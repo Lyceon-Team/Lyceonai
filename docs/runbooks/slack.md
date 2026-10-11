@@ -1,6 +1,7 @@
 # Runbook — posting to Slack from repo jobs
 
 > @spec [owner brief 2026-10-10 (QOTD social assets to Slack: bot token as a GitHub secret,
+>
 > > channel ID as a variable, fail loudly); owner brief "Doc 10B Phase 1" (Karl, 2026-10-11) scope 4
 > > and answers 11 and 12] | @implemented [2026-10-11]
 
@@ -19,10 +20,10 @@ posts. It is never logged, never in the repository, never in Vercel.
 
 ## Jobs that post
 
-| Job                  | Workflow                   | When                                                    | What it posts                                                | Runbook                        |
-| -------------------- | -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------ |
-| QOTD social assets   | `qotd-social.yml`          | daily, 06:20 UTC                                        | the day's two images, then the caption and alt text          | `docs/runbooks/qotd-slack.md`  |
-| Content batch notify | `content-batch-notify.yml` | a batch or plan pull request into `seo` is marked ready | titles, publish dates, Codex verdicts, the pull request link | `docs/runbooks/content-ops.md` |
+| Job                  | Workflow                   | When                                                       | What it posts                                                | Runbook                        |
+| -------------------- | -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------ |
+| QOTD social assets   | `qotd-social.yml`          | daily, 06:20 UTC                                           | the day's two images, then the caption and alt text          | `docs/runbooks/qotd-slack.md`  |
+| Content batch notify | `content-batch-notify.yml` | a batch or plan pull request into `social` is marked ready | titles, publish dates, Codex verdicts, the pull request link | `docs/runbooks/content-ops.md` |
 
 ## One-time setup (Karl)
 

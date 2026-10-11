@@ -10,7 +10,7 @@
  * plain English: `content/batches/approvals.json` maps a cycle (`2026-W43`, `2026-11-plan`) to the
  * merge that approved it. Its ONE writer is the `content-batch-approval` workflow
  * (.github/workflows/content-batch-approval.yml → scripts/content/stamp-approval.ts), which runs
- * when a batch pull request into `seo` is merged by Karl and commits the stamp. No person and no
+ * when a batch pull request into `social` (CONTENT_BRANCH) is merged by Karl and commits the stamp. No person and no
  * agent edits the file: the `content-approvals-guard` step fails any pull request that touches it.
  * A post in a cycle is approved exactly when its cycle has a stamp here.
  *
@@ -18,6 +18,15 @@
  */
 import { z } from "zod";
 import approvalsJson from "../../content/batches/approvals.json";
+
+/**
+ * The branch content batches and plans are merged into, and the only base a cycle is approved
+ * from (owner brief "Doc 10B pipeline — move content to the social branch", Karl, 2026-10-11:
+ * "All content-pipeline traffic moves there so `seo` stays for build work"). Content reaches
+ * production when Karl merges `social` into `main`. The three content workflows filter on this
+ * branch; tests/ci/content-branch.test.ts pins each of them to it.
+ */
+export const CONTENT_BRANCH = "social";
 
 /** A content cycle: an ISO week (`2026-W43`) or a monthly plan (`2026-11-plan`). */
 export const contentCycleSchema = z

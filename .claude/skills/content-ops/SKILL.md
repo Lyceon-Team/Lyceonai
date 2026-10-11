@@ -1,6 +1,6 @@
 ---
 name: content-ops
-description: Lyceon's blog pipeline (Doc 10B). Use when a standing trigger or Karl asks to produce a weekly blog batch, produce a monthly content plan, or revise a batch or plan after Codex's audit. Drafts, self-audits and opens pull requests into seo; never merges, never publishes.
+description: Lyceon's blog pipeline (Doc 10B). Use when a standing trigger or Karl asks to produce a weekly blog batch, produce a monthly content plan, or revise a batch or plan after Codex's audit. Drafts, self-audits and opens pull requests into social; never merges, never publishes.
 ---
 
 # Content operations (Doc 10B pipeline)
@@ -17,7 +17,8 @@ You run one stage of the blog pipeline per invocation: **produce weekly**, **pro
 
 ## Rules that never bend
 
-- **Branches.** Work on `claude/content-<cycle>` (e.g. `claude/content-2026-W45`, `claude/content-2026-11-plan`), based on `origin/seo`. Pull requests are **drafts into `seo`**. Never push to `seo`, never merge, never force-push.
+- **Branches.** Content lives on `social` (Karl, 2026-10-11; `seo` is for build work). Work on `claude/content-<cycle>` (e.g. `claude/content-2026-W45`, `claude/content-2026-11-plan`), cut from `origin/social`. Pull requests are **drafts into `social`**. Never push to `social` or `main`, never merge a pull request, never force-push. A batch or plan pull request into any other base fails CI.
+- **Keep `social` current.** Right after cutting the branch, merge `origin/main` into it (`git merge --no-edit origin/main`, a normal merge commit, never a rebase or force-push), so the batch carries the latest site and pipeline code when Karl merges it into `social`. A conflict you cannot resolve without changing someone else's work: record it and stop.
 - **Safe to re-run.** First look for the cycle's branch, open pull request and `content/batches/<cycle>/REVIEW.md`. If they exist, update them; never open a second pull request for a cycle.
 - **Missing input: record and stop.** If something the stage needs is missing (no approved plan for the week, no batch pull request, no Codex audit), write one dated line saying so in the review record (section 1 for produce, section 3 for revise), push it, and stop.
 - **Never write** `content/batches/approvals.json` (only the merge workflow does), Codex's section of a review record (except the verbatim copy below), anything under `docs/Spec/`, or `approved:` on a page.
@@ -40,7 +41,7 @@ scripts/content/lint-prose.sh          # Vale (Microsoft + ai-tells) and lychee
 ## Produce: weekly batch (Wednesday)
 
 1. **The cycle.** The batch is next week's: `pnpm exec tsx -e 'import("./shared/content/schedule.ts").then(m=>console.log(m.isoWeekCycle(process.argv[1])))' <next Monday YYYY-MM-DD>`. Its three slots are that week's Monday, Wednesday and Friday at 07:00 (`publishSlots` in the same module).
-2. **The topics** come from the approved plan for that month, `content/batches/<YYYY-MM>-plan/PLAN.md` on `origin/seo`. No merged plan covers the week: record it and stop.
+2. **The topics** come from the approved plan for that month, `content/batches/<YYYY-MM>-plan/PLAN.md` on `origin/social`. No merged plan covers the week: record it and stop.
 3. **Each post** is one module, `shared/content/posts/<slug>.ts`, default-exporting a `ScheduledPostSpec` (`shared/content/posts/types.ts`):
    - `batch: "<cycle>"`, `publishAt: "YYYY-MM-DDT07:00"` (its slot), `targetKeyword` (the plan's);
    - `page`: `title` ≤ 60 characters, `description` 120–160, one `h1`, `intro`, `sections`, `faq` if useful, the standard CTA as the existing posts end;
@@ -50,7 +51,7 @@ scripts/content/lint-prose.sh          # Vale (Microsoft + ai-tells) and lychee
 4. **Write like a person** for a student or parent: specific, plain, short sentences, straight to the point. Helpful beyond any existing Lyceon page (RUBRIC R7). No filler, no "in today's…", no rule-of-three lists for their own sake.
 5. **Run the gates.** Fix until green.
 6. **The review record.** Copy the template to `content/batches/<cycle>/REVIEW.md`, fill `Cycle` and `Batch PR`, and write section 1: one row per post, the gates you ran, and anything Karl should know (a source you added, a claim that needs him). Leave sections 2–4 as the template has them.
-7. **Commit, push, open the draft pull request** into `seo`, titled `content: <cycle> batch`, body listing each post (slug, publish date, title, target keyword). Do not mark it ready.
+7. **Commit, push, open the draft pull request** into `social`, titled `content: <cycle> batch`, body listing each post (slug, publish date, title, target keyword). Do not mark it ready.
 
 ## Produce: monthly plan (20th)
 
@@ -59,7 +60,7 @@ scripts/content/lint-prose.sh          # Vale (Microsoft + ai-tells) and lychee
 3. **Fill one row per slot:** slug, target keyword, audience (students, parents, both), search intent, and why now (tie it to the SAT calendar: final-weeks review before a test, test-day preparation, what scores mean after release, registration reminders before a deadline; Doc 10B §3A). Sources: `docs/marketing/keyword-map/`, the backlog, last month's performance where available.
 4. **No duplicate targeting.** Every target keyword must be new: compare against every `targetKeyword` in `shared/content/` (the gate normalises case and plurals; `normalizedKeyword` in `shared/seo/content-gate.ts`). A covered topic is an update to the existing page, listed as such.
 5. **Review record** with one item, `plan`; self-audit row in section 1.
-6. **Draft pull request** into `seo`, titled `content: <YYYY-MM> plan`.
+6. **Draft pull request** into `social`, titled `content: <YYYY-MM> plan`.
 
 ## Revise (Friday for a batch; 23rd for a plan)
 

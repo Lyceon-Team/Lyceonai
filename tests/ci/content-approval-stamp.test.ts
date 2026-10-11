@@ -16,12 +16,16 @@ import {
   type MergeEvent,
 } from "../../scripts/content/stamp-approval";
 import { FIXTURE_APPROVALS } from "../lib/content-fixtures";
-import { approvalsFileSchema } from "../../shared/content/approvals";
+import {
+  CONTENT_BRANCH,
+  approvalsFileSchema,
+} from "../../shared/content/approvals";
 import { REPO_ROOT } from "../lib/prerendered-site";
 
 const SHA = "b".repeat(40);
 const merge = (over: Partial<MergeEvent> = {}): MergeEvent => ({
   pr: 1201,
+  base: CONTENT_BRANCH,
   mergedBy: "karl-login",
   // 2026-10-17 03:30 UTC is still Friday 2026-10-16 in Chicago.
   mergedAt: "2026-10-17T03:30:00Z",
@@ -59,6 +63,19 @@ describe("stamping a merged batch", () => {
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/not the approver/);
+  });
+
+  it("a merge by the approver into seo (or any base but social) records nothing", () => {
+    expect(CONTENT_BRANCH).toBe("social");
+    for (const base of ["seo", "main", "cleanup"]) {
+      const r = stampApprovals({}, merge({ base }), "karl-login");
+      expect(r, base).toEqual({
+        ok: false,
+        error: `merged into ${base}, not social: content is approved only from social`,
+      });
+    }
+    // Presence: the same merge into social stamps.
+    expect(stampApprovals({}, merge(), "karl-login").ok).toBe(true);
   });
 
   it("with no approver configured, nothing is recorded", () => {

@@ -1,11 +1,12 @@
 /**
- * CI check for a pull request into `seo` that carries content (Doc 10B §8.7).
+ * CI check for a pull request into `social` that carries content (Doc 10B §8.7).
  *
  * @spec [docs/Spec/Lyceon_Doc_10B.md §8.7; owner brief "Doc 10B Phase 1" (Karl, 2026-10-11) scope 2;
  *       owner answers on Step 0, items 1 and 3] | @implemented [2026-10-11]
  *
  * plain English: run by .github/workflows/content-batch-checks.yml on every pull request into
- * `seo`, as a draft and when marked ready. It fails when:
+ * `social`, as a draft and when marked ready. It fails when:
+ *  - it carries a cycle into any base but CONTENT_BRANCH (`social`);
  *  - the pull request edits content/batches/approvals.json (only the merge workflow writes it);
  *  - a cycle the pull request touches (a content/batches/<cycle>/ file, or a post whose `batch`
  *    is that cycle) has no REVIEW.md, or its REVIEW.md breaks the rules in ./review-record.ts
@@ -14,7 +15,7 @@
  *  - a commit marked `Audit-By: Codex` changes anything but the Codex section of a review record;
  *  - a Codex section copied from a pull request comment does not match that comment, or the
  *    comment is not Codex's.
- * Environment: BASE_SHA, HEAD_SHA, PR_DRAFT ("true"/"false"), GH_TOKEN and GITHUB_REPOSITORY (to
+ * Environment: BASE_REF (the base branch), BASE_SHA, HEAD_SHA, PR_DRAFT ("true"/"false"), GH_TOKEN and GITHUB_REPOSITORY (to
  * read a Codex comment). Prints every problem; exits 1 if there is any.
  */
 import { execFileSync } from "node:child_process";
@@ -22,6 +23,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ALL_BLOG_POSTS } from "../../shared/content/blog";
+import { CONTENT_BRANCH } from "../../shared/content/approvals";
 import { batchWeekProblem } from "../../shared/content/schedule";
 import {
   APPROVALS_PATH,
@@ -56,6 +58,19 @@ export function cyclesConcerned(changed: readonly string[]): string[] {
     if (post?.batch) cycles.add(post.batch);
   }
   return [...cycles].sort();
+}
+
+/**
+ * Batch and plan content goes to CONTENT_BRANCH and nowhere else (Karl, 2026-10-11): a pull
+ * request into any other base that carries a cycle is refused, so a batch opened against `seo`
+ * by mistake fails here rather than merging unreviewed and unapproved.
+ */
+export function baseBranchProblem(
+  base: string,
+  cycles: readonly string[],
+): string | null {
+  if (cycles.length === 0 || base === CONTENT_BRANCH) return null;
+  return `this pull request carries content (${cycles.join(", ")}) into ${base}; batch and plan pull requests go into ${CONTENT_BRANCH}`;
 }
 
 const COMMENT_URL =
@@ -102,6 +117,12 @@ function main(): void {
     const problem = approvalsEditProblem(at(base), at(head));
     if (problem) problems.push(problem);
   }
+
+  const baseProblem = baseBranchProblem(
+    process.env.BASE_REF ?? "",
+    cyclesConcerned(changed),
+  );
+  if (baseProblem) problems.push(baseProblem);
 
   for (const cycle of cyclesConcerned(changed)) {
     const path = join("content", "batches", cycle, "REVIEW.md");

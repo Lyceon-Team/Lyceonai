@@ -6,14 +6,14 @@
  *       (Karl, 2026-10-11): "merge alone counts … a plain workflow script stamps the approval from
  *       the merge event … No extra click."] | @implemented [2026-10-11]
  *
- * plain English: run by .github/workflows/content-batch-approval.yml when a pull request into `seo`
+ * plain English: run by .github/workflows/content-batch-approval.yml when a pull request into `social`
  * that touches `content/batches/<cycle>/` is merged. For each cycle it touched, it writes
  * `{ by: "Karl", date, pr, mergedBy, mergeSha }` into content/batches/approvals.json, the one file
  * the site reads approval from (shared/content/approvals.ts). It stamps only a merge by the
  * approver (`CONTENT_APPROVER_LOGIN`, a repository variable naming Karl's GitHub account): any
  * other merger, or no variable, writes nothing and exits 1 so the run is red and visible.
  *
- * Inputs (environment): STAMP_PR, STAMP_MERGED_BY, STAMP_MERGED_AT (ISO), STAMP_MERGE_SHA,
+ * Inputs (environment): STAMP_PR, STAMP_BASE, STAMP_MERGED_BY, STAMP_MERGED_AT (ISO), STAMP_MERGE_SHA,
  * STAMP_CHANGED_FILES (newline-separated paths), CONTENT_APPROVER_LOGIN.
  *
  * edge cases:
@@ -26,6 +26,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  CONTENT_BRANCH,
   approvalsFileSchema,
   contentCycleSchema,
   type ApprovalsFile,
@@ -37,6 +38,8 @@ export const APPROVALS_PATH = "content/batches/approvals.json";
 
 export type MergeEvent = {
   pr: number;
+  /** The branch the pull request was merged into; only CONTENT_BRANCH approves a cycle. */
+  base: string;
   mergedBy: string;
   mergedAt: string;
   mergeSha: string;
@@ -73,6 +76,12 @@ export function stampApprovals(
     return {
       ok: false,
       error: `merged by ${event.mergedBy}, not the approver (${approverLogin}): no approval recorded`,
+    };
+  }
+  if (event.base !== CONTENT_BRANCH) {
+    return {
+      ok: false,
+      error: `merged into ${event.base}, not ${CONTENT_BRANCH}: content is approved only from ${CONTENT_BRANCH}`,
     };
   }
   if (event.changedFiles.includes(APPROVALS_PATH)) {
@@ -152,6 +161,7 @@ function main(): void {
     current,
     {
       pr: Number(env.STAMP_PR),
+      base: env.STAMP_BASE ?? "",
       mergedBy: env.STAMP_MERGED_BY ?? "",
       mergedAt: env.STAMP_MERGED_AT ?? "",
       mergeSha: env.STAMP_MERGE_SHA ?? "",

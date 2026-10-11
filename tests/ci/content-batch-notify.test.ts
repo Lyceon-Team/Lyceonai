@@ -264,10 +264,10 @@ describe("the workflow", () => {
     jobs: { notify: { steps: Step[] } };
   };
 
-  it("runs when a pull request into seo is marked ready, and only the post step holds the token", () => {
+  it("runs when a pull request into social is marked ready, and only the post step holds the token", () => {
     expect(wf.on.pull_request).toEqual({
       types: ["ready_for_review"],
-      branches: ["seo"],
+      branches: ["social"],
     });
     const steps = wf.jobs.notify.steps;
     const post = steps.findIndex((s) => s.run?.includes("notify-batch.ts"));

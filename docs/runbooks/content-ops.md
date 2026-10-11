@@ -1,33 +1,48 @@
 # Runbook — the blog pipeline (Doc 10B Phase 1)
 
-> @spec [docs/Spec/Lyceon_Doc_10B.md §3A, §4, §5, §8; owner brief "Doc 10B Phase 1 — blog
->
-> > pipeline" and owner answers on Step 0 (Karl, 2026-10-11)] | @implemented [2026-10-11]
+> @spec [docs/Spec/Lyceon_Doc_10B.md §3A, §4, §5, §8; owner brief "Doc 10B Phase 1 — blog pipeline" and owner answers on Step 0; owner brief "Doc 10B pipeline — move content to the `social` branch" (Karl, 2026-10-11)] | @implemented [2026-10-11]
 
 Three posts a week (Monday, Wednesday and Friday at 07:00 Central), planned a month ahead around
 the SAT calendar. Claude writes, Codex audits, Karl merges. Nothing publishes without Karl's merge.
 
 ## 1. The week and the month
 
-| When (Central)          | Who                                         | What                                                                                               |
-| ----------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 20th, 09:07             | Claude routine "Content: monthly plan"      | Next month's calendar: `content/batches/<YYYY-MM>-plan/PLAN.md`, self-audited, draft PR into `seo` |
-| 22nd                    | Codex task "Content: monthly audit"         | Audits the plan into its review record                                                             |
-| 23rd, 09:07             | Claude routine "Content: monthly revise"    | Answers Codex, marks the plan PR ready                                                             |
-| by the 25th             | Karl                                        | Reads `REVIEW.md`, merges the plan PR                                                              |
-| Wednesday, 09:07        | Claude routine "Content: weekly produce"    | Next week's three posts from the approved plan, gates run, self-audit, draft PR                    |
-| Thursday                | Codex task "Content: weekly audit"          | APPROVE / REVISE / REJECT per post, with evidence                                                  |
-| Friday, 09:07           | Claude routine "Content: weekly revise"     | Fixes each REVISE (one round), drops REJECTs, re-runs the gates, marks the PR ready                |
-| Friday–Sunday           | Karl                                        | Reads `content/batches/<cycle>/REVIEW.md`; merges the batch PR into `seo`, then `seo` into `main`  |
-| Mon/Wed/Fri 07:00–07:59 | Vercel cron `/api/internal/content-publish` | On a day a post is due, triggers the production deploy hook; the post goes live                    |
+| When (Central)          | Who                                         | What                                                                                                    |
+| ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 20th, 09:07             | Claude routine "Content: monthly plan"      | Next month's calendar: `content/batches/<YYYY-MM>-plan/PLAN.md`, self-audited, draft PR into `social`   |
+| 22nd                    | Codex task "Content: monthly audit"         | Audits the plan into its review record                                                                  |
+| 23rd, 09:07             | Claude routine "Content: monthly revise"    | Answers Codex, marks the plan PR ready                                                                  |
+| by the 25th             | Karl                                        | Reads `REVIEW.md`, merges the plan PR                                                                   |
+| Wednesday, 09:07        | Claude routine "Content: weekly produce"    | Next week's three posts from the approved plan, gates run, self-audit, draft PR                         |
+| Thursday                | Codex task "Content: weekly audit"          | APPROVE / REVISE / REJECT per post, with evidence                                                       |
+| Friday, 09:07           | Claude routine "Content: weekly revise"     | Fixes each REVISE (one round), drops REJECTs, re-runs the gates, marks the PR ready                     |
+| Friday–Sunday           | Karl                                        | Reads `content/batches/<cycle>/REVIEW.md`; merges the batch PR into `social`, then `social` into `main` |
+| Mon/Wed/Fri 07:00–07:59 | Vercel cron `/api/internal/content-publish` | On a day a post is due, triggers the production deploy hook; the post goes live                         |
 
-**What Karl's merge does.** Merging a batch PR into `seo` runs **Content batch approval**, which
-stamps the cycle in `content/batches/approvals.json` (only Karl's merge stamps; only that workflow
-writes the file). A post is approved exactly when its cycle has a stamp. Production builds from
-`main`, so the batch reaches the site after the `seo` → `main` merge (two merges a week, owner
-answer 2). From then on each post is withheld from the build until its date: not prerendered, not
-in the sitemap, its URL a 404, its text in no bundle. On its date the cron rebuilds and it appears.
-**Missed merge:** nothing publishes that week (Doc 10B §8.6).
+**Branches.** Content lives on `social`, which Karl cut from `main` for it; `seo` is for build
+work, and the pipeline's code reaches `main` through `seo` as before.
+
+```
+claude/content-<cycle>  --(draft PR, Karl merges)-->  social  --(Karl merges)-->  main  -->  production
+        ^ cut from origin/social, then origin/main merged in first
+```
+
+- Every batch and plan pull request targets `social`. CI refuses a cycle aimed at any other base,
+  and the approval stamp ignores a merge into any other base, so content merged into `seo` by
+  mistake is never approved.
+- **Keeping `social` current.** Each produce routine cuts its branch from `origin/social` and then
+  merges `origin/main` into it as its first step, as a normal merge commit on the batch branch,
+  never a rebase or force-push. When Karl merges the batch, `social` picks up everything on `main`
+  since the last batch, including pipeline fixes that came through `seo`.
+
+**What Karl's merge does.** Merging a batch PR into `social` runs **Content batch approval**,
+which stamps the cycle in `content/batches/approvals.json` on `social` (only Karl's merge into
+`social` stamps; only that workflow writes the file). A post is approved exactly when its cycle
+has a stamp. Production builds from `main`, so the batch reaches the site after the `social` →
+`main` merge (two merges a week, owner answer 2). From then on each post is withheld from the
+build until its date: not prerendered, not in the sitemap, its URL a 404, its text in no bundle.
+On its date the cron rebuilds and it appears. **Missed merge:** nothing publishes that week (Doc
+10B §8.6).
 
 **When a batch PR is marked ready** a summary goes to `#social` (titles, publish dates, Codex
 verdicts, the PR link): `.github/workflows/content-batch-notify.yml`, set up in
@@ -39,12 +54,12 @@ verdicts, the PR link): `.github/workflows/content-batch-notify.yml`, set up in
    `CONTENT_APPROVER_LOGIN` = your GitHub login. Only a merge by that login stamps an approval.
    Note: pull requests Claude opens from these sessions are authored under the same GitHub
    account (`kingk237`). The approval rests on who **merges**, and the routines never merge.
-2. **Let the stamp reach `seo`.** If `seo` is protected against direct pushes, allow GitHub
+2. **Let the stamp reach `social`.** If `social` is protected against direct pushes, allow GitHub
    Actions to push to it (branch protection or ruleset bypass for `github-actions[bot]`).
    Otherwise the stamp commit fails, the **Content batch approval** run is red, and nothing in
    that batch publishes until it is fixed and re-run.
 3. **Required check.** Make **Content batch checks / review-record** a required status check on
-   `seo`. It blocks a ready batch without Codex's verdicts or without a Claude response to every
+   `social`. It blocks a ready batch without Codex's verdicts or without a Claude response to every
    REVISE, and any hand edit of `approvals.json`.
 4. **Slack.** `SLACK_BOT_TOKEN` (secret) and `SOCIAL_SLACK_CHANNEL_ID` (variable, renamed from
    `QOTD_SLACK_CHANNEL_ID`): `docs/runbooks/slack.md`.
@@ -73,39 +88,45 @@ prompts, exactly as stored:
 
 > Run the content-ops skill (.claude/skills/content-ops/SKILL.md), stage "Produce: weekly batch",
 > for next week's cycle in Lyceon-Team/lyceonai. Read everything the skill says to read first.
-> The skill is safe to re-run: if the cycle's branch, pull request or review record exists, update
-> it. If a required input is missing (no approved plan covering next week), record that in the
-> review record and stop. Never merge, never push to seo, never mark the pull request ready, never
-> edit docs/Spec or content/batches/approvals.json. End with the cycle, the pull request link,
-> each post and its publish date, and every gate's result.
+> Content lives on the social branch: cut claude/content-<cycle> from origin/social, then merge
+> origin/main into it first (a normal merge commit, never a rebase or force-push), and open the
+> draft pull request into social. The skill is safe to re-run: if the cycle's branch, pull request
+> or review record exists, update it. If a required input is missing (no approved plan covering
+> next week), record that in the review record and stop. Never merge a pull request, never push to
+> social or main, never mark the pull request ready, never edit docs/Spec or
+> content/batches/approvals.json. End with the cycle, the pull request link, each post and its
+> publish date, and every gate's result.
 
 **Content: weekly revise** (Fridays 09:07)
 
-> Run the content-ops skill (.claude/skills/content-ops/SKILL.md), stage "Revise", for the
-> current weekly batch in Lyceon-Team/lyceonai: the open draft pull request into seo titled
-> "content: <cycle> batch" whose posts publish next week. Read everything the skill says to read
-> first. Apply Codex's findings (one round), respond to every REVISE and REJECT in section 3 of
-> the review record, re-run every gate, then mark the pull request ready for review. If Codex's
-> audit is missing, record that in section 3 and stop without marking it ready. Safe to re-run.
-> Never merge, never push to seo, never edit Codex's section except to copy Codex's pull request
-> comment verbatim as the skill describes.
+> Run the content-ops skill (.claude/skills/content-ops/SKILL.md), stage "Revise", for the current
+> weekly batch in Lyceon-Team/lyceonai: the open draft pull request into social titled "content:
+> <cycle> batch" whose posts publish next week. Read everything the skill says to read first.
+> Apply Codex's findings (one round), respond to every REVISE and REJECT in section 3 of the
+> review record, re-run every gate, then mark the pull request ready for review. If Codex's audit
+> is missing, record that in section 3 and stop without marking it ready. Safe to re-run. Never
+> merge a pull request, never push to social or main, never edit Codex's section except to copy
+> Codex's pull request comment verbatim as the skill describes.
 
 **Content: monthly plan** (20th of each month, 09:07)
 
 > Run the content-ops skill (.claude/skills/content-ops/SKILL.md), stage "Produce: monthly plan",
-> for next month in Lyceon-Team/lyceonai. Read everything the skill says to read first. Generate
-> the skeleton with scripts/content/plan-skeleton.ts (never retype SAT dates), fill one row per
-> slot, self-audit, and open or update the draft pull request "content: <YYYY-MM> plan" into seo.
-> Safe to re-run. Never merge, never push to seo, never mark the pull request ready.
+> for next month in Lyceon-Team/lyceonai. Read everything the skill says to read first. Content
+> lives on the social branch: cut claude/content-<YYYY-MM>-plan from origin/social, merge
+> origin/main into it first (a normal merge commit, never a rebase or force-push), generate the
+> skeleton with scripts/content/plan-skeleton.ts (never retype SAT dates), fill one row per slot,
+> self-audit, and open or update the draft pull request "content: <YYYY-MM> plan" into social.
+> Safe to re-run. Never merge a pull request, never push to social or main, never mark the pull
+> request ready.
 
 **Content: monthly revise** (23rd of each month, 09:07)
 
 > Run the content-ops skill (.claude/skills/content-ops/SKILL.md), stage "Revise", for next
-> month's plan in Lyceon-Team/lyceonai: the open draft pull request "content: <YYYY-MM> plan"
-> into seo. Read everything the skill says to read first. Apply Codex's findings, respond in
-> section 3 of the review record, re-run the gates, then mark the pull request ready for review.
-> If Codex's audit is missing, record that and stop without marking it ready. Safe to re-run.
-> Never merge, never push to seo.
+> month's plan in Lyceon-Team/lyceonai: the open draft pull request "content: <YYYY-MM> plan" into
+> social. Read everything the skill says to read first. Apply Codex's findings, respond in section
+> 3 of the review record, re-run the gates, then mark the pull request ready for review. If
+> Codex's audit is missing, record that and stop without marking it ready. Safe to re-run. Never
+> merge a pull request, never push to social or main.
 
 ## 4. The Codex tasks (Karl creates these)
 
@@ -117,7 +138,7 @@ Codex audits; it never edits content (Doc 10B §8.7). Paste each text as the tas
 You are the independent auditor in Lyceon's blog pipeline (docs/Spec/Lyceon_Doc_10B.md §4 stage 5
 and §8.7). You audit; you never edit content.
 
-1. In Lyceon-Team/lyceonai, find the open pull request into `seo` titled "content: <cycle> batch",
+1. In Lyceon-Team/lyceonai, find the open pull request into `social` titled "content: <cycle> batch",
    where <cycle> is next week's ISO week (for example 2026-W45). If there is none, stop and reply
    "No batch to audit for <cycle>."
 2. Check out its head branch. Read content/batches/RUBRIC.md, docs/Spec/Lyceon_Doc_10B.md §2 and
@@ -153,7 +174,7 @@ and §8.7). You audit; you never edit content.
 You are the independent auditor in Lyceon's blog pipeline (docs/Spec/Lyceon_Doc_10B.md §3A, §8.1
 and §8.7). You audit; you never edit content.
 
-1. In Lyceon-Team/lyceonai, find the open pull request into `seo` titled "content: <YYYY-MM> plan"
+1. In Lyceon-Team/lyceonai, find the open pull request into `social` titled "content: <YYYY-MM> plan"
    for next month. If there is none, stop and reply "No plan to audit for <YYYY-MM>."
 2. Check out its head branch. Read content/batches/RUBRIC.md, docs/Spec/Lyceon_Doc_10B.md §3A and
    §5, and the "Public Disclosure Doctrine" in CLAUDE.md. Do NOT read "## 1. Claude self-audit" in
@@ -180,14 +201,14 @@ and §8.7). You audit; you never edit content.
 
 ## 5. When something goes wrong
 
-| What                                      | What happens                                                                   | What to do                                                                                                                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A gate fails on a batch PR (CI red)       | The PR cannot be merged once the check is required                             | The revise routine fixes it; or ask Claude in the PR                                                                                                              |
-| Codex did not audit by Friday             | The revise routine records it and does not mark the PR ready                   | Run the Codex task by hand, then re-run the revise routine                                                                                                        |
-| Karl does not merge by Sunday             | Nothing publishes that week; the posts stay withheld                           | Merge later. The `seo` → `main` merge deploys production, and that build publishes every approved post whose date has passed; the rest go live on their own dates |
-| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Fix the push permission (§2.2) and re-run the **Content batch approval** run                                                                                      |
-| The publish cron did not deploy           | `content_publish_deploy_failed` in the logs; the cron answers 500              | Check `VERCEL_DEPLOY_HOOK_URL`; redeploy by hand, which publishes everything due                                                                                  |
-| A correction after publication            | Edit the post and set `updated`; it needs a new cycle's approval (Doc 10B §10) | Include it in the next batch PR                                                                                                                                   |
+| What                                      | What happens                                                                   | What to do                                                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A gate fails on a batch PR (CI red)       | The PR cannot be merged once the check is required                             | The revise routine fixes it; or ask Claude in the PR                                                                                                                 |
+| Codex did not audit by Friday             | The revise routine records it and does not mark the PR ready                   | Run the Codex task by hand, then re-run the revise routine                                                                                                           |
+| Karl does not merge by Sunday             | Nothing publishes that week; the posts stay withheld                           | Merge later. The `social` → `main` merge deploys production, and that build publishes every approved post whose date has passed; the rest go live on their own dates |
+| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Fix the push permission (§2.2) and re-run the **Content batch approval** run                                                                                         |
+| The publish cron did not deploy           | `content_publish_deploy_failed` in the logs; the cron answers 500              | Check `VERCEL_DEPLOY_HOOK_URL`; redeploy by hand, which publishes everything due                                                                                     |
+| A correction after publication            | Edit the post and set `updated`; it needs a new cycle's approval (Doc 10B §10) | Include it in the next batch PR                                                                                                                                      |
 
 ## 6. Checking a scheduled post went live
 

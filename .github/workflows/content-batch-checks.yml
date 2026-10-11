@@ -1,24 +1,26 @@
-# Checks a content pull request into seo: the review record, Codex's write scope, the approvals file.
+# Checks a content pull request into social: the review record, Codex's write scope, the approvals file.
 #
 # @spec [docs/Spec/Lyceon_Doc_10B.md §8.7; owner brief "Doc 10B Phase 1 — blog pipeline" (Karl,
 #   2026-10-11) scope 2: "a CI check that a batch PR can't be marked ready without the Codex section
 #   and a Claude response to every REVISE"; owner answers on Step 0, items 1 and 3]
 #   | @implemented [2026-10-11]
 #
-# plain English: on every pull request into `seo` (opened, pushed to, marked ready, or turned back
+# plain English: on every pull request into `social` (opened, pushed to, marked ready, or turned back
 # into a draft) this runs scripts/content/check-batch-pr.ts. A pull request that carries no content
 # passes at once. A batch pull request passes as a draft with Claude's self-audit; once marked READY
 # it also needs Codex's verdict on every item and Claude's response to every REVISE, or the check
-# goes red. Make "Content batch checks / review-record" a required status check on `seo` (branch
+# goes red. Make "Content batch checks / review-record" a required status check on `social` (branch
 # protection) so a red record cannot be merged. It also fails any pull request that edits
 # content/batches/approvals.json, which only the merge workflow writes, and any `Audit-By: Codex`
-# commit that touches anything but the Codex section.
+# commit that touches anything but the Codex section. Content PRs go into `social` (owner brief
+# 2026-10-11, "move content to the social branch"); check-batch-pr.ts also refuses a cycle aimed at
+# any other base.
 name: Content batch checks
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-    branches: [seo]
+    branches: [social]
 
 permissions:
   contents: read
@@ -72,6 +74,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
           GH_TOKEN: ${{ github.token }}
         run: pnpm exec tsx scripts/content/check-batch-pr.ts

@@ -4,18 +4,19 @@
 #   scope 4; owner answers 11 (one SOCIAL_SLACK_CHANNEL_ID) and 12 (duplicate posts accepted)]
 #   | @implemented [2026-10-11]
 #
-# plain English: when a pull request into `seo` that carries content (content/batches/** or
+# plain English: when a pull request into `social` that carries content (content/batches/** or
 # shared/content/posts/**) is marked ready for review, scripts/content/notify-batch.ts posts the
 # titles, publish dates, Codex verdicts and the pull request link to the channel in the
 # repository variable SOCIAL_SLACK_CHANNEL_ID, as "Lyceon bot" (secret SLACK_BOT_TOKEN). Setup and
 # failures: docs/runbooks/slack.md. A failed post turns this run red; it never blocks the merge.
-# Marking a pull request ready twice posts twice (accepted, owner answer 12).
+# Marking a pull request ready twice posts twice (accepted, owner answer 12). Base `social`: owner
+# brief 2026-10-11, "move content to the social branch".
 name: Content batch notify
 
 on:
   pull_request:
     types: [ready_for_review]
-    branches: [seo]
+    branches: [social]
 
 permissions:
   contents: read

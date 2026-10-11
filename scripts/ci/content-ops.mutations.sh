@@ -27,10 +27,12 @@ SATDATES="shared/sat-test-dates.ts"
 NOTIFY="scripts/content/notify-batch.ts"
 PLAN="scripts/content/plan-skeleton.ts"
 ENTRY="client/src/prerender/entry-server.tsx"
+CHECKPR="scripts/content/check-batch-pr.ts"
+CHECKS_WF=".github/workflows/content-batch-checks.yml"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/content-mut.XXXX)"
 
-FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE" "$SATDATES" "$NOTIFY" "$PLAN" "$ENTRY")
+FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE" "$SATDATES" "$NOTIFY" "$PLAN" "$ENTRY" "$CHECKPR" "$CHECKS_WF")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -62,6 +64,7 @@ SAT_T=tests/ci/sat-test-dates.contract.test.ts
 NOTIFY_T=tests/ci/content-batch-notify.test.ts
 PLAN_T=tests/ci/content-plan.test.ts
 DRAFT_T=tests/ci/content-drafts-gate.test.ts
+BRANCH_T=tests/ci/content-branch.test.ts
 # The Vale and lychee plants (Q8, Q9) need both tools: the quality-gates suite skips them without,
 # which would read here as a plant that stayed green. Fail loudly instead.
 command -v vale >/dev/null && command -v lychee >/dev/null || { echo "vale and lychee must be on PATH (.github/actions/content-tools)"; exit 1; }
@@ -83,7 +86,7 @@ run() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T" "$QG_T" "$SAT_T" "$NOTIFY_T" "$PLAN_T" "$DRAFT_T")"; RC=$?
+OUT="$(check "$SCHED_T" "$JOB_T" "$STAMP_T" "$REVIEW_T" "$QG_T" "$SAT_T" "$NOTIFY_T" "$PLAN_T" "$DRAFT_T" "$BRANCH_T")"; RC=$?
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "CONTENT OPS MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -234,6 +237,18 @@ run "D2 draft article gated" "fails a draft whose article links to a page that d
 echo "=== (D3) gate 11 compares drafts only with each other ==="
 plant "$ENTRY" "  const problems = duplicateTargetProblems([...byPath.values()]);" "  const problems = duplicateTargetProblems(posts);" || { bad "D3 STALE"; exit 1; }
 run "D3 drafts against live pages" "fails a draft that targets a term a live page owns" "$DRAFT_T"
+
+echo "=== (B1) a batch merged into seo is approved ==="
+plant "$STAMP" "  if (event.base !== CONTENT_BRANCH) {" "  if (false) {" || { bad "B1 STALE"; exit 1; }
+run "B1 approved only from social" "a merge by the approver into seo (or any base but social) records nothing" "$STAMP_T"
+
+echo "=== (B2) a batch PR into seo passes the PR check ==="
+plant "$CHECKPR" "  if (cycles.length === 0 || base === CONTENT_BRANCH) return null;" "  return null;" || { bad "B2 STALE"; exit 1; }
+run "B2 PR check refuses seo" "a batch PR into seo fails; the same into social passes" "$BRANCH_T"
+
+echo "=== (B3) the review-record check also runs on PRs into seo ==="
+plant "$CHECKS_WF" "    branches: [social]" "    branches: [seo, social]" || { bad "B3 STALE"; exit 1; }
+run "B3 trigger is social only" "a batch PR into social triggers the review-record check; the same into seo does not" "$BRANCH_T"
 
 echo
 echo "CONTENT OPS MUTATIONS: $PASS passed, $FAIL failed"
