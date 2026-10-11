@@ -170,9 +170,19 @@ async function seedUser(id: string, email: string): Promise<void> {
  * suite pins `Date` to 17:00 UTC today (pinDaytimeClock). Seeding with the database's real
  * `now() - 1 hour` made the row "not yet due" whenever CI ran after 18:00 UTC: executedCount 0,
  * five red tests, green again the next morning. Both timestamps now come from the pinned clock.
+ *
+ * And by the DATABASE clock too: `preclear_account_deletion_links` (SQL) refuses a request that
+ * is not due by `now()` (PRECLEAR_NOT_DUE). Seeding from the pinned 17:00 clock alone made the
+ * row due at 16:00 UTC today, which the database does not reach until 16:00, so every run before
+ * then went red the same way. The row is due one hour before the EARLIER of the two clocks, so
+ * both the executor's select and the preclear see it as due at any hour. (Learned 2026-10-11.)
  */
 async function seedDueDeletion(profileId: string): Promise<string> {
-  const now = Date.now();
+  const dbNow = await pg.query(`SELECT now() AS now`);
+  const dbClock: unknown = dbNow.rows[0]?.now;
+  if (!(dbClock instanceof Date))
+    throw new Error("SELECT now() returned no timestamp");
+  const now = Math.min(Date.now(), dbClock.getTime());
   const r = await pg.query(
     `INSERT INTO public.account_deletion_requests
        (profile_id, scheduled_hard_delete_at, actor_profile_id, status, requested_at)
