@@ -759,6 +759,24 @@ describe("Suggested for you", () => {
 // ── Recent practice ────────────────────────────────────────────────────────────────────────
 
 describe("Recent practice (OQ-23: /api/review/pool)", () => {
+  // Owner brief 2026-10-11 (DESIGN.md "UI standards", long labels): two lines and an ellipsis.
+  it("titles are clamped to two lines, with the full text on hover and focus", async () => {
+    await mount("paid", { quota: "unlimited" });
+    const rows = await screen.findAllByTestId("practice-recent-row");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const title = within(row).getByTestId("practice-recent-title");
+      expect(title.className.split(" ")).toEqual(
+        expect.arrayContaining([
+          "line-clamp-2",
+          "group-focus-within:line-clamp-none",
+        ]),
+      );
+      expect(title.getAttribute("title")).toBe(title.textContent);
+      expect(row.className.split(" ")).toContain("group");
+    }
+  });
+
   it("lists the practice rows with their own review counts and links to review", async () => {
     await mount("paid", { quota: "unlimited" });
     const rows = await screen.findAllByTestId("practice-recent-row");

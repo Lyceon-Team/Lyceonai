@@ -123,7 +123,6 @@ export default function ProfileComplete() {
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [satDates, setSatDates] = useState<SatDateChoice>({
-    notSure: false,
     dates: [],
   });
   const [errorMessage, setErrorMessage] = useState("");
