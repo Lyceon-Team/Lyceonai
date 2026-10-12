@@ -234,6 +234,11 @@ const ALLOWED_EXACT: ReadonlySet<string> = new Set([
   "GET /api/billing/status",
   "GET /api/billing/plans",
   "GET /api/billing/publishable-key",
+  // Owner ruling 2026-10-12 (Karl, on #1211), a separate approval from the 2026-09-29 set: "any
+  // signed-in account (including one whose role isn't saved yet) can read latest_test_date …
+  // It carries no student data". One configuration-derived date for the caller's own account,
+  // and onboarding reads it before a date of birth is saved, so it is outside this gate.
+  "GET /api/sat-dates/bound",
   // Not in the approval by name: answers 409 ACCOUNT_SELECTION_DISABLED to every caller and
   // reads and writes nothing (server/routes/account-routes.ts). Listed so it is visible here.
   "POST /api/account/select",
@@ -317,6 +322,7 @@ const allowedReads = (studentId: string): ReadonlyArray<string> => [
   `/api/students/${studentId}/link-code`,
   `/api/students/${studentId}/links`,
   "/api/billing/status",
+  "/api/sat-dates/bound",
 ];
 const ALLOWED_READS = allowedReads(KID);
 
