@@ -218,6 +218,9 @@ describe("requireProfileComplete — HALT-3 server-side DOB soft-gate", () => {
         role: "student",
         isGuardian: false,
         isAdmin: false,
+        // a completed student's age is always known (production 2026-10-11: 59/59); the shared
+        // rule (hotfix 2026-10-11) refuses a student whose date of birth is unknown
+        is_under_13: false,
         profile_completed_at: "2026-06-17T10:00:00Z",
       },
       requestId: "halt3-4",
