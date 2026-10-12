@@ -282,6 +282,18 @@ describe("caption and alt text", () => {
     expect(speakMixedText("$\\int_0^1 x\\,dx$")).toBeNull();
   });
 
+  it("reads a paired <u>...</u> as an underline, never the tag (2026-10-11)", () => {
+    expect(
+      speakMixedText(
+        "Bees dance. <u>The dance encodes distance.</u> Others follow.",
+      ),
+    ).toBe(
+      "Bees dance. [underlined] The dance encodes distance. [end underlined] Others follow.",
+    );
+    // Anything else stays the text it is: only the paired, plain tag is markup.
+    expect(speakMixedText("a <b>bold</b> claim")).toBe("a <b>bold</b> claim");
+  });
+
   it("falls back to a generic alt text rather than garbled maths or an over-long one", () => {
     const day = socialInputFromArchive(DAYS[0]!);
     const unspeakable = buildSocialCopy({

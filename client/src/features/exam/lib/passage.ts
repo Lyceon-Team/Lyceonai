@@ -19,52 +19,93 @@
  * exponent enhancement (x^2 -> x<sup>2</sup>): that enhancement drops the caret, and
  * a highlight offset must count every source character. Passages are prose; maths in
  * a passage is written in $...$ and still renders through MathRenderer.
+ *
+ * 2026-10-11: a paired `<u>...</u>` (shared/question-markup.ts) is a `tag` atom per tag —
+ * drawn as nothing, counted in full — and the text and maths between a pair carry
+ * `underlined`, so a "function of the underlined sentence" passage shows its underline
+ * here too and every highlight offset still indexes the stored passage string.
  */
 import { tokenizeMathContent } from "@/components/MathRenderer";
+import {
+  findUnderlineMarkup,
+  isUnderlined,
+  splitByUnderlineMarkup,
+} from "@shared/question-markup";
 import {
   EXAM_WORKSPACE_MAX_HIGHLIGHTS,
   type ExamHighlight,
 } from "@lyceon/shared/exam-runtime-schema";
 
 type PassageSegment =
-  | { kind: "text"; start: number; end: number; text: string; highlighted: boolean }
-  | { kind: "math"; start: number; end: number; source: string; highlighted: boolean }
-  | { kind: "escape"; start: number; end: number; text: string; highlighted: boolean };
+  | { kind: "text"; start: number; end: number; text: string; highlighted: boolean; underlined: boolean }
+  | { kind: "math"; start: number; end: number; source: string; highlighted: boolean; underlined: boolean }
+  | { kind: "escape"; start: number; end: number; text: string; highlighted: boolean; underlined: boolean }
+  | { kind: "tag"; start: number; end: number };
 
+/**
+ * `tag` is a paired `<u>` / `</u>` (shared/question-markup.ts, 2026-10-11): an atom that
+ * renders as nothing but still occupies its source code points, so highlight offsets keep
+ * counting the passage exactly as the server stores it.
+ */
 type Piece =
-  | { kind: "text"; start: number; end: number }
-  | { kind: "math"; start: number; end: number }
-  | { kind: "escape"; start: number; end: number };
+  | { kind: "text"; start: number; end: number; underlined: boolean }
+  | { kind: "math"; start: number; end: number; underlined: boolean }
+  | { kind: "escape"; start: number; end: number; underlined: boolean }
+  | { kind: "tag"; start: number; end: number };
 
 /** UTF-16 index -> code-point index within `s`. */
 function codePointIndex(s: string, utf16Index: number): number {
   return Array.from(s.slice(0, utf16Index)).length;
 }
 
-/** Pieces in CODE POINTS: text runs, maths atoms, `\$` escape atoms. */
+/** Pieces in CODE POINTS: text runs, maths atoms, `\$` escape atoms, `<u>` tag atoms. */
 function passagePieces(passage: string): Piece[] {
   const pieces: Piece[] = [];
-  for (const token of tokenizeMathContent(passage)) {
-    const start = codePointIndex(passage, token.rawStart);
-    const end = codePointIndex(passage, token.rawEnd);
-    if (end <= start) continue;
+  const tokens = tokenizeMathContent(passage);
+  const markup = findUnderlineMarkup(
+    passage,
+    tokens
+      .filter((t) => t.type === "math")
+      .map((t) => ({ start: t.rawStart, end: t.rawEnd })),
+  );
+  for (const token of tokens) {
     if (token.type === "math") {
-      pieces.push({ kind: "math", start, end });
+      const start = codePointIndex(passage, token.rawStart);
+      const end = codePointIndex(passage, token.rawEnd);
+      if (end <= start) continue;
+      pieces.push({
+        kind: "math",
+        start,
+        end,
+        underlined: isUnderlined(markup, token.rawStart, token.rawEnd),
+      });
       continue;
     }
-    // Split the text run at every `\$` so each escape is an atom of its own.
-    const raw = Array.from(passage.slice(token.rawStart, token.rawEnd));
-    let runStart = 0;
-    for (let i = 0; i < raw.length; i++) {
-      if (raw[i] === "\\" && raw[i + 1] === "$") {
-        if (i > runStart) pieces.push({ kind: "text", start: start + runStart, end: start + i });
-        pieces.push({ kind: "escape", start: start + i, end: start + i + 2 });
-        i += 1;
-        runStart = i + 1;
+    for (const part of splitByUnderlineMarkup(markup, token.rawStart, token.rawEnd)) {
+      const start = codePointIndex(passage, part.start);
+      const end = codePointIndex(passage, part.end);
+      if (end <= start) continue;
+      if (part.kind === "tag") {
+        pieces.push({ kind: "tag", start, end });
+        continue;
       }
-    }
-    if (runStart < raw.length) {
-      pieces.push({ kind: "text", start: start + runStart, end: start + raw.length });
+      const underlined = part.underlined;
+      // Split the text run at every `\$` so each escape is an atom of its own.
+      const raw = Array.from(passage.slice(part.start, part.end));
+      let runStart = 0;
+      for (let i = 0; i < raw.length; i++) {
+        if (raw[i] === "\\" && raw[i + 1] === "$") {
+          if (i > runStart) {
+            pieces.push({ kind: "text", start: start + runStart, end: start + i, underlined });
+          }
+          pieces.push({ kind: "escape", start: start + i, end: start + i + 2, underlined });
+          i += 1;
+          runStart = i + 1;
+        }
+      }
+      if (runStart < raw.length) {
+        pieces.push({ kind: "text", start: start + runStart, end: start + raw.length, underlined });
+      }
     }
   }
   return pieces;
@@ -101,13 +142,18 @@ export function buildPassageSegments(
   const ranges = normalizeHighlights(highlights);
   const segments: PassageSegment[] = [];
   for (const piece of passagePieces(passage)) {
+    if (piece.kind === "tag") {
+      segments.push({ kind: "tag", start: piece.start, end: piece.end });
+      continue;
+    }
+    const underlined = piece.underlined;
     if (piece.kind !== "text") {
       const highlighted = ranges.some((r) => overlaps(r, piece));
       const source = cps.slice(piece.start, piece.end).join("");
       segments.push(
         piece.kind === "math"
-          ? { kind: "math", start: piece.start, end: piece.end, source, highlighted }
-          : { kind: "escape", start: piece.start, end: piece.end, text: "$", highlighted },
+          ? { kind: "math", start: piece.start, end: piece.end, source, highlighted, underlined }
+          : { kind: "escape", start: piece.start, end: piece.end, text: "$", highlighted, underlined },
       );
       continue;
     }
@@ -126,6 +172,7 @@ export function buildPassageSegments(
         end,
         text: cps.slice(start, end).join(""),
         highlighted: ranges.some((r) => r.start <= start && end <= r.end),
+        underlined,
       });
     }
   }

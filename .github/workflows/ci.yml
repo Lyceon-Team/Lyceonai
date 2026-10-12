@@ -515,6 +515,14 @@ jobs:
       - name: Legal registry reaches every runtime (incident 2026-09-16)
         run: pnpm run gate:legal-registry
 
+      # Live bug 2026-10-11: 18 Text Structure and Purpose passages printed "<u>" / "</u>" as
+      # text. The renderers now draw a paired <u> as an underline and nothing else; this pins
+      # the bank to that contract — every "the underlined ..." stem has exactly one <u> span in
+      # its passage, and no rendered field carries any other tag. Known missing targets are a
+      # shrink-only baseline in the script (content repairs owed to the questions workstream).
+      - name: Question markup gate (paired <u> only; underlined stems have their target)
+        run: pnpm exec tsx scripts/ci/question-markup-gate.ts
+
       # Doc 07A §11.1 / §11.2 (launch-required, hard-fail at V1). Parity: every emitEvent name is
       # registered, PostHog SDKs are imported only by the two permitted modules (SCL-201 IS 2),
       # redaction keys equal property keys, and the bundled registry module is current.

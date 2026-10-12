@@ -6,6 +6,11 @@ import {
   tokenizeMathContent,
   type MathContentToken,
 } from '@shared/math/tokenize';
+import {
+  findUnderlineMarkup,
+  isUnderlined,
+  splitByUnderlineMarkup,
+} from '@shared/question-markup';
 
 // Re-exported so existing importers keep one path; the tokenizer itself lives in shared/math.
 export { tokenizeMathContent };
@@ -80,11 +85,36 @@ export function MathRenderer({
 function processMixedContentSafely(content: string, defaultDisplayMode: boolean): DocumentFragment {
   const fragment = document.createDocumentFragment();
   const tokens = tokenizeContent(content, defaultDisplayMode);
+  /**
+   * @spec [shared/question-markup.ts; live bug 2026-10-11 (Text Structure and Purpose
+   *        passages printed their <u>...</u> tags)] | @implemented [2026-10-11]
+   * plain English: a paired `<u>...</u>` in the text draws a real underline. The tags are
+   * found by position and dropped; the text between them goes into a `<u>` ELEMENT built
+   * with createElement, so content is still never parsed as HTML. Any other tag, or an
+   * unpaired one, stays literal text.
+   */
+  const markup = findUnderlineMarkup(
+    content,
+    tokens
+      .filter((t) => t.type === 'math')
+      .map((t) => ({ start: t.rawStart, end: t.rawEnd })),
+  );
 
   for (const token of tokens) {
     if (token.type === 'text') {
-      // Convert caret exponents in plain text only
-      fragment.appendChild(renderCaretSuperscriptsToFragment(token.content));
+      if (markup.tags.length === 0) {
+        // Convert caret exponents in plain text only
+        fragment.appendChild(renderCaretSuperscriptsToFragment(token.content));
+        continue;
+      }
+      for (const piece of splitByUnderlineMarkup(markup, token.rawStart, token.rawEnd)) {
+        if (piece.kind === 'tag') continue;
+        // A raw slice still carries `\$` escapes, which the tokenizer drew as `$`.
+        const run = renderCaretSuperscriptsToFragment(
+          content.slice(piece.start, piece.end).replace(/\\\$/g, '$'),
+        );
+        fragment.appendChild(piece.underlined ? wrapUnderline(run) : run);
+      }
       continue;
     }
 
@@ -121,10 +151,18 @@ function processMixedContentSafely(content: string, defaultDisplayMode: boolean)
             : `$${token.content}$`;
       mathSpan.textContent = wrapped;
     }
-    fragment.appendChild(mathSpan);
+    fragment.appendChild(
+      isUnderlined(markup, token.rawStart, token.rawEnd) ? wrapUnderline(mathSpan) : mathSpan,
+    );
   }
 
   return fragment;
+}
+
+function wrapUnderline(node: Node): HTMLElement {
+  const u = document.createElement('u');
+  u.appendChild(node);
+  return u;
 }
 
 /**

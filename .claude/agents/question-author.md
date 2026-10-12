@@ -52,6 +52,10 @@ For MCQ (`item_type: "mcq"`) records, include `correct_option` (one of "A","B","
 
 Only grid-in records (`item_type: "grid_in"`) include `correct_answer` (as a STRING).
 
+## CRITICAL — "the underlined ..." needs exactly one `<u>…</u>` in the passage
+
+If a stem refers to "the underlined sentence" (or portion, word, phrase), wrap that target in the passage in a literal `<u>…</u>` — exactly one span, around non-blank text. No other markup anywhere: no `<b>`, `<i>`, `<br>`, upper-case or attributed tags. The assembly gate fails `MISSING_UNDERLINED_TARGET` / `RAW_HTML` otherwise (`docs/questions_governance.md` §A.5 rules 14–15).
+
 ## Definition of Done
 
 - Your part-file exists at the assigned path and contains exactly `count` records summed across your leaves, records only.
