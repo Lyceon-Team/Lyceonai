@@ -24,6 +24,7 @@
  * Trade-offs: no outbox, so a crash or a Resend outage between the change and the call loses that
  * event (logged). On Vercel, work after the response is best effort.
  */
+import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { lifecycleEmailEnvSchema } from "../../packages/shared/src/env";
 import { marketingOptInEligible } from "../../packages/shared/src/marketing-consent-schema";
@@ -39,14 +40,15 @@ export const ENTITLED_EVENT = "lyceon.entitled";
 
 export type LifecycleRole = "student" | "guardian";
 
-export type LifecycleProfile = {
-  id: string;
-  email: string | null;
-  role: string | null;
-  display_name: string | null;
-  date_of_birth: string | null;
-  deleted_at: string | null;
-};
+const lifecycleProfileSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().nullable(),
+  role: z.string().nullable(),
+  display_name: z.string().nullable(),
+  date_of_birth: z.string().nullable(),
+  deleted_at: z.string().nullable(),
+});
+export type LifecycleProfile = z.infer<typeof lifecycleProfileSchema>;
 
 export type Denylist = {
   domains: ReadonlySet<string>;
@@ -286,7 +288,18 @@ async function loadProfileFromDb(
     );
     return null;
   }
-  return (data as LifecycleProfile | null) ?? null;
+  if (data === null) return null;
+  const parsed = lifecycleProfileSchema.safeParse(data);
+  if (!parsed.success) {
+    logger.warn(
+      "LIFECYCLE_EMAIL",
+      "profile_shape_invalid",
+      "Profile row did not match the expected shape",
+      { profileId },
+    );
+    return null;
+  }
+  return parsed.data;
 }
 
 async function hasPendingDeletionInDb(

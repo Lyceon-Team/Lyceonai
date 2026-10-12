@@ -575,18 +575,6 @@ function epochToIso(seconds: unknown): string | null {
 }
 
 /**
- * Persist Stripe's authoritative subscription state onto the student's
- * entitlement row. Re-fetches rather than trusting the delivered object.
- */
-/**
- * Onboarding events to Resend Automations (Karl, 2026-10-12): when this write took the student
- * from not entitled to entitled, tell Resend — `lyceon.entitled` and the contact property
- * `entitled = "true"` for the student and, when a guardian paid, the payer. Both sides of the
- * test are the one platform predicate (`entitlement_active`, SCL-029), read before and after the
- * upsert, so "active" is never redefined here. An unreadable answer on either side sends
- * nothing (never a guess). Fire-and-forget: the webhook's own result never waits on Resend.
- */
-/**
  * The one predicate (SCL-029), read for the announcement only. It can never break a grant: a
  * throw or a failed read is `{ ok: false }`, which sends nothing.
  */
@@ -609,6 +597,14 @@ async function readEntitledForAnnouncement(
   }
 }
 
+/**
+ * Onboarding events to Resend Automations (Karl, 2026-10-12): when this write took the student
+ * from not entitled to entitled, tell Resend — `lyceon.entitled` and the contact property
+ * `entitled = "true"` for the student and, when a guardian paid, the payer. Both sides of the
+ * test are the one platform predicate (`entitlement_active`, SCL-029), read before and after the
+ * upsert, so "active" is never redefined here. An unreadable answer on either side sends
+ * nothing (never a guess). Fire-and-forget: the webhook's own result never waits on Resend.
+ */
 async function announceIfNewlyEntitled(
   before: { ok: true; active: boolean } | { ok: false },
   studentProfileId: string,
@@ -625,6 +621,10 @@ async function announceIfNewlyEntitled(
   );
 }
 
+/**
+ * Persist Stripe's authoritative subscription state onto the student's
+ * entitlement row. Re-fetches rather than trusting the delivered object.
+ */
 /**
  * INV-03-08 AT EVERY GRANT — the fix for the class, not the instance.
  *
