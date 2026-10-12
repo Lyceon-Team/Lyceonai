@@ -50,6 +50,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeSatDates,
+  offeredSatDates,
   toggleSatDate,
 } from "@/components/sat-dates/sat-date-picker.testing";
 import { Router } from "wouter";
@@ -153,6 +154,8 @@ import CalendarPage from "./calendar";
 /** Thursday 1 October 2026: the week shown is Monday 28 September to Sunday 4 October. */
 const NOW = new Date("2026-10-01T15:00:00Z");
 const TODAY = "2026-10-01";
+/** The served bound (`latest_test_date`, owner ruling 2026-10-11, Karl on #1204). */
+const LATEST_TEST_DATE = "2027-06-05";
 /** The SAT date, moved inside the week so the grid can star it. */
 const TEST_DATE = "2026-10-03";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -204,7 +207,10 @@ function freeSetupRequired(): unknown {
 
 /** The harness's saved profile, as `GET /api/calendar/profile` serves it. */
 function savedProfile(): StudyProfile {
-  const parsed = profileReadResponseSchema.parse({ profile: PROFILE_ROW });
+  const parsed = profileReadResponseSchema.parse({
+    profile: PROFILE_ROW,
+    latest_test_date: LATEST_TEST_DATE,
+  });
   if (parsed.profile === null) throw new Error("the harness row is a profile");
   return parsed.profile;
 }
@@ -248,7 +254,10 @@ function install(scenario: Scenario): void {
     }
     if (method === "GET" && url === "/api/calendar/profile") {
       return json({
-        ...profileReadResponseSchema.parse({ profile: state.profile }),
+        ...profileReadResponseSchema.parse({
+          profile: state.profile,
+          latest_test_date: LATEST_TEST_DATE,
+        }),
         requestId: "r",
       });
     }
@@ -620,6 +629,15 @@ describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
     await openMore();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
     await screen.findByTestId("calendar-settings-sheet");
+    // Owner ruling 2026-10-11: the sheet's picker offers nothing past the served bound.
+    await waitFor(() =>
+      expect(offeredSatDates("settings-exam-dates")).toContain(
+        LATEST_TEST_DATE,
+      ),
+    );
+    const offered = offeredSatDates("settings-exam-dates");
+    expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
     toggleSatDate("settings-exam-dates", "2026-12-05");
     closeSatDates("settings-exam-dates");
     fireEvent.click(screen.getByTestId("settings-save"));
@@ -1075,7 +1093,16 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
   it("Save sends PUT /api/calendar/profile with a key the route accepts, then shows the saved goal", async () => {
     await mount("free", { calendar: freeSetupRequired, profile: null });
     const form = await screen.findByTestId("calendar-free-setup");
-    // Owner brief 2026-10-11: the one SAT-date picker (a dropdown multi-select).
+    // Owner brief 2026-10-11: the one SAT-date picker (a dropdown multi-select), offering
+    // nothing past the served bound (owner ruling 2026-10-11, Karl on #1204).
+    await waitFor(() =>
+      expect(offeredSatDates("calendar-free-test-dates")).toContain(
+        LATEST_TEST_DATE,
+      ),
+    );
+    const offered = offeredSatDates("calendar-free-test-dates");
+    expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
     toggleSatDate("calendar-free-test-dates", "2026-12-05");
     closeSatDates("calendar-free-test-dates");
     fireEvent.change(within(form).getByLabelText("Target score"), {

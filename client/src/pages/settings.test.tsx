@@ -37,6 +37,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeSatDates,
+  offeredSatDates,
   openSatDates,
   satDatesSummary,
   toggleSatDate,
@@ -245,10 +246,14 @@ const STUDY_PROFILE = {
   setup_completed_at: "2026-09-02T00:00:00.000Z",
 } as const;
 
+/** The served bound (`latest_test_date`, owner ruling 2026-10-11, Karl on #1204). */
+const LATEST_TEST_DATE = "2027-06-05";
+
 function calendarProfileBody(exists: boolean): unknown {
   return {
     ...profileReadResponseSchema.parse({
       profile: exists ? STUDY_PROFILE : null,
+      latest_test_date: LATEST_TEST_DATE,
     }),
     requestId: "r",
   };
@@ -494,6 +499,11 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
       "settings-test-dates-date-2026-12-05",
     );
     expect(date.getAttribute("aria-checked")).toBe("true");
+    // Owner ruling 2026-10-11: nothing past the served bound is offered.
+    const offered = offeredSatDates("settings-test-dates");
+    expect(offered).toContain(LATEST_TEST_DATE);
+    expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
     closeSatDates("settings-test-dates");
     const target = screen.getByTestId("settings-target") as HTMLInputElement;
     expect(target.value).toBe("1400");

@@ -385,6 +385,11 @@ export type ProfileUpsertResponse = z.infer<typeof profileUpsertResponseSchema>;
 export const profileReadResponseSchema = z
   .object({
     profile: studyProfileSchema.nullable(),
+    // Owner ruling 2026-10-11 (Karl, on #1204, ruling 2): the furthest test date the profile
+    // write accepts for this student (`latestAcceptedExamDate`: their local day plus
+    // `target_exam_date_max_days`), so every SAT-date picker offers exactly what the write
+    // will take. A configuration bound, not a profile value: served pre-setup too.
+    latest_test_date: localDateSchema,
   })
   .strict();
 export type ProfileReadResponse = z.infer<typeof profileReadResponseSchema>;

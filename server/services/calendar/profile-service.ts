@@ -45,6 +45,7 @@
  */
 import {
   err,
+  latestAcceptedExamDate,
   makeStudyProfileUpsertSchema,
   studyProfileSchema,
   type Result,
@@ -110,6 +111,32 @@ export async function readStudyProfile(
   }
   if (data === null) return null;
   return parseProfileRow(data, requestId);
+}
+
+/**
+ * @spec [Doc-05F_V1.0 §15 (GET /api/calendar/profile), §8.1 bounds; owner ruling 2026-10-11
+ *       (Karl, on #1204, ruling 2)] | @implemented [2026-10-11]
+ *
+ * plain English: the profile read's body: the stored profile (or `null`) and the furthest test
+ * date the write would accept for this student right now. The bound is computed exactly as
+ * `upsertStudyProfile` computes it, from the same `localTodayForProfile` (the stored zone, or
+ * the fallback before setup) and the same `target_exam_date_max_days` row, through the shared
+ * `latestAcceptedExamDate`. So a date the pickers offer is a date the write takes.
+ */
+export async function readStudyProfileWithBound(
+  studentId: string,
+  requestId?: string,
+  now?: Date,
+): Promise<{ profile: StudyProfile | null; latest_test_date: string }> {
+  const config = await loadCalendarConfig();
+  const profile = await readStudyProfile(studentId, requestId);
+  return {
+    profile,
+    latest_test_date: latestAcceptedExamDate(
+      localTodayForProfile(profile, now),
+      config.bounds.target_exam_date_max_days,
+    ),
+  };
 }
 
 /**

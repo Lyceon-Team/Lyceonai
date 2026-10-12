@@ -18,8 +18,22 @@
  * menu. Choosing "Not sure yet" clears the dates; choosing a date clears "Not sure yet" (an empty
  * choice IS "Not sure yet", the onboarding rule: no answer is the same as not sure). Choosing
  * keeps the menu open so several dates can be picked in one visit. Controlled; saves nothing.
+ *
+ * @spec [owner rulings 2026-10-11 (Karl, on #1204): 1 "Keep the 14-date picker without
+ *       type-to-filter" (DESIGN.md §5: ordered lists → scrollable dropdown without filter);
+ *       2 "the calendar profile read returns the furthest accepted test date, and every SAT-date
+ *       picker … uses that one bound"] | @implemented [2026-10-11]
+ * plain English: the picker reads that bound itself (`latest_test_date` on
+ * `GET /api/calendar/profile`, through the shared `useStudyProfile` query), so no surface can
+ * pass a different one or forget it. Fail closed: until the bound has loaded, and if it cannot
+ * load, no date is offered: the menu says so ("Loading test dates…", or "We couldn't load the
+ * test dates" with Try again). "Not sure yet" is always available, so an answer is never blocked.
+ * The bound is requested when the menu first opens, so merely rendering the picker sends nothing.
+ * Trade-off: the onboarding of a guardian-intent account that switches to Student cannot read
+ * the profile (the route is student-only until the role is saved), so it offers no dates there;
+ * Settings and the Home card have the same picker once the role is saved.
  */
-import { useId } from "react";
+import { useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
@@ -29,6 +43,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useStudyProfile } from "@/features/calendar/api/queries";
 import { cn } from "@/lib/utils";
 import {
   chicagoToday,
@@ -58,25 +73,27 @@ export function SatDatePicker({
   onChange,
   legend = "When's your SAT?",
   today = chicagoToday(),
-  latest,
   "data-testid": testId = "sat-date-picker",
 }: {
   value: SatDateChoice;
   onChange: (next: SatDateChoice) => void;
   legend?: string;
   today?: string;
-  /**
-   * The last date the server will store (the calendar's served `target_exam_date_max_days`
-   * horizon, as a date). Official dates after it are not offered, as the old date input's `max`
-   * did not allow them: the profile write refuses them. Omitted where the caller has no horizon.
-   */
-  latest?: string;
   "data-testid"?: string;
 }): JSX.Element {
   const labelId = useId();
-  const options = satDateOptions(today, value.dates).filter(
-    (o) => latest === undefined || o.date <= latest,
-  );
+  // The one bound (owner ruling 2026-10-11): served by the profile read, never passed in.
+  // Requested when the menu first opens, not on mount: onboarding renders this picker under
+  // its default (student) answers before a guardian has chosen their role, and a guardian's
+  // first load makes no student-only request (G-NEW-03). A surface that has already read the
+  // profile (Settings, Home, the calendar) shares the cached answer, so nothing waits there.
+  const [opened, setOpened] = useState(false);
+  const bound = useStudyProfile({ enabled: opened });
+  const latest = bound.data?.latest_test_date;
+  const options =
+    latest === undefined
+      ? []
+      : satDateOptions(today, value.dates).filter((o) => o.date <= latest);
   const notSure = value.dates.length === 0;
 
   function toggleDate(date: string, checked: boolean): void {
@@ -91,7 +108,12 @@ export function SatDatePicker({
       <span id={labelId} className="text-[17px] font-semibold text-lyc-ink">
         {legend}
       </span>
-      <DropdownMenu modal={false}>
+      <DropdownMenu
+        modal={false}
+        onOpenChange={(open) => {
+          if (open) setOpened(true);
+        }}
+      >
         <DropdownMenuTrigger
           // Named by the question AND the current answer: "When's your SAT? Sat, Dec 5, 2026".
           aria-labelledby={`${labelId} ${labelId}-value`}
@@ -134,6 +156,32 @@ export function SatDatePicker({
             className="max-h-[min(280px,45vh)] overflow-y-auto"
             data-testid={`${testId}-dates`}
           >
+            {latest === undefined ? (
+              bound.isError ? (
+                <div
+                  className="flex items-center justify-between gap-3 px-3 py-2.5 text-lyc-body text-lyc-ink"
+                  role="status"
+                  data-testid={`${testId}-dates-error`}
+                >
+                  We couldn't load the test dates.
+                  <button
+                    type="button"
+                    className="font-semibold text-lyc-ink-strong underline underline-offset-2"
+                    onClick={() => void bound.refetch()}
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className="px-3 py-2.5 text-lyc-body text-lyc-ink"
+                  role="status"
+                  data-testid={`${testId}-dates-loading`}
+                >
+                  Loading test dates…
+                </div>
+              )
+            ) : null}
             {options.map((o) => (
               <DropdownMenuCheckboxItem
                 variant="lyc-box"

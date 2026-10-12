@@ -19,6 +19,7 @@ import {
 } from "@testing-library/react";
 import {
   closeSatDates,
+  offeredSatDates,
   openSatDates,
 } from "@/components/sat-dates/sat-date-picker.testing";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -38,7 +39,8 @@ const net = vi.hoisted(() => ({
   log: [] as { method: string; url: string; body: unknown }[],
   today: null as unknown,
   answer: null as unknown,
-  profile: { profile: null } as unknown,
+  // The served bound rides on every profile read (owner ruling 2026-10-11, Karl on #1204).
+  profile: { profile: null, latest_test_date: "2027-06-05" } as unknown,
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -159,7 +161,7 @@ function mount(): void {
 
 beforeEach(() => {
   net.log = [];
-  net.profile = { profile: null };
+  net.profile = { profile: null, latest_test_date: "2027-06-05" };
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -325,6 +327,11 @@ describe("the SAT-date card", () => {
     const options = within(menu).getAllByRole("menuitemcheckbox");
     expect(options[0]?.textContent).toBe("Not sure yet");
     expect(options.length).toBeGreaterThan(2);
+    // Owner ruling 2026-10-11: nothing past the served bound is offered.
+    const offered = offeredSatDates("home-sat-dates");
+    expect(offered).toContain("2027-06-05");
+    expect(offered.every((d) => d <= "2027-06-05")).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
     fireEvent.click(options[1] as HTMLElement);
     closeSatDates("home-sat-dates");
     fireEvent.click(screen.getByTestId("home-sat-date-save"));

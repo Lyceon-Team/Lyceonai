@@ -86,7 +86,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 | Typing indicator | LISA | A LISA-labelled bubble with three pulsing dots. Send is disabled while LISA is thinking. |
 | Footer | See App shell | |
 | Keyboard hook | Runner, LISA, modals | One shared hook. The prototype shows **no keystroke hint text** (Karl's ruling). |
-| SAT-date picker | Onboarding, Settings, Home's date card, the calendar (setup, free plan, schedule sheet) | One component, `components/sat-dates/SatDatePicker.tsx`: a dropdown multi-select. Closed: "Not sure yet", one date, or "first date + N more". Open: "Not sure yet" pinned first, then the future official dates with checkboxes, scrolling inside the menu; each choice clears the other. Added 2026-10-11 (Karl). |
+| SAT-date picker | Onboarding, Settings, Home's date card, the calendar (setup, free plan, schedule sheet) | One component, `components/sat-dates/SatDatePicker.tsx`: a dropdown multi-select. Closed: "Not sure yet", one date, or "first date + N more". Open: "Not sure yet" pinned first, then the future official dates with checkboxes, scrolling inside the menu; each choice clears the other. Offers no date past the furthest one the profile write accepts, served as `latest_test_date` on `GET /api/calendar/profile` (one bound for every surface; Karl, ruling 2 on #1204, 2026-10-11). Added 2026-10-11 (Karl). |
 | Clamped label | Any long label in a row or card | `ClampedLabel` (`components/student-ui`): two lines and an ellipsis; full text on hover and on focus within its row. Added 2026-10-11 (Karl). |
 
 ---
@@ -179,7 +179,8 @@ Standing rules for every student screen, new or changed. Added by Karl on 2026-1
 - 2–3 options: a segmented control or radio buttons (the student `Tabs` for switching views; a chip row with radio semantics for a setting).
 - 4 or more options: a dropdown (`Select` with `variant="lyc"`).
 - Multi-select: a dropdown with checkboxes (`DropdownMenu` with `DropdownMenuCheckboxItem`, as the filter bar and the SAT-date picker do; the menu stays open while choosing).
-- More than about 10 options: a dropdown with type-to-filter search.
+- More than about 10 options of names or text: a dropdown with type-to-filter search.
+- More than about 10 options in a natural order (dates, numbers): a scrollable dropdown, no filter (the list is already sorted, so the student scrolls to the value; e.g. the SAT-date picker). Amended by Karl on 2026-10-11 (ruling 1 on #1204).
 - Never render a long option list inline on the page.
 
 **Actions.** One filled primary action per screen. Everything else is outline or a text link.

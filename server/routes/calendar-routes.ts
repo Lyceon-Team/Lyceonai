@@ -72,6 +72,7 @@ import {
   upsertStudyProfile,
   type ProfileFailure,
   readStudyProfile,
+  readStudyProfileWithBound,
 } from "../services/calendar/profile-service";
 import {
   launchBlock,
@@ -577,8 +578,10 @@ calendarRouter.get("/", async (req: Request, res: Response) => {
  * which answers a free student 402, so the setup form could not show the answers it had
  * just collected (wiring-table §9, OQ-25).
  *
- * expected outcome: 200 `{ profile: StudyProfile | null, requestId }` for any tier. `null`
- * is the pre-setup state. 401 without a session. A guardian never reaches this handler:
+ * expected outcome: 200 `{ profile: StudyProfile | null, latest_test_date, requestId }` for
+ * any tier. `null` is the pre-setup state. `latest_test_date` (owner ruling 2026-10-11, Karl
+ * on #1204) is the furthest test date the PUT below accepts for this student, served so every
+ * SAT-date picker offers exactly that range. 401 without a session. A guardian never reaches this handler:
  * the `/api/calendar` mount runs `requireStudentOrAdmin` (server/index.ts), which answers a
  * guardian 403 — the same as `PUT /profile`. A guardian sees the exam date and target score
  * through the guardian calendar (`GET /api/students/:studentId/calendar`), which carries the
@@ -603,8 +606,9 @@ calendarRouter.get("/profile", async (req: Request, res: Response) => {
   if (caller === null) return;
 
   try {
-    const profile = await readStudyProfile(caller.studentId, req.requestId);
-    const body = profileReadResponseSchema.safeParse({ profile });
+    const body = profileReadResponseSchema.safeParse(
+      await readStudyProfileWithBound(caller.studentId, req.requestId),
+    );
     if (!body.success) {
       // Unreachable while `readStudyProfile` parses through the same strict schema; if it
       // ever is reached, a 500 beats serving a shape the contract does not name.

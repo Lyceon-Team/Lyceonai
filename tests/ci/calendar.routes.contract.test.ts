@@ -63,9 +63,16 @@ vi.mock("../../server/services/calendar/read-service", () => ({
   readGuardianCalendar: vi.fn(),
 }));
 
+/** The served bound in this stubbed service (the real computation is proved against PG). */
+const STUB_LATEST_TEST_DATE = "2028-03-12";
+
 vi.mock("../../server/services/calendar/profile-service", () => ({
   upsertStudyProfile: upsertProfileMock,
   readStudyProfile: readProfileMock,
+  readStudyProfileWithBound: vi.fn(async (id: string, requestId?: string) => ({
+    profile: await readProfileMock(id, requestId),
+    latest_test_date: STUB_LATEST_TEST_DATE,
+  })),
   FALLBACK_TIMEZONE: "America/Chicago",
 }));
 
@@ -856,7 +863,11 @@ describe("OQ-25 — GET /profile serves the study profile to any tier, and never
     const res = await request(buildApp()).get("/api/calendar/profile");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ profile: null, requestId: "req-test" });
+    expect(res.body).toEqual({
+      profile: null,
+      latest_test_date: STUB_LATEST_TEST_DATE,
+      requestId: "req-test",
+    });
     expect(readProfileMock).toHaveBeenCalledWith(STUDENT, "req-test");
   });
 
@@ -875,8 +886,14 @@ describe("OQ-25 — GET /profile serves the study profile to any tier, and never
       expect(res.body.profile).toEqual(SAVED_PROFILE);
       expect(res.body.profile.target_exam_date).toBe("2027-03-13");
       expect(res.body.profile.target_score).toBe(1400);
-      // The top level is the profile and the correlation id, nothing else.
-      expect(Object.keys(res.body).sort()).toEqual(["profile", "requestId"]);
+      // The top level is the profile, the served bound (owner ruling 2026-10-11) and the
+      // correlation id, nothing else.
+      expect(res.body.latest_test_date).toBe(STUB_LATEST_TEST_DATE);
+      expect(Object.keys(res.body).sort()).toEqual([
+        "latest_test_date",
+        "profile",
+        "requestId",
+      ]);
       for (const key of PLAN_KEYS) {
         expect(res.body).not.toHaveProperty(key);
         expect(res.body.profile).not.toHaveProperty(key);
