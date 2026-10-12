@@ -5,8 +5,9 @@
  *
  * plain English: the fast lane (ci.yml, every pull request) runs a few checks only when the
  * change can affect them: a gate's self-test when that gate's script changes, the review UI
- * mutation gate's full plant set when the harness itself changes, the dependency audit when a
- * manifest or the lockfile changes, the question-authoring test when the question tooling
+ * mutation gate's full plant set when the harness itself changes (since Karl's ruling of
+ * 2026-10-11 on #1204, ci.yml defers that set to ci-full's shards rather than run it), the
+ * dependency audit when a manifest or the lockfile changes, the question-authoring test when the question tooling
  * changes. Every one of them always runs in the full tier (ci-full.yml) on the way to `main`.
  * This script maps the changed files to those groups.
  *
