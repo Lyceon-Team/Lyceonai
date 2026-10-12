@@ -23,7 +23,11 @@ import { Client } from "pg";
 import fs from "fs";
 import path from "path";
 import { answerCookieBanner } from "./exam-harness/consent";
-import { DESMOS_STUBBED, stubDesmos } from "./desmos-stub";
+import {
+  DESMOS_STUBBED,
+  serveRealDesmosFromFile,
+  stubDesmos,
+} from "./desmos-stub";
 
 test.describe.configure({ mode: "serial" });
 // A container whose Playwright browser build differs from the pinned one names its own.
@@ -34,6 +38,7 @@ test.setTimeout(15 * 60_000);
 test.beforeEach(async ({ context, baseURL }) => {
   await answerCookieBanner(context, baseURL ?? "http://localhost:5173");
   if (DESMOS_STUBBED) await stubDesmos(context);
+  else await serveRealDesmosFromFile(context);
 });
 
 const SHOTS =
@@ -666,8 +671,9 @@ test("practice timing: RW routes down, Math routes up; a hidden tab pauses the c
   // test's score, and its §15.1 disclosure beside it.
   for (const name of ["Full-Length Test 1", "Full-Length Test 2"]) {
     const done = page.getByRole("article", { name });
+    // QA-OQ66 (2026-10-07): dates go through the shared US formatter ("October 11").
     await expect(done.getByTestId("exam-form-state")).toHaveText(
-      /^Completed \d{1,2} [A-Z][a-z]+\. Score \d{3,4}\.$/,
+      /^Completed [A-Z][a-z]+ \d{1,2}\. Score \d{3,4}\.$/,
     );
     await expect(done.getByTestId("exam-disclosure")).toBeVisible();
   }

@@ -18,6 +18,11 @@
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import { tokenizeMathContent } from "@/components/MathRenderer";
+import {
+  findUnderlineMarkup,
+  isUnderlined,
+  splitByUnderlineMarkup,
+} from "@shared/question-markup";
 
 function renderMath(latex: string, displayMode: boolean): string | null {
   try {
@@ -42,22 +47,55 @@ export function StaticMath({
   className?: string;
 }): JSX.Element {
   const tokens = tokenizeMathContent(content);
+  // A paired <u>...</u> draws a real underline, exactly as MathRenderer does
+  // (shared/question-markup.ts, 2026-10-11): tags dropped by position, text in a React <u>.
+  const markup = findUnderlineMarkup(
+    content,
+    tokens
+      .filter((t) => t.type === "math")
+      .map((t) => ({ start: t.rawStart, end: t.rawEnd })),
+  );
   return (
     <span className={className}>
       {tokens.map((token) => {
         if (token.type === "text") {
-          return <span key={token.rawStart}>{token.content}</span>;
+          if (markup.tags.length === 0) {
+            return <span key={token.rawStart}>{token.content}</span>;
+          }
+          return (
+            <span key={token.rawStart}>
+              {splitByUnderlineMarkup(markup, token.rawStart, token.rawEnd).map(
+                (piece) => {
+                  if (piece.kind === "tag") return null;
+                  const text = content
+                    .slice(piece.start, piece.end)
+                    .replace(/\\\$/g, "$");
+                  return piece.underlined ? (
+                    <u key={piece.start}>{text}</u>
+                  ) : (
+                    <span key={piece.start}>{text}</span>
+                  );
+                },
+              )}
+            </span>
+          );
         }
         const html = renderMath(token.content, token.displayMode);
-        return html === null ? (
-          <span key={token.rawStart}>
-            {content.slice(token.rawStart, token.rawEnd)}
-          </span>
+        const node =
+          html === null ? (
+            <span key={token.rawStart}>
+              {content.slice(token.rawStart, token.rawEnd)}
+            </span>
+          ) : (
+            <span
+              key={token.rawStart}
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          );
+        return isUnderlined(markup, token.rawStart, token.rawEnd) ? (
+          <u key={token.rawStart}>{node}</u>
         ) : (
-          <span
-            key={token.rawStart}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
+          node
         );
       })}
     </span>

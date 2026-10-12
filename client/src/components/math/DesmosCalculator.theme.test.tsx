@@ -102,12 +102,13 @@ function current(): Made {
 }
 
 describe("QA2-B: Desmos follows the page's dark theme", () => {
-  it("dark page: the Graphing calculator is constructed with invertedColors true", async () => {
+  it("dark page: the default (Scientific) calculator is constructed with invertedColors true", async () => {
     document.documentElement.setAttribute("data-theme", "dark");
     mount();
     await flush();
     expect(made).toHaveLength(1);
-    expect(current().kind).toBe("graphing");
+    // owner brief 2026-10-11: the calculator opens on Scientific
+    expect(current().kind).toBe("scientific");
     expect(current().options.invertedColors).toBe(true);
   });
 
@@ -119,13 +120,13 @@ describe("QA2-B: Desmos follows the page's dark theme", () => {
     expect(current().options.invertedColors).toBe(false);
   });
 
-  it("dark page, Scientific: the scientific calculator is constructed inverted too", async () => {
+  it("dark page, Graphing: the graphing calculator is constructed inverted too", async () => {
     document.documentElement.setAttribute("data-theme", "dark");
     mount();
     await flush();
-    fireEvent.click(screen.getByTestId("desmos-mode-scientific"));
+    fireEvent.click(screen.getByTestId("desmos-mode-graphing"));
     await flush();
-    expect(current().kind).toBe("scientific");
+    expect(current().kind).toBe("graphing");
     expect(current().options.invertedColors).toBe(true);
   });
 

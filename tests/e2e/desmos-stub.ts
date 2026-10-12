@@ -65,3 +65,28 @@ export async function stubDesmos(target: Page | BrowserContext): Promise<void> {
     }),
   );
 }
+
+/**
+ * @spec [n/a — e2e test-harness tooling; owner brief 2026-10-11 (the exam-shell calculator test
+ *       must pass where Desmos loads)] | @implemented [2026-10-11]
+ * plain English: E2E_DESMOS_SCRIPT_FILE=<path to a saved copy of www.desmos.com's calculator.js>
+ * answers the calculator.js URL with that REAL Desmos runtime, for browsers that cannot reach
+ * desmos.com themselves (an intercepting proxy whose CA the browser does not trust). Unlike the
+ * stand-in above, this IS the real Desmos runtime, so a run with it counts as "Desmos loads"
+ * (set E2E_DESMOS_REACHABLE=1 alongside it). No TLS check is weakened: the copy was fetched
+ * over verified TLS by the tool that saved it.
+ */
+export const DESMOS_SCRIPT_FILE = process.env.E2E_DESMOS_SCRIPT_FILE ?? "";
+
+export async function serveRealDesmosFromFile(
+  target: Page | BrowserContext,
+): Promise<void> {
+  if (!DESMOS_SCRIPT_FILE) return;
+  await target.route(DESMOS_SCRIPT, (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/javascript",
+      path: DESMOS_SCRIPT_FILE,
+    }),
+  );
+}
