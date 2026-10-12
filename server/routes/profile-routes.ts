@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { isProfileGateSatisfied } from "../../packages/shared/src/profile-completion";
 import { resolveFeatureAccess } from "../lib/feature-access";
 import { z } from "zod";
 import {
@@ -295,7 +296,14 @@ router.get("/", async (req: Request, res: Response) => {
     const guardianConsentRequired = !!(
       profileRow.is_under_13 && !guardianConnected
     );
-    const requiredProfileComplete = !!profileRow.profile_completed_at;
+    // The shared rule (hotfix 2026-10-11): the same answer `requireProfileComplete` gives, so
+    // the client's gate and the server's can never disagree about this account.
+    const requiredProfileComplete = isProfileGateSatisfied({
+      isAdmin: user.isAdmin,
+      role: profileRow.role,
+      profileCompletedAt: profileRow.profile_completed_at,
+      dateOfBirthKnown: profileRow.date_of_birth !== null,
+    });
 
     // @spec [Doc-01_V8 §40 / §40.3] | @implemented 2026-06-21 | plain English: server-authority
     // exposure of (a) whether the V2 account-deletion lifecycle is live and (b) whether THIS user is in

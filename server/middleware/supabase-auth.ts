@@ -12,6 +12,7 @@ import {
   PROFILE_INCOMPLETE,
 } from "../../packages/shared/src/guardian-link-gate";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { isProfileGateSatisfied } from "../../packages/shared/src/profile-completion";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 
@@ -909,10 +910,16 @@ export async function requireGuardianLinkForUnder13(
 
 /**
  * Middleware to require completed onboarding profile before feature access.
- * Blocks when profile_completed_at is null ("DOB not yet set"). An under-13 student is gated
- * separately, on every request, by the live link check `requireGuardianLinkForUnder13` (G2-04);
- * there is no stored consent state.
+ * Blocks when the shared rule `isProfileGateSatisfied` says no: an admin always passes; anyone
+ * else needs `profile_completed_at`, and a student also a known date of birth. An under-13
+ * student is gated separately, on every request, by the live link check
+ * `requireGuardianLinkForUnder13` (G2-04); there is no stored consent state.
  * @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] server-side DOB soft-gate
+ * @spec [hotfix 2026-10-11: one definition of "profile complete", shared with the client's
+ *        RequireRole and completion page; admins are not subject to the student gate]
+ *        | @implemented [2026-10-11] | plain English: before this, the gate refused an admin
+ *        whose `profile_completed_at` was NULL while the client exempted admins, and the client
+ *        reloaded between the two every ~1.5s (production, 2026-10-11).
  */
 export function requireProfileComplete(
   req: Request,
@@ -923,7 +930,15 @@ export function requireProfileComplete(
     return sendNoUser(req, res);
   }
 
-  if (!req.user.profile_completed_at) {
+  if (
+    !isProfileGateSatisfied({
+      isAdmin: req.user.isAdmin,
+      role: req.user.role,
+      profileCompletedAt: req.user.profile_completed_at,
+      // the same test requireGuardianLinkForUnder13 applies (G2-06)
+      dateOfBirthKnown: typeof req.user.is_under_13 === "boolean",
+    })
+  ) {
     logger.warn(
       "AUTH",
       "profile_incomplete",

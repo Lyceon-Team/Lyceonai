@@ -31,6 +31,7 @@ export const GROUPS = {
     "shared/question-ingestion-qa.ts",
     "shared/question-bank-contract.ts",
     "shared/practice/letter-reference.ts",
+    "shared/question-markup.ts",
     "content/canonical/",
     "docs/questions_governance.md",
     "tests/assemble-batch",
