@@ -184,4 +184,58 @@ describe("DesmosCalculator lifecycle (owner brief 2026-10-11)", () => {
     unmount();
     expect(made.map((m) => m.destroyed)).toEqual([true, true]);
   });
+
+  /**
+   * @spec [register G-NEW-14; owner brief 2026-10-12] | @implemented [2026-10-12]
+   * plain English: the component's own save moments reach the caller through `onCommit` (tab
+   * switch, close, unmount), each after the pending change is emitted; `flushRef` emits a
+   * pending change at once. The debounced change itself is local only.
+   */
+  it("onCommit on tab switch, close and unmount; flushRef emits a pending change now", async () => {
+    const onCommit = vi.fn();
+    const emitted: unknown[] = [];
+    const flushRef: { current: (() => void) | null } = { current: null };
+    function Host({ open }: { open: boolean }): JSX.Element {
+      return (
+        <DesmosCalculator
+          expanded={open}
+          onStateChange={(s) => emitted.push(s)}
+          onCommit={onCommit}
+          flushRef={flushRef}
+          debounceMs={10_000}
+        />
+      );
+    }
+    const { rerender, unmount } = render(<Host open />);
+    await flush();
+    const scientific = of("scientific")[0]!;
+
+    // A change inside the debounce is not emitted until flushRef asks for it.
+    scientific.state = { kind: "scientific", n: 1 };
+    scientific.fireChange();
+    expect(emitted).toHaveLength(0);
+    act(() => flushRef.current?.());
+    expect(emitted).toEqual([
+      { graphing: null, scientific: { kind: "scientific", n: 1 } },
+    ]);
+    expect(onCommit).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("desmos-mode-graphing"));
+    await flush();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+
+    rerender(<Host open={false} />);
+    await flush();
+    expect(onCommit).toHaveBeenCalledTimes(2);
+
+    const graphing = of("graphing")[0]!;
+    graphing.state = { kind: "graphing", n: 2 };
+    graphing.fireChange();
+    unmount();
+    expect(onCommit).toHaveBeenCalledTimes(3);
+    expect(emitted.at(-1)).toEqual({
+      graphing: { kind: "graphing", n: 2 },
+      scientific: { kind: "scientific", n: 1 },
+    });
+  });
 });

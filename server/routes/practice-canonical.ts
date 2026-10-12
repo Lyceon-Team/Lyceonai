@@ -65,6 +65,7 @@ import {
   practiceSessionModeSchema,
 } from "../../packages/shared/src/session-mode";
 import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
+import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -2779,7 +2780,27 @@ router.post(
       metadata.client_instance_id = binding.requestedClientInstanceId;
     }
 
-    metadata.calculator_state = parsed.data.calculator_state ?? null;
+    /**
+     * @spec [register G-NEW-14; owner brief 2026-10-12 ("if the saved state is identical,
+     *       return early and don't write")] | @implemented [2026-10-12]
+     * plain English: after ownership, the closed-session check and the client-instance binding
+     * (all unchanged), a posted state identical to the stored one (same hash; jsonb key order
+     * does not matter) is answered at once with no write. A request that binds this client
+     * instance still writes, because the binding itself is new.
+     */
+    const nextCalculatorState = parsed.data.calculator_state ?? null;
+    if (
+      binding.action !== "bind" &&
+      calculatorStateHash(metadata.calculator_state ?? null) ===
+        calculatorStateHash(nextCalculatorState)
+    ) {
+      return res.json({
+        sessionId,
+        calculatorState: metadata.calculator_state ?? null,
+      });
+    }
+
+    metadata.calculator_state = nextCalculatorState;
 
     await updateSessionLifecycle(sessionId, metadata);
 
