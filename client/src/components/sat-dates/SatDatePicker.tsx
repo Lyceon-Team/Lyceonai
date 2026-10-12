@@ -23,15 +23,20 @@
  *       type-to-filter" (DESIGN.md §5: ordered lists → scrollable dropdown without filter);
  *       2 "the calendar profile read returns the furthest accepted test date, and every SAT-date
  *       picker … uses that one bound"] | @implemented [2026-10-11]
- * plain English: the picker reads that bound itself (`latest_test_date` on
- * `GET /api/calendar/profile`, through the shared `useStudyProfile` query), so no surface can
- * pass a different one or forget it. Fail closed: until the bound has loaded, and if it cannot
- * load, no date is offered: the menu says so ("Loading test dates…", or "We couldn't load the
- * test dates" with Try again). "Not sure yet" is always available, so an answer is never blocked.
- * The bound is requested when the menu first opens, so merely rendering the picker sends nothing.
- * Trade-off: the onboarding of a guardian-intent account that switches to Student cannot read
- * the profile (the route is student-only until the role is saved), so it offers no dates there;
- * Settings and the Home card have the same picker once the role is saved.
+ *
+ * @spec [owner ruling 2026-10-12 (Karl, on #1211): "Serve the test-date bound from a
+ *       role-agnostic read: any signed-in account (including one whose role isn't saved yet)
+ *       can read latest_test_date"; the error row is not accepted for a guardian-intent account
+ *       that switches to Student] | @implemented [2026-10-12]
+ * plain English: the picker reads that bound itself (`latest_test_date` from
+ * `GET /api/sat-dates/bound`, through the shared `useSatDateBound` query), so no surface can
+ * pass a different one or forget it. The read is role-agnostic, so every signed-in account gets
+ * the dates, including a guardian-intent account switching to Student at onboarding. Fail
+ * closed: until the bound has loaded, and if it cannot load (a network or server fault), no
+ * date is offered: the menu says so ("Loading test dates…", or "We couldn't load the test
+ * dates" with Try again). "Not sure yet" is always available, so an answer is never blocked.
+ * The bound is requested when the menu first opens, so merely rendering the picker sends
+ * nothing.
  */
 import { useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
@@ -43,7 +48,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useStudyProfile } from "@/features/calendar/api/queries";
+import { useSatDateBound } from "@/features/calendar/api/queries";
 import { cn } from "@/lib/utils";
 import {
   chicagoToday,
@@ -82,13 +87,13 @@ export function SatDatePicker({
   "data-testid"?: string;
 }): JSX.Element {
   const labelId = useId();
-  // The one bound (owner ruling 2026-10-11): served by the profile read, never passed in.
-  // Requested when the menu first opens, not on mount: onboarding renders this picker under
-  // its default (student) answers before a guardian has chosen their role, and a guardian's
-  // first load makes no student-only request (G-NEW-03). A surface that has already read the
-  // profile (Settings, Home, the calendar) shares the cached answer, so nothing waits there.
+  // The one bound (owner rulings 2026-10-11 and 2026-10-12): served role-agnostically by
+  // GET /api/sat-dates/bound, never passed in. Requested when the menu first opens, not on
+  // mount: onboarding renders this picker under its default (student) answers before a guardian
+  // has chosen their role, and a guardian who never opens it should cause no request at all
+  // (G-NEW-03). Every picker shares one cached answer.
   const [opened, setOpened] = useState(false);
-  const bound = useStudyProfile({ enabled: opened });
+  const bound = useSatDateBound({ enabled: opened });
   const latest = bound.data?.latest_test_date;
   const options =
     latest === undefined

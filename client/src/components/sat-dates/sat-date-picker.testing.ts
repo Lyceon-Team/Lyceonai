@@ -6,15 +6,22 @@
  */
 import { createElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, screen, within } from "@testing-library/react";
-import type { ProfileReadResponse } from "@lyceon/shared/calendar";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import type { SatDateBoundResponse } from "@lyceon/shared/calendar";
 import { calendarKeys } from "@/features/calendar/api/keys";
+import { expect } from "vitest";
 
 /**
- * The served bound, as `GET /api/calendar/profile` carries it (owner ruling 2026-10-11, Karl on
- * #1204, ruling 2), for a component rendered outside a page. Seeds the SAME query the picker
- * reads (`calendarKeys.profile()`), so the picker takes its bound exactly as in the product.
- * Pages that read the profile through their own fetch mock serve `latest_test_date` there.
+ * The served bound, as `GET /api/sat-dates/bound` carries it (owner rulings 2026-10-11 on #1204
+ * and 2026-10-12 on #1211), for a component rendered outside a page. Seeds the SAME query the
+ * picker reads (`calendarKeys.satDateBound()`), so the picker takes its bound exactly as in the
+ * product. Pages that stub the network serve `/api/sat-dates/bound` there instead.
  */
 export function satDateBoundWrapper(
   latestTestDate: string,
@@ -22,11 +29,8 @@ export function satDateBoundWrapper(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  const served: ProfileReadResponse = {
-    profile: null,
-    latest_test_date: latestTestDate,
-  };
-  client.setQueryData(calendarKeys.profile(), served);
+  const served: SatDateBoundResponse = { latest_test_date: latestTestDate };
+  client.setQueryData(calendarKeys.satDateBound(), served);
   return function SatDateBound({
     children,
   }: {
@@ -75,6 +79,18 @@ export function offeredSatDates(testId: string): string[] {
     .map((el) => el.getAttribute("data-testid") ?? "")
     .filter((id) => id.startsWith(`${testId}-date-`))
     .map((id) => id.slice(`${testId}-date-`.length));
+}
+
+/**
+ * Opens the picker and waits until its dates have arrived. The bound is read when the menu first
+ * opens (`GET /api/sat-dates/bound`), so a page's picker lists its dates a moment later, as a
+ * person sees it.
+ */
+export async function waitForSatDates(testId: string): Promise<string[]> {
+  await waitFor(() =>
+    expect(offeredSatDates(testId).length).toBeGreaterThan(0),
+  );
+  return offeredSatDates(testId);
 }
 
 /** The closed trigger's text ("Not sure yet", one date, or "… + N more"). */

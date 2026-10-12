@@ -1,25 +1,29 @@
 // @vitest-environment jsdom
 /**
- * Onboarding's "When's your SAT?" offers nothing past the served bound.
+ * Onboarding's "When's your SAT?" for a guardian-intent account that switches to Student: the
+ * dates are offered, bounded by the served bound.
  *
- * @spec [owner ruling 2026-10-11 (Karl, on #1204, ruling 2): "the calendar profile read returns
- *       the furthest accepted test date, and every SAT-date picker (onboarding, Settings, Home
- *       card, calendar) uses that one bound. A test proves a date beyond the bound is never
- *       offered anywhere."] | @implemented [2026-10-11]
+ * @spec [owner rulings (Karl): 2026-10-11 on #1204 ruling 2 ("A test proves a date beyond the
+ *       bound is never offered anywhere"); 2026-10-12 on #1211 ("don't accept the error row for
+ *       guardian-intent → Student switches … any signed-in account (including one whose role
+ *       isn't saved yet) can read latest_test_date … Test: a guardian-intent account that
+ *       switches to Student at onboarding sees the dates (no error row)")]
+ * | @implemented [2026-10-12]
  *
  * plain English: the REAL onboarding page with a real React Query client; only the network is
- * stubbed (as in profile-complete.marketing-opt-in.test.tsx). A student of 16 opens the picker;
- * the bound arrives from `GET /api/calendar/profile` (`latest_test_date`) and every offered date
- * is on or before it. The sibling suites hold the same for Settings, the Home card and the
- * calendar; SatDatePicker.test.tsx holds it for the picker itself and proves every surface
- * renders that one picker.
+ * stubbed, and it answers as the server does for this account: its stored role is still
+ * `guardian` (the switch is saved by onboarding's own submit), so the student-only
+ * `GET /api/calendar/profile` is 403, while the role-agnostic `GET /api/sat-dates/bound` serves
+ * the bound. The page opens on Guardian (the stored role); the person switches to Student, gives
+ * a 16-year-old's date of birth and opens the picker: the dates are there, none past the bound,
+ * no error row, and no calendar route was asked.
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { profileReadResponseSchema } from "@lyceon/shared/calendar";
-import { offeredSatDates } from "@/components/sat-dates/sat-date-picker.testing";
+import { satDateBoundResponseSchema } from "@lyceon/shared/calendar";
+import { waitForSatDates } from "@/components/sat-dates/sat-date-picker.testing";
 
 // The served bound; hoisted so the network stub below serves the same value the test asserts.
 const calls = vi.hoisted(() => ({
@@ -46,7 +50,8 @@ vi.mock("@/lib/csrf", () => ({
           authenticated: true,
           user: {
             id: "a1111111-1111-4111-8111-111111111113",
-            role: "student",
+            // Guardian-intent: the stored role until onboarding's submit saves the switch.
+            role: "guardian",
             display_name: null,
             requiredProfileComplete: false,
             profileCompletedAt: null,
@@ -64,16 +69,22 @@ vi.mock("@/lib/queryClient", async () => {
     queryClient: qc,
     apiRequest: vi.fn(async (url: string) => {
       calls.urls.push(url);
-      if (url === "/api/calendar/profile") {
+      if (url === "/api/sat-dates/bound") {
         return new Response(
           JSON.stringify({
-            ...profileReadResponseSchema.parse({
-              profile: null,
+            ...satDateBoundResponseSchema.parse({
               latest_test_date: calls.latest,
             }),
             requestId: "r",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.startsWith("/api/calendar")) {
+        // As `requireStudentOrAdmin` answers a stored guardian.
+        return new Response(
+          JSON.stringify({ error: "Student access required", requestId: "r" }),
+          { status: 403, headers: { "Content-Type": "application/json" } },
         );
       }
       return new Response(JSON.stringify({ error: "unexpected" }), {
@@ -93,34 +104,49 @@ function yearsAgo(years: number): string {
 }
 
 beforeEach(() => {
+  // jsdom lacks these; the Radix role select calls them (as in the guardian first-load test).
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  proto.hasPointerCapture ??= () => false;
+  proto.setPointerCapture ??= () => undefined;
+  proto.releasePointerCapture ??= () => undefined;
+  proto.scrollIntoView ??= () => undefined;
   calls.urls = [];
   moduleClient.clear();
 });
 
-describe("onboarding: the SAT-date picker is bounded by the served latest_test_date", () => {
-  it("offers dates up to the bound, the bound included, and none after it", async () => {
+describe("onboarding: a guardian-intent account that switches to Student sees the dates", () => {
+  it("offers dates up to the served bound, none after it, with no error row and no calendar request", async () => {
     render(
       <QueryClientProvider client={moduleClient as QueryClient}>
         <ProfileComplete />
       </QueryClientProvider>,
     );
-    fireEvent.change(await screen.findByTestId("input-display-name"), {
+    // The page opens on the stored role: Guardian, so no SAT question yet.
+    const trigger = await screen.findByTestId("select-role");
+    await waitFor(() => expect(trigger.textContent).toContain("Guardian"));
+    expect(screen.queryByTestId("onboarding-sat-dates-trigger")).toBeNull();
+
+    // The switch to Student, as a person makes it.
+    fireEvent.pointerDown(trigger, {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse",
+    });
+    fireEvent.click(await screen.findByRole("option", { name: "Student" }));
+    fireEvent.change(screen.getByTestId("input-display-name"), {
       target: { value: "Sam" },
     });
     fireEvent.change(screen.getByTestId("input-date-of-birth"), {
       target: { value: yearsAgo(16) },
     });
     await screen.findByTestId("onboarding-sat-dates-trigger");
-    // Nothing is requested until the picker opens.
-    expect(calls.urls).not.toContain("/api/calendar/profile");
-    offeredSatDates("onboarding-sat-dates");
-    await waitFor(() =>
-      expect(offeredSatDates("onboarding-sat-dates").length).toBeGreaterThan(0),
-    );
-    const offered = offeredSatDates("onboarding-sat-dates");
-    expect(calls.urls).toContain("/api/calendar/profile");
+
+    const offered = await waitForSatDates("onboarding-sat-dates");
+    expect(screen.queryByTestId("onboarding-sat-dates-dates-error")).toBeNull();
     expect(offered).toContain(LATEST_TEST_DATE);
     expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
     expect(offered).not.toContain("2027-08-28");
+    expect(calls.urls).toContain("/api/sat-dates/bound");
+    expect(calls.urls.filter((u) => u.startsWith("/api/calendar"))).toEqual([]);
   });
 });

@@ -21,6 +21,7 @@ import {
   closeSatDates,
   offeredSatDates,
   openSatDates,
+  waitForSatDates,
 } from "@/components/sat-dates/sat-date-picker.testing";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,8 +40,7 @@ const net = vi.hoisted(() => ({
   log: [] as { method: string; url: string; body: unknown }[],
   today: null as unknown,
   answer: null as unknown,
-  // The served bound rides on every profile read (owner ruling 2026-10-11, Karl on #1204).
-  profile: { profile: null, latest_test_date: "2027-06-05" } as unknown,
+  profile: { profile: null } as unknown,
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -62,6 +62,9 @@ vi.mock("@/lib/csrf", () => ({
     if (url === "/api/qotd/answer") return json({ data: net.answer }, 201);
     if (url === "/api/qotd/email-consent")
       return json({ data: { consented: true, show_email_prompt: false } });
+    // The served bound (owner rulings 2026-10-11 on #1204, 2026-10-12 on #1211).
+    if (url === "/api/sat-dates/bound")
+      return json({ latest_test_date: "2027-06-05", requestId: "r" });
     if (url.startsWith("/api/calendar/profile"))
       return json({ ...(net.profile as object), requestId: "r" });
     return json({ error: "Not found" }, 404);
@@ -161,7 +164,7 @@ function mount(): void {
 
 beforeEach(() => {
   net.log = [];
-  net.profile = { profile: null, latest_test_date: "2027-06-05" };
+  net.profile = { profile: null };
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -323,6 +326,7 @@ describe("the SAT-date card", () => {
     mount();
     fireEvent.click(await screen.findByTestId("home-sat-date-open"));
     // The one picker: a dropdown whose items are "Not sure yet" first, then future dates only.
+    await waitForSatDates("home-sat-dates");
     const menu = openSatDates("home-sat-dates");
     const options = within(menu).getAllByRole("menuitemcheckbox");
     expect(options[0]?.textContent).toBe("Not sure yet");

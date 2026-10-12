@@ -64,6 +64,7 @@ import {
   launchResponseSchema,
   makeStudyProfileUpsertSchema,
   profileReadResponseSchema,
+  satDateBoundResponseSchema,
   profileUpsertResponseSchema,
   versionResponseSchema,
   type CalendarSetupDefaults,
@@ -154,7 +155,7 @@ import CalendarPage from "./calendar";
 /** Thursday 1 October 2026: the week shown is Monday 28 September to Sunday 4 October. */
 const NOW = new Date("2026-10-01T15:00:00Z");
 const TODAY = "2026-10-01";
-/** The served bound (`latest_test_date`, owner ruling 2026-10-11, Karl on #1204). */
+/** The served bound (`GET /api/sat-dates/bound`, owner rulings 2026-10-11 and 2026-10-12). */
 const LATEST_TEST_DATE = "2027-06-05";
 /** The SAT date, moved inside the week so the grid can star it. */
 const TEST_DATE = "2026-10-03";
@@ -207,10 +208,7 @@ function freeSetupRequired(): unknown {
 
 /** The harness's saved profile, as `GET /api/calendar/profile` serves it. */
 function savedProfile(): StudyProfile {
-  const parsed = profileReadResponseSchema.parse({
-    profile: PROFILE_ROW,
-    latest_test_date: LATEST_TEST_DATE,
-  });
+  const parsed = profileReadResponseSchema.parse({ profile: PROFILE_ROW });
   if (parsed.profile === null) throw new Error("the harness row is a profile");
   return parsed.profile;
 }
@@ -252,12 +250,17 @@ function install(scenario: Scenario): void {
         return scenario.calendar.clone();
       return json((scenario.calendar ?? paidWeek)());
     }
-    if (method === "GET" && url === "/api/calendar/profile") {
+    if (method === "GET" && url === "/api/sat-dates/bound") {
       return json({
-        ...profileReadResponseSchema.parse({
-          profile: state.profile,
+        ...satDateBoundResponseSchema.parse({
           latest_test_date: LATEST_TEST_DATE,
         }),
+        requestId: "r",
+      });
+    }
+    if (method === "GET" && url === "/api/calendar/profile") {
+      return json({
+        ...profileReadResponseSchema.parse({ profile: state.profile }),
         requestId: "r",
       });
     }

@@ -153,11 +153,11 @@ export const SAT_DATES: PageGroup = {
       waitFor: both(`[data-testid="${ONBOARDING}-trigger"]`),
       fulfillRequest: {
         method: "GET",
-        path: "/api/calendar/profile",
+        path: "/api/sat-dates/bound",
         status: 500,
         body: { error: "Internal server error", requestId: "harness" },
         reason:
-          "Owner ruling 2026-10-11 (Karl, on #1204): the picker fails closed when the served bound (latest_test_date) cannot load. The route does not fail in the harness, so the browser answers it with a 500.",
+          "Owner rulings 2026-10-11 (Karl, on #1204) and 2026-10-12 (on #1211): the picker fails closed when the served bound (GET /api/sat-dates/bound) cannot load, a network or server fault. The route does not fail in the harness, so the browser answers it with a 500.",
       },
       steps: [{ click: both(`[data-testid="${ONBOARDING}-trigger"]`) }],
       expectVisible: `[data-testid="${ONBOARDING}-dates-error"]`,

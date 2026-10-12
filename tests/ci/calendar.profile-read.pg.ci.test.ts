@@ -36,10 +36,6 @@ import {
 } from "vitest";
 import { studyProfileSchema } from "../../packages/shared/src/calendar/profile";
 import {
-  addDaysToLocalDate,
-  localDateSchema,
-} from "../../packages/shared/src/calendar/time";
-import {
   makePgSupabase,
   bootstrapPgDatabase,
   PG_AVAILABLE,
@@ -184,15 +180,7 @@ describe.skipIf(!PG_AVAILABLE)(
       const res = await request(app).get("/api/calendar/profile");
 
       expect(res.status).toBe(200);
-      // Owner ruling 2026-10-11 (Karl, on #1204): the bound is served before setup too.
-      expect(localDateSchema.safeParse(res.body.latest_test_date).success).toBe(
-        true,
-      );
-      expect(res.body).toEqual({
-        profile: null,
-        latest_test_date: res.body.latest_test_date,
-        requestId: "oq-25",
-      });
+      expect(res.body).toEqual({ profile: null, requestId: "oq-25" });
     });
 
     for (const tier of [
@@ -226,104 +214,14 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(Object.keys(res.body.profile).sort()).toEqual(
           Object.keys(studyProfileSchema.shape).sort(),
         );
-        // Absence: the top level is the profile, the served bound (owner ruling 2026-10-11)
-        // and the correlation id, and no plan key.
-        expect(Object.keys(res.body).sort()).toEqual([
-          "latest_test_date",
-          "profile",
-          "requestId",
-        ]);
+        // Absence: the top level is the profile and the correlation id, and no plan key.
+        expect(Object.keys(res.body).sort()).toEqual(["profile", "requestId"]);
         for (const key of PLAN_KEYS) {
           expect(res.body).not.toHaveProperty(key);
           expect(res.body.profile).not.toHaveProperty(key);
         }
       });
     }
-
-    /**
-     * @spec [owner ruling 2026-10-11 (Karl, on #1204, ruling 2): "the calendar profile read
-     *       returns the furthest accepted test date"] | @implemented [2026-10-11]
-     *
-     * plain English: real producer through real consumer. The date the read serves is the
-     * furthest the real PUT accepts: a dates-only save of exactly that date is 200, and of the
-     * day after it is 400. It is the stored zone's local day plus the live
-     * `target_exam_date_max_days` row, so a zone a day ahead of Chicago serves a bound a day
-     * ahead too (the write uses the same local day).
-     */
-    describe("latest_test_date is the furthest date the write accepts", () => {
-      async function maxDays(): Promise<number> {
-        const r = await pg.query<{ value: unknown }>(
-          `SELECT value FROM public.calendar_runtime_config
-            WHERE key = 'target_exam_date_max_days'`,
-        );
-        return Number(r.rows[0]?.value);
-      }
-      function localToday(zone: string): string {
-        return new Intl.DateTimeFormat("en-CA", {
-          timeZone: zone,
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-        }).format(new Date());
-      }
-      function datesOnly(date: string): Record<string, unknown> {
-        return {
-          target_exam_dates: [date],
-          idempotency_key: crypto.randomUUID(),
-        };
-      }
-
-      it("before setup: the served date saves, and the day after it is refused", async () => {
-        const days = await maxDays();
-        expect(days).toBeGreaterThan(0);
-        const read = await request(app).get("/api/calendar/profile");
-        const latest = String(read.body.latest_test_date);
-        expect(latest).toBe(
-          addDaysToLocalDate(localToday("America/Chicago"), days),
-        );
-
-        const accepted = await request(app)
-          .put("/api/calendar/profile")
-          .send(datesOnly(latest));
-        expect(accepted.status).toBe(200);
-        expect(accepted.body.profile.target_exam_dates).toEqual([latest]);
-
-        const refused = await request(app)
-          .put("/api/calendar/profile")
-          .send(datesOnly(addDaysToLocalDate(latest, 1)));
-        expect(refused.status).toBe(400);
-      });
-
-      it("after setup in another zone: the bound follows the stored zone, as the write does", async () => {
-        const zone = "Pacific/Kiritimati"; // UTC+14: a day ahead of Chicago at every hour
-        const put = await request(app)
-          .put("/api/calendar/profile")
-          .send({ ...setupBody(), timezone: zone });
-        expect(put.status).toBe(200);
-        expect(put.body.profile.timezone).toBe(zone);
-
-        const read = await request(app).get("/api/calendar/profile");
-        const latest = String(read.body.latest_test_date);
-        expect(latest).toBe(
-          addDaysToLocalDate(localToday(zone), await maxDays()),
-        );
-
-        expect(
-          (
-            await request(app)
-              .put("/api/calendar/profile")
-              .send(datesOnly(latest))
-          ).status,
-        ).toBe(200);
-        expect(
-          (
-            await request(app)
-              .put("/api/calendar/profile")
-              .send(datesOnly(addDaysToLocalDate(latest, 1)))
-          ).status,
-        ).toBe(400);
-      });
-    });
 
     it("the read never asks for calendar_access", async () => {
       await request(app).put("/api/calendar/profile").send(setupBody());

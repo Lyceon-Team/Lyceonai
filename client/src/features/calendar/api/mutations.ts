@@ -162,6 +162,10 @@ export function useStudyProfileMutation(): UseMutationResult<
       // UI-55: the free calendar reads the profile on its own key (OQ-25), outside the
       // range prefix, so a save names it too or the form and goal card would show the old one.
       void queryClient.invalidateQueries({ queryKey: calendarKeys.profile() });
+      // The SAT-date bound follows the stored zone, which a save can change (ruling on #1211).
+      void queryClient.invalidateQueries({
+        queryKey: calendarKeys.satDateBound(),
+      });
     },
   });
 }

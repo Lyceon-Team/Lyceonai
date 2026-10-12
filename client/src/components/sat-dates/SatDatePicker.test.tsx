@@ -214,12 +214,9 @@ describe("open", () => {
   });
 });
 
-describe("the served bound (owner ruling 2026-10-11): fail closed until it is known", () => {
-  const SERVED = {
-    profile: null,
-    latest_test_date: "2027-03-06",
-    requestId: "r",
-  };
+describe("the served bound (owner rulings 2026-10-11, 2026-10-12): fail closed until it is known", () => {
+  // The role-agnostic read's body (`GET /api/sat-dates/bound`), as the route sends it.
+  const SERVED = { latest_test_date: "2027-03-06", requestId: "r" };
 
   function renderUnseeded(): void {
     const client = new QueryClient({
@@ -234,7 +231,7 @@ describe("the served bound (owner ruling 2026-10-11): fail closed until it is kn
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("reads the bound from GET /api/calendar/profile and offers no date while it loads", async () => {
+  it("reads the bound from GET /api/sat-dates/bound and offers no date while it loads", async () => {
     const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
     vi.stubGlobal("fetch", fetchMock);
     renderUnseeded();
@@ -247,9 +244,10 @@ describe("the served bound (owner ruling 2026-10-11): fail closed until it is kn
     expect(offeredSatDates(ID)).toEqual([]);
     // "Not sure yet" stays available, and the closed answer still reads the saved date.
     expect(within(menu).getByTestId(`${ID}-not-sure`)).toBeInTheDocument();
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-      "/api/calendar/profile",
-    );
+    // The role-agnostic read, never the student-only calendar profile (ruling on #1211).
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([
+      expect.stringContaining("/api/sat-dates/bound"),
+    ]);
     closeSatDates(ID);
     expect(satDatesSummary(ID)).toBe("Sat, Dec 5, 2026");
   });
@@ -269,7 +267,7 @@ describe("the served bound (owner ruling 2026-10-11): fail closed until it is kn
     );
     renderUnseeded();
     openSatDates(ID);
-    // `useStudyProfile` retries once (about a second) before it reports the failure.
+    // `useSatDateBound` retries once (about a second) before it reports the failure.
     const error = await screen.findByTestId(
       `${ID}-dates-error`,
       {},
@@ -345,7 +343,8 @@ describe("one picker: no other component renders the SAT date list (grep proof)"
       path.join(root, "components", "sat-dates", "SatDatePicker.tsx"),
       "utf8",
     );
-    expect(picker).toContain("useStudyProfile({ enabled: opened })");
+    expect(picker).toContain("useSatDateBound({ enabled: opened })");
+    expect(picker).not.toContain("useStudyProfile");
     expect(picker).toContain("bound.data?.latest_test_date");
   });
 
