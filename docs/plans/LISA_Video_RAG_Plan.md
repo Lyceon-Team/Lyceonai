@@ -102,6 +102,8 @@ Plus the stale SCL-060 comment. Zero importers, so free. **Before Step C.**
 
 ### Step C — Provision the corpus *(irreversible)*
 Run `scripts/provisioning/rag-corpus-create.ts` **unchanged in schema**. Set `RAG_CORPUS_RESOURCE_NAME` in the env schema and Vercel.
+
+*Updated 2026-10-13 (R-1 ruling, Karl): Serverless mode, `us-central1`. The script was rewritten for it: REST, a mode pre-flight, a dry run by default, and no metadata keys. Serverless mode has no metadata search, so the four fields travel inside each record and the BFF checks `skill_codes` after retrieval, over-fetching N=20 to start (R-2).*
 **Proof:** corpus exists with the locked four-field metadata schema.
 
 ### Step D — Ingestion *(reworked, Karl 2026-10-13; replaces the original Step D)*

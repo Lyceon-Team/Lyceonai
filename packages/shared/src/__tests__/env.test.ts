@@ -40,3 +40,29 @@ describe("envSchema", () => {
     expect(env.DATABASE_URL).toBe("postgres://h:5432/db");
   });
 });
+
+describe("ragEnvSchema (LISA_Video_RAG_Plan.md Step C)", () => {
+  it("accepts a us-central1 corpus resource name and accepts it unset", async () => {
+    const { ragEnvSchema } = await import("../env.js");
+    expect(
+      ragEnvSchema.safeParse({
+        RAG_CORPUS_RESOURCE_NAME:
+          "projects/replit-cop/locations/us-central1/ragCorpora/123456",
+      }).success,
+    ).toBe(true);
+    expect(ragEnvSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("rejects another region or a malformed name", async () => {
+    const { ragEnvSchema } = await import("../env.js");
+    for (const bad of [
+      "projects/replit-cop/locations/us-east5/ragCorpora/123456",
+      "projects/replit-cop/locations/us-central1/ragCorpora/",
+      "ragCorpora/123456",
+    ]) {
+      expect(
+        ragEnvSchema.safeParse({ RAG_CORPUS_RESOURCE_NAME: bad }).success,
+      ).toBe(false);
+    }
+  });
+});

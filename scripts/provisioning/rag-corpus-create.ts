@@ -1,132 +1,250 @@
 /**
- * @spec [Doc-03D_V1.2 §6.7]
- * @implemented 2026-08-20
+ * @spec [Doc-03D_V1.2 §6.7; LISA_Video_RAG_Plan.md Step C; closure plan R-1, ruled
+ *       2026-10-13 (Karl): Serverless mode, us-central1] | @implemented [2026-08-20, rewritten 2026-10-13]
  *
- * plain English: Provisioning script for the Vertex AI RAG Engine corpus.
- * Creates the corpus and index with the locked metadata schema against
- * empty storage. Post-launch content ingestion becomes a content
- * operation, not a re-architecture.
+ * plain English: provisions the LISA curriculum corpus in Vertex AI RAG Engine, Serverless mode,
+ * us-central1, with the `text-embedding-005` embedding model. Prints the resource name for
+ * `RAG_CORPUS_RESOURCE_NAME`.
  *
- * ⚠ DO NOT EXECUTE — this script is for Karl to run during GCP
- * provisioning. It requires:
- *   - GOOGLE_CLOUD_PROJECT env var
- *   - GOOGLE_CLOUD_LOCATION env var (e.g. "us-central1")
- *   - @google-cloud/aiplatform SDK installed
- *   - Service account with roles/aiplatform.user
+ * IRREVERSIBLE (§6.7): the embedding model is locked to the corpus at creation. Changing it later
+ * means recreating the corpus and re-importing everything. The script is a dry run unless
+ * `--execute` is passed, and the dry run prints exactly what it would send.
  *
- * Embedding model: text-embedding-005 (Karl ruling, 2026-08-20).
- * VERIFY AT PROVISIONING TIME: if gemini-embedding-001 has been added
- * to RAG Engine's supported model list by provisioning date, STOP and
- * report to Karl before proceeding. Check:
- *   https://cloud.google.com/vertex-ai/docs/generative-ai/rag/rag-supported-models
+ * What changed from the 2026-08-20 version, and why:
+ *  - Serverless mode (R-1 ruling). Spanner mode was refused in us-central1 (allowlist) and failed
+ *    in us-east5, us-south1 and us-west1. In Serverless mode the vector store is RAG-managed
+ *    Vertex Vector Search 2.0 (`vectorDbConfig.ragManagedVertexVectorSearch`).
+ *  - No metadata schema. Serverless mode has no metadata search, so no `RagDataSchema` keys are
+ *    created. `skill_codes`, `provenance`, `surface_gate` and `content_type` travel with each
+ *    item and are checked by the BFF after retrieval, which is the only skill filter (R-2,
+ *    owner ruling 2026-10-13). The locked four-field record is unchanged; only where it is read
+ *    changes.
+ *  - REST, not `@google-cloud/aiplatform`. That SDK is not a dependency. Credentials are attached
+ *    by the session's egress proxy (or `gcloud`'s ADC on a workstation); none are read here.
  *
- * §6.7 decisions locked at corpus creation (expensive to change):
- *   1. Embedding model — locked to corpus. Changing requires recreating
- *      the corpus and re-importing every document.
- *   2. Chunking strategy — layout-aware for structured content (headings,
- *      tables); fixed-size for prose.
- *   3. Metadata schema — skill_codes, provenance, surface_gate,
- *      content_type. Adding a field later requires re-import.
+ * Pre-flight (refuses to create if any check fails):
+ *  1. `ragEngineConfig` for us-central1 must report Serverless mode. If it reports Spanner and
+ *     `--switch-to-serverless` is passed, the script PATCHes it; otherwise it stops. Switching
+ *     does not delete Spanner-mode data.
+ *  2. No corpus with the target display name may already exist (no duplicate on a re-run).
+ *  3. The embedding model is `text-embedding-005` (Karl, 2026-08-20; the RAG Engine embedding
+ *     page, read 2026-10-13, lists it as the default and does not list gemini-embedding-001).
  *
- * expected outcome: an empty corpus with the correct embedding model
- * and metadata schema, ready for content ingestion.
- *
- * After running, set the env var:
- *   RAG_CORPUS_RESOURCE_NAME=projects/PROJECT/locations/LOCATION/ragCorpora/CORPUS_ID
+ * Usage (on a session whose proxy attaches the Vertex credential to
+ * `us-central1-aiplatform.googleapis.com`):
+ *   NODE_USE_ENV_PROXY=1 pnpm exec tsx scripts/provisioning/rag-corpus-create.ts --project replit-cop
+ *   ... add --switch-to-serverless to allow the mode switch, and --execute to act.
  */
+import { parseArgs } from "node:util";
+import { z } from "zod";
 
-// ────────────────────────────────────────────────────────────────────
-// Script body — for Karl's manual execution
-// ────────────────────────────────────────────────────────────────────
+const LOCATION = "us-central1";
+const DISPLAY_NAME = "lyceon-lisa-curriculum-v1";
+const EMBEDDING_MODEL = "text-embedding-005";
+
+const operationSchema = z.object({
+  name: z.string(),
+  done: z.boolean().optional(),
+  error: z.object({ code: z.number(), message: z.string() }).optional(),
+  response: z.record(z.unknown()).optional(),
+});
+
+const engineConfigSchema = z.object({
+  ragManagedDbConfig: z.record(z.unknown()).optional(),
+});
+
+const corporaSchema = z.object({
+  ragCorpora: z
+    .array(z.object({ name: z.string(), displayName: z.string() }))
+    .optional(),
+});
+
+async function request(
+  url: string,
+  init: { method: string; body?: unknown },
+): Promise<{ status: number; body: unknown }> {
+  const response = await fetch(url, {
+    method: init.method,
+    headers: { "content-type": "application/json" },
+    ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+  });
+  const text = await response.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (err: unknown) {
+    body = {
+      non_json_body: text,
+      parse_error: err instanceof Error ? err.message : "unknown",
+    };
+  }
+  if (response.status === 401) {
+    throw new Error(
+      `${init.method} ${new URL(url).host} → 401: no credential was attached for this host`,
+    );
+  }
+  return { status: response.status, body };
+}
+
+async function waitFor(
+  base: string,
+  operationName: string,
+): Promise<z.infer<typeof operationSchema>> {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const { body } = await request(`${base}/${operationName}`, {
+      method: "GET",
+    });
+    const op = operationSchema.parse(body);
+    if (op.done) return op;
+    await new Promise((r) => setTimeout(r, 5_000));
+  }
+  throw new Error(`operation ${operationName} did not finish in 10 minutes`);
+}
+
+function log(line: string): void {
+  process.stdout.write(`${line}\n`);
+}
 
 async function main(): Promise<void> {
-  const project = process.env.GOOGLE_CLOUD_PROJECT;
-  const location = process.env.GOOGLE_CLOUD_LOCATION ?? "us-central1";
-
-  if (!project) {
-    console.error("GOOGLE_CLOUD_PROJECT env var is required");
+  const { values } = parseArgs({
+    options: {
+      project: { type: "string" },
+      execute: { type: "boolean", default: false },
+      "switch-to-serverless": { type: "boolean", default: false },
+    },
+  });
+  const project = z.string().min(1).parse(values.project);
+  if (process.env.NODE_USE_ENV_PROXY !== "1") {
+    process.stderr.write(
+      "run with NODE_USE_ENV_PROXY=1; no request was sent.\n",
+    );
     process.exit(1);
   }
+  const execute = values.execute === true;
+  const base = `https://${LOCATION}-aiplatform.googleapis.com/v1beta1`;
+  const parent = `projects/${project}/locations/${LOCATION}`;
+  log(`mode: ${execute ? "EXECUTE" : "dry run (pass --execute to act)"}`);
 
-  console.log("=== Vertex AI RAG Engine Corpus Creation ===");
-  console.log(`Project:  ${project}`);
-  console.log(`Location: ${location}`);
-  console.log("");
-
-  // ── Pre-flight: check if gemini-embedding-001 is now supported ──
-  console.log(
-    "⚠ BEFORE PROCEEDING: verify that gemini-embedding-001 has NOT been",
-  );
-  console.log(
-    "  added to RAG Engine's supported model list. If it has, STOP and",
-  );
-  console.log("  report to Karl — the embedding model decision may change.");
-  console.log(
-    "  Check: https://cloud.google.com/vertex-ai/docs/generative-ai/rag/rag-supported-models",
-  );
-  console.log("");
-
-  // ── Import SDK ──
-  const { VertexRagDataServiceClient } =
-    await import("@google-cloud/aiplatform");
-
-  const parent = `projects/${project}/locations/${location}`;
-  const client = new VertexRagDataServiceClient({
-    apiEndpoint: `${location}-aiplatform.googleapis.com`,
+  // 1. Deployment mode.
+  const config = await request(`${base}/${parent}/ragEngineConfig`, {
+    method: "GET",
   });
+  const dbConfig =
+    engineConfigSchema.parse(config.body).ragManagedDbConfig ?? {};
+  const isServerless = "serverless" in dbConfig;
+  log(
+    `ragEngineConfig: ${JSON.stringify(dbConfig)} → ${isServerless ? "Serverless" : "not Serverless"}`,
+  );
+  if (!isServerless) {
+    const patch = { ragManagedDbConfig: { serverless: {} } };
+    if (!values["switch-to-serverless"]) {
+      log(
+        `STOP: mode is not Serverless. Re-run with --switch-to-serverless to send:`,
+      );
+      log(`  PATCH ${base}/${parent}/ragEngineConfig ${JSON.stringify(patch)}`);
+      process.exit(2);
+    }
+    log(
+      `${execute ? "sending" : "would send"}: PATCH ragEngineConfig ${JSON.stringify(patch)}`,
+    );
+    if (execute) {
+      const patched = await request(`${base}/${parent}/ragEngineConfig`, {
+        method: "PATCH",
+        body: patch,
+      });
+      const op = operationSchema.safeParse(patched.body);
+      if (patched.status !== 200)
+        throw new Error(
+          `mode switch → ${patched.status} ${JSON.stringify(patched.body)}`,
+        );
+      if (op.success && !op.data.done) {
+        const done = await waitFor(base, op.data.name);
+        if (done.error)
+          throw new Error(`mode switch failed: ${done.error.message}`);
+      }
+      log("mode switched to Serverless");
+    }
+  }
 
-  // ── Step 1: Create the RAG corpus ──
-  console.log("Creating RAG corpus with text-embedding-005...");
+  // 2. No duplicate.
+  const listed = corporaSchema.parse(
+    (
+      await request(`${base}/${parent}/ragCorpora?pageSize=100`, {
+        method: "GET",
+      })
+    ).body,
+  );
+  const existing = (listed.ragCorpora ?? []).filter(
+    (c) => c.displayName === DISPLAY_NAME,
+  );
+  if (existing.length > 0) {
+    log(
+      `STOP: a corpus named ${DISPLAY_NAME} already exists: ${existing.map((c) => c.name).join(", ")}`,
+    );
+    process.exit(2);
+  }
 
-  const [operation] = await client.createRagCorpus({
-    parent,
-    ragCorpus: {
-      displayName: "lyceon-lisa-curriculum-v1",
-      description:
-        "LISA curriculum retrieval corpus — textbooks, video transcripts, " +
-        "strategy content, worked-example libraries. Per Doc 03D §6.7.",
+  // 3. Create.
+  const body = {
+    displayName: DISPLAY_NAME,
+    description:
+      "LISA curriculum retrieval corpus (Doc 03D §6.7): one file per video segment, Lyceon-authored " +
+      "descriptions. Skill and surface checks run in the BFF after retrieval.",
+    vectorDbConfig: {
+      ragManagedVertexVectorSearch: {},
       ragEmbeddingModelConfig: {
         vertexPredictionEndpoint: {
-          // text-embedding-005 — Karl ruling 2026-08-20
-          // 768-dimensional embeddings, optimized for retrieval
-          endpoint: `projects/${project}/locations/${location}/publishers/google/models/text-embedding-005`,
+          endpoint: `${parent}/publishers/google/models/${EMBEDDING_MODEL}`,
         },
       },
     },
+  };
+  log(
+    `${execute ? "sending" : "would send"}: POST ${base}/${parent}/ragCorpora ${JSON.stringify(body)}`,
+  );
+  if (!execute) return;
+
+  const created = await request(`${base}/${parent}/ragCorpora`, {
+    method: "POST",
+    body,
   });
+  if (created.status !== 200)
+    throw new Error(
+      `create → ${created.status} ${JSON.stringify(created.body)}`,
+    );
+  const done = await waitFor(base, operationSchema.parse(created.body).name);
 
-  console.log("Waiting for corpus creation to complete...");
-  const [corpus] = await operation.promise();
-
-  if (!corpus?.name) {
-    console.error("Corpus creation failed — no resource name returned");
+  // A failed create can still leave corpora behind (RAG Engine retries internally; observed
+  // 2026-10-13). Report every corpus carrying the display name, whatever the operation said.
+  const after = corporaSchema.parse(
+    (
+      await request(`${base}/${parent}/ragCorpora?pageSize=100`, {
+        method: "GET",
+      })
+    ).body,
+  );
+  const named = (after.ragCorpora ?? []).filter(
+    (c) => c.displayName === DISPLAY_NAME,
+  );
+  if (done.error) {
+    log(`create failed: ${done.error.message}`);
+    log(
+      `corpora with this display name now: ${JSON.stringify(named.map((c) => c.name))}`,
+    );
     process.exit(1);
   }
-
-  console.log("");
-  console.log("✅ Corpus created successfully!");
-  console.log(`   Resource name: ${corpus.name}`);
-  console.log("");
-  console.log("Set this env var on the Cloud Run service:");
-  console.log(`   RAG_CORPUS_RESOURCE_NAME=${corpus.name}`);
-  console.log("");
-  console.log("Metadata schema (locked — §6.7):");
-  console.log("   skill_codes:  string[]  — SAT skill taxonomy codes");
-  console.log('   provenance:   string    — e.g. "textbook:isbn:chapter"');
-  console.log(
-    '   surface_gate: string    — "pre_and_post" | "post_only" | "review_only"',
-  );
-  console.log(
-    '   content_type: string    — "textbook" | "video_transcript" | "strategy" | "worked_example"',
-  );
-  console.log("");
-  console.log("Next steps:");
-  console.log("  1. Ingest content using the RAG Engine import API");
-  console.log("  2. Each document must carry the metadata fields above");
-  console.log("  3. Test retrieval quality BEFORE wiring to generation (§6.7)");
+  if (named.length !== 1) {
+    log(
+      `WARNING: ${named.length} corpora named ${DISPLAY_NAME}: ${JSON.stringify(named.map((c) => c.name))}`,
+    );
+  }
+  const name = z.object({ name: z.string() }).parse(done.response).name;
+  log("");
+  log(`created: ${name}`);
+  log(`RAG_CORPUS_RESOURCE_NAME=${name}`);
 }
 
-main().catch((err) => {
-  console.error("Corpus creation failed:", err);
+main().catch((err: unknown) => {
+  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

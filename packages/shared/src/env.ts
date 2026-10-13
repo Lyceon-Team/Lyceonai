@@ -93,6 +93,16 @@ export const envSchema = z.object({
   POSTHOG_API_KEY: z.string().min(1).optional(),
   POSTHOG_HOST: z.string().url().optional(),
   ANALYTICS_SALT: z.string().min(32).optional(),
+
+  // LISA video retrieval (LISA_Video_RAG_Plan.md Step C; R-1 ruled 2026-10-13: Serverless mode,
+  // us-central1). The full resource name of the RAG Engine corpus, printed by
+  // scripts/provisioning/rag-corpus-create.ts. Not a secret; the Vertex credential is attached
+  // by the platform, never read from here. Optional: retrieval is additive, so with it unset the
+  // tutor turn runs exactly as it does today, with no video block.
+  RAG_CORPUS_RESOURCE_NAME: z
+    .string()
+    .regex(/^projects\/[^/]+\/locations\/us-central1\/ragCorpora\/[0-9]+$/)
+    .optional(),
 });
 
 /**
@@ -121,6 +131,10 @@ export const analyticsEnvSchema = envSchema.pick({
   ANALYTICS_SALT: true,
 });
 export type AnalyticsEnv = z.infer<typeof analyticsEnvSchema>;
+
+/** The video-retrieval lane's variable (LISA_Video_RAG_Plan.md Step C). */
+export const ragEnvSchema = envSchema.pick({ RAG_CORPUS_RESOURCE_NAME: true });
+export type RagEnv = z.infer<typeof ragEnvSchema>;
 
 /**
  * The Stripe variable names this codebase reads, derived from the canonical
