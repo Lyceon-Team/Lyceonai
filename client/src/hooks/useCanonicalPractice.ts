@@ -72,6 +72,14 @@ export type PracticeQuestion = {
   section?: string | null;
   options?: PracticeOption[] | null;
   assets?: PracticeAssets | null;
+  /**
+   * @spec [owner brief "Question metadata header" (Karl, 2026-10-13) §1] | @implemented [2026-10-13]
+   * plain English: the served item's domain, skill and difficulty (as served, 1-3) for the
+   * runner's question header. Taxonomy only, never answer data; null when the payload has none.
+   */
+  domain?: string | null;
+  skill?: string | null;
+  difficulty?: string | number | null;
 };
 
 export type PracticeNextResponse = {
@@ -172,6 +180,13 @@ function isGridIn(question: PracticeQuestion | null): boolean {
   );
 }
 
+/** A trimmed, non-empty string, or null (the question header's domain and skill). */
+function nonEmptyText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeQuestion(
   raw: PracticeQuestion | null,
 ): PracticeQuestion | null {
@@ -215,6 +230,12 @@ function normalizeQuestion(
     section,
     options: isGrid ? [] : options,
     assets: normalizeAssets(raw.assets),
+    domain: nonEmptyText(raw.domain),
+    skill: nonEmptyText(raw.skill),
+    difficulty:
+      typeof raw.difficulty === "string" || typeof raw.difficulty === "number"
+        ? raw.difficulty
+        : null,
   };
 }
 

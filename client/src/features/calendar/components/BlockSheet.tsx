@@ -42,6 +42,7 @@ import { longDate } from "../lib/dates";
 import { reviewCountChoices } from "../lib/members";
 import { MixRows, type MixEntry } from "./MixRows";
 import { TONE_LABEL } from "../lib/blocks";
+import { GUARDIAN_NOTICE_LINE } from "../copy/guardian-notice";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
 
 export type BlockSheetActions = {
@@ -56,6 +57,11 @@ export type BlockSheetActions = {
   onDoItNow: () => void;
   onMove: (toDate: string) => void;
   launchPending: boolean;
+  /**
+   * Owner brief 2026-10-13 ("Transparency"): true when the student has an active guardian link,
+   * which is when removing or moving this block is reported to a guardian.
+   */
+  guardianNotice?: boolean;
 };
 
 type BlockSheetProps = {
@@ -331,6 +337,17 @@ export function BlockSheet({
                 }}
               />
             </div>
+          ) : null}
+
+          {actions !== undefined &&
+          !locked &&
+          actions.guardianNotice === true ? (
+            <p
+              className="field-note"
+              data-testid="calendar-block-guardian-notice"
+            >
+              {GUARDIAN_NOTICE_LINE}
+            </p>
           ) : null}
         </div>
 

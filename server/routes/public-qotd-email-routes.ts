@@ -22,16 +22,13 @@ import { anonymousBucketRateLimit } from "../middleware/rate-limit";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { escapeHtml } from "../lib/notifications/templates/shared";
 import { logger } from "../logger";
-import {
-  verifyQotdEmailLinkToken,
-  type QotdEmailLinkAction,
-} from "../services/qotd/qotd-email-links";
+import { verifyQotdEmailLinkToken } from "../services/qotd/qotd-email-links";
 import type { RpcClient } from "../lib/rpc-client";
 
 const COMPONENT = "QOTD_EMAIL_LINK";
 
 const COPY: Record<
-  QotdEmailLinkAction,
+  "unsubscribe" | "resume",
   { title: string; button: string; done: string; fn: string }
 > = {
   unsubscribe: {
@@ -48,7 +45,8 @@ const COPY: Record<
   },
 };
 
-function page(title: string, body: string): string {
+/** The link pages' shell, shared with the guardian digest's unsubscribe route. */
+export function emailLinkPage(title: string, body: string): string {
   return [
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -60,12 +58,13 @@ function page(title: string, body: string): string {
   ].join("");
 }
 
-function refused(res: Response): Response {
+/** A missing, malformed or tampered token: 400, nothing changes. Shared with the digest route. */
+export function refusedEmailLink(res: Response): Response {
   return res
     .status(400)
     .type("html")
     .send(
-      page(
+      emailLinkPage(
         "This link isn't valid",
         "<h1>This link isn't valid</h1><p>Open the latest email from Lyceon and try its link again.</p>",
       ),
@@ -83,13 +82,14 @@ export function createPublicQotdEmailRouter(
 
     router.get(`/${action}`, limit, (req: Request, res: Response) => {
       const token = req.query.t;
-      if (verifyQotdEmailLinkToken(action, token) === null) return refused(res);
+      if (verifyQotdEmailLinkToken(action, token) === null)
+        return refusedEmailLink(res);
       const actionUrl = `?t=${encodeURIComponent(String(token))}`;
       return res
         .status(200)
         .type("html")
         .send(
-          page(
+          emailLinkPage(
             copy.title,
             `<h1>${escapeHtml(copy.title)}</h1><form method="post" action="${escapeHtml(actionUrl)}"><button type="submit" style="font:inherit;padding:10px 18px;border-radius:8px;border:0;background:#111;color:#fff;cursor:pointer">${escapeHtml(copy.button)}</button></form>`,
           ),
@@ -104,7 +104,7 @@ export function createPublicQotdEmailRouter(
           requestId: req.requestId,
           action,
         });
-        return refused(res);
+        return refusedEmailLink(res);
       }
       try {
         const { error } = await db().rpc(copy.fn, {
@@ -119,7 +119,7 @@ export function createPublicQotdEmailRouter(
         return res
           .status(200)
           .type("html")
-          .send(page(copy.title, `<p>${escapeHtml(copy.done)}</p>`));
+          .send(emailLinkPage(copy.title, `<p>${escapeHtml(copy.done)}</p>`));
       } catch {
         // QOTD resilience brief (Karl, 2026-10-09) §2: request id only (the action is the route).
         logger.error(
@@ -133,7 +133,7 @@ export function createPublicQotdEmailRouter(
           .status(500)
           .type("html")
           .send(
-            page(
+            emailLinkPage(
               "Something went wrong",
               "<p>Something went wrong. Please try the link again in a minute.</p>",
             ),

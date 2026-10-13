@@ -1,5 +1,8 @@
 import { Request, Response, Router } from "express";
-import { requireSupabaseAuth } from "../middleware/supabase-auth";
+import {
+  requireRequestUser,
+  requireSupabaseAuth,
+} from "../middleware/supabase-auth";
 // Q7 denials reuse the resolver's 404 body verbatim. A second "not found" shape would let a
 // caller tell the two surfaces apart, which is the whole thing the shared body prevents.
 import { sendNotFound } from "../middleware/subject-resolver";
@@ -41,6 +44,14 @@ import { GUARDIAN_LINK_LEGAL_DOC } from "../../shared/legal-consent.js";
 import { getStudentLinkCodeTtlSeconds } from "../lib/auth-runtime-config";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
 import { notificationEventId } from "../lib/notifications/event-id";
+import {
+  readGuardianDigestPreference,
+  writeGuardianDigestPreference,
+} from "../lib/notifications/guardian-digest-preference";
+import {
+  GUARDIAN_DIGEST_PREFERENCE_PATH,
+  guardianDigestPreferenceSchema,
+} from "../../packages/shared/src/notifications-schema";
 
 const router = Router();
 
@@ -739,4 +750,64 @@ router.delete(
     }
   },
 );
+/**
+ * GET / PUT /api/guardian/notification-preferences/daily-digest — the guardian's daily summary
+ * email switch.
+ *
+ * @spec [owner brief "Guardian accountability loop" (Karl, 2026-10-13) "Delivery": "The guardian
+ *        can turn the digest email off in their notification settings (default on). Students
+ *        can't affect it."; contracts/notifications.contract.md C2A.2; Coding Standards §8.1]
+ *        | @implemented [2026-10-13]
+ *
+ * plain English: auth → guardian role (`requireGuardianAccess`, so a student is 403 before any
+ * read) → Zod parse → the one SQL writer → `{ data: { enabled } }`. No entitlement gate: the
+ * switch is the guardian's own preference about their own inbox, not a read of a student. The
+ * guardian is read from the session, never from the request. Logs carry the outcome and the
+ * request id only.
+ */
+router.get(
+  GUARDIAN_DIGEST_PREFERENCE_PATH,
+  requireSupabaseAuth,
+  requireGuardianAccess,
+  answerEveryFailure("digest_preference_read", async (req, res) => {
+    const user = requireRequestUser(req, res);
+    if (!user) return;
+    const data = await readGuardianDigestPreference(user.id);
+    res.status(200).json({ data });
+  }),
+);
+
+router.put(
+  GUARDIAN_DIGEST_PREFERENCE_PATH,
+  requireSupabaseAuth,
+  requireGuardianAccess,
+  answerEveryFailure("digest_preference_write", async (req, res) => {
+    const user = requireRequestUser(req, res);
+    if (!user) return;
+    const parsed = guardianDigestPreferenceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: {
+          message: "Invalid input",
+          code: "INVALID_REQUEST",
+          details: parsed.error.flatten(),
+        },
+        requestId: req.requestId,
+      });
+      return;
+    }
+    const data = await writeGuardianDigestPreference(
+      user.id,
+      parsed.data.enabled,
+    );
+    logger.info(
+      "GUARDIAN",
+      "digest_preference_set",
+      "Guardian daily summary email preference set",
+      { enabled: data.enabled, requestId: req.requestId },
+    );
+    res.status(200).json({ data });
+  }),
+);
+
 export default router;
