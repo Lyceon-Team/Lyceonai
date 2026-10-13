@@ -75,6 +75,14 @@ export type FreshSession = {
   mcqFirst?: boolean;
   /** QA 2026-10-07: the reverse of `mcqFirst`, for a grid-in shot (retries until one leads). */
   gridInFirst?: true;
+  /**
+   * First-run activation brief (2026-10-13) P0 item 3: play the session to its end through the
+   * REAL routes before the page loads (one `/next`, then an answer or a skip, per entry; then the
+   * closing `/next`), so the page opens on a completed session (its summary). "correct" and
+   * "incorrect" are resolved from the served item in the harness database (its option token map
+   * and keyed answer); the client never knows which is which.
+   */
+  playThrough?: readonly ("correct" | "incorrect" | "skip")[];
 };
 
 export type PrototypePairing =

@@ -706,12 +706,97 @@ async function startFreshSession(
   }
 }
 
+/**
+ * First-run activation (2026-10-13), groups/types.ts `playThrough`: answers or skips each item
+ * through the real routes, then asks `/next` once more so the server closes the session (409
+ * `session_closed`), as the runner's "Done" does.
+ */
+async function playFreshSession(
+  stack: Stack,
+  persona: StudentPersona,
+  fresh: FreshSession,
+  sessionId: string,
+  plan: readonly ("correct" | "incorrect" | "skip")[],
+): Promise<void> {
+  const db = await harnessDb();
+  const nextUrl = `${stack.baseUrl}/api/${fresh.engine}/sessions/${sessionId}/next?client_instance_id=${SEED_CLIENT_INSTANCE}`;
+  const headers = { [PERSONA_HEADER]: persona };
+  try {
+    for (let i = 0; i < plan.length; i += 1) {
+      const res = await fetch(nextUrl, { headers });
+      const next = (await res.json()) as { sessionItemId?: unknown };
+      if (res.status !== 200 || typeof next.sessionItemId !== "string")
+        throw new Error(`playThrough: /next ${i + 1} answered ${res.status}`);
+      const itemId = next.sessionItemId;
+      freshCounter += 1;
+      const attempt = `student-harness-play-${process.pid}-${freshCounter}`;
+      if (plan[i] === "skip") {
+        await apiCall(
+          stack,
+          persona,
+          "POST",
+          `/api/${fresh.engine}/sessions/${sessionId}/skip`,
+          {
+            sessionItemId: itemId,
+            clientAttemptId: attempt,
+            client_instance_id: SEED_CLIENT_INSTANCE,
+          },
+        );
+        continue;
+      }
+      const r = await db.query<{
+        option_token_map: Record<string, string> | null;
+        question_correct_answer: string | null;
+        question_item_type: string | null;
+      }>(
+        `SELECT option_token_map, question_correct_answer, question_item_type
+           FROM public.${itemsTable(fresh.engine)} WHERE id = $1`,
+        [itemId],
+      );
+      const row = r.rows[0];
+      if (!row) throw new Error(`playThrough: item ${itemId} not found`);
+      const right = plan[i] === "correct";
+      let choice: Record<string, string>;
+      if (row.question_item_type === "grid_in") {
+        choice = {
+          answer: right ? (row.question_correct_answer ?? "") : "-987",
+        };
+      } else {
+        const entries = Object.entries(row.option_token_map ?? {});
+        const token = entries.find(([, key]) =>
+          right
+            ? key === row.question_correct_answer
+            : key !== row.question_correct_answer,
+        )?.[0];
+        if (!token) throw new Error(`playThrough: no token on ${itemId}`);
+        choice = { selectedOptionId: token };
+      }
+      await apiCall(stack, persona, "POST", `/api/${fresh.engine}/answer`, {
+        sessionId,
+        sessionItemId: itemId,
+        ...choice,
+        clientAttemptId: attempt,
+        client_instance_id: SEED_CLIENT_INSTANCE,
+      });
+    }
+    const closing = await fetch(nextUrl, { headers });
+    if (closing.status !== 409)
+      throw new Error(
+        `playThrough: the closing /next answered ${closing.status}, not 409`,
+      );
+  } finally {
+    await db.end();
+  }
+}
+
 async function endFreshSession(
   stack: Stack,
   persona: StudentPersona,
   fresh: FreshSession,
   sessionId: string,
 ): Promise<void> {
+  // A session played to its end (`playThrough`) is completed: nothing to end.
+  if (fresh.playThrough !== undefined) return;
   await apiCall(
     stack,
     persona,
@@ -861,6 +946,8 @@ async function shootBuilt(
     throw new Error(`${shot.id}: a fresh session needs a signed-in persona`);
   const sessionId =
     fresh && persona ? await startFreshSession(stack, persona, fresh) : null;
+  if (fresh?.playThrough !== undefined && persona && sessionId !== null)
+    await playFreshSession(stack, persona, fresh, sessionId, fresh.playThrough);
   if (shot.reviewCap === true && persona === null)
     throw new Error(`${shot.id}: the review cap needs a seeded student`);
   const capOpened =
