@@ -84,10 +84,17 @@ export const retrievalRequestSchema = z.object({
   /** The student's current question's skill codes (primary retrieval scope) */
   active_skill_codes: z.array(z.string()).min(1),
 
-  /** Whether the current question is pre-submit (gates explanation access) */
-  is_pre_submit: z.boolean(),
+  // No pre-submit field, deliberately. Doc 03D §6.3: pre-submit state is derived server-side
+  // from the item's submission state (isPreSubmitForSurface, server/services/tutor-antileak.ts)
+  // and is never supplied by the caller. A caller-supplied boolean gating a safety decision is
+  // a boolean an attacker sets. Removed 2026-10-13 (video RAG plan Step B).
 
-  /** The active question's canonical ID (INCLUDED in pre-submit retrieval per SCL-060) */
+  /**
+   * The active question's canonical ID. It is not a route to that question's explanation:
+   * the explanation reaches the model only post-submit, on `question_content.explanation`
+   * (SCL-144, owner ruling 2026-09-25, reversing SCL-060), and the question bank is not a
+   * retrieval source (owner ruling 2026-10-13).
+   */
   active_question_canonical_id: z.string().nullable(),
 
   /** Student ID for personalized ranking (exposure history) */
