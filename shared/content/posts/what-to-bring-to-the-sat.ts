@@ -62,7 +62,12 @@ const post: ScheduledPostSpec = {
         blocks: [
           {
             type: "p",
-            text: "Your ID must be an original, unexpired photo ID issued by the government or by the school you attend now. The name on it has to match the name on your admission ticket exactly, so a nickname on one and your full name on the other won't work.",
+            text: "Most students bring an original, unexpired photo ID issued by the government or by the school they attend now. A school ID from last school year still works through the end of December. The name on your ID has to match the name on your admission ticket exactly, so a nickname on one and your full name on the other won't work.",
+            sources: [CB_ID_REQUIREMENTS],
+          },
+          {
+            type: "p",
+            text: "No school photo ID? At U.S. test centers, students under 21 can use an SAT Student ID Form instead. The school you attend prepares it, or a notary does if you're schooled at home. If you'll be 21 or older on test day, only a government-issued photo ID is accepted. Testing outside the U.S. has its own rules, so check College Board's ID requirements for the country where you're testing.",
             sources: [CB_ID_REQUIREMENTS],
           },
           {
@@ -111,7 +116,7 @@ const post: ScheduledPostSpec = {
         blocks: [
           {
             type: "p",
-            text: "Phones, smartwatches, fitness trackers, earbuds and separate timers aren't allowed during the test or the break. A plain digital or analog watch is fine. If a phone makes a noise or you're seen with it, you can be dismissed and your scores canceled.",
+            text: "Unless College Board has approved an accommodation for you, phones, smartwatches, fitness trackers, earbuds and separate timers aren't allowed during the test or the break. A plain digital or analog watch is fine. If a phone makes a noise or you're seen with it, you can be dismissed and your scores canceled.",
             sources: [CB_PROHIBITED_DEVICES],
           },
         ],
