@@ -58,6 +58,7 @@ import {
   toGuardianCalendarDay,
   type ActivityUnit,
   type BlockLaunchState,
+  type CalendarDay,
   type CalendarDayInput,
   type LinkedSession,
   type CalendarEngine,
@@ -811,6 +812,47 @@ async function readProjection(
     );
     return null;
   }
+}
+
+// ── The accountability read (owner brief 2026-10-13) ────────────────────────
+
+/**
+ * @spec [owner brief "Guardian accountability loop" (Karl, 2026-10-13) "Missed days and back on
+ *        track"; Doc-05F_V1.0 §13 (allocator), §14 (day.status), R-08-04] | @implemented [2026-10-13]
+ *
+ * plain English: the SAME assembly and the SAME allocator the student's and the guardian's
+ * calendars run, over a window of past days, for the evening job. Returns the student's own
+ * today (in their calendar zone) and the derived days, nothing else. Like the guardian read it
+ * generates nothing: R-08-04's first plan belongs to the student's own first open, and a job
+ * creating one would be a write nobody asked for. A student with no finished setup has no plan
+ * to evaluate and comes back as `null`.
+ */
+export async function readAccountabilityDays(request: {
+  student_id: string;
+  from: string;
+  to: string;
+  now?: Date;
+}): Promise<{ today: string; days: CalendarDay[] } | null> {
+  const profile = completedStudyProfile(
+    await readStudyProfile(request.student_id),
+  );
+  if (profile === null) return null;
+  const range = await assembleRange(
+    request.student_id,
+    profile,
+    request.from,
+    request.to,
+    request.now,
+    undefined,
+  );
+  const built = buildCalendarRange({
+    today: range.today,
+    days: range.days,
+    units: range.units,
+    launches: range.launches,
+    linked_sessions: range.linkedSessions,
+  });
+  return { today: range.today, days: built.days };
 }
 
 // ── The guardian read (§16, sheet item 14) ──────────────────────────────────

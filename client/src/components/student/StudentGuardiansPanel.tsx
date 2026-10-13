@@ -27,28 +27,13 @@ import {
 // schema, whose `*_SECRET` names would land in the client bundle — see StudentLinkCodePanel).
 import {
   studentLinkRevokeUrl,
-  studentLinksUrl,
-  studentGuardianLinksViewSchema,
   type StudentGuardianLinkView,
 } from "../../../../packages/shared/src/student-resources";
-
-const STUDENT_GUARDIAN_LINKS_QUERY_KEY = ["student-guardian-links"] as const;
-/** G-NEW-11: one cache entry per student, as `studentLinkCodeQueryKey`. */
-function studentGuardianLinksQueryKey(studentId: string) {
-  return [...STUDENT_GUARDIAN_LINKS_QUERY_KEY, studentId] as const;
-}
-
-async function readLinks(
-  studentId: string,
-): Promise<StudentGuardianLinkView[]> {
-  const res = await csrfFetch(studentLinksUrl(studentId), {
-    credentials: "include",
-  });
-  if (!res.ok)
-    throw await parseApiErrorFromResponse(res, "Could not load your guardians");
-  const payload = (await res.json()) as { data?: unknown };
-  return studentGuardianLinksViewSchema.parse(payload?.data).links;
-}
+// The query (key + read) is shared with the calendar's guardian line (owner brief 2026-10-13).
+import {
+  readStudentGuardianLinks as readLinks,
+  studentGuardianLinksQueryKey,
+} from "@/hooks/useStudentGuardianLinks";
 
 function guardianLabel(link: StudentGuardianLinkView): string {
   const trimmed = link.guardian_display_name.trim();

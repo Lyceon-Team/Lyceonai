@@ -47,6 +47,7 @@ import { SessionNotice } from "@/components/feedback/SessionNotice";
 import { DeleteAccountCard } from "@/components/account-deletion/DeleteAccountCard";
 import { EmailNotificationsCard } from "@/components/account/EmailNotificationsCard";
 import { CookiesAnalyticsCard } from "@/components/account/CookiesAnalyticsCard";
+import { GuardianDigestEmailCard } from "@/components/account/GuardianDigestEmailCard";
 import { MarketingEmailCard } from "@/components/account/MarketingEmailCard";
 import { FeedbackSettingsRow } from "@/components/product-feedback/FeedbackDialog";
 import { isSessionError, toUserFacingMessage } from "@/lib/api-error";
@@ -520,6 +521,8 @@ export default function UserProfile() {
                     explain it lives here, above the control that creates it. Renders nothing
                     unless this address is actually suppressed. */}
                 <EmailNotificationsCard />
+                {/* Owner brief 2026-10-13: the guardian's daily summary email (default on). */}
+                <GuardianDigestEmailCard />
                 <CookiesAnalyticsCard />
                 {/* Plan R26 / R28 (Q5, Q6; owner answers 2026-10-05). */}
                 <MarketingEmailCard />

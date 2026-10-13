@@ -700,7 +700,10 @@ BEGIN
       ('calendar_viewer_is_admin', 130, 'd0707346dc5e5486d8dd014ee386b79d'),
       ('calendar_weekly_candidate', 880, 'e21a91d1d762ea0e731b50c8b276c7af'),
       ('calendar_weekly_candidates', 245, 'ec25c92bc2a4581409a67d042873e801'),
-      ('calendar_write_version', 3806, '6da5b170ec14ee5c9c7eab0f311ed7ef')
+      -- Re-recorded 2026-10-13 by 20261101000000 (owner brief "Guardian accountability loop"):
+      -- a student's day_edit version records its plan reduction (accountability_record_plan_change).
+      -- NOT YET DEPLOYED when recorded: Karl applies the migration.
+      ('calendar_write_version', 4850, 'deedf1c23ea4d48a2fec24974aa1ff97')
   ),
   live AS (
     SELECT p.proname::text AS name,
