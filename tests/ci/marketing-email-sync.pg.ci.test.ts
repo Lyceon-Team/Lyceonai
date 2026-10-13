@@ -15,8 +15,11 @@
  *   S2  opt-out in Lyceon → contact deleted at the next run, record forgotten
  *   S3  under-13 and no date of birth → never synced, even if a legacy row slipped past the guard
  *   S4  a pending deletion request → removed at the next run (marketing stops at the request)
- *   S5  the reconcile brings an unsubscribe back BEFORE deleting, including a manual import's
- *   S6  every contact no eligible profile backs is deleted; a foreign segment is reported
+ *   S5  the reconcile brings an unsubscribe back, including from a contact it does not manage
+ *       (which it keeps); an eligible person's unmanaged contact is added to their segment
+ *   S6  every contact the sync MANAGES (synced segment or recorded) that no eligible profile backs
+ *       is deleted; every other contact (an onboarding contact, a manual import) is left alone
+ *       (Karl, 2026-10-12); a foreign segment is reported
  *   S7  a failed read writes nothing; a second run over a correct state writes nothing
  *   S8  past the write deadline the rest is deferred to the next run
  *   W1  bad / missing signature → 400, no row
@@ -153,6 +156,14 @@ async function fakeFetch(
     });
     resend.writes.push(`create ${id}`);
     return json({ object: "contact", id });
+  }
+  const join = /^\/contacts\/([^/]+)\/segments\/([^/]+)$/.exec(url.pathname);
+  if (method === "POST" && join) {
+    const c = findContact(decodeURIComponent(join[1]!));
+    if (!c) return json({ message: "not found" }, 404);
+    c.segments.add(decodeURIComponent(join[2]!));
+    resend.writes.push(`join ${c.id}`);
+    return json({ id: c.id });
   }
   const del = /^\/contacts\/([^/]+)$/.exec(url.pathname);
   if (method === "DELETE" && del) {
@@ -483,12 +494,12 @@ describe.skipIf(!PG_AVAILABLE)("marketing email lane — real Postgres", () => {
     expect(contactOf(LEAVER.email)).toBeUndefined();
   });
 
-  it("S5 an unsubscribe in Resend comes back BEFORE the contact is deleted — a manual launch contact included", async () => {
+  it("S5 an unsubscribe comes back from a contact the sync does not manage, which is kept; an eligible person's is joined to their segment", async () => {
     await optIn(TEEN.id, true);
     await optIn(PARENT.id, true);
-    // The launch import: the teen unsubscribed from the notice; the parent did not.
+    // A launch import (a foreign segment): the teen unsubscribed from the notice; the parent did not.
     const teenManual = seedContact(TEEN.email, [SEG_LEGACY], true);
-    seedContact(PARENT.email, [SEG_LEGACY], false);
+    const parentManual = seedContact(PARENT.email, [SEG_LEGACY], false);
     resend.segments.push({ id: SEG_LEGACY, name: "Launch — friends & family" });
 
     const summary = await reconcile();
@@ -498,13 +509,22 @@ describe.skipIf(!PG_AVAILABLE)("marketing email lane — real Postgres", () => {
       granted: false,
       source: "email_unsubscribe",
     });
-    // the unsubscribed contact is gone, and NOT re-created
-    expect(resend.contacts.has(teenManual)).toBe(false);
-    expect(contactOf(TEEN.email)).toBeUndefined();
-    // the parent's manual contact is replaced by one in the synced guardians segment
-    expect([...(contactOf(PARENT.email)?.segments ?? [])]).toEqual([
-      SEG_GUARDIANS,
-    ]);
+    // the unsubscribed contact is NOT the sync's: it is kept (still unsubscribed), never re-created
+    expect(resend.contacts.has(teenManual)).toBe(true);
+    expect(contactOf(TEEN.email)?.unsubscribed).toBe(true);
+    expect(
+      [...resend.contacts.values()].filter((c) => c.email === TEEN.email),
+    ).toHaveLength(1);
+    // the parent's own contact joins the synced guardians segment; no duplicate is created
+    expect(resend.contacts.has(parentManual)).toBe(true);
+    expect([...(contactOf(PARENT.email)?.segments ?? [])].sort()).toEqual(
+      [SEG_GUARDIANS, SEG_LEGACY].sort(),
+    );
+    expect(summary).toMatchObject({
+      addedToSegment: 1,
+      created: 0,
+      deleted: 0,
+    });
     // ledger: one row, keyed by the contact, applied
     const ledger = await pg.query(
       `SELECT provider_event_id, event_type, outcome FROM public.marketing_email_webhook_events`,
@@ -518,16 +538,41 @@ describe.skipIf(!PG_AVAILABLE)("marketing email lane — real Postgres", () => {
     ]);
   });
 
-  it("S6 every contact no eligible profile backs is deleted, and a foreign segment is reported", async () => {
-    seedContact("stranger@x.test", [SEG_LEGACY]);
-    seedContact(CHILD.email, ["seg_general"]);
+  it("S5b an unsubscribed contact the sync manages brings its unsubscribe back BEFORE it is deleted", async () => {
+    await optIn(TEEN.id, true);
+    const managed = seedContact(TEEN.email, [SEG_STUDENTS], true);
+    const summary = await reconcile();
+    expect(summary.optedOut).toBe(1);
+    expect(await optedIn(TEEN.id)).toBe(false);
+    expect(resend.contacts.has(managed)).toBe(false);
+    expect(contactOf(TEEN.email)).toBeUndefined();
+    const ledger = await pg.query(
+      `SELECT provider_event_id, outcome FROM public.marketing_email_webhook_events`,
+    );
+    expect(ledger.rows).toEqual([
+      { provider_event_id: `reconcile:${managed}`, outcome: "applied" },
+    ]);
+  });
+
+  it("S6 a managed contact no eligible profile backs is deleted; an onboarding contact and a manual import are left alone; a foreign segment is reported", async () => {
+    const orphanStudents = seedContact("stranger@x.test", [SEG_STUDENTS]);
+    const orphanGuardians = seedContact("left@x.test", [SEG_GUARDIANS]);
+    const onboarding = seedContact("new-student@x.test", []);
+    const manual = seedContact(CHILD.email, [SEG_LEGACY]);
     resend.segments.push({
       id: SEG_LEGACY,
       name: "Launch — all account holders (batch 2)",
     });
     const summary = await reconcile();
-    expect(summary).toMatchObject({ deleted: 2, foreignSegments: 1 });
-    expect(resend.contacts.size).toBe(0);
+    expect(summary).toMatchObject({
+      deleted: 2,
+      leftAlone: 2,
+      foreignSegments: 1,
+    });
+    expect(resend.contacts.has(orphanStudents)).toBe(false);
+    expect(resend.contacts.has(orphanGuardians)).toBe(false);
+    expect(resend.contacts.has(onboarding)).toBe(true);
+    expect(resend.contacts.has(manual)).toBe(true);
     expect(
       captured.some(
         (l) => l.includes("foreign_segment_present") && l.includes(SEG_LEGACY),

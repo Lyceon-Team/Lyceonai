@@ -35,10 +35,20 @@ const EVENT_LABEL: Record<SatCalendarEventKind, string> = {
 };
 
 /** The last day of `month` (`YYYY-MM`). */
-function lastDay(month: string): string {
+/** The month's last day, `YYYY-MM-DD`. */
+export function lastDay(month: string): string {
   const [y, m] = month.split("-").map(Number);
   const d = new Date(Date.UTC(y ?? 1970, m ?? 1, 0));
   return d.toISOString().slice(0, 10);
+}
+
+/** `2026-11` → `November 2026`. */
+export function monthTitle(month: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${month}-01T00:00:00Z`));
 }
 
 /** The next SAT test on or after `date`, or null past the published list. */
@@ -51,11 +61,7 @@ export function planSkeleton(month: string): string {
     throw new Error(`month must be YYYY-MM, got "${month}"`);
   const first = `${month}-01`;
   const last = lastDay(month);
-  const monthName = new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${first}T00:00:00Z`));
+  const monthName = monthTitle(month);
 
   const out: string[] = [
     `# Content plan: ${monthName} (${month}-plan)`,
