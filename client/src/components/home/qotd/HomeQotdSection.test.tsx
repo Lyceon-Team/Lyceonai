@@ -121,6 +121,7 @@ function unanswered(): HomeQotdTodayResponse {
     qotd_date: "2026-10-09",
     question: QUESTION,
     streak: { current: 0, today_done: false, broken: false },
+    active_days: [],
     show_email_prompt: false,
     show_dont_ask_again: false,
   });
@@ -133,6 +134,7 @@ function answeredEarlier(): HomeQotdTodayResponse {
     question: QUESTION,
     result: RESULT,
     streak: { current: 4, today_done: true, broken: false },
+    active_days: [],
     show_email_prompt: true,
     show_dont_ask_again: false,
   });
@@ -339,6 +341,7 @@ describe("Home QOTD card", () => {
     net.today = homeQotdTodayResponseSchema.parse({
       state: "none",
       streak: { current: 2, today_done: false, broken: false },
+      active_days: [],
       show_email_prompt: false,
       show_dont_ask_again: false,
     });

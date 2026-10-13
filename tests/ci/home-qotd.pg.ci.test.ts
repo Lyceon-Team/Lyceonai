@@ -620,6 +620,36 @@ describe.skipIf(!PG_AVAILABLE)(
       });
     });
 
+    // ── First-run activation (2026-10-13) P1: "This week" ticks the streak's own days ──────
+    it("P1: active_days are the streak's day set, from every source, Chicago days, last seven only", async () => {
+      const S = "a7000000-0000-4000-8000-0000000000fe";
+      await seedPerson(S, "student", "2008-01-01");
+      const { readActiveDays } =
+        await import("../../server/services/activity-streak");
+      // Presence of the empty case first.
+      expect(await readActiveDays(S, new Date("2026-02-11T20:00:00Z"))).toEqual(
+        [],
+      );
+      await seedAnswer("practice", S, "2026-02-05T18:00:00Z");
+      await seedAnswer("review", S, "2026-02-06T18:00:00Z");
+      await seedAnswer("full_length", S, "2026-02-07T18:00:00Z");
+      // 23:30 Chicago on the 8th (05:30Z on the 9th) is the 8th, as the streak counts it.
+      await seedAnswer("practice", S, "2026-02-09T05:30:00Z");
+      expect(await readActiveDays(S, new Date("2026-02-11T20:00:00Z"))).toEqual(
+        ["2026-02-05", "2026-02-06", "2026-02-07", "2026-02-08"],
+      );
+      // A day later the window (today and the six days before) no longer holds the 5th.
+      expect(await readActiveDays(S, new Date("2026-02-12T20:00:00Z"))).toEqual(
+        ["2026-02-06", "2026-02-07", "2026-02-08"],
+      );
+      // The same days the streak counts: a 4-day run ending the 8th.
+      expect(await streakAt(S, "2026-02-08T20:00:00Z")).toEqual({
+        current_streak: 4,
+        today_done: true,
+        broken: false,
+      });
+    });
+
     // ── A5 ─────────────────────────────────────────────────────────────────
     it("A5: the prompt shows after the answer; 'Don't ask again' only from the 3rd ask; a grant writes consent with a version", async () => {
       // Two earlier asks on earlier days.

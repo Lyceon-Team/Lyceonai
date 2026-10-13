@@ -52,7 +52,7 @@ import {
   buildSessionItemInsertRows,
   toCanonicalQuestionForServing,
 } from "../../routes/practice-canonical";
-import { readDailyStreak } from "../activity-streak";
+import { readActiveDays, readDailyStreak } from "../activity-streak";
 import { logger } from "../../logger";
 import { qotdOptionToken } from "./option-tokens";
 import {
@@ -223,15 +223,18 @@ export async function getHomeQotdToday(
   student: HomeQotdStudent,
   now: Date = new Date(),
 ): Promise<HomeQotdTodayResponse> {
-  const [row, streak, state] = await Promise.all([
+  const [row, streak, state, active_days] = await Promise.all([
     readQotd(db(), null),
     readDailyStreak(student.id, now),
     readPromptState(student.id, now),
+    // First-run activation brief (2026-10-13) P1: Home's "This week" ticks these days.
+    readActiveDays(student.id, now),
   ]);
   if (row === null || row.qotd_date !== qotdToday(now)) {
     return homeQotdTodayResponseSchema.parse({
       state: "none",
       streak,
+      active_days,
       show_email_prompt: false,
       show_dont_ask_again: false,
     });
@@ -243,6 +246,7 @@ export async function getHomeQotdToday(
       qotd_date: row.qotd_date,
       question: studentQuestion(row),
       streak,
+      active_days,
       show_email_prompt: false,
       show_dont_ask_again: false,
     });
@@ -253,6 +257,7 @@ export async function getHomeQotdToday(
     question: studentQuestion(row),
     result: resultFor(row, attempt.selected_answer, attempt.is_correct),
     streak,
+    active_days,
     ...promptFlags(state, true),
   });
 }

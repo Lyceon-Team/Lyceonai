@@ -314,5 +314,12 @@ describe("diagnosticActionLabel", () => {
         32,
       ),
     ).toBe("Resume diagnostic · question 4 of 32");
+    // No length known at all: no invented number.
+    expect(
+      diagnosticActionLabel(
+        { answered_items: 3, target_question_count: 0 },
+        null,
+      ),
+    ).toBe("Resume diagnostic");
   });
 });

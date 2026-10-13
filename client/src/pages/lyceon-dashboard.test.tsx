@@ -497,6 +497,8 @@ type Scenario = {
   today?: string;
   /** First-run activation P1: the form has no sitting in progress. */
   noSitting?: boolean;
+  /** First-run activation P1: the days with an answered question (the streak's day set). */
+  activeDays?: string[];
 };
 
 function install(s: Scenario): void {
@@ -561,6 +563,8 @@ function install(s: Scenario): void {
           data: homeQotdTodayResponseSchema.parse({
             state: "none",
             streak: { current: 0, today_done: false, broken: false },
+            // First-run P1: the days "This week" ticks (the streak's own day set).
+            active_days: s.activeDays ?? [],
             show_email_prompt: false,
             show_dont_ask_again: false,
           }),
@@ -1499,6 +1503,37 @@ describe("first-run P1: the Question of the Day card lands with the page (no lay
       expect(screen.getByTestId("home-qotd")).toBeTruthy();
     });
   }
+});
+
+describe("first-run P1: 'This week' ticks the days with study activity", () => {
+  it("ticks exactly the server's active days (the streak's day set), whatever the plan says; the plan line stays separate", async () => {
+    await mount("paid", {
+      calendar: "ready",
+      activeDays: ["2026-09-29", "2026-10-01"],
+    });
+    const week = await screen.findByTestId("home-week");
+    const days = within(week).getAllByRole("listitem");
+    expect(days).toHaveLength(7);
+    const ticked = days
+      .filter(
+        (li) =>
+          within(li)
+            .getByTestId("home-week-tick")
+            .getAttribute("data-studied") === "true",
+      )
+      .map((li) => li.textContent);
+    // Presence first: two days carry the tick, each named "studied" for screen readers.
+    expect(ticked).toEqual(["Tue29✓studied", "Thu1✓studied"]);
+    // Plan completion is its own line, unchanged by the ticks.
+    expect(within(week).getByText("1 of 6 days done.")).toBeTruthy();
+  });
+
+  it("no active days: no tick at all", async () => {
+    await mount("paid", { calendar: "ready" });
+    const week = await screen.findByTestId("home-week");
+    expect(week.textContent).not.toContain("✓");
+    expect(week.textContent).not.toContain("studied");
+  });
 });
 
 describe("first-run P1: today's plan rows act through text links", () => {

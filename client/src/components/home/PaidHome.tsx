@@ -378,7 +378,11 @@ export function PaidHome({
             targetScore={ready?.profile.target_score ?? null}
           />
           {ready !== null ? (
-            <WeekSection days={ready.days} today={today} />
+            <WeekSection
+              days={ready.days}
+              today={today}
+              activeDays={qotd.data?.active_days ?? []}
+            />
           ) : null}
           <RecentSessionsSection
             sessions={pool.pool?.sessions ?? []}

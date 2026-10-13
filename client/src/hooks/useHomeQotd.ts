@@ -91,6 +91,10 @@ export function useAnswerHomeQotd(): UseMutationResult<
                 question: current.question,
                 result: answer.result,
                 streak: answer.streak,
+                // First-run P1: today now has an answer, so "This week" ticks it at once.
+                active_days: current.active_days.includes(current.qotd_date)
+                  ? current.active_days
+                  : [...current.active_days, current.qotd_date].sort(),
                 show_email_prompt: answer.show_email_prompt,
                 show_dont_ask_again: answer.show_dont_ask_again,
               },

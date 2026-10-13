@@ -95,11 +95,29 @@ const promptShape = {
   show_dont_ask_again: z.boolean(),
 };
 
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: '"This week" ticks days
+ *       with any study activity (same definition as the streak); plan completion is a separate
+ *       line'; SCL-226 (the streak's day: a Chicago day with at least one answered question from
+ *       any source)] | @implemented [2026-10-13]
+ * plain English: the Chicago days, from six days ago through today, on which the student answered
+ * at least one question, read from `public.student_answer_days`, the same set the streak counts.
+ * Home's "This week" ticks a day that is in it. Ascending, at most seven.
+ */
+const activeDaysShape = {
+  active_days: z.array(qotdDateSchema).max(7),
+};
+
 /** GET /api/qotd/today */
 export const homeQotdTodayResponseSchema = z.discriminatedUnion("state", [
   // No question scheduled today: the card is hidden; the streak is unaffected.
   z
-    .object({ state: z.literal("none"), streak: streakSchema, ...promptShape })
+    .object({
+      state: z.literal("none"),
+      streak: streakSchema,
+      ...activeDaysShape,
+      ...promptShape,
+    })
     .strict(),
   z
     .object({
@@ -107,6 +125,7 @@ export const homeQotdTodayResponseSchema = z.discriminatedUnion("state", [
       qotd_date: qotdDateSchema,
       question: homeQotdQuestionSchema,
       streak: streakSchema,
+      ...activeDaysShape,
       ...promptShape,
     })
     .strict(),
@@ -117,6 +136,7 @@ export const homeQotdTodayResponseSchema = z.discriminatedUnion("state", [
       question: homeQotdQuestionSchema,
       result: homeQotdResultSchema,
       streak: streakSchema,
+      ...activeDaysShape,
       ...promptShape,
     })
     .strict(),
