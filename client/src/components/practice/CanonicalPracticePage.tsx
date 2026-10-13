@@ -21,6 +21,10 @@
  * practice runner" header with its answered/streak chips and progress pill (the PracticeShell),
  * the difficulty and domain badges, the "Session guidance" side card, and "End Session" (the
  * back link leaves with the place saved; Practice and Review end open sessions from their rows).
+ * The domain and difficulty came back on 2026-10-13 by owner brief (Karl, "Question metadata
+ * header" §1) with the skill: `QuestionMetaHeader` above the question, three small neutral pills
+ * (ruled on #1225 the same day: the shared `Pill`, difficulty not colour-coded, the skill a
+ * focus stop).
  *
  * Finishing: "Done" asks `/next` once more. The server answers 409 `session_closed` after the
  * last item (it completes the session if the last answer did not), the hook marks the session
@@ -41,6 +45,7 @@ import React from "react";
 import { useLocation } from "wouter";
 import { BookOpen, Calculator, Loader2, MessageCircle } from "lucide-react";
 import QuestionRenderer from "@/components/question-renderer";
+import { QuestionMetaHeader } from "@/components/practice/QuestionMetaHeader";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
 import {
@@ -650,6 +655,13 @@ export default function CanonicalPracticePage(props: {
           data-testid="practice-calculator-save-failed"
         />
       ) : null}
+      {/* Owner brief 2026-10-13 §1: domain · skill · difficulty on practice, review and the
+          diagnostic (all three run in this page); never on the full-length module. */}
+      <QuestionMetaHeader
+        domain={question.domain}
+        skill={question.skill}
+        difficulty={question.difficulty}
+      />
       <QuestionRenderer
         question={question}
         selectedAnswer={selectedAnswer}

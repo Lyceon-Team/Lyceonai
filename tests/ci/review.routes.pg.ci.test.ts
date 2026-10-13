@@ -129,8 +129,11 @@ function authStub() {
       next(),
     requireProfileComplete: (_q: Request, _s: Response, next: NextFunction) =>
       next(),
-    requireGuardianLinkForUnder13: (_q: Request, _s: Response, next: NextFunction) =>
-      next(),
+    requireGuardianLinkForUnder13: (
+      _q: Request,
+      _s: Response,
+      next: NextFunction,
+    ) => next(),
     getSupabaseAdmin: () => {
       if (!testPg) throw new Error("PG client not initialised");
       return makePgSupabase(testPg);
@@ -451,6 +454,40 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // QMH — question header (owner brief, Karl, 2026-10-13 §1) | @implemented [2026-10-13]
+  // plain English: review's /next carries the served item's domain, skill and difficulty for
+  // the runner's header, from the seeded question (Q_RW: three fields that differ from every
+  // other question's), and still no answer field. Presence first, then absence.
+  // -------------------------------------------------------------------------
+  it("QMH: review /next carries the item's domain, skill and difficulty, and no answer field", async () => {
+    await enqueue(testPg!, { questionId: Q_RW, queuedAt: T1 });
+    const created = await createSession();
+    expect(created.status).toBe(200);
+    const next = await nextItem(created.body.sessionId as string);
+    expect(next.status).toBe(200);
+
+    const q = next.body.question as Record<string, unknown>;
+    expect(q.stem).toBe(`Stem for ${Q_RW}`);
+    expect(q.domain).toBe("Information and Ideas");
+    expect(q.skill).toBe("INI.D01");
+    expect(q.difficulty).toBe(3);
+
+    expect(q.correct_answer).toBeNull();
+    expect(q.explanation).toBeNull();
+    const serialized = JSON.stringify(next.body);
+    for (const leak of [
+      `Explanation for ${Q_RW}`,
+      "option_metadata",
+      "correct_variants",
+      "option_token_map",
+      "correctOptionId",
+      "correctAnswer",
+    ]) {
+      expect(serialized, leak).not.toContain(leak);
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // A2 — post-submit reveal
   // -------------------------------------------------------------------------
   it("A2: the answer response reveals the correct answer and the explanation", async () => {
@@ -579,7 +616,11 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     // Presence: the legacy token is really there before the backfill runs.
     expect(await answers()).toEqual([tokenA, tokenA]);
 
-    type Counts = { phase: string; items_token: number; attempts_token: number };
+    type Counts = {
+      phase: string;
+      items_token: number;
+      attempts_token: number;
+    };
     const countsOf = (results: unknown): Counts[] => {
       const list = Array.isArray(results) ? results : [results];
       const hit = list.find(
