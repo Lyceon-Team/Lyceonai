@@ -26,9 +26,7 @@ Video id and segment bounds, inside the existing field. Title, channel and forma
 
 ### 1.2 Transcripts — two tiers
 
-Pull YouTube's timed-text where available. **Whisper where it is not.** Whisper gives word-level timestamps, so segment boundaries are better than fixed caption blocks.
-
-Chunking per the external plan: **45–60 second windows, 10 second overlap.**
+*Superseded by the reworked Step D (2026-10-13): transcripts are read once at build time to generate descriptions, and are never stored. Chapter markers segment when present, fixed windows when not. No Whisper fallback; a video with no obtainable transcript is skipped.*
 
 ### 1.3 Embedding model — one check outstanding
 
@@ -106,11 +104,139 @@ Plus the stale SCL-060 comment. Zero importers, so free. **Before Step C.**
 Run `scripts/provisioning/rag-corpus-create.ts` **unchanged in schema**. Set `RAG_CORPUS_RESOURCE_NAME` in the env schema and Vercel.
 **Proof:** corpus exists with the locked four-field metadata schema.
 
-### Step D — Ingestion
-`scripts/rag/ingest-youtube.ts` — YouTube Data API metadata, timed-text where available, **Whisper fallback**, 45–60s windows with 10s overlap, raw JSONL to GCS.
-`scripts/rag/map-skills.ts` — appends `skill_codes` (array, valid against the taxonomy), `provenance` in the namespaced form, `surface_gate`, `content_type: "video_transcript"`.
-**Skill tags are reviewed, not trusted.**
-**Proof:** items in the corpus, retrievable by direct query, metadata correct.
+### Step D — Ingestion *(reworked, Karl 2026-10-13; replaces the original Step D)*
+
+Fully automated. No manual video watching.
+
+#### D.1 Why this shape
+
+Two facts from the audit decide it.
+
+**Transcripts cannot be fetched from production.** YouTube gates `/api/timedtext` behind a PoToken as of April 2026, and datacenter IPs get "Sign in to confirm you're not a bot" on caption fetches. Every library and managed API works around this by scraping internal endpoints via the ANDROID InnerTube client. A Vercel or Cloud Run process calling any of them is a production dependency on a scraped, actively-defended endpoint.
+
+**Transcript text is poor retrieval material anyway.** Spoken speech is filler-heavy, has no sentence boundaries that match concept boundaries, and auto-captions mangle exactly the technical terms that matter — "sine" / "sign", "x squared" / "x-squared". Chunking it on 45-second windows produces embeddings for half-sentences.
+
+So the transcript is an input, not the product. It is read once, at build time, to generate a clean teaching description. The corpus stores the description. The transcript is discarded.
+
+This is automated end to end, it retrieves better, and nothing third-party is stored or served.
+
+#### D.2 The pipeline
+
+Build-time only. Runs on a workstation, not in any deployed runtime.
+
+```
+channel/playlist/video list
+  → A. metadata        (YouTube Data API v3 — official, keyed)
+  → B. transcript      (build-time fetch, discarded after C)
+  → C. segmentation + description  (Gemini batch)
+  → D. skill tagging   (Gemini, constrained to the taxonomy)
+  → E. review sample   (automated checks + a spot-check set)
+  → F. JSONL to GCS → corpus import
+```
+
+**A. Metadata — `scripts/rag/fetch-video-metadata.ts`**
+
+YouTube Data API v3, official and keyed: title, channel, duration, publish date, chapter markers where present. Writes to a Postgres table, not the corpus (R-3).
+
+```sql
+video_resources (
+  video_id text primary key,
+  title text not null,
+  channel_name text not null,
+  duration_seconds int not null,
+  status text not null default 'active',   -- active | unavailable
+  last_checked_at timestamptz,
+  approved_by uuid,
+  approved_at timestamptz
+)
+```
+
+This is what Step I's link-rot job updates and what the client joins at render time.
+
+**B. Transcript — `scripts/rag/fetch-transcripts.ts`**
+
+Build-time, local, rate-limited, cached to disk so a video is fetched once.
+
+Chapter markers are the better segmentation signal where a video has them — a creator-authored chapter is a concept boundary, which a 45-second window is not. Use chapters when present, fixed windows when not.
+
+The transcript cache is working material. It is not committed, not uploaded to GCS, and not imported. Step C consumes it and it is deleted.
+
+If a transcript cannot be obtained for a video, that video is skipped. No partial entries.
+
+**C. Segmentation and description — `scripts/rag/generate-descriptions.ts`**
+
+The step that makes this work.
+
+For each segment, a Gemini call takes the transcript window plus the video title and returns:
+
+- `description` — two to four sentences stating what this segment teaches, written as instructional content, not as a summary of someone talking. No "the speaker explains", no "in this video". Just the concept, the method, and the condition under which it applies.
+- `concepts` — a short list of named concepts covered
+- `boundary_confidence` — whether the window starts or ends mid-explanation
+
+Prompt rules: never quote the transcript verbatim beyond a technical term; never attribute to the speaker; write as though explaining the concept directly; if the segment teaches nothing self-contained, return `null` and the segment is dropped.
+
+Merge adjacent segments where `boundary_confidence` says an explanation spans a window edge. A segment that ends mid-derivation is useless to a student.
+
+This is the corpus content. Lyceon-authored text, generated from a read of the source, embedding cleanly because it is written to be read.
+
+**D. Skill tagging — `scripts/rag/map-skills.ts`**
+
+Gemini, constrained to the canonical taxonomy — the model picks from an enumerated list of valid `skill_codes` and cannot emit anything else. Invalid codes fail the row rather than being coerced.
+
+Multi-tag allowed; `skill_codes` is an array.
+
+**E. Review — automated, with a sample**
+
+Not manual watching. Automated gates:
+
+- every `skill_code` valid against the taxonomy
+- `start_seconds < end_seconds`, both within `duration_seconds`
+- description length within bounds, no transcript verbatim above a threshold
+- no segment shorter than 20s or longer than 180s
+- no duplicate `provenance`
+
+Then a random 5% sample surfaced for your eye — description against the actual timestamp. Enough to catch a systematic failure, not enough to be a job.
+
+**F. Import**
+
+JSONL to `gs://<bucket>/processed_chunks/`, imported to the corpus. Each item:
+
+```json
+{
+  "id": "yt_AB1234567_142",
+  "text": "<the generated description>",
+  "skill_codes": ["ALG-LIN-01", "ALG-LIN-03"],
+  "provenance": "youtube:AB1234567:142-195",
+  "surface_gate": "any",
+  "content_type": "video_segment"
+}
+```
+
+The four locked metadata fields, unchanged. Title and channel come from `video_resources` at render time.
+
+> **Placement note (2026-10-13):** the example values `"any"`, `"video_segment"` and `"ALG-LIN-01"` don't match the locked enums or the bank's skill strings. The JSONL-with-per-record-metadata import shape isn't one RAG Engine documents either. See closure plan R-5 to R-7. The text above is as Karl wrote it, and those findings say what has to be decided before it runs.
+
+#### D.3 What this costs
+
+Gemini Flash for description and tagging, on segments rather than whole videos. A 10-minute video is roughly 12 segments. A hundred videos is a few dollars. The bottleneck is wall-clock on the transcript fetch, not money.
+
+#### D.4 Proof
+
+1. `video_resources` populated for the seeded set
+2. Corpus items present, retrievable by direct query, metadata valid
+3. The 5% sample reviewed by Karl — descriptions match what is actually at those timestamps
+4. Zero transcript text in the corpus — assert against the cached transcripts
+5. Every `skill_code` in the corpus valid against the taxonomy
+
+#### D.5 Out of scope
+
+Hosting or re-publishing video. Serving transcript text to anyone. Any production-time transcript fetch. Khan Academy text specifically — CC BY-NC-SA, the non-commercial clause excludes it from a paid product, though embedding and linking their videos is fine.
+
+#### D.6 Push back
+
+If chapter markers turn out to be rare across the chosen channels, say so — fixed windows with merge-on-low-confidence still work, it just means more segments get merged.
+
+If a description generated from a bad auto-caption is confidently wrong about the mathematics, that is the failure mode that matters and the 5% sample is what catches it. If the sample shows it happening at any rate above noise, stop and report before scaling the corpus.
 
 ### Step E — Retrieval quality, before generation *(a gate, per §6.7)*
 Query set per skill, inspect results, confirm the gate drops what it should.
