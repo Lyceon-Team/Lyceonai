@@ -72,7 +72,6 @@ import {
   type FreeGoal,
 } from "@/features/calendar/components/FreeCalendar";
 import {
-  addDays,
   browserLocalToday,
   rangeForView,
   startOfWeek,
@@ -231,11 +230,6 @@ export default function CalendarPage(): JSX.Element {
         today={today}
         profile={freeProfile}
         reason={lockReason}
-        maxTestDate={
-          setupDefaults === null
-            ? null
-            : addDays(today, setupDefaults.target_exam_date_max_days)
-        }
         onSave={(goal: FreeGoal) =>
           saveProfile(
             freeProfile === null && setupDefaults !== null

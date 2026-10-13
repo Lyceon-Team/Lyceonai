@@ -52,6 +52,7 @@ import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
 import { calendarRouter } from "./routes/calendar-routes";
+import { satDateRouter } from "./routes/sat-date-routes";
 import { scoreReportRouter } from "./routes/score-report-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
@@ -420,6 +421,18 @@ app.use(
   doubleCsrfProtection,
   requireStudentOrAdmin,
   calendarRouter,
+);
+
+// The SAT-date bound (owner ruling 2026-10-12, Karl on #1211): ANY signed-in account, so NOT
+// behind `requireStudentOrAdmin`. A guardian-intent account that switches to Student at
+// onboarding is still a guardian here until onboarding saves, and its picker must still offer
+// the dates. One configuration-derived date and nothing else (`.strict()`), for the session's
+// own account; the student-only calendar profile routes above stay student-only.
+app.use(
+  "/api/sat-dates",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  satDateRouter,
 );
 
 // Doc 05F §15's standalone streak route is retired (SCL-212, owner ruling 2026-10-05, OQ-61 (a)):

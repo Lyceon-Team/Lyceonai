@@ -43,7 +43,7 @@ import {
   buildEscapeKeymap,
   useKeyboardShortcuts,
 } from "@/hooks/useKeyboardShortcuts";
-import { addDays, daysBetween } from "../lib/dates";
+import { daysBetween } from "../lib/dates";
 import {
   SatDatePicker,
   type SatDateChoice,
@@ -415,7 +415,6 @@ export function SetupPopup({
                   value={examDates}
                   onChange={setExamDates}
                   today={today}
-                  latest={addDays(today, defaults.target_exam_date_max_days)}
                   data-testid="calendar-setup-exam-dates"
                 />
               </div>

@@ -18,6 +18,7 @@ import {
   launchBodySchema,
   launchResponseSchema,
   profileReadResponseSchema,
+  satDateBoundResponseSchema,
   profileUpsertResponseSchema,
   versionResponseSchema,
 } from "../calendar/api";
@@ -654,5 +655,38 @@ describe("the error envelope (Coding Standards §8.2)", () => {
     expect(apiErrorSchema.safeParse({ message: "Not entitled" }).success).toBe(
       false,
     );
+  });
+});
+
+/**
+ * @spec [owner ruling 2026-10-12 (Karl, on #1211): a role-agnostic read of latest_test_date that
+ *       "carries no student data"] | @implemented [2026-10-12]
+ * plain English: the bound's wire shape is one local date and nothing else, so no profile
+ * value can ride along on a read any signed-in account may make.
+ */
+describe("GET /api/sat-dates/bound", () => {
+  it("is exactly { latest_test_date: a local date }", () => {
+    expect(
+      satDateBoundResponseSchema.safeParse({ latest_test_date: "2028-03-12" }).success,
+    ).toBe(true);
+    expect(satDateBoundResponseSchema.safeParse({}).success).toBe(false);
+    expect(
+      satDateBoundResponseSchema.safeParse({
+        latest_test_date: "2028-03-12T00:00:00Z",
+      }).success,
+    ).toBe(false);
+    // Presence above, absence here: no profile value can be added to it.
+    expect(
+      satDateBoundResponseSchema.safeParse({
+        latest_test_date: "2028-03-12",
+        profile: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      satDateBoundResponseSchema.safeParse({
+        latest_test_date: "2028-03-12",
+        target_exam_dates: ["2027-03-06"],
+      }).success,
+    ).toBe(false);
   });
 });

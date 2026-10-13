@@ -25,8 +25,10 @@ import { fullLengthsBeforeTarget } from "@lyceon/shared/calendar";
 import {
   chooseNotSure,
   closeSatDates,
+  offeredSatDates,
   openSatDates,
   satDatesSummary,
+  satDateBoundWrapper,
   toggleSatDate,
 } from "@/components/sat-dates/sat-date-picker.testing";
 
@@ -51,6 +53,8 @@ const DEFAULTS: CalendarSetupDefaults = {
 };
 
 const TODAY = "2026-09-24";
+// The served bound (`latest_test_date`, owner ruling 2026-10-11): TODAY + 365 days.
+const LATEST_TEST_DATE = "2027-09-24";
 
 function open(over: Partial<React.ComponentProps<typeof SetupPopup>> = {}): {
   submitted: SetupAnswers[];
@@ -68,6 +72,7 @@ function open(over: Partial<React.ComponentProps<typeof SetupPopup>> = {}): {
       error={null}
       {...over}
     />,
+    { wrapper: satDateBoundWrapper(LATEST_TEST_DATE) },
   );
   return { submitted, dismissed: () => onDismiss.mock.calls.length };
 }
@@ -235,6 +240,17 @@ describe("the test date is optional", () => {
       defaults: { ...DEFAULTS, target_exam_dates: ["2026-12-05"] },
     });
     expect(satDatesSummary(PICKER)).toBe("Sat, Dec 5, 2026");
+  });
+});
+
+describe("the served bound (owner ruling 2026-10-11, Karl on #1204)", () => {
+  it("offers dates up to latest_test_date, the bound included, and none after it", () => {
+    open();
+    const offered = offeredSatDates(PICKER);
+    expect(offered).toContain("2027-08-28");
+    expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
+    // The next official date after the bound (2027-09-24) is 2027-10-09.
+    expect(offered).not.toContain("2027-10-09");
   });
 });
 
