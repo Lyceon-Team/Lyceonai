@@ -30,6 +30,12 @@ import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
 import { useRouteScrollReset } from "@/lib/route-scroll-reset";
 import { SIGN_UP_HREF } from "@/lib/marketing-links";
+import {
+  chunkKeyOf,
+  claimChunkReload,
+  isChunkLoadError,
+} from "@/lib/chunk-reload";
+import { reloadPage } from "@/lib/reload-page";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
@@ -563,18 +569,37 @@ export function Router() {
  */
 export class ErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean }
+  { hasError: boolean; reloading: boolean }
 > {
   constructor(props: { children: ReactNode }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, reloading: false };
   }
 
-  static getDerivedStateFromError(): { hasError: boolean } {
-    return { hasError: true };
+  static getDerivedStateFromError(error: unknown): {
+    hasError: boolean;
+    reloading: boolean;
+  } {
+    return { hasError: true, reloading: isChunkLoadError(error) };
+  }
+
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 1]
+   *       | @implemented [2026-10-13]
+   * plain English: a chunk that fails above every shell (the route guard's, the shell frame's,
+   * a public page's) reloads once, loop-guarded by the same `claimChunkReload` the in-shell
+   * boundary uses (RouteErrorBoundary.tsx); refused, this card shows. A page's own chunk is
+   * caught inside its shell and never reaches here.
+   */
+  componentDidCatch(error: unknown): void {
+    if (!isChunkLoadError(error)) return;
+    if (claimChunkReload(chunkKeyOf(error), Date.now()).kind === "reload")
+      reloadPage();
+    else this.setState({ reloading: false });
   }
 
   render() {
+    if (this.state.hasError && this.state.reloading) return null;
     if (this.state.hasError) {
       // UI-41: the error screen is a Bare card (DESIGN.md §2). BareCard reads no context, so it
       // renders here, above every provider. UI-59: on the student tokens only, so it follows the
