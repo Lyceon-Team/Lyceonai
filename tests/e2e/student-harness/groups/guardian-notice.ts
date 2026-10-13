@@ -8,8 +8,8 @@
  *
  * plain English: the paid persona is the exam harness's student, who has an ACTIVE guardian
  * link (personas.ts), so the line shows wherever the student can clear a day or remove or move a
- * block: the day ⋯ menu (where "Block out this day" clears it) and the block panel (Remove,
- * Move to…). The seed is UI-55's ("calendar-goal"): the plan is the one the real generator builds
+ * block: the day ⋯ menu (where "Block out this day" clears it), the block panel (Remove,
+ * Move to…) and, since SCL-230 was approved (Karl, 2026-10-13), the schedule sheet. The seed is UI-55's ("calendar-goal"): the plan is the one the real generator builds
  * on first open, and today holds a review block that is not started. UI-55's own shots are the
  * control for a student whose surfaces draw nothing new.
  */
@@ -59,6 +59,37 @@ export const GUARDIAN_NOTICE: PageGroup = {
         kind: "none",
         reason:
           "The line is new (owner brief 2026-10-13); the prototype's block sheet has no guardian line.",
+      },
+    },
+    {
+      id: "settings-sheet",
+      title:
+        "Edit schedule (SCL-230, approved by Karl 2026-10-13): the schedule sheet with the guardian line under the live readout, above Cancel / Save changes (at 390 the sheet is opened from the '⋯' menu)",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: {
+        desktop: '[data-testid="topbar-edit-schedule"]',
+        mobile: '[data-testid="calendar-more-actions"]',
+      },
+      steps: [
+        {
+          click: {
+            desktop: '[data-testid="topbar-edit-schedule"]',
+            mobile: '[data-testid="calendar-more-actions"]',
+          },
+        },
+        {
+          click: {
+            desktop: null,
+            mobile: '[data-testid="calendar-more-edit-schedule"]',
+          },
+        },
+      ],
+      expectVisible: '[data-testid="settings-guardian-notice"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "The line is new (SCL-230, approved 2026-10-13); the prototype's schedule sheet has no guardian line.",
       },
     },
   ],

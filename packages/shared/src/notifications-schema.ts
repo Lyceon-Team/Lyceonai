@@ -226,16 +226,41 @@ export const GUARDIAN_DIGEST_TIME_ZONE = "America/Chicago";
 const localDateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 /**
- * @spec [owner brief 2026-10-13 "What gets recorded" items 2 and 3; Doc-05F_V1.0 §12.4, §12.8,
- *        §16 (a guardian receives the days and their blocks and the minute estimates — not the
- *        study-days mask or the daily minutes, see SCL-230); contracts/notifications.contract.md
- *        §8.1] | @implemented [2026-10-13]
+ * The three SCHEDULE changes (SCL-230, approved by Karl 2026-10-13: "guardians may be told study
+ * days, minutes per day and full-length frequency (before → after)"). Study days travel as a
+ * count per week, never the mask; the frequency as the weekday (Postgres DOW, 0 = Sunday) and
+ * the interval in weeks, both null when practice tests are off.
+ */
+const weekdaySchema = z.number().int().min(0).max(6).nullable();
+const intervalWeeksSchema = z.number().int().min(1).nullable();
+const scheduleChangeFields = {
+  study_days: {
+    before_days: z.number().int().min(0).max(7),
+    after_days: z.number().int().min(0).max(7),
+  },
+  daily_minutes: {
+    before_minutes: z.number().int().min(0),
+    after_minutes: z.number().int().min(0),
+  },
+  full_length_frequency: {
+    before_weekday: weekdaySchema,
+    before_interval_weeks: intervalWeeksSchema,
+    after_weekday: weekdaySchema,
+    after_interval_weeks: intervalWeeksSchema,
+  },
+} as const;
+
+/**
+ * @spec [owner brief 2026-10-13 "What gets recorded" items 1–3; Doc-05F_V1.0 §12.4, §12.8, §16;
+ *        SCL-230 (approved by Karl 2026-10-13 for the three schedule kinds);
+ *        contracts/notifications.contract.md §8.1] | @implemented [2026-10-13]
  *
- * One student-initiated plan reduction, written by `calendar_write_version` when a student's
- * day edit or block move lowers a day's planned minutes or takes a full-length test off its day.
- * Rendering parameters only: the student's first name, the plan date(s), the minute totals the
- * cards already show, and `digest_date` (the Chicago day of the digest that reports it). No block
- * ids, no scope, no question content.
+ * One student-initiated plan change. The day kinds are written by `calendar_write_version` when
+ * a student's day edit or block move lowers a day's planned minutes or takes a full-length test
+ * off its day; the schedule kinds by the `student_study_profile` trigger. Rendering parameters
+ * only: the student's first name, the plan date(s) or the before/after values, and
+ * `digest_date` (the Chicago day of the digest that reports it). No block ids, no scope, no
+ * study-days mask, no question content.
  */
 export const studyPlanChangedPayloadSchema = z.discriminatedUnion("kind", [
   z
@@ -262,6 +287,30 @@ export const studyPlanChangedPayloadSchema = z.discriminatedUnion("kind", [
       student_first_name: z.string(),
       plan_date: localDateStringSchema,
       to_date: localDateStringSchema,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("study_days"),
+      student_first_name: z.string(),
+      ...scheduleChangeFields.study_days,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("daily_minutes"),
+      student_first_name: z.string(),
+      ...scheduleChangeFields.daily_minutes,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_frequency"),
+      student_first_name: z.string(),
+      ...scheduleChangeFields.full_length_frequency,
       digest_date: localDateStringSchema,
     })
     .strict(),
@@ -293,7 +342,7 @@ export const backOnTrackPayloadSchema = z
   .strict();
 export type BackOnTrackPayload = z.infer<typeof backOnTrackPayloadSchema>;
 
-/** A plan change as the digest aggregates it: a reduced day once, first "before" to last "after". */
+/** A plan change as the digest aggregates it: a reduced day (or a schedule kind) once, first "before" to last "after". */
 export const digestPlanChangeSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -314,6 +363,24 @@ export const digestPlanChangeSchema = z.discriminatedUnion("kind", [
       kind: z.literal("full_length_moved"),
       plan_date: localDateStringSchema,
       to_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("study_days"),
+      ...scheduleChangeFields.study_days,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("daily_minutes"),
+      ...scheduleChangeFields.daily_minutes,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_frequency"),
+      ...scheduleChangeFields.full_length_frequency,
     })
     .strict(),
 ]);

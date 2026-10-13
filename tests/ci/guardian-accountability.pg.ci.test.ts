@@ -52,6 +52,8 @@ import {
 } from "../../packages/shared/src/notifications-schema";
 
 const DB_NAME = "guardian_accountability_ci";
+process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET = "guardian-accountability-ci-secret";
+process.env.PUBLIC_SITE_URL = "https://lyceon.test";
 
 // Recording group (real "now").
 const REC = "a8000000-0000-4000-8000-000000000001";
@@ -66,6 +68,7 @@ const RULE_GUARDIAN = "a8000000-0000-4000-8000-000000000011";
 const J1 = "a8000000-0000-4000-8000-000000000021"; // 13+, guardian GJ1, missed run
 const J8 = "a8000000-0000-4000-8000-000000000028"; // GJ1's second student: completion only
 const GJ1 = "a8000000-0000-4000-8000-000000000031";
+const GJ8 = "a8000000-0000-4000-8000-000000000038"; // a guardian who is never unsubscribed
 const J2 = "a8000000-0000-4000-8000-000000000022"; // under 13
 const GJ2 = "a8000000-0000-4000-8000-000000000032";
 const J3 = "a8000000-0000-4000-8000-000000000023"; // guardian turned the digest off
@@ -77,6 +80,9 @@ const GJ5 = "a8000000-0000-4000-8000-000000000035";
 const J6 = "a8000000-0000-4000-8000-000000000026"; // link revoked
 const GJ6 = "a8000000-0000-4000-8000-000000000036";
 const J7 = "a8000000-0000-4000-8000-000000000027"; // no guardian
+// Schedule changes (SCL-230, approved 2026-10-13).
+const PROF = "a8000000-0000-4000-8000-000000000051";
+const PROF_GUARDIAN = "a8000000-0000-4000-8000-000000000052";
 const W1 = "a8000000-0000-4000-8000-000000000041"; // winter
 const GW1 = "a8000000-0000-4000-8000-000000000042";
 
@@ -372,6 +378,7 @@ describe.skipIf(!PG_AVAILABLE)(
         [J1, "student", TEEN, "Jamie One"],
         [J8, "student", TEEN, "Kai Eight"],
         [GJ1, "guardian", ADULT, "Gee One"],
+        [GJ8, "guardian", ADULT, "Gee Eight"],
         [J2, "student", CHILD, "Jo Two"],
         [GJ2, "guardian", ADULT, "Gee Two"],
         [J3, "student", TEEN, "Jay Three"],
@@ -384,6 +391,8 @@ describe.skipIf(!PG_AVAILABLE)(
         [GJ6, "guardian", ADULT, "Gee Six"],
         [J7, "student", TEEN, "Jules Seven"],
         [W1, "student", TEEN, "Wren Winter"],
+        [PROF, "student", TEEN, "Priya Prof"],
+        [PROF_GUARDIAN, "guardian", ADULT, "Gee Prof"],
         [GW1, "guardian", ADULT, "Gee Winter"],
       ] as const) {
         await seedPerson(id, role, dob, name);
@@ -401,6 +410,7 @@ describe.skipIf(!PG_AVAILABLE)(
         J6,
         J7,
         W1,
+        PROF,
       ])
         await entitle(s);
       await entitle(J5, "canceled");
@@ -415,7 +425,8 @@ describe.skipIf(!PG_AVAILABLE)(
       await link(GJ5, J5);
       await link(GJ6, J6, "revoked");
       await link(GW1, W1);
-      for (const s of [REC, LONE, REVOKED]) {
+      await link(PROF_GUARDIAN, PROF);
+      for (const s of [REC, LONE, REVOKED, PROF]) {
         await studyProfile(s);
         const r = await q<{ r: Record<string, unknown> }>(
           `SELECT public.calendar_persist_version($1, 'setup', 'student', 'v1', NULL) AS r`,
@@ -583,10 +594,14 @@ describe.skipIf(!PG_AVAILABLE)(
         // NON-TRIVIAL ON PURPOSE: the budget is halved underneath the plan (a fixture write, not a
         // student action), so every regeneration below really does lower planned days. Without it
         // a regeneration that changes nothing would pass this test for the wrong reason.
+        // The fixture write bypasses triggers: it is the test's setup, not a student's change
+        // (S1–S5 below prove the trigger records the real ones).
+        await pg.query(`SET session_replication_role = replica`);
         await pg.query(
           `UPDATE public.student_study_profile SET daily_minutes = 30 WHERE student_id = $1`,
           [LONE],
         );
+        await pg.query(`SET session_replication_role = DEFAULT`);
         const minutesBefore = await q<{ m: number }>(
           `SELECT public.accountability_day_minutes(
                     public.accountability_plan_snapshot($1, ARRAY[($2::date + 5)]),
@@ -653,6 +668,104 @@ describe.skipIf(!PG_AVAILABLE)(
           expect(mine).toHaveLength(1);
           expect(await messages(mine[0]?.event_id ?? "")).toEqual([]);
         }
+      });
+    });
+
+    // ── Schedule changes (SCL-230, approved by Karl 2026-10-13) ─────────────
+
+    describe("S: study days, minutes per day and practice-test frequency (before → after)", () => {
+      async function save(body: Record<string, unknown>) {
+        const { upsertStudyProfile } =
+          await import("../../server/services/calendar/profile-service");
+        const r = await upsertStudyProfile(PROF, {
+          ...body,
+          idempotency_key: randomUUID(),
+        });
+        expect(r.ok).toBe(true);
+      }
+      async function schedule(kind: string): Promise<EventRow[]> {
+        return (await events(PROF, "study_plan_changed")).filter(
+          (e) => e.payload.kind === kind,
+        );
+      }
+
+      it("S1: fewer study days records study_days 7 → 5, to the guardian in-app only", async () => {
+        await save({ study_days_mask: 62 });
+        const days = await schedule("study_days");
+        expect(
+          days.map((e) => [e.payload.before_days, e.payload.after_days]),
+        ).toEqual([[7, 5]]);
+        expect(days[0]?.payload.student_first_name).toBe("Priya");
+        // Never the mask itself.
+        expect(Object.keys(days[0]?.payload ?? {})).not.toContain(
+          "study_days_mask",
+        );
+        expect(await messages(days[0]?.event_id ?? "")).toEqual([
+          { recipient: PROF_GUARDIAN, channel: "in_app" },
+        ]);
+      });
+
+      it("S2: minutes per day 60 → 45 → 30 records each change", async () => {
+        await save({ daily_minutes: 45 });
+        await save({ daily_minutes: 30 });
+        expect(
+          (await schedule("daily_minutes")).map((e) => [
+            e.payload.before_minutes,
+            e.payload.after_minutes,
+          ]),
+        ).toEqual([
+          [60, 45],
+          [45, 30],
+        ]);
+      });
+
+      it("S3: turning practice tests on records the frequency, none → every 2 weeks on Saturdays", async () => {
+        await save({ full_length_weekday: 6, full_length_interval_weeks: 2 });
+        const f = await schedule("full_length_frequency");
+        expect(f).toHaveLength(1);
+        expect(f[0]?.payload).toMatchObject({
+          before_weekday: null,
+          before_interval_weeks: null,
+          after_weekday: 6,
+          after_interval_weeks: 2,
+        });
+      });
+
+      it("S4: a save that changes nothing on the schedule, a SAT date and a target score record nothing", async () => {
+        const before = (await events(PROF, "study_plan_changed")).length;
+        await save({ daily_minutes: 30 });
+        await save({ target_exam_dates: [await plusDays(await today(), 70)] });
+        await save({ target_score: 1450 });
+        expect((await events(PROF, "study_plan_changed")).length).toBe(before);
+      });
+
+      it("S5: the digest aggregates per kind (60 → 30) and drops a change that was changed back", async () => {
+        await save({ study_days_mask: 127 }); // 5 → 7: back where the day began
+        const runAt = await digestRunNow();
+        await q(
+          `SELECT public.guardian_daily_digest_notify($1::timestamptz, 500)`,
+          [runAt],
+        );
+        const digest = (
+          await events(PROF_GUARDIAN, "guardian_daily_digest")
+        )[0];
+        expect(digest).toBeDefined();
+        const changes =
+          guardianDailyDigestPayloadSchema.parse(digest?.payload).students[0]
+            ?.plan_changes ?? [];
+        expect(changes).toContainEqual({
+          kind: "daily_minutes",
+          before_minutes: 60,
+          after_minutes: 30,
+        });
+        expect(changes).toContainEqual({
+          kind: "full_length_frequency",
+          before_weekday: null,
+          before_interval_weeks: null,
+          after_weekday: 6,
+          after_interval_weeks: 2,
+        });
+        expect(changes.some((c) => c.kind === "study_days")).toBe(false);
       });
     });
 
@@ -797,11 +910,17 @@ describe.skipIf(!PG_AVAILABLE)(
     // ── The evening job ─────────────────────────────────────────────────────
 
     describe("J: the 18:00 Chicago job (alerts, digest, sends)", () => {
-      const sent: { to: string; subject: string; text: string }[] = [];
+      const sent: {
+        to: string;
+        subject: string;
+        text: string;
+        headers?: Record<string, string>;
+      }[] = [];
       const fakeTransport = async (input: {
         to: string;
         subject: string;
         text: string;
+        headers?: Record<string, string>;
       }) => {
         sent.push(input);
         return {
@@ -910,7 +1029,17 @@ describe.skipIf(!PG_AVAILABLE)(
           "Jamie hasn't studied for 2 planned days",
         );
         expect(toGj1[0]?.text).toContain(
-          "Kai completed 1 of 1 planned session",
+          "Kai completed 1 of 1 planned session today so far",
+        );
+        // Karl's ruling 5 (2026-10-13): RFC 8058 one-click headers on the digest.
+        expect(toGj1[0]?.headers?.["List-Unsubscribe-Post"]).toBe(
+          "List-Unsubscribe=One-Click",
+        );
+        expect(toGj1[0]?.headers?.["List-Unsubscribe"]).toMatch(
+          /^<https:\/\/lyceon\.test\/api\/public\/guardian-digest-email\/unsubscribe\?t=[^>]+>$/,
+        );
+        expect(toGj1[0]?.text).toContain(
+          "Unsubscribe from this daily summary: https://lyceon.test/api/public/guardian-digest-email/unsubscribe?t=",
         );
         // The 13+ student got their alert by email too.
         expect(sent.filter((s) => s.to === `${J1}@example.test`)).toHaveLength(
@@ -946,6 +1075,18 @@ describe.skipIf(!PG_AVAILABLE)(
           channel: "email",
         });
         expect(sent.some((s) => s.to === `${J2}@example.test`)).toBe(false);
+        // The under-13's guardian gets the same notices under the same rule: in-app now and the
+        // evening digest (the recipient rule never reads the student's age).
+        expect(j2Messages).toContainEqual({
+          recipient: GJ2,
+          channel: "in_app",
+        });
+        const gj2Digest = (await events(GJ2, "guardian_daily_digest"))[0];
+        expect(
+          guardianDailyDigestPayloadSchema.parse(gj2Digest?.payload).students[0]
+            ?.missed_plan_alert,
+        ).toEqual({ missed_days: 2 });
+        expect(sent.some((s) => s.to === `${GJ2}@example.test`)).toBe(true);
       });
 
       it("J5: no guardian, an inactive link or a lapsed entitlement → nothing to the guardian", async () => {
@@ -1013,6 +1154,123 @@ describe.skipIf(!PG_AVAILABLE)(
           c: "2026-01-14",
           d: "2026-01-15",
         });
+      });
+
+      it("U1: the digest's one-click link turns the SAME switch off (GET changes nothing; POST does)", async () => {
+        const { createPublicGuardianDigestEmailRouter } =
+          await import("../../server/routes/public-guardian-digest-email-routes");
+        const a = express();
+        a.use(express.json());
+        a.use(
+          "/api/public/guardian-digest-email",
+          createPublicGuardianDigestEmailRouter(() => makePgSupabase(pg)),
+        );
+        const header = sent.find((s) => s.to === `${GJ1}@example.test`)
+          ?.headers?.["List-Unsubscribe"];
+        const url = new URL(String(header).slice(1, -1));
+        const enabled = async (id: string) =>
+          (
+            await q<{ e: boolean }>(
+              `SELECT public.guardian_daily_digest_email_enabled($1) AS e`,
+              [id],
+            )
+          )[0]?.e;
+        expect(await enabled(GJ1)).toBe(true);
+        const page = await request(a).get(url.pathname + url.search);
+        expect(page.status).toBe(200);
+        expect(await enabled(GJ1)).toBe(true);
+        const done = await request(a).post(url.pathname + url.search);
+        expect(done.status).toBe(200);
+        expect(await enabled(GJ1)).toBe(false);
+        // The one writer wrote it, as Settings does.
+        const row = await q<{ updated_source: string }>(
+          `SELECT updated_source FROM public.notification_channel_preferences
+            WHERE profile_id = $1 AND event_type = 'guardian_daily_digest'`,
+          [GJ1],
+        );
+        expect(row[0]?.updated_source).toBe("settings");
+      });
+
+      it("U2: a tampered token, or a token for another action, is refused and changes nothing", async () => {
+        const { createPublicGuardianDigestEmailRouter } =
+          await import("../../server/routes/public-guardian-digest-email-routes");
+        const { createPublicQotdEmailRouter } =
+          await import("../../server/routes/public-qotd-email-routes");
+        const { qotdEmailLinkToken } =
+          await import("../../server/services/qotd/qotd-email-links");
+        const a = express();
+        a.use(
+          "/api/public/guardian-digest-email",
+          createPublicGuardianDigestEmailRouter(() => makePgSupabase(pg)),
+        );
+        a.use(
+          "/api/public/qotd-email",
+          createPublicQotdEmailRouter(() => makePgSupabase(pg)),
+        );
+        const digest = qotdEmailLinkToken("guardian_digest_unsubscribe", GJ8);
+        const qotd = qotdEmailLinkToken("unsubscribe", GJ8);
+        const tampered = `${digest.slice(0, -2)}AA`;
+        for (const t of [tampered, qotd, "nope"]) {
+          const res = await request(a).post(
+            `/api/public/guardian-digest-email/unsubscribe?t=${encodeURIComponent(t)}`,
+          );
+          expect(res.status).toBe(400);
+        }
+        // The digest token on the daily-question route is refused there too.
+        expect(
+          (
+            await request(a).post(
+              `/api/public/qotd-email/unsubscribe?t=${encodeURIComponent(digest)}`,
+            )
+          ).status,
+        ).toBe(400);
+        expect(
+          await count(
+            `SELECT count(*)::int AS n FROM public.notification_channel_preferences WHERE profile_id = $1`,
+            [GJ8],
+          ),
+        ).toBe(0);
+      });
+
+      it("U3: a digest queued before the guardian unsubscribed is not sent (re-read at send time)", async () => {
+        const { dispatchQueuedMessages } =
+          await import("../../server/lib/notifications/dispatch");
+        const id = randomUUID();
+        await pg.query(
+          `SELECT public.emit_notification_event($1::uuid, 'guardian_daily_digest', $2::uuid,
+                    jsonb_build_array(jsonb_build_object('profile_id', $2::text, 'channels', jsonb_build_array('email'))),
+                    $3::jsonb, NULL)`,
+          [
+            id,
+            GJ1,
+            JSON.stringify({
+              digest_date: "2026-07-15",
+              students: [
+                {
+                  student_first_name: "Jamie",
+                  completion: { planned: 1, completed: 0 },
+                  plan_changes: [],
+                  missed_plan_alert: null,
+                  back_on_track: false,
+                },
+              ],
+            }),
+          ],
+        );
+        const before = sent.length;
+        const d = await dispatchQueuedMessages({
+          eventId: id,
+          now: new Date("2026-07-15T23:00:00Z"),
+          transport: fakeTransport,
+        });
+        expect(d.selected).toBe(1);
+        expect(sent.length).toBe(before);
+        const m = await q<{ status: string; last_error: string }>(
+          `SELECT status, last_error FROM public.notification_messages WHERE event_id = $1`,
+          [id],
+        );
+        expect(m[0]?.status).toBe("failed");
+        expect(m[0]?.last_error).toContain("withdrawn");
       });
 
       it("J9: no log line carries a student's or guardian's name", () => {

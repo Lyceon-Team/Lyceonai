@@ -19,7 +19,7 @@ import {
 } from "../../../packages/shared/src/notifications-schema";
 
 const URL = `/api/guardian${GUARDIAN_DIGEST_PREFERENCE_PATH}`;
-export const GUARDIAN_DIGEST_PREFERENCE_QUERY_KEY = [URL] as const;
+const GUARDIAN_DIGEST_PREFERENCE_QUERY_KEY = [URL] as const;
 
 function parseData(body: unknown): GuardianDigestPreference {
   const data =

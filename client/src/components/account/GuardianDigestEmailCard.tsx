@@ -27,7 +27,7 @@ export function GuardianDigestEmailCard(): JSX.Element | null {
   if (preference.isError) {
     return (
       <div className={look.row} data-testid="guardian-digest-email-card">
-        <p className={look.error} role="alert">
+        <p className="text-base text-destructive" role="alert">
           We couldn&apos;t load your daily summary setting. Please try again.
         </p>
       </div>
@@ -50,18 +50,18 @@ export function GuardianDigestEmailCard(): JSX.Element | null {
           />
           <Label
             htmlFor="guardian-digest-email"
-            className="text-sm font-normal leading-5"
+            className="text-base font-normal leading-6"
           >
             Email me a summary at 6 PM Central on days there&apos;s something to
             report about my student&apos;s study plan.
           </Label>
         </div>
-        <p className={look.note}>
+        <p className="text-base text-muted-foreground">
           Plan changes, missed days and back-on-track notes still appear in your
           notifications.
         </p>
         {save.isError ? (
-          <p className={look.error} role="alert">
+          <p className="text-base text-destructive" role="alert">
             Your choice couldn&apos;t be saved. Please try again.
           </p>
         ) : null}

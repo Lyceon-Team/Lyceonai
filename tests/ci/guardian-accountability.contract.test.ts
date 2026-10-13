@@ -114,6 +114,100 @@ describe("C8.1: the payloads carry rendering parameters only", () => {
   });
 });
 
+describe("SCL-230 (approved by Karl 2026-10-13): the schedule changes", () => {
+  it("study days travel as a count, never the mask; the payload refuses the mask", () => {
+    const days = {
+      kind: "study_days",
+      student_first_name: "Amingwa",
+      before_days: 5,
+      after_days: 4,
+      digest_date: "2026-10-13",
+    };
+    expect(studyPlanChangedPayloadSchema.safeParse(days).success).toBe(true);
+    expect(
+      studyPlanChangedPayloadSchema.safeParse({ ...days, study_days_mask: 62 })
+        .success,
+    ).toBe(false);
+  });
+
+  it("the brief's line, and the minutes and frequency lines", () => {
+    expect(
+      planChangeLine("Amingwa", {
+        kind: "study_days",
+        before_days: 5,
+        after_days: 4,
+      }),
+    ).toBe("Amingwa reduced study days from 5 to 4 a week");
+    expect(
+      planChangeLine("Amingwa", {
+        kind: "study_days",
+        before_days: 4,
+        after_days: 4,
+      }),
+    ).toBe("Amingwa changed which days they study (4 a week)");
+    expect(
+      planChangeLine("Amingwa", {
+        kind: "daily_minutes",
+        before_minutes: 60,
+        after_minutes: 45,
+      }),
+    ).toBe("Amingwa reduced daily study time from 60 to 45 minutes");
+    expect(
+      planChangeLine("Amingwa", {
+        kind: "full_length_frequency",
+        before_weekday: 6,
+        before_interval_weeks: 2,
+        after_weekday: null,
+        after_interval_weeks: null,
+      }),
+    ).toBe(
+      "Amingwa changed practice tests from every 2 weeks on Saturdays to none",
+    );
+    expect(
+      planChangeLine("Amingwa", {
+        kind: "full_length_frequency",
+        before_weekday: 6,
+        before_interval_weeks: 1,
+        after_weekday: 0,
+        after_interval_weeks: 4,
+      }),
+    ).toBe(
+      "Amingwa changed practice tests from every week on Saturdays to every 4 weeks on Sundays",
+    );
+  });
+});
+
+describe("Karl's ruling 5 (2026-10-13): the digest's one-click unsubscribe", () => {
+  const payload = {
+    digest_date: "2026-10-13",
+    students: [
+      {
+        student_first_name: "Amingwa",
+        completion: { planned: 2, completed: 1 },
+        plan_changes: [],
+        missed_plan_alert: null,
+        back_on_track: false,
+      },
+    ],
+  };
+  it("carries List-Unsubscribe + List-Unsubscribe-Post and the link in the body when the dispatcher gives one", () => {
+    const link =
+      "https://lyceon.test/api/public/guardian-digest-email/unsubscribe?t=x.y";
+    const email = renderEmail("guardian_daily_digest", payload, {
+      ...ctxGuardian,
+      guardianDigestEmail: { unsubscribeUrl: link },
+    });
+    expect(email.ok).toBe(true);
+    if (!email.ok) return;
+    expect(email.value.headers).toEqual({
+      "List-Unsubscribe": `<${link}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+    expect(email.value.text).toContain(link);
+    expect(email.value.html).toContain(link);
+  });
+});
+
 describe("the lines a guardian reads", () => {
   it("plain-language sentences, the brief's examples", () => {
     expect(
@@ -150,10 +244,10 @@ describe("the lines a guardian reads", () => {
       }),
     ).toBe("Amingwa removed the practice test on Saturday 17 October");
     expect(completionLine("Amingwa", { planned: 2, completed: 1 })).toBe(
-      "Amingwa completed 1 of 2 planned sessions",
+      "Amingwa completed 1 of 2 planned sessions today so far",
     );
     expect(completionLine("Amingwa", { planned: 1, completed: 1 })).toBe(
-      "Amingwa completed 1 of 1 planned session",
+      "Amingwa completed 1 of 1 planned session today so far",
     );
   });
 
@@ -237,7 +331,7 @@ describe("the lines a guardian reads", () => {
     };
     expect(digestLines(payload.students[0]!)).toEqual([
       "Amingwa hasn't studied for 2 planned days",
-      "Amingwa completed 1 of 2 planned sessions",
+      "Amingwa completed 1 of 2 planned sessions today so far",
       "Amingwa reduced the plan for Wednesday 14 October from 45 min to 15 min",
     ]);
     const email = renderEmail("guardian_daily_digest", payload, ctxGuardian);

@@ -396,6 +396,82 @@ $$;
 
 
 --
+-- Name: accountability_record_profile_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.accountability_record_profile_change() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_digest     date := public.accountability_digest_date(now());
+  -- One source per write: the student and the transaction's own instant. Deterministic for a
+  -- replay of the same transaction; a later write is a later instant and a new event.
+  v_source     text := NEW.student_id::text || ':'
+                       || to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US');
+  v_name       text;
+  v_recipients jsonb;
+BEGIN
+  -- The first setup is not a change; neither is a write that left the schedule as it was.
+  IF OLD.setup_completed_at IS NULL THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.study_days_mask IS NOT DISTINCT FROM OLD.study_days_mask
+     AND NEW.daily_minutes IS NOT DISTINCT FROM OLD.daily_minutes
+     AND NEW.full_length_weekday IS NOT DISTINCT FROM OLD.full_length_weekday
+     AND NEW.full_length_interval_weeks IS NOT DISTINCT FROM OLD.full_length_interval_weeks THEN
+    RETURN NEW;
+  END IF;
+
+  v_name := public.accountability_student_first_name(NEW.student_id);
+  v_recipients := public.accountability_guardian_recipients(NEW.student_id);
+
+  IF NEW.study_days_mask IS DISTINCT FROM OLD.study_days_mask THEN
+    PERFORM public.emit_notification_event(
+      public.notification_event_id('study_plan_changed', v_source || ':study_days'),
+      'study_plan_changed', NEW.student_id, v_recipients,
+      jsonb_build_object(
+        'kind', 'study_days',
+        'student_first_name', v_name,
+        -- A count of days a week: SCL-230 admits the number, never the mask itself.
+        'before_days', length(replace(COALESCE(OLD.study_days_mask, 0)::integer::bit(7)::text, '0', '')),
+        'after_days',  length(replace(COALESCE(NEW.study_days_mask, 0)::integer::bit(7)::text, '0', '')),
+        'digest_date', v_digest));
+  END IF;
+
+  IF NEW.daily_minutes IS DISTINCT FROM OLD.daily_minutes THEN
+    PERFORM public.emit_notification_event(
+      public.notification_event_id('study_plan_changed', v_source || ':daily_minutes'),
+      'study_plan_changed', NEW.student_id, v_recipients,
+      jsonb_build_object(
+        'kind', 'daily_minutes',
+        'student_first_name', v_name,
+        'before_minutes', OLD.daily_minutes,
+        'after_minutes', NEW.daily_minutes,
+        'digest_date', v_digest));
+  END IF;
+
+  IF NEW.full_length_weekday IS DISTINCT FROM OLD.full_length_weekday
+     OR NEW.full_length_interval_weeks IS DISTINCT FROM OLD.full_length_interval_weeks THEN
+    PERFORM public.emit_notification_event(
+      public.notification_event_id('study_plan_changed', v_source || ':full_length_frequency'),
+      'study_plan_changed', NEW.student_id, v_recipients,
+      jsonb_build_object(
+        'kind', 'full_length_frequency',
+        'student_first_name', v_name,
+        'before_weekday', OLD.full_length_weekday,
+        'before_interval_weeks', OLD.full_length_interval_weeks,
+        'after_weekday', NEW.full_length_weekday,
+        'after_interval_weeks', NEW.full_length_interval_weeks,
+        'digest_date', v_digest));
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: accountability_student_first_name(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8702,6 +8778,40 @@ BEGIN
              AND e.subject_profile_id = v_student.id
              AND e.payload ->> 'kind' IN ('full_length_moved', 'full_length_removed')
              AND (e.payload ->> 'digest_date')::date = v_day
+          UNION ALL
+          -- Schedule changes (SCL-230): once per kind, the first "before" to the last "after";
+          -- dropped when the day ended where it began (changed and changed back).
+          SELECT CASE y.kind
+                   WHEN 'study_days' THEN jsonb_build_object(
+                     'kind', 'study_days',
+                     'before_days', y.first_p -> 'before_days',
+                     'after_days', y.last_p -> 'after_days')
+                   WHEN 'daily_minutes' THEN jsonb_build_object(
+                     'kind', 'daily_minutes',
+                     'before_minutes', y.first_p -> 'before_minutes',
+                     'after_minutes', y.last_p -> 'after_minutes')
+                   ELSE jsonb_build_object(
+                     'kind', 'full_length_frequency',
+                     'before_weekday', y.first_p -> 'before_weekday',
+                     'before_interval_weeks', y.first_p -> 'before_interval_weeks',
+                     'after_weekday', y.last_p -> 'after_weekday',
+                     'after_interval_weeks', y.last_p -> 'after_interval_weeks') END,
+                 v_day, -1, y.first_at
+            FROM (SELECT e.payload ->> 'kind' AS kind,
+                         (array_agg(e.payload ORDER BY e.created_at, e.event_id))[1] AS first_p,
+                         (array_agg(e.payload ORDER BY e.created_at DESC, e.event_id DESC))[1] AS last_p,
+                         min(e.created_at) AS first_at
+                    FROM public.notification_events e
+                   WHERE e.event_type = 'study_plan_changed'
+                     AND e.subject_profile_id = v_student.id
+                     AND e.payload ->> 'kind' IN ('study_days', 'daily_minutes', 'full_length_frequency')
+                     AND (e.payload ->> 'digest_date')::date = v_day
+                   GROUP BY 1) y
+           WHERE NOT CASE y.kind
+                   WHEN 'study_days' THEN (y.first_p -> 'before_days') = (y.last_p -> 'after_days')
+                   WHEN 'daily_minutes' THEN (y.first_p -> 'before_minutes') = (y.last_p -> 'after_minutes')
+                   ELSE (y.first_p -> 'before_weekday') = (y.last_p -> 'after_weekday')
+                        AND (y.first_p -> 'before_interval_weeks') = (y.last_p -> 'after_interval_weeks') END
         ) c;
 
       SELECT jsonb_build_object('missed_days', (e.payload ->> 'missed_days')::integer)
@@ -20720,6 +20830,13 @@ CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.rev
 
 
 --
+-- Name: student_study_profile student_study_profile_accountability; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER student_study_profile_accountability AFTER UPDATE ON public.student_study_profile FOR EACH ROW EXECUTE FUNCTION public.accountability_record_profile_change();
+
+
+--
 -- Name: student_study_profile study_profile_exam_dates_sync; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -23752,6 +23869,13 @@ GRANT ALL ON FUNCTION public.accountability_record_day_outcomes(p_student_id uui
 
 REVOKE ALL ON FUNCTION public.accountability_record_plan_change(p_student_id uuid, p_version_id uuid, p_before jsonb, p_after jsonb, p_engine_planning jsonb) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.accountability_record_plan_change(p_student_id uuid, p_version_id uuid, p_before jsonb, p_after jsonb, p_engine_planning jsonb) TO service_role;
+
+
+--
+-- Name: FUNCTION accountability_record_profile_change(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.accountability_record_profile_change() FROM PUBLIC;
 
 
 --

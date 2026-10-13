@@ -51,18 +51,54 @@ export function accountabilityFirstName(raw: string): string {
   return word;
 }
 
+const WEEKDAY_PLURAL = [
+  "Sundays",
+  "Mondays",
+  "Tuesdays",
+  "Wednesdays",
+  "Thursdays",
+  "Fridays",
+  "Saturdays",
+] as const;
+
+/** "every 2 weeks on Saturdays", "every week on Sundays", or "none" when practice tests are off. */
+export function practiceTestCadence(
+  weekday: number | null,
+  intervalWeeks: number | null,
+): string {
+  if (intervalWeeks === null) return "none";
+  const every =
+    intervalWeeks === 1 ? "every week" : `every ${intervalWeeks} weeks`;
+  const day = weekday === null ? undefined : WEEKDAY_PLURAL[weekday];
+  return day === undefined ? every : `${every} on ${day}`;
+}
+
+function moreOrLess(before: number, after: number): "reduced" | "increased" {
+  return after < before ? "reduced" : "increased";
+}
+
 /** One plan change as a sentence, the same in the bell and in the digest. */
 export function planChangeLine(name: string, change: DigestPlanChange): string {
-  const day = renderNoticeDate(change.plan_date);
   switch (change.kind) {
-    case "day_reduced":
+    case "day_reduced": {
+      const day = renderNoticeDate(change.plan_date);
       return change.after_minutes === 0
         ? `${name} cleared the plan for ${day} (${change.before_minutes} min)`
         : `${name} reduced the plan for ${day} from ${change.before_minutes} min to ${change.after_minutes} min`;
+    }
     case "full_length_removed":
-      return `${name} removed the practice test on ${day}`;
+      return `${name} removed the practice test on ${renderNoticeDate(change.plan_date)}`;
     case "full_length_moved":
-      return `${name} moved the practice test from ${day} to ${renderNoticeDate(change.to_date)}`;
+      return `${name} moved the practice test from ${renderNoticeDate(change.plan_date)} to ${renderNoticeDate(change.to_date)}`;
+    // SCL-230 (approved by Karl 2026-10-13): the schedule itself, before → after.
+    case "study_days":
+      return change.after_days === change.before_days
+        ? `${name} changed which days they study (${change.after_days} a week)`
+        : `${name} ${moreOrLess(change.before_days, change.after_days)} study days from ${change.before_days} to ${change.after_days} a week`;
+    case "daily_minutes":
+      return `${name} ${moreOrLess(change.before_minutes, change.after_minutes)} daily study time from ${change.before_minutes} to ${change.after_minutes} minutes`;
+    case "full_length_frequency":
+      return `${name} changed practice tests from ${practiceTestCadence(change.before_weekday, change.before_interval_weeks)} to ${practiceTestCadence(change.after_weekday, change.after_interval_weeks)}`;
   }
 }
 
@@ -79,7 +115,9 @@ export function completionLine(
   completion: { planned: number; completed: number },
 ): string {
   const noun = completion.planned === 1 ? "session" : "sessions";
-  return `${name} completed ${completion.completed} of ${completion.planned} planned ${noun}`;
+  // Karl's ruling 6 on #1223 (2026-10-13): "today so far" — at 18:00 Chicago the day may still be
+  // running (and is, for a student west of Chicago).
+  return `${name} completed ${completion.completed} of ${completion.planned} planned ${noun} today so far`;
 }
 
 function toDigestChange(payload: StudyPlanChangedPayload): DigestPlanChange {
@@ -98,6 +136,26 @@ function toDigestChange(payload: StudyPlanChangedPayload): DigestPlanChange {
         kind: "full_length_moved",
         plan_date: payload.plan_date,
         to_date: payload.to_date,
+      };
+    case "study_days":
+      return {
+        kind: "study_days",
+        before_days: payload.before_days,
+        after_days: payload.after_days,
+      };
+    case "daily_minutes":
+      return {
+        kind: "daily_minutes",
+        before_minutes: payload.before_minutes,
+        after_minutes: payload.after_minutes,
+      };
+    case "full_length_frequency":
+      return {
+        kind: "full_length_frequency",
+        before_weekday: payload.before_weekday,
+        before_interval_weeks: payload.before_interval_weeks,
+        after_weekday: payload.after_weekday,
+        after_interval_weeks: payload.after_interval_weeks,
       };
   }
 }
@@ -290,6 +348,7 @@ export function guardianDailyDigestEmail(
     lines: digestLines(s),
   }));
   const multi = sections.length > 1;
+  const unsubscribeUrl = ctx.guardianDigestEmail?.unsubscribeUrl ?? null;
   const text = [
     `Today, ${renderNoticeDate(payload.digest_date)}:`,
     "",
@@ -302,6 +361,9 @@ export function guardianDailyDigestEmail(
     "",
     GUARDIAN_FOOTER,
     textLink(ctx, GUARDIAN_SETTINGS, "Settings"),
+    unsubscribeUrl === null
+      ? ""
+      : `Unsubscribe from this daily summary: ${unsubscribeUrl}`,
   ]
     .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
     .join("\n");
@@ -315,7 +377,23 @@ export function guardianDailyDigestEmail(
       ),
       link(ctx, GUARDIAN_HOME, "Open Lyceon"),
     ],
-    GUARDIAN_FOOTER,
+    unsubscribeUrl === null
+      ? GUARDIAN_FOOTER
+      : `${GUARDIAN_FOOTER} <a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from this daily summary</a>.`,
   );
-  return { subject: digestSubject(payload), text, html };
+  // Karl's ruling 5 on #1223 (2026-10-13): RFC 8058 one-click, the QOTD email's pattern. The link
+  // is built by the dispatcher at send time (guardian-digest-send-context.ts), never stored.
+  const headers: Record<string, string> | undefined =
+    unsubscribeUrl === null
+      ? undefined
+      : {
+          "List-Unsubscribe": `<${unsubscribeUrl}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        };
+  return {
+    subject: digestSubject(payload),
+    text,
+    html,
+    ...(headers === undefined ? {} : { headers }),
+  };
 }

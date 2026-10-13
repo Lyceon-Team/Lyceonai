@@ -43,7 +43,7 @@ export async function readStudentGuardianLinks(
   return studentGuardianLinksViewSchema.parse(payload?.data).links;
 }
 
-export function useStudentGuardianLinks(studentId: string | null) {
+function useStudentGuardianLinks(studentId: string | null) {
   return useQuery({
     queryKey: studentGuardianLinksQueryKey(studentId ?? ""),
     queryFn: () => readStudentGuardianLinks(studentId ?? ""),

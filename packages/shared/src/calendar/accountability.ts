@@ -19,11 +19,11 @@
  * ended), `upcoming`. The SQL rule (`accountability_record_day_outcomes`) owns the run, the
  * alert and the back-on-track transitions; this only says what each day was.
  *
- * WHERE THIS DIFFERS FROM THE BRIEF'S WORDING, AND WHY. The brief says "missed if … none were
- * COMPLETED". §14 and owner ruling B5 say a day with partial progress is `partial`, never
+ * WHERE THIS DIFFERS FROM THE BRIEF'S WORDING, AND THE RULING. The brief says "missed if … none
+ * were COMPLETED". §14 and owner ruling B5 say a day with partial progress is `partial`, never
  * `missed` ("a student who did 12 of 20 did not miss the day"), and the calendar both parties
- * look at renders exactly that. Using §14 keeps the alert true to the grid; the difference is a
- * partial-only day, which this counts as work. Raised for Karl in the PR (open question 2).
+ * look at renders exactly that. RULED by Karl on #1223, 2026-10-13 (ruling 2): "Missed day stays
+ * as built: partial progress is not missed." A partial-only day counts as work.
  *
  * `completion` is the digest day's plan as the digest states it ("completed 1 of 2 planned
  * sessions"): blocks on that date, and blocks whose §13 status is `completed`.

@@ -668,6 +668,7 @@ export function CalendarView({
           onClose={() => setSettingsOpen(false)}
           pending={schedule.pending}
           error={schedule.error}
+          guardianNotice={guardianNotice}
           replanOffer={
             schedule.offerReplan
               ? {
