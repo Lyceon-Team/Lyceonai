@@ -234,10 +234,11 @@ const ALLOWED_EXACT: ReadonlySet<string> = new Set([
   "GET /api/billing/status",
   "GET /api/billing/plans",
   "GET /api/billing/publishable-key",
-  // Owner ruling 2026-10-12 (Karl, on #1211), a separate approval from the 2026-09-29 set: "any
-  // signed-in account (including one whose role isn't saved yet) can read latest_test_date …
-  // It carries no student data". One configuration-derived date for the caller's own account,
-  // and onboarding reads it before a date of birth is saved, so it is outside this gate.
+  // APPROVED by the owner (Karl, 2026-10-13) as its own entry beside the 2026-09-29 set, citing
+  // his ruling of 2026-10-12 on #1211 ("any signed-in account (including one whose role isn't
+  // saved yet) can read latest_test_date … It carries no student data"). Grounds: it returns
+  // only latest_test_date, no student or learning data, and must be reachable during onboarding
+  // before a date of birth exists. Recorded in SCL-187 and Guardian_Closure_Plan row G2-04.
   "GET /api/sat-dates/bound",
   // Not in the approval by name: answers 409 ACCOUNT_SELECTION_DISABLED to every caller and
   // reads and writes nothing (server/routes/account-routes.ts). Listed so it is visible here.
