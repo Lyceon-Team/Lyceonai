@@ -17,8 +17,8 @@
  *     answers it 403;
  *   - once that account is a student, the served date saves through the real PUT and the day
  *     after it is refused, so a date past the bound can never be stored;
- *   - an account with a stored zone a day ahead of Chicago gets a bound a day ahead, as the
- *     write does;
+ *   - an account whose stored zone is on a different calendar day from Chicago gets that zone's
+ *     bound, not Chicago's, as the write does;
  *   - the body is the date and the correlation id only, even for a student whose profile
  *     carries dates and a score.
  *
@@ -239,7 +239,14 @@ describe.skipIf(!PG_AVAILABLE)(
 
     it("an account with a stored zone gets that zone's bound, as the write uses it", async () => {
       await setStoredRole("student");
-      const zone = "Pacific/Kiritimati"; // UTC+14: a day ahead of Chicago at every hour
+      // A zone whose local date differs from Chicago's RIGHT NOW, so the bound can only match if
+      // the stored zone is used. Kiritimati (UTC+14) is a day ahead of Chicago except between
+      // 05:00 and 10:00 UTC; Pago Pago (UTC-11) is a day behind exactly then. One always differs.
+      const zone =
+        localToday("Pacific/Kiritimati") !== localToday("America/Chicago")
+          ? "Pacific/Kiritimati"
+          : "Pacific/Pago_Pago";
+      expect(localToday(zone)).not.toBe(localToday("America/Chicago"));
       const put = await request(app)
         .put("/api/calendar/profile")
         .send(setupBody(zone));
@@ -251,10 +258,10 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(latest).toBe(
         addDaysToLocalDate(localToday(zone), await maxDays()),
       );
-      expect(
-        latest >
-          addDaysToLocalDate(localToday("America/Chicago"), await maxDays()),
-      ).toBe(true);
+      // Not the fallback zone's bound.
+      expect(latest).not.toBe(
+        addDaysToLocalDate(localToday("America/Chicago"), await maxDays()),
+      );
 
       expect(
         (
