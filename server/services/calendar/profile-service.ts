@@ -266,16 +266,25 @@ const REQUIRED_FOR_SETUP = ["study_days_mask", "daily_minutes"] as const;
  * @spec [SCL-223; owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) Part A2:
  *       "Saving dates alone must not mark calendar setup complete or require study
  *       days/minutes"] | @implemented [2026-10-09]
- * A body that carries only SAT dates (and, optionally, the device zone). Onboarding and
- * Settings send these; they may create the row, and never complete setup.
+ * @spec [owner brief "Student dashboard — Getting started checklist + onboarding update"
+ *       (final brief v2, Karl, 2026-10-13) §1, and ruling 1 of 2026-10-13: "Settings → Profile
+ *       shows the target score field to every student (not only after calendar setup), saving
+ *       through the existing study-profile write"] | @implemented [2026-10-13]
+ * A GOAL-only body: SAT dates and/or the target score (and, optionally, the device zone).
+ * Onboarding and Settings send these before the student has opened the calendar; they may
+ * create the row, and never complete setup. The target score joined the dates on 2026-10-13:
+ * before it, a score saved from onboarding or Settings was read as calendar setup and refused
+ * as `incomplete` for want of study days and minutes.
  */
-function isDatesOnly(update: StudyProfileUpsert): boolean {
+const GOAL_FIELDS: ReadonlySet<string> = new Set([
+  "target_exam_dates",
+  "target_exam_date",
+  "target_score",
+]);
+function isGoalOnly(update: StudyProfileUpsert): boolean {
   const { idempotency_key: _key, timezone: _tz, ...fields } = update;
   const named = Object.entries(fields).filter(([, v]) => v !== undefined);
-  return (
-    named.length > 0 &&
-    named.every(([k]) => k === "target_exam_dates" || k === "target_exam_date")
-  );
+  return named.length > 0 && named.every(([k]) => GOAL_FIELDS.has(k));
 }
 
 /**
@@ -309,10 +318,10 @@ export async function upsertStudyProfile(
   }
   const update: StudyProfileUpsert = parsed.data;
 
-  // A write that is not dates-only is calendar setup (or an edit after it), so the schedule
+  // A write that is not goal-only is calendar setup (or an edit after it), so the schedule
   // must be present once it lands: sent now, or already stored.
-  const datesOnly = isDatesOnly(update);
-  if (!datesOnly) {
+  const goalOnly = isGoalOnly(update);
+  if (!goalOnly) {
     const missing = REQUIRED_FOR_SETUP.filter(
       (field) =>
         update[field] === undefined && (existing?.[field] ?? null) === null,
@@ -385,9 +394,18 @@ export async function upsertStudyProfile(
   // read answers `setup_required` and serves `defaults` instead. So the first write is
   // always setup finishing, whatever it did or did not carry.
   //
-  // SCL-223: except a dates-only write. Onboarding and Settings save SAT dates before the
-  // student has opened the calendar; that row exists, and setup is still outstanding.
-  const completesSetup = !datesOnly && existing?.setup_completed_at == null;
+  // SCL-223: except a goal-only write (SAT dates and/or target score, 2026-10-13). Onboarding
+  // and Settings save these before the student has opened the calendar; that row exists, and
+  // setup is still outstanding. ONE EXCEPTION, kept from before 2026-10-13: a target score
+  // saved onto a row whose schedule is already stored but was never stamped (a student who
+  // pressed through setup without answering, before SCL-130) finishes setup, as it always did.
+  // SAT dates alone never do.
+  const scheduleStored = REQUIRED_FOR_SETUP.every(
+    (field) => (existing?.[field] ?? null) !== null,
+  );
+  const completesSetup =
+    existing?.setup_completed_at == null &&
+    (!goalOnly || (scheduleStored && update.target_score !== undefined));
   if (completesSetup) row.setup_completed_at = new Date().toISOString();
 
   /**

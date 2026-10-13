@@ -70,6 +70,7 @@ import { getQueryFn } from "@/lib/queryClient";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
 import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { getPracticeTopics } from "../../../server/routes/practice-topics-routes";
+import type { EstimateResponse } from "@/lib/projectionApi";
 import Practice from "./practice";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
@@ -369,7 +370,42 @@ type Scenario = {
   open?: boolean;
   max?: number;
   start?: "ok" | "402" | "422";
+  /** GET /api/progress/projection's status; unanswered (as before) when absent. */
+  estimateStatus?: "no_baseline" | "baseline_only";
 };
+
+/** GET /api/progress/projection, the two arms the blind-spots row turns on. */
+function projectionBody(
+  status: "no_baseline" | "baseline_only",
+): EstimateResponse {
+  const base = {
+    totalQuestionsAttempted: 0,
+    lastUpdated: "2026-10-01T12:00:00.000Z",
+    entitlement: {
+      hasPaidAccess: false,
+      plan: "free" as const,
+      status: "none" as const,
+      reason: "none" as const,
+      currentPeriodEnd: null,
+    },
+  };
+  return status === "no_baseline"
+    ? { ...base, estimateStatus: "no_baseline", estimate: null, baseline: null }
+    : {
+        ...base,
+        estimateStatus: "baseline_only",
+        estimate: null,
+        baseline: {
+          composite: 1050,
+          math: 530,
+          rw: 520,
+          range: { low: 990, high: 1110 },
+          confidenceBand: "Low",
+          capturedAt: "2026-09-20T12:00:00.000Z",
+        },
+        cta: true,
+      };
+}
 
 function install(s: Scenario): void {
   net.handlers = [
@@ -383,6 +419,10 @@ function install(s: Scenario): void {
         return json(openSessions(s.open ?? false, s.max ?? 5));
       if (path === "/api/review/pool") return json(POOL);
       if (path === "/api/practice/quota") return json(quota(s.quota ?? 12));
+      if (path === "/api/progress/projection" && s.estimateStatus !== undefined)
+        return json(projectionBody(s.estimateStatus));
+      if (method === "POST" && path === "/api/practice/diagnostic/sessions")
+        return json({ sessionId: NEW_SESSION }, 201);
       if (method === "POST" && path === "/api/practice/sessions") {
         if (s.start === "402") return json(QUOTA_402, 402);
         if (s.start === "422") return json(POOL_EMPTY_422, 422);
@@ -893,5 +933,39 @@ describe("QA item 5: Practice's Start shows a pending state from the first click
       expect(history.at(-1)).toBe(`/practice/session/${NEW_SESSION}`),
     );
     expect(startBodies()).toHaveLength(1);
+  });
+});
+
+describe("Find your blind spots row (final brief v2 §6, Karl, 2026-10-13)", () => {
+  it("before the diagnostic: a compact row below the filters card, with the subtitle, that starts it", async () => {
+    const { history } = await mount("free", { estimateStatus: "no_baseline" });
+    const row = await screen.findByTestId("practice-blind-spots");
+    expect(within(row).getByText("Find your blind spots")).toBeTruthy();
+    expect(
+      within(row).getByText(/^\d+ questions · about 40 minutes$/),
+    ).toBeTruthy();
+    // Below the filters card, above "Your session".
+    const filters = screen.getByTestId("filter-bar");
+    const session = screen.getByTestId("practice-session");
+    expect(
+      filters.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      row.compareDocumentPosition(session) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(within(row).getByTestId("practice-blind-spots-start"));
+    await waitFor(() =>
+      expect(history[history.length - 1]).toBe(
+        `/practice/session/${NEW_SESSION}`,
+      ),
+    );
+  });
+
+  it("after the diagnostic: no row", async () => {
+    await mount("free", { estimateStatus: "baseline_only" });
+    await waitFor(() => expect(gets()).toContain("/api/progress/projection"));
+    // Presence first: the page itself is drawn.
+    expect(screen.getByTestId("practice-session")).toBeTruthy();
+    expect(screen.queryByTestId("practice-blind-spots")).toBeNull();
   });
 });

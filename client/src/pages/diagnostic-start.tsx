@@ -3,6 +3,7 @@ import { Redirect, useLocation } from "wouter";
 import { FullPageLoader } from "@/components/student-ui/FullPageLoader";
 import { Notice } from "@/components/student-ui/Notice";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 
 /**
  * @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 3; Doc-05C §7.4 (the
@@ -54,7 +55,7 @@ export default function DiagnosticStart() {
   return (
     <FullPageLoader
       fill="region"
-      label="Starting your diagnostic..."
+      label={`Starting ${BLIND_SPOTS_NAME}...`}
       data-testid="diagnostic-start-loading"
     />
   );

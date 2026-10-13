@@ -551,6 +551,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/home-qotd.mutations.sh
 
+      # Owner brief "Getting started checklist + onboarding update" (final brief v2, Karl,
+      # 2026-10-13): every rule (step data, "Not sure yet", sticky, plan and eligibility, dismiss,
+      # students only, Home order, Practice row, onboarding and Settings score, the rename) is
+      # planted and must turn its named test red.
+      - name: Getting started checklist mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/getting-started.mutations.sh
+
       # QOTD resilience (Karl, 2026-10-09): every alert rule (horizon < 7, once per condition per
       # day, one recovery, the independent check, channel independence, one unset-webhook warning),
       # the no-question skip, the summary line, no address in logs, and both collapsed cards are

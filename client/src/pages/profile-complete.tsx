@@ -39,6 +39,11 @@ import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
+import { TargetScorePicker } from "@/components/sat-dates/TargetScorePicker";
+import {
+  invalidateGettingStarted,
+  recordGettingStartedNotSure,
+} from "@/hooks/useGettingStarted";
 import {
   calendarKeys,
   newIntent,
@@ -125,6 +130,7 @@ export default function ProfileComplete() {
   const [satDates, setSatDates] = useState<SatDateChoice>({
     dates: [],
   });
+  const [targetScore, setTargetScore] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -195,20 +201,38 @@ export default function ProfileComplete() {
       });
 
       const completed = (await response.json()) as ProfileCompletionResponse;
-      if (satDatesAsked && satDates.dates.length > 0) {
+      // @spec [owner brief "Getting started checklist + onboarding update" (final brief v2,
+      // Karl, 2026-10-13) §1] | @implemented [2026-10-13] | plain English: the SAT question
+      // also asks for the target score. Both go through the one study-profile write as a
+      // goal-only save (never calendar setup); a "Not sure yet" for either is recorded for the
+      // Getting started checklist, so a new student arrives on Home with step 1 ticked.
+      if (satDatesAsked) {
+        const goal: { target_exam_dates?: string[]; target_score?: number } =
+          {};
+        if (satDates.dates.length > 0) goal.target_exam_dates = satDates.dates;
+        if (targetScore !== null) goal.target_score = targetScore;
         try {
-          await putStudyProfile(
-            newIntent({ target_exam_dates: satDates.dates }),
-          );
-          await queryClient.invalidateQueries({
-            queryKey: calendarKeys.profile(),
-          });
+          if (Object.keys(goal).length > 0) {
+            await putStudyProfile(newIntent(goal));
+            await queryClient.invalidateQueries({
+              queryKey: calendarKeys.profile(),
+            });
+          }
+          const notSureDate = satDates.dates.length === 0;
+          const notSureScore = targetScore === null;
+          if (notSureDate || notSureScore) {
+            await recordGettingStartedNotSure({
+              ...(notSureDate ? { test_date: true } : {}),
+              ...(notSureScore ? { target_score: true } : {}),
+            });
+          }
+          await invalidateGettingStarted(queryClient);
         } catch {
-          // The profile is complete; the dates are a second, separate save. Tell the student
-          // it failed and let them carry on — Settings has the same picker.
+          // The profile is complete; the date and score are a second, separate save. Tell the
+          // student it failed and let them carry on — Settings has the same pickers.
           toast({
-            title: "We couldn't save your SAT date",
-            description: "You can add it any time in Settings.",
+            title: "We couldn't save your SAT date and score",
+            description: "You can add them any time in Settings.",
           });
         }
       }
@@ -443,6 +467,15 @@ export default function ProfileComplete() {
               value={satDates}
               onChange={setSatDates}
               data-testid="onboarding-sat-dates"
+            />
+          )}
+
+          {satDatesAsked && (
+            <TargetScorePicker
+              value={targetScore}
+              onChange={setTargetScore}
+              help="You can change this any time in Settings."
+              data-testid="onboarding-target-score"
             />
           )}
 

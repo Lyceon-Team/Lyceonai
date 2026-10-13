@@ -191,7 +191,7 @@ export const UI_41: PageGroup = {
     {
       id: "app-upgrade-modal-fulllength-free",
       title:
-        "Upgrade modal opened from the locked Full-Length entry (390: Home's full-length card; desktop: the rail), free, on /dashboard",
+        "Upgrade modal opened from the locked Full-Length entry (the rail; desktop only since Home's full-length card was removed, final brief v2 §4), free, on /dashboard",
       persona: "free",
       route: "/dashboard",
       sessionStorage: DIAGNOSTIC_PROMPT_DISMISSED,
@@ -203,7 +203,9 @@ export const UI_41: PageGroup = {
         {
           click: {
             desktop: '[data-testid="rail-full-length"]',
-            mobile: '[data-testid="home-full-length-start"]',
+            // Final brief v2 §4 (Karl, 2026-10-13): Home's full-length card is gone, and it was
+            // this shot's only phone entry (Full-Length is on neither phone surface).
+            mobile: null,
           },
         },
       ],

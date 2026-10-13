@@ -33,6 +33,7 @@
 
 import { displayFormName } from "@lyceon/shared/exam-form-display";
 import { formatDate } from "@/lib/format-date";
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 
 /** `YYYY-MM-DD` in the given IANA zone. `en-CA` is the locale that formats that way. */
 export function localDateKey(date: Date, timeZone: string | null): string {
@@ -132,7 +133,7 @@ export function sourceFiltersLine(
   filters: unknown,
   engine?: string,
 ): string {
-  if (mode === "diagnostic") return "Diagnostic";
+  if (mode === "diagnostic") return BLIND_SPOTS_NAME;
 
   const bag: Record<string, unknown> =
     filters !== null && typeof filters === "object" && !Array.isArray(filters)

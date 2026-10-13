@@ -32,17 +32,17 @@
  */
 import { useId, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
-import { TARGET_SCORE_BOUNDS } from "@lyceon/shared/calendar/profile";
-import {
-  completedStudyProfile,
-  type StudyProfile,
-} from "@lyceon/shared/calendar/profile";
+import { type StudyProfile } from "@lyceon/shared/calendar/profile";
 import { chicagoToday } from "@shared/sat-test-dates";
 import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
+import { TargetScorePicker } from "@/components/sat-dates/TargetScorePicker";
+import {
+  invalidateGettingStarted,
+  recordGettingStartedNotSure,
+} from "@/hooks/useGettingStarted";
 import { Notice } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -61,8 +61,6 @@ import {
   FIELD_LABEL,
   SectionHeading,
 } from "./settings-ui";
-
-const CALENDAR_PATH = "/calendar";
 
 export function ProfileSection({ name }: { name: string }): JSX.Element {
   const studyProfile = useStudyProfile();
@@ -113,13 +111,10 @@ function ProfileForm({
   const [dates, setDates] = useState<SatDateChoice>({
     dates: savedDates,
   });
-  // The target score is a calendar-setup answer (OQ-20); the SAT dates are not (SCL-223).
-  const setupDone = completedStudyProfile(goal) !== null;
-  const [score, setScore] = useState(
-    goal?.target_score === null || goal?.target_score === undefined
-      ? ""
-      : String(goal.target_score),
-  );
+  // Ruling 1 (Karl, 2026-10-13): the target score is shown to every student, not only after
+  // calendar setup; it saves with the dates as a goal-only write (never calendar setup).
+  const savedScore = goal?.target_score ?? null;
+  const [score, setScore] = useState<number | null>(savedScore);
   const [saved, setSaved] = useState(false);
 
   const nameSave = useMutation({ mutationFn: saveProfileName });
@@ -131,20 +126,33 @@ function ProfileForm({
   if (dates.dates.join(",") !== savedDates.join(",")) {
     goalChange.target_exam_dates = dates.dates;
   }
-  if (goal !== null && setupDone) {
-    const nextScore = score === "" ? null : Number(score);
-    if (nextScore !== goal.target_score) goalChange.target_score = nextScore;
-  }
+  if (score !== savedScore) goalChange.target_score = score;
   const goalChanged = Object.keys(goalChange).length > 0;
   const pending = nameSave.isPending || goalSave.isPending;
   const error = nameSave.error ?? goalSave.error;
 
+  // "Not sure yet" for either is recorded for the Getting started checklist (final brief v2
+  // §1); the checklist is refreshed after any goal save, since the server decides what is done.
+  async function afterGoalSaved(): Promise<void> {
+    const notSureDate = dates.dates.length === 0;
+    const notSureScore = score === null;
+    if (notSureDate || notSureScore) {
+      await recordGettingStartedNotSure({
+        ...(notSureDate ? { test_date: true } : {}),
+        ...(notSureScore ? { target_score: true } : {}),
+      });
+    }
+    await invalidateGettingStarted(queryClient);
+    setSaved(true);
+  }
   function saveGoal(): void {
     if (!goalChanged) {
-      setSaved(true);
+      void afterGoalSaved();
       return;
     }
-    goalSave.mutate(newIntent(goalChange), { onSuccess: () => setSaved(true) });
+    goalSave.mutate(newIntent(goalChange), {
+      onSuccess: () => void afterGoalSaved(),
+    });
   }
 
   function save(): void {
@@ -207,46 +215,21 @@ function ProfileForm({
         </p>
       </div>
 
-      {setupDone ? (
-        <div
-          className="flex flex-col gap-3"
-          data-testid="settings-target-block"
-        >
-          <label className={FIELD_LABEL}>
-            Target score
-            <input
-              type="number"
-              inputMode="numeric"
-              min={TARGET_SCORE_BOUNDS.min}
-              max={TARGET_SCORE_BOUNDS.max}
-              step={TARGET_SCORE_BOUNDS.step}
-              value={score}
-              onChange={(event) => {
-                setSaved(false);
-                setScore(event.target.value);
-              }}
-              className={FIELD_INPUT}
-              data-testid="settings-target"
-            />
-          </label>
-          <p className={FIELD_HELP}>
-            Your study calendar uses the same test date and target, so changing
-            them here updates your plan.
-          </p>
-        </div>
-      ) : (
-        <p
-          className="m-0 text-lyc-body text-lyc-ink"
-          data-testid="settings-goal-setup"
-        >
-          <Link
-            href={CALENDAR_PATH}
-            className="font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline"
-          >
-            Set up your study calendar
-          </Link>
+      <div className="flex flex-col gap-3" data-testid="settings-target-block">
+        <TargetScorePicker
+          legend="Target score"
+          value={score}
+          onChange={(next) => {
+            setSaved(false);
+            setScore(next);
+          }}
+          data-testid="settings-target"
+        />
+        <p className={FIELD_HELP}>
+          Your study calendar uses the same test date and target, so changing
+          them here updates your plan.
         </p>
-      )}
+      </div>
 
       {error ? (
         <p

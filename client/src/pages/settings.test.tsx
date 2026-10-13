@@ -75,6 +75,7 @@ import {
 } from "@/hooks/useProfileQuery";
 import { practiceQuotaSchema } from "@lyceon/shared/practice-quota";
 import { PLAN_PAID_ADDS, planFreeIncludes } from "@/lib/plan-copy";
+import { deriveGettingStarted } from "@lyceon/shared/getting-started-schema";
 import { getQueryFn } from "@/lib/queryClient";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
@@ -293,6 +294,24 @@ type Serve = {
   }[];
 };
 
+/** The checklist as the server answers it, built by the real derivation (never hand-written). */
+const GETTING_STARTED_AFTER_NOT_SURE = deriveGettingStarted(
+  {
+    email_eligible: true,
+    test_date_done: true,
+    qotd_done: false,
+    email_done: false,
+    email_skipped: false,
+    blind_spots_done: false,
+    review_done: false,
+    calendar_done: false,
+    lisa_done: false,
+    guardian_done: false,
+    dismissed: false,
+  },
+  { plan: "free", lisaAvailable: true },
+);
+
 function serve(opts: Serve): void {
   net.answer = (method, url, body) => {
     const path = url.split("?")[0];
@@ -318,6 +337,9 @@ function serve(opts: Serve): void {
         }),
         requestId: "r",
       });
+    }
+    if (path === "/api/home/getting-started/not-sure" && method === "POST") {
+      return json({ data: GETTING_STARTED_AFTER_NOT_SURE });
     }
     if (path === "/api/profile/name" && method === "PATCH") {
       const name = (body as { displayName: string }).displayName;
@@ -487,16 +509,20 @@ describe("the section lives in the URL (?tab=)", () => {
 // ── Profile ────────────────────────────────────────────────────────────────────────────────
 
 describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
-  it("with no calendar profile: 'Set up your study calendar' links to the calendar, no goal fields", async () => {
+  it("ruling 1 (2026-10-13): with no calendar profile the target score still shows, 'Not sure yet' first, 1600 down to 400", async () => {
     serve({ calendarProfile: false });
     await mount({});
-    const setup = await screen.findByTestId("settings-goal-setup");
-    const link = within(setup).getByRole("link", {
-      name: "Set up your study calendar",
-    });
-    expect(link.getAttribute("href")).toBe("/calendar");
-    expect(screen.queryByTestId("settings-test-date")).toBeNull();
-    expect(screen.queryByTestId("settings-target")).toBeNull();
+    const select = (await screen.findByTestId(
+      "settings-target-select",
+    )) as HTMLSelectElement;
+    expect(select.value).toBe("");
+    const options = [...select.options].map((o) => o.textContent);
+    expect(options[0]).toBe("Not sure yet");
+    expect(options[1]).toBe("1600");
+    expect(options[options.length - 1]).toBe("400");
+    expect(options).toHaveLength(1 + 121);
+    // The old "set up your calendar first" link is gone.
+    expect(screen.queryByTestId("settings-goal-setup")).toBeNull();
     expect(calls("GET", "/api/calendar/profile")).toHaveLength(1);
   });
 
@@ -517,7 +543,9 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
     expect(offered).not.toContain("2027-08-28");
     closeSatDates("settings-test-dates");
-    const target = screen.getByTestId("settings-target") as HTMLInputElement;
+    const target = screen.getByTestId(
+      "settings-target-select",
+    ) as HTMLSelectElement;
     expect(target.value).toBe("1400");
     expect(screen.queryByTestId("settings-goal-setup")).toBeNull();
 
@@ -536,6 +564,8 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     expect(typeof body.idempotency_key).toBe("string");
     // The name did not change, so the name route was not called.
     expect(calls("PATCH", "/api/profile/name")).toHaveLength(0);
+    // A date and a score were saved: nothing is "Not sure yet".
+    expect(calls("POST", "/api/home/getting-started/not-sure")).toHaveLength(0);
   });
 
   it("the name saves through PATCH /api/profile/name with { displayName } only, never marketingOptIn", async () => {
@@ -553,6 +583,13 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     expect(patches[0]?.body).toEqual({ displayName: "Samira Rivera" });
     // The onboarding route (F-54) is never used for a name change.
     expect(calls("PATCH", "/api/profile")).toHaveLength(0);
+    // The form saved shows "Not sure yet" for the date and the score, so both are recorded for
+    // the Getting started checklist (final brief v2 §1).
+    await waitFor(() =>
+      expect(
+        calls("POST", "/api/home/getting-started/not-sure")[0]?.body,
+      ).toEqual({ test_date: true, target_score: true }),
+    );
     expect(JSON.stringify(net.log)).not.toContain("marketingOptIn");
   });
 
@@ -560,9 +597,8 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     serve({ calendarProfile: false });
     await mount({});
     await screen.findByTestId("settings-test-dates-trigger");
-    // The target score waits for calendar setup (OQ-20); the link to set it up stays.
-    expect(screen.queryByTestId("settings-target")).toBeNull();
-    expect(screen.getByTestId("settings-goal-setup")).toBeTruthy();
+    // Ruling 1 (2026-10-13): the score shows before calendar setup too, left at "Not sure yet".
+    expect(screen.getByTestId("settings-target-select")).toBeTruthy();
     await waitForSatDates("settings-test-dates");
     toggleSatDate("settings-test-dates", "2026-12-05");
     closeSatDates("settings-test-dates");
@@ -576,6 +612,12 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
       "target_exam_dates",
     ]);
     expect(body.target_exam_dates).toEqual(["2026-12-05"]);
+    // A date was saved; the score was left at "Not sure yet", and only that is recorded.
+    await waitFor(() =>
+      expect(
+        calls("POST", "/api/home/getting-started/not-sure")[0]?.body,
+      ).toEqual({ target_score: true }),
+    );
   });
 
   it("an unchanged form has nothing to save", async () => {

@@ -111,7 +111,7 @@ const PROTOTYPE_FAQS: readonly [string, string][] = [
   [
     "What is free, and what needs a paid plan?",
     // The prototype's "40" is the configured daily limit: the served value (OQ-68 (d)).
-    `Free: the diagnostic, your projected score, ${FREE_DAILY_LIMIT} practice questions a day and unlimited review. Paid plans add your study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.`,
+    `Free: Find your blind spots, your projected score, ${FREE_DAILY_LIMIT} practice questions a day and unlimited review. Paid plans add your study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.`,
   ],
   [
     "How is my projected score worked out?",
@@ -275,7 +275,7 @@ describe("the Help page (DESIGN.md §4 Help)", () => {
     const faqs = await screen.findAllByTestId("help-faq");
     await waitFor(() => expect(net.log).toContain("GET /api/practice/quota"));
     expect(faqs[0]?.textContent).toContain(
-      "Free: the diagnostic, your projected score, daily practice questions and unlimited review.",
+      "Free: Find your blind spots, your projected score, daily practice questions and unlimited review.",
     );
     expect(document.body.textContent).not.toMatch(/\b40\b|forty/i);
   });
