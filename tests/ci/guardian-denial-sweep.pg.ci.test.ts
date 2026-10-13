@@ -144,9 +144,10 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
   "/api/notifications/", // the caller's own feed
   "/api/profile/", // the caller's own profile
   "/api/public/",
-  // Owner ruling 2026-10-12 (Karl, on #1211): the SAT-date bound is role-agnostic ("any signed-in
-  // account (including one whose role isn't saved yet) … It carries no student data"). One
-  // config-derived date for the caller's own account; the calendar profile routes stay gated.
+  // Owner ruling 2026-10-12 (Karl, on #1211), approved for reachability 2026-10-13 (SCL-187):
+  // the SAT-date bound is role-agnostic ("any signed-in account (including one whose role isn't
+  // saved yet) … It carries no student data"). One config-derived date for the caller's own
+  // account; the calendar profile routes stay gated.
   "/api/sat-dates/",
   "/api/questions/stats", // admin-gated (requireSupabaseAdmin): bank counts are admin-only (student UI UI-07)
   "/api/students/", // subject resolver: guardian reads only when linked + entitled; writes require via=self
