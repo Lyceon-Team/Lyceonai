@@ -13,19 +13,20 @@ Batch PR: #1202
 
 ## 1. Claude self-audit
 
-<!-- Written by the produce trigger (Claude Code). One row per item. -->
+<!--
+Written by the produce trigger (Claude Code). Claude's self-audit is private (Karl, 2026-10-13;
+SCL-229): Claude audits and fixes everything before opening the pull request, and this section is
+only the structural record of what was produced. Print it, never type it:
+  pnpm exec tsx scripts/content/production-record.ts <cycle>
+One row per item; the last cell is "Passed internal audit.". No findings, reasoning, notes or
+doubts, here or anywhere else in this section; CI refuses any other line.
+-->
 
-| Item | Gates | Notes |
-| --- | --- | --- |
-| `what-to-bring-to-the-sat` | pass | Mon 2026-11-02 07:00 CT · target `what to bring to the sat`. The test-day checklist, ID rules, banned devices, exam setup and arrival time. Every block cites College Board (CB_WHAT_TO_BRING, CB_ID_REQUIREMENTS, CB_PROHIBITED_DEVICES, CB_DEVICE_READINESS, CB_WHAT_TO_EXPECT, CB_CALCULATOR, CB_SAT_DATES); no Lyceon claim. Gates run 2026-10-11 on the branch head, all green: draft gate, quality gates, publish gate and schedule (88/88 tests); Vale (Microsoft + ai-tells) and lychee via `scripts/content/lint-prose.sh`; `pnpm -s run build` and `gate:seo-output` ("3 withheld post(s) have no page, no sitemap entry and no copy in the build"). |
-| `last-minute-sat-prep` | pass | Wed 2026-11-04 07:00 CT · target `last minute sat prep` (500/month in the 2026-10-02 export). Exam setup, the Bluebook test preview and its tools, the built-in calculator, one timed practice test, the module timing, the night before. All College Board (CB_DEVICE_READINESS, CB_PRACTICE, CB_WHAT_TO_EXPECT, CB_CALCULATOR, CB_BLUEBOOK_PRACTICE_TESTS, CB_STRUCTURE, CB_WHAT_TO_BRING, CB_SAT_DATES); no Lyceon claim. Two sentences are my reasoning from the sources, worth Codex's R2 look: early setup "leaves time to sort out a device problem" (CB_DEVICE_READINESS advises early download for that reason), and a practice test "shows you the pacing" (CB: the tests are "timed like a real test"). |
-| `how-long-is-the-sat` | pass | Fri 2026-11-06 07:00 CT · target `how long is the sat`. Section and module timing (table), the adaptive second module as College Board describes it, the 10-minute break, the sample Saturday schedule, the Nov 20 score release, extended-time end times. All College Board (CB_STRUCTURE, CB_WHAT_TO_EXPECT, CB_SCORE_RELEASE_DATES); no Lyceon claim. |
-
-Notes for Karl and Codex:
-
-- **New sources.** Seven College Board pages were added to `shared/seo/sources.ts` and to the claim inventory's new table "Content pipeline sources (batch 2026-W45)", each with the quoted text, all read 2026-10-11. No Lyceon-specific claim was added or used.
-- **Plan.** The topics come from the November plan, which is still a draft PR (#1201). This batch was produced ahead of it, as the pipeline's dry run, so the posts can go out before the Nov 7 test.
-- **Publishing.** The posts are unapproved and withheld until Karl merges this PR into `social`, then `social` into `main`. Each goes live at 07:00 Central on its date.
+| Item | Title | Publishes | Target keyword | Sources | Audit |
+| --- | --- | --- | --- | --- | --- |
+| `what-to-bring-to-the-sat` | What to Bring to the SAT: Test Day Checklist \| Lyceon | 2026-11-02 07:00 CT | what to bring to the sat | <https://satsuite.collegeboard.org/sat/dates-deadlines> <https://satsuite.collegeboard.org/sat/device-readiness> <https://satsuite.collegeboard.org/sat/what-to-bring-do/calculator-policy> <https://satsuite.collegeboard.org/sat/what-to-bring-do/id-requirements> <https://satsuite.collegeboard.org/sat/what-to-bring-do/prohibited-devices> <https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-bring> <https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-expect> | Passed internal audit. |
+| `last-minute-sat-prep` | Last-Minute SAT Prep: The Final Three Days \| Lyceon | 2026-11-04 07:00 CT | last minute sat prep | <https://satsuite.collegeboard.org/practice> <https://satsuite.collegeboard.org/practice/practice-tests/bluebook> <https://satsuite.collegeboard.org/sat/dates-deadlines> <https://satsuite.collegeboard.org/sat/device-readiness> <https://satsuite.collegeboard.org/sat/what-to-bring-do/calculator-policy> <https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-bring> <https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-expect> <https://satsuite.collegeboard.org/sat/whats-on-the-test/structure> | Passed internal audit. |
+| `how-long-is-the-sat` | How Long Is the SAT? Timing and Breaks \| Lyceon | 2026-11-06 07:00 CT | how long is the sat | <https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-expect> <https://satsuite.collegeboard.org/sat/whats-on-the-test/structure> <https://satsuite.collegeboard.org/scores/score-release-dates> | Passed internal audit. |
 
 ## 2. Codex audit
 
@@ -80,11 +81,6 @@ changed, or why not. One revision round: an item still not approved is carried t
 | Item | Finding | Response | Commit |
 | --- | --- | --- | --- |
 | `what-to-bring-to-the-sat` | R2/R3: the device prohibition omits the approved-accommodation exception; the ID rule omits the SAT Student ID Form, the 21+ and country restrictions, and the prior-year school ID exception. | Fixed. The ID section now says a school ID from last school year works through the end of December; adds a paragraph on the SAT Student ID Form (U.S. centers, under 21, prepared by the school or a notary for students schooled at home), the government-ID-only rule at 21 or older, and a pointer to College Board's country-specific rules. The device paragraph now opens "Unless College Board has approved an accommodation for you". Both pages re-read 2026-10-13; the new quotes are in the claim inventory's CB_ID_REQUIREMENTS and CB_PROHIBITED_DEVICES rows. Gates re-run 2026-10-13, all green: draft, quality, publish and schedule (88/88), Vale and lychee (3 posts pass), build, `gate:seo-output`. | 5e686fbf |
-
-Notes for Karl:
-
-- **Codex's two approvals stand as written**; no change to `last-minute-sat-prep` or `how-long-is-the-sat`. Codex's side note on `CB_PRACTICE` (its overview no longer carries the test-preview sentence quoted in the inventory) needs no edit: the sentence also cites `CB_WHAT_TO_EXPECT`, which Codex confirmed carries it.
-- **Blind order was not met.** Codex reports that it saw section 1 before forming its verdicts, so this run did not satisfy the rubric's rule that the auditor not read the self-audit first. Codex recomputed every finding from the posts and sources rather than accepting the self-audit. Whether this run counts as the independent audit for the dry run is your call. The cause is in the pipeline, not this batch: the self-audit and Codex's section live in one file, so the rule relies on Codex filtering what it reads. A fix belongs in a separate PR into `seo`, not in this batch.
 
 ## 4. Karl decision
 
