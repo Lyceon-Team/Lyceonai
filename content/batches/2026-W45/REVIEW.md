@@ -79,7 +79,12 @@ changed, or why not. One revision round: an item still not approved is carried t
 
 | Item | Finding | Response | Commit |
 | --- | --- | --- | --- |
-| `slug` | The finding. | Fixed: what changed. | abc1234 |
+| `what-to-bring-to-the-sat` | R2/R3: the device prohibition omits the approved-accommodation exception; the ID rule omits the SAT Student ID Form, the 21+ and country restrictions, and the prior-year school ID exception. | Fixed. The ID section now says a school ID from last school year works through the end of December; adds a paragraph on the SAT Student ID Form (U.S. centers, under 21, prepared by the school or a notary for students schooled at home), the government-ID-only rule at 21 or older, and a pointer to College Board's country-specific rules. The device paragraph now opens "Unless College Board has approved an accommodation for you". Both pages re-read 2026-10-13; the new quotes are in the claim inventory's CB_ID_REQUIREMENTS and CB_PROHIBITED_DEVICES rows. Gates re-run 2026-10-13, all green: draft, quality, publish and schedule (88/88), Vale and lychee (3 posts pass), build, `gate:seo-output`. | 5e686fbf |
+
+Notes for Karl:
+
+- **Codex's two approvals stand as written**; no change to `last-minute-sat-prep` or `how-long-is-the-sat`. Codex's side note on `CB_PRACTICE` (its overview no longer carries the test-preview sentence quoted in the inventory) needs no edit: the sentence also cites `CB_WHAT_TO_EXPECT`, which Codex confirmed carries it.
+- **Blind order was not met.** Codex reports that it saw section 1 before forming its verdicts, so this run did not satisfy the rubric's rule that the auditor not read the self-audit first. Codex recomputed every finding from the posts and sources rather than accepting the self-audit. Whether this run counts as the independent audit for the dry run is your call. The cause is in the pipeline, not this batch: the self-audit and Codex's section live in one file, so the rule relies on Codex filtering what it reads. A fix belongs in a separate PR into `seo`, not in this batch.
 
 ## 4. Karl decision
 
