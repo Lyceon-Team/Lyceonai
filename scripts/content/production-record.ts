@@ -94,8 +94,9 @@ export function cycleProduction(
   return posts.filter((p) => p.batch === cycle).map(postProduction);
 }
 
-/** A table cell: a pipe in the text (a page title's "… | Lyceon") is escaped. */
-const cell = (text: string): string => text.replace(/\|/g, "\\|");
+/** A table cell: escape backslashes first, then pipes. */
+const cell = (text: string): string =>
+  text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 
 /** The row Claude writes for an item. */
 export function productionRow(p: ProductionItem): string {
