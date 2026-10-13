@@ -38,6 +38,7 @@ import {
   bootHarness,
   buildApp,
   closeOpenSessions,
+  callsTo,
   correctTokenFor,
   harness,
   setupBody,
@@ -325,10 +326,10 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       expect(sortedFresh.length).toBeGreaterThan(0);
 
-      const before = harness.roundTrips;
+      const before = callsTo("canonical_skill_catalog");
       const first = await fetchSkillCatalog();
       const second = await fetchSkillCatalog();
-      expect(harness.roundTrips - before).toBe(1);
+      expect(callsTo("canonical_skill_catalog") - before).toBe(1);
       expect(first).toEqual(sortedFresh);
       expect(second).toEqual(first);
       // A copy per caller: mutating one result cannot change the next.
@@ -379,7 +380,8 @@ describe.skipIf(!PG_AVAILABLE)(
       }
       expect([...truth.values()]).toEqual([true, true, false, false]);
 
-      const before = harness.roundTrips;
+      const before = callsTo("rpc:calendar_is_known_timezone");
+      const configBefore = callsTo("caching_runtime_config");
       for (let pass = 0; pass < 3; pass += 1) {
         for (const z of zones) {
           const resolved = await resolveStoredTimezone(z, "rid-tz");
@@ -390,8 +392,64 @@ describe.skipIf(!PG_AVAILABLE)(
           );
         }
       }
-      expect(harness.roundTrips - before).toBe(zones.length);
+      expect(callsTo("rpc:calendar_is_known_timezone") - before).toBe(
+        zones.length,
+      );
+      // Each miss read its TTL from caching_runtime_config (ruling 2026-10-13, #1232 item 2);
+      // the eight hits read nothing.
+      expect(callsTo("caching_runtime_config") - configBefore).toBe(
+        zones.length,
+      );
       invalidateKnownTimezoneCache();
+    });
+
+    it("both caches take their TTL from the seeded caching_runtime_config rows", async () => {
+      // Presence: the migration seeded both rows with the ruled values (owner ruling
+      // 2026-10-13 on #1232: timezone 24 h, skill catalog 10 min).
+      const seeded = (
+        await harness.setup!.query(
+          `SELECT key, value FROM public.caching_runtime_config
+            WHERE key IN ('known_timezone_cache_ttl_seconds', 'skill_catalog_cache_ttl_seconds')
+            ORDER BY key`,
+        )
+      ).rows as Array<{ key: string; value: number }>;
+      expect(seeded).toEqual([
+        { key: "known_timezone_cache_ttl_seconds", value: 86400 },
+        { key: "skill_catalog_cache_ttl_seconds", value: 600 },
+      ]);
+
+      const { readCacheTtlMs } =
+        await import("../../server/lib/caching-runtime-config");
+      expect(await readCacheTtlMs("knownTimezone")).toBe(86_400_000);
+      expect(await readCacheTtlMs("skillCatalog")).toBe(600_000);
+
+      // The cache USES the row: an operator value (60 s, inside the row's own bounds) makes a
+      // read 61 s later a miss, where the 10-minute fallback would have been a hit.
+      const { fetchSkillCatalog, invalidateSkillCatalogCache } =
+        await import("../../apps/api/src/services/skill-catalog-read");
+      await harness.setup!.query(
+        `UPDATE public.caching_runtime_config SET value = '60'::jsonb
+          WHERE key = 'skill_catalog_cache_ttl_seconds'`,
+      );
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        invalidateSkillCatalogCache();
+        const start = callsTo("canonical_skill_catalog");
+        await fetchSkillCatalog();
+        vi.setSystemTime(Date.now() + 59_000);
+        await fetchSkillCatalog();
+        expect(callsTo("canonical_skill_catalog") - start).toBe(1);
+        vi.setSystemTime(Date.now() + 2_000);
+        await fetchSkillCatalog();
+        expect(callsTo("canonical_skill_catalog") - start).toBe(2);
+      } finally {
+        vi.useRealTimers();
+        await harness.setup!.query(
+          `UPDATE public.caching_runtime_config SET value = '600'::jsonb
+            WHERE key = 'skill_catalog_cache_ttl_seconds'`,
+        );
+        invalidateSkillCatalogCache();
+      }
     });
   },
 );

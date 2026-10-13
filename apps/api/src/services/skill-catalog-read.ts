@@ -1,6 +1,10 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
 import { createTtlCache } from "../../../../server/lib/ttl-cache";
 import {
+  CACHE_TTL_CONFIG,
+  readCacheTtlMs,
+} from "../../../../server/lib/caching-runtime-config";
+import {
   CANONICAL_DOMAINS_BY_SECTION,
   isCanonicalDomainForSection,
 } from "../../../../shared/question-bank-contract";
@@ -106,30 +110,36 @@ export async function fetchSkillsForDomain(
  * @spec [owner brief 2026-10-13 "first-run activation fixes" item 2 ("cache in process ... the
  *       canonical_skill_catalog read (~875 ms mean, 95 calls; 29 rows) ... the skill catalog
  *       changes only on deploy/migration — cache with a TTL and say what invalidates it");
- *       Doc-01A_V1.0 §21, §24, §25] | @implemented [2026-10-13]
+ *       Doc-01A_V1.0 §21, §24, §25; owner rulings (Karl) 2026-10-13 on #1232, items 2 and 3]
+ *       | @implemented [2026-10-13]
  *
  * plain English: the view is a DISTINCT over every published question (an unnest of
  * `skill_codes` across the whole bank), which is why one read costs hundreds of milliseconds
  * for 29 rows. Its answer is the same for every student and changes only when a question for
  * a new (section, domain, skill) is published or the last one for a triple is retired —
  * which happens through the question pipeline's seed SQL and migrations; no mounted route
- * publishes a question (`server/services/question-publish.ts` is unmounted and unimported). So the parsed, sorted catalog is held in process for CATALOG_TTL_MS (10 min), with a
- * 1 h hard-staleness bound for serving the previous catalog through a failed refresh (Doc 01A
- * §24); a failed read with nothing usable cached still throws, as before.
+ * publishes a question (`server/services/question-publish.ts` is unmounted and unimported).
+ * So the parsed, sorted catalog is held in process for the TTL in
+ * `caching_runtime_config.skill_catalog_cache_ttl_seconds` (seeded 600 s = 10 min; read on a
+ * miss only, alongside the catalog read — ruling item 2; the fallback when the row is unusable
+ * is the same 10 min, see `server/lib/caching-runtime-config.ts`), with a 1 h hard-staleness
+ * bound for serving the previous catalog through a failed refresh (Doc 01A §24); a failed read
+ * with nothing usable cached still throws, as before.
  *
  * INVALIDATION: a deploy starts fresh instances (cleared); a question publish applied out of
- * band shows up within 10 minutes; `invalidateSkillCatalogCache()` clears it on demand. A
- * newly published skill appearing up to 10 minutes late in the picker is the accepted cost.
- * Per-student data never enters it: the catalog is a projection of the bank alone.
+ * band shows up within the TTL; `invalidateSkillCatalogCache()` clears it on demand. A newly
+ * published skill appearing up to 10 minutes late in the picker is ACCEPTED — owner ruling
+ * (Karl) 2026-10-13 on #1232, item 3. Per-student data never enters it: the catalog is a
+ * projection of the bank alone.
  *
  * trade-offs: callers receive a fresh copy of the cached rows, so no caller can mutate what
  * the next one reads.
  */
-const CATALOG_TTL_MS = 10 * 60 * 1000;
 const CATALOG_HARD_STALE_MS = 60 * 60 * 1000;
 const SKILL_CATALOG_CACHE = createTtlCache<readonly CatalogEntry[]>({
   name: "catalog:canonical_skill_catalog",
-  ttlMs: CATALOG_TTL_MS,
+  ttlMs: CACHE_TTL_CONFIG.skillCatalog.fallbackSeconds * 1000,
+  ttlFrom: () => readCacheTtlMs("skillCatalog"),
   hardStaleMs: CATALOG_HARD_STALE_MS,
   maxEntries: 1,
 });

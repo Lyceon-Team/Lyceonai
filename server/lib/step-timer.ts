@@ -31,6 +31,10 @@
  * handler: the auth session lookup and profile read happen there, so a slow request whose
  * steps are all fast is attributable.
  *
+ * VOLUME — owner ruling (Karl) 2026-10-13 on #1232, item 4: the line is emitted on EVERY
+ * request to the four timed routes, at INFO, unsampled. Do not add sampling without a new
+ * ruling.
+ *
  * trade-offs: outside a timed route `timedStep` is a plain call (no store, no cost beyond one
  * lookup), so the shared services it wraps behave identically for every other caller. Steps are
  * capped at MAX_STEPS per request so a loop cannot grow one line without bound; the overflow is

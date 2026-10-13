@@ -27,9 +27,11 @@
  * deploys to does not hold, so caches built on this primitive are TTL-only — the "degraded
  * mode" §26 already describes, by design rather than by accident. A deploy starts fresh
  * instances, so a deploy clears every cache. §24 also puts TTL values in `*_runtime_config`
- * rows; the two callers here state theirs as named constants with the owner brief as the
- * authority, because reading a config row to decide whether to skip a read would cost the
- * round trip the cache exists to save. Both are recorded as open questions for the owner.
+ * rows, and since the owner's ruling of 2026-10-13 on #1232 (item 2) they live there: a caller
+ * passes `ttlFrom`, which is read on a MISS, in parallel with the data load, and the entry
+ * stores the TTL it was read with. A hit therefore costs no round trip and a miss no extra
+ * sequential one; a changed row takes effect at each instance's next refresh. `ttlMs` stays as
+ * the TTL when no `ttlFrom` is given (tests, and any future caller without a config row).
  *
  * edge cases: the map is bounded (`maxEntries`); inserting past the bound evicts the oldest
  * insertion first (a `Map` iterates in insertion order), so a caller keyed by client-supplied
@@ -50,6 +52,11 @@ export type TtlCacheOptions = {
   /** `<subsystem>:<entity>` — the key prefix and the name in logs (Doc 01A §25). */
   name: string;
   ttlMs: number;
+  /**
+   * The TTL to store a fresh entry with, read on every miss alongside the load (Doc 01A §24:
+   * from the cache's `*_runtime_config` row). The hard bound is never below it.
+   */
+  ttlFrom?: () => Promise<number>;
   hardStaleMs: number;
   maxEntries: number;
   now?: () => number;
@@ -74,14 +81,16 @@ export function createTtlCache<T>(options: TtlCacheOptions): TtlCache<T> {
       `ttl_cache_misconfigured: ${options.name} needs maxEntries >= 1`,
     );
   }
-  const now = options.now ?? Date.now;
+  // Read through `Date.now()` at call time, not a captured reference, so a replaced clock
+  // (a test's fake Date) is honoured.
+  const now = options.now ?? ((): number => Date.now());
   const entries = new Map<string, CacheEntry<T>>();
   const inflight = new Map<string, Promise<T>>();
   let generation = 0;
 
   const keyOf = (id: string): string => `${options.name}:${id}`;
 
-  function store(key: string, value: T, at: number): void {
+  function store(key: string, value: T, at: number, ttlMs: number): void {
     // Re-inserting moves the key to the newest position, so eviction stays oldest-first.
     entries.delete(key);
     while (entries.size >= options.maxEntries) {
@@ -91,8 +100,8 @@ export function createTtlCache<T>(options: TtlCacheOptions): TtlCache<T> {
     }
     entries.set(key, {
       value,
-      expiresAt: at + options.ttlMs,
-      hardStaleAt: at + options.hardStaleMs,
+      expiresAt: at + ttlMs,
+      hardStaleAt: at + Math.max(options.hardStaleMs, ttlMs),
     });
   }
 
@@ -102,8 +111,11 @@ export function createTtlCache<T>(options: TtlCacheOptions): TtlCache<T> {
     // body can run — even a `load` that throws synchronously settles through the same path.
     const pending: Promise<T> = Promise.resolve().then(async (): Promise<T> => {
       try {
-        const value = await load();
-        if (startedIn === generation) store(key, value, now());
+        const [value, ttlMs] = await Promise.all([
+          load(),
+          options.ttlFrom ? options.ttlFrom() : options.ttlMs,
+        ]);
+        if (startedIn === generation) store(key, value, now(), ttlMs);
         return value;
       } catch (error: unknown) {
         const previous = entries.get(key);

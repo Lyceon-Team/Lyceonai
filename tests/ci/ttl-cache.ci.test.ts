@@ -234,6 +234,30 @@ describe("createTtlCache", () => {
     expect(reloadA.calls()).toBe(1);
   });
 
+  it("ttlFrom: a miss stores the TTL it read, and the hard bound never falls below it", async () => {
+    const configured = 50;
+    let ttlReads = 0;
+    const cache = createTtlCache<string>({
+      name: "test:ttl-from",
+      ttlMs: 100,
+      ttlFrom: async () => {
+        ttlReads += 1;
+        return configured;
+      },
+      hardStaleMs: 500,
+      maxEntries: 4,
+      now,
+    });
+    const src = counter(["a", "b", "c"]);
+    expect(await cache.get("k", src.load)).toBe("a");
+    clock += 49;
+    expect(await cache.get("k", src.load)).toBe("a"); // hit: no load, no TTL read
+    expect(ttlReads).toBe(1);
+    clock += 1; // 50 ms: the configured TTL, not the 100 ms default
+    expect(await cache.get("k", src.load)).toBe("b");
+    expect(ttlReads).toBe(2);
+  });
+
   it("refuses a configuration that cannot hold an entry", () => {
     expect(() =>
       createTtlCache({ name: "x", ttlMs: 0, hardStaleMs: 1, maxEntries: 1 }),

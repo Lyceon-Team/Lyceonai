@@ -49,13 +49,26 @@ export const harness: {
   actingStudent: string;
   latencyMs: number;
   roundTrips: number;
+  /** Round trips per table or rpc name, so a test can count one target's reads. */
+  calls: Map<string, number>;
 } = {
   pool: null,
   setup: null,
   actingStudent: STUDENT,
   latencyMs: 0,
   roundTrips: 0,
+  calls: new Map(),
 };
+
+function count(target: string): void {
+  harness.roundTrips += 1;
+  harness.calls.set(target, (harness.calls.get(target) ?? 0) + 1);
+}
+
+/** Round trips to one table or rpc since the harness booted. */
+export function callsTo(target: string): number {
+  return harness.calls.get(target) ?? 0;
+}
 
 type Facade = ReturnType<typeof makePgSupabase>;
 type Runnable = { run: () => Promise<unknown> };
@@ -79,14 +92,14 @@ export function transport(): Facade {
       const runnable = builder as unknown as Runnable;
       const original = runnable.run.bind(builder);
       runnable.run = async () => {
-        harness.roundTrips += 1;
+        count(table);
         if (harness.latencyMs > 0) await sleep(harness.latencyMs);
         return original();
       };
       return builder;
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
-      harness.roundTrips += 1;
+      count(`rpc:${fn}`);
       if (harness.latencyMs > 0) await sleep(harness.latencyMs);
       return sb.rpc(fn, args);
     },

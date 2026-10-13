@@ -58,6 +58,10 @@ import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
 import { classifyError } from "../../lib/redact";
 import { createTtlCache } from "../../lib/ttl-cache";
+import {
+  CACHE_TTL_CONFIG,
+  readCacheTtlMs,
+} from "../../lib/caching-runtime-config";
 import { localTodayIn } from "./adapters/local-day";
 import { loadCalendarConfig } from "./config";
 import { regeneratePlan } from "./plan-service";
@@ -221,13 +225,22 @@ export function localTodayForProfile(
  *
  * @spec [owner brief 2026-10-13 "first-run activation fixes" item 2 ("cache in process: the
  *       pg_timezone_names list ... the timezone list is effectively static — cache with a long
- *       TTL"); Doc-01A_V1.0 §21, §24, §25] | @implemented [2026-10-13]
+ *       TTL"); Doc-01A_V1.0 §21, §24, §25; owner rulings (Karl) 2026-10-13 on #1232, items 1
+ *       and 2] | @implemented [2026-10-13]
  * CACHED PER ZONE, IN PROCESS. The answer to "does this Postgres know zone X" is a fact about
  * the database build, the same for every student, and changes only when Postgres's tz data
  * does (a Supabase platform upgrade) — never because of anything this application writes. So
- * it is held per candidate zone in `KNOWN_TIMEZONE_CACHE` (24 h TTL, 7-day hard staleness,
- * 1,024 zones max — IANA has about 600, and the bound stops arbitrary device strings growing
- * memory). Both answers are cached, `true` and `false`; a FAILED lookup is not, so a blip is
+ * it is held per candidate zone in `KNOWN_TIMEZONE_CACHE` (TTL from
+ * `caching_runtime_config.known_timezone_cache_ttl_seconds`, seeded 24 h, read on a miss only —
+ * ruling item 2; 7-day hard staleness; 1,024 zones max — IANA has about 600, and the bound stops
+ * arbitrary device strings growing memory).
+ *
+ * WHAT THIS CACHE DOES NOT DO — ruling item 1, 2026-10-13. The production `pg_stat_statements`
+ * line that prompted it (`pg_timezone_names`, 494 calls, ~515 ms mean) comes from role
+ * `authenticator`: Supabase's API layer reloading its schema cache, not this application (per
+ * the owner's report of 2026-10-13). This cache does not and cannot reduce that line. It is
+ * KEPT, by the same ruling, because it still removes this application's own repeat round trip
+ * on every setup read that sends a device zone and every profile save. Both answers are cached, `true` and `false`; a FAILED lookup is not, so a blip is
  * retried on the next request, and — Doc 01A §24 — a previously known answer inside the hard
  * bound is served through one. The zone string is the only key and it is not personal data
  * (the fall-back log below already records it). INVALIDATION: nothing in this application
@@ -239,7 +252,8 @@ export function localTodayForProfile(
  */
 const KNOWN_TIMEZONE_CACHE = createTtlCache<boolean>({
   name: "calendar:known_timezone",
-  ttlMs: 24 * 60 * 60 * 1000,
+  ttlMs: CACHE_TTL_CONFIG.knownTimezone.fallbackSeconds * 1000,
+  ttlFrom: () => readCacheTtlMs("knownTimezone"),
   hardStaleMs: 7 * 24 * 60 * 60 * 1000,
   maxEntries: 1024,
 });
