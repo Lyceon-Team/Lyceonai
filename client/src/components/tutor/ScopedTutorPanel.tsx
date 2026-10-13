@@ -62,6 +62,7 @@ import {
   type TutorSourceSurface,
 } from "@/hooks/tutor-client";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
+import { Pill } from "@/components/student-ui";
 import {
   LisaUpgradeCard,
   isLisaEntitlementDenial,
@@ -252,12 +253,11 @@ export function ScopedTutorPanel({
           <span className="font-lyc-serif text-lyc-body font-semibold text-lyc-ink-strong">
             LISA
           </span>
-          <span
-            className="truncate rounded-full border border-lyc-rule bg-lyc-chip px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink"
-            data-testid="tutor-question-chip"
-          >
+          {/* The shared student pill (2026-10-13: lifted from this chip, now also the runner's
+              question header), truncated to one line here. */}
+          <Pill className="truncate" data-testid="tutor-question-chip">
             {questionLabel}
-          </span>
+          </Pill>
         </div>
         <Button
           type="button"

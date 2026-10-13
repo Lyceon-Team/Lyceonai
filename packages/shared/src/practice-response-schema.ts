@@ -59,6 +59,18 @@ export const studentSafeQuestionSchema = z.object({
   inputMode: z.enum(["choice", "numeric_entry"]),
   options: z.array(studentSafeOptionSchema),
   difficulty: z.union([z.string(), z.number(), z.null()]),
+  /**
+   * @spec [owner brief "Question metadata header" (Karl, 2026-10-13) §1; Doc 02B §20 (the
+   *        domain/skill/difficulty pre-submit exclusion is the full-length exam's, not
+   *        practice's or review's)] | @implemented [2026-10-13]
+   * plain English: the served item's canonical domain and skill, from the session-item snapshot
+   * (`question_domain`, `question_skill`: the skill is the first of the question's
+   * `skill_codes`, the column `canonical_skill_catalog` is built from). Shown on the runner's
+   * question header with `difficulty`. Taxonomy, not answer data: neither says which choice is
+   * correct. Required (nullable) so a route that drops either one fails this schema.
+   */
+  domain: z.string().nullable(),
+  skill: z.string().nullable(),
   correct_answer: z.null(),
   explanation: z.null(),
 });
@@ -170,6 +182,7 @@ export const engineSkipResponseSchema = z.object({
   idempotentRetried: z.boolean().optional(),
 });
 
+export type StudentSafeQuestion = z.infer<typeof studentSafeQuestionSchema>;
 export type EngineCreateSessionResponse = z.infer<
   typeof engineCreateSessionResponseSchema
 >;
