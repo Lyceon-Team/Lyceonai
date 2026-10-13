@@ -7,17 +7,17 @@ the SAT calendar. Claude writes, Codex audits, Karl merges. Nothing publishes wi
 
 ## 1. The week and the month
 
-| When (Central)          | Who                                         | What                                                                                                    |
-| ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 20th, 09:07             | Claude routine "Content: monthly plan"      | Next month's calendar: `content/batches/<YYYY-MM>-plan/PLAN.md`, self-audited, draft PR into `social`   |
-| 22nd                    | Codex task "Content: monthly audit"         | Audits the plan into its review record                                                                  |
-| 23rd, 09:07             | Claude routine "Content: monthly revise"    | Answers Codex, marks the plan PR ready                                                                  |
-| by the 25th             | Karl                                        | Reads `REVIEW.md`, merges the plan PR                                                                   |
-| Wednesday, 09:07        | Claude routine "Content: weekly produce"    | Next week's three posts from the approved plan, gates run, self-audit, draft PR                         |
-| Thursday                | Codex task "Content: weekly audit"          | APPROVE / REVISE / REJECT per post, with evidence                                                       |
-| Friday, 09:07           | Claude routine "Content: weekly revise"     | Fixes each REVISE (one round), drops REJECTs, re-runs the gates, marks the PR ready                     |
-| Friday–Sunday           | Karl                                        | Reads `content/batches/<cycle>/REVIEW.md`; merges the batch PR into `social`, then `social` into `main` |
-| Mon/Wed/Fri 07:00–07:59 | Vercel cron `/api/internal/content-publish` | On a day a post is due, triggers the production deploy hook; the post goes live                         |
+| When (Central)          | Who                                         | What                                                                                                       |
+| ----------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 20th, 09:07             | Claude routine "Content: monthly plan"      | Next month's calendar: `content/batches/<YYYY-MM>-plan/PLAN.md`, audited privately, draft PR into `social` |
+| 22nd                    | Codex task "Content: monthly audit"         | Audits the plan into its review record                                                                     |
+| 23rd, 09:07             | Claude routine "Content: monthly revise"    | Answers Codex, marks the plan PR ready                                                                     |
+| by the 25th             | Karl                                        | Reads `REVIEW.md`, merges the plan PR                                                                      |
+| Wednesday, 09:07        | Claude routine "Content: weekly produce"    | Next week's three posts from the approved plan, gates run, private audit, draft PR                         |
+| Thursday                | Codex task "Content: weekly audit"          | APPROVE / REVISE / REJECT per post, with evidence                                                          |
+| Friday, 09:07           | Claude routine "Content: weekly revise"     | Fixes each REVISE (one round), drops REJECTs, re-runs the gates, marks the PR ready                        |
+| Friday–Sunday           | Karl                                        | Reads `content/batches/<cycle>/REVIEW.md`; merges the batch PR into `social`, then `social` into `main`    |
+| Mon/Wed/Fri 07:00–07:59 | Vercel cron `/api/internal/content-publish` | On a day a post is due, triggers the production deploy hook; the post goes live                            |
 
 **Branches.** Content lives on `social`, which Karl cut from `main` for it; `seo` is for build
 work, and the pipeline's code reaches `main` through `seo` as before.
@@ -112,10 +112,12 @@ prompts, exactly as stored:
 > origin/main into it first (a normal merge commit, never a rebase or force-push), and open the
 > draft pull request into social. The skill is safe to re-run: if the cycle's branch, pull request
 > or review record exists, update it. If a required input is missing (no approved plan covering
-> next week), record that in the review record and stop. Never merge a pull request, never push to
-> social or main, never mark the pull request ready, never edit docs/Spec or
-> content/batches/approvals.json. End with the cycle, the pull request link, each post and its
-> publish date, and every gate's result.
+> next week), open nothing, say so in your reply, and stop. Your self-audit is private (Karl,
+> 2026-10-13; SCL-229): audit every post and fix everything before opening the pull request, write
+> none of it down, and make section 1 of the review record exactly the output of
+> scripts/content/production-record.ts. Never merge a pull request, never push to social or main,
+> never mark the pull request ready, never edit docs/Spec or content/batches/approvals.json. End
+> with the cycle, the pull request link, each post and its publish date, and every gate's result.
 
 **Content: weekly revise** (Fridays 09:07)
 
@@ -135,7 +137,9 @@ prompts, exactly as stored:
 > lives on the social branch: cut claude/content-<YYYY-MM>-plan from origin/social, merge
 > origin/main into it first (a normal merge commit, never a rebase or force-push), generate the
 > skeleton with scripts/content/plan-skeleton.ts (never retype SAT dates), fill one row per slot,
-> self-audit, and open or update the draft pull request "content: <YYYY-MM> plan" into social.
+> audit the plan privately and fix everything (Karl, 2026-10-13; SCL-229: write none of it down),
+> make section 1 of the review record exactly the output of scripts/content/production-record.ts,
+> and open or update the draft pull request "content: <YYYY-MM> plan" into social.
 > Safe to re-run. Never merge a pull request, never push to social or main, never mark the pull
 > request ready.
 

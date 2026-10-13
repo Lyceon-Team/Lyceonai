@@ -20,6 +20,10 @@ import {
   run,
   verdictFor,
 } from "../../scripts/content/notify-batch";
+import {
+  cycleProduction,
+  productionRow,
+} from "../../scripts/content/production-record";
 import type { FetchLike } from "../../scripts/slack/client";
 import {
   FIXTURE_APPROVALS,
@@ -49,7 +53,7 @@ const POSTS = [
   ),
 ];
 
-const SELF = ["| `post-a` | pass | ok |", "| `post-b` | pass | ok |"];
+const SELF = cycleProduction(POSTS[0]?.batch ?? "", POSTS).map(productionRow);
 const AUDITED = reviewRecord({
   self: SELF,
   source: "Codex scheduled task, 2026-10-15",
