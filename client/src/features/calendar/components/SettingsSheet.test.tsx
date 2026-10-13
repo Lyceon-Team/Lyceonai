@@ -35,8 +35,12 @@ import {
   closeSatDates,
   openSatDates,
   satDatesSummary,
+  satDateBoundWrapper,
   toggleSatDate,
 } from "@/components/sat-dates/sat-date-picker.testing";
+
+// The served bound (`latest_test_date`, owner ruling 2026-10-11): 2026-09-22 + 400 days.
+const LATEST_TEST_DATE = "2027-10-27";
 
 const ESTIMATES: PlanningEstimates = {
   practice_seconds_per_unit: 90,
@@ -91,6 +95,7 @@ function renderSheet(
       replanOffer={null}
       {...overrides}
     />,
+    { wrapper: satDateBoundWrapper(LATEST_TEST_DATE) },
   );
   return { ...utils, onSave, onClose };
 }
@@ -151,13 +156,13 @@ describe("the sheet opens on the student's CURRENT schedule", () => {
     expect(group.queryByRole("button", { name: "1 hr" })).toBeNull();
   });
 
-  it("bounds the SAT dates by the served window, not by a literal", () => {
+  it("bounds the SAT dates by the served latest_test_date, not by a literal", () => {
     renderSheet();
     // Owner brief 2026-10-11 §1: the one SAT-date picker, opening on the saved date.
     expect(satDatesSummary("settings-exam-dates")).toBe("Sat, Nov 7, 2026");
     const menu = openSatDates("settings-exam-dates");
-    // 2026-09-22 + 400 days = 2027-10-27: the official 2027-10-09 is offered, and the
-    // official 2027-11-06, past the served horizon the write refuses, is not.
+    // Served bound 2027-10-27 (owner ruling 2026-10-11): the official 2027-10-09 is offered,
+    // and the official 2027-11-06, past the bound the write refuses, is not.
     expect(
       within(menu).queryByTestId("settings-exam-dates-date-2027-10-09"),
     ).not.toBeNull();

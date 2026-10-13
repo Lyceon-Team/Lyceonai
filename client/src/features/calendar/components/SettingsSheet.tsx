@@ -46,7 +46,6 @@ import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
-import { addDays } from "../lib/dates";
 import {
   EXAM_FREQUENCIES,
   examCadenceNote,
@@ -324,7 +323,6 @@ export function SettingsSheet({
                   setDraft({ ...draft, target_exam_dates: next.dates })
                 }
                 today={today}
-                latest={addDays(today, bounds.target_exam_date_max_days)}
                 data-testid="settings-exam-dates"
               />
             </div>

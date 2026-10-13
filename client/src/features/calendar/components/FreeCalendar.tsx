@@ -74,7 +74,6 @@ export function FreeCalendar({
   today,
   profile,
   reason,
-  maxTestDate,
   onSave,
   pending,
   error,
@@ -84,8 +83,6 @@ export function FreeCalendar({
   profile: StudyProfile | null;
   /** The feature-access lock reason (OQ-29); `plan` when the page learned it from a 402. */
   reason: "plan" | "age";
-  /** The served `target_exam_date_max_days` horizon as a date, when the page has it. */
-  maxTestDate: string | null;
   onSave: (goal: FreeGoal) => void;
   pending: boolean;
   error: string | null;
@@ -101,7 +98,6 @@ export function FreeCalendar({
         {profile === null ? (
           <SetupForm
             today={today}
-            maxTestDate={maxTestDate}
             onSave={onSave}
             pending={pending}
             error={error}
@@ -160,13 +156,11 @@ function SetupHeading(): JSX.Element {
 /** Before the first save: the editable form. Nothing is prefilled, as no profile exists. */
 function SetupForm({
   today,
-  maxTestDate,
   onSave,
   pending,
   error,
 }: {
   today: string;
-  maxTestDate: string | null;
   onSave: (goal: FreeGoal) => void;
   pending: boolean;
   error: string | null;
@@ -198,7 +192,6 @@ function SetupForm({
             value={dates}
             onChange={setDates}
             today={today}
-            {...(maxTestDate === null ? {} : { latest: maxTestDate })}
             data-testid="calendar-free-test-dates"
           />
           <label className={FIELD_LABEL}>

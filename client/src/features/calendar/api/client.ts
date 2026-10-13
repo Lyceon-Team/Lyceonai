@@ -23,6 +23,7 @@ import {
   launchResponseSchema,
   profileReadResponseSchema,
   profileUpsertResponseSchema,
+  satDateBoundResponseSchema,
   versionResponseSchema,
   type AcknowledgeBody,
   type CalendarResponse,
@@ -35,6 +36,7 @@ import {
   type MoveBlockBody,
   type ProfileReadResponse,
   type ProfileUpsertResponse,
+  type SatDateBoundResponse,
   type StudyProfileUpsert,
   type VersionResponse,
 } from "@lyceon/shared/calendar";
@@ -177,6 +179,23 @@ export async function fetchStudyProfile(): Promise<ProfileReadResponse> {
     response,
     profileReadResponseSchema,
     "GET /api/calendar/profile",
+  );
+}
+
+/**
+ * GET /api/sat-dates/bound: the furthest test date the profile write accepts for this account.
+ * Role-agnostic (owner ruling 2026-10-12, Karl on #1211), so the onboarding picker of an account
+ * whose role is not saved yet reads it too. `.strict()`: one date, nothing else.
+ *
+ * @spec [owner rulings 2026-10-11 on #1204 (ruling 2), 2026-10-12 on #1211] |
+ * @implemented [2026-10-12]
+ */
+export async function fetchSatDateBound(): Promise<SatDateBoundResponse> {
+  const response = await apiRequest("/api/sat-dates/bound");
+  return parsed(
+    response,
+    satDateBoundResponseSchema,
+    "GET /api/sat-dates/bound",
   );
 }
 

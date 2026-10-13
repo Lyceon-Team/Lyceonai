@@ -634,13 +634,19 @@ jobs:
       # turn the job from loudly broken into silently green -- testing nothing and saying
       # so to nobody. If it goes red naming skipped tests, a secret is missing, and the
       # message says which.
+      #
+      # The gate's `--file` names FILES: it matches each against a result's path, so the
+      # directory `tests/integration` matched nothing and failed every push to main with
+      # "no result for tests/integration — it did not run" while all 10 tests passed.
+      # A new integration test file must be added here too.
       - name: Run Integration Tests
         run: |
           set -euo pipefail
           pnpm exec vitest run --config vitest.integration.config.ts \
             --reporter=default --reporter=json --outputFile=/tmp/vitest-integration.json
           node scripts/ci/vitest-summary-gate.mjs --json /tmp/vitest-integration.json \
-            --file tests/integration
+            --file tests/integration/auth.integration.test.ts \
+            --file tests/integration/protected-routes.integration.test.ts
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

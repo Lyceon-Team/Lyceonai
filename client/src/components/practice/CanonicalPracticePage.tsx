@@ -261,7 +261,10 @@ export default function CanonicalPracticePage(props: {
     nextQuestion,
     handleMissingMcChoices,
     calculatorState,
-    persistCalculatorState,
+    noteCalculatorChange,
+    commitCalculatorState,
+    calculatorFlushRef,
+    calculatorSaveFailed,
     submitBlocked,
     setForceTakeover,
     sessionItemId,
@@ -376,19 +379,22 @@ export default function CanonicalPracticePage(props: {
    * plain English: a failed calculator-state save is surfaced to the student instead of the
    * console: the calculator keeps working from local state, and a notice says the work was not
    * saved. The next successful save clears it. Nothing is logged.
+   *
+   * @spec [register G-NEW-14; owner brief 2026-10-12] | @implemented [2026-10-12]
+   * plain English: a change only updates the local copy and tells the saver; it is no longer a
+   * request. The save moments are the hook's (useCanonicalPractice, calculator-saver.ts), plus
+   * the calculator's own `onCommit` (tab switch, close, unmount).
    */
-  const [calculatorSaveFailed, setCalculatorSaveFailed] = React.useState(false);
-
   const onCalculatorStateChange = React.useCallback(
     (nextState: unknown) => {
       setLocalCalculatorState(nextState);
-      persistCalculatorState(nextState).then(
-        () => setCalculatorSaveFailed(false),
-        () => setCalculatorSaveFailed(true),
-      );
+      noteCalculatorChange(nextState);
     },
-    [persistCalculatorState],
+    [noteCalculatorChange],
   );
+  const onCalculatorCommit = React.useCallback(() => {
+    void commitCalculatorState();
+  }, [commitCalculatorState]);
 
   const isLastQuestion =
     typeof totalQuestions === "number" && currentIndex + 1 === totalQuestions;
@@ -744,6 +750,8 @@ export default function CanonicalPracticePage(props: {
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
         onStateChange={onCalculatorStateChange}
+        onCommit={onCalculatorCommit}
+        flushRef={calculatorFlushRef}
         fillHeight
       />
     </div>
@@ -763,6 +771,8 @@ export default function CanonicalPracticePage(props: {
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
         onStateChange={onCalculatorStateChange}
+        onCommit={onCalculatorCommit}
+        flushRef={calculatorFlushRef}
         className="w-full"
       />
     </div>
