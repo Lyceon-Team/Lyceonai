@@ -373,6 +373,51 @@ describe.skipIf(!PG_AVAILABLE)("session summary → real PG", () => {
     expectNoContent(res.body);
   }, 120_000);
 
+  it("each summary counts only its own session's queue entries", async () => {
+    // A second practice session, every item skipped: each skip queues one entry for IT.
+    const created = await request(app)
+      .post("/api/practice/sessions")
+      .send({
+        sections: ["M"],
+        domains: ["Algebra"],
+        target_question_count: 5,
+        client_instance_id: CLIENT,
+        idempotency_key: "summary-practice-2",
+      });
+    expect(created.status, JSON.stringify(created.body)).toBe(200);
+    const second = created.body.sessionId as string;
+    let skipped = 0;
+    for (;;) {
+      const next = await request(app).get(
+        `/api/practice/sessions/${second}/next?client_instance_id=${CLIENT}`,
+      );
+      if (next.status === 409) break;
+      expect(next.status, JSON.stringify(next.body)).toBe(200);
+      const res = await request(app)
+        .post(`/api/practice/sessions/${second}/skip`)
+        .send({
+          sessionItemId: next.body.sessionItemId,
+          clientAttemptId: `sum2-skip-${skipped}`,
+          client_instance_id: CLIENT,
+        });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      skipped += 1;
+    }
+    // Presence first: the second session really queued entries of its own.
+    expect(skipped).toBeGreaterThan(0);
+    const mine = await request(app).get(
+      `/api/practice/sessions/${second}/summary`,
+    );
+    expect(mine.status, JSON.stringify(mine.body)).toBe(200);
+    expect(sessionSummarySchema.parse(mine.body.data).sent_to_review).toBe(
+      skipped,
+    );
+    const first = await request(app).get(
+      `/api/practice/sessions/${practiceSessionId}/summary`,
+    );
+    expect(sessionSummarySchema.parse(first.body.data).sent_to_review).toBe(2);
+  });
+
   it("practice on a plan without mastery detail: no mastery line at all (null), the rest unchanged", async () => {
     masteryGranted = false;
     const res = await request(app).get(
@@ -390,6 +435,8 @@ describe.skipIf(!PG_AVAILABLE)("session summary → real PG", () => {
       mode: "queue",
       client_instance_id: CLIENT,
       idempotency_key: "summary-review",
+      // The queue serves oldest first: the first session's miss and skip.
+      target_count: 2,
     });
     expect(created.status, JSON.stringify(created.body)).toBe(200);
     const reviewId = created.body.sessionId as string;

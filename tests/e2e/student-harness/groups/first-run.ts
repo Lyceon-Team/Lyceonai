@@ -86,6 +86,17 @@ export const FIRST_RUN: PageGroup = {
       prototype: NEW_SCREEN,
     },
     {
+      id: "home-paid-plan",
+      title:
+        "Home, paid, scrolled to today's plan (the first row's link focused): each row acts through a text link, 'Start today's plan' the one filled button",
+      persona: "paid",
+      route: "/dashboard",
+      waitFor: both('[data-testid="home-plan-start"]'),
+      steps: [{ focus: both('[data-testid="home-plan-start"]') }],
+      expectVisible: '[data-testid="home-start-plan"]',
+      prototype: NEW_SCREEN,
+    },
+    {
       id: "home-review-cap",
       title:
         "Home, paid, at the review cap: the notice's 'Continue your open session' wraps inside the panel",
