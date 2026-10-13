@@ -8,6 +8,25 @@ const SCRATCH = resolve(ROOT, "tests/__fixtures__/assemble-batch-scratch");
 const ASSEMBLE_BATCH_SCRIPT = resolve(ROOT, "scripts/assemble-batch.ts");
 const PROD_CORPUS_PATH = resolve(ROOT, "content/canonical/prod_dedup_corpus.txt");
 
+/**
+ * A real "function of the underlined sentence" record, read from the batch it shipped in, so
+ * the markup rules are proved against what authoring actually produces (2026-10-11). Its
+ * passage gets a fixture-only closing sentence so the bank dedup gate does not reject it as
+ * the published item it is.
+ */
+function realUnderlinedRecord(): Record<string, unknown> {
+  const rec = readFileSync(
+    resolve(ROOT, "content/canonical/batch_024_parts/craft_and_structure.ndjson"),
+    "utf-8",
+  )
+    .split("\n")
+    .filter((l) => l.trim().length > 0)
+    .map((l) => JSON.parse(l) as Record<string, unknown>)
+    .find((r) => typeof r.passage === "string" && r.passage.includes("<u>"));
+  if (rec === undefined) throw new Error("batch_024 has no <u> record to derive from");
+  return { ...rec, passage: `${String(rec.passage)} (Fixture copy for the markup gate.)` };
+}
+
 function runGate(
   partsDir: string,
   opts: { dryRun?: boolean; out?: string; report?: string } = {},
@@ -414,6 +433,51 @@ describe("assemble-batch gate", () => {
     expect(sql).toContain("::jsonb");
     expect(sql).toContain("My brother and I were inseparable");
     expect(sql).not.toContain("'::jsonb");
+  });
+
+  it("passes a real underlined-sentence record whose passage carries one <u>...</u>", () => {
+    const dir = join(SCRATCH, "underline-real");
+    const rec = realUnderlinedRecord();
+    // Presence before absence: the fixture really has the stem and the span under test.
+    expect(String(rec.stem)).toMatch(/the underlined sentence/);
+    expect(String(rec.passage).match(/<u>/g)).toHaveLength(1);
+    writeParts(dir, [rec]);
+    const result = runGate(dir, { dryRun: true });
+    // A one-record batch always trips the batch-level longest-answer statistic, so the gate
+    // exits 1 — with that as its ONLY violation: no per-record rule fired on the record.
+    expect(result.stderr).toContain("GATE FAIL: 1 violation(s) found.");
+    expect(result.stderr).toContain("[RW_LONGEST_ANSWER_TELL]");
+    expect(result.stderr).not.toContain("MISSING_UNDERLINED_TARGET");
+    expect(result.stderr).not.toContain("RAW_HTML");
+  });
+
+  it("rejects an underlined-sentence stem whose passage lost its <u>...</u>", () => {
+    const dir = join(SCRATCH, "underline-missing");
+    const rec = realUnderlinedRecord();
+    writeParts(dir, [
+      { ...rec, passage: String(rec.passage).replace("<u>", "").replace("</u>", "") },
+    ]);
+    const result = runGate(dir, { dryRun: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("MISSING_UNDERLINED_TARGET");
+  });
+
+  it("rejects an underlined-sentence stem with two <u>...</u> spans", () => {
+    const dir = join(SCRATCH, "underline-two");
+    const rec = realUnderlinedRecord();
+    writeParts(dir, [{ ...rec, passage: `${String(rec.passage)} <u>Another.</u>` }]);
+    const result = runGate(dir, { dryRun: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("has 2 paired <u>...</u> span(s)");
+  });
+
+  it("rejects any tag other than a paired <u>, in any rendered field", () => {
+    const dir = join(SCRATCH, "underline-raw-html");
+    const rec = realUnderlinedRecord();
+    writeParts(dir, [{ ...rec, explanation: `${String(rec.explanation)} <b>Note.</b>` }]);
+    const result = runGate(dir, { dryRun: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("RAW_HTML: explanation carries <b>, </b>");
   });
 
   it("report JSON has expected shape on success", () => {

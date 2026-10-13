@@ -42,6 +42,10 @@ import {
   type CompletedStudyProfile,
   type StudyProfileBounds,
 } from "@lyceon/shared/calendar";
+import {
+  SatDatePicker,
+  type SatDateChoice,
+} from "@/components/sat-dates/SatDatePicker";
 import { addDays } from "../lib/dates";
 import {
   EXAM_FREQUENCIES,
@@ -79,7 +83,8 @@ export type SettingsDraft = {
   timezone: string;
   study_days_mask: number;
   daily_minutes: number;
-  target_exam_date: string | null;
+  /** SCL-223: the chosen SAT dates (future ones; `[]` is "Not sure yet"). */
+  target_exam_dates: string[];
   target_score: number | null;
   full_length_weekday: number | null;
   full_length_interval_weeks: number | null;
@@ -227,7 +232,7 @@ export function SettingsSheet({
     timezone: profile.timezone,
     study_days_mask: profile.study_days_mask,
     daily_minutes: profile.daily_minutes,
-    target_exam_date: profile.target_exam_date,
+    target_exam_dates: profile.target_exam_dates.filter((d) => d >= today),
     target_score: profile.target_score,
     full_length_weekday: profile.full_length_weekday,
     full_length_interval_weeks: profile.full_length_interval_weeks,
@@ -235,7 +240,10 @@ export function SettingsSheet({
   }));
   const [lastDayRefused, setLastDayRefused] = useState(false);
 
-  const latestExamDate = addDays(today, bounds.target_exam_date_max_days);
+  // The date the readout counts to: the closest chosen date on or after today, the rule the
+  // database applies to `target_exam_date` (SCL-223).
+  const effectiveExamDate =
+    draft.target_exam_dates.find((d) => d >= today) ?? null;
 
   /**
    * The cadence a day-pick adopts when the student has not chosen one. From the server
@@ -308,20 +316,16 @@ export function SettingsSheet({
 
           <div className="row">
             <div className="field">
-              <label htmlFor="settings-exam-date">SAT date</label>
-              <input
-                id="settings-exam-date"
-                type="date"
-                min={today}
-                max={latestExamDate}
-                value={draft.target_exam_date ?? ""}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    target_exam_date:
-                      event.target.value === "" ? null : event.target.value,
-                  })
+              {/* Owner brief 2026-10-11 §1: the one SAT-date picker, here as everywhere. */}
+              <SatDatePicker
+                legend="SAT date"
+                value={{ dates: draft.target_exam_dates }}
+                onChange={(next: SatDateChoice) =>
+                  setDraft({ ...draft, target_exam_dates: next.dates })
                 }
+                today={today}
+                latest={addDays(today, bounds.target_exam_date_max_days)}
+                data-testid="settings-exam-dates"
               />
             </div>
             <div className="field">
@@ -451,7 +455,7 @@ export function SettingsSheet({
 
           <p className="note" data-testid="settings-summary">
             {scheduleSummary(draft, estimates, {
-              targetExamDate: draft.target_exam_date,
+              targetExamDate: effectiveExamDate,
               today,
               finalExamLeadDays: examPlanning.final_exam_lead_days,
             })}

@@ -3545,14 +3545,14 @@ QA2F_DASH="client/src/pages/lyceon-dashboard.test.tsx"
 plant "QA2-B1" "Desmos is constructed light on a dark page (no invertedColors from the theme)" \
   "$QA2B_CALC" \
   "client/src/components/math/DesmosCalculator.tsx" \
-  'a = "          invertedColors: invertedColorsRef.current,\n"
+  'a = "        invertedColors: invertedColorsRef.current,\n"
 assert s.count(a) == 1
-s = s.replace(a, "          invertedColors: false,\n", 1)'
+s = s.replace(a, "        invertedColors: false,\n", 1)'
 
 plant "QA2-B2" "a theme change after construction never reaches Desmos (no updateSettings)" \
   "$QA2B_CALC" \
   "client/src/components/math/DesmosCalculator.tsx" \
-  'a = "    calcRef.current?.updateSettings({ invertedColors });\n"
+  'a = "    calcRefs.current.graphing?.updateSettings({ invertedColors });\n    calcRefs.current.scientific?.updateSettings({ invertedColors });\n"
 assert s.count(a) == 1
 s = s.replace(a, "    void invertedColors;\n", 1)'
 
@@ -3702,9 +3702,9 @@ s = s.replace(a, "            const title = s.source_engine === \"review\" ? \"R
 plant "W6-UI66-P1" "Practice's recent row prints \"Practice\" again, not the criteria" \
   "$W6_UI66_PRACTICE" \
   "client/src/pages/practice.tsx" \
-  'a = "                  {recentSessionTitle(s)}\n"
+  'a = "                  text={recentSessionTitle(s)}\n"
 assert s.count(a) == 1
-s = s.replace(a, "                  {\"Practice\"}\n", 1)'
+s = s.replace(a, "                  text=\"Practice\"\n", 1)'
 
 plant "W6-UI66-M1" "the row helper ignores the criteria the row carries" \
   "$W6_UI66_MODEL $W6_UI66_HOME $W6_UI66_PRACTICE" \

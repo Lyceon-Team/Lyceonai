@@ -38,6 +38,10 @@ import {
   type QotdTodayResponse,
 } from "../../packages/shared/src/qotd-schema";
 import { tokenizeMathContent } from "../math/tokenize";
+import {
+  findUnderlineMarkup,
+  splitByUnderlineMarkup,
+} from "../question-markup";
 import { stemRepeatsPassage } from "./projection";
 import { qotdReadabilityProblem } from "./readability";
 import {
@@ -271,9 +275,33 @@ function tidy(text: string): string {
  */
 export function speakMixedText(content: string): string | null {
   let out = "";
-  for (const token of tokenizeMathContent(content)) {
+  const tokens = tokenizeMathContent(content);
+  // A paired <u>...</u> (shared/question-markup.ts, 2026-10-11) is read as "[underlined] ...
+  // [end underlined]", the way a blank is read as "[blank]": the tag itself is never spoken.
+  const markup = findUnderlineMarkup(
+    content,
+    tokens
+      .filter((t) => t.type === "math")
+      .map((t) => ({ start: t.rawStart, end: t.rawEnd })),
+  );
+  const openTags = new Set(
+    markup.underlined.map((r) => r.start - "<u>".length),
+  );
+  for (const token of tokens) {
     if (token.type === "text") {
-      out += token.content.replace(/_{2,}/g, " [blank] ");
+      const text =
+        markup.tags.length === 0
+          ? token.content
+          : splitByUnderlineMarkup(markup, token.rawStart, token.rawEnd)
+              .map((piece) =>
+                piece.kind === "tag"
+                  ? openTags.has(piece.start)
+                    ? " [underlined] "
+                    : " [end underlined] "
+                  : content.slice(piece.start, piece.end).replace(/\\\$/g, "$"),
+              )
+              .join("");
+      out += text.replace(/_{2,}/g, " [blank] ");
       continue;
     }
     try {

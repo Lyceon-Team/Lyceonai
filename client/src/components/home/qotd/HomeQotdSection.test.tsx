@@ -10,7 +10,17 @@
  * parsed with the shared response schema before it is served, so the fixtures are shapes the
  * server can emit (the server itself is proved in tests/ci/home-qotd.pg.ci.test.ts).
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import {
+  closeSatDates,
+  openSatDates,
+} from "@/components/sat-dates/sat-date-picker.testing";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -310,10 +320,13 @@ describe("the SAT-date card", () => {
     net.today = answeredEarlier();
     mount();
     fireEvent.click(await screen.findByTestId("home-sat-date-open"));
-    const options = screen.getAllByRole("checkbox");
-    // "Not sure yet" first, then future official dates only.
+    // The one picker: a dropdown whose items are "Not sure yet" first, then future dates only.
+    const menu = openSatDates("home-sat-dates");
+    const options = within(menu).getAllByRole("menuitemcheckbox");
+    expect(options[0]?.textContent).toBe("Not sure yet");
     expect(options.length).toBeGreaterThan(2);
     fireEvent.click(options[1] as HTMLElement);
+    closeSatDates("home-sat-dates");
     fireEvent.click(screen.getByTestId("home-sat-date-save"));
     await waitFor(() =>
       expect(

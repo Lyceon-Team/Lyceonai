@@ -48,6 +48,10 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  closeSatDates,
+  toggleSatDate,
+} from "@/components/sat-dates/sat-date-picker.testing";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import {
@@ -258,7 +262,18 @@ function install(scenario: Scenario): void {
           full_length_weekday: null,
           full_length_interval_weeks: null,
         }),
-        target_exam_date: body.target_exam_date as string | null,
+        // SCL-223 as the database applies it: the dates are stored, and the single column is
+        // the effective date — the closest one on or after today.
+        ...(Array.isArray(body.target_exam_dates)
+          ? {
+              target_exam_dates: body.target_exam_dates as string[],
+              target_exam_date:
+                (body.target_exam_dates as string[])
+                  .slice()
+                  .sort()
+                  .find((d) => d >= TODAY) ?? null,
+            }
+          : { target_exam_date: body.target_exam_date as string | null }),
         target_score: body.target_score as number | null,
       };
       state.profile = next;
@@ -595,6 +610,28 @@ describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
     await openMore();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
     expect(await screen.findByTestId("calendar-settings-sheet")).toBeTruthy();
+  });
+
+  // Owner brief 2026-10-11 §1 / SCL-223 as amended: the sheet's SAT dates reach the profile
+  // write as the date list, through the page's save (not only the sheet's draft).
+  it("Edit schedule: a date chosen in the sheet's picker is in the PUT body as target_exam_dates", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    await openMore();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
+    await screen.findByTestId("calendar-settings-sheet");
+    toggleSatDate("settings-exam-dates", "2026-12-05");
+    closeSatDates("settings-exam-dates");
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() =>
+      expect(sent("PUT", "/api/calendar/profile")).toHaveLength(1),
+    );
+    const body = sent("PUT", "/api/calendar/profile")[0] as Record<
+      string,
+      unknown
+    >;
+    expect(body.target_exam_dates).toContain("2026-12-05");
+    expect(Object.keys(body)).not.toContain("target_exam_date");
   });
 
   it("Regenerate plan posts to /api/calendar/plan/regenerate with a fresh key, then reads Plan regenerated", async () => {
@@ -1038,9 +1075,9 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
   it("Save sends PUT /api/calendar/profile with a key the route accepts, then shows the saved goal", async () => {
     await mount("free", { calendar: freeSetupRequired, profile: null });
     const form = await screen.findByTestId("calendar-free-setup");
-    fireEvent.change(within(form).getByLabelText("Test date"), {
-      target: { value: "2026-12-05" },
-    });
+    // Owner brief 2026-10-11: the one SAT-date picker (a dropdown multi-select).
+    toggleSatDate("calendar-free-test-dates", "2026-12-05");
+    closeSatDates("calendar-free-test-dates");
     fireEvent.change(within(form).getByLabelText("Target score"), {
       target: { value: "1400" },
     });
@@ -1066,7 +1103,7 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     ).toEqual([]);
     if (!parsed.success) throw new Error("asserted above");
     expect(parsed.data.idempotency_key).toMatch(UUID);
-    expect(parsed.data.target_exam_date).toBe("2026-12-05");
+    expect(parsed.data.target_exam_dates).toEqual(["2026-12-05"]);
     expect(parsed.data.target_score).toBe(1400);
     // A first save carries the schedule the route requires on create (REQUIRED_ON_CREATE).
     expect(parsed.data.study_days_mask).toBeGreaterThan(0);
