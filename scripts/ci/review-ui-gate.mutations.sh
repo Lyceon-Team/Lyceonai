@@ -1927,12 +1927,14 @@ s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + p
 
 # Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
 # (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
+# Re-pointed 2026-10-13: the free sentence names the diagnostic as "Find your blind spots"
+# (final brief v2 §7) through BLIND_SPOTS_NAME.
 plant "UI58-U6" "the shared free sentence drops the projection" \
   "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
   "client/src/lib/plan-copy.ts" \
-  'a = "the diagnostic, your projected score, ${practice}"
+  'a = "${BLIND_SPOTS_NAME}, your projected score, ${practice}"
 assert s.count(a) == 1
-s = s.replace(a, "the diagnostic, ${practice}", 1)'
+s = s.replace(a, "${BLIND_SPOTS_NAME}, ${practice}", 1)'
 
 plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
   "client/src/pages/upgrade.page.test.tsx" \
