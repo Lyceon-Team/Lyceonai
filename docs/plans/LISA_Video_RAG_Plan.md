@@ -128,10 +128,10 @@ Build-time only. Runs on a workstation, not in any deployed runtime.
 channel/playlist/video list
   → A. metadata        (YouTube Data API v3 — official, keyed)
   → B. transcript      (build-time fetch, discarded after C)
-  → C. segmentation + description  (Gemini batch)
-  → D. skill tagging   (Gemini, constrained to the taxonomy)
-  → E. review sample   (automated checks + a spot-check set)
-  → F. JSONL to GCS → corpus import
+  → C. content gate → segmentation + description  (Gemini batch)
+  → D. skill tagging   (Gemini, constrained to the 29 taxonomy names)
+  → E. review sample   (automated checks + at least 5 per skill)
+  → F. one file per segment to GCS → import → attach metadata (v1beta1)
 ```
 
 **A. Metadata — `scripts/rag/fetch-video-metadata.ts`**
@@ -167,7 +167,9 @@ If a transcript cannot be obtained for a video, that video is skipped. No partia
 
 The step that makes this work.
 
-For each segment, a Gemini call takes the transcript window plus the video title and returns:
+**Content gate first** *(Karl, 2026-10-13)*. Before any description is generated, the model answers one question for the segment: *does this segment teach SAT content a student would practise?* A **no** drops the segment there. No description is generated and no skill tag is attempted. This catches what the `null` rule below doesn't: a district-partnership webinar, a channel promo, an admissions-strategy aside. Each of those can be "self-contained" and still isn't practice content. The gate's answer and a one-line reason are logged with the segment's provenance, so a systematic drop (a whole channel gated out) shows up in the run report.
+
+For each segment that passes the gate, a Gemini call takes the transcript window plus the video title and returns:
 
 - `description` — two to four sentences stating what this segment teaches, written as instructional content, not as a summary of someone talking. No "the speaker explains", no "in this video". Just the concept, the method, and the condition under which it applies.
 - `concepts` — a short list of named concepts covered
@@ -183,6 +185,8 @@ This is the corpus content. Lyceon-authored text, generated from a read of the s
 
 Gemini, constrained to the canonical taxonomy — the model picks from an enumerated list of valid `skill_codes` and cannot emit anything else. Invalid codes fail the row rather than being coerced.
 
+**The enumerated list is the 29 full skill names in `content/canonical/taxonomy.json` `skills`** (e.g. `"Linear Equations in One Variable"`). These are the same strings the question bank stores in `questions.skill_codes`. Production holds zero code-shaped values, per the owner's report of 2026-10-13. There are no short codes. The list is read from `taxonomy.json` at run time, never typed. Only segments that passed the content gate reach this step.
+
 Multi-tag allowed; `skill_codes` is an array.
 
 **E. Review — automated, with a sample**
@@ -195,26 +199,24 @@ Not manual watching. Automated gates:
 - no segment shorter than 20s or longer than 180s
 - no duplicate `provenance`
 
-Then a random 5% sample surfaced for your eye — description against the actual timestamp. Enough to catch a systematic failure, not enough to be a job.
+Then a review sample surfaced for your eye — description against the actual timestamp. **The sample is a minimum count per skill, not a percentage** *(Karl, 2026-10-13)*: at least 5 segments for every skill tagged in the run, or every segment where a skill has fewer than 5. Selection is seeded and recorded, so the sample can be reproduced. A flat 5% of a small seed set is a handful of segments in total, and a low but real error rate in one skill would slip through it. Enough to catch a systematic failure, not enough to be a job.
 
-**F. Import**
+**F. Import** *(corrected 2026-10-13: R-5, R-6, R-7)*
 
-JSONL to `gs://<bucket>/processed_chunks/`, imported to the corpus. Each item:
+**One `RagFile` per segment.** RAG Engine attaches metadata to a file and filters at file level, not per chunk. A file holding many segments would give them all one `provenance`. So each segment is written as its own small text file, `gs://<bucket>/segments/<video_id>_<start>-<end>.txt`, whose whole content is the generated description. They're imported with `ragFiles:import`, using a chunk size well above a description's length so each file stays one chunk. Then each file's metadata is attached **after import** with v1beta1 `ragMetadata:batchCreate`, against the four keys Step C created. Each segment's metadata:
 
 ```json
 {
-  "id": "yt_AB1234567_142",
-  "text": "<the generated description>",
-  "skill_codes": ["ALG-LIN-01", "ALG-LIN-03"],
+  "skill_codes": ["Linear Equations in One Variable", "Linear Functions"],
   "provenance": "youtube:AB1234567:142-195",
-  "surface_gate": "any",
-  "content_type": "video_segment"
+  "surface_gate": "pre_and_post",
+  "content_type": "video_transcript"
 }
 ```
 
-The four locked metadata fields, unchanged. Title and channel come from `video_resources` at render time.
+The four locked metadata fields, unchanged, with values from the locked enums (`packages/shared/tutor-rag-types.ts`, `ragCorpusMetadataSchema`). `skill_codes` are taxonomy names. Title and channel come from `video_resources` at render time.
 
-> **Placement note (2026-10-13):** the example values `"any"`, `"video_segment"` and `"ALG-LIN-01"` don't match the locked enums or the bank's skill strings. The JSONL-with-per-record-metadata import shape isn't one RAG Engine documents either. See closure plan R-5 to R-7. The text above is as Karl wrote it, and those findings say what has to be decided before it runs.
+**Metadata is attached after import, so there is a window where a file has no metadata.** A filtered query never matches such a file, so it can't leak into a skill-scoped turn. An unfiltered query could still see it. The import run therefore checks that every imported file carries all four keys before it reports success. A file that fails that check is deleted, not left behind.
 
 #### D.3 What this costs
 
@@ -223,9 +225,10 @@ Gemini Flash for description and tagging, on segments rather than whole videos. 
 #### D.4 Proof
 
 1. `video_resources` populated for the seeded set
+1a. Content-gate report: segments dropped by the gate, by channel, with reasons
 2. Corpus items present, retrievable by direct query, metadata valid
-3. The 5% sample reviewed by Karl — descriptions match what is actually at those timestamps
-4. Zero transcript text in the corpus — assert against the cached transcripts
+3. The per-skill review sample (at least 5 per tagged skill) reviewed by Karl — descriptions match what is actually at those timestamps
+4. Zero transcript text in the corpus — asserted against the cached transcripts **before the cache is deleted**
 5. Every `skill_code` in the corpus valid against the taxonomy
 
 #### D.5 Out of scope
@@ -236,7 +239,7 @@ Hosting or re-publishing video. Serving transcript text to anyone. Any productio
 
 If chapter markers turn out to be rare across the chosen channels, say so — fixed windows with merge-on-low-confidence still work, it just means more segments get merged.
 
-If a description generated from a bad auto-caption is confidently wrong about the mathematics, that is the failure mode that matters and the 5% sample is what catches it. If the sample shows it happening at any rate above noise, stop and report before scaling the corpus.
+If a description generated from a bad auto-caption is confidently wrong about the mathematics, that is the failure mode that matters and the per-skill review sample is what catches it. If the sample shows it happening at any rate above noise, stop and report before scaling the corpus.
 
 ### Step E — Retrieval quality, before generation *(a gate, per §6.7)*
 Query set per skill, inspect results, confirm the gate drops what it should.
