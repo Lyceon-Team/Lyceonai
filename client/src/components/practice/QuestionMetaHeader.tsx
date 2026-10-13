@@ -29,8 +29,7 @@
  * edge cases: a missing part is left out; with nothing to show the header renders nothing.
  * Difficulty is shown only when it maps to Easy/Medium/Hard (never a guessed word).
  */
-import { ClampedLabel } from "@/components/student-ui/ClampedLabel";
-import { Pill } from "@/components/student-ui/Pill";
+import { ClampedLabel, Pill } from "@/components/student-ui";
 import { LYC_FOCUS } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { questionDifficultyLabel } from "@lyceon/shared/question-difficulty";

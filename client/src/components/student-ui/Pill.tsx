@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * difficulty coding). Callers add layout classes (`truncate`, a wider radius for a pill that
  * can wrap) through `className`; extra props (`tabIndex`, `data-testid`, aria) pass through.
  */
-export const PILL_CLASSES =
+const PILL_CLASSES =
   "inline-block rounded-full border border-lyc-rule bg-lyc-chip px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink";
 
 export function Pill({

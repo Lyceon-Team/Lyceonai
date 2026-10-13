@@ -62,7 +62,7 @@ import {
   type TutorSourceSurface,
 } from "@/hooks/tutor-client";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
-import { Pill } from "@/components/student-ui/Pill";
+import { Pill } from "@/components/student-ui";
 import {
   LisaUpgradeCard,
   isLisaEntitlementDenial,

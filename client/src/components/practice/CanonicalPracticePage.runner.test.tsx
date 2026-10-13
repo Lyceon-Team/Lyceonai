@@ -47,7 +47,6 @@ import {
 } from "@/lib/engine-config";
 import CanonicalPracticePage from "./CanonicalPracticePage";
 import { MISS_NOTE } from "@/components/question-renderer";
-import { PILL_CLASSES } from "@/components/student-ui/Pill";
 import { LYC_FOCUS } from "@/components/ui/button";
 import { queryClient as appQueryClient } from "@/lib/queryClient";
 
@@ -1074,13 +1073,17 @@ describe("QMH: the question header on practice, review and the diagnostic", () =
       within(meta).getByTestId("question-meta-skill-pill"),
       within(meta).getByTestId("question-meta-difficulty"),
     ];
-    // The recipe less its radius: the skill pill, which can wrap to two lines, takes a smaller one.
-    const pillRecipe = PILL_CLASSES.split(" ").filter(
-      (c) => !c.startsWith("rounded"),
-    );
-    expect(pillRecipe).toEqual(
-      expect.arrayContaining(["bg-lyc-chip", "text-lyc-meta"]),
-    );
+    // The shared pill's neutral recipe (DESIGN.md §3 Pill): `--chip` fill, `--rule` border, the
+    // 14px meta token, semibold `--ink`. Its radius is left out: the skill pill, which can wrap to
+    // two lines, takes a smaller one.
+    const pillRecipe = [
+      "border",
+      "border-lyc-rule",
+      "bg-lyc-chip",
+      "text-lyc-meta",
+      "font-semibold",
+      "text-lyc-ink",
+    ];
     for (const pill of pills) {
       expect(cls(pill)).toEqual(expect.arrayContaining(pillRecipe));
     }

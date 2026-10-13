@@ -146,7 +146,7 @@ describe("one neutral pill (2026-10-13)", () => {
   ])("%s renders the shared Pill", (site) => {
     const text = read(site);
     expect(text).toMatch(
-      /import \{ Pill \} from "@\/components\/student-ui\/Pill"/,
+      /import \{[^}]*\bPill\b[^}]*\} from "@\/components\/student-ui"/,
     );
     expect(text).toMatch(/<Pill\b/);
   });
