@@ -21,8 +21,9 @@ describe("notifications schema", () => {
   // a type cannot appear in one without somebody naming it in the other. The two practice-test
   // notices joined on 2026-09-27 (Brief 14 Step 5, 20261012000000); the two post-exam notices on
   // 2026-09-30 (SCL-191, 20261015000000); the daily-question reminder `qotd_daily` on 2026-10-09
-  // (owner ruling on #1166 item 1, 20261029020000).
-  it("names exactly the seven event types, in the CHECK's own order", () => {
+  // (owner ruling on #1166 item 1, 20261029020000); the four guardian-accountability types on
+  // 2026-10-13 (owner brief "Guardian accountability loop", 20261101000000).
+  it("names exactly the eleven event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",
       "guardian_unlinked",
@@ -31,6 +32,10 @@ describe("notifications schema", () => {
       "exam_score_report_requested",
       "renewal_decision_requested",
       "qotd_daily",
+      "study_plan_changed",
+      "missed_plan_alert",
+      "back_on_track",
+      "guardian_daily_digest",
     ]);
   });
 
