@@ -11,6 +11,7 @@ import {
   APPROVALS_PATH,
   approvalsEditProblem,
   cyclesTouched,
+  mergeEventFromPull,
   serializeApprovals,
   stampApprovals,
   type MergeEvent,
@@ -155,5 +156,106 @@ describe("a pull request may not stamp approvals by hand", () => {
     expect(approvalsEditProblem(empty, '{"2026-W43": {"by": "Someone"}}')).toBe(
       `${APPROVALS_PATH} is not a valid approvals file`,
     );
+  });
+});
+
+/**
+ * GitHub's REST record of a merged pull request (`GET /repos/{owner}/{repo}/pulls/{number}`),
+ * trimmed to a realistic subset: the values are #1192's real ones (merged by kingk237 at
+ * 2026-10-11T07:56:55Z as merge commit 024256a4 on seo), re-based onto social for the batch case.
+ * Extra fields stay in so the parser is shown to ignore them.
+ */
+const MERGE_SHA = "024256a4cbdc0384b6cefdd488856d690fd475d5";
+function githubPull(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    url: "https://api.github.com/repos/Lyceon-Team/Lyceonai/pulls/1192",
+    number: 1192,
+    state: "closed",
+    title: "content: 2026-W45 batch",
+    user: { login: "kingk237", id: 223177803 },
+    merged: true,
+    merged_at: "2026-10-11T07:56:55Z",
+    merge_commit_sha: MERGE_SHA,
+    merged_by: { login: "kingk237", id: 223177803, type: "User" },
+    head: {
+      ref: "claude/content-2026-W45",
+      sha: "afef05f3b9a69e55a837a0e4f69c08aeda49749e",
+    },
+    base: { ref: "social", sha: "419b240b88b79142b97813c5a890cc27159251c5" },
+    ...over,
+  };
+}
+const BATCH_FILES = [
+  "content/batches/2026-W45/REVIEW.md",
+  "shared/content/posts/sat-test-day-checklist.ts",
+];
+
+describe("the merge is read from GitHub's record of the pull request", () => {
+  it("a merged pull request whose merge commit is this push yields the merge event", () => {
+    expect(mergeEventFromPull(githubPull(), MERGE_SHA, BATCH_FILES)).toEqual({
+      ok: true,
+      event: {
+        pr: 1192,
+        base: "social",
+        mergedBy: "kingk237",
+        mergedAt: "2026-10-11T07:56:55Z",
+        mergeSha: MERGE_SHA,
+        changedFiles: BATCH_FILES,
+      },
+    });
+  });
+
+  it("and the stamp it leads to is Karl's, dated the Chicago merge day", () => {
+    const merge = mergeEventFromPull(githubPull(), MERGE_SHA, BATCH_FILES);
+    if (!merge.ok) throw new Error(merge.reason);
+    const r = stampApprovals({}, merge.event, "kingk237");
+    expect(r).toEqual({
+      ok: true,
+      approvals: {
+        "2026-W45": {
+          by: "Karl",
+          date: "2026-10-11",
+          pr: 1192,
+          mergedBy: "kingk237",
+          mergeSha: MERGE_SHA,
+        },
+      },
+      stamped: ["2026-W45"],
+    });
+  });
+
+  it("a push that is not that pull request's merge commit stamps nothing", () => {
+    expect(
+      mergeEventFromPull(githubPull(), "f".repeat(40), BATCH_FILES),
+    ).toEqual({
+      ok: false,
+      reason: "pull request #1192 was not merged by this push (fffffff)",
+    });
+  });
+
+  it("an unmerged pull request, or no pull request at all (the App's own stamp commit), stamps nothing", () => {
+    expect(
+      mergeEventFromPull(
+        githubPull({ merged_at: null, merged_by: null }),
+        MERGE_SHA,
+        BATCH_FILES,
+      ),
+    ).toEqual({ ok: false, reason: "pull request #1192 is not merged" });
+    expect(mergeEventFromPull(null, MERGE_SHA, [APPROVALS_PATH])).toEqual({
+      ok: false,
+      reason: "no pull request record for this push",
+    });
+  });
+
+  it("a merge by someone else, read from GitHub's record, is still refused by the stamp", () => {
+    const merge = mergeEventFromPull(
+      githubPull({ merged_by: { login: "someone-else" } }),
+      MERGE_SHA,
+      BATCH_FILES,
+    );
+    if (!merge.ok) throw new Error(merge.reason);
+    expect(stampApprovals({}, merge.event, "kingk237").ok).toBe(false);
   });
 });

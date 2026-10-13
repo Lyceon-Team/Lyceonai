@@ -72,6 +72,7 @@ import {
   type QuestionsPerSession,
 } from "@/components/practice/practice-landing-model";
 import {
+  ClampedLabel,
   EMPTY_FILTER,
   FilterBar,
   Modal,
@@ -631,16 +632,18 @@ function RecentPractice({
           {sessions.map((s) => (
             <li
               key={s.source_session_id}
-              className="flex items-center justify-between gap-6 border-b border-lyc-rule py-3.5"
+              className="group flex items-center justify-between gap-6 border-b border-lyc-rule py-3.5"
               data-testid="practice-recent-row"
             >
               {/* UI-66 (OQ-53 (e), owner ruling Karl 2026-10-05) | @implemented [2026-10-08]:
                   the row leads with the session's criteria title, as "Pick up where you left
                   off" does, and the day and time follow (was: the time, then "Practice"). */}
               <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-lg font-semibold text-lyc-ink">
-                  {recentSessionTitle(s)}
-                </span>
+                <ClampedLabel
+                  text={recentSessionTitle(s)}
+                  className="text-lg font-semibold text-lyc-ink"
+                  data-testid="practice-recent-title"
+                />
                 <span className="text-base text-lyc-muted">
                   {s.local_time === null
                     ? dayHeaderLabel(s.local_date, todayKey)

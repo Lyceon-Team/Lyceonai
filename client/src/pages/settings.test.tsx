@@ -35,6 +35,14 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  closeSatDates,
+  offeredSatDates,
+  openSatDates,
+  satDatesSummary,
+  toggleSatDate,
+  waitForSatDates,
+} from "@/components/sat-dates/sat-date-picker.testing";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import {
@@ -44,6 +52,7 @@ import {
 } from "@lyceon/shared/billing-schema";
 import {
   profileReadResponseSchema,
+  satDateBoundResponseSchema,
   profileUpsertResponseSchema,
 } from "@lyceon/shared/calendar/api";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
@@ -239,6 +248,16 @@ const STUDY_PROFILE = {
   setup_completed_at: "2026-09-02T00:00:00.000Z",
 } as const;
 
+/**
+ * The served bound (`GET /api/sat-dates/bound`, owner rulings 2026-10-11 on #1204 and
+ * 2026-10-12 on #1211), built by the shared wire schema.
+ */
+const LATEST_TEST_DATE = "2027-06-05";
+const SAT_DATE_BOUND_BODY = {
+  ...satDateBoundResponseSchema.parse({ latest_test_date: LATEST_TEST_DATE }),
+  requestId: "r",
+};
+
 function calendarProfileBody(exists: boolean): unknown {
   return {
     ...profileReadResponseSchema.parse({
@@ -279,6 +298,9 @@ function serve(opts: Serve): void {
     const path = url.split("?")[0];
     if (path === "/api/billing/status" && opts.billing) {
       return json(opts.billing);
+    }
+    if (path === "/api/sat-dates/bound" && method === "GET") {
+      return json(SAT_DATE_BOUND_BODY);
     }
     if (path === "/api/calendar/profile" && method === "GET") {
       return json(calendarProfileBody(opts.calendarProfile ?? false));
@@ -481,12 +503,21 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
   it("with a calendar profile: the test date and target show and save through PUT /api/calendar/profile", async () => {
     serve({ calendarProfile: true });
     await mount({});
-    // SCL-223: the saved date is a ticked option in the shared SAT-date picker.
-    const date = await screen.findByTestId(
+    // SCL-223: the saved date is the picker's closed value and a ticked option in its menu.
+    await screen.findByTestId("settings-test-dates-trigger");
+    expect(satDatesSummary("settings-test-dates")).toBe("Sat, Dec 5, 2026");
+    await waitForSatDates("settings-test-dates");
+    const date = within(openSatDates("settings-test-dates")).getByTestId(
       "settings-test-dates-date-2026-12-05",
     );
-    const target = screen.getByTestId("settings-target") as HTMLInputElement;
     expect(date.getAttribute("aria-checked")).toBe("true");
+    // Owner ruling 2026-10-11: nothing past the served bound is offered.
+    const offered = offeredSatDates("settings-test-dates");
+    expect(offered).toContain(LATEST_TEST_DATE);
+    expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
+    closeSatDates("settings-test-dates");
+    const target = screen.getByTestId("settings-target") as HTMLInputElement;
     expect(target.value).toBe("1400");
     expect(screen.queryByTestId("settings-goal-setup")).toBeNull();
 
@@ -528,13 +559,13 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
   it("SCL-223: with no calendar profile the SAT dates still show and save alone, through PUT /api/calendar/profile", async () => {
     serve({ calendarProfile: false });
     await mount({});
-    const option = await screen.findByTestId(
-      "settings-test-dates-date-2026-12-05",
-    );
+    await screen.findByTestId("settings-test-dates-trigger");
     // The target score waits for calendar setup (OQ-20); the link to set it up stays.
     expect(screen.queryByTestId("settings-target")).toBeNull();
     expect(screen.getByTestId("settings-goal-setup")).toBeTruthy();
-    fireEvent.click(option);
+    await waitForSatDates("settings-test-dates");
+    toggleSatDate("settings-test-dates", "2026-12-05");
+    closeSatDates("settings-test-dates");
     fireEvent.click(screen.getByTestId("settings-profile-save"));
     await screen.findByTestId("settings-profile-saved");
     const puts = calls("PUT", "/api/calendar/profile");

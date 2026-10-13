@@ -148,12 +148,11 @@ describe("DesmosCalculator ResizeObserver", () => {
 
     resizeSpy.mockClear();
 
-    // Click the Scientific mode button to switch modes
-    const scientificBtn = screen.getByTestId("desmos-mode-scientific");
-    fireEvent.click(scientificBtn);
+    // The calculator opens on Scientific (owner brief 2026-10-11); switch to Graphing.
+    const graphingBtn = screen.getByTestId("desmos-mode-graphing");
+    fireEvent.click(graphingBtn);
 
-    // Mode switch destroys old calculator and creates new one.
-    // The new constructor call triggers an initial resize() via setTimeout(0).
+    // The tab's calculator is shown (created the first time, kept after) and resized to its host.
     triggerScriptLoad();
 
     await waitFor(() => {

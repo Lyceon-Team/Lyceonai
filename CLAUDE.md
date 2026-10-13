@@ -299,6 +299,17 @@ anywhere a route, service, or handler re-states a shape the canonical type alrea
 
 For any non-trivial change, use **plan mode**: explore and read first, propose a plan, proceed to edits only after the plan is reviewed. Use **subagents** for investigation, parallel exploration, and independent review so the main thread stays focused and uncluttered.
 
+## UI standards — every student screen
+
+`docs/plans/student-ui/design/DESIGN.md` §5 "UI standards" (Karl, 2026-10-11) applies to every
+student screen you build or change. In short: 2–3 options → segmented control or radios; 4+ →
+dropdown; multi-select → dropdown with checkboxes; more than ~10 names/text → dropdown with
+type-to-filter, more than ~10 in a natural order (dates, numbers) → scrollable dropdown without a
+filter; never a long option list inline. One filled primary action per screen. Nothing below 14px; tokens
+only, no raw hex. Lists over ~5 rows on a card show 5 and "Show more". Long labels clamp to two
+lines (`ClampedLabel`). Every data area has empty, loading and error states. **Check each new
+screen against §5 in the PR description (a short checklist) and attach screenshots.**
+
 ## Before declaring a domain change complete
 
 Invoke `/grill-me` to adversarially self-review the diff against the spec, then hand to the `spec-auditor` subagent. Goal: **never fail a Codex audit** — catch everything Codex would catch in the inner loop first.

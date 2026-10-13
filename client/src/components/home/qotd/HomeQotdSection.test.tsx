@@ -10,7 +10,19 @@
  * parsed with the shared response schema before it is served, so the fixtures are shapes the
  * server can emit (the server itself is proved in tests/ci/home-qotd.pg.ci.test.ts).
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import {
+  closeSatDates,
+  offeredSatDates,
+  openSatDates,
+  waitForSatDates,
+} from "@/components/sat-dates/sat-date-picker.testing";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -50,6 +62,9 @@ vi.mock("@/lib/csrf", () => ({
     if (url === "/api/qotd/answer") return json({ data: net.answer }, 201);
     if (url === "/api/qotd/email-consent")
       return json({ data: { consented: true, show_email_prompt: false } });
+    // The served bound (owner rulings 2026-10-11 on #1204, 2026-10-12 on #1211).
+    if (url === "/api/sat-dates/bound")
+      return json({ latest_test_date: "2027-06-05", requestId: "r" });
     if (url.startsWith("/api/calendar/profile"))
       return json({ ...(net.profile as object), requestId: "r" });
     return json({ error: "Not found" }, 404);
@@ -310,10 +325,19 @@ describe("the SAT-date card", () => {
     net.today = answeredEarlier();
     mount();
     fireEvent.click(await screen.findByTestId("home-sat-date-open"));
-    const options = screen.getAllByRole("checkbox");
-    // "Not sure yet" first, then future official dates only.
+    // The one picker: a dropdown whose items are "Not sure yet" first, then future dates only.
+    await waitForSatDates("home-sat-dates");
+    const menu = openSatDates("home-sat-dates");
+    const options = within(menu).getAllByRole("menuitemcheckbox");
+    expect(options[0]?.textContent).toBe("Not sure yet");
     expect(options.length).toBeGreaterThan(2);
+    // Owner ruling 2026-10-11: nothing past the served bound is offered.
+    const offered = offeredSatDates("home-sat-dates");
+    expect(offered).toContain("2027-06-05");
+    expect(offered.every((d) => d <= "2027-06-05")).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
     fireEvent.click(options[1] as HTMLElement);
+    closeSatDates("home-sat-dates");
     fireEvent.click(screen.getByTestId("home-sat-date-save"));
     await waitFor(() =>
       expect(

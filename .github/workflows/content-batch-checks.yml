@@ -7,10 +7,12 @@
 #
 # plain English: on every pull request into `social` (opened, pushed to, marked ready, or turned back
 # into a draft) this runs scripts/content/check-batch-pr.ts. A pull request that carries no content
-# passes at once. A batch pull request passes as a draft with Claude's self-audit; once marked READY
+# passes at once. A batch pull request passes as a draft with section 1, the structural record of what
+# was produced (SCL-229: Claude's self-audit is private, so no findings appear there); once marked READY
 # it also needs Codex's verdict on every item and Claude's response to every REVISE, or the check
-# goes red. Make "Content batch checks / review-record" a required status check on `social` (branch
-# protection) so a red record cannot be merged. It also fails any pull request that edits
+# goes red. Not a required check (Karl, 2026-10-11, "keep it simple"): it runs and shows on every
+# batch PR, and Karl merges only after reading the record. Making it required needs the App upgrade
+# in docs/runbooks/content-ops.md §7 first, or the approval stamp could no longer push. It also fails any pull request that edits
 # content/batches/approvals.json, which only the merge workflow writes, and any `Audit-By: Codex`
 # commit that touches anything but the Codex section. Content PRs go into `social` (owner brief
 # 2026-10-11, "move content to the social branch"); check-batch-pr.ts also refuses a cycle aimed at

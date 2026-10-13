@@ -45,6 +45,10 @@ Clear, warm and plain. Honest about limits. Written by a person for a parent or 
 4. **Review.** Post the PR link and a plain summary in the thread. Apply Karl's edits.
 5. **Approval.** Karl's written approval is recorded on the content and in the claim inventory before merge. Only Karl merges.
 
+## Angles and hooks
+
+When planning content, ads or video, pick an angle from the hook bank, [`references/hook-bank.md`](references/hook-bank.md), and state which one in the plan or brief. Propose a new angle by adding a row in the same columns, marked `proposed`, for Karl's approval. The bank is a brainstorm, not approved copy: a hook goes public only after it passes the normal gates (claims, sources, disclosure) and Karl approves it.
+
 ## Blog pipeline (Doc 10B)
 
 Blog posts and the monthly content calendar run through the scheduled pipeline, not the ad-hoc workflow above: monthly plan on the 20th, weekly batch on Wednesday, Codex's independent audit, Claude's revision, Karl's merge, then the post goes live on its date at 07:00 Central. Follow `.claude/skills/content-ops/SKILL.md` for any of those stages, including when Karl asks for one by hand. A timely idea from Slack goes into the next plan or, if Karl wants it sooner, through the same pipeline as a batch of its own.

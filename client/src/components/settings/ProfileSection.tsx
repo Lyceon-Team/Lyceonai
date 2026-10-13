@@ -111,7 +111,6 @@ function ProfileForm({
     .filter((d) => d >= today)
     .sort();
   const [dates, setDates] = useState<SatDateChoice>({
-    notSure: false,
     dates: savedDates,
   });
   // The target score is a calendar-setup answer (OQ-20); the SAT dates are not (SCL-223).

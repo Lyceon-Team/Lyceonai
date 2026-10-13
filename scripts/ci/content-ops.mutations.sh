@@ -29,10 +29,11 @@ PLAN="scripts/content/plan-skeleton.ts"
 ENTRY="client/src/prerender/entry-server.tsx"
 CHECKPR="scripts/content/check-batch-pr.ts"
 CHECKS_WF=".github/workflows/content-batch-checks.yml"
+APPROVAL_WF=".github/workflows/content-batch-approval.yml"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/content-mut.XXXX)"
 
-FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE" "$SATDATES" "$NOTIFY" "$PLAN" "$ENTRY" "$CHECKPR" "$CHECKS_WF")
+FILES=("$SCHEDULE" "$BLOG" "$PLUGIN" "$WITHHELD" "$GATE" "$JOB" "$STAMP" "$REVIEW" "$BANNED" "$VALE_INI" "$LYCHEE" "$SATDATES" "$NOTIFY" "$PLAN" "$ENTRY" "$CHECKPR" "$CHECKS_WF" "$APPROVAL_WF")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -249,6 +250,18 @@ run "B2 PR check refuses seo" "a batch PR into seo fails; the same into social p
 echo "=== (B3) the review-record check also runs on PRs into seo ==="
 plant "$CHECKS_WF" "    branches: [social]" "    branches: [seo, social]" || { bad "B3 STALE"; exit 1; }
 run "B3 trigger is social only" "a batch PR into social triggers the review-record check; the same into seo does not" "$BRANCH_T"
+
+echo "=== (AP1) a push that is not the pull request's merge commit is stamped ==="
+plant "$STAMP" "  if (pr.merge_commit_sha !== pushSha)" "  if (false)" || { bad "AP1 STALE"; exit 1; }
+run "AP1 this push's merge only" "a push that is not that pull request's merge commit stamps nothing" "$STAMP_T"
+
+echo "=== (AP2) the stamp is pushed with the workflow token, not the App's ==="
+plant "$APPROVAL_WF" "          token: \${{ steps.app.outputs.token }}" "          token: \${{ github.token }}" || { bad "AP2 STALE"; exit 1; }
+run "AP2 pushed as the App" "the stamp is pushed to social with the App token, never the workflow token" "$BRANCH_T"
+
+echo "=== (AP3) the stamp job runs outside the Environment that guards the App key ==="
+plant "$APPROVAL_WF" "    environment: content-approval" "" || { bad "AP3 STALE"; exit 1; }
+run "AP3 key only in the Environment" "the approval stamp runs only on a push to social, in the Environment that holds the App key" "$BRANCH_T"
 
 echo
 echo "CONTENT OPS MUTATIONS: $PASS passed, $FAIL failed"

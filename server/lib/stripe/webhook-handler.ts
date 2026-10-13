@@ -49,6 +49,12 @@ import {
 import type { EntitlementUpdate } from "../account";
 import { logger } from "../../logger";
 import { digestId } from "./redact";
+import { EntitlementService } from "../../services/entitlement-service";
+import {
+  defaultLifecycleDeps,
+  fireLifecycle,
+  sendEntitledEvents,
+} from "../lifecycle-email";
 import { getTier1Countries } from "../entitlement-runtime-config";
 import {
   evaluateCountryEligibility,
@@ -569,6 +575,53 @@ function epochToIso(seconds: unknown): string | null {
 }
 
 /**
+ * The one predicate (SCL-029), read for the announcement only. It can never break a grant: a
+ * throw or a failed read is `{ ok: false }`, which sends nothing.
+ */
+async function readEntitledForAnnouncement(
+  profileId: string,
+): Promise<{ ok: true; active: boolean } | { ok: false }> {
+  try {
+    return await EntitlementService.evaluateEntitlementActive(profileId);
+  } catch (error: unknown) {
+    logger.warn(
+      "LIFECYCLE_EMAIL",
+      "entitled_read_failed",
+      "Could not tell whether the entitlement was new; no lifecycle event",
+      {
+        profileRef: digestId(profileId),
+        error: error instanceof Error ? error.name : "unknown",
+      },
+    );
+    return { ok: false };
+  }
+}
+
+/**
+ * Onboarding events to Resend Automations (Karl, 2026-10-12): when this write took the student
+ * from not entitled to entitled, tell Resend — `lyceon.entitled` and the contact property
+ * `entitled = "true"` for the student and, when a guardian paid, the payer. Both sides of the
+ * test are the one platform predicate (`entitlement_active`, SCL-029), read before and after the
+ * upsert, so "active" is never redefined here. An unreadable answer on either side sends
+ * nothing (never a guess). Fire-and-forget: the webhook's own result never waits on Resend.
+ */
+async function announceIfNewlyEntitled(
+  before: { ok: true; active: boolean } | { ok: false },
+  studentProfileId: string,
+  payerProfileId: string | null,
+): Promise<void> {
+  if (!before.ok || before.active) return;
+  const after = await readEntitledForAnnouncement(studentProfileId);
+  if (!after.ok || !after.active) return;
+  fireLifecycle("entitled", studentProfileId, () =>
+    sendEntitledEvents(
+      { studentProfileId, payerProfileId },
+      defaultLifecycleDeps(),
+    ),
+  );
+}
+
+/**
  * Persist Stripe's authoritative subscription state onto the student's
  * entitlement row. Re-fetches rather than trusting the delivered object.
  */
@@ -735,6 +788,7 @@ async function writeEntitlementFromSubscription(
     );
   }
 
+  const wasEntitled = await readEntitledForAnnouncement(studentProfileId);
   await upsertEntitlement(studentProfileId, {
     tier,
     status,
@@ -753,6 +807,11 @@ async function writeEntitlementFromSubscription(
     // so the honest absence and the honest self-payer are the same value on purpose.
     payer_profile_id: subscription.metadata?.payer_profile_id ?? null,
   });
+  await announceIfNewlyEntitled(
+    wasEntitled,
+    studentProfileId,
+    subscription.metadata?.payer_profile_id ?? null,
+  );
   // W3-3: record the billing country on the same grant. Revocations leave the
   // last known country in place — a lapsed student in crisis still gets theirs.
   // Only a country Stripe PROVIDED is stored: a defaulted US is a decision rule, not a fact
@@ -1411,6 +1470,7 @@ async function writeEntitlementsForAllItems(
     if (!item) continue;
     const studentProfileId = candidate.studentProfileId;
 
+    const wasEntitled = await readEntitledForAnnouncement(studentProfileId);
     await upsertEntitlement(studentProfileId, {
       tier,
       status: mapped.status,
@@ -1426,6 +1486,11 @@ async function writeEntitlementsForAllItems(
       // flow reads it to decide who to ask about the money (Doc 01 §36.4).
       payer_profile_id: payerProfileId,
     });
+    await announceIfNewlyEntitled(
+      wasEntitled,
+      studentProfileId,
+      payerProfileId,
+    );
     if (grantCountry?.source === "provided") {
       await setProfileCountryCode(studentProfileId, grantCountry.country);
     }

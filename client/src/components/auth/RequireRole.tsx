@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
+import { isProfileGateSatisfied } from "@lyceon/shared/profile-completion";
 import { runtimeRoleSchema } from "@lyceon/shared/runtime-role-schema";
 import { AccountUnavailable } from "./AccountUnavailable";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -130,8 +131,21 @@ export function RequireRole({ allow, children }: RequireRoleProps) {
   // the flag itself. What remains are two facts about an INCOMPLETE ACCOUNT —
   // no profile yet — and one condition from the Terms:
   //
+  //
+  // Hotfix 2026-10-11: "complete" is the ONE shared rule, `isProfileGateSatisfied` — the same
+  // function the server's `requireProfileComplete` and `/api/profile` use — so this gate and the
+  // server's can never disagree (their disagreement over an admin was the production reload loop).
   const needsOnboarding =
-    requiredProfileComplete === false || !profileCompletedAt;
+    requiredProfileComplete === false ||
+    !isProfileGateSatisfied({
+      isAdmin,
+      role: gateUser?.role,
+      profileCompletedAt,
+      dateOfBirthKnown:
+        gateUser?.dateOfBirth === undefined
+          ? undefined
+          : gateUser.dateOfBirth !== null,
+    });
 
   if (!isAdmin && !isProfileCompletePage && needsOnboarding) {
     // @spec [AS-5; register UI-03] | @implemented [2026-09-29] | plain English: the page the

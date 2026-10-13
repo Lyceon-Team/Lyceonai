@@ -7,17 +7,17 @@ the SAT calendar. Claude writes, Codex audits, Karl merges. Nothing publishes wi
 
 ## 1. The week and the month
 
-| When (Central)          | Who                                         | What                                                                                                    |
-| ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| 20th, 09:07             | Claude routine "Content: monthly plan"      | Next month's calendar: `content/batches/<YYYY-MM>-plan/PLAN.md`, self-audited, draft PR into `social`   |
-| 22nd                    | Codex task "Content: monthly audit"         | Audits the plan into its review record                                                                  |
-| 23rd, 09:07             | Claude routine "Content: monthly revise"    | Answers Codex, marks the plan PR ready                                                                  |
-| by the 25th             | Karl                                        | Reads `REVIEW.md`, merges the plan PR                                                                   |
-| Wednesday, 09:07        | Claude routine "Content: weekly produce"    | Next week's three posts from the approved plan, gates run, self-audit, draft PR                         |
-| Thursday                | Codex task "Content: weekly audit"          | APPROVE / REVISE / REJECT per post, with evidence                                                       |
-| Friday, 09:07           | Claude routine "Content: weekly revise"     | Fixes each REVISE (one round), drops REJECTs, re-runs the gates, marks the PR ready                     |
-| Friday–Sunday           | Karl                                        | Reads `content/batches/<cycle>/REVIEW.md`; merges the batch PR into `social`, then `social` into `main` |
-| Mon/Wed/Fri 07:00–07:59 | Vercel cron `/api/internal/content-publish` | On a day a post is due, triggers the production deploy hook; the post goes live                         |
+| When (Central)          | Who                                         | What                                                                                                       |
+| ----------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 20th, 09:07             | Claude routine "Content: monthly plan"      | Next month's calendar: `content/batches/<YYYY-MM>-plan/PLAN.md`, audited privately, draft PR into `social` |
+| 22nd                    | Codex task "Content: monthly audit"         | Audits the plan into its review record                                                                     |
+| 23rd, 09:07             | Claude routine "Content: monthly revise"    | Answers Codex, marks the plan PR ready                                                                     |
+| by the 25th             | Karl                                        | Reads `REVIEW.md`, merges the plan PR                                                                      |
+| Wednesday, 09:07        | Claude routine "Content: weekly produce"    | Next week's three posts from the approved plan, gates run, private audit, draft PR                         |
+| Thursday                | Codex task "Content: weekly audit"          | APPROVE / REVISE / REJECT per post, with evidence                                                          |
+| Friday, 09:07           | Claude routine "Content: weekly revise"     | Fixes each REVISE (one round), drops REJECTs, re-runs the gates, marks the PR ready                        |
+| Friday–Sunday           | Karl                                        | Reads `content/batches/<cycle>/REVIEW.md`; merges the batch PR into `social`, then `social` into `main`    |
+| Mon/Wed/Fri 07:00–07:59 | Vercel cron `/api/internal/content-publish` | On a day a post is due, triggers the production deploy hook; the post goes live                            |
 
 **Branches.** Content lives on `social`, which Karl cut from `main` for it; `seo` is for build
 work, and the pipeline's code reaches `main` through `seo` as before.
@@ -37,7 +37,8 @@ claude/content-<cycle>  --(draft PR, Karl merges)-->  social  --(Karl merges)-->
 
 **What Karl's merge does.** Merging a batch PR into `social` runs **Content batch approval**,
 which stamps the cycle in `content/batches/approvals.json` on `social` (only Karl's merge into
-`social` stamps; only that workflow writes the file). A post is approved exactly when its cycle
+`social` stamps; only that workflow writes the file, reading the merge from GitHub's own record of
+the pull request and pushing as the `lyceon-content-approval` App). A post is approved exactly when its cycle
 has a stamp. Production builds from `main`, so the batch reaches the site after the `social` →
 `main` merge (two merges a week, owner answer 2). From then on each post is withheld from the
 build until its date: not prerendered, not in the sitemap, its URL a 404, its text in no bundle.
@@ -54,10 +55,29 @@ verdicts, the PR link): `.github/workflows/content-batch-notify.yml`, set up in
    `CONTENT_APPROVER_LOGIN` = your GitHub login. Only a merge by that login stamps an approval.
    Note: pull requests Claude opens from these sessions are authored under the same GitHub
    account (`kingk237`). The approval rests on who **merges**, and the routines never merge.
-2. **Let the stamp reach `social`.** If `social` is protected against direct pushes, allow GitHub
-   Actions to push to it (branch protection or ruleset bypass for `github-actions[bot]`).
-   Otherwise the stamp commit fails, the **Content batch approval** run is red, and nothing in
-   that batch publishes until it is fixed and re-run.
+2. **Let the stamp reach `social` (a GitHub App).** The `social` ruleset cannot bypass-list the
+   workflow's own token, so the stamp is pushed by a small GitHub App instead, which a ruleset can
+   bypass-list. This is GitHub's standard way for a workflow to write to a protected branch.
+   Once, in this order:
+   1. **Create the App.** GitHub → your organization (Lyceon-Team) → **Settings → Developer
+      settings → GitHub Apps → New GitHub App**. Name `lyceon-content-approval`. Uncheck
+      **Webhook → Active**. **Repository permissions → Contents: Read and write** (nothing else).
+      **Where can this GitHub App be installed: Only on this account.** Create it.
+   2. **Key and install.** On the App's page, note the **App ID**, then **Generate a private key**
+      (a `.pem` file downloads). **Install App** → Lyceon-Team → **Only select repositories** →
+      `Lyceonai`.
+   3. **Environment that holds the key.** Repository **Settings → Environments → New environment**,
+      named `content-approval`. **Deployment branches and tags → Selected branches and tags → add
+      `social`.** Then in that Environment add the **secret** `CONTENT_APP_PRIVATE_KEY` (paste the
+      whole `.pem` file) and the **variable** `CONTENT_APP_ID` (the App ID). Delete the downloaded
+      `.pem` afterwards. Only a job running on `social` can read the key; no pull request can.
+   4. **Bypass.** Repository **Settings → Rules → Rulesets →** the `social` ruleset → **Bypass list
+      → Add bypass → Apps → `lyceon-content-approval`**, mode **Always**.
+
+   Until all four are done, a merged batch is not stamped: the **Content batch approval** run is
+   red and nothing in that batch publishes. Nothing else needs a bypass: Karl's own merges go
+   through the normal pull request path.
+
 3. **Required check.** Make **Content batch checks / review-record** a required status check on
    `social`. It blocks a ready batch without Codex's verdicts or without a Claude response to every
    REVISE, and any hand edit of `approvals.json`.
@@ -92,10 +112,12 @@ prompts, exactly as stored:
 > origin/main into it first (a normal merge commit, never a rebase or force-push), and open the
 > draft pull request into social. The skill is safe to re-run: if the cycle's branch, pull request
 > or review record exists, update it. If a required input is missing (no approved plan covering
-> next week), record that in the review record and stop. Never merge a pull request, never push to
-> social or main, never mark the pull request ready, never edit docs/Spec or
-> content/batches/approvals.json. End with the cycle, the pull request link, each post and its
-> publish date, and every gate's result.
+> next week), open nothing, say so in your reply, and stop. Your self-audit is private (Karl,
+> 2026-10-13; SCL-229): audit every post and fix everything before opening the pull request, write
+> none of it down, and make section 1 of the review record exactly the output of
+> scripts/content/production-record.ts. Never merge a pull request, never push to social or main,
+> never mark the pull request ready, never edit docs/Spec or content/batches/approvals.json. End
+> with the cycle, the pull request link, each post and its publish date, and every gate's result.
 
 **Content: weekly revise** (Fridays 09:07)
 
@@ -115,7 +137,9 @@ prompts, exactly as stored:
 > lives on the social branch: cut claude/content-<YYYY-MM>-plan from origin/social, merge
 > origin/main into it first (a normal merge commit, never a rebase or force-push), generate the
 > skeleton with scripts/content/plan-skeleton.ts (never retype SAT dates), fill one row per slot,
-> self-audit, and open or update the draft pull request "content: <YYYY-MM> plan" into social.
+> audit the plan privately and fix everything (Karl, 2026-10-13; SCL-229: write none of it down),
+> make section 1 of the review record exactly the output of scripts/content/production-record.ts,
+> and open or update the draft pull request "content: <YYYY-MM> plan" into social.
 > Safe to re-run. Never merge a pull request, never push to social or main, never mark the pull
 > request ready.
 
@@ -203,10 +227,10 @@ and §8.7). You audit; you never edit content.
 
 | What                                      | What happens                                                                   | What to do                                                                                                                                                           |
 | ----------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A gate fails on a batch PR (CI red)       | The PR cannot be merged once the check is required                             | The revise routine fixes it; or ask Claude in the PR                                                                                                                 |
+| A gate fails on a batch PR (CI red)       | The PR shows red; GitHub still allows the merge, so Karl does not merge it     | The revise routine fixes it; or ask Claude in the PR                                                                                                                 |
 | Codex did not audit by Friday             | The revise routine records it and does not mark the PR ready                   | Run the Codex task by hand, then re-run the revise routine                                                                                                           |
 | Karl does not merge by Sunday             | Nothing publishes that week; the posts stay withheld                           | Merge later. The `social` → `main` merge deploys production, and that build publishes every approved post whose date has passed; the rest go live on their own dates |
-| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Fix the push permission (§2.2) and re-run the **Content batch approval** run                                                                                         |
+| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Check §2.2 (App installed, key and ID in the `content-approval` Environment, App on the `social` bypass list), then re-run the **Content batch approval** run        |
 | The publish cron did not deploy           | `content_publish_deploy_failed` in the logs; the cron answers 500              | Check `VERCEL_DEPLOY_HOOK_URL`; redeploy by hand, which publishes everything due                                                                                     |
 | A correction after publication            | Edit the post and set `updated`; it needs a new cycle's approval (Doc 10B §10) | Include it in the next batch PR                                                                                                                                      |
 
@@ -220,3 +244,59 @@ curl -s https://lyceon.ai/sitemap.xml | grep -c '/blog/<slug><'   # 1
 ```
 
 And the day before, the same URL answers 404 and the sitemap has no entry.
+
+## 7. Upgrade path: if `social` ever needs required checks
+
+Not in use (Karl, 2026-10-11: `review-record` stays a visible, not required, check). Read this only
+if `social` gets a rule that blocks direct pushes, such as a required status check.
+
+**The problem it solves.** The approval stamp is a direct push to `social` by the workflow's own
+token (`GITHUB_TOKEN`). A ruleset cannot list that token as a bypass actor. So once `social`
+requires a check, the stamp's push is refused, the **Content batch approval** run goes red, and no
+batch is approved.
+
+**The design (GitHub's standard pattern for a workflow that writes to a protected branch).** The
+stamp is pushed by a small GitHub App, which a ruleset can bypass-list. Karl's merge stays the
+approval, and the stamp's content and rules don't change:
+
+- the merger must be `CONTENT_APPROVER_LOGIN`;
+- the base must be `social`;
+- the first stamp wins;
+- it records `mergedBy`, `mergeSha` and the PR number.
+
+1. **Trigger.** The job runs on **push to `social`**, which is the merge itself, not on
+   `pull_request: closed`.
+2. **Environment.** It runs in an Environment, `content-approval`, whose deployment branch rule
+   admits only `social`. The App's private key lives only there, so no pull request, other branch
+   or other workflow can read it. A pull-request-triggered job runs on `refs/pull/N/merge`, which
+   that rule refuses.
+3. **Merge record.** The job reads the merge from GitHub's own record (`commits/{sha}/pulls`, then
+   `pulls/{n}`), never from the pull request's contents. It counts only when the PR's
+   `merge_commit_sha` is exactly the pushed commit. The App's own stamp commit has no PR behind
+   it, so it stamps nothing and cannot loop.
+4. **Token.** `actions/create-github-app-token` mints a one-hour token, limited to this repository
+   with Contents: read and write. Checkout and push use it. The workflow's own token stays
+   read-only.
+
+**Where it is.** The full implementation, with tests and planted defects, is on the branch
+`claude/content-approval-app-token` (commit 43760e42), from the closed PR #1195:
+`.github/workflows/content-batch-approval.yml`, `mergeEventFromPull` in
+`scripts/content/stamp-approval.ts`, and its tests.
+
+**Turning it on.**
+
+1. Create the GitHub App `lyceon-content-approval`: Contents read and write only, webhook off,
+   installed on `Lyceonai` only.
+2. Create the Environment `content-approval`, with deployment branches limited to `social`. Give it
+   the secret `CONTENT_APP_PRIVATE_KEY` (the `.pem` file) and the variable `CONTENT_APP_ID`.
+3. Add the App to the `social` ruleset's bypass list (mode: Always).
+4. Merge that branch's change. Bring it up to date with `seo` first.
+5. Only then add the required check.
+
+**Rejected alternatives.**
+
+- **Approval read from the merge record at build time.** Every production deploy would depend on
+  the GitHub API, the record would leave the repo, and Vercel's shallow clone makes git history
+  unreliable.
+- **A stamp written in the PR before merge.** That records an approval before it happens, and a
+  file in the PR can be edited by anyone who pushes to the branch.

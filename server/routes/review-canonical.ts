@@ -84,6 +84,7 @@ import {
   type SessionCriteria,
 } from "@lyceon/shared";
 import type { ReviewSessionItemRow } from "../../packages/shared/src/review-table-schema";
+import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 
 const router = Router();
 
@@ -1875,7 +1876,18 @@ router.post(
     }
 
     const metadata = asReviewSessionMetadata(session.filters);
-    metadata.calculator_state = parsed.data.calculator_state ?? null;
+    // G-NEW-14 (2026-10-12): an identical state (same hash) is answered with no write.
+    const nextCalculatorState = parsed.data.calculator_state ?? null;
+    if (
+      calculatorStateHash(metadata.calculator_state ?? null) ===
+      calculatorStateHash(nextCalculatorState)
+    ) {
+      return res.json({
+        sessionId,
+        calculatorState: metadata.calculator_state ?? null,
+      });
+    }
+    metadata.calculator_state = nextCalculatorState;
     await updateSessionLifecycle(sessionId, metadata);
 
     return res.json({

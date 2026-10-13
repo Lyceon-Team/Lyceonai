@@ -17,7 +17,11 @@ import type { CalendarDay } from "@lyceon/shared/calendar";
 import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
 import type { PracticeQuota } from "@lyceon/shared/practice-quota";
 import { BASELINE_PENDING_HEADLINE } from "@lyceon/shared/diagnostic-state";
-import { RulerProgress, rulerFill } from "@/components/student-ui";
+import {
+  ClampedLabel,
+  RulerProgress,
+  rulerFill,
+} from "@/components/student-ui";
 import { LYC_FOCUS } from "@/components/ui/button";
 import { ABSENT_COPY } from "@/features/calendar/components/Chrome";
 import { dayOfMonth, shortWeekday } from "@/features/calendar/lib/dates";
@@ -218,13 +222,16 @@ export function RecentSessionsSection({
             return (
               <Fragment key={recentRowKey(s)}>
                 <li
-                  className="flex items-center justify-between gap-3 border-b border-lyc-rule-soft px-1 py-[9px]"
+                  className="group flex items-center justify-between gap-3 border-b border-lyc-rule-soft px-1 py-[9px]"
                   data-testid="home-recent-row"
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-base font-semibold text-lyc-ink">
-                      {title}
-                    </span>
+                    {/* Owner brief 2026-10-11: two lines and an ellipsis, never five. */}
+                    <ClampedLabel
+                      text={title}
+                      className="text-base font-semibold text-lyc-ink"
+                      data-testid="home-recent-title"
+                    />
                     <span className="text-lyc-meta text-lyc-muted">
                       {/* Two unbreakable halves: a narrow panel wraps between them, never
                           inside "2 to review". */}

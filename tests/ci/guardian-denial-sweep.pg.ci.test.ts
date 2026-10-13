@@ -144,6 +144,11 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
   "/api/notifications/", // the caller's own feed
   "/api/profile/", // the caller's own profile
   "/api/public/",
+  // Owner ruling 2026-10-12 (Karl, on #1211), approved for reachability 2026-10-13 (SCL-187):
+  // the SAT-date bound is role-agnostic ("any signed-in account (including one whose role isn't
+  // saved yet) … It carries no student data"). One config-derived date for the caller's own
+  // account; the calendar profile routes stay gated.
+  "/api/sat-dates/",
   "/api/questions/stats", // admin-gated (requireSupabaseAdmin): bank counts are admin-only (student UI UI-07)
   "/api/students/", // subject resolver: guardian reads only when linked + entitled; writes require via=self
   "/api/webhooks/", // signature-verified
@@ -202,6 +207,21 @@ describe.skipIf(!PG_AVAILABLE)("G1-11 guardian denial sweep (routes read from th
     expect(has("post", "/api/review/answer")).toBe(true);
     expect(tutor.length).toBeGreaterThan(0);
     expect(gated.length).toBeGreaterThanOrEqual(50);
+  });
+
+  it("the real app serves a guardian the SAT-date bound, and only the date (ruling on #1211)", async () => {
+    // Presence: the route is mounted and ungated in the real app.
+    expect(
+      endpoints.some(
+        (e) => e.method === "get" && e.path === "/api/sat-dates/bound" && e.gates.length === 0,
+      ),
+    ).toBe(true);
+    const res = await request(app).get("/api/sat-dates/bound");
+    expect(res.status).toBe(200);
+    expect(res.body.latest_test_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(Object.keys(res.body).sort()).toEqual(["latest_test_date", "requestId"]);
+    // The student-only profile read beside it stays closed to the same session.
+    expect((await request(app).get("/api/calendar/profile")).status).toBe(403);
   });
 
   it("every /api/tutor route is gated", () => {

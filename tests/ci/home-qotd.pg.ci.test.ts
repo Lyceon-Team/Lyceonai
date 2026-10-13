@@ -69,6 +69,7 @@ const DATES = "a7000000-0000-4000-8000-00000000000b";
 const DELETED = "a7000000-0000-4000-8000-00000000000c";
 const NEVERER = "a7000000-0000-4000-8000-00000000000d";
 const TOGGLER = "a7000000-0000-4000-8000-00000000000e";
+const CAL_SETUP = "a7000000-0000-4000-8000-00000000000f";
 
 const TODAY_Q = "SATM1Q90001";
 const SUMMER_Q = "SATM1Q90002";
@@ -348,6 +349,7 @@ describe.skipIf(!PG_AVAILABLE)(
         DELETED,
         NEVERER,
         TOGGLER,
+        CAL_SETUP,
       ]) {
         await seedPerson(id, "student", "2008-01-01");
       }
@@ -1394,6 +1396,60 @@ describe.skipIf(!PG_AVAILABLE)(
         idempotency_key: randomUUID(),
       });
       expect(incomplete.ok).toBe(false);
+    });
+
+    // ── A8b ────────────────────────────────────────────────────────────────
+    // Owner brief 2026-10-11 §1: the calendar's own forms now use the one SAT-date picker and
+    // send `target_exam_dates` (SCL-223 as amended), in the SAME body as the schedule. These are
+    // the bodies the setup popup and the schedule sheet build, through the real service.
+    it("A8b: the calendar's setup and schedule bodies carry the date list with the schedule", async () => {
+      const { upsertStudyProfile, readStudyProfile } =
+        await import("../../server/services/calendar/profile-service");
+      const sooner = "2026-12-05";
+      const later = "2027-05-01";
+      const schedule = {
+        study_days_mask: 62,
+        daily_minutes: 30,
+        full_length_weekday: null,
+        full_length_interval_weeks: null,
+        timezone: "America/Chicago",
+      };
+
+      // The setup popup: dates and schedule in one body complete setup and keep every date.
+      const setup = await upsertStudyProfile(CAL_SETUP, {
+        ...schedule,
+        target_exam_dates: [later, sooner],
+        target_score: 1400,
+        idempotency_key: randomUUID(),
+      });
+      expect(setup.ok).toBe(true);
+      const afterSetup = await readStudyProfile(CAL_SETUP);
+      expect(afterSetup?.setup_completed_at).not.toBeNull();
+      expect(afterSetup?.target_exam_dates).toEqual([sooner, later]);
+      expect(afterSetup?.target_exam_date).toBe(sooner);
+
+      // The schedule sheet: the list replaces the future dates, and the effective date follows.
+      const edit = await upsertStudyProfile(CAL_SETUP, {
+        ...schedule,
+        target_exam_dates: [later],
+        idempotency_key: randomUUID(),
+      });
+      expect(edit.ok).toBe(true);
+      const afterEdit = await readStudyProfile(CAL_SETUP);
+      expect(afterEdit?.target_exam_dates).toEqual([later]);
+      expect(afterEdit?.target_exam_date).toBe(later);
+
+      // "Not sure yet" from the sheet: no dates, no effective date, setup still complete.
+      const unsure = await upsertStudyProfile(CAL_SETUP, {
+        ...schedule,
+        target_exam_dates: [],
+        idempotency_key: randomUUID(),
+      });
+      expect(unsure.ok).toBe(true);
+      const afterUnsure = await readStudyProfile(CAL_SETUP);
+      expect(afterUnsure?.target_exam_dates).toEqual([]);
+      expect(afterUnsure?.target_exam_date).toBeNull();
+      expect(afterUnsure?.setup_completed_at).not.toBeNull();
     });
 
     // ── A9 ─────────────────────────────────────────────────────────────────

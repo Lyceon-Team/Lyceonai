@@ -31,7 +31,11 @@ import { expect, test, type Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import { answerCookieBanner } from "./exam-harness/consent";
-import { DESMOS_STUBBED, stubDesmos } from "./desmos-stub";
+import {
+  DESMOS_STUBBED,
+  serveRealDesmosFromFile,
+  stubDesmos,
+} from "./desmos-stub";
 
 if (process.env.E2E_CHROMIUM)
   test.use({ launchOptions: { executablePath: process.env.E2E_CHROMIUM } });
@@ -41,6 +45,7 @@ test.setTimeout(3 * 60_000);
 test.beforeEach(async ({ context, baseURL }) => {
   await answerCookieBanner(context, baseURL ?? "http://localhost:5173");
   if (DESMOS_STUBBED) await stubDesmos(context);
+  else await serveRealDesmosFromFile(context);
 });
 
 const SHOTS =
@@ -128,9 +133,26 @@ test("Math module: calculator from the tools row, resume with it open, reference
     await expect(panel.locator(".dcg-container").first()).toBeVisible({
       timeout: 20_000,
     });
-    await panel.locator(".dcg-mq-editable-field").first().click();
+    // Owner brief 2026-10-11: the calculator opens on Scientific; the graph is on the Graphing tab.
+    await expect(panel.getByTestId("desmos-mode-scientific")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await panel.getByTestId("desmos-mode-graphing").click();
+    const field = panel
+      .getByTestId("desmos-host-graphing")
+      .locator(".dcg-mq-editable-field")
+      .first();
+    await field.click();
     await page.keyboard.type("y=x^2");
     await page.waitForTimeout(1_000);
+    await expect(field).toContainText("y=x");
+    // The real runtime draws the graph; the stand-in (E2E_DESMOS_STUB) has no canvas.
+    if (REACHABLE) {
+      await expect(
+        panel.getByTestId("desmos-host-graphing").locator("canvas").first(),
+      ).toBeVisible();
+    }
     await expect(page.getByTestId("desmos-calculator-error")).toHaveCount(0);
     expect(desmosFailures).toEqual([]);
   } else {

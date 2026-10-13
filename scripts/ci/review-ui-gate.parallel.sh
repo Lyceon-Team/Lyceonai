@@ -26,12 +26,33 @@
 # mutations script). Every shard must agree on how many were selected; with no selection set,
 # every plant must be selected.
 #
-# Usage:  bash scripts/ci/review-ui-gate.parallel.sh   (REVIEW_UI_GATE_SHARDS=<n>, default nproc)
+# Across jobs (CI wall-time brief, Karl 2026-10-11): REVIEW_UI_GATE_JOB=<m>/<M> makes this run
+# one of M matrix jobs. The plants are then split into M*SHARDS global shards; this job runs
+# global shards m*SHARDS .. m*SHARDS+SHARDS-1, with every per-plant and per-worktree check above
+# unchanged. The sums (every selected plant ran exactly once and went red) can only be checked
+# across all M jobs, so this job writes one line per shard to REVIEW_UI_GATE_SUMMARY and
+# scripts/ci/review-ui-gate.combine.sh checks the totals over every job's lines.
+#
+# Usage:  bash scripts/ci/review-ui-gate.parallel.sh   (REVIEW_UI_GATE_SHARDS=<n>, default nproc;
+#         REVIEW_UI_GATE_JOB=<m>/<M> and REVIEW_UI_GATE_SUMMARY=<file> for one job of M)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT="$PWD"
 SCRIPT="scripts/ci/review-ui-gate.mutations.sh"
 SHARDS="${REVIEW_UI_GATE_SHARDS:-$(nproc)}"
+JOB_SPEC="${REVIEW_UI_GATE_JOB:-0/1}"
+JOB_M="${JOB_SPEC%/*}"
+JOB_N="${JOB_SPEC#*/}"
+if ! [[ "$SHARDS" =~ ^[1-9][0-9]*$ && "$JOB_M" =~ ^[0-9]+$ && "$JOB_N" =~ ^[1-9][0-9]*$ ]] || [ "$JOB_M" -ge "$JOB_N" ]; then
+  echo "!! bad REVIEW_UI_GATE_SHARDS=$SHARDS / REVIEW_UI_GATE_JOB=$JOB_SPEC (want <index>/<count>, index < count)"
+  exit 2
+fi
+if [ "$JOB_N" -gt 1 ] && [ -z "${REVIEW_UI_GATE_SUMMARY:-}" ]; then
+  echo "!! REVIEW_UI_GATE_JOB=$JOB_SPEC needs REVIEW_UI_GATE_SUMMARY: the totals are checked across jobs"
+  exit 2
+fi
+GLOBAL_N=$((JOB_N * SHARDS))
+GLOBAL_BASE=$((JOB_M * SHARDS))
 
 # The worktrees check out HEAD, so the gate must be testing HEAD: refuse a tree whose tracked
 # files differ from it (fail closed, never test something else than what was checked out).
@@ -55,7 +76,7 @@ trap cleanup EXIT
 # package's own (pnpm links them per package).
 mapfile -t MODULE_DIRS < <(find . -maxdepth 4 -name node_modules -type d -not -path '*/node_modules/*' | sed 's#^\./##' | sort)
 
-echo "Sharding $SCRIPT across $SHARDS worktrees of $(git rev-parse --short HEAD)"
+echo "Sharding $SCRIPT: global shards $GLOBAL_BASE..$((GLOBAL_BASE + SHARDS - 1)) of $GLOBAL_N (job $JOB_SPEC), $SHARDS worktrees of $(git rev-parse --short HEAD)"
 for ((i = 0; i < SHARDS; i++)); do
   git worktree add --quiet --detach "$WORK/s$i" HEAD
   for d in "${MODULE_DIRS[@]}"; do ln -s "$ROOT/$d" "$WORK/s$i/$d"; done
@@ -66,7 +87,7 @@ for ((i = 0; i < SHARDS; i++)); do
   (
     cd "$WORK/s$i"
     rc=0
-    REVIEW_UI_GATE_SHARD="$i/$SHARDS" REVIEW_UI_GATE_SKIP_FINAL_SUITE=1 \
+    REVIEW_UI_GATE_SHARD="$((GLOBAL_BASE + i))/$GLOBAL_N" REVIEW_UI_GATE_SKIP_FINAL_SUITE=1 \
       bash "$SCRIPT" >"$WORK/s$i.log" 2>&1 || rc=$?
     echo "$rc" >"$WORK/s$i.rc"
   ) &
@@ -108,11 +129,34 @@ for ((i = 0; i < SHARDS; i++)); do
     echo "!! shard $i left its worktree different from HEAD:"
     git -C "$WORK/s$i" diff --stat HEAD -- | tail -5
     FAIL=1
+    continue
+  fi
+  # Written only for a shard that passed every check above; the combine step needs all of them.
+  if [ -n "${REVIEW_UI_GATE_SUMMARY:-}" ]; then
+    echo "shard=$((GLOBAL_BASE + i)) of=$GLOBAL_N total=$t selected=$sel ran=$r red=$p head=$(git rev-parse HEAD)" >>"$REVIEW_UI_GATE_SUMMARY"
   fi
 done
 
 printf '\n────────────────────────────────\n'
 echo "plants: total=${TOTAL:-?} selected=${SELECTED:-?} ran=$RAN_SUM red=$RED_SUM across $SHARDS shards in $(($(date +%s) - start))s"
+if [ "$JOB_N" -gt 1 ]; then
+  # One job of several: the sums are the combine step's (review-ui-gate.combine.sh), over every
+  # job's summary lines. Everything this job can check on its own was checked above.
+  if [ -z "$TOTAL" ] || [ "$TOTAL" -eq 0 ]; then
+    echo "!! no plant was counted"
+    FAIL=1
+  fi
+  if ! git diff --quiet HEAD --; then
+    echo "!! the main tree changed during the gate"
+    FAIL=1
+  fi
+  if [ "$FAIL" -ne 0 ]; then
+    echo "GATE FAILED (job $JOB_SPEC)"
+    exit 1
+  fi
+  echo "job $JOB_SPEC passed its shards; the totals are checked by review-ui-gate.combine.sh"
+  exit 0
+fi
 if [ -z "$TOTAL" ] || [ "$TOTAL" -eq 0 ]; then
   echo "!! no plant was counted"
   FAIL=1

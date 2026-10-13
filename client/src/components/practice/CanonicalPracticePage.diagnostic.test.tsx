@@ -110,7 +110,10 @@ function buildHookState(overrides?: Record<string, unknown>) {
     nextQuestion: vi.fn(),
     handleMissingMcChoices: vi.fn(),
     calculatorState: null,
-    persistCalculatorState: vi.fn(),
+    noteCalculatorChange: vi.fn(),
+    commitCalculatorState: vi.fn(async () => undefined),
+    calculatorFlushRef: { current: null },
+    calculatorSaveFailed: false,
     submitBlocked: null,
     ...overrides,
   };
