@@ -215,7 +215,7 @@ const TAB_BAR_ITEMS: readonly RailItem[] = TAB_BAR_KEYS.map(railItem);
 const SETTINGS_PATH = "/profile";
 
 /** Accessible names for a locked item (prototype: "<label>, included with a paid plan"). */
-export const LOCK_SUFFIX: Readonly<Record<FeatureLockReason, string>> = {
+const LOCK_SUFFIX: Readonly<Record<FeatureLockReason, string>> = {
   plan: "included with a paid plan",
   age: "not available on your account",
 };
@@ -244,9 +244,9 @@ const NOTIFICATIONS_PATH = "/notifications";
 
 /**
  * Why `feature` is locked for this student, or null (granted, or no map). The ONE reading of the
- * OQ-29 map for a lock: the rail, the tab bar and Home's full-length card all use it.
+ * OQ-29 map for a lock: the rail and the tab bar both use it.
  */
-export function featureLockReason(
+function featureLockReason(
   feature: LockableFeatureKey,
   access: FeatureAccessMap | null,
 ): FeatureLockReason | null {

@@ -39,7 +39,7 @@ const TEXT_LINK =
 
 type StepCopy = { title: string; body: string; cta: string; link: string };
 
-export function stepCopy(
+function stepCopy(
   id: GettingStartedStepId,
   diagnosticTotal: number | null,
 ): StepCopy {
