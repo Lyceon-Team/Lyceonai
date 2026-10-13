@@ -27,6 +27,10 @@ import {
 } from "../lib/retention/sweeps.js";
 import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
 import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
+import {
+  defaultAccountabilityJobDeps,
+  runGuardianAccountabilityJob,
+} from "../services/calendar/accountability-job.js";
 import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
 import {
   defaultOpsAlertDeps,
@@ -857,6 +861,52 @@ router.get(
         err,
       );
       res.status(500).json({ error: "qotd_daily_email_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/guardian-daily-digest
+ * @spec [owner brief "Guardian accountability loop" (Karl, 2026-10-13) "Delivery": "one email at
+ *        6 PM Chicago (two UTC cron entries with a Chicago-hour guard, like the QOTD email)";
+ *        "Missed days and back on track"; contracts/notifications.contract.md §2.3, §6.2]
+ *        | @implemented [2026-10-13]
+ *
+ * SCHEDULE: two DAILY Vercel crons (the plan allows daily crons only, see /qotd-daily-email):
+ * 23:00 UTC is 18:00 CDT and 00:00 UTC is 18:00 CST, so exactly one of the two lands in the
+ * 18:00 Chicago hour each day; the other does nothing.
+ *
+ * plain English: in the 18:00 Chicago hour, evaluates every entitled student's planned days
+ * (missed-plan alert, back on track), then builds each guardian's digest (one per guardian per
+ * day, only with something to report, only when their digest email is on), then sends the queued
+ * emails of those three types. Safe to rerun: every event id is deterministic and the rule skips
+ * days already evaluated. 500 when any send or any student evaluation failed, so the run shows as
+ * failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/guardian-daily-digest",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runGuardianAccountabilityJob(
+        defaultAccountabilityJobDeps(),
+      );
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "guardian_daily_digest", summary });
+    } catch (err) {
+      logger.error(
+        "ACCOUNTABILITY",
+        "guardian_daily_digest_job_error",
+        "Scheduled guardian accountability run failed",
+        err,
+      );
+      res.status(500).json({ error: "guardian_daily_digest_failed" });
     }
   },
 );

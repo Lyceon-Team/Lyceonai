@@ -21,6 +21,13 @@ export type RenderContext = {
     unsubscribeUrl: string | null;
     resumeUrl: string | null;
   };
+  /**
+   * `guardian_daily_digest` email only (Karl's ruling 5 on #1223, 2026-10-13): the recipient's
+   * signed one-click unsubscribe link, built by the dispatcher at send time and never stored.
+   */
+  guardianDigestEmail?: {
+    unsubscribeUrl: string | null;
+  };
 };
 
 export type InAppRender = {

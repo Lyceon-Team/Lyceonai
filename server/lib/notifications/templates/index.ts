@@ -11,7 +11,11 @@
  * flow, G2-05.)
  */
 import {
+  backOnTrackPayloadSchema,
   fullLengthNoticePayloadSchema,
+  guardianDailyDigestPayloadSchema,
+  missedPlanAlertPayloadSchema,
+  studyPlanChangedPayloadSchema,
   guardianLinkedPayloadSchema,
   guardianUnlinkedPayloadSchema,
   postExamNoticePayloadSchema,
@@ -37,6 +41,16 @@ import {
   renewalDecisionRequestedInApp,
 } from "./post-exam";
 import { qotdDailyInApp, qotdDailyNotificationEmail } from "./qotd-daily";
+import {
+  backOnTrackEmail,
+  backOnTrackInApp,
+  guardianDailyDigestEmail,
+  guardianDailyDigestInApp,
+  missedPlanAlertEmail,
+  missedPlanAlertInApp,
+  studyPlanChangedEmail,
+  studyPlanChangedInApp,
+} from "./accountability";
 import type { EmailRender, InAppRender, RenderContext } from "./shared";
 
 export type { EmailRender, InAppRender, RenderContext } from "./shared";
@@ -98,6 +112,31 @@ export function renderInApp(
         return err("qotd_daily payload does not match its schema");
       return ok(qotdDailyInApp(parsed.data));
     }
+    // Owner brief 2026-10-13 (guardian accountability).
+    case "study_plan_changed": {
+      const parsed = studyPlanChangedPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("study_plan_changed payload does not match its schema");
+      return ok(studyPlanChangedInApp(parsed.data, ctx));
+    }
+    case "missed_plan_alert": {
+      const parsed = missedPlanAlertPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("missed_plan_alert payload does not match its schema");
+      return ok(missedPlanAlertInApp(parsed.data, ctx));
+    }
+    case "back_on_track": {
+      const parsed = backOnTrackPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("back_on_track payload does not match its schema");
+      return ok(backOnTrackInApp(parsed.data, ctx));
+    }
+    case "guardian_daily_digest": {
+      const parsed = guardianDailyDigestPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("guardian_daily_digest payload does not match its schema");
+      return ok(guardianDailyDigestInApp(parsed.data, ctx));
+    }
   }
 }
 
@@ -152,6 +191,30 @@ export function renderEmail(
       if (!parsed.success)
         return err("qotd_daily payload does not match its schema");
       return qotdDailyNotificationEmail(parsed.data, ctx);
+    }
+    case "study_plan_changed": {
+      const parsed = studyPlanChangedPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("study_plan_changed payload does not match its schema");
+      return ok(studyPlanChangedEmail(parsed.data, ctx));
+    }
+    case "missed_plan_alert": {
+      const parsed = missedPlanAlertPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("missed_plan_alert payload does not match its schema");
+      return ok(missedPlanAlertEmail(parsed.data, ctx));
+    }
+    case "back_on_track": {
+      const parsed = backOnTrackPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("back_on_track payload does not match its schema");
+      return ok(backOnTrackEmail(parsed.data, ctx));
+    }
+    case "guardian_daily_digest": {
+      const parsed = guardianDailyDigestPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("guardian_daily_digest payload does not match its schema");
+      return ok(guardianDailyDigestEmail(parsed.data, ctx));
     }
   }
 }
