@@ -23,6 +23,7 @@
  * written: the title is the existing section label and the line is the page's approved subtitle.
  */
 import { Lock } from "lucide-react";
+import type { MouseEvent } from "react";
 import { Link } from "wouter";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
 import { featureLockReason, LOCK_SUFFIX } from "@/components/layout/app-shell";
@@ -37,7 +38,29 @@ const FULL_LENGTH_CARD_ACTION = "Start a full-length test";
 
 const FULL_LENGTH_HREF = "/tests";
 
-export function FullLengthCard(): JSX.Element {
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: '"Resume" for an
+ *       unfinished full-length'; DESIGN.md §4 Full-Length home ("Resume, otherwise Start"), §2
+ *       Mobile (OQ-63: Start and Resume ask the phone pre-start check)] | @implemented [2026-10-13]
+ * plain English: with a sitting in progress (the paid Home passes the one from the exam list it
+ * already reads), the card's action is "Resume", straight to that sitting, through the phone
+ * pre-start check as Home's "Pick up" row does; otherwise "Start a full-length test" to the
+ * Full-Length page, as before. Still outline: Home keeps its one filled primary.
+ */
+const FULL_LENGTH_RESUME_ACTION = "Resume";
+
+export type FullLengthResume = {
+  href: string;
+  /** The test's display name, for the action's accessible name ("Resume Practice Test 1"). */
+  formName: string;
+  onClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+};
+
+export function FullLengthCard({
+  resume = null,
+}: {
+  resume?: FullLengthResume | null;
+} = {}): JSX.Element {
   const access = useFeatureAccess();
   const { open } = useUpgradeModal();
   const reason = featureLockReason("exam_full_length", access);
@@ -61,11 +84,18 @@ export function FullLengthCard(): JSX.Element {
         {reason === null ? (
           <Button asChild variant="lyc-outline" size="lyc">
             <Link
-              href={FULL_LENGTH_HREF}
+              href={resume?.href ?? FULL_LENGTH_HREF}
               className="no-underline"
               data-testid="home-full-length-start"
+              {...(resume
+                ? {
+                    "aria-label": `Resume ${resume.formName}`,
+                    "data-resume": "true",
+                    onClick: resume.onClick,
+                  }
+                : {})}
             >
-              {FULL_LENGTH_CARD_ACTION}
+              {resume ? FULL_LENGTH_RESUME_ACTION : FULL_LENGTH_CARD_ACTION}
             </Link>
           </Button>
         ) : (

@@ -80,9 +80,10 @@ import {
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { DiagnosticCard } from "./DiagnosticCard";
-import { FullLengthCard } from "./FullLengthCard";
+import { FullLengthCard, type FullLengthResume } from "./FullLengthCard";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
+import { useHomeQotd } from "@/hooks/useHomeQotd";
 import { HomeLoading } from "./HomeLoading";
 import {
   ProjectionSection,
@@ -141,6 +142,7 @@ export function PaidHome({
   });
   const pool = useReviewPool();
   const projection = useHomeProjection(studentId);
+  const qotd = useHomeQotd();
   const { launch, pendingBlockId } = useLaunchBlock(navigate);
   const [launchFailed, setLaunchFailed] = useState(false);
   const precheck = useFullLengthPhonePrecheck();
@@ -218,7 +220,10 @@ export function PaidHome({
     !review.isLoading &&
     !exams.isLoading &&
     !pool.isLoading &&
-    !projection.isLoading;
+    !projection.isLoading &&
+    // First-run activation brief (Karl, 2026-10-13) P1: the Question of the Day card lands
+    // with the page, in its final place, instead of pushing the page down after it.
+    !qotd.isLoading;
 
   const retry = (): void => {
     void calendar.refetch();
@@ -266,6 +271,18 @@ export function PaidHome({
     ),
   ];
 
+  // First-run activation brief (Karl, 2026-10-13) P1: the full-length card resumes a sitting in
+  // progress (the first one the "Pick up" list shows), through the same phone pre-start check.
+  const sittingRow = resumeRows.find((r) => r.fullLength) ?? null;
+  const fullLengthResume: FullLengthResume | null =
+    sittingRow === null
+      ? null
+      : {
+          href: sittingRow.href,
+          formName: sittingRow.title,
+          onClick: precheck.onLinkClick(sittingRow.href),
+        };
+
   if (!settled) return <HomeLoading />;
   const needsDiagnostic =
     freeHomeStage(projection.estimateStatus) === "diagnostic";
@@ -308,7 +325,7 @@ export function PaidHome({
       ) : null}
 
       {/* Owner ruling (Karl, 2026-10-05) item 4: the full-length card, after today's plan. */}
-      <FullLengthCard />
+      <FullLengthCard resume={fullLengthResume} />
 
       {mastery.data !== undefined ? (
         <section
@@ -504,10 +521,14 @@ function ReadyPlan({
                 ) : null}
               </div>
               <span className="text-[17px] text-lyc-ink">{row.time ?? ""}</span>
-              {/* QA item 5 (2026-10-07): the pressed row says it is starting, from the click. */}
+              {/* QA item 5 (2026-10-07): the pressed row says it is starting, from the click.
+                  First-run activation brief (Karl, 2026-10-13) P1: each row's action is a text
+                  link, so "Start today's plan" is Home's only filled button and the rows no longer
+                  read as a column of competing buttons. */}
               <Button
                 type="button"
-                variant="lyc-outline"
+                variant="lyc-link"
+                className="self-start sm:self-center sm:justify-self-end"
                 disabled={row.completed || pendingBlockId !== null}
                 pending={pendingBlockId === row.blockId && !startedFromPrimary}
                 onClick={() => {

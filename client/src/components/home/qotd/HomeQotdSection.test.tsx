@@ -41,6 +41,8 @@ const net = vi.hoisted(() => ({
   today: null as unknown,
   answer: null as unknown,
   profile: { profile: null } as unknown,
+  /** First-run P1: hold the consent write, to see which button spins. */
+  holdConsent: false,
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -60,8 +62,10 @@ vi.mock("@/lib/csrf", () => ({
     net.log.push({ method, url, body });
     if (url === "/api/qotd/today") return json({ data: net.today });
     if (url === "/api/qotd/answer") return json({ data: net.answer }, 201);
-    if (url === "/api/qotd/email-consent")
+    if (url === "/api/qotd/email-consent") {
+      if (net.holdConsent) return new Promise<Response>(() => undefined);
       return json({ data: { consented: true, show_email_prompt: false } });
+    }
     // The served bound (owner rulings 2026-10-11 on #1204, 2026-10-12 on #1211).
     if (url === "/api/sat-dates/bound")
       return json({ latest_test_date: "2027-06-05", requestId: "r" });
@@ -164,6 +168,7 @@ function mount(): void {
 
 beforeEach(() => {
   net.log = [];
+  net.holdConsent = false;
   net.profile = { profile: null };
 });
 afterEach(() => {
@@ -225,7 +230,13 @@ describe("Home QOTD card", () => {
         "🔥 1 · Today ✓",
       ),
     );
+    // First-run P1: never over the explanation. While it is on screen there is no prompt; it
+    // opens once the student closes the explanation (Done), and the explanation is gone then.
+    expect(screen.getByText(EXPLANATION)).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByTestId("home-qotd-done"));
     const dialog = await screen.findByRole("dialog");
+    expect(screen.queryByText(EXPLANATION)).toBeNull();
     expect(dialog.textContent).toContain(QOTD_EMAIL_PROMPT_COPY.title);
     expect(dialog.textContent).toContain(QOTD_EMAIL_PROMPT_COPY.body);
     expect(screen.getByTestId("qotd-email-yes").textContent).toBe("Yes");
@@ -245,6 +256,7 @@ describe("Home QOTD card", () => {
     mount();
     fireEvent.click(await screen.findByText("3"));
     fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    fireEvent.click(await screen.findByTestId("home-qotd-done"));
     const dialog = await screen.findByRole("dialog");
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -262,6 +274,7 @@ describe("Home QOTD card", () => {
     mount();
     fireEvent.click(await screen.findByText("4"));
     fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    fireEvent.click(await screen.findByTestId("home-qotd-done"));
     expect((await screen.findByTestId("qotd-email-never")).textContent).toBe(
       "Don't ask again",
     );
@@ -282,6 +295,30 @@ describe("Home QOTD card", () => {
     fireEvent.click(screen.getByTestId("home-qotd-submit"));
     expect(await screen.findByText(EXPLANATION)).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
+    // Closing the explanation does not open it either.
+    fireEvent.click(screen.getByTestId("home-qotd-done"));
+    expect(await screen.findByTestId("home-qotd-collapsed")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("first-run P1: the spinner shows only on the button pressed (Not now), never on Yes", async () => {
+    net.today = unanswered();
+    net.answer = answer();
+    net.holdConsent = true;
+    mount();
+    fireEvent.click(await screen.findByText("2"));
+    fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    fireEvent.click(await screen.findByTestId("home-qotd-done"));
+    const notNow = await screen.findByTestId("qotd-email-not-now");
+    fireEvent.click(notNow);
+    await waitFor(() => expect(notNow.getAttribute("aria-busy")).toBe("true"));
+    const yes = screen.getByTestId("qotd-email-yes") as HTMLButtonElement;
+    expect(yes.getAttribute("aria-busy")).toBeNull();
+    expect(within(yes).queryByTestId("button-pending-spinner")).toBeNull();
+    expect(within(notNow).getByTestId("button-pending-spinner")).toBeTruthy();
+    // Both wait: a second decision cannot be sent meanwhile.
+    expect(yes.disabled).toBe(true);
+    net.holdConsent = false;
   });
 
   it("answered on an earlier visit: collapsed, with See explanation, and no prompt", async () => {

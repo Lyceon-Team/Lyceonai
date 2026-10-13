@@ -33,6 +33,7 @@ import {
 } from "@/components/sat-dates/SatDatePicker";
 import { Notice } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   newIntent,
   useStudyProfile,
@@ -62,7 +63,17 @@ export function HomeQotdSection({
   const today = useHomeQotd();
   const data = today.data;
 
-  if (today.isLoading) return null;
+  // First-run activation brief (Karl, 2026-10-13) P1: the card's place is held while it loads.
+  // Home waits for this read before it draws (PaidHome/FreeHome `settled`), so this shows only
+  // where the section renders on its own.
+  if (today.isLoading)
+    return (
+      <Skeleton
+        variant="lyc"
+        className="h-[88px] w-full"
+        data-testid="home-qotd-loading"
+      />
+    );
   if (today.isError) {
     return (
       <Notice
@@ -127,6 +138,24 @@ function QotdCard({
   const [justAnswered, setJustAnswered] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "The email pop-up
+   *       opens only after the explanation is visible/dismissed, never over it"]
+   *       | @implemented [2026-10-13]
+   * plain English: the server's "show the prompt" answer no longer opens it on top of the
+   * explanation the student is reading. It is held here, and the prompt opens when the student
+   * closes the explanation ("Done" under it), once. A student who leaves without pressing Done is
+   * not asked today; the explanation always comes first.
+   */
+  const [promptDue, setPromptDue] = useState(false);
+  const closeExplanation = (): void => {
+    setJustAnswered(false);
+    setExpanded(false);
+    if (promptDue) {
+      setPromptDue(false);
+      setPromptOpen(true);
+    }
+  };
 
   // The daily email links to /dashboard#qotd: bring the card into view on arrival. A side
   // effect on mount (scrolling), not derived state.
@@ -159,7 +188,7 @@ function QotdCard({
       onSuccess: (response) => {
         setJustAnswered(true);
         if (response.streak_extended) onStreakExtended();
-        if (response.show_email_prompt) setPromptOpen(true);
+        if (response.show_email_prompt) setPromptDue(true);
       },
     });
   };
@@ -207,7 +236,7 @@ function QotdCard({
     <QotdEmailPrompt
       open={promptOpen}
       showDontAskAgain={data.show_dont_ask_again}
-      pending={decide.isPending}
+      pendingDecision={decide.isPending ? (decide.variables ?? null) : null}
       error={
         decide.error !== null
           ? "We couldn't save that. Please try again."
@@ -241,6 +270,7 @@ function QotdCard({
         >
           See explanation
         </button>
+        {prompt}
       </section>
     );
   }
@@ -287,12 +317,23 @@ function QotdCard({
           </div>
         </div>
       ) : (
-        <p
-          className="m-0 text-base text-lyc-muted"
-          data-testid="home-qotd-next"
-        >
-          New question tomorrow.
-        </p>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          {/* P1 (2026-10-13): closing the explanation is when the email prompt may open. */}
+          <Button
+            type="button"
+            variant="lyc-outline"
+            onClick={closeExplanation}
+            data-testid="home-qotd-done"
+          >
+            Done
+          </Button>
+          <p
+            className="m-0 text-base text-lyc-muted"
+            data-testid="home-qotd-next"
+          >
+            New question tomorrow.
+          </p>
+        </div>
       )}
       {prompt}
     </section>

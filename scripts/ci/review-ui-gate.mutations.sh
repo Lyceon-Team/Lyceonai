@@ -2290,10 +2290,11 @@ assert s.count(a) == 1
 s = s.replace(a, "  \"text-lyc-ink focus:bg-accent focus:text-lyc-ink-strong\";", 1)'
 
 # Home's "Start a full-length test" card (the ruling's item 4).
+# Re-pointed 2026-10-13 (first-run activation P1): the paid card takes the sitting to resume.
 plant "HC-1" "no full-length card on the paid Home" \
   "$T50_HOME" \
   "client/src/components/home/PaidHome.tsx" \
-  'a = "      <FullLengthCard />\n"
+  'a = "      <FullLengthCard resume={fullLengthResume} />\n"
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 

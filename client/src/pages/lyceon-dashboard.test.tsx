@@ -495,6 +495,8 @@ type Scenario = {
   fullLengthToday?: boolean;
   /** QA item 15: the fixture week as of another day (its Sunday has no blocks). */
   today?: string;
+  /** First-run activation P1: the form has no sitting in progress. */
+  noSitting?: boolean;
 };
 
 function install(s: Scenario): void {
@@ -567,7 +569,14 @@ function install(s: Scenario): void {
         return json({ profile: null, requestId: "r" });
       if (path === "/api/review/sessions/open") return json(REVIEW_OPEN);
       if (path === "/api/review/pool") return json(POOL);
-      if (path === "/api/tests/forms") return json(FORMS);
+      if (path === "/api/tests/forms")
+        return json(
+          s.noSitting === true
+            ? {
+                forms: FORMS.forms.map((f) => ({ ...f, latest_session: null })),
+              }
+            : FORMS,
+        );
       if (path === "/api/practice/quota")
         return json(
           quota(s.quota ?? 12, (s.config ?? SEEDED_CONFIG).dailyLimit),
@@ -1171,7 +1180,7 @@ describe("Home's 'Start a full-length test' card (owner ruling, Karl, 2026-10-05
   }
 
   it("its words are the ruling's action and the Full-Length page's approved subtitle", async () => {
-    await mount("paid", { calendar: "ready" });
+    await mount("paid", { calendar: "ready", noSitting: true });
     const card = await screen.findByTestId("home-full-length");
     expect(within(card).getByTestId("home-full-length-start").textContent).toBe(
       FULL_LENGTH_CARD_ACTION,
@@ -1187,8 +1196,29 @@ describe("Home's 'Start a full-length test' card (owner ruling, Karl, 2026-10-05
     expect(prototype).toContain(FULL_LENGTH_CARD_LINE);
   });
 
-  it("paid: after today's plan, shown at every size, an outline link to /tests that navigates", async () => {
+  it("first-run P1: with a sitting in progress the card's action is Resume, straight to the sitting, still outline", async () => {
     const { container, history } = await mount("paid", { calendar: "ready" });
+    const card = await screen.findByTestId("home-full-length");
+    const resume = within(card).getByTestId("home-full-length-start");
+    expect(resume.tagName).toBe("A");
+    expect(resume.textContent).toBe("Resume");
+    expect(resume.getAttribute("aria-label")).toBe("Resume Full-Length Test 1");
+    expect(resume.getAttribute("href")).toBe(`/tests/${EXAM_SESSION_ID}`);
+    await waitFor(() =>
+      expect(screen.getByTestId("home-mastery")).toBeTruthy(),
+    );
+    expect(primaries(container)).toEqual([
+      screen.getByTestId("home-start-plan"),
+    ]);
+    fireEvent.click(resume);
+    expect(history[history.length - 1]).toBe(`/tests/${EXAM_SESSION_ID}`);
+  });
+
+  it("paid: after today's plan, shown at every size, an outline link to /tests that navigates", async () => {
+    const { container, history } = await mount("paid", {
+      calendar: "ready",
+      noSitting: true,
+    });
     const card = await screen.findByTestId("home-full-length");
     expectShownAtEverySize(card);
     expect(within(card).getByRole("heading", { level: 2 }).textContent).toBe(
@@ -1441,6 +1471,57 @@ describe("QA item 4: every Home CTA lands on its exact destination (owner ruling
   });
 });
 
+describe("first-run P1: the Question of the Day card lands with the page (no layout shift)", () => {
+  for (const plan of ["paid", "free"] as const) {
+    it(`${plan}: while today's question loads, Home holds its loading state; then the page and the card together`, async () => {
+      let release: () => void = () => undefined;
+      net.hold = {
+        pattern: /^\/api\/qotd\/today/,
+        gate: new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      };
+      await mount(
+        plan,
+        plan === "paid"
+          ? { calendar: "ready" }
+          : { estimateStatus: "no_baseline" },
+        { pending: true },
+      );
+      await waitFor(() => expect(gets()).toContain("/api/qotd/today"));
+      expect(screen.getByTestId("home-loading")).toBeTruthy();
+      expect(screen.queryByTestId("home")).toBeNull();
+      await act(async () => {
+        release();
+      });
+      await screen.findByTestId("home");
+      // The card is there in the same render as the page, never pushed in after it.
+      expect(screen.getByTestId("home-qotd")).toBeTruthy();
+    });
+  }
+});
+
+describe("first-run P1: today's plan rows act through text links", () => {
+  it("each row's action is a text link; 'Start today's plan' is Home's only filled button", async () => {
+    const { container } = await mount("paid", { calendar: "ready" });
+    const rows = await screen.findAllByTestId("home-plan-start");
+    // Presence first: the fixture day has rows.
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const classes = row.className.split(/\s+/);
+      expect(classes).toContain("underline");
+      expect(classes).not.toContain("border");
+      expect(classes).not.toContain("bg-lyc-primary-bg");
+    }
+    await waitFor(() =>
+      expect(screen.getByTestId("home-mastery")).toBeTruthy(),
+    );
+    expect(primaries(container)).toEqual([
+      screen.getByTestId("home-start-plan"),
+    ]);
+  });
+});
+
 describe("QA item 5: Home's starts show a pending state from the first click", () => {
   it("'Start today's plan': 'Starting…', disabled and busy while the launch is in flight; one launch", async () => {
     let release: () => void = () => undefined;
@@ -1512,7 +1593,8 @@ describe("QA item 5: Home's starts show a pending state from the first click", (
     const start = (await screen.findByTestId(
       "home-start-diagnostic",
     )) as HTMLButtonElement;
-    expect(start.textContent).toBe("Start diagnostic");
+    // First-run P1: the fixture's diagnostic is in progress (12 resolved of 40).
+    expect(start.textContent).toBe("Resume diagnostic · question 13 of 40");
     await act(async () => {
       fireEvent.click(start);
     });

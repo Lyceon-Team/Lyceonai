@@ -20,7 +20,11 @@ import { Button } from "@/components/ui/button";
 import type { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { STARTING_LABEL } from "@/lib/pending-copy";
-import { answeredLine, diagnosticCardLine } from "./home-model";
+import {
+  answeredLine,
+  diagnosticActionLabel,
+  diagnosticCardLine,
+} from "./home-model";
 
 type PracticeRead = Pick<
   ReturnType<typeof useActiveSessions>,
@@ -99,7 +103,12 @@ export function DiagnosticCard({
           onClick={() => void startDiagnostic()}
           data-testid="home-start-diagnostic"
         >
-          {diagnostic.isStarting ? STARTING_LABEL : "Start diagnostic"}
+          {diagnostic.isStarting
+            ? STARTING_LABEL
+            : diagnosticActionLabel(
+                openDiagnostic,
+                practice.diagnosticTotalQuestions,
+              )}
         </Button>
         <span className="text-base text-lyc-muted">
           You can stop and pick up where you left off.
