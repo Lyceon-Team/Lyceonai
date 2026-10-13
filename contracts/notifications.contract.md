@@ -487,10 +487,11 @@ with nothing in the product to explain why.
 **C14A.2** NEVER FOR: a student under 13 or of unknown age (`marketingOptInEligible`), a deleted account, an account with a `pending` deletion request (or whose deletion state cannot be read), or an address matched by `LIFECYCLE_EMAIL_DENYLIST` (domains and full addresses) or whose local part contains `test`.
 *Violated if:* any of these reaches Resend.
 
-**C14A.3** FIRE-AND-FORGET, NOTHING STORED. Sends run after the response (the webhook: without delaying its result) and never fail or delay the request or the grant. A failure is logged with the profile id, the step and Resend's status code; there is no retry. No address or name is logged or stored in Lyceon's tables. Resend holds the contact as a listed processor; account deletion removes it with the marketing contact (C14.8, same address).
+**C14A.3** FIRE-AND-FORGET, NOTHING STORED. Sends run after the response (the webhook: without delaying its result) and never fail or delay the request or the grant. Each send is registered with Vercel's `waitUntil` while the request is live (Karl, 2026-10-13), so the function stays up until it settles; the route's send starts only once the response has closed. A failure is logged with the profile id, the step and Resend's status code; there is no retry. No address or name is logged or stored in Lyceon's tables. Resend holds the contact as a listed processor; account deletion removes it with the marketing contact (C14.8, same address).
 
 | Clause | Falsified by |
 |---|---|
 | C14A.1, C14A.2 | `tests/ci/lifecycle-email.pg.ci.test.ts` (real route, real Postgres), `tests/ci/lifecycle-email.contract.test.ts`, `tests/ci/lifecycle-entitled-webhook.contract.test.ts` |
 | C14A.3 | the same suites: no address in any captured log line; a Resend rejection logs the status and the profile id only |
+| C14A.3 (`waitUntil`) | `lifecycle-email.contract.test.ts` (the kept promise settles only after the send, and never rejects); `lifecycle-email.pg.ci.test.ts` O1 (registered while the response is open; with the response held open 300 ms, Resend hears nothing before it closes) |
 | C14.2 (amended) | `tests/ci/marketing-email-sync.plan.test.ts`, `tests/ci/marketing-email-sync.pg.ci.test.ts` S5–S6 |

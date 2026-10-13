@@ -17,13 +17,17 @@
  * LIFECYCLE_EMAIL_DENYLIST, plus any address whose local part contains "test").
  *
  * Fire-and-forget, after the response: `fireLifecycle` never throws and never delays the caller.
+ * The send is handed to Vercel's `waitUntil` (Karl, 2026-10-13: Vercel's standard), which keeps
+ * the function alive until it settles; outside Vercel it is a no-op and the promise simply runs.
  * A failure is logged with the profile id (digested by the logger), the step and Resend's status
  * code, and that is all; there is no retry and no queue (ruling). Logs never carry an address or
  * a name; nothing is stored in Lyceon's tables.
  *
  * Trade-offs: no outbox, so a crash or a Resend outage between the change and the call loses that
- * event (logged). On Vercel, work after the response is best effort.
+ * event (logged). Two concurrent first completions can both send `lyceon.onboarded` (accepted,
+ * Karl 2026-10-13).
  */
+import { waitUntil } from "@vercel/functions";
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { lifecycleEmailEnvSchema } from "../../packages/shared/src/env";
@@ -327,14 +331,15 @@ export function defaultLifecycleDeps(): LifecycleDeps {
 
 /**
  * Run a lifecycle send without awaiting it. Never throws, never delays the caller: an unexpected
- * error is logged (profile id and error class only) and dropped.
+ * error is logged (profile id and error class only) and dropped. The promise goes to `waitUntil`
+ * so a Vercel function is not frozen before the send to Resend completes.
  */
 export function fireLifecycle(
   label: string,
   profileId: string,
   task: () => Promise<unknown>,
 ): void {
-  void Promise.resolve()
+  const settled = Promise.resolve()
     .then(task)
     .catch((error: unknown) => {
       logger.error(
@@ -348,4 +353,5 @@ export function fireLifecycle(
         },
       );
     });
+  waitUntil(settled);
 }

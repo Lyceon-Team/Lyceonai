@@ -62,6 +62,27 @@ const resend = vi.hoisted(() => ({
     body: Record<string, unknown> | null;
   }[],
   contacts: new Set<string>(),
+  /** Resend calls made while the response was still open: must stay 0 (after the response). */
+  beforeResponse: 0,
+}));
+
+/**
+ * Vercel's `waitUntil`, observed (Karl, 2026-10-13): each call records whether the response had
+ * already finished. It must be registered while the request is live, or Vercel may not honour it.
+ */
+const vercel = vi.hoisted(() => ({
+  current: null as { writableFinished: boolean } | null,
+  kept: [] as { promise: Promise<unknown>; afterResponse: boolean }[],
+  /** Hold the response open this long, so a send that does not wait for it would be seen. */
+  holdEndMs: 0,
+}));
+vi.mock("@vercel/functions", () => ({
+  waitUntil: (promise: Promise<unknown>): void => {
+    vercel.kept.push({
+      promise,
+      afterResponse: vercel.current?.writableFinished ?? true,
+    });
+  },
 }));
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
@@ -135,6 +156,8 @@ async function fakeResend(
   const body = init?.body
     ? (JSON.parse(String(init.body)) as Record<string, unknown>)
     : null;
+  if (vercel.current && !vercel.current.writableFinished)
+    resend.beforeResponse++;
   resend.calls.push({ method, path: decodeURIComponent(url.pathname), body });
   const one = /^\/contacts\/([^/]+)$/.exec(url.pathname);
   if (method === "PATCH" && one) {
@@ -173,8 +196,17 @@ async function loadApp(): Promise<express.Express> {
     await import("../../server/middleware/supabase-auth");
   const app = express();
   app.use(express.json());
-  app.use((req: Request, _res: Response, next: NextFunction) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     req.requestId = "req-lifecycle";
+    vercel.current = res;
+    const holdMs = vercel.holdEndMs;
+    if (holdMs > 0) {
+      const end = res.end.bind(res);
+      res.end = ((...args: Parameters<Response["end"]>) => {
+        setTimeout(() => end(...args), holdMs);
+        return res;
+      }) as Response["end"];
+    }
     next();
   });
   app.use("/api/profile", requireSupabaseAuth, profileRoutes);
@@ -240,6 +272,10 @@ describe.skipIf(!PG_AVAILABLE)(
       logged.length = 0;
       resend.calls.length = 0;
       resend.contacts.clear();
+      resend.beforeResponse = 0;
+      vercel.kept.length = 0;
+      vercel.current = null;
+      vercel.holdEndMs = 0;
       process.env.RESEND_API_KEY = "re_test_lifecycle";
       process.env.LIFECYCLE_EMAIL_DENYLIST = "lyceon.ai, karl@founder.example";
       vi.stubGlobal("fetch", vi.fn(fakeResend));
@@ -259,6 +295,9 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     it("O1 + O2: a first completion sends exactly one lyceon.onboarded with role and first name; a second completion sends nothing", async () => {
+      // The response is held open for 300 ms: a send that started before it closed would reach
+      // the fake Resend inside that window and count in beforeResponse.
+      vercel.holdEndMs = 300;
       const app = await loadApp();
       const res = await request(app)
         .patch("/api/profile")
@@ -269,6 +308,13 @@ describe.skipIf(!PG_AVAILABLE)(
         });
       expect(res.status).toBe(200);
       await vi.waitFor(() => expect(events()).toHaveLength(1));
+
+      // Kept alive by waitUntil, registered while the request was live; the promise it holds
+      // settles only after the send, and Resend heard nothing before the response went out.
+      expect(vercel.kept).toHaveLength(1);
+      expect(vercel.kept[0]?.afterResponse).toBe(false);
+      await vercel.kept[0]?.promise;
+      expect(resend.beforeResponse).toBe(0);
 
       // Upsert first (PATCH 404 → POST create, in no segment), then the event.
       expect(resend.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
@@ -287,6 +333,8 @@ describe.skipIf(!PG_AVAILABLE)(
         email: USER.email,
         payload: { role: "student" },
       });
+
+      vercel.holdEndMs = 0;
 
       // O2: the form re-submitted. Only the first completion counts.
       resend.calls.length = 0;

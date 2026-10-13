@@ -13,7 +13,9 @@
  *     state unreadable, denylisted — none reaches Resend;
  *   - `lyceon.entitled` + `entitled = "true"` for the student and, when someone else paid, the
  *     payer; an under-13 student is skipped while the guardian payer still gets it;
- *   - a Resend failure stops that recipient, is logged with the profile id and status only.
+ *   - a Resend failure stops that recipient, is logged with the profile id and status only;
+ *   - every after-response send is handed to Vercel's `waitUntil` (Karl, 2026-10-13), as a promise
+ *     that settles only once the send has finished, and never rejects (a throw is logged).
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,9 +29,15 @@ vi.mock("../../server/logger", () => {
   };
 });
 
+const vercel = vi.hoisted(() => ({
+  waitUntil: vi.fn((_promise: Promise<unknown>): void => undefined),
+}));
+vi.mock("@vercel/functions", () => ({ waitUntil: vercel.waitUntil }));
+
 import {
   ENTITLED_EVENT,
   ONBOARDED_EVENT,
+  fireLifecycle,
   isDenylisted,
   lifecycleFirstName,
   parseDenylist,
@@ -122,6 +130,7 @@ const eventsOf = (calls: Call[]) =>
 
 beforeEach(() => {
   logged.length = 0;
+  vercel.waitUntil.mockClear();
 });
 
 describe("first name", () => {
@@ -285,5 +294,48 @@ describe("lyceon.entitled", () => {
     expect(eventsOf(calls).map((c) => c.body?.email)).toEqual([
       "0002@home.example",
     ]);
+  });
+});
+
+describe("after-response sends are kept alive with waitUntil", () => {
+  it("hands waitUntil a promise that settles only once the send has finished", async () => {
+    let finish: () => void = () => undefined;
+    let finished = false;
+    fireLifecycle(
+      "onboarded",
+      STUDENT,
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            finished = true;
+            resolve();
+          };
+        }),
+    );
+    expect(vercel.waitUntil).toHaveBeenCalledTimes(1);
+    const kept = vercel.waitUntil.mock.calls[0]?.[0];
+    expect(kept).toBeInstanceOf(Promise);
+    let settled = false;
+    void kept?.then(() => {
+      settled = true;
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(settled).toBe(false); // still waiting on the send
+    finish();
+    await kept;
+    expect(finished).toBe(true);
+    expect(settled).toBe(true);
+  });
+
+  it("a send that throws still settles the kept promise, and is logged without content", async () => {
+    fireLifecycle("entitled", STUDENT, async () => {
+      throw new TypeError("boom 0001@home.example");
+    });
+    const kept = vercel.waitUntil.mock.calls[0]?.[0];
+    await expect(kept).resolves.toBeUndefined();
+    const text = JSON.stringify(logged);
+    expect(text).toContain("unexpected_failure");
+    expect(text).toContain("TypeError");
+    expect(text).not.toContain("0001@home.example");
   });
 });

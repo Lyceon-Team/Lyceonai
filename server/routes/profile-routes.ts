@@ -692,11 +692,15 @@ router.patch("/", async (req: Request, res: Response) => {
     // Onboarding events to Resend Automations (Karl, 2026-10-12): on the FIRST completion only,
     // after the response and fire-and-forget. server/lib/lifecycle-email.ts upserts the contact
     // and sends `lyceon.onboarded`, or skips (under 13, deletion, denylisted) and logs why.
+    // Registered now, while the request is live, so Vercel's `waitUntil` covers it (Karl,
+    // 2026-10-13); the send itself starts once the response has closed.
     if (existingProfile.profile_completed_at === null) {
-      res.once("finish", () => {
-        fireLifecycle("onboarded", userId, () =>
-          sendOnboardedEvent(userId, defaultLifecycleDeps()),
-        );
+      const responded = new Promise<void>((resolve) => {
+        res.once("close", () => resolve());
+      });
+      fireLifecycle("onboarded", userId, async () => {
+        await responded;
+        return sendOnboardedEvent(userId, defaultLifecycleDeps());
       });
     }
 
