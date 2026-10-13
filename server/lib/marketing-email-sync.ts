@@ -9,7 +9,7 @@
  *
  * plain English: once a day, make the Resend account hold exactly one contact per person
  * `marketing_email_audience()` returns (opted in, 13+, not deleted, no pending deletion,
- * student or guardian), each in its audience's segment, and nothing else.
+ * student or guardian), each in its audience's segment, and no other contact it manages.
  *
  *   1. READ everything first: the audience, the contacts Lyceon recorded, the account's
  *      segments, every contact in the account, and the members of the two synced segments. If
@@ -34,9 +34,15 @@
  * never a provider payload, never the key.
  *
  * trade-offs: a contact in the wrong synced segment (a role change) is deleted and created
- * again rather than moved, so the client needs no membership-edit calls. A contact matching an
- * eligible profile that sits in no synced segment (for example a manual import) is treated the
- * same way: it is replaced by one Lyceon created.
+ * again rather than moved.
+ *
+ * Managed contacts only (Karl, 2026-10-12, onboarding events to Resend Automations): the sync
+ * deletes ONLY contacts it manages — in one of the two synced segments, or recorded in
+ * `marketing_email_contacts` as one it created. Every other contact (the onboarding lane's,
+ * server/lib/lifecycle-email.ts, which sits in no segment) is left alone; its unsubscribe still
+ * comes back exactly as before. When such a contact belongs to an eligible person, the sync adds
+ * it to that person's segment (the address is unique per account, so it cannot create a second)
+ * and records it — from then on it is managed like any other, including deletion on opt-out.
  */
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -103,6 +109,17 @@ export type ReconcilePlan = {
   optOut: { contactId: string; email: string }[];
   delete: { contactId: string; profileId: string | null }[];
   create: { profileId: string; email: string; segment: MarketingSegment }[];
+  /**
+   * An eligible person's existing contact that the sync does not manage (the onboarding lane's
+   * contact, server/lib/lifecycle-email.ts): it is added to the segment, never replaced.
+   */
+  addToSegment: {
+    profileId: string;
+    contactId: string;
+    segment: MarketingSegment;
+  }[];
+  /** Contacts the sync does not manage (in no synced segment, never recorded): left alone. */
+  leftAlone: number;
   /** Already correct in Resend; make sure Lyceon's record says so. */
   record: { profileId: string; contactId: string; segment: MarketingSegment }[];
   /** Lyceon records a contact that no longer exists or is being deleted. */
@@ -110,10 +127,14 @@ export type ReconcilePlan = {
 };
 
 /**
- * The whole rule set, pure. Every remote contact is either KEPT (backed by an eligible profile,
- * subscribed, in exactly that profile's segment) or DELETED; every eligible profile without a
- * kept contact gets one CREATED — unless its contact was unsubscribed, in which case the opt-out
- * is applied and nothing is created.
+ * The whole rule set, pure. The sync MANAGES a contact when it sits in one of the two synced
+ * segments or Lyceon recorded it as one the sync created (`known`). A managed contact is either
+ * KEPT (backed by an eligible profile, subscribed, in exactly that profile's segment) or DELETED.
+ * A contact the sync does not manage (the onboarding lane's, server/lib/lifecycle-email.ts) is
+ * never deleted (Karl, 2026-10-12): its unsubscribe still comes back, and if it belongs to an
+ * eligible person it is ADDED to that person's segment rather than replaced. Every eligible
+ * profile without such a contact gets one CREATED — unless its contact was unsubscribed, in
+ * which case the opt-out is applied and nothing is created.
  */
 export function planMarketingReconcile(input: ReconcileInput): ReconcilePlan {
   const plan: ReconcilePlan = {
@@ -122,6 +143,8 @@ export function planMarketingReconcile(input: ReconcileInput): ReconcilePlan {
     create: [],
     record: [],
     forget: [],
+    addToSegment: [],
+    leftAlone: 0,
   };
   const eligible = new Map<string, AudienceRow>();
   for (const row of input.audience)
@@ -136,13 +159,35 @@ export function planMarketingReconcile(input: ReconcileInput): ReconcilePlan {
   for (const contact of input.contacts) {
     const owner = eligible.get(normaliseAddress(contact.email)) ?? null;
     const knownOwner = knownByContact.get(contact.id)?.profile_id ?? null;
+    const managed =
+      input.members.students.has(contact.id) ||
+      input.members.guardians.has(contact.id) ||
+      knownByContact.has(contact.id);
     if (contact.unsubscribed) {
       plan.optOut.push({ contactId: contact.id, email: contact.email });
-      plan.delete.push({
-        contactId: contact.id,
-        profileId: owner?.profile_id ?? knownOwner,
-      });
+      if (managed) {
+        plan.delete.push({
+          contactId: contact.id,
+          profileId: owner?.profile_id ?? knownOwner,
+        });
+      } else {
+        plan.leftAlone += 1;
+      }
       if (owner) settled.add(owner.profile_id);
+      continue;
+    }
+    if (!managed) {
+      // Not the sync's contact. An eligible person's is joined to their segment, once.
+      if (owner && !settled.has(owner.profile_id)) {
+        plan.addToSegment.push({
+          profileId: owner.profile_id,
+          contactId: contact.id,
+          segment: owner.segment,
+        });
+        settled.add(owner.profile_id);
+      } else {
+        plan.leftAlone += 1;
+      }
       continue;
     }
     if (!owner) {
@@ -197,12 +242,16 @@ export type ReconcileSummary = {
   optedOut: number;
   deleted: number;
   created: number;
+  /** Existing (onboarding) contacts joined to their segment instead of created. */
+  addedToSegment: number;
   recorded: number;
   forgotten: number;
   failed: number;
   deferred: number;
   foreignSegments: number;
   purgedEvents: number;
+  /** Contacts the sync does not manage, left untouched. */
+  leftAlone: number;
 };
 
 export type ReconcileOptions = {
@@ -223,12 +272,14 @@ function emptySummary(): ReconcileSummary {
     optedOut: 0,
     deleted: 0,
     created: 0,
+    addedToSegment: 0,
     recorded: 0,
     forgotten: 0,
     failed: 0,
     deferred: 0,
     foreignSegments: 0,
     purgedEvents: 0,
+    leftAlone: 0,
   };
 }
 
@@ -390,6 +441,8 @@ export async function reconcileMarketingContacts(
     },
   });
 
+  summary.leftAlone = plan.leftAlone;
+
   // ── 3. Apply: unsubscribes back first, then deletions, then creations. ───────────────
   let writes = 0;
   const budget = (): boolean => {
@@ -480,6 +533,31 @@ export async function reconcileMarketingContacts(
       continue;
     }
     summary.created += 1;
+  }
+
+  for (const item of plan.addToSegment) {
+    if (!budget()) continue;
+    await pause(RESEND_CALL_SPACING_MS);
+    const joinSegmentId = segmentIds[item.segment];
+    const result = await contacts.addContactToSegment(
+      item.contactId,
+      joinSegmentId,
+      { recipientProfileId: item.profileId },
+    );
+    if (!result.ok) {
+      summary.failed += 1;
+      continue;
+    }
+    const { error } = await db.rpc("marketing_email_contact_record", {
+      p_profile_id: item.profileId,
+      p_resend_contact_id: item.contactId,
+      p_segment: item.segment,
+    });
+    if (error) {
+      summary.failed += 1;
+      continue;
+    }
+    summary.addedToSegment += 1;
   }
 
   for (const item of plan.record) {
