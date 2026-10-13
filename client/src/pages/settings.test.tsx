@@ -36,6 +36,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  chooseNotSure,
   closeSatDates,
   offeredSatDates,
   openSatDates,
@@ -515,8 +516,12 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     const select = (await screen.findByTestId(
       "settings-target-select",
     )) as HTMLSelectElement;
+    // Untouched: the hidden "Choose a score" placeholder, never an answer (#1230 item 4).
     expect(select.value).toBe("");
-    const options = [...select.options].map((o) => o.textContent);
+    expect(select.options[0]?.textContent).toBe("Choose a score");
+    const options = [...select.options]
+      .filter((o) => !o.hidden)
+      .map((o) => o.textContent);
     expect(options[0]).toBe("Not sure yet");
     expect(options[1]).toBe("1600");
     expect(options[options.length - 1]).toBe("400");
@@ -583,13 +588,9 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     expect(patches[0]?.body).toEqual({ displayName: "Samira Rivera" });
     // The onboarding route (F-54) is never used for a name change.
     expect(calls("PATCH", "/api/profile")).toHaveLength(0);
-    // The form saved shows "Not sure yet" for the date and the score, so both are recorded for
-    // the Getting started checklist (final brief v2 §1).
-    await waitFor(() =>
-      expect(
-        calls("POST", "/api/home/getting-started/not-sure")[0]?.body,
-      ).toEqual({ test_date: true, target_score: true }),
-    );
+    // Karl, 2026-10-13 on #1230: a name-only save leaves the date and score untouched, so no
+    // "Not sure yet" is recorded. "Saved" shows after every recording would have been sent.
+    expect(calls("POST", "/api/home/getting-started/not-sure")).toHaveLength(0);
     expect(JSON.stringify(net.log)).not.toContain("marketingOptIn");
   });
 
@@ -597,7 +598,7 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
     serve({ calendarProfile: false });
     await mount({});
     await screen.findByTestId("settings-test-dates-trigger");
-    // Ruling 1 (2026-10-13): the score shows before calendar setup too, left at "Not sure yet".
+    // Ruling 1 (2026-10-13): the score shows before calendar setup too; here it is untouched.
     expect(screen.getByTestId("settings-target-select")).toBeTruthy();
     await waitForSatDates("settings-test-dates");
     toggleSatDate("settings-test-dates", "2026-12-05");
@@ -612,12 +613,35 @@ describe("Profile (OQ-20, OQ-28, UI-S8)", () => {
       "target_exam_dates",
     ]);
     expect(body.target_exam_dates).toEqual(["2026-12-05"]);
-    // A date was saved; the score was left at "Not sure yet", and only that is recorded.
-    await waitFor(() =>
-      expect(
-        calls("POST", "/api/home/getting-started/not-sure")[0]?.body,
-      ).toEqual({ target_score: true }),
-    );
+    // A date was saved and the score was left untouched: nothing is "Not sure yet" (#1230 item 4).
+    expect(calls("POST", "/api/home/getting-started/not-sure")).toHaveLength(0);
+  });
+
+  it("#1230 item 4: an explicit 'Not sure yet' for both is saved and recorded once, with no study-profile write", async () => {
+    serve({ calendarProfile: false });
+    await mount({});
+    await screen.findByTestId("settings-test-dates-trigger");
+    const save = screen.getByTestId(
+      "settings-profile-save",
+    ) as HTMLButtonElement;
+    // Untouched: nothing to save.
+    expect(save.disabled).toBe(true);
+    await waitForSatDates("settings-test-dates");
+    chooseNotSure("settings-test-dates");
+    closeSatDates("settings-test-dates");
+    fireEvent.change(screen.getByTestId("settings-target-select"), {
+      target: { value: "not_sure" },
+    });
+    // An explicit answer is something to save, though no stored value changes.
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await screen.findByTestId("settings-profile-saved");
+    expect(
+      calls("POST", "/api/home/getting-started/not-sure").map((c) => c.body),
+    ).toEqual([{ test_date: true, target_score: true }]);
+    expect(calls("PUT", "/api/calendar/profile")).toHaveLength(0);
+    // Recorded: the form is clean again.
+    expect(save.disabled).toBe(true);
   });
 
   it("an unchanged form has nothing to save", async () => {

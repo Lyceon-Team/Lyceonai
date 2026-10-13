@@ -28,11 +28,13 @@ ONBOARD="client/src/pages/profile-complete.tsx"
 PROFILE="client/src/components/settings/ProfileSection.tsx"
 SECTION="client/src/components/home/qotd/HomeQotdSection.tsx"
 COPY="client/src/lib/blind-spots-copy.ts"
+PICKER="client/src/components/sat-dates/SatDatePicker.tsx"
+FL_ROW="client/src/components/practice/FullLengthRow.tsx"
 PROFILE_SVC="server/services/calendar/profile-service.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/gs-mut.XXXX)"
 
-FILES=("$MIG" "$SCHEMA" "$ROUTE" "$INDEX" "$CARD" "$FREE_HOME" "$PRACTICE" "$ONBOARD" "$PROFILE" "$SECTION" "$COPY" "$PROFILE_SVC")
+FILES=("$MIG" "$SCHEMA" "$ROUTE" "$INDEX" "$CARD" "$FREE_HOME" "$PRACTICE" "$ONBOARD" "$PROFILE" "$SECTION" "$COPY" "$PROFILE_SVC" "$PICKER" "$FL_ROW")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() {
   for f in "${FILES[@]}"; do
@@ -191,9 +193,11 @@ echo "=== (18) Practice's blind spots row shows after the diagnostic ==="
 plant "$PRACTICE" '      {freeHomeStage(projection.estimateStatus) === "diagnostic" ? (' '      {true ? (' || { bad "G18 STALE"; exit 1; }
 run "G18 row until the diagnostic" "after the diagnostic: no row" "$PRACTICE_UI"
 
-echo "=== (19) onboarding never records 'Not sure yet' for the score ==="
-plant "$ONBOARD" "          const notSureScore = targetScore === null;" "          const notSureScore = false;" || { bad "G19 STALE"; exit 1; }
-run "G19 onboarding not-sure" "O3: both left at 'Not sure yet'" "$ONBOARD_UI"
+# Re-pointed 2026-10-13 (Karl on #1230, item 4): "Not sure yet" is recorded only when chosen, so
+# the plant now drops an EXPLICIT score choice (O5); G26 below plants the untouched case.
+echo "=== (19) onboarding drops an explicit 'Not sure yet' for the score ==="
+plant "$ONBOARD" '          const notSureScore = scoreChoice.kind === "not_sure";' "          const notSureScore = false;" || { bad "G19 STALE"; exit 1; }
+run "G19 onboarding explicit not-sure" "O5: both explicitly 'Not sure yet'" "$ONBOARD_UI"
 
 echo "=== (20) Settings hides the score from a student without a calendar ==="
 plant "$PROFILE" \
@@ -220,6 +224,34 @@ run "G24 rename" "is 'Find your blind spots'" "$RENAME"
 echo "=== (25) a score-only save is refused for want of a schedule ==="
 plant "$PROFILE_SVC" '  "target_score",' '' || { bad "G25 STALE"; exit 1; }
 run "G25 score is a goal field" "A8: several dates stored" "$QOTD_PG"
+
+echo "=== (26) onboarding records 'Not sure yet' for an untouched date ==="
+plant "$ONBOARD" "          const notSureDate = dateNotSureChosen && satDates.dates.length === 0;" "          const notSureDate = satDates.dates.length === 0;" || { bad "G26 STALE"; exit 1; }
+run "G26 onboarding untouched records nothing" "O3: both untouched" "$ONBOARD_UI"
+
+echo "=== (27) Settings records 'Not sure yet' for an untouched date on a name-only save ==="
+plant "$PROFILE" "  const notSureDate = dateNotSureChosen && dates.dates.length === 0;" "  const notSureDate = dates.dates.length === 0;" || { bad "G27 STALE"; exit 1; }
+run "G27 Settings untouched records nothing" "the name saves through PATCH /api/profile/name" "$SETTINGS"
+
+echo "=== (28) the date picker never reports an explicit 'Not sure yet' ==="
+plant "$PICKER" "              onNotSureChosen?.();" "" || { bad "G28 STALE"; exit 1; }
+run "G28 explicit date choice reported" "#1230 item 4: an explicit 'Not sure yet' for both" "$SETTINGS"
+
+echo "=== (29) the SAT-date card saves with nothing chosen ==="
+plant "$SECTION" "              disabled={!answered || save.isPending || notSure.isPending}" "              disabled={save.isPending || notSure.isPending}" || { bad "G29 STALE"; exit 1; }
+run "G29 SAT card needs an answer" "#1230 item 4: Save with nothing chosen is not an answer" "$SECTION_UI"
+
+echo "=== (30) dismiss is not rate-limited ==="
+plant "$ROUTE" $'    "/dismiss",\n    singleBucketRateLimit(ACTION_BUCKET, COMPONENT),\n' $'    "/dismiss",\n' || { bad "G30 STALE"; exit 1; }
+run "G30 the POSTs share one bucket" "GS12: the three POSTs share the getting_started_action bucket" "$PG_SUITE"
+
+echo "=== (31) a locked full-length row navigates instead of opening the modal ==="
+plant "$FL_ROW" "        {reason === null ? (" "        {true ? (" || { bad "G31 STALE"; exit 1; }
+run "G31 full-length lock" "free: the lock opens the full-length upgrade modal in place" "$PRACTICE_UI"
+
+echo "=== (32) the full-length row is gone from Practice ==="
+plant "$PRACTICE" $'      <FullLengthRow />\n' "" || { bad "G32 STALE"; exit 1; }
+run "G32 full-length entry on Practice" "paid: a compact row whose Start is a link to the Full-Length page" "$PRACTICE_UI"
 
 echo
 echo "GETTING STARTED MUTATIONS: $PASS passed, $FAIL failed"

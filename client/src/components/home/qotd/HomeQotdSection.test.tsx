@@ -18,6 +18,7 @@ import {
   within,
 } from "@testing-library/react";
 import {
+  chooseNotSure,
   closeSatDates,
   offeredSatDates,
   openSatDates,
@@ -400,13 +401,19 @@ describe("the SAT-date card", () => {
     expect(screen.getByTestId("home-sat-date-card")).toBeTruthy();
   });
 
-  it("ruling 3: Save with no date chosen is 'Not sure yet', never an empty date write", async () => {
+  it("#1230 item 4: Save with nothing chosen is not an answer; 'Not sure yet' chosen in the picker is recorded", async () => {
     net.today = answeredEarlier();
     mount();
     fireEvent.click(await screen.findByTestId("home-sat-date-open"));
     await waitForSatDates("home-sat-dates");
     closeSatDates("home-sat-dates");
-    fireEvent.click(screen.getByTestId("home-sat-date-save"));
+    const save = screen.getByTestId("home-sat-date-save") as HTMLButtonElement;
+    // Untouched: nothing to save, so nothing can be recorded.
+    expect(save.disabled).toBe(true);
+    chooseNotSure("home-sat-dates");
+    closeSatDates("home-sat-dates");
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
     await waitFor(() =>
       expect(
         net.log.filter(

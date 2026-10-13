@@ -323,6 +323,10 @@ function SatDateCard(): JSX.Element | null {
   const [choice, setChoice] = useState<SatDateChoice>({
     dates: [],
   });
+  // Karl, 2026-10-13 on #1230: "Not sure yet" counts only when chosen. Save with nothing chosen
+  // is not an answer, so it is disabled until a date or "Not sure yet" is picked.
+  const [notSureChosen, setNotSureChosen] = useState(false);
+  const answered = choice.dates.length > 0 || notSureChosen;
   const todayChicago = chicagoToday();
 
   if (profile.isLoading || profile.isError) return null;
@@ -372,7 +376,11 @@ function SatDateCard(): JSX.Element | null {
           <SatDatePicker
             legend="When's your SAT?"
             value={choice}
-            onChange={setChoice}
+            onChange={(next) => {
+              setChoice(next);
+              if (next.dates.length > 0) setNotSureChosen(false);
+            }}
+            onNotSureChosen={() => setNotSureChosen(true)}
             today={todayChicago}
             data-testid="home-sat-dates"
           />
@@ -386,7 +394,7 @@ function SatDateCard(): JSX.Element | null {
               type="button"
               variant="lyc-outline"
               pending={save.isPending || notSure.isPending}
-              disabled={save.isPending || notSure.isPending}
+              disabled={!answered || save.isPending || notSure.isPending}
               onClick={() =>
                 choice.dates.length === 0
                   ? notSure.mutate(undefined, {

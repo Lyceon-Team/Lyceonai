@@ -39,7 +39,11 @@ import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
-import { TargetScorePicker } from "@/components/sat-dates/TargetScorePicker";
+import {
+  targetScoreOf,
+  TargetScorePicker,
+  type TargetScoreChoice,
+} from "@/components/sat-dates/TargetScorePicker";
 import {
   invalidateGettingStarted,
   recordGettingStartedNotSure,
@@ -130,7 +134,12 @@ export default function ProfileComplete() {
   const [satDates, setSatDates] = useState<SatDateChoice>({
     dates: [],
   });
-  const [targetScore, setTargetScore] = useState<number | null>(null);
+  // Karl, 2026-10-13 on #1230: "Not sure yet" is recorded only when explicitly chosen.
+  const [dateNotSureChosen, setDateNotSureChosen] = useState(false);
+  const [scoreChoice, setScoreChoice] = useState<TargetScoreChoice>({
+    kind: "unset",
+  });
+  const targetScore = targetScoreOf(scoreChoice);
   const [errorMessage, setErrorMessage] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -204,8 +213,9 @@ export default function ProfileComplete() {
       // @spec [owner brief "Getting started checklist + onboarding update" (final brief v2,
       // Karl, 2026-10-13) §1] | @implemented [2026-10-13] | plain English: the SAT question
       // also asks for the target score. Both go through the one study-profile write as a
-      // goal-only save (never calendar setup); a "Not sure yet" for either is recorded for the
-      // Getting started checklist, so a new student arrives on Home with step 1 ticked.
+      // goal-only save (never calendar setup). A "Not sure yet" the student CHOSE for either is
+      // recorded for the Getting started checklist; a field left untouched records nothing
+      // (Karl, 2026-10-13 on #1230), so step 1 stays open until the student answers it.
       if (satDatesAsked) {
         const goal: { target_exam_dates?: string[]; target_score?: number } =
           {};
@@ -218,8 +228,8 @@ export default function ProfileComplete() {
               queryKey: calendarKeys.profile(),
             });
           }
-          const notSureDate = satDates.dates.length === 0;
-          const notSureScore = targetScore === null;
+          const notSureDate = dateNotSureChosen && satDates.dates.length === 0;
+          const notSureScore = scoreChoice.kind === "not_sure";
           if (notSureDate || notSureScore) {
             await recordGettingStartedNotSure({
               ...(notSureDate ? { test_date: true } : {}),
@@ -465,15 +475,19 @@ export default function ProfileComplete() {
           {satDatesAsked && (
             <SatDatePicker
               value={satDates}
-              onChange={setSatDates}
+              onChange={(next) => {
+                setSatDates(next);
+                if (next.dates.length > 0) setDateNotSureChosen(false);
+              }}
+              onNotSureChosen={() => setDateNotSureChosen(true)}
               data-testid="onboarding-sat-dates"
             />
           )}
 
           {satDatesAsked && (
             <TargetScorePicker
-              value={targetScore}
-              onChange={setTargetScore}
+              value={scoreChoice}
+              onChange={setScoreChoice}
               help="You can change this any time in Settings."
               data-testid="onboarding-target-score"
             />

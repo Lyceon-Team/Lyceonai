@@ -22,6 +22,7 @@
  *   GS9  guardians and admins get 403; a bad "Not sure yet" body is a 400
  *   GS10 presence only: the LISA message's text never reaches the response or the logs
  *   GS11 only the student's own message counts for LISA (not the tutor's, not a suggestion)
+ *   GS12 the three POSTs share one rate-limit bucket (Karl, 2026-10-13 on #1230); GET is not limited
  */
 import express, {
   type NextFunction,
@@ -468,6 +469,60 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(statusOf(await read(s)).lisa).toBe("open");
       await seedLisaMessage(s);
       expect(statusOf(await read(s)).lisa).toBe("done");
+    });
+
+    it("GS12: the three POSTs share the getting_started_action bucket (seeded 30 / hour); the GET is not limited", async () => {
+      const seeded = await pg.query(
+        `SELECT value -> 'getting_started_action' AS def FROM public.rate_limit_runtime_config WHERE key = 'bucket_definitions'`,
+      );
+      expect(seeded.rows[0].def).toEqual({ limit: 30, window_seconds: 3600 });
+
+      // The mechanism, at a limit small enough to reach: one bucket across all three actions.
+      const s = id(21);
+      await seedStudent(s);
+      as(s);
+      await pg.query(
+        `UPDATE public.rate_limit_runtime_config
+            SET value = jsonb_set(value, '{getting_started_action,limit}', '2')
+          WHERE key = 'bucket_definitions'`,
+      );
+      try {
+        const a = await app();
+        const statuses: number[] = [];
+        statuses.push(
+          (
+            await request(a)
+              .post("/api/home/getting-started/not-sure")
+              .send({ test_date: true })
+          ).status,
+        );
+        statuses.push(
+          (await request(a).post("/api/home/getting-started/skip-email"))
+            .status,
+        );
+        const denied = await request(a).post(
+          "/api/home/getting-started/dismiss",
+        );
+        statuses.push(denied.status);
+        expect(statuses).toEqual([200, 200, 429]);
+        expect(denied.headers["x-ratelimit-limit"]).toBe("2");
+        // Nothing was written by the refused request: still not dismissed.
+        const row = await pg.query(
+          `SELECT dismissed_at FROM public.student_getting_started_state WHERE profile_id = $1`,
+          [s],
+        );
+        expect(row.rows[0]?.dismissed_at).toBeNull();
+        // Home's read is not limited.
+        expect((await request(a).get("/api/home/getting-started")).status).toBe(
+          200,
+        );
+      } finally {
+        await pg.query(
+          `UPDATE public.rate_limit_runtime_config
+              SET value = jsonb_set(value, '{getting_started_action,limit}', '30')
+            WHERE key = 'bucket_definitions'`,
+        );
+      }
     });
 
     it("GS7: Pro sees eight steps and its three follow their data; free never sees them", async () => {

@@ -1,22 +1,26 @@
 // @vitest-environment jsdom
 /**
- * Onboarding's SAT question also asks for the target score, and records "Not sure yet" for
- * whichever of the two the student leaves empty.
+ * Onboarding's SAT question also asks for the target score, and records "Not sure yet" only for
+ * an answer the student explicitly chose.
  *
  * @spec [owner brief "Student dashboard — Getting started checklist + onboarding update" (final
  *       brief v2, Karl, 2026-10-13) §1 ("the step that asks for the SAT date also asks for the
  *       target score … 'Not sure yet' for the date and for the score is recorded"); rulings
- *       2026-10-13: 2 ("the full 400–1600 list, with 'Not sure yet' first")]
+ *       2026-10-13: 2 ("the full 400–1600 list, with 'Not sure yet' first"); Karl, 2026-10-13 on
+ *       #1230, item 4 ("record it only when the student explicitly selects it, not on a save
+ *       where the field was untouched. Same rule in onboarding")]
  * | @implemented [2026-10-13]
  *
  * plain English: the REAL onboarding page with a real React Query client; only the network is
  * stubbed (as in profile-complete.sat-dates.test.tsx). After the profile PATCH, the page saves
  * the date and score through the one study-profile write (PUT /api/calendar/profile) and sends
- * "Not sure yet" (POST /api/home/getting-started/not-sure) only for a field left empty.
- *   O1 the score picker is shown with "Not sure yet" first, then 1600 … 400
+ * "Not sure yet" (POST /api/home/getting-started/not-sure) only for a field where the student
+ * chose it.
+ *   O1 the score picker reads "Choose a score" untouched; its list is "Not sure yet", 1600 … 400
  *   O2 date + score: one PUT carrying both, no not-sure call
- *   O3 both empty: no PUT; not-sure for both
- *   O4 date only: a PUT with the date and no score; not-sure for the score only
+ *   O3 both untouched: no PUT and no "Not sure yet" (step 1 stays open)
+ *   O4 date only, score untouched: a PUT with the date and no score; no "Not sure yet"
+ *   O5 both chosen as "Not sure yet": no PUT; "Not sure yet" for both
  */
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -27,6 +31,7 @@ import {
   satDateBoundResponseSchema,
 } from "@lyceon/shared/calendar";
 import {
+  chooseNotSure,
   closeSatDates,
   toggleSatDate,
   waitForSatDates,
@@ -212,17 +217,24 @@ async function submitAndSettle(): Promise<void> {
 }
 
 describe("onboarding: the SAT question also asks for the target score (final brief v2 §1)", () => {
-  it("O1: the score picker is shown, 'Not sure yet' first, then 1600 down to 400", async () => {
+  it("O1: untouched, the score reads 'Choose a score'; the list is 'Not sure yet' first, then 1600 down to 400", async () => {
     await mountAsStudentOf16();
     const select = screen.getByTestId(
       "onboarding-target-score-select",
     ) as HTMLSelectElement;
-    const labels = Array.from(select.options).map((o) => o.textContent);
+    // The placeholder is selected but hidden from the list, and cannot be chosen.
+    const placeholder = select.options[0];
+    expect(select.value).toBe("");
+    expect(placeholder?.textContent).toBe("Choose a score");
+    expect(placeholder?.hidden).toBe(true);
+    expect(placeholder?.disabled).toBe(true);
+    const labels = Array.from(select.options)
+      .filter((o) => !o.hidden)
+      .map((o) => o.textContent);
     expect(labels[0]).toBe("Not sure yet");
     expect(labels[1]).toBe("1600");
     expect(labels[labels.length - 1]).toBe("400");
     expect(labels).toHaveLength(1 + (1600 - 400) / 10 + 1);
-    expect(select.value).toBe("");
   });
 
   it("O2: a date and a score are one PUT carrying both, and no 'Not sure yet' is sent", async () => {
@@ -240,8 +252,36 @@ describe("onboarding: the SAT question also asks for the target score (final bri
     expect(sent("POST", NOT_SURE_URL)).toEqual([]);
   });
 
-  it("O3: both left at 'Not sure yet' — no study-profile write; 'Not sure yet' for both", async () => {
+  it("O3: both untouched — no study-profile write and no 'Not sure yet'", async () => {
     await mountAsStudentOf16();
+    await submitAndSettle();
+    // Presence first: the submit ran its saves (the checklist is refreshed after them).
+    expect(sent("PATCH", "/api/profile")).toHaveLength(1);
+    expect(sent("POST", NOT_SURE_URL)).toEqual([]);
+    expect(sent("PUT", "/api/calendar/profile")).toEqual([]);
+  });
+
+  it("O4: a date only, score untouched — the PUT carries the date and no score; no 'Not sure yet'", async () => {
+    await mountAsStudentOf16();
+    await waitForSatDates("onboarding-sat-dates");
+    toggleSatDate("onboarding-sat-dates", net.latest);
+    closeSatDates("onboarding-sat-dates");
+    await submitAndSettle();
+    expect(sent("POST", NOT_SURE_URL)).toEqual([]);
+    const puts = sent("PUT", "/api/calendar/profile");
+    expect(puts).toHaveLength(1);
+    expect(puts[0]).toMatchObject({ target_exam_dates: [net.latest] });
+    expect(puts[0]).not.toHaveProperty("target_score");
+  });
+
+  it("O5: both explicitly 'Not sure yet' — no study-profile write; 'Not sure yet' for both", async () => {
+    await mountAsStudentOf16();
+    await waitForSatDates("onboarding-sat-dates");
+    chooseNotSure("onboarding-sat-dates");
+    closeSatDates("onboarding-sat-dates");
+    fireEvent.change(screen.getByTestId("onboarding-target-score-select"), {
+      target: { value: "not_sure" },
+    });
     await submitAndSettle();
     expect(sent("POST", NOT_SURE_URL)).toHaveLength(1);
     expect(sent("POST", NOT_SURE_URL)[0]).toEqual({
@@ -249,19 +289,5 @@ describe("onboarding: the SAT question also asks for the target score (final bri
       target_score: true,
     });
     expect(sent("PUT", "/api/calendar/profile")).toEqual([]);
-  });
-
-  it("O4: a date only — the PUT carries the date and no score; 'Not sure yet' for the score only", async () => {
-    await mountAsStudentOf16();
-    await waitForSatDates("onboarding-sat-dates");
-    toggleSatDate("onboarding-sat-dates", net.latest);
-    closeSatDates("onboarding-sat-dates");
-    await submitAndSettle();
-    expect(sent("POST", NOT_SURE_URL)).toHaveLength(1);
-    expect(sent("POST", NOT_SURE_URL)[0]).toEqual({ target_score: true });
-    const puts = sent("PUT", "/api/calendar/profile");
-    expect(puts).toHaveLength(1);
-    expect(puts[0]).toMatchObject({ target_exam_dates: [net.latest] });
-    expect(puts[0]).not.toHaveProperty("target_score");
   });
 });

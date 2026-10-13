@@ -191,7 +191,7 @@ export const UI_41: PageGroup = {
     {
       id: "app-upgrade-modal-fulllength-free",
       title:
-        "Upgrade modal opened from the locked Full-Length entry (the rail; desktop only since Home's full-length card was removed, final brief v2 §4), free, on /dashboard",
+        "Upgrade modal opened from the locked Full-Length entry (the rail; desktop only — the phone's entry is Practice's full-length row, shot below), free, on /dashboard",
       persona: "free",
       route: "/dashboard",
       sessionStorage: DIAGNOSTIC_PROMPT_DISMISSED,
@@ -203,8 +203,8 @@ export const UI_41: PageGroup = {
         {
           click: {
             desktop: '[data-testid="rail-full-length"]',
-            // Final brief v2 §4 (Karl, 2026-10-13): Home's full-length card is gone, and it was
-            // this shot's only phone entry (Full-Length is on neither phone surface).
+            // Full-Length is on neither phone surface; the phone's entry is Practice's
+            // full-length row (Karl, 2026-10-13 on #1230), shot in the next entry.
             mobile: null,
           },
         },
@@ -217,6 +217,33 @@ export const UI_41: PageGroup = {
         steps: ['button[aria-label^="Full-Length"]'],
         state: "full-length-clicked",
         note: "Home, plan = free, Full-Length rail item clicked",
+      },
+    },
+    {
+      id: "practice-full-length-locked-free",
+      title:
+        "Practice's 'Full-length test' row (Karl, 2026-10-13 on #1230), free: its locked Start opens the upgrade modal in place, phone and desktop",
+      persona: "free",
+      route: "/practice",
+      sessionStorage: DIAGNOSTIC_PROMPT_DISMISSED,
+      waitFor: {
+        desktop: '[data-testid="practice-full-length"]',
+        mobile: '[data-testid="practice-full-length"]',
+      },
+      steps: [
+        {
+          click: {
+            desktop: '[data-testid="practice-full-length-start"]',
+            mobile: '[data-testid="practice-full-length-start"]',
+          },
+        },
+      ],
+      expectVisible: '[data-testid="upgrade-modal"]',
+      expectPath: "^/practice$",
+      prototype: {
+        kind: "none",
+        reason:
+          "The row is Karl's ruling of 2026-10-13 on #1230, not in the prototype; the modal's copy is the prototype's LYC_COPY.full.",
       },
     },
     {

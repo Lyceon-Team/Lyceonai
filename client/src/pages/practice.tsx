@@ -88,6 +88,7 @@ import { browserLocalToday } from "@/features/calendar/lib/dates";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { BlindSpotsRow } from "@/components/practice/BlindSpotsRow";
+import { FullLengthRow } from "@/components/practice/FullLengthRow";
 import { freeHomeStage } from "@/components/home/home-model";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { usePractice } from "@/hooks/usePractice";
@@ -247,6 +248,10 @@ export default function Practice(): JSX.Element {
             : null
         }
       />
+
+      {/* Karl, 2026-10-13 on #1230: the phone's (and desktop's) entry to full-length tests,
+          with the rail's locks, now that Home's full-length card is gone. */}
+      <FullLengthRow />
 
       {masteryGranted && sectionNodes.length > 0 ? (
         <Suggested

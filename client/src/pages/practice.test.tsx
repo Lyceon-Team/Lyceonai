@@ -59,6 +59,7 @@ import {
   toSessionCriteria,
 } from "@lyceon/shared/session-criteria";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
+import { UPGRADE_MODAL_COPY } from "@/components/billing/upgrade-modal";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   canonicalCatalogRows,
@@ -178,12 +179,15 @@ beforeAll(async () => {
   TOPICS = await topicsFromRoute(getPracticeTopics);
 });
 
-async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
+async function accessMap(
+  paid: boolean,
+  under13 = false,
+): Promise<FeatureAccessMap> {
   entitlement.paid = paid;
   const map = await resolveFeatureAccess({
     id: STUDENT,
     role: "student",
-    is_under_13: false,
+    is_under_13: under13,
   });
   if (map === null) throw new Error("a student always gets a map");
   return map;
@@ -443,9 +447,10 @@ function install(s: Scenario): void {
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario,
+  under13 = false,
 ): Promise<{ container: HTMLElement; history: string[] }> {
   install(scenario);
-  const map = await accessMap(plan === "paid");
+  const map = await accessMap(plan === "paid", under13);
   const { hook, history } = memoryLocation({
     path: "/practice",
     record: true,
@@ -967,5 +972,49 @@ describe("Find your blind spots row (final brief v2 §6, Karl, 2026-10-13)", () 
     // Presence first: the page itself is drawn.
     expect(screen.getByTestId("practice-session")).toBeTruthy();
     expect(screen.queryByTestId("practice-blind-spots")).toBeNull();
+  });
+});
+
+describe("Full-length test row (Karl, 2026-10-13 on #1230, item 1)", () => {
+  it("paid: a compact row whose Start is a link to the Full-Length page", async () => {
+    const { history } = await mount("paid", {});
+    const row = await screen.findByTestId("practice-full-length");
+    expect(within(row).getByText("Full-length test")).toBeTruthy();
+    const start = within(row).getByTestId("practice-full-length-start");
+    expect(start.tagName).toBe("A");
+    expect(start.getAttribute("href")).toBe("/tests");
+    expect(within(row).queryByTestId("practice-full-length-lock")).toBeNull();
+    // Not a second filled primary: Practice's one primary stays "Start practice".
+    expect(start.className).not.toContain("bg-lyc-primary-bg");
+    fireEvent.click(start);
+    expect(history[history.length - 1]).toBe("/tests");
+  });
+
+  it("free: the lock opens the full-length upgrade modal in place — no navigation, no exam request", async () => {
+    const { history } = await mount("free", {});
+    const row = await screen.findByTestId("practice-full-length");
+    const start = within(row).getByTestId("practice-full-length-start");
+    // A button: there is no href to follow.
+    expect(start.tagName).toBe("BUTTON");
+    expect(start.getAttribute("href")).toBeNull();
+    expect(within(row).getByTestId("practice-full-length-lock")).toBeTruthy();
+    expect(start.getAttribute("aria-label")).toBe(
+      "Start a full-length test, included with a paid plan",
+    );
+    fireEvent.click(start);
+    const modal = await screen.findByTestId("upgrade-modal");
+    expect(modal.textContent).toContain(
+      UPGRADE_MODAL_COPY.exam_full_length.plan.title,
+    );
+    expect(history).toEqual(["/practice"]);
+    expect(gets().filter((u) => u.startsWith("/api/tests"))).toEqual([]);
+  });
+
+  it("under 13, paid: the real access map grants full-length tests (only LISA is age-locked), so it is the link", async () => {
+    await mount("paid", {}, true);
+    const row = await screen.findByTestId("practice-full-length");
+    const start = within(row).getByTestId("practice-full-length-start");
+    expect(start.tagName).toBe("A");
+    expect(start.getAttribute("href")).toBe("/tests");
   });
 });

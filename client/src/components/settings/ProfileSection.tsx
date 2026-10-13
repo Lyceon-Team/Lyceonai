@@ -38,7 +38,12 @@ import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
-import { TargetScorePicker } from "@/components/sat-dates/TargetScorePicker";
+import {
+  targetScoreChoiceFrom,
+  targetScoreOf,
+  TargetScorePicker,
+  type TargetScoreChoice,
+} from "@/components/sat-dates/TargetScorePicker";
 import {
   invalidateGettingStarted,
   recordGettingStartedNotSure,
@@ -111,10 +116,16 @@ function ProfileForm({
   const [dates, setDates] = useState<SatDateChoice>({
     dates: savedDates,
   });
+  // Karl, 2026-10-13 on #1230: "Not sure yet" is recorded only when the student explicitly
+  // chooses it in this form; an untouched empty field records nothing.
+  const [dateNotSureChosen, setDateNotSureChosen] = useState(false);
   // Ruling 1 (Karl, 2026-10-13): the target score is shown to every student, not only after
   // calendar setup; it saves with the dates as a goal-only write (never calendar setup).
   const savedScore = goal?.target_score ?? null;
-  const [score, setScore] = useState<number | null>(savedScore);
+  const [scoreChoice, setScoreChoice] = useState<TargetScoreChoice>(() =>
+    targetScoreChoiceFrom(savedScore),
+  );
+  const score = targetScoreOf(scoreChoice);
   const [saved, setSaved] = useState(false);
 
   const nameSave = useMutation({ mutationFn: saveProfileName });
@@ -128,19 +139,30 @@ function ProfileForm({
   }
   if (score !== savedScore) goalChange.target_score = score;
   const goalChanged = Object.keys(goalChange).length > 0;
+  // An explicit "Not sure yet" is an answer to save even when the stored goal does not change
+  // (no date or score was stored before); once recorded, it no longer makes the form dirty.
+  const [recordedNotSure, setRecordedNotSure] = useState({
+    date: false,
+    score: false,
+  });
+  const notSureDate = dateNotSureChosen && dates.dates.length === 0;
+  const notSureScore = scoreChoice.kind === "not_sure";
+  const notSureToRecord =
+    (notSureDate && !recordedNotSure.date) ||
+    (notSureScore && !recordedNotSure.score);
   const pending = nameSave.isPending || goalSave.isPending;
   const error = nameSave.error ?? goalSave.error;
 
   // "Not sure yet" for either is recorded for the Getting started checklist (final brief v2
-  // §1); the checklist is refreshed after any goal save, since the server decides what is done.
+  // §1) only when the student chose it explicitly (Karl, 2026-10-13 on #1230); the checklist is
+  // refreshed after any goal save, since the server decides what is done.
   async function afterGoalSaved(): Promise<void> {
-    const notSureDate = dates.dates.length === 0;
-    const notSureScore = score === null;
     if (notSureDate || notSureScore) {
       await recordGettingStartedNotSure({
         ...(notSureDate ? { test_date: true } : {}),
         ...(notSureScore ? { target_score: true } : {}),
       });
+      setRecordedNotSure({ date: notSureDate, score: notSureScore });
     }
     await invalidateGettingStarted(queryClient);
     setSaved(true);
@@ -205,6 +227,11 @@ function ProfileForm({
           onChange={(next) => {
             setSaved(false);
             setDates(next);
+            if (next.dates.length > 0) setDateNotSureChosen(false);
+          }}
+          onNotSureChosen={() => {
+            setSaved(false);
+            setDateNotSureChosen(true);
           }}
           today={today}
           data-testid="settings-test-dates"
@@ -218,10 +245,10 @@ function ProfileForm({
       <div className="flex flex-col gap-3" data-testid="settings-target-block">
         <TargetScorePicker
           legend="Target score"
-          value={score}
+          value={scoreChoice}
           onChange={(next) => {
             setSaved(false);
-            setScore(next);
+            setScoreChoice(next);
           }}
           data-testid="settings-target"
         />
@@ -247,7 +274,9 @@ function ProfileForm({
           variant="lyc-primary"
           size="lyc-lg"
           disabled={
-            pending || trimmedName.length === 0 || !(nameChanged || goalChanged)
+            pending ||
+            trimmedName.length === 0 ||
+            !(nameChanged || goalChanged || notSureToRecord)
           }
           data-testid="settings-profile-save"
         >

@@ -34,7 +34,14 @@
 --
 -- OWNER-RUN. Karl applies to prod. DO NOT auto-apply. LYCEON-MIGRATION-REVIEWED
 --
+-- Rate limit (Karl, 2026-10-13 on #1230): the three POSTs (not-sure, skip-email, dismiss) share
+-- one per-profile bucket, `getting_started_action`, seeded here in `bucket_definitions` like the
+-- qotd_* buckets (20261029010000 §10). Each action is idempotent and writes one row per
+-- student, so 30 an hour is far above any real use.
+--
 -- rollback (in this order):
+--   UPDATE public.rate_limit_runtime_config SET value = value - 'getting_started_action'
+--    WHERE key = 'bucket_definitions';
 --   DROP FUNCTION IF EXISTS public.getting_started_dismiss(uuid);
 --   DROP FUNCTION IF EXISTS public.getting_started_skip_email(uuid);
 --   DROP FUNCTION IF EXISTS public.getting_started_record_not_sure(uuid, boolean, boolean);
@@ -215,5 +222,26 @@ GRANT EXECUTE ON FUNCTION public.getting_started_observe(uuid)                  
 GRANT EXECUTE ON FUNCTION public.getting_started_record_not_sure(uuid, boolean, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.getting_started_skip_email(uuid)                        TO service_role;
 GRANT EXECUTE ON FUNCTION public.getting_started_dismiss(uuid)                           TO service_role;
+
+-- ---------------------------------------------------------------------------
+-- Rate-limit bucket (RateLimitLedger, per profile)
+-- ---------------------------------------------------------------------------
+UPDATE public.rate_limit_runtime_config
+SET value = value || jsonb_build_object(
+      'getting_started_action', jsonb_build_object('limit', 30, 'window_seconds', 3600)
+    ),
+    updated_at = now()
+WHERE key = 'bucket_definitions';
+
+DO $rl$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.rate_limit_runtime_config
+     WHERE key = 'bucket_definitions' AND value ? 'getting_started_action'
+  ) THEN
+    RAISE EXCEPTION 'getting started migration: bucket_definitions row missing; getting_started_action was not seeded';
+  END IF;
+END
+$rl$;
 
 COMMIT;
