@@ -35,6 +35,7 @@
 
 import { Router, type Request, type Response } from "express";
 import * as crypto from "node:crypto";
+import { z } from "zod";
 import { logger } from "../logger";
 import type { SupabaseUser } from "../middleware/supabase-auth";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -44,6 +45,11 @@ import {
   requireGuardianLinkForUnder13,
 } from "../middleware/supabase-auth.js";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
+import {
+  sessionSummarySchema,
+  type SessionSummaryReviewAgain,
+} from "../../packages/shared/src/session-summary-schema";
+import { buildSessionSummaryCore } from "../services/session-summary";
 import {
   MASTERY_EMISSION_COMPONENT,
   MASTERY_EMISSION_EVENT,
@@ -77,6 +83,7 @@ import {
   reviewNextQuerySchema,
   reviewPoolQuerySchema,
   reviewResumeBodySchema,
+  reviewSessionSourceSchema,
   reviewSkipBodySchema,
   toSessionCriteria,
   type ReviewPoolSessionsCursor,
@@ -211,6 +218,49 @@ function poolSpecToFilters(spec: ReviewPoolSpec): Record<string, unknown> {
     skills: spec.filter.skills ?? null,
     difficulties: spec.filter.difficulties ?? null,
   };
+}
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 3 ("Another 5")]
+ *       | @implemented [2026-10-13]
+ * plain English: the inverse of `poolSpecToFilters`: the pool a stored review session was created
+ * with (its `mode` column plus the pool half of `filters`), in the create body's shape, so the
+ * summary's "Another 5" starts the same kind of review. A `session` row without its source, or an
+ * unknown mode, is a corrupt row: it throws, and the summary route answers 500 rather than starting
+ * a different review than the one the student had.
+ */
+function reviewAgainFromSession(
+  mode: string,
+  filters: unknown,
+): SessionSummaryReviewAgain {
+  const stored =
+    filters && typeof filters === "object" && !Array.isArray(filters)
+      ? (filters as Record<string, unknown>)
+      : {};
+  if (mode === "queue") return { mode: "queue" };
+  if (mode === "session") {
+    const source = reviewSessionSourceSchema.parse({
+      source_engine: stored.source_engine,
+      source_session_id: stored.source_session_id,
+    });
+    return { mode: "session", filters: source };
+  }
+  if (mode === "filter") {
+    const list = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === "string")
+        : [];
+    return {
+      mode: "filter",
+      filters: {
+        sections: list(stored.sections),
+        domains: list(stored.domains),
+        skills: list(stored.skills),
+        difficulties: list(stored.difficulties),
+      },
+    };
+  }
+  throw new Error(`review_session_unknown_mode: ${mode}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1684,6 +1734,84 @@ router.get(
       readOnly: state === "completed" || state === "abandoned",
       criteria: reviewSessionCriteria(session.filters),
     });
+  },
+);
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 3 ("Same pattern for
+ *       review sessions"); Coding Standards §8.2, §8.3, §10, §5] | @implemented [2026-10-13]
+ * plain English: GET /api/review/sessions/:sessionId/summary — practice's summary route
+ * (practice-canonical.ts) on review's tables: 404 for a session the student does not own, 409
+ * `SESSION_NOT_COMPLETED` for one not finished, else `{ data }` built from recorded data and
+ * parsed with the strict shared schema. `again` is the session's own pool
+ * (`reviewAgainFromSession`).
+ */
+router.get(
+  "/sessions/:sessionId/summary",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireGuardianLinkForUnder13,
+  async (req, res) => {
+    const requestId = (req as unknown as { requestId?: string }).requestId;
+    const studentId = requireStudentId(req, res);
+    if (!studentId) return;
+    const parsedId = z.string().uuid().safeParse(req.params.sessionId);
+    if (!parsedId.success) {
+      return res.status(400).json({
+        error: { code: "INVALID_SESSION_ID", message: "sessionId is required" },
+        requestId,
+      });
+    }
+    const session = await loadOwnedReviewSession(parsedId.data, studentId);
+    if (!session) {
+      return res.status(404).json({
+        error: {
+          code: "SESSION_NOT_FOUND",
+          message: "Review session not found",
+        },
+        requestId,
+      });
+    }
+    if (normalizeSessionState(session.status) !== "completed") {
+      return res.status(409).json({
+        error: {
+          code: "SESSION_NOT_COMPLETED",
+          message: "This session is not finished yet",
+        },
+        requestId,
+      });
+    }
+    try {
+      const core = await buildSessionSummaryCore({
+        engine: "review",
+        sessionId: session.id,
+        studentId,
+        ...(requestId ? { requestId } : {}),
+      });
+      const data = sessionSummarySchema.parse({
+        engine: "review",
+        sessionId: session.id,
+        ...core,
+        again: reviewAgainFromSession(session.mode, session.filters),
+      });
+      return res.json({ data });
+    } catch (summaryError) {
+      logger.error(
+        "REVIEW_SUMMARY",
+        "summary_failed",
+        "the review session summary could not be built",
+        summaryError,
+        undefined,
+        { userId: studentId, ...(requestId ? { requestId } : {}) },
+      );
+      return res.status(500).json({
+        error: {
+          code: "SUMMARY_FAILED",
+          message: "We couldn't load this summary",
+        },
+        requestId,
+      });
+    }
   },
 );
 
