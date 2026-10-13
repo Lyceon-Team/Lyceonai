@@ -68,6 +68,7 @@ import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
 import { sessionSummarySchema } from "../../packages/shared/src/session-summary-schema";
 import { buildSessionSummaryCore } from "../services/session-summary";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
+import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -90,20 +91,11 @@ type McOption = CanonicalMcOption;
 // hard-typed `null`; correct_variants is answer-bearing and is intentionally ABSENT from this
 // type — it can never be assigned here. For grid_in, options is [] and inputMode signals a
 // numeric-entry surface (the student produces the answer; no A–D choices exist).
-type StudentSafeQuestionDTO = {
-  sessionItemId: string;
-  stem: string;
-  passage: string | null;
-  assets: unknown | null;
-  section: string;
-  questionType: "multiple_choice" | "grid_in";
-  itemType: CanonicalItemType;
-  inputMode: "choice" | "numeric_entry";
-  options: StudentSafeOption[];
-  difficulty: string | number | null;
-  correct_answer: null;
-  explanation: null;
-};
+// @implemented [2026-10-13] (question metadata header, owner brief Karl 2026-10-13 §1): the type
+// is now inferred from `studentSafeQuestionSchema` (packages/shared, Zod first) instead of being
+// written out beside it, so the DTO and the schema the A14 parity test holds both engines to are
+// one definition. It gained `domain` and `skill` (taxonomy, not answer data).
+type StudentSafeQuestionDTO = StudentSafeQuestion;
 
 type SessionRow = {
   id: string;
@@ -780,6 +772,10 @@ export { filterAssetsPreSubmit };
 // hand it correct_variants (it has no such field; the answer set stays server-side). The
 // serializer null-strips correct_answer/explanation; for grid_in it emits options [] +
 // inputMode 'numeric_entry'. So this DTO carries no answer, no explanation, no variants.
+// @implemented [2026-10-13] (question header, owner brief Karl 2026-10-13 §1): it also carries
+// the projection's `domain` and `skill` (read from the session-item snapshot) for the runner's
+// header. Practice and review may show taxonomy pre-submit; only the full-length exam withholds
+// it (Doc 02B §20), and the exam has its own serializer. Named fields, no spread.
 export function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
@@ -818,6 +814,8 @@ export function toStudentSafeQuestionDTO(args: {
     difficulty: normalizeSafeDifficulty(safe.difficulty),
     correct_answer: null,
     explanation: null,
+    domain: safe.domain,
+    skill: safe.skill,
   };
 }
 

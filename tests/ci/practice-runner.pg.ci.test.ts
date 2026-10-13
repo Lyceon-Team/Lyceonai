@@ -44,7 +44,11 @@ import {
   pgConnConfig,
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
-import { practiceSessionStateResponseSchema } from "../../packages/shared/src/practice-response-schema";
+import {
+  engineNextItemResponseSchema,
+  practiceSessionStateResponseSchema,
+  studentSafeQuestionSchema,
+} from "../../packages/shared/src/practice-response-schema";
 
 const DB_NAME = "practice_runner_ci";
 const STUDENT = "77777777-7777-7777-7777-777777777777";
@@ -115,18 +119,33 @@ const ALGEBRA = Array.from(
   (_, i) => `SATM1ALG${String(i).padStart(3, "0")}`,
 );
 const GEOMETRY = ["SATM1GEO000", "SATM1GEO001"];
+/**
+ * QMH (question header): one question whose domain, skill and difficulty all differ from every
+ * other seeded question's, so a header field read from the wrong place cannot pass.
+ */
+const QMH_QUESTION = {
+  id: "SATM1PSD000",
+  domain: "Problem Solving and Data Analysis",
+  skill: "PSD.D02",
+  difficulty: 2,
+} as const;
 
-async function seedQuestion(id: string, domain: string): Promise<void> {
+async function seedQuestion(
+  id: string,
+  domain: string,
+  skill = "ALG.D01",
+  difficulty = 1,
+): Promise<void> {
   await setupPg!.query(
     `INSERT INTO public.questions
        (id, section, source_type, domain, skill_codes, difficulty, stem, options,
         correct_answer, explanation, option_metadata, status, item_type, published_at)
-     VALUES ($1,'M',1,$2,$3,1,$4,
+     VALUES ($1,'M',1,$2,$3,$6,$4,
        '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
        'C',$5,
        '{"A":{"role":"distractor"},"B":{"role":"distractor"},"C":{"role":"correct"},"D":{"role":"distractor"}}'::jsonb,
        'published','mcq', now())`,
-    [id, domain, ["ALG.D01"], `Stem ${id}`, `Expl ${id}`],
+    [id, domain, [skill], `Stem ${id}`, `Expl ${id}`, difficulty],
   );
 }
 
@@ -165,6 +184,12 @@ describe.skipIf(!PG_AVAILABLE)("practice runner reads → real PG", () => {
     for (const id of ALGEBRA) await seedQuestion(id, "Algebra");
     for (const id of GEOMETRY)
       await seedQuestion(id, "Geometry and Trigonometry");
+    await seedQuestion(
+      QMH_QUESTION.id,
+      QMH_QUESTION.domain,
+      QMH_QUESTION.skill,
+      QMH_QUESTION.difficulty,
+    );
 
     pool = new pg.Pool({ ...pgConnConfig(DB_NAME), max: 8 });
 
@@ -355,5 +380,119 @@ describe.skipIf(!PG_AVAILABLE)("practice runner reads → real PG", () => {
     ).toBe(true);
     expect(state.body.shortened).toBe(false);
     await terminate(sessionId);
+  });
+  /**
+   * QMH — question header (owner brief, Karl, 2026-10-13 §1) | @implemented [2026-10-13]
+   * plain English: practice's /next carries the served item's domain, skill and difficulty for
+   * the runner's header, read from the snapshot of the one question whose three fields differ
+   * from every other's. Presence first; then the whole body parses STRICT against the shared
+   * engine schema (so no field beyond the contract rides along, answer-bearing or not) and
+   * carries no answer field anywhere.
+   */
+  it("QMH: practice /next carries the item's domain, skill and difficulty, and no answer field", async () => {
+    const sessionId = await start("qmh-practice", {
+      sections: ["M"],
+      domains: [QMH_QUESTION.domain],
+      target_question_count: 1,
+    });
+    const res = await next(sessionId);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const q = res.body.question as Record<string, unknown>;
+    expect(q.stem).toBe(`Stem ${QMH_QUESTION.id}`);
+    expect(q.domain).toBe(QMH_QUESTION.domain);
+    expect(q.skill).toBe(QMH_QUESTION.skill);
+    expect(q.difficulty).toBe(QMH_QUESTION.difficulty);
+
+    const parsed = engineNextItemResponseSchema
+      .extend({ question: studentSafeQuestionSchema.strict() })
+      .strict()
+      .safeParse(res.body);
+    expect(
+      parsed.success,
+      parsed.success ? "" : JSON.stringify(parsed.error.issues),
+    ).toBe(true);
+    expect(q.correct_answer).toBeNull();
+    expect(q.explanation).toBeNull();
+    const keys = collectKeys(res.body, new Set());
+    for (const k of [
+      "option_metadata",
+      "correct_variants",
+      "option_token_map",
+      "option_order",
+      "correctOptionId",
+      "correctAnswer",
+    ])
+      expect(keys.has(k), k).toBe(false);
+    expect(JSON.stringify(res.body)).not.toContain(`Expl ${QMH_QUESTION.id}`);
+    await terminate(sessionId);
+  });
+
+  /**
+   * QMH — the diagnostic (owner brief, Karl, 2026-10-13 §1) | @implemented [2026-10-13]
+   * plain English: the diagnostic has no serve route of its own; a `mode = 'diagnostic'` session
+   * is served by this same /next. A diagnostic session with one served item (the snapshot the
+   * diagnostic start writes: canonical answer, explanation and option metadata included) is
+   * asked for its item, which must carry the header fields and nothing answer-bearing.
+   */
+  it("QMH: a diagnostic session's /next carries the item's domain, skill and difficulty, and no answer field", async () => {
+    const sessionId = "9d9d9d9d-9d9d-4d9d-8d9d-9d9d9d9d9d9d";
+    const itemId = "7f7f7f7f-7f7f-4f7f-8f7f-7f7f7f7f7f7f";
+    await setupPg!.query(
+      `INSERT INTO public.practice_sessions
+          (id, user_id, actor_id, mode, filters, target_count, platform, status)
+        VALUES ($1, $2, $2, 'diagnostic',
+          '{"target_question_count": 1}', 1, 'web', 'active')`,
+      [sessionId, STUDENT],
+    );
+    await setupPg!.query(
+      `INSERT INTO public.practice_session_items
+          (id, session_id, user_id, actor_id, ordinal,
+           question_id, question_stem, question_options,
+           question_correct_answer, question_explanation, question_option_metadata,
+           question_domain, question_skill, question_difficulty,
+           question_section, status, question_item_type,
+           option_order, option_token_map)
+        VALUES ($1, $2, $3, $3, 1, $4, $5,
+          '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
+          'C', $6,
+          '{"A":{"role":"distractor"},"B":{"role":"distractor"},"C":{"role":"correct"},"D":{"role":"distractor"}}'::jsonb,
+          $7, $8, $9, 'M', 'served', 'mcq',
+          ARRAY['B','C','A','D']::text[],
+          '{"opt_aaaaaaaaaaaaaaaa":"B","opt_bbbbbbbbbbbbbbbb":"C","opt_cccccccccccccccc":"A","opt_dddddddddddddddd":"D"}'::jsonb)`,
+      [
+        itemId,
+        sessionId,
+        STUDENT,
+        QMH_QUESTION.id,
+        `Diagnostic stem ${QMH_QUESTION.id}`,
+        `Expl ${QMH_QUESTION.id}`,
+        QMH_QUESTION.domain,
+        QMH_QUESTION.skill,
+        QMH_QUESTION.difficulty,
+      ],
+    );
+
+    const res = await next(sessionId);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const q = res.body.question as Record<string, unknown>;
+    // Presence first: the diagnostic's real item, with its header fields.
+    expect(q.stem).toBe(`Diagnostic stem ${QMH_QUESTION.id}`);
+    expect(q.domain).toBe(QMH_QUESTION.domain);
+    expect(q.skill).toBe(QMH_QUESTION.skill);
+    expect(q.difficulty).toBe(QMH_QUESTION.difficulty);
+    // Then absence: nothing answer-bearing.
+    expect(q.correct_answer).toBeNull();
+    expect(q.explanation).toBeNull();
+    const keys = collectKeys(res.body, new Set());
+    for (const k of [
+      "option_metadata",
+      "correct_variants",
+      "option_token_map",
+      "option_order",
+      "role",
+    ])
+      expect(keys.has(k), k).toBe(false);
+    expect(JSON.stringify(res.body)).not.toContain(`Expl ${QMH_QUESTION.id}`);
+    // The session stays open: this is the suite's last test and its database is its own.
   });
 });
