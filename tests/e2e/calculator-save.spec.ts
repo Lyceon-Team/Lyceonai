@@ -98,6 +98,8 @@ function nextItem(server: Server): unknown {
         { id: "opt-d", text: "7" },
       ],
       difficulty: "medium",
+      domain: "Algebra",
+      skill: "Linear equations in one variable",
       correct_answer: null,
       explanation: null,
     },

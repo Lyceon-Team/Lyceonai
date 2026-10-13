@@ -84,6 +84,9 @@ const CANONICAL: CanonicalMcOption[] = [
   { key: "D", text: "x = 12" },
 ];
 const STORED_ORDER = ["C", "A", "D", "B"] as const;
+/** QMH (question header): the served item's taxonomy; the bank's difficulty 1 reads "Easy". */
+const QMH_DOMAIN = "Algebra";
+const QMH_SKILL = "Linear equations in one variable";
 const CORRECT_TEXT = "x = 4"; // canonical A, shown second → display letter B
 const FIRST_TEXT = "x = 8"; // canonical C, shown first → display letter A
 
@@ -103,6 +106,9 @@ function servedItem(ordinal: number, total: number, leak = false): ServedItem {
     options: CANONICAL,
     correct_answer: "A",
     explanation: EXPLANATION,
+    domain: QMH_DOMAIN,
+    skill: QMH_SKILL,
+    difficulty: 1,
   });
   const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(
     CANONICAL,
@@ -124,7 +130,9 @@ function servedItem(ordinal: number, total: number, leak = false): ServedItem {
       itemType: projected.item_type,
       inputMode: projected.inputMode,
       options: safeOptions,
-      difficulty: null,
+      difficulty: projected.difficulty,
+      domain: projected.domain,
+      skill: projected.skill,
       correct_answer: projected.correct_answer,
       explanation: projected.explanation,
     },
@@ -257,6 +265,8 @@ function mountRunner(
     engine?: EngineConfig;
     shortened?: boolean;
     strict?: boolean;
+    /** The diagnostic as resume-practice.tsx mounts it (QMH, 2026-10-13). */
+    diagnostic?: boolean;
   } = {},
 ) {
   const engine = opts.engine ?? PRACTICE_ENGINE_CONFIG;
@@ -267,12 +277,21 @@ function mountRunner(
   const page = (
     <StudentRouteFrame route={route}>
       <CanonicalPracticePage
-        title={engine.domain === "review" ? "Review session" : "Algebra"}
+        title={
+          opts.diagnostic === true
+            ? "Diagnostic Assessment"
+            : engine.domain === "review"
+              ? "Review session"
+              : "Algebra"
+        }
         section="M"
         sessionId={SESSION_ID}
         engine={engine}
         shortened={opts.shortened}
-        completionHref={engine.completionHref}
+        isDiagnostic={opts.diagnostic}
+        completionHref={
+          opts.diagnostic === true ? "/dashboard" : engine.completionHref
+        }
       />
     </StudentRouteFrame>
   );
@@ -922,5 +941,125 @@ describe("QA item 6 (2026-10-07): answering, skipping and leaving mark the sessi
     expect(keys.map(invalidated)).toEqual([false, false, false, false, false]);
     unmount();
     expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
+  });
+});
+
+/**
+ * QMH — the question header (owner brief, Karl, 2026-10-13 §1) | @implemented [2026-10-13]
+ *
+ * plain English: practice, review and the diagnostic (the three surfaces CanonicalPracticePage
+ * serves) show "domain · skill · difficulty" above the question, read from the served item. The
+ * fixture's item is the real shared projection fed Algebra / "Linear equations in one variable" /
+ * difficulty 1, so the header reads "Algebra", the skill and "Easy". The pre-submit screen still
+ * carries no answer: the header is presence, the explanation and correctness tags are absence.
+ * Layout is asserted on the classes that make it (jsdom lays nothing out; the screenshots in the
+ * PR show it drawn): from `lg` one row in DOM order, below it domain + difficulty then the skill
+ * on its own row, clamped to two lines.
+ */
+describe("QMH: the question header on practice, review and the diagnostic", () => {
+  async function expectHeader(): Promise<HTMLElement> {
+    const meta = await screen.findByTestId("question-meta");
+    expect(within(meta).getByTestId("question-meta-domain").textContent).toBe(
+      QMH_DOMAIN,
+    );
+    expect(within(meta).getByTestId("question-meta-skill").textContent).toBe(
+      QMH_SKILL,
+    );
+    expect(
+      within(meta).getByTestId("question-meta-difficulty").textContent,
+    ).toBe("Difficulty: Easy");
+    return meta;
+  }
+
+  function expectNoReveal(): void {
+    expect(document.body.innerHTML).not.toContain(EXPLANATION);
+    for (const word of ["Correct answer", "Your answer", "Not quite"]) {
+      expect(document.body.textContent).not.toContain(word);
+    }
+    expect(screen.queryByTestId("runner-feedback")).toBeNull();
+  }
+
+  it("practice: domain, skill and difficulty above the question, and no reveal before submit", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    await expectHeader();
+    expectNoReveal();
+  });
+
+  it("review: the same header", async () => {
+    window.history.replaceState(null, "", `/review/session/${SESSION_ID}`);
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    await expectHeader();
+    expectNoReveal();
+  });
+
+  it("diagnostic: the same header", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ diagnostic: true });
+    await loaded();
+    expect(screen.queryByTestId("runner-skip")).toBeNull();
+    await expectHeader();
+    expectNoReveal();
+  });
+
+  it("the header sits above the question's stem", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const stem = screen.getByText("Question 1: if 2x + 3 = 11, what is x?");
+    expect(
+      meta.compareDocumentPosition(stem) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("layout: one row from lg (domain · skill · difficulty); below lg domain · difficulty, then the skill clamped to two lines", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const cls = (el: Element): string[] => el.className.split(/\s+/);
+    const domain = within(meta).getByTestId("question-meta-domain");
+    const skill = within(meta).getByTestId("question-meta-skill");
+    const difficulty = within(meta).getByTestId("question-meta-difficulty");
+    const dot = within(meta).getByTestId("question-meta-dot-difficulty");
+
+    // DOM (and screen-reader) order is domain, skill, difficulty.
+    const parts = [domain, skill, difficulty];
+    for (let i = 1; i < parts.length; i += 1) {
+      expect(
+        parts[i - 1]!.compareDocumentPosition(parts[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+
+    // Desktop (lg): one row, in that order.
+    expect(cls(meta)).toEqual(
+      expect.arrayContaining(["flex", "flex-wrap", "lg:flex-nowrap"]),
+    );
+    expect(cls(skill)).toEqual(
+      expect.arrayContaining(["lg:order-3", "lg:basis-auto"]),
+    );
+    expect(cls(difficulty)).toContain("lg:order-5");
+
+    // Phone: row 1 is domain · difficulty, row 2 is the skill on its own full-width line.
+    expect(cls(domain)).toContain("order-1");
+    expect(cls(dot)).toEqual(expect.arrayContaining(["order-2", "inline"]));
+    expect(cls(difficulty)).toContain("order-3");
+    expect(cls(skill)).toEqual(
+      expect.arrayContaining(["order-4", "basis-full"]),
+    );
+
+    // The skill is a ClampedLabel: two lines and an ellipsis, the full name on hover.
+    expect(cls(skill)).toContain("line-clamp-2");
+    expect(skill.getAttribute("title")).toBe(QMH_SKILL);
+
+    // Tokens only, nothing below 14px (DESIGN.md §5): the 16px body token, muted.
+    expect(cls(meta)).toEqual(
+      expect.arrayContaining(["text-lyc-body", "text-lyc-muted"]),
+    );
   });
 });

@@ -150,6 +150,9 @@ FILES=(
   "client/src/features/exam/pages/ExamModulePage.tsx"
   "client/src/hooks/usePracticeQuota.ts"
   "server/lib/practice-quota.ts"
+  "client/src/components/practice/QuestionMetaHeader.tsx"
+  "packages/shared/src/question-difficulty.ts"
+  "packages/shared/src/exam-runtime-schema.ts"
 )
 
 snapshot_all() {
@@ -3922,6 +3925,103 @@ plant "W6-UI64-10" "the unlimited shape drops freeDailyLimit" \
   'a = "        resetAt: null,\n        freeDailyLimit,\n      }\n"
 assert s.count(a) == 1
 s = s.replace(a, "        resetAt: null,\n      }\n", 1)'
+
+# ── QMH — the question header: domain · skill · difficulty (2026-10-13) ────────────────
+# Owner brief (Karl, 2026-10-13) §1: the header on practice, review and the diagnostic (all three
+# run in CanonicalPracticePage), never on the timed full-length module; phone layout below lg
+# (domain · difficulty, then the skill clamped to two lines). Each plant mutates product source
+# at an anchor that occurs exactly once. The server half (domain/skill/difficulty on /next, and no
+# answer field) is proved by PG tests outside this client gate; its plants are in the PR.
+QMH_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+QMH_UNIT="client/src/components/practice/QuestionMetaHeader.test.tsx"
+QMH_EXAM="client/src/features/exam/pages/ExamModulePage.test.tsx"
+
+plant "QMH-1" "the runner passes the header nothing (practice, review and diagnostic lose it)" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "        domain={question.domain}\n        skill={question.skill}\n        difficulty={question.difficulty}\n"
+assert s.count(a) == 1
+s = s.replace(a, "        domain={null}\n        skill={null}\n        difficulty={null}\n", 1)'
+
+plant "QMH-2" "the hook drops the served skill" \
+  "$QMH_RUNNER" \
+  "client/src/hooks/useCanonicalPractice.ts" \
+  'a = "    skill: nonEmptyText(raw.skill),\n"
+assert s.count(a) == 1
+s = s.replace(a, "    skill: null,\n", 1)'
+
+plant "QMH-3" "the bank's difficulty 1 reads Hard" \
+  "$QMH_RUNNER $QMH_UNIT" \
+  "packages/shared/src/question-difficulty.ts" \
+  'a = "  \"1\": \"Easy\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "  \"1\": \"Hard\",\n", 1)'
+
+plant "QMH-4" "an undefined difficulty is guessed as Medium" \
+  "$QMH_UNIT" \
+  "packages/shared/src/question-difficulty.ts" \
+  'a = "  return BY_TOKEN[token] ?? null;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  return BY_TOKEN[token] ?? \"Medium\";\n", 1)'
+
+plant "QMH-5" "phone: the skill shares row 1 instead of its own row" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "className=\"order-4 min-w-0 basis-full lg:order-3 lg:basis-auto\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"order-2 min-w-0 lg:order-3 lg:basis-auto\"", 1)'
+
+plant "QMH-6" "desktop: difficulty drawn first" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "className=\"order-3 shrink-0 whitespace-nowrap lg:order-5\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"order-3 shrink-0 whitespace-nowrap lg:order-1\"", 1)'
+
+plant "QMH-7" "the skill is not clamped (a plain span)" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "        <ClampedLabel\n          text={skillText}\n          data-testid=\"question-meta-skill\"\n          className=\"order-4 min-w-0 basis-full lg:order-3 lg:basis-auto\"\n        />\n"
+assert s.count(a) == 1
+s = s.replace(a, "        <span\n          data-testid=\"question-meta-skill\"\n          className=\"order-4 min-w-0 basis-full lg:order-3 lg:basis-auto\"\n        >{skillText}</span>\n", 1)'
+
+plant "QMH-8" "a dot is drawn before a missing skill" \
+  "$QMH_UNIT" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "  const dotDomainSkill = domainText !== null && skillText !== null;\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const dotDomainSkill = domainText !== null;\n", 1)'
+
+plant "QMH-9" "with nothing to show, an empty header is still drawn" \
+  "$QMH_UNIT" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "  if (domainText === null && skillText === null && difficultyText === null) {\n    return null;\n  }\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "QMH-10" "the header drawn below the question instead of above it" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "      <QuestionMetaHeader\n        domain={question.domain}\n        skill={question.skill}\n        difficulty={question.difficulty}\n      />\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)
+b = "        onMissingMcChoices={handleMissingMcChoices}\n      />\n"
+assert s.count(b) == 1
+s = s.replace(b, b + a, 1)'
+
+plant "QMH-11" "the full-length module draws a question header" \
+  "$QMH_EXAM" \
+  "client/src/features/exam/pages/ExamModulePage.tsx" \
+  'a = "data-testid=\"exam-module\">"
+assert s.count(a) == 1
+s = s.replace(a, a + "<div data-testid=\"question-meta\">Algebra · Easy</div>", 1)'
+
+plant "QMH-12" "the full-length module payload gains a difficulty" \
+  "$QMH_EXAM" \
+  "packages/shared/src/exam-runtime-schema.ts" \
+  'a = "    current_answer: z.string().nullable(),\n"
+assert s.count(a) == 1
+s = s.replace(a, a + "    difficulty: z.number().nullable().optional(),\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
