@@ -83,6 +83,7 @@ changed, or why not. One revision round: an item still not approved is carried t
 | Item | Finding | Response | Commit |
 | --- | --- | --- | --- |
 | `what-to-bring-to-the-sat` | R2/R3: the device prohibition omits the approved-accommodation exception; the ID rule omits the SAT Student ID Form, the 21+ and country restrictions, and the prior-year school ID exception. | Fixed. The ID section now says a school ID from last school year works through the end of December; adds a paragraph on the SAT Student ID Form (U.S. centers, under 21, prepared by the school or a notary for students schooled at home), the government-ID-only rule at 21 or older, and a pointer to College Board's country-specific rules. The device paragraph now opens "Unless College Board has approved an accommodation for you". Both pages re-read 2026-10-13; the new quotes are in the claim inventory's CB_ID_REQUIREMENTS and CB_PROHIBITED_DEVICES rows. Gates re-run 2026-10-13, all green: draft, quality, publish and schedule (88/88), Vale and lychee (3 posts pass), build, `gate:seo-output`. | 5e686fbf |
+| `what-to-bring-to-the-sat` | Re-audit, R2: "Most students bring…" asserts what most students do; the source states only the ID requirement. | Fixed. The sentence now reads "Bring an original, unexpired photo ID issued by the government or by the school you attend now." Gates re-run 2026-10-13, all green. This is a second revision round; Doc 10B §8.7 allows one, so keeping the post in this batch is Karl's decision (otherwise it is carried to 2026-W46). | b9f392ad |
 
 ## 4. Karl decision
 
