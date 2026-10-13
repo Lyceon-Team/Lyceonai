@@ -268,6 +268,8 @@ function mountRunner(
     strict?: boolean;
     /** The diagnostic as resume-practice.tsx mounts it (QMH, 2026-10-13). */
     diagnostic?: boolean;
+    /** P0 item 3: the page shows the summary itself. */
+    onSessionClosed?: () => void;
   } = {},
 ) {
   const engine = opts.engine ?? PRACTICE_ENGINE_CONFIG;
@@ -293,6 +295,9 @@ function mountRunner(
         completionHref={
           opts.diagnostic === true ? "/dashboard" : engine.completionHref
         }
+        {...(opts.onSessionClosed
+          ? { onSessionClosed: opts.onSessionClosed }
+          : {})}
       />
     </StudentRouteFrame>
   );
@@ -587,6 +592,19 @@ describe("UI-53 runner: bar, steps, keys", () => {
     expect(window.location.pathname).toBe(`/practice/session/${SESSION_ID}`);
     await click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(window.location.pathname).toBe("/practice"));
+  });
+
+  it("P0-3: with a summary page, Done hands the closed session back once and stays (no navigation)", async () => {
+    installNetwork({ total: 1 });
+    const onSessionClosed = vi.fn();
+    mountRunner({ onSessionClosed });
+    await loaded();
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await screen.findByTestId("runner-feedback");
+    await click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(onSessionClosed).toHaveBeenCalledTimes(1));
+    expect(window.location.pathname).toBe(`/practice/session/${SESSION_ID}`);
   });
 
   it("keys through the shared hook: ↓ chooses, Enter submits, → goes next", async () => {

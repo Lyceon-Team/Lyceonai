@@ -216,6 +216,8 @@ export default function CanonicalPracticePage(props: {
   shortened?: boolean;
   engine?: EngineConfig;
   review?: ReviewSessionSpec;
+  /** P0 item 3: the session closed; the page shows its summary instead of navigating away. */
+  onSessionClosed?: () => void;
 }): JSX.Element {
   const engine = props.engine ?? PRACTICE_ENGINE_CONFIG;
   const [, navigate] = useLocation();
@@ -375,7 +377,23 @@ export default function CanonicalPracticePage(props: {
   // F-53: `/next` found no next item and the server closed the session (after "Done" on the
   // last question, or a skip of it), so the runner leaves for the completion destination,
   // client-side. Not on the last ANSWER: its feedback stays on screen until "Done".
+  //
+  // First-run activation brief (Karl, 2026-10-13) P0 item 3 | @implemented [2026-10-13]: a page
+  // that shows the end-of-session summary passes `onSessionClosed` (it re-reads the session's
+  // state, which is now completed, and draws the summary in place); then the runner does not
+  // leave. Called once per closure (the ref), whatever the caller's function identity.
+  const onSessionClosedRef = React.useRef(props.onSessionClosed);
+  onSessionClosedRef.current = props.onSessionClosed;
+  const closedHandled = React.useRef(false);
   React.useEffect(() => {
+    const onClosed = onSessionClosedRef.current;
+    if (sessionClosed && onClosed !== undefined) {
+      if (!closedHandled.current) {
+        closedHandled.current = true;
+        onClosed();
+      }
+      return;
+    }
     if (sessionClosed) navigate(completionDest);
   }, [sessionClosed, completionDest, navigate]);
 
