@@ -260,8 +260,11 @@ export async function buildApp(): Promise<Express> {
 
   const app = express();
   app.use(express.json());
+  // A stand-in for requestIdMiddleware without its per-request access log (which would add
+  // stdout work to every benchmarked request): honours `x-request-id` as production does.
   app.use((req, _res, next) => {
-    req.requestId = `hotpath-${harness.roundTrips}`;
+    req.requestId =
+      req.header("x-request-id") ?? `hotpath-${harness.roundTrips}`;
     next();
   });
   app.use("/api/practice/topics", auth.requireSupabaseAuth, getPracticeTopics);

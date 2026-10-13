@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "../lib/supabase-admin";
+import { createTtlCache } from "../../../../server/lib/ttl-cache";
 import {
   CANONICAL_DOMAINS_BY_SECTION,
   isCanonicalDomainForSection,
@@ -102,10 +103,38 @@ export async function fetchSkillsForDomain(
 }
 
 /**
- * The full catalog. Used by the fixture-canonicality snapshot refresh and by callers
- * that need more than one domain at a time.
+ * @spec [owner brief 2026-10-13 "first-run activation fixes" item 2 ("cache in process ... the
+ *       canonical_skill_catalog read (~875 ms mean, 95 calls; 29 rows) ... the skill catalog
+ *       changes only on deploy/migration — cache with a TTL and say what invalidates it");
+ *       Doc-01A_V1.0 §21, §24, §25] | @implemented [2026-10-13]
+ *
+ * plain English: the view is a DISTINCT over every published question (an unnest of
+ * `skill_codes` across the whole bank), which is why one read costs hundreds of milliseconds
+ * for 29 rows. Its answer is the same for every student and changes only when a question for
+ * a new (section, domain, skill) is published or the last one for a triple is retired —
+ * which happens through the question pipeline's seed SQL and migrations; no mounted route
+ * publishes a question (`server/services/question-publish.ts` is unmounted and unimported). So the parsed, sorted catalog is held in process for CATALOG_TTL_MS (10 min), with a
+ * 1 h hard-staleness bound for serving the previous catalog through a failed refresh (Doc 01A
+ * §24); a failed read with nothing usable cached still throws, as before.
+ *
+ * INVALIDATION: a deploy starts fresh instances (cleared); a question publish applied out of
+ * band shows up within 10 minutes; `invalidateSkillCatalogCache()` clears it on demand. A
+ * newly published skill appearing up to 10 minutes late in the picker is the accepted cost.
+ * Per-student data never enters it: the catalog is a projection of the bank alone.
+ *
+ * trade-offs: callers receive a fresh copy of the cached rows, so no caller can mutate what
+ * the next one reads.
  */
-export async function fetchSkillCatalog(): Promise<CatalogEntry[]> {
+const CATALOG_TTL_MS = 10 * 60 * 1000;
+const CATALOG_HARD_STALE_MS = 60 * 60 * 1000;
+const SKILL_CATALOG_CACHE = createTtlCache<readonly CatalogEntry[]>({
+  name: "catalog:canonical_skill_catalog",
+  ttlMs: CATALOG_TTL_MS,
+  hardStaleMs: CATALOG_HARD_STALE_MS,
+  maxEntries: 1,
+});
+
+async function readSkillCatalogFromDb(): Promise<CatalogEntry[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("canonical_skill_catalog")
@@ -121,6 +150,20 @@ export async function fetchSkillCatalog(): Promise<CatalogEntry[]> {
       a.domain.localeCompare(b.domain, "en") ||
       a.skill.localeCompare(b.skill, "en"),
   );
+}
+
+/**
+ * The full catalog, from the in-process cache above. Used by the practice topic picker, the
+ * mastery skill view, and any caller that needs more than one domain at a time.
+ */
+export async function fetchSkillCatalog(): Promise<CatalogEntry[]> {
+  const cached = await SKILL_CATALOG_CACHE.get("all", readSkillCatalogFromDb);
+  return cached.map((entry) => ({ ...entry }));
+}
+
+/** Drops the cached catalog: for an operator after a publish that must show at once, and tests. */
+export function invalidateSkillCatalogCache(): void {
+  SKILL_CATALOG_CACHE.invalidate();
 }
 
 /** The eight canonical (section, domain) pairs, in a stable order. Not a database read. */
