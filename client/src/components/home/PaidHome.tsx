@@ -83,7 +83,7 @@ import { DiagnosticCard } from "./DiagnosticCard";
 import { FullLengthCard, type FullLengthResume } from "./FullLengthCard";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
-import { useHomeQotd } from "@/hooks/useHomeQotd";
+import { homeQotdFirstLoad, useHomeQotd } from "@/hooks/useHomeQotd";
 import { HomeLoading } from "./HomeLoading";
 import {
   ProjectionSection,
@@ -223,7 +223,7 @@ export function PaidHome({
     !projection.isLoading &&
     // First-run activation brief (Karl, 2026-10-13) P1: the Question of the Day card lands
     // with the page, in its final place, instead of pushing the page down after it.
-    !qotd.isLoading;
+    !homeQotdFirstLoad(qotd);
 
   const retry = (): void => {
     void calendar.refetch();

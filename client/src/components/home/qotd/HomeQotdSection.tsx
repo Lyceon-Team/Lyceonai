@@ -60,7 +60,7 @@ export function HomeQotdSection({
 }: {
   onStreakExtended: () => void;
 }): JSX.Element | null {
-  const today = useHomeQotd();
+  const today = useHomeQotd({ joinHome: true });
   const data = today.data;
 
   // First-run activation brief (Karl, 2026-10-13) P1: the card's place is held while it loads.

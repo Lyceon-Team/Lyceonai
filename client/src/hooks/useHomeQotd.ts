@@ -49,14 +49,43 @@ async function fetchHomeQotd(): Promise<HomeQotdTodayResponse> {
   return homeQotdTodayResponseSchema.parse(data);
 }
 
-export function useHomeQotd(): UseQueryResult<HomeQotdTodayResponse, Error> {
+/**
+ * `joinHome` (first-run activation brief, 2026-10-13): Home itself reads today's question before
+ * it draws (`homeQotdFirstLoad`), so the card and the streak chip, which mount once Home has
+ * drawn, JOIN that read instead of starting another: no refetch on mount (the read is fresh,
+ * Home just made it) and no retry of a failed read on mount (the card shows the failure with Try
+ * again). Without a cached read (the card rendered on its own) they still fetch.
+ */
+export function useHomeQotd(
+  options: { joinHome?: boolean } = {},
+): UseQueryResult<HomeQotdTodayResponse, Error> {
   const { user, authLoading } = useSupabaseAuth();
   return useQuery<HomeQotdTodayResponse, Error>({
     queryKey: [HOME_QOTD_TODAY_PATH],
     queryFn: fetchHomeQotd,
     enabled: !!user && !authLoading,
     ...QUERY_FRESHNESS.homeQotd,
+    ...(options.joinHome === true
+      ? { refetchOnMount: false, retryOnMount: false }
+      : {}),
   });
+}
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Reserve the QOTD card's
+ *       space while loading (no layout shift)"] | @implemented [2026-10-13]
+ * plain English: true only while today's question is being read for the FIRST time (no answer
+ * and no failure yet). Home waits on this, so the card lands with the page. It is deliberately not
+ * `isLoading`: after a failed read, the card's own observer refetches on mount (staleTime 0) and a
+ * refetch with no data is "loading" again, so a Home that waited on `isLoading` would unmount the
+ * card, settle on the failure, remount it, refetch, and loop. A failed first read ends the wait
+ * like an answer does; the card then shows its own error.
+ */
+export function homeQotdFirstLoad(query: {
+  isLoading: boolean;
+  isFetched: boolean;
+}): boolean {
+  return query.isLoading && !query.isFetched;
 }
 
 function dataOf(body: unknown): unknown {

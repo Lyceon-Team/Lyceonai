@@ -1505,6 +1505,26 @@ describe("first-run P1: the Question of the Day card lands with the page (no lay
   }
 });
 
+describe("first-run P1: a failed QOTD read ends Home's wait, once (no reload loop)", () => {
+  for (const plan of ["paid", "free"] as const) {
+    it(`${plan}: the page draws with the card's error, and today's question is asked for once`, async () => {
+      await mount(
+        plan,
+        plan === "paid"
+          ? { calendar: "ready" }
+          : { estimateStatus: "no_baseline" },
+        { failPath: /^\/api\/qotd\/today/ },
+      );
+      expect(await screen.findByTestId("home-qotd-error")).toBeTruthy();
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 300));
+      });
+      expect(screen.getByTestId("home")).toBeTruthy();
+      expect(gets().filter((p) => p === "/api/qotd/today")).toHaveLength(1);
+    });
+  }
+});
+
 describe("first-run P1: 'This week' ticks the days with study activity", () => {
   it("ticks exactly the server's active days (the streak's day set), whatever the plan says; the plan line stays separate", async () => {
     await mount("paid", {

@@ -50,7 +50,7 @@ import { usePracticeQuota } from "@/hooks/usePracticeQuota";
 import { FullLengthCard } from "./FullLengthCard";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
-import { useHomeQotd } from "@/hooks/useHomeQotd";
+import { homeQotdFirstLoad, useHomeQotd } from "@/hooks/useHomeQotd";
 import { HomeLoading } from "./HomeLoading";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
 import { DiagnosticCard } from "./DiagnosticCard";
@@ -139,7 +139,7 @@ export function FreeHome({
     !practice.isLoading &&
     !quota.isLoading &&
     // First-run activation brief (Karl, 2026-10-13) P1: the QOTD card lands with the page.
-    !qotd.isLoading;
+    !homeQotdFirstLoad(qotd);
   if (!settled) return <HomeLoading />;
 
   const freeDailyLimit = quota.data?.freeDailyLimit ?? null;
