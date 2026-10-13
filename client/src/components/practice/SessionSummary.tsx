@@ -59,7 +59,7 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /** "4 of 5 correct · 1 skipped" (pure; the tests read it). */
-export function scoreLine(
+function scoreLine(
   s: Pick<Summary, "answered" | "correct" | "skipped">,
 ): string {
   const head =
@@ -69,7 +69,7 @@ export function scoreLine(
   return s.skipped > 0 ? `${head} · ${s.skipped} skipped` : head;
 }
 
-export function sentToReviewLine(engine: SummaryEngine, n: number): string {
+function sentToReviewLine(engine: SummaryEngine, n: number): string {
   if (engine === "review")
     return n === 0
       ? "Nothing went back to your review queue"

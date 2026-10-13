@@ -32,7 +32,7 @@ import {
   sessionSummarySchema,
   type SessionSummary as Summary,
 } from "@lyceon/shared/session-summary-schema";
-import { SessionSummary, scoreLine } from "./SessionSummary";
+import { SessionSummary } from "./SessionSummary";
 
 const SESSION = "11111111-1111-4111-8111-111111111111";
 const NEW_SESSION = "22222222-2222-4222-8222-222222222222";
@@ -279,12 +279,22 @@ describe("P0-3: the session summary", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
-  it("scoreLine words", () => {
-    expect(scoreLine({ answered: 0, correct: 0, skipped: 5 })).toBe(
-      "No questions answered · 5 skipped",
-    );
-    expect(scoreLine({ answered: 5, correct: 5, skipped: 0 })).toBe(
-      "5 of 5 correct",
-    );
+  it("the score's words: every question skipped, and no skips", async () => {
+    net.summary = practiceSummary({
+      answered: 0,
+      correct: 0,
+      skipped: 5,
+      mastery_changes: [],
+    });
+    renderSummary("practice");
+    expect(
+      (await screen.findByTestId("session-summary-score")).textContent,
+    ).toBe("No questions answered · 5 skipped");
+    cleanup();
+    net.summary = practiceSummary({ answered: 5, correct: 5, skipped: 0 });
+    renderSummary("practice");
+    expect(
+      (await screen.findByTestId("session-summary-score")).textContent,
+    ).toBe("5 of 5 correct");
   });
 });
