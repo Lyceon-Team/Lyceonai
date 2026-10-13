@@ -29,7 +29,7 @@ batch is produced the Wednesday before its week.
 | 2026-W46 | Wed, Nov 11, 2026 | Sat, Dec 5, 2026 (24) | `should-you-retake-the-sat` | should i retake the sat | Both | Deciding whether to sit the Dec 5 test | Dec 5 registration closes Nov 20 |
 | 2026-W46 | Fri, Nov 13, 2026 | Sat, Dec 5, 2026 (22) | `bluebook-sat-practice-tests` | bluebook sat practice | Students | How to use College Board's full-length practice tests | 3 weeks to Dec 5: time for one or two full practice tests |
 | 2026-W47 | Mon, Nov 16, 2026 | Sat, Dec 5, 2026 (19) | `sat-registration-deadlines` | sat registration deadline | Both | Regular and late deadlines for Dec 5, and what each allows | Dec 5 deadline is Nov 20, late deadline Nov 24 |
-| 2026-W47 | Wed, Nov 18, 2026 | Sat, Dec 5, 2026 (17) | `sat-score-report-explained` | sat score report | Both | Reading the report: total, sections, percentiles | Nov 7 scores arrive Nov 20 |
+| 2026-W47 | Wed, Nov 18, 2026 | Sat, Dec 5, 2026 (17) | `sat-score-report-explained` | sat score report | Both | Walking through the score report once it's out: where to find it online, the score range, and the Knowledge and Skills section by content area; links to the scoring explainer for the scale and percentiles instead of repeating them | Nov 7 scores arrive Nov 20 |
 | 2026-W47 | Fri, Nov 20, 2026 | Sat, Dec 5, 2026 (15) | `sat-superscore` | sat superscore | Both | What superscoring is and how colleges use it | Score release day for Nov 7; retake decisions |
 | 2026-W48 | Mon, Nov 23, 2026 | Sat, Dec 5, 2026 (12) | `send-sat-scores-to-colleges` | send sat scores | Both | How and when to send scores to colleges | Scores just released; application deadlines ahead |
 | 2026-W48 | Wed, Nov 25, 2026 | Sat, Dec 5, 2026 (10) | `sat-test-strategies` | sat test strategies | Students | Pacing and question-by-question habits for both sections | 10 days to the Dec 5 test |
@@ -45,8 +45,12 @@ batch is produced the Wednesday before its week.
   come out`, `sat registration deadline`, …) are not in that export, which was seeded with prep and
   score terms; they are picked for the calendar, as Doc 10B §3A asks.
 - **Closest existing pages** (R7, helpful beyond them): `sat-score-report-explained` sits next to
-  `/blog/digital-sat-scoring-explained` (how scoring works); this one is the report itself:
-  sections, percentiles, where to find it. `bluebook-sat-practice-tests` sits next to
+  `/blog/digital-sat-scoring-explained`, which already covers the report's total and two section
+  scores, the 200–800 scale, the modules, percentiles and the benchmarks. The new post covers only
+  what that page does not: where to find the report after release, the score range, and the
+  Knowledge and Skills section (performance in each of the eight content areas, four per section),
+  citing College Board's "What Do My Scores Mean?" and "SAT Scores" pages. It links to the
+  explainer for the scale and percentiles. `bluebook-sat-practice-tests` sits next to
   `/free-sat-practice-test`; this one is how to use the official full-length tests well.
 - **Dates.** Every SAT date above comes from `shared/sat-test-dates.ts` (College Board, read
   2026-10-11). Posts restate them with the College Board pages cited.
