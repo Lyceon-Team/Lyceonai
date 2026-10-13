@@ -770,6 +770,10 @@ export { filterAssetsPreSubmit };
 // hand it correct_variants (it has no such field; the answer set stays server-side). The
 // serializer null-strips correct_answer/explanation; for grid_in it emits options [] +
 // inputMode 'numeric_entry'. So this DTO carries no answer, no explanation, no variants.
+// @implemented [2026-10-13] (question header, owner brief Karl 2026-10-13 §1): it also carries
+// the projection's `domain` and `skill` (read from the session-item snapshot) for the runner's
+// header. Practice and review may show taxonomy pre-submit; only the full-length exam withholds
+// it (Doc 02B §20), and the exam has its own serializer. Named fields, no spread.
 export function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
@@ -806,13 +810,10 @@ export function toStudentSafeQuestionDTO(args: {
     // Grid-ins have no choices: emit []. MCQs carry the per-session tokenized options.
     options: isGridIn ? [] : args.safeOptions,
     difficulty: normalizeSafeDifficulty(safe.difficulty),
-    // Question header (owner brief 2026-10-13 §1): the projection's domain and skill, which it
-    // reads from the session-item snapshot. Practice and review may show taxonomy pre-submit;
-    // only the full-length exam withholds it (Doc 02B §20), and the exam has its own serializer.
-    domain: safe.domain,
-    skill: safe.skill,
     correct_answer: null,
     explanation: null,
+    domain: safe.domain,
+    skill: safe.skill,
   };
 }
 
