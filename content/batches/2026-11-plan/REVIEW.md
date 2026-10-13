@@ -67,7 +67,11 @@ changed, or why not. One revision round: an item still not approved is carried t
 
 | Item | Finding | Response | Commit |
 | --- | --- | --- | --- |
-| `slug` | The finding. | Fixed: what changed. | abc1234 |
+| `plan` | R7: the `sat-score-report-explained` slot promised total, sections and percentiles, which `/blog/digital-sat-scoring-explained` already explains; the note understated that page. | Fixed. The slot now covers only what the explainer lacks: where to find the report online after the Nov 20 release, the score range, and the Knowledge and Skills section (performance in each of the eight content areas, four per section), from College Board's "What Do My Scores Mean?" and "SAT Scores" pages (read 2026-10-13). It links to the explainer for the scale and percentiles. The closest-pages note now lists what the explainer already covers. Target keyword and date unchanged; the other twelve slots are unchanged. | a3ca08e7 |
+
+Notes for Karl:
+
+- **Blind order was not met.** Codex reports that it saw section 1 before forming its verdict. Its checks were recomputed from PLAN.md and the sources, but the rubric's order was not followed. The same happened on the W45 batch (#1202); the cause is noted there.
 
 ## 4. Karl decision
 
