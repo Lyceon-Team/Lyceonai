@@ -1,0 +1,71 @@
+{
+  "answer": {
+    "correctOptionId": "<token>",
+    "explanation": "<explanation of the answered item>",
+    "feedback": "Incorrect",
+    "isCorrect": false,
+    "mode": "multiple_choice",
+    "sessionId": "<uuid>",
+    "sessionItemId": "<uuid>",
+    "state": "completed",
+    "stats": {
+      "correct": 0,
+      "incorrect": 1,
+      "skipped": 0,
+      "streak": 0,
+      "total": 1
+    }
+  },
+  "session": {
+    "client_instance_id": "golden-client",
+    "completed": true,
+    "filters": {
+      "active_session_item_id": null,
+      "client_instance_id": "golden-client",
+      "last_served_ordinal": 1,
+      "prebuilt": true,
+      "requested_count": 1,
+      "selection_mode": "exact",
+      "session_spec": {
+        "difficulties": [
+          "medium"
+        ],
+        "domains": [
+          "Craft and Structure"
+        ],
+        "mode": "balanced",
+        "sections": [
+          "RW"
+        ],
+        "skills": [
+          "CRS.S0"
+        ],
+        "target_minutes": null,
+        "target_question_count": 1
+      },
+      "session_start_idempotency_key": "golden-practice-start-2",
+      "source_pool_count": 1,
+      "target_question_count": 1
+    },
+    "mode": "balanced",
+    "platform": "web",
+    "status": "completed",
+    "target_count": 1
+  },
+  "items": {
+    "question_ids": [
+      "SATRW1CRS004"
+    ],
+    "by_ordinal": [
+      {
+        "ordinal": 1,
+        "status": "answered",
+        "is_correct": false,
+        "outcome": "incorrect",
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      }
+    ]
+  }
+}

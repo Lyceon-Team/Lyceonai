@@ -14,7 +14,7 @@
  * uuids, timestamps and the random option tokens masked — into one record per path.
  *
  * HOW "UNCHANGED" IS PROVEN. The date-independent records (practice, answer, review, topics,
- * pre-setup calendar) are pinned in this file's snapshot, which was RECORDED ON origin/cleanup
+ * pre-setup calendar) are pinned in `tests/ci/__golden__/hot-paths.*.json`, which were RECORDED ON origin/cleanup
  * before the performance pass and is asserted unchanged after it. The set-up calendar read
  * depends on today's date (a 14-day window from the student's local today), so it cannot be a
  * committed snapshot; it is asserted structurally here, and the before/after comparison of its
@@ -154,6 +154,15 @@ async function practiceSession(sessionId: string): Promise<unknown> {
 
 const golden: Record<string, unknown> = {};
 
+/**
+ * The pinned record as JSON. A JSON file rather than a vitest `.snap`, because the
+ * fixture-canonicality gate parses `.json` (and has no parser for `.snap`): the `section`
+ * values a golden record carries are checked against the database CHECKs like any fixture.
+ */
+function goldenJson(record: unknown): string {
+  return JSON.stringify(record, null, 2) + "\n";
+}
+
 describe.skipIf(!PG_AVAILABLE)(
   "hot paths: golden regression (real routes, real PG)",
   () => {
@@ -198,7 +207,9 @@ describe.skipIf(!PG_AVAILABLE)(
         items: await practiceItems(created.body.sessionId),
       };
       golden.practice_start = record;
-      expect(record).toMatchSnapshot();
+      await expect(goldenJson(record)).toMatchFileSnapshot(
+        "./__golden__/hot-paths.practice_start.json",
+      );
     });
 
     it("answer submit: correct, replayed, and an answer to an item not yet served", async () => {
@@ -257,7 +268,9 @@ describe.skipIf(!PG_AVAILABLE)(
         items: await practiceItems(session.id),
       };
       golden.answer_submit = record;
-      expect(record).toMatchSnapshot();
+      await expect(goldenJson(record)).toMatchFileSnapshot(
+        "./__golden__/hot-paths.answer_submit.json",
+      );
     });
 
     it("answer submit that completes a one-question session", async () => {
@@ -308,7 +321,9 @@ describe.skipIf(!PG_AVAILABLE)(
         items: await practiceItems(created.body.sessionId),
       };
       golden.answer_completes = record;
-      expect(record).toMatchSnapshot();
+      await expect(goldenJson(record)).toMatchFileSnapshot(
+        "./__golden__/hot-paths.answer_completes.json",
+      );
     });
 
     it("review session start: the open queue, oldest mistake first, then its replay", async () => {
@@ -347,7 +362,9 @@ describe.skipIf(!PG_AVAILABLE)(
         items,
       };
       golden.review_start = record;
-      expect(record).toMatchSnapshot();
+      await expect(goldenJson(record)).toMatchFileSnapshot(
+        "./__golden__/hot-paths.review_start.json",
+      );
     });
 
     it("practice topics: the catalog, read twice, is the same both times", async () => {
@@ -357,7 +374,9 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(first.status).toBe(200);
       expect(normalise(second.body)).toEqual(normalise(first.body));
       golden.practice_topics = normalise(first.body);
-      expect(golden.practice_topics).toMatchSnapshot();
+      await expect(goldenJson(golden.practice_topics)).toMatchFileSnapshot(
+        "./__golden__/hot-paths.practice_topics.json",
+      );
     });
 
     it("calendar read, pre-setup: a known device zone is offered, an unknown one falls open", async () => {
@@ -382,7 +401,9 @@ describe.skipIf(!PG_AVAILABLE)(
         unknown: normalise(unknown.body),
       };
       golden.calendar_presetup = record;
-      expect(record).toMatchSnapshot();
+      await expect(goldenJson(record)).toMatchFileSnapshot(
+        "./__golden__/hot-paths.calendar_presetup.json",
+      );
     });
 
     it("calendar read, set up and entitled: a full ready payload, identical on a second read", async () => {
