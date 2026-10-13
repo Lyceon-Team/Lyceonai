@@ -137,9 +137,9 @@ describe("timedRoute / timedStep", () => {
     const calls = timingCalls();
     expect(calls).toHaveLength(1);
     expect(calls[0]!.data.status).toBe(500);
-    expect((calls[0]!.data.steps as Array<{ step: string }>)[0]?.step).toBe(
-      "doomed",
-    );
+    expect(calls[0]!.data.steps).toEqual([
+      { step: "doomed", ms: expect.any(Number), at_ms: expect.any(Number) },
+    ]);
   });
 
   it("a step still running when the response finished is listed with ms: null", async () => {

@@ -203,20 +203,28 @@ describe.skipIf(!PG_AVAILABLE)(
 
     it("answer submit: correct, replayed, and an answer to an item not yet served", async () => {
       harness.actingStudent = STUDENT;
-      const [session] = (await rows(
-        `SELECT id FROM public.practice_sessions
-        WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
-        [STUDENT],
-      )) as Array<{ id: string }>;
+      // Self-contained: the same start body as the test above, so this is that session — created
+      // here when this test runs alone, an idempotent replay (no change to the record) otherwise.
+      const start = await request(app)
+        .post("/api/practice/sessions")
+        .send({
+          sections: ["M"],
+          domains: ["Algebra"],
+          target_question_count: 10,
+          idempotency_key: "golden-practice-start-1",
+          client_instance_id: "golden-client",
+        });
+      expect(start.status).toBe(200);
+      const session = { id: start.body.sessionId as string };
       const [first, second] = (await rows(
         `SELECT id FROM public.practice_session_items
         WHERE session_id = $1 ORDER BY ordinal LIMIT 2`,
-        [session!.id],
+        [session.id],
       )) as Array<{ id: string }>;
       const token = await correctTokenFor(first!.id);
 
       const answer = {
-        sessionId: session!.id,
+        sessionId: session.id,
         sessionItemId: first!.id,
         selectedAnswer: token,
         clientAttemptId: "golden-attempt-1",
@@ -232,7 +240,7 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(replay.status).toBe(200);
       expect(replay.body.idempotentRetried).toBe(true);
       const notServed = await request(app).post("/api/practice/answer").send({
-        sessionId: session!.id,
+        sessionId: session.id,
         sessionItemId: second!.id,
         selectedAnswer: token,
         clientAttemptId: "golden-attempt-2",
@@ -245,8 +253,8 @@ describe.skipIf(!PG_AVAILABLE)(
           status: notServed.status,
           body: normalise(notServed.body),
         },
-        session: await practiceSession(session!.id),
-        items: await practiceItems(session!.id),
+        session: await practiceSession(session.id),
+        items: await practiceItems(session.id),
       };
       golden.answer_submit = record;
       expect(record).toMatchSnapshot();
