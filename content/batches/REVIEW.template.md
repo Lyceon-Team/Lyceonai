@@ -13,11 +13,18 @@ Batch PR: #PR
 
 ## 1. Claude self-audit
 
-<!-- Written by the produce trigger (Claude Code). One row per item. -->
+<!--
+Written by the produce trigger (Claude Code). Claude's self-audit is private (Karl, 2026-10-13;
+SCL-229): Claude audits and fixes everything before opening the pull request, and this section is
+only the structural record of what was produced. Print it, never type it:
+  pnpm exec tsx scripts/content/production-record.ts <cycle>
+One row per item; the last cell is "Passed internal audit.". No findings, reasoning, notes or
+doubts, here or anywhere else in this section; CI refuses any other line.
+-->
 
-| Item | Gates | Notes |
-| --- | --- | --- |
-| `slug` | pass | What was checked and anything Karl should know. |
+| Item | Title | Publishes | Target keyword | Sources | Audit |
+| --- | --- | --- | --- | --- | --- |
+| `slug` | Page title | YYYY-MM-DD 07:00 CT | target keyword | <https://satsuite.collegeboard.org/> | Passed internal audit. |
 
 ## 2. Codex audit
 
