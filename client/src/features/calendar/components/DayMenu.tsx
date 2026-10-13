@@ -17,12 +17,18 @@
  * one step that makes it available, which is what the prototype does.
  */
 import { useEffect, useRef, useState } from "react";
+import { GUARDIAN_NOTICE_LINE } from "../copy/guardian-notice";
 
 export type DayActions = {
   onBlockOut: (date: string) => void;
   onUndoBlockOut: (date: string) => void;
   onRegenerateDay: (date: string) => void;
   onResetDay: (date: string) => void;
+  /**
+   * Owner brief 2026-10-13 ("Transparency"): true when the student has an active guardian link,
+   * which is when blocking out a day is reported to a guardian. Draws one line in the menu.
+   */
+  guardianNotice?: boolean;
 };
 
 export function DayMenu({
@@ -146,6 +152,17 @@ export function DayMenu({
               {notice}
             </p>
           )}
+          {actions.guardianNotice === true ? (
+            <>
+              <hr />
+              <p
+                className="note"
+                data-testid={`day-menu-guardian-notice-${date}`}
+              >
+                {GUARDIAN_NOTICE_LINE}
+              </p>
+            </>
+          ) : null}
         </div>
       )}
     </div>

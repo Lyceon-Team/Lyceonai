@@ -21,6 +21,10 @@
  * practice runner" header with its answered/streak chips and progress pill (the PracticeShell),
  * the difficulty and domain badges, the "Session guidance" side card, and "End Session" (the
  * back link leaves with the place saved; Practice and Review end open sessions from their rows).
+ * The domain and difficulty came back on 2026-10-13 by owner brief (Karl, "Question metadata
+ * header" §1) with the skill: `QuestionMetaHeader` above the question, three small neutral pills
+ * (ruled on #1225 the same day: the shared `Pill`, difficulty not colour-coded, the skill a
+ * focus stop).
  *
  * Finishing: "Done" asks `/next` once more. The server answers 409 `session_closed` after the
  * last item (it completes the session if the last answer did not), the hook marks the session
@@ -41,6 +45,7 @@ import React from "react";
 import { useLocation } from "wouter";
 import { BookOpen, Calculator, Loader2, MessageCircle } from "lucide-react";
 import QuestionRenderer from "@/components/question-renderer";
+import { QuestionMetaHeader } from "@/components/practice/QuestionMetaHeader";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
 import {
@@ -261,7 +266,10 @@ export default function CanonicalPracticePage(props: {
     nextQuestion,
     handleMissingMcChoices,
     calculatorState,
-    persistCalculatorState,
+    noteCalculatorChange,
+    commitCalculatorState,
+    calculatorFlushRef,
+    calculatorSaveFailed,
     submitBlocked,
     setForceTakeover,
     sessionItemId,
@@ -376,19 +384,22 @@ export default function CanonicalPracticePage(props: {
    * plain English: a failed calculator-state save is surfaced to the student instead of the
    * console: the calculator keeps working from local state, and a notice says the work was not
    * saved. The next successful save clears it. Nothing is logged.
+   *
+   * @spec [register G-NEW-14; owner brief 2026-10-12] | @implemented [2026-10-12]
+   * plain English: a change only updates the local copy and tells the saver; it is no longer a
+   * request. The save moments are the hook's (useCanonicalPractice, calculator-saver.ts), plus
+   * the calculator's own `onCommit` (tab switch, close, unmount).
    */
-  const [calculatorSaveFailed, setCalculatorSaveFailed] = React.useState(false);
-
   const onCalculatorStateChange = React.useCallback(
     (nextState: unknown) => {
       setLocalCalculatorState(nextState);
-      persistCalculatorState(nextState).then(
-        () => setCalculatorSaveFailed(false),
-        () => setCalculatorSaveFailed(true),
-      );
+      noteCalculatorChange(nextState);
     },
-    [persistCalculatorState],
+    [noteCalculatorChange],
   );
+  const onCalculatorCommit = React.useCallback(() => {
+    void commitCalculatorState();
+  }, [commitCalculatorState]);
 
   const isLastQuestion =
     typeof totalQuestions === "number" && currentIndex + 1 === totalQuestions;
@@ -644,6 +655,13 @@ export default function CanonicalPracticePage(props: {
           data-testid="practice-calculator-save-failed"
         />
       ) : null}
+      {/* Owner brief 2026-10-13 §1: domain · skill · difficulty on practice, review and the
+          diagnostic (all three run in this page); never on the full-length module. */}
+      <QuestionMetaHeader
+        domain={question.domain}
+        skill={question.skill}
+        difficulty={question.difficulty}
+      />
       <QuestionRenderer
         question={question}
         selectedAnswer={selectedAnswer}
@@ -744,6 +762,8 @@ export default function CanonicalPracticePage(props: {
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
         onStateChange={onCalculatorStateChange}
+        onCommit={onCalculatorCommit}
+        flushRef={calculatorFlushRef}
         fillHeight
       />
     </div>
@@ -763,6 +783,8 @@ export default function CanonicalPracticePage(props: {
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
         onStateChange={onCalculatorStateChange}
+        onCommit={onCalculatorCommit}
+        flushRef={calculatorFlushRef}
         className="w-full"
       />
     </div>

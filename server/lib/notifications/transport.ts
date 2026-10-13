@@ -116,7 +116,7 @@ type TransportOptions = {
  * suppression reads need to tell a 404 ("not suppressed") from a real rejection.
  */
 type ResendRequest = (
-  method: "GET" | "POST" | "DELETE",
+  method: "GET" | "POST" | "PATCH" | "DELETE",
   path: string,
   body?: Record<string, unknown>,
   extraHeaders?: Record<string, string>,
@@ -584,6 +584,29 @@ export type ContactsTransport = {
     idOrEmail: string,
     context: SuppressionLogContext,
   ) => Promise<Result<{ deleted: boolean }, ContactsFailure>>;
+  /** Join an existing contact to a segment (the reconcile adopting an onboarding contact). */
+  addContactToSegment: (
+    contactId: string,
+    segmentId: string,
+    context: SuppressionLogContext,
+  ) => Promise<Result<true, ContactsFailure>>;
+  /**
+   * The onboarding lane's contact (server/lib/lifecycle-email.ts): update by address, or create
+   * it (in no segment) when Resend has none. `properties` are Resend contact properties, which
+   * must exist in the account (`role`, `entitled`).
+   */
+  upsertContact: (
+    email: string,
+    fields: { firstName?: string; properties: Record<string, string> },
+    context: SuppressionLogContext,
+  ) => Promise<Result<{ created: boolean }, ContactsFailure>>;
+  /** POST /events/send — starts any Resend Automation whose trigger is `event`. */
+  sendEvent: (
+    event: string,
+    email: string,
+    payload: Record<string, string>,
+    context: SuppressionLogContext,
+  ) => Promise<Result<true, ContactsFailure>>;
 };
 
 export function createResendContactsTransport(
@@ -702,6 +725,100 @@ export function createResendContactsTransport(
         return response;
       }
       return ok({ deleted: true });
+    },
+
+    async addContactToSegment(contactId, segmentId, context) {
+      const response = await request(
+        "POST",
+        `/contacts/${encodeURIComponent(contactId)}/segments/${encodeURIComponent(segmentId)}`,
+      );
+      if (!response.ok) {
+        logger.warn(
+          "MARKETING_EMAIL",
+          "contact_segment_add_failed",
+          "Resend did not add the contact to the segment",
+          {
+            recipientProfileId: context.recipientProfileId,
+            kind: response.error.kind,
+            status: response.error.status,
+          },
+        );
+        return response;
+      }
+      return ok(true);
+    },
+
+    async upsertContact(email, fields, context) {
+      const address = normaliseAddress(email);
+      const update = await request(
+        "PATCH",
+        `/contacts/${encodeURIComponent(address)}`,
+        {
+          ...(fields.firstName !== undefined
+            ? { first_name: fields.firstName }
+            : {}),
+          properties: fields.properties,
+        },
+      );
+      if (update.ok) return ok({ created: false });
+      if (update.error.status !== 404) {
+        logger.warn(
+          "LIFECYCLE_EMAIL",
+          "contact_update_failed",
+          "Resend did not accept the contact update",
+          {
+            recipientProfileId: context.recipientProfileId,
+            kind: update.error.kind,
+            status: update.error.status,
+          },
+        );
+        return update;
+      }
+      const created = await request("POST", "/contacts", {
+        email: address,
+        unsubscribed: false,
+        ...(fields.firstName !== undefined
+          ? { first_name: fields.firstName }
+          : {}),
+        properties: fields.properties,
+      });
+      if (!created.ok) {
+        logger.warn(
+          "LIFECYCLE_EMAIL",
+          "contact_create_failed",
+          "Resend did not accept the contact",
+          {
+            recipientProfileId: context.recipientProfileId,
+            kind: created.error.kind,
+            status: created.error.status,
+          },
+        );
+        return created;
+      }
+      return ok({ created: true });
+    },
+
+    async sendEvent(event, email, payload, context) {
+      const response = await request("POST", "/events/send", {
+        event,
+        email: normaliseAddress(email),
+        payload,
+      });
+      if (!response.ok) {
+        logger.warn(
+          "LIFECYCLE_EMAIL",
+          "event_send_failed",
+          "Resend did not accept the event",
+          {
+            recipientProfileId: context.recipientProfileId,
+            event,
+            kind: response.error.kind,
+            status: response.error.status,
+          },
+        );
+        return response;
+      }
+      return ok(true);
     },
   };
 }

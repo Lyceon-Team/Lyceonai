@@ -45,6 +45,7 @@
  */
 import {
   err,
+  latestAcceptedExamDate,
   makeStudyProfileUpsertSchema,
   studyProfileSchema,
   type Result,
@@ -110,6 +111,34 @@ export async function readStudyProfile(
   }
   if (data === null) return null;
   return parseProfileRow(data, requestId);
+}
+
+/**
+ * @spec [§8.1 bounds; owner rulings (Karl) 2026-10-11 on #1204 (ruling 2) and 2026-10-12 on
+ *       #1211 ("any signed-in account (including one whose role isn't saved yet) can read
+ *       latest_test_date. Use the account's stored timezone if present, else America/Chicago.
+ *       Same shared helper as the save")] | @implemented [2026-10-12]
+ *
+ * plain English: the furthest test date `upsertStudyProfile` would accept for this account right
+ * now. Computed exactly as the write computes it: the same `localTodayForProfile` (the stored
+ * study-profile zone, or America/Chicago when there is no row, which is every account before
+ * calendar setup and every guardian) and the same `target_exam_date_max_days` row, through the
+ * shared `latestAcceptedExamDate`. Returns the date only: the profile is read for its zone and
+ * never leaves this function.
+ */
+export async function readSatDateBound(
+  accountId: string,
+  requestId?: string,
+  now?: Date,
+): Promise<{ latest_test_date: string }> {
+  const config = await loadCalendarConfig();
+  const profile = await readStudyProfile(accountId, requestId);
+  return {
+    latest_test_date: latestAcceptedExamDate(
+      localTodayForProfile(profile, now),
+      config.bounds.target_exam_date_max_days,
+    ),
+  };
 }
 
 /**
@@ -245,9 +274,7 @@ function isDatesOnly(update: StudyProfileUpsert): boolean {
   const named = Object.entries(fields).filter(([, v]) => v !== undefined);
   return (
     named.length > 0 &&
-    named.every(
-      ([k]) => k === "target_exam_dates" || k === "target_exam_date",
-    )
+    named.every(([k]) => k === "target_exam_dates" || k === "target_exam_date")
   );
 }
 

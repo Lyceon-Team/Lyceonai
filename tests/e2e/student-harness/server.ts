@@ -107,6 +107,8 @@ async function main(): Promise<void> {
     await import("../../../server/routes/exam-report-routes");
   const { calendarRouter } =
     await import("../../../server/routes/calendar-routes");
+  const { satDateRouter } =
+    await import("../../../server/routes/sat-date-routes");
   const { scoreReportRouter } =
     await import("../../../server/routes/score-report-routes");
   const { getScoreEstimate, getRecencyKpis } =
@@ -211,6 +213,8 @@ async function main(): Promise<void> {
     auth.requireStudentOrAdmin,
     calendarRouter,
   );
+  // Role-agnostic, as in server/index.ts (owner ruling 2026-10-12 on #1211).
+  app.use("/api/sat-dates", auth.requireSupabaseAuth, satDateRouter);
   app.use(
     "/api/score-report",
     auth.requireSupabaseAuth,

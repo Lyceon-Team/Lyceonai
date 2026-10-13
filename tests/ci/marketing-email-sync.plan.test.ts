@@ -81,17 +81,61 @@ describe("planMarketingReconcile", () => {
       create: [],
       record: [],
       forget: [],
+      addToSegment: [],
+      leftAlone: 0,
     });
   });
 
-  it("deletes every contact no eligible profile backs — the manual-import guard", () => {
+  it("deletes a contact it manages that no eligible profile backs (in a synced segment, or recorded)", () => {
+    const plan = planMarketingReconcile({
+      audience,
+      known: [
+        {
+          profile_id: "33333333-3333-4333-8333-333333333333",
+          resend_contact_id: "c_recorded",
+          segment: "students",
+        },
+      ],
+      contacts: [
+        contact("c_in_segment", "someone-else@x.test"),
+        contact("c_recorded", "gone@x.test"),
+      ],
+      members: members(["c_in_segment"], []),
+    });
+    expect(plan.delete).toEqual([
+      { contactId: "c_in_segment", profileId: null },
+      {
+        contactId: "c_recorded",
+        profileId: "33333333-3333-4333-8333-333333333333",
+      },
+    ]);
+  });
+
+  // Karl, 2026-10-12: the onboarding lane's contacts sit in no segment and are never recorded.
+  it("leaves alone a contact it does not manage (an onboarding contact): never deleted", () => {
     const plan = planMarketingReconcile({
       audience,
       known: [],
-      contacts: [contact("c_manual", "someone-else@x.test")],
+      contacts: [contact("c_onboarding", "new-student@x.test")],
       members: members([], []),
     });
-    expect(plan.delete).toEqual([{ contactId: "c_manual", profileId: null }]);
+    expect(plan.delete).toEqual([]);
+    expect(plan.leftAlone).toBe(1);
+    expect(plan.create.map((c) => c.profileId)).toEqual([TEEN, PARENT]);
+  });
+
+  it("an eligible person's onboarding contact is ADDED to their segment, not deleted or duplicated", () => {
+    const plan = planMarketingReconcile({
+      audience,
+      known: [],
+      contacts: [contact("c_teen_onboarding", "Teen@x.test")],
+      members: members([], []),
+    });
+    expect(plan.addToSegment).toEqual([
+      { profileId: TEEN, contactId: "c_teen_onboarding", segment: "students" },
+    ]);
+    expect(plan.delete).toEqual([]);
+    expect(plan.create.map((c) => c.profileId)).toEqual([PARENT]);
   });
 
   it("an opted-out profile's contact is deleted and its record forgotten", () => {
@@ -126,17 +170,31 @@ describe("planMarketingReconcile", () => {
     expect(plan.create.map((c) => c.profileId)).toEqual([PARENT]);
   });
 
-  it("an unsubscribed contact with no eligible profile still reports its unsubscribe before deletion", () => {
+  it("an unsubscribed contact it manages, with no eligible profile, reports its unsubscribe before deletion", () => {
     const plan = planMarketingReconcile({
       audience: [],
       known: [],
       contacts: [contact("c_manual", "launch@x.test", true)],
-      members: members([], []),
+      members: members(["c_manual"], []),
     });
     expect(plan.optOut).toEqual([
       { contactId: "c_manual", email: "launch@x.test" },
     ]);
     expect(plan.delete).toEqual([{ contactId: "c_manual", profileId: null }]);
+  });
+
+  it("an unsubscribed onboarding contact still brings its unsubscribe back, and is kept", () => {
+    const plan = planMarketingReconcile({
+      audience: [],
+      known: [],
+      contacts: [contact("c_onboarding", "new-student@x.test", true)],
+      members: members([], []),
+    });
+    expect(plan.optOut).toEqual([
+      { contactId: "c_onboarding", email: "new-student@x.test" },
+    ]);
+    expect(plan.delete).toEqual([]);
+    expect(plan.leftAlone).toBe(1);
   });
 
   it("a contact in the wrong segment (role change) is replaced, never left in both", () => {

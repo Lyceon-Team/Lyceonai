@@ -25,3 +25,5 @@ export { EMPTY_FILTER, type FilterBarValue } from "./filter-bar/filter-cascade";
 export { RulerProgress, rulerFill } from "./RulerProgress";
 // Owner brief 2026-10-11 (DESIGN.md "UI standards"): a long label is two lines and an ellipsis.
 export { ClampedLabel } from "./ClampedLabel";
+// Owner ruling (Karl) 2026-10-13 on #1225: the one neutral pill (LISA's question chip, the question header).
+export { Pill } from "./Pill";

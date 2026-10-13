@@ -46,12 +46,12 @@ import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
-import { addDays } from "../lib/dates";
 import {
   EXAM_FREQUENCIES,
   examCadenceNote,
   WEEKDAYS,
 } from "../copy/exam-cadence";
+import { GUARDIAN_NOTICE_LINE } from "../copy/guardian-notice";
 
 /**
  * §8.1's four cadences and the weekday table, from `copy/exam-cadence` — the SAME tables the
@@ -107,6 +107,12 @@ type SettingsSheetProps = {
    * the student-initiated refresh; dismissing leaves the plan exactly as it was.
    */
   replanOffer: { onConfirm: () => void; onDismiss: () => void } | null;
+  /**
+   * SCL-230, approved by Karl 2026-10-13: changes to study days, minutes per day and the
+   * practice-test frequency are reported to a linked guardian, so the sheet says so — only when
+   * the student has an active guardian link.
+   */
+  guardianNotice?: boolean;
 };
 
 /**
@@ -227,6 +233,7 @@ export function SettingsSheet({
   pending,
   error,
   replanOffer,
+  guardianNotice = false,
 }: SettingsSheetProps): JSX.Element {
   const [draft, setDraft] = useState<SettingsDraft>(() => ({
     timezone: profile.timezone,
@@ -324,7 +331,6 @@ export function SettingsSheet({
                   setDraft({ ...draft, target_exam_dates: next.dates })
                 }
                 today={today}
-                latest={addDays(today, bounds.target_exam_date_max_days)}
                 data-testid="settings-exam-dates"
               />
             </div>
@@ -460,6 +466,12 @@ export function SettingsSheet({
               finalExamLeadDays: examPlanning.final_exam_lead_days,
             })}
           </p>
+
+          {guardianNotice ? (
+            <p className="note" data-testid="settings-guardian-notice">
+              {GUARDIAN_NOTICE_LINE}
+            </p>
+          ) : null}
 
           {error === null ? null : (
             <div className="why" role="alert">

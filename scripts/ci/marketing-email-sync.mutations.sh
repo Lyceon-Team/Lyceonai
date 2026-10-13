@@ -131,7 +131,7 @@ run "M8 complaint ignored" "W4 email.complained" "$PG_SUITE"
 
 echo "=== (9) the reconcile deletes unsubscribed contacts WITHOUT bringing the unsubscribe back ==="
 plant "$SYNC" "  for (const item of plan.optOut) {" "  for (const item of [] as typeof plan.optOut) {" || { bad "M9 STALE"; exit 1; }
-run "M9 unsubscribe lost on delete" "S5 an unsubscribe in Resend comes back BEFORE" "$PG_SUITE"
+run "M9 unsubscribe lost on delete" "S5b an unsubscribed contact the sync manages" "$PG_SUITE"
 
 echo "=== (10) an opted-out profile's contact is kept ==="
 plant "$SYNC" "    if (!owner) {

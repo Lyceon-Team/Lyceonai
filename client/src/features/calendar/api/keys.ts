@@ -44,6 +44,14 @@ export const calendarKeys = {
    */
   profile: () => ["calendar", "profile"] as const,
 
+  /**
+   * GET /api/sat-dates/bound (owner ruling 2026-10-12, Karl on #1211): the furthest test date
+   * the profile write accepts, read by every SAT-date picker. Under the `calendar` prefix so a
+   * sign-out reset clears it (the bound is per account: its zone). A profile save invalidates it
+   * too, since a save can change the stored zone.
+   */
+  satDateBound: () => ["calendar", "sat-date-bound"] as const,
+
   /** The prefix every guardian range read shares. */
   guardianRanges: () => ["calendar", "guardian"] as const,
 

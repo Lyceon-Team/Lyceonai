@@ -1,8 +1,9 @@
 /**
  * CI check for a pull request into `social` that carries content (Doc 10B §8.7).
  *
- * @spec [docs/Spec/Lyceon_Doc_10B.md §8.7; owner brief "Doc 10B Phase 1" (Karl, 2026-10-11) scope 2;
- *       owner answers on Step 0, items 1 and 3] | @implemented [2026-10-11]
+ * @spec [docs/Spec/Lyceon_Doc_10B.md §8.7, amended by SCL-229; owner brief "Doc 10B Phase 1" (Karl,
+ *       2026-10-11) scope 2; owner answers on Step 0, items 1 and 3; Karl's ruling 2026-10-13
+ *       ("Claude's self-audit is private")] | @implemented [2026-10-11; section 1 2026-10-13]
  *
  * plain English: run by .github/workflows/content-batch-checks.yml on every pull request into
  * `social`, as a draft and when marked ready. It fails when:
@@ -10,7 +11,8 @@
  *  - the pull request edits content/batches/approvals.json (only the merge workflow writes it);
  *  - a cycle the pull request touches (a content/batches/<cycle>/ file, or a post whose `batch`
  *    is that cycle) has no REVIEW.md, or its REVIEW.md breaks the rules in ./review-record.ts
- *    (draft: the self-audit; ready: also the Codex audit and Claude's responses);
+ *    (draft: section 1, the structural record of what the cycle produced, cell for cell and
+ *    nothing else, per SCL-229; ready: also the Codex audit and Claude's responses);
  *  - a weekly batch carries a post whose `publishAt` is outside that ISO week;
  *  - a commit marked `Audit-By: Codex` changes anything but the Codex section of a review record;
  *  - a Codex section copied from a pull request comment does not match that comment, or the
@@ -30,6 +32,7 @@ import {
   approvalsEditProblem,
   cyclesTouched,
 } from "./stamp-approval";
+import { cycleProduction } from "./production-record";
 import {
   codexCommitProblems,
   copiedCommentProblems,
@@ -40,12 +43,6 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const git = (...args: string[]): string =>
   execFileSync("git", args, { cwd: ROOT, encoding: "utf8" });
-
-/** The items a cycle carries now: post slugs, or `plan` for a monthly plan. */
-export function cycleItems(cycle: string): string[] {
-  if (cycle.endsWith("-plan")) return ["plan"];
-  return ALL_BLOG_POSTS.filter((p) => p.batch === cycle).map((p) => p.slug);
-}
 
 /** The cycles a change set concerns: batch folders touched, and the batches of posts touched. */
 export function cyclesConcerned(changed: readonly string[]): string[] {
@@ -136,7 +133,7 @@ function main(): void {
     }
     const text = readFileSync(join(ROOT, path), "utf8");
     for (const p of reviewRecordProblems(text, {
-      items: cycleItems(cycle),
+      production: cycleProduction(cycle),
       ready,
     })) {
       problems.push(`${path}: ${p}`);
