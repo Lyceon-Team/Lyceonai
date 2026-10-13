@@ -153,6 +153,7 @@ FILES=(
   "client/src/components/practice/QuestionMetaHeader.tsx"
   "packages/shared/src/question-difficulty.ts"
   "packages/shared/src/exam-runtime-schema.ts"
+  "client/src/components/student-ui/Pill.tsx"
 )
 
 snapshot_all() {
@@ -803,12 +804,14 @@ plant "OQ54-K1" "panel frame back on the app-wide tokens" \
 assert s.count(a) == 1
 s = s.replace(a, "overflow-hidden rounded-2xl border border-border/60 bg-card\"", 1)'
 
+# Re-pointed 2026-10-13 (#1225, owner ruling: one shared pill): the chip's classes moved from
+# ScopedTutorPanel into student-ui/Pill.tsx, which the chip now renders.
 plant "OQ54-K2" "question chip back to 12px legacy text" \
   "$T54L" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
-  'a = "px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink\""
+  "client/src/components/student-ui/Pill.tsx" \
+  'a = "px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink\";"
 assert s.count(a) == 1
-s = s.replace(a, "px-2.5 py-0.5 text-xs font-medium text-lyc-ink\"", 1)'
+s = s.replace(a, "px-2.5 py-0.5 text-xs font-medium text-lyc-ink\";", 1)'
 
 plant "OQ54-K3" "opener body back on the legacy muted colour" \
   "$T54L" \
@@ -3926,15 +3929,18 @@ plant "W6-UI64-10" "the unlimited shape drops freeDailyLimit" \
 assert s.count(a) == 1
 s = s.replace(a, "        resetAt: null,\n      }\n", 1)'
 
-# ── QMH — the question header: domain · skill · difficulty (2026-10-13) ────────────────
+# ── QMH — the question header: domain, skill, difficulty pills (2026-10-13) ─────────────
 # Owner brief (Karl, 2026-10-13) §1: the header on practice, review and the diagnostic (all three
 # run in CanonicalPracticePage), never on the timed full-length module; phone layout below lg
-# (domain · difficulty, then the skill clamped to two lines). Each plant mutates product source
-# at an anchor that occurs exactly once. The server half (domain/skill/difficulty on /next, and no
-# answer field) is proved by PG tests outside this client gate; its plants are in the PR.
+# (domain + difficulty, then the skill clamped to two lines). Owner rulings (Karl, 2026-10-13, on
+# #1225): neutral pills on the one shared Pill (difficulty not colour-coded), the skill pill the
+# header's one focus stop. Each plant mutates product source at an anchor that occurs exactly
+# once. The server half (domain/skill/difficulty on /next, and no answer field) is proved by PG
+# tests outside this client gate; its plants are in the PR.
 QMH_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
 QMH_UNIT="client/src/components/practice/QuestionMetaHeader.test.tsx"
 QMH_EXAM="client/src/features/exam/pages/ExamModulePage.test.tsx"
+QMH_GUARD="client/src/components/student-ui/shared-primitives.guard.test.ts"
 
 plant "QMH-1" "the runner passes the header nothing (practice, review and diagnostic lose it)" \
   "$QMH_RUNNER" \
@@ -3967,30 +3973,30 @@ s = s.replace(a, "  return BY_TOKEN[token] ?? \"Medium\";\n", 1)'
 plant "QMH-5" "phone: the skill shares row 1 instead of its own row" \
   "$QMH_RUNNER" \
   "client/src/components/practice/QuestionMetaHeader.tsx" \
-  'a = "className=\"order-4 min-w-0 basis-full lg:order-3 lg:basis-auto\""
+  'a = "className=\"order-3 flex min-w-0 basis-full lg:order-2 lg:basis-auto\""
 assert s.count(a) == 1
-s = s.replace(a, "className=\"order-2 min-w-0 lg:order-3 lg:basis-auto\"", 1)'
+s = s.replace(a, "className=\"order-1 flex min-w-0 lg:order-2 lg:basis-auto\"", 1)'
 
 plant "QMH-6" "desktop: difficulty drawn first" \
   "$QMH_RUNNER" \
   "client/src/components/practice/QuestionMetaHeader.tsx" \
-  'a = "className=\"order-3 shrink-0 whitespace-nowrap lg:order-5\""
+  'a = "className=\"order-2 shrink-0 lg:order-3\""
 assert s.count(a) == 1
-s = s.replace(a, "className=\"order-3 shrink-0 whitespace-nowrap lg:order-1\"", 1)'
+s = s.replace(a, "className=\"order-2 shrink-0 lg:order-1\"", 1)'
 
 plant "QMH-7" "the skill is not clamped (a plain span)" \
   "$QMH_RUNNER" \
   "client/src/components/practice/QuestionMetaHeader.tsx" \
-  'a = "        <ClampedLabel\n          text={skillText}\n          data-testid=\"question-meta-skill\"\n          className=\"order-4 min-w-0 basis-full lg:order-3 lg:basis-auto\"\n        />\n"
+  'a = "<ClampedLabel text={skillText} data-testid=\"question-meta-skill\" />"
 assert s.count(a) == 1
-s = s.replace(a, "        <span\n          data-testid=\"question-meta-skill\"\n          className=\"order-4 min-w-0 basis-full lg:order-3 lg:basis-auto\"\n        >{skillText}</span>\n", 1)'
+s = s.replace(a, "<span data-testid=\"question-meta-skill\">{skillText}</span>", 1)'
 
-plant "QMH-8" "a dot is drawn before a missing skill" \
-  "$QMH_UNIT" \
+plant "QMH-8" "the domain pill becomes a second tab stop" \
+  "$QMH_RUNNER $QMH_UNIT" \
   "client/src/components/practice/QuestionMetaHeader.tsx" \
-  'a = "  const dotDomainSkill = domainText !== null && skillText !== null;\n"
+  'a = "<Pill data-testid=\"question-meta-domain\" className=\"order-1 shrink-0\">"
 assert s.count(a) == 1
-s = s.replace(a, "  const dotDomainSkill = domainText !== null;\n", 1)'
+s = s.replace(a, "<Pill tabIndex={0} data-testid=\"question-meta-domain\" className=\"order-1 shrink-0\">", 1)'
 
 plant "QMH-9" "with nothing to show, an empty header is still drawn" \
   "$QMH_UNIT" \
@@ -4022,6 +4028,62 @@ plant "QMH-12" "the full-length module payload gains a difficulty" \
   'a = "    current_answer: z.string().nullable(),\n"
 assert s.count(a) == 1
 s = s.replace(a, a + "    difficulty: z.number().nullable().optional(),\n", 1)'
+
+plant "QMH-13" "the skill pill is not focusable" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "            tabIndex={0}\n            data-testid=\"question-meta-skill-pill\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "            data-testid=\"question-meta-skill-pill\"\n", 1)'
+
+plant "QMH-14" "the focused skill pill draws no focus ring" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "className={cn(\"group min-w-0 max-w-full rounded-xl\", LYC_FOCUS)}"
+assert s.count(a) == 1
+s = s.replace(a, "className={cn(\"group min-w-0 max-w-full rounded-xl\")}", 1)'
+
+plant "QMH-15" "focus no longer lifts the skill clamp (no group on the pill)" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "className={cn(\"group min-w-0 max-w-full rounded-xl\", LYC_FOCUS)}"
+assert s.count(a) == 1
+s = s.replace(a, "className={cn(\"min-w-0 max-w-full rounded-xl\", LYC_FOCUS)}", 1)'
+
+plant "QMH-16" "the difficulty pill is colour-coded" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "className=\"order-2 shrink-0 lg:order-3\""
+assert s.count(a) == 1
+s = s.replace(a, "className=\"order-2 shrink-0 lg:order-3 border-lyc-lv2-bd bg-lyc-lv2-bg text-lyc-lv2-ink\"", 1)'
+
+plant "QMH-17" "LISA's chip retypes the pill recipe instead of rendering Pill" \
+  "$QMH_GUARD" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "          <Pill className=\"truncate\" data-testid=\"tutor-question-chip\">\n            {questionLabel}\n          </Pill>\n"
+assert s.count(a) == 1
+s = s.replace(a, "          <span className=\"truncate rounded-full border border-lyc-rule bg-lyc-chip px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink\" data-testid=\"tutor-question-chip\">\n            {questionLabel}\n          </span>\n", 1)'
+
+plant "QMH-18" "the pill drops below 14px (12px legacy text)" \
+  "$QMH_RUNNER" \
+  "client/src/components/student-ui/Pill.tsx" \
+  'a = "px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink\";"
+assert s.count(a) == 1
+s = s.replace(a, "px-2.5 py-0.5 text-xs font-semibold text-lyc-ink\";", 1)'
+
+plant "QMH-19" "the difficulty word is drawn in a level colour inside its pill" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "          {difficultyText}\n"
+assert s.count(a) == 1
+s = s.replace(a, "          <span className=\"text-lyc-lv4-ink\">{difficultyText}</span>\n", 1)'
+
+plant "QMH-20" "the skill tab stop announces itself as a button" \
+  "$QMH_RUNNER" \
+  "client/src/components/practice/QuestionMetaHeader.tsx" \
+  'a = "            tabIndex={0}\n"
+assert s.count(a) == 1
+s = s.replace(a, "            tabIndex={0}\n            role=\"button\"\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

@@ -1,17 +1,21 @@
 /**
- * QMH: the question header (domain · skill · difficulty) on the practice, review and diagnostic
- * runners, and its absence from the timed full-length module.
+ * QMH: the question header (domain, skill and difficulty pills) on the practice, review and
+ * diagnostic runners, and its absence from the timed full-length module.
  *
  * @spec [owner brief "Question metadata header" (Karl, 2026-10-13) §1 ("Screenshots: light/dark,
- *        1440/390"); DESIGN.md §5 UI standards (screenshots light and dark, 1440 and 390)]
+ *        1440/390"); owner rulings (Karl) 2026-10-13 on #1225 (neutral pills; the skill a focus
+ *        stop that shows its full text, with a focused-skill shot at 390); DESIGN.md §4 Question
+ *        runner, §5 UI standards (screenshots light and dark, 1440 and 390)]
  *        | @implemented [2026-10-13]
  *
  * plain English: each runner shot starts its own session through the real create route (the
  * diagnostic through Home's real "Start diagnostic" click, as UI-50's click path does) and is
- * taken before any answer, so the header is shown on the pre-submit screen. At 1440 the header is
- * one row; at 390 it is domain · difficulty with the skill on a second row. The capture fails
- * unless the header is wholly in the viewport. The timed module is shot light only (DESIGN.md §2)
- * to show it carries no header.
+ * taken before any answer. The `mastery-skills` seed retags the harness bank with the canonical
+ * skill names (content/canonical/taxonomy.json), so the header shows real skills, and the
+ * practice shots ask for one long one ("Ratios, Rates, Proportional Relationships, and Units"),
+ * which wraps to two lines at 390. The focused shot gives the skill pill keyboard focus (a
+ * `focus` step, F-69) to show the focus ring. The timed module needs the exam seed, so it is its
+ * own group (QMH-EXAM), shot light only (DESIGN.md §2).
  */
 import { SEED_CLIENT_INSTANCE } from "../seed";
 import type { FreshSession, PageGroup } from "./types";
@@ -27,10 +31,16 @@ const FITS = {
   unscrolled: "main#main",
 } as const;
 
-/** Math, so the header sits under a bar with Calculator and Reference. */
+/** The longest first skill in the taxonomy, so the phone header shows the skill on two lines. */
+const LONG_SKILL = "Ratios, Rates, Proportional Relationships, and Units";
 const PRACTICE: FreshSession = {
   engine: "practice",
-  body: { sections: ["M"], target_question_count: 10 },
+  body: {
+    sections: ["M"],
+    domains: ["Problem Solving and Data Analysis"],
+    skills: [LONG_SKILL],
+    target_question_count: 3,
+  },
   mcqFirst: true,
 };
 /** The student's own Reading and Writing misses (as UI-53's review shots). */
@@ -41,19 +51,19 @@ const REVIEW: FreshSession = {
 };
 
 const NO_PROTOTYPE =
-  "No prototype draws the question header: it is the owner brief of 2026-10-13 (Runner.dc.html predates it).";
+  "No prototype draws the question header: it is the owner brief of 2026-10-13 (Runner.dc.html predates it); DESIGN.md §4 describes it.";
 
 export const QMH: PageGroup = {
   id: "QMH",
   title:
-    "Question header (domain · skill · difficulty): practice, review and diagnostic runners, light and dark, 1440 and 390; none on the timed module",
-  // The paid student's in-progress full-length test, for the timed-module shot (as UI-54).
-  seed: "exam-history",
+    "Question header (domain, skill and difficulty pills): practice, review and diagnostic runners, light and dark, 1440 and 390, and the skill focused at 390",
+  // Canonical skill names on the harness bank (the base bank has one placeholder skill).
+  seed: "mastery-skills",
   shots: [
     {
       id: "practice",
       title:
-        "Practice runner, before submitting: the header above the question (1440: one row; 390: domain · difficulty, then the skill)",
+        "Practice runner, before submitting: the header above the question (1440: one row; 390: domain + difficulty, then the skill on two lines)",
       persona: "paid",
       route: "/practice/session/{session}",
       freshSession: PRACTICE,
@@ -64,9 +74,29 @@ export const QMH: PageGroup = {
       prototype: { kind: "none", reason: NO_PROTOTYPE },
     },
     {
+      id: "practice-skill-focused",
+      title:
+        "Practice runner, the skill pill focused (the header's one tab stop): its focus ring, and the full skill name on focus (the 390 shot is the one the ruling asks for)",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [
+        {
+          focus: {
+            desktop: '[data-testid="question-meta-skill-pill"]',
+            mobile: '[data-testid="question-meta-skill-pill"]',
+          },
+        },
+      ],
+      expectInViewport: HEADER,
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    {
       id: "review",
       title:
-        "Review runner, before submitting: the same header (LISA beside the question at 1440)",
+        "Review runner, before submitting: the same header (LISA beside the question at 1440, its question chip on the same pill)",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
@@ -101,6 +131,16 @@ export const QMH: PageGroup = {
       expectInViewport: HEADER,
       prototype: { kind: "none", reason: NO_PROTOTYPE },
     },
+  ],
+};
+
+/** The timed module needs the exam seed (the paid student's in-progress test), as UI-54. */
+export const QMH_EXAM: PageGroup = {
+  id: "QMH-EXAM",
+  title:
+    "Question header: none on the timed full-length module (light only, 1440 and 390)",
+  seed: "exam-history",
+  shots: [
     {
       id: "timed-module",
       title:

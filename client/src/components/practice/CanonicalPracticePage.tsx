@@ -21,9 +21,10 @@
  * practice runner" header with its answered/streak chips and progress pill (the PracticeShell),
  * the difficulty and domain badges, the "Session guidance" side card, and "End Session" (the
  * back link leaves with the place saved; Practice and Review end open sessions from their rows).
- * The domain and difficulty came back on 2026-10-13 in a different form, by owner brief (Karl,
- * "Question metadata header" §1): one muted line above the question, domain · skill · difficulty
- * (`QuestionMetaHeader`), not badges.
+ * The domain and difficulty came back on 2026-10-13 by owner brief (Karl, "Question metadata
+ * header" §1) with the skill: `QuestionMetaHeader` above the question, three small neutral pills
+ * (ruled on #1225 the same day: the shared `Pill`, difficulty not colour-coded, the skill a
+ * focus stop).
  *
  * Finishing: "Done" asks `/next` once more. The server answers 409 `session_closed` after the
  * last item (it completes the session if the last answer did not), the hook marks the session

@@ -47,6 +47,8 @@ import {
 } from "@/lib/engine-config";
 import CanonicalPracticePage from "./CanonicalPracticePage";
 import { MISS_NOTE } from "@/components/question-renderer";
+import { PILL_CLASSES } from "@/components/student-ui/Pill";
+import { LYC_FOCUS } from "@/components/ui/button";
 import { queryClient as appQueryClient } from "@/lib/queryClient";
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the shortened-session sentence, verbatim. */
@@ -955,6 +957,9 @@ describe("QA item 6 (2026-10-07): answering, skipping and leaving mark the sessi
  * Layout is asserted on the classes that make it (jsdom lays nothing out; the screenshots in the
  * PR show it drawn): from `lg` one row in DOM order, below it domain + difficulty then the skill
  * on its own row, clamped to two lines.
+ * Owner rulings (Karl) 2026-10-13 on #1225: the three are pills on the shared neutral `Pill`
+ * (difficulty the same colour as the rest), and the skill pill is the header's one focus stop,
+ * which un-clamps it on focus.
  */
 describe("QMH: the question header on practice, review and the diagnostic", () => {
   async function expectHeader(): Promise<HTMLElement> {
@@ -1016,16 +1021,16 @@ describe("QMH: the question header on practice, review and the diagnostic", () =
     ).toBeTruthy();
   });
 
-  it("layout: one row from lg (domain · skill · difficulty); below lg domain · difficulty, then the skill clamped to two lines", async () => {
+  it("layout: one row from lg (domain, skill, difficulty); below lg domain + difficulty, then the skill alone, clamped to two lines", async () => {
     installNetwork({ total: 3 });
     mountRunner();
     await loaded();
     const meta = await expectHeader();
     const cls = (el: Element): string[] => el.className.split(/\s+/);
     const domain = within(meta).getByTestId("question-meta-domain");
+    const skillRow = within(meta).getByTestId("question-meta-skill-row");
     const skill = within(meta).getByTestId("question-meta-skill");
     const difficulty = within(meta).getByTestId("question-meta-difficulty");
-    const dot = within(meta).getByTestId("question-meta-dot-difficulty");
 
     // DOM (and screen-reader) order is domain, skill, difficulty.
     const parts = [domain, skill, difficulty];
@@ -1040,26 +1045,82 @@ describe("QMH: the question header on practice, review and the diagnostic", () =
     expect(cls(meta)).toEqual(
       expect.arrayContaining(["flex", "flex-wrap", "lg:flex-nowrap"]),
     );
-    expect(cls(skill)).toEqual(
-      expect.arrayContaining(["lg:order-3", "lg:basis-auto"]),
-    );
-    expect(cls(difficulty)).toContain("lg:order-5");
-
-    // Phone: row 1 is domain · difficulty, row 2 is the skill on its own full-width line.
     expect(cls(domain)).toContain("order-1");
-    expect(cls(dot)).toEqual(expect.arrayContaining(["order-2", "inline"]));
-    expect(cls(difficulty)).toContain("order-3");
-    expect(cls(skill)).toEqual(
-      expect.arrayContaining(["order-4", "basis-full"]),
+    expect(cls(skillRow)).toEqual(
+      expect.arrayContaining(["lg:order-2", "lg:basis-auto"]),
+    );
+    expect(cls(difficulty)).toContain("lg:order-3");
+
+    // Phone: row 1 is domain + difficulty, row 2 is the skill on its own full-width row.
+    expect(cls(difficulty)).toContain("order-2");
+    expect(cls(skillRow)).toEqual(
+      expect.arrayContaining(["order-3", "basis-full"]),
     );
 
     // The skill is a ClampedLabel: two lines and an ellipsis, the full name on hover.
     expect(cls(skill)).toContain("line-clamp-2");
     expect(skill.getAttribute("title")).toBe(QMH_SKILL);
+  });
 
-    // Tokens only, nothing below 14px (DESIGN.md §5): the 16px body token, muted.
-    expect(cls(meta)).toEqual(
-      expect.arrayContaining(["text-lyc-body", "text-lyc-muted"]),
+  // Owner ruling (Karl) 2026-10-13 on #1225: small pills on the shared pill, difficulty NEUTRAL.
+  it("pills: all three on the shared neutral pill (14px, tokens only); no colour-coded difficulty", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const cls = (el: Element): string[] => el.className.split(/\s+/);
+    const pills = [
+      within(meta).getByTestId("question-meta-domain"),
+      within(meta).getByTestId("question-meta-skill-pill"),
+      within(meta).getByTestId("question-meta-difficulty"),
+    ];
+    // The recipe less its radius: the skill pill, which can wrap to two lines, takes a smaller one.
+    const pillRecipe = PILL_CLASSES.split(" ").filter(
+      (c) => !c.startsWith("rounded"),
+    );
+    expect(pillRecipe).toEqual(
+      expect.arrayContaining(["bg-lyc-chip", "text-lyc-meta"]),
+    );
+    for (const pill of pills) {
+      expect(cls(pill)).toEqual(expect.arrayContaining(pillRecipe));
+    }
+    // Neutral: every pill keeps the recipe's colours (above; `cn` drops a recipe colour that a
+    // caller overrides), and no level, success, warning or danger token appears anywhere in
+    // the header, on a pill or inside one.
+    expect(meta.innerHTML).not.toMatch(
+      /lyc-(lv\d|danger|warn|success|correct|good|bad)/,
+    );
+    // 14px is the smallest size the header uses (the meta token), and no raw size class.
+    expect(meta.innerHTML).not.toMatch(/text-(xs|\[1[0-3]px\])/);
+  });
+
+  // Owner ruling (Karl) 2026-10-13 on #1225: one focus stop, on the skill; focus shows it in full.
+  it("focus: the skill pill is the header's one tab stop, with the focus ring, and focus un-clamps it", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const cls = (el: Element): string[] => el.className.split(/\s+/);
+    const skillPill = within(meta).getByTestId("question-meta-skill-pill");
+    const skill = within(meta).getByTestId("question-meta-skill");
+
+    const stops = meta.querySelectorAll(
+      'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    expect(Array.from(stops)).toEqual([skillPill]);
+    expect(skillPill.getAttribute("tabindex")).toBe("0");
+    // No role and no label override: a screen reader reads the skill's own text, as before.
+    expect(skillPill.getAttribute("role")).toBeNull();
+    expect(skillPill.getAttribute("aria-label")).toBeNull();
+
+    skillPill.focus();
+    expect(document.activeElement).toBe(skillPill);
+    // Focus within the pill (`group`) lifts the two-line clamp (ClampedLabel); the ring is the
+    // student focus ring.
+    expect(cls(skillPill)).toContain("group");
+    expect(cls(skill)).toContain("group-focus-within:line-clamp-none");
+    expect(cls(skillPill)).toEqual(
+      expect.arrayContaining(LYC_FOCUS.split(" ")),
     );
   });
 });

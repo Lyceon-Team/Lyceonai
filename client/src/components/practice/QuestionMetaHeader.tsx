@@ -1,35 +1,39 @@
 /**
- * The question header: domain · skill · difficulty, above the question in the practice, review
- * and diagnostic runners.
+ * The question header: domain, skill and difficulty pills above the question in the practice,
+ * review and diagnostic runners.
  *
  * @spec [owner brief "Question metadata header" (Karl, 2026-10-13) §1 ("Header: domain · skill ·
- *        difficulty (Easy/Medium/Hard), using the existing domain-tag style. Desktop: one row.
- *        Phone (<1024px): row 1 = domain + difficulty, row 2 = skill, clamped to 2 lines with an
- *        ellipsis"; "NOT the timed full-length module"); DESIGN.md §5 UI standards (tokens only,
- *        nothing below 14px, long labels with `ClampedLabel`); DESIGN.md §2 Mobile (`lg`, 1024px,
- *        is the phone/desktop line)] | @implemented [2026-10-13]
+ *        difficulty (Easy/Medium/Hard) ... Desktop: one row. Phone (<1024px): row 1 = domain +
+ *        difficulty, row 2 = skill, clamped to 2 lines with an ellipsis"; "NOT the timed
+ *        full-length module"); owner rulings (Karl) 2026-10-13 on #1225: (1) the three parts are
+ *        small pills on the existing pill primitive, difficulty in a NEUTRAL colour (no
+ *        green/amber/red coding); (2) the skill is one keyboard focus stop, so its full text shows
+ *        on focus as well as hover; DESIGN.md §4 Question runner (the header), §5 UI standards
+ *        (tokens only, nothing below 14px, long labels with `ClampedLabel`, full text on hover
+ *        and focus); DESIGN.md §2 Mobile (`lg`, 1024px, is the phone/desktop line)]
+ *        | @implemented [2026-10-13]
  *
- * plain English: one line of muted text in the style Home's "Today's question" card already uses
- * for "Math · Algebra" (16px `--muted`, middle-dot separators). From `lg` (1024px) it is one row,
- * "Algebra · Linear equations in one variable · Easy". Below it, the skill drops to a second row
- * and the first row reads "Algebra · Easy". The order is set with CSS `order`, so the DOM (and a
- * screen reader) always reads domain, skill, difficulty; the dots are hidden from assistive tech
- * and the difficulty is announced as "Difficulty: Easy". The skill is a `ClampedLabel`: two lines
- * and an ellipsis at most, the full name in its `title`.
+ * plain English: three `Pill`s (the student UI's one neutral pill: `--chip` fill, `--rule`
+ * border, 14px semibold `--ink`), all the same colour: the difficulty is a word, never a traffic
+ * light. From `lg` (1024px) they sit in one row, domain, skill, difficulty. Below it the first row
+ * is domain and difficulty and the skill takes the second row on its own. The order is set with
+ * CSS `order`, so the DOM (and a screen reader) always reads domain, skill, difficulty; the
+ * difficulty is announced as "Difficulty: Easy". The skill is a `ClampedLabel` inside its pill:
+ * two lines and an ellipsis at most, the full name in its `title` (hover). The skill pill is the
+ * header's only focus stop (`tabIndex=0`, the student focus ring): focusing it un-clamps the
+ * label (`group` + ClampedLabel's `group-focus-within:line-clamp-none`). It has no role, so a
+ * screen reader reads its text as it did before; the tab stop adds nothing else.
  * expected outcome: CanonicalPracticePage renders this once, so practice, review and the
- * diagnostic (all three run in that page) show the same header. The full-length module
- * (ExamModulePage) never renders it, and its payload carries no taxonomy (Doc 04A §10.2).
- * trade-offs: no element here is focusable, so the clamped skill's full text is on hover (title)
- * and to screen readers (the clamp is visual only), not on keyboard focus; adding a tab stop
- * before the choices for a label was judged worse. Raised as a question in the PR.
- * edge cases: a missing part is left out with its dot; with nothing to show the header renders
- * nothing. Difficulty is shown only when it maps to Easy/Medium/Hard (never a guessed word).
+ * diagnostic show the same header. The full-length module (ExamModulePage) never renders it, and
+ * its payload carries no taxonomy (Doc 04A §10.2).
+ * edge cases: a missing part is left out; with nothing to show the header renders nothing.
+ * Difficulty is shown only when it maps to Easy/Medium/Hard (never a guessed word).
  */
-import { ClampedLabel } from "@/components/student-ui";
+import { ClampedLabel } from "@/components/student-ui/ClampedLabel";
+import { Pill } from "@/components/student-ui/Pill";
+import { LYC_FOCUS } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { questionDifficultyLabel } from "@lyceon/shared/question-difficulty";
-
-const DOT = "·";
 
 export function QuestionMetaHeader({
   domain,
@@ -47,59 +51,39 @@ export function QuestionMetaHeader({
     return null;
   }
 
-  // Desktop: domain · skill · difficulty. Phone: domain · difficulty, then the skill below.
-  const dotDomainSkill = domainText !== null && skillText !== null;
-  const dotBeforeDifficultyPhone =
-    domainText !== null && difficultyText !== null;
-  const dotBeforeDifficultyDesktop =
-    (domainText !== null || skillText !== null) && difficultyText !== null;
-
+  // Desktop: domain, skill, difficulty. Phone: domain, difficulty, then the skill on its own row.
   return (
     <div
       data-testid="question-meta"
-      className="flex flex-wrap items-baseline gap-x-2 text-lyc-body text-lyc-muted lg:flex-nowrap"
+      className="flex flex-wrap items-start gap-2 lg:flex-nowrap"
     >
       {domainText !== null ? (
-        <span
-          data-testid="question-meta-domain"
-          className="order-1 shrink-0 whitespace-nowrap"
-        >
+        <Pill data-testid="question-meta-domain" className="order-1 shrink-0">
           {domainText}
-        </span>
-      ) : null}
-      {dotDomainSkill ? (
-        <span aria-hidden="true" className="hidden lg:order-2 lg:inline">
-          {DOT}
-        </span>
+        </Pill>
       ) : null}
       {skillText !== null ? (
-        <ClampedLabel
-          text={skillText}
-          data-testid="question-meta-skill"
-          className="order-4 min-w-0 basis-full lg:order-3 lg:basis-auto"
-        />
-      ) : null}
-      {dotBeforeDifficultyPhone || dotBeforeDifficultyDesktop ? (
-        <span
-          aria-hidden="true"
-          data-testid="question-meta-dot-difficulty"
-          className={cn(
-            "order-2 lg:order-4",
-            dotBeforeDifficultyPhone ? "inline" : "hidden",
-            dotBeforeDifficultyDesktop ? "lg:inline" : "lg:hidden",
-          )}
+        <div
+          data-testid="question-meta-skill-row"
+          className="order-3 flex min-w-0 basis-full lg:order-2 lg:basis-auto"
         >
-          {DOT}
-        </span>
+          <Pill
+            tabIndex={0}
+            data-testid="question-meta-skill-pill"
+            className={cn("group min-w-0 max-w-full rounded-xl", LYC_FOCUS)}
+          >
+            <ClampedLabel text={skillText} data-testid="question-meta-skill" />
+          </Pill>
+        </div>
       ) : null}
       {difficultyText !== null ? (
-        <span
+        <Pill
           data-testid="question-meta-difficulty"
-          className="order-3 shrink-0 whitespace-nowrap lg:order-5"
+          className="order-2 shrink-0 lg:order-3"
         >
           <span className="sr-only">Difficulty: </span>
           {difficultyText}
-        </span>
+        </Pill>
       ) : null}
     </div>
   );
