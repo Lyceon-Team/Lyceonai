@@ -57,7 +57,7 @@ scripts/content/lint-prose.sh          # Vale (Microsoft + ai-tells) and lychee
 
 1. **The cycle** is next month: `<YYYY-MM>-plan`.
 2. **The skeleton:** `pnpm exec tsx scripts/content/plan-skeleton.ts <YYYY-MM> > content/batches/<YYYY-MM>-plan/PLAN.md`. It lists the month's College Board dates (cited) and every Mon/Wed/Fri slot with the days to the next test. Do not retype or edit the dates.
-3. **Fill one row per slot:** slug, target keyword, audience (students, parents, both), search intent, and why now (tie it to the SAT calendar: final-weeks review before a test, test-day preparation, what scores mean after release, registration reminders before a deadline; Doc 10B §3A). Sources: `docs/marketing/keyword-map/`, the backlog, last month's performance where available.
+3. **Fill one row per slot:** slug, target keyword, audience (students, parents, both), search intent, and why now (tie it to the SAT calendar: final-weeks review before a test, test-day preparation, what scores mean after release, registration reminders before a deadline; Doc 10B §3A). Sources: `docs/marketing/keyword-map/`, the backlog, last month's performance where available. Where one fits, name the slot's hook-bank angle (`.claude/skills/ai-cmo/references/hook-bank.md`).
 4. **No duplicate targeting.** Every target keyword must be new: compare against every `targetKeyword` in `shared/content/` (the gate normalises case and plurals; `normalizedKeyword` in `shared/seo/content-gate.ts`). A covered topic is an update to the existing page, listed as such.
 5. **Review record** with one item, `plan`; self-audit row in section 1.
 6. **Draft pull request** into `social`, titled `content: <YYYY-MM> plan`.
