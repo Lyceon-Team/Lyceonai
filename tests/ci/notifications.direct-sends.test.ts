@@ -125,7 +125,8 @@ describe("direct sends (R7/R8/R9)", () => {
         recipientProfileId: "44444444-4444-4444-8444-444444444444",
         completedAt: "2026-09-17T00:00:00.000Z",
       },
-      { transport },
+      // Chicago daytime (16:00 CDT): this test is about the body, not quiet hours.
+      { transport, now: new Date("2026-09-17T21:00:00Z") },
     );
     expect(result.ok).toBe(true);
     expect(requests).toHaveLength(1);

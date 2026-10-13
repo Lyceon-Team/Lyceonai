@@ -18,6 +18,16 @@
  * and `resetAt` its next midnight as an absolute instant; the count is answers submitted, not
  * questions served (owner ruling OQ-43 / F-61, Karl, 2026-10-03; Doc 02B §13).
  * A display hint only: the serving routes still decide on every request.
+ *
+ * `freeDailyLimit` (owner ruling OQ-68 (d), Karl, 2026-10-08, register row UI-64: "The '40
+ * questions' copy reads the server quota value (the same source as the 402)"): the free plan's
+ * daily limit, on BOTH shapes, so the plan copy ("N practice questions a day" on Help, Settings
+ * → Billing, `/upgrade` and Home) can print it for a paid reader too. It is the config number
+ * `practice_runtime_config.daily_quota_free`, the value the 402 carries as `limit`: for a free
+ * student it is the dry run's own `limit` (the same SQL evaluation as the refusal), for a paid
+ * student or an admin, whose dry run reports no daily cap, the same config row read directly
+ * (`getPracticeDailyFreeQuota`). A config number, not student data. `limit` is unchanged: it
+ * stays the student's own cap (null when there is none).
  */
 import { z } from "zod";
 
@@ -27,6 +37,7 @@ export const practiceQuotaLimitedSchema = z
     limit: z.number().int().nonnegative(),
     remaining: z.number().int().nonnegative(),
     resetAt: z.string().datetime({ offset: true }),
+    freeDailyLimit: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -36,6 +47,7 @@ export const practiceQuotaUnlimitedSchema = z
     limit: z.null(),
     remaining: z.null(),
     resetAt: z.null(),
+    freeDailyLimit: z.number().int().nonnegative(),
   })
   .strict();
 

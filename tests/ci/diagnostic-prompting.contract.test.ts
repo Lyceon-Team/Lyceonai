@@ -36,8 +36,11 @@ describe("Diagnostic prompting contract", () => {
       /\/\*[\s\S]*?\*\//g,
       "",
     );
-    expect(home).toMatch(/stage === "diagnostic" \? \(\s*<section/);
-    expect(home.match(/data-testid="home-diagnostic"/g)?.length).toBe(1);
+    // The card moved into DiagnosticCard.tsx (2026-10-09) so the paid Home can draw it too; the
+    // free Home still draws it under the diagnostic stage only.
+    expect(home).toMatch(/stage === "diagnostic" \? <DiagnosticCard\b/);
+    const card = read("client/src/components/home/DiagnosticCard.tsx");
+    expect(card.match(/data-testid="home-diagnostic"/g)?.length).toBe(1);
   });
 
   /**
@@ -95,6 +98,7 @@ describe("Diagnostic prompting contract", () => {
       "client/src/pages/lyceon-dashboard.tsx",
       "client/src/components/home/FreeHome.tsx",
       "client/src/components/home/PaidHome.tsx",
+      "client/src/components/home/DiagnosticCard.tsx",
     ]) {
       const source = read(file);
       expect(source, file).not.toContain(CARD_MODULE_PATH);
@@ -154,7 +158,8 @@ describe("Diagnostic prompting contract", () => {
   it("the one start surface reuses useDiagnosticStart (no forked start flow)", () => {
     // UI-50: Home's diagnostic card replaced DiagnosticPromptModal (deleted); UI-51 deleted the
     // old CTA card, the only other caller. Code only: the module comment names the route.
-    const home = code(read("client/src/components/home/FreeHome.tsx"));
+    // The card (DiagnosticCard.tsx since 2026-10-09) is the one start surface, on both Homes.
+    const home = code(read("client/src/components/home/DiagnosticCard.tsx"));
     expect(home).toContain("useDiagnosticStart");
     expect(home).not.toContain("/api/practice/diagnostic/sessions");
   });
@@ -163,7 +168,12 @@ describe("Diagnostic prompting contract", () => {
     // Home's card (UI-50) uses the signed-off prototype's words ("Start diagnostic",
     // Main.dc.html; owner ruling 2026-10-03: copy from the prototype). The old card's
     // action-neutral "Work on Diagnostic" left with the card (UI-51).
-    const home = code(read("client/src/components/home/FreeHome.tsx"));
-    expect(home).toContain("projected SAT score");
+    // OQ-68 (d) / UI-64 (2026-10-08): the card's sentence carries the served diagnostic length,
+    // so it is built by home-model.ts `diagnosticCardLine`, which FreeHome renders.
+    const home = code(read("client/src/components/home/DiagnosticCard.tsx"));
+    expect(home).toContain("diagnosticCardLine(");
+    const model = code(read("client/src/components/home/home-model.ts"));
+    expect(model).toContain("export function diagnosticCardLine(");
+    expect(model).toContain("projected SAT score");
   });
 });

@@ -29,6 +29,7 @@ import {
   makePgSupabase,
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
+import { pinDaytimeClock, releaseClock } from "../helpers/daytime-clock";
 
 const DB_NAME = "deletion_completed_ci";
 const USER_A = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
@@ -47,13 +48,35 @@ type CapturedRequest = {
 };
 const fakeResend = {
   mode: "ok" as "ok" | "reject",
+  /** Email sends only (`POST /emails`). */
   requests: [] as CapturedRequest[],
+  /**
+   * The marketing lane's contact removal (`DELETE /contacts/{address}`, step 6.5), kept apart
+   * from the sends so every count above stays a count of emails.
+   */
+  contactDeletes: [] as string[],
+  /** Every provider path in arrival order, for the notice-before-removal assertion. */
+  order: [] as string[],
   nextId: 1,
 };
 async function fakeFetch(
   input: string | URL | Request,
   init?: RequestInit,
 ): Promise<Response> {
+  const url = typeof input === "string" ? input : input.toString();
+  const path = url.replace(/^https?:\/\/[^/]+/, "");
+  fakeResend.order.push(
+    `${init?.method ?? "GET"} ${path.split("/").slice(0, 2).join("/")}`,
+  );
+  if (init?.method === "DELETE" && path.startsWith("/contacts/")) {
+    fakeResend.contactDeletes.push(
+      decodeURIComponent(path.slice("/contacts/".length)),
+    );
+    return new Response(
+      JSON.stringify({ object: "contact", contact: "c_1", deleted: true }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }
   fakeResend.requests.push({
     url: typeof input === "string" ? input : input.toString(),
     headers: Object.fromEntries(
@@ -141,13 +164,26 @@ async function seedUser(id: string, email: string): Promise<void> {
   );
 }
 
+/**
+ * Due ONE HOUR AGO BY BOTH CLOCKS THE DELETION READS. `executeDueDeletions` selects rows with
+ * `scheduled_hard_delete_at <= new Date()` (server/lib/account-deletion-execute.ts), and this
+ * suite pins `Date` to 17:00 UTC today (pinDaytimeClock). The SQL it then calls,
+ * `preclear_account_deletion_links`, re-checks `scheduled_hard_delete_at <= now()` against the
+ * database's REAL clock. Each clock alone was a time-of-day failure:
+ *   - the database's `now() - 1 hour` was "not yet due" to the pinned JS clock after 18:00 UTC;
+ *   - the pinned clock's 16:00 was "not yet due" to the database before 16:00 UTC
+ *     (`PRECLEAR_NOT_DUE`, executedCount 0, failedCount 1; CI on #1190 at 05:08 UTC).
+ * So the row is due an hour before the EARLIER of the two, which satisfies both at any hour.
+ */
 async function seedDueDeletion(profileId: string): Promise<string> {
+  const pinnedNow = new Date(Date.now()).toISOString();
   const r = await pg.query(
     `INSERT INTO public.account_deletion_requests
        (profile_id, scheduled_hard_delete_at, actor_profile_id, status, requested_at)
-     VALUES ($1, now() - interval '1 hour', $1, 'pending', now() - interval '8 days')
+     VALUES ($1, LEAST(now(), $2::timestamptz) - interval '1 hour', $1, 'pending',
+             LEAST(now(), $2::timestamptz) - interval '8 days')
      RETURNING id`,
-    [profileId],
+    [profileId, pinnedNow],
   );
   return String(r.rows[0].id);
 }
@@ -174,6 +210,10 @@ describe.skipIf(!PG_AVAILABLE)(
   "deletion-completed notice — real Postgres",
   () => {
     beforeAll(async () => {
+      // Quiet hours (owner ruling 2026-10-09): the notice is not exempt and the executor reads
+      // the process clock, so at night it would carry `scheduled_at`. This suite is about the
+      // notice itself; quiet hours are proved in notification-quiet-hours.pg.ci.test.ts.
+      pinDaytimeClock();
       process.env.RESEND_API_KEY = "re_test_key";
       process.env.NOTIFICATION_FROM_EMAIL = FROM_EMAIL;
       process.env.PUBLIC_SITE_URL = "https://app.example.test";
@@ -182,6 +222,7 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     afterAll(async () => {
+      releaseClock();
       vi.unstubAllGlobals();
       if (pg) await pg.end();
     });
@@ -189,6 +230,8 @@ describe.skipIf(!PG_AVAILABLE)(
     beforeEach(async () => {
       fakeResend.mode = "ok";
       fakeResend.requests = [];
+      fakeResend.contactDeletes = [];
+      fakeResend.order = [];
       fakeResend.nextId = 1;
       captured.length = 0;
       callOrder.length = 0;
@@ -247,6 +290,9 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(fakeResend.requests).toHaveLength(1);
       const req = fakeResend.requests[0]!;
       expect(req.body.to).toEqual([EMAIL_A]);
+      // Step 6.5: the marketing contact for that address is removed, after the notice.
+      expect(fakeResend.contactDeletes).toEqual([EMAIL_A]);
+      expect(fakeResend.order).toEqual(["POST /emails", "DELETE /contacts"]);
       expect(req.body.from).toBe(FROM_EMAIL);
       expect(req.headers["Idempotency-Key"]).toBe(
         `account-deletion-completed:${requestId}`,

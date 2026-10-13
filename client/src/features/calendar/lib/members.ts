@@ -231,9 +231,19 @@ export function mixCountChoices(): readonly number[] {
   return [5, 10, 15, 20];
 }
 
-/** The item choices a review block offers. */
-export function reviewCountChoices(): readonly number[] {
-  return [5, 10, 15, 20, 25, 30];
+/**
+ * The item choices a review block offers.
+ *
+ * @updated 2026-10-08 — production re-test (QA2, found while fixing item G): the plan sizes a
+ * review block from the queue, so its target can be any count (a 7-item block is real). With
+ * only the fixed steps on offer, a `<select>` whose value matches no option shows the FIRST
+ * option, so a 7-item block read "5 items". `current`, when given, is always among the choices
+ * (in order), so the control shows the block's real count; the steps stay as before.
+ */
+export function reviewCountChoices(current?: number): readonly number[] {
+  const steps = [5, 10, 15, 20, 25, 30];
+  if (current === undefined || steps.includes(current)) return steps;
+  return [...steps, current].sort((a, b) => a - b);
 }
 
 /** A mix is valid when it is non-empty, within the domain cap, and every count is a multiple. */

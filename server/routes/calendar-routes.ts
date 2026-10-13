@@ -45,6 +45,7 @@ import {
   idempotentMutationBodySchema,
   launchBodySchema,
   profileReadResponseSchema,
+  completedStudyProfile,
 } from "@lyceon/shared";
 import { logger } from "../logger";
 import { logRejectedRequest, routeOf } from "../lib/validation-log";
@@ -81,7 +82,8 @@ import { liveLaunchDeps } from "../services/calendar/launch-deps";
 export const calendarRouter = Router();
 
 /** §16: the one feature key this surface gates on. Never the entitlement predicate directly. */
-export const CALENDAR_FEATURE_KEY = "calendar_access" satisfies EntitlementFeatureKey;
+export const CALENDAR_FEATURE_KEY =
+  "calendar_access" satisfies EntitlementFeatureKey;
 
 /** §7 / §15: the two rate-limited surfaces, seeded by `20260917140000`. */
 export const CALENDAR_PLAN_REGENERATE_BUCKET = "calendar_plan_regenerate";
@@ -514,8 +516,11 @@ calendarRouter.get("/", async (req: Request, res: Response) => {
   // Checked directly rather than by calling `readCalendar` and inspecting the result:
   // `readCalendar` runs `generateOnFirstOpen` (R-08-04), and generating a plan for a
   // student who is not entitled to one is exactly what the gate is for.
+  // SCL-223: "has a profile" means "has completed setup"; a dates-only row is pre-setup.
   const hasProfile =
-    (await readStudyProfile(caller.studentId, req.requestId)) !== null;
+    completedStudyProfile(
+      await readStudyProfile(caller.studentId, req.requestId),
+    ) !== null;
   if (!hasProfile) {
     try {
       const result = await readCalendar({
@@ -574,7 +579,9 @@ calendarRouter.get("/", async (req: Request, res: Response) => {
  * just collected (wiring-table §9, OQ-25).
  *
  * expected outcome: 200 `{ profile: StudyProfile | null, requestId }` for any tier. `null`
- * is the pre-setup state. 401 without a session. A guardian never reaches this handler:
+ * is the pre-setup state. (The SAT-date bound is NOT here: it is served role-agnostically by
+ * `GET /api/sat-dates/bound`, owner ruling 2026-10-12 on #1211.) 401 without a session. A
+ * guardian never reaches this handler:
  * the `/api/calendar` mount runs `requireStudentOrAdmin` (server/index.ts), which answers a
  * guardian 403 — the same as `PUT /profile`. A guardian sees the exam date and target score
  * through the guardian calendar (`GET /api/students/:studentId/calendar`), which carries the

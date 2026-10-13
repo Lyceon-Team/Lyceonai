@@ -196,6 +196,24 @@ export default function TestsHomePage(): JSX.Element {
   );
   const primaryId = primaryFormId(rows);
   const [mode, setMode] = useState<ExamMode>("strict");
+  /**
+   * @spec [production QA 2026-10-08 item F (Karl: "Full-Length cards: no layout shift on load");
+   *       DESIGN.md §1] | @implemented [2026-10-08]
+   * plain English: the rows are drawn once, complete. A row's look depends on three reads: the
+   * forms, the scored sessions (a completed row carries its score and the disclosure, three lines
+   * taller) and, for a test in progress, its `/state` ("In progress: Reading & Writing, Module
+   * 2"). They used to land one by one into a 180px block, and each landing pushed "Before you
+   * start" (and the footer) down: a measured layout shift of 0.06 to 0.11. Now, until all three
+   * are in, the list and "Before you start" are drawn as one page-shaped placeholder
+   * (`TestsLoading`) tall enough that nothing under it is on screen, and the whole of it is
+   * replaced in one step, so nothing on screen moves. The same for the right panel: the score
+   * history sits ABOVE the mastery rows, so the panel waits for the scored sessions instead of
+   * inserting the history over rows already drawn. A read that fails ends the wait (its own
+   * notice or, for the history, nothing), it never holds the page.
+   */
+  const inProgressSettled = inProgressId === null || !inProgress.isPending;
+  const listReady = forms.isSuccess && !scored.isPending && inProgressSettled;
+  const panelReady = !examGranted || !scored.isPending;
 
   return (
     <div className="flex flex-col gap-10" data-testid="tests-home">
@@ -219,9 +237,7 @@ export default function TestsHomePage(): JSX.Element {
               <h2 id="tests-h" className={SECTION_H2}>
                 Your full-length tests
               </h2>
-              {forms.isPending ? (
-                <Skeleton variant="lyc" className="h-[180px] w-full" />
-              ) : forms.isError ? (
+              {forms.isError ? (
                 <Notice
                   tone="danger"
                   title="We couldn't load the full-length tests."
@@ -229,6 +245,8 @@ export default function TestsHomePage(): JSX.Element {
                   onAction={() => void forms.refetch()}
                   data-testid="tests-error"
                 />
+              ) : !listReady ? (
+                <TestsLoading />
               ) : rows.length === 0 ? (
                 <p className="m-0 text-lyc-body-lg text-lyc-muted">
                   No full-length tests are available yet.
@@ -248,58 +266,66 @@ export default function TestsHomePage(): JSX.Element {
               )}
             </section>
 
-            <BeforeYouStart mode={mode} />
+            {listReady || forms.isError ? <BeforeYouStart mode={mode} /> : null}
           </>
         ) : null}
 
         <AppShellPanel>
-          <div className="flex flex-col gap-9" data-testid="tests-panel">
-            {examGranted && (scored.data?.length ?? 0) > 0 ? (
-              <ScoreHistory rows={scored.data ?? []} />
-            ) : null}
-            <section
-              aria-labelledby="tests-mastery-h"
-              className="flex flex-col gap-4"
-              data-testid="tests-mastery"
-            >
-              <h2 id="tests-mastery-h" className={PANEL_H2}>
-                Mastery
-              </h2>
-              {masteryGranted && mastery.data !== undefined ? (
-                <>
-                  {MASTERY_SECTIONS.map((s) => (
-                    <div key={s} className="flex flex-col">
-                      <h3 className="m-0 mb-1 text-[15px] font-semibold text-lyc-muted">
-                        {sectionDisplayLabel(s)}
-                      </h3>
-                      {canonicalDomainNodes(mastery.data.domains, [s]).map(
-                        (node) => (
-                          <MasteryRow
-                            key={`${node.section}:${node.domain}`}
-                            label={node.domain}
-                            levelKey={node.levelKey}
-                            displayName={node.displayName}
-                            variant="compact"
-                            href={masteryDomainHref(node)}
-                          />
-                        ),
-                      )}
-                    </div>
-                  ))}
-                  <Link href="/mastery" className={TEXT_LINK}>
-                    See every skill
-                  </Link>
-                </>
-              ) : masteryAccess?.access === "locked" ? (
-                <LockedMasteryCard
-                  headingLevel={3}
-                  onSeeWhatsIncluded={() =>
-                    upgrade.open("mastery_detail", masteryAccess.reason)
-                  }
-                />
+          {panelReady ? (
+            <div className="flex flex-col gap-9" data-testid="tests-panel">
+              {examGranted && (scored.data?.length ?? 0) > 0 ? (
+                <ScoreHistory rows={scored.data ?? []} />
               ) : null}
-            </section>
-          </div>
+              <section
+                aria-labelledby="tests-mastery-h"
+                className="flex flex-col gap-4"
+                data-testid="tests-mastery"
+              >
+                <h2 id="tests-mastery-h" className={PANEL_H2}>
+                  Mastery
+                </h2>
+                {masteryGranted && mastery.data !== undefined ? (
+                  <>
+                    {MASTERY_SECTIONS.map((s) => (
+                      <div key={s} className="flex flex-col">
+                        <h3 className="m-0 mb-1 text-[15px] font-semibold text-lyc-muted">
+                          {sectionDisplayLabel(s)}
+                        </h3>
+                        {canonicalDomainNodes(mastery.data.domains, [s]).map(
+                          (node) => (
+                            <MasteryRow
+                              key={`${node.section}:${node.domain}`}
+                              label={node.domain}
+                              levelKey={node.levelKey}
+                              displayName={node.displayName}
+                              variant="compact"
+                              href={masteryDomainHref(node)}
+                            />
+                          ),
+                        )}
+                      </div>
+                    ))}
+                    <Link href="/mastery" className={TEXT_LINK}>
+                      See every skill
+                    </Link>
+                  </>
+                ) : masteryAccess?.access === "locked" ? (
+                  <LockedMasteryCard
+                    headingLevel={3}
+                    onSeeWhatsIncluded={() =>
+                      upgrade.open("mastery_detail", masteryAccess.reason)
+                    }
+                  />
+                ) : null}
+              </section>
+            </div>
+          ) : (
+            <Skeleton
+              variant="lyc"
+              className="h-[320px] w-full"
+              data-testid="tests-panel-loading"
+            />
+          )}
         </AppShellPanel>
       </div>
     </div>
@@ -555,6 +581,49 @@ function StartButton({
           {error}
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * QA2-F (2026-10-08): the list and "Before you start" while the rows' reads are in flight. Shaped
+ * like the loaded page (three rows: a name, a status line and an action; then the "Before you
+ * start" heading and its four lines) at the loaded rows' own sizes, and tall enough that what
+ * follows (the footer) starts below the screen at every width, so the one swap to the loaded
+ * page moves nothing a student can see. A polite live region named "Loading full-length tests".
+ */
+function TestsLoading(): JSX.Element {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Loading full-length tests"
+      aria-busy="true"
+      className="flex min-h-[100dvh] flex-col"
+      data-testid="tests-loading"
+    >
+      <div aria-hidden="true" className="flex flex-col">
+        <div className="border-t border-lyc-rule">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="grid min-h-[107px] grid-cols-1 gap-4 border-b border-lyc-rule py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6"
+            >
+              <div className="flex flex-col gap-2">
+                <Skeleton variant="lyc" className="h-6 w-48" />
+                <Skeleton variant="lyc" className="h-5 w-64 max-w-full" />
+              </div>
+              <Skeleton variant="lyc" className="h-11 w-24" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-10 flex flex-col gap-3.5">
+          <Skeleton variant="lyc" className="h-8 w-56" />
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} variant="lyc" className="h-6 w-full" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

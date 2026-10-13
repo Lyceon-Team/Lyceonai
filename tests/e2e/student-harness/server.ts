@@ -32,7 +32,11 @@ import express, {
 } from "express";
 import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
-import { buildStudentHarnessDb, seedPaidNotifications } from "./db";
+import {
+  applyQuotaConfig,
+  buildStudentHarnessDb,
+  seedPaidNotifications,
+} from "./db";
 import {
   BARE_PAGE_PERSONAS,
   isBarePagePersona,
@@ -64,6 +68,9 @@ const PORT = Number(process.env.HARNESS_PORT ?? "5056");
  */
 const BARE_PAGES = process.env.STUDENT_HARNESS_SEED === "bare-pages";
 if (BARE_PAGES) process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";
+// The Home QOTD's option tokens are an HMAC under the public secret (option-tokens.ts); a
+// throwaway value here, never a real one.
+process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??= "student-harness-only";
 
 type ProfileRow = {
   id: string;
@@ -100,6 +107,8 @@ async function main(): Promise<void> {
     await import("../../../server/routes/exam-report-routes");
   const { calendarRouter } =
     await import("../../../server/routes/calendar-routes");
+  const { satDateRouter } =
+    await import("../../../server/routes/sat-date-routes");
   const { scoreReportRouter } =
     await import("../../../server/routes/score-report-routes");
   const { getScoreEstimate, getRecencyKpis } =
@@ -120,6 +129,8 @@ async function main(): Promise<void> {
     ? (await import("../../../server/routes/account-deletion-routes")).default
     : null;
   const { legalRouter } = await import("../../../server/routes/legal-routes");
+  const { default: homeQotdRoutes } =
+    await import("../../../server/routes/home-qotd-routes");
   const { default: tutorRuntimeRouter } =
     await import("../../../server/routes/tutor-runtime");
   const { TutorConfig } = await import("../../../server/services/tutor-config");
@@ -183,6 +194,13 @@ async function main(): Promise<void> {
   app.use("/api/legal", auth.requireSupabaseAuth, legalRouter);
   app.use("/api/profile", auth.requireSupabaseAuth, profileRoutes);
   app.use("/api/feedback", auth.requireSupabaseAuth, productFeedbackRoutes);
+  // Owner brief "Question of the Day on Home" (2026-10-08/09): as server/index.ts mounts it.
+  app.use(
+    "/api/qotd",
+    auth.requireSupabaseAuth,
+    auth.requireStudentAccount,
+    homeQotdRoutes,
+  );
   app.use(
     NOTIFICATION_API_MOUNT,
     auth.requireSupabaseAuth,
@@ -195,6 +213,8 @@ async function main(): Promise<void> {
     auth.requireStudentOrAdmin,
     calendarRouter,
   );
+  // Role-agnostic, as in server/index.ts (owner ruling 2026-10-12 on #1211).
+  app.use("/api/sat-dates", auth.requireSupabaseAuth, satDateRouter);
   app.use(
     "/api/score-report",
     auth.requireSupabaseAuth,
@@ -312,6 +332,12 @@ async function main(): Promise<void> {
         // QA 2026-10-07 (UI-41): unread in-app notifications for the paid student (db.ts).
         if (process.env.STUDENT_HARNESS_SEED === "notifications")
           await seedPaidNotifications(pg);
+        // W6 UI-64: non-default practice config (db.ts `applyQuotaConfig`), after the base
+        // seed; then the practice config cache (30 s, practice-canonical.ts) is waited out.
+        if (process.env.STUDENT_HARNESS_SEED === "quota-config") {
+          await applyQuotaConfig(pg);
+          await new Promise((resolve) => setTimeout(resolve, 31_000));
+        }
         return seeded;
       })
       .then(

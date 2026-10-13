@@ -211,12 +211,15 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
       /\/\*[\s\S]*?\*\//g,
       "",
     );
-    const cardAt = home.indexOf('stage === "diagnostic" ? (');
-    const startAt = home.indexOf("Start diagnostic");
-    expect(cardAt).toBeGreaterThan(-1);
-    expect(startAt).toBeGreaterThan(cardAt);
-    expect(home.split("Start diagnostic").length - 1).toBe(1);
-    expect(home.split("void startDiagnostic()").length - 1).toBe(1);
+    // The card lives in DiagnosticCard.tsx (2026-10-09); FreeHome draws it under the stage only.
+    expect(home).toMatch(/stage === "diagnostic" \? <DiagnosticCard\b/);
+    expect(home).not.toContain("Start diagnostic");
+    const card = read("client/src/components/home/DiagnosticCard.tsx").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(card.split("Start diagnostic").length - 1).toBe(1);
+    expect(card.split("void startDiagnostic()").length - 1).toBe(1);
   });
 
   it("Home's panel says the ruled pending sentence (the shared constant)", () => {

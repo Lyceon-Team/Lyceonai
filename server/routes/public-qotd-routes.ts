@@ -45,6 +45,7 @@ import {
   qotdToday,
   QotdUnavailableError,
   readQotd,
+  isPublishableArchiveRow,
   readQotdArchive,
   toArchiveIndexResponse,
   toArchiveResponse,
@@ -160,7 +161,8 @@ router.get(
     }
     try {
       const row = await readQotd(db(), parsed.data);
-      if (!row) {
+      // A withheld day (no question prompt; owner 2026-10-08) is not found, like a missing one.
+      if (!row || !isPublishableArchiveRow(row)) {
         return res
           .status(404)
           .json(errorBody("not_found", "Not found.", req.requestId));

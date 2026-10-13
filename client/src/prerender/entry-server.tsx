@@ -44,7 +44,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Writable } from "node:stream";
-import { renderToPipeableStream } from "react-dom/server";
+import { renderToPipeableStream, renderToStaticMarkup } from "react-dom/server";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { ContentArticle } from "@/components/content/ContentArticle";
 import { Router as WouterRouter } from "wouter";
 import App from "@/App";
 import { queryClient } from "@/lib/queryClient";
@@ -56,7 +58,7 @@ import {
 } from "@/lib/legal-content";
 import { BLOG_PAGES, BLOG_POSTS } from "@shared/content/blog";
 import { resolvePublicMeta } from "@shared/seo/public-meta";
-import { toArchiveIndex } from "@shared/qotd/projection";
+import { stemRepeatsPassage, toArchiveIndex } from "@shared/qotd/projection";
 import { qotdToday } from "../../../server/services/qotd/qotd-service";
 import {
   qotdArchiveDayQueryOptions,
@@ -88,8 +90,10 @@ import { CONTENT_PAGES, contentPageAt } from "@shared/content/pages";
 import { qotdSampleDates } from "@shared/content/qotd-samples";
 import type { ContentPage } from "../../../packages/shared/src/seo-content-schema";
 import {
+  articleProblems,
   claimIdsIn,
   contentPageProblems,
+  duplicateTargetProblems,
   renderedPageProblems,
   type GateContext,
 } from "@shared/seo/content-gate";
@@ -114,6 +118,8 @@ export type PrerenderedSite = {
   qotdArchive: {
     source: QotdArchiveSource["source"];
     days: QotdArchiveResponse[];
+    /** Past days not published because the question's stem repeats its passage. */
+    withheldStemRepeatsPassage: string[];
   };
 };
 
@@ -203,10 +209,18 @@ async function loadPageQueries(
       );
       queryClient.setQueryData(qotdArchiveIndexQueryOptions().queryKey, index);
       for (const block of samples) {
-        for (const date of qotdSampleDates(index.days, block.filter, block.limit)) {
+        for (const date of qotdSampleDates(
+          index.days,
+          block.filter,
+          block.limit,
+        )) {
           const day = qotdDays.find((d) => d.qotd_date === date);
-          if (!day) throw new Error(`prerender: no archive payload for ${date}`);
-          queryClient.setQueryData(qotdArchiveDayQueryOptions(date).queryKey, day);
+          if (!day)
+            throw new Error(`prerender: no archive payload for ${date}`);
+          queryClient.setQueryData(
+            qotdArchiveDayQueryOptions(date).queryKey,
+            day,
+          );
         }
       }
     }
@@ -237,6 +251,73 @@ async function loadPublishedLegal(): Promise<PrerenderContent["legal"]> {
   return published;
 }
 
+/** What a link may point at: a page this build produced, or a registry route the SPA answers. */
+function gateContext(
+  pages: readonly { path: string }[],
+  registry: readonly RouteRegistryRow[],
+  claimInventory: string,
+): GateContext {
+  const served = new Set<string>([
+    ...pages.map((p) => p.path),
+    ...registry
+      .filter((r) => !r.redirect_to && !r.path_pattern.includes(":"))
+      .map((r) => r.path_pattern),
+  ]);
+  return {
+    resolves: (p) => served.has(p),
+    claimIds: claimIdsIn(claimInventory),
+    claimInventory,
+  };
+}
+
+/**
+ * The publish gate for posts that are not built yet: every pipeline post, as it will be on the
+ * day it goes live.
+ *
+ * @spec [docs/Spec/Lyceon_Doc_10B.md §4 stage 4 ("Every gate in §5 passes") before stage 6
+ *       (Karl's merge), §5 gate 11; owner brief "Doc 10B Phase 1" (Karl, 2026-10-11)]
+ *       | @implemented [2026-10-11]
+ *
+ * plain English: a batch's posts are unapproved until Karl merges, so the build withholds them and
+ * the build's gate never sees them. This runs the same checks on each of `posts` with the approval
+ * the merge will stamp (Karl, dated the publish date), so everything except the approval itself is
+ * proven before the merge: the data checks, gate 11 against every page and post (`allPages`), and
+ * the article as rendered on its own (heading order, every link). The page around the article (one
+ * H1, the footer's trademark notice) is the blog's shared template, checked on every built post.
+ */
+export function draftPostProblems(
+  posts: readonly ContentPage[],
+  allPages: readonly ContentPage[],
+  builtPages: readonly { path: string }[],
+  registry: readonly RouteRegistryRow[],
+  claimInventory: string,
+): string[] {
+  const ctx = gateContext(
+    [...builtPages, ...posts.map((p) => ({ path: p.path }))],
+    registry,
+    claimInventory,
+  );
+  const byPath = new Map<string, ContentPage>();
+  for (const page of [...allPages, ...posts]) byPath.set(page.path, page);
+  const problems = duplicateTargetProblems([...byPath.values()]);
+  for (const page of posts) {
+    const asMerged: ContentPage = {
+      ...page,
+      approved: { by: "Karl", date: page.lastModified },
+    };
+    problems.push(...contentPageProblems(asMerged, ctx));
+    const article = renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <WouterRouter ssrPath={page.path}>
+          <ContentArticle page={asMerged} byline="Lyceon Team" />
+        </WouterRouter>
+      </QueryClientProvider>,
+    );
+    problems.push(...articleProblems(page.path, article, ctx));
+  }
+  return problems;
+}
+
 /**
  * The publish gate over the built site (plan row C3). A link resolves when it names a page this
  * build produced or a registry route the SPA answers (`/login`, …); a redirect row does not
@@ -248,23 +329,15 @@ export function assertContentPagesPublishable(
   registry: readonly RouteRegistryRow[],
   claimInventory: string,
 ): void {
-  const served = new Set<string>([
-    ...pages.map((p) => p.path),
-    ...registry
-      .filter((r) => !r.redirect_to && !r.path_pattern.includes(":"))
-      .map((r) => r.path_pattern),
-  ]);
-  const ctx: GateContext = {
-    resolves: (p) => served.has(p),
-    claimIds: claimIdsIn(claimInventory),
-    claimInventory,
-  };
-  const problems: string[] = [];
+  const ctx = gateContext(pages, registry, claimInventory);
+  const problems: string[] = [...duplicateTargetProblems(contentPages)];
   for (const content of contentPages) {
     problems.push(...contentPageProblems(content, ctx));
     const built = pages.find((p) => p.path === content.path);
     if (!built) {
-      problems.push(`${content.path}: no prerendered page (is it in the registry?)`);
+      problems.push(
+        `${content.path}: no prerendered page (is it in the registry?)`,
+      );
       continue;
     }
     problems.push(...renderedPageProblems(content.path, built.html, ctx));
@@ -296,7 +369,15 @@ export async function prerenderSite(options: {
     : await loadQotdArchiveForBuild(process.env, globalThis.fetch);
   // The one canonical QOTD day helper (America/Chicago), shared with the API.
   const today = qotdToday(options.now);
-  const qotdDays = loaded.days.filter((d) => d.qotd_date < today);
+  const pastDays = loaded.days.filter((d) => d.qotd_date < today);
+  // Owner 2026-10-08: a past day whose question has no prompt (the stem repeats the passage) is
+  // not published, so neither its page nor its sitemap entry nor its hub link exists. The test is
+  // on content, not on the date: once the questions vertical repairs the question, the next
+  // build publishes the day again.
+  const withheld = pastDays.filter((d) =>
+    stemRepeatsPassage(d.question.stem, d.question.passage),
+  );
+  const qotdDays = pastDays.filter((d) => !withheld.includes(d));
 
   const realFetch = globalThis.fetch;
   globalThis.fetch = legalFetch(path.join(options.repoRoot, "legal"));
@@ -342,7 +423,11 @@ export async function prerenderSite(options: {
       ),
       shellHtml: options.template,
       sitemapXml: buildSitemapXml(pages, BASE_URL),
-      qotdArchive: { source: loaded.source, days: qotdDays },
+      qotdArchive: {
+        source: loaded.source,
+        days: qotdDays,
+        withheldStemRepeatsPassage: withheld.map((d) => d.qotd_date),
+      },
     };
   } finally {
     globalThis.fetch = realFetch;

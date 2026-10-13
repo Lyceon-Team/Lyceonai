@@ -15,6 +15,10 @@
  * Retail prices change: TPR_TUTORING and CARE_TUTOR_COST are shown "as viewed" with that date.
  */
 import type { ContentSource } from "../../packages/shared/src/seo-content-schema";
+import {
+  SAT_DATES_SOURCE_URL,
+  SAT_SCORE_RELEASE_SOURCE_URL,
+} from "../sat-test-dates";
 
 /** One shape for a cited source, inferred from the content schema (Coding Standards §7.2). */
 export type Source = Readonly<ContentSource>;
@@ -94,13 +98,15 @@ export const CB_GOOD_SCORE: Source = {
 
 /** Class of 2026: mean 1045 (RW 528, Math 517); 42% met both benchmarks. */
 export const CB_ANNUAL_REPORT_2026: Source = {
-  label: "College Board: 2026 SAT Suite of Assessments Annual Report (total group)",
+  label:
+    "College Board: 2026 SAT Suite of Assessments Annual Report (total group)",
   url: "https://reports.collegeboard.org/media/pdf/2026-total-group-sat-suite-of-assessments-annual-report-ada.pdf",
 };
 
 /** Benchmarks RW 480, Math 530; "75% likelihood of achieving a C or higher…". */
 export const CB_UNDERSTANDING_SCORES_PDF: Source = {
-  label: "College Board: Understanding Scores (Fall 2026, students and families)",
+  label:
+    "College Board: Understanding Scores (Fall 2026, students and families)",
   url: "https://satsuite.collegeboard.org/media/pdf/sat-understanding-scores.pdf",
 };
 
@@ -147,4 +153,50 @@ export const CB_BLUEBOOK_PRACTICE_TESTS: Source = {
 export const CB_BLUEBOOK_HOW_TO: Source = {
   label: "College Board: how to use Bluebook practice tests",
   url: "https://satsuite.collegeboard.org/practice/bluebook",
+};
+
+// Content pipeline, batch 2026-W45 (Doc 10B; read 2026-10-11). Each page was fetched on
+// 2026-10-11 and the quoted text found on it; the quotes are in the claim inventory's
+// "Content pipeline sources" table.
+
+/** The test-day checklist: device with Bluebook, admission ticket, physical photo ID, pencils or pens, login, calculator; the "Nice to Have" list. */
+export const CB_WHAT_TO_BRING: Source = {
+  label: "College Board: what to bring on SAT test day",
+  url: "https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-bring",
+};
+
+/** Physical, unexpired photo ID; full legal name matching the admission ticket; acceptable and unacceptable IDs. */
+export const CB_ID_REQUIREMENTS: Source = {
+  label: "College Board: SAT ID requirements",
+  url: "https://satsuite.collegeboard.org/sat/what-to-bring-do/id-requirements",
+};
+
+/** The Saturday schedule (doors 7:45–8 a.m., testing 8:15–8:30, standard time ends 10:45–11); the 10-minute break; modules; tools. */
+export const CB_WHAT_TO_EXPECT: Source = {
+  label: "College Board: what to expect on SAT test day",
+  url: "https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-expect",
+};
+
+/** Phones, smartwatches, earbuds and separate timers are not allowed during the test or breaks. */
+export const CB_PROHIBITED_DEVICES: Source = {
+  label: "College Board: prohibited devices",
+  url: "https://satsuite.collegeboard.org/sat/what-to-bring-do/prohibited-devices",
+};
+
+/** Bluebook devices; exam setup 1–5 days before; the test-day morning check. */
+export const CB_DEVICE_READINESS: Source = {
+  label: "College Board: SAT device readiness",
+  url: "https://satsuite.collegeboard.org/sat/device-readiness",
+};
+
+/** SAT test dates and registration deadlines (the same page shared/sat-test-dates.ts reads). */
+export const CB_SAT_DATES: Source = {
+  label: "College Board: SAT dates and deadlines",
+  url: SAT_DATES_SOURCE_URL,
+};
+
+/** Student score release dates (the same page shared/sat-test-dates.ts reads). */
+export const CB_SCORE_RELEASE_DATES: Source = {
+  label: "College Board: SAT score release dates",
+  url: SAT_SCORE_RELEASE_SOURCE_URL,
 };

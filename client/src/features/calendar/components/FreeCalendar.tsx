@@ -35,6 +35,10 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import type { StudyProfile } from "@lyceon/shared/calendar";
 import { AppShellPanel } from "@/components/layout/app-shell";
+import {
+  SatDatePicker,
+  type SatDateChoice,
+} from "@/components/sat-dates/SatDatePicker";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import {
   UPGRADE_MODAL_AGE_BODY,
@@ -61,7 +65,8 @@ const SCORE_MAX = 1600;
 const SCORE_STEP = 10;
 
 export type FreeGoal = {
-  target_exam_date: string | null;
+  /** SCL-223: the chosen SAT dates; `[]` is "Not sure yet". */
+  target_exam_dates: string[];
   target_score: number | null;
 };
 
@@ -69,7 +74,6 @@ export function FreeCalendar({
   today,
   profile,
   reason,
-  maxTestDate,
   onSave,
   pending,
   error,
@@ -79,8 +83,6 @@ export function FreeCalendar({
   profile: StudyProfile | null;
   /** The feature-access lock reason (OQ-29); `plan` when the page learned it from a 402. */
   reason: "plan" | "age";
-  /** The served `target_exam_date_max_days` horizon as a date, when the page has it. */
-  maxTestDate: string | null;
   onSave: (goal: FreeGoal) => void;
   pending: boolean;
   error: string | null;
@@ -95,7 +97,7 @@ export function FreeCalendar({
       <div className="flex max-w-[720px] flex-col gap-7 px-4 py-6 lg:px-14 lg:py-12">
         {profile === null ? (
           <SetupForm
-            maxTestDate={maxTestDate}
+            today={today}
             onSave={onSave}
             pending={pending}
             error={error}
@@ -153,17 +155,18 @@ function SetupHeading(): JSX.Element {
 
 /** Before the first save: the editable form. Nothing is prefilled, as no profile exists. */
 function SetupForm({
-  maxTestDate,
+  today,
   onSave,
   pending,
   error,
 }: {
-  maxTestDate: string | null;
+  today: string;
   onSave: (goal: FreeGoal) => void;
   pending: boolean;
   error: string | null;
 }): JSX.Element {
-  const [date, setDate] = useState("");
+  // Owner brief 2026-10-11 §1: the one SAT-date picker. Empty is "Not sure yet" (saves no dates).
+  const [dates, setDates] = useState<SatDateChoice>({ dates: [] });
   const [score, setScore] = useState("");
   return (
     <section
@@ -178,23 +181,19 @@ function SetupForm({
         onSubmit={(event) => {
           event.preventDefault();
           onSave({
-            target_exam_date: date === "" ? null : date,
+            target_exam_dates: dates.dates,
             target_score: score === "" ? null : Number(score),
           });
         }}
       >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-          <label className={FIELD_LABEL}>
-            Test date
-            <input
-              type="date"
-              value={date}
-              {...(maxTestDate === null ? {} : { max: maxTestDate })}
-              onChange={(event) => setDate(event.target.value)}
-              className={FIELD_INPUT}
-              data-testid="calendar-free-test-date"
-            />
-          </label>
+          <SatDatePicker
+            legend="Test date"
+            value={dates}
+            onChange={setDates}
+            today={today}
+            data-testid="calendar-free-test-dates"
+          />
           <label className={FIELD_LABEL}>
             Target score
             <input

@@ -41,6 +41,14 @@ function bare(
   };
 }
 
+/** QA2-E: the 404 at 1024 too (production re-test 2026-10-08 asks for 1440, 1024 and 390). */
+const W1024 = {
+  name: "w1024",
+  width: 1024,
+  height: 768,
+  selectors: "desktop",
+} as const;
+
 function click(selector: string): {
   click: Record<"desktop" | "mobile", string>;
 } {
@@ -141,24 +149,39 @@ export const UI_59: PageGroup = {
       route: "/guardian-required",
       ready: '[data-testid="guardian-required"]',
     }),
-    // The 404 is the SEO page since the PR 1069 merge (main F6/F2; owner choice 2026-10-05): the
-    // same page as the static 404.html, unshelled, with a link to the homepage.
+    // The 404 is the SEO page (main F6/F2) and, since the production re-test of 2026-10-08
+    // (QA2-E, Karl: "restyle the 404 page with student tokens, fonts and theme"), a Bare-card page
+    // in the visitor's theme. Its one way out fits who is looking: Home for a signed-in student,
+    // the homepage for a signed-out visitor (as the static 404.html, always signed out, renders).
     bare({
       id: "not-found",
       title:
-        '404 (/no-such-page), signed in: the SEO page ("Page not found") and its link home',
+        '404 (/no-such-page), signed in: the Bare card ("Page not found") and Back to Home',
       persona: "paid",
       route: "/no-such-page",
-      ready: 'a[href="/"]',
+      ready: '[data-testid="not-found-way-out"][href="/dashboard"]',
+      extraViewports: [W1024],
+    }),
+    bare({
+      id: "not-found-signed-out",
+      title:
+        "404 (/no-such-page), signed out: the Bare card and Go to the homepage",
+      persona: "signed-out",
+      route: "/no-such-page",
+      ready: '[data-testid="not-found-way-out"][href="/"]',
+      extraViewports: [W1024],
     }),
     {
       id: "not-found-home",
-      title: "Click path: 404 → Go to the homepage lands on /",
+      title: "Click path: 404 (signed in) → Back to Home lands on /dashboard",
       persona: "paid",
       route: "/no-such-page",
-      waitFor: { desktop: 'a[href="/"]', mobile: 'a[href="/"]' },
-      steps: [click('a[href="/"]')],
-      expectPath: "^/$",
+      waitFor: {
+        desktop: '[data-testid="not-found-way-out"]',
+        mobile: '[data-testid="not-found-way-out"]',
+      },
+      steps: [click('[data-testid="not-found-way-out"]')],
+      expectPath: "^/dashboard$",
       prototype: { kind: "none", reason: NOT_PROTOTYPED },
     },
     bare({

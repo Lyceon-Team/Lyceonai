@@ -126,6 +126,14 @@ export type Shot = {
    */
   freshReviewPrompt?: true;
   /**
+   * Owner brief "Question of the Day on Home" (2026-10-08/09): before every capture, today's
+   * (America/Chicago) question is scheduled in the harness database if it is not, and the
+   * persona's QOTD answer for today, its one-item practice session and its daily-email prompt
+   * state are deleted, so each viewport and theme starts unanswered. `priorAsks` seeds that many
+   * earlier prompt asks (on earlier days), e.g. 2 so the next answer is the 3rd ask.
+   */
+  freshQotd?: { priorAsks?: number };
+  /**
    * The visitor already answered the cookie banner (analytics rejected), so the banner does not
    * cover the page's controls. Written as the real consent cookie, in the current banner version,
    * the way the banner itself writes it. Listed in the index next to the shot.
@@ -146,8 +154,38 @@ export type Shot = {
   extraViewports?: readonly ExtraViewport[];
   /** UI-56: a selector the page must show after `steps` (the capture fails otherwise). */
   expectVisible?: string;
+  /**
+   * QA2-D (2026-10-08): a selector whose top edge must be inside the viewport after `steps`, not
+   * merely rendered somewhere down the page (the phone LISA panel brought into view by a tap).
+   * The capture fails otherwise, naming where the top edge was.
+   */
+  expectInView?: string;
+  /**
+   * QA2-F (2026-10-08, Karl: "Full-Length cards: no layout shift on load"): the page's layout
+   * shift during load, summed from a `PerformanceObserver` of `layout-shift` entries (those
+   * without recent input) installed before the first byte, read after the page settles. The
+   * capture records the sum and its largest shifts in the index and fails the run (after writing
+   * the index) when the sum exceeds `max`. `apiDelayMs` answers every `/api/` request that much
+   * later, as a real network does, so the loading state is painted before the data lands (the
+   * harness answers in a few ms, which hides a shift a student sees).
+   */
+  layoutShift?: { max: number; apiDelayMs?: number };
   /** UI-56: a selector the page must NOT show after `steps` (e.g. no bubbles in a new column). */
   expectGone?: string;
+  /**
+   * QA2-A (owner re-test, 2026-10-08): a selector that must, after `steps`, lie wholly inside the
+   * viewport (its bounding box between the top and bottom of the window): the review cap's message
+   * shown at the clicked button, never below the fold. The capture fails otherwise, naming the box.
+   */
+  expectInViewport?: string;
+  /**
+   * QA2-A (owner re-test, 2026-10-08): the persona is at the concurrent review-session cap before
+   * every capture. capture.ts opens review sessions through the REAL create route
+   * (`POST /api/review/sessions`, queue mode) until the server itself refuses one with
+   * `SESSION_LIMIT_EXCEEDED`, and ends the ones it opened through the real terminate route after
+   * the screenshot. The refusal the page then meets is the server's own, not a stub.
+   */
+  reviewCap?: true;
   /**
    * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
    * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`
@@ -172,10 +210,16 @@ export type Shot = {
    * index says so, with `reason`. The body must be built from the shared response schema.
    */
   fulfillRequest?: {
-    method: "GET";
+    method: "GET" | "POST";
     path: string;
     body: unknown;
     reason: string;
+    /**
+     * Entry-aware auth (2026-10-10): the status the browser answers with (default 200). The
+     * harness mounts no `/api/auth` routes (they call Supabase), so a failed email sign-in is
+     * answered here with the real route's 401 and body.
+     */
+    status?: number;
   };
   /**
    * UI-59: requests the browser fails itself (a network error, never reaching the server), for a
@@ -229,6 +273,9 @@ export type PageGroup = {
    * "notifications" (QA 2026-10-07, UI-41): three unread in-app notifications for the paid
    * student, emitted through the real SQL fan-out (`public.emit_notification_event` with
    * `public.notification_event_id`), so the bell's badge and the popover's items are real rows.
+   * "quota-config" (W6 UI-64, OQ-68 (d)): `daily_quota_free` 37 and the diagnostic 6 × 8 = 48 in
+   * the harness database after the base seed (db.ts `applyQuotaConfig`), so the copy's numbers
+   * visibly come from the server config.
    * Off by default, so the other groups' payloads do not change.
    */
   seed?:
@@ -238,7 +285,8 @@ export type PageGroup = {
     | "lisa-history"
     | "mastery-skills"
     | "bare-pages"
-    | "notifications";
+    | "notifications"
+    | "quota-config";
   /**
    * Where the group's evidence goes, relative to the repo root. Defaults to the student-UI Wave 5
    * evidence directory; the SEO vertical's groups write under docs/plans/seo/evidence/.

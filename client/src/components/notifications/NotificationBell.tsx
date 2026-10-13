@@ -139,11 +139,18 @@ function FeedSkeleton({ t }: { t: ToneClasses }): JSX.Element {
 export function NotificationBell({
   tone = "app",
   current = false,
+  railItem,
 }: {
   /** QA 12/13: `student` draws the popover in the student tokens, inside the page's theme. */
   tone?: BellTone;
   /** QA 14: the notifications page is open, so the bell is the current section. */
   current?: boolean;
+  /**
+   * QA2-H (production re-test 2026-10-08): the App shell draws the bell as one of its rail items,
+   * with the rail item's own classes (its active style included) and a visible "Notifications"
+   * label. The shell owns both class strings, so the rail's look has one source.
+   */
+  railItem?: { readonly className: string; readonly labelClassName: string };
 } = {}) {
   const [open, setOpen] = useState(false);
   const [, navigate] = useLocation();
@@ -210,31 +217,50 @@ export function NotificationBell({
 
   const items = feedQuery.data?.items ?? [];
   const student = tone === "student";
+  const triggerName =
+    unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
+  const badge =
+    unread > 0 ? (
+      <span
+        aria-hidden="true"
+        className={t.badge}
+        data-testid="notification-badge"
+      >
+        {unread > 9 ? "9+" : unread}
+      </span>
+    ) : null;
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative"
-          aria-label={
-            unread > 0 ? `Notifications, ${unread} unread` : "Notifications"
-          }
-          aria-current={current ? "page" : undefined}
-          data-testid="button-notifications"
-        >
-          <Bell className="h-5 w-5" />
-          {unread > 0 && (
-            <span
-              aria-hidden="true"
-              className={t.badge}
-              data-testid="notification-badge"
-            >
-              {unread > 9 ? "9+" : unread}
+        {railItem !== undefined ? (
+          <button
+            type="button"
+            className={railItem.className}
+            aria-label={triggerName}
+            aria-current={current ? "page" : undefined}
+            data-testid="button-notifications"
+          >
+            {/* The badge rides the icon, as the rail's lock glyph rides its item. */}
+            <span className="relative inline-flex">
+              <Bell aria-hidden="true" className="h-6 w-6" strokeWidth={1.75} />
+              {badge}
             </span>
-          )}
-        </Button>
+            <span className={railItem.labelClassName}>Notifications</span>
+          </button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative"
+            aria-label={triggerName}
+            aria-current={current ? "page" : undefined}
+            data-testid="button-notifications"
+          >
+            <Bell className="h-5 w-5" />
+            {badge}
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent
         align="end"

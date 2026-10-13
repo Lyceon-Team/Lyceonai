@@ -22,7 +22,7 @@
  */
 import { useDraggable } from "@dnd-kit/core";
 import type { ViewBlock } from "../lib/view-model";
-import { domainChipLabel } from "../lib/blocks";
+import { compactBlockLabel, domainChipLabel } from "../lib/blocks";
 
 const TONE_CLASS: Readonly<Record<ViewBlock["tone"], string>> = {
   math: "math",
@@ -52,6 +52,7 @@ export function BlockCard({
   });
 
   const complete = block.target > 0 && block.actual >= block.target;
+  const compact = compactBlockLabel(block);
 
   /*
    * "Full sitting" belongs to a FULL-LENGTH block and nothing else.
@@ -94,16 +95,37 @@ export function BlockCard({
       data-testid={`calendar-block-${block.blockId}`}
       data-draggable={draggable ? "true" : "false"}
       // The accessible name carries everything the visual card carries, in order, so a
-      // screen-reader user is not told only "Math" and left to guess the rest.
+      // screen-reader user is not told only "Math" and left to guess the rest. It is always the
+      // FULL wording: the full title, never the compact one a narrow column draws, and each
+      // domain by its canonical name, never the chip's short or truncated one (QA2-C).
       aria-label={`${block.title}${block.minutes === null ? "" : `, ${block.minutes}`}${
         block.started && !complete ? ", started" : ""
-      }${block.actual > 0 && !complete ? `, ${block.actual} of ${block.target} done` : ""}`}
+      }${block.actual > 0 && !complete ? `, ${block.actual} of ${block.target} done` : ""}${block.mix
+        .map((entry) => `, ${entry.domain} ${entry.count}`)
+        .join("")}`}
       {...attributes}
       {...listeners}
     >
       <i className="bar" aria-hidden="true" />
       <div className="ttl">
-        {block.title}
+        {/*
+          QA2-C (Karl, 2026-10-08): both wordings are drawn and the stylesheet shows one. The
+          compact one ("Rev 15", `compactBlockLabel`) shows only where the column is too narrow
+          for the full one (a seven-day week under 910px, `calendar-student.css`); the
+          guardian's stylesheet never shows it. Hidden from assistive technology: the card's
+          name already carries the full title. Where the two are the same words (a full-length
+          test, OQ-62 (b)) one span is drawn at every width.
+        */}
+        {compact === block.title ? (
+          <span className="ttl-only">{block.title}</span>
+        ) : (
+          <>
+            <span className="ttl-full">{block.title}</span>
+            <span className="ttl-short" aria-hidden="true">
+              {compact}
+            </span>
+          </>
+        )}
         {block.started && !complete ? (
           <span className="lock" aria-hidden="true">
             🔒 started
@@ -114,8 +136,12 @@ export function BlockCard({
       {block.mix.length > 0 ? (
         <div className="dom">
           {block.mix.map((entry) => (
-            <span key={entry.domain}>
-              {domainChipLabel(entry.domain)} {entry.count}
+            // QA2-C: the name and the count are separate boxes, so a narrow column can cut the
+            // NAME with an ellipsis on one line while the count stays whole. The full canonical
+            // name is the chip's title and is in the card's accessible name.
+            <span key={entry.domain} title={entry.domain}>
+              <span className="dname">{domainChipLabel(entry.domain)}</span>{" "}
+              <span className="dcount">{entry.count}</span>
             </span>
           ))}
         </div>

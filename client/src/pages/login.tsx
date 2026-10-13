@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { isProfileGateSatisfied } from "@lyceon/shared/profile-completion";
 import { useLocation } from "wouter";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
@@ -9,6 +10,7 @@ import {
   postAuthDestination,
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
+import { authEntryFromSearch } from "@lyceon/shared/auth-entry";
 
 /**
  * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (login, signup);
@@ -43,8 +45,14 @@ export default function Login() {
       // No legal document appears here now. What remains is an incomplete
       // account, and the under-13 rule, which is a condition of the Terms rather
       // than a consent state.
+      // Hotfix 2026-10-11: the one shared rule (admins pass), as RequireRole and the server.
       const needsOnboarding =
-        user.requiredProfileComplete === false || !user.profile_completed_at;
+        user.requiredProfileComplete === false ||
+        !isProfileGateSatisfied({
+          isAdmin: user.role === "admin",
+          role: user.role,
+          profileCompletedAt: user.profile_completed_at,
+        });
       // G2-04: an under-13 student with no active guardian link goes to the linking page.
       const needsGuardianLink =
         user.role === "student" && user.guardianConsentRequired === true;
@@ -82,10 +90,21 @@ export default function Login() {
     }
   }, [isAuthenticated, authLoading, user, navigate]);
 
+  // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 4] |
+  // @implemented [2026-10-10] | plain English: the skeleton covers the FIRST auth check only.
+  // `authLoading` is also raised by every submit (signIn / signUp / Google set it while their
+  // request runs), and swapping the form for the skeleton then unmounted it, so a failed email
+  // sign-in came back as a fresh, empty form: the typed email, the inline error and "No account
+  // yet? Create one" were all lost (the toast alone survived). Once the first check has settled
+  // the form stays mounted, and its own buttons show the pending state (`isLoading`). The ref
+  // only ever goes false → true, so writing it during render is idempotent.
+  const firstCheckSettled = useRef(false);
+  if (!authLoading) firstCheckSettled.current = true;
+
   // Show loading skeleton while checking auth state.
   // UI-59: the student placeholder (`Skeleton variant="lyc"`: still, --seg-empty, aria-hidden)
   // inside a polite status region named for what is loading.
-  if (authLoading) {
+  if (authLoading && !firstCheckSettled.current) {
     return (
       <div
         role="status"
@@ -102,6 +121,14 @@ export default function Login() {
     );
   }
 
+  // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 1] |
+  // @implemented [2026-10-10] | plain English: the tab and role the link asked for (`?mode=`,
+  // `?role=`), through the shared allowlist; anything else opens Sign In with no role intent.
+  // Read once per render like `?error=` above; the form takes them as its starting state only.
+  const entry = authEntryFromSearch(
+    typeof window !== "undefined" ? window.location.search : "",
+  );
+
   // Show auth form when ready
   return (
     <div className="flex flex-col gap-4">
@@ -112,7 +139,12 @@ export default function Login() {
           data-testid="login-redirect-error"
         />
       )}
-      <SupabaseAuthForm />
+      {/* Keyed by the entry, so a link from /login to another entry URL starts the form anew. */}
+      <SupabaseAuthForm
+        key={`${entry.mode}:${entry.role ?? ""}`}
+        initialMode={entry.mode}
+        initialRole={entry.role}
+      />
     </div>
   );
 }

@@ -343,6 +343,12 @@ Every question must have a non-empty stem containing the question prompt. An emp
 **13. Stem ≠ passage (`STEM_EQUALS_PASSAGE`).**
 The stem must not be a verbatim copy of the passage. When `trim(stem) === trim(passage)`, the student sees the passage twice and no question prompt. This caught 17 published Transitions questions whose prompt was overwritten by a copy of the passage. A DB CHECK constraint (`questions_stem_ne_passage`) blocks these at publish; the gate rejects them at authoring so batches don't fail at publish time. Gate detector: `stem.trim() === passage.trim()` → FAIL. _(Added 2026-10-08.)_
 
+**14. An underlined target exists (`MISSING_UNDERLINED_TARGET`).**
+A stem that refers to "the underlined sentence / portion / word / ..." must have **exactly one** `<u>…</u>` span in its passage, wrapping the target text (non-blank). Without it the item is unanswerable: the student is asked about an underline they cannot see. Mark the target with the literal tags, e.g. `… begin to reproduce. <u>This adaptation allows the species to survive drought.</u> Researchers …`. Gate detector: `/\bthe\s+underlined\b/i` on the stem → count paired `<u>…</u>` in the passage; anything but one non-blank span = FAIL. _(Added 2026-10-11 after 18 published Text Structure and Purpose passages rendered their tags as text, and the Codex `missing_underlined_target` finding on items with no tag at all.)_
+
+**15. No markup but a paired `<u>` (`RAW_HTML`).**
+Content is text, never HTML. The ONLY markup allowed in any field is a paired, lower-case, attribute-free `<u>…</u>`; the renderers draw that as an underline and print anything else literally. `<b>`, `<i>`, `<br>`, `<U>`, `<u class=…>`, or an unpaired `<u>` / `</u>` = FAIL in stem, passage, every option and the explanation. Gate detector: every `<letter|/|! … >` that is not one of the field's paired `<u>` / `</u>` tags. The same two rules run over the whole seeded bank in CI (`scripts/ci/question-markup-gate.ts`; known missing targets are a shrink-only baseline there). _(Added 2026-10-11.)_
+
 ### Math delimiter convention (Rule 10)
 
 Standardize on `$…$` for inline math and `$$…$$` for display math across the entire bank. Do not use `\(…\)` or `\[…\]` notation. Existing content should be migrated to `$…$` during remediation. Explanations should state why each distractor is wrong, not just why the correct answer is correct.
@@ -544,6 +550,7 @@ If the independent derivation produces a DIFFERENT answer, or if MORE THAN ONE o
 
 | 14 | **Phantom figure reference** | Stem does not reference a visual (`graph`, `figure`, `chart`, etc.) when `assets` is NULL; or the item is self-contained (equation-as-graph is fine) | `PHANTOM_FIGURE` |
 | 15 | **RW longest-answer tell** (batch-level) | ≤35% of RW MCQs in the batch have the correct option strictly longest (random baseline 25%). Fix direction: lengthen distractors, not trim key. | `RW_LONGEST_ANSWER_TELL` |
+| 16 | **Underlined target / markup** | A stem referring to "the underlined …" has exactly one non-blank `<u>…</u>` span in its passage; no field carries any other tag | `MISSING_UNDERLINED_TARGET` / `RAW_HTML` |
 
 ### Scoring
 
@@ -593,7 +600,7 @@ All Reading & Writing questions are passage-based. Each passage supports exactly
 - **Information and Ideas:** Passages present findings, claims, or descriptions. Questions ask about central ideas, supporting evidence, or logical inferences.
 - **Craft and Structure:** Passages may be literary or argumentative. Questions ask about word meaning in context, author purpose, or cross-text comparison (paired passages for Cross-Text Connections).
 - **Expression of Ideas:** Passages are presented as bulleted notes (Rhetorical Synthesis) or paragraphs with transition gaps (Transitions). No traditional continuous prose for Rhetorical Synthesis.
-- **Standard English Conventions:** Passages contain a blank or underlined section where the grammar/punctuation choice is tested. The question asks which option correctly completes the sentence.
+- **Standard English Conventions:** Passages contain a blank or underlined section (an underline is a literal `<u>…</u>`, §A.5 rule 14) where the grammar/punctuation choice is tested. The question asks which option correctly completes the sentence.
 
 **Rhetorical Synthesis special format:** The "passage" for Rhetorical Synthesis is a set of bulleted notes about a topic, followed by a task instruction (e.g., "While writing about X, a student wants to emphasize Y. Which choice most effectively uses relevant information from the notes to accomplish this goal?"). Options are complete sentences.
 

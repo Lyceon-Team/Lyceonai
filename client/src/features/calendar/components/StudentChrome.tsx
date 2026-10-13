@@ -450,11 +450,18 @@ export function GoalCard({
   testDate,
   targetScore,
   projection,
+  streakDays = null,
 }: {
   today: string;
   testDate: string | null;
   targetScore: number | null;
   projection: readonly SectionProjectionDto[] | null;
+  /**
+   * Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the paid card shows
+   * "🔥 N-day streak" (the daily streak, SCL-226). Drawn from 1 day up; 0 or unknown draws
+   * nothing (no guilt copy).
+   */
+  streakDays?: number | null;
 }): JSX.Element {
   const daysToTest =
     testDate === null ? null : Math.max(0, daysBetween(today, testDate));
@@ -514,6 +521,14 @@ export function GoalCard({
           </div>
         )}
       </div>
+      {streakDays !== null && streakDays > 0 ? (
+        <span
+          className="rounded-full border border-lyc-lv2-bd bg-lyc-lv2-bg px-3 py-1 text-lyc-body font-semibold text-lyc-lv2-ink"
+          data-testid="calendar-goal-streak"
+        >
+          🔥 {streakDays}-day streak
+        </span>
+      ) : null}
       <Link
         href={EDIT_GOALS_HREF}
         className={`${LYC_FOCUS} text-lyc-meta-lg font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline`}

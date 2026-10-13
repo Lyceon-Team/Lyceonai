@@ -104,7 +104,6 @@ async function landAnswerAndSignUp(
   await page.getByTestId("input-signup-name").fill("Casey Student");
   await page.getByTestId("input-signup-email").fill("casey@example.test");
   await page.getByTestId("input-signup-password").fill("Str0ngPassw0rd!");
-  await page.getByTestId("checkbox-signup-legal").click();
   await page.getByTestId("button-signup").click();
 }
 

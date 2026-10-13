@@ -220,8 +220,8 @@ const MORE_MENU_BELOW = 1200;
  * and every line of TEXT — measured as laid out (`Range.getClientRects`), against the card and
  * against the element holding it (a chip whose words spill past the chip's own background is
  * as broken as one past the card). Text inside an element that clips (`overflow: hidden`, the
- * truncated "started" tag and the month chip's label) is cut on purpose and is judged by that
- * element's box instead.
+ * truncated "started" tag, the month chip's label, and since QA2-C a scope chip) is cut on
+ * purpose and is judged by that element's box instead.
  */
 async function overflowingCardContent(
   page: Page,
@@ -250,7 +250,20 @@ async function overflowingCardContent(
       ) {
         const holder = node.parentElement;
         if (holder === null || (node.textContent ?? "").trim() === "") continue;
-        if (getComputedStyle(holder).overflowX !== "visible") continue;
+        // Cut on purpose by the element holding it or by a box between it and the card (QA2-C:
+        // a scope chip cuts a word wider than itself with an ellipsis): judged by that box.
+        let clipped = false;
+        for (
+          let a: Element | null = holder;
+          a !== null && a !== card;
+          a = a.parentElement
+        ) {
+          if (getComputedStyle(a).overflowX !== "visible") {
+            clipped = true;
+            break;
+          }
+        }
+        if (clipped) continue;
         const range = document.createRange();
         range.selectNodeContents(node);
         const held = holder.getBoundingClientRect();
@@ -295,6 +308,8 @@ for (const vp of QA_WIDTHS) {
     expect(
       await overflowingCardContent(page, ".lyceon-calendar .block"),
     ).toEqual([]);
+    // QA2-C: and no drawn label breaks inside a word or shows a single letter, at every width.
+    expect((await chipLabelFindings(page, "week")).problems).toEqual([]);
 
     // (d) The header: each control group on one line, and the expected number of rows.
     const header = await page.evaluate(() => {
@@ -458,6 +473,7 @@ for (const vp of QA_WIDTHS) {
     expect(
       await overflowingCardContent(page, ".lyceon-calendar .mchip"),
     ).toEqual([]);
+    expect((await chipLabelFindings(page, "month")).problems).toEqual([]);
 
     // No sideways scroll on the page.
     expect(
@@ -465,6 +481,177 @@ for (const vp of QA_WIDTHS) {
         () => document.documentElement.scrollWidth - window.innerWidth,
       ),
     ).toBeLessThanOrEqual(0);
+  });
+}
+
+/**
+ * The drawn labels of the week cards or the month chips, as laid out: which of them break
+ * inside a word, which show fewer than two letters, and how many are drawn (and how many of
+ * those are the compact form).
+ *
+ * A word breaks when its characters (`Range.getClientRects`, one character at a time) sit on
+ * more than one line. A label's VISIBLE letters are the ones inside its clipping box (the
+ * element itself, or the chip, when that cuts with `overflow: hidden`); a cut label loses one
+ * more to the ellipsis. The count chip (`.dcount`, "5") is not a label and is judged only for
+ * breaks.
+ */
+async function chipLabelFindings(
+  page: Page,
+  surface: "week" | "month",
+): Promise<{
+  problems: string[];
+  drawn: number;
+  compact: number;
+  names: { aria: string; full: string; chips: string[] }[];
+}> {
+  return page.evaluate((which) => {
+    const labelSel =
+      which === "week"
+        ? ".lyceon-calendar .block .ttl-full, .lyceon-calendar .block .ttl-short, .lyceon-calendar .block .ttl-only, .lyceon-calendar .block .dom .dname, .lyceon-calendar .block .dom .dcount"
+        : ".lyceon-calendar .mchip .full, .lyceon-calendar .mchip .short, .lyceon-calendar .mchip .only";
+    const compactSel = which === "week" ? ".ttl-short" : ".mchip .short";
+    const problems: string[] = [];
+    let drawn = 0;
+    let compact = 0;
+    for (const el of Array.from(document.querySelectorAll(labelSel))) {
+      const box = el.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) continue;
+      drawn += 1;
+      if (el.matches(compactSel)) compact += 1;
+      // The nearest box that cuts its content, up to the card or chip.
+      let clip: DOMRect | null = null;
+      for (let a: Element | null = el; a !== null; a = a.parentElement) {
+        if (getComputedStyle(a).overflowX !== "visible") {
+          clip = a.getBoundingClientRect();
+          break;
+        }
+        if (a.matches(".block, .mchip")) break;
+      }
+      const text = el.textContent ?? "";
+      const node = el.firstChild;
+      if (node === null || node.nodeType !== Node.TEXT_NODE) {
+        problems.push(`"${text}" is not one text node`);
+        continue;
+      }
+      const chars: { top: number; visible: boolean }[] = [];
+      for (let i = 0; i < text.length; i += 1) {
+        const range = document.createRange();
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const r = range.getClientRects()[0];
+        chars.push(
+          r === undefined
+            ? { top: Number.NaN, visible: false }
+            : {
+                top: r.top,
+                visible: clip === null || r.right <= clip.right + 0.5,
+              },
+        );
+      }
+      // Words: runs with no space or hyphen in them. A space and a hyphen are where a line
+      // may break ("Full-" over "length test", OQ-62 (b) leaves the sitting unabbreviated);
+      // anywhere else is inside a word.
+      for (const match of Array.from(text.matchAll(/[^\s-]+/g))) {
+        const start = match.index ?? 0;
+        const tops = chars
+          .slice(start, start + match[0].length)
+          .map((c) => c.top)
+          .filter((t) => !Number.isNaN(t));
+        const first = tops[0];
+        if (first !== undefined && tops.some((t) => Math.abs(t - first) > 2)) {
+          problems.push(`"${text}" breaks inside "${match[0]}"`);
+        }
+      }
+      if (el.matches(".dcount")) continue;
+      const cut = chars.some((c) => !c.visible);
+      const letters =
+        chars.filter((c, i) => c.visible && /[A-Za-z]/.test(text[i] ?? ""))
+          .length - (cut ? 1 : 0);
+      if (letters < 2) {
+        problems.push(`"${text}" shows ${letters} letter(s)`);
+      }
+    }
+    // The accessible name: every card's (or chip's) name starts with the full title, and a
+    // card's names each domain by its canonical name (the chip's title).
+    const cardSel =
+      which === "week" ? ".lyceon-calendar .block" : ".lyceon-calendar .mchip";
+    const fullSel = which === "week" ? ".ttl-full, .ttl-only" : ".full, .only";
+    const names = Array.from(document.querySelectorAll(cardSel)).map(
+      (card) => ({
+        aria: card.getAttribute("aria-label") ?? "",
+        full: card.querySelector(fullSel)?.textContent ?? "",
+        chips: Array.from(card.querySelectorAll(".dom > span")).map(
+          (chip) => chip.getAttribute("title") ?? "",
+        ),
+      }),
+    );
+    return { problems, drawn, compact, names };
+  }, surface);
+}
+
+/**
+ * QA2-C (Karl, production re-test 2026-10-08): "Calendar chips at narrow widths: compact labels
+ * that keep the count ('Rev 15', 'Math 5', 'R&W 15') plus color; never a single letter; no
+ * mid-word breaks." At 1024 and 1199 (a seven-day week under 910px) the cards and the month
+ * chips draw the compact label; at 390 (one wide day) the week keeps the full title and the
+ * month's 55px cells the compact one; at 1440 both keep the full wording. At every width no
+ * drawn label breaks inside a word or shows fewer than two letters, and the accessible names
+ * carry the full title and the canonical domain names.
+ *
+ * @spec [production re-test 2026-10-08 item C; Doc 05F §17.1] | @implemented [2026-10-08]
+ */
+/** A block's full §17.1 title at the start of its accessible name (`titleOf`). */
+const FULL_TITLE =
+  /^(Review · \d+ items?|Math · \d+ questions?|Reading & Writing · \d+ questions?|Full-length test)(,|$)/;
+
+for (const vp of [
+  { width: 1024, weekCompact: true, monthCompact: true },
+  { width: 1199, weekCompact: true, monthCompact: true },
+  { width: 390, weekCompact: false, monthCompact: true },
+  { width: 1440, weekCompact: false, monthCompact: false },
+] as const) {
+  test(`QA2-C chip labels @${vp.width}`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: 900 });
+    await serveStudentCalendar(page, F.studentCalendarStarted);
+    await pinBrowserToday(page);
+    await page.goto("/calendar");
+    await page
+      .locator('[data-testid="calendar-week-grid"]')
+      .first()
+      .waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(300);
+
+    for (const surface of ["week", "month"] as const) {
+      if (surface === "month") {
+        await page.locator('[data-testid="calendar-view-month"]').click();
+        await page
+          .locator('[data-testid="calendar-month-grid"]')
+          .waitFor({ timeout: 15_000 });
+        await page.waitForTimeout(200);
+      }
+      const found = await chipLabelFindings(page, surface);
+      // Presence first: labels are drawn, and the compact form exactly where it is meant to be.
+      expect(found.drawn).toBeGreaterThan(0);
+      const wantCompact = surface === "week" ? vp.weekCompact : vp.monthCompact;
+      if (wantCompact) expect(found.compact).toBeGreaterThan(0);
+      else expect(found.compact).toBe(0);
+      expect(found.problems).toEqual([]);
+      expect(found.names.length).toBeGreaterThan(0);
+      for (const name of found.names) {
+        // The full §17.1 title (`titleOf`), whatever the chip draws.
+        expect(name.aria).toMatch(FULL_TITLE);
+        if (surface === "week") {
+          expect(name.aria.startsWith(name.full)).toBe(true);
+        }
+        for (const domain of name.chips) {
+          expect(domain.length).toBeGreaterThan(1);
+          expect(name.aria).toContain(domain);
+        }
+      }
+      if (surface === "week") {
+        expect(found.names.some((n) => n.chips.length > 0)).toBe(true);
+      }
+    }
   });
 }
 

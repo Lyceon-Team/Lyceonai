@@ -109,11 +109,18 @@ export function QotdWidget({
   if (today.isError) {
     const notYet =
       today.error instanceof QotdRequestError && today.error.status === 404;
+    // QOTD resilience brief (Karl, 2026-10-09) §1, the homepage's no-question state (an SEO-owned
+    // surface: only this state changed): one collapsed line, no empty card, no error, no spinner.
+    if (notYet) {
+      return (
+        <p className="m-0 text-lg" data-testid="qotd-none">
+          Today&apos;s question is on its way. Check back soon.
+        </p>
+      );
+    }
     return (
       <p className="text-muted-foreground" data-testid="qotd-unavailable">
-        {notYet
-          ? "Today's question is not up yet. Check back soon."
-          : "Today's question could not be loaded. Please try again later."}
+        Today&apos;s question could not be loaded. Please try again later.
       </p>
     );
   }

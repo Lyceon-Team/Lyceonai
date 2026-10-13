@@ -254,6 +254,8 @@ export const PROFILE_ROW = {
    * round trip. Production's own value for the student in Brief 13.
    */
   target_exam_date: "2026-12-05",
+  /** SCL-223: the stored dates the effective date above is derived from. */
+  target_exam_dates: ["2026-12-05"],
   target_score: 1400,
   study_days_mask: 127,
   daily_minutes: 60,

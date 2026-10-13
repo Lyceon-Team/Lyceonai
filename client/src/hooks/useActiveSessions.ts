@@ -56,10 +56,15 @@ export function useActiveSessions() {
 
   const sessions: ActiveSession[] = data?.sessions ?? [];
   const maxConcurrentSessions = data?.maxConcurrentSessions ?? null;
+  // OQ-68 (d) / UI-64: the diagnostic's configured length and per-domain count (Home's card).
+  const diagnosticTotalQuestions = data?.diagnosticTotalQuestions ?? null;
+  const diagnosticPerDomain = data?.diagnosticPerDomain ?? null;
 
   return {
     sessions,
     maxConcurrentSessions,
+    diagnosticTotalQuestions,
+    diagnosticPerDomain,
     isLoading,
     isError,
     error,

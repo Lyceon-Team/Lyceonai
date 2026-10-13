@@ -60,6 +60,7 @@
 | R18 | One question per America/Chicago day, never repeated — enforced by a schedule table (`qotd_date` PK, `question_id` UNIQUE). |
 | R19 | Abuse protection: Cloudflare Turnstile on submit + durable hashed-IP rate limit (SCL). |
 | R20a | Public question exposure: the dated QOTD archive, plus each skill's public page may show up to 2 previous QOTD questions from that skill as a funnel. No other bank content goes public. |
+| R20b | Readability (Karl, option B, 2026-10-09): the QOTD is quick to read — multiple choice only; no "Text 1 / Text 2" paired passages; Math passage + question text ≤ 400 characters; Reading and Writing passage ≤ 300 characters (about 50 words) and passage + question text ≤ 400 characters (added by Karl, 2026-10-10: a short passage had carried an 882-character stem through). Thresholds live in `shared/qotd/readability.ts`, shared by the scheduler and the social generator. A domain with nothing readable left passes to the next domain in the rotation; already-scheduled upcoming days (after today, Chicago) that fail are replaced by the same selection; today, past days and archive pages never change. Read-only production check: `scripts/prod-verify/qotd-readability-upcoming.sql`. |
 | R20 | Reddit: owned subreddit, AI posting account and LISA public answering are post-launch. Other channels now; named-human r/SAT presence allowed. |
 
 ### Content, channels, email, paid
@@ -204,7 +205,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | C2 | Keyword-map pages: practice hubs/skill pages (each skill page shows up to 2 previous QOTD questions from that skill, nothing else from the bank), good-SAT-score + score-level pages, free practice test → diagnostic, parent pages, online prep landing, how-to guides | GSC: each page indexed (SHOT/READ) |
 | C3 | Publish gate: automated checks (doctrine rules, sources present, banned phrases, meta lengths, links resolve) + Karl approval; automation dial per R21 | CI: planted unsourced/proprietary claim is blocked |
 | C4 | Rewrite the 5 existing posts | HTTP live + passes gate |
-| C5 | AI CMO in Slack (Claude Tag) | SHOT: idea → brief → draft → approval thread |
+| C5 | AI CMO in Slack (Claude Tag). **Moved to post-launch by Karl's ruling, 2026-10-07**; its working instructions are committed as the `ai-cmo` skill (`.claude/skills/ai-cmo/SKILL.md`) | SHOT: idea → brief → draft → approval thread |
 
 ### Wave 4 — Distribution
 
@@ -212,7 +213,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 |---|---|---|
 | D1 | QOTD to X, Instagram, TikTok, Facebook, YouTube, Threads via official APIs/schedulers | SHOT: published posts |
 | D2 | Discord server; named-human r/SAT presence | SHOT |
-| D3 | Marketing email lane: Resend broadcasts by audience bucket, one-click `List-Unsubscribe`, consent artifact live | READ/SHOT test broadcast + unsubscribe |
+| D3 | Marketing email lane: Resend broadcasts by audience bucket, one-click `List-Unsubscribe`, consent artifact live. **Sync built 2026-10-07** (owner brief "SEO vertical — email lane"): daily reconcile Lyceon → Resend segments `Marketing — students` / `Marketing — guardians`, unsubscribe + complaint back-sync by webhook, removal at deletion request and at deletion; contract §14, runbook `docs/runbooks/marketing-email-resend.md` | READ/SHOT test broadcast + unsubscribe; READ segment counts vs `marketing_email_audience()` after deploy |
 | D4 | Trustpilot invites (guardians + 18+) and testimonial display per R29 | SHOT; WALK |
 | D5 | `/brag` video — script approved by Karl before production | Karl approval + published asset |
 
@@ -224,7 +225,7 @@ Tracks without a dependency run in parallel. A new finding becomes a new row wit
 | P2 | PostHog experiments when traffic supports a readable result. **The homepage hero experiment started early by Karl's ruling, 2026-10-05 (F13 decision 6; SCL-213 IS 7); further experiments stay here.** | SHOT experiment config + result |
 
 ### Post-launch (parked)
-Average score improvement (R31) · owned subreddit + Reddit API approval · LISA public presence · AI agents on social · competitor comparison pages · SAT prep app page · on-camera video.
+AI CMO in Slack (C5; Karl, 2026-10-07) · Average score improvement (R31) · owned subreddit + Reddit API approval · LISA public presence · AI agents on social · competitor comparison pages · SAT prep app page · on-camera video.
 
 ---
 
@@ -280,3 +281,13 @@ Found while drafting Doc 10A (`docs/plans/seo/doc-10a-draft.md`). Logged here, n
 | FU9 | At Doc 10A lock: registry `owning_doc` `Doc-10` → `Doc-10A` on the `unauth_marketing` content rows; claim inventory and guard messages move from a–e to Doc 10A §3.2's categories | `infra/route-surface-classification.yaml`; `docs/compliance/claim-inventory.md`; `tests/ci/public-copy-claims.contract.test.ts` | `route:validate` green; inventory carries the new labels |
 | FU10 | CSP tightening audit: identify what needs `'unsafe-eval'` (Desmos today) and `style-src 'unsafe-inline'` (React style attributes, Radix positioning) and remove each where possible, for example by isolating Desmos in a sandboxed cross-origin iframe. Both are kept with the reason recorded until then (Karl, 2026-10-05; Doc 10A §4.6) | `vercel.json:52`; `tests/ci/page-security-headers.ci.test.ts:85-95` | Audit note per allowance; each removal proved by `tests/ci/page-security-headers.ci.test.ts` and the page-CSP gate (`ci.yml:163-167`) |
 | FU11 | Stale comment: `client/src/lib/analytics/posthog-client.ts:20` says session recording "stays off until F15 ships"; Karl enabled the PostHog project's recording on 2026-10-05 after F15 shipped (Doc 10A draft §6.5) | `client/src/lib/analytics/posthog-client.ts:20` | Comment matches the project setting |
+
+## 11. Changes to SEO-owned surfaces made outside `seo`
+
+Recorded so the `seo` owner and Codex see them; each is the minimum the cross-vertical brief needed.
+
+| # | Change | Where | Brief / proof |
+|---|---|---|---|
+| X1 | Homepage QOTD no-question state (a 404 `qotd_not_scheduled` from `GET /api/public/qotd/today`): was the line "Today's question is not up yet. Check back soon."; now a single collapsed line "Today's question is on its way. Check back soon." (no empty card, no error, no spinner). Only that state changed; the load-failure line, the question, the reveal and the API are untouched. The same widget also serves the hub (`/sat-question-of-the-day`); the archive-day pages do not use it | `client/src/components/qotd/QotdWidget.tsx` (the `notYet` branch) | Owner brief "QOTD resilience" (Karl, 2026-10-09) §1; `client/src/components/qotd/QotdWidget.test.tsx` ("collapses to 'on its way'"), planted by `scripts/ci/qotd-resilience.mutations.sh` R13. PR into `cleanup` |
+| X2 | The QOTD schedule job (`/api/internal/qotd-schedule`) now runs through `runMonitoredQotdSchedule`: one summary log line per run, every unfilled day at ERROR, and owner alerts (Slack + email) when it throws, leaves a day unfilled, or leaves the horizon under 7 days. The fill itself (`schedule-job.ts`, rotation, eligibility, the deploy hook) is unchanged | `server/services/qotd/qotd-health.ts`; `server/routes/internal-cron-routes.ts` | Same brief §2-§3; `tests/ci/qotd-resilience.pg.ci.test.ts` |
+| X3 | Link targets only, nothing visual (owner brief "Entry-aware sign-in / sign-up", Karl 2026-10-10, rule 6). Each auth CTA now names the auth page's mode, and the parent button its role: "Sign in" → `/login?mode=signin`; "Get started", "Get started free" and the paid card's "Get started" → `/login?mode=signup`; "Start the free diagnostic" → `/login?mode=signup&next=/practice/diagnostic` (was `next=/dashboard`; it now lands in the diagnostic, rule 3); "I'm a parent or guardian" → `/login?mode=signup&role=guardian&next=/guardian`; "Try … more questions free" and "Start practicing free →" → `/login?mode=signup&next=/dashboard` (they shared the diagnostic link before; destination kept). Labels, styles, layout and copy are unchanged; the one shared module is `client/src/lib/marketing-links.ts`, so the content pages' "Start the free diagnostic" follows it too | `client/src/lib/marketing-links.ts`; `client/src/pages/home.tsx` (hrefs and one source comment); `client/src/components/marketing/HomeNav.tsx`, `client/src/components/layout/PublicNavBar.tsx` (hrefs); `client/src/components/content/ContentArticle.tsx` unchanged (consumes the constant) | Brief rules 1, 3, 6; `client/src/pages/auth-entry.cta.test.tsx` reads every CTA's href off the rendered homepage and public header and lands each on the auth page. PR into `cleanup` |

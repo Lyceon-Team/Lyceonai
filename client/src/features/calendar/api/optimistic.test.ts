@@ -125,6 +125,7 @@ const READY: CalendarResponse = {
   profile: {
     timezone: TZ,
     target_exam_date: "2026-11-07",
+    target_exam_dates: ["2026-11-07"],
     target_score: 1400,
     study_days_mask: 62,
     daily_minutes: 45,
@@ -237,6 +238,7 @@ const SETUP_REQUIRED: CalendarResponse = {
     default_full_length_interval_weeks: 2,
     default_full_length_weekday: 6,
     final_exam_lead_days: 7,
+    target_exam_dates: [],
   },
 };
 

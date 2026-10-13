@@ -148,7 +148,101 @@ export const qotdArchiveIndexResponseSchema = z
   })
   .strict();
 
+/**
+ * The ONLY input the QOTD social assets (image + caption + alt text) are built from.
+ *
+ * @spec [Doc 10A §7 ("no answer is revealed before submitting"), §11 (the QOTD is the first
+ *       social stream); owner decisions 2026-10-07 on the QOTD social assets (GitHub run
+ *       downloads; portrait 1080x1350 + story 1080x1920; choice order fixed per day)]
+ *       | @implemented [2026-10-07]
+ *
+ * plain English: the pre-submit shape, with the answer and the explanation as the literal
+ * `null` and STRICT, so a payload that carries either fails to parse. The generator
+ * (scripts/qotd-social/generate.ts) cannot leak what it is never given. Options are plain texts
+ * in display order (letters come from position); grid-in has none.
+ */
+export const qotdSocialInputSchema = z
+  .object({
+    qotd_date: qotdDateSchema,
+    section_code: z.enum(["M", "RW"]),
+    domain: z.string().min(1),
+    item_type: z.enum(["mcq", "grid_in"]),
+    stem: z.string().min(1),
+    passage: z.string().nullable(),
+    options: z.array(z.object({ text: z.string() }).strict()),
+    correct_answer: z.null(),
+    explanation: z.null(),
+  })
+  .strict()
+  .refine(
+    (q) =>
+      q.item_type === "mcq" ? q.options.length === 4 : q.options.length === 0,
+    "an MCQ has four options; a grid-in has none",
+  );
+
+/** The caption and alt text posted with the images. */
+export const qotdSocialCopySchema = z
+  .object({ caption: z.string().min(1), alt_text: z.string().min(1).max(1000) })
+  .strict();
+
+/**
+ * The publish manifest: what the generator hands the Slack poster for one day.
+ *
+ * @spec [Doc 10A §7 ("no answer is revealed before submitting"), §11; owner brief 2026-10-10
+ *       (QOTD social assets to Slack: "never post a day with a leak-check failure", the date and
+ *       section with the caption and alt text)] | @implemented [2026-10-10]
+ *
+ * plain English: scripts/qotd-social/generate.ts writes post.json ONLY when every check passed,
+ * and the poster (scripts/qotd-social/post-to-slack.ts) posts nothing without it. `leaks` says
+ * how the leak check went: "passed" when the day's answer was known and socialAssetLeaks found
+ * nothing (a past day), or "no-answer-in-source" for today, whose public pre-submit payload
+ * carries the answer and explanation as the literal null (qotdSocialInputSchema), so there is
+ * nothing to leak and nothing to check against. Any other value fails to parse.
+ */
+export const qotdSocialPostManifestSchema = z
+  .object({
+    qotd_date: qotdDateSchema,
+    section: z.enum(["Math", "Reading and Writing"]),
+    source: z.enum(["today", "past"]),
+    caption: z.string().min(1),
+    alt_text: z.string().min(1).max(1000),
+    images: z
+      .array(
+        z
+          .object({
+            format: z.enum(["portrait", "story"]),
+            file: z
+              .string()
+              .regex(/^qotd-\d{4}-\d{2}-\d{2}-(portrait|story)\.png$/),
+          })
+          .strict(),
+      )
+      .min(1),
+    checks: z
+      .object({
+        input: z.literal("passed"),
+        copy: z.literal("passed"),
+        reveal_wording: z.literal("passed"),
+        leaks: z.enum(["passed", "no-answer-in-source"]),
+      })
+      .strict(),
+  })
+  .strict()
+  .refine(
+    (m) => m.source === "past" || m.checks.leaks === "no-answer-in-source",
+    "today's source has no answer to check against",
+  )
+  .refine(
+    (m) => m.source === "today" || m.checks.leaks === "passed",
+    "a past day's leak check must have run and passed",
+  );
+
 export type QotdOption = z.infer<typeof qotdOptionSchema>;
+export type QotdSocialInput = z.infer<typeof qotdSocialInputSchema>;
+export type QotdSocialCopy = z.infer<typeof qotdSocialCopySchema>;
+export type QotdSocialPostManifest = z.infer<
+  typeof qotdSocialPostManifestSchema
+>;
 export type QotdServedOption = z.infer<typeof qotdServedOptionSchema>;
 export type QotdPreSubmitQuestion = z.infer<typeof qotdPreSubmitQuestionSchema>;
 export type QotdStat = z.infer<typeof qotdStatSchema>;

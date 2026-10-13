@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { createClient } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
+import { sanitizeReturnPath } from "../../packages/shared/src/return-path";
 import {
   requireSupabaseAuth,
   getSupabaseAdmin,
@@ -27,6 +28,7 @@ import {
   revokeOtherSessionsAfterRecovery,
 } from "../lib/password-credentials.js";
 import { isAdminRoleRequest } from "../lib/auth-role.js";
+import { parseSignupRoleIntent } from "../../packages/shared/src/auth-entry";
 import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
@@ -55,21 +57,31 @@ const signupSchema = z.object({
   email: z.string().email(),
   password: passwordSchema,
   displayName: z.string().trim().min(1).max(120).optional(),
-  legalConsent: z.object({
-    studentTermsAccepted: z.literal(true),
-    privacyPolicyAccepted: z.literal(true),
-    consentSource: z
-      .enum([
-        "email_signup_form",
-        "google_continue_pre_oauth",
-        "google_continue_click",
-      ])
-      .optional(),
-  }),
+  // SCL-222 (owner ruling 2026-10-09): the sign-in notice under the buttons replaces the Terms
+  // checkbox, and acceptance is recorded at account creation — here, on every successful signup.
+  // The field is optional: it only labels the row's consent source, never decides whether one is
+  // written. Older clients that still send the two `true` flags are accepted unchanged.
+  legalConsent: z
+    .object({
+      studentTermsAccepted: z.literal(true).optional(),
+      privacyPolicyAccepted: z.literal(true).optional(),
+      consentSource: z
+        .enum([
+          "email_signup_form",
+          "google_continue_pre_oauth",
+          "google_continue_click",
+        ])
+        .optional(),
+    })
+    .optional(),
   role: z.unknown().optional(),
   // SCL-201 IS 6: the first-touch channel the browser derived in memory. Parsed by
   // recordSignupSource, never here — a bad value is dropped, it never refuses a signup.
   signupSource: z.unknown().optional(),
+  // Owner brief 2026-10-10 (follow-up to #1188): the page the visitor signed up FROM (e.g.
+  // `/upgrade?promo=…`). Re-sanitised below with the one return-path allowlist; an unsafe or
+  // unknown value is dropped, never a refusal.
+  next: z.unknown().optional(),
 });
 
 /**
@@ -144,8 +156,20 @@ router.post(
       }
 
       const { email, password, displayName, legalConsent } = validation.data;
+      // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 2] |
+      // @implemented [2026-10-10] | plain English: a sign-up that came through "I'm a parent or
+      // guardian" names `role: "guardian"`, and the account is created as a guardian (the
+      // handle_new_user trigger reads this metadata and maps anything but 'guardian' to
+      // 'student'). Before, every sign-up was created as a student and the guardian choice
+      // depended on onboarding still seeing `next=/guardian`, which an email-confirmation link
+      // does not carry. Both roles are self-assignable (server/lib/role-choice.ts), so this grants
+      // nothing the onboarding form does not; admin was refused above. Unknown → student.
+      const signupRole =
+        parseSignupRoleIntent(validation.data.role) === "guardian"
+          ? "guardian"
+          : "student";
       const consentSource: ConsentSource =
-        legalConsent.consentSource ?? "email_signup_form";
+        legalConsent?.consentSource ?? "email_signup_form";
 
       // In test env we skip making real Supabase calls; behave like signup
       // failed so that downstream logic doesn't try to set cookies.
@@ -166,7 +190,17 @@ router.post(
       // establishes the SAME @supabase/ssr session as every other entry method — no custom token
       // handling. Omitted (not set to undefined) when PUBLIC_SITE_URL is absent.
       const siteUrl = (process.env.PUBLIC_SITE_URL || "").replace(/\/$/, "");
-      const emailRedirectTo = siteUrl ? `${siteUrl}/auth/callback` : null;
+      // THE RETURN LINK RIDES THE CONFIRMATION LINK (owner brief 2026-10-10). Without it a
+      // visitor who signed up by email from `/upgrade?promo=…` confirmed and landed on the
+      // default page: the link was dropped here. `sanitizeReturnPath` is the same allowlist
+      // the callback re-applies (`parseSafeNext`), and the shape is the one password recovery
+      // already sends (`/auth/callback?next=…`), so the redirect allowlist already admits it.
+      const signupNext = sanitizeReturnPath(validation.data.next);
+      const emailRedirectTo = siteUrl
+        ? `${siteUrl}/auth/callback${
+            signupNext ? `?next=${encodeURIComponent(signupNext)}` : ""
+          }`
+        : null;
 
       // Sign up user with Supabase Auth
       const { data: authData, error: signupError } = await supabase.auth.signUp(
@@ -177,8 +211,9 @@ router.post(
             ...(emailRedirectTo ? { emailRedirectTo } : {}),
             data: {
               display_name: displayName || email.split("@")[0],
-              // Safe temporary backend role until profile-complete finalization.
-              role: "student",
+              // The sign-up's role intent (above): guardian or student. Onboarding can still
+              // change it once, before completion (decideRoleChoice).
+              role: signupRole,
             },
           },
         },
@@ -210,7 +245,11 @@ router.post(
       // admin client for the durable consent capture below.
       const admin = getSupabaseAdmin();
 
-      await recordSignupSource(authData.user.id, validation.data.signupSource, req.requestId);
+      await recordSignupSource(
+        authData.user.id,
+        validation.data.signupSource,
+        req.requestId,
+      );
 
       // AS-1: durable + non-throwing. A SINGLE-store failure keeps the signup (outbox absorbs it).
       // Only when consent can't be captured ANYWHERE (both stores down) do we fail closed — consent is
@@ -301,6 +340,7 @@ router.post(
       logger.info("AUTH", "signup_success", "User signed up successfully", {
         userId: authData.user.id,
         canonicalSessionEstablished: hasCanonicalSession,
+        role: signupRole,
         requestId: req.requestId,
       });
 
@@ -437,7 +477,9 @@ router.post(
       // Doc 07A §6.2 user_signed_out. Only an explicit sign-out reaches this route; expiry and
       // security logouts are never observed here, so `explicit` is the only value emitted.
       if (req.user?.id) {
-        await emitEvent(req.user.id, "user_signed_out", { signout_trigger: "explicit" });
+        await emitEvent(req.user.id, "user_signed_out", {
+          signout_trigger: "explicit",
+        });
       }
 
       res.json({

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
-import { invalidateProgressKpis } from "@/hooks/useProgressKpis";
 import { csrfFetch } from "@/lib/csrf";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { invalidateSessionReads } from "@/lib/session-reads";
 import { isSubmittableAnswer } from "@/lib/practice-submission";
+import {
+  createCalculatorSaver,
+  type CalculatorSaver,
+} from "@/lib/calculator-saver";
 import {
   type EngineConfig,
   type ReviewSessionSpec,
@@ -69,6 +72,14 @@ export type PracticeQuestion = {
   section?: string | null;
   options?: PracticeOption[] | null;
   assets?: PracticeAssets | null;
+  /**
+   * @spec [owner brief "Question metadata header" (Karl, 2026-10-13) §1] | @implemented [2026-10-13]
+   * plain English: the served item's domain, skill and difficulty (as served, 1-3) for the
+   * runner's question header. Taxonomy only, never answer data; null when the payload has none.
+   */
+  domain?: string | null;
+  skill?: string | null;
+  difficulty?: string | number | null;
 };
 
 export type PracticeNextResponse = {
@@ -169,6 +180,13 @@ function isGridIn(question: PracticeQuestion | null): boolean {
   );
 }
 
+/** A trimmed, non-empty string, or null (the question header's domain and skill). */
+function nonEmptyText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeQuestion(
   raw: PracticeQuestion | null,
 ): PracticeQuestion | null {
@@ -212,6 +230,12 @@ function normalizeQuestion(
     section,
     options: isGrid ? [] : options,
     assets: normalizeAssets(raw.assets),
+    domain: nonEmptyText(raw.domain),
+    skill: nonEmptyText(raw.skill),
+    difficulty:
+      typeof raw.difficulty === "string" || typeof raw.difficulty === "number"
+        ? raw.difficulty
+        : null,
   };
 }
 
@@ -280,6 +304,93 @@ export function useCanonicalPractice(
     "created" | "active" | "completed" | "abandoned"
   >("created");
   const [calculatorState, setCalculatorState] = useState<unknown | null>(null);
+  const [calculatorSaveFailed, setCalculatorSaveFailed] = useState(false);
+  /** Filled by the mounted DesmosCalculator: emits its pending change now (see `flushRef`). */
+  const calculatorFlushRef = useRef<(() => void) | null>(null);
+  /** What a calculator save needs at the moment it runs (the saver outlives renders). */
+  const calculatorTarget = useRef({
+    sessionId: null as string | null,
+    open: true,
+    engine,
+    clientInstanceId,
+  });
+  /**
+   * @spec [Doc-02B_v4 §14, §28; register G-NEW-14; owner brief 2026-10-12 ("Calculator state
+   *       saves: only when needed")] | @implemented [2026-10-12]
+   * plain English: the calculator's state reaches the server only at the save moments (see
+   * calculator-saver.ts): leaving or submitting the question, closing the calculator or
+   * switching its tab, the page going hidden or closing (`keepalive`), and 10 s after the last
+   * change. It used to post on every 600 ms pause in typing — about once a second in production
+   * (G-NEW-14). A save whose state the server already holds is skipped. A failed save shows the
+   * UI-10 notice and is retried at the next save moment. The response is not fed back into the
+   * calculator: the server stores it as jsonb (keys reordered), and re-applying it would reset
+   * the calculator under the student.
+   */
+  const calculatorSaverRef = useRef<CalculatorSaver | null>(null);
+  if (calculatorSaverRef.current === null) {
+    calculatorSaverRef.current = createCalculatorSaver({
+      canSend: () =>
+        calculatorTarget.current.sessionId !== null &&
+        calculatorTarget.current.open,
+      send: async (nextCalculatorState, { keepalive }) => {
+        const target = calculatorTarget.current;
+        if (target.sessionId === null) return;
+        const res = await csrfFetch(
+          target.engine.endpoints.calculatorState(target.sessionId),
+          {
+            method: "POST",
+            credentials: "include",
+            keepalive,
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              client_instance_id: target.clientInstanceId,
+              calculator_state: nextCalculatorState,
+            }),
+          },
+        );
+        if (!res.ok) {
+          throw new Error(`Failed to persist calculator state (${res.status})`);
+        }
+      },
+      onResult: (ok) => setCalculatorSaveFailed(!ok),
+    });
+  }
+  const calculatorSaver = calculatorSaverRef.current;
+
+  /**
+   * A calculator state from the server (resume, start, `/next`). It is what the server holds,
+   * so it counts as saved. It replaces the calculator's state only when it differs from what the
+   * calculator already shows, and never over a local change that has not been saved yet (a
+   * failed save): that change stays, and is saved at the next save moment.
+   */
+  const receiveCalculatorState = useCallback(
+    (incoming: unknown | null): void => {
+      if (calculatorSaver.hasUnsaved()) return;
+      const alreadyShown = calculatorSaver.isLatest(incoming);
+      calculatorSaver.seed(incoming);
+      if (!alreadyShown) setCalculatorState(incoming);
+    },
+    [calculatorSaver],
+  );
+
+  /** Emit the calculator's pending change, then save if the server does not hold it yet. */
+  const commitCalculatorState = useCallback(
+    (opts?: { keepalive?: boolean }): Promise<void> => {
+      calculatorFlushRef.current?.();
+      return calculatorSaver.flush(opts);
+    },
+    [calculatorSaver],
+  );
+
+  const noteCalculatorChange = useCallback(
+    (nextCalculatorState: unknown): void => {
+      calculatorSaver.change(nextCalculatorState);
+    },
+    [calculatorSaver],
+  );
   /**
    * True once `/next` has answered 409 `session_closed` (F-53, UI-53): the session is over and
    * there is no next item. Separate from `sessionState`, which the answer response also sets to
@@ -376,7 +487,7 @@ export function useCanonicalPractice(
         if (
           Object.prototype.hasOwnProperty.call(resumeBody, "calculatorState")
         ) {
-          setCalculatorState(resumeBody.calculatorState ?? null);
+          receiveCalculatorState(resumeBody.calculatorState ?? null);
         }
         return resumeBody.sessionId;
       }
@@ -426,7 +537,7 @@ export function useCanonicalPractice(
 
       setSessionId(started.sessionId);
       if (Object.prototype.hasOwnProperty.call(started, "calculatorState")) {
-        setCalculatorState(started.calculatorState ?? null);
+        receiveCalculatorState(started.calculatorState ?? null);
       }
       return started.sessionId;
     })();
@@ -443,6 +554,7 @@ export function useCanonicalPractice(
     engine,
     forceTakeover,
     initialSessionId,
+    receiveCalculatorState,
     section,
     sessionId,
     sessionSpec,
@@ -474,6 +586,9 @@ export function useCanonicalPractice(
       setError(null);
 
       try {
+        // Leaving the question is a save moment, and `/next` serves the saved state back: the
+        // save lands first.
+        await commitCalculatorState();
         const effectiveSessionId = await ensureSession();
         const nextRes = await csrfFetch(
           engine.endpoints.next(effectiveSessionId, clientInstanceId),
@@ -512,7 +627,7 @@ export function useCanonicalPractice(
         setQuestion(normalizeQuestion(data.question ?? null));
         if (data.state) setSessionState(data.state);
         if (Object.prototype.hasOwnProperty.call(data, "calculatorState")) {
-          setCalculatorState(data.calculatorState ?? null);
+          receiveCalculatorState(data.calculatorState ?? null);
         }
 
         if (typeof data.totalQuestions === "number")
@@ -538,7 +653,14 @@ export function useCanonicalPractice(
       } finally {
         setIsLoading(false);
       }
-    }, [clientInstanceId, engine, ensureSession, resetPerQuestionState]);
+    }, [
+      clientInstanceId,
+      commitCalculatorState,
+      engine,
+      ensureSession,
+      receiveCalculatorState,
+      resetPerQuestionState,
+    ]);
 
   const fetchNextQuestion =
     useCallback((): Promise<PracticeNextResponse | null> => {
@@ -565,6 +687,8 @@ export function useCanonicalPractice(
       }
 
       setSubmitBlocked(null);
+      // Submitting the question is a save moment (not awaited: the answer does not wait on it).
+      void commitCalculatorState();
 
       setIsSubmitting(true);
       setSubmitKind(opts.skipped ? "skip" : "answer");
@@ -623,10 +747,6 @@ export function useCanonicalPractice(
           sessionId: effectiveSessionId,
         });
         if (data.state) setSessionState(data.state);
-        // Owner ruling 2026-10-01: the KPI read no longer polls, so the answer that completes
-        // the session marks it stale (practice and review both run through this hook).
-        if (data.state === "completed")
-          void invalidateProgressKpis(queryClient);
 
         if (data.stats) {
           setScore((prev) => mergeStats(prev, data.stats));
@@ -677,6 +797,7 @@ export function useCanonicalPractice(
     [
       clientInstanceId,
       clientAttemptId,
+      commitCalculatorState,
       currentAnswer,
       engine,
       ensureSession,
@@ -697,44 +818,35 @@ export function useCanonicalPractice(
     await submitAnswer({ skipped: true });
   }, [question, submitAnswer]);
 
-  const persistCalculatorState = useCallback(
-    async (nextCalculatorState: unknown | null) => {
-      if (!sessionId) return null;
-      if (sessionState === "completed" || sessionState === "abandoned")
-        return null;
+  calculatorTarget.current = {
+    sessionId,
+    open: sessionState !== "completed" && sessionState !== "abandoned",
+    engine,
+    clientInstanceId,
+  };
 
-      const res = await csrfFetch(engine.endpoints.calculatorState(sessionId), {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          client_instance_id: clientInstanceId,
-          calculator_state: nextCalculatorState,
-        }),
-      });
-
-      const payloadBody = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        throw new Error(`Failed to persist calculator state (${res.status})`);
+  /**
+   * The page going hidden or closing is a save moment (`keepalive`, so the request outlives the
+   * page); so is the runner unmounting (leaving the session).
+   */
+  useEffect(() => {
+    const onVisibility = (): void => {
+      if (document.visibilityState === "hidden") {
+        void commitCalculatorState({ keepalive: true });
       }
-
-      const data = (payloadBody ?? {}) as { calculatorState?: unknown | null };
-      const value = Object.prototype.hasOwnProperty.call(
-        data,
-        "calculatorState",
-      )
-        ? (data.calculatorState ?? null)
-        : nextCalculatorState;
-
-      setCalculatorState(value ?? null);
-      return value ?? null;
-    },
-    [clientInstanceId, engine, sessionId, sessionState],
-  );
+    };
+    const onPageHide = (): void => {
+      void commitCalculatorState({ keepalive: true });
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      void commitCalculatorState({ keepalive: true });
+      calculatorSaver.dispose();
+    };
+  }, [calculatorSaver, commitCalculatorState]);
 
   useEffect(() => {
     fetchNextQuestion();
@@ -794,7 +906,10 @@ export function useCanonicalPractice(
     nextQuestion,
     handleMissingMcChoices,
     calculatorState,
-    persistCalculatorState,
+    noteCalculatorChange,
+    commitCalculatorState,
+    calculatorFlushRef,
+    calculatorSaveFailed,
     submitBlocked,
     setForceTakeover,
     /** The served item's id — what a scoped LISA conversation anchors to (W4-1). */

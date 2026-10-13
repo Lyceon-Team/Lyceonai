@@ -11,7 +11,8 @@
  * row on a phone. A signed-in visitor sees "Dashboard" instead of the two account buttons.
  */
 import { Link } from "wouter";
-import { GraduationCap } from "lucide-react";
+import { LyceonMark } from "@/components/common/LyceonMark";
+import { SIGN_IN_HREF, SIGN_UP_HREF } from "@/lib/marketing-links";
 
 const SECTION_LINKS = [
   { label: "How it works", href: "#how-it-works" },
@@ -39,7 +40,7 @@ export function HomeNav({
           href="/"
           className={`${TAP} gap-2.5 text-[22px] font-bold text-foreground`}
         >
-          <GraduationCap className="h-6 w-6" aria-hidden="true" />
+          <LyceonMark decorative className="h-6 w-6" />
           Lyceon
         </Link>
         <div className="flex items-center gap-3 sm:gap-6">
@@ -65,13 +66,13 @@ export function HomeNav({
           ) : (
             <>
               <Link
-                href="/login"
+                href={SIGN_IN_HREF}
                 className={`${TAP} rounded-[10px] border-[1.5px] border-foreground px-4 font-semibold hover:bg-card`}
               >
                 Sign in
               </Link>
               <Link
-                href="/login"
+                href={SIGN_UP_HREF}
                 className={`${TAP} rounded-[10px] bg-foreground px-4 font-semibold text-background hover:opacity-90 sm:px-5`}
               >
                 Get started

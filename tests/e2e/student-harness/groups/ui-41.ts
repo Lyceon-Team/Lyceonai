@@ -189,30 +189,6 @@ export const UI_41: PageGroup = {
       },
     },
     {
-      id: "app-avatar-menu-light-locked",
-      title:
-        "App shell, /practice/topics (a page still pinned light, OQ-49), paid: the avatar menu opened (a light menu in both themes at both widths, F-70; desktop since QA 2026-10-07 item 3)",
-      persona: "paid",
-      route: "/practice/topics",
-      waitFor: {
-        desktop: '[data-testid="app-rail"]',
-        mobile: '[data-testid="app-tab-bar"]',
-      },
-      steps: [
-        {
-          click: {
-            desktop: '[data-testid="button-user-menu"]',
-            mobile: '[data-testid="button-user-menu"]',
-          },
-        },
-      ],
-      prototype: {
-        kind: "none",
-        reason:
-          "The prototypes have no phone layout (fixed 1440x900 canvas); the menu's theme is register §8 F-70.",
-      },
-    },
-    {
       id: "app-upgrade-modal-fulllength-free",
       title:
         "Upgrade modal opened from the locked Full-Length entry (390: Home's full-length card; desktop: the rail), free, on /dashboard",

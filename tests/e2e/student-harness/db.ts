@@ -19,6 +19,7 @@ import type { Client } from "pg";
 import { z } from "zod";
 import { buildHarnessDb, makeHarnessForm } from "../exam-harness/db";
 import { BARE_PAGE_PERSONAS, PERSONAS } from "./personas";
+import { WALKTHROUGH_GRID_IN, WALKTHROUGH_MCQ } from "./walkthrough-content";
 
 /**
  * The throwaway database's name. `STUDENT_HARNESS_DB` overrides it so two page groups can be
@@ -79,6 +80,63 @@ async function useCanonicalSkills(pg: Client): Promise<void> {
   }
 }
 
+/**
+ * Walkthrough video (`STUDENT_HARNESS_WALKTHROUGH=1`, owner decisions 2026-10-09 item 8): every
+ * question in this throwaway database is rewritten with the original items in
+ * walkthrough-content.ts, by its own domain, so the practice runner, review and the explanation
+ * on screen show readable SAT-style content written for the video (the fixture's explanations
+ * read "exg fixture"). Correct keys are untouched: the fixture's "A" (each item lists its correct
+ * option first) and grid-in "1".
+ */
+async function useWalkthroughContent(pg: Client): Promise<void> {
+  for (const [domain, items] of Object.entries(WALKTHROUGH_MCQ)) {
+    const rows = await pg.query<{ id: string }>(
+      `SELECT id FROM public.questions WHERE domain = $1 AND item_type = 'mcq' ORDER BY id`,
+      [domain],
+    );
+    for (const [n, row] of rows.rows.entries()) {
+      const item = items[n % items.length];
+      if (!item) continue;
+      await pg.query(
+        `UPDATE public.questions
+            SET passage = $2, stem = $3, explanation = $4,
+                options = jsonb_build_array(
+                  jsonb_build_object('key','A','text',$5::text),
+                  jsonb_build_object('key','B','text',$6::text),
+                  jsonb_build_object('key','C','text',$7::text),
+                  jsonb_build_object('key','D','text',$8::text))
+          WHERE id = $1`,
+        [
+          row.id,
+          item.passage ?? null,
+          item.stem,
+          item.explanation,
+          ...item.options,
+        ],
+      );
+    }
+  }
+  const grid = await pg.query<{ id: string }>(
+    `SELECT id FROM public.questions WHERE item_type = 'grid_in' ORDER BY id`,
+  );
+  for (const [n, row] of grid.rows.entries()) {
+    const item = WALKTHROUGH_GRID_IN[n % WALKTHROUGH_GRID_IN.length];
+    if (!item) continue;
+    await pg.query(
+      `UPDATE public.questions SET passage = NULL, stem = $2, explanation = $3 WHERE id = $1`,
+      [row.id, item.stem, item.explanation],
+    );
+  }
+  const left = await pg.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM public.questions WHERE explanation = 'exg fixture'`,
+  );
+  if (left.rows[0]?.n !== "0") {
+    throw new Error(
+      `walkthrough: ${left.rows[0]?.n ?? "?"} question(s) kept the fixture explanation`,
+    );
+  }
+}
+
 export async function buildStudentHarnessDb(): Promise<Client> {
   const pg = await buildHarnessDb(STUDENT_HARNESS_DB);
   if (process.env.STUDENT_HARNESS_SEED === "exam-history") {
@@ -89,6 +147,9 @@ export async function buildStudentHarnessDb(): Promise<Client> {
   }
   if (process.env.STUDENT_HARNESS_SEED === "mastery-skills") {
     await useCanonicalSkills(pg);
+  }
+  if (process.env.STUDENT_HARNESS_WALKTHROUGH === "1") {
+    await useWalkthroughContent(pg);
   }
   // The paid student comes from the exam harness's database; the others are built here.
   for (const persona of [PERSONAS.free, PERSONAS.managed]) {
@@ -230,6 +291,34 @@ async function addBarePagePersonas(pg: Client): Promise<void> {
  * real `GET /api/notifications` turn them into titles and bodies, so nothing here is copy. Only
  * the `in_app` channel: the harness sends no email.
  */
+/**
+ * W6 UI-64 (`seed: "quota-config"`; owner ruling OQ-68 (d), Karl, 2026-10-08): config values that
+ * are not the seeded 40, so the captures show the copy following the server config. Written AFTER
+ * the base seed (whose paid diagnostic is answered at the seeded 8 × 5), through the config rows
+ * the routes read: `daily_quota_free` 37 (read per request, like the SQL quota function) and the
+ * diagnostic 6 per domain, 48 in all (read through the practice config, cached for 30 s, so the
+ * caller waits that out before announcing ready). Nothing here starts a diagnostic at 48.
+ */
+const QUOTA_CONFIG_VALUES = {
+  daily_quota_free: 37,
+  diagnostic_per_domain: 6,
+  diagnostic_total_questions: 48,
+} as const;
+
+export async function applyQuotaConfig(pg: Client): Promise<void> {
+  for (const [key, value] of Object.entries(QUOTA_CONFIG_VALUES)) {
+    const r = await pg.query(
+      `UPDATE public.practice_runtime_config SET value = $2::jsonb WHERE key = $1`,
+      [key, String(value)],
+    );
+    if (r.rowCount !== 1) {
+      throw new Error(
+        `applyQuotaConfig: no practice_runtime_config row ${key}`,
+      );
+    }
+  }
+}
+
 export async function seedPaidNotifications(pg: Client): Promise<void> {
   const paid = PERSONAS.paid.id;
   const link = await pg.query<{ id: string }>(

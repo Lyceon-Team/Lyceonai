@@ -22,3 +22,6 @@ export {
   type StudyProfileFields,
 } from "./mutations";
 export { useLaunchBlock } from "./launch";
+// The one profile write, for a surface outside the calendar that saves with the app's global
+// query client (onboarding, SCL-223). Same route, same schema as useStudyProfileMutation.
+export { putStudyProfile } from "./client";

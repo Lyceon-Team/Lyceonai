@@ -56,6 +56,14 @@ const decision = vi.fn();
  * not by table, so one read can fail while its table's other reads still answer.
  */
 const failingReads = new Set<string>();
+/**
+ * SCL-226: the streak's one source is `student_streak` (Chicago days with an answer, from every
+ * source), proved against real SQL in tests/ci/home-qotd.pg.ci.test.ts (A4). Here it is the RPC's
+ * answer, so these cases prove the ROUTES carry that one number on every surface.
+ */
+let streakRpc:
+  | { kind: "row"; current: number; todayDone: boolean }
+  | { kind: "error" } = { kind: "row", current: 3, todayDone: true };
 
 function resetRows() {
   rows.student_domain_mastery = [
@@ -156,6 +164,7 @@ function resetRows() {
     {
       timezone: "America/Chicago",
       target_exam_date: null,
+      target_exam_dates: [],
       target_score: 1400,
       study_days_mask: 127,
       daily_minutes: 60,
@@ -261,6 +270,14 @@ function fakeClient() {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       if (fn === "guardian_view_decision") return { data: decision(args), error: null };
       if (fn === "entitlement_active") return { data: true, error: null };
+      if (fn === "student_streak") {
+        return streakRpc.kind === "error"
+          ? { data: null, error: { message: "student_streak unavailable" } }
+          : {
+              data: [{ current_streak: streakRpc.current, today_done: streakRpc.todayDone, broken: false }],
+              error: null,
+            };
+      }
       return { data: null, error: null };
     },
   };
@@ -342,6 +359,7 @@ describe("subject-scoped resources — one route, two callers", () => {
     vi.clearAllMocks();
     resetRows();
     failingReads.clear();
+    streakRpc = { kind: "row", current: 3, todayDone: true };
     decision.mockReturnValue("allow");
   });
 
@@ -456,7 +474,7 @@ describe("subject-scoped resources — one route, two callers", () => {
     it("WIRE — the guardian kpi/overall is exactly { ok, currentStreakDays, requestId }", async () => {
       const guardian = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
       expect(guardian.status).toBe(200);
-      // The value is the row's, not a default: the fixture's current_streak_days is 3.
+      // The value is the daily streak's (SCL-226), not a default: the stubbed student_streak is 3.
       expect(guardian.body.currentStreakDays).toBe(3);
       expect(Object.keys(guardian.body).sort()).toEqual([
         "currentStreakDays",
@@ -535,7 +553,7 @@ describe("subject-scoped resources — one route, two callers", () => {
   });
 
   // -- G-NEW-16: THE STREAK AS OF TODAY, ONE ANSWER ON EVERY SURFACE ------------
-  describe("G-NEW-16 — the streak is as of today, on the calendar and on kpi/overall alike", () => {
+  describe("G-NEW-16 / SCL-226 — one streak, as of today, on the calendar and on kpi/overall alike", () => {
     const DAY_MS = 24 * 60 * 60 * 1000;
     const lastActive = (daysAgo: number): void => {
       const row = rows.student_overall_kpi![0] as Record<string, unknown>;
@@ -551,28 +569,25 @@ describe("subject-scoped resources — one route, two callers", () => {
       return [guardianKpi.body.currentStreakDays, metric?.value, calendar.body.streak.current];
     };
 
-    it("last active 3 days ago: the streak reads 0 on every surface (stored value is 3)", async () => {
-      lastActive(3);
+    it("every surface carries the daily streak's number", async () => {
+      streakRpc = { kind: "row", current: 3, todayDone: true };
+      expect(await streaks()).toEqual([3, 3, 3]);
+      streakRpc = { kind: "row", current: 0, todayDone: false };
       expect(await streaks()).toEqual([0, 0, 0]);
     });
 
-    it("last active yesterday: the streak is kept on every surface", async () => {
-      lastActive(1);
-      expect(await streaks()).toEqual([3, 3, 3]);
+    it("the stored KPI no longer decides it: a stale stored 3 does not override the daily streak", async () => {
+      lastActive(3);
+      streakRpc = { kind: "row", current: 5, todayDone: false };
+      expect(await streaks()).toEqual([5, 5, 5]);
     });
 
-    it("active today: the streak is kept on every surface", async () => {
-      lastActive(0);
-      expect(await streaks()).toEqual([3, 3, 3]);
-    });
-
-    // Owner decision 2026-10-01: when the zone cannot be read the streak is UNKNOWN (`null`) on
-    // every surface, and never a 500 — it is a decoration, as the calendar already treated it.
-    it("the zone cannot be read: 200 everywhere, and the streak is null on every surface", async () => {
-      lastActive(1);
+    // Owner decision 2026-10-01: an unreadable streak is UNKNOWN (`null`) on every surface, and
+    // never a 500 — it is a decoration, as the calendar already treated it.
+    it("the streak cannot be read: 200 everywhere, and the streak is null on every surface", async () => {
       // Presence first: with the read healthy the streak is a real number on every surface.
       expect(await streaks()).toEqual([3, 3, 3]);
-      failingReads.add("student_study_profile:timezone");
+      streakRpc = { kind: "error" };
       const guardianKpi = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
       const studentKpi = await call(STUDENT, STUDENT, STUDENT_RESOURCE_PATHS.kpiOverall);
       const calendar = await call(GUARDIAN, STUDENT, STUDENT_RESOURCE_PATHS.calendar);

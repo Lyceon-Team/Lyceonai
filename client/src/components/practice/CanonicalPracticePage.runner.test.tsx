@@ -47,6 +47,7 @@ import {
 } from "@/lib/engine-config";
 import CanonicalPracticePage from "./CanonicalPracticePage";
 import { MISS_NOTE } from "@/components/question-renderer";
+import { LYC_FOCUS } from "@/components/ui/button";
 import { queryClient as appQueryClient } from "@/lib/queryClient";
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the shortened-session sentence, verbatim. */
@@ -84,6 +85,9 @@ const CANONICAL: CanonicalMcOption[] = [
   { key: "D", text: "x = 12" },
 ];
 const STORED_ORDER = ["C", "A", "D", "B"] as const;
+/** QMH (question header): the served item's taxonomy; the bank's difficulty 1 reads "Easy". */
+const QMH_DOMAIN = "Algebra";
+const QMH_SKILL = "Linear equations in one variable";
 const CORRECT_TEXT = "x = 4"; // canonical A, shown second → display letter B
 const FIRST_TEXT = "x = 8"; // canonical C, shown first → display letter A
 
@@ -103,6 +107,9 @@ function servedItem(ordinal: number, total: number, leak = false): ServedItem {
     options: CANONICAL,
     correct_answer: "A",
     explanation: EXPLANATION,
+    domain: QMH_DOMAIN,
+    skill: QMH_SKILL,
+    difficulty: 1,
   });
   const { optionTokenMap, safeOptions } = buildStudentSafeOptionTokens(
     CANONICAL,
@@ -124,7 +131,9 @@ function servedItem(ordinal: number, total: number, leak = false): ServedItem {
       itemType: projected.item_type,
       inputMode: projected.inputMode,
       options: safeOptions,
-      difficulty: null,
+      difficulty: projected.difficulty,
+      domain: projected.domain,
+      skill: projected.skill,
       correct_answer: projected.correct_answer,
       explanation: projected.explanation,
     },
@@ -257,6 +266,8 @@ function mountRunner(
     engine?: EngineConfig;
     shortened?: boolean;
     strict?: boolean;
+    /** The diagnostic as resume-practice.tsx mounts it (QMH, 2026-10-13). */
+    diagnostic?: boolean;
   } = {},
 ) {
   const engine = opts.engine ?? PRACTICE_ENGINE_CONFIG;
@@ -267,12 +278,21 @@ function mountRunner(
   const page = (
     <StudentRouteFrame route={route}>
       <CanonicalPracticePage
-        title={engine.domain === "review" ? "Review session" : "Algebra"}
+        title={
+          opts.diagnostic === true
+            ? "Diagnostic Assessment"
+            : engine.domain === "review"
+              ? "Review session"
+              : "Algebra"
+        }
         section="M"
         sessionId={SESSION_ID}
         engine={engine}
         shortened={opts.shortened}
-        completionHref={engine.completionHref}
+        isDiagnostic={opts.diagnostic}
+        completionHref={
+          opts.diagnostic === true ? "/dashboard" : engine.completionHref
+        }
       />
     </StudentRouteFrame>
   );
@@ -299,6 +319,40 @@ async function click(el: HTMLElement): Promise<void> {
   await act(async () => {
     fireEvent.click(el);
   });
+}
+
+/** From 1024 (TUTOR_SIDE_BY_SIDE_BREAKPOINT) LISA sits beside the question. */
+function mockSideBySide(): void {
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        matches: /min-width:\s*1024px/.test(query),
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as MediaQueryList,
+  );
+}
+
+/**
+ * QA2-D: jsdom lays nothing out, so the two boxes the runner measures are given positions: the
+ * runner's scroll area (0..700) and the top of LISA's column at `panelTop`.
+ */
+function layOut({ panelTop }: { panelTop: number }): void {
+  const real = Element.prototype.getBoundingClientRect;
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: Element): DOMRect {
+      const id = this.getAttribute("data-testid");
+      if (id === "runner-scroll") return new DOMRect(0, 0, 390, 700);
+      if (id === "practice-tutor-aside")
+        return new DOMRect(0, panelTop, 390, 600);
+      return real.call(this);
+    },
+  );
 }
 
 const submitButton = (): HTMLButtonElement =>
@@ -623,6 +677,8 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
   });
 
   it("LISA (review) gets the served item id and 'Question N of M' — no choices, no letters, no correctness", async () => {
+    // Side by side, where LISA is open on load (W4-4); on a phone it starts closed (QA2-D).
+    mockSideBySide();
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
@@ -631,6 +687,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(Object.keys(props).sort()).toEqual([
       "onHide",
       "questionLabel",
+      "revealKey",
       "revealOnOpen",
       "sessionItemId",
       "sourceSurface",
@@ -647,36 +704,83 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
   });
 
   // QA 2026-10-07 item 8 (Karl: "Phone LISA in the runner: opening it brings the panel into
-  // view"). The panel itself scrolls on mount when told to (ScopedTutorPanel.contract.test.tsx);
-  // this pins the runner telling it: only when the student opened it, only on the phone layout.
-  it("QA-8: Show LISA on the phone layout opens the panel told to reveal itself; on load it is not", async () => {
-    // The test DOM's default matchMedia answers "no match": below `lg`, LISA stacks.
+  // view"), and QA 2026-10-08 item D (Karl: "Phone: the LISA panel defaults closed; tapping the
+  // icon always brings it into view."). The panel itself scrolls when told to
+  // (ScopedTutorPanel.contract.test.tsx); this pins the runner: closed on load on the phone
+  // layout, opened and told to reveal by the icon, and an icon tap on an open panel that is
+  // scrolled out of view reveals it again rather than closing it.
+  it("QA2-D: on the phone layout LISA is closed on load and the icon offers it", async () => {
+    // The test DOM's default matchMedia answers "no match": below 1024, LISA stacks.
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
-    expect(tutorProps.last?.revealOnOpen).toBe(false);
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(tutorProps.last).toBeNull();
+  });
+
+  it("QA2-D: a tap on the phone opens LISA told to reveal itself", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    await click(screen.getByTestId("practice-tutor-toggle"));
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealOnOpen).toBe(true);
+    expect(
+      screen.getByTestId("practice-tutor-toggle").getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("QA2-D: open but scrolled out of view, a tap brings it back into view and does not close it", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
     const toggle = screen.getByTestId("practice-tutor-toggle");
     await click(toggle);
-    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    const keyBefore = tutorProps.last?.revealKey;
+    expect(typeof keyBefore).toBe("number");
+    // The runner scrolled back to the question: LISA's top is below the scroll area.
+    layOut({ panelTop: 1400 });
     await click(toggle);
     expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
     expect(tutorProps.last?.revealOnOpen).toBe(true);
+    expect(tutorProps.last?.revealKey).toBe(Number(keyBefore) + 1);
+    // Scrolled past it (its top above the scroll area): the same.
+    layOut({ panelTop: -600 });
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    expect(tutorProps.last?.revealKey).toBe(Number(keyBefore) + 2);
+  });
+
+  it("QA2-D: open and in view, a tap closes it", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    const toggle = screen.getByTestId("practice-tutor-toggle");
+    await click(toggle);
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    layOut({ panelTop: 120 });
+    await click(toggle);
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("QA2-D: side by side LISA is still open on load, and the toggle still hides it", async () => {
+    mockSideBySide();
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    // Even scrolled away, a tap side by side is the plain toggle.
+    layOut({ panelTop: 1400 });
+    await click(screen.getByTestId("practice-tutor-toggle"));
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
   });
 
   it("QA-8: side by side (from lg) Show LISA does not scroll anything", async () => {
-    vi.spyOn(window, "matchMedia").mockImplementation(
-      (query: string) =>
-        ({
-          matches: /min-width:\s*1024px/.test(query),
-          media: query,
-          onchange: null,
-          addListener: () => undefined,
-          removeListener: () => undefined,
-          addEventListener: () => undefined,
-          removeEventListener: () => undefined,
-          dispatchEvent: () => false,
-        }) as MediaQueryList,
-    );
+    mockSideBySide();
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
@@ -838,5 +942,188 @@ describe("QA item 6 (2026-10-07): answering, skipping and leaving mark the sessi
     expect(keys.map(invalidated)).toEqual([false, false, false, false, false]);
     unmount();
     expect(keys.map(invalidated)).toEqual([true, true, true, true, true]);
+  });
+});
+
+/**
+ * QMH — the question header (owner brief, Karl, 2026-10-13 §1) | @implemented [2026-10-13]
+ *
+ * plain English: practice, review and the diagnostic (the three surfaces CanonicalPracticePage
+ * serves) show "domain · skill · difficulty" above the question, read from the served item. The
+ * fixture's item is the real shared projection fed Algebra / "Linear equations in one variable" /
+ * difficulty 1, so the header reads "Algebra", the skill and "Easy". The pre-submit screen still
+ * carries no answer: the header is presence, the explanation and correctness tags are absence.
+ * Layout is asserted on the classes that make it (jsdom lays nothing out; the screenshots in the
+ * PR show it drawn): from `lg` one row in DOM order, below it domain + difficulty then the skill
+ * on its own row, clamped to two lines.
+ * Owner rulings (Karl) 2026-10-13 on #1225: the three are pills on the shared neutral `Pill`
+ * (difficulty the same colour as the rest), and the skill pill is the header's one focus stop,
+ * which un-clamps it on focus.
+ */
+describe("QMH: the question header on practice, review and the diagnostic", () => {
+  async function expectHeader(): Promise<HTMLElement> {
+    const meta = await screen.findByTestId("question-meta");
+    expect(within(meta).getByTestId("question-meta-domain").textContent).toBe(
+      QMH_DOMAIN,
+    );
+    expect(within(meta).getByTestId("question-meta-skill").textContent).toBe(
+      QMH_SKILL,
+    );
+    expect(
+      within(meta).getByTestId("question-meta-difficulty").textContent,
+    ).toBe("Difficulty: Easy");
+    return meta;
+  }
+
+  function expectNoReveal(): void {
+    expect(document.body.innerHTML).not.toContain(EXPLANATION);
+    for (const word of ["Correct answer", "Your answer", "Not quite"]) {
+      expect(document.body.textContent).not.toContain(word);
+    }
+    expect(screen.queryByTestId("runner-feedback")).toBeNull();
+  }
+
+  it("practice: domain, skill and difficulty above the question, and no reveal before submit", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    await expectHeader();
+    expectNoReveal();
+  });
+
+  it("review: the same header", async () => {
+    window.history.replaceState(null, "", `/review/session/${SESSION_ID}`);
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    await expectHeader();
+    expectNoReveal();
+  });
+
+  it("diagnostic: the same header", async () => {
+    installNetwork({ total: 3 });
+    mountRunner({ diagnostic: true });
+    await loaded();
+    expect(screen.queryByTestId("runner-skip")).toBeNull();
+    await expectHeader();
+    expectNoReveal();
+  });
+
+  it("the header sits above the question's stem", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const stem = screen.getByText("Question 1: if 2x + 3 = 11, what is x?");
+    expect(
+      meta.compareDocumentPosition(stem) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("layout: one row from lg (domain, skill, difficulty); below lg domain + difficulty, then the skill alone, clamped to two lines", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const cls = (el: Element): string[] => el.className.split(/\s+/);
+    const domain = within(meta).getByTestId("question-meta-domain");
+    const skillRow = within(meta).getByTestId("question-meta-skill-row");
+    const skill = within(meta).getByTestId("question-meta-skill");
+    const difficulty = within(meta).getByTestId("question-meta-difficulty");
+
+    // DOM (and screen-reader) order is domain, skill, difficulty.
+    const parts = [domain, skill, difficulty];
+    for (let i = 1; i < parts.length; i += 1) {
+      expect(
+        parts[i - 1]!.compareDocumentPosition(parts[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+
+    // Desktop (lg): one row, in that order.
+    expect(cls(meta)).toEqual(
+      expect.arrayContaining(["flex", "flex-wrap", "lg:flex-nowrap"]),
+    );
+    expect(cls(domain)).toContain("order-1");
+    expect(cls(skillRow)).toEqual(
+      expect.arrayContaining(["lg:order-2", "lg:basis-auto"]),
+    );
+    expect(cls(difficulty)).toContain("lg:order-3");
+
+    // Phone: row 1 is domain + difficulty, row 2 is the skill on its own full-width row.
+    expect(cls(difficulty)).toContain("order-2");
+    expect(cls(skillRow)).toEqual(
+      expect.arrayContaining(["order-3", "basis-full"]),
+    );
+
+    // The skill is a ClampedLabel: two lines and an ellipsis, the full name on hover.
+    expect(cls(skill)).toContain("line-clamp-2");
+    expect(skill.getAttribute("title")).toBe(QMH_SKILL);
+  });
+
+  // Owner ruling (Karl) 2026-10-13 on #1225: small pills on the shared pill, difficulty NEUTRAL.
+  it("pills: all three on the shared neutral pill (14px, tokens only); no colour-coded difficulty", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const cls = (el: Element): string[] => el.className.split(/\s+/);
+    const pills = [
+      within(meta).getByTestId("question-meta-domain"),
+      within(meta).getByTestId("question-meta-skill-pill"),
+      within(meta).getByTestId("question-meta-difficulty"),
+    ];
+    // The shared pill's neutral recipe (DESIGN.md §3 Pill): `--chip` fill, `--rule` border, the
+    // 14px meta token, semibold `--ink`. Its radius is left out: the skill pill, which can wrap to
+    // two lines, takes a smaller one.
+    const pillRecipe = [
+      "border",
+      "border-lyc-rule",
+      "bg-lyc-chip",
+      "text-lyc-meta",
+      "font-semibold",
+      "text-lyc-ink",
+    ];
+    for (const pill of pills) {
+      expect(cls(pill)).toEqual(expect.arrayContaining(pillRecipe));
+    }
+    // Neutral: every pill keeps the recipe's colours (above; `cn` drops a recipe colour that a
+    // caller overrides), and no level, success, warning or danger token appears anywhere in
+    // the header, on a pill or inside one.
+    expect(meta.innerHTML).not.toMatch(
+      /lyc-(lv\d|danger|warn|success|correct|good|bad)/,
+    );
+    // 14px is the smallest size the header uses (the meta token), and no raw size class.
+    expect(meta.innerHTML).not.toMatch(/text-(xs|\[1[0-3]px\])/);
+  });
+
+  // Owner ruling (Karl) 2026-10-13 on #1225: one focus stop, on the skill; focus shows it in full.
+  it("focus: the skill pill is the header's one tab stop, with the focus ring, and focus un-clamps it", async () => {
+    installNetwork({ total: 3 });
+    mountRunner();
+    await loaded();
+    const meta = await expectHeader();
+    const cls = (el: Element): string[] => el.className.split(/\s+/);
+    const skillPill = within(meta).getByTestId("question-meta-skill-pill");
+    const skill = within(meta).getByTestId("question-meta-skill");
+
+    const stops = meta.querySelectorAll(
+      'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    expect(Array.from(stops)).toEqual([skillPill]);
+    expect(skillPill.getAttribute("tabindex")).toBe("0");
+    // No role and no label override: a screen reader reads the skill's own text, as before.
+    expect(skillPill.getAttribute("role")).toBeNull();
+    expect(skillPill.getAttribute("aria-label")).toBeNull();
+
+    skillPill.focus();
+    expect(document.activeElement).toBe(skillPill);
+    // Focus within the pill (`group`) lifts the two-line clamp (ClampedLabel); the ring is the
+    // student focus ring.
+    expect(cls(skillPill)).toContain("group");
+    expect(cls(skill)).toContain("group-focus-within:line-clamp-none");
+    expect(cls(skillPill)).toEqual(
+      expect.arrayContaining(LYC_FOCUS.split(" ")),
+    );
   });
 });

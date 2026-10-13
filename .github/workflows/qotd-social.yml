@@ -1,0 +1,134 @@
+# Question of the Day social assets: two images, the caption and the alt text, every day.
+#
+# @spec [Doc 10A §7, §11; owner decisions 2026-10-07 on the QOTD social assets (delivery as
+#   GitHub run downloads, the caption and alt text on the run page; portrait 1080x1350 + story
+#   1080x1920; existing tooling only)] | @implemented [2026-10-07]
+#
+# plain English: at 06:20 UTC (always after midnight in America/Chicago, the QOTD day boundary,
+# with or without daylight saving) this builds today's assets from the website's own public
+# pre-submit payload (/api/public/qotd/today: no answer, no explanation, and only today exists
+# there). Karl downloads the zip from the run's Artifacts; the run page shows the caption and
+# alt text with a copy button. No database access; the build's only network call is to lyceon.ai.
+#
+# Slack (owner brief 2026-10-10): once the download is uploaded, a scheduled or hand-started run
+# posts the day to Slack (#social): both images, then the caption and alt text, with the date and
+# section (scripts/qotd-social/post-to-slack.ts). It posts only from post.json, which the build
+# writes only when every check passed, the leak check included; a build that failed never reaches
+# the step. The bot token is the GitHub secret SLACK_BOT_TOKEN, read by that one step and nothing
+# else; the channel is the variable SOCIAL_SLACK_CHANNEL_ID (or the run's slack_channel input, for
+# a test post). A missing token or a Slack error fails the run, after the download is uploaded.
+# Pull requests run the same step as a dry run: every check, no token, nothing sent.
+# Setup: docs/runbooks/qotd-slack.md.
+#
+# Run it by hand with no date for today, or with a PAST date to rebuild that day (today and
+# future dates are refused by the script, exit 2). A pull request that touches the generator
+# builds the newest archive day instead, so the whole workflow is proven before it merges (a
+# schedule only ever runs from the default branch).
+name: QOTD social assets
+
+on:
+  schedule:
+    - cron: "20 6 * * *"
+  pull_request:
+    paths:
+      - .github/workflows/qotd-social.yml
+      - scripts/qotd-social/**
+      - shared/qotd/social.ts
+      - shared/math/tokenize.ts
+      - client/src/components/qotd/QotdSocialCard.tsx
+      - client/src/components/qotd/StaticMath.tsx
+      - packages/shared/src/qotd-schema.ts
+      - docs/runbooks/qotd-slack.md
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "A past day, YYYY-MM-DD (leave empty for today)"
+        required: false
+        default: ""
+      slack_channel:
+        description: "Slack channel ID for this run only, e.g. a test channel (empty: SOCIAL_SLACK_CHANNEL_ID)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qotd-social-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build the assets
+        env:
+          QOTD_DATE: ${{ github.event_name == 'pull_request' && 'latest' || inputs.date }}
+        run: |
+          if [ -n "${QOTD_DATE:-}" ]; then
+            pnpm exec tsx scripts/qotd-social/generate.ts --date "$QOTD_DATE" --out qotd-social-out
+          else
+            pnpm exec tsx scripts/qotd-social/generate.ts --out qotd-social-out
+          fi
+
+      - name: Caption and alt text on the run page
+        if: always()
+        run: |
+          if [ -f qotd-social-out/summary.md ]; then
+            cat qotd-social-out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No assets were produced; see the 'Build the assets' step." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Find the day
+        id: day
+        if: success()
+        run: |
+          f="$(ls qotd-social-out/qotd-*-portrait.png qotd-social-out/qotd-*-story.png 2>/dev/null | head -1)"
+          d="$(basename "$f" | sed -E 's/^qotd-([0-9-]{10})-.*/\1/')"
+          echo "date=$d" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the assets
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qotd-${{ steps.day.outputs.date }}
+          path: |
+            qotd-social-out/*.png
+            qotd-social-out/caption.txt
+            qotd-social-out/alt-text.txt
+            qotd-social-out/post.json
+          if-no-files-found: error
+          retention-days: 30
+
+      # Pull requests: every check the post makes, the message built, nothing sent, no token.
+      - name: Slack post (dry run)
+        if: success() && github.event_name == 'pull_request'
+        run: pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out --dry-run
+
+      # After the upload, so a Slack failure never costs the download; it fails the run instead.
+      - name: Post to Slack
+        if: success() && github.event_name != 'pull_request'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out

@@ -57,6 +57,12 @@ const FULL_LENGTH_BLOCK_AT = {
   desktop: FULL_LENGTH_BLOCK,
   mobile: FULL_LENGTH_BLOCK,
 } as const;
+/** QA2-G: today's review block (the first `rev` card; the days before today are rest days). */
+const REVIEW_BLOCK = "button.block.rev";
+const REVIEW_BLOCK_AT = {
+  desktop: REVIEW_BLOCK,
+  mobile: REVIEW_BLOCK,
+} as const;
 /** The block sheet's Start (or Resume, once started): its one primary button. */
 const SHEET_START =
   '[data-testid="calendar-block-sheet"] footer button.primary';
@@ -88,7 +94,7 @@ export const UI_55: PageGroup = {
     {
       id: "paid-week-mid",
       title:
-        'Calendar, paid, week between the phone and desktop layouts (production QA 2026-10-07 items 11(c), 11(d); OQ-66 (c)): at 700 the range title over Week/Month, Today, arrows (left) and the "⋯" menu (right); at 1024, beside the right panel, two rows: the range title with "⋯" at its right end, then the view controls; at 1280 the range title over the controls and Edit schedule, Regenerate plan; block cards whose titles, chips and tags stay inside them',
+        'Calendar, paid, week between the phone and desktop layouts (production QA 2026-10-07 items 11(c), 11(d); OQ-66 (c)): at 700 the range title over Week/Month, Today, arrows (left) and the "⋯" menu (right); at 1024, beside the right panel, two rows: the range title with "⋯" at its right end, then the view controls; at 1280 the range title over the controls and Edit schedule, Regenerate plan; block cards whose titles, chips and tags stay inside them. QA2-C (Karl, 2026-10-08): at 1024 and 1280 (columns under 130px) the card titles are the compact labels ("Rev 15", "Math 5", "R&W 5") in the card\'s colour, and a scope chip keeps one line, its name cut with an ellipsis, its count whole; no word is split',
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
@@ -161,11 +167,14 @@ export const UI_55: PageGroup = {
     {
       id: "paid-month",
       title:
-        "Click path (paid): the Month toggle shows the month grid, the test day starred and labelled",
+        'Click path (paid): the Month toggle shows the month grid, the test day starred and labelled. QA2-C (Karl, 2026-10-08): at 1024 (cells under 130px) the chips read "Rev 15", "Math 5", "R&W 5" whole; at 390 (55px cells) the count goes under the label ("Rev" over "15"), never "R…"; at 1440 the full chips',
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
       steps: [{ click: MONTH_BUTTON }],
+      extraViewports: [
+        { name: "w1024", width: 1024, height: 768, selectors: "desktop" },
+      ],
       prototype: {
         kind: "screen",
         file: "Calendar.dc.html",
@@ -249,6 +258,43 @@ export const UI_55: PageGroup = {
         kind: "none",
         reason:
           "A click path; its proof is the landing path (the prototype's blocks are not wired).",
+      },
+    },
+    {
+      id: "paid-review-launch",
+      title:
+        "Click path (QA2-G set-up): today's review block, Start: the calendar launch runs (POST /api/calendar/blocks/:id/launch) and the student lands in the review session. The first capture starts the session; later ones find the block started and resume it",
+      persona: "paid",
+      route: "/calendar",
+      waitFor: REVIEW_BLOCK_AT,
+      steps: [
+        { click: REVIEW_BLOCK_AT, ariaDisabledOk: true },
+        { click: { desktop: SHEET_START, mobile: SHEET_START } },
+      ],
+      expectPath: "^/review",
+      prototype: {
+        kind: "none",
+        reason:
+          "A click path that puts today's review block in progress for the next shot; its proof is the landing path.",
+      },
+    },
+    {
+      id: "paid-block-sheet-in-progress",
+      title:
+        'QA2-G (Karl, 2026-10-08: "disable \'Items to clear\' while the block is in progress"): today\'s review block, started by the shot before (the server\'s §13 status `in_progress`; "🔒 started" on the card), its sheet open: Items to clear disabled, with "You can\'t change this while the block is in progress." under it; Resume',
+      persona: "paid",
+      route: "/calendar",
+      waitFor: REVIEW_BLOCK_AT,
+      steps: [{ click: REVIEW_BLOCK_AT, ariaDisabledOk: true }],
+      expectVisible:
+        '[data-testid="calendar-block-sheet"] select[aria-label="Items to clear"][disabled][aria-disabled="true"] ~ [data-testid="calendar-items-locked-note"]',
+      extraViewports: [
+        { name: "w1024", width: 1024, height: 768, selectors: "desktop" },
+      ],
+      prototype: {
+        kind: "none",
+        reason:
+          "The prototype's blocks open no sheet; the locked control is Karl's production re-test item G (2026-10-08).",
       },
     },
     {

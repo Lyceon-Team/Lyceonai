@@ -1,5 +1,6 @@
 /**
- * THE billing CTA card. Every paid boundary on every surface renders this one.
+ * THE billing CTA card. Written for every paid boundary; drawn today only by Practice at 0
+ * questions left (see "ON THE STUDENT TOKENS" below).
  *
  * @spec [Doc 01 V8 §20 "Who pays"; §31.1–§31.4; Doc 02B "Entitlement Matrix";
  *        Coding Standards §11.1, §11.3] | @implemented [2026-09-03]
@@ -22,6 +23,18 @@
  * nothing and it asks `/api/billing/status` itself, which is right for the
  * student surfaces, where the viewer IS the subject.
  *
+ * ON THE STUDENT TOKENS (register UI-65; OQ-52 (c), owner ruling Karl 2026-10-05: "Restyling
+ * `PremiumUpgradePrompt` onto student tokens is Wave 6 row UI-65") | @implemented [2026-10-08].
+ * Its one live caller is Practice at 0 questions left (`pages/practice.tsx`), inside the student
+ * shell's `.lyc` root, so the card is drawn with the student card (`border-lyc-rule bg-lyc-sheet`,
+ * as FullLengthCard and FilterBar), a serif panel heading and the 17px body, light and dark from
+ * the tokens; no shadow (DESIGN.md §1). The action is `lyc-outline`, not a filled primary,
+ * because Practice's one filled primary is "Start N questions" (disabled at 0, still the
+ * surface's primary). No other surface renders this card today: chat and the review runner moved
+ * to `LisaUpgradeCard` (UI-56, OQ-54), and no guardian or admin page imports it. Were a
+ * non-student surface to render it again, it would need the student `.lyc` root or its own
+ * variant; the guardian-state copy it still resolves is exercised only by GuardianCta.test.tsx.
+ *
  * THE PORTAL BRANCH IS NOW REACHABLE, and was not before. It used to be gated
  * on `getPremiumDenialReason` returning `payment_past_due`,
  * `subscription_canceled` or `subscription_expired`, which it does only when an
@@ -30,19 +43,13 @@
  * condition nothing wrote, the same shape as `linkRequiredForPremium`. Both
  * entry points now reach it from facts the server does write.
  */
+import { useId } from "react";
 import { useLocation } from "wouter";
 import {
   useBillingStatusQuery,
   type BillingStatus,
 } from "@/hooks/useBillingStatusQuery";
-import { X, Sparkles, CreditCard, ArrowRight } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { X, CreditCard, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -51,6 +58,7 @@ import {
   resolveCtaDestination,
   type BillingCtaState,
 } from "@/lib/billing-cta";
+import { cn } from "@/lib/utils";
 
 /**
  * Kept only because `chat.tsx` types its own local denial state with it
@@ -136,6 +144,7 @@ export function PremiumUpgradePrompt({
   const [, navigate] = useLocation();
   const { isGuardian } = useSupabaseAuth();
   const portal = useBillingPortal();
+  const titleId = useId();
 
   /**
    * Skipped entirely when the caller already knows the state — the guardian
@@ -168,52 +177,56 @@ export function PremiumUpgradePrompt({
   };
 
   return (
-    <Card
+    <section
+      aria-labelledby={titleId}
       data-testid="premium-upgrade-prompt"
       data-cta-state={resolved.kind}
-      className={
-        mode === "floating"
-          ? "fixed right-4 bottom-4 z-50 w-[min(440px,calc(100vw-2rem))] border-primary/30 shadow-lg"
-          : "border-primary/30 bg-card"
-      }
+      className={cn(
+        "flex flex-col gap-4 rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-6 sm:px-7",
+        mode === "floating" &&
+          "fixed bottom-4 right-4 z-50 w-[min(440px,calc(100vw-2rem))]",
+      )}
     >
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              {copy.title}
-            </CardTitle>
-            <CardDescription className="mt-1">{copy.body}</CardDescription>
-          </div>
-          {mode === "floating" && onDismiss && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Dismiss upgrade prompt"
-              onClick={onDismiss}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <h3
+            id={titleId}
+            className="m-0 font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong"
+          >
+            {copy.title}
+          </h3>
+          <p className="m-0 text-lyc-body text-lyc-ink">{copy.body}</p>
         </div>
-      </CardHeader>
-      <CardContent className="pt-2">
-        <Button
-          onClick={handlePrimaryAction}
-          disabled={portal.isPending}
-          data-testid="premium-upgrade-cta"
-        >
-          {copy.action.kind === "portal" ? (
-            <CreditCard className="h-4 w-4 mr-2" />
-          ) : null}
-          {portal.isPending ? "Opening billing..." : copy.actionLabel}
-          {copy.action.kind === "navigate" ? (
-            <ArrowRight className="h-4 w-4 ml-2" />
-          ) : null}
-        </Button>
-      </CardContent>
-    </Card>
+        {mode === "floating" && onDismiss && (
+          <Button
+            type="button"
+            variant="lyc-quiet"
+            size="lyc-icon"
+            className="text-lyc-body"
+            aria-label="Dismiss upgrade prompt"
+            onClick={onDismiss}
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </Button>
+        )}
+      </div>
+      <Button
+        type="button"
+        variant="lyc-outline"
+        size="lyc"
+        className="self-start"
+        onClick={handlePrimaryAction}
+        disabled={portal.isPending}
+        data-testid="premium-upgrade-cta"
+      >
+        {copy.action.kind === "portal" ? (
+          <CreditCard className="mr-2 h-4 w-4" aria-hidden="true" />
+        ) : null}
+        {portal.isPending ? "Opening billing..." : copy.actionLabel}
+        {copy.action.kind === "navigate" ? (
+          <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
+        ) : null}
+      </Button>
+    </section>
   );
 }

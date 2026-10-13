@@ -58,7 +58,7 @@
 :root[data-guardian-surface] .lyceon-calendar .block .sub {
     font-size: 16px
 }
-:root[data-guardian-surface] .lyceon-calendar .block .dom span {
+:root[data-guardian-surface] .lyceon-calendar .block .dom > span {
     font-size: 16px
 }
 :root[data-guardian-surface] .lyceon-calendar .lock {

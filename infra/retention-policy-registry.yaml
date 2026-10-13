@@ -133,7 +133,8 @@ retention_policies:
 
   # ── Privacy Policy v6 §6.2 — the 7-day grace window ─────────────────
   # ENFORCED. The soft-delete envelope plus GET /api/internal/execute-deletions
-  # (vercel.json, 0 2 * * *). This is the §9.1 `doc01v6_t_plus_7` substrate.
+  # (vercel.json, 0 15 * * * since 2026-10-09, owner ruling on the schedule audit; was 0 2).
+  # This is the §9.1 `doc01v6_t_plus_7` substrate.
   - policy_id: RPOL-DELETE-01
     pii_surface_name: 'account_deletion_requests.subject_email'
     canonical_owner_doc_and_section: 'legal/privacy-policy/v6/en.md §6.2'

@@ -49,10 +49,18 @@ import {
 import type { EntitlementUpdate } from "../account";
 import { logger } from "../../logger";
 import { digestId } from "./redact";
+import { EntitlementService } from "../../services/entitlement-service";
+import {
+  defaultLifecycleDeps,
+  fireLifecycle,
+  sendEntitledEvents,
+} from "../lifecycle-email";
 import { getTier1Countries } from "../entitlement-runtime-config";
 import {
   evaluateCountryEligibility,
   deniesEntitlement,
+  resolveBillingCountry,
+  type BillingCountrySource,
 } from "./country-eligibility";
 import {
   resolveEntitlementItem,
@@ -567,6 +575,53 @@ function epochToIso(seconds: unknown): string | null {
 }
 
 /**
+ * The one predicate (SCL-029), read for the announcement only. It can never break a grant: a
+ * throw or a failed read is `{ ok: false }`, which sends nothing.
+ */
+async function readEntitledForAnnouncement(
+  profileId: string,
+): Promise<{ ok: true; active: boolean } | { ok: false }> {
+  try {
+    return await EntitlementService.evaluateEntitlementActive(profileId);
+  } catch (error: unknown) {
+    logger.warn(
+      "LIFECYCLE_EMAIL",
+      "entitled_read_failed",
+      "Could not tell whether the entitlement was new; no lifecycle event",
+      {
+        profileRef: digestId(profileId),
+        error: error instanceof Error ? error.name : "unknown",
+      },
+    );
+    return { ok: false };
+  }
+}
+
+/**
+ * Onboarding events to Resend Automations (Karl, 2026-10-12): when this write took the student
+ * from not entitled to entitled, tell Resend — `lyceon.entitled` and the contact property
+ * `entitled = "true"` for the student and, when a guardian paid, the payer. Both sides of the
+ * test are the one platform predicate (`entitlement_active`, SCL-029), read before and after the
+ * upsert, so "active" is never redefined here. An unreadable answer on either side sends
+ * nothing (never a guess). Fire-and-forget: the webhook's own result never waits on Resend.
+ */
+async function announceIfNewlyEntitled(
+  before: { ok: true; active: boolean } | { ok: false },
+  studentProfileId: string,
+  payerProfileId: string | null,
+): Promise<void> {
+  if (!before.ok || before.active) return;
+  const after = await readEntitledForAnnouncement(studentProfileId);
+  if (!after.ok || !after.active) return;
+  fireLifecycle("entitled", studentProfileId, () =>
+    sendEntitledEvents(
+      { studentProfileId, payerProfileId },
+      defaultLifecycleDeps(),
+    ),
+  );
+}
+
+/**
  * Persist Stripe's authoritative subscription state onto the student's
  * entitlement row. Re-fetches rather than trusting the delivered object.
  */
@@ -596,11 +651,14 @@ async function assertCountryEligibleForGrant(
   customerRef: string | { id: string } | null | undefined,
   eventType: string,
   eventId: string,
-): Promise<string> {
+): Promise<{ country: string; source: BillingCountrySource }> {
   const customerId =
     typeof customerRef === "string" ? customerRef : customerRef?.id;
 
+  // NO CUSTOMER, OR A DELETED ONE, IS NOT A MISSING ADDRESS and is not defaulted: it stays
+  // `null` and so `unknown`, which denies. Only a live Customer with no address is defaulted.
   let country: string | null | undefined = null;
+  let source: BillingCountrySource = "provided";
   if (customerId) {
     // PARSED, NOT CAST (SCL-DRAFT-B-customer-parse). This value decides whether
     // a grant happens, so it is checked at the boundary like every other Stripe
@@ -617,7 +675,13 @@ async function assertCountryEligibleForGrant(
     // ineligible one, and `evaluateCountryEligibility` turns absence into
     // `unknown`, which denies the grant. Branched explicitly so the reason is
     // legible rather than arriving as an undefined field read.
-    country = customer.deleted ? null : customer.address?.country;
+    if (!customer.deleted) {
+      // Owner ruling 2026-10-10: a live Customer with no billing country (a $0 Checkout with
+      // no card collects no address) is evaluated as US; a country Stripe gave always wins.
+      const resolved = resolveBillingCountry(customer.address?.country);
+      country = resolved.country;
+      source = resolved.source;
+    }
   }
 
   const eligibility = evaluateCountryEligibility(
@@ -626,7 +690,18 @@ async function assertCountryEligibleForGrant(
   );
   // W3-3: the approved country is RETURNED so the writer can record it on the
   // student's profile — the crisis resources are chosen from it (Doc 03 §4.6).
-  if (eligibility.verdict === "eligible") return eligibility.country;
+  // With its SOURCE: a defaulted US is not recorded as if somebody had given it.
+  if (eligibility.verdict === "eligible") {
+    if (source === "default_us") {
+      logger.info(
+        "STRIPE_WEBHOOK",
+        eventType,
+        "Billing country absent on the Customer; evaluated as US (owner ruling 2026-10-10)",
+        { eventId, customerId, country_source: source },
+      );
+    }
+    return { country: eligibility.country, source };
+  }
 
   logger.error(
     "STRIPE_WEBHOOK",
@@ -636,6 +711,7 @@ async function assertCountryEligibleForGrant(
       eventId,
       customerId,
       verdict: eligibility.verdict,
+      country_source: source,
     },
   );
   // A DENIAL IS A DECISION, NOT A SHAPE FAILURE (SCL-DRAFT-B-denial-is-a-decision).
@@ -712,6 +788,7 @@ async function writeEntitlementFromSubscription(
     );
   }
 
+  const wasEntitled = await readEntitledForAnnouncement(studentProfileId);
   await upsertEntitlement(studentProfileId, {
     tier,
     status,
@@ -730,9 +807,18 @@ async function writeEntitlementFromSubscription(
     // so the honest absence and the honest self-payer are the same value on purpose.
     payer_profile_id: subscription.metadata?.payer_profile_id ?? null,
   });
+  await announceIfNewlyEntitled(
+    wasEntitled,
+    studentProfileId,
+    subscription.metadata?.payer_profile_id ?? null,
+  );
   // W3-3: record the billing country on the same grant. Revocations leave the
   // last known country in place — a lapsed student in crisis still gets theirs.
-  if (grantCountry) await setProfileCountryCode(studentProfileId, grantCountry);
+  // Only a country Stripe PROVIDED is stored: a defaulted US is a decision rule, not a fact
+  // about this student, so `profiles.country_code` stays as it was (owner ruling 2026-10-10).
+  if (grantCountry?.source === "provided") {
+    await setProfileCountryCode(studentProfileId, grantCountry.country);
+  }
 
   // Charter §6: the student is the payer on the unaccompanied path, and Stripe
   // object ids resolve to a named person in the Dashboard. Digest both.
@@ -1384,6 +1470,7 @@ async function writeEntitlementsForAllItems(
     if (!item) continue;
     const studentProfileId = candidate.studentProfileId;
 
+    const wasEntitled = await readEntitledForAnnouncement(studentProfileId);
     await upsertEntitlement(studentProfileId, {
       tier,
       status: mapped.status,
@@ -1399,8 +1486,13 @@ async function writeEntitlementsForAllItems(
       // flow reads it to decide who to ask about the money (Doc 01 §36.4).
       payer_profile_id: payerProfileId,
     });
-    if (grantCountry) {
-      await setProfileCountryCode(studentProfileId, grantCountry);
+    await announceIfNewlyEntitled(
+      wasEntitled,
+      studentProfileId,
+      payerProfileId,
+    );
+    if (grantCountry?.source === "provided") {
+      await setProfileCountryCode(studentProfileId, grantCountry.country);
     }
     written += 1;
   }
@@ -1748,8 +1840,33 @@ async function fulfilCheckoutSession(
    * fail-closed default the owner ruled, and the reason the gate is INERT
    * (meaning: denying) until the owner DML is applied.
    */
-  const eligibility = evaluateCountryEligibility(
+  /**
+   * NO COUNTRY ON THE SESSION IS EVALUATED AS US — owner ruling (Karl) 2026-10-10, confirmed
+   * the same day as overriding INV-03-08 for a missing country (SCL-228, OPEN).
+   * A $0 Checkout (FOUNDING50 on Monthly, `payment_method_collection: "if_required"`) collects
+   * no card and so no billing address; the owner chose this default over asking every buyer
+   * for an address. A country Stripe DID provide always wins, so a non-Tier-1 country still
+   * denies and remediates exactly as before. `country_source` tells the two apart in the log;
+   * nothing personal is logged. An unseeded Tier-1 list still holds (the default is for a
+   * missing country, never a missing configuration).
+   */
+  const billing = resolveBillingCountry(
     session.customer_details?.address?.country,
+  );
+  if (billing.source === "default_us") {
+    logger.info(
+      "STRIPE_WEBHOOK",
+      eventType,
+      "Completed session carries no billing country; evaluated as US (owner ruling 2026-10-10)",
+      {
+        eventId,
+        sessionRef: digestId(session.id),
+        country_source: billing.source,
+      },
+    );
+  }
+  const eligibility = evaluateCountryEligibility(
+    billing.country,
     await getTier1Countries(),
   );
   if (deniesEntitlement(eligibility)) {
@@ -1767,6 +1884,7 @@ async function fulfilCheckoutSession(
         payerProfileId: session.metadata?.payer_profile_id ?? null,
         verdict: eligibility.verdict,
         country: eligibility.verdict === "unknown" ? null : eligibility.country,
+        country_source: billing.source,
       },
     );
     throw new CountryDenialError(

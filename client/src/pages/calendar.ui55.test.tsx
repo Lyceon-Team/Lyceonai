@@ -48,6 +48,11 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  closeSatDates,
+  offeredSatDates,
+  toggleSatDate,
+} from "@/components/sat-dates/sat-date-picker.testing";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import {
@@ -59,6 +64,7 @@ import {
   launchResponseSchema,
   makeStudyProfileUpsertSchema,
   profileReadResponseSchema,
+  satDateBoundResponseSchema,
   profileUpsertResponseSchema,
   versionResponseSchema,
   type CalendarSetupDefaults,
@@ -149,6 +155,8 @@ import CalendarPage from "./calendar";
 /** Thursday 1 October 2026: the week shown is Monday 28 September to Sunday 4 October. */
 const NOW = new Date("2026-10-01T15:00:00Z");
 const TODAY = "2026-10-01";
+/** The served bound (`GET /api/sat-dates/bound`, owner rulings 2026-10-11 and 2026-10-12). */
+const LATEST_TEST_DATE = "2027-06-05";
 /** The SAT date, moved inside the week so the grid can star it. */
 const TEST_DATE = "2026-10-03";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -182,6 +190,7 @@ function harnessDefaults(): CalendarSetupDefaults {
       "default_full_length_weekday",
     ) as number,
     final_exam_lead_days: config.get("final_exam_lead_days") as number,
+    target_exam_dates: [],
   };
 }
 
@@ -241,6 +250,14 @@ function install(scenario: Scenario): void {
         return scenario.calendar.clone();
       return json((scenario.calendar ?? paidWeek)());
     }
+    if (method === "GET" && url === "/api/sat-dates/bound") {
+      return json({
+        ...satDateBoundResponseSchema.parse({
+          latest_test_date: LATEST_TEST_DATE,
+        }),
+        requestId: "r",
+      });
+    }
     if (method === "GET" && url === "/api/calendar/profile") {
       return json({
         ...profileReadResponseSchema.parse({ profile: state.profile }),
@@ -257,7 +274,18 @@ function install(scenario: Scenario): void {
           full_length_weekday: null,
           full_length_interval_weeks: null,
         }),
-        target_exam_date: body.target_exam_date as string | null,
+        // SCL-223 as the database applies it: the dates are stored, and the single column is
+        // the effective date — the closest one on or after today.
+        ...(Array.isArray(body.target_exam_dates)
+          ? {
+              target_exam_dates: body.target_exam_dates as string[],
+              target_exam_date:
+                (body.target_exam_dates as string[])
+                  .slice()
+                  .sort()
+                  .find((d) => d >= TODAY) ?? null,
+            }
+          : { target_exam_date: body.target_exam_date as string | null }),
         target_score: body.target_score as number | null,
       };
       state.profile = next;
@@ -596,6 +624,37 @@ describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
     expect(await screen.findByTestId("calendar-settings-sheet")).toBeTruthy();
   });
 
+  // Owner brief 2026-10-11 §1 / SCL-223 as amended: the sheet's SAT dates reach the profile
+  // write as the date list, through the page's save (not only the sheet's draft).
+  it("Edit schedule: a date chosen in the sheet's picker is in the PUT body as target_exam_dates", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    await openMore();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit schedule" }));
+    await screen.findByTestId("calendar-settings-sheet");
+    // Owner ruling 2026-10-11: the sheet's picker offers nothing past the served bound.
+    await waitFor(() =>
+      expect(offeredSatDates("settings-exam-dates")).toContain(
+        LATEST_TEST_DATE,
+      ),
+    );
+    const offered = offeredSatDates("settings-exam-dates");
+    expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
+    toggleSatDate("settings-exam-dates", "2026-12-05");
+    closeSatDates("settings-exam-dates");
+    fireEvent.click(screen.getByTestId("settings-save"));
+    await waitFor(() =>
+      expect(sent("PUT", "/api/calendar/profile")).toHaveLength(1),
+    );
+    const body = sent("PUT", "/api/calendar/profile")[0] as Record<
+      string,
+      unknown
+    >;
+    expect(body.target_exam_dates).toContain("2026-12-05");
+    expect(Object.keys(body)).not.toContain("target_exam_date");
+  });
+
   it("Regenerate plan posts to /api/calendar/plan/regenerate with a fresh key, then reads Plan regenerated", async () => {
     await mount("paid");
     await screen.findByTestId("calendar-week-grid");
@@ -618,7 +677,7 @@ describe("paid: the header's ⋯ menu (OQ-66 (c))", () => {
 });
 
 describe("paid: no streak line and no facts strip (SCL-211, OQ-56)", () => {
-  it("the week draws; neither the streak line nor the facts strip does, and no streak is read", async () => {
+  it("the week draws; neither the streak line nor the facts strip does, and no streak is read separately", async () => {
     await mount("paid");
     // Presence first: the grid, the header and the payload's own streak and facts are real.
     const grid = await screen.findByTestId("calendar-week-grid");
@@ -633,7 +692,17 @@ describe("paid: no streak line and no facts strip (SCL-211, OQ-56)", () => {
     // Absence.
     expect(screen.queryByTestId("calendar-facts")).toBeNull();
     expect(document.querySelector('[data-item="streak"]')).toBeNull();
-    expect(document.body.textContent).not.toMatch(/day streak/);
+    // Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the goal card shows
+    // "🔥 N-day streak" from the payload's own streak; it is the only place the streak appears.
+    const goalStreak = screen.queryByTestId("calendar-goal-streak");
+    expect(goalStreak?.textContent ?? null).toBe(
+      (week.streak.current ?? 0) > 0
+        ? `🔥 ${week.streak.current}-day streak`
+        : null,
+    );
+    expect(document.body.textContent?.match(/day streak/g)?.length ?? 0).toBe(
+      goalStreak === null ? 0 : 1,
+    );
     expect(document.body.textContent).not.toMatch(/blocks complete/);
     expect(streakReads()).toEqual([]);
   });
@@ -796,12 +865,16 @@ describe("paid: the header and card layout rules (QA 2026-10-07 items 11(c), 11(
     expect(css).toContain("@container lyc-cal-body (min-width: 920px) {");
   });
 
-  it("(c) a card's text breaks rather than overflow, and the started tag is cut", () => {
+  it("(c) a card's text wraps between words, never inside one, and the started tag is cut", () => {
     const css = studentCss();
     // The QA block's `.block` rule (the first is the base card's).
     const block = css.slice(css.indexOf("QA 2026-10-07 item 11(c)"));
-    expect(rule(block, ".lyceon-calendar.lyc-cal .block")).toContain(
-      "overflow-wrap: anywhere;",
+    // QA2-C (Karl, 2026-10-08): "no mid-word breaks"; `anywhere` split "Conventi/ons".
+    const card = rule(block, ".lyceon-calendar.lyc-cal .block");
+    expect(card).toContain("overflow-wrap: normal;");
+    expect(card).not.toContain("anywhere");
+    expect(css).not.toMatch(
+      /overflow-wrap:\s*anywhere|word-break:\s*break-all/,
     );
     expect(rule(block, ".lyceon-calendar.lyc-cal .block .ttl")).toContain(
       "flex-wrap: wrap;",
@@ -809,9 +882,69 @@ describe("paid: the header and card layout rules (QA 2026-10-07 items 11(c), 11(
     const lock = rule(block, ".lyceon-calendar.lyc-cal .block .lock");
     expect(lock).toContain("text-overflow: ellipsis;");
     expect(lock).toContain("max-width: 100%;");
-    expect(rule(block, ".lyceon-calendar.lyc-cal .block .dom span")).toContain(
-      "max-width: 100%;",
+    const chip = rule(block, ".lyceon-calendar.lyc-cal .block .dom > span");
+    expect(chip).toContain("max-width: 100%;");
+    // A word wider than the chip is cut with an ellipsis, not split.
+    expect(chip).toContain("overflow: hidden;");
+    expect(chip).toContain("text-overflow: ellipsis;");
+  });
+
+  /** The body of the first `@container` block that opens with exactly this prelude. */
+  function containerBody(css: string, prelude: string): string {
+    const at = css.indexOf(`${prelude} {`);
+    expect(at).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("\n}\n", at));
+  }
+
+  it("(QA2-C) a narrow week column and a narrow month draw the compact label; a narrow chip keeps one line", () => {
+    const css = studentCss();
+    // The week: the seven-column rules under 910px (a column under 130px).
+    const week = containerBody(css, "@container (max-width: 909px)");
+    expect(week).toMatch(/\.ttl-full \{\s*display: none;/);
+    expect(week).toMatch(/\.ttl-short \{\s*display: inline;/);
+    expect(week).toMatch(/\.dname \{[^}]*text-overflow: ellipsis;/);
+    expect(week).toMatch(/\.dcount \{\s*flex: none;/);
+    expect(week).toMatch(/> span \{[^}]*white-space: nowrap;/);
+    // Elsewhere the compact title is not drawn.
+    expect(rule(css, ".lyceon-calendar.lyc-cal .block .ttl-short")).toContain(
+      "display: none;",
     );
+    // The month is its own size container, and swaps under 910px.
+    expect(css).toContain(
+      ".lyceon-calendar.lyc-cal .month {\n  container: lyc-cal-month / inline-size;\n}",
+    );
+    const month = containerBody(
+      css,
+      "@container lyc-cal-month (max-width: 909.98px)",
+    );
+    expect(month).toMatch(/\.mchip \.full \{\s*display: none;/);
+    expect(month).toMatch(/\.mchip \.short \{\s*display: inline;/);
+    // Under 560px (the phone's 55px cells) the count may go under the label, at the space.
+    const phone = containerBody(
+      css,
+      "@container lyc-cal-month (max-width: 559.98px)",
+    );
+    expect(phone).toMatch(/\.mchip > span \{\s*white-space: normal;/);
+  });
+
+  it("(QA2-C) the cards carry the compact label from the canonical table, hidden from assistive technology", async () => {
+    await mount("paid");
+    await screen.findByTestId("calendar-week-grid");
+    const shorts = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".lyceon-calendar .block .ttl-short",
+      ),
+    );
+    // Presence first.
+    expect(shorts.length).toBeGreaterThan(0);
+    for (const short of shorts) {
+      expect(short.getAttribute("aria-hidden")).toBe("true");
+      expect(short.textContent).toMatch(/^(Rev|Math|R&W) \d+$/);
+      const card = short.closest(".block");
+      const full = card?.querySelector(".ttl-full")?.textContent ?? "";
+      expect(full.length).toBeGreaterThan(short.textContent?.length ?? 0);
+      expect(card?.getAttribute("aria-label")?.startsWith(full)).toBe(true);
+    }
   });
 });
 
@@ -963,9 +1096,18 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
   it("Save sends PUT /api/calendar/profile with a key the route accepts, then shows the saved goal", async () => {
     await mount("free", { calendar: freeSetupRequired, profile: null });
     const form = await screen.findByTestId("calendar-free-setup");
-    fireEvent.change(within(form).getByLabelText("Test date"), {
-      target: { value: "2026-12-05" },
-    });
+    // Owner brief 2026-10-11: the one SAT-date picker (a dropdown multi-select), offering
+    // nothing past the served bound (owner ruling 2026-10-11, Karl on #1204).
+    await waitFor(() =>
+      expect(offeredSatDates("calendar-free-test-dates")).toContain(
+        LATEST_TEST_DATE,
+      ),
+    );
+    const offered = offeredSatDates("calendar-free-test-dates");
+    expect(offered.every((d) => d <= LATEST_TEST_DATE)).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
+    toggleSatDate("calendar-free-test-dates", "2026-12-05");
+    closeSatDates("calendar-free-test-dates");
     fireEvent.change(within(form).getByLabelText("Target score"), {
       target: { value: "1400" },
     });
@@ -991,7 +1133,7 @@ describe("free: before setup (DESIGN.md §4, SCL-130)", () => {
     ).toEqual([]);
     if (!parsed.success) throw new Error("asserted above");
     expect(parsed.data.idempotency_key).toMatch(UUID);
-    expect(parsed.data.target_exam_date).toBe("2026-12-05");
+    expect(parsed.data.target_exam_dates).toEqual(["2026-12-05"]);
     expect(parsed.data.target_score).toBe(1400);
     // A first save carries the schedule the route requires on create (REQUIRED_ON_CREATE).
     expect(parsed.data.study_days_mask).toBeGreaterThan(0);

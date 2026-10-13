@@ -16,6 +16,15 @@
  * committed, so a mail failure is logged (ids and a redacted address only) and returned as a
  * Result, never thrown and never surfaced as a failed request. The completed notice has NO
  * retry by design — a retry would need the address persisted, and it must not be.
+ *
+ * QUIET HOURS (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 2) | @implemented
+ * [2026-10-09]: each send names its audience for the guard in transport.ts. The guardian invite
+ * and the deletion-scheduled email are `user_triggered` — each is sent inside the request of the
+ * person who just asked for it (a student inviting a guardian; an account holder deleting their
+ * account, whose email carries the recovery link) — and go at once. The deletion-completed notice
+ * is NOT exempt (`student_or_guardian`, as the ruling says): its job runs at 15:00 UTC (daytime in
+ * Chicago in both CST and CDT) and the route refuses to run in the window (internal-cron-routes.ts),
+ * so it is never due then; if it were, the transport would hand it to Resend scheduled for 08:00.
  */
 import { createHash } from "node:crypto";
 import { err, type Result } from "../../../packages/shared/src/result";
@@ -27,6 +36,7 @@ import { siteUrlFromEnv } from "./templates";
 import {
   defaultEmailTransport,
   type EmailSendFailure,
+  type EmailSendSuccess,
   type EmailTransport,
 } from "./transport";
 
@@ -63,12 +73,11 @@ type DirectSendDeps = {
   transport?: EmailTransport;
   /** PUBLIC_SITE_URL without trailing slash; defaults to the environment. */
   siteUrl?: string;
+  /** The clock the transport's quiet-hours guard reads. Default: the process clock. */
+  now?: Date;
 };
 
-export type DirectSendResult = Result<
-  { providerMessageId: string },
-  EmailSendFailure
->;
+export type DirectSendResult = Result<EmailSendSuccess, EmailSendFailure>;
 
 function resolveSiteUrl(deps: DirectSendDeps): string {
   return deps.siteUrl ?? siteUrlFromEnv();
@@ -116,6 +125,9 @@ export async function sendAccountDeletionScheduledEmail(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    // Sent in the account holder's own deletion request, carrying the recovery link: exempt.
+    audience: "user_triggered",
+    ...(deps.now ? { now: deps.now } : {}),
   });
   if (sent.ok) {
     logger.info(
@@ -205,6 +217,9 @@ export async function sendGuardianLinkInviteEmail(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    // The invite a student sends, in their own request: exempt (owner ruling 2026-10-09).
+    audience: "user_triggered",
+    ...(deps.now ? { now: deps.now } : {}),
   });
   if (sent.ok) {
     logger.info(
@@ -270,6 +285,9 @@ export async function sendAccountDeletionCompletedEmail(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    // NOT exempt (owner ruling 2026-10-09): a cron send, not the recipient's own request.
+    audience: "student_or_guardian",
+    ...(deps.now ? { now: deps.now } : {}),
   });
   if (sent.ok) {
     logger.info(

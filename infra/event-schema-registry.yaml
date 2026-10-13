@@ -19,10 +19,12 @@
 # subscription_payment_failed, practice_session_started, practice_question_submitted,
 # practice_session_completed, exam_completed, exam_section_partial_abandoned, exam_resumed,
 # mastery_event_observed, mastery_level_changed, error_caught. (consent_captured was registered
-# 2026-10-05 for the marketing opt-in, plan Q5.)
+# 2026-10-05 for the marketing opt-in, plan Q5; the five Home QOTD events qotd_viewed,
+# qotd_answered, qotd_email_prompt_shown, qotd_email_consent and streak_extended were registered
+# 2026-10-09 by the owner brief "Question of the Day on Home".)
 
 schema_version: "1.0.0"
-last_updated: "2026-10-05"
+last_updated: "2026-10-09"
 owner_doc: "07A V1.0"
 
 events:
@@ -243,6 +245,134 @@ events:
       consent_type:      not_pii
       consent_version:   not_pii
     retention_class: standard_analytics
+
+  - event_name: qotd_viewed
+    schema_tier: strict
+    canonical_event_class: practice
+    owner: "07A V1.0"
+    V1_active: true
+    schema_version: "1.0.0"
+    description: "Home Question of the Day card shown to a signed-in student (owner brief 2026-10-09). The question and the student's answer are never carried."
+    json_schema:
+      type: object
+      additionalProperties: false
+      required: [event_name, timestamp, analytics_user_id, schema_version, qotd_state]
+      properties:
+        event_name:        { type: string, const: "qotd_viewed" }
+        timestamp:         { type: string, format: date-time }
+        analytics_user_id: { type: string, format: uuid }
+        schema_version:    { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+        qotd_state: { type: string, enum: [unanswered, answered] }
+    pii_redaction:
+      event_name:        not_pii
+      timestamp:         not_pii
+      analytics_user_id: opaque_id_only
+      schema_version:    not_pii
+      qotd_state: not_pii
+    retention_class: standard_analytics
+
+  - event_name: qotd_answered
+    schema_tier: strict
+    canonical_event_class: practice
+    owner: "07A V1.0"
+    V1_active: true
+    schema_version: "1.0.0"
+    description: "A signed-in student answered the Question of the Day on Home (first answer of the day only; replays are not re-emitted). Correctness only; never the choice or the question."
+    json_schema:
+      type: object
+      additionalProperties: false
+      required: [event_name, timestamp, analytics_user_id, schema_version, is_correct, section]
+      properties:
+        event_name:        { type: string, const: "qotd_answered" }
+        timestamp:         { type: string, format: date-time }
+        analytics_user_id: { type: string, format: uuid }
+        schema_version:    { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+        is_correct: { type: boolean }
+        section:      { type: string, enum: [M, RW] }
+    pii_redaction:
+      event_name:        not_pii
+      timestamp:         not_pii
+      analytics_user_id: opaque_id_only
+      schema_version:    not_pii
+      is_correct: not_pii
+      section: not_pii
+    retention_class: standard_analytics
+
+  - event_name: qotd_email_prompt_shown
+    schema_tier: strict
+    canonical_event_class: practice
+    owner: "07A V1.0"
+    V1_active: true
+    schema_version: "1.0.0"
+    description: "The daily-email prompt was shown after a Question of the Day answer. ask_number counts asks, one per Chicago day."
+    json_schema:
+      type: object
+      additionalProperties: false
+      required: [event_name, timestamp, analytics_user_id, schema_version, ask_number]
+      properties:
+        event_name:        { type: string, const: "qotd_email_prompt_shown" }
+        timestamp:         { type: string, format: date-time }
+        analytics_user_id: { type: string, format: uuid }
+        schema_version:    { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+        ask_number: { type: integer, minimum: 1 }
+    pii_redaction:
+      event_name:        not_pii
+      timestamp:         not_pii
+      analytics_user_id: opaque_id_only
+      schema_version:    not_pii
+      ask_number: not_pii
+    retention_class: standard_analytics
+
+  - event_name: qotd_email_consent
+    schema_tier: strict
+    canonical_event_class: system
+    owner: "07A V1.0"
+    V1_active: true
+    schema_version: "1.0.0"
+    description: "The student's decision on the daily-email prompt. No email address or consent text."
+    json_schema:
+      type: object
+      additionalProperties: false
+      required: [event_name, timestamp, analytics_user_id, schema_version, decision]
+      properties:
+        event_name:        { type: string, const: "qotd_email_consent" }
+        timestamp:         { type: string, format: date-time }
+        analytics_user_id: { type: string, format: uuid }
+        schema_version:    { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+        decision: { type: string, enum: [grant, not_now, never] }
+    pii_redaction:
+      event_name:        not_pii
+      timestamp:         not_pii
+      analytics_user_id: opaque_id_only
+      schema_version:    not_pii
+      decision: not_pii
+    retention_class: standard_analytics
+
+  - event_name: streak_extended
+    schema_tier: strict
+    canonical_event_class: practice
+    owner: "07A V1.0"
+    V1_active: true
+    schema_version: "1.0.0"
+    description: "The student's first answered question of a Chicago day extended (or started) the daily streak."
+    json_schema:
+      type: object
+      additionalProperties: false
+      required: [event_name, timestamp, analytics_user_id, schema_version, streak_current]
+      properties:
+        event_name:        { type: string, const: "streak_extended" }
+        timestamp:         { type: string, format: date-time }
+        analytics_user_id: { type: string, format: uuid }
+        schema_version:    { type: string, pattern: "^\\d+\\.\\d+\\.\\d+$" }
+        streak_current: { type: integer, minimum: 1 }
+    pii_redaction:
+      event_name:        not_pii
+      timestamp:         not_pii
+      analytics_user_id: opaque_id_only
+      schema_version:    not_pii
+      streak_current: not_pii
+    retention_class: standard_analytics
+
 
 # Doc 07A §7 declares four Person Properties. Only analytics_user_id is used at this launch: the
 # other three (exam_date, exam_date_cohort_id, exam_date_source) are set by the cohort-class

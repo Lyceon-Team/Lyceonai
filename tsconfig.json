@@ -14,6 +14,7 @@
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "downlevelIteration": true,
     "baseUrl": ".",

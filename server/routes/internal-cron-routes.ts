@@ -27,9 +27,26 @@ import {
 } from "../lib/retention/sweeps.js";
 import { runWeeklyRegeneration } from "../services/calendar/weekly-job.js";
 import { runExamNotifications } from "../services/calendar/exam-notify-job.js";
+import {
+  defaultAccountabilityJobDeps,
+  runGuardianAccountabilityJob,
+} from "../services/calendar/accountability-job.js";
 import { runExamScoreRenewal } from "../services/exam-score-renewal/job.js";
-import { runQotdSchedule } from "../services/qotd/schedule-job.js";
+import {
+  defaultOpsAlertDeps,
+  defaultSendAlert,
+  runMonitoredQotdSchedule,
+} from "../services/qotd/qotd-health.js";
+import { sendOpsAlert } from "../lib/ops-alerts.js";
 import type { QotdDbClient } from "../services/qotd/qotd-service.js";
+import { reconcileMarketingContacts } from "../lib/marketing-email-sync.js";
+import { ALL_BLOG_POSTS } from "../../shared/content/blog.js";
+import { runContentPublish } from "../services/content/publish-job.js";
+import { quietHoursDeferral } from "../lib/notifications/quiet-hours.js";
+import {
+  defaultQotdEmailJobDeps,
+  runQotdEmailJob,
+} from "../services/qotd/qotd-email-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -92,6 +109,14 @@ router.get(
  *   2. ACCOUNT_DELETION_LIFECYCLE_V2 — flag-OFF is genuinely dormant: a no-op acknowledgement, no
  *      selector, no deidentify_user call. So shipping with the staged migration unapplied / flag off
  *      cannot anonymize anyone.
+ *
+ * SCHEDULE AND QUIET HOURS (owner ruling, Karl 2026-10-09, schedule audit Step 2 items 1 and 2)
+ * | @implemented [2026-10-09]: scheduled at 15:00 UTC (vercel.json `0 15 * * *`) = 10:00 CDT /
+ * 09:00 CST, so the deletion-completed email it sends is never due in quiet hours. A run that
+ * lands in 21:00–08:00 America/Chicago anyway (a manual trigger) does nothing and says so: the
+ * notice is not exempt, and it cannot be postponed past the step after it — the do-not-contact
+ * suppression added right after the notice would swallow a notice scheduled for 08:00 (the
+ * executor's step 7 comment). The next scheduled run, at most a few hours later, does the work.
  */
 router.get(
   "/execute-deletions",
@@ -107,6 +132,16 @@ router.get(
         skipped: "lifecycle_v2_disabled",
         executedCount: 0,
       });
+      return;
+    }
+    if (quietHoursDeferral(new Date()) !== null) {
+      // Quiet hours (owner ruling 2026-10-09): no deletion-completed email at night. Not an error.
+      logger.info(
+        "DELETION",
+        "execute_deletions_quiet_hours",
+        "Anonymize pass skipped: inside 21:00-08:00 America/Chicago; the next scheduled run does it",
+      );
+      res.json({ ok: true, skipped: "quiet_hours", executedCount: 0 });
       return;
     }
     try {
@@ -236,8 +271,10 @@ router.post(
  * session leaves its queue entries open, which is the point.
  *
  * Managed-service first: this is a Vercel cron entry in vercel.json, the same
- * scheduler already driving legal-acceptance-drain and execute-deletions. No
- * pg_cron (genesis excludes it as platform-managed), no second scheduler.
+ * scheduler already driving legal-acceptance-drain and execute-deletions. Not
+ * pg_cron (genesis excludes it as platform-managed; production runs exactly two pg_cron jobs,
+ * `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's report of
+ * 2026-10-09, both installed by owner-run scripts under scripts/ops/).
  *
  * Runs daily. The window is seven days, so the exact hour is immaterial and a
  * missed run costs nothing — the next run sweeps the same rows plus a day's worth.
@@ -372,6 +409,12 @@ router.get(
  * left behind (attempts below the cap) and hands them to the same dispatcher. Vercel Cron
  * on the hobby plan runs at most daily, so nothing here may be relied on for latency.
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ *
+ * SCHEDULE (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 1) | @implemented
+ * [2026-10-09]: 14:00 UTC (`0 14 * * *`) = 09:00 CDT / 08:00 CST — after quiet hours end, so it
+ * is also what delivers the emails quiet hours postponed to 08:00 Chicago (their `not_before`
+ * has passed by then), and it is the ONE retry path for every type but `qotd_daily` (the 17:00
+ * QOTD run dispatches only its own type). A retried email whose event has expired is dropped.
  */
 router.get(
   "/notification-dispatch-sweep",
@@ -436,7 +479,9 @@ router.get(
  * path re-runs them harmlessly.
  *
  * Scheduled by the vercel.json entry for this path; CRON_SECRET-gated like every other
- * endpoint in this file; unauthorized => 404. No pg_cron (installed, unused, stays so).
+ * endpoint in this file; unauthorized => 404. Not pg_cron: production runs exactly two pg_cron
+ * jobs, `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's report of
+ * 2026-10-09 (this comment used to say pg_cron was unused).
  */
 router.get(
   "/notification-retention-sweep",
@@ -479,7 +524,12 @@ router.get(
  * would answer `skipped_fresh` even without it.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which
- * reveals nothing and fails closed. No pg_cron (installed, unused, stays so).
+ * reveals nothing and fails closed. Not pg_cron: production runs exactly two pg_cron jobs,
+ * `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's report of
+ * 2026-10-09 (this comment used to say pg_cron was unused).
+ *
+ * The "this week" exam notice no longer depends on this cron running first: the notify job
+ * re-plans a due student itself (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 3(4)).
  */
 router.get(
   "/calendar-weekly-regen",
@@ -523,14 +573,25 @@ router.get(
  * Safe to rerun: the event id is derived from (event type, block), so a second call the same day
  * finds the event already there and records `skipped_duplicate` rather than sending twice.
  *
- * SCHEDULED AFTER the weekly regeneration (`30 5`, this at `0 6`), and that order is the point:
- * the weekly job may replan the future half of the horizon, so notifying first could announce a
- * practice test the replan then moves. Delivery does not depend on the dispatch sweep at `30 4`
- * having run — this job sends its own email inline (contract §6.1) and the sweep is only the
- * backstop for a row whose send failed.
+ * SCHEDULE (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 1) | @implemented
+ * [2026-10-09]: 21:00 UTC (`0 21 * * *`) = 16:00 CDT / 15:00 CST, the afternoon before the test
+ * for a Chicago student, outside quiet hours. "Tomorrow" stays right in every zone because the
+ * predicate reads each student's own local today.
+ *
+ * ORDER AGAINST THE WEEKLY RE-PLAN IS NOT A CRON ORDER. This comment used to claim the weekly
+ * regeneration (`30 5`) ran first and that this made the "this week" notice safe. It did not hold
+ * for every zone (a Chicago student in CST was notified at local 00:00 Monday and re-planned at
+ * 23:30 that night), and no single UTC time can make it hold. So the job re-plans any student
+ * whose week notice is due and whose week is not re-planned yet, and the emitter refuses the
+ * notice until it is (exam-notify-job.ts; ruling item 3(4)). Delivery does not depend on the
+ * dispatch sweep — this job sends its own email inline (contract §6.1) and the sweep (14:00 UTC)
+ * is only the backstop for a row whose send failed; the reminder expires at the start of the test
+ * day, so a retry never arrives late.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which reveals
- * nothing and fails closed. No pg_cron (installed, unused, stays so).
+ * nothing and fails closed. Scheduled by Vercel Cron, not pg_cron (production runs exactly two
+ * pg_cron jobs, `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's
+ * report of 2026-10-09; neither touches notifications).
  */
 router.get(
   "/calendar-exam-notify",
@@ -577,13 +638,16 @@ router.get(
  * twice. The silence pass is safe to rerun for a different reason — `setCancelAtPeriodEnd` reads
  * Stripe before writing, so a second pass is a no-op rather than a second webhook.
  *
- * SCHEDULED AFTER the exam notifications (`0 6`, this at `30 6`), and the order is only a courtesy:
- * the two touch nothing in common. It is late enough in the sequence that the dispatch sweep at
- * `30 4` has long finished, which matters not at all — this job sends its own email inline
- * (contract §6.1) and the sweep is only the backstop for a row whose send failed.
+ * SCHEDULE (owner ruling, Karl 2026-10-09, schedule audit Step 2 item 1) | @implemented
+ * [2026-10-09]: 20:00 UTC (`0 20 * * *`) = 15:00 CDT / 14:00 CST, outside quiet hours. It shares
+ * nothing with the exam notifications (21:00 UTC), so their order is immaterial. This job sends
+ * its own email inline (contract §6.1); the dispatch sweep (14:00 UTC) is only the backstop for a
+ * row whose send failed.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404, which reveals
- * nothing and fails closed. No pg_cron (installed, unused, stays so).
+ * nothing and fails closed. Scheduled by Vercel Cron, not pg_cron (production runs exactly two
+ * pg_cron jobs, `exam-abandonment-sweep` and `projection-refresh-outbox-drain`, per the owner's
+ * report of 2026-10-09).
  */
 router.get(
   "/exam-score-renewal",
@@ -627,6 +691,9 @@ router.get(
  * SCHEDULED AT 07:15 UTC: after America/Chicago midnight in both CST (06:00 UTC) and CDT
  * (05:00 UTC), so the build it triggers sees the day that just ended as an archive day. Because
  * the schedule is filled a week ahead, a missed run never leaves today without a question.
+ * The run is monitored (QOTD resilience brief, Karl 2026-10-09; qotd-health.ts): one summary
+ * line, every unfilled day at ERROR, and an owner alert (Slack + email, once per condition per
+ * day) when it throws, leaves a day unfilled, or leaves the horizon under 7 days.
  *
  * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
  */
@@ -638,11 +705,20 @@ router.get(
       return;
     }
     try {
-      const summary = await runQotdSchedule({
+      // QOTD resilience brief (Karl, 2026-10-09): one summary line per run, every failure at
+      // ERROR, an alert on a throw, an unfilled day or a horizon under 7 (qotd-health.ts).
+      const { summary, health } = await runMonitoredQotdSchedule({
         client: getSupabaseAdmin() as unknown as QotdDbClient,
         deployHookUrl: process.env.VERCEL_DEPLOY_HOOK_URL,
+        sendAlert: defaultSendAlert(),
       });
-      res.json({ ok: true, job: "qotd_schedule", summary });
+      res.json({
+        ok: true,
+        job: "qotd_schedule",
+        summary,
+        horizon: health.horizon.horizon,
+        runsOutOn: health.horizon.runs_out_on,
+      });
     } catch (err) {
       logger.error(
         "QOTD",
@@ -651,6 +727,231 @@ router.get(
         err,
       );
       res.status(500).json({ error: "qotd_schedule_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/content-publish
+ * @spec [docs/Spec/Lyceon_Doc_10B.md §8.3, §8.4 ("a daily job triggers the production deploy hook
+ *        only on days when an item's date arrives"); owner answers on Doc 10B Phase 1 Step 0
+ *        (Karl, 2026-10-11)] | @implemented [2026-10-11]
+ *
+ * plain English: scheduled at 12:05 and 13:05 UTC (vercel.json); each run acts only when it is the
+ * 07:00 hour in America/Chicago, so exactly one run a day can act in summer or winter time. It
+ * triggers the production build only when an approved blog post's publishAt is today and has
+ * arrived (server/services/content/publish-job.ts); otherwise it does nothing. Safe to rerun: a
+ * second build on a publish day rebuilds the same site.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/content-publish",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runContentPublish({
+        posts: ALL_BLOG_POSTS,
+        now: new Date(),
+        deployHookUrl: process.env.VERCEL_DEPLOY_HOOK_URL,
+      });
+      res.status(summary.deploy === "failed" ? 500 : 200).json({
+        ok: summary.deploy !== "failed",
+        job: "content_publish",
+        ...summary,
+      });
+    } catch (err) {
+      logger.error(
+        "CONTENT",
+        "content_publish_job_error",
+        "Content publish job failed",
+        err,
+      );
+      res.status(500).json({ error: "content_publish_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/marketing-email-reconcile
+ * @spec [contracts/notifications.contract.md §14 (marketing lane, amended 2026-10-07); owner
+ *        Step 0 decision 1, 2026-10-07 ("daily reconcile only, no new Cloud Tasks queue")]
+ *        | @implemented [2026-10-07]
+ *
+ * plain English: makes Resend's two marketing segments equal to `marketing_email_audience()`,
+ * bringing any unsubscribe back to Lyceon before the contact carrying it is deleted. Opt-outs
+ * made in Lyceon reach Resend at the next run; unsubscribes made in Resend reach Lyceon
+ * immediately through the webhook. Safe to rerun: the plan is computed from state.
+ *
+ * Answers 500 when the run stopped before writing (missing config, a missing segment, a failed
+ * read) or when any single write failed, so the cron run shows as failed and is looked at; the
+ * summary carries counts only.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/marketing-email-reconcile",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await reconcileMarketingContacts(
+        req.requestId === undefined ? {} : { requestId: req.requestId },
+      );
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "marketing_email_reconcile", summary });
+    } catch (err) {
+      logger.error(
+        "MARKETING_EMAIL",
+        "marketing_email_reconcile_job_error",
+        "Scheduled marketing contact reconcile failed",
+        err,
+      );
+      res.status(500).json({ error: "marketing_email_reconcile_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/qotd-daily-email
+ * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": the job
+ *        sends only in the 17:00 America/Chicago hour, so 5 PM is right in both CST and CDT;
+ *        SCL-223 (the roll of the effective SAT date rides on it)] | @implemented [2026-10-09]
+ *
+ * SCHEDULE: three DAILY Vercel crons, not one hourly one — the project's plan allows daily crons
+ * only (Vercel refused `5 * * * *` on the preview deploy, 2026-10-09). 22:00 UTC is 17:00 CDT and
+ * 23:00 UTC is 17:00 CST, so exactly one of the two lands in the 17:00 Chicago hour each day and
+ * the other only rolls dates; 06:05 UTC is just after Chicago midnight in both, so a passed SAT
+ * date hands over to the next at the start of the day. An hourly schedule on a plan that allows
+ * it needs no code change.
+ *
+ * plain English: every run rolls the effective SAT dates; in the 17:00 Chicago hour, runs the
+ * `qotd_daily` notification rule (owner ruling on #1166, 2026-10-09): every student who has
+ * answered nothing today gets the in-app notification, and the email too when its channel is on,
+ * then the notification dispatcher sends the queued `qotd_daily` emails — that type only (owner
+ * ruling, Karl 2026-10-09, schedule audit Step 2 item 3(3)). Safe to rerun: the event id is
+ * deterministic per (student, day), so a second run the same day emits and sends nothing. 500
+ * when any send failed, so the run shows as failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/qotd-daily-email",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runQotdEmailJob(defaultQotdEmailJobDeps());
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "qotd_daily_email", summary });
+    } catch (err) {
+      logger.error(
+        "QOTD_EMAIL",
+        "qotd_daily_email_job_error",
+        "Scheduled daily question email failed",
+        err,
+      );
+      res.status(500).json({ error: "qotd_daily_email_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/guardian-daily-digest
+ * @spec [owner brief "Guardian accountability loop" (Karl, 2026-10-13) "Delivery": "one email at
+ *        6 PM Chicago (two UTC cron entries with a Chicago-hour guard, like the QOTD email)";
+ *        "Missed days and back on track"; contracts/notifications.contract.md §2.3, §6.2]
+ *        | @implemented [2026-10-13]
+ *
+ * SCHEDULE: two DAILY Vercel crons (the plan allows daily crons only, see /qotd-daily-email):
+ * 23:00 UTC is 18:00 CDT and 00:00 UTC is 18:00 CST, so exactly one of the two lands in the
+ * 18:00 Chicago hour each day; the other does nothing.
+ *
+ * plain English: in the 18:00 Chicago hour, evaluates every entitled student's planned days
+ * (missed-plan alert, back on track), then builds each guardian's digest (one per guardian per
+ * day, only with something to report, only when their digest email is on), then sends the queued
+ * emails of those three types. Safe to rerun: every event id is deterministic and the rule skips
+ * days already evaluated. 500 when any send or any student evaluation failed, so the run shows as
+ * failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/guardian-daily-digest",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary = await runGuardianAccountabilityJob(
+        defaultAccountabilityJobDeps(),
+      );
+      res
+        .status(summary.ok ? 200 : 500)
+        .json({ ok: summary.ok, job: "guardian_daily_digest", summary });
+    } catch (err) {
+      logger.error(
+        "ACCOUNTABILITY",
+        "guardian_daily_digest_job_error",
+        "Scheduled guardian accountability run failed",
+        err,
+      );
+      res.status(500).json({ error: "guardian_daily_digest_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/ops-alert-test — the owner's test alert.
+ *
+ * @spec [owner brief "QOTD resilience" (Karl, 2026-10-09) "Production proof": "Karl confirms he
+ *       received one test alert, triggered by an owner-only test command; no fake production
+ *       data"] | @implemented [2026-10-09]
+ *
+ * plain English: sends ONE test message through the real ops alert path (Slack and email, the
+ * same ledger), condition `ops_test`, so it goes at most once a day like every other alert. It
+ * writes no QOTD data. Owner-only because it is CRON_SECRET-gated like the rest of this file
+ * (unauthorized => 404); run it with the secret:
+ *   curl -H "Authorization: Bearer $CRON_SECRET" https://lyceon.ai/api/internal/ops-alert-test
+ */
+router.get(
+  "/ops-alert-test",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const outcome = await sendOpsAlert(
+        {
+          condition: "ops_test",
+          title: "Test alert (owner-triggered)",
+          lines: [
+            "This is a test of the Lyceon ops alert path. Nothing is wrong.",
+            "Real alerts: QOTD schedule failures, a horizon under 7 days, no question today, and the recovery message.",
+          ],
+        },
+        defaultOpsAlertDeps(),
+      );
+      res.json({ ok: true, job: "ops_alert_test", outcome });
+    } catch (err) {
+      logger.error(
+        "OPS_ALERT",
+        "ops_alert_test_error",
+        "Ops test alert failed",
+        err,
+      );
+      res.status(500).json({ error: "ops_alert_test_failed" });
     }
   },
 );

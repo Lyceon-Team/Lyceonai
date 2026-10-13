@@ -47,6 +47,7 @@ const RESPONSE = {
   profile: {
     timezone: "America/Chicago",
     target_exam_date: null,
+    target_exam_dates: [],
     target_score: 1400,
     study_days_mask: 127,
     daily_minutes: 60,

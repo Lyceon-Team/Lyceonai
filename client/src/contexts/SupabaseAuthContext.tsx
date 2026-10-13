@@ -30,6 +30,17 @@ import {
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
 
+/** The allowlisted return path on the current URL, if any (the sign-up form's `next`). */
+function signupReturnPath(): string | null {
+  return typeof window === "undefined"
+    ? null
+    : returnPathFromSearch(window.location.search);
+}
+import {
+  AUTH_ROLE_PARAM,
+  type SignupRoleIntent,
+} from "@lyceon/shared/auth-entry";
+
 export type SignupOutcome = "authenticated" | "verification_required";
 
 export interface SignupResult {
@@ -42,9 +53,13 @@ export interface SignupResult {
   };
 }
 
+/**
+ * @spec [SCL-222] | @implemented [2026-10-09] | plain English: the consent source that labels the
+ * acceptance rows the server writes when an account is created. There is no checkbox to report:
+ * the sign-in notice under the buttons is what the person agrees to, and whether a row is written
+ * is decided on the server (account creation), never by this value.
+ */
 export interface SignupLegalConsent {
-  studentTermsAccepted: boolean;
-  privacyPolicyAccepted: boolean;
   consentSource?: ConsentSource;
 }
 
@@ -65,9 +80,13 @@ interface SupabaseAuthContextType {
     password: string,
     legalConsent: SignupLegalConsent,
     displayName?: string,
+    roleIntent?: SignupRoleIntent | null,
   ) => Promise<SignupResult>;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: (legalConsent: SignupLegalConsent) => Promise<void>;
+  signInWithGoogle: (
+    legalConsent: SignupLegalConsent,
+    roleIntent?: SignupRoleIntent | null,
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -366,6 +385,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     password: string,
     legalConsent: SignupLegalConsent,
     displayName?: string,
+    roleIntent?: SignupRoleIntent | null,
   ): Promise<SignupResult> => {
     setAuthLoading(true);
     try {
@@ -378,13 +398,18 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           password,
           displayName,
           legalConsent: {
-            studentTermsAccepted: legalConsent.studentTermsAccepted,
-            privacyPolicyAccepted: legalConsent.privacyPolicyAccepted,
             consentSource: legalConsent.consentSource ?? "email_signup_form",
           },
           // SCL-201 IS 6: the first-touch channel (kept for the tab session only with analytics
           // consent; see lib/analytics/first-touch.ts).
           signupSource: firstTouchSource(),
+          // Owner brief 2026-10-10 rule 2: the account type the sign-up asked for (the server
+          // re-parses it against the same allowlist; absent or unknown is a student).
+          ...(roleIntent ? { role: roleIntent } : {}),
+          // Owner brief 2026-10-10: the page this sign-up came from (`/login?mode=signup&next=…`),
+          // so the email-confirmation link can bring the person back to it. Already sanitised
+          // here; the server re-sanitises.
+          ...(signupReturnPath() ? { next: signupReturnPath() } : {}),
         }),
       });
 
@@ -461,16 +486,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signInWithGoogle = async (legalConsent: SignupLegalConsent) => {
-    if (
-      !legalConsent.studentTermsAccepted ||
-      !legalConsent.privacyPolicyAccepted
-    ) {
-      throw new Error(
-        "You must accept Terms and Privacy before continuing with Google",
-      );
-    }
-
+  const signInWithGoogle = async (
+    legalConsent: SignupLegalConsent,
+    roleIntent?: SignupRoleIntent | null,
+  ) => {
     setAuthLoading(true);
     try {
       // Native Supabase OAuth (PKCE). Supabase owns the Google OAuth callback at
@@ -478,7 +497,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // server exchanges the PKCE code for a session. The Google client secret lives only in the
       // Supabase dashboard — never in app code (HALT-3).
       const consentSource =
-        legalConsent.consentSource ?? "google_continue_pre_oauth";
+        legalConsent.consentSource ?? "google_continue_click";
       const callbackParams = new URLSearchParams({
         consentSource,
         // SCL-201 IS 6: recorded by the callback only on a new, not-yet-onboarded account.
@@ -489,6 +508,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       // shared module before honouring it after the onboarding gate. Off-origin → dropped here.
       const returnPath = returnPathFromSearch(window.location.search);
       if (returnPath) callbackParams.set(RETURN_PATH_PARAM, returnPath);
+      // Owner brief 2026-10-10 rule 2: the role intent rides the same callback URL as `next`;
+      // the server applies it only to the account this sign-in creates.
+      if (roleIntent) callbackParams.set(AUTH_ROLE_PARAM, roleIntent);
       const redirectTo = `${window.location.origin}/auth/callback?${callbackParams.toString()}`;
 
       // @spec [SEO plan F8 (public-page weight); OAUTH-001] | @implemented [2026-10-07] |

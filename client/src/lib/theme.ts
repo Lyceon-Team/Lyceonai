@@ -102,6 +102,26 @@ export function readPaintedTheme(): ResolvedTheme {
     : "light";
 }
 
+/**
+ * @spec [production QA 2026-10-08 item B (Karl: "Desmos: invertedColors when the app theme is
+ *       dark"); DESIGN.md §1, §2 (the timed module is light only)] | @implemented [2026-10-08]
+ * plain English: the theme ONE element is painted in. Its nearest `.lyc` token root decides,
+ * exactly as student-tokens.css does: dark only when the setting is dark and that root is
+ * neither pinned light (`data-theme-lock`) nor previewing light. An element outside any token
+ * root, or not yet mounted (null), reads light. Desmos reads this, so the calculator in the
+ * timed module (pinned light) stays light while the runners' calculator follows the setting.
+ */
+export function readPaintedThemeAt(el: Element | null): ResolvedTheme {
+  if (document.documentElement.getAttribute("data-theme") !== "dark")
+    return "light";
+  const root = el?.closest(".lyc") ?? null;
+  if (root === null) return "light";
+  return root.getAttribute("data-theme-lock") === "light" ||
+    root.getAttribute("data-theme-preview") === "light"
+    ? "light"
+    : "dark";
+}
+
 /** Fires when the theme setting changes, or a token root mounts, unmounts or (un)locks. */
 export function subscribePaintedTheme(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange);

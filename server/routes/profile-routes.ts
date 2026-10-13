@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { isProfileGateSatisfied } from "../../packages/shared/src/profile-completion";
 import { resolveFeatureAccess } from "../lib/feature-access";
 import { z } from "zod";
 import {
@@ -22,6 +23,11 @@ import { logger } from "../logger";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state";
 import { hasPasswordIdentity } from "../lib/password-credentials";
 import { emitEvent } from "../lib/analytics/emit-event";
+import {
+  defaultLifecycleDeps,
+  fireLifecycle,
+  sendOnboardedEvent,
+} from "../lib/lifecycle-email";
 import { signupSourceSchema } from "../../packages/shared/src/analytics-consent-schema";
 import {
   dateOfBirthSchema,
@@ -295,7 +301,14 @@ router.get("/", async (req: Request, res: Response) => {
     const guardianConsentRequired = !!(
       profileRow.is_under_13 && !guardianConnected
     );
-    const requiredProfileComplete = !!profileRow.profile_completed_at;
+    // The shared rule (hotfix 2026-10-11): the same answer `requireProfileComplete` gives, so
+    // the client's gate and the server's can never disagree about this account.
+    const requiredProfileComplete = isProfileGateSatisfied({
+      isAdmin: user.isAdmin,
+      role: profileRow.role,
+      profileCompletedAt: profileRow.profile_completed_at,
+      dateOfBirthKnown: profileRow.date_of_birth !== null,
+    });
 
     // @spec [Doc-01_V8 §40 / §40.3] | @implemented 2026-06-21 | plain English: server-authority
     // exposure of (a) whether the V2 account-deletion lifecycle is live and (b) whether THIS user is in
@@ -430,8 +443,9 @@ router.patch("/", async (req: Request, res: Response) => {
       });
     }
 
-    // G1-02 (R1): the one-time role choice. Every account is created as a student, so a
-    // parent picking "Guardian" is a CHANGE of role; `decideRoleChoice` allows it once,
+    // G1-02 (R1): the one-time role choice. An account is created as a student unless its
+    // sign-up came through the parent entry point (owner brief 2026-10-10), so picking the
+    // other role here is a CHANGE of role; `decideRoleChoice` allows it once,
     // before completion, on an account with no link and no learning state. The facts are
     // only read when a change is actually requested.
     const isRoleChange =
@@ -682,6 +696,21 @@ router.patch("/", async (req: Request, res: Response) => {
     }
     // After user_signed_up, never before: see server/lib/marketing-consent.ts.
     await emitMarketingConsentCaptured(emitEvent, userId, consentWrite);
+
+    // Onboarding events to Resend Automations (Karl, 2026-10-12): on the FIRST completion only,
+    // after the response and fire-and-forget. server/lib/lifecycle-email.ts upserts the contact
+    // and sends `lyceon.onboarded`, or skips (under 13, deletion, denylisted) and logs why.
+    // Registered now, while the request is live, so Vercel's `waitUntil` covers it (Karl,
+    // 2026-10-13); the send itself starts once the response has closed.
+    if (existingProfile.profile_completed_at === null) {
+      const responded = new Promise<void>((resolve) => {
+        res.once("close", () => resolve());
+      });
+      fireLifecycle("onboarded", userId, async () => {
+        await responded;
+        return sendOnboardedEvent(userId, defaultLifecycleDeps());
+      });
+    }
 
     return res.json({
       success: true,

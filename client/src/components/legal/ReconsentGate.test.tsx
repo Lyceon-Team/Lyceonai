@@ -187,6 +187,19 @@ describe("R1 — a guardian sees the prompt and can dismiss it", () => {
       .closest("a");
     expect(link?.getAttribute("href")).toBe("/legal/parent-guardian-terms");
   });
+
+  // UI-62 (student-UI register, the 14px floor) | @implemented [2026-10-08]: the version line
+  // under each document was text-xs (12px). Size only; the words are unchanged.
+  it("prints the version line at 14px, not below", async () => {
+    await renderGate();
+    await screen.findByTestId("reconsent-modal");
+
+    const line = screen.getByText(/^Version 2\.0 · Effective/);
+    expect(line.textContent).toContain("you accepted 1.0");
+    const cls = line.getAttribute("class") ?? "";
+    expect(cls.split(/\s+/)).toContain("text-[14px]");
+    expect(cls).not.toMatch(/(^|\s)text-(xs|sm)(\s|$)/);
+  });
 });
 
 // ── R2 ──────────────────────────────────────────────────────────────────

@@ -99,6 +99,55 @@ export const BANNED: readonly BannedPhrase[] = [
 ];
 
 /**
+ * Words pipeline content never uses: AI, models, automation, or how content is made.
+ *
+ * @spec [docs/Spec/Lyceon_Doc_10B.md §2.12 ("Content never mentions AI, automation or how it was
+ *       made; the only AI it names is LISA, as a product feature"), §2.13, §5 gate 12; owner answer
+ *       on Doc 10B Phase 1 Step 0, item 8 (Karl, 2026-10-11): "content may name LISA as a product
+ *       feature ('LISA, your AI tutor'). Nothing else about AI, models, automation or process."]
+ *       | @implemented [2026-10-11]
+ *
+ * plain English: applied to every blog post by the content gate (shared/seo/content-gate.ts). The
+ * product pages, which describe the AI tutor as a feature, are not pipeline content and keep their
+ * wording. The one exception, LISA named as the AI tutor, is set aside before matching.
+ */
+export const PIPELINE_BANNED: readonly BannedPhrase[] = [
+  {
+    pattern: /\bA\.?I\.?\b/,
+    why: "AI (LISA, your AI tutor, is the only exception)",
+  },
+  {
+    pattern:
+      /\b(artificial intelligence|machine[- ]learning|neural|(large )?language models?|LLMs?|chatbots?|bots?)\b/i,
+    why: "AI or models",
+  },
+  {
+    pattern: /\b((Chat)?GPT|Claude|Codex|Anthropic|OpenAI|Gemini|Copilot)\b/,
+    why: "AI or models: a named model or vendor",
+  },
+  {
+    pattern:
+      /\b(automat(e|ed|es|ing|ion|ic|ically)|algorithms?|(auto|machine)[- ]generated|generated (by|with))\b/i,
+    why: "automation",
+  },
+  {
+    pattern:
+      /\b((our|this|the) (process|pipeline|workflow|content team|editorial team)|(written|drafted|reviewed|edited|produced) by)\b/i,
+    why: "how content is made",
+  },
+];
+
+/** "LISA, your AI tutor" and "the AI tutor, LISA": the one AI mention pipeline content may make. */
+const LISA_AS_FEATURE =
+  /\bLISA\b,?\s+(your|our|an?|the|Lyceon's)\s+AI tutor\b|\bAI tutor,?\s+LISA\b/g;
+
+/** The first pipeline-banned phrase in `text` once LISA-as-a-feature is set aside, or null. */
+export function firstPipelinePhrase(text: string): BannedPhrase | null {
+  const rest = text.replace(LISA_AS_FEATURE, " ");
+  return PIPELINE_BANNED.find((b) => b.pattern.test(rest)) ?? null;
+}
+
+/**
  * Outcome claims: wording that promises or implies a result (a higher score, progress, a gain).
  *
  * @spec [Doctrine rule 5 (outcome/performance claims need Karl's written approval); owner ruling
@@ -160,4 +209,44 @@ export function firstUnapprovedOutcome(text: string): BannedPhrase | null {
 /** The first banned phrase `text` matches, or null. Patterns carry no `g` flag (no lastIndex state). */
 export function firstBannedPhrase(text: string): BannedPhrase | null {
   return BANNED.find((b) => b.pattern.test(text)) ?? null;
+}
+
+/**
+ * Internal labels and mechanisms content pages never name.
+ *
+ * @spec [docs/Spec/Lyceon_Doc_10B.md §5 gate 2 ("no mechanisms, no proprietary details, no bank
+ *       size, no internal labels"); docs/plans/seo/seo-marketing-vertical.md §0 rule 2]
+ *       | @implemented [2026-10-11]
+ *
+ * plain English: applied by the content gate (shared/seo/content-gate.ts) to every content page
+ * and post. Not part of BANNED, which scans every public page: the legal pages must name
+ * entitlements and the mastery data they hold, and do so as a privacy and billing disclosure,
+ * not as a description of how anything works.
+ */
+export const INTERNAL_LABELS: readonly BannedPhrase[] = [
+  {
+    pattern: /\bmastery (score|engine|model|algorithm|level|weights?)s?\b/i,
+    why: "(c) mastery computation",
+  },
+  {
+    pattern: /\bscoring (formula|model|algorithm|weights?|constants?)\b/i,
+    why: "(c) the scoring formula",
+  },
+  {
+    pattern: /\bquestion[- ]selection\b|\bitem response theory\b|\bIRT\b/i,
+    why: "(c) question selection logic",
+  },
+  {
+    pattern: /\b(entitlements?|canonical (ids?|questions?))\b/i,
+    why: "(c) internal label",
+  },
+  {
+    pattern: /\b(SCL|INV|OQ|SEO)-\d+\b/,
+    why: "(c) internal label: a register or plan ID",
+  },
+];
+
+/** The first internal label or mechanism in `text`, or null. */
+export function firstInternalLabel(text: string): BannedPhrase | null {
+  return INTERNAL_LABELS.find((b) => b.pattern.test(text)) ?? null;
 }

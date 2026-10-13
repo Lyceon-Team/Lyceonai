@@ -227,7 +227,7 @@ Nothing here is built yet; Step 0b proceeds in its own PRs.
 | Billing: self / guardian / free | `GET /api/billing/status` | `plan`, `currentPeriodEnd`, `effectiveAccess`, `managedBy` | `UserProfile.tsx` uses `hasManageableSubscription`, not `managedBy` | none | OK server (live, §0). Client switches to `managedBy` |
 | Billing: Manage billing → Stripe | `POST /api/billing/portal` (`billing-routes.ts:912`) | `{url}`; 409 `NO_STRIPE_CUSTOMER` | `useBillingPortal` | — | OK |
 | Billing: See plans | `/upgrade`; `GET /api/billing/plans` | — | `UserProfile.tsx` | — | OK |
-| Notifications: Email notifications switch | **none**: no preference storage, and no sender would honour one. `profiles.marketing_opt_in` exists but no sender reads it | — | `EmailNotificationsCard.tsx` (bounce suppression only) | — | **MISSING**: OQ-27 |
+| Notifications: "Daily question email" switch (OQ-27 superseded 2026-10-09, owner ruling on #1166 item 2) | `GET`/`PUT /api/qotd/email-preference` → `qotd_daily_email_preference` / `set_qotd_daily_email` (the one writer of `notification_channel_preferences`) | `useQotdEmailPreference`, `useSetQotdEmailPreference` | `NotificationsSection.tsx` | `client/src/pages/settings.test.tsx`; `tests/ci/home-qotd.pg.ci.test.ts` A7 | **WIRED** |
 | Appearance | none needed | — | none | — | Client only (UI-47) |
 
 ## 12. Help
@@ -262,7 +262,7 @@ Each item below is in register §9. "New endpoint" and "new field" both need Kar
 | OQ-24 | "Past sessions (N)" on Review | Add `sessions_total` to the `/api/review/pool` response, counted before paging (`review-pool.ts:509-530`) |
 | OQ-25 | The study profile, read without a subscription (free goal card, free setup form after the first save, Settings' OQ-20 condition) | New `GET /api/calendar/profile` → `{profile: StudyProfile \| null}` from `readStudyProfile`, ungated like `PUT /profile` (SCL-130). No plan data |
 | OQ-26 | Sign-in method, and hiding Change password for Google-only (F-38) | Add `hasPassword: boolean` to `GET /api/profile` `user`, from the existing `hasPasswordIdentity` |
-| OQ-27 | Email notifications switch | A ruling first: what the switch controls. Nothing stores it and no sender would read it. Smallest truthful option: it is `profiles.marketing_opt_in`, with a narrow write path. Anything wider changes the notifications contract |
+| OQ-27 | Email notifications switch | **Superseded 2026-10-09** (owner ruling on #1166 item 2): one toggle, "Daily question email", over the `qotd_daily` email channel's stored preference; the notifications contract gained §2A in the same change |
 | OQ-28 | Name save in Settings | A narrow `PATCH /api/profile/name {displayName}`, or drop the `.default(false)` on `marketingOptIn` so an absent field is left alone (F-54) |
 | OQ-29 | Rail lock state with no call to the gated endpoint | Add `features: Record<feature, boolean>` to `GET /api/billing/status`, computed with `canAccessFeature`. Also: which predicate is authoritative for LISA (`isEntitlementActiveForProfile` differs), and what an under-13 student sees on the LISA lock |
 | OQ-30 | Full-Length score history | A new paid-gated `GET /api/tests/sessions?state=scored` (Doc 04C §16.3 projection: `session_id, test_form_name, completed_at, total_scaled, rw_scaled, math_scaled, disclosure.summary`). Doc 04C §16.3 defers the multi-session list to V1.1 |

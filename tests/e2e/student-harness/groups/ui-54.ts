@@ -32,6 +32,14 @@ const TESTS_PAID = {
   mobile: '[data-testid="tests-history"]',
 } as const;
 
+/** QA2 (2026-10-08): the 1024 width, with the desktop steps and selectors. */
+const W1024 = {
+  name: "w1024",
+  width: 1024,
+  height: 768,
+  selectors: "desktop",
+} as const;
+
 /** 390 only: the shared pre-start check's "Continue anyway" (OQ-63). */
 const CONTINUE_ANYWAY = {
   click: {
@@ -82,6 +90,73 @@ export const UI_54: PageGroup = {
         file: "FullLength.dc.html",
         plan: "paid",
         note: "Full-Length, plan = paid",
+      },
+    },
+    {
+      id: "tests-paid-loading",
+      title:
+        'QA2-F (Karl, 2026-10-08: "Full-Length cards: no layout shift on load"): Full-Length, paid, while the tests list loads (`GET /api/tests/forms` held in the browser). The loading rows hold the loaded rows\' size, so nothing moves when they land',
+      persona: "paid",
+      route: "/tests",
+      waitFor: {
+        desktop: '[data-testid="tests-list"]',
+        mobile: '[data-testid="tests-list"]',
+      },
+      holdRequest: { method: "GET", path: "/api/tests/forms" },
+      extraViewports: [W1024],
+      prototype: {
+        kind: "none",
+        reason: "A loading state the prototype does not draw.",
+      },
+    },
+    {
+      id: "tests-paid-load-shift",
+      title:
+        "QA2-F: Full-Length, paid, loaded over a slow network (every `/api/` answer 600ms late): the page's layout shift during load must stay under 0.01 (the run fails otherwise); the measured sum and its largest shifts are under each shot",
+      persona: "paid",
+      route: "/tests",
+      waitFor: TESTS_PAID,
+      expectText: "In progress: Reading & Writing, Module 2",
+      layoutShift: { max: 0.01, apiDelayMs: 600 },
+      extraViewports: [W1024],
+      prototype: {
+        kind: "none",
+        reason:
+          "A measurement of the load; the loaded page is the tests-paid shot.",
+      },
+    },
+    {
+      id: "home-full-length-load-shift",
+      title:
+        "QA2-F: Home's Full-Length card (paid), loaded over a slow network (every `/api/` answer 600ms late): the page's layout shift during load must stay under 0.01 (the run fails otherwise); the measured sum and its largest shifts are under each shot",
+      persona: "paid",
+      route: "/dashboard",
+      waitFor: {
+        desktop: '[data-testid="home-full-length"]',
+        mobile: '[data-testid="home-full-length"]',
+      },
+      layoutShift: { max: 0.01, apiDelayMs: 600 },
+      extraViewports: [W1024],
+      prototype: {
+        kind: "none",
+        reason: "A measurement of the load; Home itself is UI-50's.",
+      },
+    },
+    {
+      id: "home-full-length-load-shift-free",
+      title:
+        "QA2-F: Home's Full-Length card (free: the locked action), loaded over a slow network: layout shift during load under 0.01",
+      persona: "free",
+      route: "/dashboard",
+      waitFor: {
+        desktop: '[data-testid="home-full-length"]',
+        mobile: '[data-testid="home-full-length"]',
+      },
+      layoutShift: { max: 0.01, apiDelayMs: 600 },
+      extraViewports: [W1024],
+      prototype: {
+        kind: "none",
+        reason: "A measurement of the load; Home itself is UI-50's.",
       },
     },
     {

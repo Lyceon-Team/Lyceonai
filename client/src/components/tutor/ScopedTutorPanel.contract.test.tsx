@@ -932,6 +932,32 @@ describe("QA 2026-10-07 — Send is pending from the click (item 5), Show LISA r
     vi.mocked(window.requestAnimationFrame).mockRestore();
   });
 
+  // QA 2026-10-08 item D (Karl: "tapping the icon always brings it into view"): the runner bumps
+  // `revealKey` when the icon is tapped on an open panel scrolled out of view; the panel reveals
+  // itself again without remounting (the draft typed into it survives).
+  it("QA2-D: a new revealKey reveals the open panel again, without remounting it", async () => {
+    const base = { ...props(seedReviewItem(1)), revealOnOpen: true };
+    const view = renderPanel({ ...base, revealKey: 0 });
+    await ready();
+    const panel = screen.getByTestId("scoped-tutor-panel");
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "kept draft" },
+    });
+    // The student scrolls away: the mount's reveal stops.
+    window.dispatchEvent(new Event("wheel"));
+    const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    const panelCalls = (): number =>
+      scroll.mock.contexts.filter((el) => el === panel).length;
+    const before = panelCalls();
+    expect(before).toBeGreaterThan(0);
+    view.rerender({ ...base, revealKey: 1 });
+    expect(panelCalls()).toBeGreaterThan(before);
+    expect(screen.getByTestId("scoped-tutor-panel")).toBe(panel);
+    expect(
+      (screen.getByLabelText("Message") as HTMLTextAreaElement).value,
+    ).toBe("kept draft");
+  });
+
   it("item 8: LISA simply there (every question, W4-4) does not scroll the runner to itself", async () => {
     renderPanel(props(seedReviewItem(1)));
     await ready();

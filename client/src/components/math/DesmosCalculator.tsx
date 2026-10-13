@@ -1,8 +1,9 @@
 /**
  * @spec [Doc-02B_v4, §28 Math Tooling: Desmos and Formula Sheet] | @implemented [2026-07-26]
  * Desmos calculator with graphing/scientific mode toggle and Bluebook-parity resizable panel.
- * Per-mode state is retained across mode switches via a mode-keyed map flushed
- * synchronously before switching. The session payload persisted through
+ * Opens on Scientific; both calculators start in degrees (owner brief 2026-10-11). Each tab's
+ * calculator is created once and kept across mode switches (one host per tab, the hidden one
+ * `display: none`); a pending save is flushed synchronously before switching. The session payload persisted through
  * onStateChange is the full { graphing, scientific } map so both modes survive
  * reload. Legacy sessions that stored a single graphing-shaped blob are
  * recognized and loaded as graphing-only (backward compatible).
@@ -17,7 +18,9 @@ import React, {
   useRef,
   useState,
   useCallback,
+  useSyncExternalStore,
 } from "react";
+import { readPaintedThemeAt, subscribePaintedTheme } from "@/lib/theme";
 
 declare global {
   interface DesmosCalculatorInstance {
@@ -27,6 +30,7 @@ declare global {
     destroy: () => void;
     observeEvent: (event: string, cb: () => void) => void;
     unobserveEvent: (event: string, cb: () => void) => void;
+    updateSettings: (settings: Record<string, unknown>) => void;
   }
 
   interface Window {
@@ -152,6 +156,16 @@ type DesmosCalculatorProps = {
   onStateChange?: (state: unknown) => void;
   debounceMs?: number;
   fillHeight?: boolean;
+  /**
+   * Filled with a function that emits any change still inside the debounce, now, through
+   * `onStateChange` — so a caller about to save (leaving the question) sees the last keystroke.
+   */
+  flushRef?: React.MutableRefObject<(() => void) | null>;
+  /**
+   * The component's own save moments: a tab switch, the calculator closing (`expanded` going
+   * false) and unmount. Called after any pending change has been emitted.
+   */
+  onCommit?: () => void;
 };
 
 const EXPANDED_HEIGHT_GRAPHING = 520;
@@ -179,15 +193,77 @@ export default function DesmosCalculator({
   onStateChange,
   debounceMs = 600,
   fillHeight = false,
+  flushRef,
+  onCommit,
 }: DesmosCalculatorProps): React.ReactElement {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const calcRef = useRef<DesmosCalculatorInstance | null>(null);
-  const stateDebounceRef = useRef<number | null>(null);
+  /**
+   * @spec [Doc-02B_v4 §28; owner brief 2026-10-11 ("default to Scientific + DEG, and fix the
+   *       keypad"; "switching tabs keeps each calculator's state, no re-creation on switch")]
+   * @implemented [2026-10-11]
+   * plain English: ONE Desmos calculator per tab, each in its own host inside the same bordered
+   * box, created the first time its tab is shown and never again while the component is mounted.
+   * Switching tabs only shows one host and hides the other (then `resize()`s the one shown), so
+   * each calculator keeps its expressions, cursor and keypad. Both start in degrees
+   * (`degreeMode: true`) and the component opens on Scientific.
+   *
+   * THE KEYPAD BUG this replaces: every caller stores the state this component emits and passes
+   * it straight back as `initialState` (ExamModulePage `setCalculatorState`/`calculatorState`,
+   * CanonicalPracticePage `onCalculatorStateChange`/`localCalculatorState`). The old code applied
+   * every new `initialState` with `setState` on the live Graphing calculator, so ~600 ms after
+   * each pause in typing the calculator was reset under the student: the expression being
+   * edited lost focus, Desmos's keypad closed, and the next presses went nowhere. Now an
+   * `initialState` equal to what this component last emitted is recognised as its own echo and
+   * ignored; only a genuinely different state (a resume) is applied.
+   */
+  const hostRefs = useRef<Record<CalculatorMode, HTMLDivElement | null>>({
+    graphing: null,
+    scientific: null,
+  });
+  const calcRefs = useRef<
+    Record<CalculatorMode, DesmosCalculatorInstance | null>
+  >({
+    graphing: null,
+    scientific: null,
+  });
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const debounceRefs = useRef<Record<CalculatorMode, number | null>>({
+    graphing: null,
+    scientific: null,
+  });
   const onStateChangeRef = useRef(onStateChange);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [mode, setMode] = useState<CalculatorMode>("graphing");
+  const [desmosReady, setDesmosReady] = useState(false);
+  const [mode, setMode] = useState<CalculatorMode>("scientific");
   const modeStateRef = useRef<PerModeState>(parseInitialState(initialState));
-  const activeModeRef = useRef<CalculatorMode>("graphing");
+  const activeModeRef = useRef<CalculatorMode>("scientific");
+  /** The serialized payload this component last emitted: its own echo, never re-applied. */
+  const lastEmittedKeyRef = useRef<string | null>(null);
+
+  /**
+   * @spec [production QA 2026-10-08 item B (Karl: "Desmos: invertedColors when the app theme is
+   *       dark (Graphing and Scientific)"); DESIGN.md §1 (light and dark), §2 (the timed module
+   *       is light only)] | @implemented [2026-10-08]
+   * plain English: Desmos draws its own UI, white whatever the page. Its `invertedColors`
+   * setting is its dark look, so it is on exactly when the host is painted dark: the theme
+   * setting is dark and the host's `.lyc` root is not pinned light (readPaintedThemeAt; the
+   * timed module is pinned light, so its calculator stays light). Read from the DOM through the
+   * same store the cookie surface uses, so a change in Settings, or a root that (un)locks,
+   * re-renders this component. Both calculators are constructed with the current value (a ref,
+   * so a theme change never re-runs the construction effect), and a later change is applied
+   * live with `updateSettings`, so the calculator, its expressions and its viewport survive.
+   * On the first render the host is not mounted yet and reads light; React re-reads the
+   * snapshot when it subscribes after mount, before Desmos (loaded asynchronously) exists.
+   */
+  const invertedColors =
+    useSyncExternalStore(
+      subscribePaintedTheme,
+      () => readPaintedThemeAt(boxRef.current),
+      () => "light" as const,
+    ) === "dark";
+  const invertedColorsRef = useRef(invertedColors);
+  invertedColorsRef.current = invertedColors;
 
   const initialStateKey = useMemo(
     () => JSON.stringify(initialState ?? null),
@@ -198,100 +274,81 @@ export default function DesmosCalculator({
     onStateChangeRef.current = onStateChange;
   }, [onStateChange]);
 
-  useEffect(() => {
-    if (initialState != null) {
-      const parsed = parseInitialState(initialState);
-      modeStateRef.current.graphing = parsed.graphing;
-      modeStateRef.current.scientific = parsed.scientific;
-    }
-  }, [initialStateKey, initialState]);
-
   const emitPerModeState = useCallback((): void => {
-    if (!onStateChangeRef.current) return;
-    onStateChangeRef.current({
+    const payload: PerModeState = {
       graphing: modeStateRef.current.graphing,
       scientific: modeStateRef.current.scientific,
-    });
+    };
+    lastEmittedKeyRef.current = JSON.stringify(payload);
+    onStateChangeRef.current?.(payload);
   }, []);
 
-  const flushActiveState = useCallback((): void => {
-    const calculator = calcRef.current;
-    if (!calculator) return;
-    if (stateDebounceRef.current !== null) {
-      window.clearTimeout(stateDebounceRef.current);
-      stateDebounceRef.current = null;
-    }
-    const currentState = calculator.getState();
-    modeStateRef.current[activeModeRef.current] = currentState;
-    emitPerModeState();
-  }, [emitPerModeState]);
+  /** Save a calculator's state now (a pending debounce is cancelled and done immediately). */
+  const flushState = useCallback(
+    (kind: CalculatorMode): void => {
+      const calculator = calcRefs.current[kind];
+      const pending = debounceRefs.current[kind];
+      if (pending === null || !calculator) return;
+      window.clearTimeout(pending);
+      debounceRefs.current[kind] = null;
+      modeStateRef.current[kind] = calculator.getState();
+      emitPerModeState();
+    },
+    [emitPerModeState],
+  );
+
+  /**
+   * @spec [register G-NEW-14; owner brief 2026-10-12 ("save only on: leaving or submitting the
+   *       question …; closing the calculator panel or switching its tab; the page closing or going
+   *       hidden; one save after 10 s of no calculator activity"; "the 600 ms debounce stays for
+   *       local UI state only")] | @implemented [2026-10-12]
+   * plain English: the debounce below only keeps the caller's copy of the state current; it is
+   * never a save. Saving is the caller's, at the moments it is told about: `onCommit` for the
+   * ones this component sees (tab switch, close, unmount), `flushRef` for the caller's own
+   * (leaving the question), so the state saved always includes the last keystroke.
+   */
+  const flushAll = useCallback((): void => {
+    flushState("graphing");
+    flushState("scientific");
+  }, [flushState]);
+
+  useEffect(() => {
+    if (!flushRef) return;
+    flushRef.current = flushAll;
+    return () => {
+      if (flushRef.current === flushAll) flushRef.current = null;
+    };
+  }, [flushRef, flushAll]);
 
   const handleModeSwitch = useCallback(
     (nextMode: CalculatorMode): void => {
       if (nextMode === activeModeRef.current) return;
-      flushActiveState();
+      flushState(activeModeRef.current);
       activeModeRef.current = nextMode;
       setMode(nextMode);
+      onCommitRef.current?.();
     },
-    [flushActiveState],
+    [flushState],
   );
 
+  // Closing the calculator (expanded → collapsed) is a save moment.
+  const wasExpandedRef = useRef(expanded);
+  useEffect(() => {
+    const was = wasExpandedRef.current;
+    wasExpandedRef.current = expanded;
+    if (was && !expanded) {
+      flushAll();
+      onCommitRef.current?.();
+    }
+  }, [expanded, flushAll]);
+
+  // Load the Desmos script once for this mount.
   useEffect(() => {
     let mounted = true;
     setLoadError(null);
-
     void loadDesmosScriptOnce()
       .then(() => {
-        if (!mounted || !hostRef.current || !window.Desmos) return;
-
-        if (calcRef.current) {
-          const handler = changeHandlers.get(calcRef.current);
-          if (handler) {
-            calcRef.current.unobserveEvent("change", handler);
-          }
-          calcRef.current.destroy();
-          calcRef.current = null;
-        }
-
-        const Constructor =
-          mode === "scientific"
-            ? window.Desmos.ScientificCalculator
-            : window.Desmos.GraphingCalculator;
-
-        if (!Constructor) return;
-
-        const calculator = new Constructor(hostRef.current, {
-          autosize: true,
-          expressions: true,
-          settingsMenu: true,
-          zoomButtons: true,
-          lockViewport: false,
-        });
-
-        calcRef.current = calculator;
-
-        const savedState = modeStateRef.current[mode];
-        if (savedState) {
-          calculator.setState(savedState);
-        }
-
-        const handleChange = () => {
-          if (stateDebounceRef.current !== null) {
-            window.clearTimeout(stateDebounceRef.current);
-          }
-          stateDebounceRef.current = window.setTimeout(() => {
-            stateDebounceRef.current = null;
-            if (!calcRef.current) return;
-            const state = calcRef.current.getState();
-            modeStateRef.current[mode] = state;
-            emitPerModeState();
-          }, debounceMs);
-        };
-
-        calculator.observeEvent("change", handleChange);
-        changeHandlers.set(calculator, handleChange);
-
-        window.setTimeout(() => calculator.resize(), 0);
+        if (mounted && window.Desmos) setDesmosReady(true);
       })
       .catch(() => {
         if (!mounted) return;
@@ -299,63 +356,126 @@ export default function DesmosCalculator({
           "Desmos calculator unavailable. Configure VITE_DESMOS_API_KEY.",
         );
       });
-
     return () => {
       mounted = false;
-
-      if (stateDebounceRef.current !== null) {
-        window.clearTimeout(stateDebounceRef.current);
-        stateDebounceRef.current = null;
-      }
-
-      const calculator = calcRef.current;
-      if (calculator) {
-        const handler = changeHandlers.get(calculator);
-        if (handler) {
-          calculator.unobserveEvent("change", handler);
-        }
-        calculator.destroy();
-      }
-      calcRef.current = null;
     };
-  }, [debounceMs, emitPerModeState, mode]);
+  }, []);
+
+  // Create the shown tab's calculator the first time it is shown; never re-create it. Then size
+  // it to its host, which was hidden (display: none) until now if this is a switch.
+  useEffect(() => {
+    if (!desmosReady || !window.Desmos) return;
+    const host = hostRefs.current[mode];
+    if (!host) return;
+    let calculator = calcRefs.current[mode];
+    if (!calculator) {
+      const Constructor =
+        mode === "scientific"
+          ? window.Desmos.ScientificCalculator
+          : window.Desmos.GraphingCalculator;
+      if (!Constructor) return;
+      calculator = new Constructor(host, {
+        autosize: true,
+        expressions: true,
+        settingsMenu: true,
+        zoomButtons: true,
+        lockViewport: false,
+        degreeMode: true,
+        invertedColors: invertedColorsRef.current,
+      });
+      calcRefs.current[mode] = calculator;
+      const savedState = modeStateRef.current[mode];
+      if (savedState) calculator.setState(savedState);
+
+      const kind = mode;
+      const created = calculator;
+      const handleChange = (): void => {
+        const pending = debounceRefs.current[kind];
+        if (pending !== null) window.clearTimeout(pending);
+        debounceRefs.current[kind] = window.setTimeout(() => {
+          debounceRefs.current[kind] = null;
+          modeStateRef.current[kind] = created.getState();
+          emitPerModeState();
+        }, debounceMs);
+      };
+      calculator.observeEvent("change", handleChange);
+      changeHandlers.set(calculator, handleChange);
+    }
+    const shown = calculator;
+    const t = window.setTimeout(() => shown.resize(), 0);
+    return () => window.clearTimeout(t);
+  }, [desmosReady, mode, debounceMs, emitPerModeState]);
+
+  // Destroy both calculators when the component unmounts (and only then), after emitting any
+  // pending change and telling the caller (unmount is a save moment).
+  useEffect(() => {
+    const calcs = calcRefs.current;
+    const debounces = debounceRefs.current;
+    return () => {
+      flushAll();
+      onCommitRef.current?.();
+      for (const kind of ["graphing", "scientific"] as const) {
+        const pending = debounces[kind];
+        if (pending !== null) window.clearTimeout(pending);
+        debounces[kind] = null;
+        const calculator = calcs[kind];
+        if (!calculator) continue;
+        const handler = changeHandlers.get(calculator);
+        if (handler) calculator.unobserveEvent("change", handler);
+        calculator.destroy();
+        calcs[kind] = null;
+      }
+    };
+    // Unmount only: `flushAll` is stable (its inputs are refs and a stable callback).
+  }, []);
 
   useEffect(() => {
-    const calculator = calcRef.current;
+    const calculator = calcRefs.current[activeModeRef.current];
     if (!calculator) return;
-    window.setTimeout(() => calculator.resize(), 0);
+    const t = window.setTimeout(() => calculator.resize(), 0);
+    return () => window.clearTimeout(t);
   }, [expanded]);
 
+  // QA2-B: a theme change after construction is applied live (see invertedColors above).
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host || !expanded) return;
+    calcRefs.current.graphing?.updateSettings({ invertedColors });
+    calcRefs.current.scientific?.updateSettings({ invertedColors });
+  }, [invertedColors]);
+
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box || !expanded) return;
     let rafId: number | null = null;
     const observer = new ResizeObserver(() => {
       if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         rafId = null;
-        calcRef.current?.resize();
+        calcRefs.current[activeModeRef.current]?.resize();
       });
     });
-    observer.observe(host);
+    observer.observe(box);
     return () => {
       observer.disconnect();
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [expanded]);
 
+  // An initialState from outside (a resume) is applied to both calculators. The component's
+  // own emitted state coming back through the parent is NOT re-applied: that was the reset
+  // that closed the keypad mid-typing.
   useEffect(() => {
-    const calculator = calcRef.current;
-    if (!calculator || !initialState || mode !== "graphing") return;
+    if (initialState == null) return;
+    if (initialStateKey === lastEmittedKeyRef.current) return;
     const parsed = parseInitialState(initialState);
-    if (parsed.graphing) {
-      calculator.setState(parsed.graphing);
-      modeStateRef.current.graphing = parsed.graphing;
+    modeStateRef.current = {
+      graphing: parsed.graphing,
+      scientific: parsed.scientific,
+    };
+    for (const kind of ["graphing", "scientific"] as const) {
+      const saved = parsed[kind];
+      if (saved) calcRefs.current[kind]?.setState(saved);
     }
-    if (parsed.scientific) {
-      modeStateRef.current.scientific = parsed.scientific;
-    }
-  }, [initialStateKey, initialState, mode]);
+  }, [initialStateKey, initialState]);
 
   const expandedHeight =
     mode === "scientific"
@@ -417,10 +537,29 @@ export default function DesmosCalculator({
           </div>
         )}
         <div
-          ref={hostRef}
+          ref={boxRef}
           className="h-full w-full rounded-md border border-lyc-rule"
           data-testid="desmos-calculator"
-        />
+        >
+          {/* One host per tab; only the shown tab's host is displayed, so the other tab's
+              calculator (and its work) is kept, not destroyed. */}
+          <div
+            ref={(el) => {
+              hostRefs.current.scientific = el;
+            }}
+            className="h-full w-full"
+            style={mode === "scientific" ? undefined : { display: "none" }}
+            data-testid="desmos-host-scientific"
+          />
+          <div
+            ref={(el) => {
+              hostRefs.current.graphing = el;
+            }}
+            className="h-full w-full"
+            style={mode === "graphing" ? undefined : { display: "none" }}
+            data-testid="desmos-host-graphing"
+          />
+        </div>
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { dayOfMonth, isSameMonth, WEEKDAY_HEADERS } from "../lib/dates";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
 import { DayMenu, type DayActions } from "./DayMenu";
+import { compactBlockLabel } from "../lib/blocks";
 import { canControlDay, isBlockedOut } from "../lib/day-state";
 
 const TONE_CLASS: Readonly<Record<ViewBlock["tone"], string>> = {
@@ -47,6 +48,8 @@ function MonthChip({
     disabled: !draggable,
     data: { fromDate: date },
   });
+  const full = chipLabel(block);
+  const compact = compactBlockLabel(block);
 
   return (
     <button
@@ -61,7 +64,20 @@ function MonthChip({
       {...listeners}
     >
       <i style={{ background: "currentColor" }} aria-hidden="true" />
-      <span>{chipLabel(block)}</span>
+      {/* QA2-C: the full and the compact label ("Rev 15", `compactBlockLabel`); the stylesheet
+          shows the compact one only in a month narrower than 910px. The chip's name is the
+          full title either way. Where the two are the same words (a full-length test, OQ-62
+          (b)) one span is drawn at every width. */}
+      {full === compact ? (
+        <span className="only">{full}</span>
+      ) : (
+        <span className="lbl">
+          <span className="full">{full}</span>
+          <span className="short" aria-hidden="true">
+            {compact}
+          </span>
+        </span>
+      )}
     </button>
   );
 }

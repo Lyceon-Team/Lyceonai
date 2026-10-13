@@ -289,7 +289,10 @@ function buildHookState(
     nextQuestion: vi.fn(),
     handleMissingMcChoices: vi.fn(),
     calculatorState: null,
-    persistCalculatorState: vi.fn(),
+    noteCalculatorChange: vi.fn(),
+    commitCalculatorState: vi.fn(async () => undefined),
+    calculatorFlushRef: { current: null },
+    calculatorSaveFailed: false,
     submitBlocked: null,
     ...overrides,
   };
@@ -400,39 +403,45 @@ describe("CanonicalPracticePage calculator UX", () => {
    * `console.error`. It is now surfaced to the student as a notice, with nothing
    * logged; the next successful save clears the notice.
    */
-  it("surfaces a failed calculator save as a notice and logs nothing", async () => {
-    const persist = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("save failed (500)"))
-      .mockResolvedValueOnce({ expressions: [] });
+  it("surfaces a failed calculator save as a notice and logs nothing", () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => undefined);
     hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("M", { persistCalculatorState: persist }),
+      buildHookState("M", { calculatorSaveFailed: true }),
     );
-
-    render(<CanonicalPracticePage title="Math Practice" section="M" />);
-
-    expect(screen.queryByTestId("practice-calculator-save-failed")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("desmos-emit-state"));
-    await waitFor(() => {
-      expect(
-        screen.getByTestId("practice-calculator-save-failed").textContent,
-      ).toContain("could not be saved");
-    });
-    expect(persist).toHaveBeenCalledWith({ expressions: [] });
+    const { rerender } = render(
+      <CanonicalPracticePage title="Math Practice" section="M" />,
+    );
+    expect(
+      screen.getByTestId("practice-calculator-save-failed").textContent,
+    ).toContain("could not be saved");
     expect(consoleError).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByTestId("desmos-emit-state"));
-    await waitFor(() => {
-      expect(
-        screen.queryByTestId("practice-calculator-save-failed"),
-      ).toBeNull();
-    });
-
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", { calculatorSaveFailed: false }),
+    );
+    rerender(<CanonicalPracticePage title="Math Practice" section="M" />);
+    expect(screen.queryByTestId("practice-calculator-save-failed")).toBeNull();
     consoleError.mockRestore();
+  });
+
+  /**
+   * @spec [register G-NEW-14; owner brief 2026-10-12] | @implemented [2026-10-12]
+   * plain English: a calculator change is local — it tells the saver and makes no save; the
+   * calculator's own save moments (`onCommit`) go to the hook's commit.
+   */
+  it("a calculator change is noted locally, never saved on its own", () => {
+    const state = buildHookState("M");
+    hookMock.useCanonicalPractice.mockReturnValue(state);
+    render(<CanonicalPracticePage title="Math Practice" section="M" />);
+    fireEvent.click(screen.getByTestId("desmos-emit-state"));
+    fireEvent.click(screen.getByTestId("desmos-emit-state"));
+    expect(state.noteCalculatorChange).toHaveBeenCalledTimes(2);
+    expect(state.noteCalculatorChange).toHaveBeenCalledWith({
+      expressions: [],
+    });
+    expect(state.commitCalculatorState).not.toHaveBeenCalled();
   });
 });
 
@@ -1193,6 +1202,9 @@ describe("W4-4 — LISA always open in review, three panels", () => {
   it("below 1024px: one column — question, then LISA, then the calculator", () => {
     mockViewport(390);
     renderReview();
+    // QA2-D: below 1024 LISA starts closed; the student opens it from the bar.
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
 
     const layout = screen.getByTestId("review-tutor-layout");

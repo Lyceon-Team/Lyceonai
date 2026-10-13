@@ -254,6 +254,9 @@ function openSessions(withOpen: boolean, max = 5) {
         ]
       : [],
     maxConcurrentSessions: max,
+    // The seeded practice_runtime_config values (OQ-68 (d): config numbers on this read).
+    diagnosticTotalQuestions: 40,
+    diagnosticPerDomain: 5,
     requestId: "r",
   });
 }
@@ -333,6 +336,8 @@ function quota(remaining: number | "unlimited") {
           reservationId: null,
           duplicate: false,
         },
+    // `freeDailyLimitFor`: the seeded daily_quota_free (OQ-68 (d)).
+    40,
   );
   if (!result.ok) throw new Error("quota fixture did not serialize");
   return result.value;
@@ -754,6 +759,24 @@ describe("Suggested for you", () => {
 // ── Recent practice ────────────────────────────────────────────────────────────────────────
 
 describe("Recent practice (OQ-23: /api/review/pool)", () => {
+  // Owner brief 2026-10-11 (DESIGN.md "UI standards", long labels): two lines and an ellipsis.
+  it("titles are clamped to two lines, with the full text on hover and focus", async () => {
+    await mount("paid", { quota: "unlimited" });
+    const rows = await screen.findAllByTestId("practice-recent-row");
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const title = within(row).getByTestId("practice-recent-title");
+      expect(title.className.split(" ")).toEqual(
+        expect.arrayContaining([
+          "line-clamp-2",
+          "group-focus-within:line-clamp-none",
+        ]),
+      );
+      expect(title.getAttribute("title")).toBe(title.textContent);
+      expect(row.className.split(" ")).toContain("group");
+    }
+  });
+
   it("lists the practice rows with their own review counts and links to review", async () => {
     await mount("paid", { quota: "unlimited" });
     const rows = await screen.findAllByTestId("practice-recent-row");
@@ -761,9 +784,12 @@ describe("Recent practice (OQ-23: /api/review/pool)", () => {
     expect(rows).toHaveLength(1);
     // OQ-66 (g): "Fri, Sep 25, 12:49 PM", the ruling's own example.
     expect(rows[0]?.textContent).toContain("Fri, Sep 25, 12:49 PM");
-    // The row's criteria are not read here (UI-51 choice): the line is the row's own kind.
-    expect(rows[0]?.textContent).toContain("Practice");
-    expect(rows[0]?.textContent).not.toContain("Algebra");
+    // UI-66 (OQ-53 (e)): the row leads with its criteria title, as the open rows do
+    // (`sessionTitle`: the domain, the narrowest choice made), then the day and time.
+    expect(rows[0]?.firstElementChild?.firstElementChild?.textContent).toBe(
+      "Algebra",
+    );
+    expect(rows[0]?.textContent).toMatch(/^AlgebraFri, Sep 25, 12:49 PM/);
     expect(rows[0]?.textContent).toContain("4 to review");
     // The review-engine row belongs to Review, not to "Recent practice".
     expect(screen.getByTestId("practice-recent").textContent).not.toContain(

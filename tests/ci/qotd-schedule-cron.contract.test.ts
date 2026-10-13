@@ -7,6 +7,10 @@
  * refuses everything without CRON_SECRET (404, reveals nothing), and an authorised call runs the
  * job once and returns its summary nested under the envelope. Same pattern as
  * tests/ci/notification-retention-sweep.contract.test.ts.
+ *
+ * QOTD resilience brief (Karl, 2026-10-09): the route now runs the MONITORED fill
+ * (server/services/qotd/qotd-health.ts, proved in tests/ci/qotd-resilience.pg.ci.test.ts), and
+ * returns the horizon beside the summary. The owner's test alert route is wired here too.
  */
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,9 +18,16 @@ import express from "express";
 import request from "supertest";
 
 const runMock = vi.hoisted(() => vi.fn());
-vi.mock("../../server/services/qotd/schedule-job.js", async (orig) => ({
+const alertMock = vi.hoisted(() => vi.fn());
+vi.mock("../../server/services/qotd/qotd-health.js", async (orig) => ({
   ...(await orig<object>()),
-  runQotdSchedule: runMock,
+  runMonitoredQotdSchedule: runMock,
+  defaultSendAlert: () => async () => ({ slack: "sent", email: "sent" }),
+  defaultOpsAlertDeps: () => ({}),
+}));
+vi.mock("../../server/lib/ops-alerts.js", async (orig) => ({
+  ...(await orig<object>()),
+  sendOpsAlert: alertMock,
 }));
 
 describe("the cron route", () => {
@@ -24,7 +35,21 @@ describe("the cron route", () => {
   let app: express.Express;
   beforeEach(async () => {
     runMock.mockReset();
-    runMock.mockResolvedValue({ today: "2026-10-05", days: [] });
+    runMock.mockResolvedValue({
+      summary: { today: "2026-10-05", days: [] },
+      health: {
+        horizon: {
+          today: "2026-10-05",
+          today_covered: true,
+          runs_out_on: "2026-10-13",
+          horizon: 7,
+        },
+        raised: [],
+        recovered: false,
+      },
+    });
+    alertMock.mockReset();
+    alertMock.mockResolvedValue({ slack: "sent", email: "sent" });
     process.env.CRON_SECRET = "test-cron-secret";
     const router = (await import("../../server/routes/internal-cron-routes"))
       .default;
@@ -61,6 +86,8 @@ describe("the cron route", () => {
       ok: true,
       job: "qotd_schedule",
       summary: { today: "2026-10-05", days: [] },
+      horizon: 7,
+      runsOutOn: "2026-10-13",
     });
     expect(runMock).toHaveBeenCalledTimes(1);
   });
@@ -72,5 +99,24 @@ describe("the cron route", () => {
       .set("Authorization", "Bearer test-cron-secret");
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: "qotd_schedule_failed" });
+  });
+
+  it("the owner's test alert: 404 without the secret; with it, ONE ops_test alert", async () => {
+    const TEST_PATH = "/api/internal/ops-alert-test";
+    expect((await request(app).get(TEST_PATH)).status).toBe(404);
+    expect(alertMock).not.toHaveBeenCalled();
+    const res = await request(app)
+      .get(TEST_PATH)
+      .set("Authorization", "Bearer test-cron-secret");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      job: "ops_alert_test",
+      outcome: { slack: "sent", email: "sent" },
+    });
+    expect(alertMock).toHaveBeenCalledTimes(1);
+    expect(alertMock.mock.calls[0]?.[0]).toMatchObject({
+      condition: "ops_test",
+    });
   });
 });

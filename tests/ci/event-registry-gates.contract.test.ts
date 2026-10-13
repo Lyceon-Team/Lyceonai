@@ -55,8 +55,9 @@ describe("ci/event-schema-registry-parity", () => {
       "user_signed_out",
     ]);
     expect(report.failures).toEqual([]);
-    // SCL-213's seven, plus consent_captured (registered 2026-10-05 for the marketing opt-in, Q5).
-    expect(report.tier_distribution).toEqual({ strict: 8, loose: 0 });
+    // SCL-213's seven, plus consent_captured (registered 2026-10-05 for the marketing opt-in, Q5),
+    // plus the five Home QOTD events (owner brief 2026-10-08/09).
+    expect(report.tier_distribution).toEqual({ strict: 13, loose: 0 });
   });
 
   it("(a) fails an unregistered event name", () => {

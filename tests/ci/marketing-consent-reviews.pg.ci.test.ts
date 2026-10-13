@@ -246,11 +246,37 @@ describe.skipIf(!PG_AVAILABLE)(
         });
       });
 
+      // F-83 (2026-10-07 production error: a grant logged as source 'system' with no version).
+      // Since 20261029000000 the profiles guard refuses it BEFORE the log's CHECK is reached,
+      // naming the rule rather than a constraint.
       it("a grant written around set_marketing_consent is refused: it names no wording", async () => {
         await expectRaise(
           `UPDATE public.profiles SET marketing_opt_in = true WHERE id = $1`,
           [FRESH],
-          /marketing_consent_log_grant_versioned/,
+          /set_marketing_consent from a user action with a consent version \(F-83\)/,
+        );
+      });
+
+      it("F-83: a grant through the setter with no consent version is refused up front", async () => {
+        await expectRaise(
+          `SELECT public.set_marketing_consent($1, true, 'settings', NULL)`,
+          [FRESH],
+          /a grant requires a consent version \(F-83\)/,
+        );
+        await expectRaise(
+          `SELECT public.set_marketing_consent($1, true, 'signup', '  ')`,
+          [FRESH],
+          /a grant requires a consent version \(F-83\)/,
+        );
+      });
+
+      it("F-83: a write that declares a non-user source cannot grant, even with a version", async () => {
+        await expectRaise(
+          `SELECT set_config('lyceon.marketing_consent_source', 'system', true),
+                  set_config('lyceon.marketing_consent_version', '1.0.0', true);
+           UPDATE public.profiles SET marketing_opt_in = true WHERE id = '${FRESH}'`,
+          [],
+          /\(F-83\)/,
         );
       });
 

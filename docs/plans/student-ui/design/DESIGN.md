@@ -41,7 +41,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - **Left rail,** 96px, `--rail` background:
   - top: logo mark with the "Lyceon" wordmark under it;
   - then Home, Practice, Review, Full-Length, Calendar, LISA, with icon above label;
-  - bottom: Help, then the account avatar. The avatar opens the account menu (**Settings, Help, Sign out**) at every width, desktop included (owner QA list, Karl, 2026-10-07, item 3; it used to open Settings directly, which left desktop with no Sign out in the shell).
+  - bottom: the bell, labelled **Notifications** and drawn as a rail item (icon above label, the rail's shared current style on `/notifications`, light and dark; production re-test, Karl, 2026-10-08, item H), then Help, then the account avatar. The avatar opens the account menu (**Settings, Help, Sign out**) at every width, desktop included (owner QA list, Karl, 2026-10-07, item 3; it used to open Settings directly, which left desktop with no Sign out in the shell).
 - **Middle column:** the only part that scrolls. Content max-width 800px, padding 56px 72px.
 - **Right panel,** 360px (Calendar 340px, LISA 320px), `--margin` background, hairline left rule. Its content depends on the page.
 - **Fit to screen:** the rail and the right panel are fixed to the viewport height. The right panel scrolls on its own only when its content is taller than the screen. Only the middle column scrolls the page.
@@ -86,6 +86,9 @@ Data in the prototype is illustrative. Every number in production comes from an 
 | Typing indicator | LISA | A LISA-labelled bubble with three pulsing dots. Send is disabled while LISA is thinking. |
 | Footer | See App shell | |
 | Keyboard hook | Runner, LISA, modals | One shared hook. The prototype shows **no keystroke hint text** (Karl's ruling). |
+| SAT-date picker | Onboarding, Settings, Home's date card, the calendar (setup, free plan, schedule sheet) | One component, `components/sat-dates/SatDatePicker.tsx`: a dropdown multi-select. Closed: "Not sure yet", one date, or "first date + N more". Open: "Not sure yet" pinned first, then the future official dates with checkboxes, scrolling inside the menu; each choice clears the other. Offers no date past the furthest one the profile write accepts, served as `latest_test_date` by the role-agnostic `GET /api/sat-dates/bound` (one bound for every surface and every signed-in account; Karl, ruling 2 on #1204, 2026-10-11, and the ruling on #1211, 2026-10-12). Added 2026-10-11 (Karl). |
+| Clamped label | Any long label in a row or card | `ClampedLabel` (`components/student-ui`): two lines and an ellipsis; full text on hover and on focus within its row. Added 2026-10-11 (Karl). |
+| Pill | The question runner's header, LISA's question chip | `Pill` (`components/student-ui`): a small neutral pill, `--chip` fill, `--rule` border, 14px semibold `--ink`. No colour variants: a pill names something, it never grades it. Added 2026-10-13 (Karl, ruling on #1225). |
 
 ---
 
@@ -125,7 +128,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 
 **Calendar** (Canvas-style).
 - Header: Week/Month, Today and the arrows on the left; the date range centered (`M/D – M/D`); Edit schedule and **Regenerate plan** (`POST /api/calendar/plan/regenerate`) on the right. At most two rows at 1024px; below a ~1200px viewport Edit schedule and Regenerate plan move into a "⋯" menu ("More actions"), on a phone too (owner ruling, Karl, 2026-10-07, OQ-66 (c)).
-- Week grid with category-striped blocks, and Month view.
+- Week grid with category-striped blocks, and Month view. Where a column is too narrow for a block's full title (under 130px), the card and the month chip show the compact label that keeps the count, in the block's colour: "Rev 15", "Math 5", "R&W 15"; a full-length test keeps its words. Never a single letter, never a word split; a scope chip keeps one line and cuts its name with an ellipsis, its count whole. The full title stays in the accessible name (owner ruling, Karl, 2026-10-08, production re-test item C).
 - **The test day is starred** in week view, month view and the mini month.
 - Right panel:
   - mini month, navigable;
@@ -140,6 +143,12 @@ Data in the prototype is illustrative. Every number in production comes from an 
 
 **Question runner** (Focus shell).
 - Top bar: back to Practice, session name, "Question N of M" with a progress strip, Calculator, Reference.
+- **Question header** (owner brief, Karl, 2026-10-13; style ruled on #1225 the same day), above the stem on the **practice, review and diagnostic** runners. **The timed full-length module has none**: it stays Bluebook-like, and its payload carries no domain, skill or difficulty.
+  - Three small pills: the domain, the skill and the difficulty (Easy, Medium or Hard). All three use the shared neutral pill (`Pill` in `components/student-ui`: `--chip` fill, `--rule` border, 14px semibold `--ink`), the same one as LISA's question chip. The difficulty is **not colour-coded**: no green, amber or red.
+  - Desktop (from `lg`, 1024px): one row, domain, skill, difficulty.
+  - Phone: row 1 is domain and difficulty; row 2 is the skill alone, clamped to two lines with `ClampedLabel`.
+  - The skill pill is the header's **one keyboard focus stop**, with the focus ring; focusing it shows the full skill name, as hovering does (§5 Long labels). Screen readers read domain, skill, difficulty in that order, with the difficulty as "Difficulty: Easy".
+  - A part the question lacks is left out; with nothing to show there is no header.
 - Body: the stem and the choices, **lettered A–D by on-screen position** (ruled 2026-10-02). Then the feedback panel after submitting, showing the correct answer and the student's pick, the explanation, and the review-queue note on a miss.
 - **Letters are display labels, never the canonical stored option letters.** "B" always means the second option on screen. Whatever LISA receives about this question must carry the choices in their displayed order with their display letters, so "the answer is B" means the same thing to the student and to LISA. No letter mapping may expose which option is correct before submission.
 - Footer: Skip and Submit (disabled until a choice is made), then Next question.
@@ -166,3 +175,28 @@ Data in the prototype is illustrative. Every number in production comes from an 
 - the upgrade/plans page;
 - the bare-card pages;
 - the pending-deletion screen.
+
+---
+
+## 5. UI standards
+
+Standing rules for every student screen, new or changed. Added by Karl on 2026-10-11, and referenced from the repo's `CLAUDE.md` so every session applies them. **Every new screen is checked against this list in its PR description (a short checklist), with screenshots attached** (light and dark, 1440 and 390).
+
+**Choosing from options.**
+- 2–3 options: a segmented control or radio buttons (the student `Tabs` for switching views; a chip row with radio semantics for a setting).
+- 4 or more options: a dropdown (`Select` with `variant="lyc"`).
+- Multi-select: a dropdown with checkboxes (`DropdownMenu` with `DropdownMenuCheckboxItem`, as the filter bar and the SAT-date picker do; the menu stays open while choosing).
+- More than about 10 options of names or text: a dropdown with type-to-filter search.
+- More than about 10 options in a natural order (dates, numbers): a scrollable dropdown, no filter (the list is already sorted, so the student scrolls to the value; e.g. the SAT-date picker). Amended by Karl on 2026-10-11 (ruling 1 on #1204).
+- Never render a long option list inline on the page.
+
+**Actions.** One filled primary action per screen. Everything else is outline or a text link.
+
+**Type and color.** Text is never below 14px. Tokens only; no raw hex.
+
+**Lists on a card.** A list longer than about 5 rows shows 5, then "Show more" or "Load more".
+
+**Long labels.** Truncate to 2 lines with an ellipsis, with the full text on hover and focus (`ClampedLabel`). A label never pushes the layout.
+
+**States.** Every data area has an empty, a loading and an error state: the student `EmptyState`, the still `Skeleton variant="lyc"` (or `FullPageLoader` for a whole page) and a `Notice`. Never blank space, and never a bare "Loading…".
+

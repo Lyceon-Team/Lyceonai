@@ -62,6 +62,11 @@ fs.rmSync(ssrDir, { recursive: true, force: true });
 console.log(
   `QOTD archive: ${site.qotdArchive.days.length} past day(s) (source: ${site.qotdArchive.source})`,
 );
+if (site.qotdArchive.withheldStemRepeatsPassage.length > 0) {
+  console.log(
+    `QOTD archive: withheld until the question is repaired (stem repeats passage): ${site.qotdArchive.withheldStemRepeatsPassage.join(", ")}`,
+  );
+}
 console.log(
   `PRERENDERED ${site.pages.length} pages (${site.pages.filter((p) => p.indexable).length} in sitemap.xml) + 404.html + app.html`,
 );

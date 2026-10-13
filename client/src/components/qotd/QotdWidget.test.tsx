@@ -261,14 +261,37 @@ describe("QotdWidget", () => {
     expect(screen.queryByText("See past questions")).toBeNull();
   });
 
-  it("a day with no question yet says so", async () => {
+  // QOTD resilience brief (Karl, 2026-10-09) §1: the homepage card collapses to one line.
+  it("a day with no question collapses to 'on its way': no question, no error, no spinner", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(404, {
         error: { code: "qotd_not_scheduled", message: "x" },
       }),
     );
     renderWidget();
-    const msg = await screen.findByTestId("qotd-unavailable");
-    expect(msg.textContent).toContain("not up yet");
+    const msg = await screen.findByTestId("qotd-none");
+    expect(msg.textContent).toBe(
+      "Today's question is on its way. Check back soon.",
+    );
+    expect(screen.queryByTestId("qotd-unavailable")).toBeNull();
+    expect(screen.queryByTestId("qotd-widget")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("a failure to load is still an error, not 'on its way'", async () => {
+    // A 5xx is retried once (client/src/lib/qotd.ts retryOnce): both calls fail.
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(503, {
+        error: { code: "qotd_unavailable", message: "x" },
+      }),
+    );
+    renderWidget();
+    const msg = await screen.findByTestId(
+      "qotd-unavailable",
+      {},
+      { timeout: 5000 },
+    );
+    expect(msg.textContent).toContain("could not be loaded");
+    expect(screen.queryByTestId("qotd-none")).toBeNull();
   });
 });

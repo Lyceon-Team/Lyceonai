@@ -82,6 +82,10 @@ vi.mock("@/lib/queryClient", () => ({
 import Login from "./login";
 import ProfileComplete from "./profile-complete";
 import { RequireRole } from "@/components/auth/RequireRole";
+import {
+  GUARDIAN_SIGNUP_HREF,
+  START_DIAGNOSTIC_HREF,
+} from "@/lib/marketing-links";
 
 function redirectTarget(): string {
   const to = screen.getByTestId("redirect").getAttribute("data-to");
@@ -208,6 +212,93 @@ describe("UI-03 — a return path survives sign-in AND first-time onboarding", (
     });
     expect(navigateMock).toHaveBeenCalledWith("/guardian");
     expect(navigateMock).not.toHaveBeenCalledWith("/calendar");
+  });
+
+  // @spec [owner brief "Entry-aware sign-in / sign-up" (Karl, 2026-10-10) rule 3] |
+  // @implemented [2026-10-10] | the homepage's real href, through sign-up and onboarding.
+  it('"Start the free diagnostic" → sign up → onboarding → the diagnostic', async () => {
+    window.history.replaceState({}, "", START_DIAGNOSTIC_HREF);
+    authState = {
+      user: {
+        role: "student",
+        profile_completed_at: null,
+        requiredProfileComplete: false,
+        guardianConsentRequired: false,
+      },
+      isAuthenticated: true,
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    const { unmount } = render(React.createElement(Login));
+    expect(navigateMock).toHaveBeenCalledTimes(1);
+    const onboardingUrl = String(navigateMock.mock.calls[0]?.[0]);
+    expect(onboardingUrl).toBe(
+      "/profile/complete?next=%2Fpractice%2Fdiagnostic",
+    );
+    unmount();
+
+    window.history.replaceState({}, "", onboardingUrl);
+    profilePayload = {
+      authenticated: true,
+      user: {
+        id: "d1",
+        role: "student",
+        profileCompletedAt: null,
+        requiredProfileComplete: false,
+      },
+    };
+    render(React.createElement(ProfileComplete));
+    navigateMock.mockClear();
+    await mutationOptions?.onSuccess({
+      success: true,
+      profile: { id: "d1", role: "student" },
+      guardianConsentRequired: false,
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/practice/diagnostic");
+  });
+
+  it("the diagnostic return path is never honoured for a guardian", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/profile/complete?next=%2Fpractice%2Fdiagnostic",
+    );
+    profilePayload = {
+      authenticated: true,
+      user: {
+        id: "g2",
+        role: "guardian",
+        profileCompletedAt: null,
+        requiredProfileComplete: false,
+      },
+    };
+    render(React.createElement(ProfileComplete));
+    await mutationOptions?.onSuccess({
+      success: true,
+      profile: { id: "g2", role: "guardian" },
+      guardianConsentRequired: false,
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/guardian");
+  });
+
+  // @spec [owner brief 2026-10-10 rule 2] | the account a guardian-intent sign-up created is a
+  // guardian, so onboarding defaults to Guardian even where the link carried no `next` (an
+  // email-confirmation link lands on plain /profile/complete).
+  it("a guardian-created account opens onboarding on Guardian without any next", () => {
+    expect(GUARDIAN_SIGNUP_HREF).toContain("role=guardian");
+    window.history.replaceState({}, "", "/profile/complete");
+    profilePayload = {
+      authenticated: true,
+      user: {
+        id: "g3",
+        role: "guardian",
+        profileCompletedAt: null,
+        requiredProfileComplete: false,
+      },
+    };
+    render(React.createElement(ProfileComplete));
+    expect(screen.getByTestId("select-role").textContent).toContain("Guardian");
   });
 
   it("a disallowed next on the onboarding URL is dropped for the role default", async () => {

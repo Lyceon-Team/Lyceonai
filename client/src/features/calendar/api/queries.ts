@@ -25,6 +25,7 @@ import type {
   CalendarResponse,
   GuardianCalendarResponse,
   ProfileReadResponse,
+  SatDateBoundResponse,
 } from "@lyceon/shared/calendar";
 import { calendarKeys } from "./keys";
 // @spec [student-UI register UI-44; §2 Free versus paid, Step 2 ruling 3; Doc 05F §15, §17.5]
@@ -36,6 +37,7 @@ import { ENTITLEMENT_DENIAL_INLINE_META } from "@/components/billing/upgrade-mod
 import {
   fetchCalendar,
   fetchGuardianCalendar,
+  fetchSatDateBound,
   fetchStudyProfile,
 } from "./client";
 import {
@@ -189,6 +191,26 @@ export function useStudyProfile(options?: {
     meta: ENTITLEMENT_DENIAL_INLINE_META,
     queryKey: calendarKeys.profile(),
     queryFn: fetchStudyProfile,
+    enabled: options?.enabled ?? true,
+    ...QUERY_FRESHNESS.calendarRange,
+    retry: 1,
+  });
+}
+
+/**
+ * GET /api/sat-dates/bound, the one bound every SAT-date picker offers up to (owner rulings
+ * 2026-10-11 on #1204 and 2026-10-12 on #1211). Role-agnostic, so an account whose role is not
+ * saved yet reads it. Same freshness as the profile read; the bound moves once a day.
+ *
+ * @spec [owner rulings 2026-10-11 on #1204 (ruling 2), 2026-10-12 on #1211] |
+ * @implemented [2026-10-12]
+ */
+export function useSatDateBound(options?: {
+  enabled?: boolean;
+}): UseQueryResult<SatDateBoundResponse, Error> {
+  return useQuery<SatDateBoundResponse, Error>({
+    queryKey: calendarKeys.satDateBound(),
+    queryFn: fetchSatDateBound,
     enabled: options?.enabled ?? true,
     ...QUERY_FRESHNESS.calendarRange,
     retry: 1,

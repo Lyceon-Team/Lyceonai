@@ -33,6 +33,7 @@ function readyFor(from: string): CalendarResponse {
     profile: {
       timezone: "America/Chicago",
       target_exam_date: null,
+      target_exam_dates: [],
       target_score: null,
       study_days_mask: 62,
       daily_minutes: 60,

@@ -140,12 +140,16 @@ async function seedStudyProfile(
   targetExamDate: string | null,
   timezone = "UTC",
 ): Promise<void> {
+  // SCL-223 (20261029000000): the stored truth is `target_exam_dates`; `target_exam_date` is the
+  // EFFECTIVE (next future) date the trigger derives from it, so a past date is seeded where it
+  // really lives. Writing a past date into the derived column would be a fixture asserting a
+  // shape nothing in the system produces.
   await pg.query(
     `INSERT INTO public.student_study_profile
-       (student_id, timezone, target_exam_date, study_days_mask, daily_minutes)
-     VALUES ($1, $2, $3, 127, 60)
+       (student_id, timezone, target_exam_dates, study_days_mask, daily_minutes)
+     VALUES ($1, $2, CASE WHEN $3::date IS NULL THEN '{}'::date[] ELSE ARRAY[$3::date] END, 127, 60)
      ON CONFLICT (student_id) DO UPDATE SET
-       target_exam_date = EXCLUDED.target_exam_date,
+       target_exam_dates = EXCLUDED.target_exam_dates,
        timezone = EXCLUDED.timezone`,
     [studentId, timezone, targetExamDate],
   );

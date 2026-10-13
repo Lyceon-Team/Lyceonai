@@ -47,6 +47,22 @@ export const qotdRowSchema = z.object({
 });
 export type QotdRow = z.infer<typeof qotdRowSchema>;
 
+/**
+ * A question whose stem repeats its passage word for word has no question prompt: posted, it asks
+ * nothing. Seventeen published questions carry this defect, the live 2026-10-07 QOTD among them
+ * (owner 2026-10-08: repairing them belongs to the questions vertical). The scheduler skips them
+ * and the social generator refuses them, both through this one predicate. Whitespace is
+ * collapsed so a trailing newline or a doubled space cannot hide a copy. Pure.
+ */
+export function stemRepeatsPassage(
+  stem: string,
+  passage: string | null,
+): boolean {
+  const norm = (text: string): string => text.replace(/\s+/g, " ").trim();
+  const p = norm(passage ?? "");
+  return p.length > 0 && norm(stem) === p;
+}
+
 /** Options in authored (canonical) order, each carrying its canonical key as its id. */
 export function qotdServedOptions(row: QotdRow): QotdOption[] {
   if (row.item_type === "grid_in") return [];

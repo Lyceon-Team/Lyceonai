@@ -24,11 +24,14 @@
  */
 import type { CalendarDay, PlanningEstimates } from "@lyceon/shared/calendar";
 import type { SessionCriteria } from "@lyceon/shared/session-criteria";
+import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
+import { displayFormName } from "@lyceon/shared/exam-form-display";
 import type { EstimateStatus } from "@lyceon/shared/diagnostic-state";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { minutesFor } from "@/features/calendar/lib/blocks";
 import { daysBetween } from "@/features/calendar/lib/dates";
 import { formatDate } from "@/lib/format-date";
+import { sourceEngineLabel } from "@/lib/review-session-picker";
 
 type DayBlock = CalendarDay["blocks"][number];
 
@@ -185,6 +188,47 @@ export function sessionTitle(
   return sectionDisplayLabel(section) ?? "Practice";
 }
 
+/** No criteria chosen: `sessionTitle`'s fallback input. */
+const NO_CRITERIA: SessionCriteria = {
+  sections: [],
+  domains: [],
+  skills: [],
+  difficulties: [],
+};
+
+/**
+ * A recent-session row (`/api/review/pool` `sessions[]`) named the way the open-session rows are.
+ *
+ * @spec [student-UI register UI-66; OQ-53 (e), owner ruling (Karl) 2026-10-05: "print the
+ *        canonical criteria on Practice and Home recent rows"; OQ-22 (criteria shape); F-52 (the
+ *        row's `filters` is the strict four-array criteria, or a full-length row's
+ *        `{test_form_name}`)] | @implemented [2026-10-08]
+ *
+ * plain English: a practice or review row is named by `sessionTitle` from the criteria the row
+ * carries ("Algebra", "Math", "Review session"), exactly as "Pick up where you left off" names an
+ * open session. Fallbacks, the open rows' own: no criteria (`filters: null`, the source row gone)
+ * gives sessionTitle's empty-criteria answer ("Practice" / "Review session"); a full-length row
+ * is named by its form ("Full-Length Test 1", as Home's open full-length row), else "Full-length
+ * test". A diagnostic row keeps the shipped "Diagnostic" (its criteria name no choice the
+ * student made). The pool row carries no `section`, so none is passed.
+ */
+export function recentSessionTitle(row: ReviewPoolSourceSession): string {
+  if (row.mode === "diagnostic") return "Diagnostic";
+  const filters = row.filters;
+  if (row.source_engine === "full_length") {
+    return filters !== null && "test_form_name" in filters
+      ? displayFormName(filters.test_form_name)
+      : sourceEngineLabel("full_length");
+  }
+  const criteria =
+    filters !== null && "sections" in filters ? filters : NO_CRITERIA;
+  return sessionTitle(
+    row.source_engine === "review" ? "review" : "practice",
+    criteria,
+    null,
+  );
+}
+
 /** "7 of 26 answered" — the student's own session. */
 export function answeredLine(answered: number, total: number): string {
   return `${answered} of ${total} answered`;
@@ -195,9 +239,74 @@ export function toReviewLine(openCount: number): string {
   return `${openCount} to review`;
 }
 
-/** "40 of 40 practice questions left" — today's quota (OQ-21). */
+/** "27 of 37 practice questions left" — today's quota (OQ-21), both numbers the server's. */
 export function quotaLine(remaining: number, limit: number): string {
   return `${remaining} of ${limit} practice questions left`;
+}
+
+/** The words the approved copy spells its small counts with ("five", "eight"). */
+const SMALL_COUNT_WORDS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+] as const;
+
+/** A count as the copy writes it: a word up to ten, digits above. */
+function countWord(n: number): string {
+  return SMALL_COUNT_WORDS[n] ?? String(n);
+}
+
+/**
+ * @spec [owner ruling OQ-68 (d), Karl, 2026-10-08, register row UI-64: "The '40 questions' copy
+ *        reads the server quota value (the same source as the 402)"; Doc 05P §10.1 (the
+ *        diagnostic is 8 domains × `diagnostic_per_domain`, trimmed to
+ *        `diagnostic_total_questions`)] | @implemented [2026-10-08]
+ *
+ * plain English: the free Home's sentences that state a configured number, with the server's
+ * numbers put in. The diagnostic's length and per-domain count come from
+ * `GET /api/practice/sessions/open` (`diagnosticTotalQuestions`, `diagnosticPerDomain`, the
+ * config `POST /diagnostic/sessions` sizes it with); the daily limit from
+ * `GET /api/practice/quota` (`freeDailyLimit`, the 402's `daily_quota_free`). A null number (the
+ * read failed) prints the sentence without one, never a remembered 40.
+ * edge cases: "five from each of the eight SAT domains" is printed only when the total is a
+ * whole number of per-domain draws (total ÷ per-domain = the domains); otherwise the server
+ * trims some domain short, so the per-domain clause is dropped rather than stated wrongly.
+ */
+export function diagnosticCardLine(
+  total: number | null,
+  perDomain: number | null,
+): string {
+  const ending = "When you finish, you'll see your projected SAT score.";
+  if (total === null) {
+    return `Questions from every SAT domain. ${ending}`;
+  }
+  if (perDomain !== null && perDomain > 0 && total % perDomain === 0) {
+    return `${total} questions, ${countWord(perDomain)} from each of the ${countWord(total / perDomain)} SAT domains. ${ending}`;
+  }
+  return `${total} questions across the SAT domains. ${ending}`;
+}
+
+/** "How Lyceon works" step 1, with the diagnostic's length (OQ-68 (d)). */
+export function diagnosticStepBody(total: number | null): string {
+  const lead = total === null ? "Questions" : `${total} questions`;
+  return `${lead} across every domain give you a projected score and a starting point.`;
+}
+
+/** "How Lyceon works" step 2, with the free daily limit (OQ-68 (d)). */
+export function practiceStepBody(freeDailyLimit: number | null): string {
+  const lead =
+    freeDailyLimit === null
+      ? "Practice questions every day"
+      : `${freeDailyLimit} practice ${freeDailyLimit === 1 ? "question" : "questions"} a day`;
+  return `${lead}, and every question you miss comes back until you get it right.`;
 }
 
 /** The projected band as the prototype prints it: "610–990". */

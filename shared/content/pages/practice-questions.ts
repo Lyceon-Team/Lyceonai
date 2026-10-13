@@ -161,6 +161,7 @@ function domainPage(domain: DomainSpec): ContentPageInput {
     title: domainTitle(domain.name),
     description: `What SAT ${domain.name} questions cover, in the College Board's words, with recent free practice questions from the ${section} section.`,
     h1: `SAT ${domain.name} practice questions`,
+    targetKeyword: `sat ${domain.name.toLowerCase()} practice questions`,
     crumb: domain.name,
     parent: SECTION_PATH[domain.section],
     intro: [
@@ -255,6 +256,7 @@ const hub: ContentPageInput = {
   description:
     "Free SAT practice questions for Math and Reading and Writing, sorted by the topics the College Board tests, with a new Question of the Day every day.",
   h1: "SAT practice questions",
+  targetKeyword: "sat practice questions",
   crumb: "SAT practice questions",
   intro: [
     {
@@ -352,6 +354,7 @@ const math: ContentPageInput = {
   description:
     "SAT Math practice by content area: what Algebra, Advanced Math, Problem-Solving and Data Analysis, and Geometry and Trigonometry cover, with free questions.",
   h1: "SAT Math practice questions",
+  targetKeyword: "sat math practice questions",
   crumb: "Math",
   parent: PRACTICE_HUB_PATH,
   intro: [
@@ -501,6 +504,7 @@ const readingWriting: ContentPageInput = {
   description:
     "SAT Reading and Writing practice by content area, with strategies for short passages, the grammar rules that come up most, and free practice questions.",
   h1: "SAT Reading and Writing practice questions",
+  targetKeyword: "sat reading and writing",
   crumb: "Reading and Writing",
   parent: PRACTICE_HUB_PATH,
   intro: [

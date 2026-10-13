@@ -73,7 +73,10 @@ function hookState(overrides: Record<string, unknown> = {}) {
     nextQuestion: vi.fn(),
     handleMissingMcChoices: vi.fn(),
     calculatorState: null,
-    persistCalculatorState: vi.fn(),
+    noteCalculatorChange: vi.fn(),
+    commitCalculatorState: vi.fn(async () => undefined),
+    calculatorFlushRef: { current: null },
+    calculatorSaveFailed: false,
     submitBlocked: null,
     setForceTakeover: vi.fn(),
     sessionItemId: "item-1",
@@ -241,6 +244,8 @@ describe("practice/review runner keys (§2 row 1)", () => {
   it("review runner: same keys; typing in the LISA composer triggers none of them", () => {
     const state = hookState({ selectedAnswer: "opt-1", canSubmit: true });
     mountRunner(state, REVIEW_ENGINE_CONFIG);
+    // QA2-D: below 1024 LISA starts closed; the student opens it from the bar.
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     const composer = screen.getByTestId("lisa-composer");
     press("Enter", composer);
     press("ArrowDown", composer);

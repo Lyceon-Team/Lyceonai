@@ -8,7 +8,7 @@ import { sectionDisplayLabel } from "@shared/section-display";
 import type { MasteryLevelKey } from "@lyceon/shared/mastery-levels";
 import PublicLayout from "@/components/layout/PublicLayout";
 import { HomeNav } from "@/components/marketing/HomeNav";
-import { ProductVisual } from "@/components/marketing/ProductVisual";
+import { WalkthroughVideo } from "@/components/marketing/WalkthroughVideo";
 import {
   MASTERY_METER_SEGMENTS,
   masteryMeterFill,
@@ -20,7 +20,10 @@ import {
 import { ctaClickHandlers } from "@/lib/cta-click";
 import {
   GUARDIAN_SIGNUP_HREF,
+  SIGN_IN_HREF,
+  SIGN_UP_HREF,
   START_DIAGNOSTIC_HREF,
+  START_PRACTICE_HREF,
 } from "@/lib/marketing-links";
 import {
   HERO_COPY,
@@ -56,7 +59,6 @@ import { LazyQotdWidget } from "@/components/qotd/LazyQotdWidget";
  * production nor Doc 02B. That divergence is reported, not resolved here.
  */
 const FREE_DAILY_PRACTICE_QUESTIONS = 40;
-
 
 const TRUST_ITEMS = [
   "Free daily practice",
@@ -243,7 +245,7 @@ export default function HomePage() {
               Practice, review and the parent view.
             </p>
           </div>
-          <ProductVisual />
+          <WalkthroughVideo />
           <ol className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {HOW_IT_WORKS.map((step, i) => (
               <li
@@ -290,7 +292,7 @@ export default function HomePage() {
               showArchiveLink={false}
               afterReveal={
                 <Link
-                  href={START_DIAGNOSTIC_HREF}
+                  href={START_PRACTICE_HREF}
                   className={`${PRIMARY_BUTTON} w-full`}
                   data-testid="qotd-try-more"
                 >
@@ -356,7 +358,7 @@ export default function HomePage() {
                 </figcaption>
               </figure>
               <Link
-                href={START_DIAGNOSTIC_HREF}
+                href={START_PRACTICE_HREF}
                 className="mt-auto font-semibold underline underline-offset-2 hover:opacity-80"
               >
                 Start practicing free →
@@ -414,7 +416,7 @@ export default function HomePage() {
                 </li>
               </ul>
               <Link
-                href="/login"
+                href={SIGN_UP_HREF}
                 className={`${OUTLINE_BUTTON} mt-auto w-full`}
                 data-testid="button-get-started-free"
               >
@@ -456,13 +458,13 @@ export default function HomePage() {
                 ))}
               </ul>
               {/*
-                `/signup` redirects to `/login` (`App.tsx:71`), so this lands
-                where the free card's CTA lands, with different copy. That is
-                intended (owner ruling 2026-09-03): the destination is one auth
-                page, and the two labels name which plan the visitor came for.
+                This lands where the free card's CTA lands (the auth page's
+                Sign Up tab), with different copy. That is intended (owner
+                ruling 2026-09-03): the destination is one auth page, and the
+                two labels name which plan the visitor came for.
               */}
               <Link
-                href="/signup"
+                href={SIGN_UP_HREF}
                 className={`${PRIMARY_BUTTON} mt-auto w-full`}
                 data-testid="button-get-started-paid"
               >
@@ -522,7 +524,7 @@ export default function HomePage() {
               </Link>
             ) : (
               <Link
-                href="/login"
+                href={SIGN_IN_HREF}
                 className={OUTLINE_BUTTON}
                 data-testid="button-footer-signin"
               >

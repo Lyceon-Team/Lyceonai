@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/internal/execute-deletions",
-      "schedule": "0 2 * * *"
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/internal/stale-session-sweep",
@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/internal/notification-dispatch-sweep",
-      "schedule": "30 4 * * *"
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/internal/notification-retention-sweep",
@@ -34,15 +34,47 @@
     },
     {
       "path": "/api/internal/calendar-exam-notify",
-      "schedule": "0 6 * * *"
+      "schedule": "0 21 * * *"
     },
     {
       "path": "/api/internal/exam-score-renewal",
-      "schedule": "30 6 * * *"
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/internal/content-publish",
+      "schedule": "5 12 * * *"
+    },
+    {
+      "path": "/api/internal/content-publish",
+      "schedule": "5 13 * * *"
     },
     {
       "path": "/api/internal/qotd-schedule",
       "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/internal/marketing-email-reconcile",
+      "schedule": "45 7 * * *"
+    },
+    {
+      "path": "/api/internal/qotd-daily-email",
+      "schedule": "5 6 * * *"
+    },
+    {
+      "path": "/api/internal/qotd-daily-email",
+      "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/internal/qotd-daily-email",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/internal/guardian-daily-digest",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/internal/guardian-daily-digest",
+      "schedule": "0 0 * * *"
     }
   ],
   "routes": [
@@ -137,6 +169,10 @@
       "dest": "/app.html"
     },
     {
+      "src": "^/practice/topics/?$",
+      "dest": "/app.html"
+    },
+    {
       "src": "^/math-practice/?$",
       "dest": "/app.html"
     },
@@ -157,7 +193,7 @@
       "dest": "/app.html"
     },
     {
-      "src": "^/practice/topics/?$",
+      "src": "^/practice/diagnostic/?$",
       "dest": "/app.html"
     },
     {
@@ -226,6 +262,10 @@
     },
     {
       "src": "^/help/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/settings/?$",
       "dest": "/app.html"
     },
     {

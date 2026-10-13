@@ -14,6 +14,11 @@
  * difference, the guardian answer, is the OQ-38 sentence (see help.tsx). The rail's Help item,
  * the avatar menu's Help and the footer's "Help and FAQs" all point at `/help`, and clicking the
  * rail item from Home lands on the Help page.
+ *
+ * OQ-68 (d), UI-64 (owner ruling, Karl, 2026-10-08: "The '40 questions' copy reads the server
+ * quota value (the same source as the 402)"): the first answer's daily number is the quota
+ * read's `freeDailyLimit`. The fixture serves 37, not the seeded 40, so a literal cannot pass;
+ * the paid shape is the default (Help is shown to paid students, whose `limit` is null).
  */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -22,6 +27,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,18 +37,46 @@ import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
 import { AppShell } from "@/components/layout/app-shell";
 import { HELP_PATH } from "@/components/layout/LegalFooter";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
+import { practiceQuotaSchema } from "@lyceon/shared/practice-quota";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import HelpPage from "./help";
 
-const net = vi.hoisted(() => ({ log: [] as string[] }));
+/** A config value that is not the seeded 40 (OQ-68 (d)). */
+const FREE_DAILY_LIMIT = 37;
+
+/** `GET /api/practice/quota` as the route writes it for a paid student (practiceQuotaSchema). */
+const PAID_QUOTA = practiceQuotaSchema.parse({
+  unlimited: true,
+  limit: null,
+  remaining: null,
+  resetAt: null,
+  freeDailyLimit: FREE_DAILY_LIMIT,
+});
+/** The same read for a free student. */
+const FREE_QUOTA = practiceQuotaSchema.parse({
+  unlimited: false,
+  limit: FREE_DAILY_LIMIT,
+  remaining: 30,
+  resetAt: "2026-10-09T05:00:00.000Z",
+  freeDailyLimit: FREE_DAILY_LIMIT,
+});
+
+const net = vi.hoisted(() => ({
+  log: [] as string[],
+  quota: null as unknown,
+  quotaStatus: 200,
+}));
 
 vi.mock("@/lib/csrf", () => ({
   csrfFetch: async (url: string, init?: RequestInit): Promise<Response> => {
     net.log.push(`${init?.method ?? "GET"} ${url}`);
+    const isQuota = url.split("?")[0] === "/api/practice/quota";
     return new Response(
-      JSON.stringify({ data: { unread: 0 }, requestId: "r" }),
+      JSON.stringify(
+        isQuota ? net.quota : { data: { unread: 0 }, requestId: "r" },
+      ),
       {
-        status: 200,
+        status: isQuota ? net.quotaStatus : 200,
         headers: { "Content-Type": "application/json" },
       },
     );
@@ -76,7 +110,8 @@ vi.mock("@/hooks/use-toast", () => ({
 const PROTOTYPE_FAQS: readonly [string, string][] = [
   [
     "What is free, and what needs a paid plan?",
-    "Free: the diagnostic, your projected score, 40 practice questions a day and unlimited review. Paid plans add your study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.",
+    // The prototype's "40" is the configured daily limit: the served value (OQ-68 (d)).
+    `Free: the diagnostic, your projected score, ${FREE_DAILY_LIMIT} practice questions a day and unlimited review. Paid plans add your study calendar, mastery for every domain and skill, full-length tests and LISA, your tutor.`,
   ],
   [
     "How is my projected score worked out?",
@@ -135,6 +170,8 @@ function mount(path: string): { history: string[] } {
 
 beforeEach(() => {
   net.log = [];
+  net.quota = PAID_QUOTA;
+  net.quotaStatus = 200;
 });
 afterEach(cleanup);
 
@@ -154,6 +191,10 @@ describe("the Help page (DESIGN.md §4 Help)", () => {
   it("each answer, opened in turn, is the approved copy, and only one is open at a time", async () => {
     mount("/help");
     const faqs = await screen.findAllByTestId("help-faq");
+    // The quota read has answered before the plans answer is compared.
+    await within(faqs[0] as HTMLElement).findByText(
+      new RegExp(`\\b${FREE_DAILY_LIMIT} practice questions a day\\b`),
+    );
     for (const [index, [question, answer]] of PROTOTYPE_FAQS.entries()) {
       const faq = faqs[index] as HTMLElement;
       const button = within(faq).getByRole("button", { name: question });
@@ -204,15 +245,39 @@ describe("the Help page (DESIGN.md §4 Help)", () => {
     ]);
   });
 
-  it("carries the slim footer and asks the server for nothing", async () => {
+  it("carries the slim footer and asks the server only for the quota's free daily limit", async () => {
     mount("/help");
     await screen.findByTestId("help-page");
     const footer = screen.getByTestId("legal-footer");
     expect(footer.textContent).toContain("© 2026 Lyceon");
-    // The only request on screen is the shell's own bell.
+    // Besides the shell's own bell, the one request is the quota read (OQ-68 (d)), once.
+    await screen.findByText(/\b37 practice questions a day\b/);
     expect(
       net.log.filter((l) => !l.startsWith("GET /api/notifications")),
-    ).toEqual([]);
+    ).toEqual(["GET /api/practice/quota"]);
+  });
+
+  it("UI-64: a free reader gets the same served number", async () => {
+    net.quota = FREE_QUOTA;
+    mount("/help");
+    const faqs = await screen.findAllByTestId("help-faq");
+    expect(
+      await within(faqs[0] as HTMLElement).findByText(
+        PROTOTYPE_FAQS[0]?.[1] ?? "",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("UI-64: until the quota read answers, or when it fails, the plans answer prints no number", async () => {
+    net.quotaStatus = 500;
+    net.quota = { error: "boom" };
+    mount("/help");
+    const faqs = await screen.findAllByTestId("help-faq");
+    await waitFor(() => expect(net.log).toContain("GET /api/practice/quota"));
+    expect(faqs[0]?.textContent).toContain(
+      "Free: the diagnostic, your projected score, daily practice questions and unlimited review.",
+    );
+    expect(document.body.textContent).not.toMatch(/\b40\b|forty/i);
   });
 });
 

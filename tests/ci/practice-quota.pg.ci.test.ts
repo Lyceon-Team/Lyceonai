@@ -32,7 +32,12 @@
  *   - the day boundary and DST, through the SQL function's `p_now` over real answered and
  *     skipped rows whose `occurred_at` is moved to the instant under test;
  *   - a paid student: unlimited; reading twice writes nothing; 401, guardian 403, admin unlimited.
- * The limit is read from `practice_runtime_config.daily_quota_free`, never written here. The
+ *   - OQ-68 (d) / UI-64 (owner ruling, Karl, 2026-10-08: "The '40 questions' copy reads the
+ *     server quota value (the same source as the 402)"): every reader, free, paid and admin, gets
+ *     `freeDailyLimit`, equal to the 402's `limit`; changing `daily_quota_free` changes it for
+ *     all three (the last test, which restores the row).
+ * The limit is read from `practice_runtime_config.daily_quota_free`, never written here (except
+ * by the OQ-68 (d) test, last, which writes another value and restores it). The
  * answer route's own per-minute limiter (`answer_rate_limit_max`, a different control) is raised
  * in this throwaway database so that reaching the daily limit through real answers is possible.
  */
@@ -436,6 +441,8 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(quota.unlimited).toBe(false);
       expect(quota.limit).toBe(dailyLimit);
       expect(quota.remaining).toBe(dailyLimit);
+      // OQ-68 (d): the plan copy's number is the same config value.
+      expect(quota.freeDailyLimit).toBe(dailyLimit);
       expect(Date.parse(String(quota.resetAt))).toBe(
         nextChicagoMidnight(before),
       );
@@ -537,6 +544,8 @@ describe.skipIf(!PG_AVAILABLE)(
         remaining: quota.remaining,
         resetAt: quota.resetAt,
       });
+      // OQ-68 (d): the number the copy prints is the number this 402 carries.
+      expect(refusedNext.body.limit).toBe(quota.freeDailyLimit);
       const pendingA = await pg.query(
         `SELECT count(*)::int AS n FROM public.practice_session_items
           WHERE session_id = $1 AND status = 'pending'`,
@@ -553,6 +562,7 @@ describe.skipIf(!PG_AVAILABLE)(
         remaining: quota.remaining,
         resetAt: quota.resetAt,
       });
+      expect(start.body.limit).toBe(quota.freeDailyLimit);
 
       // Doc 02B §13 refuses at session start and next question, not at submit: the question C
       // put on screen at limit−1 can still be answered (OQ-50 (b), not ruled; kept). The read
@@ -707,6 +717,8 @@ describe.skipIf(!PG_AVAILABLE)(
         limit: null,
         remaining: null,
         resetAt: null,
+        // OQ-68 (d): no cap of their own, but the free plan's limit for the plan copy.
+        freeDailyLimit: dailyLimit,
       });
     });
 
@@ -745,8 +757,49 @@ describe.skipIf(!PG_AVAILABLE)(
         limit: null,
         remaining: null,
         resetAt: null,
+        freeDailyLimit: dailyLimit,
       });
       expect(await ledgerRows(ADMIN)).toBe(0);
+    });
+
+    // Last: it writes the config row (and restores it), so nothing after it sees another limit.
+    it("OQ-68 (d): changing daily_quota_free changes freeDailyLimit for a free, a paid and an admin reader, and the 402", async () => {
+      const changed = dailyLimit - 3;
+      expect(changed).not.toBe(dailyLimit);
+      await pg.query(
+        `UPDATE public.practice_runtime_config SET value = $1::jsonb WHERE key = 'daily_quota_free'`,
+        [String(changed)],
+      );
+      try {
+        const free = await readQuota(FREE_FRESH);
+        expect(free).toMatchObject({
+          unlimited: false,
+          limit: changed,
+          freeDailyLimit: changed,
+        });
+        const paid = practiceQuotaSchema.parse((await quotaAs(PAID)).body);
+        expect(paid).toMatchObject({
+          unlimited: true,
+          freeDailyLimit: changed,
+        });
+        const admin = practiceQuotaSchema.parse(
+          (await quotaAs(ADMIN, "admin")).body,
+        );
+        expect(admin).toMatchObject({
+          unlimited: true,
+          freeDailyLimit: changed,
+        });
+        // FREE_LIMIT is past both limits: the session-start 402 carries the new number too.
+        const refused = await startSession(FREE_LIMIT, 5);
+        expect(refused.status).toBe(402);
+        expect(refused.body.limit).toBe(changed);
+        expect((await readQuota(FREE_LIMIT)).freeDailyLimit).toBe(changed);
+      } finally {
+        await pg.query(
+          `UPDATE public.practice_runtime_config SET value = $1::jsonb WHERE key = 'daily_quota_free'`,
+          [String(dailyLimit)],
+        );
+      }
     });
   },
 );

@@ -11,6 +11,23 @@ export type RenderContext = {
   recipientIsSubject: boolean;
   /** PUBLIC_SITE_URL without a trailing slash, or "" when unset (links are then omitted). */
   siteUrl: string;
+  /**
+   * `qotd_daily` email only: what the dispatcher looked up at send time — the day's stem (never
+   * stored in the payload) and the recipient's signed unsubscribe / resume links. Absent for
+   * every other type and for in-app renders.
+   */
+  qotdEmail?: {
+    stem: string | null;
+    unsubscribeUrl: string | null;
+    resumeUrl: string | null;
+  };
+  /**
+   * `guardian_daily_digest` email only (Karl's ruling 5 on #1223, 2026-10-13): the recipient's
+   * signed one-click unsubscribe link, built by the dispatcher at send time and never stored.
+   */
+  guardianDigestEmail?: {
+    unsubscribeUrl: string | null;
+  };
 };
 
 export type InAppRender = {
@@ -24,6 +41,8 @@ export type EmailRender = {
   subject: string;
   html: string;
   text: string;
+  /** Extra headers (List-Unsubscribe on an opt-in email). Absent on transactional emails. */
+  headers?: Record<string, string>;
 };
 
 export function escapeHtml(value: string): string {

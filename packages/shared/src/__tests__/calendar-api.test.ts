@@ -18,6 +18,7 @@ import {
   launchBodySchema,
   launchResponseSchema,
   profileReadResponseSchema,
+  satDateBoundResponseSchema,
   profileUpsertResponseSchema,
   versionResponseSchema,
 } from "../calendar/api";
@@ -60,6 +61,7 @@ const BOUNDS = {
 const PROFILE = {
   timezone: "America/Los_Angeles",
   target_exam_date: "2026-11-07",
+  target_exam_dates: ["2026-11-07"],
   target_score: 1400,
   study_days_mask: 62,
   daily_minutes: 45,
@@ -190,6 +192,7 @@ describe("GET /api/calendar", () => {
         default_full_length_interval_weeks: 2,
         default_full_length_weekday: 6,
         final_exam_lead_days: 7,
+        target_exam_dates: [],
       },
     };
     const parsed = calendarResponseSchema.safeParse(payload);
@@ -554,6 +557,7 @@ describe("guardian read (§16, R-08-22)", () => {
           default_full_length_interval_weeks: 2,
           default_full_length_weekday: 6,
           final_exam_lead_days: 7,
+          target_exam_dates: [],
         },
       }).success,
     ).toBe(false);
@@ -651,5 +655,38 @@ describe("the error envelope (Coding Standards §8.2)", () => {
     expect(apiErrorSchema.safeParse({ message: "Not entitled" }).success).toBe(
       false,
     );
+  });
+});
+
+/**
+ * @spec [owner ruling 2026-10-12 (Karl, on #1211): a role-agnostic read of latest_test_date that
+ *       "carries no student data"] | @implemented [2026-10-12]
+ * plain English: the bound's wire shape is one local date and nothing else, so no profile
+ * value can ride along on a read any signed-in account may make.
+ */
+describe("GET /api/sat-dates/bound", () => {
+  it("is exactly { latest_test_date: a local date }", () => {
+    expect(
+      satDateBoundResponseSchema.safeParse({ latest_test_date: "2028-03-12" }).success,
+    ).toBe(true);
+    expect(satDateBoundResponseSchema.safeParse({}).success).toBe(false);
+    expect(
+      satDateBoundResponseSchema.safeParse({
+        latest_test_date: "2028-03-12T00:00:00Z",
+      }).success,
+    ).toBe(false);
+    // Presence above, absence here: no profile value can be added to it.
+    expect(
+      satDateBoundResponseSchema.safeParse({
+        latest_test_date: "2028-03-12",
+        profile: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      satDateBoundResponseSchema.safeParse({
+        latest_test_date: "2028-03-12",
+        target_exam_dates: ["2027-03-06"],
+      }).success,
+    ).toBe(false);
   });
 });

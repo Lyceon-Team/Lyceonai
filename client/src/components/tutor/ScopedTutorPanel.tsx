@@ -62,6 +62,7 @@ import {
   type TutorSourceSurface,
 } from "@/hooks/tutor-client";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
+import { Pill } from "@/components/student-ui";
 import {
   LisaUpgradeCard,
   isLisaEntitlementDenial,
@@ -115,6 +116,7 @@ export function ScopedTutorPanel({
   questionLabel,
   onHide,
   revealOnOpen = false,
+  revealKey = 0,
 }: {
   sourceSurface: Extract<TutorSourceSurface, "review" | "practice">;
   sessionItemId: string;
@@ -129,9 +131,17 @@ export function ScopedTutorPanel({
    * never loads scrolled away from itself.
    */
   revealOnOpen?: boolean;
+  /**
+   * QA 2026-10-08 item D (Karl: "tapping the icon always brings it into view"): the runner
+   * bumps this when the student taps the LISA icon while the panel is already open but scrolled
+   * out of view, so the same reveal runs again without remounting (the thread, the draft and
+   * the scroll position inside the panel are kept). Read only with `revealOnOpen`.
+   */
+  revealKey?: number;
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
-  // Mount-only: the panel mounts when it is opened, and it is the opening that is revealed.
+  // On mount (the panel mounts when it is opened, and it is the opening that is revealed) and
+  // again on each `revealKey` (QA2-D: a tap on the icon while open but out of view).
   // The runner is still laying out the question above it when LISA mounts (measured at 390: its
   // column grows a frame later, so a single scroll stopped short), so the reveal is repeated
   // each frame until the panel holds still (at most 30 frames, ~0.5s), and stops at once if
@@ -167,7 +177,7 @@ export function ScopedTutorPanel({
       stop();
       for (const type of inputs) window.removeEventListener(type, stop);
     };
-  }, []);
+  }, [revealKey]);
   // Looking is a GET. Nothing here creates a conversation on load.
   const existing = useItemConversation(sourceSurface, sessionItemId);
   const createConversation = useCreateConversation();
@@ -243,12 +253,11 @@ export function ScopedTutorPanel({
           <span className="font-lyc-serif text-lyc-body font-semibold text-lyc-ink-strong">
             LISA
           </span>
-          <span
-            className="truncate rounded-full border border-lyc-rule bg-lyc-chip px-2.5 py-0.5 text-lyc-meta font-semibold text-lyc-ink"
-            data-testid="tutor-question-chip"
-          >
+          {/* The shared student pill (2026-10-13: lifted from this chip, now also the runner's
+              question header), truncated to one line here. */}
+          <Pill className="truncate" data-testid="tutor-question-chip">
             {questionLabel}
-          </span>
+          </Pill>
         </div>
         <Button
           type="button"

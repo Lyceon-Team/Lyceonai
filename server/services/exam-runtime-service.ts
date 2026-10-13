@@ -24,7 +24,9 @@
  *
  * trade-offs: scoring failures do not fail the student's request — the session is
  * over and committed; the failure is logged and the outbox row stays pending for
- * the sweep (exam_abandonment_sweep) to retry. Grading never happens here: Module 1
+ * the sweep (exam_abandonment_sweep; the pg_cron job `exam-abandonment-sweep`, every 5 minutes,
+ * live in production per the owner's report of 2026-10-09) to retry. Grading never happens here:
+ * Module 1
  * is graded inside exam_submit_module / the timeout path, in SQL.
  *
  * edge cases: every RPC response is parsed as `unknown` through Zod; a malformed
@@ -220,7 +222,8 @@ async function consumeOutboxEvent(
  * exam, means the projection already includes this test when the student reaches the
  * report. expected outcome: 'refreshed', or 'nothing_pending' for a partial session or a
  * replay. trade-offs: two projection computes on the finishing request. edge cases: any
- * failure is logged and left to the pg_cron drain (projection_refresh_outbox_drain) — the
+ * failure is logged and left to the pg_cron drain (projection_refresh_outbox_drain; the job
+ * `projection-refresh-outbox-drain`, live in production per the owner's report of 2026-10-09) — the
  * outbox row is the contract, this call only gets there sooner; nothing about the student
  * or their scores is logged.
  */

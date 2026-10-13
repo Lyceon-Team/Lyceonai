@@ -22,6 +22,10 @@ import {
 } from "../shared/seo/public-meta";
 import { CONTENT_PAGES } from "../shared/content/pages";
 import { BASE_URL, LOGO_URL } from "../shared/seo/structured-data";
+import {
+  SOCIAL_PROFILES,
+  SOCIAL_PROFILE_URLS,
+} from "../shared/seo/social-profiles";
 import { HEAD_END_MARKER, HEAD_START_MARKER } from "../shared/seo/head";
 import { stripComments } from "./ci/lib/strip-comments";
 import { BLOG_POSTS } from "../shared/content/blog";
@@ -234,6 +238,42 @@ describe("structured data (F1)", () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it("the Organization's sameAs is the official profiles, from the one config constant", () => {
+    // Owner brief 2026-10-10: the brief's four profiles, in order.
+    expect(SOCIAL_PROFILE_URLS).toEqual([
+      "https://www.instagram.com/lyceon.ai",
+      "https://www.tiktok.com/@lyceon.ai",
+      "https://x.com/lyceonai",
+      "https://www.youtube.com/@lyceonai",
+    ]);
+    const orgs = site.pages.flatMap((p) =>
+      jsonLdBlocks(p.html)
+        .filter((b) => b["@type"] === "Organization")
+        .map((b) => ({ path: p.path, sameAs: b.sameAs })),
+    );
+    // Presence first: the homepage at least carries the Organization.
+    expect(orgs.map((o) => o.path)).toContain("/");
+    for (const o of orgs) expect(o.sameAs, o.path).toEqual(SOCIAL_PROFILE_URLS);
+  });
+
+  it("every prerendered public page's footer links the four profiles, labelled, in a new tab", () => {
+    expect(site.pages.length).toBeGreaterThan(10);
+    for (const p of site.pages) {
+      const footer = p.html.slice(p.html.lastIndexOf("<footer"));
+      for (const profile of SOCIAL_PROFILES) {
+        const anchor = footer.match(
+          new RegExp(`<a\\b[^>]*href="${escapeRegExp(profile.url)}"[^>]*>`),
+        )?.[0];
+        expect(anchor, `${p.path} ${profile.platform}`).toBeDefined();
+        expect(anchor, p.path).toContain('target="_blank"');
+        expect(anchor, p.path).toContain('rel="noopener noreferrer"');
+        expect(anchor, p.path).toContain(
+          `aria-label="Lyceon on ${profile.platform}"`,
+        );
+      }
+    }
   });
 
   it("no page declares a SearchAction (the site has no search page)", () => {

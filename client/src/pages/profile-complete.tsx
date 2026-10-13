@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { isProfileGateSatisfied } from "@lyceon/shared/profile-completion";
+import { resetOnboardingLoopGuard } from "@/lib/onboarding-loop-guard";
 import { Redirect, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { FullPageLoader, Notice } from "@/components/student-ui";
@@ -33,6 +35,15 @@ import {
   MARKETING_CONSENT_LABEL,
   marketingOptInEligible,
 } from "../../../packages/shared/src/marketing-consent-schema";
+import {
+  SatDatePicker,
+  type SatDateChoice,
+} from "@/components/sat-dates/SatDatePicker";
+import {
+  calendarKeys,
+  newIntent,
+  putStudyProfile,
+} from "@/features/calendar/api";
 
 /**
  * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (profile completion);
@@ -111,6 +122,9 @@ export default function ProfileComplete() {
   const [role, setRole] = useState<"student" | "guardian">("student");
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [marketingOptIn, setMarketingOptIn] = useState(false);
+  const [satDates, setSatDates] = useState<SatDateChoice>({
+    dates: [],
+  });
   const [errorMessage, setErrorMessage] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -155,6 +169,14 @@ export default function ProfileComplete() {
   // plain English: the marketing checkbox is shown only to guardians and students 13+ — the
   // shared rule the server and the database also apply. Hidden means not sent at all, so a box
   // ticked before the date of birth changed to under-13 can never be submitted.
+  // @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Onboarding order":
+  // Name → DOB (under-13 → guardian gate as today) → "When's your SAT?"; SCL-223] |
+  // @implemented [2026-10-09] | plain English: students 13+ answer the SAT question here. An
+  // under-13 goes to the guardian gate first, as today, and can add dates later in Settings. The
+  // dates are saved through the calendar's one profile write (PUT /api/calendar/profile) after
+  // the profile itself, and never complete calendar setup. The question never blocks onboarding:
+  // no answer is the same as "Not sure yet" (Home then offers the date card).
+  const satDatesAsked = role === "student" && age !== null && !isUnder13;
   const marketingOptInOffered =
     (role === "student" || role === "guardian") &&
     marketingOptInEligible(dateOfBirth === "" ? null : dateOfBirth, new Date());
@@ -172,10 +194,30 @@ export default function ProfileComplete() {
         }),
       });
 
-      return response.json() as Promise<ProfileCompletionResponse>;
+      const completed = (await response.json()) as ProfileCompletionResponse;
+      if (satDatesAsked && satDates.dates.length > 0) {
+        try {
+          await putStudyProfile(
+            newIntent({ target_exam_dates: satDates.dates }),
+          );
+          await queryClient.invalidateQueries({
+            queryKey: calendarKeys.profile(),
+          });
+        } catch {
+          // The profile is complete; the dates are a second, separate save. Tell the student
+          // it failed and let them carry on — Settings has the same picker.
+          toast({
+            title: "We couldn't save your SAT date",
+            description: "You can add it any time in Settings.",
+          });
+        }
+      }
+      return completed;
     },
     onSuccess: async (result) => {
       setErrorMessage("");
+      // A completed profile ends any loop suspicion (hotfix 2026-10-11).
+      resetOnboardingLoopGuard();
       await queryClient.invalidateQueries({ queryKey: PROFILE_QUERY_KEY });
 
       toast({
@@ -246,10 +288,18 @@ export default function ProfileComplete() {
    */
   const completing =
     completionMutation.isPending || completionMutation.isSuccess;
+  // Hotfix 2026-10-11: "already complete" is the one shared rule the server gate uses, so this
+  // page never sends someone back to a page the server will refuse them.
   if (
     !completing &&
-    profile?.requiredProfileComplete &&
-    profile?.profileCompletedAt
+    profile !== null &&
+    profile.requiredProfileComplete !== false &&
+    isProfileGateSatisfied({
+      isAdmin: false, // an admin already returned above
+      role: profile.role,
+      profileCompletedAt: profile.profileCompletedAt,
+      dateOfBirthKnown: profile.dateOfBirth !== null,
+    })
   ) {
     return (
       <Redirect
@@ -387,6 +437,14 @@ export default function ProfileComplete() {
               </p>
             )}
           </div>
+
+          {satDatesAsked && (
+            <SatDatePicker
+              value={satDates}
+              onChange={setSatDates}
+              data-testid="onboarding-sat-dates"
+            />
+          )}
 
           {marketingOptInOffered && (
             <div className="flex items-start gap-3">

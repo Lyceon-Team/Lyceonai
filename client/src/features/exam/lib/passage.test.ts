@@ -20,7 +20,9 @@ describe("passage segments", () => {
     // code points: 😀=0, ' '=1, k=2 ... "kelp" = [2, 6)
     const segs = buildPassageSegments(p, [{ start: 2, end: 6 }]);
     const hi = segs.filter((s) => s.highlighted);
-    expect(hi).toEqual([{ kind: "text", start: 2, end: 6, text: "kelp", highlighted: true }]);
+    expect(hi).toEqual([
+      { kind: "text", start: 2, end: 6, text: "kelp", highlighted: true, underlined: false },
+    ]);
     expect(segs.map((s) => ("text" in s ? s.text : s.source)).join("")).toBe(p);
   });
 

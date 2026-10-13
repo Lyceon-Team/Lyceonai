@@ -37,6 +37,10 @@ export const SESSION_MODES_DB = [
   "balanced",
   "timed",
   "diagnostic",
+  // SCL-224 (owner brief "Question of the Day on Home", Karl 2026-10-08/09): the one-item
+  // session the Home QOTD answer writes. Server-assigned by qotd_student_answer only; never
+  // accepted from a request body. Maps to 'practice_attempt' (it is a practice answer).
+  "qotd",
 ] as const;
 
 export const sessionModeSchema = z.enum(SESSION_MODES_DB);
@@ -66,3 +70,6 @@ export const DEFAULT_PRACTICE_SESSION_MODE: PracticeSessionMode = "balanced";
 
 /** Server-assigned only. Never accepted from a request body. */
 export const DIAGNOSTIC_SESSION_MODE = "diagnostic" as const;
+
+/** Server-assigned only (SCL-224): the Home Question of the Day's one-item session. */
+export const QOTD_SESSION_MODE = "qotd" as const;

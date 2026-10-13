@@ -386,6 +386,60 @@ describe("GET /:date — the archive", () => {
   });
 });
 
+describe("a past day whose stem repeats its passage is withheld (owner 2026-10-08)", () => {
+  // A real archive row with a passage, copied to an unused past date; only its stem changes.
+  const withPassage = QOTD_ARCHIVE_ROWS.find((r) => r.passage);
+  const BROKEN_DATE = "2026-10-01";
+  function addDay(stem: string): void {
+    if (!withPassage?.passage)
+      throw new Error("fixture has no archive row with a passage");
+    fake.state.rows.archive.push({
+      ...withPassage,
+      qotd_date: BROKEN_DATE,
+      stem,
+    });
+  }
+
+  it("not in GET /archive and 404 on GET /:date while broken", async () => {
+    addDay(`${withPassage?.passage ?? ""}\n`);
+    const index = await request(app)
+      .get("/api/public/qotd/archive")
+      .set("x-vercel-forwarded-for", nextIp());
+    expect(index.status).toBe(200);
+    const listed = (index.body.data.days as { qotd_date: string }[]).map(
+      (d) => d.qotd_date,
+    );
+    // Presence before absence: the other past days are still listed.
+    expect(listed).toEqual(
+      QOTD_ARCHIVE_ROWS.map((r) => r.qotd_date)
+        .sort()
+        .reverse(),
+    );
+    expect(listed).not.toContain(BROKEN_DATE);
+    const day = await request(app)
+      .get(`/api/public/qotd/${BROKEN_DATE}`)
+      .set("x-vercel-forwarded-for", nextIp());
+    expect(day.status).toBe(404);
+    expect(JSON.stringify(day.body)).not.toContain(
+      String(withPassage?.explanation),
+    );
+  });
+
+  it("published again, with no other change, once the question is repaired", async () => {
+    addDay("Which choice completes the text with the most logical transition?");
+    const index = await request(app)
+      .get("/api/public/qotd/archive")
+      .set("x-vercel-forwarded-for", nextIp());
+    expect(
+      (index.body.data.days as { qotd_date: string }[]).map((d) => d.qotd_date),
+    ).toContain(BROKEN_DATE);
+    const day = await request(app)
+      .get(`/api/public/qotd/${BROKEN_DATE}`)
+      .set("x-vercel-forwarded-for", nextIp());
+    expect(day.status).toBe(200);
+  });
+});
+
 describe("POST /today/answer — Turnstile first (SCL-202 item 2)", () => {
   it("a missing token is 403 before any other work", async () => {
     const res = await submit(nextIp(), {

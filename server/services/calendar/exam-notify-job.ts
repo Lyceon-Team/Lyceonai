@@ -38,6 +38,17 @@
  * `failed`, and the loop continues. A job that aborts on the first bad row leaves everybody
  * after it un-notified and gives no clue which row it was.
  *
+ * RE-PLAN FIRST, THEN "THIS WEEK" (owner ruling, Karl 2026-10-09, schedule audit Step 2 item
+ * 3(4)) | @implemented [2026-10-09]. The week notice must come after the student's weekly
+ * re-plan for that local week, because the re-plan may move the exam. Crons cannot promise that
+ * order (the weekly cron fires at one UTC instant and students' Mondays begin at many: a Chicago
+ * student in CST was told on Monday and re-planned that night). So it is made structural, twice:
+ *   1. this job, before notifying, re-plans every student who has a week notice due and whose
+ *      week §12.5 still says "generate" (`ensureWeeklyReplan`, the weekly job's own code path),
+ *      then reads the population AGAIN, so the notice names the re-planned exam;
+ *   2. `calendar_emit_exam_notification` refuses a week notice while that predicate still says
+ *      "generate" (`skipped_not_replanned`, recorded), whoever calls it.
+ *
  * EMAIL IS DELIVERED INLINE, awaited (contract §6.1). Vercel may freeze the function the moment
  * the response is written, so fire-and-forget would leave the row queued until the next daily
  * sweep — a day late for a notice whose whole content is "tomorrow". The dispatcher never
@@ -48,6 +59,7 @@ import { logger } from "../../logger";
 import { classifyError } from "../../lib/redact";
 import { dispatchQueuedMessages } from "../../lib/notifications/dispatch";
 import { notificationEventId } from "../../lib/notifications/event-id";
+import { ensureWeeklyReplan } from "./weekly-job";
 
 /** `calendar_job_runs.job` — the value 20261012000000 added beside `weekly_regen`. */
 export const EXAM_NOTIFY_JOB = "exam_notify" as const;
@@ -61,6 +73,7 @@ export const EXAM_NOTIFY_OUTCOMES = [
   "skipped_no_entitlement",
   "skipped_complete",
   "skipped_duplicate",
+  "skipped_not_replanned",
   "failed",
 ] as const;
 export type ExamNotifyOutcome = (typeof EXAM_NOTIFY_OUTCOMES)[number];
@@ -71,6 +84,7 @@ export type ExamNotifySummary = {
   skipped_no_entitlement: number;
   skipped_complete: number;
   skipped_duplicate: number;
+  skipped_not_replanned: number;
   failed: number;
 };
 
@@ -94,6 +108,7 @@ function outcomeFor(emitted: string): ExamNotifyOutcome | null {
   if (emitted === "emitted") return "ok";
   if (emitted === "skipped_complete") return "skipped_complete";
   if (emitted === "duplicate") return "skipped_duplicate";
+  if (emitted === "skipped_not_replanned") return "skipped_not_replanned";
   return null;
 }
 
@@ -137,6 +152,29 @@ function isCandidate(value: unknown): value is Candidate {
   );
 }
 
+async function readCandidates(
+  limit: number,
+  requestId: string | undefined,
+): Promise<unknown[]> {
+  const { data, error } = await supabaseServer.rpc(
+    "calendar_exam_notification_candidates",
+    { p_limit: limit },
+  );
+
+  if (error) {
+    logger.error(
+      "CALENDAR_JOB",
+      "exam_notify_candidates_read_failed",
+      "the exam notification job could not read its population; nothing was sent",
+      { ...classifyError(error), requestId },
+    );
+    throw new Error(
+      `calendar_exam_notification_candidates_failed: ${error.message}`,
+    );
+  }
+  return Array.isArray(data) ? data : [];
+}
+
 /**
  * One pass. Returns the counts §18's `calendar.job_run {job, outcome}` event reports.
  *
@@ -154,27 +192,37 @@ export async function runExamNotifications(options?: {
     skipped_no_entitlement: 0,
     skipped_complete: 0,
     skipped_duplicate: 0,
+    skipped_not_replanned: 0,
     failed: 0,
   };
+  const limit = options?.limit ?? 500;
 
-  const { data, error } = await supabaseServer.rpc(
-    "calendar_exam_notification_candidates",
-    { p_limit: options?.limit ?? 500 },
-  );
-
-  if (error) {
-    logger.error(
-      "CALENDAR_JOB",
-      "exam_notify_candidates_read_failed",
-      "the exam notification job could not read its population; nothing was sent",
-      { ...classifyError(error), requestId },
-    );
-    throw new Error(
-      `calendar_exam_notification_candidates_failed: ${error.message}`,
-    );
+  // Step 1: re-plan, for every student with a week notice due, whose week is not re-planned yet.
+  // Distinct students, in the population's own stable order.
+  const firstRead = await readCandidates(limit, requestId);
+  const weekStudents = new Set<string>();
+  for (const row of firstRead) {
+    if (
+      isCandidate(row) &&
+      row.kind === "full_length_week" &&
+      row.outcome === null
+    ) {
+      weekStudents.add(row.student_id);
+    }
+  }
+  let replanned = 0;
+  for (const studentId of weekStudents) {
+    // A failure is logged inside; the emitter then refuses that student's notice and the
+    // refusal is recorded below.
+    if ((await ensureWeeklyReplan(studentId, requestId)) === "replanned") {
+      replanned += 1;
+    }
   }
 
-  const rows: unknown[] = Array.isArray(data) ? data : [];
+  // Step 2: the population again, so a notice names the exam as re-planned. When nobody was
+  // re-planned nothing moved, and the first read stands.
+  const rows: unknown[] =
+    replanned === 0 ? firstRead : await readCandidates(limit, requestId);
 
   for (const row of rows) {
     if (!isCandidate(row)) continue;

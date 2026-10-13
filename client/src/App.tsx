@@ -1,5 +1,6 @@
 import { Component, ReactNode, Suspense, lazy } from "react";
-import { Switch, Route, Redirect, useLocation } from "wouter";
+import { OnboardingLoopScreen } from "@/components/auth/OnboardingLoopScreen";
+import { Switch, Route, Redirect, useLocation, useSearch } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
@@ -27,6 +28,8 @@ import { ActiveThemeLockProvider } from "@/components/layout/theme-lock";
 import { GUARDIAN_ROUTES } from "@/features/guardian/routes";
 import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
+import { useRouteScrollReset } from "@/lib/route-scroll-reset";
+import { SIGN_UP_HREF } from "@/lib/marketing-links";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
@@ -128,9 +131,41 @@ function AccountRecoverRoute() {
     </StudentRouteFrame>
   );
 }
-/** The SEO 404 (F6/F2), as the static 404.html renders it: no student shell (PR 1069 merge). */
-function NotFoundRoute() {
-  return <NotFound />;
+/**
+ * @spec [production re-test 2026-10-08 item E (Karl: "restyle the 404 page with student tokens,
+ *        fonts and theme"); DESIGN.md §2 "Bare card" (the 404 is a Bare-card page); SEO F6/F2]
+ *        | @implemented [2026-10-08; replaces the unshelled SEO card of the PR 1069 merge]
+ * plain English: the catch-all, framed in the Bare card here (it has no path, so it has no row in
+ * the student route table for `StudentRouteFrame` to look up), as the error screen and the
+ * pending-deletion screen are. The static 404.html is this same render, so it gets the card too,
+ * in the theme the boot script in index.html sets before the first paint. Exported for the
+ * bare-page suite, which renders the 404 the way the router does.
+ */
+export function NotFoundRoute(): JSX.Element {
+  return (
+    <BareCard>
+      <NotFound />
+    </BareCard>
+  );
+}
+
+/**
+ * @spec [production re-test 2026-10-08 item E (Karl: "Redirect /settings → /profile")]
+ *        | @implemented [2026-10-08]
+ * plain English: Settings lives at `/profile` (UI-58); `/settings` used to fall through to the
+ * 404. It now replaces itself with `/profile` (a history replace, so Back does not bounce back
+ * through it), keeping the query (`?tab=` picks the section) and the hash. Admission is
+ * `/profile`'s own guard's; this route renders nothing of its own.
+ */
+function SettingsRedirect(): JSX.Element {
+  const search = useSearch();
+  const hash = typeof window === "undefined" ? "" : window.location.hash;
+  return (
+    <Redirect
+      to={`/profile${search === "" ? "" : `?${search}`}${hash}`}
+      replace
+    />
+  );
 }
 // Doc 05F §17.1. Lazy like every other authenticated page: the calendar pulls in @dnd-kit
 // and its own stylesheet, and a student who never opens it should not download either.
@@ -138,8 +173,8 @@ const Calendar = lazy(() => import("@/pages/calendar"));
 // Guardian pages (the student calendar and exam results included) are routed by
 // GUARDIAN_ROUTES (`features/guardian/routes.tsx`), which lazy-loads them itself.
 const ScoreReport = lazy(() => import("@/pages/score-report"));
-const BrowseTopics = lazy(() => import("@/pages/browse-topics"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
+const DiagnosticStart = lazy(() => import("@/pages/diagnostic-start"));
 const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
 const UserProfile = lazy(() => import("@/pages/UserProfile"));
@@ -197,6 +232,8 @@ const ROUTE_FALLBACK = <RouteLoading data-testid="page-loader" />;
 export function Router() {
   // UI-41: the Focus shell's back arrow asks whether the entry behind is an in-app page.
   useInAppHistoryTracking();
+  // QA2-I (production re-test 2026-10-08): every pathname change opens the page at its top.
+  useRouteScrollReset();
   return (
     <Suspense fallback={ROUTE_FALLBACK}>
       <Switch>
@@ -204,8 +241,11 @@ export function Router() {
         <Route path="/" component={HomePage} />
         <Route path="/login" component={LoginRoute} />
 
-        {/* Signup redirects to login page (signup happens via modal/form on login page) */}
-        <Route path="/signup">{() => <Redirect to="/login" replace />}</Route>
+        {/* Signup redirects to the auth page on its Sign Up tab (owner brief 2026-10-10 rule 1;
+            the URL comes from the shared allowlist). */}
+        <Route path="/signup">
+          {() => <Redirect to={SIGN_UP_HREF} replace />}
+        </Route>
 
         {/* SEO Content Pages */}
         {/* @spec [owner decision 3 on SEO Wave 3 Step 0, 2026-10-05: the three /digital-sat*
@@ -288,16 +328,12 @@ export function Router() {
             </RequireRole>
           )}
         />
-        <Route
-          path="/practice/topics"
-          component={() => (
-            <RequireRole allow={["student", "admin"]}>
-              <StudentRouteFrame route="/practice/topics">
-                <BrowseTopics />
-              </StudentRouteFrame>
-            </RequireRole>
-          )}
-        />
+        {/* OQ-68 (a) (Karl, 2026-10-08): the topic browser is retired; its address replaces itself
+            with /practice (history replace, so Back does not bounce through it). The query is
+            dropped: /practice reads none. Admission is /practice's own guard's. */}
+        <Route path="/practice/topics">
+          {() => <Redirect to="/practice" replace />}
+        </Route>
         <Route path="/practice/math">
           {() => <Redirect to="/practice" replace />}
         </Route>
@@ -307,6 +343,19 @@ export function Router() {
         <Route path="/practice/random">
           {() => <Redirect to="/practice" replace />}
         </Route>
+        {/* Owner brief 2026-10-10 rule 3: "Start the free diagnostic" lands here after sign-in,
+            or after sign-up and onboarding; it starts (or resumes) the diagnostic and replaces
+            itself with the session. */}
+        <Route
+          path="/practice/diagnostic"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <StudentRouteFrame route="/practice/diagnostic">
+                <DiagnosticStart />
+              </StudentRouteFrame>
+            </RequireRole>
+          )}
+        />
         <Route
           path="/practice/session/:sessionId"
           component={() => (
@@ -409,6 +458,8 @@ export function Router() {
             </RequireRole>
           )}
         />
+        {/* QA2-E: the old Settings address lands on Settings. */}
+        <Route path="/settings" component={SettingsRedirect} />
         {/* UI-58 (OQ-46): the Help page; the rail, the avatar menu and the footer land here. */}
         <Route
           path="/help"
@@ -612,6 +663,9 @@ function App() {
                   <DeletionGate>
                     <Router />
                   </DeletionGate>
+                  {/* Hotfix 2026-10-11: the onboarding-redirect loop guard's screen (sign-out
+                      instead of a third redirect). Renders nothing until the guard trips. */}
+                  <OnboardingLoopScreen />
                 </StudentUpgradeModal>
               </ActiveThemeLockProvider>
               {/* SEO F10/F11: cookie banner + the only switch that starts PostHog (after

@@ -14,7 +14,11 @@ import {
   checkAndReservePracticeQuota,
   RateLimitUnavailableError,
 } from "../../apps/api/src/lib/rate-limit-ledger";
-import { dryRunPracticeQuota, toPracticeQuota } from "../lib/practice-quota";
+import {
+  dryRunPracticeQuota,
+  freeDailyLimitFor,
+  toPracticeQuota,
+} from "../lib/practice-quota";
 import {
   hasCanonicalOptionSet,
   buildServedOptions,
@@ -61,6 +65,8 @@ import {
   practiceSessionModeSchema,
 } from "../../packages/shared/src/session-mode";
 import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
+import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
+import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -83,20 +89,11 @@ type McOption = CanonicalMcOption;
 // hard-typed `null`; correct_variants is answer-bearing and is intentionally ABSENT from this
 // type — it can never be assigned here. For grid_in, options is [] and inputMode signals a
 // numeric-entry surface (the student produces the answer; no A–D choices exist).
-type StudentSafeQuestionDTO = {
-  sessionItemId: string;
-  stem: string;
-  passage: string | null;
-  assets: unknown | null;
-  section: string;
-  questionType: "multiple_choice" | "grid_in";
-  itemType: CanonicalItemType;
-  inputMode: "choice" | "numeric_entry";
-  options: StudentSafeOption[];
-  difficulty: string | number | null;
-  correct_answer: null;
-  explanation: null;
-};
+// @implemented [2026-10-13] (question metadata header, owner brief Karl 2026-10-13 §1): the type
+// is now inferred from `studentSafeQuestionSchema` (packages/shared, Zod first) instead of being
+// written out beside it, so the DTO and the schema the A14 parity test holds both engines to are
+// one definition. It gained `domain` and `skill` (taxonomy, not answer data).
+type StudentSafeQuestionDTO = StudentSafeQuestion;
 
 type SessionRow = {
   id: string;
@@ -773,6 +770,10 @@ export { filterAssetsPreSubmit };
 // hand it correct_variants (it has no such field; the answer set stays server-side). The
 // serializer null-strips correct_answer/explanation; for grid_in it emits options [] +
 // inputMode 'numeric_entry'. So this DTO carries no answer, no explanation, no variants.
+// @implemented [2026-10-13] (question header, owner brief Karl 2026-10-13 §1): it also carries
+// the projection's `domain` and `skill` (read from the session-item snapshot) for the runner's
+// header. Practice and review may show taxonomy pre-submit; only the full-length exam withholds
+// it (Doc 02B §20), and the exam has its own serializer. Named fields, no spread.
 export function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
@@ -811,6 +812,8 @@ export function toStudentSafeQuestionDTO(args: {
     difficulty: normalizeSafeDifficulty(safe.difficulty),
     correct_answer: null,
     explanation: null,
+    domain: safe.domain,
+    skill: safe.skill,
   };
 }
 
@@ -2241,10 +2244,13 @@ async function serveNextForSession(args: {
  * under-13 link gate here); no entitlement gate, because the free student is the reader. The
  * number comes from `dryRunPracticeQuota`, the call the session-start 402 makes, so the read and
  * the refusal cannot disagree; a dry run writes no ledger row. Body: `{unlimited, limit,
- * remaining, resetAt}` (`practiceQuotaSchema`). A paid student, and an admin (the wrapper's admin
- * bypass), read `unlimited: true` with nulls. Since the OQ-43 / F-61 ruling (Karl, 2026-10-03)
- * the count is answers submitted in the current America/Chicago day and `resetAt` the next
- * Chicago midnight (Doc 02B §13); the SQL function changed, this handler did not.
+ * remaining, resetAt, freeDailyLimit}` (`practiceQuotaSchema`). A paid student, and an admin (the
+ * wrapper's admin bypass), read `unlimited: true` with nulls, plus `freeDailyLimit`: the free
+ * plan's limit for the plan copy, which every reader gets (OQ-68 (d), Karl, 2026-10-08, UI-64;
+ * `freeDailyLimitFor`: the dry run's own `limit` for a free student, the same
+ * `daily_quota_free` row read directly for the other two). Since the OQ-43 / F-61 ruling (Karl,
+ * 2026-10-03) the count is answers submitted in the current America/Chicago day and `resetAt`
+ * the next Chicago midnight (Doc 02B §13); the SQL function changed, this handler did not.
  * edge cases: ledger unavailable, or a decision without numbers → 503 (fail closed, never a
  * guessed number), like the 402 sites. Logs carry the user id and the decision code, nothing else.
  */
@@ -2277,7 +2283,11 @@ router.get(
         userId: user.id,
         role: user.role,
       });
-      const quota = toPracticeQuota(decision);
+      // OQ-68 (d) / UI-64: the free plan's daily limit for the plan copy, on every shape.
+      const quota = toPracticeQuota(
+        decision,
+        await freeDailyLimitFor(decision),
+      );
       if (!quota.ok) {
         logger.error(
           "PRACTICE_QUOTA",
@@ -2404,6 +2414,13 @@ router.get(
     return res.json({
       sessions: enhancedSessions,
       maxConcurrentSessions: openConfig.maxConcurrentSessions,
+      // @spec [owner ruling OQ-68 (d), Karl, 2026-10-08, register row UI-64; Doc 05P §10.1
+      //        (8 domains × `diagnostic_per_domain`)] | @implemented [2026-10-08] | plain
+      // English: the diagnostic's length and per-domain count, the config numbers
+      // `POST /diagnostic/sessions` sizes the diagnostic with (the same `loadPracticeConfig`),
+      // so Home's diagnostic card prints them instead of a literal 40. Config, not student data.
+      diagnosticTotalQuestions: openConfig.diagnosticTotalQuestions,
+      diagnosticPerDomain: openConfig.diagnosticPerDomain,
       requestId,
     });
   },
@@ -2761,7 +2778,27 @@ router.post(
       metadata.client_instance_id = binding.requestedClientInstanceId;
     }
 
-    metadata.calculator_state = parsed.data.calculator_state ?? null;
+    /**
+     * @spec [register G-NEW-14; owner brief 2026-10-12 ("if the saved state is identical,
+     *       return early and don't write")] | @implemented [2026-10-12]
+     * plain English: after ownership, the closed-session check and the client-instance binding
+     * (all unchanged), a posted state identical to the stored one (same hash; jsonb key order
+     * does not matter) is answered at once with no write. A request that binds this client
+     * instance still writes, because the binding itself is new.
+     */
+    const nextCalculatorState = parsed.data.calculator_state ?? null;
+    if (
+      binding.action !== "bind" &&
+      calculatorStateHash(metadata.calculator_state ?? null) ===
+        calculatorStateHash(nextCalculatorState)
+    ) {
+      return res.json({
+        sessionId,
+        calculatorState: metadata.calculator_state ?? null,
+      });
+    }
+
+    metadata.calculator_state = nextCalculatorState;
 
     await updateSessionLifecycle(sessionId, metadata);
 

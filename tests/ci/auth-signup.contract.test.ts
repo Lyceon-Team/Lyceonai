@@ -278,17 +278,38 @@ describe("Auth Signup Contract", () => {
     expect(signUpMock).not.toHaveBeenCalled();
   });
 
-  it("rejects signup payloads that omit canonical legal consent", async () => {
+  // @spec [SCL-222 (owner ruling 2026-10-09)] | @implemented [2026-10-09] | plain English: the
+  // sign-in notice replaces the checkbox, so a signup carries no consent flags at all, and the
+  // server still records both documents at creation, stamped `email_signup_form`.
+  it("SCL-222: a signup with no legalConsent is accepted and records both documents at creation", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-no-flags", email: "noflags@example.com" },
+        session: null,
+      },
+      error: null,
+    });
     const app = await loadAuthApp();
 
     const res = await signupWithCsrf(app, {
-      email: "student@example.com",
+      email: "noflags@example.com",
       password: "Password123!",
     });
 
-    expect(res.status).toBe(400);
-    expect(res.body).toHaveProperty("error");
-    expect(signUpMock).not.toHaveBeenCalled();
+    expect(res.status).toBe(202);
+    expect(signUpMock).toHaveBeenCalledTimes(1);
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    const rows = upsertMock.mock.calls[0]?.[0] as Array<
+      Record<string, unknown>
+    >;
+    expect(rows.map((r) => r.doc_key).sort()).toEqual([
+      "privacy_policy",
+      "student_terms",
+    ]);
+    expect(rows.every((r) => r.consent_source === "email_signup_form")).toBe(
+      true,
+    );
+    expect(rows.every((r) => r.user_id === "user-no-flags")).toBe(true);
   });
 
   it("AL-3: invokes native signUp with emailRedirectTo pointing at /auth/callback", async () => {
@@ -323,6 +344,69 @@ describe("Auth Signup Contract", () => {
       "https://app.lyceon.ai/auth/callback",
     );
   });
+
+  /**
+   * Owner brief 2026-10-10 (follow-up to #1188): the email-confirmation link brings the person
+   * back to the page they signed up from. Before this, the link was always the bare callback, so
+   * `/upgrade?promo=…` was lost on email sign-up (login and Google kept it).
+   */
+  it("carries the page the visitor signed up from on the confirmation link", async () => {
+    signUpMock.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-next", email: "next@example.com" },
+        session: null,
+      },
+      error: null,
+    });
+    const app = await loadAuthApp();
+
+    const res = await signupWithCsrf(app, {
+      email: "next@example.com",
+      password: "Password123!",
+      next: "/upgrade?promo=FOUNDING50",
+    });
+
+    expect(res.status).toBe(202);
+    const signUpArg = signUpMock.mock.calls[0]?.[0] as {
+      options?: { emailRedirectTo?: string };
+    };
+    expect(signUpArg.options?.emailRedirectTo).toBe(
+      "https://app.lyceon.ai/auth/callback?next=%2Fupgrade%3Fpromo%3DFOUNDING50",
+    );
+  });
+
+  it.each([
+    ["an off-origin URL", "https://evil.example/upgrade"],
+    ["a protocol-relative host", "//evil.example/upgrade"],
+    ["an un-allowlisted path", "/not-a-route?x=1"],
+    ["a non-string", { path: "/upgrade" }],
+  ])(
+    "drops %s from the confirmation link without refusing the sign-up",
+    async (_label, next) => {
+      signUpMock.mockResolvedValueOnce({
+        data: {
+          user: { id: "user-bad-next", email: "bad@example.com" },
+          session: null,
+        },
+        error: null,
+      });
+      const app = await loadAuthApp();
+
+      const res = await signupWithCsrf(app, {
+        email: "bad@example.com",
+        password: "Password123!",
+        next,
+      });
+
+      expect(res.status).toBe(202);
+      const signUpArg = signUpMock.mock.calls[0]?.[0] as {
+        options?: { emailRedirectTo?: string };
+      };
+      expect(signUpArg.options?.emailRedirectTo).toBe(
+        "https://app.lyceon.ai/auth/callback",
+      );
+    },
+  );
 
   it("returns verification_required when Supabase signup has no session", async () => {
     signUpMock.mockResolvedValueOnce({

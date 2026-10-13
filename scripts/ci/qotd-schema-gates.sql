@@ -125,8 +125,9 @@ BEGIN
        WHERE n.nspname = 'public'
          AND p.proname IN ('qotd_question_is_eligible','qotd_schedule_candidates','qotd_schedule_insert',
                            'qotd_question_for','qotd_archive','qotd_record_attempt',
-                           'rate_limit_check_and_increment_anon','sweep_rate_limit_ledger_anon')) <> 8 THEN
-    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-02 expected exactly 8 QOTD/anon-ledger functions';
+                           'rate_limit_check_and_increment_anon','sweep_rate_limit_ledger_anon',
+                           'qotd_schedule_candidate_page','qotd_schedule_upcoming','qotd_schedule_release')) <> 11 THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-02 expected exactly 11 QOTD/anon-ledger functions';
   END IF;
   FOR r IN
     SELECT p.oid, p.proname, p.prosecdef, p.proconfig
@@ -134,7 +135,8 @@ BEGIN
      WHERE n.nspname = 'public'
        AND p.proname IN ('qotd_question_is_eligible','qotd_schedule_candidates','qotd_schedule_insert',
                          'qotd_question_for','qotd_archive','qotd_record_attempt',
-                         'rate_limit_check_and_increment_anon','sweep_rate_limit_ledger_anon')
+                         'rate_limit_check_and_increment_anon','sweep_rate_limit_ledger_anon',
+                         'qotd_schedule_candidate_page','qotd_schedule_upcoming','qotd_schedule_release')
   LOOP
     IF NOT r.prosecdef OR r.proconfig IS NULL
        OR NOT EXISTS (SELECT 1 FROM unnest(r.proconfig) c WHERE c LIKE 'search_path=%') THEN
@@ -148,7 +150,7 @@ BEGIN
       RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-02 % is not executable by service_role', r.proname;
     END IF;
   END LOOP;
-  RAISE NOTICE '    OK Q-02 RLS on, no anon/authenticated access, 8 functions SECDEF + service_role only';
+  RAISE NOTICE '    OK Q-02 RLS on, no anon/authenticated access, 11 functions SECDEF + service_role only';
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -321,6 +323,67 @@ BEGIN
     RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-08 qotd_* bucket definitions missing';
   END IF;
   RAISE NOTICE '    OK Q-08 limit holds, 32-byte subject enforced, ended windows swept, buckets seeded';
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Q-09 readability filter support (owner brief "QOTD — readability filter", Karl 2026-10-09):
+--   * qotd_schedule_release never touches today or the past, whatever the caller passes, and
+--     releases exactly one upcoming row;
+--   * qotd_schedule_upcoming lists only days strictly after its argument;
+--   * qotd_schedule_candidate_page keeps the eligibility predicate, returns item_type, and pages
+--     by id with no overlap.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  q_today text; q_past text; q_future text; n integer; p1 text[]; p2 text[];
+BEGIN
+  SELECT question_id INTO q_today FROM public.qotd_schedule WHERE qotd_date = public.qotd_today();
+  SELECT question_id INTO q_past FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() - 3;
+  SELECT question_id INTO q_future FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() + 3;
+  -- Presence first: Q-04 scheduled all three days.
+  IF q_today IS NULL OR q_past IS NULL OR q_future IS NULL THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 fixture days missing';
+  END IF;
+  -- The past day first: it has no stats row, so a missing guard shows as this assertion, not as
+  -- the stats foreign key (which would also stop today's delete, for the wrong reason).
+  IF public.qotd_schedule_release(public.qotd_today() - 3, q_past) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 a past day was released';
+  END IF;
+  IF public.qotd_schedule_release(public.qotd_today(), q_today) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 today was released';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.qotd_schedule WHERE qotd_date = public.qotd_today())
+     OR NOT EXISTS (SELECT 1 FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() - 3) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 today or a past day lost its row';
+  END IF;
+  IF public.qotd_schedule_release(public.qotd_today() + 3, 'SATM1NOTTHIS') THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 a release with the wrong question id deleted a row';
+  END IF;
+  IF NOT public.qotd_schedule_release(public.qotd_today() + 3, q_future) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 an upcoming day was not released';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() + 3) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 the released upcoming row is still there';
+  END IF;
+  -- Upcoming: strictly after the argument.
+  IF EXISTS (SELECT 1 FROM public.qotd_schedule_upcoming(public.qotd_today()) WHERE qotd_date <= public.qotd_today()) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 upcoming listed today or a past day';
+  END IF;
+  SELECT count(*) INTO n FROM public.qotd_schedule_upcoming(public.qotd_today());
+  IF n <> (SELECT count(*) FROM public.qotd_schedule WHERE qotd_date > public.qotd_today()) OR n = 0 THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 upcoming row count %', n;
+  END IF;
+  -- Candidate pages: eligible only, item_type present, keyset with no overlap.
+  IF EXISTS (SELECT 1 FROM public.qotd_schedule_candidate_page('M', 'Algebra', NULL, 100)
+              WHERE question_id IN ('SATM1Q10001', 'SATM1XASSET', 'SATM1XDRAFT') OR item_type IS NULL) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 an ineligible question (or no item_type) in a candidate page';
+  END IF;
+  SELECT array_agg(question_id ORDER BY question_id) INTO p1 FROM public.qotd_schedule_candidate_page('RW', 'Craft and Structure', NULL, 1);
+  SELECT array_agg(question_id ORDER BY question_id) INTO p2 FROM public.qotd_schedule_candidate_page('RW', 'Craft and Structure', p1[1], 1);
+  IF p1 IS NULL OR p2 IS NULL OR p2[1] <= p1[1] THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-09 candidate pages overlap or do not advance (% then %)', p1, p2;
+  END IF;
+  RAISE NOTICE '    OK Q-09 release refuses today and the past, upcoming lists only future days, candidate pages advance';
 END $$;
 
 ROLLBACK;

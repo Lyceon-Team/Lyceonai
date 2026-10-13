@@ -23,11 +23,21 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261027000000_marketing_consent_and_product_reviews.sql"
+# set_marketing_consent was REPLACED by 20261028000000 (the marketing email lane added two
+# withdrawal-only sources). Its plants (R4, R6) are re-pointed there; every other object is still
+# last defined in $MIG. need_last checks this per plant.
+MIG_SYNC="supabase/migrations/20261028000000_marketing_email_sync.sql"
+# set_marketing_consent AND profiles_marketing_consent_guard were REPLACED again by
+# 20261029000000 (F-83: a grant needs a user-action source and a version). R2, R4 and R6 are
+# re-pointed there.
+MIG_F83="supabase/migrations/20261029000000_test_dates_and_consent_guard.sql"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/mcr-mut.XXXX)"
 
 FILES=(
   "$MIG"
+  "$MIG_SYNC"
+  "$MIG_F83"
   "server/routes/profile-routes.ts"
   "server/lib/marketing-consent.ts"
   "server/services/product-feedback/product-feedback-service.ts"
@@ -83,8 +93,10 @@ expect_red() {
 }
 
 last_definer() { grep -ln "FUNCTION public\.$1\b" supabase/migrations/*.sql | sort | tail -1; }
+# need_last <function> <plant> [migration] — the plant's migration must be the LAST definer.
 need_last() {
-  [ "$(last_definer "$1")" = "$MIG" ] || { bad "$2 targets $MIG but $1 is last defined in $(last_definer "$1")"; exit 1; }
+  local target="${3:-$MIG}"
+  [ "$(last_definer "$1")" = "$target" ] || { bad "$2 targets $target but $1 is last defined in $(last_definer "$1")"; exit 1; }
 }
 
 # run <name> <substring> <check files...> — after a plant
@@ -117,8 +129,8 @@ if [ "$HAVE_PG" = 1 ]; then
   run "R1 reset bug" "omits marketingOptIn leaves a stored TRUE alone" "$PG_ROUTES"
 
   echo "=== Q5 (2) the database guard lets an under-13 opt-in through ==="
-  need_last profiles_marketing_consent_guard R2
-  plant "$MIG" \
+  need_last profiles_marketing_consent_guard R2 "$MIG_F83"
+  plant "$MIG_F83" \
     "  IF NEW.marketing_opt_in AND NOT public.marketing_opt_in_age_eligible(NEW.date_of_birth) THEN" \
     "  IF false THEN" || { bad "R2 STALE"; exit 1; }
   run "R2 trigger guard" "a direct write is refused for an under-13 date of birth" "$PG_DB"
@@ -129,8 +141,8 @@ if [ "$HAVE_PG" = 1 ]; then
   run "R3 age threshold" "the day before the 13th birthday is refused" "$PG_DB"
 
   echo "=== Q5 (4) the logged setter grants to an under-13 account ==="
-  need_last set_marketing_consent R4
-  plant "$MIG" \
+  need_last set_marketing_consent R4 "$MIG_F83"
+  plant "$MIG_F83" \
     "  IF p_granted AND NOT public.marketing_opt_in_age_eligible(v_dob) THEN" \
     "  IF false THEN" || { bad "R4 STALE"; exit 1; }
   run "R4 setter age check" "set_marketing_consent answers age_ineligible" "$PG_DB"
@@ -144,7 +156,8 @@ if [ "$HAVE_PG" = 1 ]; then
   run "R5 PATCH age check" "an under-13 student cannot be set true" "$PG_ROUTES"
 
   echo "=== Q5 (6) the log loses where the choice was made ==="
-  plant "$MIG" \
+  need_last set_marketing_consent R6 "$MIG_F83"
+  plant "$MIG_F83" \
     "  PERFORM set_config('lyceon.marketing_consent_source', p_source, true);" \
     "  PERFORM set_config('lyceon.marketing_consent_source', 'system', true);" || { bad "R6 STALE"; exit 1; }
   run "R6 consent source" "records source signup" "$PG_ROUTES"

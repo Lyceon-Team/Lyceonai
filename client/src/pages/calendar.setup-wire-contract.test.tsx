@@ -96,6 +96,7 @@ const DEFAULTS: CalendarSetupDefaults = {
   default_full_length_interval_weeks: 2,
   default_full_length_weekday: 6,
   final_exam_lead_days: 7,
+  target_exam_dates: [],
 };
 
 const SETUP_REQUIRED = {
@@ -109,6 +110,7 @@ const SAVED_PROFILE = {
   profile: {
     timezone: DEFAULTS.timezone,
     target_exam_date: null,
+    target_exam_dates: [],
     target_score: null,
     study_days_mask: 62,
     daily_minutes: 60,

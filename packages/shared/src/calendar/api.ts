@@ -29,6 +29,7 @@ import { planBlockSchema, planMemberSchema } from "./plan.js";
 import {
   fullLengthIntervalWeeksSchema,
   postgresDowSchema,
+  completedStudyProfileSchema,
   studyProfileBoundsSchema,
   studyProfileSchema,
   targetScoreSchema,
@@ -169,6 +170,9 @@ export const calendarSetupDefaultsSchema = z
     // The frequency readout is on the SETUP form too, so the constant it needs travels with
     // the rest of the prefill rather than being fetched separately.
     final_exam_lead_days: z.number().int().positive(),
+    // SCL-223: the SAT dates the student already chose (onboarding or Settings) before
+    // setting up the calendar, so the setup form opens on them. `[]` when none.
+    target_exam_dates: z.array(localDateSchema),
   })
   .strict();
 export type CalendarSetupDefaults = z.infer<typeof calendarSetupDefaultsSchema>;
@@ -236,7 +240,7 @@ export type ExamPlanning = z.infer<typeof examPlanningSchema>;
 export const calendarReadyResponseSchema = z
   .object({
     status: z.literal("ready"),
-    profile: studyProfileSchema,
+    profile: completedStudyProfileSchema,
     /**
      * §8.1's bounds, so §17.3's settings sheet can offer the SAME minute presets and the
      * same furthest exam date that the server will validate the save against.
@@ -384,6 +388,27 @@ export const profileReadResponseSchema = z
   })
   .strict();
 export type ProfileReadResponse = z.infer<typeof profileReadResponseSchema>;
+
+// ── GET /api/sat-dates/bound ────────────────────────────────────────────────
+
+/**
+ * @spec [owner rulings (Karl) on #1204 ruling 2 (2026-10-11: "every SAT-date picker uses that
+ *       one bound") and on #1211 (2026-10-12: "Serve the test-date bound from a role-agnostic
+ *       read … It carries no student data, so it doesn't need the student-only gate")]
+ * | @implemented [2026-10-12]
+ *
+ * plain English: the furthest test date the profile write accepts for this account
+ * (`latestAcceptedExamDate`: the account's local day, in its stored zone or America/Chicago,
+ * plus `target_exam_date_max_days`), so every SAT-date picker offers exactly what the write will
+ * take. One field and nothing else (`.strict()`): it is readable by any signed-in account,
+ * including one whose role is not saved yet, so no student value may ride along.
+ */
+export const satDateBoundResponseSchema = z
+  .object({
+    latest_test_date: localDateSchema,
+  })
+  .strict();
+export type SatDateBoundResponse = z.infer<typeof satDateBoundResponseSchema>;
 
 // ── POST /plan/regenerate, /days/:date/regenerate, /days/:date/reset ────────
 

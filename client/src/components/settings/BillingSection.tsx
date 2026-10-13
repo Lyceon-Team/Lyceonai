@@ -18,7 +18,9 @@
  *   - free: anything else (never paid, or ended): the free plan's lines and See plans, which
  *     goes to the plans page through the one role-aware resolver. The two lines are the approved
  *     Help FAQ wording from `@/lib/plan-copy`, the same sentences `/help` and `/upgrade` show
- *     (owner ruling 2026-10-05, OQ-61 (e)), so the three surfaces cannot drift apart.
+ *     (owner ruling 2026-10-05, OQ-61 (e)), so the three surfaces cannot drift apart. The free
+ *     sentence's daily number is the server's (`useFreeDailyLimit`, read only in this state;
+ *     OQ-68 (d), Karl, 2026-10-08, UI-64), with no number until that read answers.
  * The server decides access everywhere; this only chooses words and a button.
  *
  * edge cases: a guardian-managed plan reads "guardian" whatever its standing (the guardian
@@ -38,7 +40,8 @@ import {
 } from "@/hooks/useBillingStatusQuery";
 import { toUserFacingMessage } from "@/lib/api-error";
 import { resolveCtaDestination } from "@/lib/billing-cta";
-import { PLAN_FREE_INCLUDES, PLAN_PAID_ADDS } from "@/lib/plan-copy";
+import { useFreeDailyLimit } from "@/hooks/usePracticeQuota";
+import { PLAN_PAID_ADDS, planFreeIncludes } from "@/lib/plan-copy";
 import {
   BoxHeading,
   FIELD_HELP,
@@ -133,10 +136,20 @@ function BillingState({ status }: { status: BillingStatus }): JSX.Element {
   }
 
   return (
+    <FreePlanBox
+      onSeePlans={() => navigate(resolveCtaDestination({ isGuardian: false }))}
+    />
+  );
+}
+
+/** The free state: the plan copy, with the server's daily number (OQ-68 (d)). */
+function FreePlanBox({ onSeePlans }: { onSeePlans: () => void }): JSX.Element {
+  const freeDailyLimit = useFreeDailyLimit();
+  return (
     <SheetBox data-testid="settings-billing-free">
       <BoxHeading>Free plan</BoxHeading>
       <p className="m-0 text-[17px] leading-relaxed text-lyc-ink">
-        {PLAN_FREE_INCLUDES}
+        {planFreeIncludes(freeDailyLimit)}
       </p>
       <p className="m-0 text-[17px] leading-relaxed text-lyc-muted">
         {PLAN_PAID_ADDS}
@@ -146,7 +159,7 @@ function BillingState({ status }: { status: BillingStatus }): JSX.Element {
         variant="lyc-primary"
         size="lyc-lg"
         className="self-start"
-        onClick={() => navigate(resolveCtaDestination({ isGuardian: false }))}
+        onClick={onSeePlans}
         data-testid="button-see-plans"
       >
         See plans

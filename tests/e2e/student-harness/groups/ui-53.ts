@@ -32,6 +32,14 @@ function both(selector: string): Step {
   return { click: { desktop: selector, mobile: selector } };
 }
 
+/** QA2 (2026-10-08): the 1024 width, with the desktop steps and selectors. */
+const W1024 = {
+  name: "w1024",
+  width: 1024,
+  height: 768,
+  selectors: "desktop",
+} as const;
+
 const SUBMIT = both('[data-testid="runner-footer"] button:has-text("Submit")');
 const NEXT = both(
   '[data-testid="runner-footer"] button:has-text("Next question")',
@@ -65,6 +73,18 @@ const SHORTENED: FreshSession = {
 };
 
 const CLIENT = { lyceon_client_instance_id: SEED_CLIENT_INSTANCE } as const;
+/**
+ * QA2-D (2026-10-08): on a phone LISA starts closed, so a shot that needs the panel there first
+ * taps the bar's LISA icon (desktop: LISA is already open beside the question).
+ */
+const OPEN_LISA_ON_PHONE: Step = {
+  click: { desktop: null, mobile: '[data-testid="practice-tutor-toggle"]' },
+};
+/** QA2-D: wait for the composer on desktop; on a phone, for the runner (LISA starts closed). */
+const LISA_OR_RUNNER = {
+  desktop: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
+  mobile: '[data-testid="runner-choice"]',
+} as const;
 /** The review runner's LISA composer (ScopedTutorPanel). */
 const LISA_COMPOSER = {
   desktop: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
@@ -205,9 +225,10 @@ export const UI_53: PageGroup = {
       route: "/review/session/{session}",
       freshSession: REVIEW,
       localStorage: CLIENT,
-      waitFor: LISA_COMPOSER,
+      waitFor: LISA_OR_RUNNER,
       holdRequest: { method: "POST", path: "/api/tutor/messages" },
       steps: [
+        OPEN_LISA_ON_PHONE,
         {
           fill: {
             desktop: LISA_COMPOSER.desktop,
@@ -236,8 +257,9 @@ export const UI_53: PageGroup = {
       route: "/review/session/{session}",
       freshSession: REVIEW,
       localStorage: CLIENT,
-      waitFor: LISA_COMPOSER,
+      waitFor: LISA_OR_RUNNER,
       steps: [
+        OPEN_LISA_ON_PHONE,
         {
           focus: {
             desktop: LISA_COMPOSER.desktop,
@@ -255,22 +277,51 @@ export const UI_53: PageGroup = {
     {
       id: "review-lisa-show",
       title:
-        "QA 2026-10-07 item 8: LISA hidden with the bar's toggle, then opened again with Show LISA. On a phone (LISA stacks under the question) the panel opens scrolled into view inside the shell, its header at the top of the runner's scroll area; at 1440 it is beside the question and nothing scrolls",
+        "QA 2026-10-07 item 8 and QA2-D (2026-10-08): at 1440 LISA hidden with the bar's toggle, then shown again beside the question (nothing scrolls). On a phone LISA starts closed, and one tap on the bar's LISA icon opens it scrolled into view inside the shell, its header at the top of the runner's scroll area",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
       localStorage: CLIENT,
-      waitFor: LISA_COMPOSER,
+      waitFor: LISA_OR_RUNNER,
       steps: [
-        both('[data-testid="practice-tutor-toggle"]'),
+        {
+          click: {
+            desktop: '[data-testid="practice-tutor-toggle"]',
+            mobile: null,
+          },
+        },
         both('[data-testid="practice-tutor-toggle"]'),
       ],
       expectVisible: '[data-testid="scoped-tutor-panel"]',
+      expectInView: '[data-testid="scoped-tutor-panel"]',
       expectFitsViewport: FITS,
       prototype: {
         kind: "none",
         reason:
           "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d)). QA item 8's proof shot: Show LISA on a phone brings the panel into view.",
+      },
+    },
+    {
+      id: "review-lisa-phone-return",
+      title:
+        'QA2-D (Karl, 2026-10-08: "tapping the icon always brings it into view"): on a phone LISA opened, then the runner scrolled back up to the question (the first choice focused), then the LISA icon tapped again: the open panel is brought back into view, not closed. Desktop: LISA beside the question, untouched (control)',
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: LISA_OR_RUNNER,
+      steps: [
+        OPEN_LISA_ON_PHONE,
+        { focus: { desktop: null, mobile: '[data-testid="runner-choice"]' } },
+        OPEN_LISA_ON_PHONE,
+      ],
+      expectVisible: '[data-testid="scoped-tutor-panel"]',
+      expectInView: '[data-testid="scoped-tutor-panel"]',
+      expectFitsViewport: FITS,
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d)).",
       },
     },
     {
@@ -283,9 +334,10 @@ export const UI_53: PageGroup = {
       localStorage: CLIENT,
       waitFor: {
         desktop: '[data-testid="lisa-upgrade"]',
-        mobile: '[data-testid="lisa-upgrade"]',
+        mobile: '[data-testid="runner-choice"]',
       },
       steps: [
+        OPEN_LISA_ON_PHONE,
         both('[data-testid="upgrade-modal"] button:has-text("Not now")'),
         both('[data-testid="tutor-question-chip"]'),
       ],
@@ -295,6 +347,62 @@ export const UI_53: PageGroup = {
         kind: "none",
         reason:
           "Not prototyped in the runner: the card is the Lisa.dc.html free card (plan = free) sized for the review runner's LISA panel.",
+      },
+    },
+    {
+      id: "practice-calculator",
+      title:
+        'QA2-B (Karl, 2026-10-08: "Desmos: invertedColors when the app theme is dark"): the practice runner with the Graphing calculator open. Dark: Desmos draws inverted (dark) to match the page; light: Desmos\'s own light look. Desmos itself shows only in a run with STUDENT_HARNESS_DESMOS=1 (see Run facts)',
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [both('[data-testid="practice-calculator-toggle"]')],
+      expectVisible: '[data-testid="desmos-calculator"]',
+      extraViewports: [W1024],
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html draws no calculator content; Desmos's own UI is Desmos's.",
+      },
+    },
+    {
+      id: "practice-calculator-scientific",
+      title:
+        "QA2-B: the same runner with the calculator switched to Scientific (our mode switch, then Desmos's scientific calculator, inverted in dark)",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [
+        both('[data-testid="practice-calculator-toggle"]'),
+        both('[data-testid="desmos-mode-scientific"]'),
+      ],
+      expectVisible:
+        '[data-testid="desmos-mode-scientific"][aria-checked="true"]',
+      extraViewports: [W1024],
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html draws no calculator content; Desmos's own UI is Desmos's.",
+      },
+    },
+    {
+      id: "review-lisa-phone-default",
+      title:
+        'QA2-D (Karl, 2026-10-08: "Phone: the LISA panel defaults closed"): the review runner on load. At 390 (LISA stacks under the question) the panel is closed and the bar\'s LISA icon offers it; at 1024 and 1440 LISA is beside the question, open, as before',
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      extraViewports: [W1024],
+      prototype: {
+        kind: "none",
+        reason:
+          "Not prototyped: Runner.dc.html does not draw LISA (OQ-54 (d)).",
       },
     },
     {

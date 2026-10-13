@@ -394,11 +394,17 @@ describe("user_signed_up fires once (requireFirstIdentity)", () => {
 describe("registry module", () => {
   // The SCL-213 launch set, plus consent_captured, registered 2026-10-05 for the marketing opt-in
   // (plan Q5; SCL-213 item 3: a deferred event is registered by a registry PR, no new SCL).
-  it("carries exactly the SCL-213 launch set plus consent_captured", () => {
+  it("carries exactly the SCL-213 launch set plus consent_captured and the Home QOTD five", () => {
+    // The five Home QOTD events: owner brief "Question of the Day on Home" (Karl, 2026-10-08/09).
     expect(EVENT_REGISTRY.events.map((e) => e.event_name).sort()).toEqual([
       "consent_captured",
       "exam_section_submitted",
       "exam_started",
+      "qotd_answered",
+      "qotd_email_consent",
+      "qotd_email_prompt_shown",
+      "qotd_viewed",
+      "streak_extended",
       "tutor_session_ended",
       "tutor_session_started",
       "user_signed_in",

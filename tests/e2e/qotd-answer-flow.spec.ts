@@ -64,6 +64,67 @@ const TURNSTILE_STUB_JS = `window.turnstile = {
   remove: function () {}
 };`;
 const SHOT_DIR = process.env.E2E_SHOT_DIR ?? "test-results/qotd";
+
+/**
+ * KaTeX is found by its CONTENT, the widget by its chunk name.
+ *
+ * @updated 2026-10-08 (OQ-68 (a), owner ruling): Rollup names a shared chunk after whichever
+ * module it lists first, so KaTeX's chunk name is not stable: retiring /practice/topics (one of
+ * MathRenderer's importers) moved KaTeX into a chunk called "tokenize-…", and a name-based check
+ * then saw no KaTeX at all while KaTeX still loaded lazily, exactly as required. Pinning the name
+ * with `manualChunks` was tried and pulled KaTeX into the homepage's first load, so the check reads
+ * the chunk instead: a chunk carrying KaTeX's own parse-error text is KaTeX.
+ */
+const KATEX_MARKER = "KaTeX parse error";
+const WIDGET_CHUNK = /\/assets\/QotdWidget-[^/]+\.js$/;
+
+type ChunkSeen = { url: string; katex: Promise<boolean> };
+
+/** Records every JS chunk the page loads; `lazyOnes` names those that are the widget or KaTeX. */
+function watchChunks(page: Page): {
+  lazyOnes: () => Promise<{ widget: string[]; katex: string[] }>;
+} {
+  const seen: ChunkSeen[] = [];
+  page.on("response", (res) => {
+    const url = res.url();
+    if (!/\/assets\/[^/]+\.js$/.test(url)) return;
+    seen.push({
+      url,
+      katex: res.text().then((body) => body.includes(KATEX_MARKER)),
+    });
+  });
+  return {
+    lazyOnes: async () => {
+      const flags = await Promise.all(seen.map((c) => c.katex));
+      return {
+        widget: seen.filter((c) => WIDGET_CHUNK.test(c.url)).map((c) => c.url),
+        katex: seen.filter((_, i) => flags[i]).map((c) => c.url),
+      };
+    },
+  };
+}
+
+/**
+ * The scripts the entry HTML loads up front (its module entry and any modulepreload) that are the
+ * widget chunk or carry KaTeX.
+ */
+async function preloadedLazyChunks(
+  page: Page,
+  html: string,
+): Promise<string[]> {
+  const hrefs = [
+    ...html.matchAll(/<script[^>]*type="module"[^>]*src="([^"]+)"/g),
+    ...html.matchAll(/<link[^>]*rel="modulepreload"[^>]*href="([^"]+)"/g),
+  ].map((m) => m[1] ?? "");
+  // Presence first: the entry script is always there, so an empty list would prove nothing.
+  expect(hrefs.length).toBeGreaterThan(0);
+  const lazy: string[] = [];
+  for (const href of hrefs) {
+    const body = await (await page.request.get(href)).text();
+    if (WIDGET_CHUNK.test(href) || body.includes(KATEX_MARKER)) lazy.push(href);
+  }
+  return lazy;
+}
 test.use({ baseURL: BASE });
 // E2E_PROXY: an outbound proxy for Chromium (Turnstile loads from challenges.cloudflare.com);
 // local addresses bypass it so the static server is reached directly.
@@ -214,16 +275,9 @@ test.describe("Question of the Day", () => {
     });
     // The homepage widget is lazy (owner request 2026-10-05): its chunk and KaTeX load only when
     // the slot nears the viewport, so record those requests and scroll to the slot first.
-    const lazyChunks: string[] = [];
-    page.on("request", (r) => {
-      if (/\/assets\/(QotdWidget|MathRenderer)-/.test(r.url()))
-        lazyChunks.push(r.url());
-    });
     await page.goto("/");
     const entryHtml = (await (await page.request.get("/")).text()) ?? "";
-    expect(entryHtml).not.toMatch(
-      /modulepreload[^>]*(QotdWidget|MathRenderer)/,
-    );
+    expect(await preloadedLazyChunks(page, entryHtml)).toEqual([]);
     await page.getByTestId("qotd-lazy-slot").scrollIntoViewIfNeeded();
     const area = page.getByTestId("qotd-question-area");
     await expect(area).toBeVisible({ timeout: 20_000 });
@@ -304,21 +358,18 @@ test.describe("Question of the Day", () => {
     const posted: unknown[] = [];
     await bypass(page);
     if (!LIVE) await mockApi(page, posted);
-    const lazyChunks: string[] = [];
-    page.on("request", (r) => {
-      if (/\/assets\/(QotdWidget|MathRenderer)-/.test(r.url()))
-        lazyChunks.push(r.url());
-    });
+    const chunks = watchChunks(page);
     await page.goto("/", { waitUntil: "networkidle" });
     // Presence first: the slot is on the page, below the fold.
     await expect(page.getByTestId("qotd-lazy-slot")).toHaveCount(1);
-    expect(lazyChunks).toEqual([]);
+    expect(await chunks.lazyOnes()).toEqual({ widget: [], katex: [] });
     await page.getByTestId("qotd-lazy-slot").scrollIntoViewIfNeeded();
     await expect(page.getByTestId("qotd-question-area")).toBeVisible({
       timeout: 20_000,
     });
-    expect(lazyChunks.some((u) => u.includes("/QotdWidget-"))).toBe(true);
-    expect(lazyChunks.some((u) => u.includes("/MathRenderer-"))).toBe(true);
+    const after = await chunks.lazyOnes();
+    expect(after.widget.length).toBe(1);
+    expect(after.katex.length).toBeGreaterThan(0);
     await page.close();
   });
 

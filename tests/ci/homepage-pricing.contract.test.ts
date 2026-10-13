@@ -13,6 +13,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { authEntryFromSearch } from "../../packages/shared/src/auth-entry";
+import { SIGN_UP_HREF } from "../../client/src/lib/marketing-links";
 
 const repoRoot = process.cwd();
 
@@ -44,10 +46,10 @@ describe("homepage paid card", () => {
   /**
    * TEST 3 — the CTA goes to signup.
    *
-   * `/signup` redirects to `/login` (`App.tsx:71`), which is the same place the
-   * free card lands. Asserting the ROUTE rather than the final URL is
-   * deliberate: if the redirect is ever removed and `/signup` becomes a real
-   * page, this control should follow it there without an edit.
+   * Since the entry-aware auth brief (Karl, 2026-10-10, rule 1) the card links straight to the
+   * auth page's Sign Up tab through the shared `SIGN_UP_HREF` (the free card's target too), and
+   * `/signup` itself redirects there. The claim is unchanged — the destination is sign-up — and
+   * it is now checked as the URL the shared allowlist reads, not as a literal path.
    */
   it('routes "Get Started" to signup', () => {
     const home = readCode(HOME);
@@ -57,8 +59,11 @@ describe("homepage paid card", () => {
     // putting the className and the testid on the same tag — a red that said nothing
     // about reachability. This matches a Link tag carrying that href, however it wraps.
     expect(home).toMatch(
-      /<Link\b[^>]*?href="\/signup"[\s\S]{0,400}button-get-started-paid/,
+      /<Link\b[^>]*?href=\{SIGN_UP_HREF\}[\s\S]{0,400}button-get-started-paid/,
     );
+    const url = new URL(SIGN_UP_HREF, "https://lyceon.invalid");
+    expect(url.pathname).toBe("/login");
+    expect(authEntryFromSearch(url.search).mode).toBe("signup");
   });
 
   /**

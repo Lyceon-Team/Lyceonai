@@ -41,3 +41,16 @@ export function usePracticeQuota(options?: {
     ...QUERY_FRESHNESS.practiceQuota,
   });
 }
+
+/**
+ * @spec [owner ruling OQ-68 (d), Karl, 2026-10-08, register row UI-64: "The '40 questions' copy
+ *        reads the server quota value (the same source as the 402)"] | @implemented [2026-10-08]
+ *
+ * plain English: the free plan's daily limit for the plan copy (`planFreeIncludes`), read from
+ * the one quota query above (same key, so a page that also draws the ruler makes one request).
+ * Every signed-in student gets it, paid or free (`freeDailyLimit` is on both shapes). Null while
+ * loading, after a failure, or with no signed-in student: the copy then prints no number.
+ */
+export function useFreeDailyLimit(): number | null {
+  return usePracticeQuota().data?.freeDailyLimit ?? null;
+}

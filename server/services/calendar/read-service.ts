@@ -58,6 +58,7 @@ import {
   toGuardianCalendarDay,
   type ActivityUnit,
   type BlockLaunchState,
+  type CalendarDay,
   type CalendarDayInput,
   type LinkedSession,
   type CalendarEngine,
@@ -66,8 +67,9 @@ import {
   type CalendarSetupDefaults,
   type GuardianCalendarResponse,
   type Result,
-  type StudyProfile,
   type UnacknowledgedChange,
+  completedStudyProfile,
+  type CompletedStudyProfile,
 } from "@lyceon/shared";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
@@ -384,7 +386,7 @@ async function readUnacknowledgedChange(
 // ── Assembly ────────────────────────────────────────────────────────────────
 
 type AssembledRange = {
-  profile: StudyProfile;
+  profile: CompletedStudyProfile;
   today: string;
   days: CalendarDayInput[];
   units: ActivityUnit[];
@@ -405,7 +407,7 @@ type AssembledRange = {
 
 async function assembleRange(
   studentId: string,
-  profile: StudyProfile,
+  profile: CompletedStudyProfile,
   from: string,
   to: string,
   now: Date | undefined,
@@ -578,18 +580,22 @@ export async function readCalendar(
   const query = parsedQuery.data;
 
   const config = await loadCalendarConfig();
-  const profile = await readStudyProfile(
+  const stored = await readStudyProfile(
     request.student_id,
     request.request_id,
   );
   // R-08-04 / §17.5's pre-setup state. An empty calendar, not a missing one — so a 200
-  // carrying the state, never a 404 (owner ruling on addendum item 26).
+  // carrying the state, never a 404 (owner ruling on addendum item 26). SCL-223: a row that
+  // holds only SAT dates (saved in onboarding or Settings) is still pre-setup, and its dates
+  // prefill the setup form.
+  const profile = completedStudyProfile(stored);
   if (profile === null) {
     return ok({
       status: "setup_required",
       defaults: await setupDefaults(
         config,
         query.device_timezone,
+        stored?.target_exam_dates ?? [],
         request.request_id,
       ),
     });
@@ -706,7 +712,7 @@ function mismatchOf(
  */
 async function generateOnFirstOpen(
   studentId: string,
-  profile: StudyProfile,
+  profile: CompletedStudyProfile,
   generatorVersion: string,
   requestId?: string,
 ): Promise<void> {
@@ -769,6 +775,7 @@ async function generateOnFirstOpen(
 async function setupDefaults(
   config: CalendarConfig,
   deviceTimezone: string | undefined,
+  savedExamDates: string[],
   requestId: string | undefined,
 ): Promise<CalendarSetupDefaults> {
   const timezone =
@@ -784,6 +791,7 @@ async function setupDefaults(
     default_full_length_interval_weeks: config.defaultFullLengthIntervalWeeks,
     default_full_length_weekday: config.defaultFullLengthWeekday,
     final_exam_lead_days: config.finalExamLeadDays,
+    target_exam_dates: savedExamDates,
   };
 }
 
@@ -804,6 +812,47 @@ async function readProjection(
     );
     return null;
   }
+}
+
+// ── The accountability read (owner brief 2026-10-13) ────────────────────────
+
+/**
+ * @spec [owner brief "Guardian accountability loop" (Karl, 2026-10-13) "Missed days and back on
+ *        track"; Doc-05F_V1.0 §13 (allocator), §14 (day.status), R-08-04] | @implemented [2026-10-13]
+ *
+ * plain English: the SAME assembly and the SAME allocator the student's and the guardian's
+ * calendars run, over a window of past days, for the evening job. Returns the student's own
+ * today (in their calendar zone) and the derived days, nothing else. Like the guardian read it
+ * generates nothing: R-08-04's first plan belongs to the student's own first open, and a job
+ * creating one would be a write nobody asked for. A student with no finished setup has no plan
+ * to evaluate and comes back as `null`.
+ */
+export async function readAccountabilityDays(request: {
+  student_id: string;
+  from: string;
+  to: string;
+  now?: Date;
+}): Promise<{ today: string; days: CalendarDay[] } | null> {
+  const profile = completedStudyProfile(
+    await readStudyProfile(request.student_id),
+  );
+  if (profile === null) return null;
+  const range = await assembleRange(
+    request.student_id,
+    profile,
+    request.from,
+    request.to,
+    request.now,
+    undefined,
+  );
+  const built = buildCalendarRange({
+    today: range.today,
+    days: range.days,
+    units: range.units,
+    launches: range.launches,
+    linked_sessions: range.linkedSessions,
+  });
+  return { today: range.today, days: built.days };
 }
 
 // ── The guardian read (§16, sheet item 14) ──────────────────────────────────
@@ -828,9 +877,8 @@ export async function readGuardianCalendar(
   const query = parsedQuery.data;
 
   const config = await loadCalendarConfig();
-  const profile = await readStudyProfile(
-    request.student_id,
-    request.request_id,
+  const profile = completedStudyProfile(
+    await readStudyProfile(request.student_id, request.request_id),
   );
   // §16 gives a guardian no write path, so no `defaults`: the chips exist to prefill a
   // setup form, and a guardian cannot run setup for their student.

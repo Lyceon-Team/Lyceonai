@@ -146,6 +146,54 @@ Not cited, because the page could not be read or does not say it: Kaplan, Wyzant
 **Also approved by Karl 2026-10-05:** "average" in place of the draft's "middle 50%" on the score pages (W14), and the public nav and footer link changes (nav "SAT Practice" → the hub; footer lists the new pages).
 
 
+## Homepage walkthrough video (approved by Karl 2026-10-09)
+
+**Approval:** the nine-line narration below is Karl's approved script for the homepage "See how it
+works" video (16:9, `client/public/media/walkthrough.*`) and its 9:16 social cut; it is spoken, and
+carried verbatim by each cut's WebVTT track (and burned in on the 9:16). Two phrases are new and
+approved by Karl for this script (decision 9, 2026-10-09): V3's "Practice every day for free" and
+V4's "so they stick". Every other line matches an existing approved row. Scenes 5–8 carry a "Pro"
+tag on screen, so each paid feature is labelled as paid (X5).
+
+**On screen:** test accounts and fixture data only (`tests/e2e/student-harness`, walkthrough mode);
+questions written for the video (`tests/e2e/student-harness/walkthrough-content.ts`), never bank
+items; no real student, name or score. Cropped out before composition: the calendar's target and
+projected-score panel; the report's total, section scores and scoring note (domain bars only); the
+dashboard's projected score; the review runner's LISA panel (decision 4). Painted out of the frame
+after the compliance audit (2026-10-09): the Review page's two lines on how the review list is
+ordered and refilled (mechanism, Doctrine rule 2), the diagnostic's question counter and progress
+dots (its length is not public), and the calendar test-day card's "Good luck. You're ready." (reads
+as a readiness claim). The parent scene is the guardian dashboard Karl approved as the homepage
+product screenshot (open item 5, 2026-10-05: score strip and latest-test card hidden), shown on
+example data; the report's "% of the section, n to m questions" lines are the College Board's
+published blueprint (CB_READING_WRITING, CB_MATH).
+
+| ID | Line | Matches | Cat |
+|---|---|---|---|
+| V1 | "SAT prep that adapts to you." | H32 | e |
+| V2 | "Start with a free diagnostic. See where you stand across every SAT section." | H38 ("Find the gaps" card) | e |
+| V3 | "Practice every day for free, with a worked explanation after every question." | H37, H38; "Practice every day for free" **new, approved by Karl (this script)** | e |
+| V4 | "Review the ones you missed, so they stick." | H41 (review); "so they stick" **new, approved by Karl (this script)** | e |
+| V5 | "Stuck? Ask LISA, your AI tutor, for step-by-step help." (Pro) | H42, X4 | e |
+| V6 | "A study plan that adapts and focuses on your weak areas." (Pro) | H42, X2/X3 | e |
+| V7 | "Take full-length practice tests with a score report after each one." (Pro) | H20, H42 | e |
+| V8 | "Parents can follow along with a read-only progress view." (Pro) | H28, X6 | e |
+| V9 | "Lyceon. Study Smarter, Score Higher. Start free at lyceon.ai." | X1, H43 | e |
+
+## Content pipeline sources (batch 2026-W45)
+
+**Sources (content pipeline).** Added for the 2026-W45 blog batch (Doc 10B). Each page was fetched on 2026-10-11 and the quoted text found on the page itself. These are College Board facts only; no Lyceon-specific claim was added.
+
+| Key | URL | Quoted / relied on |
+|---|---|---|
+| CB_WHAT_TO_BRING | https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-bring | "Your fully charged testing device with the Bluebook application installed and exam setup completed"; "Your up-to-date admission ticket from the Bluebook app. Bringing a printed ticket is preferred"; "Acceptable photo ID. This must be a physical document, not electronic."; "Pencils or pens for scratch work."; "Your College Board username and password."; "An acceptable calculator for use on the Math section of the test (there will be an embedded calculator you can use within Bluebook…)"; Nice to Have: "A watch without an audible alarm", "A charging cable or portable charger", "A bag or backpack", "A drink or snacks (for your break)", "A backup testing device". |
+| CB_ID_REQUIREMENTS | https://satsuite.collegeboard.org/sat/what-to-bring-do/id-requirements | "Be a valid (unexpired) photo ID that is government-issued or issued by the school that you currently attend"; "Be an original, physical document (not photocopied or electronic—digital IDs will not be accepted)"; "Bear your full, legal name exactly as it appears on your admission ticket"; unacceptable: "Credit or debit card of any kind", "Birth certificate", "Social Security card", "Any temporary ID card"; "You should keep your ID with you at all times while at the test center, including during breaks."; "School IDs from the prior school year are valid through the end of December of the current calendar year."; "SAT Student ID Form, which must be prepared by the school you currently attend or a notary, if homeschooled (only accepted in U.S. centers for students under 21 years of age)."; "If you’ll be 21 or older on test day, the only acceptable form of identification is an official government-issued photo ID"; section "Country-Specific" (re-read 2026-10-13). |
+| CB_WHAT_TO_EXPECT | https://satsuite.collegeboard.org/sat/what-to-bring-do/what-to-expect | "7:45 a.m.: All students check into the test center. 8 a.m.: Test center doors close. 8:15–8:30 a.m.: Testing starts. 10:45–11 a.m.: Standard time testing ends."; "You can't be admitted once testing has started."; "Students will have one 10-minute break during the test between test sections. You can take an unscheduled break if you need to, but you'll lose testing time."; "Each section of the test (Reading and Writing and Math) has 2 parts called modules, and each module is timed separately."; "Once you've moved on from a module, you cannot go back to it."; "a test preview to help familiarize yourself with key aspects of the app"; tools: reference sheet and calculator, annotation, cross out, mark for review; device "will need to stay on for roughly 3 hours". |
+| CB_PROHIBITED_DEVICES | https://satsuite.collegeboard.org/sat/what-to-bring-do/prohibited-devices | "Unless students have a College Board–approved accommodation, they can't access these items during the test or breaks:" (re-read 2026-10-13); "Phones, smartwatches, fitness trackers, smart glasses, or other wearable technology (simple digital non-smartwatches or analog watches are acceptable)"; "Separate timers of any type"; "Headphones, earbuds, or earplugs"; "If your prohibited electronic device makes noise or you're seen with it at any time, including during breaks, you may be dismissed immediately, your scores may be canceled". |
+| CB_DEVICE_READINESS | https://satsuite.collegeboard.org/sat/device-readiness | "1–5 Days Before Your Test: Complete a quick exam setup. The application will download your test and generate your admission ticket"; "Test Day Morning: Complete your final check. Close and reopen Bluebook, check for last-minute messages and updated test center information, and charge your battery." |
+| CB_SAT_DATES | https://satsuite.collegeboard.org/sat/dates-deadlines | The 2026-27 table: "Nov. 7, 2026 · Oct. 23, 2026 · Oct. 27, 2026" and "Dec. 5, 2026 · Nov. 20, 2026 · Nov. 24, 2026" (test date, registration deadline, deadline for changes and late registration). The same page shared/sat-test-dates.ts reads. |
+| CB_SCORE_RELEASE_DATES | https://satsuite.collegeboard.org/scores/score-release-dates | "Nov. 7, 2026 · Nov. 20, 2026" (student score release); "Most scores from weekend tests are released 2–4 weeks after test day." |
+
 ## Before and after
 
 `IDs` match the Step 0 inventory. "Source / approval" names the College Board or research source for a category-d fact, or the approval for everything else ("approved" means the 2026-10-03 approval above).

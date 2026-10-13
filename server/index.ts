@@ -52,12 +52,15 @@ import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
 import studentResourceRoutes from "./routes/student-resources";
 import { calendarRouter } from "./routes/calendar-routes";
+import { satDateRouter } from "./routes/sat-date-routes";
 import { scoreReportRouter } from "./routes/score-report-routes";
 import billingRoutes from "./routes/billing-routes";
 import accountRoutes from "./routes/account-routes";
 import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
 import publicQotdRoutes from "./routes/public-qotd-routes";
+import publicQotdEmailRoutes from "./routes/public-qotd-email-routes";
+import publicGuardianDigestEmailRoutes from "./routes/public-guardian-digest-email-routes";
 import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -69,6 +72,7 @@ import examReportRouter from "./routes/exam-report-routes";
 import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import productFeedbackRoutes from "./routes/product-feedback-routes";
+import homeQotdRoutes from "./routes/home-qotd-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -373,6 +377,18 @@ app.use(
   productFeedbackRoutes,
 );
 
+// Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09). Today's question, the answer
+// (a practice answer, SCL-224) and the daily-email prompt decision. Students only
+// (`requireStudentAccount`, ending in the live under-13 link gate); no entitlement gate — the
+// QOTD and streak are free for everyone. Distinct from the public /api/public/qotd.
+app.use(
+  "/api/qotd",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  homeQotdRoutes,
+);
+
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
 // principal; every read/write is a recipient-scoped SQL function.
 app.use(
@@ -406,6 +422,18 @@ app.use(
   doubleCsrfProtection,
   requireStudentOrAdmin,
   calendarRouter,
+);
+
+// The SAT-date bound (owner ruling 2026-10-12, Karl on #1211): ANY signed-in account, so NOT
+// behind `requireStudentOrAdmin`. A guardian-intent account that switches to Student at
+// onboarding is still a guardian here until onboarding saves, and its picker must still offer
+// the dates. One configuration-derived date and nothing else (`.strict()`), for the session's
+// own account; the student-only calendar profile routes above stay student-only.
+app.use(
+  "/api/sat-dates",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  satDateRouter,
 );
 
 // Doc 05F §15's standalone streak route is retired (SCL-212, owner ruling 2026-10-05, OQ-61 (a)):
@@ -505,6 +533,21 @@ app.use("/api/public", publicPricingRoutes);
 // the reads are hashed-IP limited too. See server/routes/public-qotd-routes.ts.
 // CSRF_EXEMPT_REASON: no ambient credential is read; the submit is Turnstile-gated (owner Step 0 decision, 2026-10-05).
 app.use("/api/public/qotd", publicQotdRoutes);
+
+// Daily-question email links (UNAUTHENTICATED BY DESIGN — owner brief "Question of the Day on
+// Home", 2026-10-08/09: "one-click unsubscribe link (signed, single-purpose, no sign-in)"). The
+// GET only renders a button; the POST (also the RFC 8058 List-Unsubscribe-Post target) acts, and
+// only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
+app.use("/api/public/qotd-email", publicQotdEmailRoutes);
+
+// Guardian daily summary email unsubscribe (UNAUTHENTICATED BY DESIGN — Karl's ruling 5 on #1223,
+// 2026-10-13: "a signed link + List-Unsubscribe … follow the existing QOTD-email one-click
+// unsubscribe pattern exactly"). Same shape as the QOTD links above: the GET renders a button, the
+// POST (the RFC 8058 target) turns the guardian's digest email off through its one writer, and
+// only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
+app.use("/api/public/guardian-digest-email", publicGuardianDigestEmailRoutes);
 
 // Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
 // Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no

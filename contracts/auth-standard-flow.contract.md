@@ -50,6 +50,26 @@ asserts (a) NO `signOut`, (b) session/redirect is the normal authenticated landi
 outbox row is enqueued; a drain test applies it to `legal_acceptances` and marks it processed
 (idempotent, re-drain is a no-op).
 
+### AS-1b — Acceptance is recorded at account creation, by notice, never by a returning sign-in (SCL-222)
+
+Owner ruling 2026-10-09. `/login` has no Terms checkbox: "Continue with Google" comes first, full
+width and never disabled, then the email form; under the buttons sits the standard notice, "By
+continuing, you agree to Lyceon's Terms of Use and Privacy Policy" (linked). `legal_acceptances`
+rows for Student Terms and the Privacy Policy, at the versions `legal/` serves, are written when the
+account is **created**: on `POST /api/auth/signup` for email (the `legalConsent` field is optional
+and only labels the row, `email_signup_form` by default), and on `/auth/callback` for Google **only
+when that callback created the account** (auth `created_at` inside `NEW_ACCOUNT_WINDOW_MS`,
+`server/lib/new-auth-account.ts`; stamped `google_continue_click`). A returning user's sign-in, and
+the email-confirmation / recovery handoffs, record nothing: updated documents reach existing
+accounts only through the re-acceptance prompt. Parent/Guardian Terms stay at link time
+(`acceptParentGuardianTerms`, explicit clickwrap); Billing Terms stay at Stripe checkout.
+**Proof:** `tests/ci/oauth-callback.contract.test.ts` "SCL-222" (new account records both documents;
+a returning user records nothing even with the browser's `consentSource`; an OTP handoff records
+nothing); `tests/ci/new-auth-account.contract.test.ts`; `tests/ci/auth-signup.contract.test.ts`
+"SCL-222"; `tests/ci/signup-frontend.contract.test.ts` "SCL-222". Planted defects:
+`scripts/ci/signin-notice.mutations.sh` (M1 creation check dropped, M2 window ignored, M3 email
+record tied to a client claim, M4 Google disabled), each red on a named test.
+
 ### AS-2 — Required gates still block (no regression)
 
 The DOB/onboarding gate still routes incomplete profiles to `/profile/complete`; the
