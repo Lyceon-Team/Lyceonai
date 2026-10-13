@@ -218,7 +218,16 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
       /\/\*[\s\S]*?\*\//g,
       "",
     );
-    expect(card.split("Start diagnostic").length - 1).toBe(1);
+    // First-run activation (2026-10-13): the button's words come from `diagnosticActionLabel`
+    // (home-model.ts: "Start diagnostic", or "Resume diagnostic · question N of 40" while one is
+    // open), drawn once, on the card's one start.
+    expect(card.split("diagnosticActionLabel(").length - 1).toBe(1);
+    expect(card).not.toContain("Start diagnostic");
+    const model = read("client/src/components/home/home-model.ts").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(model.split('"Start diagnostic"').length - 1).toBe(1);
     expect(card.split("void startDiagnostic()").length - 1).toBe(1);
   });
 
