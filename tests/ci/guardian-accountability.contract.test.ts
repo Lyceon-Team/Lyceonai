@@ -13,14 +13,6 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../apps/api/src/lib/supabase-server", () => ({
-  supabaseServer: {
-    rpc: () => {
-      throw new Error("no database in this suite");
-    },
-  },
-}));
-
 import {
   backOnTrackPayloadSchema,
   guardianDailyDigestPayloadSchema,
