@@ -153,12 +153,14 @@ export default function ProfileComplete() {
       profile.role === "guardian" || prefersGuardian ? "guardian" : "student",
     );
 
-    // @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] | @implemented [2026-06-17] | plain English: DOB picker
-    // defaults to current_date − 13y (dynamically computed at render time, never hardcoded —
-    // the threshold drifts with calendar time per the owner ruling).
-    const defaultDob = new Date();
-    defaultDob.setFullYear(defaultDob.getFullYear() - 13);
-    setDateOfBirth(defaultDob.toISOString().split("T")[0]);
+    // @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Date of birth
+    // starts empty"; Doc-01_V8 §9 / §37.1 (under-13 gating, unchanged)] | @implemented
+    // [2026-10-13] | plain English: the date of birth starts EMPTY. It used to default to
+    // today − 13 years, which put every student exactly at the threshold and let a student
+    // continue without ever entering their own date (the under-13 gate then rested on a
+    // default). Now nothing is assumed: submit asks for a date (the existing "Please enter your
+    // date of birth" check), the age line, the under-13 notice, the SAT-date question and the
+    // marketing box all appear only once a date is entered, as they key on it.
 
     setIsInitialized(true);
   }, [profile, isInitialized]);

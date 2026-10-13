@@ -315,6 +315,27 @@ export default function CanonicalPracticePage(props: {
   const splitEnabled = useSplitEnabled();
   const threePanelEnabled = useMinWidth(THREE_PANEL_BREAKPOINT);
   const tutorSideBySide = useMinWidth(TUTOR_SIDE_BY_SIDE_BREAKPOINT);
+
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Phone: after submit,
+   *       scroll the explanation into view"] | @implemented [2026-10-13]
+   * plain English: on the phone layout (below TUTOR_SIDE_BY_SIDE_BREAKPOINT, the stacked one) the
+   * feedback panel with the explanation appears under the choices, usually below the fold, and
+   * nothing moved: the student saw no change after Submit. Once per answered item, when its
+   * feedback first shows, the runner scrolls the panel's top into view, instantly (DESIGN.md §1:
+   * no motion but LISA's typing dots). Side by side nothing moves.
+   */
+  const feedbackScrolledFor = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!showResult || tutorSideBySide || !sessionItemId) return;
+    if (feedbackScrolledFor.current === sessionItemId) return;
+    feedbackScrolledFor.current = sessionItemId;
+    const panel = runnerScrollRef.current?.querySelector<HTMLElement>(
+      '[data-testid="runner-feedback"]',
+    );
+    if (!panel || typeof panel.scrollIntoView !== "function") return;
+    panel.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [showResult, tutorSideBySide, sessionItemId]);
   const panelGroupRef = React.useRef<HTMLDivElement | null>(null);
   const calcPanelRef = React.useRef<ImperativePanelHandle | null>(null);
 

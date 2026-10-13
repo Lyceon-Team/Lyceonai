@@ -116,6 +116,36 @@ describe("closed: what the trigger reads", () => {
   });
 });
 
+describe("first-run P1 (2026-10-13): the helper line and a Done that never scrolls away", () => {
+  it('says "Pick every date you might take", and the trigger is described by it', () => {
+    render(<Harness />);
+    const help = screen.getByTestId(`${ID}-help`);
+    expect(help.textContent).toBe("Pick every date you might take");
+    const trigger = screen.getByTestId(`${ID}-trigger`);
+    expect(trigger.getAttribute("aria-describedby")).toBe(help.id);
+  });
+
+  it("Done sits outside the scrolling list, and only the list scrolls (the menu is a non-scrolling column)", () => {
+    render(<Harness />);
+    const menu = openSatDates(ID);
+    const done = within(menu).getByTestId(`${ID}-done`);
+    const list = within(menu).getByTestId(`${ID}-dates`);
+    // Presence first: the list holds dates, and Done is in the menu.
+    expect(
+      within(list).getAllByRole("menuitemcheckbox").length,
+    ).toBeGreaterThan(3);
+    expect(list.contains(done)).toBe(false);
+    const menuClasses = menu.className.split(/\s+/);
+    expect(menuClasses).toContain("flex-col");
+    expect(menuClasses).toContain("overflow-y-hidden");
+    expect(menuClasses).not.toContain("overflow-y-auto");
+    const listClasses = list.className.split(/\s+/);
+    expect(listClasses).toContain("overflow-y-auto");
+    expect(listClasses).toContain("min-h-0");
+    expect(done.className.split(/\s+/)).toContain("shrink-0");
+  });
+});
+
 describe("open", () => {
   it('"Not sure yet" is first and pinned outside the scrolling list of future dates', () => {
     render(<Harness />);

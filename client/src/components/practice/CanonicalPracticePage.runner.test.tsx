@@ -594,6 +594,51 @@ describe("UI-53 runner: bar, steps, keys", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/practice"));
   });
 
+  it("P1 phone: after Submit the explanation is scrolled into view, once, instantly", async () => {
+    installNetwork({ total: 2 });
+    const original = Element.prototype.scrollIntoView;
+    const scrolled: Array<{ el: Element; arg: unknown }> = [];
+    Element.prototype.scrollIntoView = function (this: Element, arg?: unknown) {
+      scrolled.push({ el: this, arg });
+    } as typeof Element.prototype.scrollIntoView;
+    try {
+      mountRunner();
+      await loaded();
+      await click(choice(CORRECT_TEXT));
+      await click(submitButton());
+      const feedback = await screen.findByTestId("runner-feedback");
+      await waitFor(() =>
+        expect(scrolled.filter((s) => s.el === feedback)).toHaveLength(1),
+      );
+      expect(scrolled.find((s) => s.el === feedback)?.arg).toEqual({
+        block: "start",
+        behavior: "auto",
+      });
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it("P1: side by side (from 1024) Submit scrolls nothing to the explanation", async () => {
+    mockSideBySide();
+    installNetwork({ total: 2 });
+    const original = Element.prototype.scrollIntoView;
+    const scrolled: Element[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    } as typeof Element.prototype.scrollIntoView;
+    try {
+      mountRunner();
+      await loaded();
+      await click(choice(CORRECT_TEXT));
+      await click(submitButton());
+      const feedback = await screen.findByTestId("runner-feedback");
+      expect(scrolled.includes(feedback)).toBe(false);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("P0-3: with a summary page, Done hands the closed session back once and stays (no navigation)", async () => {
     installNetwork({ total: 1 });
     const onSessionClosed = vi.fn();
