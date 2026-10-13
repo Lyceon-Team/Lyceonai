@@ -245,13 +245,15 @@ export function answeredLine(answered: number, total: number): string {
  */
 export function diagnosticActionLabel(
   inProgress: { answered_items: number; target_question_count: number } | null,
-  configuredTotal: number,
+  configuredTotal: number | null,
 ): string {
   if (inProgress === null) return "Start diagnostic";
   const total =
     inProgress.target_question_count > 0
       ? inProgress.target_question_count
       : configuredTotal;
+  // No length known (the config read failed): no invented number.
+  if (total === null || total <= 0) return "Resume diagnostic";
   const next = Math.min(inProgress.answered_items + 1, total);
   return `Resume diagnostic · question ${next} of ${total}`;
 }
