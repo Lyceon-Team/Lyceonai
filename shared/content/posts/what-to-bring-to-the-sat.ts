@@ -62,7 +62,7 @@ const post: ScheduledPostSpec = {
         blocks: [
           {
             type: "p",
-            text: "Most students bring an original, unexpired photo ID issued by the government or by the school they attend now. A school ID from last school year still works through the end of December. The name on your ID has to match the name on your admission ticket exactly, so a nickname on one and your full name on the other won't work.",
+            text: "Bring an original, unexpired photo ID issued by the government or by the school you attend now. A school ID from last school year still works through the end of December. The name on your ID has to match the name on your admission ticket exactly, so a nickname on one and your full name on the other won't work.",
             sources: [CB_ID_REQUIREMENTS],
           },
           {
