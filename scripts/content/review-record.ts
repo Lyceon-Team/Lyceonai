@@ -176,7 +176,13 @@ export function reviewRecordProblems(
 
 /** The text outside HTML comments, line by line. */
 function uncommentedLines(section: string): string[] {
-  return section.replace(/<!--[\s\S]*?-->/g, "").split("\n");
+  let current = section;
+  while (true) {
+    const next = current.replace(/<!--[\s\S]*?-->/g, "");
+    if (next === current) break;
+    current = next;
+  }
+  return current.split("\n");
 }
 
 const squashSpaces = (s: string): string => s.replace(/\s+/g, " ").trim();
