@@ -9,7 +9,7 @@
  * event payloads persist and become recipient-readable. The token exists only in this render,
  * in the request that produced it, and in the recipient's inbox. Every value is escaped.
  */
-import { escapeHtml, type EmailRender } from "./shared";
+import { emailRender, escapeHtml, type EmailRender } from "./shared";
 
 export function deletionScheduledEmail(input: {
   recoverUrl: string;
@@ -45,5 +45,12 @@ export function deletionScheduledEmail(input: {
     "</body></html>",
   ].join("");
 
-  return { subject, html, text };
+  // Karl, 2026-10-14: subject unchanged; the preview says what to do if this was not you.
+  return emailRender({
+    subject,
+    preview: `It will be deleted on ${whenLabel}. Restore it before then if you didn't ask for this.`,
+    fromCategory: "general",
+    html,
+    text,
+  });
 }

@@ -28,6 +28,7 @@
  */
 import type { FullLengthNoticePayload } from "../../../../packages/shared/src/notifications-schema";
 import {
+  emailRender,
   escapeHtml,
   type EmailRender,
   type InAppRender,
@@ -126,8 +127,13 @@ export function fullLengthWeekEmail(
   const when = renderNoticeDate(payload.local_date);
   const safeWhen = escapeHtml(when);
   const siteUrl = ctx.siteUrl ? escapeHtml(ctx.siteUrl) : null;
-  return {
-    subject: "You have a full-length test this week",
+  // Karl, 2026-10-14: a study-plan reminder ("Lyceon Study Plan"), "SAT" up front, the date in
+  // the subject. "full-length test", not the table's "practice test": owner ruling OQ-62 (b)
+  // (2026-10-05) governs this wording. The in-app title is unchanged.
+  return emailRender({
+    subject: `SAT full-length test this week: ${when}`,
+    preview: "It takes about three hours, so plan ahead.",
+    fromCategory: "study_plan",
     text: [
       `You have a full-length test this week, on ${when}.`,
       "",
@@ -145,7 +151,7 @@ export function fullLengthWeekEmail(
         ? `<p><a href="${siteUrl}${CALENDAR_HREF}">Open your calendar</a></p>`
         : "",
     ]),
-  };
+  });
 }
 
 export function fullLengthTomorrowEmail(
@@ -155,8 +161,11 @@ export function fullLengthTomorrowEmail(
   const when = renderNoticeDate(payload.local_date);
   const safeWhen = escapeHtml(when);
   const siteUrl = ctx.siteUrl ? escapeHtml(ctx.siteUrl) : null;
-  return {
-    subject: "Your full-length test is tomorrow",
+  // Karl, 2026-10-14: as the week notice above.
+  return emailRender({
+    subject: `SAT full-length test tomorrow, ${when}`,
+    preview: "Set aside about three hours. It's on your study plan.",
+    fromCategory: "study_plan",
     text: [
       `Your full-length test is tomorrow, ${when}.`,
       "",
@@ -174,5 +183,5 @@ export function fullLengthTomorrowEmail(
         ? `<p><a href="${siteUrl}${CALENDAR_HREF}">Open your calendar</a></p>`
         : "",
     ]),
-  };
+  });
 }

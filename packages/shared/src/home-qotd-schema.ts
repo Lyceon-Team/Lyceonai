@@ -217,9 +217,35 @@ export function streakChipText(streak: Streak): string {
     : `🔥 ${streak.current} · keep it going today`;
 }
 
-/** The daily email's subject (brief, Part B "Daily email"). */
-export function qotdEmailSubject(currentStreak: number): string {
-  return currentStreak > 0
-    ? `Day ${currentStreak} 🔥 Your question is ready`
-    : "Your question is ready";
+/**
+ * @spec [owner brief "Notification emails — sender name per email type" (Karl, 2026-10-14) §2;
+ *       Karl's Step 0 ruling 1 (no time estimate: the subject ends at "one <Domain> question")]
+ *       | @implemented [2026-10-14] (replaces the 2026-10-09 "Day N 🔥 Your question is ready")
+ *
+ * plain English: the daily email's subject always starts with "SAT Question of the Day", so
+ * "Lyceon" in the sender and "SAT" at the start of the subject together mark it out from junk.
+ * A streak of 2+ days asks the student to keep it; otherwise the subject names the domain. No
+ * emoji, no "Day N:", no urgency. Inputs are the streak and the domain only — nothing that could
+ * carry the answer reaches this function.
+ *
+ * edge cases: a blank domain reads "one question"; a negative or fractional streak is treated as
+ * no streak.
+ */
+export const QOTD_EMAIL_SUBJECT_PREFIX = "SAT Question of the Day";
+export const QOTD_EMAIL_STREAK_THRESHOLD = 2;
+
+export function qotdEmailSubject(input: {
+  currentStreak: number;
+  domain: string;
+}): string {
+  const streak = Number.isInteger(input.currentStreak)
+    ? input.currentStreak
+    : 0;
+  if (streak >= QOTD_EMAIL_STREAK_THRESHOLD) {
+    return `${QOTD_EMAIL_SUBJECT_PREFIX}: keep your ${streak}-day streak`;
+  }
+  const domain = input.domain.replace(/\s+/g, " ").trim();
+  return domain.length > 0
+    ? `${QOTD_EMAIL_SUBJECT_PREFIX}: one ${domain} question`
+    : `${QOTD_EMAIL_SUBJECT_PREFIX}: one question`;
 }

@@ -510,6 +510,14 @@ jobs:
         if: matrix.group == 'qotd'
         run: bash scripts/ci/question-underline.mutations.sh
 
+      # Sender name per email type and the QOTD subject/preview (Karl, 2026-10-14): plants the bare
+      # From, a wrong category, no fallback, no sanitizing, the subject prefix, the streak
+      # threshold, the dropped preheader, an answer leak through the row projection, and a send
+      # without an address. Each must turn its test red.
+      - name: Email sender-name mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        run: bash scripts/ci/email-sender-names.mutations.sh
+
       # Doc 10B Phase 1 (blog pipeline): plants an unapproved or future post going public, the
       # withheld post's words reaching the bundle, a daily rebuild, a merge by anyone stamping the
       # approval, a ready batch without Codex's verdicts or Claude's responses, and each new
