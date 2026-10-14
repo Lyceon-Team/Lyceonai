@@ -45,6 +45,7 @@ function renderedStrings(kind: Kind): Record<string, string> {
     "in-app title": inApp.value.title,
     "in-app body": inApp.value.body,
     "email subject": email.value.subject,
+    "email preview": email.value.preview,
     "email text": email.value.text,
     "email html": email.value.html,
   };
@@ -54,7 +55,13 @@ describe("OQ-62 (b): the full-length notices say 'full-length test'", () => {
   it("full_length_week: titles and the email's lead line", () => {
     const s = renderedStrings("full_length_week");
     expect(s["in-app title"]).toBe("You have a full-length test this week");
-    expect(s["email subject"]).toBe("You have a full-length test this week");
+    // Karl, 2026-10-14: "SAT" up front and the date in the subject, still "full-length test".
+    expect(s["email subject"]).toBe(
+      "SAT full-length test this week: Saturday 17 October",
+    );
+    expect(s["email preview"]).toBe(
+      "It takes about three hours, so plan ahead.",
+    );
     expect(s["in-app body"]).toBe(
       "It's on Saturday 17 October. A full-length test takes about three hours, so it helps to know now.",
     );
@@ -75,7 +82,12 @@ describe("OQ-62 (b): the full-length notices say 'full-length test'", () => {
   it("full_length_tomorrow: titles and the email's lead line", () => {
     const s = renderedStrings("full_length_tomorrow");
     expect(s["in-app title"]).toBe("Your full-length test is tomorrow");
-    expect(s["email subject"]).toBe("Your full-length test is tomorrow");
+    expect(s["email subject"]).toBe(
+      "SAT full-length test tomorrow, Saturday 17 October",
+    );
+    expect(s["email preview"]).toBe(
+      "Set aside about three hours. It's on your study plan.",
+    );
     expect(s["email text"]).toContain(
       "Your full-length test is tomorrow, Saturday 17 October.",
     );
@@ -91,7 +103,12 @@ describe("OQ-62 (b): the full-length notices say 'full-length test'", () => {
       for (const [field, value] of Object.entries(s)) {
         // Presence first: the field is non-trivial and names the sitting the ruled way.
         expect(value.length, field).toBeGreaterThan(0);
-        if (field !== "in-app body" || kind === "full_length_week") {
+        // The preview line is about time, not the sitting, so it need not name it (but it may
+        // still never say "practice test" or a bare "test", checked below).
+        if (
+          field !== "email preview" &&
+          (field !== "in-app body" || kind === "full_length_week")
+        ) {
           expect(value, field).toMatch(/\bfull-length test\b/i);
         }
         expect(value, field).not.toMatch(/\bpractice tests?\b/i);

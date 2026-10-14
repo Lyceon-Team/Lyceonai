@@ -9,7 +9,7 @@
  * student name, no progress data, and no recovery link: recovery is not possible at this point
  * and offering it would be false. Nothing is interpolated except the date, and that is escaped.
  */
-import { escapeHtml, type EmailRender } from "./shared";
+import { emailRender, escapeHtml, type EmailRender } from "./shared";
 
 export function deletionCompletedEmail(input: {
   /**
@@ -40,5 +40,12 @@ export function deletionCompletedEmail(input: {
     "</body></html>",
   ].join("");
 
-  return { subject, html, text };
+  // Account email: sender "Lyceon"; the subject already says it all (Karl, 2026-10-14).
+  return emailRender({
+    subject,
+    preview: `Your account and its data were deleted on ${whenLabel}.`,
+    fromCategory: "general",
+    html,
+    text,
+  });
 }

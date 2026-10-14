@@ -773,6 +773,7 @@ describe.skipIf(!PG_AVAILABLE)(
         subject: string;
         text: string;
         html: string;
+        fromCategory: string;
         headers?: Record<string, string>;
       }[] = [];
       const fakeTransport = async (input: {
@@ -781,6 +782,7 @@ describe.skipIf(!PG_AVAILABLE)(
         subject: string;
         text: string;
         html: string;
+        fromCategory: string;
         headers?: Record<string, string>;
       }) => {
         sent.push(input);
@@ -898,7 +900,24 @@ describe.skipIf(!PG_AVAILABLE)(
           ].sort(),
         );
         const daily = sent.find((s) => s.to === `${MAILED}@example.test`);
-        expect(daily?.subject).toBe("Your question is ready");
+        // Karl, 2026-10-14: "SAT Question of the Day" first; no streak yet, so the domain. The
+        // preview is the real row's metadata plus the start of the stem, and it is the first text
+        // in the HTML. Sent under "Lyceon Question of the Day".
+        expect(daily?.subject).toBe(
+          "SAT Question of the Day: one Algebra question",
+        );
+        expect(daily?.fromCategory).toBe("qotd");
+        const preview = `Math · Algebra · Medium: ${STEM} Answer it today.`;
+        expect(
+          daily?.html.replace(/^[\s\S]*?<body[^>]*><div[^>]*>/, ""),
+        ).toMatch(
+          new RegExp(`^${preview.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+        );
+        // Neither the subject nor the preview carries the explanation or an answer line.
+        for (const part of [daily?.subject ?? "", preview]) {
+          expect(part).not.toContain(EXPLANATION);
+          expect(part).not.toMatch(/x = 3\b|\bB\)/);
+        }
         expect(daily?.text).toContain(STEM);
         expect(daily?.text).toContain("https://lyceon.test/dashboard#qotd");
         // No choices and no answer in the email.
@@ -923,7 +942,8 @@ describe.skipIf(!PG_AVAILABLE)(
         const pause = sent.find(
           (s) => s.to === `${MAILED_SUNSET}@example.test`,
         );
-        expect(pause?.subject).toBe("We've paused your daily question");
+        expect(pause?.subject).toBe("SAT Question of the Day is paused");
+        expect(pause?.fromCategory).toBe("qotd");
         expect(pause?.text).toContain("/api/public/qotd-email/resume?t=");
         expect(summary.paused_notices).toBe(1);
         // Privacy: no address and no question text in any log line.
@@ -1049,7 +1069,10 @@ describe.skipIf(!PG_AVAILABLE)(
         const mine = sent
           .slice(before)
           .find((s) => s.to === `${MAILED}@example.test`);
-        expect(mine?.subject).toBe("Day 1 🔥 Your question is ready");
+        // A 1-day streak is under the 2-day threshold: the domain version (Karl, 2026-10-14).
+        expect(mine?.subject).toBe(
+          "SAT Question of the Day: one Algebra question",
+        );
         // 22:00Z in January is 16:00 CST: not the hour.
         expect((await run("2026-01-15T22:00:00Z")).skipped).toBe(
           "not_send_hour",

@@ -1,11 +1,15 @@
 /**
  * The daily-question email and the one "paused" email.
  *
- * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": subject
- *       "Day N 🔥 Your question is ready" (or "Your question is ready" at 0); body the question's
- *       first line, an "Answer now" button to /dashboard#qotd, an unsubscribe link and the Lyceon
- *       footer; no choices or answers; the sunset's "We've paused your daily question" email with
- *       a resume link; contracts/notifications.contract.md §12 (no tracking)] | @implemented [2026-10-09]
+ * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": body the
+ *       question's first line, an "Answer now" button to /dashboard#qotd, an unsubscribe link and
+ *       the Lyceon footer; no choices or answers; the sunset's pause email with a resume link;
+ *       contracts/notifications.contract.md §12 (no tracking)] | @implemented [2026-10-09]
+ *       [owner brief "Notification emails — sender name per email type" and Step 0 rulings (Karl,
+ *       2026-10-14): the subjects ("SAT Question of the Day: …", "SAT Question of the Day is
+ *       paused") REPLACED the 2026-10-09 "Day N 🔥 Your question is ready" / "We've paused your
+ *       daily question"; the preview line and the "Lyceon Question of the Day" sender were added;
+ *       contract C12.5] | @implemented [2026-10-14]
  *
  * plain English: plain functions returning strings, like every other template here. Every
  * interpolated value is HTML-escaped. The question's first line is the stem's first line only
@@ -13,29 +17,103 @@
  */
 import { qotdEmailSubject } from "../../../../packages/shared/src/home-qotd-schema";
 import type { QotdDailyPayload } from "../../../../packages/shared/src/notifications-schema";
+import { questionDifficultyLabel } from "../../../../packages/shared/src/question-difficulty";
 import { err, ok, type Result } from "../../../../packages/shared/src/result";
+import { speakMixedText } from "../../../../shared/qotd/social";
+import { sectionDisplayLabel } from "../../../../shared/section-display";
 import {
+  emailRender,
   escapeHtml,
   type EmailRender,
   type InAppRender,
   type RenderContext,
 } from "./shared";
 
-export const QOTD_PAUSED_SUBJECT = "We've paused your daily question";
+/** Karl, 2026-10-14 (Step 0 table, approved): "SAT" up front. */
+export const QOTD_PAUSED_SUBJECT = "SAT Question of the Day is paused";
+/**
+ * Karl's condition on the approved preview: "with one click" only if it really is one click. The
+ * resume link opens a page with a Resume button (two clicks, public-qotd-email-routes.ts), so
+ * the preview points at Settings instead.
+ */
+export const QOTD_PAUSED_PREVIEW =
+  "You haven't opened it in a while. Turn it back on in Settings.";
 
 const FIRST_LINE_MAX = 160;
 
-/** The stem's first non-empty line, plain text, at most 160 characters. */
-export function qotdFirstLine(stem: string): string {
-  const line =
+/** The stem's first non-empty line, tags dropped, whitespace collapsed, uncut. */
+function stemFirstLine(stem: string): string {
+  return (
     stem
       .replace(/<[^>]*>/g, " ")
       .split(/\r?\n/)
       .map((l) => l.replace(/\s+/g, " ").trim())
-      .find((l) => l.length > 0) ?? "";
+      .find((l) => l.length > 0) ?? ""
+  );
+}
+
+/** The stem's first non-empty line, plain text, at most 160 characters. */
+export function qotdFirstLine(stem: string): string {
+  const line = stemFirstLine(stem);
   return line.length > FIRST_LINE_MAX
     ? `${line.slice(0, FIRST_LINE_MAX - 1).trimEnd()}…`
     : line;
+}
+
+/**
+ * @spec [owner brief "Notification emails — sender name per email type" (Karl, 2026-10-14) §2;
+ *       Karl's Step 0 rulings 2 ("Answer it today.") and 3 (metadata plus the truncated start of
+ *       the question; never the answer or the answer choices)] | @implemented [2026-10-14]
+ *
+ * plain English: the inbox preview line, e.g. "Math · Algebra · Medium: If 3x + 11 = 47, what
+ * is… Answer it today." Built from the section, domain and difficulty, and from the STEM ONLY —
+ * its first line, maths read out in words by the same reader the social alt text uses — never
+ * the passage, the options, the answer or the explanation, none of which this function is given.
+ * The question is cut at a word boundary to at most QOTD_PREVIEW_QUESTION_MAX characters.
+ *
+ * edge cases: maths the reader cannot say in words drops the question part (metadata only),
+ * rather than showing raw LaTeX; an unknown section or difficulty is left out of the lead.
+ */
+export const QOTD_PREVIEW_QUESTION_MAX = 60;
+export const QOTD_PREVIEW_CLOSER = "Answer it today.";
+
+export function qotdPreviewQuestion(stem: string): string | null {
+  const spoken = speakMixedText(stemFirstLine(stem));
+  if (spoken === null) return null;
+  const line = spoken.replace(/\s+/g, " ").trim();
+  if (line.length === 0) return null;
+  if (line.length <= QOTD_PREVIEW_QUESTION_MAX) return line;
+  const room = line.slice(0, QOTD_PREVIEW_QUESTION_MAX);
+  const cut = room.lastIndexOf(" ");
+  const head = (cut > 0 ? room.slice(0, cut) : room).replace(
+    /[\s,;:.!?]+$/,
+    "",
+  );
+  return `${head}…`;
+}
+
+export function qotdPreviewLine(input: {
+  section: string;
+  domain: string;
+  difficulty: number | null;
+  stem: string;
+}): string {
+  const lead = [
+    sectionDisplayLabel(input.section),
+    input.domain.replace(/\s+/g, " ").trim() || null,
+    questionDifficultyLabel(input.difficulty),
+  ]
+    .filter((part): part is string => part !== null && part.length > 0)
+    .join(" · ");
+  const question = qotdPreviewQuestion(input.stem);
+  if (question === null) {
+    return lead.length > 0
+      ? `${lead}. ${QOTD_PREVIEW_CLOSER}`
+      : QOTD_PREVIEW_CLOSER;
+  }
+  return lead.length > 0
+    ? `${lead}: ${question} ${QOTD_PREVIEW_CLOSER}`
+    : `${question} ${QOTD_PREVIEW_CLOSER}`;
 }
 
 const BODY_OPEN =
@@ -61,10 +139,14 @@ function footerText(unsubscribeUrl: string | null): string[] {
 export function qotdDailyEmail(input: {
   currentStreak: number;
   stem: string;
+  meta: { section: string; domain: string; difficulty: number | null };
   siteUrl: string;
   unsubscribeUrl: string | null;
 }): EmailRender {
-  const subject = qotdEmailSubject(input.currentStreak);
+  const subject = qotdEmailSubject({
+    currentStreak: input.currentStreak,
+    domain: input.meta.domain,
+  });
   const firstLine = qotdFirstLine(input.stem);
   const answerUrl = input.siteUrl ? `${input.siteUrl}/dashboard#qotd` : null;
   const text = [
@@ -84,7 +166,13 @@ export function qotdDailyEmail(input: {
     footerHtml(input.unsubscribeUrl),
     "</body></html>",
   ].join("");
-  return { subject, html, text };
+  return emailRender({
+    subject,
+    preview: qotdPreviewLine({ ...input.meta, stem: input.stem }),
+    fromCategory: "qotd",
+    html,
+    text,
+  });
 }
 
 export function qotdPausedEmail(input: {
@@ -110,7 +198,13 @@ export function qotdPausedEmail(input: {
     footerHtml(input.unsubscribeUrl),
     "</body></html>",
   ].join("");
-  return { subject: QOTD_PAUSED_SUBJECT, html, text };
+  return emailRender({
+    subject: QOTD_PAUSED_SUBJECT,
+    preview: QOTD_PAUSED_PREVIEW,
+    fromCategory: "qotd",
+    html,
+    text,
+  });
 }
 
 /**
@@ -153,12 +247,13 @@ export function qotdDailyNotificationEmail(
     });
     return ok(headers ? { ...rendered, headers } : rendered);
   }
-  if (extras.stem === null) {
+  if (extras.stem === null || extras.meta === null) {
     return err("qotd_daily: no question is scheduled for the payload's day");
   }
   const rendered = qotdDailyEmail({
     currentStreak: payload.current_streak,
     stem: extras.stem,
+    meta: extras.meta,
     siteUrl: ctx.siteUrl,
     unsubscribeUrl,
   });
