@@ -23,9 +23,9 @@
  *    by the session's egress proxy (or `gcloud`'s ADC on a workstation); none are read here.
  *
  * Pre-flight (refuses to create if any check fails):
- *  1. `ragEngineConfig` for us-central1 must report Serverless mode. If it reports Spanner and
- *     `--switch-to-serverless` is passed, the script PATCHes it; otherwise it stops. Switching
- *     does not delete Spanner-mode data.
+ *  1. `ragEngineConfig` for us-central1 must already report Serverless mode. The script never
+ *     changes the mode: the switch is owned outside this script (Karl, 2026-10-14: Terraform
+ *     owns it; see closure plan R-9 for why the provider can't express it yet).
  *  2. No corpus with the target display name may already exist (no duplicate on a re-run).
  *  3. The embedding model is `text-embedding-005` (Karl, 2026-08-20; the RAG Engine embedding
  *     page, read 2026-10-13, lists it as the default and does not list gemini-embedding-001).
@@ -33,7 +33,7 @@
  * Usage (on a session whose proxy attaches the Vertex credential to
  * `us-central1-aiplatform.googleapis.com`):
  *   NODE_USE_ENV_PROXY=1 pnpm exec tsx scripts/provisioning/rag-corpus-create.ts --project replit-cop
- *   ... add --switch-to-serverless to allow the mode switch, and --execute to act.
+ *   ... add --execute to act.
  */
 import { parseArgs } from "node:util";
 import { z } from "zod";
@@ -110,7 +110,6 @@ async function main(): Promise<void> {
     options: {
       project: { type: "string" },
       execute: { type: "boolean", default: false },
-      "switch-to-serverless": { type: "boolean", default: false },
     },
   });
   const project = z.string().min(1).parse(values.project);
@@ -136,34 +135,10 @@ async function main(): Promise<void> {
     `ragEngineConfig: ${JSON.stringify(dbConfig)} → ${isServerless ? "Serverless" : "not Serverless"}`,
   );
   if (!isServerless) {
-    const patch = { ragManagedDbConfig: { serverless: {} } };
-    if (!values["switch-to-serverless"]) {
-      log(
-        `STOP: mode is not Serverless. Re-run with --switch-to-serverless to send:`,
-      );
-      log(`  PATCH ${base}/${parent}/ragEngineConfig ${JSON.stringify(patch)}`);
-      process.exit(2);
-    }
     log(
-      `${execute ? "sending" : "would send"}: PATCH ragEngineConfig ${JSON.stringify(patch)}`,
+      "STOP: mode is not Serverless. This script does not change the mode; switch it first, then re-run.",
     );
-    if (execute) {
-      const patched = await request(`${base}/${parent}/ragEngineConfig`, {
-        method: "PATCH",
-        body: patch,
-      });
-      const op = operationSchema.safeParse(patched.body);
-      if (patched.status !== 200)
-        throw new Error(
-          `mode switch → ${patched.status} ${JSON.stringify(patched.body)}`,
-        );
-      if (op.success && !op.data.done) {
-        const done = await waitFor(base, op.data.name);
-        if (done.error)
-          throw new Error(`mode switch failed: ${done.error.message}`);
-      }
-      log("mode switched to Serverless");
-    }
+    process.exit(2);
   }
 
   // 2. No duplicate.

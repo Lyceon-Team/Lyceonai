@@ -273,4 +273,5 @@ in Phase 3) but not the corpus itself.
 ## Phase 3 (post-launch)
 
 - `google_vertex_ai_rag_engine_config` (DB tier)
+  - **Not yet expressible for Serverless mode** (checked 2026-10-14): the resource supports only `basic`, `scaled` and `unprovisioned`. The project is moving to Serverless (LISA video RAG, R-1 ruling 2026-10-13). Declaring the resource with a Spanner tier would revert that on every apply, so it stays out of Terraform until the provider gains `serverless` (closure plan R-9).
 - Secret Manager entries if migrated from env vars
