@@ -1,11 +1,15 @@
 /**
  * The daily-question email and the one "paused" email.
  *
- * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": subject
- *       "Day N 🔥 Your question is ready" (or "Your question is ready" at 0); body the question's
- *       first line, an "Answer now" button to /dashboard#qotd, an unsubscribe link and the Lyceon
- *       footer; no choices or answers; the sunset's "We've paused your daily question" email with
- *       a resume link; contracts/notifications.contract.md §12 (no tracking)] | @implemented [2026-10-09]
+ * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email": body the
+ *       question's first line, an "Answer now" button to /dashboard#qotd, an unsubscribe link and
+ *       the Lyceon footer; no choices or answers; the sunset's pause email with a resume link;
+ *       contracts/notifications.contract.md §12 (no tracking)] | @implemented [2026-10-09]
+ *       [owner brief "Notification emails — sender name per email type" and Step 0 rulings (Karl,
+ *       2026-10-14): the subjects ("SAT Question of the Day: …", "SAT Question of the Day is
+ *       paused") REPLACED the 2026-10-09 "Day N 🔥 Your question is ready" / "We've paused your
+ *       daily question"; the preview line and the "Lyceon Question of the Day" sender were added;
+ *       contract C12.5] | @implemented [2026-10-14]
  *
  * plain English: plain functions returning strings, like every other template here. Every
  * interpolated value is HTML-escaped. The question's first line is the stem's first line only
