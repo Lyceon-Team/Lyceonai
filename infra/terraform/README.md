@@ -254,6 +254,8 @@ Instead:
 
 ## What's NOT in Terraform (documented hybrid)
 
+**Vertex AI RAG Engine mode (us-central1): Serverless.** This was a one-time manual step, the same shape as the corpus below, because `google_vertex_ai_rag_engine_config` can't express Serverless mode (Phase 3 note). It was switched by Karl on 2026-10-14 at 22:52 UTC with a manual `PATCH .../v1beta1/projects/replit-cop/locations/us-central1/ragEngineConfig` and body `{"ragManagedDbConfig":{"serverless":{}}}`. Operation `2225455665407590400` returned `done: true`. Verify with `GET` on the same URL; it reads `{"ragManagedDbConfig":{"serverless":{}}}`. Don't add the Terraform resource until the provider supports `serverless`. Whether Spanner-mode billing stopped on the switch is undocumented; see closure plan R-10.
+
 **Vertex AI RAG Corpus** — no Terraform resource exists for
 `ragCorpora`. The provisioning script at
 `scripts/provisioning/rag-corpus-create.ts` is the correct mechanism.
@@ -273,5 +275,5 @@ in Phase 3) but not the corpus itself.
 ## Phase 3 (post-launch)
 
 - `google_vertex_ai_rag_engine_config` (DB tier)
-  - **Not yet expressible for Serverless mode** (checked 2026-10-14): the resource supports only `basic`, `scaled` and `unprovisioned`. The project is moving to Serverless (LISA video RAG, R-1 ruling 2026-10-13). Declaring the resource with a Spanner tier would revert that on every apply, so it stays out of Terraform until the provider gains `serverless` (closure plan R-9).
+  - **Not yet expressible for Serverless mode** (checked 2026-10-14): the resource supports only `basic`, `scaled` and `unprovisioned`, so it stays out of Terraform until the provider gains `serverless`. Declaring it with a Spanner tier would revert the project on every apply (closure plan R-9).
 - Secret Manager entries if migrated from env vars
