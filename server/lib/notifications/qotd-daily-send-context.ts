@@ -35,7 +35,32 @@ import { qotdDailyPayloadSchema } from "../../../packages/shared/src/notificatio
 import { err, ok, type Result } from "../../../packages/shared/src/result";
 import { qotdEmailLinkUrl } from "../../services/qotd/qotd-email-links";
 import { readQotd } from "../../services/qotd/qotd-service";
+import type { QotdRow } from "../../../shared/qotd/projection";
 import type { RenderContext } from "./templates";
+
+/**
+ * @spec [owner brief "Notification emails — sender name per email type" (Karl, 2026-10-14) §2:
+ *       "Content comes only from today's question metadata and the student's streak. Never the
+ *       answer"] | @implemented [2026-10-14]
+ * plain English: the ONLY fields of today's question row that reach the email: the stem (the
+ * body's first line and the preview's question start) and section, domain and difficulty (the
+ * subject and preview lead). Picked by name, so the options, answer and explanation the row also
+ * carries cannot reach a template. Pure, so the leak test runs it on real question rows.
+ */
+export function qotdEmailQuestionFields(row: QotdRow | null): {
+  stem: string | null;
+  meta: { section: string; domain: string; difficulty: number | null } | null;
+} {
+  if (row === null) return { stem: null, meta: null };
+  return {
+    stem: row.stem,
+    meta: {
+      section: row.section,
+      domain: row.domain,
+      difficulty: row.difficulty,
+    },
+  };
+}
 
 export async function qotdDailySendContext(
   payload: unknown,
@@ -70,13 +95,12 @@ export async function qotdDailySendContext(
         final: true,
       });
     }
-    const stem =
+    const row =
       parsed.data.email_variant === "daily"
-        ? ((await readQotd(supabaseServer, parsed.data.qotd_date))?.stem ??
-          null)
+        ? await readQotd(supabaseServer, parsed.data.qotd_date)
         : null;
     return ok({
-      stem,
+      ...qotdEmailQuestionFields(row),
       unsubscribeUrl: qotdEmailLinkUrl(
         siteUrl,
         "unsubscribe",

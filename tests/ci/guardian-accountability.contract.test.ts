@@ -337,7 +337,12 @@ describe("the lines a guardian reads", () => {
     const email = renderEmail("guardian_daily_digest", payload, ctxGuardian);
     expect(email.ok).toBe(true);
     if (!email.ok) return;
-    expect(email.value.subject).toBe("Your students' day on Lyceon");
+    // Karl, 2026-10-14: "SAT prep today", and the first digest line as the inbox preview.
+    expect(email.value.subject).toBe("Your students' SAT prep today");
+    expect(email.value.preview).toBe(
+      "Amingwa hasn't studied for 2 planned days",
+    );
+    expect(email.value.fromCategory).toBe("guardian");
     expect(email.value.text).toContain("O'Neil is back on track");
     expect(email.value.html).toContain("O&#39;Neil is back on track");
     expect(email.value.text).toContain("turn off the daily summary email");

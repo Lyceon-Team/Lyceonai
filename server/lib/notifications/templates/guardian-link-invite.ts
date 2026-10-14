@@ -10,7 +10,7 @@
  * how to ignore it. Redeeming still requires signing in; the email never says otherwise.
  * Every interpolated value is HTML-escaped. No tracking pixel, no per-message tracking option.
  */
-import { escapeHtml, type EmailRender } from "./shared";
+import { emailRender, escapeHtml, type EmailRender } from "./shared";
 
 type GuardianLinkInviteInput = {
   studentDisplayName: string;
@@ -77,5 +77,15 @@ export function guardianLinkInviteEmail(
     "</body></html>",
   ].join("");
 
-  return { subject, html, text };
+  // Karl, 2026-10-14: to a guardian, so "Lyceon for Parents"; subject unchanged.
+  return emailRender({
+    subject,
+    preview:
+      expiresText === "soon"
+        ? "Use the code to see their progress summary. It expires soon."
+        : `Use the code to see their progress summary. It expires ${expiresText}.`,
+    fromCategory: "guardian",
+    html,
+    text,
+  });
 }

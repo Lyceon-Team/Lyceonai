@@ -10,6 +10,7 @@
  */
 import type { GuardianLinkedPayload } from "../../../../packages/shared/src/notifications-schema";
 import {
+  emailRender,
   escapeHtml,
   type EmailRender,
   type InAppRender,
@@ -71,5 +72,13 @@ export function guardianLinkedEmail(
     "</body></html>",
   ].join("");
 
-  return { subject, html, text };
+  // Karl, 2026-10-14: the email goes to the guardian (the student's copy is in-app only), so
+  // "Lyceon for Parents"; chosen by recipient all the same, should a channel ever be added.
+  return emailRender({
+    subject,
+    preview: `${name}'s SAT progress summary is now on your dashboard.`,
+    fromCategory: ctx.recipientIsSubject ? "general" : "guardian",
+    html,
+    text,
+  });
 }

@@ -32,6 +32,7 @@ import type {
 } from "../../../../packages/shared/src/notifications-schema";
 import { renderNoticeDate } from "./full-length";
 import {
+  emailRender,
   escapeHtml,
   type EmailRender,
   type InAppRender,
@@ -203,8 +204,12 @@ export function studyPlanChangedEmail(
   ctx: RenderContext,
 ): EmailRender {
   const inApp = studyPlanChangedInApp(payload, ctx);
-  return {
-    subject: inApp.title,
+  const name = accountabilityFirstName(payload.student_first_name);
+  // Karl, 2026-10-14: to a guardian ("Lyceon for Parents"), "SAT" in the subject; in-app unchanged.
+  return emailRender({
+    subject: `${name} changed their SAT study plan`,
+    preview: inApp.body,
+    fromCategory: "guardian",
     text: [inApp.body, "", textLink(ctx, GUARDIAN_HOME, "Open Lyceon")]
       .filter((l) => l !== "")
       .join("\n"),
@@ -215,7 +220,7 @@ export function studyPlanChangedEmail(
       ],
       GUARDIAN_FOOTER,
     ),
-  };
+  });
 }
 
 // ── missed_plan_alert (student + guardians) ─────────────────────────────────
@@ -247,8 +252,16 @@ export function missedPlanAlertEmail(
   const path = ctx.recipientIsSubject ? STUDENT_CALENDAR : GUARDIAN_HOME;
   const label = ctx.recipientIsSubject ? "Open your calendar" : "Open Lyceon";
   const footer = ctx.recipientIsSubject ? STUDENT_FOOTER : GUARDIAN_FOOTER;
-  return {
-    subject: inApp.title,
+  // Karl, 2026-10-14: the student's copy names the plan and says what to do; it goes out as
+  // "Lyceon Study Plan". A guardian's copy keeps its wording, as "Lyceon for Parents".
+  return emailRender({
+    subject: ctx.recipientIsSubject
+      ? "Your SAT study plan is waiting"
+      : inApp.title,
+    preview: ctx.recipientIsSubject
+      ? `${payload.missed_days} planned days missed. Start with today's first session when you're ready.`
+      : inApp.body,
+    fromCategory: ctx.recipientIsSubject ? "study_plan" : "guardian",
     text: [inApp.body, "", textLink(ctx, path, label), "", footer]
       .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
       .join("\n"),
@@ -256,7 +269,7 @@ export function missedPlanAlertEmail(
       [`<p>${escapeHtml(inApp.body)}</p>`, link(ctx, path, label)],
       footer,
     ),
-  };
+  });
 }
 
 // ── back_on_track (student + guardians) ─────────────────────────────────────
@@ -288,8 +301,13 @@ export function backOnTrackEmail(
   const path = ctx.recipientIsSubject ? STUDENT_CALENDAR : GUARDIAN_HOME;
   const label = ctx.recipientIsSubject ? "Open your calendar" : "Open Lyceon";
   const footer = ctx.recipientIsSubject ? STUDENT_FOOTER : GUARDIAN_FOOTER;
-  return {
-    subject: inApp.title,
+  // Karl, 2026-10-14: as missed_plan_alert above; the preview is the body line.
+  return emailRender({
+    subject: ctx.recipientIsSubject
+      ? "You're back on track with your SAT study plan"
+      : inApp.title,
+    preview: inApp.body,
+    fromCategory: ctx.recipientIsSubject ? "study_plan" : "guardian",
     text: [inApp.body, "", textLink(ctx, path, label), "", footer]
       .filter((l, i, arr) => !(l === "" && arr[i - 1] === ""))
       .join("\n"),
@@ -297,7 +315,7 @@ export function backOnTrackEmail(
       [`<p>${escapeHtml(inApp.body)}</p>`, link(ctx, path, label)],
       footer,
     ),
-  };
+  });
 }
 
 // ── guardian_daily_digest (guardian email) ──────────────────────────────────
@@ -390,10 +408,18 @@ export function guardianDailyDigestEmail(
           "List-Unsubscribe": `<${unsubscribeUrl}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         };
-  return {
-    subject: digestSubject(payload),
+  // Karl, 2026-10-14: "SAT prep today" in the subject and the first digest line as the preview
+  // (it used to be "Today, <date>:"). Sent as "Lyceon for Parents". The in-app title is unchanged.
+  const names = sections.map((sec) => sec.name);
+  return emailRender({
+    subject:
+      names.length === 1
+        ? `${names[0] ?? "Your student"}'s SAT prep today`
+        : "Your students' SAT prep today",
+    preview: sections.flatMap((sec) => sec.lines)[0] ?? digestSubject(payload),
+    fromCategory: "guardian",
     text,
     html,
     ...(headers === undefined ? {} : { headers }),
-  };
+  });
 }
