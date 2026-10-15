@@ -12,9 +12,9 @@
 --     one item in a practice session whose mode is not 'qotd';
 --   * QOTD answers still count for step 2 only.
 -- "Diagnostic completed" is the canonical lifecycle function, student_diagnostic_state, in
--- 'baseline_pending' or 'baseline_ready' (completed is terminal there). An answered item in a
--- diagnostic session also counts, since its mode is not 'qotd': that is the rule as written, and
--- it matches the step's old meaning for everything but QOTD.
+-- 'baseline_pending' or 'baseline_ready' (completed is terminal there). An answered item in an
+-- unfinished diagnostic also counts, since its mode is not 'qotd': ruled by Karl on 2026-10-15
+-- (#1253), "keep the rule as written", consistent with any practice answer counting.
 --
 -- This replaces getting_started_observe (last defined in 20261102000000); only step 4 changes.
 -- The function stays SECURITY INVOKER, and service_role already holds what the new step reads:
