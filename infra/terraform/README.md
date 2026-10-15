@@ -25,7 +25,7 @@ Terraform state.
 | 11 | `google_cloud_scheduler_job.retention_sweep_90d` | **create** | Same route, 90d tier — instruction assignments and exposures |
 | 12 | `google_cloud_scheduler_job.retention_sweep_180d` | **create** | Same route, 180d tier — resolved crisis cases and injection logs |
 
-**Not in Phase 1:** BigQuery tables, RAG corpus, Phase 2 Cloud Tasks
+**Not in Phase 1:** BigQuery tables, Phase 2 Cloud Tasks
 queues, floor settings.
 
 Rows 9 and 10 were added after Phase 1 (2026-09-21, retention policy
@@ -254,13 +254,13 @@ Instead:
 
 ## What's NOT in Terraform (documented hybrid)
 
-**Vertex AI RAG Engine mode (us-central1): Serverless.** This was a one-time manual step, the same shape as the corpus below, because `google_vertex_ai_rag_engine_config` can't express Serverless mode (Phase 3 note). It was switched by Karl on 2026-10-14 at 22:52 UTC with a manual `PATCH .../v1beta1/projects/replit-cop/locations/us-central1/ragEngineConfig` and body `{"ragManagedDbConfig":{"serverless":{}}}`. Operation `2225455665407590400` returned `done: true`. Verify with `GET` on the same URL; it reads `{"ragManagedDbConfig":{"serverless":{}}}`. Don't add the Terraform resource until the provider supports `serverless`. Whether Spanner-mode billing stopped on the switch is undocumented; see closure plan R-10.
-
-**Vertex AI RAG Corpus** — no Terraform resource exists for
-`ragCorpora`. The provisioning script at
-`scripts/provisioning/rag-corpus-create.ts` is the correct mechanism.
-Terraform owns everything around it (service account, IAM, engine config
-in Phase 3) but not the corpus itself.
+**Vertex AI RAG Engine — retired (SCL-231, PROPOSED 2026-10-15).** LISA curriculum retrieval
+moved to pgvector in Supabase (`curriculum_chunks`, LISA_Video_RAG_Plan.md Step C), after four
+failed corpus creations (closure plan row C). No RAG corpus exists and none is provisioned, so
+there is nothing here for Terraform to own. One manual change is still live on `replit-cop`: the
+`us-central1` `ragEngineConfig` was switched to Serverless by Karl on 2026-10-14, 22:52 UTC
+(operation `2225455665407590400`). It holds no data. Whether Spanner-mode billing stopped on
+that switch is closure plan R-10.
 
 ---
 
@@ -274,6 +274,4 @@ in Phase 3) but not the corpus itself.
 
 ## Phase 3 (post-launch)
 
-- `google_vertex_ai_rag_engine_config` (DB tier)
-  - **Not yet expressible for Serverless mode** (checked 2026-10-14): the resource supports only `basic`, `scaled` and `unprovisioned`, so it stays out of Terraform until the provider gains `serverless`. Declaring it with a Spanner tier would revert the project on every apply (closure plan R-9).
 - Secret Manager entries if migrated from env vars

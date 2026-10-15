@@ -4,9 +4,11 @@
  *
  * plain English: Shared types for LISA curriculum retrieval — the unified
  * contract that merges deterministic Postgres retrieval (question explanations)
- * and semantic Vertex AI RAG Engine retrieval (textbooks, video transcripts,
- * strategy content, worked-example libraries). Both paths return
- * RetrievedItem[] per §6.8.
+ * and semantic retrieval (textbooks, video transcripts, strategy content,
+ * worked-example libraries). Both paths return RetrievedItem[] per §6.8.
+ * The semantic store is pgvector in Postgres (`curriculum_chunks`), not
+ * Vertex AI RAG Engine: SCL-231, PROPOSED 2026-10-15, after four failed
+ * corpus creations (LISA_Video_RAG_Closure_Plan.md row C).
  *
  * expected outcome: consuming code (tutor context assembly in Doc 03A Layer 5)
  * receives a single ranked set of RetrievedItem regardless of source. Adding
@@ -19,9 +21,9 @@
  *  - Explanations stay deterministic (Postgres WHERE clause) because the
  *    most dangerous payload in the system (active question's explanation on
  *    a pre-submit turn) must not travel a probabilistic path (§6.6).
- *  - Metadata schema is locked at corpus creation (§6.7): skill_codes,
- *    provenance, surface_gate, content_type. Adding a field later requires
- *    re-import of all corpus documents.
+ *  - The four §6.7 metadata fields (skill_codes, provenance, surface_gate,
+ *    content_type) are columns of `curriculum_chunks`, with CHECKs carrying
+ *    the enums below. Adding a field is a migration, not a re-import.
  */
 import { z } from "zod";
 
@@ -41,10 +43,10 @@ export const retrievedItemSchema = z.object({
   /**
    * Where this content came from:
    *  - "question_explanation" — from canonical question bank (Postgres)
-   *  - "textbook"            — from RAG corpus
-   *  - "video_transcript"    — from RAG corpus
-   *  - "strategy_content"    — from RAG corpus
-   *  - "worked_example"      — from RAG corpus
+   *  - "textbook"            — from curriculum_chunks (pgvector)
+   *  - "video_transcript"    — from curriculum_chunks (pgvector)
+   *  - "strategy_content"    — from curriculum_chunks (pgvector)
+   *  - "worked_example"      — from curriculum_chunks (pgvector)
    */
   provenance: z.string(),
 
@@ -141,10 +143,11 @@ export type RetrievalResponse = z.infer<typeof retrievalResponseSchema>;
 // ── RAG corpus metadata schema (locked at §6.7) ─────────────────────
 
 /**
- * Metadata schema for Vertex AI RAG Engine corpus items.
- * Locked at corpus creation — adding a field later requires re-import.
+ * Metadata of a semantic-store item: one `curriculum_chunks` row (migration
+ * 20261101000000_lisa_curriculum_chunks.sql). The enums here and that table's
+ * CHECK constraints are the same lists; change both in one change.
  *
- * @spec [Doc-03D_V1.2 §6.7]
+ * @spec [Doc-03D_V1.2 §6.7; SCL-231 (PROPOSED 2026-10-15): pgvector store]
  */
 export const ragCorpusMetadataSchema = z.object({
   skill_codes: z.array(z.string()),

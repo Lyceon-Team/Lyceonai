@@ -13,6 +13,8 @@
 
 Doc 03D §6.7 locks it: `skill_codes`, `provenance`, `surface_gate`, `content_type`. **It stays exactly as locked.** No SCL, no re-import risk, no new fields.
 
+*Amended 2026-10-15 by SCL-231 (PROPOSED), storage only: the four fields are unchanged and now live as columns of `curriculum_chunks` (pgvector), not as corpus metadata. That SCL amends §6.6/§6.7's naming of Vertex AI RAG Engine as the store. It does not change this field list.*
+
 **`provenance` already carries structured data by convention.** The provisioning script's own example is `"textbook:isbn:chapter"`. Video uses the same shape:
 
 ```
@@ -34,6 +36,8 @@ The ruling (`text-embedding-005`) is from 2026-08-20. The provisioning script's 
 
 This is the **last irreversible decision** — the embedding model is locked to the corpus at creation and changing it means recreating and re-importing everything. Check before Step C:
 `https://cloud.google.com/vertex-ai/docs/generative-ai/rag/rag-supported-models`
+
+*Revised 2026-10-15 (pgvector, Steps C and F; SCL-231 PROPOSED): there is no corpus, so the model is not locked to one. Changing it means re-embedding rows. The output dimension is what's fixed in the schema: `text-embedding-005` returned **768** values from the live model on 2026-10-15, and `curriculum_chunks.embedding` is `vector(768)`.*
 
 ---
 
@@ -74,7 +78,7 @@ Placing retrieval there would send the student's **raw unsanitized message** to 
 
 - Query text is the **sanitized** message
 - A crisis turn never reaches it
-- Skill-filtered: CEL on `skill_codes`
+- Skill-filtered: ~~CEL on `skill_codes`~~ a SQL `WHERE skill_codes && $skills` inside the retrieval statement *(revised 2026-10-15, pgvector)*
 - `surface_gate` evaluated **after** retrieval, **before** the prompt (§6.8) — a failing item is dropped silently
 - **Fails open**: a retrieval error logs at ERROR and the turn proceeds with no video block
 
@@ -100,11 +104,34 @@ Check the supported-models page. Report before provisioning.
 ### Step B — Remove `is_pre_submit` from `RetrievalRequest`
 Plus the stale SCL-060 comment. Zero importers, so free. **Before Step C.**
 
-### Step C — Provision the corpus *(irreversible)*
-Run `scripts/provisioning/rag-corpus-create.ts` **unchanged in schema**. Set `RAG_CORPUS_RESOURCE_NAME` in the env schema and Vercel.
+### Step C — The store: `curriculum_chunks` + `video_resources` *(revised 2026-10-15, Karl: pgvector, replacing Vertex AI RAG Engine; SCL-231 PROPOSED)*
 
-*Updated 2026-10-13 (R-1 ruling, Karl): Serverless mode, `us-central1`. The script was rewritten for it: REST, a mode pre-flight, a dry run by default, and no metadata keys. Serverless mode has no metadata search, so the four fields travel inside each record and the BFF checks `skill_codes` after retrieval, over-fetching N=20 to start (R-2).*
-**Proof:** corpus exists with the locked four-field metadata schema.
+**Why.** RAG Engine corpus creation failed four times across two modes and four regions. In Spanner mode it was allowlist-gated or failed `INTERNAL`. In Serverless mode it hit an undisclosed API prerequisite, then failed three times with *"No available indexing project found in us-central1"*, the last 32 minutes after the API was enabled. That is an undocumented Google-side capacity error, and no setting on our side changes it. The record is in closure plan R-11. **Storage changes. The design does not**: skill-filtered retrieval, server-side verification, insertion at Step 13d, fail-open, and no model-emitted identifiers are all unchanged.
+
+**What improves.** The skill filter becomes a real `WHERE` with a GIN index, in the same database as `questions` and the skill taxonomy. It is not a CEL expression that R-2 found silently ignored on list fields. One fewer service sits in the turn path. Changing the embedding model means re-embedding rows, not recreating a corpus. RLS, migrations, backups and CI schema gates already exist. **What we give up:** Vertex's managed chunking and embedding orchestration. Step D already writes its own text, so this is one embedding call per segment at build time.
+
+**The migration** is `supabase/migrations/20261101000000_lisa_curriculum_chunks.sql`. pgvector is already installed: genesis creates `vector` in schema `extensions`.
+
+- `curriculum_chunks`:
+  - Columns: `id`, `content`, `skill_codes text[]`, `provenance` (`youtube:<video_id>:<start>-<end>`), `surface_gate`, `content_type`, `embedding vector(768)` (text-embedding-005, dimension confirmed against the live model 2026-10-15), `status`, `reviewed_by`, `reviewed_at`, `created_at`, `updated_at`.
+  - `skill_codes text[]` matches `questions.skill_codes` exactly. It has no FK: genesis note A7 deliberately has no closed skills table.
+  - Indexes: GIN on `skill_codes`, HNSW `vector_cosine_ops` on `embedding` (no training data needed, better recall, small corpus), a partial index on `status = 'active'`, and `unique (provenance)`, which makes ingestion idempotent.
+- `video_resources` (Step D §A): `video_id`, `title`, `channel_name`, `duration_seconds`, `status`, `last_checked_at`. It is joined at render time, not stored per chunk.
+- **RLS:** on for both tables, with **zero policies** and no anon/authenticated privilege. The BFF reads with the service role. This is the question-bank posture (genesis A4). No student-facing policy is needed; if one ever is, stop and report.
+- Functions, both service-role only:
+  - `curriculum_chunk_upsert(...)`, the one ingestion writer.
+  - `curriculum_chunks_search(embedding, skill_codes, limit)`, the Step F query.
+
+**Changed from the brief's DDL** (closure plan R-12; each is caught by a CI gate):
+- `cardinality(skill_codes) >= 1`, not `array_length(...) >= 1`, which lets an empty array through.
+- `status` is `pending_review | active | retired`, defaulting to `pending_review`, with `CHECK (status <> 'active' OR reviewed_by/reviewed_at set)`. This enforces §6's "no chunk active without `reviewed_by`" in the schema.
+- CHECKs on the §6.7 `surface_gate` and `content_type` enums, as listed in `ragCorpusMetadataSchema`. A contract test keeps the two lists equal.
+- A `youtube:` provenance format check for `video_transcript`.
+- `curriculum_chunk_upsert` sends a *changed* segment back to `pending_review`, so an edit is never live on an old approval.
+
+**Proof:**
+- The table and all four indexes exist in production, with `\d curriculum_chunks` output pasted into the closure plan (owner-run).
+- CI: `scripts/ci/curriculum-chunks-gates.sql` in the `pg` job, and the genesis snapshot.
 
 ### Step D — Ingestion *(reworked, Karl 2026-10-13; replaces the original Step D)*
 
@@ -203,9 +230,9 @@ Not manual watching. Automated gates:
 
 Then a review sample surfaced for your eye — description against the actual timestamp. **The sample is a minimum count per skill, not a percentage** *(Karl, 2026-10-13)*: at least 5 segments for every skill tagged in the run, or every segment where a skill has fewer than 5. Selection is seeded and recorded, so the sample can be reproduced. A flat 5% of a small seed set is a handful of segments in total, and a low but real error rate in one skill would slip through it. Enough to catch a systematic failure, not enough to be a job.
 
-**F. Import** *(corrected 2026-10-13: R-5, R-6, R-7)*
+**F. Embed and upsert** *(revised 2026-10-15, Karl: pgvector; replaces the GCS / `RagFile` import of 2026-10-13, R-7)*
 
-**One `RagFile` per segment.** RAG Engine attaches metadata to a file and filters at file level, not per chunk. A file holding many segments would give them all one `provenance`. So each segment is written as its own small text file, `gs://<bucket>/segments/<video_id>_<start>-<end>.txt`, whose whole content is the generated description. They're imported with `ragFiles:import`, using a chunk size well above a description's length so each file stays one chunk. Then each file's metadata is attached **after import** with v1beta1 `ragMetadata:batchCreate`, against the four keys Step C created. Each segment's metadata:
+After description generation and skill tagging, embed the description with `text-embedding-005` and write the row through `public.curriculum_chunk_upsert(provenance, content, skill_codes, surface_gate, content_type, embedding)`, with the service role. It is the same model and the same text, upserted on `provenance`. There is no GCS bucket and no corpus import. Each segment's four fields:
 
 ```json
 {
@@ -216,9 +243,9 @@ Then a review sample surfaced for your eye — description against the actual ti
 }
 ```
 
-The four locked metadata fields, unchanged, with values from the locked enums (`packages/shared/tutor-rag-types.ts`, `ragCorpusMetadataSchema`). `skill_codes` are taxonomy names. Title and channel come from `video_resources` at render time.
+These are the four locked fields with values from the locked enums (`packages/shared/tutor-rag-types.ts`, `ragCorpusMetadataSchema`, and the table's CHECKs). `skill_codes` are taxonomy names. Title and channel come from `video_resources` at render time.
 
-**Metadata is attached after import, so there is a window where a file has no metadata.** A filtered query never matches such a file, so it can't leak into a skill-scoped turn. An unfiltered query could still see it. The import run therefore checks that every imported file carries all four keys before it reports success. A file that fails that check is deleted, not left behind.
+Rows land `pending_review`. A row becomes `active` only when `reviewed_by` and `reviewed_at` are set (CHECK), after the per-skill sample in E. Re-running a segment updates it in place. A changed segment drops back to `pending_review`. A retired row stays retired. One statement writes the row and its four fields together, so a segment never exists without metadata.
 
 #### D.3 What this costs
 
@@ -228,9 +255,9 @@ Gemini Flash for description and tagging, on segments rather than whole videos. 
 
 1. `video_resources` populated for the seeded set
 1a. Content-gate report: segments dropped by the gate, by channel, with reasons
-2. Corpus items present, retrievable by direct query, metadata valid
+2. `curriculum_chunks` rows present, retrievable through `curriculum_chunks_search`, every row valid under the table's CHECKs
 3. The per-skill review sample (at least 5 per tagged skill) reviewed by Karl — descriptions match what is actually at those timestamps
-4. Zero transcript text in the corpus — asserted against the cached transcripts **before the cache is deleted**
+4. Zero transcript text in `curriculum_chunks` — asserted against the cached transcripts **before the cache is deleted**
 5. Every `skill_code` in the corpus valid against the taxonomy
 
 #### D.5 Out of scope
@@ -245,10 +272,30 @@ If a description generated from a bad auto-caption is confidently wrong about th
 
 ### Step E — Retrieval quality, before generation *(a gate, per §6.7)*
 Query set per skill, inspect results, confirm the gate drops what it should.
+*Revised 2026-10-15 (pgvector):* the filter runs in the database, so the "how many of 20 survive" measurement is dropped. Report p50/p95 for the **query embedding call** and for the **SQL** separately. If the embedding call pushes retrieval past roughly 300 ms, report it. Caching embeddings for repeated queries is the next lever, because in review the query is often the same question's text. The first sample (2026-10-15, from the CC container through the egress proxy, not Vercel) was a 339 ms p50 over 12 calls (closure plan R-13).
 **Proof:** reviewed by Karl. Bad retrieval produces bad tutoring regardless of model.
 
-### Step F — Envelope
-`retrieved_video_resources` on the wire. Query at **13d**. Skill-filtered, gated, capped, fail-open.
+### Step F — Envelope *(retrieval revised 2026-10-15, Karl: pgvector)*
+`retrieved_video_resources` on the wire, unchanged shape, so Steps G and H need no change. Query at **13d**, in `server/routes/tutor-runtime.ts`, between the end of the 13c branch and Step 14.
+
+1. **Embed the query.** Make one `text-embedding-005` call on the **sanitized** message, in the BFF, before the SQL. It is the only network hop in the retrieval path, so bound it with an explicit timeout.
+2. **One statement.** `select * from curriculum_chunks_search($embedding, $active_skill_codes, 3)`. The skill filter is `skill_codes && $2` inside the statement, over active rows only, ranked by exact cosine distance with `id` breaking ties. `limit 3` returns three on-skill chunks whenever three exist (CI gate R3), so there is no over-fetch.
+3. **`surface_gate` after retrieval, before prompt assembly** (§6.8). A failing item is dropped silently.
+4. **Fail open.** An embedding error or timeout, or an SQL error, logs at ERROR (no content) and the turn proceeds with no knowledge block.
+5. **The model never sees `provenance`.** It stays server-side until the client card.
+
+**Tests.** The SQL-level tests are already in Step C's CI gates:
+- a skill-X query never returns a chunk tagged only Y;
+- `retired` (and `pending_review`) never returned;
+- identical requests return identical rows in identical order;
+- re-ingesting updates rather than duplicates.
+
+Step F adds these with its code:
+- an embedding failure gives no block, an ERROR log, and a completed turn;
+- an SQL failure behaves the same;
+- `provenance` never appears in the assembled prompt.
+
+No change to mastery, scoring, selection, the pre-submit gate or the serializer.
 **Proof:** an assembled system instruction showing the video block for a real turn.
 
 ### Step G — Worker *(needs a Cloud Build)*

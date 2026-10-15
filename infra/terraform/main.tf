@@ -24,15 +24,3 @@ resource "google_project_service" "modelarmor" {
 
   disable_on_destroy = false
 }
-
-# Vector Search API: RAG Engine in Serverless mode stores each corpus's vectors in a
-# RAG-managed Vector Search 2.0 collection, and corpus creation fails PERMISSION_DENIED
-# without this API (LISA video RAG Step C, 2026-10-14). Enabled by hand on replit-cop
-# the same day; declared here so a rebuilt project doesn't hit the same wall. Enabling an
-# already-enabled service is a no-op, so no import block is needed.
-resource "google_project_service" "vectorsearch" {
-  project = var.project
-  service = "vectorsearch.googleapis.com"
-
-  disable_on_destroy = false
-}
