@@ -119,6 +119,59 @@ export function cutWindows(
   return out;
 }
 
+export const proposedSegmentSchema = z.object({
+  start_seconds: z.number().int().nonnegative(),
+  end_seconds: z.number().int().nonnegative(),
+  teaches_sat_content: z.boolean(),
+  summary: z.string(),
+});
+export type ProposedSegment = z.infer<typeof proposedSegmentSchema>;
+
+/** Seconds of gap, overlap or end mismatch tolerated (and closed) in a proposed tiling. */
+export const TILING_TOLERANCE_SECONDS = 3;
+
+export type Segmentation =
+  | { ok: true; segments: ProposedSegment[] }
+  | { ok: false; error: string };
+
+/**
+ * Checks and normalises a whole-video segmentation proposed by the model (video source, R-14).
+ * The segments must tile [0, duration] in order; gaps and overlaps up to the tolerance are
+ * closed by moving each start onto the previous end. Anything worse is refused, never patched:
+ * a tiling that skips or repeats content is not one this pipeline can trust. Length is NOT
+ * enforced here — an over-cap teaching segment is the caller's open-ended drop.
+ */
+export function normalizeSegmentation(
+  proposed: ProposedSegment[],
+  durationSeconds: number,
+): Segmentation {
+  if (proposed.length === 0) return { ok: false, error: "no segments" };
+  const sorted = [...proposed].sort(
+    (a, b) => a.start_seconds - b.start_seconds,
+  );
+  const out: ProposedSegment[] = [];
+  let cursor = 0;
+  for (const seg of sorted) {
+    if (seg.end_seconds <= seg.start_seconds) {
+      return { ok: false, error: `empty segment at ${seg.start_seconds}s` };
+    }
+    if (Math.abs(seg.start_seconds - cursor) > TILING_TOLERANCE_SECONDS) {
+      return {
+        ok: false,
+        error: `${seg.start_seconds > cursor ? "gap" : "overlap"} at ${cursor}s`,
+      };
+    }
+    out.push({ ...seg, start_seconds: cursor });
+    cursor = seg.end_seconds;
+  }
+  if (Math.abs(cursor - durationSeconds) > TILING_TOLERANCE_SECONDS) {
+    return { ok: false, error: `ends at ${cursor}s of ${durationSeconds}s` };
+  }
+  const last = out[out.length - 1];
+  if (last) out[out.length - 1] = { ...last, end_seconds: durationSeconds };
+  return { ok: true, segments: out };
+}
+
 export function windowText(cues: TranscriptCue[]): string {
   return cues
     .map((c) => c.text.replace(/\s+/g, " ").trim())

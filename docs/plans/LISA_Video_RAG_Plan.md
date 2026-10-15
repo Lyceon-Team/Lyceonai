@@ -156,7 +156,7 @@ Build-time only. Runs on a workstation, not in any deployed runtime.
 ```
 channel/playlist/video list
   → A. metadata        (YouTube Data API v3 — official, keyed)
-  → B. transcript      (build-time fetch, discarded after C)
+  → B. source         (per tier: Gemini watches the video — R-14, 2026-10-15 — or build-time captions)
   → C. content gate → segmentation + description  (Gemini batch)
   → D. skill tagging   (Gemini, constrained to the 29 taxonomy names)
   → E. review sample   (automated checks + at least 5 per skill)
@@ -182,15 +182,13 @@ video_resources (
 
 This is what Step I's link-rot job updates and what the client joins at render time.
 
-**B. Transcript — `scripts/rag/fetch-transcripts.ts`**
+**B. Source — chosen per tier** *(replaced 2026-10-15 by Karl's R-14 ruling: "use Gemini video reading … Decide per tier, not globally")*
 
-Build-time, local, rate-limited, cached to disk so a video is fetched once.
+- **Video (`--source video`)**, for tiers that teach on screen: Tier 1's Desmos course is the case. Gemini on Vertex watches the public YouTube URL (`fileData.fileUri`, clipped with `videoMetadata` start/end offsets). Nothing is fetched, cached or stored here, so no transcript exists at all; the model sees the Desmos manipulation, which is the teaching content, where the captions say "type this here". This removes the transcript fetch, the allowlist, the scraping question, the PoToken wall and datacenter-IP blocking; R-4 is moot rather than ruled. **Segmentation for this source** is one whole-video call that proposes segments cut between problems, validated by `normalizeSegmentation`. On Tutorllini lesson 1 it was identical across two runs, where per-window boundary judgements were not (1 vs 3 segments kept). It can still cut inside a problem (lesson 9 came back as setup / perform / check per regression problem), so **every cut between two teaching segments gets a boundary check** (the model watches 20 s either side), and `mergeOnBoundary` rejoins segments across any cut that splits an explanation, up to the 180 s cap. A group still open at the cap is dropped as open-ended.
+- **Captions (`--source transcript`)**, for tiers that are a person talking over text (PrepPros Reading, SupertutorTV): `scripts/rag/fetch-transcripts.ts` as originally planned — build-time, local, rate-limited, cached once, deleted after C; chapters when present, ~60 s windows when not, merge-on-boundary. It needs `www.youtube.com` reachable from wherever it runs.
+- **Cost** (Karl, 2026-10-15): video input costs far more than text per segment. Report per-segment cost with each tier's results before scaling (Tier 2 is ~150 videos).
 
-Chapter markers are the better segmentation signal where a video has them — a creator-authored chapter is a concept boundary, which a 45-second window is not. Use chapters when present, fixed windows when not.
-
-The transcript cache is working material. It is not committed, not uploaded to GCS, and not imported. Step C consumes it and it is deleted.
-
-If a transcript cannot be obtained for a video, that video is skipped. No partial entries.
+If a video can't be read (a refused segmentation, twice), it is skipped and listed. No partial entries.
 
 **C. Segmentation and description — `scripts/rag/generate-descriptions.ts`**
 

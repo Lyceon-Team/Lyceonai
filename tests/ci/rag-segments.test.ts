@@ -11,6 +11,7 @@ import {
   SEGMENT_MAX_SECONDS,
   cutWindows,
   mergeOnBoundary,
+  normalizeSegmentation,
   provenanceOf,
   segmentGateFailures,
   selectReviewSample,
@@ -93,6 +94,52 @@ describe("cutWindows", () => {
     expect(w.length).toBeGreaterThan(2);
     for (const x of w.slice(1))
       expect(x.end - x.start).toBeLessThanOrEqual(SEGMENT_MAX_SECONDS);
+  });
+});
+
+describe("normalizeSegmentation (video source)", () => {
+  const seg = (a: number, b: number, t = true) => ({
+    start_seconds: a,
+    end_seconds: b,
+    teaches_sat_content: t,
+    summary: "s",
+  });
+
+  it("accepts a tiling, closes small gaps and overlaps, and snaps the end", () => {
+    const r = normalizeSegmentation(
+      [seg(0, 14, false), seg(15, 112), seg(111, 228), seg(228, 353)],
+      355,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.segments.map((x) => [x.start_seconds, x.end_seconds])).toEqual([
+      [0, 14],
+      [14, 112],
+      [112, 228],
+      [228, 355],
+    ]);
+  });
+
+  it("sorts an out-of-order proposal", () => {
+    const r = normalizeSegmentation([seg(60, 120), seg(0, 60)], 120);
+    expect(r.ok && r.segments[0]?.start_seconds).toBe(0);
+  });
+
+  it("refuses gaps, overlaps, empty segments and a wrong end", () => {
+    expect(normalizeSegmentation([seg(0, 50), seg(60, 120)], 120)).toEqual({
+      ok: false,
+      error: "gap at 50s",
+    });
+    expect(normalizeSegmentation([seg(0, 70), seg(60, 120)], 120)).toEqual({
+      ok: false,
+      error: "overlap at 70s",
+    });
+    expect(normalizeSegmentation([seg(0, 0)], 10).ok).toBe(false);
+    expect(normalizeSegmentation([seg(0, 100)], 120)).toEqual({
+      ok: false,
+      error: "ends at 100s of 120s",
+    });
+    expect(normalizeSegmentation([], 120).ok).toBe(false);
   });
 });
 

@@ -13,7 +13,7 @@
  * credentials: attached by the session's egress proxy (or ADC on a workstation); nothing is
  *  read from the environment, and fetch must go through the proxy (NODE_USE_ENV_PROXY=1).
  *
- * edge cases: 429 and 5xx retry with backoff (4 tries); anything else, or a response that
+ * edge cases: 429 and 5xx retry with backoff (6 tries, 5 s doubling, jitter); anything else, or a response that
  *  fails its schema, throws with the status and the step name. Response bodies are not
  *  logged: they can echo transcript text, which is never stored or printed.
  */
@@ -46,10 +46,18 @@ async function postJson(
     });
     if (response.ok) return response.json();
     const retryable = response.status === 429 || response.status >= 500;
-    if (!retryable || attempt >= 3) {
-      throw new Error(`${step}: Vertex returned ${response.status}`);
+    if (!retryable || attempt >= 5) {
+      // The error body is Vertex's (or the proxy's) status text, never model output.
+      const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 200);
+      throw new Error(
+        `${step}: Vertex returned ${response.status} after ${attempt + 1} tries: ${detail}`,
+      );
     }
-    await new Promise((r) => setTimeout(r, 2_000 * 2 ** attempt));
+    await response.body?.cancel();
+    // 5, 10, 20, 40, 80 s plus jitter: a video-token quota (429) needs longer than a blip.
+    await new Promise((r) =>
+      setTimeout(r, 5_000 * 2 ** attempt + Math.floor(Math.random() * 1_000)),
+    );
   }
 }
 
@@ -64,7 +72,58 @@ const generateResponseSchema = z.object({
       }),
     )
     .min(1),
+  usageMetadata: z
+    .object({
+      promptTokenCount: z.number().optional(),
+      cachedContentTokenCount: z.number().optional(),
+      candidatesTokenCount: z.number().optional(),
+      thoughtsTokenCount: z.number().optional(),
+    })
+    .optional(),
 });
+
+/** Token usage of one or more Gemini calls, summed. */
+export const usageSchema = z.object({
+  calls: z.number(),
+  prompt: z.number(),
+  cached: z.number(),
+  output: z.number(),
+});
+export type Usage = z.infer<typeof usageSchema>;
+export const ZERO_USAGE: Usage = { calls: 0, prompt: 0, cached: 0, output: 0 };
+export function addUsage(a: Usage, b: Usage): Usage {
+  return {
+    calls: a.calls + b.calls,
+    prompt: a.prompt + b.prompt,
+    cached: a.cached + b.cached,
+    output: a.output + b.output,
+  };
+}
+
+/**
+ * USD per 1M tokens for gemini-3.5-flash on Vertex, pay-as-you-go: $1.50 input (text, audio
+ * and video alike), $0.15 cached input, $9.00 output including thinking. Third-party
+ * aggregator figures read 2026-10-15 (llmreference.com, getmaxim.ai); the official Vertex
+ * pricing page did not load from this session. The raw token counts are reported alongside,
+ * so the cost can be recomputed against the real rate card.
+ */
+export const PRICE_PER_MTOK = {
+  input: 1.5,
+  cached: 0.15,
+  output: 9.0,
+} as const;
+export function usageCostUsd(u: Usage): number {
+  const uncached = Math.max(0, u.prompt - u.cached);
+  return (
+    (uncached * PRICE_PER_MTOK.input +
+      u.cached * PRICE_PER_MTOK.cached +
+      u.output * PRICE_PER_MTOK.output) /
+    1_000_000
+  );
+}
+
+/** A public YouTube video, clipped to [start, end) seconds, for Gemini to watch. */
+export type VideoClip = { videoId: string; start: number; end: number };
 
 /** One Gemini call returning JSON that must satisfy `schema`. */
 export async function generateJson<T>(opts: {
@@ -74,13 +133,32 @@ export async function generateJson<T>(opts: {
   user: string;
   responseSchema: Record<string, unknown>;
   schema: z.ZodType<T>;
+  /** Gemini watches this clip before reading the text (R-14, Karl 2026-10-15). */
+  video?: VideoClip;
+  /** Receives the call's token usage. */
+  onUsage?: (u: Usage) => void;
 }): Promise<T> {
+  const videoParts =
+    opts.video === undefined
+      ? []
+      : [
+          {
+            fileData: {
+              fileUri: `https://www.youtube.com/watch?v=${opts.video.videoId}`,
+              mimeType: "video/*",
+            },
+            videoMetadata: {
+              startOffset: `${Math.floor(opts.video.start)}s`,
+              endOffset: `${Math.ceil(opts.video.end)}s`,
+            },
+          },
+        ];
   const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/global/publishers/google/models/${opts.model}:generateContent`;
   const raw = await postJson(
     url,
     {
       systemInstruction: { parts: [{ text: opts.system }] },
-      contents: [{ role: "user", parts: [{ text: opts.user }] }],
+      contents: [{ role: "user", parts: [...videoParts, { text: opts.user }] }],
       generationConfig: {
         temperature: 0,
         responseMimeType: "application/json",
@@ -92,6 +170,13 @@ export async function generateJson<T>(opts: {
   const parsed = generateResponseSchema.safeParse(raw);
   if (!parsed.success)
     throw new Error(`${opts.step}: unexpected response shape`);
+  const m = parsed.data.usageMetadata;
+  opts.onUsage?.({
+    calls: 1,
+    prompt: m?.promptTokenCount ?? 0,
+    cached: m?.cachedContentTokenCount ?? 0,
+    output: (m?.candidatesTokenCount ?? 0) + (m?.thoughtsTokenCount ?? 0),
+  });
   const candidate = parsed.data.candidates[0];
   const text = (candidate?.content.parts ?? [])
     .map((p) => p.text ?? "")
