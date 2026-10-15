@@ -13,10 +13,17 @@
  */
 import type { ScheduledPostSpec } from "./types";
 import howLongIsTheSat from "./how-long-is-the-sat";
+import howToRegisterForTheSat from "./how-to-register-for-the-sat";
 import lastMinuteSatPrep from "./last-minute-sat-prep";
+import satFeeWaiver from "./sat-fee-waiver";
+import twoWeekSatStudyPlan from "./two-week-sat-study-plan";
 import whatToBringToTheSat from "./what-to-bring-to-the-sat";
 
 export const SCHEDULED_POST_SPECS: ReadonlyArray<ScheduledPostSpec | null> = [
+  // 2026-W43
+  howToRegisterForTheSat,
+  satFeeWaiver,
+  twoWeekSatStudyPlan,
   // 2026-W45
   whatToBringToTheSat,
   lastMinuteSatPrep,
