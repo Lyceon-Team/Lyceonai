@@ -50,8 +50,14 @@ import {
 import { EntitlementService } from "../../entitlement-service";
 import { logger } from "../../../logger";
 import { err, ok, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
-import { localDayWindowUtc, localTodayIn, toIsoTimestamp } from "./local-day";
+import {
+  dayWindowSpan,
+  localDatesContaining,
+  localTodayIn,
+  toIsoTimestamp,
+} from "./local-day";
 import type {
+  ActivityDay,
   CalendarEngineAdapter,
   EngineCreateContext,
   EngineCreateResult,
@@ -154,7 +160,8 @@ async function create(
 }
 
 /**
- * §9.4: one unit per exam Doc 04 reports complete on the local date, carrying its `form_id`.
+ * §9.4: one unit per exam Doc 04 reports complete on each requested local date, carrying its
+ * `form_id` (every requested day in one read, §9.1 as amended by SCL-233).
  *
  * "Complete" is `test_sessions.state = 'completed'` — Doc 04A's terminal state for a sitting
  * that ran to the end — and the unit is dated by `completed_at`, the moment it became so. An
@@ -164,18 +171,19 @@ async function create(
  */
 async function activityUnits(
   studentId: string,
-  localDate: string,
-  timeZone: string,
+  days: readonly ActivityDay[],
 ): Promise<ActivityUnit[]> {
-  const window = localDayWindowUtc(localDate, timeZone);
+  // SCL-233: one read for every requested day, filed per day — see the practice adapter.
+  const span = dayWindowSpan(days);
+  if (span === null) return [];
 
   const { data, error } = await supabaseServer
     .from("test_sessions")
     .select("id, test_form_id, completed_at, state")
     .eq("student_id", studentId)
     .eq("state", "completed")
-    .gte("completed_at", window.startUtc)
-    .lt("completed_at", window.endUtc);
+    .gte("completed_at", span.startUtc)
+    .lt("completed_at", span.endUtc);
 
   if (error) {
     // Fail OPEN, exactly as practice and review do (§5A).
@@ -183,7 +191,7 @@ async function activityUnits(
       "CALENDAR_ADAPTER",
       "full_length_activity_read_failed",
       "full-length activity units could not be read",
-      { code: error.code, localDate },
+      { code: error.code, dayCount: days.length },
     );
     return [];
   }
@@ -195,20 +203,22 @@ async function activityUnits(
     // Normalised, not type-guarded: a string over PostgREST, a Date over node-postgres.
     const occurredAt = toIsoTimestamp(row.completed_at);
     if (occurredAt === null) continue;
-    units.push({
-      engine: "full_length",
-      unit_id: row.id,
-      // THE SAME VALUE as `unit_id`, and that is correct rather than lazy: for this engine
-      // the unit IS the sitting, so `test_sessions.id` is both the unit's identity and the
-      // session a launch row points at. The two fields agreeing here is what makes a
-      // full-length launched from a future block count for that block.
-      session_id: row.id,
-      occurred_at: occurredAt,
-      local_date: localDate,
-      section: null,
-      domain: null,
-      form_id: row.test_form_id,
-    });
+    for (const localDate of localDatesContaining(span, occurredAt)) {
+      units.push({
+        engine: "full_length",
+        unit_id: row.id,
+        // THE SAME VALUE as `unit_id`, and that is correct rather than lazy: for this engine
+        // the unit IS the sitting, so `test_sessions.id` is both the unit's identity and the
+        // session a launch row points at. The two fields agreeing here is what makes a
+        // full-length launched from a future block count for that block.
+        session_id: row.id,
+        occurred_at: occurredAt,
+        local_date: localDate,
+        section: null,
+        domain: null,
+        form_id: row.test_form_id,
+      });
+    }
   }
   return units;
 }
@@ -218,15 +228,8 @@ async function activityUnits(
  * `completed` is completed; `abandoned_final` and `partial_scored_abandoned` both ended
  * without the sitting running to the end, so both are abandoned.
  */
-async function progress(sessionId: string): Promise<EngineLifecycle | null> {
-  const { data, error } = await supabaseServer
-    .from("test_sessions")
-    .select("state")
-    .eq("id", sessionId)
-    .maybeSingle();
-
-  if (error || data === null) return null;
-  switch (data.state) {
+function lifecycleOf(state: unknown): EngineLifecycle | null {
+  switch (state) {
     case "created":
     case "active":
     case "section_break":
@@ -239,6 +242,36 @@ async function progress(sessionId: string): Promise<EngineLifecycle | null> {
     default:
       return null;
   }
+}
+
+/** One read for every sitting asked about (SCL-233). */
+async function progress(
+  sessionIds: readonly string[],
+): Promise<ReadonlyMap<string, EngineLifecycle>> {
+  const lifecycles = new Map<string, EngineLifecycle>();
+  if (sessionIds.length === 0) return lifecycles;
+
+  const { data, error } = await supabaseServer
+    .from("test_sessions")
+    .select("id, state")
+    .in("id", [...new Set(sessionIds)]);
+
+  if (error) {
+    // Fail OPEN to "unknown", exactly as `activityUnits` does (§5A).
+    logger.warn(
+      "CALENDAR_ADAPTER",
+      "full_length_progress_read_failed",
+      "full-length session lifecycles could not be read",
+      { code: error.code, sessionCount: sessionIds.length },
+    );
+    return lifecycles;
+  }
+  for (const row of data ?? []) {
+    if (typeof row.id !== "string") continue;
+    const lifecycle = lifecycleOf(row.state);
+    if (lifecycle !== null) lifecycles.set(row.id, lifecycle);
+  }
+  return lifecycles;
 }
 
 /** §9.4: a full-length block is one sitting. Not the stub's `remaining`. */

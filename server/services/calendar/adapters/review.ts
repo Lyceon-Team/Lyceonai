@@ -47,8 +47,14 @@ import {
   type ReviewPoolSpec,
   type ReviewScope,
 } from "@lyceon/shared";
-import { localDayWindowUtc, localTodayIn, toIsoTimestamp } from "./local-day";
+import {
+  dayWindowSpan,
+  localDatesContaining,
+  localTodayIn,
+  toIsoTimestamp,
+} from "./local-day";
 import type {
+  ActivityDay,
   CalendarEngineAdapter,
   EngineCreateContext,
   EngineCreateResult,
@@ -163,10 +169,11 @@ async function create(
  */
 async function activityUnits(
   studentId: string,
-  localDate: string,
-  timeZone: string,
+  days: readonly ActivityDay[],
 ): Promise<ActivityUnit[]> {
-  const window = localDayWindowUtc(localDate, timeZone);
+  // SCL-233: one read for every requested day, filed per day — see the practice adapter.
+  const span = dayWindowSpan(days);
+  if (span === null) return [];
 
   const { data, error } = await supabaseServer
     .from("review_session_items")
@@ -176,17 +183,17 @@ async function activityUnits(
     )
     .eq("student_id", studentId)
     .eq("status", "answered")
-    .gte("occurred_at", window.startUtc)
-    .lt("occurred_at", window.endUtc);
+    .gte("occurred_at", span.startUtc)
+    .lt("occurred_at", span.endUtc);
 
   if (error) {
-    // Fail OPEN, exactly as practice does: a read that cannot see today's activity shows
-    // a plan with no progress, never a 500 (§5A).
+    // Fail OPEN, exactly as practice does: a read that cannot see the window's activity
+    // shows a plan with no progress, never a 500 (§5A).
     logger.error(
       "CALENDAR_ADAPTER",
       "review_activity_read_failed",
       "review activity units could not be read",
-      { code: error.code, localDate },
+      { code: error.code, dayCount: days.length },
     );
     return [];
   }
@@ -201,17 +208,19 @@ async function activityUnits(
     const occurredAt = toIsoTimestamp(row.occurred_at);
     if (occurredAt === null) continue;
     const section = row.question_section;
-    units.push({
-      engine: "review",
-      unit_id: row.id,
-      session_id: typeof row.session_id === "string" ? row.session_id : null,
-      occurred_at: occurredAt,
-      local_date: localDate,
-      section: section === "M" || section === "RW" ? section : null,
-      domain:
-        typeof row.question_domain === "string" ? row.question_domain : null,
-      form_id: null,
-    });
+    for (const localDate of localDatesContaining(span, occurredAt)) {
+      units.push({
+        engine: "review",
+        unit_id: row.id,
+        session_id: typeof row.session_id === "string" ? row.session_id : null,
+        occurred_at: occurredAt,
+        local_date: localDate,
+        section: section === "M" || section === "RW" ? section : null,
+        domain:
+          typeof row.question_domain === "string" ? row.question_domain : null,
+        form_id: null,
+      });
+    }
   }
   return units;
 }
@@ -278,19 +287,42 @@ async function unitsForSessions(
   return units;
 }
 
-/** §13 `in_progress` needs a live session. `created` and `active` are both live. */
-async function progress(sessionId: string): Promise<EngineLifecycle | null> {
+/** `review_sessions.status` → §13 lifecycle. `created` and `active` are both live. */
+function lifecycleOf(status: unknown): EngineLifecycle | null {
+  if (status === "completed") return "completed";
+  if (status === "abandoned") return "abandoned";
+  if (status === "created" || status === "active") return "active";
+  return null;
+}
+
+/** §13 `in_progress` needs a live session; one read for every session asked about (SCL-233). */
+async function progress(
+  sessionIds: readonly string[],
+): Promise<ReadonlyMap<string, EngineLifecycle>> {
+  const lifecycles = new Map<string, EngineLifecycle>();
+  if (sessionIds.length === 0) return lifecycles;
+
   const { data, error } = await supabaseServer
     .from("review_sessions")
-    .select("status")
-    .eq("id", sessionId)
-    .maybeSingle();
+    .select("id, status")
+    .in("id", [...new Set(sessionIds)]);
 
-  if (error || data === null) return null;
-  if (data.status === "completed") return "completed";
-  if (data.status === "abandoned") return "abandoned";
-  if (data.status === "created" || data.status === "active") return "active";
-  return null;
+  if (error) {
+    // Fail OPEN to "unknown", as the per-session read did (§5A).
+    logger.warn(
+      "CALENDAR_ADAPTER",
+      "review_progress_read_failed",
+      "review session lifecycles could not be read",
+      { code: error.code, sessionCount: sessionIds.length },
+    );
+    return lifecycles;
+  }
+  for (const row of data ?? []) {
+    if (typeof row.id !== "string") continue;
+    const lifecycle = lifecycleOf(row.status);
+    if (lifecycle !== null) lifecycles.set(row.id, lifecycle);
+  }
+  return lifecycles;
 }
 
 /**

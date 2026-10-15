@@ -26,6 +26,7 @@
  */
 import type {
   ActivityUnit,
+  CalendarDayInput,
   CalendarEngine,
   PlanBlock,
   Result,
@@ -80,6 +81,13 @@ export type EngineCreateResult = Result<EngineLaunch, EngineFailure>;
 export const ENGINE_LIFECYCLES = ["active", "completed", "abandoned"] as const;
 export type EngineLifecycle = (typeof ENGINE_LIFECYCLES)[number];
 
+/**
+ * One plan date whose activity is wanted, in that date's OWN zone (§8.2). The two fields the
+ * read model's `CalendarDayInput` already carries, picked rather than re-declared, so a day the
+ * read service assembled can be handed to an adapter as it is.
+ */
+export type ActivityDay = Pick<CalendarDayInput, "local_date" | "timezone">;
+
 export type CalendarEngineAdapter = {
   engine: CalendarEngine;
 
@@ -94,7 +102,22 @@ export type CalendarEngineAdapter = {
   ): Promise<EngineCreateResult>;
 
   /**
-   * The atomic units the §13 allocator consumes, for one student-local date.
+   * The atomic units the §13 allocator consumes, for a SET of student-local dates, each in its
+   * own zone — in ONE engine read (§9.1 as amended by SCL-233).
+   *
+   * @spec [Doc-05F_V1.0 §9.1 as amended by SCL-233, §13 `units = ∪ activityUnits(student, D,
+   *        tz_D)`, §8.2] | @implemented [2026-10-15]
+   *
+   * WHY A SET OF DAYS, NOT ONE. §9.1 as locked took one `localDate`, and the read asked every
+   * engine once per day: a fortnight with all three engines was 42 queries, two thirds of the
+   * calendar read's round trips (owner ruling on #1232, 2026-10-13). The result is unchanged —
+   * the union §13 takes over the days is exactly what comes back — but it is one round trip per
+   * engine: the adapter reads the span from the earliest window's start to the latest window's
+   * end and files each row under EVERY requested day whose own half-open window contains it.
+   * "Every", because windows in different zones can overlap (a Chicago day and a Tokyo day share
+   * fourteen hours), and the per-day reads counted such a row on both days; a row in a GAP
+   * between windows belongs to none, as before. `local_date` on each unit is the requested day
+   * it was filed under. An empty `days` returns `[]` without a query.
    *
    * `occurred_at` IS THE `occurred_at` COLUMN, for both real engines — the column both
    * tables actually guarantee. `psi_resolved_requires_occurred_at` and
@@ -124,8 +147,7 @@ export type CalendarEngineAdapter = {
    */
   activityUnits(
     studentId: string,
-    localDate: string,
-    timeZone: string,
+    days: readonly ActivityDay[],
   ): Promise<ActivityUnit[]>;
 
   /**
@@ -174,8 +196,19 @@ export type CalendarEngineAdapter = {
    */
   resumeHref(sessionId: string): string;
 
-  /** The lifecycle of one engine session, for Resume and for `in_progress` (§13). */
-  progress(sessionId: string): Promise<EngineLifecycle | null>;
+  /**
+   * The lifecycle of each engine session asked about, for Resume and for `in_progress` (§13),
+   * in ONE engine read (§9.1 as amended by SCL-233).
+   *
+   * A session the engine has no row for, or a status outside its lifecycle, is simply absent
+   * from the map — the per-session `null` it was before. A failed read is an empty map: the
+   * blocks then read `scheduled` rather than `in_progress`, the cosmetic loss the read service
+   * has always accepted for an unread lifecycle. An empty `sessionIds` returns an empty map
+   * without a query.
+   */
+  progress(
+    sessionIds: readonly string[],
+  ): Promise<ReadonlyMap<string, EngineLifecycle>>;
 
   /** A size this engine's create contract accepts for the work still outstanding. */
   nextLaunchSize(block: PlanBlock, remaining: number): Promise<number>;
