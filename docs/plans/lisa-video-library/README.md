@@ -76,7 +76,15 @@ math.
 - **Practice** is not offered videos. The brief names the review panel and standalone chat,
   and a worked video on the item's skill while the item is unanswered is your call, not a
   default. `VIDEO_SURFACES` in `tutor-video-library.ts` holds the set.
-- **A reply the serializer substitutes** loses its video offer.
+- **A substituted reply** loses its video offer: the BFF anti-leak scan in `orchestrateTurn`
+  and the serializer both drop it.
+- **SCL question:** Doc 03C V3 §6.7 locks `suggested_action.type` as `none |
+offer_similar_question | offer_broader_coaching | offer_stay_focused`. This change adds
+  `recommend_video`. `start_practice` was added earlier without an SCL entry. Does the enum
+  (and the `lisa-default-v3` artifact) need an SCL entry? No number has been allocated.
+- **CSP:** `frame-src` gains `https://www.youtube-nocookie.com`, a third-party frame on
+  student pages. The brief names the nocookie embed; this records the CSP widening for
+  explicit sign-off.
 
 ## UI standards check (DESIGN.md §5)
 

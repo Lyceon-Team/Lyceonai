@@ -2085,7 +2085,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
           content_kind: orchestration.response.content_kind,
           // recommend_video carries an index; the video is attached here, from this
           // turn's offered set (brief §7). An unknown index becomes no action, and so does
-          // an offer on a reply the serializer substituted.
+          // an offer on a reply the serializer substituted (orchestrateTurn already drops one
+          // whose content its anti-leak scan replaced).
           suggested_action: resolveVideoAction(
             orchestration.response.suggested_action,
             offeredVideos,

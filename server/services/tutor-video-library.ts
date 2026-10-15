@@ -9,8 +9,9 @@
  *  - `retrieveOfferedVideos(questionRowId, surface)`: the item's `skill_codes`, then
  *    `video_resources_for_skills` (available + approved + skill filter in the statement,
  *    shortest first, at most 3). Only on the surfaces the brief names (§8: the review panel,
- *    so `review` and `test_review`; standalone chat is `dashboard`, which has no item and so
- *    no skill to match — it gets videos only if a later ruling keys them on something else).
+ *    so `review` and `test_review`; standalone chat is `dashboard`, listed because the brief
+ *    names it, but a dashboard turn has no item, so it returns at the no-item check and is
+ *    never offered a video today. OPEN, for Karl (2026-10-15): what keys standalone videos).
  *    Practice is excluded: the brief does not name it, and a worked video on the item's skill
  *    while the item is unanswered is a call for Karl, not a default. No item, no skills, or
  *    any error → no videos; an error is logged at ERROR and the turn proceeds (fail open).

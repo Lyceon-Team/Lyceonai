@@ -32,9 +32,13 @@ vi.mock("../../server/middleware/supabase-auth", () => ({
       if (table !== "video_resources") throw new Error(`unexpected ${table}`);
       return {
         select: () => ({
-          order: async () => ({
-            data: db.ids.map((video_id) => ({ video_id })),
-            error: null,
+          order: () => ({
+            range: async (from: number, to: number) => ({
+              data: db.ids
+                .slice(from, to + 1)
+                .map((video_id) => ({ video_id })),
+              error: null,
+            }),
           }),
         }),
         update: (values: Record<string, unknown>) => ({
@@ -100,6 +104,28 @@ describe("POST /api/internal/video-link-check", () => {
     ]);
     for (const u of db.updates)
       expect(typeof u.values.last_checked_at).toBe("string");
+  });
+
+  it("pages past the row cap: every row is checked", async () => {
+    process.env.YOUTUBE_DATA_API_KEY = "k";
+    const playable = (JSON.parse(REAL) as { items: { id: string }[] }).items[0];
+    db.ids = Array.from(
+      { length: 2100 },
+      (_, i) => `v${String(i).padStart(10, "0")}`,
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const ids = new URL(url).searchParams.get("id")?.split(",") ?? [];
+        return new Response(
+          JSON.stringify({ items: ids.map((id) => ({ ...playable, id })) }),
+          { status: 200 },
+        );
+      }),
+    );
+    const res = await request(app()).post("/api/internal/video-link-check");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, checked: 2100, unavailable: 0 });
   });
 
   it("the breaker run → 500, nothing written", async () => {

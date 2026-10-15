@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import { logger } from "../logger.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
 import { drainAllPendingLegalAcceptances } from "../lib/legal-acceptance.js";
@@ -995,13 +996,24 @@ router.post(
     try {
       const db = getSupabaseAdmin();
       const outcome = await runVideoLinkCheck({
+        // Paged, so PostgREST's row cap can never silently leave part of the library
+        // unchecked; Zod at the boundary.
         listVideoIds: async () => {
-          const { data, error } = await db
-            .from("video_resources")
-            .select("video_id")
-            .order("video_id");
-          if (error) throw error;
-          return (data ?? []).map((r: { video_id: string }) => r.video_id);
+          const page = 1000;
+          const ids: string[] = [];
+          for (let from = 0; ; from += page) {
+            const { data, error } = await db
+              .from("video_resources")
+              .select("video_id")
+              .order("video_id")
+              .range(from, from + page - 1);
+            if (error) throw error;
+            const rows = z
+              .array(z.object({ video_id: z.string() }))
+              .parse(data ?? []);
+            ids.push(...rows.map((r) => r.video_id));
+            if (rows.length < page) return ids;
+          }
         },
         fetchVideos: youtubeFetcher(apiKey),
         markChecked: async ({ available, unavailable }) => {
