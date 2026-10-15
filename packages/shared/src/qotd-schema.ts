@@ -186,6 +186,73 @@ export const qotdSocialCopySchema = z
   .strict();
 
 /**
+ * The day before a QOTD date (YYYY-MM-DD, calendar arithmetic in UTC so no zone shifts it).
+ * "Yesterday" for the reveal is always this, taken from the posted day itself, never the clock.
+ */
+export function previousQotdDate(date: string): string {
+  const d = new Date(`${qotdDateSchema.parse(date)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Yesterday's reveal, for the comment on yesterday's r/satquestions post.
+ *
+ * @spec [Doc 10A §7 ("no answer is revealed before submitting"; a past day's answer is public on
+ *       its archive page), Doc 10B (Reddit posting stays manual); owner brief "QOTD Slack post —
+ *       add yesterday's reveal" (Karl, 2026-10-15)] | @implemented [2026-10-15]
+ *
+ * plain English: built ONLY from yesterday's public archive payload (GET
+ * /api/public/qotd/:date, which refuses today and future days). `withheld` is a day the archive
+ * does not publish (a repaired question, owner 2026-10-08): it carries the date and nothing else,
+ * so there is nothing to post but the notice.
+ */
+export const qotdRevealAnswerSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("choice"),
+      letter: qotdOptionKeySchema,
+      text: z.string().min(1),
+    })
+    .strict(),
+  z.object({ kind: z.literal("value"), value: z.string().min(1) }).strict(),
+]);
+
+export const qotdRevealSchema = z
+  .discriminatedUnion("status", [
+    z
+      .object({
+        status: z.literal("revealed"),
+        qotd_date: qotdDateSchema,
+        section: z.enum(["Math", "Reading and Writing"]),
+        domain: z.string().min(1),
+        answer: qotdRevealAnswerSchema,
+        explanation: z.string().min(1),
+        archive_url: z
+          .string()
+          .regex(
+            /^https:\/\/lyceon\.ai\/sat-question-of-the-day\/\d{4}-\d{2}-\d{2}$/,
+          ),
+      })
+      .strict(),
+    z
+      .object({ status: z.literal("withheld"), qotd_date: qotdDateSchema })
+      .strict(),
+  ])
+  .refine(
+    (r) => r.status !== "revealed" || r.archive_url.endsWith(`/${r.qotd_date}`),
+    "the archive link is the revealed day's page",
+  );
+
+/** Today's suggested Reddit post: the title and the question as plain text. */
+export const qotdRedditPostSchema = z
+  .object({
+    title: z.string().min(1).max(300),
+    body: z.string().min(1),
+  })
+  .strict();
+
+/**
  * The publish manifest: what the generator hands the Slack poster for one day.
  *
  * @spec [Doc 10A §7 ("no answer is revealed before submitting"), §11; owner brief 2026-10-10
@@ -226,8 +293,16 @@ export const qotdSocialPostManifestSchema = z
         leaks: z.enum(["passed", "no-answer-in-source"]),
       })
       .strict(),
+    /** Today's suggested Reddit title and body (owner brief 2026-10-15). */
+    reddit: qotdRedditPostSchema,
+    /** Yesterday's reveal: always the day before `qotd_date` (owner brief 2026-10-15). */
+    reveal: qotdRevealSchema,
   })
   .strict()
+  .refine(
+    (m) => m.reveal.qotd_date === previousQotdDate(m.qotd_date),
+    "the reveal is yesterday's, never today's",
+  )
   .refine(
     (m) => m.source === "past" || m.checks.leaks === "no-answer-in-source",
     "today's source has no answer to check against",
@@ -244,6 +319,9 @@ export type QotdSocialPostManifest = z.infer<
   typeof qotdSocialPostManifestSchema
 >;
 export type QotdServedOption = z.infer<typeof qotdServedOptionSchema>;
+export type QotdReveal = z.infer<typeof qotdRevealSchema>;
+export type QotdRevealAnswer = z.infer<typeof qotdRevealAnswerSchema>;
+export type QotdRedditPost = z.infer<typeof qotdRedditPostSchema>;
 export type QotdPreSubmitQuestion = z.infer<typeof qotdPreSubmitQuestionSchema>;
 export type QotdStat = z.infer<typeof qotdStatSchema>;
 export type QotdTodayResponse = z.infer<typeof qotdTodayResponseSchema>;

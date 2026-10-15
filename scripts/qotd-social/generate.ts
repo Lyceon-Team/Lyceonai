@@ -27,6 +27,13 @@
  *   * Every day: socialCopyProblems over the caption and alt text, revealWording over the card's
  *     visible text. Any problem: nothing is written, exit 1.
  *
+ *   * Yesterday's reveal (owner brief 2026-10-15, for r/satquestions): read from yesterday's
+ *     PUBLIC archive page data only (GET /api/public/qotd/<the day before>; the server refuses
+ *     today and later), never from today's payload. A 404 is a withheld day (a repaired
+ *     question): the reveal is the notice alone. Any other failure fails the run, loudly.
+ *     Today's suggested Reddit title and plain-text body are built from the social input and go
+ *     through the same leak check as the caption and alt text.
+ *
  * Writes to DIR (default qotd-social-out/): qotd-<date>-portrait.png, qotd-<date>-story.png,
  * caption.txt, alt-text.txt and summary.md (the run-page summary, caption and alt text in code
  * blocks so GitHub shows a copy button), and post.json, the publish manifest the Slack poster
@@ -42,16 +49,24 @@ import { createServer } from "vite";
 import { chromium } from "@playwright/test";
 import { z } from "zod";
 import {
+  previousQotdDate,
   qotdArchiveIndexResponseSchema,
   qotdArchiveResponseSchema,
   qotdDateSchema,
   qotdTodayResponseSchema,
   qotdSocialPostManifestSchema,
   type QotdArchiveResponse,
+  type QotdRedditPost,
+  type QotdReveal,
   type QotdSocialCopy,
   type QotdSocialInput,
   type QotdSocialPostManifest,
 } from "../../packages/shared/src/qotd-schema";
+import {
+  buildReveal,
+  buildRedditPost,
+  withheldReveal,
+} from "../../shared/qotd/reveal";
 import {
   QOTD_SECTION_NAME,
   QOTD_SOCIAL_FORMATS,
@@ -154,6 +169,8 @@ export function publishDecision(
   copy: QotdSocialCopy,
   rendered: readonly { format: QotdSocialFormat; cardText: string }[],
   today: string,
+  reddit: QotdRedditPost,
+  reveal: QotdReveal,
 ):
   | { ok: true; manifest: QotdSocialPostManifest }
   | { ok: false; problems: string[] } {
@@ -163,8 +180,8 @@ export function publishDecision(
     ...socialCopyProblems(copy, input),
   ];
   for (const r of rendered) {
-    const reveal = revealWording(r.cardText, input);
-    if (reveal) problems.push(`${r.format} card: ${reveal}`);
+    const wording = revealWording(r.cardText, input);
+    if (wording) problems.push(`${r.format} card: ${wording}`);
     if (source.kind === "past") {
       problems.push(
         ...socialAssetLeaks(
@@ -172,11 +189,29 @@ export function publishDecision(
             caption: copy.caption,
             alt_text: copy.alt_text,
             card_text: r.cardText,
+            reddit_title: reddit.title,
+            reddit_body: reddit.body,
           },
           source.revealed,
         ).map((leak) => `${r.format}: ${leak}`),
       );
     }
+  }
+  // Today's Reddit post is one of today's messages: reveal wording is refused there on every
+  // day, as on the card (the leak check above adds the answer itself when it is known).
+  for (const [field, text] of [
+    ["reddit_title", reddit.title],
+    ["reddit_body", reddit.body],
+  ] as const) {
+    const wording = revealWording(text, input);
+    if (wording) problems.push(`${field}: ${wording}`);
+  }
+  // The reveal is yesterday's, never today's (owner brief 2026-10-15).
+  const yesterday = previousQotdDate(input.qotd_date);
+  if (reveal.qotd_date !== yesterday) {
+    problems.push(
+      `reveal: is for ${reveal.qotd_date}, not yesterday (${yesterday})`,
+    );
   }
   // "no-answer-in-source" is true only of today's own payload. A today source dated any other
   // day (a stale cache at the day boundary) is a day whose answer is already public: refused,
@@ -206,6 +241,8 @@ export function publishDecision(
         reveal_wording: "passed",
         leaks: source.kind === "past" ? "passed" : "no-answer-in-source",
       },
+      reddit,
+      reveal,
     }),
   };
 }
@@ -244,6 +281,45 @@ async function loadSource(args: Args): Promise<Source> {
     input: socialInputFromArchive(body.data),
     revealed: body.data,
   };
+}
+
+/** The one HTTP shape loadReveal needs, injectable for tests. */
+export type ArchiveFetch = (
+  url: string,
+) => Promise<{ status: number; ok: boolean; json(): Promise<unknown> }>;
+
+/**
+ * Yesterday's reveal for `postedDate`: from the PUBLIC archive page data of the day before, and
+ * nothing else (owner brief 2026-10-15). A 404 is a day the archive does not publish (a repaired
+ * question, owner 2026-10-08): withheld, the notice alone. Anything else that is not a 200, and
+ * any payload that does not parse or is not yesterday's, fails the run.
+ */
+export async function loadReveal(
+  baseUrl: string,
+  postedDate: string,
+  fetchImpl: ArchiveFetch,
+): Promise<QotdReveal> {
+  const yesterday = previousQotdDate(postedDate);
+  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);
+  if (res.status === 404) return withheldReveal(postedDate);
+  if (!res.ok) {
+    throw new Error(
+      `GET /api/public/qotd/${yesterday} -> ${res.status} (yesterday's reveal)`,
+    );
+  }
+  const body = z
+    .object({ data: qotdArchiveResponseSchema })
+    .parse(await res.json());
+  const built = buildReveal(body.data, postedDate);
+  if (!built.ok) throw new Error(built.problem);
+  return built.reveal;
+}
+
+function archiveFetch(url: string): ReturnType<ArchiveFetch> {
+  return fetch(url, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
+  });
 }
 
 type CardModule =
@@ -427,6 +503,8 @@ async function main(): Promise<number> {
     return 2;
   }
   const copy = buildSocialCopy(input);
+  const reddit = buildRedditPost(input);
+  const reveal = await loadReveal(args.baseUrl, input.qotd_date, archiveFetch);
 
   rmSync(args.out, { recursive: true, force: true });
   const workDir = join(args.out, ".render");
@@ -440,7 +518,14 @@ async function main(): Promise<number> {
     await close();
   }
 
-  const decision = publishDecision(source, copy, result.rendered, today);
+  const decision = publishDecision(
+    source,
+    copy,
+    result.rendered,
+    today,
+    reddit,
+    reveal,
+  );
   if (!decision.ok) {
     const { problems } = decision;
     rmSync(args.out, { recursive: true, force: true });
@@ -485,6 +570,14 @@ async function main(): Promise<number> {
     "",
     "### Alt text",
     fenced(copy.alt_text),
+    "",
+    "### Reddit (today's post)",
+    fenced(`${reddit.title}\n\n${reddit.body}`),
+    "",
+    "### Yesterday's reveal",
+    reveal.status === "withheld"
+      ? `${reveal.qotd_date}: withheld (not published on the archive), so there is no reveal.`
+      : `${reveal.qotd_date}: posted to Slack with the answer and explanation; ${reveal.archive_url}`,
     "",
   ].join("\n");
   writeFileSync(join(args.out, "summary.md"), summary);
