@@ -4,9 +4,11 @@
  *
  * @spec [docs/Spec/Lyceon_Doc_10B.md §3A.1-2 ("every monthly calendar shows the days remaining to
  *       each upcoming test and lines up content with them"), §8.1, §8.7 (monthly plan, 20th);
- *       owner brief "Doc 10B Phase 1" (Karl, 2026-10-11) scope 6-7] | @implemented [2026-10-11]
+ *       owner brief "Doc 10B Phase 1" (Karl, 2026-10-11) scope 6-7; Karl 2026-10-15 (rest-of-month plan)] | @implemented [2026-10-11; start date 2026-10-15]
  *
  * Usage: pnpm exec tsx scripts/content/plan-skeleton.ts 2026-11 > content/batches/2026-11-plan/PLAN.md
+ *        pnpm exec tsx scripts/content/plan-skeleton.ts 2026-10 2026-10-19   (a plan for the rest of a
+ *        month started late, Karl 2026-10-15: slots from that date on)
  *
  * plain English: every SAT date in the plan comes from shared/sat-test-dates.ts (College Board's
  * published dates, cited), never typed by hand. The skeleton has two tables: the month's SAT
@@ -34,7 +36,6 @@ const EVENT_LABEL: Record<SatCalendarEventKind, string> = {
   scores_released: "Scores released (students)",
 };
 
-/** The last day of `month` (`YYYY-MM`). */
 /** The month's last day, `YYYY-MM-DD`. */
 export function lastDay(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -56,11 +57,22 @@ export function nextTest(date: string): string | null {
   return SAT_TEST_DATES.find((t) => t.date >= date)?.date ?? null;
 }
 
-export function planSkeleton(month: string): string {
+/** The plan's first publish slot: the 1st, or `from` for a plan that starts mid-month. */
+export function planStart(month: string, from?: string): string {
+  if (from === undefined) return `${month}-01`;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !from.startsWith(`${month}-`))
+    throw new Error(
+      `from must be a YYYY-MM-DD date in ${month}, got "${from}"`,
+    );
+  return from;
+}
+
+export function planSkeleton(month: string, from?: string): string {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
     throw new Error(`month must be YYYY-MM, got "${month}"`);
   const first = `${month}-01`;
   const last = lastDay(month);
+  const start = planStart(month, from);
   const monthName = monthTitle(month);
 
   const out: string[] = [
@@ -95,7 +107,7 @@ export function planSkeleton(month: string): string {
     "| Cycle | Publishes | Next test (days to it) | Slug | Target keyword | Audience | Search intent | Why now |",
     "| --- | --- | --- | --- | --- | --- | --- | --- |",
   );
-  for (const slot of publishSlots(first, last)) {
+  for (const slot of publishSlots(start, last)) {
     const day = slot.slice(0, 10);
     const test = nextTest(day);
     const toTest = test
@@ -114,5 +126,5 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   process.chdir(ROOT);
-  process.stdout.write(planSkeleton(process.argv[2] ?? ""));
+  process.stdout.write(planSkeleton(process.argv[2] ?? "", process.argv[3]));
 }
