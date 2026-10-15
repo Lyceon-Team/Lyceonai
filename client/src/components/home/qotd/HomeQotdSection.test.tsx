@@ -62,6 +62,8 @@ vi.mock("@/lib/csrf", () => ({
     net.log.push({ method, url, body });
     if (url === "/api/qotd/today") return json({ data: net.today });
     if (url === "/api/qotd/answer") return json({ data: net.answer }, 201);
+    if (url === "/api/qotd/email-prompt/shown")
+      return json({ data: { recorded: true } });
     if (url === "/api/qotd/email-consent") {
       if (net.holdConsent) return new Promise<Response>(() => undefined);
       return json({ data: { consented: true, show_email_prompt: false } });
@@ -127,7 +129,11 @@ function unanswered(): HomeQotdTodayResponse {
   });
 }
 
-function answeredEarlier(): HomeQotdTodayResponse {
+/**
+ * Answered on an earlier visit today. `prompt` is the server's answer: true only while the prompt
+ * has not been shown (or decided) today (owner ruling 2026-10-15 on #1233, item 2).
+ */
+function answeredEarlier(prompt = false): HomeQotdTodayResponse {
   return homeQotdTodayResponseSchema.parse({
     state: "answered",
     qotd_date: "2026-10-09",
@@ -135,7 +141,7 @@ function answeredEarlier(): HomeQotdTodayResponse {
     result: RESULT,
     streak: { current: 4, today_done: true, broken: false },
     active_days: [],
-    show_email_prompt: true,
+    show_email_prompt: prompt,
     show_dont_ask_again: false,
   });
 }
@@ -321,6 +327,47 @@ describe("Home QOTD card", () => {
     // Both wait: a second decision cannot be sent meanwhile.
     expect(yes.disabled).toBe(true);
     net.holdConsent = false;
+  });
+
+  it("ruling 2026-10-15: answered on an earlier visit and not yet asked, the next Home visit opens the prompt at once, over the collapsed card, and tells the server once", async () => {
+    net.today = answeredEarlier(true);
+    mount();
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain(QOTD_EMAIL_PROMPT_COPY.title);
+    // Never over the explanation: the card is collapsed under it.
+    expect(screen.getByTestId("home-qotd-collapsed")).toBeTruthy();
+    expect(screen.queryByText(EXPLANATION)).toBeNull();
+    await waitFor(() =>
+      expect(
+        net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+      ).toHaveLength(1),
+    );
+    // Closing it ("Not now") is the day's decision; the showing was recorded once only.
+    fireEvent.click(screen.getByTestId("qotd-email-not-now"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+    ).toHaveLength(1);
+  });
+
+  it("ruling 2026-10-15: the prompt opened after Done is reported as shown, once", async () => {
+    net.today = unanswered();
+    net.answer = answer();
+    mount();
+    fireEvent.click(await screen.findByText("2"));
+    fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    expect(await screen.findByText(EXPLANATION)).toBeTruthy();
+    // Not shown yet, so not reported yet.
+    expect(
+      net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+    ).toHaveLength(0);
+    fireEvent.click(screen.getByTestId("home-qotd-done"));
+    await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+      ).toHaveLength(1),
+    );
   });
 
   it("answered on an earlier visit: collapsed, with See explanation, and no prompt", async () => {

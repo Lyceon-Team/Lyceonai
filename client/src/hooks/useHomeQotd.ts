@@ -25,6 +25,8 @@ import {
   homeQotdTodayResponseSchema,
   QOTD_EMAIL_CONSENT_VERSION,
   qotdEmailPreferenceSchema,
+  qotdEmailPromptShownResponseSchema,
+  type QotdEmailPromptShownResponse,
   type HomeQotdAnswerRequest,
   type HomeQotdAnswerResponse,
   type HomeQotdTodayResponse,
@@ -139,6 +141,39 @@ export function useAnswerHomeQotd(): UseMutationResult<
 }
 
 export type QotdEmailDecision = "grant" | "not_now" | "never";
+
+const PROMPT_SHOWN_PATH = "/api/qotd/email-prompt/shown";
+
+/**
+ * @spec [owner ruling (Karl, 2026-10-15, on #1233, item 2)] | @implemented [2026-10-15]
+ * plain English: tells the server the email prompt is on screen, so it records today's one ask
+ * (only if its own rule allows). Today's cached read then says "no prompt" for the rest of the
+ * Chicago day, as the server will on the next read.
+ */
+export function useMarkQotdPromptShown(): UseMutationResult<
+  QotdEmailPromptShownResponse,
+  Error,
+  void
+> {
+  const queryClient = useQueryClient();
+  return useMutation<QotdEmailPromptShownResponse, Error, void>({
+    mutationFn: async () => {
+      const response = await apiRequest(PROMPT_SHOWN_PATH, { method: "POST" });
+      return qotdEmailPromptShownResponseSchema.parse(
+        dataOf(await response.json()),
+      );
+    },
+    onSuccess: () => {
+      queryClient.setQueryData<HomeQotdTodayResponse>(
+        [HOME_QOTD_TODAY_PATH],
+        (current) =>
+          current === undefined
+            ? current
+            : { ...current, show_email_prompt: false },
+      );
+    },
+  });
+}
 
 export function useQotdEmailDecision(): UseMutationResult<
   { consented: boolean },

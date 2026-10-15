@@ -174,6 +174,17 @@ export type HomeQotdAnswerResponse = z.infer<
   typeof homeQotdAnswerResponseSchema
 >;
 
+/**
+ * POST /api/qotd/email-prompt/shown (owner ruling, Karl, 2026-10-15, on #1233, item 2): whether
+ * this showing was recorded as today's ask. No body is sent: the server decides from its own state.
+ */
+export const qotdEmailPromptShownResponseSchema = z
+  .object({ recorded: z.boolean() })
+  .strict();
+export type QotdEmailPromptShownResponse = z.infer<
+  typeof qotdEmailPromptShownResponseSchema
+>;
+
 export const QOTD_EMAIL_DECISIONS = ["grant", "not_now", "never"] as const;
 
 /** POST /api/qotd/email-consent */

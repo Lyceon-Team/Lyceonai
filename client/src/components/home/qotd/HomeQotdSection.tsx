@@ -24,7 +24,7 @@
  *    one profile write.
  *  - `#qotd` (the daily email's "Answer now" link) scrolls the card into view on arrival.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HomeQotdTodayResponse } from "@lyceon/shared/home-qotd-schema";
 import QuestionRenderer from "@/components/question-renderer";
 import {
@@ -41,6 +41,7 @@ import {
 } from "@/features/calendar/api";
 import {
   useAnswerHomeQotd,
+  useMarkQotdPromptShown,
   useHomeQotd,
   useQotdEmailDecision,
   type QotdEmailDecision,
@@ -137,7 +138,26 @@ function QotdCard({
   const [gridValue, setGridValue] = useState("");
   const [justAnswered, setJustAnswered] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [promptOpen, setPromptOpen] = useState(false);
+  /**
+   * @spec [owner ruling (Karl, 2026-10-15, on #1233, item 2)] | @implemented [2026-10-15]
+   * plain English: a Home visit that finds today's question ALREADY answered (an earlier visit
+   * today, left before Done) opens the prompt at once, if the server says it may: the card is
+   * collapsed, so nothing is under it. The server says so only until the prompt has been shown
+   * once today (`last_asked_on`), and only for today's own answer, so this cannot repeat the
+   * same day or carry a missed day over. Answering in this visit starts closed (Done opens it).
+   */
+  const [promptOpen, setPromptOpen] = useState(
+    () => data.state === "answered" && data.show_email_prompt,
+  );
+  const markShown = useMarkQotdPromptShown();
+  const shownRecorded = useRef(false);
+  // The prompt is on screen: tell the server once (it records today's one ask). A side effect
+  // of the prompt opening, not derived state.
+  useEffect(() => {
+    if (!promptOpen || shownRecorded.current) return;
+    shownRecorded.current = true;
+    markShown.mutate();
+  }, [promptOpen, markShown]);
   /**
    * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "The email pop-up
    *       opens only after the explanation is visible/dismissed, never over it"]
@@ -145,7 +165,8 @@ function QotdCard({
    * plain English: the server's "show the prompt" answer no longer opens it on top of the
    * explanation the student is reading. It is held here, and the prompt opens when the student
    * closes the explanation ("Done" under it), once. A student who leaves without pressing Done is
-   * not asked today; the explanation always comes first.
+   * asked once on their next Home visit the same Chicago day (owner ruling, Karl, 2026-10-15, on
+   * #1233, item 2: the initial `promptOpen` above); the explanation always comes first.
    */
   const [promptDue, setPromptDue] = useState(false);
   const closeExplanation = (): void => {
