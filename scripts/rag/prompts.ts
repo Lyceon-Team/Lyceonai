@@ -10,7 +10,7 @@
  */
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { proposedSegmentSchema, windowAssessmentSchema } from "./segments";
+import { proposedClockSegmentSchema, windowAssessmentSchema } from "./segments";
 
 export const GATE_SYSTEM = `You review one window of a transcript from an SAT preparation video, for Lyceon, an SAT practice platform. The window was cut at a fixed time, not at a topic boundary. Decide three things.
 
@@ -102,7 +102,9 @@ Return segments that tile the video from 0 to its end, in order, with no gaps or
 
 teaches_sat_content: true when the segment teaches SAT content a student would practise (a math or reading-and-writing concept, method or worked example, including how to do it in the Desmos graphing calculator). False for intros, channel promotion, sponsorship, course or tutoring advertisements, sign-offs, test registration or admissions logistics, and general motivation. A segment that mixes a few seconds of intro or outro with real teaching is true.
 
-summary: one sentence, at most 20 words, naming what the segment covers, or why it does not teach. Do not quote the speaker. Times are whole seconds from the start of the video.`;
+summary: one sentence, at most 20 words, naming what the segment covers, or why it does not teach. Do not quote the speaker.
+
+start and end: clock times from the start of the video, as "M:SS" (for example "0:00", "5:46", "12:03"), or "H:MM:SS" past an hour. The first segment starts at "0:00" and the last ends at the video's full length.`;
 
 export const segmentResponseSchema = {
   type: "OBJECT",
@@ -112,8 +114,8 @@ export const segmentResponseSchema = {
       items: {
         type: "OBJECT",
         properties: {
-          start_seconds: { type: "INTEGER" },
-          end_seconds: { type: "INTEGER" },
+          start: { type: "STRING" },
+          end: { type: "STRING" },
           teaches_sat_content: { type: "BOOLEAN" },
           summary: { type: "STRING" },
         },
@@ -129,7 +131,7 @@ export const segmentResponseSchema = {
   required: ["segments"],
 } as const;
 export const segmentSchema = z.object({
-  segments: z.array(proposedSegmentSchema),
+  segments: z.array(proposedClockSegmentSchema),
 });
 
 export const DESCRIBE_VIDEO_SYSTEM = `You watch one segment of an SAT preparation video and write its index text. Lyceon stores your text, never the video's words. A student's question is matched against your text, and the student is then offered this segment of the video.

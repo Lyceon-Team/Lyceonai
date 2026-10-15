@@ -127,6 +127,52 @@ export const proposedSegmentSchema = z.object({
 });
 export type ProposedSegment = z.infer<typeof proposedSegmentSchema>;
 
+/**
+ * "M:SS" or "H:MM:SS" → seconds; null for anything else. The segmenter returns clock strings
+ * because, asked for whole seconds, it wrote 5:46 as 546 (Tutorllini, 2026-10-15).
+ */
+export function parseClock(clock: string): number | null {
+  const m = /^(?:(\d+):)?(\d{1,2}):(\d{2})$/.exec(clock.trim());
+  if (m === null) return null;
+  const [, h, mm, ss] = m;
+  const minutes = Number(mm);
+  const seconds = Number(ss);
+  if (seconds > 59 || (h !== undefined && minutes > 59)) return null;
+  return Number(h ?? 0) * 3600 + minutes * 60 + seconds;
+}
+
+export const proposedClockSegmentSchema = z.object({
+  start: z.string(),
+  end: z.string(),
+  teaches_sat_content: z.boolean(),
+  summary: z.string(),
+});
+export type ProposedClockSegment = z.infer<typeof proposedClockSegmentSchema>;
+
+/** Clock-string proposals → second-based ones; refuses any unparseable time. */
+export function fromClockSegments(
+  segments: ProposedClockSegment[],
+): { ok: true; segments: ProposedSegment[] } | { ok: false; error: string } {
+  const out: ProposedSegment[] = [];
+  for (const s of segments) {
+    const start = parseClock(s.start);
+    const end = parseClock(s.end);
+    if (start === null || end === null) {
+      return {
+        ok: false,
+        error: `unparseable time ${start === null ? s.start : s.end}`,
+      };
+    }
+    out.push({
+      start_seconds: start,
+      end_seconds: end,
+      teaches_sat_content: s.teaches_sat_content,
+      summary: s.summary,
+    });
+  }
+  return { ok: true, segments: out };
+}
+
 /** Seconds of gap, overlap or end mismatch tolerated (and closed) in a proposed tiling. */
 export const TILING_TOLERANCE_SECONDS = 3;
 

@@ -472,6 +472,32 @@ function report(x: {
     );
   }
   lines.push("", "### Every open-ended drop", "");
+  // Lengths of the open-ended groups, and how many a longer cap would admit: the 180 s cap
+  // (plan §D.2 E) meets worked examples that run 4–5 minutes. Admitted ≠ described: a group
+  // over the cap was never described, so these counts are an upper bound for a ruling.
+  const groupBy = new Map(
+    x.results.flatMap((r) => r.groups.map((g) => [g.provenance, g] as const)),
+  );
+  const lengths = openEnded
+    .map((d) => groupBy.get(d.provenance))
+    .filter((g) => g !== undefined)
+    .map((g) => g.end - g.start);
+  if (lengths.length > 0) {
+    lines.push(
+      `Lengths: ${[...lengths]
+        .sort((a, b) => a - b)
+        .map((n) => `${Math.round(n)} s`)
+        .join(", ")}.`,
+      "",
+      "| Cap | Open-ended groups it would admit |",
+      "|---|---|",
+    );
+    for (const cap of [240, 300, 360])
+      lines.push(
+        `| ${cap} s | ${lengths.filter((n) => n <= cap).length} of ${lengths.length} |`,
+      );
+    lines.push("");
+  }
   if (openEnded.length === 0) lines.push("None.");
   for (const d of openEnded)
     lines.push(`- ${title(d.video_id)} \`${d.provenance}\`: ${d.reason}`);

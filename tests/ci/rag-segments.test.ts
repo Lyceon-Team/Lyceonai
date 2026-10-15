@@ -11,7 +11,9 @@ import {
   SEGMENT_MAX_SECONDS,
   cutWindows,
   mergeOnBoundary,
+  fromClockSegments,
   normalizeSegmentation,
+  parseClock,
   provenanceOf,
   segmentGateFailures,
   selectReviewSample,
@@ -94,6 +96,41 @@ describe("cutWindows", () => {
     expect(w.length).toBeGreaterThan(2);
     for (const x of w.slice(1))
       expect(x.end - x.start).toBeLessThanOrEqual(SEGMENT_MAX_SECONDS);
+  });
+});
+
+describe("clock times (video source)", () => {
+  it("parses M:SS and H:MM:SS, and refuses the fused form the model once wrote", () => {
+    expect(parseClock("0:00")).toBe(0);
+    expect(parseClock("5:46")).toBe(346);
+    expect(parseClock("12:03")).toBe(723);
+    expect(parseClock("1:02:03")).toBe(3723);
+    expect(parseClock("546")).toBeNull();
+    expect(parseClock("5:76")).toBeNull();
+    expect(parseClock("")).toBeNull();
+  });
+
+  it("converts a proposal, or names the unparseable time", () => {
+    expect(
+      fromClockSegments([
+        { start: "0:00", end: "5:46", teaches_sat_content: true, summary: "s" },
+      ]),
+    ).toEqual({
+      ok: true,
+      segments: [
+        {
+          start_seconds: 0,
+          end_seconds: 346,
+          teaches_sat_content: true,
+          summary: "s",
+        },
+      ],
+    });
+    expect(
+      fromClockSegments([
+        { start: "0:00", end: "546", teaches_sat_content: true, summary: "s" },
+      ]),
+    ).toEqual({ ok: false, error: "unparseable time 546" });
   });
 });
 

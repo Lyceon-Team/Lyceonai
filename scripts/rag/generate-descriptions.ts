@@ -65,6 +65,7 @@ import {
   SEGMENT_MAX_SECONDS,
   type WindowAssessment,
   cutWindows,
+  fromClockSegments,
   mergeOnBoundary,
   normalizeSegmentation,
   provenanceOf,
@@ -229,17 +230,17 @@ async function processFromVideo(
       model,
       system: SEGMENT_VIDEO_SYSTEM,
       video: { videoId: video.video_id, start: 0, end: video.duration_seconds },
-      user: `Video title: ${video.title}\nThe video is ${Math.round(video.duration_seconds)} seconds long.`,
+      user: `Video title: ${video.title}\nThe video is ${formatSeconds(video.duration_seconds)} long.`,
       responseSchema: segmentResponseSchema,
       schema: segmentSchema,
       onUsage: (u) => {
         gateUsage = addUsage(gateUsage, u);
       },
     });
-    segmentation = normalizeSegmentation(
-      proposed.segments,
-      video.duration_seconds,
-    );
+    const parsed = fromClockSegments(proposed.segments);
+    segmentation = parsed.ok
+      ? normalizeSegmentation(parsed.segments, video.duration_seconds)
+      : parsed;
   }
   if (!segmentation?.ok) {
     throw new Error(
