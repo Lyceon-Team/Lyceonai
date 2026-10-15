@@ -13,6 +13,14 @@
  * use of that secret. The action is inside the signature, so an unsubscribe token cannot be
  * used to resume and vice versa. Verification is constant-time. Nothing is stored.
  *
+ * GUARDIAN DIGEST (Karl's ruling 5 on #1223, 2026-10-13: "a signed link + List-Unsubscribe …
+ * follow the existing QOTD-email one-click unsubscribe pattern exactly; reuse its signing/
+ * verification primitive, do not fork"): the action `guardian_digest_unsubscribe` signs the
+ * GUARDIAN's id with the same sub-key. Because the action is inside the signature, a digest token
+ * cannot unsubscribe anyone from the daily question, nor a QOTD token a guardian from the digest.
+ * Served by its own route (`/api/public/guardian-digest-email/unsubscribe`), which writes through
+ * the guardian switch's one writer.
+ *
  * trade-offs: the token does not expire. An unsubscribe link must keep working for as long as the
  * email exists (industry practice and CAN-SPAM's 30-day minimum), and both actions are safe to
  * repeat. The token names a student id, which is opaque and is not personal data on its own.
@@ -24,7 +32,11 @@ import { requirePublicHmacSecret } from "../../lib/client-ip";
 const LINK_LABEL = "lyceon:qotd-email:link:v1";
 const SIGNATURE_BYTES = 16;
 
-export const QOTD_EMAIL_LINK_ACTIONS = ["unsubscribe", "resume"] as const;
+export const QOTD_EMAIL_LINK_ACTIONS = [
+  "unsubscribe",
+  "resume",
+  "guardian_digest_unsubscribe",
+] as const;
 export type QotdEmailLinkAction = (typeof QOTD_EMAIL_LINK_ACTIONS)[number];
 
 function linkKey(): Buffer {
@@ -68,10 +80,22 @@ export function verifyQotdEmailLinkToken(
   return timingSafeEqual(given, expected) ? studentId : null;
 }
 
+/** The guardian digest's one-click unsubscribe URL, or null when the site URL is not configured. */
+export function guardianDigestUnsubscribeUrl(
+  siteUrl: string,
+  guardianId: string,
+): string | null {
+  if (!siteUrl) return null;
+  const t = encodeURIComponent(
+    qotdEmailLinkToken("guardian_digest_unsubscribe", guardianId),
+  );
+  return `${siteUrl}/api/public/guardian-digest-email/unsubscribe?t=${t}`;
+}
+
 /** The public URL for a link action, or null when the site URL is not configured. */
 export function qotdEmailLinkUrl(
   siteUrl: string,
-  action: QotdEmailLinkAction,
+  action: "unsubscribe" | "resume",
   studentId: string,
 ): string | null {
   if (!siteUrl) return null;

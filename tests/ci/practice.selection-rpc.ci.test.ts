@@ -21,6 +21,8 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { z } from "zod";
+import { studentSafeQuestionSchema } from "../../packages/shared/src/practice-response-schema";
 
 // ---------------------------------------------------------------------------
 // §1  REGRESSION GUARD — source-level assertion
@@ -115,12 +117,19 @@ describe("Practice anti-leak on RPC selection path", () => {
       "utf8",
     );
 
-    // The StudentSafeQuestionDTO type must have correct_answer: null (literal null type)
+    // The StudentSafeQuestionDTO type must have correct_answer: null (literal null type).
+    // @implemented [2026-10-13] (question header, owner brief Karl 2026-10-13 §1): the type is
+    // now inferred from the shared `studentSafeQuestionSchema` instead of written out beside
+    // it, so the guard follows it there: the route's type IS the schema's, and the schema
+    // pins both fields to `z.null()` (read at runtime, not by pattern).
     expect(source).toMatch(
-      /type StudentSafeQuestionDTO\s*=\s*\{[^}]*correct_answer:\s*null/s,
+      /type StudentSafeQuestionDTO\s*=\s*StudentSafeQuestion;/,
     );
-    expect(source).toMatch(
-      /type StudentSafeQuestionDTO\s*=\s*\{[^}]*explanation:\s*null/s,
+    expect(studentSafeQuestionSchema.shape.correct_answer).toBeInstanceOf(
+      z.ZodNull,
+    );
+    expect(studentSafeQuestionSchema.shape.explanation).toBeInstanceOf(
+      z.ZodNull,
     );
 
     // The toStudentSafeQuestionDTO function must explicitly set both to null.
@@ -166,12 +175,18 @@ describe("Practice anti-leak on RPC selection path", () => {
       "utf8",
     );
 
-    // Extract the StudentSafeQuestionDTO type definition
-    const typeMatch = source.match(
-      /type StudentSafeQuestionDTO\s*=\s*\{[^}]*\}/s,
+    // The StudentSafeQuestionDTO type is the shared schema's (2026-10-13, see above): the
+    // route says so, and the schema's keys have no correct_variants. Presence first: the
+    // schema really has keys (stem, and the answer keys pinned to null).
+    expect(source).toMatch(
+      /type StudentSafeQuestionDTO\s*=\s*StudentSafeQuestion;/,
     );
-    expect(typeMatch).not.toBeNull();
-    expect(typeMatch![0]).not.toContain("correct_variants");
+    const keys = Object.keys(studentSafeQuestionSchema.shape);
+    expect(keys).toEqual(
+      expect.arrayContaining(["stem", "correct_answer", "explanation"]),
+    );
+    expect(keys).not.toContain("correct_variants");
+    expect(keys).not.toContain("option_metadata");
   });
 });
 

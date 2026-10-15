@@ -131,3 +131,39 @@ describe("UI-46 guard: replaced duplicates stay gone", () => {
     expect(text.match(/#[0-9a-fA-F]{6}\b/g) ?? []).toEqual([]);
   });
 });
+
+/**
+ * Owner ruling (Karl) 2026-10-13 on #1225: "use any existing chip/pill primitive, do not fork a
+ * second one". The neutral pill recipe (`--chip` fill on a `--rule` border) lives in
+ * student-ui/Pill.tsx; LISA's question chip and the runner's question header render `<Pill>`.
+ * Presence first: both consumers render it, then no other file retypes the recipe inline.
+ * | @implemented [2026-10-13]
+ */
+describe("one neutral pill (2026-10-13)", () => {
+  it.each([
+    "components/tutor/ScopedTutorPanel.tsx",
+    "components/practice/QuestionMetaHeader.tsx",
+  ])("%s renders the shared Pill", (site) => {
+    const text = read(site);
+    expect(text).toMatch(
+      /import \{[^}]*\bPill\b[^}]*\} from "@\/components\/student-ui"/,
+    );
+    expect(text).toMatch(/<Pill\b/);
+  });
+
+  it("no file but Pill.tsx retypes the pill recipe (bg-lyc-chip on a rounded-full lyc-rule border)", () => {
+    const hits = FILES.filter(
+      (f) => f.path !== "components/student-ui/Pill.tsx",
+    ).flatMap((f) =>
+      classStrings(f.text)
+        .filter(
+          (c) =>
+            /\bbg-lyc-chip\b/.test(c) &&
+            /\brounded-full\b/.test(c) &&
+            /\bborder-lyc-rule\b/.test(c),
+        )
+        .map((c) => `${f.path}: ${c}`),
+    );
+    expect(hits).toEqual([]);
+  });
+});

@@ -4,7 +4,7 @@
 # @spec [LISA_Video_RAG_Plan.md Step C (revised 2026-10-15, pgvector; SCL-231 PROPOSED),
 #       Step F tests; closure plan R-12] | @implemented [2026-10-15]
 #
-# Each plant breaks ONE rule of supabase/migrations/20261101000000_lisa_curriculum_chunks.sql and
+# Each plant breaks ONE rule of supabase/migrations/20261101010000_lisa_curriculum_chunks.sql and
 # must turn scripts/ci/curriculum-chunks-gates.sql red on a NAMED gate. Same rules as the other
 # *.mutations.sh harnesses:
 #   RULE 1 — APPLIED. An anchor not found exactly once is STALE: a hard failure, never a pass.
@@ -18,7 +18,7 @@ set -uo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-MIG="supabase/migrations/20261101000000_lisa_curriculum_chunks.sql"
+MIG="supabase/migrations/20261101010000_lisa_curriculum_chunks.sql"
 GATES="scripts/ci/curriculum-chunks-gates.sql"
 TEMPLATE=cc_mut_template
 DB=cc_mut

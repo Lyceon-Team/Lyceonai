@@ -110,7 +110,7 @@ Plus the stale SCL-060 comment. Zero importers, so free. **Before Step C.**
 
 **What improves.** The skill filter becomes a real `WHERE` with a GIN index, in the same database as `questions` and the skill taxonomy. It is not a CEL expression that R-2 found silently ignored on list fields. One fewer service sits in the turn path. Changing the embedding model means re-embedding rows, not recreating a corpus. RLS, migrations, backups and CI schema gates already exist. **What we give up:** Vertex's managed chunking and embedding orchestration. Step D already writes its own text, so this is one embedding call per segment at build time.
 
-**The migration** is `supabase/migrations/20261101000000_lisa_curriculum_chunks.sql`. pgvector is already installed: genesis creates `vector` in schema `extensions`.
+**The migration** is `supabase/migrations/20261101010000_lisa_curriculum_chunks.sql`. pgvector is already installed: genesis creates `vector` in schema `extensions`.
 
 - `curriculum_chunks`:
   - Columns: `id`, `content`, `skill_codes text[]`, `provenance` (`youtube:<video_id>:<start>-<end>`), `surface_gate`, `content_type`, `embedding vector(768)` (text-embedding-005, dimension confirmed against the live model 2026-10-15), `status`, `reviewed_by`, `reviewed_at`, `created_at`, `updated_at`.

@@ -58,6 +58,7 @@ import {
 } from "../../../packages/shared/src/notifications-schema";
 import { logger } from "../../logger";
 import { qotdDailySendContext } from "./qotd-daily-send-context";
+import { guardianDigestSendContext } from "./guardian-digest-send-context";
 import { quietHoursDeferral } from "./quiet-hours";
 import { renderEmail, siteUrlFromEnv, type RenderContext } from "./templates";
 import { defaultEmailTransport, type EmailTransport } from "./transport";
@@ -299,6 +300,33 @@ async function dispatchOne(
       return "failed";
     }
     ctx.qotdEmail = extras.value;
+  }
+  // Karl's ruling 5 on #1223 (2026-10-13): the digest's signed one-click unsubscribe link, and the
+  // guardian's switch re-read at send time — the QOTD pattern above, for the guardian pair.
+  if (eventRow.event_type === "guardian_daily_digest") {
+    const extras = await guardianDigestSendContext(
+      row.recipient_profile_id,
+      siteUrl,
+    );
+    if (!extras.ok) {
+      logger.error(
+        "NOTIFICATIONS",
+        "dispatch_digest_context_failed",
+        "Could not prepare a guardian daily digest email",
+        { messageId: row.message_id, reason: extras.error.reason },
+      );
+      await recordAttempt({
+        p_message_id: row.message_id,
+        p_ok: false,
+        p_provider_message_id: null,
+        p_error: extras.error.reason,
+        p_max_attempts: extras.error.final
+          ? 1
+          : NOTIFICATION_EMAIL_MAX_ATTEMPTS,
+      });
+      return "failed";
+    }
+    ctx.guardianDigestEmail = extras.value;
   }
   const rendered = renderEmail(eventRow.event_type, eventRow.payload, ctx);
   if (!rendered.ok) {

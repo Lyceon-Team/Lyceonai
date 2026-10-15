@@ -83,6 +83,14 @@ export const envSchema = z.object({
   RESEND_SEGMENT_ID_STUDENTS: z.string().min(1).optional(),
   RESEND_SEGMENT_ID_GUARDIANS: z.string().min(1).optional(),
 
+  // Onboarding events to Resend Automations (Karl, 2026-10-12). Read at:
+  //   LIFECYCLE_EMAIL_DENYLIST  server/lib/lifecycle-email.ts
+  // Comma-separated domains (`lyceon.ai`) and full addresses whose accounts never get an
+  // onboarding contact or event: internal and test accounts. Set in Vercel; an address whose
+  // local part contains "test" is skipped whatever this holds. Not a secret; unset means only
+  // the "test" rule applies.
+  LIFECYCLE_EMAIL_DENYLIST: z.string().optional(),
+
   // Product analytics (Doc 07A §7.1, §9; SCL-201). Read at:
   //   POSTHOG_API_KEY   server/lib/analytics/emit-event.ts (the PostHog project key, `phc_…`)
   //   POSTHOG_HOST      server/lib/analytics/emit-event.ts (US region ingestion host)
@@ -113,6 +121,11 @@ export const marketingEmailEnvSchema = envSchema.pick({
   RESEND_SEGMENT_ID_GUARDIANS: true,
 });
 export type MarketingEmailEnv = z.infer<typeof marketingEmailEnvSchema>;
+
+/** The onboarding-events lane's denylist, parsed by server/lib/lifecycle-email.ts. */
+export const lifecycleEmailEnvSchema = envSchema.pick({
+  LIFECYCLE_EMAIL_DENYLIST: true,
+});
 
 /** The analytics lane's variables, parsed by the emission wrapper (Doc 07A §9). */
 export const analyticsEnvSchema = envSchema.pick({

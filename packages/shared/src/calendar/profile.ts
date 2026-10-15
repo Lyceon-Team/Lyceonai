@@ -265,6 +265,23 @@ const studyProfileUpsertBaseSchema = z
   .strict();
 
 /**
+ * @spec [§8.1 bounds (`target_exam_date_max_days`); owner ruling 2026-10-11 (Karl, on #1204,
+ *       ruling 2): "the calendar profile read returns the furthest accepted test date, and every
+ *       SAT-date picker uses that one bound"] | @implemented [2026-10-11]
+ *
+ * plain English: the last test date the profile write accepts, for a student whose local day
+ * is `localToday`. The ONE computation: the upsert schema below refuses anything after it, and
+ * `GET /api/calendar/profile` serves it as `latest_test_date` so every picker offers exactly
+ * what the write will take. Inclusive: the returned date itself is accepted.
+ */
+export function latestAcceptedExamDate(
+  localToday: string,
+  maxDays: number,
+): string {
+  return addDaysToLocalDate(localToday, maxDays);
+}
+
+/**
  * The PUT `/api/calendar/profile` body, bound to one student's configuration and local day.
  *
  * Every editable field is optional and at least one must be present: the settings sheet
@@ -274,7 +291,7 @@ const studyProfileUpsertBaseSchema = z
 export function makeStudyProfileUpsertSchema(
   context: StudyProfileUpsertContext,
 ): z.ZodType<z.infer<typeof studyProfileUpsertBaseSchema>> {
-  const latestExamDate = addDaysToLocalDate(
+  const latestExamDate = latestAcceptedExamDate(
     context.localToday,
     context.bounds.target_exam_date_max_days,
   );

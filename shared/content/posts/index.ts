@@ -12,5 +12,13 @@
  * list is present and visibility is decided by shared/content/schedule.ts.
  */
 import type { ScheduledPostSpec } from "./types";
+import howLongIsTheSat from "./how-long-is-the-sat";
+import lastMinuteSatPrep from "./last-minute-sat-prep";
+import whatToBringToTheSat from "./what-to-bring-to-the-sat";
 
-export const SCHEDULED_POST_SPECS: ReadonlyArray<ScheduledPostSpec | null> = [];
+export const SCHEDULED_POST_SPECS: ReadonlyArray<ScheduledPostSpec | null> = [
+  // 2026-W45
+  whatToBringToTheSat,
+  lastMinuteSatPrep,
+  howLongIsTheSat,
+];

@@ -26,6 +26,7 @@ import type {
   ExamSessionResponse,
   ExamWorkspaceItem,
 } from "@lyceon/shared/exam-runtime-schema";
+import { examQuestionPayloadSchema } from "@lyceon/shared/exam-runtime-schema";
 
 const SID = "5e551011-0000-4000-8000-000000000001";
 const FORM = "f0f00000-0000-4000-8000-000000000001";
@@ -270,6 +271,23 @@ describe("E7b module page plants", () => {
     await screen.findByTestId("exam-module");
     expect(screen.getByTestId("exam-module-label").textContent).toBe("Module 2 of 2");
     expect(document.body.textContent ?? "").not.toMatch(/harder|easier|2A|2B/);
+  });
+
+  // QMH (owner brief, Karl, 2026-10-13 §1) | @implemented [2026-10-13]: the question header
+  // (domain · skill · difficulty) is on practice, review and the diagnostic, NOT the timed
+  // module, which stays Bluebook-like; and the module payload has no taxonomy to show
+  // (Doc 04A §10.2, Doc 02B §20). Presence first: the module and its question are on screen.
+  it("QMH: the full-length module shows no question header, and its payload carries no domain, skill or difficulty", async () => {
+    mount(RW1);
+    await screen.findByTestId("exam-module");
+    expect(screen.getByText("Which choice best completes question 1?")).toBeTruthy();
+    expect(screen.queryByTestId("question-meta")).toBeNull();
+    expect(document.body.textContent ?? "").not.toMatch(/\b(Easy|Medium|Hard|Difficulty)\b/);
+    const fields = Object.keys(examQuestionPayloadSchema.shape);
+    expect(fields).toContain("stem");
+    for (const taxonomy of ["domain", "skill", "skill_code", "difficulty"]) {
+      expect(fields, taxonomy).not.toContain(taxonomy);
+    }
   });
 
   it("MECHANISM: no heartbeat is sent while the tab is hidden", async () => {

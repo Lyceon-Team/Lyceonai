@@ -389,6 +389,27 @@ export const profileReadResponseSchema = z
   .strict();
 export type ProfileReadResponse = z.infer<typeof profileReadResponseSchema>;
 
+// ── GET /api/sat-dates/bound ────────────────────────────────────────────────
+
+/**
+ * @spec [owner rulings (Karl) on #1204 ruling 2 (2026-10-11: "every SAT-date picker uses that
+ *       one bound") and on #1211 (2026-10-12: "Serve the test-date bound from a role-agnostic
+ *       read … It carries no student data, so it doesn't need the student-only gate")]
+ * | @implemented [2026-10-12]
+ *
+ * plain English: the furthest test date the profile write accepts for this account
+ * (`latestAcceptedExamDate`: the account's local day, in its stored zone or America/Chicago,
+ * plus `target_exam_date_max_days`), so every SAT-date picker offers exactly what the write will
+ * take. One field and nothing else (`.strict()`): it is readable by any signed-in account,
+ * including one whose role is not saved yet, so no student value may ride along.
+ */
+export const satDateBoundResponseSchema = z
+  .object({
+    latest_test_date: localDateSchema,
+  })
+  .strict();
+export type SatDateBoundResponse = z.infer<typeof satDateBoundResponseSchema>;
+
 // ── POST /plan/regenerate, /days/:date/regenerate, /days/:date/reset ────────
 
 export const idempotentMutationBodySchema = z

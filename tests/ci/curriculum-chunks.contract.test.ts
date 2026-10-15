@@ -16,7 +16,7 @@ import { ragCorpusMetadataSchema } from "../../packages/shared/tutor-rag-types";
 const MIGRATION = readFileSync(
   resolve(
     __dirname,
-    "../../supabase/migrations/20261101000000_lisa_curriculum_chunks.sql",
+    "../../supabase/migrations/20261101010000_lisa_curriculum_chunks.sql",
   ),
   "utf8",
 );

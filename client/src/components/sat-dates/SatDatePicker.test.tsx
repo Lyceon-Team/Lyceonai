@@ -31,10 +31,13 @@ import {
   satDateSummary,
   type SatDateChoice,
 } from "./SatDatePicker";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   chooseNotSure,
   closeSatDates,
+  offeredSatDates,
   openSatDates,
+  satDateBoundWrapper,
   satDatesSummary,
   toggleSatDate,
 } from "./sat-date-picker.testing";
@@ -43,14 +46,14 @@ afterEach(cleanup);
 
 const TODAY = "2026-10-11";
 const ID = "picker";
+/** A served bound past every official date, for the tests that are not about the bound. */
+const FAR = "2030-12-31";
 
-function Harness({
+function Picker({
   initial = [],
-  latest,
   onChange,
 }: {
   initial?: string[];
-  latest?: string;
   onChange?: (next: SatDateChoice) => void;
 }): JSX.Element {
   const [value, setValue] = useState<SatDateChoice>({ dates: initial });
@@ -62,9 +65,25 @@ function Harness({
         onChange?.(next);
       }}
       today={TODAY}
-      {...(latest === undefined ? {} : { latest })}
       data-testid={ID}
     />
+  );
+}
+
+/** The picker under a served bound (`latest_test_date` on the profile read). */
+function Harness({
+  latest = FAR,
+  ...props
+}: {
+  initial?: string[];
+  latest?: string;
+  onChange?: (next: SatDateChoice) => void;
+}): JSX.Element {
+  const Bound = satDateBoundWrapper(latest);
+  return (
+    <Bound>
+      <Picker {...props} />
+    </Bound>
   );
 }
 
@@ -175,11 +194,13 @@ describe("open", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   });
 
-  it("offers nothing past the served horizon", () => {
-    render(<Harness latest="2027-04-01" />);
-    const menu = openSatDates(ID);
-    expect(within(menu).queryByTestId(`${ID}-date-2027-03-06`)).not.toBeNull();
-    expect(within(menu).queryByTestId(`${ID}-date-2027-05-01`)).toBeNull();
+  it("offers nothing past the served bound, and the bound itself is offered", () => {
+    render(<Harness latest="2027-03-06" />);
+    const offered = offeredSatDates(ID);
+    expect(offered).toContain("2026-11-07");
+    expect(offered).toContain("2027-03-06");
+    expect(offered.every((d) => d <= "2027-03-06")).toBe(true);
+    expect(offered).not.toContain("2027-05-01");
   });
 
   it("keeps a saved future date that is not on the official list, so a save never drops it", () => {
@@ -190,6 +211,79 @@ describe("open", () => {
         .getByTestId(`${ID}-date-2026-11-14`)
         .getAttribute("aria-checked"),
     ).toBe("true");
+  });
+});
+
+describe("the served bound (owner rulings 2026-10-11, 2026-10-12): fail closed until it is known", () => {
+  // The role-agnostic read's body (`GET /api/sat-dates/bound`), as the route sends it.
+  const SERVED = { latest_test_date: "2027-03-06", requestId: "r" };
+
+  function renderUnseeded(): void {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <Picker initial={["2026-12-05"]} />
+      </QueryClientProvider>,
+    );
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads the bound from GET /api/sat-dates/bound and offers no date while it loads", async () => {
+    const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    renderUnseeded();
+    // Rendering alone requests nothing (a guardian's first load on onboarding, G-NEW-03).
+    expect(fetchMock).not.toHaveBeenCalled();
+    const menu = openSatDates(ID);
+    expect(within(menu).getByTestId(`${ID}-dates-loading`).textContent).toBe(
+      "Loading test dates…",
+    );
+    expect(offeredSatDates(ID)).toEqual([]);
+    // "Not sure yet" stays available, and the closed answer still reads the saved date.
+    expect(within(menu).getByTestId(`${ID}-not-sure`)).toBeInTheDocument();
+    // The role-agnostic read, never the student-only calendar profile (ruling on #1211).
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toEqual([
+      expect.stringContaining("/api/sat-dates/bound"),
+    ]);
+    closeSatDates(ID);
+    expect(satDatesSummary(ID)).toBe("Sat, Dec 5, 2026");
+  });
+
+  it("when the read fails, offers no date and Try again loads the bound", async () => {
+    let fail = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        fail
+          ? new Response(JSON.stringify({ error: "boom" }), { status: 500 })
+          : new Response(JSON.stringify(SERVED), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+      ),
+    );
+    renderUnseeded();
+    openSatDates(ID);
+    // `useSatDateBound` retries once (about a second) before it reports the failure.
+    const error = await screen.findByTestId(
+      `${ID}-dates-error`,
+      {},
+      { timeout: 5000 },
+    );
+    expect(offeredSatDates(ID)).toEqual([]);
+    fail = false;
+    fireEvent.click(within(error).getByRole("button", { name: "Try again" }));
+    // Every official date up to the bound, the bound included, and nothing after it.
+    await waitFor(() =>
+      expect(offeredSatDates(ID)).toEqual([
+        "2026-11-07",
+        "2026-12-05",
+        "2027-03-06",
+      ]),
+    );
   });
 });
 
@@ -232,6 +326,26 @@ describe("one picker: no other component renders the SAT date list (grep proof)"
       });
     });
     expect(offenders.map((f) => path.relative(root, f))).toEqual([]);
+  });
+
+  it("no surface passes its own bound: the picker takes only the served one", () => {
+    const users = files.filter((f) =>
+      /<SatDatePicker\b/.test(fs.readFileSync(f, "utf8")),
+    );
+    expect(users.length).toBe(6);
+    for (const f of users) {
+      const text = fs.readFileSync(f, "utf8");
+      for (const m of text.matchAll(/<SatDatePicker\b[^>]*?\/>/gs)) {
+        expect(m[0], path.relative(root, f)).not.toMatch(/\blatest\b/);
+      }
+    }
+    const picker = fs.readFileSync(
+      path.join(root, "components", "sat-dates", "SatDatePicker.tsx"),
+      "utf8",
+    );
+    expect(picker).toContain("useSatDateBound({ enabled: opened })");
+    expect(picker).not.toContain("useStudyProfile");
+    expect(picker).toContain("bound.data?.latest_test_date");
   });
 
   it("every surface that sets the test date uses the picker", () => {

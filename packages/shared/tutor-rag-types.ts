@@ -144,7 +144,7 @@ export type RetrievalResponse = z.infer<typeof retrievalResponseSchema>;
 
 /**
  * Metadata of a semantic-store item: one `curriculum_chunks` row (migration
- * 20261101000000_lisa_curriculum_chunks.sql). The enums here and that table's
+ * 20261101010000_lisa_curriculum_chunks.sql). The enums here and that table's
  * CHECK constraints are the same lists; change both in one change.
  *
  * @spec [Doc-03D_V1.2 §6.7; SCL-231 (PROPOSED 2026-10-15): pgvector store]

@@ -1312,7 +1312,11 @@ describe.skipIf(!PG_AVAILABLE)(
             AND p.prosrc ~* '(insert\\s+into|update)\\s+public\\.notification_channel_preferences'
           ORDER BY 1`,
       );
+      // One writer PER SWITCH (contract C2A.2 as amended 2026-10-13): the guardian's daily
+      // summary email has its own, `set_guardian_daily_digest_email`, which never names
+      // qotd_daily (asserted in tests/ci/guardian-accountability.pg.ci.test.ts T3).
       expect(writers.rows.map((r) => r.proname)).toEqual([
+        "set_guardian_daily_digest_email",
         "set_qotd_daily_email",
       ]);
       // And the callers: the prompt's grant, the unsubscribe and the resume all go through it.

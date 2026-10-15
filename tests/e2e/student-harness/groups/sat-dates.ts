@@ -145,6 +145,25 @@ export const SAT_DATES: PageGroup = {
       prototype: NO_PROTOTYPE,
     },
     {
+      id: "onboarding-dates-error",
+      title:
+        "Onboarding: the bound read failed: the picker offers no date, says so, and offers Try again ('Not sure yet' stays available)",
+      persona: "onboarding",
+      route: "/profile/complete",
+      waitFor: both(`[data-testid="${ONBOARDING}-trigger"]`),
+      fulfillRequest: {
+        method: "GET",
+        path: "/api/sat-dates/bound",
+        status: 500,
+        body: { error: "Internal server error", requestId: "harness" },
+        reason:
+          "Owner rulings 2026-10-11 (Karl, on #1204) and 2026-10-12 (on #1211): the picker fails closed when the served bound (GET /api/sat-dates/bound) cannot load, a network or server fault. The route does not fail in the harness, so the browser answers it with a 500.",
+      },
+      steps: [{ click: both(`[data-testid="${ONBOARDING}-trigger"]`) }],
+      expectVisible: `[data-testid="${ONBOARDING}-dates-error"]`,
+      prototype: NO_PROTOTYPE,
+    },
+    {
       id: "settings-open",
       title: "Settings → Profile: the same picker, open",
       persona: "paid",
