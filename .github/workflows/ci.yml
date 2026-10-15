@@ -1401,6 +1401,16 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/curriculum-chunks-gates.sql
 
+      # LISA video library (CC brief 2026-10-15): video_resources tags, approval and the one
+      # retrieval query. Same database; one transaction, rolled back.
+      - name: LISA video library schema + retrieval gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-library-gates.sql
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost
