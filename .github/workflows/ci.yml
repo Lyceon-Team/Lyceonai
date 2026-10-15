@@ -1390,6 +1390,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/qotd-schema-gates.sql
 
+      # LISA curriculum retrieval store (LISA_Video_RAG_Plan.md Step C, pgvector; SCL-231). Same
+      # database as above, the full pipeline applied on pg17 with pgvector; the gate writes only
+      # inside one transaction and rolls back. R3 proves the skill filter cannot come back short.
+      - name: LISA curriculum_chunks schema + retrieval gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/curriculum-chunks-gates.sql
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost
