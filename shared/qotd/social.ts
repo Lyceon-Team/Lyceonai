@@ -42,6 +42,7 @@ import {
   findUnderlineMarkup,
   splitByUnderlineMarkup,
 } from "../question-markup";
+import { plainMathText } from "./plain-math";
 import { stemRepeatsPassage } from "./projection";
 import { qotdReadabilityProblem } from "./readability";
 import {
@@ -477,22 +478,38 @@ function containsPhrase(haystack: string, phrase: string): boolean {
 const EXPLANATION_WINDOW = 8;
 
 /**
- * Every way the caption, alt text or card text gives away the revealed answer of `day`.
- * Empty = no leak found. `card_text` is the card's visible text (innerText of the rendered
- * card).
+ * Every way the caption, alt text, card text or Reddit post gives away the revealed answer of
+ * `day`. Empty = no leak found. `card_text` is the card's visible text (innerText of the rendered
+ * card). The Reddit title and body (owner brief 2026-10-15) are today's messages too, so the same
+ * checks run over them; the title, like the caption, names no choice, and the body, like the alt
+ * text, shows all four choices or none.
  */
 export function socialAssetLeaks(
-  output: { caption: string; alt_text: string; card_text: string },
+  output: {
+    caption: string;
+    alt_text: string;
+    card_text: string;
+    reddit_title?: string;
+    reddit_body?: string;
+  },
   day: QotdArchiveResponse,
 ): string[] {
   const input = socialInputFromArchive(day);
   const question = normalize(questionText(input));
   const leaks: string[] = [];
-  const fields = [
+  const fields: (readonly [string, string])[] = [
     ["caption", output.caption],
     ["alt_text", output.alt_text],
     ["card", output.card_text],
-  ] as const;
+  ];
+  if (output.reddit_title !== undefined) {
+    fields.push(["reddit_title", output.reddit_title]);
+  }
+  if (output.reddit_body !== undefined) {
+    fields.push(["reddit_body", output.reddit_body]);
+  }
+  /** Fields that must name no choice at all. */
+  const namesNoChoice = new Set(["caption", "reddit_title"]);
 
   const explanationWords = normalize(day.question.explanation)
     .trim()
@@ -530,19 +547,31 @@ export function socialAssetLeaks(
     if (reveal) leaks.push(`${field}: ${reveal}`);
   }
 
-  // 4. MCQ: the caption names no choice; the alt text and card show all four or none, so no
-  //    one choice is singled out.
+  // 4. MCQ: the caption and the Reddit title name no choice; the alt text, card and Reddit
+  //    body show all four or none, so no one choice is singled out. A choice counts as shown in
+  //    its raw form or as plain text (the Reddit body writes maths as plain text).
   if (day.question.item_type === "mcq") {
+    const showsChoice = (haystack: string, text: string): boolean =>
+      containsPhrase(haystack, text) ||
+      containsPhrase(haystack, plainMathText(text));
     const correct = day.question.options.find(
       (o) => o.id === day.question.correct_option_id,
     );
-    if (correct && containsPhrase(normalize(output.caption), correct.text)) {
+    if (correct && showsChoice(normalize(output.caption), correct.text)) {
       leaks.push(`caption: names the correct choice "${correct.text}"`);
     }
-    for (const [field, text] of fields.slice(1)) {
+    if (
+      correct &&
+      output.reddit_title !== undefined &&
+      showsChoice(normalize(output.reddit_title), correct.text)
+    ) {
+      leaks.push(`reddit_title: names the correct choice "${correct.text}"`);
+    }
+    for (const [field, text] of fields) {
+      if (namesNoChoice.has(field)) continue;
       const haystack = normalize(text);
       const shown = day.question.options.filter((o) =>
-        containsPhrase(haystack, o.text),
+        showsChoice(haystack, o.text),
       ).length;
       if (shown !== 0 && shown !== day.question.options.length) {
         leaks.push(
