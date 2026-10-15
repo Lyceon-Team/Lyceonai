@@ -56,7 +56,7 @@ changed, or why not. One revision round: an item still not approved is carried t
 
 | Item | Finding | Response | Commit |
 | --- | --- | --- | --- |
-| `slug` | The finding. | Fixed: what changed. | abc1234 |
+| `plan` | R1/R3/R10: the Oct 30 device brief must say a new College Board loan request is too late for Nov 7 and cite the device and setup sources; R7/R11: the algebra article path is wrong and the three internal links were not shown to resolve. | Fixed. The Oct 30 slot now covers borrowing from school, family or a friend, says a College Board loan request needs 30 days (Oct 8 for Nov 7) and is for later test dates, and cites SAT device lending, Bluebook SAT Weekend and Bluebook approved devices (all read 2026-10-15). The note now names `/blog/common-sat-math-algebra-mistakes`. Live check 2026-10-15: https://lyceon.ai/sat-practice-questions/reading-and-writing, https://lyceon.ai/blog/common-sat-math-algebra-mistakes and https://lyceon.ai/how-to-study-for-the-sat each returned HTTP 200. | ac927cfc |
 
 ## 4. Karl decision
 
