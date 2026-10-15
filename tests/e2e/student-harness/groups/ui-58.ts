@@ -132,10 +132,10 @@ export const UI_58: PageGroup = {
     section({
       id: "settings-profile-free",
       title:
-        "Settings → Profile, free: name, and 'Set up your study calendar' (no calendar profile, OQ-20)",
+        "Settings → Profile, free: name, test date and target score with 'Not sure yet', shown to every student (final brief v2 ruling 1, Karl, 2026-10-13; replaces 'Set up your study calendar')",
       persona: "free",
       tab: "profile",
-      ready: '[data-testid="settings-goal-setup"]',
+      ready: '[data-testid="settings-target-select"]',
       proto: protoSection("Profile", "free", "Settings, plan = free, Profile"),
     }),
     section({

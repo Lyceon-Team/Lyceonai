@@ -68,12 +68,16 @@ vi.mock("../../server/services/calendar/adapters", () => ({
 
 const { readCalendar, readGuardianCalendar } =
   await import("../../server/services/calendar/read-service");
+const { invalidateKnownTimezoneCache } =
+  await import("../../server/services/calendar/profile-service");
 
 type LocalScenarioOptions = ScenarioOptions & { units?: number };
 
 function scenario(options: LocalScenarioOptions = {}): void {
   answeredUnits = options.units ?? 0;
   client = makeScenarioClient(options);
+  // A new client is a new zone list; the in-process zone cache (2026-10-13) starts empty.
+  invalidateKnownTimezoneCache();
 }
 
 const read = () => readCalendar({ student_id: STUDENT, query: {}, now: NOW });

@@ -38,6 +38,12 @@ import { z } from "zod";
  * is a notification, not a separate flow). One event per student per America/Chicago day, source
  * id `<student>:<day>`; in-app always, email only when the student's
  * `notification_channel_preferences` row for it is on (see qotdDailyPayloadSchema).
+ *
+ * The four accountability types joined on 2026-10-13 (owner brief "Guardian accountability
+ * loop"; 20261101000000): `study_plan_changed` (a student's plan reduction, recorded by the
+ * calendar writer; guardians in-app), `missed_plan_alert` and `back_on_track` (the missed-day
+ * rule; student in-app + email 13+, guardians in-app) and `guardian_daily_digest` (one email per
+ * guardian per Chicago day). Channel-agnostic: each emitter names its channels.
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
@@ -47,6 +53,10 @@ export const NOTIFICATION_EVENT_TYPES = [
   "exam_score_report_requested",
   "renewal_decision_requested",
   "qotd_daily",
+  "study_plan_changed",
+  "missed_plan_alert",
+  "back_on_track",
+  "guardian_daily_digest",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -198,6 +208,232 @@ export const qotdDailyPayloadSchema = z
   })
   .strict();
 export type QotdDailyPayload = z.infer<typeof qotdDailyPayloadSchema>;
+
+// ── Guardian accountability (owner brief, Karl 2026-10-13) ───────────────────
+
+/**
+ * @spec [owner brief "Guardian accountability loop" (Karl, 2026-10-13) "Delivery": "one email at
+ *        6 PM Chicago (two UTC cron entries with a Chicago-hour guard, like the QOTD email)";
+ *        contracts/notifications.contract.md §2.3, §6.2] | @implemented [2026-10-13]
+ *
+ * The America/Chicago hour the digest runs in. SQL's `accountability_digest_date` cuts the
+ * digest day at the same hour (a change at or after 18:00 belongs to the next day's digest); the
+ * PG suite holds the two equal.
+ */
+export const GUARDIAN_DIGEST_SEND_HOUR_CHICAGO = 18;
+export const GUARDIAN_DIGEST_TIME_ZONE = "America/Chicago";
+
+const localDateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/**
+ * The three SCHEDULE changes (SCL-230, approved by Karl 2026-10-13: "guardians may be told study
+ * days, minutes per day and full-length frequency (before → after)"). Study days travel as a
+ * count per week, never the mask; the frequency as the weekday (Postgres DOW, 0 = Sunday) and
+ * the interval in weeks, both null when practice tests are off.
+ */
+const weekdaySchema = z.number().int().min(0).max(6).nullable();
+const intervalWeeksSchema = z.number().int().min(1).nullable();
+const scheduleChangeFields = {
+  study_days: {
+    before_days: z.number().int().min(0).max(7),
+    after_days: z.number().int().min(0).max(7),
+  },
+  daily_minutes: {
+    before_minutes: z.number().int().min(0),
+    after_minutes: z.number().int().min(0),
+  },
+  full_length_frequency: {
+    before_weekday: weekdaySchema,
+    before_interval_weeks: intervalWeeksSchema,
+    after_weekday: weekdaySchema,
+    after_interval_weeks: intervalWeeksSchema,
+  },
+} as const;
+
+/**
+ * @spec [owner brief 2026-10-13 "What gets recorded" items 1–3; Doc-05F_V1.0 §12.4, §12.8, §16;
+ *        SCL-230 (approved by Karl 2026-10-13 for the three schedule kinds);
+ *        contracts/notifications.contract.md §8.1] | @implemented [2026-10-13]
+ *
+ * One student-initiated plan change. The day kinds are written by `calendar_write_version` when
+ * a student's day edit or block move lowers a day's planned minutes or takes a full-length test
+ * off its day; the schedule kinds by the `student_study_profile` trigger. Rendering parameters
+ * only: the student's first name, the plan date(s) or the before/after values, and
+ * `digest_date` (the Chicago day of the digest that reports it). No block ids, no scope, no
+ * study-days mask, no question content.
+ */
+export const studyPlanChangedPayloadSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("day_reduced"),
+      student_first_name: z.string(),
+      plan_date: localDateStringSchema,
+      before_minutes: z.number().int().min(0),
+      after_minutes: z.number().int().min(0),
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_removed"),
+      student_first_name: z.string(),
+      plan_date: localDateStringSchema,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_moved"),
+      student_first_name: z.string(),
+      plan_date: localDateStringSchema,
+      to_date: localDateStringSchema,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("study_days"),
+      student_first_name: z.string(),
+      ...scheduleChangeFields.study_days,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("daily_minutes"),
+      student_first_name: z.string(),
+      ...scheduleChangeFields.daily_minutes,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_frequency"),
+      student_first_name: z.string(),
+      ...scheduleChangeFields.full_length_frequency,
+      digest_date: localDateStringSchema,
+    })
+    .strict(),
+]);
+export type StudyPlanChangedPayload = z.infer<
+  typeof studyPlanChangedPayloadSchema
+>;
+
+/** Two (or more) consecutive missed planned days; one alert per run. */
+export const missedPlanAlertPayloadSchema = z
+  .object({
+    student_first_name: z.string(),
+    missed_days: z.number().int().min(2),
+    last_missed_date: localDateStringSchema,
+    digest_date: localDateStringSchema,
+  })
+  .strict();
+export type MissedPlanAlertPayload = z.infer<
+  typeof missedPlanAlertPayloadSchema
+>;
+
+/** The first day with work after an alert. */
+export const backOnTrackPayloadSchema = z
+  .object({
+    student_first_name: z.string(),
+    back_on_date: localDateStringSchema,
+    digest_date: localDateStringSchema,
+  })
+  .strict();
+export type BackOnTrackPayload = z.infer<typeof backOnTrackPayloadSchema>;
+
+/** A plan change as the digest aggregates it: a reduced day (or a schedule kind) once, first "before" to last "after". */
+export const digestPlanChangeSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("day_reduced"),
+      plan_date: localDateStringSchema,
+      before_minutes: z.number().int().min(0),
+      after_minutes: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_removed"),
+      plan_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_moved"),
+      plan_date: localDateStringSchema,
+      to_date: localDateStringSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("study_days"),
+      ...scheduleChangeFields.study_days,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("daily_minutes"),
+      ...scheduleChangeFields.daily_minutes,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("full_length_frequency"),
+      ...scheduleChangeFields.full_length_frequency,
+    })
+    .strict(),
+]);
+export type DigestPlanChange = z.infer<typeof digestPlanChangeSchema>;
+
+/**
+ * One guardian's evening email: one section per visible student with something to report. A
+ * section's `completion` is the digest day's plan (blocks planned and completed — §14's facts,
+ * which a guardian already receives); `null` on a day with nothing planned.
+ */
+export const guardianDailyDigestPayloadSchema = z
+  .object({
+    digest_date: localDateStringSchema,
+    students: z
+      .array(
+        z
+          .object({
+            student_first_name: z.string(),
+            completion: z
+              .object({
+                planned: z.number().int().min(1),
+                completed: z.number().int().min(0),
+              })
+              .strict()
+              .nullable(),
+            plan_changes: z.array(digestPlanChangeSchema),
+            missed_plan_alert: z
+              .object({ missed_days: z.number().int().min(2) })
+              .strict()
+              .nullable(),
+            back_on_track: z.boolean(),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
+export type GuardianDailyDigestPayload = z.infer<
+  typeof guardianDailyDigestPayloadSchema
+>;
+
+/**
+ * The guardian's one switch: the digest email (default ON). In-app events are not switchable.
+ * GET/PUT `/api/guardian/notification-preferences/daily-digest`.
+ */
+export const GUARDIAN_DIGEST_PREFERENCE_PATH =
+  "/notification-preferences/daily-digest";
+export const guardianDigestPreferenceSchema = z
+  .object({ enabled: z.boolean() })
+  .strict();
+export type GuardianDigestPreference = z.infer<
+  typeof guardianDigestPreferenceSchema
+>;
 
 // ── DB rows read through the service client ─────────────────────────────────
 

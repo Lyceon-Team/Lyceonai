@@ -1,0 +1,181 @@
+{
+  "correct": {
+    "correctOptionId": "<token>",
+    "explanation": "<explanation of the answered item>",
+    "feedback": "Correct",
+    "isCorrect": true,
+    "mode": "multiple_choice",
+    "sessionId": "<uuid>",
+    "sessionItemId": "<uuid>",
+    "state": "active",
+    "stats": {
+      "correct": 1,
+      "incorrect": 0,
+      "skipped": 0,
+      "streak": 1,
+      "total": 1
+    }
+  },
+  "replay": {
+    "correctOptionId": "<token>",
+    "explanation": "<explanation of the answered item>",
+    "feedback": "Correct",
+    "idempotentRetried": true,
+    "isCorrect": true,
+    "mode": "multiple_choice",
+    "sessionId": "<uuid>",
+    "sessionItemId": "<uuid>",
+    "stats": {
+      "correct": 1,
+      "incorrect": 0,
+      "skipped": 0,
+      "streak": 1,
+      "total": 1
+    }
+  },
+  "not_served": {
+    "status": 409,
+    "body": {
+      "error": "session_item_not_open",
+      "message": "This practice item is already resolved."
+    }
+  },
+  "session": {
+    "client_instance_id": "golden-client",
+    "completed": false,
+    "filters": {
+      "active_session_item_id": null,
+      "client_instance_id": "golden-client",
+      "last_served_ordinal": 1,
+      "prebuilt": true,
+      "requested_count": 10,
+      "selection_mode": "exact",
+      "session_spec": {
+        "difficulties": [],
+        "domains": [
+          "Algebra"
+        ],
+        "mode": "balanced",
+        "sections": [
+          "M"
+        ],
+        "skills": [],
+        "target_minutes": null,
+        "target_question_count": 10
+      },
+      "session_start_idempotency_key": "golden-practice-start-1",
+      "source_pool_count": 10,
+      "target_question_count": 10
+    },
+    "mode": "balanced",
+    "platform": "web",
+    "status": "active",
+    "target_count": 10
+  },
+  "items": {
+    "question_ids": [
+      "SATM1ALG000",
+      "SATM1ALG001",
+      "SATM1ALG002",
+      "SATM1ALG003",
+      "SATM1ALG004",
+      "SATM1ALG005",
+      "SATM1ALG006",
+      "SATM1ALG007",
+      "SATM1ALG008",
+      "SATM1ALG009"
+    ],
+    "by_ordinal": [
+      {
+        "ordinal": 1,
+        "status": "answered",
+        "is_correct": true,
+        "outcome": "correct",
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 2,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 3,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 4,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 5,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 6,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 7,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 8,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 9,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      },
+      {
+        "ordinal": 10,
+        "status": "pending",
+        "is_correct": null,
+        "outcome": null,
+        "has_order": true,
+        "has_tokens": true,
+        "order_len": 4
+      }
+    ]
+  }
+}

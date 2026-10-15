@@ -42,6 +42,7 @@ import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
+import { useHasActiveGuardianLink } from "@/hooks/useStudentGuardianLinks";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import {
   calendarKeys,
@@ -72,7 +73,6 @@ import {
   type FreeGoal,
 } from "@/features/calendar/components/FreeCalendar";
 import {
-  addDays,
   browserLocalToday,
   rangeForView,
   startOfWeek,
@@ -98,6 +98,9 @@ export default function CalendarPage(): JSX.Element {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { user } = useSupabaseAuth();
+  // Owner brief 2026-10-13 ("Transparency"): the day menu and the block panel say the guardian
+  // is notified only when an active link exists. The same query Settings → Guardian reads.
+  const guardianNotice = useHasActiveGuardianLink(user?.id ?? null);
 
   // OQ-29: the map decides free or paid; nothing is read until the profile has answered.
   const profileQuery = useProfileQuery();
@@ -231,11 +234,6 @@ export default function CalendarPage(): JSX.Element {
         today={today}
         profile={freeProfile}
         reason={lockReason}
-        maxTestDate={
-          setupDefaults === null
-            ? null
-            : addDays(today, setupDefaults.target_exam_date_max_days)
-        }
         onSave={(goal: FreeGoal) =>
           saveProfile(
             freeProfile === null && setupDefaults !== null
@@ -423,6 +421,7 @@ export default function CalendarPage(): JSX.Element {
           },
           onDismissReplan: () => setReplanOffered(false),
         }}
+        guardianNotice={guardianNotice}
         mutations={{
           // One fresh key per user intent; `newIntent` is the only minter, and TanStack reuses
           // the same variables object on retry, which is what makes a retry idempotent (§7.8).

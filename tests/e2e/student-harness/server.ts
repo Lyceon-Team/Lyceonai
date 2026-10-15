@@ -107,6 +107,8 @@ async function main(): Promise<void> {
     await import("../../../server/routes/exam-report-routes");
   const { calendarRouter } =
     await import("../../../server/routes/calendar-routes");
+  const { satDateRouter } =
+    await import("../../../server/routes/sat-date-routes");
   const { scoreReportRouter } =
     await import("../../../server/routes/score-report-routes");
   const { getScoreEstimate, getRecencyKpis } =
@@ -129,6 +131,8 @@ async function main(): Promise<void> {
   const { legalRouter } = await import("../../../server/routes/legal-routes");
   const { default: homeQotdRoutes } =
     await import("../../../server/routes/home-qotd-routes");
+  const { default: gettingStartedRoutes } =
+    await import("../../../server/routes/getting-started-routes");
   const { default: tutorRuntimeRouter } =
     await import("../../../server/routes/tutor-runtime");
   const { TutorConfig } = await import("../../../server/services/tutor-config");
@@ -199,6 +203,14 @@ async function main(): Promise<void> {
     auth.requireStudentAccount,
     homeQotdRoutes,
   );
+  // Final brief v2 (Karl, 2026-10-13): the Getting started checklist, as server/index.ts mounts
+  // it (CSRF is outside this harness).
+  app.use(
+    "/api/home/getting-started",
+    auth.requireSupabaseAuth,
+    auth.requireStudentAccount,
+    gettingStartedRoutes,
+  );
   app.use(
     NOTIFICATION_API_MOUNT,
     auth.requireSupabaseAuth,
@@ -211,6 +223,8 @@ async function main(): Promise<void> {
     auth.requireStudentOrAdmin,
     calendarRouter,
   );
+  // Role-agnostic, as in server/index.ts (owner ruling 2026-10-12 on #1211).
+  app.use("/api/sat-dates", auth.requireSupabaseAuth, satDateRouter);
   app.use(
     "/api/score-report",
     auth.requireSupabaseAuth,

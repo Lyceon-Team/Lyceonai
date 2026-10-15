@@ -156,6 +156,16 @@ type DesmosCalculatorProps = {
   onStateChange?: (state: unknown) => void;
   debounceMs?: number;
   fillHeight?: boolean;
+  /**
+   * Filled with a function that emits any change still inside the debounce, now, through
+   * `onStateChange` — so a caller about to save (leaving the question) sees the last keystroke.
+   */
+  flushRef?: React.MutableRefObject<(() => void) | null>;
+  /**
+   * The component's own save moments: a tab switch, the calculator closing (`expanded` going
+   * false) and unmount. Called after any pending change has been emitted.
+   */
+  onCommit?: () => void;
 };
 
 const EXPANDED_HEIGHT_GRAPHING = 520;
@@ -183,6 +193,8 @@ export default function DesmosCalculator({
   onStateChange,
   debounceMs = 600,
   fillHeight = false,
+  flushRef,
+  onCommit,
 }: DesmosCalculatorProps): React.ReactElement {
   /**
    * @spec [Doc-02B_v4 §28; owner brief 2026-10-11 ("default to Scientific + DEG, and fix the
@@ -219,6 +231,8 @@ export default function DesmosCalculator({
     scientific: null,
   });
   const onStateChangeRef = useRef(onStateChange);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [desmosReady, setDesmosReady] = useState(false);
   const [mode, setMode] = useState<CalculatorMode>("scientific");
@@ -283,15 +297,50 @@ export default function DesmosCalculator({
     [emitPerModeState],
   );
 
+  /**
+   * @spec [register G-NEW-14; owner brief 2026-10-12 ("save only on: leaving or submitting the
+   *       question …; closing the calculator panel or switching its tab; the page closing or going
+   *       hidden; one save after 10 s of no calculator activity"; "the 600 ms debounce stays for
+   *       local UI state only")] | @implemented [2026-10-12]
+   * plain English: the debounce below only keeps the caller's copy of the state current; it is
+   * never a save. Saving is the caller's, at the moments it is told about: `onCommit` for the
+   * ones this component sees (tab switch, close, unmount), `flushRef` for the caller's own
+   * (leaving the question), so the state saved always includes the last keystroke.
+   */
+  const flushAll = useCallback((): void => {
+    flushState("graphing");
+    flushState("scientific");
+  }, [flushState]);
+
+  useEffect(() => {
+    if (!flushRef) return;
+    flushRef.current = flushAll;
+    return () => {
+      if (flushRef.current === flushAll) flushRef.current = null;
+    };
+  }, [flushRef, flushAll]);
+
   const handleModeSwitch = useCallback(
     (nextMode: CalculatorMode): void => {
       if (nextMode === activeModeRef.current) return;
       flushState(activeModeRef.current);
       activeModeRef.current = nextMode;
       setMode(nextMode);
+      onCommitRef.current?.();
     },
     [flushState],
   );
+
+  // Closing the calculator (expanded → collapsed) is a save moment.
+  const wasExpandedRef = useRef(expanded);
+  useEffect(() => {
+    const was = wasExpandedRef.current;
+    wasExpandedRef.current = expanded;
+    if (was && !expanded) {
+      flushAll();
+      onCommitRef.current?.();
+    }
+  }, [expanded, flushAll]);
 
   // Load the Desmos script once for this mount.
   useEffect(() => {
@@ -357,11 +406,14 @@ export default function DesmosCalculator({
     return () => window.clearTimeout(t);
   }, [desmosReady, mode, debounceMs, emitPerModeState]);
 
-  // Destroy both calculators when the component unmounts (and only then).
+  // Destroy both calculators when the component unmounts (and only then), after emitting any
+  // pending change and telling the caller (unmount is a save moment).
   useEffect(() => {
     const calcs = calcRefs.current;
     const debounces = debounceRefs.current;
     return () => {
+      flushAll();
+      onCommitRef.current?.();
       for (const kind of ["graphing", "scientific"] as const) {
         const pending = debounces[kind];
         if (pending !== null) window.clearTimeout(pending);
@@ -374,6 +426,7 @@ export default function DesmosCalculator({
         calcs[kind] = null;
       }
     };
+    // Unmount only: `flushAll` is stable (its inputs are refs and a stable callback).
   }, []);
 
   useEffect(() => {

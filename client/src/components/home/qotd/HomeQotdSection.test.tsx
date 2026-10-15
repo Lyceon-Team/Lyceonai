@@ -18,8 +18,11 @@ import {
   within,
 } from "@testing-library/react";
 import {
+  chooseNotSure,
   closeSatDates,
+  offeredSatDates,
   openSatDates,
+  waitForSatDates,
 } from "@/components/sat-dates/sat-date-picker.testing";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,8 +63,34 @@ vi.mock("@/lib/csrf", () => ({
     if (url === "/api/qotd/answer") return json({ data: net.answer }, 201);
     if (url === "/api/qotd/email-consent")
       return json({ data: { consented: true, show_email_prompt: false } });
+    // The served bound (owner rulings 2026-10-11 on #1204, 2026-10-12 on #1211).
+    if (url === "/api/sat-dates/bound")
+      return json({ latest_test_date: "2027-06-05", requestId: "r" });
     if (url.startsWith("/api/calendar/profile"))
       return json({ ...(net.profile as object), requestId: "r" });
+    // Ruling 3 (2026-10-13): "Not sure yet" on the SAT-date card, answered with the real shape.
+    if (url === "/api/home/getting-started/not-sure") {
+      const { deriveGettingStarted } =
+        await import("@lyceon/shared/getting-started-schema");
+      return json({
+        data: deriveGettingStarted(
+          {
+            email_eligible: true,
+            test_date_done: false,
+            qotd_done: true,
+            email_done: false,
+            email_skipped: false,
+            blind_spots_done: true,
+            review_done: false,
+            calendar_done: false,
+            lisa_done: false,
+            guardian_done: false,
+            dismissed: false,
+          },
+          { plan: "free", lisaAvailable: true },
+        ),
+      });
+    }
     return json({ error: "Not found" }, 404);
   },
 }));
@@ -321,10 +350,16 @@ describe("the SAT-date card", () => {
     mount();
     fireEvent.click(await screen.findByTestId("home-sat-date-open"));
     // The one picker: a dropdown whose items are "Not sure yet" first, then future dates only.
+    await waitForSatDates("home-sat-dates");
     const menu = openSatDates("home-sat-dates");
     const options = within(menu).getAllByRole("menuitemcheckbox");
     expect(options[0]?.textContent).toBe("Not sure yet");
     expect(options.length).toBeGreaterThan(2);
+    // Owner ruling 2026-10-11: nothing past the served bound is offered.
+    const offered = offeredSatDates("home-sat-dates");
+    expect(offered).toContain("2027-06-05");
+    expect(offered.every((d) => d <= "2027-06-05")).toBe(true);
+    expect(offered).not.toContain("2027-08-28");
     fireEvent.click(options[1] as HTMLElement);
     closeSatDates("home-sat-dates");
     fireEvent.click(screen.getByTestId("home-sat-date-save"));
@@ -342,6 +377,53 @@ describe("the SAT-date card", () => {
       "target_exam_dates",
     ]);
     expect((body.target_exam_dates as string[]).length).toBe(1);
+  });
+
+  it("ruling 3: 'Not sure yet' records it for the checklist, writes no date, and the card stays", async () => {
+    net.today = answeredEarlier();
+    mount();
+    fireEvent.click(await screen.findByTestId("home-sat-date-not-sure"));
+    await waitFor(() =>
+      expect(
+        net.log.filter(
+          (c) =>
+            c.method === "POST" &&
+            c.url === "/api/home/getting-started/not-sure",
+        ),
+      ).toHaveLength(1),
+    );
+    const sent = net.log.find(
+      (c) => c.url === "/api/home/getting-started/not-sure",
+    );
+    expect(sent?.body).toEqual({ test_date: true });
+    expect(net.log.some((c) => c.method === "PUT")).toBe(false);
+    // The card stays: it is how the student sets a date later.
+    expect(screen.getByTestId("home-sat-date-card")).toBeTruthy();
+  });
+
+  it("#1230 item 4: Save with nothing chosen is not an answer; 'Not sure yet' chosen in the picker is recorded", async () => {
+    net.today = answeredEarlier();
+    mount();
+    fireEvent.click(await screen.findByTestId("home-sat-date-open"));
+    await waitForSatDates("home-sat-dates");
+    closeSatDates("home-sat-dates");
+    const save = screen.getByTestId("home-sat-date-save") as HTMLButtonElement;
+    // Untouched: nothing to save, so nothing can be recorded.
+    expect(save.disabled).toBe(true);
+    chooseNotSure("home-sat-dates");
+    closeSatDates("home-sat-dates");
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(
+        net.log.filter(
+          (c) =>
+            c.method === "POST" &&
+            c.url === "/api/home/getting-started/not-sure",
+        ),
+      ).toHaveLength(1),
+    );
+    expect(net.log.some((c) => c.method === "PUT")).toBe(false);
   });
 
   it("is absent once a future date is saved", async () => {

@@ -659,6 +659,79 @@ function validateRecord(
     v("passage", "Math questions must have passage=null");
   }
 
+  // Rule 10 — DUPLICATED_BOUNDARY_WORDS: for RW fill-in-the-blank items,
+  // inserting an option at the blank must not duplicate adjacent passage words.
+  // Catches the "bacteria bacteria" / "vault vault" class of authoring defect.
+  if (
+    rec.section !== mathSection &&
+    rec.item_type === "mcq" &&
+    typeof rec.passage === "string" &&
+    rec.passage.includes("_____") &&
+    Array.isArray(rec.options)
+  ) {
+    const blankIdx = rec.passage.indexOf("_____");
+    const beforeBlank = rec.passage.slice(0, blankIdx).trimEnd();
+    const afterBlank = rec.passage.slice(blankIdx + 5).trimStart();
+
+    const wordsBefore = beforeBlank.split(/\s+/).filter(Boolean);
+    const wordsAfter = afterBlank.split(/\s+/).filter(Boolean);
+
+    const lastWordBefore =
+      wordsBefore.length > 0
+        ? wordsBefore[wordsBefore.length - 1]
+            .replace(/[^A-Za-z'-]/g, "")
+            .toLowerCase()
+        : "";
+    const firstWordAfter =
+      wordsAfter.length > 0
+        ? wordsAfter[0].replace(/[^A-Za-z'-]/g, "").toLowerCase()
+        : "";
+
+    for (const opt of rec.options as Array<{ key: string; text: string }>) {
+      if (!opt.text) continue;
+      const optWords = opt.text.trim().split(/\s+/).filter(Boolean);
+      if (optWords.length === 0) continue;
+
+      const optFirstWord = optWords[0]
+        .replace(/[^A-Za-z'-]/g, "")
+        .toLowerCase();
+      const optLastWord = optWords[optWords.length - 1]
+        .replace(/[^A-Za-z'-]/g, "")
+        .toLowerCase();
+
+      if (lastWordBefore.length >= 3 && optFirstWord === lastWordBefore) {
+        v(
+          `option_${opt.key}`,
+          `DUPLICATED_BOUNDARY_WORDS: option ${opt.key} starts with "${optWords[0]}" which duplicates the word before the blank ("${wordsBefore[wordsBefore.length - 1]}"). Inserting produces "${wordsBefore[wordsBefore.length - 1]} ${opt.text.slice(0, 40)}…". Move the blank boundary so the option does not repeat adjacent passage text.`,
+        );
+      }
+
+      if (firstWordAfter.length >= 3 && optLastWord === firstWordAfter) {
+        v(
+          `option_${opt.key}`,
+          `DUPLICATED_BOUNDARY_WORDS: option ${opt.key} ends with "${optWords[optWords.length - 1]}" which duplicates the word after the blank ("${wordsAfter[0]}"). Move the blank boundary so the option does not repeat adjacent passage text.`,
+        );
+      }
+    }
+  }
+
+  // Rule 11 — MISSING_UNDERLINED_TARGET: stem references "underlined" but
+  // passage has no underline marker.
+  if (
+    typeof rec.stem === "string" &&
+    /\bunderlined?\b/i.test(rec.stem) &&
+    typeof rec.passage === "string" &&
+    !/<u>/i.test(rec.passage) &&
+    !/__[^_]+__/.test(rec.passage) &&
+    !/\[underlined\]/i.test(rec.passage) &&
+    !/\*\*[^*]+\*\*/.test(rec.passage)
+  ) {
+    v(
+      "passage",
+      `MISSING_UNDERLINED_TARGET: stem references an "underlined" element but passage contains no underline marker (<u>…</u>, __…__, [underlined], or **…**). Add the marker or rewrite the stem.`,
+    );
+  }
+
   if (rec.item_type === "mcq") {
     validateMcq(rec, taxonomy, v);
   } else if (rec.item_type === "grid_in") {
@@ -780,6 +853,40 @@ function validateMcq(
           "option_metadata",
           `distractor option ${k} has invalid error_taxonomy "${meta.error_taxonomy}" for section ${rec.section}`,
         );
+      }
+    }
+  }
+
+  // Rule 12 — DUPLICATE_DISTRACTOR_VALUES: two MCQ options whose text
+  // evaluates to the same numeric value (e.g. "2/5" vs "16/40").
+  // Only fires on Math MCQs whose option texts are pure numeric expressions.
+  if (rec.section === taxonomy.math_section || rec.section === "M") {
+    const numericOptionRe = /^-?\s*\d+(?:\s*[/.]\s*\d+)?(?:\s*\\pi)?$/;
+    const optionNums: Array<{ key: string; value: number; text: string }> = [];
+    for (const opt of rec.options!) {
+      const t = opt.text.trim();
+      if (!numericOptionRe.test(t)) continue;
+      const cleaned = t.replace(/\\pi/g, "").trim();
+      let val: number;
+      if (cleaned.includes("/")) {
+        const [num, den] = cleaned.split("/").map((s) => parseFloat(s.trim()));
+        if (den === 0 || isNaN(num) || isNaN(den)) continue;
+        val = num / den;
+      } else {
+        val = parseFloat(cleaned);
+        if (isNaN(val)) continue;
+      }
+      if (t.includes("\\pi")) val *= Math.PI;
+      optionNums.push({ key: opt.key, value: val, text: t });
+    }
+    for (let i = 0; i < optionNums.length; i++) {
+      for (let j = i + 1; j < optionNums.length; j++) {
+        if (Math.abs(optionNums[i].value - optionNums[j].value) < 1e-9) {
+          v(
+            "options",
+            `DUPLICATE_DISTRACTOR_VALUES: options ${optionNums[i].key} ("${optionNums[i].text}") and ${optionNums[j].key} ("${optionNums[j].text}") are numerically equal. Each option must have a distinct value.`,
+          );
+        }
       }
     }
   }

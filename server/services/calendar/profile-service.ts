@@ -32,7 +32,8 @@
  * 200 and stores `America/Chicago`.
  *
  * trade-offs: the zone is checked against `pg_timezone_names`, one extra round trip per
- * upsert that names a timezone. `Intl` would be free, but the column is read by PL/pgSQL
+ * upsert that names a zone this instance has not already asked about (the answer is cached
+ * per zone since 2026-10-13; see `resolveStoredTimezone`). `Intl` would be free, but the column is read by PL/pgSQL
  * that does `AT TIME ZONE` on it — the database's own list is the authority, and a zone
  * `Intl` accepts and Postgres does not would fail at plan generation instead of here.
  *
@@ -45,6 +46,7 @@
  */
 import {
   err,
+  latestAcceptedExamDate,
   makeStudyProfileUpsertSchema,
   studyProfileSchema,
   type Result,
@@ -55,6 +57,11 @@ import {
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
 import { classifyError } from "../../lib/redact";
+import { createTtlCache } from "../../lib/ttl-cache";
+import {
+  CACHE_TTL_CONFIG,
+  readCacheTtlMs,
+} from "../../lib/caching-runtime-config";
 import { localTodayIn } from "./adapters/local-day";
 import { loadCalendarConfig } from "./config";
 import { regeneratePlan } from "./plan-service";
@@ -110,6 +117,34 @@ export async function readStudyProfile(
   }
   if (data === null) return null;
   return parseProfileRow(data, requestId);
+}
+
+/**
+ * @spec [§8.1 bounds; owner rulings (Karl) 2026-10-11 on #1204 (ruling 2) and 2026-10-12 on
+ *       #1211 ("any signed-in account (including one whose role isn't saved yet) can read
+ *       latest_test_date. Use the account's stored timezone if present, else America/Chicago.
+ *       Same shared helper as the save")] | @implemented [2026-10-12]
+ *
+ * plain English: the furthest test date `upsertStudyProfile` would accept for this account right
+ * now. Computed exactly as the write computes it: the same `localTodayForProfile` (the stored
+ * study-profile zone, or America/Chicago when there is no row, which is every account before
+ * calendar setup and every guardian) and the same `target_exam_date_max_days` row, through the
+ * shared `latestAcceptedExamDate`. Returns the date only: the profile is read for its zone and
+ * never leaves this function.
+ */
+export async function readSatDateBound(
+  accountId: string,
+  requestId?: string,
+  now?: Date,
+): Promise<{ latest_test_date: string }> {
+  const config = await loadCalendarConfig();
+  const profile = await readStudyProfile(accountId, requestId);
+  return {
+    latest_test_date: latestAcceptedExamDate(
+      localTodayForProfile(profile, now),
+      config.bounds.target_exam_date_max_days,
+    ),
+  };
 }
 
 /**
@@ -187,28 +222,90 @@ export function localTodayForProfile(
  * over an infrastructure blip, and item 19 makes the fallback the defined behaviour for
  * "undetectable", which a failed lookup is. `data !== true` rather than `data === false`
  * for the same reason — anything that is not an explicit yes is a fall-open.
+ *
+ * @spec [owner brief 2026-10-13 "first-run activation fixes" item 2 ("cache in process: the
+ *       pg_timezone_names list ... the timezone list is effectively static — cache with a long
+ *       TTL"); Doc-01A_V1.0 §21, §24, §25; owner rulings (Karl) 2026-10-13 on #1232, items 1
+ *       and 2] | @implemented [2026-10-13]
+ * CACHED PER ZONE, IN PROCESS. The answer to "does this Postgres know zone X" is a fact about
+ * the database build, the same for every student, and changes only when Postgres's tz data
+ * does (a Supabase platform upgrade) — never because of anything this application writes. So
+ * it is held per candidate zone in `KNOWN_TIMEZONE_CACHE` (TTL from
+ * `caching_runtime_config.known_timezone_cache_ttl_seconds`, seeded 24 h, read on a miss only —
+ * ruling item 2; 7-day hard staleness; 1,024 zones max — IANA has about 600, and the bound stops
+ * arbitrary device strings growing memory).
+ *
+ * WHAT THIS CACHE DOES NOT DO — ruling item 1, 2026-10-13. The production `pg_stat_statements`
+ * line that prompted it (`pg_timezone_names`, 494 calls, ~515 ms mean) comes from role
+ * `authenticator`: Supabase's API layer reloading its schema cache, not this application (per
+ * the owner's report of 2026-10-13). This cache does not and cannot reduce that line. It is
+ * KEPT, by the same ruling, because it still removes this application's own repeat round trip
+ * on every setup read that sends a device zone and every profile save. Both answers are cached, `true` and `false`; a FAILED lookup is not, so a blip is
+ * retried on the next request, and — Doc 01A §24 — a previously known answer inside the hard
+ * bound is served through one. The zone string is the only key and it is not personal data
+ * (the fall-back log below already records it). INVALIDATION: nothing in this application
+ * writes the zone list, so there is no writer to signal; a deploy starts fresh instances and
+ * clears it, the TTL bounds an instance that outlives a Postgres upgrade, and
+ * `invalidateKnownTimezoneCache()` drops it on demand.
+ * The cached answer is the SAME RPC's answer, so behaviour per zone is unchanged; only the
+ * repeat round trips (each scanning `pg_timezone_names`) are gone.
  */
+const KNOWN_TIMEZONE_CACHE = createTtlCache<boolean>({
+  name: "calendar:known_timezone",
+  ttlMs: CACHE_TTL_CONFIG.knownTimezone.fallbackSeconds * 1000,
+  ttlFrom: () => readCacheTtlMs("knownTimezone"),
+  hardStaleMs: 7 * 24 * 60 * 60 * 1000,
+  maxEntries: 1024,
+});
+
+/** The lookup failed (not "the zone is unknown"); carries the vendor error for classification. */
+class TimezoneLookupError extends Error {
+  constructor(readonly vendorError: unknown) {
+    super("calendar_is_known_timezone failed");
+    this.name = "TimezoneLookupError";
+  }
+}
+
+async function isKnownTimezone(candidate: string): Promise<boolean> {
+  return KNOWN_TIMEZONE_CACHE.get(candidate, async () => {
+    const { data, error } = await supabaseServer.rpc(
+      "calendar_is_known_timezone",
+      {
+        p_timezone: candidate,
+      },
+    );
+    if (error) throw new TimezoneLookupError(error);
+    return data === true;
+  });
+}
+
+/** Drops every cached timezone answer. For an operator after a Postgres upgrade, and tests. */
+export function invalidateKnownTimezoneCache(): void {
+  KNOWN_TIMEZONE_CACHE.invalidate();
+}
+
 export async function resolveStoredTimezone(
   candidate: string,
   requestId?: string,
 ): Promise<{ timezone: string; fellBack: boolean }> {
-  const { data, error } = await supabaseServer.rpc(
-    "calendar_is_known_timezone",
-    {
-      p_timezone: candidate,
-    },
-  );
-
-  if (error) {
+  let known: boolean;
+  try {
+    known = await isKnownTimezone(candidate);
+  } catch (error: unknown) {
     logger.warn(
       "CALENDAR_PROFILE",
       "timezone_lookup_failed",
       "pg_timezone_names could not be read; the profile falls open to the default zone",
-      { ...classifyError(error), requestId },
+      {
+        ...classifyError(
+          error instanceof TimezoneLookupError ? error.vendorError : error,
+        ),
+        requestId,
+      },
     );
     return { timezone: FALLBACK_TIMEZONE, fellBack: true };
   }
-  if (data !== true) {
+  if (!known) {
     // Deliberately INFO, not warn: an unknown zone is a defined outcome (item 19), not a
     // fault. The candidate is logged because a zone is not personal data and knowing
     // which zone a device reported is how a real IANA gap gets found.
@@ -237,18 +334,25 @@ const REQUIRED_FOR_SETUP = ["study_days_mask", "daily_minutes"] as const;
  * @spec [SCL-223; owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) Part A2:
  *       "Saving dates alone must not mark calendar setup complete or require study
  *       days/minutes"] | @implemented [2026-10-09]
- * A body that carries only SAT dates (and, optionally, the device zone). Onboarding and
- * Settings send these; they may create the row, and never complete setup.
+ * @spec [owner brief "Student dashboard — Getting started checklist + onboarding update"
+ *       (final brief v2, Karl, 2026-10-13) §1, and ruling 1 of 2026-10-13: "Settings → Profile
+ *       shows the target score field to every student (not only after calendar setup), saving
+ *       through the existing study-profile write"] | @implemented [2026-10-13]
+ * A GOAL-only body: SAT dates and/or the target score (and, optionally, the device zone).
+ * Onboarding and Settings send these before the student has opened the calendar; they may
+ * create the row, and never complete setup. The target score joined the dates on 2026-10-13:
+ * before it, a score saved from onboarding or Settings was read as calendar setup and refused
+ * as `incomplete` for want of study days and minutes.
  */
-function isDatesOnly(update: StudyProfileUpsert): boolean {
+const GOAL_FIELDS: ReadonlySet<string> = new Set([
+  "target_exam_dates",
+  "target_exam_date",
+  "target_score",
+]);
+function isGoalOnly(update: StudyProfileUpsert): boolean {
   const { idempotency_key: _key, timezone: _tz, ...fields } = update;
   const named = Object.entries(fields).filter(([, v]) => v !== undefined);
-  return (
-    named.length > 0 &&
-    named.every(
-      ([k]) => k === "target_exam_dates" || k === "target_exam_date",
-    )
-  );
+  return named.length > 0 && named.every(([k]) => GOAL_FIELDS.has(k));
 }
 
 /**
@@ -282,10 +386,10 @@ export async function upsertStudyProfile(
   }
   const update: StudyProfileUpsert = parsed.data;
 
-  // A write that is not dates-only is calendar setup (or an edit after it), so the schedule
+  // A write that is not goal-only is calendar setup (or an edit after it), so the schedule
   // must be present once it lands: sent now, or already stored.
-  const datesOnly = isDatesOnly(update);
-  if (!datesOnly) {
+  const goalOnly = isGoalOnly(update);
+  if (!goalOnly) {
     const missing = REQUIRED_FOR_SETUP.filter(
       (field) =>
         update[field] === undefined && (existing?.[field] ?? null) === null,
@@ -358,9 +462,18 @@ export async function upsertStudyProfile(
   // read answers `setup_required` and serves `defaults` instead. So the first write is
   // always setup finishing, whatever it did or did not carry.
   //
-  // SCL-223: except a dates-only write. Onboarding and Settings save SAT dates before the
-  // student has opened the calendar; that row exists, and setup is still outstanding.
-  const completesSetup = !datesOnly && existing?.setup_completed_at == null;
+  // SCL-223: except a goal-only write (SAT dates and/or target score, 2026-10-13). Onboarding
+  // and Settings save these before the student has opened the calendar; that row exists, and
+  // setup is still outstanding. ONE EXCEPTION, kept from before 2026-10-13: a target score
+  // saved onto a row whose schedule is already stored but was never stamped (a student who
+  // pressed through setup without answering, before SCL-130) finishes setup, as it always did.
+  // SAT dates alone never do.
+  const scheduleStored = REQUIRED_FOR_SETUP.every(
+    (field) => (existing?.[field] ?? null) !== null,
+  );
+  const completesSetup =
+    existing?.setup_completed_at == null &&
+    (!goalOnly || (scheduleStored && update.target_score !== undefined));
   if (completesSetup) row.setup_completed_at = new Date().toISOString();
 
   /**
