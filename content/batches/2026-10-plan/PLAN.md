@@ -27,7 +27,7 @@ batch is produced the Wednesday before its week.
 | 2026-W43 | Fri, Oct 23, 2026 | Sat, Nov 7, 2026 (15) | `two-week-sat-study-plan` | how to study for the sat in 2 weeks | Students | A day-by-day plan for the last two weeks, ending where the Nov 4 final-days post begins | 15 days to the Nov 7 test. Hook-bank angle: Late starter |
 | 2026-W44 | Mon, Oct 26, 2026 | Sat, Nov 7, 2026 (12) | `sat-grammar-questions` | sat grammar questions | Students | The grammar and punctuation skills the Reading and Writing section tests, with our own example sentences | 12 days out: a focused review of one question family. Hook-bank angle: Self-starter |
 | 2026-W44 | Wed, Oct 28, 2026 | Sat, Nov 7, 2026 (10) | `sat-math-formulas` | sat math formulas | Students | What the reference sheet gives you, and the formulas worth knowing that it leaves out | 10 days out: a focused review for the Math section. Hook-bank angle: Self-starter |
-| 2026-W44 | Fri, Oct 30, 2026 | Sat, Nov 7, 2026 (8) | `sat-device-requirements` | sat device requirements | Both | Which devices work for the digital SAT, school-managed devices, borrowing a device | 8 days out: time to fix a device problem before exam setup opens Nov 2. Hook-bank angle: Test-day nerves |
+| 2026-W44 | Fri, Oct 30, 2026 | Sat, Nov 7, 2026 (8) | `sat-device-requirements` | sat device requirements | Both | Which devices work for the digital SAT (no personal Chromebooks or phones), checking yours, and borrowing one from school, family or a friend; a new College Board loan request is already too late for Nov 7 (it needs 30 days), so that is for later test dates | 8 days out: time to fix a device problem before exam setup opens Nov 2. Sources: [SAT device lending](https://satsuite.collegeboard.org/sat/device-lending), [Bluebook: SAT Weekend](https://bluebook.collegeboard.org/students/sat-weekend), [Bluebook: approved devices](https://bluebook.collegeboard.org/students/prepare-your-device/approved-devices). Hook-bank angle: Test-day nerves |
 
 ## Notes for Karl
 
@@ -37,8 +37,8 @@ batch is produced the Wednesday before its week.
   final-days, timing, score, retake, Bluebook, registration-deadline, superscore, score-sending,
   general-strategy, Desmos or PSAT post. The Oct 19 post is how to register (the steps); the
   Nov 16 post is the December deadlines. The Oct 23 two-week plan ends where the Nov 4 final-days
-  post starts. The Oct 30 device post is about checking the device a week out; the Nov 2 and
-  Nov 4 posts cover packing and exam setup.
+  post starts. The Oct 30 device post is about checking the device a week out and borrowing one locally if
+  needed; the Nov 2 and Nov 4 posts cover packing and exam setup.
 - **Target keywords.** All six are new: 47 distinct across the 31 pages on the site, the ten
   November slots not yet produced, and these six (case and plurals ignored, as gate 11 compares
   them). Search volumes, where the 2026-10-02 keyword export has the term: `sat grammar questions`
@@ -46,7 +46,7 @@ batch is produced the Wednesday before its week.
   terms are not in that export; they are picked for the calendar, as Doc 10B §3A asks.
 - **Closest existing pages** (R7): `sat-grammar-questions` sits next to
   `/sat-practice-questions/reading-and-writing` (a practice set); this one explains the rules.
-  `sat-math-formulas` sits next to `/blog/sat-algebra-mistakes` (common errors); this one is the
+  `sat-math-formulas` sits next to `/blog/common-sat-math-algebra-mistakes` (common errors); this one is the
   reference sheet and what to know beyond it. `two-week-sat-study-plan` sits next to
   `/how-to-study-for-the-sat` (ongoing study); this one is the last two weeks before a test date.
 - **Dates.** Every SAT date above comes from `shared/sat-test-dates.ts` (College Board). Posts
