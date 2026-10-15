@@ -1199,37 +1199,47 @@ describe("Home shows no raw accuracy, bank count or confidence (register §2; F-
   });
 });
 
-// ── Three equal entry points (owner ruling, Karl, 2026-10-15, on #1233) ──────────────────
+// ── Three equal entry points (owner ruling, Karl, 2026-10-15, on #1233; wording 2026-10-15) ─
 
 /**
- * @spec [owner ruling (Karl, 2026-10-15, on #1233) "Home: three equal entry points"]
- *       | @implemented [2026-10-15]
- * plain English: one compact section at the bottom of Home's main column on both plans, rows
- * Practice, Review, Full-Length with the ruled words and text-link actions, no filled button;
- * Review's count is the review pool's total; Full-Length is the phone's way to the Full-Length
- * page (locked for free: the upgrade modal, in place). Supersedes final brief v2 §4's removal.
+ * @spec [owner ruling (Karl, 2026-10-15, on #1233) "Home: three equal entry points"; owner
+ *       wording ruling (Karl, 2026-10-15, after #1233 merged)] | @implemented [2026-10-15]
+ * plain English: one compact section at the bottom of Home's main column on both plans, rows in
+ * the order Practice, Review, Full-Length with Karl's words ("Work on new questions", "Fix past
+ * mistakes", "Take a full-length test"), each action "Start", named by its row's title; no filled
+ * button. Review's line is the review pool's total ("{N} waiting", "All caught up" at 0, no line
+ * when the read failed). Full-Length is the phone's way to the Full-Length page (locked for
+ * free: the upgrade modal, in place).
  */
 describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #1233)", () => {
   type Row = {
-    name: string;
-    line: string;
+    title: string;
+    line: string | null;
     action: HTMLElement;
     li: HTMLElement;
   };
   function entryRows(): Row[] {
     const section = screen.getByTestId("home-entry-points");
     return Array.from(section.querySelectorAll<HTMLElement>("li")).map((li) => {
-      const spans = li.querySelectorAll("span");
       const action = li.querySelector<HTMLElement>("a, button");
       if (action === null) throw new Error("a row without an action");
+      const line = li.querySelector('[data-testid="home-entry-line"]');
       return {
-        name: spans[0]?.textContent ?? "",
-        line: spans[1]?.textContent ?? "",
+        title: li.querySelector("span")?.textContent ?? "",
+        line: line === null ? null : (line.textContent ?? ""),
         action,
         li,
       };
     });
   }
+
+  const PAID_NAMES = [
+    "Start Work on new questions",
+    "Start Fix past mistakes",
+    "Start Take a full-length test",
+  ];
+  const FREE_LOCKED_NAME =
+    "Start Take a full-length test (included with a paid plan)";
 
   /** Nothing on the section or above it (to <main>) hides it at any width. */
   function expectShownAtEverySize(el: HTMLElement): void {
@@ -1246,20 +1256,31 @@ describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #12
     }
   }
 
-  it("paid: Practice, Review, Full-Length, in order, with the ruled words, at the bottom of the column", async () => {
+  it("paid: the three rows in order with Karl's words, each Start named by its row, at the bottom of the column", async () => {
     const { container } = await mount("paid", { calendar: "ready" });
     const section = await screen.findByTestId("home-entry-points");
     const rows = entryRows();
-    expect(rows.map((r) => [r.name, r.line, r.action.textContent])).toEqual([
-      ["Practice", "Questions on any skill", "Start"],
-      ["Review", "5 waiting from past mistakes", "Review"],
-      ["Full-Length", "A timed test, like test day", "Start"],
+    expect(rows.map((r) => [r.title, r.line, r.action.textContent])).toEqual([
+      ["Work on new questions", "Any skill, any difficulty", "Start"],
+      ["Fix past mistakes", "5 waiting", "Start"],
+      ["Take a full-length test", "Timed, like test day", "Start"],
     ]);
-    expect(rows.map((r) => r.action.getAttribute("href"))).toEqual([
+    // Three "Start"s, three distinct names, each reaching its own page.
+    const links = PAID_NAMES.map((name) =>
+      within(section).getByRole("link", { name }),
+    );
+    expect(links).toEqual(rows.map((r) => r.action));
+    expect(links.map((l) => l.getAttribute("href"))).toEqual([
       "/practice",
       "/review",
       "/tests",
     ]);
+    expect(within(section).queryAllByRole("link", { name: "Start" })).toEqual(
+      [],
+    );
+    // The rows do not repeat the rail's section names.
+    for (const name of ["Practice", "Review", "Full-Length"])
+      expect(rows.map((r) => r.title)).not.toContain(name);
     // Bottom of the main column: after today's plan, Mastery and Pick up, last of the column.
     await waitFor(() =>
       expect(screen.getByTestId("home-mastery")).toBeTruthy(),
@@ -1293,27 +1314,59 @@ describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #12
     expect(screen.queryByTestId("home-entry-full-length-lock")).toBeNull();
   });
 
-  it("Review's count is the server's pool total, and 0 says 'Nothing waiting'", async () => {
+  it("Review's line is the server's pool total: '{N} waiting', and 0 says 'All caught up'", async () => {
     await mount("paid", { calendar: "ready", poolTotal: 17 });
     await screen.findByTestId("home-entry-points");
-    expect(entryRows()[1]?.line).toBe("17 waiting from past mistakes");
+    expect(entryRows()[1]?.line).toBe("17 waiting");
     cleanup();
     await mount("free", { estimateStatus: "baseline_only", poolTotal: 0 });
     await screen.findByTestId("home-entry-points");
-    expect(entryRows()[1]?.line).toBe("Nothing waiting");
+    expect(entryRows()[1]?.line).toBe("All caught up");
     expect(gets()).toContain("/api/review/pool");
   });
 
-  it("free: the same rows last in the column; Full-Length locked with the rail's words", async () => {
+  it("the review pool fails to load: Review has no muted line and no number, and keeps the rows' height", async () => {
+    await mount(
+      "paid",
+      { calendar: "ready" },
+      { failPath: /^\/api\/review\/pool/ },
+    );
+    // Presence first: the page drew (its load notice) and the other rows have their lines.
+    expect(await screen.findByTestId("home-load-error")).toBeTruthy();
+    const rows = entryRows();
+    expect(rows.map((r) => r.line)).toEqual([
+      "Any skill, any difficulty",
+      null,
+      "Timed, like test day",
+    ]);
+    const review = rows[1];
+    if (review === undefined) throw new Error("three rows");
+    expect(review.title).toBe("Fix past mistakes");
+    expect(review.li.textContent).not.toMatch(/\d/);
+    expect(review.li.textContent).not.toMatch(/waiting|caught up/);
+    // One row height for all three: the text block keeps a second, invisible, unread line.
+    const blocks = rows.map((r) => r.li.firstElementChild);
+    expect(blocks.map((b) => b?.childElementCount)).toEqual([2, 2, 2]);
+    const spacer = blocks[1]?.lastElementChild;
+    expect(spacer?.getAttribute("aria-hidden")).toBe("true");
+    expect(spacer?.className.split(/\s+/)).toContain("invisible");
+    expect(
+      within(screen.getByTestId("home-entry-points")).getByRole("link", {
+        name: "Start Fix past mistakes",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("free: the same rows last in the column, with the same words; Full-Length locked, named with the rail's words", async () => {
     const { container } = await mount("free", {
       estimateStatus: "baseline_only",
     });
     const section = await screen.findByTestId("home-entry-points");
     const rows = entryRows();
-    expect(rows.map((r) => [r.name, r.line, r.action.textContent])).toEqual([
-      ["Practice", "Questions on any skill", "Start"],
-      ["Review", "5 waiting from past mistakes", "Review"],
-      ["Full-Length", "A timed test, like test day", "Start"],
+    expect(rows.map((r) => [r.title, r.line, r.action.textContent])).toEqual([
+      ["Work on new questions", "Any skill, any difficulty", "Start"],
+      ["Fix past mistakes", "5 waiting", "Start"],
+      ["Take a full-length test", "Timed, like test day", "Start"],
     ]);
     expect(
       Array.from(screen.getByTestId("home").children)
@@ -1324,20 +1377,24 @@ describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #12
       screen.getByTestId("home-how").compareDocumentPosition(section) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    const full = rows[2]?.action;
-    if (full === undefined) throw new Error("three rows");
-    expect(full.tagName).toBe("BUTTON");
+    expect(
+      within(section).getByRole("link", { name: PAID_NAMES[0] }),
+    ).toBeTruthy();
+    expect(
+      within(section).getByRole("link", { name: PAID_NAMES[1] }),
+    ).toBeTruthy();
+    const full = within(section).getByRole("button", {
+      name: FREE_LOCKED_NAME,
+    });
+    expect(full).toBe(rows[2]?.action);
     expect(full.getAttribute("href")).toBeNull();
-    expect(full.getAttribute("aria-label")).toBe(
-      "Start a full-length test, included with a paid plan",
-    );
     expect(
       within(section).getByTestId("home-entry-full-length-lock"),
     ).toBeTruthy();
     expect(primaries(container)).toEqual([]);
   });
 
-  it("390px, free: Home's Full-Length row is shown and opens the upgrade modal in place (no navigation, no gated request)", async () => {
+  it("390px, free: 'Take a full-length test' is shown and its Start opens the upgrade modal in place (no navigation, no gated request)", async () => {
     installPhone();
     window.innerWidth = 390;
     const { history } = await mount("free", {
@@ -1347,7 +1404,7 @@ describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #12
     expectShownAtEverySize(section);
     const before = net.log.length;
     fireEvent.click(
-      within(section).getByTestId("home-entry-full-length-action"),
+      within(section).getByRole("button", { name: FREE_LOCKED_NAME }),
     );
     const modal = await screen.findByTestId("upgrade-modal");
     expect(modal.textContent).toContain(
@@ -1360,15 +1417,13 @@ describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #12
     expect(gets().filter((p) => /^\/api\/(tests|exam)/.test(p))).toEqual([]);
   });
 
-  it("390px, paid: Home's Full-Length row goes to the Full-Length page (its starts ask the phone check there)", async () => {
+  it("390px, paid: 'Start Take a full-length test' goes to the Full-Length page (its starts ask the phone check there)", async () => {
     installPhone();
     window.innerWidth = 390;
     const { history } = await mount("paid", { calendar: "ready" });
     const section = await screen.findByTestId("home-entry-points");
     expectShownAtEverySize(section);
-    const start = within(section).getByTestId("home-entry-full-length-action");
-    expect(start.tagName).toBe("A");
-    expect(start.getAttribute("aria-label")).toBe("Start a full-length test");
+    const start = within(section).getByRole("link", { name: PAID_NAMES[2] });
     fireEvent.click(start);
     expect(history.at(-1)).toBe("/tests");
     // The link starts nothing: no launch, and the phone check belongs to the page's own starts.
@@ -1376,13 +1431,15 @@ describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #12
     expect(net.log.filter((l) => l.startsWith("POST "))).toEqual([]);
   });
 
-  it("Practice and Review rows navigate to their pages", async () => {
+  it("each Start, found by its name, goes to its own page", async () => {
     const { history } = await mount("paid", { calendar: "ready" });
-    await screen.findByTestId("home-entry-points");
-    fireEvent.click(screen.getByTestId("home-entry-practice-action"));
+    const section = await screen.findByTestId("home-entry-points");
+    fireEvent.click(within(section).getByRole("link", { name: PAID_NAMES[0] }));
     expect(history.at(-1)).toBe("/practice");
-    fireEvent.click(screen.getByTestId("home-entry-review-action"));
+    fireEvent.click(within(section).getByRole("link", { name: PAID_NAMES[1] }));
     expect(history.at(-1)).toBe("/review");
+    fireEvent.click(within(section).getByRole("link", { name: PAID_NAMES[2] }));
+    expect(history.at(-1)).toBe("/tests");
   });
 });
 
