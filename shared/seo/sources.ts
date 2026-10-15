@@ -200,3 +200,73 @@ export const CB_SCORE_RELEASE_DATES: Source = {
   label: "College Board: SAT score release dates",
   url: SAT_SCORE_RELEASE_SOURCE_URL,
 };
+
+// Content pipeline, batch 2026-W43 (Doc 10B; read 2026-10-15). Each page was fetched on
+// 2026-10-15 and the quoted text found on it; the quotes are in the claim inventory's
+// "Content pipeline sources (batch 2026-W43)" table.
+
+/** Registering online: about 30 minutes, register yourself, account, photo, test date and center. */
+export const CB_REGISTERING: Source = {
+  label: "College Board: registering for the SAT",
+  url: "https://satsuite.collegeboard.org/sat/registration/online-registration/registering",
+};
+
+/** "Before you register, make sure you have a photo and form of payment." */
+export const CB_REGISTRATION: Source = {
+  label: "College Board: SAT registration",
+  url: "https://satsuite.collegeboard.org/sat/registration",
+};
+
+/** The registration photo: head-on, only you, face and eyes visible, no filters; a photo that fails means no testing. */
+export const CB_PHOTO_REQUIREMENTS: Source = {
+  label: "College Board: SAT photo requirements",
+  url: "https://satsuite.collegeboard.org/sat/registration/online-registration/photo-requirements",
+};
+
+/** The $68 registration fee and the change, cancel and late registration fees (through June 2027). */
+export const CB_TEST_FEES: Source = {
+  label: "College Board: SAT test fees",
+  url: "https://satsuite.collegeboard.org/sat/registration/fees-refunds/test-fees",
+};
+
+/** Changing a registration: test center through the account, a new date means cancel and re-register, photo until 5 days before. */
+export const CB_CHANGE_REGISTRATION: Source = {
+  label: "College Board: changing your SAT registration",
+  url: "https://satsuite.collegeboard.org/sat/registration/change-cancel/changing-registration-info",
+};
+
+/** Getting a fee waiver: counselor code or a direct request, once per lifetime, 1–2 weeks before the deadline. */
+export const CB_FEE_WAIVERS: Source = {
+  label: "College Board: SAT fee waivers",
+  url: "https://satsuite.collegeboard.org/sat/registration/fee-waivers",
+};
+
+/** Who is eligible: low-income 11th and 12th graders, and the six descriptions. */
+export const CB_FEE_WAIVER_ELIGIBILITY: Source = {
+  label: "College Board: SAT fee waiver eligibility",
+  url: "https://satsuite.collegeboard.org/sat/registration/fee-waivers/fee-waiver-eligibility",
+};
+
+/** What a fee waiver covers: two free tests, unlimited score reports, application fee waivers, no late or cancel fees. */
+export const CB_FEE_WAIVER_BENEFITS: Source = {
+  label: "College Board: SAT fee waiver benefits",
+  url: "https://satsuite.collegeboard.org/sat/registration/fee-waivers/fee-waiver-benefits",
+};
+
+/** Using a fee waiver: the request form or a code; codes for 2026–27 start with FW26 and expire in August. */
+export const CB_GETTING_FEE_WAIVER_BENEFITS: Source = {
+  label: "College Board: getting SAT fee waiver benefits",
+  url: "https://satsuite.collegeboard.org/sat/registration/fee-waivers/getting-fee-waiver-benefits",
+};
+
+/** College Board's study-plan guidance: practice test at least two weeks before test day; spacing tests; study activities. */
+export const CB_STUDY_PLAN: Source = {
+  label: "College Board: build your SAT study plan",
+  url: "https://satsuite.collegeboard.org/practice/build-your-study-plan",
+};
+
+/** The Student Question Bank: filter by test, domain, skill and difficulty. */
+export const CB_QUESTION_BANK: Source = {
+  label: "College Board: how to use the Student Question Bank",
+  url: "https://satsuite.collegeboard.org/practice/student-question-bank",
+};

@@ -252,16 +252,42 @@ plant "$CHECKS_WF" "    branches: [social]" "    branches: [seo, social]" || { b
 run "B3 trigger is social only" "a batch PR into social triggers the review-record check; the same into seo does not" "$BRANCH_T"
 
 echo "=== (AP1) a push that is not the pull request's merge commit is stamped ==="
-plant "$STAMP" "  if (pr.merge_commit_sha !== pushSha)" "  if (false)" || { bad "AP1 STALE"; exit 1; }
+plant "$STAMP" '  if (anchor.kind === "push" && pr.merge_commit_sha !== anchor.sha)' "  if (false)" || { bad "AP1 STALE"; exit 1; }
 run "AP1 this push's merge only" "a push that is not that pull request's merge commit stamps nothing" "$STAMP_T"
 
-echo "=== (AP2) the stamp is pushed with the workflow token, not the App's ==="
-plant "$APPROVAL_WF" "          token: \${{ steps.app.outputs.token }}" "          token: \${{ github.token }}" || { bad "AP2 STALE"; exit 1; }
-run "AP2 pushed as the App" "the stamp is pushed to social with the App token, never the workflow token" "$BRANCH_T"
+# Karl's ruling (2026-10-11, restated 2026-10-15): no GitHub App; the workflow token pushes.
+echo "=== (AP2) the stamp is pushed with an App token again ==="
+plant "$APPROVAL_WF" "          fetch-depth: 0" "          fetch-depth: 0
+          token: \${{ steps.app.outputs.token }}" || { bad "AP2 STALE"; exit 1; }
+run "AP2 workflow token, no App" "the stamp is pushed to social with the workflow token: no App, no key" "$BRANCH_T"
 
-echo "=== (AP3) the stamp job runs outside the Environment that guards the App key ==="
-plant "$APPROVAL_WF" "    environment: content-approval" "" || { bad "AP3 STALE"; exit 1; }
-run "AP3 key only in the Environment" "the approval stamp runs only on a push to social, in the Environment that holds the App key" "$BRANCH_T"
+echo "=== (AP3) the workflow token loses write access (the stamp could never be pushed) ==="
+plant "$APPROVAL_WF" "  contents: write" "  contents: read" || { bad "AP3 STALE"; exit 1; }
+run "AP3 token can write" "the approval stamp runs on a push to social or Karl's dispatch, only on social, with no Environment" "$BRANCH_T"
+
+echo "=== (AP4) a dispatch from another branch runs ==="
+plant "$APPROVAL_WF" "    if: github.ref == 'refs/heads/social'" "" || { bad "AP4 STALE"; exit 1; }
+run "AP4 dispatch only on social" "the approval stamp runs on a push to social or Karl's dispatch, only on social, with no Environment" "$BRANCH_T"
+
+echo "=== (AP5) a dispatched merge whose commit is not on social is stamped ==="
+plant "$STAMP" '  if (anchor.kind === "dispatch" && !anchor.mergeCommitOnBranch)' "  if (false)" || { bad "AP5 STALE"; exit 1; }
+run "AP5 merge commit on social" "a dispatch whose merge commit is not on social stamps nothing" "$STAMP_T"
+
+echo "=== (AP6) the workflow skips the on-social check ==="
+plant "$APPROVAL_WF" '          if [ -n "$merge_sha" ] && git merge-base --is-ancestor "$merge_sha" HEAD 2>/dev/null; then' "          if true; then" || { bad "AP6 STALE"; exit 1; }
+run "AP6 ancestor check in the workflow" "a dispatch reads only the requested pull request, validates the number, and checks its merge commit is on social" "$BRANCH_T"
+
+echo "=== (AP7) a dispatch stamps a different pull request's record ==="
+plant "$STAMP" '  if (anchor.kind === "dispatch" && pr.number !== anchor.pr)' "  if (false)" || { bad "AP7 STALE"; exit 1; }
+run "AP7 the requested PR only" "a dispatch naming one pull request never stamps another's record" "$STAMP_T"
+
+echo "=== (AP8) any non-empty on_branch value counts as on social ==="
+plant "$STAMP" '      mergeCommitOnBranch: env.STAMP_MERGE_ON_BRANCH === "true",' "      mergeCommitOnBranch: Boolean(env.STAMP_MERGE_ON_BRANCH)," || { bad "AP8 STALE"; exit 1; }
+run "AP8 exact true only" "a dispatch number means a dispatch; only the exact string true puts the merge on social" "$STAMP_T"
+
+echo "=== (AP9) a dispatch that cannot stamp exits green ==="
+plant "$STAMP" '    ? { exitCode: 1, message: `stamp-approval: ${reason}; nothing stamped` }' '    ? { exitCode: 0, message: `stamp-approval: ${reason}; nothing stamped` }' || { bad "AP9 STALE"; exit 1; }
+run "AP9 failed dispatch is red" "a dispatch that cannot stamp fails the run; a push that merged nothing does not" "$STAMP_T"
 
 echo
 echo "CONTENT OPS MUTATIONS: $PASS passed, $FAIL failed"
