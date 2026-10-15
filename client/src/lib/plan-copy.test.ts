@@ -69,7 +69,7 @@ const CONFIGURED_COUNT_LITERAL =
 describe("planFreeIncludes (OQ-68 (d))", () => {
   it("prints the number it is given: a config value that is not 40 changes the copy", () => {
     expect(planFreeIncludes(37)).toBe(
-      "Free: the diagnostic, your projected score, 37 practice questions a day and unlimited review.",
+      "Free: Find your blind spots, your projected score, 37 practice questions a day and unlimited review.",
     );
     expect(planFreeIncludes(1)).toContain("1 practice question a day");
   });
@@ -77,7 +77,7 @@ describe("planFreeIncludes (OQ-68 (d))", () => {
   it("prints no number while the read has not answered or failed", () => {
     const line = planFreeIncludes(null);
     expect(line).toBe(
-      "Free: the diagnostic, your projected score, daily practice questions and unlimited review.",
+      "Free: Find your blind spots, your projected score, daily practice questions and unlimited review.",
     );
     expect(line).not.toMatch(/\d/);
     expect(PLAN_PAID_ADDS).not.toMatch(/\d/);
@@ -96,7 +96,7 @@ describe("no configured count is written as a literal in client copy (UI-64 grep
       5000,
     );
     for (const removed of [
-      "Free: the diagnostic, your projected score, 40 practice questions a day and unlimited review.",
+      "Free: Find your blind spots, your projected score, 40 practice questions a day and unlimited review.",
       "40 questions, five from each of the eight SAT domains.",
       "Forty questions across every domain give you a projected score and a starting point.",
       "Forty practice questions a day, and every question you miss comes back until you get it right.",

@@ -12,12 +12,13 @@
  *        (owner ruling, Karl, 2026-10-08, UI-64: the configured numbers in the copy come from
  *        the server)] | @implemented [2026-10-03; OQ-68 (d) 2026-10-08]
  *
- * plain English: the main column is the welcome, the diagnostic card (only while the student
- * has no baseline: a ruler of their own diagnostic's progress and "Start diagnostic", the ONE
- * primary action) and "How Lyceon works" (three steps tagged Free or Paid plans). Once the
- * diagnostic is done the card goes and "Go to practice" becomes the primary (OQ-39(c)). Last in
- * the column is the "Start a full-length test" card (owner ruling, Karl, 2026-10-05), locked
- * here: it opens the upgrade modal in place and reads nothing. The
+ * plain English: the main column is the welcome, the diagnostic card — "Find your blind spots"
+ * (only while the student has no baseline: a ruler of their own progress and the start button)
+ * — the Practice and Review buttons, and "How Lyceon works" (three steps tagged Free or Paid
+ * plans). Final brief v2 (Karl, 2026-10-13): while the Getting started checklist is active it
+ * sits above today's question, replaces "How Lyceon works" and owns the one primary (the blind
+ * spots button is outlined until it is dismissed); Practice and Review are outlined buttons; the
+ * locked full-length card (owner ruling 2026-10-05) is removed from Home. The
  * right panel is the projected score (or why there is none yet), the locked mastery card
  * ("See what's included" opens the upgrade modal for `mastery_detail`) and today's quota.
  *
@@ -37,23 +38,24 @@
  * a guess.
  */
 import { useState } from "react";
-import { Link } from "wouter";
 import type { FeatureLockReason } from "@lyceon/shared/feature-access";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
 import { Notice, PageHeader } from "@/components/student-ui";
-import { Button } from "@/components/ui/button";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { usePracticeQuota } from "@/hooks/usePracticeQuota";
-import { FullLengthCard } from "./FullLengthCard";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
 import { homeQotdFirstLoad, useHomeQotd } from "@/hooks/useHomeQotd";
 import { HomeLoading } from "./HomeLoading";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
 import { DiagnosticCard } from "./DiagnosticCard";
+import { GettingStartedCard } from "./GettingStartedCard";
+import { HomePracticeReview } from "./HomePracticeReview";
+import { useGettingStarted } from "@/hooks/useGettingStarted";
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 import {
   diagnosticStepBody,
   freeHomeStage,
@@ -62,8 +64,6 @@ import {
 
 const SECTION_H2 =
   "m-0 font-lyc-serif text-lyc-section font-semibold text-lyc-ink-strong";
-const TEXT_LINK =
-  "text-[17px] font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline";
 
 const FREE_TAG = "border border-lyc-lv2-bd bg-lyc-lv2-bg text-lyc-lv2-ink";
 const PAID_TAG = "bg-lyc-primary-bg text-lyc-primary-ink";
@@ -85,7 +85,7 @@ function howSteps(
   return [
     {
       n: "1",
-      title: "Take the diagnostic",
+      title: BLIND_SPOTS_NAME,
       body: diagnosticStepBody(diagnosticTotal),
       tag: "Free",
       tone: FREE_TAG,
@@ -126,6 +126,7 @@ export function FreeHome({
   const qotd = useHomeQotd();
   const practice = useActiveSessions();
   const quota = usePracticeQuota();
+  const gettingStarted = useGettingStarted();
   const stage = freeHomeStage(projection.estimateStatus);
 
   const trimmed = name?.trim() ?? "";
@@ -138,9 +139,17 @@ export function FreeHome({
     !projection.isLoading &&
     !practice.isLoading &&
     !quota.isLoading &&
+    !gettingStarted.isLoading &&
     // First-run activation brief (Karl, 2026-10-13) P1: the QOTD card lands with the page.
     !homeQotdFirstLoad(qotd);
   if (!settled) return <HomeLoading />;
+  // Final brief v2 §4: while the Getting started checklist is active it sits above today's
+  // question and replaces "How Lyceon works"; after dismissal the 2026-10-08/09 order returns.
+  // A failed read draws the page as after dismissal: nothing on Home waits on the checklist.
+  const checklist =
+    gettingStarted.data !== undefined && !gettingStarted.data.dismissed
+      ? gettingStarted.data
+      : null;
 
   const freeDailyLimit = quota.data?.freeDailyLimit ?? null;
 
@@ -154,14 +163,22 @@ export function FreeHome({
         }
         description={
           stage === "diagnostic"
-            ? "Study smarter, score higher. Start with the free diagnostic so your practice begins in the right place."
+            ? `Study smarter, score higher. Start with ${BLIND_SPOTS_NAME} so your practice begins in the right place.`
             : "Study smarter, score higher."
         }
         actions={<HomeStreakChip celebrate={celebrate} />}
       />
 
+      {checklist !== null ? (
+        <GettingStartedCard
+          data={checklist}
+          diagnosticTotal={practice.diagnosticTotalQuestions}
+        />
+      ) : null}
+
       {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the QOTD card and the
-          SAT-date card come right after the greeting and the streak chip, before the next step. */}
+          SAT-date card come right after the greeting and the streak chip, before the next step
+          (below the Getting started checklist while it is active, final brief v2 §4). */}
       <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
 
       {failed ? (
@@ -178,71 +195,56 @@ export function FreeHome({
         />
       ) : null}
 
-      {stage === "diagnostic" ? <DiagnosticCard practice={practice} /> : null}
+      {stage === "diagnostic" ? (
+        <DiagnosticCard practice={practice} primary={checklist === null} />
+      ) : null}
 
-      <section
-        aria-labelledby="home-how-h"
-        className="flex flex-col gap-[18px]"
-        data-testid="home-how"
-      >
-        <h2 id="home-how-h" className={SECTION_H2}>
-          How Lyceon works
-        </h2>
-        <ol className="m-0 list-none border-t border-lyc-rule p-0">
-          {howSteps(practice.diagnosticTotalQuestions, freeDailyLimit).map(
-            (step) => (
-              <li
-                key={step.n}
-                className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border-b border-lyc-rule py-[22px] sm:grid-cols-[56px_minmax(0,1fr)_160px] sm:gap-5"
-              >
-                <span
-                  aria-hidden="true"
-                  className="font-lyc-serif text-[34px] font-semibold leading-none text-lyc-step"
-                >
-                  {step.n}
-                </span>
-                <div className="flex flex-col gap-1.5">
-                  <span className="font-lyc-serif text-[21px] font-semibold text-lyc-ink-strong">
-                    {step.title}
-                  </span>
-                  <span className="text-[17px] leading-normal text-lyc-muted">
-                    {step.body}
-                  </span>
-                </div>
-                <span
-                  className={`col-start-2 justify-self-start whitespace-nowrap rounded-full px-3 py-1 text-lyc-meta-lg font-semibold sm:col-start-auto sm:justify-self-end ${step.tone}`}
-                >
-                  {step.tag}
-                </span>
-              </li>
-            ),
-          )}
-        </ol>
-        <div className="flex flex-wrap items-center gap-6">
-          {stage === "after" || stage === "pending" ? (
-            <Button asChild variant="lyc-primary" size="lyc-lg">
-              <Link href="/practice" data-testid="home-go-practice">
-                Go to practice
-              </Link>
-            </Button>
-          ) : (
-            <Link
-              href="/practice"
-              className={TEXT_LINK}
-              data-testid="home-go-practice"
-            >
-              Go to practice
-            </Link>
-          )}
-          <Link href="/review" className={TEXT_LINK}>
-            Go to review
-          </Link>
-        </div>
-      </section>
+      <HomePracticeReview />
 
-      {/* Owner ruling (Karl, 2026-10-05) item 4: the full-length card, locked on the free plan
-          (it opens the upgrade modal in place). Last in the column, after the free flow. */}
-      <FullLengthCard />
+      {checklist === null ? (
+        <section
+          aria-labelledby="home-how-h"
+          className="flex flex-col gap-[18px]"
+          data-testid="home-how"
+        >
+          <h2 id="home-how-h" className={SECTION_H2}>
+            How Lyceon works
+          </h2>
+          <ol className="m-0 list-none border-t border-lyc-rule p-0">
+            {howSteps(practice.diagnosticTotalQuestions, freeDailyLimit).map(
+              (step) => (
+                <li
+                  key={step.n}
+                  className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-4 gap-y-3 border-b border-lyc-rule py-[22px] sm:grid-cols-[56px_minmax(0,1fr)_160px] sm:gap-5"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="font-lyc-serif text-[34px] font-semibold leading-none text-lyc-step"
+                  >
+                    {step.n}
+                  </span>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="font-lyc-serif text-[21px] font-semibold text-lyc-ink-strong">
+                      {step.title}
+                    </span>
+                    <span className="text-[17px] leading-normal text-lyc-muted">
+                      {step.body}
+                    </span>
+                  </div>
+                  <span
+                    className={`col-start-2 justify-self-start whitespace-nowrap rounded-full px-3 py-1 text-lyc-meta-lg font-semibold sm:col-start-auto sm:justify-self-end ${step.tone}`}
+                  >
+                    {step.tag}
+                  </span>
+                </li>
+              ),
+            )}
+          </ol>
+        </section>
+      ) : null}
+
+      {/* Final brief v2 §4 (Karl, 2026-10-13): the full-length card is gone from Home; full-length
+          tests stay on their own page and in the calendar. */}
 
       <AppShellPanel>
         <div className="flex flex-col gap-10" data-testid="home-panel">

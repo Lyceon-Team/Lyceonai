@@ -1628,12 +1628,17 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(done?.setup_completed_at).not.toBeNull();
       expect(done?.target_exam_dates).toEqual(["2026-10-03", later]);
 
-      // A write without the schedule cannot complete setup.
-      const incomplete = await upsertStudyProfile(UNDER13, {
+      // A write without the schedule cannot complete setup. A target score alone is a goal
+      // write since ruling 1 (Karl, 2026-10-13: the score is saved from onboarding and Settings
+      // before the calendar): it is accepted, and setup stays outstanding.
+      const scoreOnly = await upsertStudyProfile(UNDER13, {
         target_score: 1400,
         idempotency_key: randomUUID(),
       });
-      expect(incomplete.ok).toBe(false);
+      expect(scoreOnly.ok).toBe(true);
+      const afterScore = await readStudyProfile(UNDER13);
+      expect(afterScore?.target_score).toBe(1400);
+      expect(afterScore?.setup_completed_at ?? null).toBeNull();
     });
 
     // ── A8b ────────────────────────────────────────────────────────────────

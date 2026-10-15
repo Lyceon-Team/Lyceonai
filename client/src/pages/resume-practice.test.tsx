@@ -139,7 +139,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     // Verify diagnostic-specific props
     expect(canonicalProps.captured).not.toBeNull();
     expect(canonicalProps.captured!.isDiagnostic).toBe(true);
-    expect(canonicalProps.captured!.title).toBe("Diagnostic Assessment");
+    expect(canonicalProps.captured!.title).toBe("Find your blind spots");
     expect(canonicalProps.captured!.completionHref).toBe("/dashboard");
     expect(canonicalProps.captured!.sessionId).toBe("diag-session-001");
   });

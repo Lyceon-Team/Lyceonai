@@ -212,22 +212,24 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
       "",
     );
     // The card lives in DiagnosticCard.tsx (2026-10-09); FreeHome draws it under the stage only.
-    expect(home).toMatch(/stage === "diagnostic" \? <DiagnosticCard\b/);
+    expect(home).toMatch(/stage === "diagnostic" \?\s*\(?\s*<DiagnosticCard\b/);
     expect(home).not.toContain("Start diagnostic");
     const card = read("client/src/components/home/DiagnosticCard.tsx").replace(
       /\/\*[\s\S]*?\*\//g,
       "",
     );
-    // First-run activation (2026-10-13): the button's words come from `diagnosticActionLabel`
-    // (home-model.ts: "Start diagnostic", or "Resume diagnostic · question N of 40" while one is
-    // open), drawn once, on the card's one start.
+    // Final brief v2 §7 (Karl, 2026-10-13): the button says "Find your blind spots" (the
+    // shared BLIND_SPOTS_NAME); first-run activation P1 (2026-10-13, reconciled 2026-10-15): the
+    // words come from `diagnosticActionLabel` (home-model.ts: BLIND_SPOTS_NAME, or "Resume ·
+    // question N of 40" while one is open), drawn once, on the card's one start.
     expect(card.split("diagnosticActionLabel(").length - 1).toBe(1);
     expect(card).not.toContain("Start diagnostic");
     const model = read("client/src/components/home/home-model.ts").replace(
       /\/\*[\s\S]*?\*\//g,
       "",
     );
-    expect(model.split('"Start diagnostic"').length - 1).toBe(1);
+    expect(model).toMatch(/if \(inProgress === null\) return BLIND_SPOTS_NAME;/);
+    expect(model).not.toContain('"Start diagnostic"');
     expect(card.split("void startDiagnostic()").length - 1).toBe(1);
   });
 

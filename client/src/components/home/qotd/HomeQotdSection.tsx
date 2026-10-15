@@ -25,6 +25,7 @@
  *  - `#qotd` (the daily email's "Answer now" link) scrolls the card into view on arrival.
  */
 import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { HomeQotdTodayResponse } from "@lyceon/shared/home-qotd-schema";
 import QuestionRenderer from "@/components/question-renderer";
 import {
@@ -46,6 +47,10 @@ import {
   useQotdEmailDecision,
   type QotdEmailDecision,
 } from "@/hooks/useHomeQotd";
+import {
+  invalidateGettingStarted,
+  recordGettingStartedNotSure,
+} from "@/hooks/useGettingStarted";
 import { HttpApiError } from "@/lib/api-error";
 import { chicagoToday } from "@shared/sat-test-dates";
 import { QotdEmailPrompt } from "./QotdEmailPrompt";
@@ -364,14 +369,26 @@ function QotdCard({
 /**
  * "Pick your SAT date to see your countdown" — only while no date is saved. Saves through the
  * calendar's one profile write (a dates-only save; it never completes calendar setup).
+ *
+ * Ruling 3 (Karl, 2026-10-13): "Not sure yet" is one of its choices. It is recorded for the
+ * Getting started checklist and the card stays, since it is how the student sets a date later.
  */
 function SatDateCard(): JSX.Element | null {
   const profile = useStudyProfile();
   const save = useStudyProfileMutation();
+  const queryClient = useQueryClient();
+  const notSure = useMutation({
+    mutationFn: () => recordGettingStartedNotSure({ test_date: true }),
+    onSuccess: () => invalidateGettingStarted(queryClient),
+  });
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<SatDateChoice>({
     dates: [],
   });
+  // Karl, 2026-10-13 on #1230: "Not sure yet" counts only when chosen. Save with nothing chosen
+  // is not an answer, so it is disabled until a date or "Not sure yet" is picked.
+  const [notSureChosen, setNotSureChosen] = useState(false);
+  const answered = choice.dates.length > 0 || notSureChosen;
   const todayChicago = chicagoToday();
 
   if (profile.isLoading || profile.isError) return null;
@@ -394,14 +411,26 @@ function SatDateCard(): JSX.Element | null {
           Pick your SAT date to see your countdown
         </h2>
         {open ? null : (
-          <Button
-            type="button"
-            variant="lyc-outline"
-            onClick={() => setOpen(true)}
-            data-testid="home-sat-date-open"
-          >
-            Pick a date
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="lyc-outline"
+              onClick={() => setOpen(true)}
+              data-testid="home-sat-date-open"
+            >
+              Pick a date
+            </Button>
+            <Button
+              type="button"
+              variant="lyc-quiet"
+              pending={notSure.isPending}
+              disabled={notSure.isPending}
+              onClick={() => notSure.mutate()}
+              data-testid="home-sat-date-not-sure"
+            >
+              Not sure yet
+            </Button>
+          </div>
         )}
       </div>
       {open ? (
@@ -409,11 +438,15 @@ function SatDateCard(): JSX.Element | null {
           <SatDatePicker
             legend="When's your SAT?"
             value={choice}
-            onChange={setChoice}
+            onChange={(next) => {
+              setChoice(next);
+              if (next.dates.length > 0) setNotSureChosen(false);
+            }}
+            onNotSureChosen={() => setNotSureChosen(true)}
             today={todayChicago}
             data-testid="home-sat-dates"
           />
-          {save.isError ? (
+          {save.isError || notSure.isError ? (
             <p role="alert" className="m-0 text-base text-lyc-danger">
               We couldn&apos;t save your date. Please try again.
             </p>
@@ -422,12 +455,22 @@ function SatDateCard(): JSX.Element | null {
             <Button
               type="button"
               variant="lyc-outline"
-              pending={save.isPending}
-              disabled={save.isPending || choice.dates.length === 0}
+              pending={save.isPending || notSure.isPending}
+              disabled={!answered || save.isPending || notSure.isPending}
               onClick={() =>
-                save.mutate(newIntent({ target_exam_dates: choice.dates }), {
-                  onSuccess: () => setOpen(false),
-                })
+                choice.dates.length === 0
+                  ? notSure.mutate(undefined, {
+                      onSuccess: () => setOpen(false),
+                    })
+                  : save.mutate(
+                      newIntent({ target_exam_dates: choice.dates }),
+                      {
+                        onSuccess: () => {
+                          setOpen(false);
+                          void invalidateGettingStarted(queryClient);
+                        },
+                      },
+                    )
               }
               data-testid="home-sat-date-save"
             >

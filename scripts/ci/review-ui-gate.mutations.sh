@@ -50,7 +50,6 @@ FILES=(
   "client/src/hooks/useKeyboardShortcuts.ts"
   "client/src/components/layout/app-shell.tsx"
   "client/src/components/layout/HeaderUserMenu.tsx"
-  "client/src/components/home/FullLengthCard.tsx"
   "client/src/components/home/PaidHome.tsx"
   "client/src/components/home/FreeHome.tsx"
   "client/src/components/home/DiagnosticCard.tsx"
@@ -1664,12 +1663,17 @@ s = s.replace(a, "  const active = sectionFromSearch(window.location.search, vie
 
 # SCL-223 (2026-10-09): the SAT dates always show; OQ-20 now governs the TARGET only, shown once
 # calendar setup is complete. Re-pointed from `goal === null` (that branch no longer exists).
-plant "UI58-P1" "OQ-20 inverted: the target field shows before calendar setup" \
+# Re-pointed 2026-10-13: ruling 1 (Karl, final brief v2) replaced OQ-20's "target only after
+# calendar setup" with "the target score field, with 'Not sure yet', to every student", so the
+# plant now hides the field and the test proves it shows without a calendar profile.
+plant "UI58-P1" "ruling 1 inverted: the target field is hidden without a calendar profile" \
   "$T58" \
   "client/src/components/settings/ProfileSection.tsx" \
-  'a = "      {setupDone ? ("
-assert s.count(a) == 1
-s = s.replace(a, "      {true ? (", 1)'
+  'a = "        <TargetScorePicker\n          legend=\"Target score\""
+b = "          data-testid=\"settings-target\"\n        />"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "        {false && <TargetScorePicker\n          legend=\"Target score\"", 1)
+s = s.replace(b, "          data-testid=\"settings-target\"\n        />}", 1)'
 
 # SCL-223 (2026-10-09): the dates are now `target_exam_dates`, compared as a set of future dates.
 plant "UI58-P2" "the goal save sends unchanged test dates too" \
@@ -1923,12 +1927,14 @@ s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + p
 
 # Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
 # (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
+# Re-pointed 2026-10-13: the free sentence names the diagnostic as "Find your blind spots"
+# (final brief v2 §7) through BLIND_SPOTS_NAME.
 plant "UI58-U6" "the shared free sentence drops the projection" \
   "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
   "client/src/lib/plan-copy.ts" \
-  'a = "the diagnostic, your projected score, ${practice}"
+  'a = "${BLIND_SPOTS_NAME}, your projected score, ${practice}"
 assert s.count(a) == 1
-s = s.replace(a, "the diagnostic, ${practice}", 1)'
+s = s.replace(a, "${BLIND_SPOTS_NAME}, ${practice}", 1)'
 
 plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
   "client/src/pages/upgrade.page.test.tsx" \
@@ -2289,63 +2295,9 @@ plant "F70-4" "student menu items take the app-wide accent on focus" \
 assert s.count(a) == 1
 s = s.replace(a, "  \"text-lyc-ink focus:bg-accent focus:text-lyc-ink-strong\";", 1)'
 
-# Home's "Start a full-length test" card (the ruling's item 4).
-# Re-pointed 2026-10-13 (first-run activation P1): the paid card takes the sitting to resume.
-plant "HC-1" "no full-length card on the paid Home" \
-  "$T50_HOME" \
-  "client/src/components/home/PaidHome.tsx" \
-  'a = "      <FullLengthCard resume={fullLengthResume} />\n"
-assert s.count(a) == 1
-s = s.replace(a, "", 1)'
-
-plant "HC-2" "no full-length card on the free Home" \
-  "$T50_HOME" \
-  "client/src/components/home/FreeHome.tsx" \
-  'a = "      <FullLengthCard />\n"
-assert s.count(a) == 1
-s = s.replace(a, "", 1)'
-
-plant "HC-3" "a locked card navigates instead of opening the modal" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "        {reason === null ? ("
-assert s.count(a) == 1
-s = s.replace(a, "        {true ? (", 1)'
-
-plant "HC-4" "the locked card opens the modal for the wrong feature" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "open(\"exam_full_length\", reason)"
-assert s.count(a) == 1
-s = s.replace(a, "open(\"tutor_access\", reason)", 1)'
-
-plant "HC-5" "the card links somewhere other than the Full-Length page" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "const FULL_LENGTH_HREF = \"/tests\";"
-assert s.count(a) == 1
-s = s.replace(a, "const FULL_LENGTH_HREF = \"/practice\";", 1)'
-
-plant "HC-6" "the card's link becomes a second filled primary" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "<Button asChild variant=\"lyc-outline\" size=\"lyc\">"
-assert s.count(a) == 1
-s = s.replace(a, "<Button asChild variant=\"lyc-primary\" size=\"lyc\">", 1)'
-
-plant "HC-7" "the card is hidden on a phone" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "className=\"flex flex-col gap-4 rounded-lg border"
-assert s.count(a) == 1
-s = s.replace(a, "className=\"hidden lg:flex flex-col gap-4 rounded-lg border", 1)'
-
-plant "HC-8" "the card's line drifts from the approved Full-Length subtitle" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "and a scored report at the end.\";"
-assert s.count(a) == 1
-s = s.replace(a, "and a score at the end.\";", 1)'
+# Home's "Start a full-length test" card (the ruling's item 4) was removed by final brief v2 §4
+# (Karl, 2026-10-13), and HC-1..HC-8 with it. The card staying gone is planted in
+# scripts/ci/getting-started.mutations.sh (G17).
 
 # OQ-63 (owner ruling, Karl, 2026-10-05): "show it for every full-length start on a phone,
 # including calendar-launched starts. One shared pre-start check, same \"Continue anyway\"."

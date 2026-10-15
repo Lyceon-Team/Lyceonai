@@ -254,7 +254,7 @@ describe("recent-session names (UI-66)", () => {
       recentSessionTitle(
         row({ mode: "diagnostic", filters: criteria({ sections: ["M"] }) }),
       ),
-    ).toBe("Diagnostic");
+    ).toBe("Find your blind spots");
   });
 });
 
@@ -283,43 +283,43 @@ describe("the ruler (DESIGN.md §3: 40 ticks)", () => {
 
 /**
  * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1] | @implemented [2026-10-13]
- * plain English: "Resume diagnostic · question N of 40" while one is in progress, never past the
- * last question; "Start diagnostic" with none.
+ * plain English: "Resume · question N of 40" while one is in progress, never past the
+ * last question; "Find your blind spots" (the 2026-10-13 rename) with none.
  */
 describe("diagnosticActionLabel", () => {
   it("names the question the student lands on, of the diagnostic's length", () => {
-    expect(diagnosticActionLabel(null, 40)).toBe("Start diagnostic");
+    expect(diagnosticActionLabel(null, 40)).toBe("Find your blind spots");
     expect(
       diagnosticActionLabel(
         { answered_items: 0, target_question_count: 40 },
         40,
       ),
-    ).toBe("Resume diagnostic · question 1 of 40");
+    ).toBe("Resume · question 1 of 40");
     expect(
       diagnosticActionLabel(
         { answered_items: 12, target_question_count: 40 },
         40,
       ),
-    ).toBe("Resume diagnostic · question 13 of 40");
+    ).toBe("Resume · question 13 of 40");
     expect(
       diagnosticActionLabel(
         { answered_items: 40, target_question_count: 40 },
         40,
       ),
-    ).toBe("Resume diagnostic · question 40 of 40");
+    ).toBe("Resume · question 40 of 40");
     // A session stored without its target falls back to the configured length.
     expect(
       diagnosticActionLabel(
         { answered_items: 3, target_question_count: 0 },
         32,
       ),
-    ).toBe("Resume diagnostic · question 4 of 32");
+    ).toBe("Resume · question 4 of 32");
     // No length known at all: no invented number.
     expect(
       diagnosticActionLabel(
         { answered_items: 3, target_question_count: 0 },
         null,
       ),
-    ).toBe("Resume diagnostic");
+    ).toBe("Resume");
   });
 });

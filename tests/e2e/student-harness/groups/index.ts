@@ -21,6 +21,7 @@ import { W6_OQ_68A } from "./oq68";
 import { W6_UI_64 } from "./w6-ui-64";
 import { BRAND_MARK } from "./brand-mark";
 import { HOME_QOTD, HOME_QOTD_ONBOARDING } from "./home-qotd";
+import { GETTING_STARTED, GETTING_STARTED_ONBOARDING } from "./getting-started";
 import { SAT_DATES } from "./sat-dates";
 import { AUTH_ENTRY } from "./auth-entry";
 import { GUARDIAN_NOTICE } from "./guardian-notice";
@@ -48,6 +49,8 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [BRAND_MARK.id]: BRAND_MARK,
   [HOME_QOTD.id]: HOME_QOTD,
   [HOME_QOTD_ONBOARDING.id]: HOME_QOTD_ONBOARDING,
+  [GETTING_STARTED.id]: GETTING_STARTED,
+  [GETTING_STARTED_ONBOARDING.id]: GETTING_STARTED_ONBOARDING,
   [SAT_DATES.id]: SAT_DATES,
   [AUTH_ENTRY.id]: AUTH_ENTRY,
   [GUARDIAN_NOTICE.id]: GUARDIAN_NOTICE,

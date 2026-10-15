@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import type { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useDiagnosticStart } from "@/hooks/useDiagnosticStart";
 import { STARTING_LABEL } from "@/lib/pending-copy";
+import { BLIND_SPOTS_NAME, blindSpotsSubtitle } from "@/lib/blind-spots-copy";
 import {
   answeredLine,
   diagnosticActionLabel,
@@ -33,8 +34,14 @@ type PracticeRead = Pick<
 
 export function DiagnosticCard({
   practice,
+  primary = true,
 }: {
   practice: PracticeRead;
+  /**
+   * Final brief v2 §4 (Karl, 2026-10-13): while the Getting started checklist is active, its
+   * current step owns the page's one filled button, so this card's button is outlined.
+   */
+  primary?: boolean;
 }): JSX.Element {
   const [, navigate] = useLocation();
   const diagnostic = useDiagnosticStart();
@@ -56,8 +63,14 @@ export function DiagnosticCard({
         id="home-diag-h"
         className="m-0 font-lyc-serif text-[30px] font-semibold leading-tight text-lyc-ink-strong"
       >
-        Your free diagnostic
+        {BLIND_SPOTS_NAME}
       </h2>
+      <p
+        className="-mt-3 m-0 text-[17px] text-lyc-muted"
+        data-testid="home-diagnostic-subtitle"
+      >
+        {blindSpotsSubtitle(practice.diagnosticTotalQuestions)}
+      </p>
       <p
         className="m-0 max-w-[600px] text-[18px] leading-relaxed text-lyc-ink"
         data-testid="home-diagnostic-length"
@@ -97,7 +110,7 @@ export function DiagnosticCard({
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
         <Button
           type="button"
-          variant="lyc-primary"
+          variant={primary ? "lyc-primary" : "lyc-outline"}
           size="lyc-lg"
           pending={diagnostic.isStarting}
           onClick={() => void startDiagnostic()}
