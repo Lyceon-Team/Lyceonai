@@ -21,6 +21,7 @@
 import { useState, useCallback } from "react";
 import { csrfFetch } from "@/lib/csrf";
 import { getClientInstanceId } from "@/lib/client-instance";
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 
 export type DiagnosticStartResult = {
   sessionId: string;
@@ -91,8 +92,7 @@ export function useDiagnosticStart(): {
         body?.error === "diagnostic_already_completed"
       ) {
         setError({
-          message:
-            "You've already completed your diagnostic — it sets your baseline once.",
+          message: `You've already finished ${BLIND_SPOTS_NAME} — it sets your baseline once.`,
           code: "diagnostic_already_completed",
         });
         return null;
@@ -105,8 +105,7 @@ export function useDiagnosticStart(): {
         body?.error === "diagnostic_insufficient_coverage"
       ) {
         setError({
-          message:
-            "The diagnostic isn't available right now — we're adding more questions. Please try again later.",
+          message: `${BLIND_SPOTS_NAME} isn't available right now — we're adding more questions. Please try again later.`,
           code: "diagnostic_insufficient_coverage",
         });
         return null;
@@ -116,7 +115,7 @@ export function useDiagnosticStart(): {
       // body.message to the student (data-leak vector: internal error
       // strings, DB timeouts, stack traces, etc.).
       setError({
-        message: "Something went wrong starting the diagnostic.",
+        message: `Something went wrong starting ${BLIND_SPOTS_NAME}.`,
         code: body?.error ?? body?.code,
       });
       return null;

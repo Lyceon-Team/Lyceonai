@@ -161,7 +161,7 @@ plant "$LINKS" "  return timingSafeEqual(given, expected) ? studentId : null;" "
 run "H12 signed link" "a tampered link is refused" "$PG_SUITE"
 
 echo "=== (13) saving SAT dates completes calendar setup ==="
-plant "$PROFILE_SVC" "  const completesSetup = !datesOnly && existing?.setup_completed_at == null;" "  const completesSetup = existing?.setup_completed_at == null;" || { bad "H13 STALE"; exit 1; }
+plant "$PROFILE_SVC" "    (!goalOnly || (scheduleStored && update.target_score !== undefined));" "    true;" || { bad "H13 STALE"; exit 1; }
 run "H13 dates-only save" "A8: several dates stored" "$PG_SUITE"
 
 echo "=== (14) the effective date is the earliest date, past or not ==="

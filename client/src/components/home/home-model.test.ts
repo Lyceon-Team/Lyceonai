@@ -253,7 +253,7 @@ describe("recent-session names (UI-66)", () => {
       recentSessionTitle(
         row({ mode: "diagnostic", filters: criteria({ sections: ["M"] }) }),
       ),
-    ).toBe("Diagnostic");
+    ).toBe("Find your blind spots");
   });
 });
 

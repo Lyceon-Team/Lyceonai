@@ -131,6 +131,8 @@ async function main(): Promise<void> {
   const { legalRouter } = await import("../../../server/routes/legal-routes");
   const { default: homeQotdRoutes } =
     await import("../../../server/routes/home-qotd-routes");
+  const { default: gettingStartedRoutes } =
+    await import("../../../server/routes/getting-started-routes");
   const { default: tutorRuntimeRouter } =
     await import("../../../server/routes/tutor-runtime");
   const { TutorConfig } = await import("../../../server/services/tutor-config");
@@ -200,6 +202,14 @@ async function main(): Promise<void> {
     auth.requireSupabaseAuth,
     auth.requireStudentAccount,
     homeQotdRoutes,
+  );
+  // Final brief v2 (Karl, 2026-10-13): the Getting started checklist, as server/index.ts mounts
+  // it (CSRF is outside this harness).
+  app.use(
+    "/api/home/getting-started",
+    auth.requireSupabaseAuth,
+    auth.requireStudentAccount,
+    gettingStartedRoutes,
   );
   app.use(
     NOTIFICATION_API_MOUNT,
