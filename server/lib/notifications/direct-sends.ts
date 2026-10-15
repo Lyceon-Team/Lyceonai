@@ -125,6 +125,7 @@ export async function sendAccountDeletionScheduledEmail(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    fromCategory: rendered.fromCategory,
     // Sent in the account holder's own deletion request, carrying the recovery link: exempt.
     audience: "user_triggered",
     ...(deps.now ? { now: deps.now } : {}),
@@ -217,6 +218,7 @@ export async function sendGuardianLinkInviteEmail(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    fromCategory: rendered.fromCategory,
     // The invite a student sends, in their own request: exempt (owner ruling 2026-10-09).
     audience: "user_triggered",
     ...(deps.now ? { now: deps.now } : {}),
@@ -285,6 +287,7 @@ export async function sendAccountDeletionCompletedEmail(
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
+    fromCategory: rendered.fromCategory,
     // NOT exempt (owner ruling 2026-10-09): a cron send, not the recipient's own request.
     audience: "student_or_guardian",
     ...(deps.now ? { now: deps.now } : {}),

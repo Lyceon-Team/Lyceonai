@@ -70,6 +70,7 @@ import {
   type UnacknowledgedChange,
   completedStudyProfile,
   type CompletedStudyProfile,
+  type StudyProfile,
 } from "@lyceon/shared";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
@@ -81,6 +82,7 @@ import { adapterFor } from "./adapters";
 import { localTodayIn } from "./adapters/local-day";
 import { loadCalendarConfig, type CalendarConfig } from "./config";
 import { regeneratePlan } from "./plan-service";
+import { timedStep } from "../../lib/step-timer";
 import {
   FALLBACK_TIMEZONE,
   readStudyProfile,
@@ -256,10 +258,20 @@ async function readLaunchStates(
     });
   }
 
+  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2] | @implemented [2026-10-13]
+  // plain English: one lifecycle lookup per distinct launched session, all independent, so they
+  // run together rather than one after another (a fortnight with several launched blocks used
+  // to wait on each in turn). The results are consumed in the same `latest` order as before, so
+  // `states` is identical; a lookup that throws still fails the read, as the loop did.
+  const latestLaunches = [...latest];
+  const lifecycles = await Promise.all(
+    latestLaunches.map(([, launch]) =>
+      adapterFor(launch.engine as CalendarEngine).progress(launch.sessionId),
+    ),
+  );
   const states: BlockLaunchState[] = [];
-  for (const [blockId, launch] of latest) {
-    const engine = launch.engine as CalendarEngine;
-    const lifecycle = await adapterFor(engine).progress(launch.sessionId);
+  for (const [index, [blockId]] of latestLaunches.entries()) {
+    const lifecycle = lifecycles[index] ?? null;
     if (lifecycle === null) continue;
     const parsed = blockLaunchStateSchema.safeParse({
       block_id: blockId,
@@ -414,7 +426,9 @@ async function assembleRange(
   requestId: string | undefined,
 ): Promise<AssembledRange> {
   const today = localTodayIn(profile.timezone, now);
-  const planRows = await readCurrentPlan(studentId, from, to, requestId);
+  const planRows = await timedStep("current_plan", () =>
+    readCurrentPlan(studentId, from, to, requestId),
+  );
 
   const blockIds = planRows
     .map((row) => row.block_id)
@@ -422,9 +436,13 @@ async function assembleRange(
   const versionNos = [...new Set(planRows.map((row) => row.version_no))];
 
   const [blocks, launches, snapshotFacts] = await Promise.all([
-    readBlocks(studentId, blockIds, requestId),
-    readLaunchStates(studentId, blockIds, requestId),
-    readSnapshotFactsByVersion(studentId, versionNos, requestId),
+    timedStep("blocks", () => readBlocks(studentId, blockIds, requestId)),
+    timedStep("launches", () =>
+      readLaunchStates(studentId, blockIds, requestId),
+    ),
+    timedStep("snapshots", () =>
+      readSnapshotFactsByVersion(studentId, versionNos, requestId),
+    ),
   ]);
   const masks = snapshotFacts.masks;
 
@@ -500,7 +518,9 @@ async function assembleRange(
   for (const day of days)
     day.blocks.sort((a, b) => a.display_ordinal - b.display_ordinal);
 
-  const units = await readActivityUnits(studentId, days, requestId);
+  const units = await timedStep("activity_units", () =>
+    readActivityUnits(studentId, days, requestId),
+  );
   return {
     profile,
     today,
@@ -568,6 +588,13 @@ export type CalendarReadRequest = {
   request_id?: string;
   /** A parameter so a test can cross midnight without faking the process clock (§8.2). */
   now?: Date;
+  /**
+   * The student's profile when the caller has ALREADY read it in this request (`null` = no
+   * row), so the read below does not repeat it. Omitted = read it here. @implemented
+   * [2026-10-13] (owner brief, first-run activation item 2: GET /api/calendar read the profile
+   * once to decide setup-before-entitlement and again here, two identical round trips).
+   */
+  stored_profile?: StudyProfile | null;
 };
 
 export async function readCalendar(
@@ -579,11 +606,18 @@ export async function readCalendar(
   }
   const query = parsedQuery.data;
 
-  const config = await loadCalendarConfig();
-  const stored = await readStudyProfile(
-    request.student_id,
-    request.request_id,
-  );
+  // 2026-10-13 (owner brief, first-run activation item 2): the config and the profile are
+  // independent reads, so they run together; the profile is not read at all when the caller
+  // already holds it.
+  const prefetched = request.stored_profile;
+  const [config, stored] = await Promise.all([
+    timedStep("config", () => loadCalendarConfig()),
+    prefetched !== undefined
+      ? prefetched
+      : timedStep("profile", () =>
+          readStudyProfile(request.student_id, request.request_id),
+        ),
+  ]);
   // R-08-04 / §17.5's pre-setup state. An empty calendar, not a missing one — so a 200
   // carrying the state, never a 404 (owner ruling on addendum item 26). SCL-223: a row that
   // holds only SAT dates (saved in onboarding or Settings) is still pre-setup, and its dates
@@ -606,21 +640,45 @@ export async function readCalendar(
   // §15: "default today…+13" — the horizon, less the day the horizon starts on.
   const to = query.to ?? addDaysToLocalDate(from, config.horizonDays - 1);
 
-  await generateOnFirstOpen(
-    request.student_id,
-    profile,
-    config.generatorVersion,
-    request.request_id,
-  );
+  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2; Doc-05F_V1.0 R-08-04]
+  // | @implemented [2026-10-13]
+  // plain English: the streak, the diagnostic state and the projection read nothing the plan
+  // owns, so they run alongside the first-open probe (and the generation it may trigger)
+  // instead of after the whole range assembly. The unacknowledged-change read DOES read plan
+  // versions, which the first open may create, so it still starts only after the probe, and
+  // runs alongside the range assembly. Every value reaches the response unchanged; only the
+  // waiting is shorter. Any of these throwing still fails the read, as `Promise.all` did.
+  const [, streak, diagnostic, projection] = await Promise.all([
+    timedStep("first_open_probe", () =>
+      generateOnFirstOpen(
+        request.student_id,
+        profile,
+        config.generatorVersion,
+        request.request_id,
+      ),
+    ),
+    timedStep("streak", () =>
+      getStudentActivityStreak(request.student_id, request.request_id),
+    ),
+    timedStep("diagnostic", () => readDiagnosticState(request.student_id)),
+    timedStep("projection", () =>
+      readProjection(request.student_id, request.request_id),
+    ),
+  ]);
 
-  const range = await assembleRange(
-    request.student_id,
-    profile,
-    from,
-    to,
-    request.now,
-    request.request_id,
-  );
+  const [range, change] = await Promise.all([
+    assembleRange(
+      request.student_id,
+      profile,
+      from,
+      to,
+      request.now,
+      request.request_id,
+    ),
+    timedStep("unacknowledged_change", () =>
+      readUnacknowledgedChange(request.student_id, request.request_id),
+    ),
+  ]);
   const built = buildCalendarRange({
     today: range.today,
     days: range.days,
@@ -628,13 +686,6 @@ export async function readCalendar(
     launches: range.launches,
     linked_sessions: range.linkedSessions,
   });
-
-  const [streak, diagnostic, change, projection] = await Promise.all([
-    getStudentActivityStreak(request.student_id, request.request_id),
-    readDiagnosticState(request.student_id),
-    readUnacknowledgedChange(request.student_id, request.request_id),
-    readProjection(request.student_id, request.request_id),
-  ]);
 
   return ok({
     status: "ready",

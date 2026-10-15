@@ -193,6 +193,8 @@ async function sendEmail(
     subject: `Lyceon ops: ${alert.title}`,
     html,
     text,
+    // Ops email to the owner: "everything else", so the plain "Lyceon" (Karl, 2026-10-14).
+    fromCategory: "general",
     // To the owner, not a student or guardian: outside quiet hours (owner ruling, Karl
     // 2026-10-09, schedule audit Step 2 item 2). This field is how the sender tells them apart.
     audience: "ops",

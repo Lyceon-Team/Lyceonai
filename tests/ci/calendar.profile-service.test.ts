@@ -128,7 +128,7 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
-const { upsertStudyProfile, FALLBACK_TIMEZONE } =
+const { upsertStudyProfile, FALLBACK_TIMEZONE, invalidateKnownTimezoneCache } =
   await import("../../server/services/calendar/profile-service");
 
 /** The upserted row, minus the keys the service always sends. */
@@ -139,6 +139,9 @@ function storedRow(): Record<string, unknown> {
 
 beforeEach(() => {
   stored = null;
+  // The zone answer is cached in process (2026-10-13); each test swaps the database client
+  // and its zone list, so each starts with an empty cache.
+  invalidateKnownTimezoneCache();
 });
 
 describe("timezone fails open (sheet §8 item 19)", () => {

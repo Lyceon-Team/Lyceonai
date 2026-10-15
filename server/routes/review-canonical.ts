@@ -59,7 +59,7 @@ import {
   buildSafeOptionsForItem,
   buildSessionItemInsertRows,
   gradeAnswer,
-  hydrateSessionItemOptionTokens,
+  withServedOptionTokens,
   loadPracticeConfig,
   normalizeSessionState,
   practiceAnswerRateLimiter,
@@ -92,6 +92,7 @@ import {
 } from "@lyceon/shared";
 import type { ReviewSessionItemRow } from "../../packages/shared/src/review-table-schema";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
+import { timedRoute, timedStep } from "../lib/step-timer";
 
 const router = Router();
 
@@ -552,12 +553,16 @@ export async function startOrReplayReviewSession(args: {
   targetCount: number | null;
   requestId?: string;
 }): Promise<CreateResult> {
-  const { data: openSessions, error: openErr } = await supabaseServer
-    .from("review_sessions")
-    .select(REVIEW_SESSION_SELECT)
-    .eq("student_id", args.studentId)
-    .in("status", [...OPEN_STATUSES])
-    .order("created_at", { ascending: false });
+  const { data: openSessions, error: openErr } = await timedStep(
+    "open_sessions",
+    () =>
+      supabaseServer
+        .from("review_sessions")
+        .select(REVIEW_SESSION_SELECT)
+        .eq("student_id", args.studentId)
+        .in("status", [...OPEN_STATUSES])
+        .order("created_at", { ascending: false }),
+  );
 
   if (openErr) {
     return {
@@ -582,7 +587,7 @@ export async function startOrReplayReviewSession(args: {
       ) ?? null;
   }
 
-  const config = await loadPracticeConfig();
+  const config = await timedStep("config", () => loadPracticeConfig());
   if (!replay && sessions.length >= config.maxConcurrentSessions) {
     return {
       ok: false,
@@ -605,11 +610,13 @@ export async function startOrReplayReviewSession(args: {
     };
   }
 
-  const poolResult = await buildReviewPool({
-    studentId: args.studentId,
-    poolSpec: args.poolSpec,
-    requestId: args.requestId,
-  });
+  const poolResult = await timedStep("review_pool", () =>
+    buildReviewPool({
+      studentId: args.studentId,
+      poolSpec: args.poolSpec,
+      requestId: args.requestId,
+    }),
+  );
   if (!poolResult.ok) {
     return {
       ok: false,
@@ -651,23 +658,27 @@ export async function startOrReplayReviewSession(args: {
     calculator_state: null,
   };
 
-  const { data: inserted, error: insertErr } = await supabaseServer
-    .from("review_sessions")
-    .insert({
-      student_id: args.studentId,
-      actor_id: args.actorId,
-      mode: args.poolSpec.mode,
-      filters: metadata,
-      target_count: selected.length,
-      platform: "web",
-      client_instance_id: args.clientInstanceId,
-      status: "created",
-      created_at: now,
-      updated_at: now,
-      last_activity_at: now,
-    })
-    .select(REVIEW_SESSION_SELECT)
-    .single();
+  const { data: inserted, error: insertErr } = await timedStep(
+    "session_insert",
+    () =>
+      supabaseServer
+        .from("review_sessions")
+        .insert({
+          student_id: args.studentId,
+          actor_id: args.actorId,
+          mode: args.poolSpec.mode,
+          filters: metadata,
+          target_count: selected.length,
+          platform: "web",
+          client_instance_id: args.clientInstanceId,
+          status: "created",
+          created_at: now,
+          updated_at: now,
+          last_activity_at: now,
+        })
+        .select(REVIEW_SESSION_SELECT)
+        .single(),
+  );
 
   if (insertErr || !inserted) {
     return {
@@ -701,13 +712,21 @@ export async function startOrReplayReviewSession(args: {
   }
 
   metadata.prebuilt = true;
-  await updateSessionLifecycle(session.id, metadata);
+  await timedStep("session_update", () =>
+    updateSessionLifecycle(session.id, metadata),
+  );
 
   return { ok: true, session, metadata, replayed: false };
 }
 
 /**
- * Snapshot the pool into `review_session_items`, then hydrate the option tokens.
+ * Snapshot the pool into `review_session_items`, option tokens included.
+ *
+ * 2026-10-13 (owner brief, first-run activation item 2): the tokens are computed before the
+ * insert by `withServedOptionTokens` — practice's one derivation, shared — instead of by a
+ * post-insert `hydrateSessionItemOptionTokens` (one read plus one UPDATE per item, sequential).
+ * Same columns, same values' distribution; a throw from the derivation is the build failure
+ * below, which already cleans up.
  *
  * `buildSessionItemInsertRows` is practice's, with `ownerColumn: "student_id"` — one
  * definition of the 30-column snapshot shape for both engines. The only review
@@ -739,6 +758,7 @@ async function materializeReviewItems(args: {
       ...row,
       queue_entry_id: args.selected[index]?.entry.id ?? null,
     }));
+    rows = withServedOptionTokens(rows);
   } catch (err) {
     // assertCanonicalDomain throws on a non-canonical (section, domain) pair. Practice
     // treats that as a materialization failure rather than a silent drop, and so does
@@ -751,27 +771,13 @@ async function materializeReviewItems(args: {
     };
   }
 
-  const { error: insertErr } = await supabaseServer
-    .from("review_session_items")
-    .insert(rows);
+  const { error: insertErr } = await timedStep("items_insert", () =>
+    supabaseServer.from("review_session_items").insert(rows),
+  );
   if (insertErr) {
     return {
       ok: false,
       error: `review_item_insert_failed: ${insertErr.message}`,
-    };
-  }
-
-  try {
-    await hydrateSessionItemOptionTokens(
-      args.sessionId,
-      "review_session_items",
-    );
-  } catch (err) {
-    return {
-      ok: false,
-      error: `review_item_hydrate_failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
     };
   }
 
@@ -1598,7 +1604,7 @@ router.post(
   requireSupabaseAuth,
   requireProfileComplete,
   requireGuardianLinkForUnder13,
-  async (req, res) => {
+  timedRoute("review.session_start", async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     // As in diagnostic-routes: the canonical `SupabaseUser`, not an inline shape that makes
     // `actor_id` optional and so invites a fallback to the identity key.
@@ -1677,7 +1683,7 @@ router.post(
         result.metadata.target_question_count ?? result.session.target_count,
       calculatorState: result.metadata.calculator_state ?? null,
     });
-  },
+  }),
 );
 
 /** GET /api/review/sessions/:sessionId/state */

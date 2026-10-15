@@ -33,6 +33,7 @@
 import type { PostExamNoticePayload } from "../../../../packages/shared/src/notifications-schema";
 import { renderNoticeDate } from "./full-length";
 import {
+  emailRender,
   escapeHtml,
   type EmailRender,
   type InAppRender,
@@ -76,8 +77,13 @@ export function examScoreReportRequestedEmail(
   const when = renderNoticeDate(payload.occasion_key);
   const safeWhen = escapeHtml(when);
   const siteUrl = ctx.siteUrl ? escapeHtml(ctx.siteUrl) : null;
-  return {
-    subject: "How did your SAT go?",
+  // Karl, 2026-10-14: "Two quick questions" stays because /score-report asks exactly two
+  // (score, retake). The in-app title is unchanged.
+  return emailRender({
+    subject: "How did your SAT go? Two quick questions",
+    preview:
+      "Your scores should be out. Tell us your score and whether you're retaking it.",
+    fromCategory: "general",
     text: joinText([
       `Your scores from your SAT on ${when} should be out by now.`,
       "",
@@ -99,7 +105,7 @@ export function examScoreReportRequestedEmail(
         ? `<p><a href="${siteUrl}${SCORE_REPORT_HREF}">Answer here</a></p>`
         : "",
     ]),
-  };
+  });
 }
 
 // ── renewal_decision_requested — to the payer ───────────────────────────────
@@ -139,7 +145,11 @@ export function renewalDecisionRequestedEmail(
       ? `The SAT on ${when} has passed.`
       : `Your Lyceon subscription renews on ${when}.`;
   const safeOpening = escapeHtml(opening);
-  return {
+  // Karl, 2026-10-14: a billing email, so "Lyceon" whoever pays; subject unchanged.
+  return emailRender({
+    preview:
+      "Tell us to keep going or stop. With no reply, it ends when your paid period ends.",
+    fromCategory: "general",
     subject: ctx.recipientIsSubject
       ? "Keep your Lyceon subscription?"
       : "Keep your student's Lyceon subscription?",
@@ -164,5 +174,5 @@ export function renewalDecisionRequestedEmail(
         ? `<p><a href="${siteUrl}${SCORE_REPORT_HREF}">Answer here</a></p>`
         : "",
     ]),
-  };
+  });
 }

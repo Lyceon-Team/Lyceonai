@@ -7,6 +7,14 @@ declare global {
   namespace Express {
     interface Request {
       requestId: string;
+      /**
+       * @spec [owner brief 2026-10-13 "first-run activation fixes" item 2; Doc-01A_V1.0 §10]
+       * | @implemented [2026-10-13] | plain English: `performance.now()` when this middleware
+       * (the first) saw the request. Read by `server/lib/step-timer.ts` for `pre_handler_ms`;
+       * monotonic, process-relative, and meaningless outside this process, so it is never
+       * logged as a timestamp.
+       */
+      requestStartedAt?: number;
     }
   }
 }
@@ -29,6 +37,7 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
   const requestId = existingId || uuidv4();
 
   req.requestId = requestId;
+  req.requestStartedAt = performance.now();
   res.setHeader('X-Request-Id', requestId);
 
   const startTime = Date.now();

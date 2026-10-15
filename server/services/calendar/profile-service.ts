@@ -32,7 +32,8 @@
  * 200 and stores `America/Chicago`.
  *
  * trade-offs: the zone is checked against `pg_timezone_names`, one extra round trip per
- * upsert that names a timezone. `Intl` would be free, but the column is read by PL/pgSQL
+ * upsert that names a zone this instance has not already asked about (the answer is cached
+ * per zone since 2026-10-13; see `resolveStoredTimezone`). `Intl` would be free, but the column is read by PL/pgSQL
  * that does `AT TIME ZONE` on it — the database's own list is the authority, and a zone
  * `Intl` accepts and Postgres does not would fail at plan generation instead of here.
  *
@@ -56,6 +57,11 @@ import {
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
 import { classifyError } from "../../lib/redact";
+import { createTtlCache } from "../../lib/ttl-cache";
+import {
+  CACHE_TTL_CONFIG,
+  readCacheTtlMs,
+} from "../../lib/caching-runtime-config";
 import { localTodayIn } from "./adapters/local-day";
 import { loadCalendarConfig } from "./config";
 import { regeneratePlan } from "./plan-service";
@@ -216,28 +222,90 @@ export function localTodayForProfile(
  * over an infrastructure blip, and item 19 makes the fallback the defined behaviour for
  * "undetectable", which a failed lookup is. `data !== true` rather than `data === false`
  * for the same reason — anything that is not an explicit yes is a fall-open.
+ *
+ * @spec [owner brief 2026-10-13 "first-run activation fixes" item 2 ("cache in process: the
+ *       pg_timezone_names list ... the timezone list is effectively static — cache with a long
+ *       TTL"); Doc-01A_V1.0 §21, §24, §25; owner rulings (Karl) 2026-10-13 on #1232, items 1
+ *       and 2] | @implemented [2026-10-13]
+ * CACHED PER ZONE, IN PROCESS. The answer to "does this Postgres know zone X" is a fact about
+ * the database build, the same for every student, and changes only when Postgres's tz data
+ * does (a Supabase platform upgrade) — never because of anything this application writes. So
+ * it is held per candidate zone in `KNOWN_TIMEZONE_CACHE` (TTL from
+ * `caching_runtime_config.known_timezone_cache_ttl_seconds`, seeded 24 h, read on a miss only —
+ * ruling item 2; 7-day hard staleness; 1,024 zones max — IANA has about 600, and the bound stops
+ * arbitrary device strings growing memory).
+ *
+ * WHAT THIS CACHE DOES NOT DO — ruling item 1, 2026-10-13. The production `pg_stat_statements`
+ * line that prompted it (`pg_timezone_names`, 494 calls, ~515 ms mean) comes from role
+ * `authenticator`: Supabase's API layer reloading its schema cache, not this application (per
+ * the owner's report of 2026-10-13). This cache does not and cannot reduce that line. It is
+ * KEPT, by the same ruling, because it still removes this application's own repeat round trip
+ * on every setup read that sends a device zone and every profile save. Both answers are cached, `true` and `false`; a FAILED lookup is not, so a blip is
+ * retried on the next request, and — Doc 01A §24 — a previously known answer inside the hard
+ * bound is served through one. The zone string is the only key and it is not personal data
+ * (the fall-back log below already records it). INVALIDATION: nothing in this application
+ * writes the zone list, so there is no writer to signal; a deploy starts fresh instances and
+ * clears it, the TTL bounds an instance that outlives a Postgres upgrade, and
+ * `invalidateKnownTimezoneCache()` drops it on demand.
+ * The cached answer is the SAME RPC's answer, so behaviour per zone is unchanged; only the
+ * repeat round trips (each scanning `pg_timezone_names`) are gone.
  */
+const KNOWN_TIMEZONE_CACHE = createTtlCache<boolean>({
+  name: "calendar:known_timezone",
+  ttlMs: CACHE_TTL_CONFIG.knownTimezone.fallbackSeconds * 1000,
+  ttlFrom: () => readCacheTtlMs("knownTimezone"),
+  hardStaleMs: 7 * 24 * 60 * 60 * 1000,
+  maxEntries: 1024,
+});
+
+/** The lookup failed (not "the zone is unknown"); carries the vendor error for classification. */
+class TimezoneLookupError extends Error {
+  constructor(readonly vendorError: unknown) {
+    super("calendar_is_known_timezone failed");
+    this.name = "TimezoneLookupError";
+  }
+}
+
+async function isKnownTimezone(candidate: string): Promise<boolean> {
+  return KNOWN_TIMEZONE_CACHE.get(candidate, async () => {
+    const { data, error } = await supabaseServer.rpc(
+      "calendar_is_known_timezone",
+      {
+        p_timezone: candidate,
+      },
+    );
+    if (error) throw new TimezoneLookupError(error);
+    return data === true;
+  });
+}
+
+/** Drops every cached timezone answer. For an operator after a Postgres upgrade, and tests. */
+export function invalidateKnownTimezoneCache(): void {
+  KNOWN_TIMEZONE_CACHE.invalidate();
+}
+
 export async function resolveStoredTimezone(
   candidate: string,
   requestId?: string,
 ): Promise<{ timezone: string; fellBack: boolean }> {
-  const { data, error } = await supabaseServer.rpc(
-    "calendar_is_known_timezone",
-    {
-      p_timezone: candidate,
-    },
-  );
-
-  if (error) {
+  let known: boolean;
+  try {
+    known = await isKnownTimezone(candidate);
+  } catch (error: unknown) {
     logger.warn(
       "CALENDAR_PROFILE",
       "timezone_lookup_failed",
       "pg_timezone_names could not be read; the profile falls open to the default zone",
-      { ...classifyError(error), requestId },
+      {
+        ...classifyError(
+          error instanceof TimezoneLookupError ? error.vendorError : error,
+        ),
+        requestId,
+      },
     );
     return { timezone: FALLBACK_TIMEZONE, fellBack: true };
   }
-  if (data !== true) {
+  if (!known) {
     // Deliberately INFO, not warn: an unknown zone is a defined outcome (item 19), not a
     // fault. The candidate is logged because a zone is not personal data and knowing
     // which zone a device reported is how a real IANA gap gets found.

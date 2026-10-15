@@ -50,6 +50,7 @@ import {
 import { logger } from "../logger";
 import { logRejectedRequest, routeOf } from "../lib/validation-log";
 import { sendPaymentRequired } from "../lib/http-errors";
+import { timedRoute, timedStep } from "../lib/step-timer";
 import type { EntitlementFeatureKey } from "../../packages/shared/src/entitlement-denial";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { EntitlementService } from "../services/entitlement-service";
@@ -207,9 +208,24 @@ async function entitled(
   res: Response,
   studentId: string,
 ): Promise<boolean> {
-  if (
-    await EntitlementService.canAccessFeature(studentId, CALENDAR_FEATURE_KEY)
-  ) {
+  return entitledOrDenied(
+    req,
+    res,
+    await EntitlementService.canAccessFeature(studentId, CALENDAR_FEATURE_KEY),
+  );
+}
+
+/**
+ * `entitled`'s decision for a `canAccessFeature` answer the caller already holds — GET
+ * /api/calendar asks it in parallel with the profile read (2026-10-13, owner brief first-run
+ * activation item 2). The same log line and the same 402; one implementation of the denial.
+ */
+function entitledOrDenied(
+  req: Request,
+  res: Response,
+  canAccess: boolean,
+): boolean {
+  if (canAccess) {
     return true;
   }
   logger.info(
@@ -493,74 +509,95 @@ function sendPlanWrite(
 
 // ── GET /api/calendar ───────────────────────────────────────────────────────
 
-calendarRouter.get("/", async (req: Request, res: Response) => {
-  const caller = callerOf(req, res);
-  if (caller === null) return;
+calendarRouter.get(
+  "/",
+  timedRoute("calendar.read", async (req: Request, res: Response) => {
+    const caller = callerOf(req, res);
+    if (caller === null) return;
 
-  // ── SETUP RUNS BEFORE THE ENTITLEMENT GATE (owner ruling 2026-09-24, SCL-130) ──
-  //
-  // A student with no profile gets `setup_required` whether or not they are entitled, so
-  // the §17.5 popup renders for a free student and they can answer. Production is the
-  // argument: 104 students, ONE study profile, because the only surface in the product
-  // that collects a test date or a target score sat behind `calendar_access` — a free
-  // student could not reach it, so nobody had the data, so Doc 05C had no target to
-  // compare against and no student saw a countdown.
-  //
-  // THE PLAN PAYLOAD STAYS GATED. This only moves the boundary: pre-setup is not the paid
-  // surface, it is a form and a set of `defaults` read from `calendar_runtime_config`. The
-  // moment a profile exists the read below assembles a real plan, and `entitled` runs
-  // first — so a free student who has answered still meets the 402, and meets it with
-  // their answers saved. §16 loses nothing; it applies to the plan rather than to the
-  // question.
-  //
-  // Checked directly rather than by calling `readCalendar` and inspecting the result:
-  // `readCalendar` runs `generateOnFirstOpen` (R-08-04), and generating a plan for a
-  // student who is not entitled to one is exactly what the gate is for.
-  // SCL-223: "has a profile" means "has completed setup"; a dates-only row is pre-setup.
-  const hasProfile =
-    completedStudyProfile(
-      await readStudyProfile(caller.studentId, req.requestId),
-    ) !== null;
-  if (!hasProfile) {
+    // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2] | @implemented [2026-10-13]
+    // plain English: the profile and the entitlement answer are independent reads, and BOTH
+    // branches below consult both (the pre-setup branch reports `entitled`; the set-up branch
+    // gates on it), so they are read together, once. The profile is then handed to
+    // `readCalendar`, which used to read it a second time. Order of DECISIONS is unchanged:
+    // setup still runs before the gate (SCL-130), and a free student who has set up still meets
+    // the 402 before any plan is read or generated. `canAccessFeature` fails closed and never
+    // throws, so asking it early cannot open or break anything.
+    const [stored, canAccessPlan] = await Promise.all([
+      timedStep("profile", () =>
+        readStudyProfile(caller.studentId, req.requestId),
+      ),
+      timedStep("entitlement", () =>
+        EntitlementService.canAccessFeature(
+          caller.studentId,
+          CALENDAR_FEATURE_KEY,
+        ),
+      ),
+    ]);
+
+    // ── SETUP RUNS BEFORE THE ENTITLEMENT GATE (owner ruling 2026-09-24, SCL-130) ──
+    //
+    // A student with no profile gets `setup_required` whether or not they are entitled, so
+    // the §17.5 popup renders for a free student and they can answer. Production is the
+    // argument: 104 students, ONE study profile, because the only surface in the product
+    // that collects a test date or a target score sat behind `calendar_access` — a free
+    // student could not reach it, so nobody had the data, so Doc 05C had no target to
+    // compare against and no student saw a countdown.
+    //
+    // THE PLAN PAYLOAD STAYS GATED. This only moves the boundary: pre-setup is not the paid
+    // surface, it is a form and a set of `defaults` read from `calendar_runtime_config`. The
+    // moment a profile exists the read below assembles a real plan, and `entitled` runs
+    // first — so a free student who has answered still meets the 402, and meets it with
+    // their answers saved. §16 loses nothing; it applies to the plan rather than to the
+    // question.
+    //
+    // Checked directly rather than by calling `readCalendar` and inspecting the result:
+    // `readCalendar` runs `generateOnFirstOpen` (R-08-04), and generating a plan for a
+    // student who is not entitled to one is exactly what the gate is for.
+    // SCL-223: "has a profile" means "has completed setup"; a dates-only row is pre-setup.
+    const hasProfile = completedStudyProfile(stored) !== null;
+    if (!hasProfile) {
+      try {
+        const result = await readCalendar({
+          student_id: caller.studentId,
+          query: req.query,
+          stored_profile: stored,
+          ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
+        });
+        if (!result.ok)
+          return sendReadFailure(res, result.error, req.requestId);
+        // The popup's last press differs for a free student, so it has to be told. Computed
+        // rather than inferred from the absence of a 402, which this branch no longer sends.
+        return res.status(200).json({
+          ...result.value,
+          entitled: canAccessPlan,
+          requestId: req.requestId,
+        });
+      } catch (error) {
+        return sendServerError(res, "calendar_read", error, req.requestId);
+      }
+    }
+
+    if (!entitledOrDenied(req, res, canAccessPlan)) return;
+
     try {
       const result = await readCalendar({
         student_id: caller.studentId,
         query: req.query,
+        stored_profile: stored,
         ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
       });
       if (!result.ok) return sendReadFailure(res, result.error, req.requestId);
-      // The popup's last press differs for a free student, so it has to be told. Computed
-      // rather than inferred from the absence of a 402, which this branch no longer sends.
-      const canSeeAPlan = await EntitlementService.canAccessFeature(
-        caller.studentId,
-        CALENDAR_FEATURE_KEY,
-      );
-      return res.status(200).json({
-        ...result.value,
-        entitled: canSeeAPlan,
-        requestId: req.requestId,
-      });
+      // The service already parsed this against `calendarResponseSchema`'s own shape; the
+      // spread here adds `requestId` and nothing else.
+      return res
+        .status(200)
+        .json({ ...result.value, requestId: req.requestId });
     } catch (error) {
       return sendServerError(res, "calendar_read", error, req.requestId);
     }
-  }
-
-  if (!(await entitled(req, res, caller.studentId))) return;
-
-  try {
-    const result = await readCalendar({
-      student_id: caller.studentId,
-      query: req.query,
-      ...(req.requestId === undefined ? {} : { request_id: req.requestId }),
-    });
-    if (!result.ok) return sendReadFailure(res, result.error, req.requestId);
-    // The service already parsed this against `calendarResponseSchema`'s own shape; the
-    // spread here adds `requestId` and nothing else.
-    return res.status(200).json({ ...result.value, requestId: req.requestId });
-  } catch (error) {
-    return sendServerError(res, "calendar_read", error, req.requestId);
-  }
-});
+  }),
+);
 
 // ── GET /api/calendar/profile ───────────────────────────────────────────────
 

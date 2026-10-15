@@ -347,6 +347,8 @@ async function dispatchOne(
     subject: rendered.value.subject,
     html: rendered.value.html,
     text: rendered.value.text,
+    // The sender name the template chose for this recipient (Karl, 2026-10-14).
+    fromCategory: rendered.value.fromCategory,
     ...(rendered.value.headers ? { headers: rendered.value.headers } : {}),
     // Every notification email goes to a student, a guardian or a payer.
     audience: "student_or_guardian",
