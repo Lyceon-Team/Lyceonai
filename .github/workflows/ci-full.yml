@@ -523,6 +523,14 @@ jobs:
         if: matrix.group == 'qotd'
         run: bash scripts/ci/question-underline.mutations.sh
 
+      # Sender name per email type and the QOTD subject/preview (Karl, 2026-10-14): plants the bare
+      # From, a wrong category, no fallback, no sanitizing, the subject prefix, the streak
+      # threshold, the dropped preheader, an answer leak through the row projection, and a send
+      # without an address. Each must turn its test red.
+      - name: Email sender-name mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        run: bash scripts/ci/email-sender-names.mutations.sh
+
       # Doc 10B Phase 1 (blog pipeline): plants an unapproved or future post going public, the
       # withheld post's words reaching the bundle, a daily rebuild, a merge by anyone stamping the
       # approval, a ready batch without Codex's verdicts or Claude's responses, and each new
@@ -563,6 +571,19 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/home-qotd.mutations.sh
+
+      # Owner brief "Getting started checklist + onboarding update" (final brief v2, Karl,
+      # 2026-10-13): every rule (step data, "Not sure yet", sticky, plan and eligibility, dismiss,
+      # students only, Home order, Practice row, onboarding and Settings score, the rename) is
+      # planted and must turn its named test red.
+      - name: Getting started checklist mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/getting-started.mutations.sh
 
       # QOTD resilience (Karl, 2026-10-09): every alert rule (horizon < 7, once per condition per
       # day, one recovery, the independent check, channel independence, one unset-webhook warning),

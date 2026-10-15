@@ -135,7 +135,8 @@ describe("direct sends (R7/R8/R9)", () => {
       `${ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX}:33333333-3333-4333-8333-333333333333`,
     );
     expect(req.body.to).toEqual(["gone@example.test"]);
-    expect(req.body.from).toBe("notifications@send.example.test");
+    // Account email: the plain "Lyceon" sender name (Karl, 2026-10-14).
+    expect(req.body.from).toBe("Lyceon <notifications@send.example.test>");
     expect(String(req.body.subject)).toMatch(/has been deleted/i);
     expect(String(req.body.text)).toContain("Thu, 17 Sep 2026 00:00:00 GMT");
     // No link, no recovery offer, no site URL: recovery is impossible after completion.

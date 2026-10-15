@@ -52,6 +52,7 @@ import { FullPageLoader } from "@/components/student-ui";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
 import { sectionCodeForDisplay } from "@shared/section-display";
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 
 export default function ResumePracticePage(): JSX.Element {
   const [, params] = useRoute("/practice/session/:sessionId");
@@ -137,7 +138,7 @@ export default function ResumePracticePage(): JSX.Element {
   if (isDiagnostic) {
     return (
       <CanonicalPracticePage
-        title="Diagnostic Assessment"
+        title={BLIND_SPOTS_NAME}
         section="M"
         sessionId={sessionId}
         isDiagnostic

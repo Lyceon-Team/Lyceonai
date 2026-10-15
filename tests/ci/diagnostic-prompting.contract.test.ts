@@ -38,7 +38,7 @@ describe("Diagnostic prompting contract", () => {
     );
     // The card moved into DiagnosticCard.tsx (2026-10-09) so the paid Home can draw it too; the
     // free Home still draws it under the diagnostic stage only.
-    expect(home).toMatch(/stage === "diagnostic" \? <DiagnosticCard\b/);
+    expect(home).toMatch(/stage === "diagnostic" \?\s*\(?\s*<DiagnosticCard\b/);
     const card = read("client/src/components/home/DiagnosticCard.tsx");
     expect(card.match(/data-testid="home-diagnostic"/g)?.length).toBe(1);
   });

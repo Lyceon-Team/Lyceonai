@@ -18,6 +18,7 @@ import {
   SAT_DATES_SOURCE_URL,
   SAT_SCORE_RELEASE_SOURCE_URL,
 } from "../../shared/sat-test-dates";
+import { planSkeleton } from "../../scripts/content/plan-skeleton";
 import {
   PASSED_INTERNAL_AUDIT,
   cycleProduction,
@@ -101,6 +102,20 @@ describe("section 1 is the structural record of what was produced (SCL-229)", ()
       keyword: "One per post, in PLAN.md",
       sources: [SAT_DATES_SOURCE_URL, SAT_SCORE_RELEASE_SOURCE_URL].sort(),
     });
+  });
+
+  it("a plan's row counts the slots its PLAN.md lists, so a rest-of-month plan says so", () => {
+    const october = planSkeleton("2026-10", "2026-10-19");
+    expect(planProduction("2026-10-plan", october).publishes).toBe(
+      "6 posts, 2026-10-19 to 2026-10-30",
+    );
+    expect(
+      cycleProduction("2026-10-plan", [], () => october)[0]?.publishes,
+    ).toBe("6 posts, 2026-10-19 to 2026-10-30");
+    // A whole-month PLAN.md gives the same row as the month itself.
+    expect(planProduction("2026-11-plan", planSkeleton("2026-11"))).toEqual(
+      planProduction("2026-11-plan"),
+    );
   });
 
   it("a draft passes with the printed rows and nothing else", () => {

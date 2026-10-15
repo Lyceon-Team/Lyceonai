@@ -73,6 +73,7 @@ import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import productFeedbackRoutes from "./routes/product-feedback-routes";
 import homeQotdRoutes from "./routes/home-qotd-routes";
+import gettingStartedRoutes from "./routes/getting-started-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -387,6 +388,17 @@ app.use(
   doubleCsrfProtection,
   requireStudentAccount,
   homeQotdRoutes,
+);
+
+// Owner brief "Student dashboard — Getting started checklist" (final brief v2, Karl,
+// 2026-10-13) §8. Students only (`requireStudentAccount`: guardians and admins get 403); no
+// entitlement gate — the checklist is for free and Pro alike, the plan only decides its steps.
+app.use(
+  "/api/home/getting-started",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  gettingStartedRoutes,
 );
 
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session

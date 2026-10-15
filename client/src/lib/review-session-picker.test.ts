@@ -102,9 +102,9 @@ describe("sourceFiltersLine", () => {
     );
   });
 
-  it('reads "Diagnostic" from a diagnostic session regardless of filters', () => {
+  it('reads "Find your blind spots" (the diagnostic, renamed 2026-10-13) regardless of filters', () => {
     expect(sourceFiltersLine("diagnostic", { sections: ["M"] })).toBe(
-      "Diagnostic",
+      "Find your blind spots",
     );
   });
 

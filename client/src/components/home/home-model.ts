@@ -32,6 +32,7 @@ import { minutesFor } from "@/features/calendar/lib/blocks";
 import { daysBetween } from "@/features/calendar/lib/dates";
 import { formatDate } from "@/lib/format-date";
 import { sourceEngineLabel } from "@/lib/review-session-picker";
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 
 type DayBlock = CalendarDay["blocks"][number];
 
@@ -213,7 +214,7 @@ const NO_CRITERIA: SessionCriteria = {
  * student made). The pool row carries no `section`, so none is passed.
  */
 export function recentSessionTitle(row: ReviewPoolSourceSession): string {
-  if (row.mode === "diagnostic") return "Diagnostic";
+  if (row.mode === "diagnostic") return BLIND_SPOTS_NAME;
   const filters = row.filters;
   if (row.source_engine === "full_length") {
     return filters !== null && "test_form_name" in filters

@@ -8731,6 +8731,151 @@ COMMENT ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id
 
 
 --
+-- Name: getting_started_dismiss(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.getting_started_dismiss(p_profile_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.student_getting_started_state
+     SET dismissed_at = COALESCE(dismissed_at, now()),
+         updated_at   = now()
+   WHERE profile_id = p_profile_id;
+$$;
+
+
+--
+-- Name: getting_started_observe(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.getting_started_observe(p_profile_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_pref      jsonb;
+  v_test_date boolean;
+  v_qotd      boolean;
+  v_blind     boolean;
+  v_review    boolean;
+  v_calendar  boolean;
+  v_lisa      boolean;
+  v_guardian  boolean;
+  v_row       public.student_getting_started_state;
+BEGIN
+  INSERT INTO public.student_getting_started_state (profile_id)
+  VALUES (p_profile_id)
+  ON CONFLICT (profile_id) DO NOTHING;
+
+  -- Step 1: a SAT date (any saved date, past or future) or "Not sure yet", AND a target score
+  -- or "Not sure yet".
+  SELECT ( COALESCE(cardinality(sp.target_exam_dates), 0) > 0
+           OR s.test_date_not_sure_at IS NOT NULL )
+     AND ( sp.target_score IS NOT NULL
+           OR s.target_score_not_sure_at IS NOT NULL )
+    INTO v_test_date
+    FROM public.student_getting_started_state s
+    LEFT JOIN public.student_study_profile sp ON sp.student_id = s.profile_id
+   WHERE s.profile_id = p_profile_id;
+
+  -- Step 2: any Question of the Day answer.
+  v_qotd := EXISTS (
+    SELECT 1 FROM public.student_qotd_attempts a WHERE a.student_id = p_profile_id);
+
+  -- Step 3: opted in to the daily email, read through the one canonical preference function.
+  v_pref := public.qotd_daily_email_preference(p_profile_id);
+
+  -- Step 4: the diagnostic or any answered practice item. Question of the Day answers are
+  -- practice items (mode 'qotd', SCL-224), so they count here too.
+  v_blind := EXISTS (
+    SELECT 1 FROM public.practice_session_items i
+     WHERE i.user_id = p_profile_id AND i.status = 'answered');
+
+  -- Step 5: a review session exists.
+  v_review := EXISTS (
+    SELECT 1 FROM public.review_sessions r WHERE r.student_id = p_profile_id);
+
+  -- Step 6: a study plan exists.
+  v_calendar := EXISTS (
+    SELECT 1 FROM public.calendar_current_plan c WHERE c.student_id = p_profile_id);
+
+  -- Step 7: the student has sent LISA a message. Presence only; the message is never read.
+  v_lisa := EXISTS (
+    SELECT 1 FROM public.tutor_messages m
+     WHERE m.student_id = p_profile_id AND m.role = 'student' AND m.content_kind = 'message');
+
+  -- Step 8: an active guardian link.
+  v_guardian := EXISTS (
+    SELECT 1 FROM public.guardian_links g
+     WHERE g.student_profile_id = p_profile_id AND g.status = 'active');
+
+  UPDATE public.student_getting_started_state s
+     SET test_date_done_at   = COALESCE(s.test_date_done_at,   CASE WHEN COALESCE(v_test_date, false) THEN now() END),
+         qotd_done_at        = COALESCE(s.qotd_done_at,        CASE WHEN v_qotd THEN now() END),
+         email_done_at       = COALESCE(s.email_done_at,       CASE WHEN COALESCE((v_pref ->> 'enabled')::boolean, false) THEN now() END),
+         blind_spots_done_at = COALESCE(s.blind_spots_done_at, CASE WHEN v_blind THEN now() END),
+         review_done_at      = COALESCE(s.review_done_at,      CASE WHEN v_review THEN now() END),
+         calendar_done_at    = COALESCE(s.calendar_done_at,    CASE WHEN v_calendar THEN now() END),
+         lisa_done_at        = COALESCE(s.lisa_done_at,        CASE WHEN v_lisa THEN now() END),
+         guardian_done_at    = COALESCE(s.guardian_done_at,    CASE WHEN v_guardian THEN now() END),
+         updated_at          = now()
+   WHERE s.profile_id = p_profile_id
+  RETURNING s.* INTO v_row;
+
+  RETURN jsonb_build_object(
+    'email_eligible',   COALESCE((v_pref ->> 'eligible')::boolean, false),
+    'test_date_done',   v_row.test_date_done_at   IS NOT NULL,
+    'qotd_done',        v_row.qotd_done_at        IS NOT NULL,
+    'email_done',       v_row.email_done_at       IS NOT NULL,
+    'email_skipped',    v_row.email_skipped_at    IS NOT NULL,
+    'blind_spots_done', v_row.blind_spots_done_at IS NOT NULL,
+    'review_done',      v_row.review_done_at      IS NOT NULL,
+    'calendar_done',    v_row.calendar_done_at    IS NOT NULL,
+    'lisa_done',        v_row.lisa_done_at        IS NOT NULL,
+    'guardian_done',    v_row.guardian_done_at    IS NOT NULL,
+    'dismissed',        v_row.dismissed_at        IS NOT NULL);
+END;
+$$;
+
+
+--
+-- Name: getting_started_record_not_sure(uuid, boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.getting_started_record_not_sure(p_profile_id uuid, p_test_date boolean, p_target_score boolean) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.student_getting_started_state AS s
+         (profile_id, test_date_not_sure_at, target_score_not_sure_at)
+  VALUES (p_profile_id,
+          CASE WHEN p_test_date    THEN now() END,
+          CASE WHEN p_target_score THEN now() END)
+  ON CONFLICT (profile_id) DO UPDATE
+     SET test_date_not_sure_at    = COALESCE(s.test_date_not_sure_at,    EXCLUDED.test_date_not_sure_at),
+         target_score_not_sure_at = COALESCE(s.target_score_not_sure_at, EXCLUDED.target_score_not_sure_at),
+         updated_at               = now();
+$$;
+
+
+--
+-- Name: getting_started_skip_email(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.getting_started_skip_email(p_profile_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.student_getting_started_state AS s (profile_id, email_skipped_at)
+  VALUES (p_profile_id, now())
+  ON CONFLICT (profile_id) DO UPDATE
+     SET email_skipped_at = COALESCE(s.email_skipped_at, now()),
+         updated_at       = now();
+$$;
+
+
+--
 -- Name: grant_password_recovery(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -17571,6 +17716,35 @@ COMMENT ON TABLE public.student_dream_schools IS 'SCL-195. Up to three ordered d
 
 
 --
+-- Name: student_getting_started_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_getting_started_state (
+    profile_id uuid NOT NULL,
+    test_date_not_sure_at timestamp with time zone,
+    target_score_not_sure_at timestamp with time zone,
+    email_skipped_at timestamp with time zone,
+    test_date_done_at timestamp with time zone,
+    qotd_done_at timestamp with time zone,
+    email_done_at timestamp with time zone,
+    blind_spots_done_at timestamp with time zone,
+    review_done_at timestamp with time zone,
+    calendar_done_at timestamp with time zone,
+    lisa_done_at timestamp with time zone,
+    guardian_done_at timestamp with time zone,
+    dismissed_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE student_getting_started_state; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.student_getting_started_state IS 'Home "Getting started" checklist (owner brief v2, 2026-10-13): sticky first-reached time per step, the recorded "Not sure yet" for SAT date and target score, "Not now" on the email step, and the dismissal. Written only by the getting_started_* functions. ON DELETE CASCADE from profiles.';
+
+
+--
 -- Name: student_kpi_rollups_current; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19316,6 +19490,14 @@ ALTER TABLE ONLY public.student_dream_schools
 
 ALTER TABLE ONLY public.student_dream_schools
     ADD CONSTRAINT student_dream_schools_student_id_college_id_key UNIQUE (student_id, college_id);
+
+
+--
+-- Name: student_getting_started_state student_getting_started_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_getting_started_state
+    ADD CONSTRAINT student_getting_started_state_pkey PRIMARY KEY (profile_id);
 
 
 --
@@ -22091,6 +22273,14 @@ ALTER TABLE ONLY public.student_dream_schools
 
 
 --
+-- Name: student_getting_started_state student_getting_started_state_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_getting_started_state
+    ADD CONSTRAINT student_getting_started_state_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: student_qotd_attempts student_qotd_attempts_practice_session_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -23370,6 +23560,12 @@ ALTER TABLE public.student_domain_mastery ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.student_dream_schools ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: student_getting_started_state; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_getting_started_state ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: student_kpi_rollups_current; Type: ROW SECURITY; Schema: public; Owner: -
@@ -24992,6 +25188,38 @@ GRANT ALL ON FUNCTION public.financial_record_retention_days() TO service_role;
 
 REVOKE ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text) TO service_role;
+
+
+--
+-- Name: FUNCTION getting_started_dismiss(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.getting_started_dismiss(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.getting_started_dismiss(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION getting_started_observe(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.getting_started_observe(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.getting_started_observe(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION getting_started_record_not_sure(p_profile_id uuid, p_test_date boolean, p_target_score boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.getting_started_record_not_sure(p_profile_id uuid, p_test_date boolean, p_target_score boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.getting_started_record_not_sure(p_profile_id uuid, p_test_date boolean, p_target_score boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION getting_started_skip_email(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.getting_started_skip_email(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.getting_started_skip_email(p_profile_id uuid) TO service_role;
 
 
 --
@@ -27857,6 +28085,13 @@ GRANT SELECT ON TABLE public.student_baseline_pending TO service_role;
 --
 
 GRANT ALL ON TABLE public.student_dream_schools TO service_role;
+
+
+--
+-- Name: TABLE student_getting_started_state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.student_getting_started_state TO service_role;
 
 
 --

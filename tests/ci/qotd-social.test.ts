@@ -19,12 +19,21 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { QotdSocialCard } from "@/components/qotd/QotdSocialCard";
 import {
+  previousQotdDate,
   qotdSocialInputSchema,
   qotdSocialPostManifestSchema,
   type QotdArchiveResponse,
+  type QotdRedditPost,
+  type QotdReveal,
   type QotdSocialPostManifest,
   type QotdSocialInput,
 } from "../../packages/shared/src/qotd-schema";
+import {
+  buildRedditPost,
+  buildReveal,
+  qotdArchiveUrl,
+  withheldReveal,
+} from "../../shared/qotd/reveal";
 import {
   QOTD_ALT_TEXT_MAX,
   QOTD_SOCIAL_FORMATS,
@@ -45,9 +54,11 @@ import {
   toTodayResponse,
 } from "../../server/services/qotd/qotd-service";
 import {
+  loadReveal,
   pastDateProblem,
   publishDecision,
   writePublishManifest,
+  type ArchiveFetch,
   type Source,
 } from "../../scripts/qotd-social/generate";
 import {
@@ -55,6 +66,8 @@ import {
   run,
   slackCopyMessage,
   slackImagesComment,
+  slackRedditMessage,
+  slackRevealMessage,
 } from "../../scripts/qotd-social/post-to-slack";
 import { slackConfig, type FetchLike } from "../../scripts/slack/client";
 import { QOTD_RW_MAX_PASSAGE_CHARS } from "../../shared/qotd/readability";
@@ -529,17 +542,47 @@ function workflowSteps(): WorkflowStep[] {
 // Slack (owner brief 2026-10-10): post only after every check passed, fail loudly, no answer.
 // ---------------------------------------------------------------------------------------------
 
-/** What generate.ts hands publishDecision for a day: the copy and each card's visible text. */
-function decide(source: Source, cardText?: string) {
+/**
+ * Yesterday's reveal for a posted day, as loadReveal builds it: from the fixture's archive day
+ * before it, or withheld when the archive has none (owner brief 2026-10-15).
+ */
+function revealFor(postedDate: string): QotdReveal {
+  const day = DAYS.find((d) => d.qotd_date === previousQotdDate(postedDate));
+  if (!day) return withheldReveal(postedDate);
+  const built = buildReveal(day, postedDate);
+  if (!built.ok) throw new Error(built.problem);
+  return built.reveal;
+}
+
+/**
+ * What generate.ts hands publishDecision for a day: the copy, each card's visible text, today's
+ * Reddit post and yesterday's reveal (either may be overridden to plant a defect).
+ */
+function decide(
+  source: Source,
+  cardText?: string,
+  over: { reddit?: QotdRedditPost; reveal?: QotdReveal } = {},
+) {
   const copy = buildSocialCopy(source.input);
   const rendered = (["portrait", "story"] as const).map((format) => ({
     format,
     cardText: cardText ?? visibleText(cardMarkup(source.input, format)),
   }));
+  const reddit = over.reddit ?? buildRedditPost(source.input);
+  const reveal = over.reveal ?? revealFor(source.input.qotd_date);
   return {
     copy,
     rendered,
-    decision: publishDecision(source, copy, rendered, QOTD_FIXTURE_TODAY),
+    reddit,
+    reveal,
+    decision: publishDecision(
+      source,
+      copy,
+      rendered,
+      QOTD_FIXTURE_TODAY,
+      reddit,
+      reveal,
+    ),
   };
 }
 
@@ -738,6 +781,8 @@ describe("Slack: posts only after the leak check passes", () => {
       "https://files.slack.com/upload/v1/test-2",
       "https://slack.com/api/files.completeUploadExternal",
       "https://slack.com/api/chat.postMessage",
+      "https://slack.com/api/chat.postMessage",
+      "https://slack.com/api/chat.postMessage",
     ]);
     // The token goes to Slack's API only, never to the upload URL.
     expect(slack.calls.map((c) => c.auth)).toEqual([
@@ -745,6 +790,8 @@ describe("Slack: posts only after the leak check passes", () => {
       undefined,
       `Bearer ${ENV.SLACK_BOT_TOKEN}`,
       undefined,
+      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
+      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
       `Bearer ${ENV.SLACK_BOT_TOKEN}`,
       `Bearer ${ENV.SLACK_BOT_TOKEN}`,
     ]);
@@ -768,6 +815,14 @@ describe("Slack: posts only after the leak check passes", () => {
     };
     expect(message.channel).toBe(ENV.SLACK_CHANNEL_ID);
     expect(message.text).toBe(slackCopyMessage(manifest));
+    // Then today's Reddit post, then yesterday's reveal (owner brief 2026-10-15).
+    const texts = slack.calls
+      .slice(6)
+      .map((c) => (JSON.parse(String(c.body)) as { text: string }).text);
+    expect(texts).toEqual([
+      slackRedditMessage(manifest),
+      slackRevealMessage(manifest),
+    ]);
     // The log names the day and Slack's message id; never the token or the question.
     const all = [...l.out, ...l.err].join("\n");
     expect(all).toContain(manifest.qotd_date);
@@ -958,12 +1013,14 @@ describe("PLANTS: an answer in the caption blocks the Slack post", () => {
     extra: string,
   ): ReturnType<typeof publishDecision> {
     const source = pastSource(day);
-    const { copy, rendered } = decide(source);
+    const { copy, rendered, reddit, reveal } = decide(source);
     return publishDecision(
       source,
       { ...copy, caption: `${copy.caption}\n\n${extra}` },
       rendered,
       QOTD_FIXTURE_TODAY,
+      reddit,
+      reveal,
     );
   }
 
@@ -991,13 +1048,15 @@ describe("PLANTS: an answer in the caption blocks the Slack post", () => {
 
   it("the explanation on the card alone (the caption untouched) also blocks", () => {
     const source = pastSource(mcq);
-    const { copy } = decide(source);
+    const { copy, reddit, reveal } = decide(source);
     const card = `${visibleText(cardMarkup(source.input, "portrait"))} ${mcq.question.explanation ?? ""}`;
     const d = publishDecision(
       source,
       copy,
       [{ format: "portrait", cardText: card }],
       QOTD_FIXTURE_TODAY,
+      reddit,
+      reveal,
     );
     expect(d.ok).toBe(false);
     if (!d.ok) {
@@ -1033,8 +1092,15 @@ describe("PLANTS: an answer in the caption blocks the Slack post", () => {
 describe("Slack: the edges the audit named", () => {
   it("a today payload dated any other day is refused (its answer is already public)", () => {
     const source = todaySource();
-    const { copy, rendered } = decide(source);
-    const stale = publishDecision(source, copy, rendered, "2099-01-01");
+    const { copy, rendered, reddit, reveal } = decide(source);
+    const stale = publishDecision(
+      source,
+      copy,
+      rendered,
+      "2099-01-01",
+      reddit,
+      reveal,
+    );
     expect(stale.ok).toBe(false);
     if (!stale.ok) {
       expect(stale.problems).toEqual([
@@ -1042,7 +1108,14 @@ describe("Slack: the edges the audit named", () => {
       ]);
     }
     expect(
-      publishDecision(source, copy, rendered, source.input.qotd_date).ok,
+      publishDecision(
+        source,
+        copy,
+        rendered,
+        source.input.qotd_date,
+        reddit,
+        reveal,
+      ).ok,
     ).toBe(true);
   });
 
@@ -1090,5 +1163,338 @@ describe("Slack: the edges the audit named", () => {
         "qotd-slack: NOT POSTED: files.getUploadURLExternal: upload_url is not a Slack https URL",
       ]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
+// reveal (for r/satquestions)", Karl, 2026-10-15). Real fixture days: today is 2026-10-05 (a
+// Math MCQ) and yesterday 2026-10-04 (a Math grid-in).
+// ---------------------------------------------------------------------------------------------
+
+const YESTERDAY = previousQotdDate(QOTD_FIXTURE_TODAY);
+
+function yesterdayDay(): QotdArchiveResponse {
+  const day = DAYS.find((d) => d.qotd_date === YESTERDAY);
+  if (!day) throw new Error(`the fixture has no archive day ${YESTERDAY}`);
+  return day;
+}
+
+/** The public archive as the server answers: past days only (today and later are 404). */
+function fakeArchive(opts: { serveToday?: boolean; status?: number } = {}): {
+  fetch: ArchiveFetch;
+  urls: string[];
+} {
+  const urls: string[] = [];
+  const fetch: ArchiveFetch = async (url) => {
+    urls.push(url);
+    const date = url.split("/").pop() ?? "";
+    const reply = (status: number, json: unknown) => ({
+      status,
+      ok: status >= 200 && status < 300,
+      json: async () => json,
+    });
+    if (opts.status !== undefined) return reply(opts.status, {});
+    if (opts.serveToday) return reply(200, { data: TODAY_REVEALED });
+    const day = DAYS.find((d) => d.qotd_date === date);
+    return day ? reply(200, { data: day }) : reply(404, {});
+  };
+  return { fetch, urls };
+}
+
+/** Every answer and explanation text the fixture knows, for absence checks. */
+function answerTexts(day: QotdArchiveResponse): string[] {
+  const q = day.question;
+  const correct = q.options.find((o) => o.id === q.correct_option_id);
+  return [
+    q.explanation,
+    ...(q.correct_answer !== null && q.item_type === "grid_in"
+      ? [q.correct_answer]
+      : []),
+    ...(correct ? [correct.text] : []),
+  ];
+}
+
+describe("Yesterday's reveal: always yesterday, never today (owner brief 2026-10-15)", () => {
+  it("is built from yesterday's archive day: date, section and domain, answer, plain-text explanation, archive link", () => {
+    const day = yesterdayDay();
+    const built = buildReveal(day, QOTD_FIXTURE_TODAY);
+    expect(built.ok).toBe(true);
+    if (!built.ok || built.reveal.status !== "revealed") return;
+    const r = built.reveal;
+    expect(r.qotd_date).toBe("2026-10-04");
+    expect(r.section).toBe("Math");
+    expect(r.domain).toBe(day.question.domain);
+    // A grid-in's answer is the keyed value.
+    expect(r.answer).toEqual({ kind: "value", value: "7" });
+    // Plain text, maths readable: no $ delimiters, no LaTeX commands.
+    expect(r.explanation).toBe(
+      "Both 7 and -7 square to 49. Since x > 0, x = 7.",
+    );
+    expect(r.archive_url).toBe(
+      "https://lyceon.ai/sat-question-of-the-day/2026-10-04",
+    );
+    expect(r.archive_url).toBe(qotdArchiveUrl("2026-10-04"));
+  });
+
+  it("an MCQ day's answer is its letter and text", () => {
+    // 2026-10-03 is yesterday for a day posted 2026-10-04.
+    const day = DAYS.find((d) => d.qotd_date === "2026-10-03")!;
+    const built = buildReveal(day, "2026-10-04");
+    expect(built.ok).toBe(true);
+    if (built.ok && built.reveal.status === "revealed") {
+      expect(built.reveal.answer).toEqual({
+        kind: "choice",
+        letter: "C",
+        text: "attracted",
+      });
+    }
+  });
+
+  it("today's answer is never a reveal: the builder refuses any day but yesterday", () => {
+    // Presence first: yesterday builds.
+    expect(buildReveal(yesterdayDay(), QOTD_FIXTURE_TODAY).ok).toBe(true);
+    for (const day of [
+      TODAY_REVEALED,
+      ...DAYS.filter((d) => d !== yesterdayDay()),
+    ]) {
+      const built = buildReveal(day, QOTD_FIXTURE_TODAY);
+      expect(built.ok, day.qotd_date).toBe(false);
+      if (!built.ok) {
+        expect(built.problem).toBe(
+          `reveal: the archive day is ${day.qotd_date}, not yesterday (${YESTERDAY})`,
+        );
+      }
+    }
+  });
+
+  it("loadReveal asks the public archive for yesterday only, and refuses today's day served in its place", async () => {
+    const archive = fakeArchive();
+    const reveal = await loadReveal(
+      "https://lyceon.ai",
+      QOTD_FIXTURE_TODAY,
+      archive.fetch,
+    );
+    expect(archive.urls).toEqual([
+      `https://lyceon.ai/api/public/qotd/${YESTERDAY}`,
+    ]);
+    expect(reveal).toMatchObject({ status: "revealed", qotd_date: YESTERDAY });
+    // A server that answered with today's day would be caught, not posted.
+    await expect(
+      loadReveal(
+        "https://lyceon.ai",
+        QOTD_FIXTURE_TODAY,
+        fakeArchive({ serveToday: true }).fetch,
+      ),
+    ).rejects.toThrow(`not yesterday (${YESTERDAY})`);
+  });
+
+  it("a manifest whose reveal is not yesterday's is never written, and the schema refuses it", () => {
+    const source = todaySource();
+    // Today's archive day passed off as the reveal: the shape is valid, the day is not.
+    const wrong: QotdReveal = {
+      ...(revealFor(QOTD_FIXTURE_TODAY) as Extract<
+        QotdReveal,
+        { status: "revealed" }
+      >),
+      qotd_date: QOTD_FIXTURE_TODAY,
+      archive_url: qotdArchiveUrl(QOTD_FIXTURE_TODAY),
+    };
+    const d = decide(source, undefined, { reveal: wrong }).decision;
+    expect(d.ok).toBe(false);
+    if (!d.ok) {
+      expect(d.problems).toContain(
+        `reveal: is for ${QOTD_FIXTURE_TODAY}, not yesterday (${YESTERDAY})`,
+      );
+    }
+    const m = manifestFor(source);
+    expect(m.reveal.qotd_date).toBe(YESTERDAY);
+    expect(
+      qotdSocialPostManifestSchema.safeParse({ ...m, reveal: wrong }).success,
+    ).toBe(false);
+  });
+
+  it("the Slack reveal carries yesterday's answer and explanation and none of today's", () => {
+    const m = manifestFor(todaySource());
+    const text = unescapeMrkdwn(slackRevealMessage(m));
+    // Presence first: yesterday's date, section, domain, answer, explanation and link.
+    const y = yesterdayDay();
+    expect(text).toContain("Yesterday's reveal");
+    expect(text).toContain("October 4, 2026");
+    expect(text).toContain("Math");
+    expect(text).toContain(y.question.domain);
+    expect(text).toContain("```\n7\n```");
+    expect(text).toContain("Since x > 0, x = 7.");
+    expect(text).toContain(
+      "https://lyceon.ai/sat-question-of-the-day/2026-10-04",
+    );
+    // Absence: today's explanation and correct choice.
+    expect(text).not.toContain("length times width");
+    const todayCorrect = TODAY_REVEALED.question.options.find(
+      (o) => o.id === TODAY_REVEALED.question.correct_option_id,
+    )!;
+    expect(text).not.toMatch(new RegExp(`\\b${todayCorrect.text}\\b`));
+  });
+});
+
+describe("Today's Reddit post (owner brief 2026-10-15)", () => {
+  it("is the suggested title and today's question as plain text", () => {
+    const m = manifestFor(todaySource());
+    expect(m.reddit.title).toBe(
+      `SAT Question of the Day: Monday, October 5, 2026 (Math · ${TODAY_REVEALED.question.domain})`,
+    );
+    expect(m.reddit.body).toContain(
+      "A rectangle has a length of 8 and a width of 3. What is its area?",
+    );
+    // All four choices, lettered, and the call to action; no $ or LaTeX.
+    expect(m.reddit.body.match(/^[A-D]\) /gm)).toHaveLength(4);
+    expect(m.reddit.body).toContain(
+      "Answer it free at lyceon.ai/sat-question-of-the-day",
+    );
+    expect(m.reddit.body).not.toMatch(/\$|\\[a-z]/);
+    const text = unescapeMrkdwn(slackRedditMessage(m));
+    expect(text).toContain(m.reddit.title);
+    expect(text).toContain(m.reddit.body);
+  });
+});
+
+describe("The leak check still blocks today's answer anywhere in today's messages (2026-10-15)", () => {
+  const mcq = (): QotdArchiveResponse =>
+    publishable().find((d) => d.question.item_type === "mcq")!;
+  const correctOf = (day: QotdArchiveResponse) =>
+    day.question.options.find((o) => o.id === day.question.correct_option_id)!;
+
+  it("the day publishes untouched (presence before absence)", () => {
+    const { decision, reddit } = decide(pastSource(mcq()));
+    expect(decision.ok).toBe(true);
+    expect(reddit.body.length).toBeGreaterThan(40);
+  });
+
+  it("the explanation in the Reddit body", () => {
+    const day = mcq();
+    const base = buildRedditPost(pastSource(day).input);
+    const d = decide(pastSource(day), undefined, {
+      reddit: { ...base, body: `${base.body}\n\n${day.question.explanation}` },
+    }).decision;
+    expect(d.ok).toBe(false);
+    if (!d.ok) {
+      expect(
+        d.problems.some((p) =>
+          p.startsWith("portrait: reddit_body: carries the explanation"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("the correct choice named in the Reddit title", () => {
+    const day = mcq();
+    const base = buildRedditPost(pastSource(day).input);
+    const d = decide(pastSource(day), undefined, {
+      reddit: { ...base, title: `${base.title} ${correctOf(day).text}` },
+    }).decision;
+    expect(d.ok).toBe(false);
+    if (!d.ok) {
+      expect(d.problems).toContain(
+        `portrait: reddit_title: names the correct choice "${correctOf(day).text}"`,
+      );
+    }
+  });
+
+  it("a Reddit body that singles out one choice", () => {
+    const day = mcq();
+    const input = pastSource(day).input;
+    const base = buildRedditPost(input);
+    const body = `${input.stem}\n\n${correctOf(day).text}`;
+    const d = decide(pastSource(day), undefined, {
+      reddit: { ...base, body },
+    }).decision;
+    expect(d.ok).toBe(false);
+    if (!d.ok) {
+      expect(d.problems).toContain(
+        "portrait: reddit_body: shows 1 of the 4 choices",
+      );
+    }
+  });
+
+  it("today's Slack messages (images, caption, Reddit) carry none of the posted day's answer", () => {
+    for (const day of publishable()) {
+      const m = manifestFor(pastSource(day));
+      const today = [
+        slackImagesComment(m),
+        slackCopyMessage(m),
+        slackRedditMessage(m),
+      ].map(unescapeMrkdwn);
+      // Presence: each message is non-trivial.
+      for (const t of today) expect(t.length).toBeGreaterThan(30);
+      expect(
+        socialAssetLeaks(
+          {
+            caption: m.caption,
+            alt_text: m.alt_text,
+            card_text: today[0] ?? "",
+            reddit_title: m.reddit.title,
+            reddit_body: m.reddit.body,
+          },
+          day,
+        ),
+        day.qotd_date,
+      ).toEqual([]);
+    }
+  });
+});
+
+describe("A withheld yesterday posts no reveal (owner brief 2026-10-15)", () => {
+  it("a 404 from the archive (a repaired question) is withheld: the notice and nothing else", async () => {
+    // 2026-10-01 is not in the archive: the server answers 404, as for a withheld day.
+    const archive = fakeArchive();
+    const reveal = await loadReveal(
+      "https://lyceon.ai",
+      "2026-10-02",
+      archive.fetch,
+    );
+    expect(archive.urls).toEqual([
+      "https://lyceon.ai/api/public/qotd/2026-10-01",
+    ]);
+    expect(reveal).toEqual({ status: "withheld", qotd_date: "2026-10-01" });
+    // The posted day 2026-10-02 carries that withheld reveal in its manifest.
+    const m = manifestFor(
+      pastSource(DAYS.find((d) => d.qotd_date === "2026-10-02")!),
+    );
+    expect(m.reveal).toEqual(reveal);
+    const text = unescapeMrkdwn(slackRevealMessage(m));
+    expect(text).toContain("Yesterday's reveal");
+    expect(text).toContain("Withheld");
+    // Nothing else: no answer, explanation or link block, and no fixture day's answer text.
+    expect(text).not.toMatch(/Answer|Explanation|Archive page|```/);
+    for (const day of [...DAYS, TODAY_REVEALED]) {
+      for (const t of answerTexts(day)) {
+        if (t.length > 3) expect(text, day.qotd_date).not.toContain(t);
+      }
+    }
+  });
+
+  it("the withheld notice is what Slack receives as the reveal", async () => {
+    const m = manifestFor(
+      pastSource(DAYS.find((d) => d.qotd_date === "2026-10-02")!),
+    );
+    const slack = fakeSlack();
+    expect(
+      await run(["--dir", builtDir(m)], ENV, slack.fetch, logs().log),
+    ).toBe(0);
+    const last = JSON.parse(String(slack.calls.at(-1)!.body)) as {
+      text: string;
+    };
+    expect(last.text).toBe(slackRevealMessage(m));
+    expect(last.text).toContain("Withheld");
+  });
+
+  it("any other archive failure fails the run loudly (never a silent missing reveal)", async () => {
+    await expect(
+      loadReveal(
+        "https://lyceon.ai",
+        QOTD_FIXTURE_TODAY,
+        fakeArchive({ status: 503 }).fetch,
+      ),
+    ).rejects.toThrow(`GET /api/public/qotd/${YESTERDAY} -> 503`);
   });
 });
