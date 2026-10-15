@@ -11,6 +11,7 @@
  */
 import type { GuardianUnlinkedPayload } from "../../../../packages/shared/src/notifications-schema";
 import {
+  emailRender,
   escapeHtml,
   type EmailRender,
   type InAppRender,
@@ -80,7 +81,15 @@ export function guardianUnlinkedEmail(
       footer,
       "</body></html>",
     ].join("");
-    return { subject, html, text };
+    // Karl, 2026-10-14: to the student, so "Lyceon".
+    return emailRender({
+      subject,
+      preview:
+        "They can't see your progress anymore. You can share a new code anytime.",
+      fromCategory: "general",
+      html,
+      text,
+    });
   }
 
   const name = studentName(payload);
@@ -107,5 +116,12 @@ export function guardianUnlinkedEmail(
     footer,
     "</body></html>",
   ].join("");
-  return { subject, html, text };
+  // Karl, 2026-10-14: to the guardian, so "Lyceon for Parents".
+  return emailRender({
+    subject,
+    preview: `You no longer see ${name}'s progress. Ask them for a new code to reconnect.`,
+    fromCategory: "guardian",
+    html,
+    text,
+  });
 }

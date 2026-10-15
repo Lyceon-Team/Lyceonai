@@ -293,7 +293,8 @@ describe.skipIf(!PG_AVAILABLE)(
       // Step 6.5: the marketing contact for that address is removed, after the notice.
       expect(fakeResend.contactDeletes).toEqual([EMAIL_A]);
       expect(fakeResend.order).toEqual(["POST /emails", "DELETE /contacts"]);
-      expect(req.body.from).toBe(FROM_EMAIL);
+      // Sender name per email type (Karl, 2026-10-14).
+      expect(req.body.from).toBe(`Lyceon <${FROM_EMAIL}>`);
       expect(req.headers["Idempotency-Key"]).toBe(
         `account-deletion-completed:${requestId}`,
       );

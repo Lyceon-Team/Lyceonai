@@ -61,6 +61,7 @@ import {
   readDomainMasteryView,
   readSkillCatalogView,
 } from "../../../apps/api/src/services/mastery-view";
+import { invalidateSkillCatalogCache } from "../../../apps/api/src/services/skill-catalog-read";
 import { MASTERY_LEVEL_FIXTURE } from "../../../tests/utils/mastery-levels-fixture";
 import {
   masteryDomainAnchorId,
@@ -258,6 +259,8 @@ function installDb(args: {
     student_skill_mastery: args.skills ?? SKILL_ROWS,
     canonical_skill_catalog: args.catalog ?? canonicalCatalogRows(),
   };
+  // The catalog read is cached in process (2026-10-13); a new table is a new catalog.
+  invalidateSkillCatalogCache();
 }
 
 /** GET …/mastery/domains as the route sends it (`student-resources.ts`, mastery section). */

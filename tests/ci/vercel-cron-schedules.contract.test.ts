@@ -64,6 +64,14 @@ describe("vercel.json cron schedules (owner ruling 2026-10-09)", () => {
       { path: "/api/internal/qotd-daily-email", schedule: "5 6 * * *" },
       { path: "/api/internal/qotd-daily-email", schedule: "0 22 * * *" },
       { path: "/api/internal/qotd-daily-email", schedule: "0 23 * * *" },
+      // Owner brief "Guardian accountability loop" (Karl, 2026-10-13): the guardian digest at
+      // 18:00 Chicago, two UTC entries with a Chicago-hour guard like the QOTD email — 23:00 UTC
+      // is 18:00 CDT, 00:00 UTC is 18:00 CST.
+      {
+        path: "/api/internal/guardian-daily-digest",
+        schedule: "0 23 * * *",
+      },
+      { path: "/api/internal/guardian-daily-digest", schedule: "0 0 * * *" },
     ]);
   });
 });

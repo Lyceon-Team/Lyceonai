@@ -66,6 +66,9 @@ import {
 } from "../../packages/shared/src/session-mode";
 import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
+import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
+import { settle } from "../../packages/shared/src/result";
+import { beginStep, timedRoute, timedStep } from "../lib/step-timer";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -88,20 +91,11 @@ type McOption = CanonicalMcOption;
 // hard-typed `null`; correct_variants is answer-bearing and is intentionally ABSENT from this
 // type — it can never be assigned here. For grid_in, options is [] and inputMode signals a
 // numeric-entry surface (the student produces the answer; no A–D choices exist).
-type StudentSafeQuestionDTO = {
-  sessionItemId: string;
-  stem: string;
-  passage: string | null;
-  assets: unknown | null;
-  section: string;
-  questionType: "multiple_choice" | "grid_in";
-  itemType: CanonicalItemType;
-  inputMode: "choice" | "numeric_entry";
-  options: StudentSafeOption[];
-  difficulty: string | number | null;
-  correct_answer: null;
-  explanation: null;
-};
+// @implemented [2026-10-13] (question metadata header, owner brief Karl 2026-10-13 §1): the type
+// is now inferred from `studentSafeQuestionSchema` (packages/shared, Zod first) instead of being
+// written out beside it, so the DTO and the schema the A14 parity test holds both engines to are
+// one definition. It gained `domain` and `skill` (taxonomy, not answer data).
+type StudentSafeQuestionDTO = StudentSafeQuestion;
 
 type SessionRow = {
   id: string;
@@ -778,6 +772,10 @@ export { filterAssetsPreSubmit };
 // hand it correct_variants (it has no such field; the answer set stays server-side). The
 // serializer null-strips correct_answer/explanation; for grid_in it emits options [] +
 // inputMode 'numeric_entry'. So this DTO carries no answer, no explanation, no variants.
+// @implemented [2026-10-13] (question header, owner brief Karl 2026-10-13 §1): it also carries
+// the projection's `domain` and `skill` (read from the session-item snapshot) for the runner's
+// header. Practice and review may show taxonomy pre-submit; only the full-length exam withholds
+// it (Doc 02B §20), and the exam has its own serializer. Named fields, no spread.
 export function toStudentSafeQuestionDTO(args: {
   sessionItemId: string;
   question: CanonicalQuestionForServing;
@@ -816,6 +814,8 @@ export function toStudentSafeQuestionDTO(args: {
     difficulty: normalizeSafeDifficulty(safe.difficulty),
     correct_answer: null,
     explanation: null,
+    domain: safe.domain,
+    skill: safe.skill,
   };
 }
 
@@ -1051,21 +1051,61 @@ export async function hydrateSessionItemOptionTokens(
   >[] = data ?? [];
   for (const row of rows) {
     if (row.option_order && row.option_token_map) continue;
-    const options = safeParseOptions(row.question_options);
-    if (!hasCanonicalOptionSet(options)) continue;
-    const served = buildServedOptions(options);
+    const served = servedOptionColumnsFor(row.question_options);
+    if (served === null) continue;
     const { error: updateError } = await supabaseServer
       .from(table)
-      .update({
-        option_order: served.optionOrder,
-        option_token_map: served.optionTokenMap,
-      })
+      .update(served)
       .eq("id", row.id);
 
     if (updateError) {
       throw new Error(`${table}_option_update_failed: ${updateError.message}`);
     }
   }
+}
+
+/**
+ * The served option columns for one item's `question_options`: a fresh shuffle and its token
+ * map, or `null` when the item has no canonical option set (a grid-in). The ONE derivation
+ * behind both `hydrateSessionItemOptionTokens` (after insert) and `withServedOptionTokens`
+ * (before insert), so the two cannot drift.
+ */
+function servedOptionColumnsFor(questionOptions: unknown): {
+  option_order: string[];
+  option_token_map: Record<string, string>;
+} | null {
+  const options = safeParseOptions(questionOptions);
+  if (!hasCanonicalOptionSet(options)) return null;
+  const served = buildServedOptions(options);
+  return {
+    option_order: served.optionOrder,
+    option_token_map: served.optionTokenMap,
+  };
+}
+
+/**
+ * @spec [Doc-02B_V4 §16 (option order and tokens are written once and read back thereafter);
+ *       owner brief 2026-10-13 "first-run activation fixes" item 2 ("remove sequential/duplicate
+ *       round trips on those paths")] | @implemented [2026-10-13]
+ * plain English: the same columns `hydrateSessionItemOptionTokens` writes, computed BEFORE the
+ * insert and carried in it. Session start used to insert the items with null tokens, read every
+ * item back, and then UPDATE them one at a time — 1 + N sequential round trips (N = session
+ * size, up to the premium cap) that this folds into the insert the start already makes.
+ * expected outcome: identical rows — the same derivation (`servedOptionColumnsFor`), from the
+ * same `question_options` value the hydrate read back, with the same unseeded shuffle — and no
+ * window in which an inserted item has no tokens. trade-offs: none to behaviour; the anti-leak
+ * property is unchanged, since the tokens live only in the row and the insert returns only
+ * `id, ordinal`. edge cases: a row that already carries both columns is left as is (the hydrate's
+ * own skip rule); a grid-in keeps null columns, exactly as the hydrate left it.
+ */
+export function withServedOptionTokens(
+  rows: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return rows.map((row) => {
+    if (row.option_order && row.option_token_map) return row;
+    const served = servedOptionColumnsFor(row.question_options);
+    return served === null ? row : { ...row, ...served };
+  });
 }
 
 export async function cleanupFailedSessionMaterialization(
@@ -1366,14 +1406,18 @@ export async function startOrReplaySession(args: {
     }
 > {
   // 1) Fetch all open sessions for this user to check global limit and idempotency
-  const { data: openSessions, error: openErr } = await supabaseServer
-    .from("practice_sessions")
-    .select(
-      "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
-    )
-    .eq("user_id", args.userId)
-    .in("status", [...ACTIVE_DB_STATUSES])
-    .order("created_at", { ascending: false });
+  const { data: openSessions, error: openErr } = await timedStep(
+    "open_sessions",
+    () =>
+      supabaseServer
+        .from("practice_sessions")
+        .select(
+          "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
+        )
+        .eq("user_id", args.userId)
+        .in("status", [...ACTIVE_DB_STATUSES])
+        .order("created_at", { ascending: false }),
+  );
 
   if (openErr) {
     return {
@@ -1400,7 +1444,7 @@ export async function startOrReplaySession(args: {
 
   // @spec [Doc-02B_V4 §14; INV-02B-15] | @implemented [2026-06-27]
   // Max concurrent sessions from config (CEO model = 5).
-  const config = await loadPracticeConfig();
+  const config = await timedStep("config", () => loadPracticeConfig());
   const maxSessions = config.maxConcurrentSessions;
   if (!replay && sessions.length >= maxSessions) {
     return {
@@ -1450,7 +1494,9 @@ export async function startOrReplaySession(args: {
       replayMeta.session_start_idempotency_key = args.idempotencyKey;
     }
 
-    const existingItemCount = await countSessionItems(replay.id);
+    const existingItemCount = await timedStep("replay_item_count", () =>
+      countSessionItems(replay.id),
+    );
     if (existingItemCount > 0) {
       replayMeta.prebuilt = true;
       replayMeta.requested_count = coerceTargetQuestionCount(
@@ -1467,10 +1513,12 @@ export async function startOrReplaySession(args: {
         replayMeta.selection_mode === "exact_reuse" ? "exact_reuse" : "exact";
     }
 
-    await updateSessionLifecycle(replay.id, replayMeta, {
-      status: replay.status === "created" ? "active" : replay.status,
-      ...replayPatch,
-    });
+    await timedStep("session_update", () =>
+      updateSessionLifecycle(replay.id, replayMeta, {
+        status: replay.status === "created" ? "active" : replay.status,
+        ...replayPatch,
+      }),
+    );
 
     return {
       ok: true,
@@ -1497,13 +1545,30 @@ export async function startOrReplaySession(args: {
   // so we never over-materialize sessions beyond the remaining free-tier allowance.
   // Remaining = daily_quota_free minus answers submitted in the current America/Chicago day
   // (owner ruling OQ-43 / F-61, 2026-10-03; Doc 02B §13 "Pre-Cap", "Zero Quota Remaining").
+  //
+  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2] | @implemented [2026-10-13]
+  // plain English: the exclude-id read below does not depend on the quota decision, so it is
+  // STARTED here and runs while the dry run does, then awaited where it was always awaited. A
+  // 402/503 return leaves it unread (it is a read; nothing is written), and `settle` keeps its
+  // outcome so a failure surfaces at the await, exactly where the sequential code threw.
+  const activeSessionItemsRead = settle(
+    timedStep("exclude_ids", () =>
+      supabaseServer
+        .from("practice_session_items")
+        .select("question_id, practice_sessions!inner(status)")
+        .eq("user_id", args.userId)
+        .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]),
+    ),
+  );
   if (args.role !== "admin") {
     try {
       // OQ-21: the one dry-run call, shared with GET /quota so the read and this 402 agree.
-      const dryRunDecision = await dryRunPracticeQuota({
-        userId: args.userId,
-        role: args.role,
-      });
+      const dryRunDecision = await timedStep("quota_dry_run", () =>
+        dryRunPracticeQuota({
+          userId: args.userId,
+          role: args.role,
+        }),
+      );
       if (!dryRunDecision.allowed) {
         return {
           ok: false,
@@ -1564,12 +1629,11 @@ export async function startOrReplaySession(args: {
   // DB-side ORDER BY random() via select_practice_pool_random RPC.
   // The DB returns exactly N rows; no full-pool fetch into TS.
 
-  // 1. Gather exclude IDs (active session questions — prevents cross-session repeats)
-  const { data: activeSessionItems } = await supabaseServer
-    .from("practice_session_items")
-    .select("question_id, practice_sessions!inner(status)")
-    .eq("user_id", args.userId)
-    .in("practice_sessions.status", [...ACTIVE_DB_STATUSES]);
+  // 1. Gather exclude IDs (active session questions — prevents cross-session repeats).
+  //    Started above, in parallel with the quota dry run.
+  const activeSessionItemsResult = await activeSessionItemsRead;
+  if (!activeSessionItemsResult.ok) throw activeSessionItemsResult.error;
+  const { data: activeSessionItems } = activeSessionItemsResult.value;
 
   const excludeIds = (activeSessionItems ?? [])
     .map((item: { question_id?: string }) => item.question_id)
@@ -1585,18 +1649,19 @@ export async function startOrReplaySession(args: {
   );
 
   // 3. Call DB-side random selection
-  const { data: poolRows, error: poolError } = await supabaseServer.rpc(
-    "select_practice_pool_random",
-    {
-      p_sections: sectionCodes.length > 0 ? sectionCodes : null,
-      p_domains:
-        args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
-      p_skills:
-        args.sessionSpec.skills.length > 0 ? args.sessionSpec.skills : null,
-      p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
-      p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
-      p_limit: requestedCount,
-    },
+  const { data: poolRows, error: poolError } = await timedStep(
+    "pool_select",
+    () =>
+      supabaseServer.rpc("select_practice_pool_random", {
+        p_sections: sectionCodes.length > 0 ? sectionCodes : null,
+        p_domains:
+          args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
+        p_skills:
+          args.sessionSpec.skills.length > 0 ? args.sessionSpec.skills : null,
+        p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
+        p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
+        p_limit: requestedCount,
+      }),
   );
 
   if (poolError) {
@@ -1644,23 +1709,26 @@ export async function startOrReplaySession(args: {
     last_served_ordinal: 1,
   };
 
-  const { data: createdSession, error: sessionInsertError } =
-    await supabaseServer
-      .from("practice_sessions")
-      .insert({
-        user_id: args.userId,
-        actor_id: args.actorId,
-        mode: args.mode,
-        filters: insertFilters,
-        target_count: requestedCount,
-        platform: "web",
-        client_instance_id: args.clientInstanceId,
-        status: "active",
-      })
-      .select(
-        "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
-      )
-      .single();
+  const { data: createdSession, error: sessionInsertError } = await timedStep(
+    "session_insert",
+    () =>
+      supabaseServer
+        .from("practice_sessions")
+        .insert({
+          user_id: args.userId,
+          actor_id: args.actorId,
+          mode: args.mode,
+          filters: insertFilters,
+          target_count: requestedCount,
+          platform: "web",
+          client_instance_id: args.clientInstanceId,
+          status: "active",
+        })
+        .select(
+          "id, user_id, mode, filters, target_count, platform, client_instance_id, status, created_at, updated_at, last_activity_at, completed_at, actor_id",
+        )
+        .single(),
+  );
 
   if (sessionInsertError || !createdSession) {
     return {
@@ -1691,17 +1759,23 @@ export async function startOrReplaySession(args: {
   // @spec [Doc-05B_V1.0 §4.2] | @implemented [2026-08-16]
   // plain English: buildSessionItemInsertRows now asserts the canonical (section, domain)
   // pair, so it can throw. The session row already exists at this point — an uncaught
-  // throw would orphan it. Clean up and fail closed, matching the
-  // hydrateSessionItemOptionTokens branch immediately below.
+  // throw would orphan it. Clean up and fail closed.
+  //
+  // 2026-10-13 (owner brief, first-run activation item 2): the served option tokens are
+  // computed here and carried in the insert (`withServedOptionTokens`), replacing the
+  // post-insert `hydrateSessionItemOptionTokens` read + one UPDATE per item. Same columns, same
+  // derivation; a throw from it lands in this same cleanup branch.
   let insertRows: Record<string, unknown>[];
   try {
-    insertRows = buildSessionItemInsertRows(selected, {
-      sessionId,
-      userId: args.userId,
-      actorId: args.actorId,
-      clientInstanceId: args.clientInstanceId,
-      now,
-    });
+    insertRows = withServedOptionTokens(
+      buildSessionItemInsertRows(selected, {
+        sessionId,
+        userId: args.userId,
+        actorId: args.actorId,
+        clientInstanceId: args.clientInstanceId,
+        now,
+      }),
+    );
   } catch (buildError: unknown) {
     await cleanupFailedSessionMaterialization(sessionId);
     const message =
@@ -1725,10 +1799,14 @@ export async function startOrReplaySession(args: {
     };
   }
 
-  const { data: insertedItems, error: itemInsertError } = await supabaseServer
-    .from("practice_session_items")
-    .insert(insertRows)
-    .select("id, ordinal");
+  const { data: insertedItems, error: itemInsertError } = await timedStep(
+    "items_insert",
+    () =>
+      supabaseServer
+        .from("practice_session_items")
+        .insert(insertRows)
+        .select("id, ordinal"),
+  );
 
   if (itemInsertError) {
     await cleanupFailedSessionMaterialization(sessionId);
@@ -1742,35 +1820,20 @@ export async function startOrReplaySession(args: {
     };
   }
 
-  try {
-    await hydrateSessionItemOptionTokens(sessionId);
-  } catch (hydrateError: unknown) {
-    await cleanupFailedSessionMaterialization(sessionId);
-    return {
-      ok: false,
-      status: 500,
-      body: {
-        error: "session_create_failed",
-        message:
-          hydrateError instanceof Error
-            ? hydrateError.message
-            : "Unable to hydrate session item tokens",
-      },
-    };
-  }
-
   const firstInsertedItem = Array.isArray(insertedItems)
     ? // The insert selects only `id, ordinal`; the row type comes from that select (F-24).
       insertedItems.find((row) => Number(row.ordinal) === 1)
     : null;
 
   if (firstInsertedItem) {
-    const quotaResult = await reservePracticeQuestionQuota({
-      userId: args.userId,
-      role: args.role,
-      sessionId,
-      sessionItemId: String(firstInsertedItem.id),
-    });
+    const quotaResult = await timedStep("quota_reserve", () =>
+      reservePracticeQuestionQuota({
+        userId: args.userId,
+        role: args.role,
+        sessionId,
+        sessionItemId: String(firstInsertedItem.id),
+      }),
+    );
     if (!quotaResult.ok) {
       await cleanupFailedSessionMaterialization(sessionId);
       return {
@@ -1794,9 +1857,11 @@ export async function startOrReplaySession(args: {
     : null;
   newMetadata.last_served_ordinal = 1;
 
-  await updateSessionLifecycle(sessionId, newMetadata, {
-    status: "active",
-  });
+  await timedStep("session_update", () =>
+    updateSessionLifecycle(sessionId, newMetadata, {
+      status: "active",
+    }),
+  );
 
   return {
     ok: true,
@@ -2559,7 +2624,7 @@ router.post(
   requireSupabaseAuth,
   requireProfileComplete,
   requireGuardianLinkForUnder13,
-  async (req, res) => {
+  timedRoute("practice.session_start", async (req, res) => {
     const requestId = req.requestId;
     const user = req.user;
     const userId = user?.id;
@@ -2581,7 +2646,7 @@ router.post(
       });
     }
 
-    const config = await loadPracticeConfig();
+    const config = await timedStep("config", () => loadPracticeConfig());
     const normalizedSpec = normalizeSessionSpec(parsed.data, config);
     const section = normalizedSpec.section;
     const mode = normalizedSpec.sessionSpec.mode;
@@ -2626,7 +2691,7 @@ router.post(
       ),
       calculatorState: sessionResult.metadata.calculator_state ?? null,
     });
-  },
+  }),
 );
 
 router.post(
@@ -3335,7 +3400,28 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
-  const ownedSessionResult = await loadOwnedSession(payload.sessionId, userId);
+  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2; Doc-02B_V4 §14
+  //       (idempotent submit); tests/idor.regression.test.ts (a foreign session is refused
+  //       before ANY read of its items)] | @implemented [2026-10-13]
+  // plain English: the attempt-key lookup is keyed by the caller's own user id and the key
+  // they sent — it can only ever see the caller's own rows — and nothing it returns is
+  // consulted until after grading, so it is STARTED alongside the session read instead of
+  // after grading. The item read is NOT moved: it reads by session id, and the IDOR invariant
+  // is that a foreign session gets its 403 before any read of that session's items, so it
+  // still waits for the ownership check. Both reads still precede the CAS update, so the
+  // idempotency and race guarantees are those of the sequential code. `settle` keeps the
+  // lookup's outcome until its own await (a 404/403 branch never consults it).
+  const requestedAttemptKey = payload.clientAttemptId;
+  const attemptKeyRead = requestedAttemptKey
+    ? settle(
+        timedStep("attempt_lookup", () =>
+          findSessionItemByClientAttemptId(userId, requestedAttemptKey),
+        ),
+      )
+    : null;
+  const ownedSessionResult = await timedStep("load_session", () =>
+    loadOwnedSession(payload.sessionId, userId),
+  );
 
   if (!ownedSessionResult) {
     return res.status(404).json({
@@ -3355,10 +3441,12 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 
   const session = ownedSessionResult.session;
 
-  const sessionItem = await findSessionItemForSubmission(payload.sessionId, {
-    sessionItemId: payload.sessionItemId,
-    questionId: payload.questionId,
-  });
+  const sessionItem = await timedStep("load_item", () =>
+    findSessionItemForSubmission(payload.sessionId, {
+      sessionItemId: payload.sessionItemId,
+      questionId: payload.questionId,
+    }),
+  );
 
   if (!sessionItem) {
     return res.status(404).json({
@@ -3525,11 +3613,10 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   const clampedTimeSpentMs = null;
   const now = new Date().toISOString();
 
-  if (payload.clientAttemptId) {
-    const existingByKey = await findSessionItemByClientAttemptId(
-      userId,
-      payload.clientAttemptId,
-    );
+  if (payload.clientAttemptId && attemptKeyRead) {
+    const attemptKeyResult = await attemptKeyRead;
+    if (!attemptKeyResult.ok) throw attemptKeyResult.error;
+    const existingByKey = attemptKeyResult.value;
     if (existingByKey) {
       if (existingByKey.id !== sessionItem.id) {
         return res.status(409).json({
@@ -3601,22 +3688,26 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     }
   }
 
-  const { data: updatedItem, error: updateItemErr } = await supabaseServer
-    .from("practice_session_items")
-    .update({
-      status: "answered",
-      selected_answer: chosen,
-      is_correct: isCorrect,
-      outcome,
-      time_spent_ms: clampedTimeSpentMs,
-      answered_at: now,
-      occurred_at: now,
-      client_attempt_id: payload.clientAttemptId ?? null,
-    })
-    .eq("id", sessionItem.id)
-    .eq("status", "served")
-    .select(SESSION_ITEM_SELECT)
-    .maybeSingle();
+  const { data: updatedItem, error: updateItemErr } = await timedStep(
+    "item_update",
+    () =>
+      supabaseServer
+        .from("practice_session_items")
+        .update({
+          status: "answered",
+          selected_answer: chosen,
+          is_correct: isCorrect,
+          outcome,
+          time_spent_ms: clampedTimeSpentMs,
+          answered_at: now,
+          occurred_at: now,
+          client_attempt_id: payload.clientAttemptId ?? null,
+        })
+        .eq("id", sessionItem.id)
+        .eq("status", "served")
+        .select(SESSION_ITEM_SELECT)
+        .maybeSingle(),
+  );
 
   if (updateItemErr) {
     if (isDuplicateConflict(updateItemErr.message)) {
@@ -3703,6 +3794,19 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     });
   }
 
+  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2; Doc-05A §11 (mastery
+  //       emission is best-effort, warn-and-continue)] | @implemented [2026-10-13]
+  // plain English: the resolved-item count reads `practice_session_items`, which the mastery
+  // emission below does not write, so it is STARTED here and runs while the emission does,
+  // then awaited where it was always read. The emission block itself is untouched (and still
+  // never throws). The completion update and the diagnostic baseline still run only after
+  // both have finished, so the baseline still follows the mastery event that fed it.
+  const resolvedCountRead = settle(
+    timedStep("count_resolved", () =>
+      countResolvedSessionItems(payload.sessionId),
+    ),
+  );
+  const endMasteryStep = beginStep("mastery_emit");
   try {
     const canonicalId =
       typeof sessionItem.question_id === "string"
@@ -3838,12 +3942,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       },
     );
   }
+  endMasteryStep();
 
   const answerConfig = await loadPracticeConfig();
   const refreshedMeta = asSessionMetadata(session.filters);
   refreshedMeta.active_session_item_id = null;
 
-  const resolvedCount = await countResolvedSessionItems(payload.sessionId);
+  const resolvedCountResult = await resolvedCountRead;
+  if (!resolvedCountResult.ok) throw resolvedCountResult.error;
+  const resolvedCount = resolvedCountResult.value;
   const targetQuestionCount = coerceTargetQuestionCount(
     refreshedMeta.target_question_count,
     answerConfig.maxSessionCountPremium,
@@ -3851,11 +3958,21 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
+  // 2026-10-13 (owner brief, first-run activation item 2): the response's stats read only the
+  // session's ITEMS, which every write above has already committed and nothing below changes
+  // (the lifecycle update and the baseline write the session row and the snapshot table), so it
+  // runs alongside them instead of after them. Same rows, same numbers.
+  const statsRead = settle(
+    timedStep("stats", () => getSessionStats(payload.sessionId, userId)),
+  );
+
   if (shouldComplete) {
-    await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
-      status: "completed",
-      completed_at: now,
-    });
+    await timedStep("session_update", () =>
+      updateSessionLifecycle(payload.sessionId, refreshedMeta, {
+        status: "completed",
+        completed_at: now,
+      }),
+    );
 
     // @spec [Doc-05C §7.4, Vertical-B Slice 2] @implemented 2026-08-12
     // plain English: on diagnostic completion, capture the current section
@@ -3894,10 +4011,15 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       }
     }
   } else {
-    await updateSessionLifecycle(payload.sessionId, refreshedMeta, {
-      status: "active",
-    });
+    await timedStep("session_update", () =>
+      updateSessionLifecycle(payload.sessionId, refreshedMeta, {
+        status: "active",
+      }),
+    );
   }
+
+  const statsResult = await statsRead;
+  if (!statsResult.ok) throw statsResult.error;
 
   return res.json({
     sessionId: payload.sessionId,
@@ -3909,7 +4031,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       : { correctOptionId }),
     explanation,
     feedback: isCorrect ? "Correct" : "Incorrect",
-    stats: await getSessionStats(payload.sessionId, userId),
+    stats: statsResult.value,
     state: shouldComplete ? "completed" : "active",
   });
 }
@@ -4163,7 +4285,7 @@ router.post(
   requireProfileComplete,
   requireGuardianLinkForUnder13,
   practiceAnswerRateLimiter,
-  submitPracticeAnswer,
+  timedRoute("practice.answer_submit", submitPracticeAnswer),
 );
 router.post(
   "/sessions/:sessionId/skip",

@@ -244,7 +244,7 @@ const NOTIFICATIONS_PATH = "/notifications";
 
 /**
  * Why `feature` is locked for this student, or null (granted, or no map). The ONE reading of the
- * OQ-29 map for a lock: the rail, the tab bar and Home's full-length card all use it.
+ * OQ-29 map for a lock: the rail, the tab bar and Practice's full-length row all use it.
  */
 export function featureLockReason(
   feature: LockableFeatureKey,

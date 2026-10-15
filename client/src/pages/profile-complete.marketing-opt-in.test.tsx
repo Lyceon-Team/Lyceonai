@@ -54,7 +54,33 @@ vi.mock("@/lib/queryClient", async () => {
   const qc = new QC({ defaultOptions: { queries: { retry: false } } });
   return {
     queryClient: qc,
-    apiRequest: vi.fn(async (_url: string, init?: RequestInit) => {
+    apiRequest: vi.fn(async (url: string, init?: RequestInit) => {
+      // Only the profile PATCH is this file's subject; the SAT date, score and "Not sure yet"
+      // saves that follow it (final brief v2 §1) answer with the real checklist shape.
+      if (url !== "/api/profile") {
+        const { deriveGettingStarted } =
+          await import("@lyceon/shared/getting-started-schema");
+        const data = deriveGettingStarted(
+          {
+            email_eligible: true,
+            test_date_done: true,
+            qotd_done: false,
+            email_done: false,
+            email_skipped: false,
+            blind_spots_done: false,
+            review_done: false,
+            calendar_done: false,
+            lisa_done: false,
+            guardian_done: false,
+            dismissed: false,
+          },
+          { plan: "free", lisaAvailable: true },
+        );
+        return new Response(JSON.stringify({ data }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       calls.patchBody = JSON.parse(String(init?.body)) as Record<
         string,
         unknown

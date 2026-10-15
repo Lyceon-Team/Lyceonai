@@ -88,6 +88,7 @@ Data in the prototype is illustrative. Every number in production comes from an 
 | Keyboard hook | Runner, LISA, modals | One shared hook. The prototype shows **no keystroke hint text** (Karl's ruling). |
 | SAT-date picker | Onboarding, Settings, Home's date card, the calendar (setup, free plan, schedule sheet) | One component, `components/sat-dates/SatDatePicker.tsx`: a dropdown multi-select. Closed: "Not sure yet", one date, or "first date + N more". Open: "Not sure yet" pinned first, then the future official dates with checkboxes, scrolling inside the menu; each choice clears the other. Offers no date past the furthest one the profile write accepts, served as `latest_test_date` by the role-agnostic `GET /api/sat-dates/bound` (one bound for every surface and every signed-in account; Karl, ruling 2 on #1204, 2026-10-11, and the ruling on #1211, 2026-10-12). Added 2026-10-11 (Karl). |
 | Clamped label | Any long label in a row or card | `ClampedLabel` (`components/student-ui`): two lines and an ellipsis; full text on hover and on focus within its row. Added 2026-10-11 (Karl). |
+| Pill | The question runner's header, LISA's question chip | `Pill` (`components/student-ui`): a small neutral pill, `--chip` fill, `--rule` border, 14px semibold `--ink`. No colour variants: a pill names something, it never grades it. Added 2026-10-13 (Karl, ruling on #1225). |
 
 ---
 
@@ -142,6 +143,12 @@ Data in the prototype is illustrative. Every number in production comes from an 
 
 **Question runner** (Focus shell).
 - Top bar: back to Practice, session name, "Question N of M" with a progress strip, Calculator, Reference.
+- **Question header** (owner brief, Karl, 2026-10-13; style ruled on #1225 the same day), above the stem on the **practice, review and diagnostic** runners. **The timed full-length module has none**: it stays Bluebook-like, and its payload carries no domain, skill or difficulty.
+  - Three small pills: the domain, the skill and the difficulty (Easy, Medium or Hard). All three use the shared neutral pill (`Pill` in `components/student-ui`: `--chip` fill, `--rule` border, 14px semibold `--ink`), the same one as LISA's question chip. The difficulty is **not colour-coded**: no green, amber or red.
+  - Desktop (from `lg`, 1024px): one row, domain, skill, difficulty.
+  - Phone: row 1 is domain and difficulty; row 2 is the skill alone, clamped to two lines with `ClampedLabel`.
+  - The skill pill is the header's **one keyboard focus stop**, with the focus ring; focusing it shows the full skill name, as hovering does (§5 Long labels). Screen readers read domain, skill, difficulty in that order, with the difficulty as "Difficulty: Easy".
+  - A part the question lacks is left out; with nothing to show there is no header.
 - Body: the stem and the choices, **lettered A–D by on-screen position** (ruled 2026-10-02). Then the feedback panel after submitting, showing the correct answer and the student's pick, the explanation, and the review-queue note on a miss.
 - **Letters are display labels, never the canonical stored option letters.** "B" always means the second option on screen. Whatever LISA receives about this question must carry the choices in their displayed order with their display letters, so "the answer is B" means the same thing to the student and to LISA. No letter mapping may expose which option is correct before submission.
 - Footer: Skip and Submit (disabled until a choice is made), then Next question.

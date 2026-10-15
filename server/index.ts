@@ -60,6 +60,7 @@ import accountDeletionRoutes from "./routes/account-deletion-routes";
 import publicPricingRoutes from "./routes/public-pricing-routes";
 import publicQotdRoutes from "./routes/public-qotd-routes";
 import publicQotdEmailRoutes from "./routes/public-qotd-email-routes";
+import publicGuardianDigestEmailRoutes from "./routes/public-guardian-digest-email-routes";
 import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -72,6 +73,7 @@ import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import productFeedbackRoutes from "./routes/product-feedback-routes";
 import homeQotdRoutes from "./routes/home-qotd-routes";
+import gettingStartedRoutes from "./routes/getting-started-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -388,6 +390,17 @@ app.use(
   homeQotdRoutes,
 );
 
+// Owner brief "Student dashboard — Getting started checklist" (final brief v2, Karl,
+// 2026-10-13) §8. Students only (`requireStudentAccount`: guardians and admins get 403); no
+// entitlement gate — the checklist is for free and Pro alike, the plan only decides its steps.
+app.use(
+  "/api/home/getting-started",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  gettingStartedRoutes,
+);
+
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
 // principal; every read/write is a recipient-scoped SQL function.
 app.use(
@@ -539,6 +552,14 @@ app.use("/api/public/qotd", publicQotdRoutes);
 // only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
 // CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
 app.use("/api/public/qotd-email", publicQotdEmailRoutes);
+
+// Guardian daily summary email unsubscribe (UNAUTHENTICATED BY DESIGN — Karl's ruling 5 on #1223,
+// 2026-10-13: "a signed link + List-Unsubscribe … follow the existing QOTD-email one-click
+// unsubscribe pattern exactly"). Same shape as the QOTD links above: the GET renders a button, the
+// POST (the RFC 8058 target) turns the guardian's digest email off through its one writer, and
+// only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
+app.use("/api/public/guardian-digest-email", publicGuardianDigestEmailRoutes);
 
 // Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
 // Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no
