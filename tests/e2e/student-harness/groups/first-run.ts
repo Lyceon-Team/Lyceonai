@@ -13,6 +13,9 @@
  *   - the in-shell error screen: a page's code chunk fails twice (the automatic reload, then the
  *     screen inside the App shell with the rail or the tab bar);
  *   - the QOTD: the explanation with Done and no prompt over it; the prompt after Done;
+ *   - owner rulings (Karl, 2026-10-15, on #1233): a free student's practice summary with the
+ *     muted locked mastery line (item 3), and the email prompt on the next Home visit of a
+ *     student who answered today and left before Done (item 2);
  *   - the sign-in card with the logo and the "Password" placeholder.
  * FIRST-RUN-ONBOARDING (the bare-pages seed): the date of birth empty, and the SAT-date picker open
  * with its helper line and Done.
@@ -54,6 +57,26 @@ export const FIRST_RUN: PageGroup = {
       waitFor: both('[data-testid="session-summary-score"]'),
       fullPage: true,
       prototype: NEW_SCREEN,
+    },
+    {
+      id: "summary-practice-free",
+      title:
+        "Practice session summary, free: the muted locked line 'Track how this moves your mastery — included with paid plans' (a link to the plans page) in place of a mastery change",
+      persona: "free",
+      route: "/practice/session/{session}",
+      freshQuota: true,
+      freshSession: {
+        engine: "practice",
+        body: { sections: ["M"], target_question_count: 5 },
+        playThrough: ["correct", "incorrect", "skip", "correct", "correct"],
+      },
+      waitFor: both('[data-testid="session-summary-mastery-locked"]'),
+      fullPage: true,
+      prototype: {
+        kind: "none",
+        reason:
+          "NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, item 3), built to DESIGN.md §5; these screenshots go to Karl before merge.",
+      },
     },
     {
       id: "summary-review",
@@ -149,6 +172,21 @@ export const FIRST_RUN: PageGroup = {
       ],
       expectText: "Keep your streak alive 🔥",
       prototype: NEW_SCREEN,
+    },
+    {
+      id: "qotd-prompt-next-visit",
+      title:
+        "QOTD answered earlier today and left before Done: the next Home visit opens the email prompt once, over the collapsed card",
+      persona: "paid",
+      route: "/dashboard",
+      freshQotd: { answeredEarlier: true },
+      waitFor: both('[data-testid="qotd-email-prompt"]'),
+      expectText: "Keep your streak alive 🔥",
+      prototype: {
+        kind: "none",
+        reason:
+          "NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, item 2), built to DESIGN.md §5; these screenshots go to Karl before merge.",
+      },
     },
     {
       id: "sign-in",

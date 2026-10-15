@@ -567,6 +567,30 @@ async function clearCalendarProfile(persona: StudentPersona): Promise<void> {
  * SEO Wave 2 (groups/types.ts `freshReviewPrompt`): removes the persona's review-prompt state and
  * review, so the next page load is a never-prompted account again.
  */
+/**
+ * Owner ruling (Karl, 2026-10-15, on #1233, item 3), groups/types.ts `freshQuota`: the persona's
+ * practice answers and skips from the last day (the ones the free daily quota counts) are dated a
+ * day earlier, in the harness database only.
+ */
+async function clearTodaysQuota(persona: StudentPersona): Promise<void> {
+  const db = await harnessDb();
+  try {
+    await db.query(
+      `UPDATE public.practice_session_items psi
+          SET occurred_at = psi.occurred_at - interval '1 day'
+         FROM public.practice_sessions ps
+        WHERE ps.id = psi.session_id
+          AND psi.user_id = $1
+          AND psi.status IN ('answered', 'skipped')
+          AND psi.occurred_at >= now() - interval '1 day'
+          AND ps.mode NOT IN ('diagnostic', 'qotd')`,
+      [PERSONAS[persona].id],
+    );
+  } finally {
+    await db.end();
+  }
+}
+
 async function clearReviewPrompt(persona: StudentPersona): Promise<void> {
   const db = await harnessDb();
   try {
@@ -631,6 +655,45 @@ async function resetQotd(
   } finally {
     await db.end();
   }
+}
+
+/**
+ * Owner ruling (Karl, 2026-10-15, on #1233, item 2), groups/types.ts `freshQotd.answeredEarlier`:
+ * today's question answered through the REAL routes, as an earlier visit that left before Done
+ * would have (the first option, right or wrong); "prompt shown" is never reported.
+ */
+async function answerQotdEarlier(
+  stack: Stack,
+  persona: StudentPersona,
+): Promise<void> {
+  const res = await fetch(`${stack.baseUrl}/api/qotd/today`, {
+    headers: { [PERSONA_HEADER]: persona },
+  });
+  const json: unknown = await res.json();
+  const data =
+    json !== null && typeof json === "object" && "data" in json
+      ? (json as { data: unknown }).data
+      : null;
+  if (
+    res.status !== 200 ||
+    data === null ||
+    typeof data !== "object" ||
+    !("state" in data) ||
+    data.state !== "unanswered" ||
+    !("qotd_date" in data) ||
+    !("question" in data)
+  )
+    throw new Error(
+      `answeredEarlier: /api/qotd/today -> ${res.status}, not an unanswered question`,
+    );
+  const question = data.question as { options: { id: string }[] };
+  const first = question.options[0];
+  if (first === undefined) throw new Error("answeredEarlier: no options");
+  await apiCall(stack, persona, "POST", "/api/qotd/answer", {
+    qotd_date: data.qotd_date,
+    option_token: first.id,
+    idempotency_key: crypto.randomUUID(),
+  });
 }
 
 async function apiCall(
@@ -944,6 +1007,11 @@ async function shootBuilt(
   const fresh = shot.freshSession ?? null;
   if (fresh && persona === null)
     throw new Error(`${shot.id}: a fresh session needs a signed-in persona`);
+  if (shot.freshQuota === true) {
+    if (persona === null)
+      throw new Error(`${shot.id}: a fresh quota needs a seeded student`);
+    await clearTodaysQuota(persona);
+  }
   const sessionId =
     fresh && persona ? await startFreshSession(stack, persona, fresh) : null;
   if (fresh?.playThrough !== undefined && persona && sessionId !== null)
@@ -972,6 +1040,8 @@ async function shootBuilt(
     if (persona === null)
       throw new Error(`${shot.id}: a fresh QOTD needs a seeded student`);
     await resetQotd(persona, shot.freshQotd.priorAsks ?? 0);
+    if (shot.freshQotd.answeredEarlier === true)
+      await answerQotdEarlier(stack, persona);
   }
   const context = await browser.newContext({
     viewport: { width: size.width, height: HEIGHT_OVERRIDE ?? size.height },
@@ -1446,6 +1516,10 @@ function writeIndex(
     if (shot.freshQotd !== undefined)
       lines.push(
         `Today's question unanswered before each capture (scheduled if missing; the persona's answer, qotd session and email-prompt state deleted${shot.freshQotd.priorAsks ? `; ${shot.freshQotd.priorAsks} earlier asks seeded` : ""}).`,
+      );
+    if (shot.freshQuota === true)
+      lines.push(
+        "Today's free quota unused before each capture (the persona's practice answers and skips from the last day are dated a day earlier in the harness database).",
       );
     if (shot.freshReviewPrompt === true)
       lines.push(

@@ -139,8 +139,17 @@ export type Shot = {
    * persona's QOTD answer for today, its one-item practice session and its daily-email prompt
    * state are deleted, so each viewport and theme starts unanswered. `priorAsks` seeds that many
    * earlier prompt asks (on earlier days), e.g. 2 so the next answer is the 3rd ask.
+   * `answeredEarlier` (owner ruling, Karl, 2026-10-15, on #1233, item 2) then answers today's
+   * question through the REAL routes (GET /api/qotd/today, POST /api/qotd/answer) before the page
+   * loads, and reports nothing shown: the student who left before Done, now on the next visit.
    */
-  freshQotd?: { priorAsks?: number };
+  freshQotd?: { priorAsks?: number; answeredEarlier?: true };
+  /**
+   * Owner ruling (Karl, 2026-10-15, on #1233, item 3): the free student's practice answered in
+   * the last day is moved a day back in the harness database before every capture, so the free
+   * daily quota is unused and a `playThrough` session can run in each viewport and theme.
+   */
+  freshQuota?: true;
   /**
    * The visitor already answered the cookie banner (analytics rejected), so the banner does not
    * cover the page's controls. Written as the real consent cookie, in the current banner version,
