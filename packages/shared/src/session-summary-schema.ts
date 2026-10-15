@@ -16,12 +16,14 @@
  *   - `sent_to_review`: queue entries whose source is this session (`review_schedule` rows with
  *     this engine and session id), i.e. the misses and skips the database queued.
  *   - `streak`: the one daily streak (`student_streak`), or null if it could not be read.
- *   - `mastery_changes`: for each skill this session's answers moved to a different level, the
- *     level before the session's first event and after its last one, read from the mastery
- *     engine's own audit rows (`mastery_event_audit_log`, keyed by the session's item ids). Empty
- *     when no level changed. `null` when the student's plan has no mastery detail (the same
- *     `mastery_detail` feature the Mastery page needs): the summary then says nothing about
- *     mastery rather than drawing a locked or invented line.
+ *   - `mastery`: `{ access: "granted", changes }` lists, for each skill this session's answers
+ *     moved to a different level, the level before the session's first event and after its last
+ *     one, read from the mastery engine's own audit rows (`mastery_event_audit_log`, keyed by the
+ *     session's item ids); empty when no level changed. `{ access: "locked" }` when the student's
+ *     plan has no mastery detail (the `mastery_detail` feature the Mastery page needs, decided by
+ *     the server's `canAccessFeature`): the summary then shows the locked line and no level at all
+ *     (owner ruling, Karl, 2026-10-15, on #1233: "Track how this moves your mastery — included
+ *     with paid plans", linking to the plans page).
  *   - `again`: what "Another 5" starts: practice's criteria; review's pool (queue, a past session,
  *     or the chosen filters), as the session was created.
  *
@@ -63,6 +65,18 @@ export const sessionMasteryChangeSchema = z
   .strict();
 export type SessionMasteryChange = z.infer<typeof sessionMasteryChangeSchema>;
 
+/** The summary's mastery part: the recorded changes, or locked (no `mastery_detail`). */
+export const sessionSummaryMasterySchema = z.discriminatedUnion("access", [
+  z
+    .object({
+      access: z.literal("granted"),
+      changes: z.array(sessionMasteryChangeSchema),
+    })
+    .strict(),
+  z.object({ access: z.literal("locked") }).strict(),
+]);
+export type SessionSummaryMastery = z.infer<typeof sessionSummaryMasterySchema>;
+
 const countsShape = {
   sessionId: z.string().uuid(),
   state: z.literal("completed"),
@@ -75,8 +89,8 @@ const countsShape = {
   sent_to_review: z.number().int().min(0),
   /** The daily streak now; null when it could not be read (unknown, never zero). */
   streak: streakSchema.nullable(),
-  /** Level changes the mastery engine recorded; null when the plan has no mastery detail. */
-  mastery_changes: z.array(sessionMasteryChangeSchema).nullable(),
+  /** Level changes the mastery engine recorded, or locked when the plan has no mastery detail. */
+  mastery: sessionSummaryMasterySchema,
 };
 
 /** Review's three pools, as `POST /api/review/sessions` takes them. */

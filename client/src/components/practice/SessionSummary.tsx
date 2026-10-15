@@ -16,26 +16,32 @@
  *   - Streak: "🔥 N-day streak, kept today" when today counts; nothing when the streak is unknown.
  *   - Sent to review: how many queue entries the session created.
  *   - Mastery: only the skills whose level the mastery engine recorded changing, before → after, as
- *     the level pills draw them. No line at all when nothing changed or the plan has no mastery
- *     detail (`mastery_changes` empty or null): the client never estimates a change.
+ *     the level pills draw them; no line when nothing changed: the client never estimates a change.
+ *     Without mastery detail (the server answers `mastery: { access: "locked" }`, from the
+ *     canonical `canAccessFeature("mastery_detail")`, never the client's role), one muted line,
+ *     "Track how this moves your mastery — included with paid plans", linking to the plans page
+ *     (`UPGRADE_PLANS_DESTINATION`, Settings → Billing), no modal (owner ruling, Karl, 2026-10-15,
+ *     on #1233, item 3).
  * Actions: "Review misses" starts a review of this session's queued questions through the existing
  * review start (`mode: "session"`, this session as the source, as Home's "Review this session");
  * "Another 5" starts a 5-question session the way this one was started (practice: its criteria,
  * through `usePractice`; review: its pool, with `target_count` 5). One filled primary: "Review
- * misses" when there are misses, else "Another 5"; the other is outline. Each start's refusal is
+ * misses" when there are misses, else "Another 5"; the other is outline. RULED: owner ruling (Karl,
+ * 2026-10-15, on #1233, item 1) keeps this as built. Each start's refusal is
  * shown under the actions: the review cap with the shared ReviewCapNotice, an empty pool or a used
  * quota as a notice, in the student's words.
  *
  * Anti-leak: the summary holds no question content; nothing here can show an answer.
  */
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { ANOTHER_SESSION_SIZE } from "@lyceon/shared/session-summary-schema";
 import type { SessionSummary as Summary } from "@lyceon/shared/session-summary-schema";
 import { LevelPill } from "@/components/mastery/LevelPill";
+import { UPGRADE_PLANS_DESTINATION } from "@/components/billing/upgrade-modal";
 import { ReviewCapNotice } from "@/components/review/ReviewCapNotice";
 import { ClampedLabel, Notice } from "@/components/student-ui";
-import { Button } from "@/components/ui/button";
+import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePractice } from "@/hooks/usePractice";
 import {
@@ -53,6 +59,9 @@ import { STARTING_LABEL } from "@/lib/pending-copy";
 
 const ANOTHER_LABEL = `Another ${ANOTHER_SESSION_SIZE}`;
 const REVIEW_MISSES_LABEL = "Review misses";
+/** Owner ruling (Karl, 2026-10-15, on #1233, item 3), verbatim. */
+const MASTERY_LOCKED_LINE =
+  "Track how this moves your mastery — included with paid plans";
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
@@ -193,7 +202,7 @@ function SummaryBody({ data }: { data: Summary }): JSX.Element {
   };
 
   const hasMisses = data.sent_to_review > 0;
-  const changes = data.mastery_changes ?? [];
+  const changes = data.mastery.access === "granted" ? data.mastery.changes : [];
   const streak = data.streak;
 
   return (
@@ -271,6 +280,22 @@ function SummaryBody({ data }: { data: Summary }): JSX.Element {
                   </li>
                 ))}
               </ul>
+            </dd>
+          </>
+        ) : null}
+        {data.mastery.access === "locked" ? (
+          <>
+            <dt className="pt-5 text-lyc-body font-semibold text-lyc-muted sm:border-b sm:border-lyc-rule sm:pb-5">
+              Mastery
+            </dt>
+            <dd className="m-0 border-b border-lyc-rule pb-5 pt-1 sm:pt-5">
+              <Link
+                href={UPGRADE_PLANS_DESTINATION}
+                className={`${LYC_FOCUS} text-lyc-body text-lyc-muted underline underline-offset-4 hover:no-underline`}
+                data-testid="session-summary-mastery-locked"
+              >
+                {MASTERY_LOCKED_LINE}
+              </Link>
             </dd>
           </>
         ) : null}

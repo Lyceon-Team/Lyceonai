@@ -13,7 +13,8 @@
  *   - practice summary: 5 answered, 4 correct, 1 skipped, 2 sent to review (the miss and the
  *     skip), today's streak kept, and the mastery change exactly as the mastery engine recorded it
  *     (presence first: the 5th answered event made the skill measured, so the list is non-empty);
- *   - a free plan (no `mastery_detail`): the same summary with `mastery_changes: null`;
+ *   - a free plan (no `mastery_detail`): the same summary with `mastery: { access: "locked" }`
+ *     (owner ruling 2026-10-15 on #1233: a locked line, never a level);
  *   - review: a queue review of those two entries, one right and one wrong, summarised the same
  *     way (`again` is the queue);
  *   - denials: another student's session is 404, an open session is 409;
@@ -356,15 +357,17 @@ describe.skipIf(!PG_AVAILABLE)("session summary → real PG", () => {
     // Presence first: the engine recorded a level change (unmeasured → measured at the 5th event).
     const recorded = await recordedChanges(practiceItemIds);
     expect(recorded.length).toBeGreaterThan(0);
-    expect(summary.mastery_changes).not.toBeNull();
+    expect(summary.mastery.access).toBe("granted");
+    const changes =
+      summary.mastery.access === "granted" ? summary.mastery.changes : [];
     expect(
-      (summary.mastery_changes ?? []).map((c) => ({
+      changes.map((c) => ({
         skill: c.skill,
         before: c.before.level,
         after: c.after.level,
       })),
     ).toEqual(recorded);
-    for (const c of summary.mastery_changes ?? []) {
+    for (const c of changes) {
       expect(c.before.levelKey).toBe("unmeasured");
       expect(c.after.displayName.length).toBeGreaterThan(0);
     }
@@ -418,7 +421,7 @@ describe.skipIf(!PG_AVAILABLE)("session summary → real PG", () => {
     expect(sessionSummarySchema.parse(first.body.data).sent_to_review).toBe(2);
   });
 
-  it("practice on a plan without mastery detail: no mastery line at all (null), the rest unchanged", async () => {
+  it("practice on a plan without mastery detail: mastery locked (no level), the rest unchanged", async () => {
     masteryGranted = false;
     const res = await request(app).get(
       `/api/practice/sessions/${practiceSessionId}/summary`,
@@ -427,7 +430,7 @@ describe.skipIf(!PG_AVAILABLE)("session summary → real PG", () => {
     expect(res.status).toBe(200);
     const summary = sessionSummarySchema.parse(res.body.data);
     expect(summary.answered).toBe(5);
-    expect(summary.mastery_changes).toBeNull();
+    expect(summary.mastery).toEqual({ access: "locked" });
   });
 
   it("review: a queue review of the two entries, summarised the same way", async () => {
@@ -478,11 +481,13 @@ describe.skipIf(!PG_AVAILABLE)("session summary → real PG", () => {
     expect(summary.again).toEqual({ mode: "queue" });
     const recorded = await recordedChanges(reviewItemIds);
     expect(
-      (summary.mastery_changes ?? []).map((c) => ({
-        skill: c.skill,
-        before: c.before.level,
-        after: c.after.level,
-      })),
+      (summary.mastery.access === "granted" ? summary.mastery.changes : []).map(
+        (c) => ({
+          skill: c.skill,
+          before: c.before.level,
+          after: c.after.level,
+        }),
+      ),
     ).toEqual(recorded);
     expectNoContent(res.body);
     for (const id of reviewItemIds)

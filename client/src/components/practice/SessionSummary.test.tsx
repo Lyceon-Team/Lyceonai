@@ -92,19 +92,22 @@ function practiceSummary(over: Partial<Record<string, unknown>> = {}): Summary {
     skipped: 1,
     sent_to_review: 2,
     streak: { current: 3, today_done: true, broken: false },
-    mastery_changes: [
-      {
-        section: "M",
-        domain: "Algebra",
-        skill: "Linear equations in one variable",
-        before: {
-          levelKey: "unmeasured",
-          level: null,
-          displayName: "Not enough answers yet",
+    mastery: {
+      access: "granted",
+      changes: [
+        {
+          section: "M",
+          domain: "Algebra",
+          skill: "Linear equations in one variable",
+          before: {
+            levelKey: "unmeasured",
+            level: null,
+            displayName: "Not enough answers yet",
+          },
+          after: { levelKey: "L1", level: 1, displayName: "Building" },
         },
-        after: { levelKey: "L1", level: 1, displayName: "Building" },
-      },
-    ],
+      ],
+    },
     again: {
       criteria: {
         sections: ["M"],
@@ -184,18 +187,45 @@ describe("P0-3: the session summary", () => {
     ]);
   });
 
-  it("no mastery line when the server reports no change, or the plan has none", async () => {
-    net.summary = practiceSummary({ mastery_changes: [] });
+  it("paid with no recorded change: no mastery line at all, and not the locked line", async () => {
+    net.summary = practiceSummary({
+      mastery: { access: "granted", changes: [] },
+    });
     renderSummary("practice");
     await screen.findByTestId("session-summary-score");
     expect(screen.queryByTestId("session-summary-mastery")).toBeNull();
+    expect(screen.queryByTestId("session-summary-mastery-locked")).toBeNull();
     expect(screen.queryByText("Mastery")).toBeNull();
-    cleanup();
+  });
 
-    net.summary = practiceSummary({ mastery_changes: null });
+  it("paid with a recorded change: the change, and not the locked line (ruling 2026-10-15 item 3)", async () => {
     renderSummary("practice");
-    await screen.findByTestId("session-summary-score");
+    expect(
+      await screen.findByTestId("session-summary-mastery-row"),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("session-summary-mastery-locked")).toBeNull();
+    expect(document.body.textContent).not.toContain("included with paid plans");
+  });
+
+  it("free (the server says locked): one muted line to the plans page, and no level at all (ruling 2026-10-15 item 3)", async () => {
+    net.summary = practiceSummary({ mastery: { access: "locked" } });
+    renderSummary("practice");
+    const locked = await screen.findByTestId("session-summary-mastery-locked");
+    expect(locked.textContent).toBe(
+      "Track how this moves your mastery — included with paid plans",
+    );
+    expect(locked.tagName).toBe("A");
+    expect(locked.getAttribute("href")).toBe("/profile?tab=billing");
+    expect(locked.className.split(/\s+/)).toContain("text-lyc-muted");
+    // A link, not a modal and not a filled button.
+    expect(locked.className).not.toContain("bg-lyc-primary-bg");
+    expect(screen.queryByTestId("level-pill")).toBeNull();
     expect(screen.queryByTestId("session-summary-mastery")).toBeNull();
+    fireEvent.click(locked);
+    await waitFor(() =>
+      expect(location.history?.at(-1)).toBe("/profile?tab=billing"),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("no streak line when the streak is unknown", async () => {
@@ -284,7 +314,7 @@ describe("P0-3: the session summary", () => {
       answered: 0,
       correct: 0,
       skipped: 5,
-      mastery_changes: [],
+      mastery: { access: "granted", changes: [] },
     });
     renderSummary("practice");
     expect(

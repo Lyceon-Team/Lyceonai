@@ -16,7 +16,9 @@
  *     was queued, not after later graduations).
  *   - Streak: `readDailyStreak`, the read every surface shares; a failed read is `null` (unknown),
  *     as on the calendar and kpi/overall.
- *   - Mastery: only when the student can access `mastery_detail` (the Mastery page's own gate). The
+ *   - Mastery: `{ access: "locked" }` unless the student can access `mastery_detail` (the Mastery
+ *     page's own gate, `canAccessFeature`; owner ruling 2026-10-15 on #1233: a locked line, never
+ *     a level). With access, the
  *     mastery engine writes one `mastery_event_audit_log` row per applied event, with the skill's
  *     level before and after, keyed `(event_source_kind, event_id)` where the event id IS the
  *     session item's id (practice-canonical.ts and review-canonical.ts pass `eventId:
@@ -37,6 +39,7 @@ import { z } from "zod";
 import type {
   SessionMasteryChange,
   SessionSummary,
+  SessionSummaryMastery,
 } from "../../packages/shared/src/session-summary-schema";
 import type { Streak } from "../../packages/shared/src/home-qotd-schema";
 import { masterySectionSchema } from "../../packages/shared/src/mastery-levels";
@@ -223,9 +226,20 @@ async function readMasteryChanges(
   engine: SummaryEngine,
   studentId: string,
   answeredItemIds: readonly string[],
-): Promise<SessionMasteryChange[] | null> {
+): Promise<SessionSummaryMastery> {
   if (!(await EntitlementService.canAccessFeature(studentId, "mastery_detail")))
-    return null;
+    return { access: "locked" };
+  return {
+    access: "granted",
+    changes: await readRecordedChanges(engine, studentId, answeredItemIds),
+  };
+}
+
+async function readRecordedChanges(
+  engine: SummaryEngine,
+  studentId: string,
+  answeredItemIds: readonly string[],
+): Promise<SessionMasteryChange[]> {
   if (answeredItemIds.length === 0) return [];
   const { data, error } = await supabaseServer
     .from("mastery_event_audit_log")
@@ -259,7 +273,7 @@ export async function buildSessionSummaryCore(args: {
 }): Promise<SummaryCore> {
   const now = args.now ?? new Date();
   const counts = await readCounts(args.engine, args.sessionId, args.studentId);
-  const [sentToReview, streak, masteryChanges] = await Promise.all([
+  const [sentToReview, streak, mastery] = await Promise.all([
     readSentToReview(args.engine, args.sessionId, args.studentId),
     readStreakOrUnknown(args.studentId, now, args.requestId),
     readMasteryChanges(args.engine, args.studentId, counts.answeredItemIds),
@@ -271,6 +285,6 @@ export async function buildSessionSummaryCore(args: {
     skipped: counts.skipped,
     sent_to_review: sentToReview,
     streak,
-    mastery_changes: masteryChanges,
+    mastery,
   };
 }
