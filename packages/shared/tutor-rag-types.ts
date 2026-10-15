@@ -7,7 +7,7 @@
  * and semantic retrieval (textbooks, video transcripts, strategy content,
  * worked-example libraries). Both paths return RetrievedItem[] per §6.8.
  * The semantic store is pgvector in Postgres (`curriculum_chunks`), not
- * Vertex AI RAG Engine: SCL-231, PROPOSED 2026-10-15, after four failed
+ * Vertex AI RAG Engine: SCL-231, approved by Karl 2026-10-15, after four failed
  * corpus creations (LISA_Video_RAG_Closure_Plan.md row C).
  *
  * expected outcome: consuming code (tutor context assembly in Doc 03A Layer 5)
@@ -147,7 +147,7 @@ export type RetrievalResponse = z.infer<typeof retrievalResponseSchema>;
  * 20261101010000_lisa_curriculum_chunks.sql). The enums here and that table's
  * CHECK constraints are the same lists; change both in one change.
  *
- * @spec [Doc-03D_V1.2 §6.7; SCL-231 (PROPOSED 2026-10-15): pgvector store]
+ * @spec [Doc-03D_V1.2 §6.7; SCL-231 (approved by Karl 2026-10-15): pgvector store]
  */
 export const ragCorpusMetadataSchema = z.object({
   skill_codes: z.array(z.string()),

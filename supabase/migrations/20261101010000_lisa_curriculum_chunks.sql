@@ -2,7 +2,7 @@
 -- LISA curriculum retrieval store: curriculum_chunks + video_resources (pgvector).
 --
 -- @spec [Doc-03D_V1.2 §6.5 (provenance), §6.6 (semantic path; storage amended by SCL-231,
---       PROPOSED 2026-10-15: pgvector in Postgres, not Vertex AI RAG Engine), §6.7 (the four
+--       approved by Karl 2026-10-15: pgvector in Postgres, not Vertex AI RAG Engine), §6.7 (the four
 --       metadata fields; embedding model locked at creation), §6.8 (retrieved item shape;
 --       surface_gate evaluated after retrieval); LISA_Video_RAG_Plan.md Step C (revised
 --       2026-10-15, pgvector) and Step D §A (video_resources)] | @implemented [2026-10-15]

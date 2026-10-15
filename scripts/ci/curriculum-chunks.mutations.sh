@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # LISA curriculum retrieval store — mutation harness.
 #
-# @spec [LISA_Video_RAG_Plan.md Step C (revised 2026-10-15, pgvector; SCL-231 PROPOSED),
+# @spec [LISA_Video_RAG_Plan.md Step C (revised 2026-10-15, pgvector; SCL-231, approved by Karl 2026-10-15),
 #       Step F tests; closure plan R-12] | @implemented [2026-10-15]
 #
 # Each plant breaks ONE rule of supabase/migrations/20261101010000_lisa_curriculum_chunks.sql and

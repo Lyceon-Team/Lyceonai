@@ -481,7 +481,7 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/qotd.mutations.sh
 
-      # LISA curriculum retrieval store (SCL-231, PROPOSED): plants a dropped skill filter, a
+      # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest
       # that keeps a stale approval. Each must turn its named gate red.

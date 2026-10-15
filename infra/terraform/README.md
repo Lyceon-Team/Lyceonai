@@ -254,13 +254,14 @@ Instead:
 
 ## What's NOT in Terraform (documented hybrid)
 
-**Vertex AI RAG Engine — retired (SCL-231, PROPOSED 2026-10-15).** LISA curriculum retrieval
+**Vertex AI RAG Engine — retired (SCL-231, approved by Karl 2026-10-15).** LISA curriculum retrieval
 moved to pgvector in Supabase (`curriculum_chunks`, LISA_Video_RAG_Plan.md Step C), after four
 failed corpus creations (closure plan row C). No RAG corpus exists and none is provisioned, so
 there is nothing here for Terraform to own. One manual change is still live on `replit-cop`: the
 `us-central1` `ragEngineConfig` was switched to Serverless by Karl on 2026-10-14, 22:52 UTC
-(operation `2225455665407590400`). It holds no data. Whether Spanner-mode billing stopped on
-that switch is closure plan R-10.
+(operation `2225455665407590400`). It holds no data. Spanner-mode billing after that switch is
+negligible (closure plan R-10, closed by Karl 2026-10-15). The Vector Search API, enabled by hand
+for the Serverless attempts, was disabled by Karl on 2026-10-15.
 
 ---
 

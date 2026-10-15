@@ -9,7 +9,7 @@
 --
 -- Run:  psql -v ON_ERROR_STOP=1 -d <db> -f scripts/ci/curriculum-chunks-gates.sql
 --
--- @spec [Doc-03D_V1.2 §6.6 (as amended by SCL-231, PROPOSED), §6.7, §6.8;
+-- @spec [Doc-03D_V1.2 §6.6 (as amended by SCL-231, approved by Karl 2026-10-15), §6.7, §6.8;
 --        LISA_Video_RAG_Plan.md Step C + Step F §7 tests] | @implemented [2026-10-15]
 -- ============================================================================
 \set ON_ERROR_STOP on

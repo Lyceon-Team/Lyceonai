@@ -13,7 +13,7 @@
 
 Doc 03D §6.7 locks it: `skill_codes`, `provenance`, `surface_gate`, `content_type`. **It stays exactly as locked.** No SCL, no re-import risk, no new fields.
 
-*Amended 2026-10-15 by SCL-231 (PROPOSED), storage only: the four fields are unchanged and now live as columns of `curriculum_chunks` (pgvector), not as corpus metadata. That SCL amends §6.6/§6.7's naming of Vertex AI RAG Engine as the store. It does not change this field list.*
+*Amended 2026-10-15 by SCL-231 (approved by Karl 2026-10-15), storage only: the four fields are unchanged and now live as columns of `curriculum_chunks` (pgvector), not as corpus metadata. That SCL amends §6.6/§6.7's naming of Vertex AI RAG Engine as the store. It does not change this field list.*
 
 **`provenance` already carries structured data by convention.** The provisioning script's own example is `"textbook:isbn:chapter"`. Video uses the same shape:
 
@@ -37,7 +37,7 @@ The ruling (`text-embedding-005`) is from 2026-08-20. The provisioning script's 
 This is the **last irreversible decision** — the embedding model is locked to the corpus at creation and changing it means recreating and re-importing everything. Check before Step C:
 `https://cloud.google.com/vertex-ai/docs/generative-ai/rag/rag-supported-models`
 
-*Revised 2026-10-15 (pgvector, Steps C and F; SCL-231 PROPOSED): there is no corpus, so the model is not locked to one. Changing it means re-embedding rows. The output dimension is what's fixed in the schema: `text-embedding-005` returned **768** values from the live model on 2026-10-15, and `curriculum_chunks.embedding` is `vector(768)`.*
+*Revised 2026-10-15 (pgvector, Steps C and F; SCL-231, approved by Karl 2026-10-15): there is no corpus, so the model is not locked to one. Changing it means re-embedding rows. The output dimension is what's fixed in the schema: `text-embedding-005` returned **768** values from the live model on 2026-10-15, and `curriculum_chunks.embedding` is `vector(768)`.*
 
 ---
 
@@ -104,7 +104,7 @@ Check the supported-models page. Report before provisioning.
 ### Step B — Remove `is_pre_submit` from `RetrievalRequest`
 Plus the stale SCL-060 comment. Zero importers, so free. **Before Step C.**
 
-### Step C — The store: `curriculum_chunks` + `video_resources` *(revised 2026-10-15, Karl: pgvector, replacing Vertex AI RAG Engine; SCL-231 PROPOSED)*
+### Step C — The store: `curriculum_chunks` + `video_resources` *(revised 2026-10-15, Karl: pgvector, replacing Vertex AI RAG Engine; SCL-231, approved by Karl 2026-10-15)*
 
 **Why.** RAG Engine corpus creation failed four times across two modes and four regions. In Spanner mode it was allowlist-gated or failed `INTERNAL`. In Serverless mode it hit an undisclosed API prerequisite, then failed three times with *"No available indexing project found in us-central1"*, the last 32 minutes after the API was enabled. That is an undocumented Google-side capacity error, and no setting on our side changes it. The record is in closure plan R-11. **Storage changes. The design does not**: skill-filtered retrieval, server-side verification, insertion at Step 13d, fail-open, and no model-emitted identifiers are all unchanged.
 

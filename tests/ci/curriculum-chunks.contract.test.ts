@@ -1,5 +1,5 @@
 /**
- * @spec [Doc-03D_V1.2 §6.7; LISA_Video_RAG_Plan.md Step C (pgvector); SCL-231 (PROPOSED)]
+ * @spec [Doc-03D_V1.2 §6.7; LISA_Video_RAG_Plan.md Step C (pgvector); SCL-231 (approved by Karl 2026-10-15)]
  *       | @implemented [2026-10-15]
  *
  * plain English: the `surface_gate` and `content_type` lists exist twice — as the Zod enums in
