@@ -21,6 +21,7 @@
  * practice 402 carries. Until that read has answered, or when it fails, the sentence names
  * "daily practice questions" without a number, never a remembered one.
  */
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 
 /** The free plan, as the Help FAQ states it, with the server's daily limit (null: no number). */
 export function planFreeIncludes(freeDailyLimit: number | null): string {
@@ -28,7 +29,7 @@ export function planFreeIncludes(freeDailyLimit: number | null): string {
     freeDailyLimit === null
       ? "daily practice questions"
       : `${freeDailyLimit} practice ${freeDailyLimit === 1 ? "question" : "questions"} a day`;
-  return `Free: the diagnostic, your projected score, ${practice} and unlimited review.`;
+  return `Free: ${BLIND_SPOTS_NAME}, your projected score, ${practice} and unlimited review.`;
 }
 
 /** What a paid plan adds, as the Help FAQ states it. */

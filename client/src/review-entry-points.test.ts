@@ -56,10 +56,17 @@ describe("U8 — review is reachable from normal navigation", () => {
     // UI-50 (2026-10-03): the pre-redesign "Review Queue" tile is gone. The new Home reaches
     // review from the free Home's "Go to review" and the paid panel's "See all sessions"
     // (Main.dc.html). The claim is "a link goes to /review", not the tag's line layout (#829).
-    const free = read("client/src/components/home/FreeHome.tsx");
-    expect(free).toMatch(
-      /<Link\b[^>]*?href="\/review"[^>]*>\s*Go to review\s*</,
+    // Final brief v2 (Karl, 2026-10-13): Practice and Review are outlined buttons on Home for
+    // free and Pro, one component both plans render.
+    const buttons = read("client/src/components/home/HomePracticeReview.tsx");
+    expect(buttons).toMatch(
+      /<Link\b[^>]*?href="\/review"[^>]*>\s*Go to Review\s*</,
     );
+    for (const plan of ["FreeHome.tsx", "PaidHome.tsx"]) {
+      expect(read(`client/src/components/home/${plan}`)).toMatch(
+        /<HomePracticeReview \/>/,
+      );
+    }
     const panel = read("client/src/components/home/HomePanel.tsx");
     expect(panel).toMatch(
       /<Link\b[^>]*?href="\/review"[^>]*>\s*See all sessions\s*</,

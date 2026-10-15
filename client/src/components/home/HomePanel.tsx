@@ -37,6 +37,7 @@ import {
   weekSummary,
   type FreeHomeStage,
 } from "./home-model";
+import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 
 const PANEL_H2 =
   "m-0 font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong";
@@ -44,8 +45,7 @@ const PANEL_LINK =
   "self-start text-base font-semibold text-lyc-ink-strong underline underline-offset-4 hover:no-underline";
 
 /** The empty state the prototype's free panel shows before the diagnostic. */
-const BEFORE_DIAGNOSTIC =
-  "Your projected score appears here when you finish the diagnostic.";
+const BEFORE_DIAGNOSTIC = `Your projected score appears here when you finish ${BLIND_SPOTS_NAME}.`;
 
 /**
  * "Projected score": the band (both plans), else the sentence for why there is none. Paid adds
