@@ -9,10 +9,12 @@
  *
  * plain English: the main column is the greeting and date line, today's plan from the calendar
  * with "Start today's plan" as the ONE primary action (it launches the first block of the day
- * that is not done; each row has its own outline Start), the "Start a full-length test" card
- * (owner ruling, Karl, 2026-10-05; FullLengthCard.tsx), Mastery as wide rows, and "Pick up
+ * that is not done; each row has its own outline Start), Mastery as wide rows, and "Pick up
  * where you left off" (open practice, review and full-length sessions; the diagnostic is
- * dropped, wiring table §3). The right panel is the projected score with the target, this week's
+ * dropped, wiring table §3). Final brief v2 (Karl, 2026-10-13): while the Getting started
+ * checklist is active it sits above today's question and its current step is the one primary
+ * (today's plan is outlined until it is dismissed); Practice and Review are outlined buttons; the
+ * full-length card that stood after today's plan (owner ruling 2026-10-05) is removed from Home. The right panel is the projected score with the target, this week's
  * seven days, and recent sessions.
  *
  * READS. One calendar read covers Monday to Sunday of the current week: today's row and the
@@ -80,7 +82,9 @@ import {
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { DiagnosticCard } from "./DiagnosticCard";
-import { FullLengthCard } from "./FullLengthCard";
+import { GettingStartedCard } from "./GettingStartedCard";
+import { HomePracticeReview } from "./HomePracticeReview";
+import { useGettingStarted } from "@/hooks/useGettingStarted";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
 import { HomeLoading } from "./HomeLoading";
@@ -133,6 +137,7 @@ export function PaidHome({
     enabled: studentId.length > 0,
   });
   const practice = useActiveSessions();
+  const gettingStarted = useGettingStarted();
   const review = useActiveReviewSessions();
   const exams = useQuery({
     queryKey: examKeys.forms(),
@@ -218,7 +223,8 @@ export function PaidHome({
     !review.isLoading &&
     !exams.isLoading &&
     !pool.isLoading &&
-    !projection.isLoading;
+    !projection.isLoading &&
+    !gettingStarted.isLoading;
 
   const retry = (): void => {
     void calendar.refetch();
@@ -269,6 +275,12 @@ export function PaidHome({
   if (!settled) return <HomeLoading />;
   const needsDiagnostic =
     freeHomeStage(projection.estimateStatus) === "diagnostic";
+  // Final brief v2 §4: the Getting started checklist sits above today's question while active
+  // and owns the page's one filled button; a failed read draws the page as after dismissal.
+  const checklist =
+    gettingStarted.data !== undefined && !gettingStarted.data.dismissed
+      ? gettingStarted.data
+      : null;
 
   return (
     <div className="flex flex-col gap-12" data-testid="home" data-plan="paid">
@@ -278,8 +290,16 @@ export function PaidHome({
         actions={<HomeStreakChip celebrate={celebrate} />}
       />
 
+      {checklist !== null ? (
+        <GettingStartedCard
+          data={checklist}
+          diagnosticTotal={practice.diagnosticTotalQuestions}
+        />
+      ) : null}
+
       {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the QOTD card and the
-          SAT-date card come right after the greeting and the streak chip, before the next step. */}
+          SAT-date card come right after the greeting and the streak chip, before the next step
+          (below the Getting started checklist while it is active, final brief v2 §4). */}
       <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
 
       {failed ? (
@@ -295,20 +315,24 @@ export function PaidHome({
       {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) "Home" 5: a paid student
           with no diagnostic takes it first ("Start diagnostic" is the primary), then sets up
           their study plan; with a plan, today's plan is the primary. */}
-      {needsDiagnostic ? <DiagnosticCard practice={practice} /> : null}
+      {needsDiagnostic ? (
+        <DiagnosticCard practice={practice} primary={checklist === null} />
+      ) : null}
+
+      <HomePracticeReview />
 
       {plan !== null ? (
         <TodayPlan
           plan={plan}
-          primary={!needsDiagnostic}
+          primary={!needsDiagnostic && checklist === null}
           pendingBlockId={pendingBlockId}
           launchFailed={launchFailed}
           onStart={startChecked}
         />
       ) : null}
 
-      {/* Owner ruling (Karl, 2026-10-05) item 4: the full-length card, after today's plan. */}
-      <FullLengthCard />
+      {/* Final brief v2 §4 (Karl, 2026-10-13): the full-length card is gone from Home; full-length
+          tests stay on their own page and in the calendar. */}
 
       {mastery.data !== undefined ? (
         <section

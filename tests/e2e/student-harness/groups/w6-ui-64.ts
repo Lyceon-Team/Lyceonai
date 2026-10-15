@@ -79,7 +79,7 @@ export const W6_UI_64: PageGroup = {
     {
       id: "home-free",
       title:
-        "Home, free: the diagnostic card's length, How Lyceon works, today's quota",
+        "Home, free: the 'Find your blind spots' card's length and the checklist's step 4 (in place of How Lyceon works while the checklist is active, final brief v2 §4), today's quota",
       persona: "free",
       route: "/dashboard",
       waitFor: wait('[data-testid="home-diagnostic"]'),

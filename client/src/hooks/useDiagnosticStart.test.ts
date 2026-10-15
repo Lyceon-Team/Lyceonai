@@ -128,7 +128,7 @@ describe("useDiagnosticStart", () => {
     expect(sessionId).toBeNull();
     expect(result.current.error?.code).toBe("diagnostic_already_completed");
     // The copy states the fact and offers no retake affordance.
-    expect(result.current.error?.message).toContain("already completed");
+    expect(result.current.error?.message).toContain("already finished");
     expect(result.current.error?.message).not.toContain("Something went wrong");
   });
 
@@ -155,7 +155,7 @@ describe("useDiagnosticStart", () => {
     expect(result.current.error?.code).toBe("diagnostic_insufficient_coverage");
     // Curated message — must NOT contain raw domain-count strings
     expect(result.current.error?.message).toBe(
-      "The diagnostic isn't available right now — we're adding more questions. Please try again later.",
+      "Find your blind spots isn't available right now — we're adding more questions. Please try again later.",
     );
     // Anti-leak: the raw server message must not appear
     expect(result.current.error?.message).not.toContain("6 domains");
@@ -181,7 +181,7 @@ describe("useDiagnosticStart", () => {
     expect(result.current.error).not.toBeNull();
     // Must show the fixed generic message — never the raw server message.
     expect(result.current.error?.message).toBe(
-      "Something went wrong starting the diagnostic.",
+      "Something went wrong starting Find your blind spots.",
     );
     // Anti-leak: raw server message must NOT reach the student.
     expect(result.current.error?.message).not.toContain("Database timeout");

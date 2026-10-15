@@ -89,7 +89,7 @@ describe("DiagnosticStart", () => {
     render(<DiagnosticStart />);
     const notice = await screen.findByTestId("diagnostic-start-error");
     expect(notice.textContent).toContain(
-      "Something went wrong starting the diagnostic.",
+      "Something went wrong starting Find your blind spots.",
     );
     expect(notice.textContent).not.toContain("relation does not exist");
     screen.getByRole("button", { name: "Go to Home" }).click();

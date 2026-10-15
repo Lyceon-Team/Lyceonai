@@ -212,13 +212,16 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
       "",
     );
     // The card lives in DiagnosticCard.tsx (2026-10-09); FreeHome draws it under the stage only.
-    expect(home).toMatch(/stage === "diagnostic" \? <DiagnosticCard\b/);
+    expect(home).toMatch(/stage === "diagnostic" \?\s*\(?\s*<DiagnosticCard\b/);
     expect(home).not.toContain("Start diagnostic");
     const card = read("client/src/components/home/DiagnosticCard.tsx").replace(
       /\/\*[\s\S]*?\*\//g,
       "",
     );
-    expect(card.split("Start diagnostic").length - 1).toBe(1);
+    // Final brief v2 §7 (Karl, 2026-10-13): the button says "Find your blind spots" (the
+    // shared BLIND_SPOTS_NAME); still exactly one start button.
+    expect(card).not.toContain("Start diagnostic");
+    expect(card).toMatch(/: BLIND_SPOTS_NAME\}/);
     expect(card.split("void startDiagnostic()").length - 1).toBe(1);
   });
 

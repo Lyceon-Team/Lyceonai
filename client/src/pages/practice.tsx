@@ -31,8 +31,9 @@
  *
  * Replaces the pre-redesign page: "Session Setup" (difficulty pills, domain and skill chips, the
  * Reading/Math start buttons), the Domain Library card and its "Open Topic Explorer" link, the
- * "Weekly Activity" card (day streak, questions in 7 days), "Quick Actions", and the diagnostic
- * CTA (DESIGN.md §4 Practice has none; Home's diagnostic card is the one diagnostic entry).
+ * "Weekly Activity" card (day streak, questions in 7 days), "Quick Actions", and the old diagnostic
+ * CTA. Final brief v2 §6 (Karl, 2026-10-13) adds one back, deliberately: a compact "Find your
+ * blind spots" row below the filters card until the diagnostic is done (BlindSpotsRow.tsx).
  * `/practice/topics` was retired with a redirect here (OQ-68 (a), Karl, 2026-10-08).
  */
 import { useState } from "react";
@@ -85,6 +86,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { browserLocalToday } from "@/features/calendar/lib/dates";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
+import { useHomeProjection } from "@/hooks/useHomeProjection";
+import { BlindSpotsRow } from "@/components/practice/BlindSpotsRow";
+import { FullLengthRow } from "@/components/practice/FullLengthRow";
+import { freeHomeStage } from "@/components/home/home-model";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { usePractice } from "@/hooks/usePractice";
 import { usePracticeQuota } from "@/hooks/usePracticeQuota";
@@ -123,6 +128,7 @@ export default function Practice(): JSX.Element {
   const topics = usePracticeTopics();
   const quota = usePracticeQuota();
   const open = useActiveSessions();
+  const projection = useHomeProjection(studentId);
   const pool = useReviewPool();
   const mastery = useQuery({
     queryKey: [studentResourceUrl(studentId, "masteryDomains")],
@@ -208,6 +214,10 @@ export default function Practice(): JSX.Element {
         />
       )}
 
+      {freeHomeStage(projection.estimateStatus) === "diagnostic" ? (
+        <BlindSpotsRow diagnosticTotal={open.diagnosticTotalQuestions} />
+      ) : null}
+
       <YourSession
         taxonomy={topics.data ?? null}
         criteria={criteria}
@@ -238,6 +248,10 @@ export default function Practice(): JSX.Element {
             : null
         }
       />
+
+      {/* Karl, 2026-10-13 on #1230: the phone's (and desktop's) entry to full-length tests,
+          with the rail's locks, now that Home's full-length card is gone. */}
+      <FullLengthRow />
 
       {masteryGranted && sectionNodes.length > 0 ? (
         <Suggested

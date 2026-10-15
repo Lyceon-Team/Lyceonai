@@ -15,8 +15,10 @@
  * 2026"), or the first date "+ N more". Open: "Not sure yet" pinned at the top, then every
  * official SAT date after today (shared/sat-test-dates.ts) plus any future date the student
  * already saved that is not on the list, so a save never drops it; the dates scroll inside the
- * menu. Choosing "Not sure yet" clears the dates; choosing a date clears "Not sure yet" (an empty
- * choice IS "Not sure yet", the onboarding rule: no answer is the same as not sure). Choosing
+ * menu. Choosing "Not sure yet" clears the dates; choosing a date clears "Not sure yet". The
+ * value cannot tell an untouched picker from an explicit "Not sure yet" (both are no dates), so
+ * `onNotSureChosen` reports each explicit choice: Karl, 2026-10-13 on #1230, "record it only when
+ * the student explicitly selects it, not on a save where the field was untouched". Choosing
  * keeps the menu open so several dates can be picked in one visit. Controlled; saves nothing.
  *
  * @spec [owner rulings 2026-10-11 (Karl, on #1204): 1 "Keep the 14-date picker without
@@ -76,12 +78,15 @@ const ITEM =
 export function SatDatePicker({
   value,
   onChange,
+  onNotSureChosen,
   legend = "When's your SAT?",
   today = chicagoToday(),
   "data-testid": testId = "sat-date-picker",
 }: {
   value: SatDateChoice;
   onChange: (next: SatDateChoice) => void;
+  /** Called on every explicit "Not sure yet" choice, even when no date was chosen before. */
+  onNotSureChosen?: () => void;
   legend?: string;
   today?: string;
   "data-testid"?: string;
@@ -149,8 +154,12 @@ export function SatDatePicker({
             onCheckedChange={(checked) => {
               if (checked) onChange({ dates: [] });
             }}
-            // Keep the menu open: choosing is not leaving.
-            onSelect={(event) => event.preventDefault()}
+            // Keep the menu open: choosing is not leaving. `onSelect` fires on every choice,
+            // including one that leaves the item checked, so it is where "explicit" is read.
+            onSelect={(event) => {
+              event.preventDefault();
+              onNotSureChosen?.();
+            }}
             className={ITEM}
             data-testid={`${testId}-not-sure`}
           >

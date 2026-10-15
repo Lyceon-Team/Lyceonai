@@ -31,6 +31,7 @@ import {
   type QotdEmailPreference,
 } from "@lyceon/shared/home-qotd-schema";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { invalidateGettingStarted } from "@/hooks/useGettingStarted";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -80,6 +81,8 @@ export function useAnswerHomeQotd(): UseMutationResult<
       return homeQotdAnswerResponseSchema.parse(dataOf(await response.json()));
     },
     onSuccess: (answer) => {
+      // A step of the Getting started checklist may now be done (final brief v2 §3).
+      void invalidateGettingStarted(queryClient);
       queryClient.setQueryData<HomeQotdTodayResponse>(
         [HOME_QOTD_TODAY_PATH],
         (current) =>
@@ -127,6 +130,8 @@ export function useQotdEmailDecision(): UseMutationResult<
       );
     },
     onSuccess: () => {
+      // A step of the Getting started checklist may now be done (final brief v2 §3).
+      void invalidateGettingStarted(queryClient);
       queryClient.setQueryData<HomeQotdTodayResponse>(
         [HOME_QOTD_TODAY_PATH],
         (current) =>
@@ -186,6 +191,8 @@ export function useSetQotdEmailPreference(): UseMutationResult<
       return qotdEmailPreferenceSchema.parse(dataOf(await response.json()));
     },
     onSuccess: (preference) => {
+      // A step of the Getting started checklist may now be done (final brief v2 §3).
+      void invalidateGettingStarted(queryClient);
       queryClient.setQueryData([QOTD_EMAIL_PREFERENCE_PATH], preference);
       // Turning it on or off also settles the Home prompt.
       void queryClient.invalidateQueries({ queryKey: [HOME_QOTD_TODAY_PATH] });
