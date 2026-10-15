@@ -124,7 +124,7 @@ export const FIRST_RUN: PageGroup = {
     {
       id: "home-entry-points-paid",
       title:
-        "Home, paid, scrolled to the bottom of the main column: Practice, Review ('{N} waiting from past mistakes') and Full-Length, three equal text-link rows; 'Start today's plan' stays the one filled button",
+        "Home, paid, scrolled to the bottom of the main column: 'Work on new questions', 'Fix past mistakes' ('{N} waiting') and 'Take a full-length test', three equal rows each with a 'Start' text link (wording: Karl, 2026-10-15); 'Start today's plan' stays the one filled button",
       persona: "paid",
       route: "/dashboard",
       waitFor: both('[data-testid="home-entry-points"]'),
@@ -139,7 +139,7 @@ export const FIRST_RUN: PageGroup = {
     {
       id: "home-entry-points-free",
       title:
-        "Home, free, scrolled to the bottom of the main column: the same three rows, Full-Length locked (opens the upgrade modal)",
+        "Home, free, scrolled to the bottom of the main column: the same three rows, 'Take a full-length test' locked (its Start opens the upgrade modal)",
       persona: "free",
       route: "/dashboard",
       waitFor: both('[data-testid="home-entry-points"]'),
@@ -154,7 +154,7 @@ export const FIRST_RUN: PageGroup = {
     {
       id: "home-entry-points-free-locked",
       title:
-        "Home, free: Full-Length's locked Start opens the upgrade modal in place (no navigation)",
+        "Home, free: 'Take a full-length test' — its locked Start opens the upgrade modal in place (no navigation)",
       persona: "free",
       route: "/dashboard",
       waitFor: both('[data-testid="home-entry-points"]'),

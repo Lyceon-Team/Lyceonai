@@ -258,7 +258,7 @@ export const UI_50: PageGroup = {
     {
       id: "click-paid-go-practice",
       title:
-        "Click path (paid): Home's Practice row ('Start') lands on Practice (owner ruling, Karl, 2026-10-15, on #1233: three equal entry points, replacing final brief v2 §4's outline buttons)",
+        "Click path (paid): Home's 'Work on new questions' row's Start lands on Practice (owner ruling, Karl, 2026-10-15, on #1233: three equal entry points, replacing final brief v2 §4's outline buttons)",
       persona: "paid",
       route: "/dashboard",
       waitFor: {

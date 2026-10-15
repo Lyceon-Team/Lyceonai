@@ -1,6 +1,6 @@
 # First-run activation fixes: session summaries, Home, in-shell error screen, QOTD prompt, sign-in (light and dark, 1440 and 390)
 
-Generated 2026-10-15T04:03:01.642Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts FIRST-RUN` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-15T05:47:18.039Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts FIRST-RUN` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -18,10 +18,10 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![summary-practice desktop light](summary-practice--desktop--light--built.png)<br>`/practice/session/9bb71b56-5bea-49dd-9b70-487b1d620593`, 43 KB, horizontal overflow 0px | none |
-| desktop | dark | ![summary-practice desktop dark](summary-practice--desktop--dark--built.png)<br>`/practice/session/969eebf0-e81e-4655-b571-8c72d8da9c4b`, 44 KB, horizontal overflow 0px | none |
-| mobile | light | ![summary-practice mobile light](summary-practice--mobile--light--built.png)<br>`/practice/session/b4adf28b-1acb-4908-9a1e-0def730916de`, 36 KB, horizontal overflow 0px | none |
-| mobile | dark | ![summary-practice mobile dark](summary-practice--mobile--dark--built.png)<br>`/practice/session/bce9b688-ce99-4849-9675-b2ead9854f76`, 31 KB, horizontal overflow 0px | none |
+| desktop | light | ![summary-practice desktop light](summary-practice--desktop--light--built.png)<br>`/practice/session/0f523880-9e88-458c-aab3-5138eda4c527`, 36 KB, horizontal overflow 0px | none |
+| desktop | dark | ![summary-practice desktop dark](summary-practice--desktop--dark--built.png)<br>`/practice/session/b7fcb63a-f6ea-43f2-9903-5a46608ad387`, 44 KB, horizontal overflow 0px | none |
+| mobile | light | ![summary-practice mobile light](summary-practice--mobile--light--built.png)<br>`/practice/session/023c5a46-a11f-4ae9-bc05-4d2201faa917`, 36 KB, horizontal overflow 0px | none |
+| mobile | dark | ![summary-practice mobile dark](summary-practice--mobile--dark--built.png)<br>`/practice/session/d44d16ca-9a3f-416f-954a-d0419208d35f`, 36 KB, horizontal overflow 0px | none |
 
 ## Practice session summary, free: the muted locked line 'Track how this moves your mastery — included with paid plans' (a link to the plans page) in place of a mastery change
 
@@ -33,10 +33,10 @@ Prototype: none. NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, item 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![summary-practice-free desktop light](summary-practice-free--desktop--light--built.png)<br>`/practice/session/853b51ca-14a4-4465-bb61-b42c4cd872a0`, 44 KB, horizontal overflow 0px | none |
-| desktop | dark | ![summary-practice-free desktop dark](summary-practice-free--desktop--dark--built.png)<br>`/practice/session/71add9bc-ed47-4622-ba49-82014d3a3f0f`, 44 KB, horizontal overflow 0px | none |
-| mobile | light | ![summary-practice-free mobile light](summary-practice-free--mobile--light--built.png)<br>`/practice/session/5713317a-aefb-4e6f-9a82-db0801bc8451`, 36 KB, horizontal overflow 0px | none |
-| mobile | dark | ![summary-practice-free mobile dark](summary-practice-free--mobile--dark--built.png)<br>`/practice/session/85012a15-8cf9-4b13-9731-ea92b4438adc`, 37 KB, horizontal overflow 0px | none |
+| desktop | light | ![summary-practice-free desktop light](summary-practice-free--desktop--light--built.png)<br>`/practice/session/5765fcaa-e3d5-4c51-98ae-1b0ebf651bbc`, 44 KB, horizontal overflow 0px | none |
+| desktop | dark | ![summary-practice-free desktop dark](summary-practice-free--desktop--dark--built.png)<br>`/practice/session/25a22d72-3f82-4538-ba15-c372cd7601c8`, 44 KB, horizontal overflow 0px | none |
+| mobile | light | ![summary-practice-free mobile light](summary-practice-free--mobile--light--built.png)<br>`/practice/session/cfc948d0-e0fb-4f64-8c44-e5046e739db9`, 36 KB, horizontal overflow 0px | none |
+| mobile | dark | ![summary-practice-free mobile dark](summary-practice-free--mobile--dark--built.png)<br>`/practice/session/7aa63e3c-fed1-423e-8e89-b929a490f7e8`, 37 KB, horizontal overflow 0px | none |
 
 ## Review session summary: the same pattern ('back in your review queue')
 
@@ -47,10 +47,10 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![summary-review desktop light](summary-review--desktop--light--built.png)<br>`/review/session/e8be3019-1f46-4317-abbc-681eca58878b`, 44 KB, horizontal overflow 0px | none |
-| desktop | dark | ![summary-review desktop dark](summary-review--desktop--dark--built.png)<br>`/review/session/0f295225-6584-48e1-bc0e-e329a696ad6e`, 45 KB, horizontal overflow 0px | none |
-| mobile | light | ![summary-review mobile light](summary-review--mobile--light--built.png)<br>`/review/session/dea9c817-632c-42e6-ba2f-86faef26cf1d`, 31 KB, horizontal overflow 0px | none |
-| mobile | dark | ![summary-review mobile dark](summary-review--mobile--dark--built.png)<br>`/review/session/a18eda8a-5da4-43b6-b3ce-69c5748e84e7`, 38 KB, horizontal overflow 0px | none |
+| desktop | light | ![summary-review desktop light](summary-review--desktop--light--built.png)<br>`/review/session/34ebfd28-0518-45e7-bf41-c7fa8661aa8b`, 44 KB, horizontal overflow 0px | none |
+| desktop | dark | ![summary-review desktop dark](summary-review--desktop--dark--built.png)<br>`/review/session/a8ede68e-e51f-4ef5-a3af-06087b0c5e9f`, 45 KB, horizontal overflow 0px | none |
+| mobile | light | ![summary-review mobile light](summary-review--mobile--light--built.png)<br>`/review/session/ef1c1d4d-aa40-4d5f-8337-7f7e34878371`, 31 KB, horizontal overflow 0px | none |
+| mobile | dark | ![summary-review mobile dark](summary-review--mobile--dark--built.png)<br>`/review/session/7e5faa79-6fba-495f-9e5b-60d01cd0ab46`, 37 KB, horizontal overflow 0px | none |
 
 ## Home, paid: the QOTD card in place, today's plan rows as text links ('Start today's plan' the one filled button), 'This week' ticks
 
@@ -61,10 +61,10 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-paid desktop light](home-paid--desktop--light--built.png)<br>`/dashboard`, 163 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-paid desktop dark](home-paid--desktop--dark--built.png)<br>`/dashboard`, 162 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-paid mobile light](home-paid--mobile--light--built.png)<br>`/dashboard`, 300 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-paid mobile dark](home-paid--mobile--dark--built.png)<br>`/dashboard`, 305 KB, horizontal overflow 0px | none |
+| desktop | light | ![home-paid desktop light](home-paid--desktop--light--built.png)<br>`/dashboard`, 162 KB, horizontal overflow 0px | none |
+| desktop | dark | ![home-paid desktop dark](home-paid--desktop--dark--built.png)<br>`/dashboard`, 160 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-paid mobile light](home-paid--mobile--light--built.png)<br>`/dashboard`, 301 KB, horizontal overflow 0px | none |
+| mobile | dark | ![home-paid mobile dark](home-paid--mobile--dark--built.png)<br>`/dashboard`, 306 KB, horizontal overflow 0px | none |
 
 ## Home, paid, scrolled to today's plan (the first row's link focused): each row acts through a text link, 'Start today's plan' the one filled button
 
@@ -77,10 +77,10 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 |---|---|---|---|
 | desktop | light | ![home-paid-plan desktop light](home-paid-plan--desktop--light--built.png)<br>`/dashboard`, 136 KB, horizontal overflow 0px | none |
 | desktop | dark | ![home-paid-plan desktop dark](home-paid-plan--desktop--dark--built.png)<br>`/dashboard`, 136 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-paid-plan mobile light](home-paid-plan--mobile--light--built.png)<br>`/dashboard`, 48 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-paid-plan mobile dark](home-paid-plan--mobile--dark--built.png)<br>`/dashboard`, 47 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-paid-plan mobile light](home-paid-plan--mobile--light--built.png)<br>`/dashboard`, 49 KB, horizontal overflow 0px | none |
+| mobile | dark | ![home-paid-plan mobile dark](home-paid-plan--mobile--dark--built.png)<br>`/dashboard`, 48 KB, horizontal overflow 0px | none |
 
-## Home, paid, scrolled to the bottom of the main column: Practice, Review ('{N} waiting from past mistakes') and Full-Length, three equal text-link rows; 'Start today's plan' stays the one filled button
+## Home, paid, scrolled to the bottom of the main column: 'Work on new questions', 'Fix past mistakes' ('{N} waiting') and 'Take a full-length test', three equal rows each with a 'Start' text link (wording: Karl, 2026-10-15); 'Start today's plan' stays the one filled button
 
 Persona: `paid`. Route: `/dashboard`.
 Must then show `[data-testid="home-entry-points"]` wholly inside the viewport (the capture fails otherwise).
@@ -89,12 +89,12 @@ Prototype: none. NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, 'Home
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-entry-points-paid desktop light](home-entry-points-paid--desktop--light--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-entry-points-paid desktop dark](home-entry-points-paid--desktop--dark--built.png)<br>`/dashboard`, 129 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-entry-points-paid mobile light](home-entry-points-paid--mobile--light--built.png)<br>`/dashboard`, 44 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-entry-points-paid mobile dark](home-entry-points-paid--mobile--dark--built.png)<br>`/dashboard`, 44 KB, horizontal overflow 0px | none |
+| desktop | light | ![home-entry-points-paid desktop light](home-entry-points-paid--desktop--light--built.png)<br>`/dashboard`, 129 KB, horizontal overflow 0px | none |
+| desktop | dark | ![home-entry-points-paid desktop dark](home-entry-points-paid--desktop--dark--built.png)<br>`/dashboard`, 130 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-entry-points-paid mobile light](home-entry-points-paid--mobile--light--built.png)<br>`/dashboard`, 46 KB, horizontal overflow 0px | none |
+| mobile | dark | ![home-entry-points-paid mobile dark](home-entry-points-paid--mobile--dark--built.png)<br>`/dashboard`, 46 KB, horizontal overflow 0px | none |
 
-## Home, free, scrolled to the bottom of the main column: the same three rows, Full-Length locked (opens the upgrade modal)
+## Home, free, scrolled to the bottom of the main column: the same three rows, 'Take a full-length test' locked (its Start opens the upgrade modal)
 
 Persona: `free`. Route: `/dashboard`.
 Must then show `[data-testid="home-entry-full-length-lock"]` wholly inside the viewport (the capture fails otherwise).
@@ -103,12 +103,12 @@ Prototype: none. NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, 'Home
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-entry-points-free desktop light](home-entry-points-free--desktop--light--built.png)<br>`/dashboard`, 110 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-entry-points-free desktop dark](home-entry-points-free--desktop--dark--built.png)<br>`/dashboard`, 111 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-entry-points-free mobile light](home-entry-points-free--mobile--light--built.png)<br>`/dashboard`, 48 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-entry-points-free mobile dark](home-entry-points-free--mobile--dark--built.png)<br>`/dashboard`, 48 KB, horizontal overflow 0px | none |
+| desktop | light | ![home-entry-points-free desktop light](home-entry-points-free--desktop--light--built.png)<br>`/dashboard`, 112 KB, horizontal overflow 0px | none |
+| desktop | dark | ![home-entry-points-free desktop dark](home-entry-points-free--desktop--dark--built.png)<br>`/dashboard`, 113 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-entry-points-free mobile light](home-entry-points-free--mobile--light--built.png)<br>`/dashboard`, 50 KB, horizontal overflow 0px | none |
+| mobile | dark | ![home-entry-points-free mobile dark](home-entry-points-free--mobile--dark--built.png)<br>`/dashboard`, 49 KB, horizontal overflow 0px | none |
 
-## Home, free: Full-Length's locked Start opens the upgrade modal in place (no navigation)
+## Home, free: 'Take a full-length test' — its locked Start opens the upgrade modal in place (no navigation)
 
 Persona: `free`. Route: `/dashboard`.
 Step: click `{"desktop":"[data-testid=\"home-entry-full-length-action\"]","mobile":"[data-testid=\"home-entry-full-length-action\"]"}`.
@@ -118,9 +118,9 @@ Prototype: none. NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, 'Home
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-entry-points-free-locked desktop light](home-entry-points-free-locked--desktop--light--built.png)<br>`/dashboard`, 126 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-entry-points-free-locked desktop dark](home-entry-points-free-locked--desktop--dark--built.png)<br>`/dashboard`, 123 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-entry-points-free-locked mobile light](home-entry-points-free-locked--mobile--light--built.png)<br>`/dashboard`, 52 KB, horizontal overflow 0px | none |
+| desktop | light | ![home-entry-points-free-locked desktop light](home-entry-points-free-locked--desktop--light--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
+| desktop | dark | ![home-entry-points-free-locked desktop dark](home-entry-points-free-locked--desktop--dark--built.png)<br>`/dashboard`, 125 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-entry-points-free-locked mobile light](home-entry-points-free-locked--mobile--light--built.png)<br>`/dashboard`, 53 KB, horizontal overflow 0px | none |
 | mobile | dark | ![home-entry-points-free-locked mobile dark](home-entry-points-free-locked--mobile--dark--built.png)<br>`/dashboard`, 52 KB, horizontal overflow 0px | none |
 
 ## Home, paid, at the review cap: the notice's 'Continue your open session' wraps inside the panel
@@ -133,10 +133,10 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![home-review-cap desktop light](home-review-cap--desktop--light--built.png)<br>`/dashboard`, 156 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-review-cap desktop dark](home-review-cap--desktop--dark--built.png)<br>`/dashboard`, 158 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-review-cap mobile light](home-review-cap--mobile--light--built.png)<br>`/dashboard`, 60 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-review-cap mobile dark](home-review-cap--mobile--dark--built.png)<br>`/dashboard`, 61 KB, horizontal overflow 0px | none |
+| desktop | light | ![home-review-cap desktop light](home-review-cap--desktop--light--built.png)<br>`/dashboard`, 155 KB, horizontal overflow 0px | none |
+| desktop | dark | ![home-review-cap desktop dark](home-review-cap--desktop--dark--built.png)<br>`/dashboard`, 156 KB, horizontal overflow 0px | none |
+| mobile | light | ![home-review-cap mobile light](home-review-cap--mobile--light--built.png)<br>`/dashboard`, 58 KB, horizontal overflow 0px | none |
+| mobile | dark | ![home-review-cap mobile dark](home-review-cap--mobile--dark--built.png)<br>`/dashboard`, 59 KB, horizontal overflow 0px | none |
 
 ## A page's code chunk fails twice: one automatic reload, then the error screen inside the App shell (rail; tab bar on a phone)
 
@@ -163,8 +163,8 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![qotd-explanation-first desktop light](qotd-explanation-first--desktop--light--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
-| desktop | dark | ![qotd-explanation-first desktop dark](qotd-explanation-first--desktop--dark--built.png)<br>`/dashboard`, 129 KB, horizontal overflow 0px | none |
+| desktop | light | ![qotd-explanation-first desktop light](qotd-explanation-first--desktop--light--built.png)<br>`/dashboard`, 127 KB, horizontal overflow 0px | none |
+| desktop | dark | ![qotd-explanation-first desktop dark](qotd-explanation-first--desktop--dark--built.png)<br>`/dashboard`, 128 KB, horizontal overflow 0px | none |
 | mobile | light | ![qotd-explanation-first mobile light](qotd-explanation-first--mobile--light--built.png)<br>`/dashboard`, 41 KB, horizontal overflow 0px | none |
 | mobile | dark | ![qotd-explanation-first mobile dark](qotd-explanation-first--mobile--dark--built.png)<br>`/dashboard`, 41 KB, horizontal overflow 0px | none |
 
@@ -180,7 +180,7 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![qotd-prompt-after-done desktop light](qotd-prompt-after-done--desktop--light--built.png)<br>`/dashboard`, 152 KB, horizontal overflow 0px | none |
+| desktop | light | ![qotd-prompt-after-done desktop light](qotd-prompt-after-done--desktop--light--built.png)<br>`/dashboard`, 153 KB, horizontal overflow 0px | none |
 | desktop | dark | ![qotd-prompt-after-done desktop dark](qotd-prompt-after-done--desktop--dark--built.png)<br>`/dashboard`, 148 KB, horizontal overflow 0px | none |
 | mobile | light | ![qotd-prompt-after-done mobile light](qotd-prompt-after-done--mobile--light--built.png)<br>`/dashboard`, 52 KB, horizontal overflow 0px | none |
 | mobile | dark | ![qotd-prompt-after-done mobile dark](qotd-prompt-after-done--mobile--dark--built.png)<br>`/dashboard`, 51 KB, horizontal overflow 0px | none |
@@ -194,8 +194,8 @@ Prototype: none. NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, item 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![qotd-prompt-next-visit desktop light](qotd-prompt-next-visit--desktop--light--built.png)<br>`/dashboard`, 160 KB, horizontal overflow 0px | none |
-| desktop | dark | ![qotd-prompt-next-visit desktop dark](qotd-prompt-next-visit--desktop--dark--built.png)<br>`/dashboard`, 155 KB, horizontal overflow 0px | none |
+| desktop | light | ![qotd-prompt-next-visit desktop light](qotd-prompt-next-visit--desktop--light--built.png)<br>`/dashboard`, 159 KB, horizontal overflow 0px | none |
+| desktop | dark | ![qotd-prompt-next-visit desktop dark](qotd-prompt-next-visit--desktop--dark--built.png)<br>`/dashboard`, 153 KB, horizontal overflow 0px | none |
 | mobile | light | ![qotd-prompt-next-visit mobile light](qotd-prompt-next-visit--mobile--light--built.png)<br>`/dashboard`, 54 KB, horizontal overflow 0px | none |
 | mobile | dark | ![qotd-prompt-next-visit mobile dark](qotd-prompt-next-visit--mobile--dark--built.png)<br>`/dashboard`, 53 KB, horizontal overflow 0px | none |
 
@@ -214,7 +214,7 @@ Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 20
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"fd76273c-6992-40df-9573-d3e456083d22","openPracticeSessionId":"8fb7f3a3-60ee-46e3-881a-a91dcf927401","openReviewSessionId":"c98c58ce-8a05-42b0-b54e-246316398910","diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":39},"paid":{"completedPracticeSessionId":"2c5d207e-a106-43ad-8cf4-da3d6b4021e2","openPracticeSessionId":"1d2e1cc6-f39f-43a8-ab94-f66a77536a39","openReviewSessionId":"464b4864-4bb1-4553-8bd8-5217c2abd9b0","diagnosticSessionId":"72b19071-073e-4a2d-8e67-116330621741","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":79}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"f912ae05-4ce7-4e4e-bc4e-47fc0d5284a8","openPracticeSessionId":"eb65aea6-56da-4d82-b525-97ad5adedc23","openReviewSessionId":"bcca52b6-a8a0-480f-ad9a-fcf04e60c039","diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":39},"paid":{"completedPracticeSessionId":"fc2d0f19-0dc6-4a2a-8d19-d91e1599016f","openPracticeSessionId":"e6b46a31-d7a8-439f-8679-1f8df2758c1e","openReviewSessionId":"cf649bdd-0d1c-46eb-b9c2-9dbb6ffc0e56","diagnosticSessionId":"fcefa52b-4eec-40c8-94c4-7ff866c440a7","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":79}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - Desmos (QA2-B, opt-in `STUDENT_HARNESS_DESMOS=1`): not loaded (a local-only run; the calculator shows its unavailable line)
 - External hosts blocked: none
