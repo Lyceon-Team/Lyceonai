@@ -38,7 +38,7 @@ claude/content-<cycle>  --(draft PR, Karl merges)-->  social  --(Karl merges)-->
 **What Karl's merge does.** Merging a batch PR into `social` runs **Content batch approval**,
 which stamps the cycle in `content/batches/approvals.json` on `social` (only Karl's merge into
 `social` stamps; only that workflow writes the file, reading the merge from GitHub's own record of
-the pull request and pushing as the `lyceon-content-approval` App). A post is approved exactly when its cycle
+the pull request and pushing with the workflow's own token). A post is approved exactly when its cycle
 has a stamp. Production builds from `main`, so the batch reaches the site after the `social` →
 `main` merge (two merges a week, owner answer 2). From then on each post is withheld from the
 build until its date: not prerendered, not in the sitemap, its URL a 404, its text in no bundle.
@@ -55,28 +55,18 @@ verdicts, the PR link): `.github/workflows/content-batch-notify.yml`, set up in
    `CONTENT_APPROVER_LOGIN` = your GitHub login. Only a merge by that login stamps an approval.
    Note: pull requests Claude opens from these sessions are authored under the same GitHub
    account (`kingk237`). The approval rests on who **merges**, and the routines never merge.
-2. **Let the stamp reach `social` (a GitHub App).** The `social` ruleset cannot bypass-list the
-   workflow's own token, so the stamp is pushed by a small GitHub App instead, which a ruleset can
-   bypass-list. This is GitHub's standard way for a workflow to write to a protected branch.
-   Once, in this order:
-   1. **Create the App.** GitHub → your organization (Lyceon-Team) → **Settings → Developer
-      settings → GitHub Apps → New GitHub App**. Name `lyceon-content-approval`. Uncheck
-      **Webhook → Active**. **Repository permissions → Contents: Read and write** (nothing else).
-      **Where can this GitHub App be installed: Only on this account.** Create it.
-   2. **Key and install.** On the App's page, note the **App ID**, then **Generate a private key**
-      (a `.pem` file downloads). **Install App** → Lyceon-Team → **Only select repositories** →
-      `Lyceonai`.
-   3. **Environment that holds the key.** Repository **Settings → Environments → New environment**,
-      named `content-approval`. **Deployment branches and tags → Selected branches and tags → add
-      `social`.** Then in that Environment add the **secret** `CONTENT_APP_PRIVATE_KEY` (paste the
-      whole `.pem` file) and the **variable** `CONTENT_APP_ID` (the App ID). Delete the downloaded
-      `.pem` afterwards. Only a job running on `social` can read the key; no pull request can.
-   4. **Bypass.** Repository **Settings → Rules → Rulesets →** the `social` ruleset → **Bypass list
-      → Add bypass → Apps → `lyceon-content-approval`**, mode **Always**.
-
-   Until all four are done, a merged batch is not stamped: the **Content batch approval** run is
-   red and nothing in that batch publishes. Nothing else needs a bypass: Karl's own merges go
-   through the normal pull request path.
+2. **The stamp's push.** Nothing to set up. The **Content batch approval** job pushes the stamp to
+   `social` with the workflow's own token (`contents: write`). The `social` ruleset blocks only
+   deletion and force pushes, so that push is allowed (Karl's ruling, 2026-10-11, restated
+   2026-10-15: no GitHub App). If `social` ever gets a required check or a pull-request rule, a
+   GitHub App on the ruleset's bypass list is the upgrade path (§7).
+   **Stamping a past merge.** If a merge's stamp run failed, stamp it by hand: **Actions → Content
+   batch approval → Run workflow**, branch `social`, `pr_number` = the batch pull request (e.g.
+   `1240`). The same rules apply (merged into `social` by `CONTENT_APPROVER_LOGIN`, no hand edit of
+   `approvals.json`), and its merge commit must be on `social`. A dispatch that cannot stamp turns
+   the run red and says why; one for a cycle already stamped changes nothing. GitHub shows the
+   **Run workflow** button only once `main`'s copy of the workflow has the `pr_number` input, so a
+   change to it reaches the button through the `social` → `main` merge.
 
 3. **Required check.** Make **Content batch checks / review-record** a required status check on
    `social`. It blocks a ready batch without Codex's verdicts or without a Claude response to every
@@ -230,7 +220,7 @@ and §8.7). You audit; you never edit content.
 | A gate fails on a batch PR (CI red)       | The PR shows red; GitHub still allows the merge, so Karl does not merge it     | The revise routine fixes it; or ask Claude in the PR                                                                                                                 |
 | Codex did not audit by Friday             | The revise routine records it and does not mark the PR ready                   | Run the Codex task by hand, then re-run the revise routine                                                                                                           |
 | Karl does not merge by Sunday             | Nothing publishes that week; the posts stay withheld                           | Merge later. The `social` → `main` merge deploys production, and that build publishes every approved post whose date has passed; the rest go live on their own dates |
-| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Check §2.2 (App installed, key and ID in the `content-approval` Environment, App on the `social` bypass list), then re-run the **Content batch approval** run        |
+| The stamp did not land (approval run red) | The batch is merged but not approved; nothing publishes                        | Read the run's error. Fix the cause (e.g. `CONTENT_APPROVER_LOGIN`), then re-run that run, or dispatch it with `pr_number` (§2.2)                                    |
 | The publish cron did not deploy           | `content_publish_deploy_failed` in the logs; the cron answers 500              | Check `VERCEL_DEPLOY_HOOK_URL`; redeploy by hand, which publishes everything due                                                                                     |
 | A correction after publication            | Edit the post and set `updated`; it needs a new cycle's approval (Doc 10B §10) | Include it in the next batch PR                                                                                                                                      |
 
@@ -247,7 +237,8 @@ And the day before, the same URL answers 404 and the sitemap has no entry.
 
 ## 7. Upgrade path: if `social` ever needs required checks
 
-Not in use (Karl, 2026-10-11: `review-record` stays a visible, not required, check). Read this only
+Not in use (Karl, 2026-10-11, restated 2026-10-15: no GitHub App; `review-record` stays a
+visible, not required, check). The App version was briefly merged and is now reverted. Read this only
 if `social` gets a rule that blocks direct pushes, such as a required status check.
 
 **The problem it solves.** The approval stamp is a direct push to `social` by the workflow's own
@@ -278,8 +269,9 @@ approval, and the stamp's content and rules don't change:
    with Contents: read and write. Checkout and push use it. The workflow's own token stays
    read-only.
 
-**Where it is.** The full implementation, with tests and planted defects, is on the branch
-`claude/content-approval-app-token` (commit 43760e42), from the closed PR #1195:
+**Where it is.** The full implementation, with tests and planted defects, is commit 43760e42
+(branch `claude/content-approval-app-token`, from the closed PR #1195). Re-apply it on top of the
+dispatch path rather than reverting to it:
 `.github/workflows/content-batch-approval.yml`, `mergeEventFromPull` in
 `scripts/content/stamp-approval.ts`, and its tests.
 
