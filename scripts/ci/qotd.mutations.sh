@@ -41,6 +41,8 @@ FILES=(
   "scripts/qotd-social/generate.ts"
   "server/services/qotd/schedule-job.ts"
   "server/routes/public-qotd-routes.ts"
+  "shared/qotd/reveal.ts"
+  "scripts/qotd-social/post-to-slack.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -207,9 +209,10 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M10 grid-in answer in caption passes" "grid-in: the keyed value in the caption" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-10-15: the caption check now reads a choice raw or as plain text (showsChoice).
 echo "=== (11) socialAssetLeaks stops checking the caption for the correct choice ==="
 plant shared/qotd/social.ts \
-  "    if (correct && containsPhrase(normalize(output.caption), correct.text)) {" \
+  "    if (correct && showsChoice(normalize(output.caption), correct.text)) {" \
   "    if (false) {" || { bad "M11 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M11 correct choice in caption passes" "MCQ: the correct choice's text in the caption" "$OUT" "$RC"
@@ -340,6 +343,82 @@ if [ "$HAVE_PG" = 1 ]; then
   expect_red "M25 past day released" "Q-09 a past day was released" "$OUT" "$RC"
   restore
 fi
+
+# Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
+# reveal", Karl, 2026-10-15): the reveal is always yesterday's, never today's; the leak check still
+# covers every one of today's messages (the Reddit post included); a withheld yesterday posts the
+# notice and nothing else.
+echo "=== (26) 'yesterday' is computed as the posted day itself ==="
+plant packages/shared/src/qotd-schema.ts \
+  "  d.setUTCDate(d.getUTCDate() - 1);" \
+  "  d.setUTCDate(d.getUTCDate());" || { bad "M26 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M26 reveal is today's" "is built from yesterday's archive day" "$OUT" "$RC"
+restore
+
+echo "=== (27) the reveal builder accepts any day, today's included ==="
+plant shared/qotd/reveal.ts \
+  "  if (day.qotd_date !== yesterday) {" \
+  "  if (false) {" || { bad "M27 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M27 today's day revealed" "today's answer is never a reveal" "$OUT" "$RC"
+restore
+
+echo "=== (28) loadReveal fetches the posted day instead of yesterday ==="
+plant scripts/qotd-social/generate.ts \
+  '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);' \
+  '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${postedDate}`);' || { bad "M28 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M28 today's archive fetched" "loadReveal asks the public archive for yesterday only" "$OUT" "$RC"
+restore
+
+echo "=== (29) publishDecision stops checking the reveal's date ==="
+plant scripts/qotd-social/generate.ts \
+  "  if (reveal.qotd_date !== yesterday) {" \
+  "  if (false) {" || { bad "M29 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M29 wrong-day reveal published" "a manifest whose reveal is not yesterday's is never written" "$OUT" "$RC"
+restore
+
+echo "=== (30) LEAK: the leak check stops reading the Reddit body ==="
+plant shared/qotd/social.ts \
+  '    fields.push(["reddit_body", output.reddit_body]);' \
+  "    void 0;" || { bad "M30 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M30 explanation in Reddit body passes" "the explanation in the Reddit body" "$OUT" "$RC"
+restore
+
+echo "=== (31) LEAK: the Reddit title may name the correct choice ==="
+plant shared/qotd/social.ts \
+  '      leaks.push(`reddit_title: names the correct choice "${correct.text}"`);' \
+  "      void 0;" || { bad "M31 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M31 correct choice in Reddit title passes" "the correct choice named in the Reddit title" "$OUT" "$RC"
+restore
+
+echo "=== (32) LEAK: the generator stops handing the Reddit body to the leak check ==="
+plant scripts/qotd-social/generate.ts \
+  "            reddit_body: reddit.body," \
+  "" || { bad "M32 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M32 Reddit body unchecked" "the explanation in the Reddit body" "$OUT" "$RC"
+restore
+
+echo "=== (33) a withheld yesterday (404) is no longer recognised ==="
+plant scripts/qotd-social/generate.ts \
+  "  if (res.status === 404) return withheldReveal(postedDate);" \
+  "" || { bad "M33 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M33 withheld not recognised" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
+restore
+
+echo "=== (34) the Slack reveal ignores 'withheld' ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  '  if (r.status === "withheld") {' \
+  "  if (false) {" || { bad "M34 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M34 withheld day posts a reveal" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
+restore
 
 echo "=== RESTORED: re-check green ==="
 OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?

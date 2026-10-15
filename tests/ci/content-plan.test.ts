@@ -83,3 +83,23 @@ describe("the November 2026 plan skeleton", () => {
     expect(() => planSkeleton("2026-13")).toThrow(/YYYY-MM/);
   });
 });
+
+describe("a plan for the rest of a month (Karl, 2026-10-15)", () => {
+  const plan = planSkeleton("2026-10", "2026-10-19");
+  it("lists only the slots from its start date, with the days to the next test", () => {
+    const rows = plan.split("\n").filter((l) => /^\| 2026-W\d\d \|/.test(l));
+    expect(rows).toHaveLength(6);
+    expect(rows[0]).toBe(
+      "| 2026-W43 | Mon, Oct 19, 2026 | Sat, Nov 7, 2026 (19) |  |  |  |  |  |",
+    );
+    expect(rows[5]).toBe(
+      "| 2026-W44 | Fri, Oct 30, 2026 | Sat, Nov 7, 2026 (8) |  |  |  |  |  |",
+    );
+  });
+  it("still lists the whole month's SAT calendar", () => {
+    expect(plan).toContain("| Fri, Oct 23, 2026 | Registration deadline |");
+  });
+  it("refuses a start date outside the month", () => {
+    expect(() => planSkeleton("2026-10", "2026-11-02")).toThrow(/in 2026-10/);
+  });
+});
