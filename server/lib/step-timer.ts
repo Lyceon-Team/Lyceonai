@@ -115,12 +115,89 @@ export function beginStep(step: string): () => void {
   };
 }
 
+// ── Pre-handler steps ─────────────────────────────────────────────────────────
+
+/**
+ * @spec [owner brief (Karl) 2026-10-15 "next perf PR" item 1 ("Add per-step timing to the shared
+ *        middleware chain in front of these routes ... emitted through the existing
+ *        step-timer/route_timing line (fixed literal step names, no content, no tokens/cookies/ids
+ *        beyond what route_timing already carries)"); Doc-01A_V1.0 §10] | @implemented [2026-10-15]
+ *
+ * plain English: the middleware in front of a timed route runs BEFORE `timedRoute` opens its
+ * timer, so its cost showed only as one number, `pre_handler_ms`. Each middleware step that does
+ * I/O now records itself on the request (`req.preHandlerSteps`) with a fixed name, its duration
+ * and its start offset from the first middleware (`requestStartedAt`), and the route's one
+ * `route_timing` line carries them as `pre_steps`. What `pre_handler_ms` holds beyond the sum of
+ * `pre_steps` is synchronous middleware (headers, CORS, cookies, body parsing, CSRF's HMAC, the
+ * in-memory rate limiter) — no network.
+ *
+ * WHAT IT CAN CARRY. Names are this closed union; durations and offsets are numbers. Nothing from
+ * the request, the session or the database is read into a record.
+ *
+ *   auth_session          `supabase.auth.getUser()` — the Auth server, one call
+ *   auth_session_refresh  the same step when the session was refreshed during it (the SSR client
+ *                         wrote new auth cookies): a token refresh call plus the user call
+ *   auth_profile          the `profiles` read behind `req.user`
+ *   deletion_lock         the account-deletion lock's reads (flag-gated; absent when dormant)
+ *   under13_link          the under-13 guardian-link read (under-13 students only)
+ *   answer_rate_limit     practice's answer limiter: its config read (30 s cache) and the bucket
+ */
+export const PRE_HANDLER_STEPS = [
+  "auth_session",
+  "auth_session_refresh",
+  "auth_profile",
+  "deletion_lock",
+  "under13_link",
+  "answer_rate_limit",
+] as const;
+export type PreHandlerStepName = (typeof PRE_HANDLER_STEPS)[number];
+
+export type PreHandlerStepRecord = {
+  step: PreHandlerStepName;
+  ms: number | null;
+  /** Start offset from the first middleware (`requestStartedAt`). */
+  at_ms: number;
+};
+
+/** A request runs each middleware once; a bound keeps a misuse from growing the line. */
+const MAX_PRE_STEPS = 16;
+
+/**
+ * Open a pre-handler step on this request. Returns the function that closes it; the closer may
+ * RENAME the step to another member of the union (for `auth_session` → `auth_session_refresh`,
+ * which is only known at the end). Without `requestStartedAt` (a request that did not pass
+ * `requestIdMiddleware`, e.g. a unit test) nothing is recorded.
+ */
+export function beginPreHandlerStep(
+  req: Request,
+  step: PreHandlerStepName,
+): (finalName?: PreHandlerStepName) => void {
+  const requestStartedAt = req.requestStartedAt;
+  if (typeof requestStartedAt !== "number") return () => undefined;
+  const steps = (req.preHandlerSteps ??= []);
+  if (steps.length >= MAX_PRE_STEPS) return () => undefined;
+  const start = performance.now();
+  const record: PreHandlerStepRecord = {
+    step,
+    ms: null,
+    at_ms: round(start - requestStartedAt),
+  };
+  steps.push(record);
+  return (finalName?: PreHandlerStepName) => {
+    if (record.ms !== null) return;
+    record.ms = round(performance.now() - start);
+    if (finalName !== undefined) record.step = finalName;
+  };
+}
+
 /** The fields of the one `route_timing` line. Exported so the redaction test asserts on it. */
 export type RouteTimingLine = {
   route: RouteTimingName;
   status: number;
   total_ms: number;
   pre_handler_ms: number | null;
+  /** The middleware steps that ran before the handler, in start order (see above). */
+  pre_steps: PreHandlerStepRecord[];
   step_count: number;
   steps_dropped: number;
   steps: StepRecord[];
@@ -138,6 +215,7 @@ function emit(timer: RouteTimer, req: Request, res: Response): void {
       typeof requestStartedAt === "number"
         ? round(timer.startedAt - requestStartedAt)
         : null,
+    pre_steps: (req.preHandlerSteps ?? []).map((s) => ({ ...s })),
     step_count: timer.steps.length,
     steps_dropped: timer.dropped,
     steps: timer.steps.map((s) => ({ ...s })),

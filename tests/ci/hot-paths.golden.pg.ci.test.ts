@@ -39,9 +39,13 @@ import {
   closeOpenSessions,
   correctTokenFor,
   harness,
+  sequentialDepth,
   setupBody,
   shutdownHarness,
 } from "../perf/hot-paths.harness";
+
+/** Sequential waits in one warm `GET /api/calendar` (see the calendar test below). */
+const CALENDAR_READ_DEPTH = 5;
 
 vi.mock("../../apps/api/src/lib/supabase-server", async () => {
   const h = await import("../perf/hot-paths.harness");
@@ -415,9 +419,23 @@ describe.skipIf(!PG_AVAILABLE)(
 
       const first = await request(app).get("/api/calendar");
       expect(first.status).toBe(200);
-      const second = await request(app).get("/api/calendar");
+      // The second read runs with 10 ms per round trip, to measure its dependency depth (owner
+      // ruling 2026-10-15 on #1238). Its body must still equal the first's.
+      harness.latencyMs = 10;
+      const intervalsFrom = harness.intervals.length;
+      const second = await Promise.resolve(
+        request(app).get("/api/calendar"),
+      ).finally(() => {
+        harness.latencyMs = 0;
+      });
       expect(second.status).toBe(200);
       expect(normalise(second.body)).toEqual(normalise(first.body));
+      // Profile, the feature row and the entitlement predicate together; then the probe, the
+      // streak's two reads, the diagnostic and the projection together (config cached); then the
+      // plan; then blocks, launch rows and snapshots; then activity. Was 9 before this change.
+      expect(sequentialDepth(harness.intervals.slice(intervalsFrom))).toBe(
+        CALENDAR_READ_DEPTH,
+      );
 
       // Presence: a ready plan with a 14-day window that carries blocks.
       expect(first.body.status).toBe("ready");

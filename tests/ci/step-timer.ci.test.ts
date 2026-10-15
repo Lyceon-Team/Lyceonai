@@ -95,6 +95,7 @@ describe("timedRoute / timedStep", () => {
     expect(Object.keys(data).sort()).toEqual(
       [
         "pre_handler_ms",
+        "pre_steps",
         "route",
         "status",
         "step_count",
