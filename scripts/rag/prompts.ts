@@ -119,12 +119,7 @@ export const segmentResponseSchema = {
           teaches_sat_content: { type: "BOOLEAN" },
           summary: { type: "STRING" },
         },
-        required: [
-          "start_seconds",
-          "end_seconds",
-          "teaches_sat_content",
-          "summary",
-        ],
+        required: ["start", "end", "teaches_sat_content", "summary"],
       },
     },
   },

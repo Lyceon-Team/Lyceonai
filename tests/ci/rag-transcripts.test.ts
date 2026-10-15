@@ -97,3 +97,44 @@ describe("skill tagging schema", () => {
     );
   });
 });
+
+describe("response schemas sent to Vertex", () => {
+  // Vertex refuses a schema whose `required` names a key missing from `properties` (a stale
+  // `start_seconds` cost a whole Tier 1 pass, 2026-10-15). Checked offline, at every level.
+  function problems(node: unknown, path: string): string[] {
+    if (typeof node !== "object" || node === null) return [];
+    const o = node as Record<string, unknown>;
+    const out: string[] = [];
+    const props = o.properties;
+    if (
+      Array.isArray(o.required) &&
+      typeof props === "object" &&
+      props !== null
+    ) {
+      for (const k of o.required) {
+        if (typeof k !== "string" || !(k in props))
+          out.push(`${path}: required "${String(k)}"`);
+      }
+    }
+    if (typeof props === "object" && props !== null) {
+      for (const [k, v] of Object.entries(props))
+        out.push(...problems(v, `${path}.${k}`));
+    }
+    if (o.items !== undefined) out.push(...problems(o.items, `${path}[]`));
+    return out;
+  }
+
+  it("every required key exists in properties, for every schema", async () => {
+    const p = await import("../../scripts/rag/prompts");
+    const schemas: Array<[string, unknown]> = [
+      ["gate", p.gateResponseSchema],
+      ["describe", p.describeResponseSchema],
+      ["segment", p.segmentResponseSchema],
+      ["boundary", p.boundaryResponseSchema],
+      ["audit", p.tagAuditResponseSchema],
+      ["tag", p.tagResponseSchema(loadSkillNames())],
+    ];
+    expect(schemas.length).toBe(6);
+    for (const [name, s] of schemas) expect(problems(s, name)).toEqual([]);
+  });
+});
