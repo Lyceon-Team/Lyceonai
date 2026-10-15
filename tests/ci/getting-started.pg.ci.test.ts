@@ -23,6 +23,7 @@
  *   GS10 presence only: the LISA message's text never reaches the response or the logs
  *   GS11 only the student's own message counts for LISA (not the tutor's, not a suggestion)
  *   GS12 the three POSTs share one rate-limit bucket (Karl, 2026-10-13 on #1230); GET is not limited
+ *   GS13 the four functions run as service_role, not the owner (hotfix 2026-10-15: prod 42501)
  */
 import express, {
   type NextFunction,
@@ -654,6 +655,63 @@ describe.skipIf(!PG_AVAILABLE)(
       ).toBe("done");
       expect(JSON.stringify(res.body)).not.toContain(LISA_TEXT);
       expect(logs.join("\n")).not.toContain(LISA_TEXT);
+    });
+
+    it("GS13: the four functions run as service_role, the role the route calls them as (#1230 hotfix, 42501)", async () => {
+      // Every other case here calls the functions as the database owner, which holds every
+      // right, so a missing grant passed CI and failed production. This runs them as a role
+      // that has exactly service_role's grants (it inherits them) plus BYPASSRLS, which
+      // Supabase's service_role has and the bare-Postgres stub does not. A separate role keeps
+      // the cluster-wide service_role untouched for the other suites.
+      await pg.query(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'gs_service_role_probe') THEN
+            CREATE ROLE gs_service_role_probe NOLOGIN BYPASSRLS INHERIT;
+          END IF;
+        END $$;
+        GRANT service_role TO gs_service_role_probe;
+      `);
+      const s = id(22);
+      await seedStudent(s);
+      await makePro(s);
+      await seedLisaMessage(s);
+
+      const calls: Array<[string, string, unknown[]]> = [
+        ["observe", "SELECT public.getting_started_observe($1) AS v", [s]],
+        [
+          "record_not_sure",
+          "SELECT public.getting_started_record_not_sure($1, true, true)",
+          [s],
+        ],
+        ["skip_email", "SELECT public.getting_started_skip_email($1)", [s]],
+        ["dismiss", "SELECT public.getting_started_dismiss($1)", [s]],
+      ];
+      const failures: string[] = [];
+      for (const [name, sql, params] of calls) {
+        await pg.query("BEGIN");
+        await pg.query("SET LOCAL ROLE gs_service_role_probe");
+        try {
+          await pg.query(sql, params);
+          await pg.query("COMMIT");
+        } catch (err: unknown) {
+          await pg.query("ROLLBACK");
+          const e = err as { code?: string; message?: string };
+          failures.push(`${name}: ${e.code ?? "?"} ${e.message ?? ""}`);
+        }
+      }
+      expect(failures).toEqual([]);
+
+      // Presence: each call wrote what it should, read back as the owner.
+      const row = await pg.query(
+        `SELECT lisa_done_at, test_date_not_sure_at, target_score_not_sure_at,
+                email_skipped_at, dismissed_at
+           FROM public.student_getting_started_state WHERE profile_id = $1`,
+        [s],
+      );
+      expect(row.rows).toHaveLength(1);
+      for (const v of Object.values(row.rows[0] as Record<string, unknown>)) {
+        expect(v).not.toBeNull();
+      }
     });
   },
 );

@@ -27880,7 +27880,7 @@ GRANT ALL ON TABLE public.student_dream_schools TO service_role;
 -- Name: TABLE student_getting_started_state; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT ON TABLE public.student_getting_started_state TO service_role;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.student_getting_started_state TO service_role;
 
 
 --

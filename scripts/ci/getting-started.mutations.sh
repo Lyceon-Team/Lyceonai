@@ -18,6 +18,7 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261102000000_home_getting_started.sql"
+GRANTS="supabase/migrations/20261104000000_getting_started_service_role_grants.sql"
 SCHEMA="packages/shared/src/getting-started-schema.ts"
 ROUTE="server/routes/getting-started-routes.ts"
 INDEX="server/index.ts"
@@ -34,7 +35,7 @@ PROFILE_SVC="server/services/calendar/profile-service.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/gs-mut.XXXX)"
 
-FILES=("$MIG" "$SCHEMA" "$ROUTE" "$INDEX" "$CARD" "$FREE_HOME" "$PRACTICE" "$ONBOARD" "$PROFILE" "$SECTION" "$COPY" "$PROFILE_SVC" "$PICKER" "$FL_ROW")
+FILES=("$MIG" "$GRANTS" "$SCHEMA" "$ROUTE" "$INDEX" "$CARD" "$FREE_HOME" "$PRACTICE" "$ONBOARD" "$PROFILE" "$SECTION" "$COPY" "$PROFILE_SVC" "$PICKER" "$FL_ROW")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() {
   for f in "${FILES[@]}"; do
@@ -252,6 +253,12 @@ run "G31 full-length lock" "free: the lock opens the full-length upgrade modal i
 echo "=== (32) the full-length row is gone from Practice ==="
 plant "$PRACTICE" $'      <FullLengthRow />\n' "" || { bad "G32 STALE"; exit 1; }
 run "G32 full-length entry on Practice" "paid: a compact row whose Start is a link to the Full-Length page" "$PRACTICE_UI"
+
+# Added 2026-10-15 (#1230 hotfix): production failed with 42501 because service_role could only
+# SELECT the state table the SECURITY INVOKER functions write. GS13 runs them as service_role.
+echo "=== (33) service_role loses INSERT/UPDATE on the state table ==="
+plant "$GRANTS" $'GRANT INSERT, UPDATE ON TABLE public.student_getting_started_state TO service_role;\n' "" || { bad "G33 STALE"; exit 1; }
+run "G33 service_role can write the state" "GS13: the four functions run as service_role" "$PG_SUITE"
 
 echo
 echo "GETTING STARTED MUTATIONS: $PASS passed, $FAIL failed"
