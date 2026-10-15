@@ -13,8 +13,11 @@
  * where you left off" (open practice, review and full-length sessions; the diagnostic is
  * dropped, wiring table §3). Final brief v2 (Karl, 2026-10-13): while the Getting started
  * checklist is active it sits above today's question and its current step is the one primary
- * (today's plan is outlined until it is dismissed); Practice and Review are outlined buttons; the
- * full-length card that stood after today's plan (owner ruling 2026-10-05) is removed from Home. The right panel is the projected score with the target, this week's
+ * (today's plan is outlined until it is dismissed). Owner ruling (Karl, 2026-10-15, on #1233):
+ * Practice, Review and Full-Length are three equal text-link rows at the bottom of the column
+ * (HomeEntryPoints.tsx, Review's count from the review pool this page already reads); they
+ * replace the brief's Practice and Review outline buttons and its removal of the full-length
+ * card. The right panel is the projected score with the target, this week's
  * seven days, and recent sessions.
  *
  * READS. One calendar read covers Monday to Sunday of the current week: today's row and the
@@ -83,7 +86,7 @@ import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { DiagnosticCard } from "./DiagnosticCard";
 import { GettingStartedCard } from "./GettingStartedCard";
-import { HomePracticeReview } from "./HomePracticeReview";
+import { HomeEntryPoints } from "./HomeEntryPoints";
 import { useGettingStarted } from "@/hooks/useGettingStarted";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
@@ -324,8 +327,6 @@ export function PaidHome({
         <DiagnosticCard practice={practice} primary={checklist === null} />
       ) : null}
 
-      <HomePracticeReview />
-
       {plan !== null ? (
         <TodayPlan
           plan={plan}
@@ -335,9 +336,6 @@ export function PaidHome({
           onStart={startChecked}
         />
       ) : null}
-
-      {/* Final brief v2 §4 (Karl, 2026-10-13): the full-length card is gone from Home; full-length
-          tests stay on their own page and in the calendar. */}
 
       {mastery.data !== undefined ? (
         <section
@@ -380,6 +378,12 @@ export function PaidHome({
       {resumeRows.length > 0 ? (
         <PickUp rows={resumeRows} onFullLengthClick={precheck.onLinkClick} />
       ) : null}
+
+      {/* Owner ruling (Karl, 2026-10-15, on #1233): three equal entry points, Practice, Review
+          and Full-Length, at the bottom of the main column at every width (Home's only way to
+          Full-Length on a phone). Supersedes final brief v2 §4's removal of the full-length
+          card and its Practice and Review outline buttons. */}
+      <HomeEntryPoints reviewWaiting={pool.pool?.total ?? null} />
       {precheck.dialog}
 
       <AppShellPanel>

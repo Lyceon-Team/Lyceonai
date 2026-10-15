@@ -13,6 +13,8 @@
  *   - the in-shell error screen: a page's code chunk fails twice (the automatic reload, then the
  *     screen inside the App shell with the rail or the tab bar);
  *   - the QOTD: the explanation with Done and no prompt over it; the prompt after Done;
+ *   - owner ruling (Karl, 2026-10-15, on #1233) "three equal entry points": Home's Practice,
+ *     Review and Full-Length rows, paid and free (locked, and the modal it opens);
  *   - owner rulings (Karl, 2026-10-15, on #1233): a free student's practice summary with the
  *     muted locked mastery line (item 3), and the email prompt on the next Home visit of a
  *     student who answered today and left before Done (item 2);
@@ -118,6 +120,52 @@ export const FIRST_RUN: PageGroup = {
       steps: [{ focus: both('[data-testid="home-plan-start"]') }],
       expectVisible: '[data-testid="home-start-plan"]',
       prototype: NEW_SCREEN,
+    },
+    {
+      id: "home-entry-points-paid",
+      title:
+        "Home, paid, scrolled to the bottom of the main column: Practice, Review ('{N} waiting from past mistakes') and Full-Length, three equal text-link rows; 'Start today's plan' stays the one filled button",
+      persona: "paid",
+      route: "/dashboard",
+      waitFor: both('[data-testid="home-entry-points"]'),
+      steps: [{ focus: both('[data-testid="home-entry-full-length-action"]') }],
+      expectInViewport: '[data-testid="home-entry-points"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, 'Home: three equal entry points'), built to DESIGN.md §4 Home and §5; these screenshots go to Karl before merge.",
+      },
+    },
+    {
+      id: "home-entry-points-free",
+      title:
+        "Home, free, scrolled to the bottom of the main column: the same three rows, Full-Length locked (opens the upgrade modal)",
+      persona: "free",
+      route: "/dashboard",
+      waitFor: both('[data-testid="home-entry-points"]'),
+      steps: [{ focus: both('[data-testid="home-entry-full-length-action"]') }],
+      expectInViewport: '[data-testid="home-entry-full-length-lock"]',
+      prototype: {
+        kind: "none",
+        reason:
+          "NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, 'Home: three equal entry points'), built to DESIGN.md §4 Home and §5; these screenshots go to Karl before merge.",
+      },
+    },
+    {
+      id: "home-entry-points-free-locked",
+      title:
+        "Home, free: Full-Length's locked Start opens the upgrade modal in place (no navigation)",
+      persona: "free",
+      route: "/dashboard",
+      waitFor: both('[data-testid="home-entry-points"]'),
+      steps: [click('[data-testid="home-entry-full-length-action"]')],
+      expectVisible: '[data-testid="upgrade-modal"]',
+      expectPath: "^/dashboard$",
+      prototype: {
+        kind: "none",
+        reason:
+          "NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, 'Home: three equal entry points'), built to DESIGN.md §4 Home and §5; these screenshots go to Karl before merge.",
+      },
     },
     {
       id: "home-review-cap",

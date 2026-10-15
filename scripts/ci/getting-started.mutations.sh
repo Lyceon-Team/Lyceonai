@@ -185,9 +185,12 @@ echo "=== (16) the dismissed checklist still shows ==="
 plant "$FREE_HOME" "    gettingStarted.data !== undefined && !gettingStarted.data.dismissed" "    gettingStarted.data !== undefined" || { bad "G16 STALE"; exit 1; }
 run "G16 dismissed stays gone" "after dismissal: no checklist" "$DASH"
 
-echo "=== (17) the full-length card is back on Home ==="
-plant "$FREE_HOME" $'      <HomePracticeReview />\n' $'      <section data-testid="home-full-length" />\n      <HomePracticeReview />\n' || { bad "G17 STALE"; exit 1; }
-run "G17 no full-length card" "free: the page draws without it" "$DASH"
+# Re-pointed 2026-10-15 (owner ruling, Karl, on #1233, "Home: three equal entry points"): the
+# ruling supersedes final brief v2 §4's removal of the full-length card, so G17 now plants the
+# free Home losing its Practice / Review / Full-Length rows (its only Full-Length entry on a phone).
+echo "=== (17) the free Home loses its three entry points ==="
+plant "$FREE_HOME" $'      <HomeEntryPoints reviewWaiting={pool.pool?.total ?? null} />\n' "" || { bad "G17 STALE"; exit 1; }
+run "G17 free entry points" "free: the same rows last in the column" "$DASH"
 
 echo "=== (18) Practice's blind spots row shows after the diagnostic ==="
 plant "$PRACTICE" '      {freeHomeStage(projection.estimateStatus) === "diagnostic" ? (' '      {true ? (' || { bad "G18 STALE"; exit 1; }
