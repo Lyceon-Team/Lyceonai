@@ -1,0 +1,46 @@
+{
+  "known": {
+    "defaults": {
+      "daily_minutes_max": 180,
+      "daily_minutes_min": 15,
+      "daily_minutes_presets": [
+        15,
+        30,
+        45,
+        60,
+        90,
+        120
+      ],
+      "default_full_length_interval_weeks": 2,
+      "default_full_length_weekday": 6,
+      "final_exam_lead_days": 7,
+      "target_exam_date_max_days": 540,
+      "target_exam_dates": [],
+      "timezone": "America/New_York"
+    },
+    "entitled": false,
+    "status": "setup_required"
+  },
+  "unknown": {
+    "defaults": {
+      "daily_minutes_max": 180,
+      "daily_minutes_min": 15,
+      "daily_minutes_presets": [
+        15,
+        30,
+        45,
+        60,
+        90,
+        120
+      ],
+      "default_full_length_interval_weeks": 2,
+      "default_full_length_weekday": 6,
+      "final_exam_lead_days": 7,
+      "target_exam_date_max_days": 540,
+      "target_exam_dates": [],
+      "timezone": "America/Chicago"
+    },
+    "entitled": false,
+    "status": "setup_required"
+  }
+}
