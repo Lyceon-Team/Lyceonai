@@ -31,8 +31,14 @@ import {
 } from "../../../routes/practice-canonical";
 import { logger } from "../../../logger";
 import { err, ok, type ActivityUnit, type PlanBlock } from "@lyceon/shared";
-import { localDayWindowUtc, localTodayIn, toIsoTimestamp } from "./local-day";
+import {
+  dayWindowSpan,
+  localDatesContaining,
+  localTodayIn,
+  toIsoTimestamp,
+} from "./local-day";
 import type {
+  ActivityDay,
   CalendarEngineAdapter,
   EngineCreateContext,
   EngineCreateResult,
@@ -109,9 +115,10 @@ async function create(
 }
 
 /**
- * §9.2: one unit per ANSWERED item on the local date, carrying its section and domain.
- * `occurred_at` is the timestamp — the moment of retrieval — and the local date is
- * resolved through the plan date's OWN timezone, which arrives as `timeZone`.
+ * §9.2: one unit per ANSWERED item on each requested local date, carrying its section and
+ * domain. `occurred_at` is the timestamp — the moment of retrieval — and each local date is
+ * resolved through that plan date's OWN timezone, which arrives on the day (§9.1 as amended
+ * by SCL-233: every requested day in one read).
  *
  * AN ACTIVITY UNIT IS RETRIEVAL, AND A SKIP IS NOT RETRIEVAL. The predicate is
  * `status = 'answered'`, NOT `occurred_at IS NOT NULL`. Those read as synonyms and are not:
@@ -142,10 +149,12 @@ async function create(
  */
 async function activityUnits(
   studentId: string,
-  localDate: string,
-  timeZone: string,
+  days: readonly ActivityDay[],
 ): Promise<ActivityUnit[]> {
-  const window = localDayWindowUtc(localDate, timeZone);
+  // SCL-233: one read for every requested day — the span covering all their windows — then
+  // each row is filed under each day whose own window holds it (see `localDatesContaining`).
+  const span = dayWindowSpan(days);
+  if (span === null) return [];
 
   const { data, error } = await supabaseServer
     .from("practice_session_items")
@@ -157,17 +166,17 @@ async function activityUnits(
     .eq("user_id", studentId)
     // See the note above: retrieval, never a skip.
     .eq("status", "answered")
-    .gte("occurred_at", window.startUtc)
-    .lt("occurred_at", window.endUtc);
+    .gte("occurred_at", span.startUtc)
+    .lt("occurred_at", span.endUtc);
 
   if (error) {
-    // Fail OPEN. A read that cannot see today's activity must show a plan with no
+    // Fail OPEN. A read that cannot see the window's activity must show a plan with no
     // progress, never a 500 — Doc 05F §5A, and the same posture as the stubs.
     logger.error(
       "CALENDAR_ADAPTER",
       "practice_activity_read_failed",
       "practice activity units could not be read",
-      { code: error.code, localDate },
+      { code: error.code, dayCount: days.length },
     );
     return [];
   }
@@ -184,20 +193,22 @@ async function activityUnits(
     const occurredAt = toIsoTimestamp(row.occurred_at);
     if (occurredAt === null) continue;
     const section = row.question_section;
-    units.push({
-      engine: "practice",
-      unit_id: row.id,
-      // Null when the column is absent or not a string, which is the fail-closed reading:
-      // a unit with no session can never be linked, so it falls through to the ordinary
-      // date-and-scope match rather than being attributed by guesswork.
-      session_id: typeof row.session_id === "string" ? row.session_id : null,
-      occurred_at: occurredAt,
-      local_date: localDate,
-      section: section === "M" || section === "RW" ? section : null,
-      domain:
-        typeof row.question_domain === "string" ? row.question_domain : null,
-      form_id: null,
-    });
+    for (const localDate of localDatesContaining(span, occurredAt)) {
+      units.push({
+        engine: "practice",
+        unit_id: row.id,
+        // Null when the column is absent or not a string, which is the fail-closed reading:
+        // a unit with no session can never be linked, so it falls through to the ordinary
+        // date-and-scope match rather than being attributed by guesswork.
+        session_id: typeof row.session_id === "string" ? row.session_id : null,
+        occurred_at: occurredAt,
+        local_date: localDate,
+        section: section === "M" || section === "RW" ? section : null,
+        domain:
+          typeof row.question_domain === "string" ? row.question_domain : null,
+        form_id: null,
+      });
+    }
   }
   return units;
 }
@@ -264,19 +275,43 @@ async function unitsForSessions(
   return units;
 }
 
-/** §13 `in_progress` needs a live session. `created` and `active` are both live. */
-async function progress(sessionId: string): Promise<EngineLifecycle | null> {
+/** `practice_sessions.status` → §13 lifecycle. `created` and `active` are both live. */
+function lifecycleOf(status: unknown): EngineLifecycle | null {
+  if (status === "completed") return "completed";
+  if (status === "abandoned") return "abandoned";
+  if (status === "created" || status === "active") return "active";
+  return null;
+}
+
+/** §13 `in_progress` needs a live session; one read for every session asked about (SCL-233). */
+async function progress(
+  sessionIds: readonly string[],
+): Promise<ReadonlyMap<string, EngineLifecycle>> {
+  const lifecycles = new Map<string, EngineLifecycle>();
+  if (sessionIds.length === 0) return lifecycles;
+
   const { data, error } = await supabaseServer
     .from("practice_sessions")
-    .select("status")
-    .eq("id", sessionId)
-    .maybeSingle();
+    .select("id, status")
+    .in("id", [...new Set(sessionIds)]);
 
-  if (error || data === null) return null;
-  if (data.status === "completed") return "completed";
-  if (data.status === "abandoned") return "abandoned";
-  if (data.status === "created" || data.status === "active") return "active";
-  return null;
+  if (error) {
+    // Fail OPEN to "unknown", as the per-session read did: a block then shows `scheduled`
+    // rather than `in_progress`, never a 500.
+    logger.warn(
+      "CALENDAR_ADAPTER",
+      "practice_progress_read_failed",
+      "practice session lifecycles could not be read",
+      { code: error.code, sessionCount: sessionIds.length },
+    );
+    return lifecycles;
+  }
+  for (const row of data ?? []) {
+    if (typeof row.id !== "string") continue;
+    const lifecycle = lifecycleOf(row.status);
+    if (lifecycle !== null) lifecycles.set(row.id, lifecycle);
+  }
+  return lifecycles;
 }
 
 /**

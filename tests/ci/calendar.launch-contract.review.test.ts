@@ -358,11 +358,9 @@ describe.skipIf(!PG_AVAILABLE)(
         [sessionId],
       );
 
-      const units = await reviewAdapter.activityUnits(
-        STUDENT,
-        "2026-09-18",
-        "America/Chicago",
-      );
+      const units = await reviewAdapter.activityUnits(STUDENT, [
+        { local_date: "2026-09-18", timezone: "America/Chicago" },
+      ]);
 
       expect(units).toHaveLength(1);
       expect(units[0]).toMatchObject({
@@ -397,11 +395,9 @@ describe.skipIf(!PG_AVAILABLE)(
         [sessionId],
       );
 
-      const units = await reviewAdapter.activityUnits(
-        STUDENT,
-        "2026-09-19",
-        "America/Chicago",
-      );
+      const units = await reviewAdapter.activityUnits(STUDENT, [
+        { local_date: "2026-09-19", timezone: "America/Chicago" },
+      ]);
 
       // Revert the adapter to `answered_at` and this is 0 twice over: the SQL window
       // excludes the row, and the mapping would have nothing to date it by either. A
@@ -445,20 +441,24 @@ describe.skipIf(!PG_AVAILABLE)(
       );
       const sessionId = session.rows[0].id;
 
-      await expect(reviewAdapter.progress(sessionId)).resolves.toBe("active");
+      // SCL-233: `progress` answers for a set of sessions in one read.
+      const lifecycleOf = async (id: string): Promise<string | null> =>
+        (await reviewAdapter.progress([id])).get(id) ?? null;
+
+      await expect(lifecycleOf(sessionId)).resolves.toBe("active");
 
       await testPg!.query(
         `UPDATE public.review_sessions SET status = 'completed' WHERE id = $1`,
         [sessionId],
       );
-      await expect(reviewAdapter.progress(sessionId)).resolves.toBe(
-        "completed",
-      );
+      await expect(lifecycleOf(sessionId)).resolves.toBe("completed");
 
-      // An id that names no session is null, not a throw and not a guessed state.
-      await expect(
-        reviewAdapter.progress("00000000-0000-0000-0000-000000000000"),
-      ).resolves.toBeNull();
+      // An id that names no session is absent (null), not a throw and not a guessed state —
+      // and asking about it alongside a real one does not disturb the real one's answer.
+      const unknown = "00000000-0000-0000-0000-000000000000";
+      await expect(lifecycleOf(unknown)).resolves.toBeNull();
+      const both = await reviewAdapter.progress([sessionId, unknown]);
+      expect([...both]).toEqual([[sessionId, "completed"]]);
     });
 
     // ── Where the student lands (§15.1 step 3) ──────────────────────────────

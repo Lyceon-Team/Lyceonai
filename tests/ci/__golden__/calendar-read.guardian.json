@@ -1,0 +1,501 @@
+{
+  "status": "ready",
+  "target_score": 1400,
+  "target_exam_date": "2026-11-07",
+  "estimates": {
+    "practice_seconds_per_unit": 90,
+    "review_seconds_per_unit": 120
+  },
+  "full_length_suppressions": [
+    "2026-09-26",
+    "2026-09-27"
+  ],
+  "days": [
+    {
+      "local_date": "2026-09-10",
+      "is_study_day": true,
+      "status": "rest",
+      "blocks": [],
+      "extra_work": [],
+      "planned_count": 0,
+      "actual_count": 0,
+      "extra_count": 0
+    },
+    {
+      "local_date": "2026-09-11",
+      "is_study_day": true,
+      "status": "rest",
+      "blocks": [],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "RW",
+          "domain": "Information and Ideas",
+          "count": 1
+        },
+        {
+          "engine": "full_length",
+          "section": null,
+          "domain": null,
+          "count": 1
+        }
+      ],
+      "planned_count": 0,
+      "actual_count": 0,
+      "extra_count": 2
+    },
+    {
+      "local_date": "2026-09-12",
+      "is_study_day": false,
+      "status": "rest",
+      "blocks": [],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "M",
+          "domain": "Algebra",
+          "count": 1
+        }
+      ],
+      "planned_count": 0,
+      "actual_count": 0,
+      "extra_count": 1
+    },
+    {
+      "local_date": "2026-09-13",
+      "is_study_day": false,
+      "status": "rest",
+      "blocks": [],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "M",
+          "domain": "Algebra",
+          "count": 1
+        }
+      ],
+      "planned_count": 0,
+      "actual_count": 0,
+      "extra_count": 1
+    },
+    {
+      "local_date": "2026-09-14",
+      "is_study_day": true,
+      "status": "partial",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000001",
+            "scheduled_date": "2026-09-14",
+            "display_ordinal": 1,
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 4
+                }
+              ]
+            },
+            "target_count": 4
+          },
+          "actual": 4,
+          "progress": 1,
+          "status": "completed"
+        },
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000002",
+            "scheduled_date": "2026-09-14",
+            "display_ordinal": 2,
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 2
+                },
+                {
+                  "domain": "Advanced Math",
+                  "count": 2
+                }
+              ]
+            },
+            "target_count": 4
+          },
+          "actual": 2,
+          "progress": 0.5,
+          "status": "partial"
+        },
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000003",
+            "scheduled_date": "2026-09-14",
+            "display_ordinal": 3,
+            "block_type": "review",
+            "section": null,
+            "scope": {
+              "mode": "queue"
+            },
+            "target_count": 3
+          },
+          "actual": 2,
+          "progress": 0.6666666666666666,
+          "status": "partial"
+        }
+      ],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "RW",
+          "domain": "Information and Ideas",
+          "count": 1
+        }
+      ],
+      "planned_count": 11,
+      "actual_count": 8,
+      "extra_count": 1
+    },
+    {
+      "local_date": "2026-09-15",
+      "is_study_day": true,
+      "status": "partial",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000004",
+            "scheduled_date": "2026-09-15",
+            "display_ordinal": 1,
+            "block_type": "practice",
+            "section": "RW",
+            "scope": {
+              "level": "section",
+              "count": 3
+            },
+            "target_count": 3
+          },
+          "actual": 3,
+          "progress": 1,
+          "status": "completed"
+        },
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-00000000000d",
+            "scheduled_date": "2026-09-15",
+            "display_ordinal": 2,
+            "block_type": "review",
+            "section": null,
+            "scope": {
+              "mode": "queue"
+            },
+            "target_count": 2
+          },
+          "actual": 0,
+          "progress": 0,
+          "status": "missed"
+        }
+      ],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "RW",
+          "domain": "Information and Ideas",
+          "count": 1
+        },
+        {
+          "engine": "practice",
+          "section": "M",
+          "domain": "Algebra",
+          "count": 1
+        }
+      ],
+      "planned_count": 5,
+      "actual_count": 3,
+      "extra_count": 2
+    },
+    {
+      "local_date": "2026-09-16",
+      "is_study_day": true,
+      "status": "partial",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000006",
+            "scheduled_date": "2026-09-16",
+            "display_ordinal": 1,
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 3
+                }
+              ]
+            },
+            "target_count": 3
+          },
+          "actual": 2,
+          "progress": 0.6666666666666666,
+          "status": "partial"
+        }
+      ],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "M",
+          "domain": "Advanced Math",
+          "count": 1
+        }
+      ],
+      "planned_count": 3,
+      "actual_count": 2,
+      "extra_count": 1
+    },
+    {
+      "local_date": "2026-09-17",
+      "is_study_day": true,
+      "status": "complete",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000007",
+            "scheduled_date": "2026-09-17",
+            "display_ordinal": 1,
+            "block_type": "full_length",
+            "section": null,
+            "scope": {
+              "form_id": null,
+              "exam_mode": "strict"
+            },
+            "target_count": 1
+          },
+          "actual": 1,
+          "progress": 1,
+          "status": "completed"
+        }
+      ],
+      "extra_work": [
+        {
+          "engine": "review",
+          "section": "RW",
+          "domain": "Information and Ideas",
+          "count": 1
+        }
+      ],
+      "planned_count": 1,
+      "actual_count": 1,
+      "extra_count": 1
+    },
+    {
+      "local_date": "2026-09-18",
+      "is_study_day": true,
+      "status": "missed",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000008",
+            "scheduled_date": "2026-09-18",
+            "display_ordinal": 1,
+            "block_type": "review",
+            "section": null,
+            "scope": {
+              "mode": "queue"
+            },
+            "target_count": 2
+          },
+          "actual": 0,
+          "progress": 0,
+          "status": "in_progress"
+        }
+      ],
+      "extra_work": [],
+      "planned_count": 2,
+      "actual_count": 0,
+      "extra_count": 0
+    },
+    {
+      "local_date": "2026-09-19",
+      "is_study_day": true,
+      "status": "partial",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-000000000009",
+            "scheduled_date": "2026-09-19",
+            "display_ordinal": 1,
+            "block_type": "practice",
+            "section": "RW",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Craft and Structure",
+                  "count": 2
+                }
+              ]
+            },
+            "target_count": 2
+          },
+          "actual": 1,
+          "progress": 0.5,
+          "status": "partial"
+        }
+      ],
+      "extra_work": [],
+      "planned_count": 2,
+      "actual_count": 1,
+      "extra_count": 0
+    },
+    {
+      "local_date": "2026-09-20",
+      "is_study_day": true,
+      "status": "complete",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-00000000000a",
+            "scheduled_date": "2026-09-20",
+            "display_ordinal": 1,
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "section",
+              "count": 2
+            },
+            "target_count": 2
+          },
+          "actual": 2,
+          "progress": 1,
+          "status": "completed"
+        }
+      ],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "M",
+          "domain": "Advanced Math",
+          "count": 1
+        }
+      ],
+      "planned_count": 2,
+      "actual_count": 2,
+      "extra_count": 1
+    },
+    {
+      "local_date": "2026-09-21",
+      "is_study_day": true,
+      "status": "partial",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-00000000000b",
+            "scheduled_date": "2026-09-21",
+            "display_ordinal": 1,
+            "block_type": "practice",
+            "section": "M",
+            "scope": {
+              "level": "domain",
+              "mix": [
+                {
+                  "domain": "Algebra",
+                  "count": 2
+                }
+              ]
+            },
+            "target_count": 2
+          },
+          "actual": 1,
+          "progress": 0.5,
+          "status": "partial"
+        }
+      ],
+      "extra_work": [],
+      "planned_count": 2,
+      "actual_count": 1,
+      "extra_count": 0
+    },
+    {
+      "local_date": "2026-09-22",
+      "is_study_day": true,
+      "status": "upcoming",
+      "blocks": [],
+      "extra_work": [
+        {
+          "engine": "practice",
+          "section": "M",
+          "domain": "Algebra",
+          "count": 1
+        }
+      ],
+      "planned_count": 0,
+      "actual_count": 0,
+      "extra_count": 1
+    },
+    {
+      "local_date": "2026-09-23",
+      "is_study_day": true,
+      "status": "partial",
+      "blocks": [
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-00000000000c",
+            "scheduled_date": "2026-09-23",
+            "display_ordinal": 1,
+            "block_type": "review",
+            "section": null,
+            "scope": {
+              "mode": "queue"
+            },
+            "target_count": 2
+          },
+          "actual": 1,
+          "progress": 0.5,
+          "status": "partial"
+        },
+        {
+          "block": {
+            "block_id": "c0c0c0c0-0000-4000-8003-00000000000e",
+            "scheduled_date": "2026-09-23",
+            "display_ordinal": 2,
+            "block_type": "practice",
+            "section": "RW",
+            "scope": {
+              "level": "section",
+              "count": 2
+            },
+            "target_count": 2
+          },
+          "actual": 0,
+          "progress": 0,
+          "status": "scheduled"
+        }
+      ],
+      "extra_work": [],
+      "planned_count": 4,
+      "actual_count": 1,
+      "extra_count": 0
+    }
+  ],
+  "facts": {
+    "blocks_total": 13,
+    "blocks_completed": 4,
+    "blocks_partial": 6,
+    "blocks_missed": 1,
+    "blocks_in_progress": 1,
+    "blocks_scheduled": 1,
+    "questions_completed": 28,
+    "full_lengths_completed": 2,
+    "extra_questions": 10
+  },
+  "streak": {
+    "current": 0,
+    "longest": null,
+    "history_complete": false
+  }
+}
