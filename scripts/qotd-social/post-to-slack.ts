@@ -26,6 +26,11 @@
  *   * --dry-run does every check and builds the message, but sends nothing and needs no token
  *     (pull request runs use it).
  *   * Logs carry status and Slack's error codes only: never the token, never question text.
+ *   * After the caption, two more messages for r/satquestions (owner brief 2026-10-15; Reddit
+ *     posting stays manual, Doc 10B): today's suggested Reddit title and the question as plain
+ *     text, then "Yesterday's reveal" (yesterday's date, section and domain, the answer, the
+ *     worked explanation and the archive link), both from post.json, which the generator built
+ *     from yesterday's PUBLIC archive data only. A withheld yesterday is the notice alone.
  *   * Not idempotent: nothing records that a day was posted, so re-running a run posts it again.
  *     Ruled acceptable by Karl, 2026-10-10 (re-runs are only for failed posts;
  *     docs/runbooks/qotd-slack.md §3).
@@ -140,6 +145,49 @@ export function slackCopyMessage(m: QotdSocialPostManifest): string {
   ].join("\n");
 }
 
+/** Today's suggested Reddit post: the title and the body, each ready to copy. */
+export function slackRedditMessage(m: QotdSocialPostManifest): string {
+  return [
+    `*Reddit (r/satquestions)* · today's post, ${formatSocialDate(m.qotd_date)}`,
+    "*Title*",
+    "```",
+    escapeMrkdwn(m.reddit.title),
+    "```",
+    "*Body*",
+    "```",
+    escapeMrkdwn(m.reddit.body),
+    "```",
+  ].join("\n");
+}
+
+/**
+ * Yesterday's reveal, for the comment on yesterday's Reddit post. A withheld day (not published
+ * on the archive) says so and carries nothing else (owner brief 2026-10-15).
+ */
+export function slackRevealMessage(m: QotdSocialPostManifest): string {
+  const r = m.reveal;
+  const heading = `*Yesterday's reveal* · ${formatSocialDate(r.qotd_date)}`;
+  if (r.status === "withheld") {
+    return `${heading}\nWithheld: yesterday's question is not published on the archive (a repaired question), so there is no reveal to post.`;
+  }
+  const answer =
+    r.answer.kind === "choice"
+      ? `${r.answer.letter}) ${r.answer.text}`
+      : r.answer.value;
+  return [
+    `${heading} · ${r.section} · ${r.domain}`,
+    "*Answer*",
+    "```",
+    escapeMrkdwn(answer),
+    "```",
+    "*Explanation*",
+    "```",
+    escapeMrkdwn(r.explanation),
+    "```",
+    `*Archive page:* ${r.archive_url}`,
+  ].join("\n");
+}
+
 const uploadUrlOk = z.object({
   ok: z.literal(true),
   upload_url: z.string().url(),
@@ -155,7 +203,12 @@ export async function postToSlack(
   config: SlackConfig,
   post: LoadedPost,
   fetchImpl: FetchLike,
-): Promise<{ imagesShared: number; messageTs: string }> {
+): Promise<{
+  imagesShared: number;
+  messageTs: string;
+  redditTs: string;
+  revealTs: string;
+}> {
   const { manifest } = post;
   const fileIds: { id: string; title: string }[] = [];
   for (const image of post.images) {
@@ -210,7 +263,22 @@ export async function postToSlack(
     slackCopyMessage(manifest),
     fetchImpl,
   );
-  return { imagesShared: shared.files.length, messageTs };
+  const redditTs = await postMessage(
+    config,
+    slackRedditMessage(manifest),
+    fetchImpl,
+  );
+  const revealTs = await postMessage(
+    config,
+    slackRevealMessage(manifest),
+    fetchImpl,
+  );
+  return {
+    imagesShared: shared.files.length,
+    messageTs,
+    redditTs,
+    revealTs,
+  };
 }
 
 /** The whole command, injectable for tests. Returns the exit code. */
@@ -231,10 +299,12 @@ export async function run(
   }
   const { manifest } = post.value;
   if (dryRun) {
-    // Every check, the message built, nothing sent.
+    // Every check, the messages built, nothing sent.
     slackCopyMessage(manifest);
+    slackRedditMessage(manifest);
+    slackRevealMessage(manifest);
     log.out(
-      `qotd-slack: dry run: ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}) would post ${post.value.images.length} image(s) and the caption; nothing sent`,
+      `qotd-slack: dry run: ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}) would post ${post.value.images.length} image(s), the caption, the Reddit post and yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}); nothing sent`,
     );
     return 0;
   }
@@ -246,7 +316,7 @@ export async function run(
   try {
     const sent = await postToSlack(config.value, post.value, fetchImpl);
     log.out(
-      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}): ${sent.imagesShared} image(s) and the caption, message ${sent.messageTs}`,
+      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}): ${sent.imagesShared} image(s) and the caption, message ${sent.messageTs}; Reddit post ${sent.redditTs}; yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}) ${sent.revealTs}`,
     );
     return 0;
   } catch (e: unknown) {
