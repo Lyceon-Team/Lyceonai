@@ -23,7 +23,10 @@ import {
   type ExistingLaunch,
   type LaunchDeps,
 } from "../../server/services/calendar/launch-service";
-import type { CalendarEngineAdapter } from "../../server/services/calendar/adapters/types";
+import type {
+  CalendarEngineAdapter,
+  EngineLifecycle,
+} from "../../server/services/calendar/adapters/types";
 
 const STUDENT = "11111111-1111-1111-1111-111111111111";
 const BLOCK_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
@@ -114,7 +117,15 @@ function harness(options: {
     // §9.1: the route is the ADAPTER's to give. The service has nothing to build one from,
     // which is the point — see `CalendarEngineAdapter.resumeHref`.
     resumeHref(sessionId) { return `/practice/session/${sessionId}`; },
-    async progress(sessionId) { return sessions.get(sessionId) ?? null; },
+    // SCL-233: one call answers for a set of sessions; an absent id has no lifecycle.
+    async progress(sessionIds) {
+      const lifecycles = new Map<string, EngineLifecycle>();
+      for (const id of sessionIds) {
+        const lifecycle = sessions.get(id);
+        if (lifecycle !== undefined) lifecycles.set(id, lifecycle);
+      }
+      return lifecycles;
+    },
     async nextLaunchSize(_b, remaining) { return remaining; },
   };
 

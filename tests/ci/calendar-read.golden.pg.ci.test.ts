@@ -4,7 +4,7 @@
  * @spec [owner ruling (Karl) 2026-10-13 on #1232: "the calendar read's ~58 round trips. Plan the
  *        Doc 05F §9.1 adapter change ... target under 10 round trips, same byte-identical response
  *        proof"; Doc-05F_V1.0 §8.2 (a date is read in its OWN plan zone), §9.1 (adapter contract,
- *        as amended by SCL-231), §13 (allocator), §14 (derived state), §15 (GET /api/calendar),
+ *        as amended by SCL-233), §13 (allocator), §14 (derived state), §15 (GET /api/calendar),
  *        §16 (guardian view model), INV-08-21, INV-08-23] | @implemented [2026-10-15]
  *
  * plain English: seeds one student's plan and engine activity BY HAND, at fixed dates, then runs
@@ -740,13 +740,37 @@ function goldenJson(record: unknown): string {
 }
 
 /** Round trips one call makes through the counted transport. */
-async function counted<T>(
-  fn: () => Promise<T>,
-): Promise<{ value: T; roundTrips: number }> {
+async function counted<T>(fn: () => Promise<T>): Promise<{
+  value: T;
+  roundTrips: number;
+  byTarget: Record<string, number>;
+}> {
   const before = harness.roundTrips;
+  const beforeByTarget = new Map(harness.calls);
   const value = await fn();
-  return { value, roundTrips: harness.roundTrips - before };
+  const byTarget: Record<string, number> = {};
+  for (const [target, calls] of harness.calls) {
+    const delta = calls - (beforeByTarget.get(target) ?? 0);
+    if (delta > 0) byTarget[target] = delta;
+  }
+  return { value, roundTrips: harness.roundTrips - before, byTarget };
 }
+
+/**
+ * The engine reads one service-level student read makes over this fixture (SCL-233): ONE
+ * activity read per engine in the window and ONE lifecycle read per engine with a launched
+ * session — not one per day, not one per launched block. `test_sessions` serves both halves for
+ * full-length, so it is read twice. Before the fold this fixture made 42 activity reads and 5
+ * lifecycle reads here (61 round trips in all); after it, 20.
+ */
+const ENGINE_READS = {
+  practice_session_items: 1,
+  review_session_items: 1,
+  test_sessions: 2,
+  practice_sessions: 1,
+  review_sessions: 1,
+} as const;
+const STUDENT_READ_ROUND_TRIPS = 20;
 
 describe.skipIf(!PG_AVAILABLE)(
   "calendar read: golden equivalence over a three-zone, three-engine fixture (real PG)",
@@ -763,7 +787,11 @@ describe.skipIf(!PG_AVAILABLE)(
     it("student read, 09-10..09-23: every day shape, pinned byte for byte", async () => {
       const { readCalendar } =
         await import("../../server/services/calendar/read-service");
-      const { value: result } = await counted(() =>
+      const {
+        value: result,
+        roundTrips,
+        byTarget,
+      } = await counted(() =>
         readCalendar({
           student_id: S,
           query: {
@@ -787,6 +815,15 @@ describe.skipIf(!PG_AVAILABLE)(
         new Set(["completed", "partial", "in_progress", "missed", "scheduled"]),
       );
       expect(body.days.some((d) => d.extra_work.length > 0)).toBe(true);
+      // The round-trip budget (owner ruling on #1232; SCL-233). Every engine-owned table, one
+      // by one, then the total, so a fan-out that returns on any of them is named.
+      for (const [target, calls] of Object.entries(ENGINE_READS)) {
+        expect({ target, calls: byTarget[target] ?? 0 }).toEqual({
+          target,
+          calls,
+        });
+      }
+      expect(roundTrips).toBe(STUDENT_READ_ROUND_TRIPS);
       await expect(goldenJson(body)).toMatchFileSnapshot(
         "./__golden__/calendar-read.student.json",
       );
