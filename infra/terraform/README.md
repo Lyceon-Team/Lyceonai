@@ -25,7 +25,7 @@ Terraform state.
 | 11 | `google_cloud_scheduler_job.retention_sweep_90d` | **create** | Same route, 90d tier — instruction assignments and exposures |
 | 12 | `google_cloud_scheduler_job.retention_sweep_180d` | **create** | Same route, 180d tier — resolved crisis cases and injection logs |
 
-**Not in Phase 1:** BigQuery tables, RAG corpus, Phase 2 Cloud Tasks
+**Not in Phase 1:** BigQuery tables, Phase 2 Cloud Tasks
 queues, floor settings.
 
 Rows 9 and 10 were added after Phase 1 (2026-09-21, retention policy
@@ -254,11 +254,14 @@ Instead:
 
 ## What's NOT in Terraform (documented hybrid)
 
-**Vertex AI RAG Corpus** — no Terraform resource exists for
-`ragCorpora`. The provisioning script at
-`scripts/provisioning/rag-corpus-create.ts` is the correct mechanism.
-Terraform owns everything around it (service account, IAM, engine config
-in Phase 3) but not the corpus itself.
+**Vertex AI RAG Engine — retired (SCL-231, approved by Karl 2026-10-15).** LISA curriculum retrieval
+moved to pgvector in Supabase (`curriculum_chunks`, LISA_Video_RAG_Plan.md Step C), after four
+failed corpus creations (closure plan row C). No RAG corpus exists and none is provisioned, so
+there is nothing here for Terraform to own. One manual change is still live on `replit-cop`: the
+`us-central1` `ragEngineConfig` was switched to Serverless by Karl on 2026-10-14, 22:52 UTC
+(operation `2225455665407590400`). It holds no data. Spanner-mode billing after that switch is
+negligible (closure plan R-10, closed by Karl 2026-10-15). The Vector Search API, enabled by hand
+for the Serverless attempts, was disabled by Karl on 2026-10-15.
 
 ---
 
@@ -272,5 +275,4 @@ in Phase 3) but not the corpus itself.
 
 ## Phase 3 (post-launch)
 
-- `google_vertex_ai_rag_engine_config` (DB tier)
 - Secret Manager entries if migrated from env vars

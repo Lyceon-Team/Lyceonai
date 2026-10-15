@@ -5769,6 +5769,77 @@ COMMENT ON FUNCTION public.crisis_source_fallback(p_source text) IS 'WS-L8 Item 
 
 
 --
+-- Name: curriculum_chunk_upsert(text, text, text[], text, text, extensions.vector); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.curriculum_chunk_upsert(p_provenance text, p_content text, p_skill_codes text[], p_surface_gate text, p_content_type text, p_embedding extensions.vector) RETURNS uuid
+    LANGUAGE sql
+    SET search_path TO 'public', 'extensions', 'pg_temp'
+    AS $$
+  INSERT INTO public.curriculum_chunks AS c
+    (provenance, content, skill_codes, surface_gate, content_type, embedding)
+  VALUES (p_provenance, p_content, p_skill_codes, p_surface_gate, p_content_type, p_embedding)
+  ON CONFLICT (provenance) DO UPDATE SET
+    content      = EXCLUDED.content,
+    skill_codes  = EXCLUDED.skill_codes,
+    surface_gate = EXCLUDED.surface_gate,
+    content_type = EXCLUDED.content_type,
+    embedding    = EXCLUDED.embedding,
+    -- A changed segment loses its approval; an unchanged one keeps it; retired stays retired.
+    status = CASE
+      WHEN c.status = 'retired' THEN 'retired'
+      WHEN (c.content, c.skill_codes, c.surface_gate, c.content_type, c.embedding)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.content, EXCLUDED.skill_codes, EXCLUDED.surface_gate,
+            EXCLUDED.content_type, EXCLUDED.embedding)
+        THEN c.status
+      ELSE 'pending_review'
+    END,
+    reviewed_by = CASE
+      WHEN (c.content, c.skill_codes, c.surface_gate, c.content_type, c.embedding)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.content, EXCLUDED.skill_codes, EXCLUDED.surface_gate,
+            EXCLUDED.content_type, EXCLUDED.embedding)
+        THEN c.reviewed_by
+      ELSE NULL
+    END,
+    reviewed_at = CASE
+      WHEN (c.content, c.skill_codes, c.surface_gate, c.content_type, c.embedding)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.content, EXCLUDED.skill_codes, EXCLUDED.surface_gate,
+            EXCLUDED.content_type, EXCLUDED.embedding)
+        THEN c.reviewed_at
+      ELSE NULL
+    END,
+    updated_at = now()
+  RETURNING c.id;
+$$;
+
+
+--
+-- Name: curriculum_chunks_search(extensions.vector, text[], integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.curriculum_chunks_search(p_query_embedding extensions.vector, p_skill_codes text[], p_limit integer) RETURNS TABLE(id uuid, content text, skill_codes text[], provenance text, surface_gate text, content_type text, score double precision)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'extensions', 'pg_temp'
+    AS $$
+  WITH candidates AS MATERIALIZED (
+    SELECT c.id, c.content, c.skill_codes, c.provenance, c.surface_gate, c.content_type,
+           c.embedding OPERATOR(extensions.<=>) p_query_embedding AS distance
+    FROM public.curriculum_chunks c
+    WHERE c.status = 'active'
+      AND c.skill_codes && p_skill_codes            -- GIN index: the exact skill filter
+  )
+  SELECT k.id, k.content, k.skill_codes, k.provenance, k.surface_gate, k.content_type,
+         1 - k.distance AS score
+  FROM candidates k
+  ORDER BY k.distance, k.id                         -- exact cosine order; id breaks ties
+  LIMIT greatest(1, least(coalesce(p_limit, 3), 20));
+$$;
+
+
+--
 -- Name: notification_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -15386,6 +15457,41 @@ COMMENT ON COLUMN public.crisis_review_events.student_id IS 'The student the cri
 
 
 --
+-- Name: curriculum_chunks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.curriculum_chunks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    content text NOT NULL,
+    skill_codes text[] NOT NULL,
+    provenance text NOT NULL,
+    surface_gate text NOT NULL,
+    content_type text NOT NULL,
+    embedding extensions.vector(768) NOT NULL,
+    status text DEFAULT 'pending_review'::text NOT NULL,
+    reviewed_by uuid,
+    reviewed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT curriculum_chunks_active_reviewed CHECK (((status <> 'active'::text) OR ((reviewed_by IS NOT NULL) AND (reviewed_at IS NOT NULL)))),
+    CONSTRAINT curriculum_chunks_content_nonblank CHECK ((btrim(content) <> ''::text)),
+    CONSTRAINT curriculum_chunks_content_type_check CHECK ((content_type = ANY (ARRAY['textbook'::text, 'video_transcript'::text, 'strategy'::text, 'worked_example'::text]))),
+    CONSTRAINT curriculum_chunks_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
+    CONSTRAINT curriculum_chunks_skills_nonempty CHECK ((cardinality(skill_codes) >= 1)),
+    CONSTRAINT curriculum_chunks_status_check CHECK ((status = ANY (ARRAY['pending_review'::text, 'active'::text, 'retired'::text]))),
+    CONSTRAINT curriculum_chunks_surface_gate_check CHECK ((surface_gate = ANY (ARRAY['pre_and_post'::text, 'post_only'::text, 'review_only'::text]))),
+    CONSTRAINT curriculum_chunks_video_provenance_check CHECK (((content_type <> 'video_transcript'::text) OR (provenance ~ '^youtube:[A-Za-z0-9_-]{11}:[0-9]+-[0-9]+$'::text)))
+);
+
+
+--
+-- Name: TABLE curriculum_chunks; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.curriculum_chunks IS 'LISA curriculum retrieval store (Doc 03D §6.6 as amended by SCL-231). Service role only; students never read it directly. Written by curriculum_chunk_upsert, read by curriculum_chunks_search.';
+
+
+--
 -- Name: deletion_billing_record; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18317,6 +18423,31 @@ CREATE TABLE public.usage_rate_limit_ledger (
 
 
 --
+-- Name: video_resources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.video_resources (
+    video_id text NOT NULL,
+    title text NOT NULL,
+    channel_name text NOT NULL,
+    duration_seconds integer NOT NULL,
+    status text DEFAULT 'available'::text NOT NULL,
+    last_checked_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT video_resources_duration_check CHECK ((duration_seconds > 0)),
+    CONSTRAINT video_resources_status_check CHECK ((status = ANY (ARRAY['available'::text, 'unavailable'::text]))),
+    CONSTRAINT video_resources_video_id_check CHECK ((video_id ~ '^[A-Za-z0-9_-]{11}$'::text))
+);
+
+
+--
+-- Name: TABLE video_resources; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.video_resources IS 'Per-video facts for the LISA video card, joined at render time by the video id in curriculum_chunks.provenance. Service role only.';
+
+
+--
 -- Name: abuse_score_incidents abuse_score_incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18618,6 +18749,22 @@ ALTER TABLE ONLY public.crisis_review_cases
 
 ALTER TABLE ONLY public.crisis_review_events
     ADD CONSTRAINT crisis_review_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: curriculum_chunks curriculum_chunks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.curriculum_chunks
+    ADD CONSTRAINT curriculum_chunks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: curriculum_chunks curriculum_chunks_provenance_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.curriculum_chunks
+    ADD CONSTRAINT curriculum_chunks_provenance_unique UNIQUE (provenance);
 
 
 --
@@ -19685,6 +19832,14 @@ ALTER TABLE ONLY public.usage_rate_limit_ledger
 
 
 --
+-- Name: video_resources video_resources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_resources
+    ADD CONSTRAINT video_resources_pkey PRIMARY KEY (video_id);
+
+
+--
 -- Name: calendar_blocks_student_date; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -19717,6 +19872,27 @@ CREATE INDEX calendar_plan_dates_student_date ON public.calendar_plan_dates USIN
 --
 
 CREATE INDEX calendar_plan_versions_student_created ON public.calendar_plan_versions USING btree (student_id, created_at DESC);
+
+
+--
+-- Name: curriculum_chunks_active_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curriculum_chunks_active_idx ON public.curriculum_chunks USING btree (status) WHERE (status = 'active'::text);
+
+
+--
+-- Name: curriculum_chunks_embedding_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curriculum_chunks_embedding_idx ON public.curriculum_chunks USING hnsw (embedding extensions.vector_cosine_ops);
+
+
+--
+-- Name: curriculum_chunks_skills_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curriculum_chunks_skills_idx ON public.curriculum_chunks USING gin (skill_codes);
 
 
 --
@@ -22733,6 +22909,12 @@ CREATE POLICY "crisis_review_writer insert crisis_review_cases" ON public.crisis
 
 
 --
+-- Name: curriculum_chunks; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.curriculum_chunks ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: deletion_billing_record; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -23989,6 +24171,12 @@ CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledg
 
 
 --
+-- Name: video_resources; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.video_resources ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
 --
 
@@ -24569,6 +24757,22 @@ GRANT ALL ON FUNCTION public.crisis_review_sla_hours() TO service_role;
 
 REVOKE ALL ON FUNCTION public.crisis_source_fallback(p_source text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.crisis_source_fallback(p_source text) TO service_role;
+
+
+--
+-- Name: FUNCTION curriculum_chunk_upsert(p_provenance text, p_content text, p_skill_codes text[], p_surface_gate text, p_content_type text, p_embedding extensions.vector); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.curriculum_chunk_upsert(p_provenance text, p_content text, p_skill_codes text[], p_surface_gate text, p_content_type text, p_embedding extensions.vector) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.curriculum_chunk_upsert(p_provenance text, p_content text, p_skill_codes text[], p_surface_gate text, p_content_type text, p_embedding extensions.vector) TO service_role;
+
+
+--
+-- Name: FUNCTION curriculum_chunks_search(p_query_embedding extensions.vector, p_skill_codes text[], p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.curriculum_chunks_search(p_query_embedding extensions.vector, p_skill_codes text[], p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.curriculum_chunks_search(p_query_embedding extensions.vector, p_skill_codes text[], p_limit integer) TO service_role;
 
 
 --
@@ -26475,6 +26679,13 @@ GRANT ALL ON TABLE public.crisis_review_cases TO service_role;
 
 
 --
+-- Name: TABLE curriculum_chunks; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.curriculum_chunks TO service_role;
+
+
+--
 -- Name: TABLE deletion_billing_record; Type: ACL; Schema: public; Owner: -
 --
 
@@ -28159,6 +28370,13 @@ GRANT ALL ON TABLE public.tutor_question_links TO service_role;
 --
 
 GRANT ALL ON TABLE public.usage_rate_limit_ledger TO service_role;
+
+
+--
+-- Name: TABLE video_resources; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_resources TO service_role;
 
 
 --
