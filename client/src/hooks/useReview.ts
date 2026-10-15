@@ -291,7 +291,7 @@ export function useActiveReviewSessions(): {
  * The three ways into a review session, as the create body R3 takes
  * (`review-schema.ts:93-99`). The landing builds one of these and hands it here.
  */
-export type ReviewStartSpec =
+export type ReviewStartSpec = (
   | { mode: "queue" }
   | {
       mode: "session";
@@ -305,7 +305,16 @@ export type ReviewStartSpec =
         skills?: string[];
         difficulties?: string[];
       };
-    };
+    }
+) & {
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 3 ("Another 5")]
+   *       | @implemented [2026-10-13]
+   * plain English: how many questions to take from the pool (`target_count`, which the create
+   * body already accepts, as the calendar uses it). Left out, the server's own rule applies.
+   */
+  targetCount?: number;
+};
 
 /**
  * Why a create fails in a way the student should see. `pool_empty` is NOT an error —
@@ -347,6 +356,9 @@ export function useCreateReviewSession(): {
         body: JSON.stringify({
           mode: spec.mode,
           ...(spec.mode === "queue" ? {} : { filters: spec.filters }),
+          ...(spec.targetCount !== undefined
+            ? { target_count: spec.targetCount }
+            : {}),
           client_instance_id: getClientInstanceId(),
           idempotency_key: crypto.randomUUID(),
         }),

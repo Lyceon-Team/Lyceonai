@@ -258,18 +258,18 @@ export const UI_50: PageGroup = {
     {
       id: "click-paid-go-practice",
       title:
-        "Click path (paid): Home's outlined 'Go to Practice' button lands on Practice (final brief v2 §4, Karl, 2026-10-13; the full-length card's shots were removed with the card)",
+        "Click path (paid): Home's Practice row ('Start') lands on Practice (owner ruling, Karl, 2026-10-15, on #1233: three equal entry points, replacing final brief v2 §4's outline buttons)",
       persona: "paid",
       route: "/dashboard",
       waitFor: {
-        desktop: '[data-testid="home-practice-review"]',
-        mobile: '[data-testid="home-practice-review"]',
+        desktop: '[data-testid="home-entry-points"]',
+        mobile: '[data-testid="home-entry-points"]',
       },
       steps: [
         {
           click: {
-            desktop: '[data-testid="home-go-practice"]',
-            mobile: '[data-testid="home-go-practice"]',
+            desktop: '[data-testid="home-entry-practice-action"]',
+            mobile: '[data-testid="home-entry-practice-action"]',
           },
         },
       ],
@@ -277,7 +277,7 @@ export const UI_50: PageGroup = {
       prototype: {
         kind: "none",
         reason:
-          "A click path: the screenshot is where the click landed (Practice), proven by its pathname. The buttons are final brief v2 §4, not in the prototype.",
+          "A click path: the screenshot is where the click landed (Practice), proven by its pathname. The entry rows are the 2026-10-15 ruling on #1233, not in the prototype.",
       },
     },
     {

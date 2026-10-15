@@ -22,6 +22,12 @@ A shot may name `expectPath` (a pathname pattern): its `steps` are then a click 
 capture fails unless the page lands on a matching path (UI-50's "Start today's plan" and
 "Start diagnostic").
 
+First-run activation (2026-10-13) adds `freshSession.playThrough`: a list of `"correct"`,
+`"incorrect"` or `"skip"`, played through the real `/next`, `/answer` and `/skip` routes before the
+page loads, then one closing `/next` (409, the server closes the session), so the runner page opens
+on the completed session's summary. "correct" and "incorrect" are resolved from the served item's
+option token map and keyed answer in the harness database; a played session is not terminated.
+
 Runner shots (UI-53) add three fields. `freshSession` starts a new practice or review session
 through the real create route before every capture (`{session}` in the route is its id) and ends
 it through the real terminate route afterwards, so every viewport and theme shows the same step.
