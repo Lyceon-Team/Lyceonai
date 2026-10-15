@@ -106,7 +106,7 @@ export type CalendarEngineAdapter = {
    * own zone — in ONE engine read (§9.1 as amended by SCL-233).
    *
    * @spec [Doc-05F_V1.0 §9.1 as amended by SCL-233, §13 `units = ∪ activityUnits(student, D,
-   *        tz_D)`, §8.2] | @implemented [2026-10-15]
+   *        tz_D)`, §8.2; SCL-233 approved by Karl 2026-10-15] | @implemented [2026-10-15]
    *
    * WHY A SET OF DAYS, NOT ONE. §9.1 as locked took one `localDate`, and the read asked every
    * engine once per day: a fortnight with all three engines was 42 queries, two thirds of the
