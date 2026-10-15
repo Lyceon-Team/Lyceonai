@@ -436,6 +436,23 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(sequentialDepth(harness.intervals.slice(intervalsFrom))).toBe(
         CALENDAR_READ_DEPTH,
       );
+      // COLD (config cache empty): the two config reads and the cache's lifetime row run together
+      // and alongside the probe/streak/diagnostic/projection wave, so a cold read is no deeper.
+      const { invalidateCalendarConfigCache } =
+        await import("../../server/services/calendar/config");
+      invalidateCalendarConfigCache();
+      harness.latencyMs = 10;
+      const coldFrom = harness.intervals.length;
+      const third = await Promise.resolve(
+        request(app).get("/api/calendar"),
+      ).finally(() => {
+        harness.latencyMs = 0;
+      });
+      expect(third.status).toBe(200);
+      expect(normalise(third.body)).toEqual(normalise(first.body));
+      expect(sequentialDepth(harness.intervals.slice(coldFrom))).toBe(
+        CALENDAR_READ_DEPTH,
+      );
 
       // Presence: a ready plan with a 14-day window that carries blocks.
       expect(first.body.status).toBe("ready");
