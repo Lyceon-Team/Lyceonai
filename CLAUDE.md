@@ -19,7 +19,7 @@ These are hard stops. Generating any of them is a defect, not a tradeoff:
 - **Determinism:** no randomness in question selection once mastery data exists. Mutations are idempotent (`idempotency_key`; Stripe webhooks deduped via event ledger).
 - **Guardian model:** guardian visibility is derived ONLY if (link active AND student entitlement active). Guardians are view-only — zero write access to learning state, zero LISA access.
 - **Mastery is earned from observed events only.** Never infer, estimate, or invent "predicted score" / "AI confidence" / vanity metrics. (skill: `mastery-kpi`)
-- **Privacy:** never log secrets, cookies, tokens, student answers, or tutor prompts/responses. Tutor exchanges are ephemeral — never stored verbatim. No PII in AI prompts.
+- **Privacy:** never log secrets, cookies, tokens, student answers, or tutor prompts/responses. No PII in AI prompts.
 - **No escape hatches:** no `any`, no `@ts-ignore`/`@ts-expect-error`, no silent/empty `catch`. `unknown` at boundaries, narrow with Zod.
 
 Full hard-stop list: see `docs/Spec` Coding Standards §17. Domain detail loads on demand via skills — do not inline it here.
