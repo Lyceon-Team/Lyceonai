@@ -9,12 +9,15 @@
 # plain English: the same render as walkthrough-video.yml (pinned Hyperframes via pnpm dlx,
 # `hyperframes check` first, delivery quality, a poster baked in as frame 0), checked to be
 # 1080×1920 and 22.5 s. The artifact holds the MP4, poster, captions and caption text. Pull
-# request runs render only; a workflow_dispatch run also posts to #social, after the upload, so a
-# Slack failure never costs the download. The token is read only by the post step.
+# request runs render only; a workflow_dispatch run, or adding the `post-to-social` label to the
+# pull request (dispatch needs the file on the default branch, which this one is not yet), also
+# posts to #social, after the upload, so a Slack failure never costs the download. The token is
+# read only by the post step.
 name: Oct scores TikTok
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - .github/workflows/oct-scores-tiktok.yml
       - brag-output-2026-10-16-oct-scores/**
@@ -111,11 +114,11 @@ jobs:
           retention-days: 90
 
       - name: Check the Slack post (dry run)
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name != 'workflow_dispatch' && github.event.label.name != 'post-to-social'
         run: pnpm exec tsx scripts/social/post-video-to-slack.ts --video "$OUT/$NAME.mp4" --caption "$OUT/share-copy.txt" --title "October SAT score release (TikTok, 9:16, 22.5 s)" --dry-run
 
       - name: Post to #social for review
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'post-to-social')
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
