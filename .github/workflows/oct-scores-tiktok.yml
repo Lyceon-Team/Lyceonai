@@ -117,7 +117,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' && github.event.label.name != 'post-to-social'
         run: pnpm exec tsx scripts/social/post-video-to-slack.ts --video "$OUT/$NAME.mp4" --caption "$OUT/share-copy.txt" --title "October SAT score release (TikTok, 9:16, 22.5 s)" --dry-run
 
-      - name: Post to #social for review
+      - name: "Post to #social for review"
         if: github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'post-to-social')
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
