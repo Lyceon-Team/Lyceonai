@@ -38,17 +38,15 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { z } from "zod";
 import {
   qotdSocialPostManifestSchema,
   type QotdSocialPostManifest,
 } from "../../packages/shared/src/qotd-schema";
 import { formatSocialDate } from "../../shared/qotd/social";
 import {
-  SlackCallError,
   escapeMrkdwn,
   postMessage,
-  slackCall,
+  shareFiles,
   slackConfig,
   type FetchLike,
   type Result,
@@ -188,16 +186,6 @@ export function slackRevealMessage(m: QotdSocialPostManifest): string {
   ].join("\n");
 }
 
-const uploadUrlOk = z.object({
-  ok: z.literal(true),
-  upload_url: z.string().url(),
-  file_id: z.string().min(1),
-});
-const completeOk = z.object({
-  ok: z.literal(true),
-  files: z.array(z.object({ id: z.string() })).min(1),
-});
-
 /** Post the day: images (with the date and section) first, then the caption and alt text. */
 export async function postToSlack(
   config: SlackConfig,
@@ -210,53 +198,16 @@ export async function postToSlack(
   revealTs: string;
 }> {
   const { manifest } = post;
-  const fileIds: { id: string; title: string }[] = [];
-  for (const image of post.images) {
-    const target = await slackCall(
-      fetchImpl,
-      config.token,
-      "files.getUploadURLExternal",
-      {
-        form: {
-          filename: image.file,
-          length: String(image.bytes.length),
-          alt_txt: manifest.alt_text,
-        },
-      },
-      uploadUrlOk,
-    );
-    // The bytes go only to Slack's own host, over https (the token never goes there at all).
-    const uploadUrl = new URL(target.upload_url);
-    if (
-      uploadUrl.protocol !== "https:" ||
-      !uploadUrl.hostname.endsWith(".slack.com")
-    ) {
-      throw new SlackCallError(
-        "files.getUploadURLExternal: upload_url is not a Slack https URL",
-      );
-    }
-    const put = await fetchImpl(target.upload_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: new Uint8Array(image.bytes),
-    });
-    if (!put.ok) {
-      throw new SlackCallError(`upload of ${image.file}: HTTP ${put.status}`);
-    }
-    fileIds.push({ id: target.file_id, title: image.file });
-  }
-  const shared = await slackCall(
+  // The shared upload in scripts/slack/client.ts (moved there 2026-10-16, unchanged behaviour).
+  const imagesShared = await shareFiles(
+    config,
+    post.images.map((image) => ({
+      filename: image.file,
+      bytes: image.bytes,
+      altText: manifest.alt_text,
+    })),
+    slackImagesComment(manifest),
     fetchImpl,
-    config.token,
-    "files.completeUploadExternal",
-    {
-      json: {
-        files: fileIds,
-        channel_id: config.channel,
-        initial_comment: slackImagesComment(manifest),
-      },
-    },
-    completeOk,
   );
   const messageTs = await postMessage(
     config,
@@ -274,7 +225,7 @@ export async function postToSlack(
     fetchImpl,
   );
   return {
-    imagesShared: shared.files.length,
+    imagesShared,
     messageTs,
     redditTs,
     revealTs,

@@ -24,6 +24,7 @@ posts. It is never logged, never in the repository, never in Vercel.
 | -------------------- | -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------ |
 | QOTD social assets   | `qotd-social.yml`          | daily, 06:20 UTC                                           | the day's two images, then the caption and alt text          | `docs/runbooks/qotd-slack.md`  |
 | Content batch notify | `content-batch-notify.yml` | a batch or plan pull request into `social` is marked ready | titles, publish dates, Codex verdicts, the pull request link | `docs/runbooks/content-ops.md` |
+| Oct scores TikTok    | `oct-scores-tiktok.yml`    | manual run (`workflow_dispatch`) only                      | the MP4 for review, then its caption                         | `brag-output-2026-10-16-oct-scores/brag-plan.md` |
 
 ## One-time setup (Karl)
 
