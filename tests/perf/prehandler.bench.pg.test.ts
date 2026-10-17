@@ -129,16 +129,35 @@ async function buildRealChainApp(): Promise<Express> {
     await import("../../server/routes/review-canonical");
   const { calendarRouter } =
     await import("../../server/routes/calendar-routes");
+  const { doubleCsrfProtection, generateToken } =
+    await import("../../server/middleware/csrf-double-submit");
 
   const app = express();
+  // The production global limiter's shape (server/index.ts: 1000 per 15 min), raised to the run's
+  // own request count so it can never trip mid-run: setup (token, profile, first read) plus four
+  // timed requests per round, N + 2 rounds per latency.
   const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000,
+    max: Math.max(1000, 10 + (N + 2) * 4 * Math.max(1, LATENCIES.length)),
   });
   app.use(requestIdMiddleware);
   app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
   app.use(limiter);
+  // The CSRF token bootstrap, as production serves it (server/index.ts `/api/csrf-token`).
+  app.get("/api/csrf-token", (req, res) => {
+    res.json({ csrfToken: generateToken(req, res) });
+  });
+  // CSRF: the PRODUCTION middleware (`doubleCsrfProtection`, server/middleware/csrf-double-submit),
+  // not a stub. Production mounts it per router, after the session middleware. Here it sits
+  // app-level, right after the cookie parser and limiter and BEFORE the session middleware,
+  // because the session middleware is itself an app-level handler that reads cookies, and CodeQL
+  // (js/missing-token-validation) wants every cookie-reading handler behind CSRF (production's
+  // own index.ts carries a dismissal note for that same pattern). For the requests measured here
+  // the position costs nothing (an HMAC check, no I/O; GET is exempt); only the PRECEDENCE of two
+  // denials differs — a request failing both CSRF and auth sees 403 here, 401 in production — and
+  // every request below carries a valid token, so that path is never exercised.
+  app.use(doubleCsrfProtection);
   app.use(supabaseAuthMiddleware);
   app.use(enforceDeletionLock);
   app.use(
@@ -166,6 +185,11 @@ describe.skipIf(!ENABLED)(
   "pre-handler: local benchmark (real middleware chain)",
   () => {
     let server: http.Server;
+    /** One cookie jar for the whole run, so the CSRF cookie travels like a browser's. */
+    let agent: ReturnType<typeof request.agent>;
+    /** The token every mutating request sends, obtained from `/api/csrf-token`. */
+    let csrfToken = "";
+    const ORIGIN = "http://localhost:5000";
     const results: Array<Record<string, unknown>> = [];
     const preHandler: number[] = [];
 
@@ -195,12 +219,18 @@ describe.skipIf(!ENABLED)(
       }) as typeof logger.info);
 
       server = (await buildRealChainApp()).listen(0);
+      agent = request.agent(server);
+      const tokenRes = await agent.get("/api/csrf-token");
+      expect(tokenRes.status).toBe(200);
+      csrfToken = String(tokenRes.body.csrfToken);
       harness.actingStudent = STUDENT;
-      const put = await request(server)
+      const put = await agent
         .put("/api/calendar/profile")
+        .set("x-csrf-token", csrfToken)
+        .set("Origin", ORIGIN)
         .send(setupBody());
       expect(put.status).toBe(200);
-      expect((await request(server).get("/api/calendar")).status).toBe(200);
+      expect((await agent.get("/api/calendar")).status).toBe(200);
     }, 240_000);
 
     afterAll(async () => {
@@ -247,8 +277,10 @@ describe.skipIf(!ENABLED)(
 
           harness.latencyMs = latencyMs;
           const start = await timed(() =>
-            request(server)
+            agent
               .post("/api/practice/sessions")
+              .set("x-csrf-token", csrfToken)
+              .set("Origin", ORIGIN)
               .send({
                 sections: ["M"],
                 target_question_count: 10,
@@ -272,8 +304,10 @@ describe.skipIf(!ENABLED)(
 
           harness.latencyMs = latencyMs;
           const answer = await timed(() =>
-            request(server)
+            agent
               .post("/api/practice/answer")
+              .set("x-csrf-token", csrfToken)
+              .set("Origin", ORIGIN)
               .send({
                 sessionId,
                 sessionItemId: itemId,
@@ -283,8 +317,10 @@ describe.skipIf(!ENABLED)(
           );
           expect(answer.status).toBe(200);
           const review = await timed(() =>
-            request(server)
+            agent
               .post("/api/review/sessions")
+              .set("x-csrf-token", csrfToken)
+              .set("Origin", ORIGIN)
               .send({
                 mode: "queue",
                 idempotency_key: `ph-review-${latencyMs}-${i}`,
@@ -292,9 +328,7 @@ describe.skipIf(!ENABLED)(
               }),
           );
           expect(review.status).toBe(200);
-          const calendar = await timed(() =>
-            request(server).get("/api/calendar"),
-          );
+          const calendar = await timed(() => agent.get("/api/calendar"));
           expect(calendar.status).toBe(200);
 
           if (keep) {

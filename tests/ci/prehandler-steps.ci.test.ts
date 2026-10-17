@@ -85,17 +85,40 @@ const { supabaseAuthMiddleware, requireSupabaseAuth } =
   await import("../../server/middleware/supabase-auth");
 const { timedRoute, PRE_HANDLER_STEPS } =
   await import("../../server/lib/step-timer");
+const { doubleCsrfProtection, generateToken } =
+  await import("../../server/middleware/csrf-double-submit");
 
 function app(): express.Express {
   const a = express();
   a.use(requestIdMiddleware);
   a.use(cookieParser());
   a.use("/api", authRateLimiter);
+  // The CSRF token bootstrap, as production serves it (server/index.ts `/api/csrf-token`).
+  a.get("/api/csrf-token", (req, res) => {
+    res.json({ csrfToken: generateToken(req, res) });
+  });
+  // CSRF: the PRODUCTION middleware (`doubleCsrfProtection`, server/middleware/csrf-double-submit),
+  // not a stub. Production mounts it per router, after the session middleware. Here it sits
+  // app-level, right after the cookie parser and limiter and BEFORE the session middleware,
+  // because the session middleware is itself an app-level handler that reads cookies, and CodeQL
+  // (js/missing-token-validation) wants every cookie-reading handler behind CSRF (production's
+  // own index.ts carries a dismissal note for that same pattern). For the requests measured here
+  // the position costs nothing (an HMAC check, no I/O; GET is exempt); only the PRECEDENCE of two
+  // denials differs — a request failing both CSRF and auth sees 403 here, 401 in production — and
+  // every request below carries a valid token, so that path is never exercised.
+  a.use(doubleCsrfProtection);
   a.use(supabaseAuthMiddleware);
   a.get(
     "/api/timed",
     requireSupabaseAuth,
     timedRoute("calendar.read", async (_req, res) => {
+      res.json({ ok: true });
+    }),
+  );
+  a.post(
+    "/api/timed",
+    requireSupabaseAuth,
+    timedRoute("practice.answer_submit", async (_req, res) => {
       res.json({ ok: true });
     }),
   );
@@ -167,6 +190,28 @@ describe("pre-handler steps (route_timing.pre_steps)", () => {
     for (const forbidden of [TOKEN, "SECRET", EMAIL, USER_ID, "sb-"]) {
       expect(serialised).not.toContain(forbidden);
     }
+  });
+
+  it("a mutation goes through the REAL CSRF check: refused without a token, timed with one", async () => {
+    const agent = request.agent(app());
+    const refused = await agent
+      .post("/api/timed")
+      .set("Cookie", `sb-access-token=${TOKEN}`)
+      .set("Origin", "http://localhost:5000")
+      .send({});
+    expect(refused.status).toBe(403);
+    expect(timingLines()).toHaveLength(0);
+
+    const tokenRes = await agent.get("/api/csrf-token");
+    expect(tokenRes.status).toBe(200);
+    const accepted = await agent
+      .post("/api/timed")
+      .set("x-csrf-token", String(tokenRes.body.csrfToken))
+      .set("Origin", "http://localhost:5000")
+      .send({});
+    expect(accepted.status).toBe(200);
+    const steps = timingLines()[0]!.pre_steps as PreStep[];
+    expect(steps.map((s) => s.step)).toEqual(["auth_session", "auth_profile"]);
   });
 
   it("the 401 path is unchanged: no user, no handler, no timing line", async () => {
