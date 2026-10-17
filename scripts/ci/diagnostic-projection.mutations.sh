@@ -181,7 +181,7 @@ plant "$CANON" '  if (args.mode === "diagnostic") {
 run_vt "R7 diagnostic completion bypasses complete_diagnostic_session" "40th answer: stores exactly two computed diagnostic projection rows" "$HANDLER"
 
 echo "=== (C) guard — one completion path (constraint 3) ==="
-plant "$CANON" '      .neq("mode", "diagnostic")' '      .neq("mode", "nothing")' || { bad "G1 STALE"; exit 1; }
+plant "$CANON" '    .neq("mode", "diagnostic")' '    .neq("mode", "nothing")' || { bad "G1 STALE"; exit 1; }
 run_guard "G1 completeSession's own update loses its diagnostic exclusion" "lost its .neq"
 
 python3 - "$DIAG_ROUTES" <<'PY'

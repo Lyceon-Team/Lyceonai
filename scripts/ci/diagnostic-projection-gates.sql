@@ -185,6 +185,10 @@ DECLARE s uuid := pg_temp.mk_student('canonical'); v_sess uuid; r jsonb; sec tex
         d public.student_diagnostic_projections; l public.student_section_projections;
 BEGIN
   v_sess := pg_temp.mk_diagnostic(s, timestamptz '2026-10-01 10:00Z', NULL, true);
+  -- Applying the fixture's mastery events already refreshes the live projection, so without this
+  -- the comparison below would pass with no refresh at completion at all (mutation S6 stayed
+  -- green). Clear it: only complete_diagnostic_session's own refresh (D2) can write it back.
+  DELETE FROM public.student_section_projections WHERE student_id = s;
   r := public.complete_diagnostic_session(v_sess, timestamptz '2026-10-01 11:00Z');
   FOREACH sec IN ARRAY ARRAY['M','RW'] LOOP
     d := pg_temp.dp(v_sess, sec);
