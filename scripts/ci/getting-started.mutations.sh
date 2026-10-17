@@ -19,6 +19,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261102000000_home_getting_started.sql"
 GRANTS="supabase/migrations/20261104000000_getting_started_service_role_grants.sql"
+# Last definer of getting_started_observe since 2026-10-15 (QOTD no longer completes step 4).
+FIX="supabase/migrations/20261105000000_getting_started_blind_spots_not_qotd.sql"
 SCHEMA="packages/shared/src/getting-started-schema.ts"
 ROUTE="server/routes/getting-started-routes.ts"
 INDEX="server/index.ts"
@@ -35,7 +37,7 @@ PROFILE_SVC="server/services/calendar/profile-service.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/gs-mut.XXXX)"
 
-FILES=("$MIG" "$GRANTS" "$SCHEMA" "$ROUTE" "$INDEX" "$CARD" "$FREE_HOME" "$PRACTICE" "$ONBOARD" "$PROFILE" "$SECTION" "$COPY" "$PROFILE_SVC" "$PICKER" "$FL_ROW")
+FILES=("$MIG" "$GRANTS" "$FIX" "$SCHEMA" "$ROUTE" "$INDEX" "$CARD" "$FREE_HOME" "$PRACTICE" "$ONBOARD" "$PROFILE" "$SECTION" "$COPY" "$PROFILE_SVC" "$PICKER" "$FL_ROW")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() {
   for f in "${FILES[@]}"; do
@@ -109,15 +111,18 @@ OUT="$(check "$PG_SUITE" "$QOTD_PG" "$CONTRACT" "$RENAME" "$CARD_UI" "$DASH" "$P
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "GETTING STARTED MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
-echo "=== (1) today's question stops counting for step 4 ==="
-need_last getting_started_observe G1 "$MIG"
-plant "$MIG" "     WHERE i.user_id = p_profile_id AND i.status = 'answered');" \
-  $'      JOIN public.practice_sessions ps ON ps.id = i.session_id\n     WHERE i.user_id = p_profile_id AND i.status = \'answered\' AND ps.mode <> \'qotd\');' || { bad "G1 STALE"; exit 1; }
-run "G1 QOTD counts for step 4" "GS3: today's question counts for steps 2 AND 4" "$PG_SUITE"
+# G1 reversed 2026-10-15 (Karl): today's question must NOT complete step 4. It used to plant
+# the exclusion; it now plants its removal. G1/G2/G4/G6/G7 re-pointed from $MIG to $FIX, which
+# replaces getting_started_observe.
+echo "=== (1) today's question completes step 4 again ==="
+need_last getting_started_observe G1 "$FIX"
+plant "$FIX" "       WHERE i.user_id = p_profile_id AND i.status = 'answered' AND ps.mode <> 'qotd');" \
+  "       WHERE i.user_id = p_profile_id AND i.status = 'answered');" || { bad "G1 STALE"; exit 1; }
+run "G1 QOTD does not count for step 4" "GS3: today's question counts for step 2 only" "$PG_SUITE"
 
 echo "=== (2) 'Not sure yet' for the date stops counting for step 1 ==="
-need_last getting_started_observe G2 "$MIG"
-plant "$MIG" "           OR s.test_date_not_sure_at IS NOT NULL )" "           OR false )" || { bad "G2 STALE"; exit 1; }
+need_last getting_started_observe G2 "$FIX"
+plant "$FIX" "           OR s.test_date_not_sure_at IS NOT NULL )" "           OR false )" || { bad "G2 STALE"; exit 1; }
 run "G2 not-sure counts" "GS4: 'Not sure yet' counts for step 1" "$PG_SUITE"
 
 echo "=== (3) a repeated 'Not sure yet' overwrites the first ==="
@@ -127,8 +132,8 @@ plant "$MIG" "     SET test_date_not_sure_at    = COALESCE(s.test_date_not_sure_
 run "G3 not-sure idempotent" "GS4: 'Not sure yet' counts for step 1" "$PG_SUITE"
 
 echo "=== (4) the email step is done without an opt-in ==="
-need_last getting_started_observe G4 "$MIG"
-plant "$MIG" "CASE WHEN COALESCE((v_pref ->> 'enabled')::boolean, false) THEN now() END" "CASE WHEN true THEN now() END" || { bad "G4 STALE"; exit 1; }
+need_last getting_started_observe G4 "$FIX"
+plant "$FIX" "CASE WHEN COALESCE((v_pref ->> 'enabled')::boolean, false) THEN now() END" "CASE WHEN true THEN now() END" || { bad "G4 STALE"; exit 1; }
 run "G4 email done only on opt-in" "GS5: step 3" "$PG_SUITE"
 
 echo "=== (5) the email step shows to a student who cannot opt in ==="
@@ -136,14 +141,14 @@ plant "$SCHEMA" '  if (id === "email") return obs.email_eligible;' '  if (id ===
 run "G5 email hidden when ineligible" "the email step is hidden for a student who cannot opt in" "$CONTRACT"
 
 echo "=== (6) a step is not sticky (a deleted LISA message reopens it) ==="
-need_last getting_started_observe G6 "$MIG"
-plant "$MIG" "         lisa_done_at        = COALESCE(s.lisa_done_at,        CASE WHEN v_lisa THEN now() END)," \
+need_last getting_started_observe G6 "$FIX"
+plant "$FIX" "         lisa_done_at        = COALESCE(s.lisa_done_at,        CASE WHEN v_lisa THEN now() END)," \
   "         lisa_done_at        = CASE WHEN v_lisa THEN now() END," || { bad "G6 STALE"; exit 1; }
 run "G6 sticky" "GS6: sticky" "$PG_SUITE"
 
 echo "=== (7) a tutor message or a suggestion counts for LISA ==="
-need_last getting_started_observe G7 "$MIG"
-plant "$MIG" "     WHERE m.student_id = p_profile_id AND m.role = 'student' AND m.content_kind = 'message');" \
+need_last getting_started_observe G7 "$FIX"
+plant "$FIX" "     WHERE m.student_id = p_profile_id AND m.role = 'student' AND m.content_kind = 'message');" \
   "     WHERE m.student_id = p_profile_id);" || { bad "G7 STALE"; exit 1; }
 run "G7 student's own message only" "GS11: only a message the student sent counts for LISA" "$PG_SUITE"
 
@@ -262,6 +267,27 @@ run "G32 full-length entry on Practice" "paid: a compact row whose Start is a li
 echo "=== (33) service_role loses INSERT/UPDATE on the state table ==="
 plant "$GRANTS" $'GRANT INSERT, UPDATE ON TABLE public.student_getting_started_state TO service_role;\n' "" || { bad "G33 STALE"; exit 1; }
 run "G33 service_role can write the state" "GS13: the four functions run as service_role" "$PG_SUITE"
+
+# Added 2026-10-15 (Karl): QOTD must not complete "Find your blind spots".
+echo "=== (34) a practice answer no longer completes step 4 ==="
+need_last getting_started_observe G34 "$FIX"
+plant "$FIX" "       WHERE i.user_id = p_profile_id AND i.status = 'answered' AND ps.mode <> 'qotd');" \
+  "       WHERE i.user_id = p_profile_id AND i.status = 'answered' AND false);" || { bad "G34 STALE"; exit 1; }
+run "G34 practice answer ticks step 4" "GS14: step 4 (as service_role)" "$PG_SUITE"
+
+echo "=== (35) a completed diagnostic without a baseline yet does not complete step 4 ==="
+need_last getting_started_observe G35 "$FIX"
+plant "$FIX" "IN ('baseline_pending', 'baseline_ready')" "IN ('baseline_ready')" || { bad "G35 STALE"; exit 1; }
+run "G35 completed diagnostic ticks step 4" "GS14: step 4 (as service_role)" "$PG_SUITE"
+
+echo "=== (36) the data fix also clears students with a practice answer ==="
+plant "$FIX" "      WHERE i.user_id = s.profile_id AND i.status = 'answered' AND ps.mode <> 'qotd');" \
+  "      WHERE i.user_id = s.profile_id AND i.status = 'answered' AND false);" || { bad "G36 STALE"; exit 1; }
+run "G36 data fix keeps non-QOTD completions" "GS15: clears step 4 only where every answered item is a QOTD item" "$PG_SUITE"
+
+echo "=== (37) the data fix clears nothing ==="
+plant "$FIX" "   AND EXISTS (" "   AND false AND EXISTS (" || { bad "G37 STALE"; exit 1; }
+run "G37 data fix clears QOTD-only rows" "GS15: clears step 4 only where every answered item is a QOTD item" "$PG_SUITE"
 
 echo
 echo "GETTING STARTED MUTATIONS: $PASS passed, $FAIL failed"
