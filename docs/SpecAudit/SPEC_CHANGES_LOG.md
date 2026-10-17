@@ -4970,3 +4970,39 @@ Why: four failed corpus creations. Spanner mode (2026-10-13): allowlist-gated in
 Disclosure: none. Internal storage; nothing public changes.
 Owner action: rule the entry; apply `supabase/migrations/20261101010000_lisa_curriculum_chunks.sql` to production and paste `\d curriculum_chunks` into closure plan row C; amend Doc 03D §6.6/§6.7 per IS.
 Build artifact: `supabase/migrations/20261101010000_lisa_curriculum_chunks.sql` (`curriculum_chunks`, `video_resources`, `curriculum_chunk_upsert`, `curriculum_chunks_search`); `scripts/ci/curriculum-chunks-gates.sql` (CI `pg` job); `scripts/ci/curriculum-chunks.mutations.sh` (`ci-full`); `scripts/ci/genesis-schema.expected.sql`; `tests/ci/curriculum-chunks.contract.test.ts`; `docs/plans/LISA_Video_RAG_Plan.md` Steps C, D §F, E, F; deleted: `scripts/provisioning/rag-corpus-create.ts`, `scripts/rag/probe-rag-data-schema.ts`.
+
+SCL-235 | 2026-10-17 | Amends Doc 02B §12 (Free Tier, Entitlement Matrix): a free student sees only their stored diagnostic projection; the ongoing (live) overall and section-level projection is Premium-only. Supersedes the 2026-09-29 ruling (`docs/plans/student-ui/student-ui-vertical.md:47`) | OPEN
+Status: OPEN. Ruled by Karl, 2026-10-16 (brief "Separate diagnostic projection + free/paid projection split", rulings 1, 3, 4); entry approved as drafted, 2026-10-17 ("Use both SCL entries (235 and 236) as drafted"). Owed into the spec; becomes APPLIED when folded into Doc 02B §12.
+Change: the free tier's projection becomes the single stored diagnostic projection (SCL-236), not the live projection. Premium sees the live projection only; the diagnostic number is not shown to a paid student. Guardian visibility is unchanged (active link AND student entitlement, Doc 01 / Doc 05 Parent §11.1).
+WAS, verbatim (Doc 02B §12, `Lyceon — Document 02B_ Runtime Engines (V4).md`):
+  :463 "Free users also see a final-score projection (single overall score prediction) computed from their mastery."
+  :480 "| Overall score projection (single number) | Yes | Yes |"
+  :481 "| Section-level projection | Yes | Yes |"
+IS:
+  :463 "Free users also see their diagnostic projection: the single stored projection computed from their initial diagnostic's answers (Doc 05C, SCL-236). It never changes after it is written. Free users do not see the ongoing projection."
+  :480 "| Diagnostic projection (stored, overall and section) | Yes | No (not shown) |"
+  :481 "| Ongoing projection (overall and section, refreshed from mastery) | No | Yes |"
+Rationale: owner product rule, 2026-10-16. The live projection is a paid progression feature; the diagnostic result is the free product.
+Supersedes: the 2026-09-29 Step 2 ruling 4 (`docs/plans/student-ui/student-ui-vertical.md:47-48`, OQ-9/OQ-36). That plan text is a plan entry and is amended in the same PR.
+Disclosure: public pricing/marketing copy that promises a free "score projection" must say "diagnostic score estimate" (routed to the seo vertical; not changed here).
+Owner action: fold into Doc 02B §12.
+Build artifact: see SCL-236 (one PR).
+Id: `SCL-235` derived at the moment of use, 2026-10-17, after `git fetch --all --prune` and the register scan of every remote ref: the highest allocated anywhere is `SCL-234`. Open PRs checked (7 open; only #1255 adds ids, SCL-233 and SCL-234). Two entries allocated in sequence: SCL-235, SCL-236.
+
+SCL-236 | 2026-10-17 | Amends Doc 05C (new §12A "Diagnostic projection") and Doc 05A §6 / §11.4: a new stored value, the diagnostic projection, computed once per diagnostic session from that session's answered events only, through the unchanged Doc 05A formula and Doc 05C §6 mapping and range | OPEN
+Status: OPEN. Ruled by Karl, 2026-10-16 (same brief, rulings 2 and 5); entry approved as drafted, 2026-10-17, with D1 = (a), D2 = yes, D3 = reuse `mastery_detail`, D4 = exclude the old baseline rows from paid snapshot reads. Owed into the spec; becomes APPLIED when folded into Doc 05C and Doc 05A.
+Change:
+  1. New stored value (Doc 05C §12A). For each completed diagnostic session, one row per section in `student_diagnostic_projections`, UNIQUE (practice_session_id, section), written once and never updated. Inputs: the session's practice_session_items with status 'answered' only, never practice, review, QOTD or full-length events. Per-domain mastery by the Doc 05A formula over those events; the Doc 05C §6.2 evidence gate unchanged; mastery term, blend and range by §6.1–§6.5 unchanged, with fl1 = fl2 = NULL (State A) and relevant_question_count = the diagnostic's answered items in the section. Stamped with both constants hashes and mastery_model_version. A session that fails the gate stores `insufficient_evidence` rows with NULL scores (D1 = (a)).
+  2. Doc 05A §6: the formula body moves into a pure `compute_mastery_core(events, constants)`. `compute_mastery_for_entity` keeps its §6.1 signature and becomes its wrapper. Still one implementation (INV-05A-11); no model-version bump (no maths change).
+  3. Doc 05C §5/§6: the §6 maths moves into a pure `projection_core(...)`. `compute_section_projection` keeps its §5.1 signature and output.
+  4. INV-05C-A1 scope: unchanged for 05C's live projection. The diagnostic projection is computed by a diagnostic-owned function that calls `compute_mastery_core` and `projection_core`; 05C's own functions still never call the mastery formula.
+  5. Doc 05A §11.4 gains: "Mastery sees no distinction. Separately, the diagnostic session's own answered events feed the diagnostic projection (Doc 05C §12A); this does not alter mastery."
+  6. §12 "Diagnostic Post-Completion Expected State" also requires the §12A rows to exist after completion, written in the same transaction that completes the session, on every completion path; that transaction also refreshes the live projection for both sections (D2), which §12 already names as a refresh boundary ("the diagnostic completion is itself a throttle-eligible boundary").
+WAS (Doc 05C `:83`): "05C never re-derives mastery … It never calls `compute_mastery_for_entity` itself." Doc 05A §11.4 `:1642-1644`: "… The diagnostic is product flow built on practice infrastructure; mastery sees no distinction." Doc 05C has no diagnostic-projection value.
+IS: as Change 1–6.
+Rationale: the old "diagnostic_baseline" was a copy of the live projection at an uncertain moment. It was written best-effort, skipped when the live projection was empty, never retried, and mixed earlier practice in, so two students with the same 40 answers could get different numbers (read-only trace of 2026-10-16; sarasspam03 and oseiks1353 stuck in baseline_pending).
+Preserves: existing `diagnostic_baseline` snapshot rows (INV-05C-17), kept as audit history; nothing reads them.
+Disclosure: none (internal mechanism; Public Disclosure Doctrine §2).
+Owner action: fold into Doc 05C (§12A, §12) and Doc 05A (§6, §11.4).
+Build artifact: (filled at commit).
+Id: `SCL-236`, allocated second in sequence with SCL-235 (see its Id line).

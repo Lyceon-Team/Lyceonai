@@ -44,8 +44,8 @@ These are decided. Do not relitigate them; raise a conflict in §9 if a spec dis
 - Marketing footer is removed from app pages; legal links move under Help.
 
 **Free versus paid**
-- Free: the diagnostic, the ongoing overall and section-level score projection (Doc 02B §12 matrix; Doc 05C, which lets a student read their own projection with no entitlement check), 40 practice questions a day, and unlimited review (SCL-110, applied 2026-09-29). *Amended 2026-09-29 (Step 2 ruling 4); this replaces "the diagnostic and its projection".*
-- Paid: Calendar, LISA, Full-Length, and mastery and KPIs (`mastery_detail`). *Amended 2026-09-29 (Step 2 ruling 4): "every projection after the diagnostic" is removed.*
+- Free: the diagnostic and its stored diagnostic projection (computed once from that diagnostic's answers, never changing), 40 practice questions a day, and unlimited review (SCL-110, applied 2026-09-29). *Amended 2026-10-16 (owner ruling, SCL-235/SCL-236): free students see only the diagnostic projection; this supersedes the 2026-09-29 Step 2 ruling 4, which had given them "the ongoing overall and section-level score projection".*
+- Paid: Calendar, LISA, Full-Length, mastery and KPIs, and the ongoing (live) projection, all behind `mastery_detail` for the projection. The diagnostic number is not shown to a paid student. *Amended 2026-10-16 (owner ruling, SCL-235): the ongoing projection is Premium-only.*
 - LISA and Full-Length rail items show a small lock. Clicking one opens a feature-specific upgrade modal in place, with no navigation and no call to the gated endpoint.
 - Calendar is the exception (Step 2 ruling 3, 2026-09-29). Its rail item keeps the lock icon as a hint but **navigates to the calendar page**, which does the upsell itself per Doc 05F §15 and §17.5. Setup renders before the entitlement gate (SCL-130), so a free student can still state a test date and target score.
 - The server still enforces every gate.
