@@ -24,8 +24,8 @@ const ENV = { SLACK_BOT_TOKEN: "xoxb-test-token-not-real", SLACK_CHANNEL_ID: "C0
 /** Visible text in the composition: tag content and alt text, scripts and styles removed. */
 function onScreen(html: string): string {
   return html
-    .replace(/<script[\s\S]*?<\/script>/g, " ")
-    .replace(/<style[\s\S]*?<\/style>/g, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/alt="([^"]*)"/g, " $1 ")
     .replace(/<[^>]+>/g, " ");
 }
