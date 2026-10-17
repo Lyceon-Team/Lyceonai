@@ -47,6 +47,7 @@ import {
 } from "@lyceon/shared/practice-response-schema";
 import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
 import { RunnerStateCard } from "@/components/practice/RunnerStateCard";
+import { SessionSummary } from "@/components/practice/SessionSummary";
 import { sessionTitle } from "@/components/home/home-model";
 import { FullPageLoader } from "@/components/student-ui";
 import { getClientInstanceId } from "@/lib/client-instance";
@@ -106,6 +107,28 @@ export default function ResumePracticePage(): JSX.Element {
   // This is checked BEFORE the diagnostic branch, because an abandoned diagnostic is
   // just as unplayable as an abandoned single-section session.
   if (session.readOnly) {
+    // First-run activation brief (Karl, 2026-10-13) P0 item 3 | @implemented [2026-10-13]: a
+    // finished practice session shows its summary (a refresh shows it again); a finished
+    // diagnostic keeps its card, since its result is the baseline on Home.
+    if (
+      session.state === "completed" &&
+      session.mode !== "diagnostic" &&
+      sessionId
+    ) {
+      const summaryTitle = sessionTitle(
+        "practice",
+        session.criteria,
+        session.section,
+      );
+      return (
+        <SessionSummary
+          key={sessionId}
+          engine="practice"
+          sessionId={sessionId}
+          title={summaryTitle}
+        />
+      );
+    }
     const wasAbandoned = session.state === "abandoned";
     return (
       <RunnerStateCard
@@ -173,6 +196,7 @@ export default function ResumePracticePage(): JSX.Element {
       sessionId={sessionId}
       shortened={session.shortened}
       completionHref="/practice"
+      onSessionClosed={() => void refetch()}
     />
   );
 }

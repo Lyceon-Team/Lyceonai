@@ -258,20 +258,38 @@ async function readLaunchStates(
     });
   }
 
-  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2] | @implemented [2026-10-13]
-  // plain English: one lifecycle lookup per distinct launched session, all independent, so they
-  // run together rather than one after another (a fortnight with several launched blocks used
-  // to wait on each in turn). The results are consumed in the same `latest` order as before, so
-  // `states` is identical; a lookup that throws still fails the read, as the loop did.
+  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2; owner ruling 2026-10-13
+  //        on #1232 (the calendar read's round trips); Doc-05F_V1.0 §9.1 as amended by SCL-233]
+  // | @implemented [2026-10-13; one read per engine 2026-10-15]
+  // plain English: the latest launched session of every block, grouped by the engine that owns
+  // it, and ONE lifecycle read per engine for the whole group (SCL-233) — where this used to be
+  // one read per launched block. The engines' reads are independent, so they run together. The
+  // results are consumed in the same `latest` order as before, so `states` is identical; a
+  // lookup that throws still fails the read, as it always did.
   const latestLaunches = [...latest];
-  const lifecycles = await Promise.all(
-    latestLaunches.map(([, launch]) =>
-      adapterFor(launch.engine as CalendarEngine).progress(launch.sessionId),
+  const sessionsByEngine = new Map<CalendarEngine, string[]>();
+  for (const [, launch] of latestLaunches) {
+    const engine = launch.engine as CalendarEngine;
+    const sessions = sessionsByEngine.get(engine);
+    if (sessions === undefined)
+      sessionsByEngine.set(engine, [launch.sessionId]);
+    else sessions.push(launch.sessionId);
+  }
+  const engineReads = [...sessionsByEngine];
+  const lifecycleMaps = await Promise.all(
+    engineReads.map(([engine, sessionIds]) =>
+      adapterFor(engine).progress(sessionIds),
     ),
   );
+  const lifecyclesByEngine = new Map(
+    engineReads.map(([engine], index) => [engine, lifecycleMaps[index]]),
+  );
   const states: BlockLaunchState[] = [];
-  for (const [index, [blockId]] of latestLaunches.entries()) {
-    const lifecycle = lifecycles[index] ?? null;
+  for (const [blockId, launch] of latestLaunches) {
+    const lifecycle =
+      lifecyclesByEngine
+        .get(launch.engine as CalendarEngine)
+        ?.get(launch.sessionId) ?? null;
     if (lifecycle === null) continue;
     const parsed = blockLaunchStateSchema.safeParse({
       block_id: blockId,
@@ -536,6 +554,14 @@ async function assembleRange(
  * Engine activity for every date in the window, asked of each engine that owns a block
  * somewhere in it. The date's OWN timezone is passed (§8.2), so a date planned in Tokyo
  * is counted in Tokyo even after the student moves.
+ *
+ * @spec [Doc-05F_V1.0 §9.1 as amended by SCL-233, §13; owner ruling (Karl) 2026-10-13 on #1232]
+ * | @implemented [2026-10-15]
+ * ONE CALL PER ENGINE, WITH EVERY DAY. Until SCL-233 this asked each engine once per date — a
+ * fortnight with all three engines was 42 round trips, two thirds of the read. The adapter now
+ * takes the whole set of days and answers in one read; the union is the same units, each filed
+ * under the same day(s), so the allocator's input — and the response — is unchanged
+ * (`tests/ci/calendar-read.golden.pg.ci.test.ts`, recorded before the fold).
  */
 async function readActivityUnits(
   studentId: string,
@@ -553,12 +579,7 @@ async function readActivityUnits(
 
   const calls: Promise<ActivityUnit[]>[] = [];
   for (const engine of engines) {
-    const adapter = adapterFor(engine);
-    for (const day of days) {
-      calls.push(
-        adapter.activityUnits(studentId, day.local_date, day.timezone),
-      );
-    }
+    calls.push(adapterFor(engine).activityUnits(studentId, days));
   }
 
   const settled = await Promise.allSettled(calls);
@@ -568,12 +589,12 @@ async function readActivityUnits(
       units.push(...result.value);
       continue;
     }
-    // Fail OPEN, per §5A and the adapters' own posture: a day whose activity could not be
-    // read shows no progress rather than taking the calendar down.
+    // Fail OPEN, per §5A and the adapters' own posture: an engine whose activity could not
+    // be read shows no progress for the window rather than taking the calendar down.
     logger.error(
       "CALENDAR_READ",
       "activity_read_failed",
-      "an engine could not report activity for a date; that date shows no progress",
+      "an engine could not report activity for the window; its blocks show no progress",
       { requestId },
     );
   }

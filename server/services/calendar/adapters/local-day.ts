@@ -25,6 +25,8 @@
  * (23 hours) and the fall-back day (25 hours).
  */
 
+import type { ActivityDay } from "./types";
+
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
@@ -132,6 +134,71 @@ export function localDayWindowUtc(
   const nextLocalDate = nextDay.toISOString().slice(0, 10);
   const end = startOfLocalDay(nextLocalDate, timeZone);
   return { startUtc: start.toISOString(), endUtc: end.toISOString() };
+}
+
+/** One requested day's half-open window, as epoch milliseconds for comparison. */
+type ResolvedDayWindow = { local_date: string; startMs: number; endMs: number };
+
+/**
+ * Several local days' windows, plus the one instant range that covers all of them.
+ *
+ * @spec [Doc-05F_V1.0 §9.1 as amended by SCL-233, §8.2, §13] | @implemented [2026-10-15]
+ *
+ * plain English: an adapter reads activity for many days at once by asking the database for the
+ * span `[startUtc, endUtc)` — the earliest window's start to the latest window's end — and then
+ * files each row under the requested days whose own window contains it (`localDatesContaining`).
+ * The span may include instants that belong to NO requested day (a gap between two zones'
+ * windows); those rows are read and dropped, exactly as the per-day reads never fetched them.
+ */
+export type DayWindowSpan = {
+  windows: ResolvedDayWindow[];
+  /** Inclusive. */
+  startUtc: string;
+  /** EXCLUSIVE. */
+  endUtc: string;
+};
+
+/** `null` for no days, so the caller makes no query at all. */
+export function dayWindowSpan(
+  days: readonly ActivityDay[],
+): DayWindowSpan | null {
+  if (days.length === 0) return null;
+  const windows = days.map((day): ResolvedDayWindow => {
+    const window = localDayWindowUtc(day.local_date, day.timezone);
+    return {
+      local_date: day.local_date,
+      startMs: Date.parse(window.startUtc),
+      endMs: Date.parse(window.endUtc),
+    };
+  });
+  const startMs = Math.min(...windows.map((window) => window.startMs));
+  const endMs = Math.max(...windows.map((window) => window.endMs));
+  return {
+    windows,
+    startUtc: new Date(startMs).toISOString(),
+    endUtc: new Date(endMs).toISOString(),
+  };
+}
+
+/**
+ * The requested days whose half-open window contains `instant`, in the order they were asked
+ * for. Zero days for an instant in a gap; two or more where windows in different zones overlap —
+ * the per-day reads counted such a row on each of those days, and so does this.
+ *
+ * EXACT, NOT APPROXIMATE, AT THE BOUNDARY. `instant` comes from `toIsoTimestamp`, which (like
+ * both transports: `Date.parse` and node-postgres) TRUNCATES a `timestamptz`'s microseconds to
+ * milliseconds. Every window bound is a whole minute (`offsetMinutesAt`), so for a bound `b` and
+ * a stored value `v`, `v >= b` exactly when `trunc_ms(v) >= b`. This comparison therefore agrees
+ * with the SQL `>= start AND < end` the per-day reads ran, down to the microsecond.
+ */
+export function localDatesContaining(
+  span: DayWindowSpan,
+  instant: string,
+): string[] {
+  const at = Date.parse(instant);
+  return span.windows
+    .filter((window) => at >= window.startMs && at < window.endMs)
+    .map((window) => window.local_date);
 }
 
 /**

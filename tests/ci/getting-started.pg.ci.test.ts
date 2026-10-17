@@ -12,7 +12,8 @@
  *   GS1  a new free student: five steps, all open, in the brief's order, with their links
  *   GS2  each step follows its own real data (date and score, today's question, the email
  *        opt-in, an answered practice item, a review session)
- *   GS3  today's question counts for steps 2 AND 4; a practice answer counts for 4 only
+ *   GS3  today's question counts for step 2 only, never step 4; a practice answer counts for 4 only
+ *        (Karl, 2026-10-15: QOTD must not complete "Find your blind spots")
  *   GS4  "Not sure yet" counts for step 1, for the date and for the score; a date alone does not
  *   GS5  step 3: done only on opt-in; "Not now" skips it (counts toward finishing); opting in
  *        later makes it done; hidden for a student who cannot opt in (under 13)
@@ -23,6 +24,10 @@
  *   GS10 presence only: the LISA message's text never reaches the response or the logs
  *   GS11 only the student's own message counts for LISA (not the tutor's, not a suggestion)
  *   GS12 the three POSTs share one rate-limit bucket (Karl, 2026-10-13 on #1230); GET is not limited
+ *   GS13 the four functions run as service_role, not the owner (hotfix 2026-10-15: prod 42501)
+ *   GS14 step 4, read as service_role: a QOTD answer leaves it open, a practice answer or a
+ *        completed diagnostic ticks it, an unfinished diagnostic with no answer does not
+ *   GS15 the one-time data fix clears step 4 only where every answered item is a QOTD item
  */
 import express, {
   type NextFunction,
@@ -34,6 +39,7 @@ import type { Client } from "pg";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  applyMigrationsFrom,
   bootstrapPgDatabase,
   makePgSupabase,
   PG_AVAILABLE,
@@ -188,7 +194,7 @@ async function replica<T>(work: () => Promise<T>): Promise<T> {
 /** One answered practice item; `mode = 'qotd'` is how today's question is stored (SCL-224). */
 async function seedPracticeAnswer(
   id: string,
-  mode: "balanced" | "qotd",
+  mode: "balanced" | "qotd" | "diagnostic",
 ): Promise<string> {
   return replica(async () => {
     const s = randomUUID();
@@ -306,6 +312,61 @@ async function seedGuardianLink(
   );
 }
 
+/**
+ * A role with exactly service_role's grants (it inherits them) plus BYPASSRLS, which Supabase's
+ * service_role has and the bare-Postgres stub does not. The route calls the functions as
+ * service_role; running them as the owner hid a missing grant until production (#1248). A
+ * separate role keeps the cluster-wide service_role untouched for the other suites.
+ */
+async function ensureServiceRoleProbe(): Promise<void> {
+  await pg.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'gs_service_role_probe') THEN
+        CREATE ROLE gs_service_role_probe NOLOGIN BYPASSRLS INHERIT;
+      END IF;
+    END $$;
+    GRANT service_role TO gs_service_role_probe;
+  `);
+}
+
+type Observed = Record<string, boolean>;
+
+/** `getting_started_observe` as service_role, the way the route runs it. */
+async function observeAsServiceRole(profileId: string): Promise<Observed> {
+  await ensureServiceRoleProbe();
+  await pg.query("BEGIN");
+  try {
+    await pg.query("SET LOCAL ROLE gs_service_role_probe");
+    const r = await pg.query<{ v: Observed }>(
+      "SELECT public.getting_started_observe($1) AS v",
+      [profileId],
+    );
+    await pg.query("COMMIT");
+    const row = r.rows[0];
+    if (!row) throw new Error("getting_started_observe returned no row");
+    return row.v;
+  } catch (err: unknown) {
+    await pg.query("ROLLBACK");
+    throw err;
+  }
+}
+
+/** A diagnostic session in `status`, with no answered item (so only the lifecycle can count). */
+async function seedDiagnosticSession(
+  id: string,
+  status: "completed" | "active",
+): Promise<void> {
+  await replica(() =>
+    pg.query(
+      `INSERT INTO public.practice_sessions
+         (id, user_id, actor_id, mode, target_count, platform, status, completed_at)
+       VALUES ($1, $2, $2, 'diagnostic', 1, 'web', $3,
+               CASE WHEN $3 = 'completed' THEN now() END)`,
+      [randomUUID(), id, status],
+    ),
+  );
+}
+
 const id = (n: number): string =>
   `b8000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -349,6 +410,7 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(statusOf(await read(s)).qotd).toBe("done");
       await seedOptIn(s, true);
       expect(statusOf(await read(s)).email).toBe("done");
+      await seedPracticeAnswer(s, "balanced");
       await seedReviewSession(s);
       const view = await read(s);
       expect(statusOf(view)).toEqual({
@@ -361,7 +423,7 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(view.complete).toBe(true);
     });
 
-    it("GS3: today's question counts for steps 2 AND 4; a practice answer counts for 4 only", async () => {
+    it("GS3: today's question counts for step 2 only; a practice answer counts for 4 only", async () => {
       const qotd = id(3);
       const practice = id(4);
       await seedStudent(qotd);
@@ -369,7 +431,7 @@ describe.skipIf(!PG_AVAILABLE)(
       await seedQotdAnswer(qotd);
       await seedPracticeAnswer(practice, "balanced");
       const a = statusOf(await read(qotd));
-      expect([a.qotd, a.blind_spots]).toEqual(["done", "done"]);
+      expect([a.qotd, a.blind_spots]).toEqual(["done", "open"]);
       const b = statusOf(await read(practice));
       expect([b.qotd, b.blind_spots]).toEqual(["open", "done"]);
     });
@@ -589,6 +651,7 @@ describe.skipIf(!PG_AVAILABLE)(
 
       await seedGoal(s, { dates: ["2026-12-05"], score: 1300 });
       await seedQotdAnswer(s);
+      await seedPracticeAnswer(s, "balanced");
       await seedReviewSession(s);
       as(s);
       await request(await app()).post("/api/home/getting-started/skip-email");
@@ -654,6 +717,183 @@ describe.skipIf(!PG_AVAILABLE)(
       ).toBe("done");
       expect(JSON.stringify(res.body)).not.toContain(LISA_TEXT);
       expect(logs.join("\n")).not.toContain(LISA_TEXT);
+    });
+
+    it("GS13: the four functions run as service_role, the role the route calls them as (#1230 hotfix, 42501)", async () => {
+      // Every other route case calls the functions as the database owner, which holds every
+      // right, so a missing grant passed CI and failed production. See ensureServiceRoleProbe.
+      await ensureServiceRoleProbe();
+      const s = id(22);
+      await seedStudent(s);
+      await makePro(s);
+      await seedLisaMessage(s);
+
+      const calls: Array<[string, string, unknown[]]> = [
+        ["observe", "SELECT public.getting_started_observe($1) AS v", [s]],
+        [
+          "record_not_sure",
+          "SELECT public.getting_started_record_not_sure($1, true, true)",
+          [s],
+        ],
+        ["skip_email", "SELECT public.getting_started_skip_email($1)", [s]],
+        ["dismiss", "SELECT public.getting_started_dismiss($1)", [s]],
+      ];
+      const failures: string[] = [];
+      for (const [name, sql, params] of calls) {
+        await pg.query("BEGIN");
+        await pg.query("SET LOCAL ROLE gs_service_role_probe");
+        try {
+          await pg.query(sql, params);
+          await pg.query("COMMIT");
+        } catch (err: unknown) {
+          await pg.query("ROLLBACK");
+          const e = err as { code?: string; message?: string };
+          failures.push(`${name}: ${e.code ?? "?"} ${e.message ?? ""}`);
+        }
+      }
+      expect(failures).toEqual([]);
+
+      // Presence: each call wrote what it should, read back as the owner.
+      const row = await pg.query(
+        `SELECT lisa_done_at, test_date_not_sure_at, target_score_not_sure_at,
+                email_skipped_at, dismissed_at
+           FROM public.student_getting_started_state WHERE profile_id = $1`,
+        [s],
+      );
+      expect(row.rows).toHaveLength(1);
+      for (const v of Object.values(row.rows[0] as Record<string, unknown>)) {
+        expect(v).not.toBeNull();
+      }
+    });
+
+    it("GS14: step 4 (as service_role): QOTD leaves it open; a practice answer or a completed diagnostic ticks it", async () => {
+      // QOTD only: step 2 done, step 4 open.
+      const qotd = id(23);
+      await seedStudent(qotd);
+      await seedQotdAnswer(qotd);
+      const a = await observeAsServiceRole(qotd);
+      expect([a.qotd_done, a.blind_spots_done]).toEqual([true, false]);
+
+      // A practice answer (mode 'balanced'): step 4 done.
+      const practice = id(24);
+      await seedStudent(practice);
+      await seedPracticeAnswer(practice, "balanced");
+      expect((await observeAsServiceRole(practice)).blind_spots_done).toBe(
+        true,
+      );
+
+      // A completed diagnostic with no answered item: done through the lifecycle alone.
+      const diag = id(25);
+      await seedStudent(diag);
+      await seedDiagnosticSession(diag, "completed");
+      expect((await observeAsServiceRole(diag)).blind_spots_done).toBe(true);
+
+      // A diagnostic still in progress with nothing answered: open.
+      const started = id(26);
+      await seedStudent(started);
+      await seedDiagnosticSession(started, "active");
+      expect((await observeAsServiceRole(started)).blind_spots_done).toBe(
+        false,
+      );
+
+      // QOTD then practice: step 4 is reached by the practice answer.
+      await seedPracticeAnswer(qotd, "balanced");
+      expect((await observeAsServiceRole(qotd)).blind_spots_done).toBe(true);
+    });
+  },
+);
+
+const FIX_MIGRATION = "20261105000000_getting_started_blind_spots_not_qotd.sql";
+
+describe.skipIf(!PG_AVAILABLE)(
+  "Getting started — the one-time step 4 data fix (Karl, 2026-10-15)",
+  () => {
+    beforeAll(async () => {
+      pg = await bootstrapPgDatabase(`${DB_NAME}_fix`, {
+        stopBefore: FIX_MIGRATION,
+      });
+    }, 180_000);
+
+    afterAll(async () => {
+      await pg?.end();
+    });
+
+    it("GS15: clears step 4 only where every answered item is a QOTD item; nothing else changes", async () => {
+      const qotdOnly = id(31);
+      const qotdAndPractice = id(32);
+      const practiceOnly = id(33);
+      const qotdAndDiagnostic = id(34);
+      for (const s of [
+        qotdOnly,
+        qotdAndPractice,
+        practiceOnly,
+        qotdAndDiagnostic,
+      ]) {
+        await seedStudent(s);
+      }
+      await seedQotdAnswer(qotdOnly);
+      await seedQotdAnswer(qotdAndPractice);
+      await seedPracticeAnswer(qotdAndPractice, "balanced");
+      await seedPracticeAnswer(practiceOnly, "balanced");
+      await seedQotdAnswer(qotdAndDiagnostic);
+      await seedPracticeAnswer(qotdAndDiagnostic, "diagnostic");
+
+      // The state production has: the OLD rule latched step 4 for all four.
+      for (const s of [
+        qotdOnly,
+        qotdAndPractice,
+        practiceOnly,
+        qotdAndDiagnostic,
+      ]) {
+        await pg.query("SELECT public.getting_started_observe($1)", [s]);
+      }
+      const stamps = async (): Promise<
+        Map<string, { blind: string | null; qotd: string | null }>
+      > => {
+        const r = await pg.query<{
+          profile_id: string;
+          blind: string | null;
+          qotd: string | null;
+        }>(
+          `SELECT profile_id, blind_spots_done_at::text AS blind, qotd_done_at::text AS qotd
+             FROM public.student_getting_started_state`,
+        );
+        return new Map(
+          r.rows.map((x) => [x.profile_id, { blind: x.blind, qotd: x.qotd }]),
+        );
+      };
+      const before = await stamps();
+      // Presence first: every row has step 4 latched before the fix.
+      for (const s of [
+        qotdOnly,
+        qotdAndPractice,
+        practiceOnly,
+        qotdAndDiagnostic,
+      ]) {
+        expect(before.get(s)?.blind).not.toBeNull();
+      }
+
+      await applyMigrationsFrom(pg, FIX_MIGRATION);
+      const after = await stamps();
+
+      expect(after.get(qotdOnly)?.blind).toBeNull();
+      for (const s of [qotdAndPractice, practiceOnly, qotdAndDiagnostic]) {
+        expect(after.get(s)?.blind).toBe(before.get(s)?.blind);
+      }
+      // Step 2 is untouched everywhere.
+      for (const s of [
+        qotdOnly,
+        qotdAndPractice,
+        practiceOnly,
+        qotdAndDiagnostic,
+      ]) {
+        expect(after.get(s)?.qotd).toBe(before.get(s)?.qotd);
+      }
+
+      // And the QOTD-only student stays open under the new rule, read as service_role.
+      expect((await observeAsServiceRole(qotdOnly)).blind_spots_done).toBe(
+        false,
+      );
     });
   },
 );

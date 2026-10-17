@@ -216,6 +216,8 @@ export default function CanonicalPracticePage(props: {
   shortened?: boolean;
   engine?: EngineConfig;
   review?: ReviewSessionSpec;
+  /** P0 item 3: the session closed; the page shows its summary instead of navigating away. */
+  onSessionClosed?: () => void;
 }): JSX.Element {
   const engine = props.engine ?? PRACTICE_ENGINE_CONFIG;
   const [, navigate] = useLocation();
@@ -313,6 +315,27 @@ export default function CanonicalPracticePage(props: {
   const splitEnabled = useSplitEnabled();
   const threePanelEnabled = useMinWidth(THREE_PANEL_BREAKPOINT);
   const tutorSideBySide = useMinWidth(TUTOR_SIDE_BY_SIDE_BREAKPOINT);
+
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Phone: after submit,
+   *       scroll the explanation into view"] | @implemented [2026-10-13]
+   * plain English: on the phone layout (below TUTOR_SIDE_BY_SIDE_BREAKPOINT, the stacked one) the
+   * feedback panel with the explanation appears under the choices, usually below the fold, and
+   * nothing moved: the student saw no change after Submit. Once per answered item, when its
+   * feedback first shows, the runner scrolls the panel's top into view, instantly (DESIGN.md §1:
+   * no motion but LISA's typing dots). Side by side nothing moves.
+   */
+  const feedbackScrolledFor = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!showResult || tutorSideBySide || !sessionItemId) return;
+    if (feedbackScrolledFor.current === sessionItemId) return;
+    feedbackScrolledFor.current = sessionItemId;
+    const panel = runnerScrollRef.current?.querySelector<HTMLElement>(
+      '[data-testid="runner-feedback"]',
+    );
+    if (!panel || typeof panel.scrollIntoView !== "function") return;
+    panel.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [showResult, tutorSideBySide, sessionItemId]);
   const panelGroupRef = React.useRef<HTMLDivElement | null>(null);
   const calcPanelRef = React.useRef<ImperativePanelHandle | null>(null);
 
@@ -375,7 +398,23 @@ export default function CanonicalPracticePage(props: {
   // F-53: `/next` found no next item and the server closed the session (after "Done" on the
   // last question, or a skip of it), so the runner leaves for the completion destination,
   // client-side. Not on the last ANSWER: its feedback stays on screen until "Done".
+  //
+  // First-run activation brief (Karl, 2026-10-13) P0 item 3 | @implemented [2026-10-13]: a page
+  // that shows the end-of-session summary passes `onSessionClosed` (it re-reads the session's
+  // state, which is now completed, and draws the summary in place); then the runner does not
+  // leave. Called once per closure (the ref), whatever the caller's function identity.
+  const onSessionClosedRef = React.useRef(props.onSessionClosed);
+  onSessionClosedRef.current = props.onSessionClosed;
+  const closedHandled = React.useRef(false);
   React.useEffect(() => {
+    const onClosed = onSessionClosedRef.current;
+    if (sessionClosed && onClosed !== undefined) {
+      if (!closedHandled.current) {
+        closedHandled.current = true;
+        onClosed();
+      }
+      return;
+    }
     if (sessionClosed) navigate(completionDest);
   }, [sessionClosed, completionDest, navigate]);
 

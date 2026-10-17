@@ -21,6 +21,7 @@ import {
   type ScenarioOptions,
   type FakeClient,
 } from "./calendar.service-harness";
+import type { ActivityDay } from "../../server/services/calendar/adapters/types";
 
 const STUDENT = SCENARIO_STUDENT;
 const TODAY = SCENARIO_TODAY;
@@ -49,9 +50,10 @@ vi.mock("../../server/services/calendar/adapters", () => ({
     engine: "practice" as const,
     create: vi.fn(),
     nextLaunchSize: vi.fn(),
-    progress: vi.fn(async () => null),
-    activityUnits: vi.fn(async (_s: string, localDate: string) =>
-      localDate !== TODAY
+    // SCL-233: both answer for a SET (sessions, days) in one call.
+    progress: vi.fn(async () => new Map()),
+    activityUnits: vi.fn(async (_s: string, days: readonly ActivityDay[]) =>
+      !days.some((day) => day.local_date === TODAY)
         ? []
         : Array.from({ length: answeredUnits }, (_value, index) => ({
             engine: "practice" as const,
