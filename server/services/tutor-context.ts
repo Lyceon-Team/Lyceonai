@@ -369,6 +369,32 @@ export async function resolveScope(
  * expected outcome: QuestionContent | null. Degrades to null on DB error
  * or missing session item (general mode).
  */
+/**
+ * @spec [CC Brief "Video Library (ships now)", Karl 2026-10-15, §6 (retrieval on the item's
+ *       skills)] | @implemented 2026-10-15
+ *
+ * plain English: the item's `skill_codes`, by row id — the video library's only input. A
+ * metadata lookup by ID (this file's servable-questions allowlist entry); no content, no
+ * answer. Throws on a query error (the caller fails open); a missing row or null column is
+ * an empty list.
+ */
+export async function resolveQuestionSkillCodes(
+  questionRowId: string,
+): Promise<string[]> {
+  const { data, error } = await supabaseServer
+    .from("questions")
+    .select("skill_codes")
+    .eq("id", questionRowId)
+    .maybeSingle();
+  if (error) throw error;
+  return (
+    z
+      .object({ skill_codes: z.array(z.string()).nullable() })
+      .nullable()
+      .parse(data)?.skill_codes ?? []
+  );
+}
+
 const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
   "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map";
 const QUESTION_CONTENT_COLUMNS_POST_SUBMIT =

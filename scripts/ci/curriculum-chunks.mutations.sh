@@ -73,9 +73,19 @@ for fn in curriculum_chunks_search curriculum_chunk_upsert; do
   [ "$(last_definer "$fn")" = "$MIG" ] || { bad "RULE 3: $fn is last defined in $(last_definer "$fn"), not $MIG"; exit 1; }
 done
 
-# Every migration but the one under test goes into a template once; each plant clones it and
-# applies only the (planted) migration.
-echo "=== building template (pipeline minus $MIG) ==="
+# Pipeline order is kept: the migrations BEFORE the one under test go into a template once; each
+# plant clones it, applies the (planted) migration, then every migration AFTER it. A later
+# migration that builds on this one's tables (20261104000000_lisa_video_library.sql ALTERs
+# video_resources, created here) fails to apply when it runs first — the template must never hold
+# a migration that sorts after $MIG. (Learned 2026-10-17, #1255: the template applied "every
+# migration but this one", so the video library's ALTER ran before video_resources existed.)
+BEFORE=(); AFTER=()
+for f in supabase/migrations/*.sql; do
+  if [ "$f" = "$MIG" ]; then continue
+  elif [[ "$f" < "$MIG" ]]; then BEFORE+=("$f")
+  else AFTER+=("$f"); fi
+done
+echo "=== building template (the ${#BEFORE[@]} migrations before $MIG; ${#AFTER[@]} after apply per check) ==="
 psql -q -d postgres -c "DROP DATABASE IF EXISTS $DB;" -c "DROP DATABASE IF EXISTS $TEMPLATE;" -c "CREATE DATABASE $TEMPLATE;" >/dev/null
 psql -v ON_ERROR_STOP=1 -q -d "$TEMPLATE" >/dev/null <<'SQL'
 DO $$ BEGIN
@@ -87,15 +97,19 @@ CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb);
 CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $f$ SELECT NULL::uuid $f$;
 SQL
-for f in supabase/migrations/*.sql; do
-  [ "$f" = "$MIG" ] && continue
+for f in "${BEFORE[@]}"; do
   psql -v ON_ERROR_STOP=1 -q -d "$TEMPLATE" -f "$f" >/dev/null 2>&1 || { bad "template: $f failed to apply"; exit 1; }
 done
 
-# check — clone the template, apply the (possibly planted) migration, run the gates.
+# check — clone the template, apply the (possibly planted) migration and the ones after it, run
+# the gates.
 check() {
+  local f
   psql -q -d postgres -c "DROP DATABASE IF EXISTS $DB;" -c "CREATE DATABASE $DB TEMPLATE $TEMPLATE;" >/dev/null
   psql -v ON_ERROR_STOP=1 -q -d "$DB" -f "$MIG" >/dev/null 2>&1 || { echo "MIGRATION FAILED TO APPLY"; return 3; }
+  for f in "${AFTER[@]}"; do
+    psql -v ON_ERROR_STOP=1 -q -d "$DB" -f "$f" >/dev/null 2>&1 || { echo "LATER MIGRATION FAILED TO APPLY: $f"; return 3; }
+  done
   psql -v ON_ERROR_STOP=1 -d "$DB" -f "$GATES" 2>&1
 }
 

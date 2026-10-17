@@ -94,6 +94,11 @@ import {
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import {
+  resolveVideoAction,
+  retrieveOfferedVideos,
+  toWireVideos,
+} from "../services/tutor-video-library";
+import {
   listConversationsQuerySchema,
   type ConversationDetail,
   type ConversationListCursor,
@@ -1771,6 +1776,23 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       }
     }
 
+    // Step 13d (video library, CC brief 2026-10-15 §6): up to three approved videos for the
+    // item's skills, after crisis (13a), the Model Armor input scan (13b) and the crisis-flag
+    // branch (13c). A crisis turn never reaches here; an input-blocked turn never calls the
+    // worker. Fails open: an error logs and the turn proceeds with no videos. The worker gets
+    // index, title, channel and length only — the ids stay here (§7).
+    const offeredVideos =
+      armorInput.kind === "blocked"
+        ? []
+        : await retrieveOfferedVideos(
+            effectiveScope.source_question_row_id,
+            envelope.source_surface,
+            conversation.id,
+          );
+    if (offeredVideos.length > 0) {
+      envelope.offered_videos = toWireVideos(offeredVideos);
+    }
+
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
     // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
@@ -1880,6 +1902,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       armorOutputBlocked,
       // An input-blocked reply is the server-authored substitution.
       isServerAuthored: armorInput.kind === "blocked",
+      // Video library (brief §7): a YouTube link to anything outside this set is redacted.
+      allowedVideoIds: offeredVideos.map((v) => v.video_id),
     };
     const serialized = await serializeTutorOutput(
       tutorResponse,
@@ -2059,7 +2083,15 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
         response: {
           content: safeContent,
           content_kind: orchestration.response.content_kind,
-          suggested_action: orchestration.response.suggested_action,
+          // recommend_video carries an index; the video is attached here, from this
+          // turn's offered set (brief §7). An unknown index becomes no action, and so does
+          // an offer on a reply the serializer substituted (orchestrateTurn already drops one
+          // whose content its anti-leak scan replaced).
+          suggested_action: resolveVideoAction(
+            orchestration.response.suggested_action,
+            offeredVideos,
+            serialized.blocked,
+          ),
           ui_hints: orchestration.response.ui_hints,
         },
         conversation_updated_at: new Date().toISOString(),
