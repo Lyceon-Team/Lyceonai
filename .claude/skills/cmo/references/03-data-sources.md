@@ -73,7 +73,7 @@ The CMO's credibility rests on numbers that mean the same thing every week. This
 
 ## 4. Canonical metrics
 
-Windows are `[t0, now)`. "Internal" means Karl's own and test accounts, listed by profile ID and Stripe customer ID (never by email) in `docs/marketing/cmo/state.md` under "Internal accounts". Every query below must exclude them.
+Windows are `[t0, now)`. "Internal" means Karl's own and test accounts, listed by profile ID and Stripe customer ID (never by email) in the private store (Google Drive folder "CMO reports", file "internal-accounts"); never in the public repo. Every query below must exclude them.
 
 | Metric | Definition | Source |
 |---|---|---|
@@ -97,11 +97,11 @@ Windows are `[t0, now)`. "Internal" means Karl's own and test accounts, listed b
 
 ### Core weekly query (Supabase)
 
-Validated 2026-10-15. Replace the internal-ID list placeholder with the list in `state.md`.
+Validated 2026-10-15. Replace the internal-ID list placeholder with the list from the private store.
 
 ```sql
 with w as (select now() - interval '7 days' as t0),
-internal as (select unnest(array[]::uuid[]) as id),  -- internal profile IDs from state.md
+internal as (select unnest(array[]::uuid[]) as id),  -- internal profile IDs from the private store
 stu as (select id from profiles where role = 'student' and deleted_at is null
         and id not in (select id from internal)),
 act as (
@@ -139,7 +139,7 @@ group by 1 order by 2 desc;
 
 ## 5. Hygiene rules (apply every run, and say you applied them)
 
-1. **Exclude internal accounts** everywhere (profile IDs and Stripe customer IDs in `state.md`). Add newly discovered test accounts to the list and note it in the thread.
+1. **Exclude internal accounts** everywhere (profile IDs and Stripe customer IDs in the private store). Add newly discovered test accounts to that list; note in the thread only that the list changed, never the IDs.
 2. **PostHog referrers to reclassify:**
    - `accounts.google.com` = Google sign-in returning a user. Not a traffic source. Remove from organic search.
    - `lyceon.ai` (self-referral) = an internal navigation or a broken session. Not a traffic source.
@@ -151,13 +151,13 @@ group by 1 order by 2 desc;
 4. **Direct is not a channel.** It's unattributed traffic: DM links, typed URLs, untagged links, apps that strip referrers. Report it, but never as a strategy.
 5. **Redemptions are not revenue.** $0 invoices are redemptions.
 6. **Test sends are not email volume.** Exclude "[TEST]" subjects and internal recipients.
-7. **State what hygiene changed.** E.g. "PostHog reports organic search 31; after removing 13 Google sign-in returns and 1 Bing, real organic search is about 18, most of it branded."
+7. **State what hygiene changed.** E.g. "PostHog's organic-search figure fell by about 40% after removing Google sign-in returns; what remains is mostly branded."
 
 ## 6. Known data issues (as of 2026-10-15)
 
 - **`signup_source` overstates organic search.** It's derived from the landing referrer. The search-engine pattern matches any Google host, including `accounts.google.com`, so a visitor who signs up with Google and hadn't accepted analytics (first-touch kept in memory only) can be recorded as `organic_search`. Needs engineering: exclude the sign-in host from the search pattern. Until fixed, don't trust `organic_search` counts.
 - **`signup_source` is coarse by design.** Only five values (direct, referral, paid_ad, organic_search, unknown); no campaign or source name is stored (privacy by design). It can't tell Reddit from any other referral. Use PostHog UTM breakdowns and the attribution survey for channel detail.
-- **PostHog undercounts.** Consent-based tracking means visitors who refuse or ignore the banner aren't counted. On 2026-10-15, PostHog showed 63 weekly visitors against 49 new student signups, which is implausible as a full count.
+- **PostHog undercounts.** Consent-based tracking means visitors who refuse or ignore the banner aren't counted. On 2026-10-15, PostHog showed fewer weekly visitors than there were new student signups, which is implausible as a full count.
 - **Branded search and direct traffic are Reddit's echo** (see `01` §7).
 - **Resend click tracking state is unclear.** Rulings say click tracking turns on with a privacy policy update, but "clicked" statuses appeared on 2026-10-14. Confirm before using click rates.
 - **Signup source before 2026-10-05 is null** for most accounts (the field didn't exist).
@@ -175,7 +175,7 @@ Small numbers lie. Apply these before calling anything a trend, a winner or a lo
 
 ## 8. Snapshots and trends
 
-- Every weekly report saves its headline numbers to `docs/marketing/cmo/reports/` (and a one-line summary to `state.md`), so trends come from snapshots, not from re-querying history with today's definitions.
+- Every weekly report saves its headline numbers to the private store (Google Drive folder "CMO reports"), so trends come from snapshots, not from re-querying history with today's definitions. Nothing numeric goes in the repo while it is public.
 - If a definition changes, note it in the snapshot and don't compare across the change without saying so.
 
 ## 9. Sources to add, and their gates
