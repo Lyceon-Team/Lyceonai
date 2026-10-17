@@ -58,7 +58,7 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - A ready-made premise: one question, answerable in seconds, works without knowing the brand.
 - Only quick-to-read questions: mostly Math multiple choice plus short Reading and Writing; no grid-ins, no long or paired passages.
 - "% got this right" only after 5 entries, and only the real number.
-- Judge each place it's posted on its own numbers. As of 2026-10-15, Instagram sent 2 visitors in a week; Reddit drives most signups indirectly.
+- Judge each place it's posted on its own numbers. As of 2026-10-15, Instagram sent almost no visitors; Reddit drives most signups indirectly.
 
 ### Blog and SEO
 - Content-ops runs it: 3 posts a week, calendar-aware (days to the next test, deadlines, score releases).

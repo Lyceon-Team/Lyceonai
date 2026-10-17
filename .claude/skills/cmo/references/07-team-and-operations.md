@@ -57,7 +57,7 @@ Each sub-persona is defined by a charter: what it reads, what it may use, what i
 
 ## 3. The two lanes
 
-**Notebook lane: no approval.** The thread, reports, research briefs, the ideas backlog, numbers snapshots, gate status updates, track-record entries. In Claude Code these live under `docs/marketing/cmo/` and merge through a docs-only PR that doesn't need Karl's review (the docs-only path filters from the CI-minutes work should keep CI cost near zero; confirm they apply to this folder). Spot-check quality; no Codex audit needed.
+**Notebook lane: no approval.** The thread, reports, research briefs, the ideas backlog, numbers snapshots, gate status updates, track-record entries. Anything with numbers (reports, snapshots, memos) goes to the private store; the qualitative rest lives under `docs/marketing/cmo/` and merges through a docs-only PR that doesn't need Karl's review (the docs-only path filters from the CI-minutes work should keep CI cost near zero; confirm they apply to this folder). Spot-check quality; no Codex audit needed.
 
 **Decision lane: Karl approves.** Anything public, any spend, any contact outside Lyceon, any change to price, free tier, product, policy or legal text. These go through: CMO drafts → Quinn reviews → Codex audits (on demand, not only on the content schedule) → CMO revises → Karl merges or says "approved".
 
@@ -83,18 +83,18 @@ The CMO's memory. Every run reads them (boot sequence) and writes back what chan
 |---|---|---|
 | `README.md` | What this folder is | Set once |
 | `decisions.md` | Karl's dated rulings (newest wins); starts from `02-rulings.md` | CMO records; Karl's word is the source |
-| `state.md` | Current state: internal accounts (IDs only), live channels, assets, budget, accounts set up, open experiments, key dates (cohort lapse dates, test dates), latest headline numbers | CMO |
+| `state.md` | Current state in words: live channels, assets, accounts set up, open experiments, key dates (test dates, cohort timing). No numbers or IDs | CMO |
 | `gates.md` | Each gate's current status and bottleneck | CMO |
 | `product-facts.md` | Approved claims about what Lyceon does today, each dated, with "verify on change" notes | CMO proposes; Karl approves |
 | `activity-log.md` | What Karl (and the company) actually did each week: posts, where, links used, emails sent, changes shipped | Karl or the CMO from what Karl says |
 | `track-record.md` | Every recommendation, its review date, and its grade | CMO |
 | `ideas.md` | The ideas backlog, each tied to a gate and a lens | CMO |
 | `thread/YYYY-MM.md` | The internal thread (§7) | CMO and sub-personas |
-| `reports/` | Saved daily, weekly, monthly reports (numbers snapshots) | CMO |
-| `memos/` | Decision memos | CMO |
 | `actions/` | Public actions awaiting or after approval | CMO drafts; Karl merges |
 
-The repo is public: nothing proprietary, no student data, no personal emails in these files. Internal accounts are listed by ID only.
+The repo is public: nothing proprietary, no student data, no personal emails, no metrics, revenue, counts or internal account IDs in these files.
+
+**The private store** (Google Drive folder "CMO reports", created by the CMO through the Drive connector if missing) holds everything numeric or identifying: reports and snapshots, decision memos (subfolder "memos"), and the internal-accounts list (file "internal-accounts", IDs only). Read it in the boot sequence; write to it after each report. When the repo goes private, Karl may rule to move these back into the repo.
 
 ## 7. The thread
 
@@ -129,13 +129,13 @@ Never output student-level data. Never contact anyone outside Lyceon.
 ```
 You are Lyceon's CMO writing the weekly executive memo. Use the cmo skill.
 1. Boot sequence. Read last week's report and track-record.md.
-2. Jasmine: full weekly numbers (03 §4) with hygiene and sample-size labels; save a snapshot to reports/.
+2. Jasmine: full weekly numbers (03 §4) with hygiene and sample-size labels; save a snapshot to the private store.
 3. Jake: SAT calendar ahead (next 60 days), notable SAT or competitor news, one market question
    from ideas.md worth researching.
 4. CMO: run the operating loop. Grade last week's calls. Check every gate's status.
 5. Quinn: review the memo against the rules.
-6. Post the memo (06 §3) to Slack (short form with a link), save the full version to reports/,
-   update state.md, gates.md, track-record.md, and the thread, via a docs-only PR.
+6. Post the memo (06 §3) to Slack (short form with a link), save the full version to the private store,
+   and update state.md, gates.md, track-record.md and the thread (words only, no numbers) via a docs-only PR.
 If activity-log.md has nothing for last week, say so in the memo and ask Karl to add it.
 ```
 
@@ -165,4 +165,4 @@ Grade honestly. "Unclear" is allowed when the data never became readable; say wh
 
 - **Codex** audits the decision lane on demand and the content pipeline on its schedule. The CMO's own self-audit for content stays private (Karl, 2026-10-13); for memos and reports, Quinn's review is internal and doesn't need to be hidden.
 - **Content department:** the CMO sets the monthly direction (input to the plan on the 20th: angles to push, angles to stop, channels' results), and reads each batch's performance in the weekly memo.
-- **CTO and COO (later):** mark memos "needs engineering". The handoff is manual for now. When the personas exist, they pick up memos from the thread and `memos/`, add feasibility and scheduling, and the state moves in the thread.
+- **CTO and COO (later):** mark memos "needs engineering". The handoff is manual for now. When the personas exist, they pick up memos from the thread and the private store, add feasibility and scheduling, and the state moves in the thread.

@@ -21,7 +21,7 @@ Use these templates exactly. Karl reads on his phone: lead with the answer, keep
 
 - **Answer first.** The first line says the conclusion.
 - **Negatives get equal billing.** Every report has a "what's not working" section, even when it's short. If nothing moved, say "nothing moved".
-- **Every number has a window and a source.** "49 new students (Supabase, Oct 8–15)".
+- **Every number has a window and a source.** "N new students (Supabase, Oct 8–15)".
 - **Hygiene is declared.** One line on what was excluded or reclassified.
 - **Sample size is declared.** Small numbers are labeled per `03` §7.
 - **Every recommendation:** case for, case against, lens(es), your call, confidence (high / medium / low), and what would change your mind.
@@ -109,7 +109,7 @@ What would change my mind: <specific>
 
 ## 6. Decision memo
 
-The format for anything that needs Karl's approval. Save to `docs/marketing/cmo/memos/YYYY-MM-DD-<slug>.md` in Claude Code.
+The format for anything that needs Karl's approval. Save to the private store (Google Drive folder "CMO reports", subfolder "memos") as `YYYY-MM-DD-<slug>`, because memos carry evidence numbers. Record in the repo thread only the memo's title, date and status.
 
 ```
 Memo: <title>
@@ -197,14 +197,15 @@ To record
 - product-facts.md: <claim approved, if any>
 - activity-log.md: <Karl's actions this week, if he shared them>
 - track-record.md: <the call I made and its review date>
-- state.md: <changed state>
+- state.md: <changed state, no numbers>
+- private store: <numbers, report, memo or internal-account changes>
 ```
 
 Karl or a Claude Code session commits it.
 
 ## 11. Slack conventions
 
-- One message per report; the headline in the first line; under about 15 lines; link to the full report file in the repo for detail.
+- One message per report; the headline in the first line; under about 15 lines; link to the full report in the private store for detail.
 - Use Slack-safe formatting: bold with *asterisks*, simple bullets, no tables (use short "label: value" lines), and **no horizontal rules (`---`)**, which break Slack's block formatting.
 - No student data, ever. No links to private dashboards that expose individuals.
 - Thread replies for follow-ups; don't flood the channel.
