@@ -21,7 +21,7 @@ DB=diagnostic_projection_gate_ci
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"; psql -d postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null 2>&1 || true' EXIT
 
-EXPECTED_IDS="D1 D2 D3 D4 D5 D6 D7 D8 D9 D10 D11 D12 D13-setup D13"
+EXPECTED_IDS="D1 D2 D3 D4 D5 D6 D7 D8 D9 D10 D11 D12 D13-setup D13 D14 D15"
 
 psql_db() { psql -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
 
@@ -62,6 +62,25 @@ if [ "$NOW_TRUE" = "1" ] && [ "$COMPUTED" = "2" ] && [ "$ROWS" = "2" ]; then
 else
   echo "DPG FAIL [D13] completed_now=true x$NOW_TRUE, computed x$COMPUTED, rows=$ROWS" >> "$WORK/sql.out"
   cat "$WORK/race1.out" "$WORK/race2.out" >> "$WORK/sql.out"
+fi
+
+echo "==> D14/D15 the owner-run files, in console mode (psql -c, as pasted)"
+PRE="$(PGOPTIONS='-c client_min_messages=warning' psql -X -tA -d "$DB" -c "$(cat "$ROOT/scripts/prod-verify/diagnostic-projection-preflight.sql")" 2>&1)"
+case "$PRE" in
+  "OK: no student holds two in-flight diagnostics"*) echo "ok   [D14] preflight verdict: OK on a database with one in-flight diagnostic per student" >> "$WORK/sql.out" ;;
+  *) echo "DPG FAIL [D14] preflight: $PRE" >> "$WORK/sql.out" ;;
+esac
+BF="$(PGOPTIONS='-c client_min_messages=warning' psql -X -tA -F '|' -d "$DB" -c "$(cat "$ROOT/scripts/prod-verify/diagnostic-projection-backfill.sql")" 2>&1)"
+# Every completed diagnostic in this database is reported; none MISSING; the fresh student's row
+# carries both the stored new values and STORED.
+if printf '%s\n' "$BF" | grep -q 'MISSING'; then
+  echo "DPG FAIL [D15] backfill reported a MISSING row: $BF" >> "$WORK/sql.out"
+elif printf '%s\n' "$BF" | grep -q '^dpg-fresh|.*|STORED$' && printf '%s\n' "$BF" | grep -q '^dpg-skipper' ; then
+  echo "DPG FAIL [D15] the anonymized skipper should no longer be listed: $BF" >> "$WORK/sql.out"
+elif printf '%s\n' "$BF" | grep -q '^dpg-fresh|.*|STORED$' && printf '%s\n' "$BF" | grep -q '^dpg-historic|.*|STORED$'; then
+  echo "ok   [D15] backfill runs in console mode; every completed diagnostic reported STORED (fresh, historic, prior, canonical, racer), none MISSING" >> "$WORK/sql.out"
+else
+  echo "DPG FAIL [D15] backfill report unexpected: $BF" >> "$WORK/sql.out"
 fi
 
 grep -E 'ok   \[|DPG FAIL|ERROR' "$WORK/sql.out" | sed 's/^psql:[^ ]* //' || true

@@ -63,6 +63,8 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
         filters[col] = val;
         return chain;
       },
+      // updateSessionLifecycle narrows its update to in-flight rows (SCL-236 guard).
+      in: () => chain,
       single: async () => result(),
       maybeSingle: async () => result(),
       then: (resolve: (v: { data: null; error: null }) => unknown) => {

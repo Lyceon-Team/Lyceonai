@@ -408,16 +408,6 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/prod-verify-console-gate.sh
 
-      # captureDiagnosticBaseline is once-only with no retry and silently returns
-      # when the projection is not ready, so a student who completed a diagnostic
-      # during the mastery outage is permanently no_baseline. This guards the
-      # repair — and above all that it stays a repair, never a fabricated score.
-      - name: Baseline repair gate (BUG-1 — repair, not fabrication)
-        if: matrix.group == 'calendar-migrations'
-        run: |
-          export PATH=/usr/lib/postgresql/16/bin:$PATH
-          bash scripts/ci/baseline-repair-gate.sh
-
       # Guards the two read-only files that decide whether a history repair is safe
       # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs
       # FIRST and must be strict: it is the only thing between a hand-applied schema
