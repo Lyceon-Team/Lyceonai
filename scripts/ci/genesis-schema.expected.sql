@@ -4805,6 +4805,263 @@ $$;
 
 
 --
+-- Name: complete_diagnostic_session(uuid, timestamp with time zone, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.complete_diagnostic_session(p_session_id uuid, p_now timestamp with time zone, p_filters jsonb DEFAULT NULL::jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_student        uuid;
+  v_mode           text;
+  v_status         text;
+  v_completed_now  boolean := false;
+  v_stored         integer;
+  v_projection     text;
+BEGIN
+  IF p_session_id IS NULL OR p_now IS NULL THEN
+    RAISE EXCEPTION 'DIAGNOSTIC_COMPLETE_INVALID_ARGS';
+  END IF;
+
+  -- Serialize every completer of this session (answer, skip, next, replay, race).
+  SELECT ps.user_id, ps.mode, ps.status
+  INTO   v_student, v_mode, v_status
+  FROM   public.practice_sessions ps
+  WHERE  ps.id = p_session_id
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'DIAGNOSTIC_COMPLETE_SESSION_NOT_FOUND: %', p_session_id;
+  END IF;
+  IF v_mode IS DISTINCT FROM 'diagnostic' THEN
+    RAISE EXCEPTION 'DIAGNOSTIC_COMPLETE_NOT_DIAGNOSTIC: session % has mode %', p_session_id, v_mode;
+  END IF;
+
+  IF v_status = 'abandoned' THEN
+    -- A terminated diagnostic is not spent (ruling Q1) and is never completed behind its back.
+    RETURN jsonb_build_object('state', 'abandoned', 'completed_now', false, 'projection', NULL);
+  END IF;
+
+  IF v_status IN ('created', 'active') THEN
+    BEGIN
+      UPDATE public.practice_sessions
+         SET status           = 'completed',
+             completed_at     = p_now,
+             updated_at       = p_now,
+             last_activity_at = p_now,
+             filters          = COALESCE(p_filters, filters)
+       WHERE id = p_session_id;
+    EXCEPTION WHEN unique_violation THEN
+      -- practice_sessions_one_completed_diagnostic_uq: the student already completed another
+      -- diagnostic. This one stays in flight; nothing is stored for it.
+      RETURN jsonb_build_object('state', 'conflict_other_completed', 'completed_now', false,
+                                'projection', NULL);
+    END;
+    v_completed_now := true;
+  END IF;
+  -- v_status = 'completed' (or just became so): completed_at is never rewritten.
+
+  -- The stored projection. Its own subtransaction: a raise here (e.g. MASTERY_HISTORICAL_DATA_
+  -- INVALID on a corrupt item) must not undo the completion and strand the student at 40 of 40;
+  -- the session stays completed, 'failed' is returned, and diagnostic_projection_repair retries.
+  BEGIN
+    INSERT INTO public.student_diagnostic_projections
+    SELECT * FROM public.compute_diagnostic_projection(p_session_id)
+    ON CONFLICT (practice_session_id, section) DO NOTHING;
+    GET DIAGNOSTICS v_stored = ROW_COUNT;
+
+    SELECT CASE WHEN bool_and(sdp.status = 'computed') THEN 'computed' ELSE 'insufficient_evidence' END
+    INTO   v_projection
+    FROM   public.student_diagnostic_projections sdp
+    WHERE  sdp.practice_session_id = p_session_id;
+  EXCEPTION WHEN OTHERS THEN
+    v_stored := 0;
+    v_projection := 'failed';
+    RAISE WARNING 'complete_diagnostic_session: projection for session % failed (%)', p_session_id, SQLSTATE;
+  END;
+
+  -- D2: the transition is a projection refresh boundary (Doc 05C §12) for the LIVE projection.
+  -- Best-effort for the same reason; the throttle and the outbox refresh it again later.
+  IF v_completed_now THEN
+    BEGIN
+      PERFORM public.compute_section_projection(v_student, 'M',  p_now);
+      PERFORM public.compute_section_projection(v_student, 'RW', p_now);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'complete_diagnostic_session: live refresh for session % failed (%)', p_session_id, SQLSTATE;
+    END;
+  END IF;
+
+  RETURN jsonb_build_object('state', 'completed', 'completed_now', v_completed_now,
+                            'projection', v_projection, 'rows_stored', v_stored);
+END;
+$$;
+
+
+--
+-- Name: student_diagnostic_projections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_diagnostic_projections (
+    practice_session_id uuid NOT NULL,
+    section text NOT NULL,
+    student_id uuid NOT NULL,
+    status text NOT NULL,
+    projected_score_mid integer,
+    projected_score_low integer,
+    projected_score_high integer,
+    range_width integer,
+    relevant_question_count integer,
+    mastery_term numeric(8,4),
+    answered_count integer NOT NULL,
+    domain_mastery jsonb NOT NULL,
+    mastery_constants_hash text NOT NULL,
+    projection_constants_hash text NOT NULL,
+    mastery_model_version text NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT sdp_status_matches_scores CHECK ((((status = 'computed'::text) AND (projected_score_mid IS NOT NULL) AND (projected_score_low IS NOT NULL) AND (projected_score_high IS NOT NULL) AND (range_width IS NOT NULL)) OR ((status = 'insufficient_evidence'::text) AND (projected_score_mid IS NULL) AND (projected_score_low IS NULL) AND (projected_score_high IS NULL) AND (range_width IS NULL)))),
+    CONSTRAINT student_diagnostic_projections_answered_count_check CHECK ((answered_count >= 0)),
+    CONSTRAINT student_diagnostic_projections_projected_score_high_check CHECK (((projected_score_high IS NULL) OR ((projected_score_high >= 200) AND (projected_score_high <= 800)))),
+    CONSTRAINT student_diagnostic_projections_projected_score_low_check CHECK (((projected_score_low IS NULL) OR ((projected_score_low >= 200) AND (projected_score_low <= 800)))),
+    CONSTRAINT student_diagnostic_projections_projected_score_mid_check CHECK (((projected_score_mid IS NULL) OR ((projected_score_mid >= 200) AND (projected_score_mid <= 800)))),
+    CONSTRAINT student_diagnostic_projections_range_width_check CHECK (((range_width IS NULL) OR (range_width >= 0))),
+    CONSTRAINT student_diagnostic_projections_relevant_question_count_check CHECK (((relevant_question_count IS NULL) OR (relevant_question_count >= 0))),
+    CONSTRAINT student_diagnostic_projections_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text]))),
+    CONSTRAINT student_diagnostic_projections_status_check CHECK ((status = ANY (ARRAY['computed'::text, 'insufficient_evidence'::text])))
+);
+
+
+--
+-- Name: TABLE student_diagnostic_projections; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.student_diagnostic_projections IS 'SCL-236: the diagnostic projection. One write-once row per (completed diagnostic session, section), computed from that session''s answered items only. Written only by complete_diagnostic_session / diagnostic_projection_repair. The diagnostic_baseline snapshots it replaces stay as audit history and are read by nothing.';
+
+
+--
+-- Name: compute_diagnostic_projection(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compute_diagnostic_projection(p_session_id uuid) RETURNS SETOF public.student_diagnostic_projections
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_student         uuid;
+  v_mode            text;
+  v_status          text;
+  v_constants       jsonb;
+  v_dm_section      text[]    := '{}';
+  v_dm_domain       text[]    := '{}';
+  v_dm_event_count  integer[] := '{}';
+  v_dm_score        numeric[] := '{}';
+  v_pair            record;
+  v_mastery         record;
+  v_pc              record;
+  v_core            record;
+  v_min_events      integer;
+  v_mastery_hash    text;
+  v_projection_hash text;
+  v_section         text;
+  v_answered        integer;
+  v_row             public.student_diagnostic_projections;
+BEGIN
+  SELECT ps.user_id, ps.mode, ps.status
+  INTO   v_student, v_mode, v_status
+  FROM   public.practice_sessions ps
+  WHERE  ps.id = p_session_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'DIAGNOSTIC_PROJECTION_SESSION_NOT_FOUND: %', p_session_id;
+  END IF;
+  IF v_mode IS DISTINCT FROM 'diagnostic' THEN
+    RAISE EXCEPTION 'DIAGNOSTIC_PROJECTION_NOT_DIAGNOSTIC: session % has mode %', p_session_id, v_mode;
+  END IF;
+  IF v_status IS DISTINCT FROM 'completed' THEN
+    RAISE EXCEPTION 'DIAGNOSTIC_PROJECTION_NOT_COMPLETED: session % is %', p_session_id, v_status;
+  END IF;
+  IF v_student IS NULL THEN
+    RAISE EXCEPTION 'DIAGNOSTIC_PROJECTION_NO_STUDENT: session % has no user_id', p_session_id;
+  END IF;
+
+  -- Doc 05A per-domain mastery over THIS session's answered items only. The events come from the
+  -- canonical derivation, restricted to the session's item ids, so their shape (section, domain,
+  -- difficulty, correct, occurred_at, source_family) is exactly what live mastery sees.
+  v_constants := public.canonicalize_mastery_constants();
+  FOR v_pair IN
+    SELECT DISTINCT pi.question_section AS section, pi.question_domain AS domain
+    FROM   public.practice_session_items pi
+    WHERE  pi.session_id = p_session_id
+      AND  pi.status     = 'answered'
+    ORDER BY 1, 2
+  LOOP
+    SELECT * INTO v_mastery
+    FROM public.compute_mastery_core(
+      ARRAY(
+        SELECT ROW(ce.*)::public.mastery_event
+        FROM   public.canonical_mastery_events(v_student, 'domain', v_pair.section, v_pair.domain, NULL) ce
+        JOIN   public.practice_session_items pi ON pi.id = ce.event_id
+        WHERE  pi.session_id = p_session_id
+          AND  pi.status     = 'answered'
+      ),
+      v_constants
+    );
+    v_dm_section     := v_dm_section     || v_pair.section;
+    v_dm_domain      := v_dm_domain      || v_pair.domain;
+    v_dm_event_count := v_dm_event_count || v_mastery.total_events;
+    v_dm_score       := v_dm_score       || v_mastery.mastery_score;
+  END LOOP;
+
+  SELECT * INTO v_pc FROM public.read_projection_constants();
+  v_min_events := public.mastery_min_events();
+  v_mastery_hash := encode(extensions.digest(public.canonicalize_mastery_constants_serialized(), 'sha256'), 'hex');
+  v_projection_hash := encode(
+      extensions.digest(convert_to(public.canonicalize_projection_constants_serialized(), 'UTF8'), 'sha256'),
+      'hex');
+
+  FOR v_section IN SELECT unnest(ARRAY['M', 'RW']) LOOP
+    SELECT count(*)::integer INTO v_answered
+    FROM   public.practice_session_items pi
+    WHERE  pi.session_id       = p_session_id
+      AND  pi.status           = 'answered'
+      AND  pi.question_section = v_section;
+
+    -- Doc 05C §6 (gate, mastery term, blend, range): State A, the session's own evidence count.
+    SELECT * INTO v_core
+    FROM public.projection_core(
+        v_student, v_section,
+        v_dm_section, v_dm_domain, v_dm_event_count, v_dm_score,
+        v_min_events,
+        NULL, NULL, v_answered,
+        v_pc.target_qcount, v_pc.min_delta, v_pc.max_delta,
+        v_pc.mid_round, v_pc.bound_round, v_pc.section_max, v_pc.section_min, v_pc.weights
+    );
+
+    v_row.practice_session_id       := p_session_id;
+    v_row.section                   := v_section;
+    v_row.student_id                := v_student;
+    v_row.status                    := CASE WHEN v_core.projected_score_mid IS NULL
+                                            THEN 'insufficient_evidence' ELSE 'computed' END;
+    v_row.projected_score_mid       := v_core.projected_score_mid;
+    v_row.projected_score_low       := v_core.projected_score_low;
+    v_row.projected_score_high      := v_core.projected_score_high;
+    v_row.range_width               := v_core.range_width;
+    v_row.relevant_question_count   := v_core.relevant_question_count;
+    v_row.mastery_term              := v_core.mastery_term;
+    v_row.answered_count            := v_answered;
+    v_row.domain_mastery            := COALESCE((
+        SELECT jsonb_object_agg(d.domain, jsonb_build_object('mastery_score', d.score, 'events', d.events))
+        FROM   unnest(v_dm_section, v_dm_domain, v_dm_score, v_dm_event_count) AS d(section, domain, score, events)
+        WHERE  d.section = v_section), '{}'::jsonb);
+    v_row.mastery_constants_hash    := v_mastery_hash;
+    v_row.projection_constants_hash := v_projection_hash;
+    v_row.mastery_model_version     := public.mastery_model_version();
+    v_row.computed_at               := now();
+    RETURN NEXT v_row;
+  END LOOP;
+END;
+$$;
+
+
+--
 -- Name: compute_longest_streak_days(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5880,6 +6137,49 @@ CREATE FUNCTION public.deletion_evidence_retention_months() RETURNS integer
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT 24;
+$$;
+
+
+--
+-- Name: diagnostic_projection_repair(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.diagnostic_projection_repair(p_limit integer DEFAULT 500) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_session   uuid;
+  v_examined  integer := 0;
+  v_stored    integer := 0;
+  v_failed    integer := 0;
+  v_n         integer;
+BEGIN
+  FOR v_session IN
+    SELECT ps.id
+    FROM   public.practice_sessions ps
+    WHERE  ps.mode    = 'diagnostic'
+      AND  ps.status  = 'completed'
+      AND  ps.user_id IS NOT NULL
+      AND  NOT EXISTS (SELECT 1 FROM public.student_diagnostic_projections sdp
+                       WHERE sdp.practice_session_id = ps.id)
+    ORDER BY ps.completed_at NULLS LAST, ps.id
+    LIMIT  GREATEST(COALESCE(p_limit, 0), 0)
+  LOOP
+    v_examined := v_examined + 1;
+    BEGIN
+      INSERT INTO public.student_diagnostic_projections
+      SELECT * FROM public.compute_diagnostic_projection(v_session)
+      ON CONFLICT (practice_session_id, section) DO NOTHING;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_stored := v_stored + v_n;
+    EXCEPTION WHEN OTHERS THEN
+      v_failed := v_failed + 1;
+      RAISE WARNING 'diagnostic_projection_repair: session % failed (%)', v_session, SQLSTATE;
+    END;
+  END LOOP;
+  RETURN jsonb_build_object('examined', v_examined, 'rows_stored', v_stored, 'failed', v_failed);
+END;
 $$;
 
 
@@ -8200,6 +8500,14 @@ BEGIN
   DELETE FROM public.legal_acceptance_outbox WHERE user_id = p_profile_id;
   GET DIAGNOSTICS v_count = ROW_COUNT;
   v_result := v_result || jsonb_build_object('legal_acceptance_outbox', v_count);
+
+  -- L1-14. student_diagnostic_projections (SCL-236). Derived state: computed from the diagnostic
+  -- session's answers and recomputable from retained activity, so DELETED in both modes like every
+  -- other L1 projection table. (hard_delete would also reach it through practice_sessions ON DELETE
+  -- CASCADE; anonymize keeps the session, so this line is what removes it there.)
+  DELETE FROM public.student_diagnostic_projections WHERE student_id = p_profile_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  v_result := v_result || jsonb_build_object('student_diagnostic_projections', v_count);
 
   -- ========================================================================
   -- MODE BRANCH: hard_delete vs anonymize diverge at L2
@@ -13707,6 +14015,20 @@ $$;
 
 
 --
+-- Name: student_diagnostic_projections_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.student_diagnostic_projections_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'DIAGNOSTIC_PROJECTION_IMMUTABLE: a stored diagnostic projection is never updated (session %, section %)',
+    OLD.practice_session_id, OLD.section;
+END;
+$$;
+
+
+--
 -- Name: student_diagnostic_state(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -17707,37 +18029,6 @@ COMMENT ON TABLE public.student_background IS 'SCL-195. Optional, student-suppli
 
 
 --
--- Name: student_section_projection_snapshots; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.student_section_projection_snapshots (
-    snapshot_id bigint NOT NULL,
-    student_id uuid NOT NULL,
-    section text NOT NULL,
-    projected_score_mid integer,
-    projected_score_low integer,
-    projected_score_high integer,
-    range_width integer,
-    relevant_question_count integer,
-    mastery_term numeric(8,4),
-    fl1_score integer,
-    fl2_score integer,
-    fl_count_used smallint DEFAULT 0 NOT NULL,
-    blend_denominator smallint DEFAULT 1 NOT NULL,
-    projection_constants_hash text,
-    mastery_model_version text DEFAULT 'v1.0'::text NOT NULL,
-    snapshot_at timestamp with time zone DEFAULT now() NOT NULL,
-    refreshed_at_t_now timestamp with time zone DEFAULT now() NOT NULL,
-    snapshot_kind text DEFAULT 'periodic'::text NOT NULL,
-    CONSTRAINT snapshot_kind_valid CHECK ((snapshot_kind = ANY (ARRAY['periodic'::text, 'diagnostic_baseline'::text]))),
-    CONSTRAINT student_section_projection_snapshots_projected_score_high_check CHECK (((projected_score_high IS NULL) OR ((projected_score_high >= 200) AND (projected_score_high <= 800)))),
-    CONSTRAINT student_section_projection_snapshots_projected_score_low_check CHECK (((projected_score_low IS NULL) OR ((projected_score_low >= 200) AND (projected_score_low <= 800)))),
-    CONSTRAINT student_section_projection_snapshots_projected_score_mid_check CHECK (((projected_score_mid IS NULL) OR ((projected_score_mid >= 200) AND (projected_score_mid <= 800)))),
-    CONSTRAINT student_section_projection_snapshots_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
-);
-
-
---
 -- Name: student_diagnostic_states; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -17752,16 +18043,17 @@ CREATE VIEW public.student_diagnostic_states AS
           WHERE ((ps.mode = 'diagnostic'::text) AND (ps.user_id IS NOT NULL))
           GROUP BY ps.user_id
         ), baseline AS (
-         SELECT sn.student_id,
-            count(DISTINCT sn.section) FILTER (WHERE (sn.projected_score_mid IS NOT NULL)) AS scored_sections,
-            min(sn.snapshot_at) AS baseline_captured_at
-           FROM public.student_section_projection_snapshots sn
-          WHERE (sn.snapshot_kind = 'diagnostic_baseline'::text)
-          GROUP BY sn.student_id
+         SELECT sdp.student_id,
+            count(DISTINCT sdp.section) AS stored_sections,
+            count(DISTINCT sdp.section) FILTER (WHERE (sdp.status = 'computed'::text)) AS scored_sections,
+            min(sdp.computed_at) AS baseline_captured_at
+           FROM (public.student_diagnostic_projections sdp
+             JOIN public.practice_sessions ps ON (((ps.id = sdp.practice_session_id) AND (ps.status = 'completed'::text))))
+          GROUP BY sdp.student_id
         )
  SELECT d.student_id,
         CASE
-            WHEN ((d.completed_count > 0) AND (COALESCE(b.scored_sections, (0)::bigint) >= 2)) THEN 'baseline_ready'::text
+            WHEN ((d.completed_count > 0) AND (COALESCE(b.stored_sections, (0)::bigint) >= 2)) THEN 'baseline_ready'::text
             WHEN (d.completed_count > 0) THEN 'baseline_pending'::text
             WHEN (d.in_flight_count > 0) THEN 'in_progress'::text
             ELSE 'not_taken'::text
@@ -17780,7 +18072,7 @@ CREATE VIEW public.student_diagnostic_states AS
 -- Name: VIEW student_diagnostic_states; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON VIEW public.student_diagnostic_states IS 'One row per student with any diagnostic session. state is the single canonical answer to "where is this student in the diagnostic lifecycle": not_taken | in_progress | baseline_pending | baseline_ready. Precedence matches resolveDiagnosticStartDecision — completed is checked first and is terminal.';
+COMMENT ON VIEW public.student_diagnostic_states IS 'One row per student with any diagnostic session. state is the single canonical answer to "where is this student in the diagnostic lifecycle": not_taken | in_progress | baseline_pending | baseline_ready. baseline_ready = the stored diagnostic projection (SCL-236) exists for the completed session, both sections, computed or insufficient_evidence. Precedence matches resolveDiagnosticStartDecision — completed is checked first and is terminal.';
 
 
 --
@@ -17924,6 +18216,37 @@ CREATE TABLE public.student_qotd_email_prefs (
 --
 
 COMMENT ON TABLE public.student_qotd_email_prefs IS 'Home QOTD: the email prompt''s server-side state (asks, last asked/decided, never-ask) and the daily email''s sunset pause (paused_at, run_since). Whether the email is ON lives in notification_channel_preferences. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: student_section_projection_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.student_section_projection_snapshots (
+    snapshot_id bigint NOT NULL,
+    student_id uuid NOT NULL,
+    section text NOT NULL,
+    projected_score_mid integer,
+    projected_score_low integer,
+    projected_score_high integer,
+    range_width integer,
+    relevant_question_count integer,
+    mastery_term numeric(8,4),
+    fl1_score integer,
+    fl2_score integer,
+    fl_count_used smallint DEFAULT 0 NOT NULL,
+    blend_denominator smallint DEFAULT 1 NOT NULL,
+    projection_constants_hash text,
+    mastery_model_version text DEFAULT 'v1.0'::text NOT NULL,
+    snapshot_at timestamp with time zone DEFAULT now() NOT NULL,
+    refreshed_at_t_now timestamp with time zone DEFAULT now() NOT NULL,
+    snapshot_kind text DEFAULT 'periodic'::text NOT NULL,
+    CONSTRAINT snapshot_kind_valid CHECK ((snapshot_kind = ANY (ARRAY['periodic'::text, 'diagnostic_baseline'::text]))),
+    CONSTRAINT student_section_projection_snapshots_projected_score_high_check CHECK (((projected_score_high IS NULL) OR ((projected_score_high >= 200) AND (projected_score_high <= 800)))),
+    CONSTRAINT student_section_projection_snapshots_projected_score_low_check CHECK (((projected_score_low IS NULL) OR ((projected_score_low >= 200) AND (projected_score_low <= 800)))),
+    CONSTRAINT student_section_projection_snapshots_projected_score_mid_check CHECK (((projected_score_mid IS NULL) OR ((projected_score_mid >= 200) AND (projected_score_mid <= 800)))),
+    CONSTRAINT student_section_projection_snapshots_section_check CHECK ((section = ANY (ARRAY['M'::text, 'RW'::text])))
+);
 
 
 --
@@ -19568,6 +19891,14 @@ ALTER TABLE ONLY public.student_background
 
 
 --
+-- Name: student_diagnostic_projections student_diagnostic_projections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_diagnostic_projections
+    ADD CONSTRAINT student_diagnostic_projections_pkey PRIMARY KEY (practice_session_id, section);
+
+
+--
 -- Name: student_domain_kpi student_domain_kpi_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20539,6 +20870,13 @@ CREATE INDEX idx_score_runs_student ON public.score_runs USING btree (student_id
 
 
 --
+-- Name: idx_student_diagnostic_projections_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_student_diagnostic_projections_student ON public.student_diagnostic_projections USING btree (student_id);
+
+
+--
 -- Name: idx_student_domain_kpi_student; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -20938,6 +21276,13 @@ COMMENT ON INDEX public.practice_sessions_one_completed_diagnostic_uq IS 'Owner 
 
 
 --
+-- Name: practice_sessions_one_inflight_diagnostic_uq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX practice_sessions_one_inflight_diagnostic_uq ON public.practice_sessions USING btree (user_id) WHERE ((mode = 'diagnostic'::text) AND (status = ANY (ARRAY['created'::text, 'active'::text])));
+
+
+--
 -- Name: profiles_student_link_code_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -21292,6 +21637,13 @@ CREATE TRIGGER review_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE O
 --
 
 CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.review_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: student_diagnostic_projections student_diagnostic_projections_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER student_diagnostic_projections_no_update BEFORE UPDATE ON public.student_diagnostic_projections FOR EACH ROW EXECUTE FUNCTION public.student_diagnostic_projections_immutable();
 
 
 --
@@ -22361,6 +22713,14 @@ ALTER TABLE ONLY public.student_background
 
 ALTER TABLE ONLY public.student_background
     ADD CONSTRAINT student_background_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: student_diagnostic_projections student_diagnostic_projections_practice_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.student_diagnostic_projections
+    ADD CONSTRAINT student_diagnostic_projections_practice_session_id_fkey FOREIGN KEY (practice_session_id) REFERENCES public.practice_sessions(id) ON DELETE CASCADE;
 
 
 --
@@ -23651,6 +24011,12 @@ ALTER TABLE public.stripe_webhook_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_background ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: student_diagnostic_projections; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.student_diagnostic_projections ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: student_domain_kpi; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -24755,6 +25121,29 @@ GRANT ALL ON FUNCTION public.complete_deletion_log(p_completions text) TO servic
 
 
 --
+-- Name: FUNCTION complete_diagnostic_session(p_session_id uuid, p_now timestamp with time zone, p_filters jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.complete_diagnostic_session(p_session_id uuid, p_now timestamp with time zone, p_filters jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.complete_diagnostic_session(p_session_id uuid, p_now timestamp with time zone, p_filters jsonb) TO service_role;
+
+
+--
+-- Name: TABLE student_diagnostic_projections; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.student_diagnostic_projections TO service_role;
+
+
+--
+-- Name: FUNCTION compute_diagnostic_projection(p_session_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.compute_diagnostic_projection(p_session_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.compute_diagnostic_projection(p_session_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION compute_longest_streak_days(p_student_id uuid, p_t_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -24909,6 +25298,14 @@ GRANT ALL ON FUNCTION public.defer_notification_send(p_message_id uuid, p_not_be
 
 REVOKE ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.deidentify_user(target_user_id uuid, deleted_email text) TO service_role;
+
+
+--
+-- Name: FUNCTION diagnostic_projection_repair(p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.diagnostic_projection_repair(p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.diagnostic_projection_repair(p_limit integer) TO service_role;
 
 
 --
@@ -28183,13 +28580,6 @@ GRANT ALL ON TABLE public.student_background TO service_role;
 
 
 --
--- Name: TABLE student_section_projection_snapshots; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.student_section_projection_snapshots TO service_role;
-
-
---
 -- Name: TABLE student_diagnostic_states; Type: ACL; Schema: public; Owner: -
 --
 
@@ -28243,6 +28633,13 @@ GRANT SELECT,INSERT ON TABLE public.student_qotd_attempts TO service_role;
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.student_qotd_email_prefs TO service_role;
+
+
+--
+-- Name: TABLE student_section_projection_snapshots; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.student_section_projection_snapshots TO service_role;
 
 
 --

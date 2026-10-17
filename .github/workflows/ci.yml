@@ -1083,6 +1083,16 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/05c-projection-gates.sh
 
+      - name: SCL-236 diagnostic projection gates (stored, write-once, one completion path, race, deletion)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/diagnostic-projection-gates.sh
+
       - name: Guardian-mirror gates (denial by absence + one gate form + view-only + carve-outs)
         env:
           PGHOST: localhost
