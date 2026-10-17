@@ -9,7 +9,8 @@
  * plain English: the three content workflows trigger on base CONTENT_BRANCH and nothing else
  * (GitHub's own branch filter, evaluated here on the real workflow files: a PR into social runs
  * the review-record check and one into seo does not); the approval stamp checks out and pushes to
- * that branch; and the PR check itself refuses a cycle aimed at any other base, so a content PR
+ * that branch, with the workflow's own token (Karl's ruling, 2026-10-11, restated 2026-10-15: no
+ * GitHub App), on the merge's push or on Karl's dispatch for a past merge; and the PR check itself refuses a cycle aimed at any other base, so a content PR
  * into seo can never pass the pipeline's checks even if a trigger is widened later.
  */
 import { readFileSync } from "node:fs";
@@ -23,7 +24,7 @@ import { REPO_ROOT } from "../lib/prerendered-site";
 type Step = {
   name?: string;
   uses?: string;
-  with?: Record<string, string>;
+  with?: Record<string, string | number>;
   env?: Record<string, string>;
   run?: string;
 };
@@ -31,9 +32,12 @@ type Workflow = {
   on: {
     pull_request?: { types: string[]; branches: string[] };
     push?: { branches: string[]; paths?: string[] };
+    workflow_dispatch?: {
+      inputs?: Record<string, { required?: boolean; description?: string }>;
+    };
   };
   permissions?: Record<string, string>;
-  jobs: Record<string, { steps: Step[]; environment?: string }>;
+  jobs: Record<string, { steps: Step[]; environment?: string; if?: string }>;
 };
 
 function workflow(file: string): Workflow {
@@ -75,16 +79,18 @@ describe("the content workflows run on PRs into social only", () => {
     );
   });
 
-  it("the approval stamp runs only on a push to social, in the Environment that holds the App key", () => {
+  it("the approval stamp runs on a push to social or Karl's dispatch, only on social, with no Environment", () => {
     const wf = workflow("content-batch-approval.yml");
-    // A push trigger runs on refs/heads/social, the only ref the `content-approval` Environment's
-    // branch rule admits; a pull_request trigger (refs/pull/N/merge) could never read the key.
     expect(wf.on.pull_request).toBeUndefined();
     expect(wf.on.push?.branches).toEqual([CONTENT_BRANCH]);
-    expect(wf.jobs["stamp"]?.environment).toBe("content-approval");
-    // The workflow's own token can read, never write: the stamp is pushed as the App.
+    expect(wf.on.workflow_dispatch?.inputs?.["pr_number"]?.required).toBe(true);
+    // A dispatch from another branch is refused before any step runs.
+    expect(wf.jobs["stamp"]?.if).toBe("github.ref == 'refs/heads/social'");
+    expect(wf.jobs["stamp"]?.environment).toBeUndefined();
+    // The workflow's own token writes the stamp (the ruleset on social blocks only deletion
+    // and force pushes).
     expect(wf.permissions).toEqual({
-      contents: "read",
+      contents: "write",
       "pull-requests": "read",
     });
   });
@@ -101,29 +107,45 @@ describe("the content workflows run on PRs into social only", () => {
     ).toBe("${{ github.sha }}");
   });
 
-  it("the stamp is pushed to social with the App token, never the workflow token", () => {
+  it("the stamp is pushed to social with the workflow token: no App, no key", () => {
     const steps =
       workflow("content-batch-approval.yml").jobs["stamp"]?.steps ?? [];
-    const app = steps.find((s) =>
-      s.uses?.startsWith("actions/create-github-app-token"),
-    );
-    expect(app?.with).toEqual({
-      "app-id": "${{ vars.CONTENT_APP_ID }}",
-      "private-key": "${{ secrets.CONTENT_APP_PRIVATE_KEY }}",
-    });
+    expect(steps.length).toBeGreaterThan(0);
+    for (const step of steps) {
+      expect(step.uses ?? "", step.name).not.toMatch(/create-github-app-token/);
+      expect(JSON.stringify(step).includes("secrets."), step.name).toBe(false);
+    }
+    // No token override: checkout persists GITHUB_TOKEN, which the push then uses. Full
+    // history, so a dispatch can check its merge commit is on social.
     const checkout = steps.find((s) => s.uses?.startsWith("actions/checkout"));
-    expect(checkout?.with).toEqual({
-      ref: CONTENT_BRANCH,
-      token: "${{ steps.app.outputs.token }}",
-    });
-    // The key is read by the token step and nowhere else.
-    for (const step of steps)
-      expect(JSON.stringify(step).includes("secrets."), step.name).toBe(
-        step === app,
-      );
+    expect(checkout?.with).toEqual({ ref: CONTENT_BRANCH, "fetch-depth": 0 });
     const push = steps.find((s) => s.run?.includes("git push"))?.run ?? "";
     expect(push).toContain("git push origin HEAD:social");
     expect(push).not.toMatch(/\bseo\b/);
+  });
+
+  it("a dispatch reads only the requested pull request, validates the number, and checks its merge commit is on social", () => {
+    const steps =
+      workflow("content-batch-approval.yml").jobs["stamp"]?.steps ?? [];
+    const dispatched = steps.find(
+      (s) => s.env?.PR_NUMBER === "${{ inputs.pr_number }}",
+    );
+    const run = dispatched?.run ?? "";
+    // The input reaches the shell as an environment variable, never interpolated into it.
+    for (const step of steps)
+      expect(step.run ?? "", step.name).not.toContain("${{ inputs.");
+    expect(run).toContain('[[ "$PR_NUMBER" =~ ^[1-9][0-9]{0,6}$ ]]');
+    expect(run).toContain(
+      'gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}"',
+    );
+    expect(run).toContain('git merge-base --is-ancestor "$merge_sha" HEAD');
+    const stamp = steps.find((s) => s.run?.includes("stamp-approval.ts"));
+    expect(stamp?.env?.STAMP_DISPATCH_PR).toBe(
+      "${{ steps.dispatched.outputs.number }}",
+    );
+    expect(stamp?.env?.STAMP_MERGE_ON_BRANCH).toBe(
+      "${{ steps.dispatched.outputs.on_branch }}",
+    );
   });
 });
 
