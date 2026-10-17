@@ -1,0 +1,54 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "P1Qe3UXQA2Rrsj6kTmOFdeW6XcY",
+  "items": [
+    {
+      "kind": "youtube#video",
+      "etag": "kkcok-O5WnO3F6UD_gq41tV6plU",
+      "id": "f9DxgfyvRKg",
+      "contentDetails": {
+        "duration": "PT26S",
+        "dimension": "2d",
+        "definition": "hd",
+        "caption": "false",
+        "licensedContent": true,
+        "contentRating": {},
+        "projection": "rectangular"
+      },
+      "status": {
+        "uploadStatus": "processed",
+        "privacyStatus": "public",
+        "license": "youtube",
+        "embeddable": true,
+        "publicStatsViewable": true,
+        "madeForKids": false
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "u-cvVbd0zXNCtsEEm-AZdGK1Y44",
+      "id": "o8mfb_2bQ50",
+      "contentDetails": {
+        "duration": "PT30M36S",
+        "dimension": "2d",
+        "definition": "hd",
+        "caption": "false",
+        "licensedContent": true,
+        "contentRating": {},
+        "projection": "rectangular"
+      },
+      "status": {
+        "uploadStatus": "processed",
+        "privacyStatus": "public",
+        "license": "youtube",
+        "embeddable": true,
+        "publicStatsViewable": true,
+        "madeForKids": false
+      }
+    }
+  ],
+  "pageInfo": {
+    "totalResults": 2,
+    "resultsPerPage": 2
+  }
+}

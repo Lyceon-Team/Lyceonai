@@ -34,6 +34,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MathRenderer } from "@/components/MathRenderer";
+import { VideoRecommendationCard } from "./VideoRecommendationCard";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import {
   buildLisaComposerKeymap,
@@ -515,15 +516,24 @@ export function useScrollToBottomOnChange(
 export const PRACTICE_HANDOFF_HREF = "/practice";
 
 /**
- * Renders the action LISA offered on its last turn. Only `start_practice` has
- * a surface today: LISA never writes a question — it hands off to practice,
- * which owns selection, serving, anti-leak, grading and mastery.
+ * Renders the action LISA offered on its last turn. `start_practice`: LISA never writes a
+ * question — it hands off to practice, which owns selection, serving, anti-leak, grading and
+ * mastery. `recommend_video` (2026-10-15): a video from Lyceon's reviewed library, attached by
+ * the server, shown as a card.
  */
 export function SuggestedActionLink({
   action,
 }: {
   action: TutorSuggestedAction | null;
 }) {
+  // Video library (CC brief 2026-10-15 §8): the server-attached video, as a card.
+  if (action?.type === "recommend_video") {
+    return (
+      <div className="flex justify-start">
+        <VideoRecommendationCard video={action.video} label={action.label} />
+      </div>
+    );
+  }
   if (action?.type !== "start_practice") return null;
   return (
     <div className="flex justify-start">

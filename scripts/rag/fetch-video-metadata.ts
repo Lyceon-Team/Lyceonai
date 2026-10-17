@@ -83,6 +83,8 @@ export type VideoMetadata = {
   published_at: string;
   embeddable: boolean;
   chapters: Chapter[];
+  /** the creator's description, kept for the video-library tagger (title + description + chapters) */
+  description: string;
 };
 
 export type SourceReport = {
@@ -159,6 +161,7 @@ async function fetchVideos(ids: string[]): Promise<VideoMetadata[]> {
         published_at: item.snippet.publishedAt,
         embeddable: item.status.embeddable ?? false,
         chapters: parseChapters(item.snippet.description, duration),
+        description: item.snippet.description,
       });
     }
   }

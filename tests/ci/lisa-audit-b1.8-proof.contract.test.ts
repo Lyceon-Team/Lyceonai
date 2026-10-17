@@ -323,7 +323,8 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
 
     // 3. Prompt registry: scaffolded resolves to a known artifact (not fallback)
     const artifact = resolvePromptArtifact("scaffolded", null);
-    expect(artifact.version).toBe("lisa-default-v2");
+    // v3 (2026-10-15, video library) is the latest artifact for every variant.
+    expect(artifact.version).toBe("lisa-default-v3");
   });
 
   it("all four spec variants resolve in the prompt registry (no fallback warning)", () => {
@@ -332,7 +333,8 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
     for (const variant of variants) {
       const artifact = resolvePromptArtifact(variant, null);
       // Each variant must resolve without falling back to the unknown-variant path
-      expect(artifact.version).toBe("lisa-default-v2");
+      // v3 (2026-10-15, video library) is the latest artifact for every variant.
+      expect(artifact.version).toBe("lisa-default-v3");
     }
   });
 
