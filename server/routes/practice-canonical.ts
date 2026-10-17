@@ -70,6 +70,7 @@ import { buildSessionSummaryCore } from "../services/session-summary";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
 import { settle } from "../../packages/shared/src/result";
+import { diagnosticCompletionResultSchema } from "../../packages/shared/src/diagnostic-projection";
 import { beginStep, timedRoute, timedStep } from "../lib/step-timer";
 
 /**
@@ -1355,11 +1356,31 @@ async function getSessionProgressCounts(sessionId: string): Promise<{
   };
 }
 
+/** The lifecycle states a session may still change from (Doc 02B §14). */
+const IN_FLIGHT_SESSION_STATUSES = ["created", "active"];
+
+/**
+ * @spec [Doc-02B_V4 §14 session lifecycle; SCL-236; owner ruling 2026-10-17 (binding constraint
+ *        3: "updateSessionLifecycle must never rewrite completed_at or move a completed session
+ *        backward")] | @implemented [2026-10-17]
+ *
+ * plain English: writes an IN-FLIGHT session's metadata and lifecycle. Two guards:
+ *  - it only ever touches a row whose status is still 'created' or 'active', so a completed or
+ *    abandoned session can never be moved back to active, re-abandoned, or have completed_at
+ *    rewritten — on a terminal row the update matches nothing and is a no-op;
+ *  - it refuses a `status: "completed"` patch outright. Completion is completeSession's job
+ *    (one path per mode; for a diagnostic, the SQL function complete_diagnostic_session).
+ */
 async function updateSessionLifecycle(
   sessionId: string,
   metadata: SessionMetadata,
   patch?: Record<string, unknown>,
 ) {
+  if (patch?.status === "completed") {
+    throw new Error(
+      "practice_session_completion_forbidden_here: completion goes through completeSession",
+    );
+  }
   const nextUpdate: Record<string, unknown> = {
     filters: metadata,
     updated_at: new Date().toISOString(),
@@ -1370,11 +1391,103 @@ async function updateSessionLifecycle(
   const { error } = await supabaseServer
     .from("practice_sessions")
     .update(nextUpdate)
-    .eq("id", sessionId);
+    .eq("id", sessionId)
+    .in("status", IN_FLIGHT_SESSION_STATUSES);
 
   if (error) {
     throw new Error(`practice_sessions_update_failed: ${error.message}`);
   }
+}
+
+/**
+ * @spec [SCL-236 (Doc 05C §12A, §12); owner ruling 2026-10-17 (binding constraint 3: "one
+ *        completion path")] | @implemented [2026-10-17]
+ *
+ * plain English: THE way a practice-engine session becomes completed.
+ *  - A diagnostic is completed ONLY by the SQL function complete_diagnostic_session, which in
+ *    one transaction stamps completed_at once, stores the diagnostic projection (write-once) and
+ *    refreshes the live projection. Every diagnostic completion path — the 40th answer, a skip
+ *    on the last question, next-question with nothing left, a replay, a race — lands here.
+ *  - Any other mode is completed by one guarded update that cannot touch a diagnostic row
+ *    (`mode <> 'diagnostic'`) or a terminal one.
+ * scripts/ci/diagnostic-completion-single-path.mjs fails the build if anything else writes
+ * `status: "completed"` to practice_sessions.
+ *
+ * Returns whether the session is now completed. For a diagnostic that another completed
+ * diagnostic already blocks (the once-only index), it is not, and the caller reports "active".
+ * Logs carry ids and statuses only — never answers.
+ */
+async function completeSession(args: {
+  sessionId: string;
+  mode: string;
+  metadata: SessionMetadata;
+  now: string;
+  requestId?: string;
+}): Promise<{ completed: boolean }> {
+  if (args.mode === "diagnostic") {
+    const { data, error } = await supabaseServer.rpc(
+      "complete_diagnostic_session",
+      {
+        p_session_id: args.sessionId,
+        p_now: args.now,
+        p_filters: args.metadata,
+      },
+    );
+    if (error) {
+      throw new Error(`diagnostic_completion_failed: ${error.message}`);
+    }
+    const result = diagnosticCompletionResultSchema.safeParse(data);
+    if (!result.success) {
+      throw new Error("diagnostic_completion_result_unparseable");
+    }
+    const logFields = {
+      requestId: args.requestId,
+      practiceSessionId: args.sessionId,
+      state: result.data.state,
+      completedNow: result.data.completed_now,
+      projection: result.data.projection,
+    };
+    if (result.data.projection === "failed") {
+      logger.error(
+        "DIAGNOSTIC_PROJECTION",
+        "diagnostic_projection_failed",
+        "diagnostic completed but its projection could not be stored; the repair sweep retries it",
+        logFields,
+      );
+    } else if (result.data.state === "conflict_other_completed") {
+      logger.error(
+        "DIAGNOSTIC_PROJECTION",
+        "diagnostic_completion_conflict",
+        "a second diagnostic reached completion for a student who already completed one",
+        logFields,
+      );
+    } else if (result.data.completed_now) {
+      logger.info(
+        "DIAGNOSTIC_PROJECTION",
+        "diagnostic_completed",
+        "diagnostic completed and its projection stored",
+        logFields,
+      );
+    }
+    return { completed: result.data.state === "completed" };
+  }
+
+  const { error } = await supabaseServer
+    .from("practice_sessions")
+    .update({
+      filters: args.metadata,
+      updated_at: args.now,
+      last_activity_at: args.now,
+      status: "completed",
+      completed_at: args.now,
+    })
+    .eq("id", args.sessionId)
+    .neq("mode", "diagnostic")
+    .in("status", IN_FLIGHT_SESSION_STATUSES);
+  if (error) {
+    throw new Error(`practice_sessions_update_failed: ${error.message}`);
+  }
+  return { completed: true };
 }
 
 /**
@@ -2175,9 +2288,12 @@ async function serveNextForSession(args: {
 
   if (!nextPrebuilt) {
     metadata.active_session_item_id = null;
-    await updateSessionLifecycle(args.sessionId, metadata, {
-      status: "completed",
-      completed_at: new Date().toISOString(),
+    await completeSession({
+      sessionId: args.sessionId,
+      mode: session.mode,
+      metadata,
+      now: new Date().toISOString(),
+      requestId,
     });
 
     return args.res.status(409).json({
@@ -2734,6 +2850,18 @@ router.post(
       });
     }
 
+    // A completed or abandoned session is read-only. Terminating a COMPLETED diagnostic used to
+    // flip it to abandoned with completed_at nulled, re-opening a second diagnostic (report of
+    // 2026-10-17); the lifecycle guard below would now make that update a no-op, and this says
+    // so to the caller instead of answering "abandoned" for a session that is not.
+    if (isTerminalDbStatus(owned.session.status)) {
+      return res.status(409).json({
+        error: "session_closed",
+        message: "Practice session is read-only",
+        requestId,
+      });
+    }
+
     const metadata = asSessionMetadata(owned.session.filters);
     metadata.active_session_item_id = null;
     metadata.client_instance_id = null;
@@ -3278,14 +3406,15 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
  * immediately without checking completion.
  *
  * For non-final answers (resolvedCount < target), this is a no-op (no lifecycle
- * change). For the final answer, this completes the diagnostic.
- * We only UPGRADE to completed — never downgrade — because a concurrent request
- * may have already completed the session.
+ * change). For the final answer, this completes the diagnostic through completeSession
+ * (complete_diagnostic_session): an already-completed session keeps its completed_at and its
+ * stored projection, and a missing projection is stored now (SCL-236, 2026-10-17).
  */
 async function reconcileDiagnosticCompletionOnReplay(opts: {
   sessionId: string;
   session: { filters: unknown };
   now: string;
+  requestId?: string;
 }): Promise<{ shouldComplete: boolean }> {
   const config = await loadPracticeConfig();
   const meta = asSessionMetadata(opts.session.filters);
@@ -3297,158 +3426,18 @@ async function reconcileDiagnosticCompletionOnReplay(opts: {
     config.maxSessionCountPremium,
     config.defaultSessionCountWeb,
   );
-  const shouldComplete = resolvedCount >= targetQuestionCount;
-
-  if (shouldComplete) {
-    // Idempotent — if already completed by the winning request, this rewrites
-    // the same status + completed_at. We never downgrade a completed session.
-    await updateSessionLifecycle(opts.sessionId, meta, {
-      status: "completed",
-      completed_at: opts.now,
-    });
+  if (resolvedCount < targetQuestionCount) {
+    return { shouldComplete: false };
   }
 
-  return { shouldComplete };
-}
-
-/**
- * @spec [Doc-05C §7.4, Vertical-B Slice 2] @implemented 2026-08-12
- *
- * plain English: capture the current live section projections as frozen
- * diagnostic_baseline snapshots. Called exactly once at diagnostic completion,
- * after compute_section_projection already ran (the throttle fired on the
- * 40th mastery event). Reads the live projection and writes a deliberate
- * snapshot — decoupled from the projection engine.
- *
- * expected outcome: two rows inserted into student_section_projection_snapshots
- * (one for M, one for RW) with snapshot_kind='diagnostic_baseline'. The partial
- * unique index enforces once-only — a second call is a harmless no-op.
- *
- * trade-offs: if the evidence gate hasn't cleared yet (projections are NULL),
- * this is a no-op with a warning. This is defensive — the diagnostic's 8×5=40
- * events should always clear the evidence gate.
- */
-export async function captureDiagnosticBaseline(
-  userId: string,
-  requestId: string,
-): Promise<void> {
-  // Read both section projections (M + RW) from the already-computed live table.
-  const { data: projections, error: readError } = await supabaseServer
-    .from("student_section_projections")
-    .select(
-      "student_id, section, projected_score_mid, projected_score_low, projected_score_high, range_width, relevant_question_count, mastery_term, fl1_score, fl2_score, fl_count_used, blend_denominator, projection_constants_hash, mastery_model_version, refreshed_at_t_now",
-    )
-    .eq("student_id", userId);
-
-  if (readError) {
-    logger.warn(
-      "DIAGNOSTIC_BASELINE",
-      "baseline_read_failed",
-      "diagnostic baseline read failed",
-      { requestId, userId, dbError: readError.message },
-    );
-    return;
-  }
-
-  const rows = (projections ?? []) as Array<{
-    student_id: string;
-    section: string;
-    projected_score_mid: number | null;
-    projected_score_low: number | null;
-    projected_score_high: number | null;
-    range_width: number | null;
-    relevant_question_count: number | null;
-    mastery_term: number | null;
-    fl1_score: number | null;
-    fl2_score: number | null;
-    fl_count_used: number;
-    blend_denominator: number;
-    projection_constants_hash: string | null;
-    mastery_model_version: string;
-    refreshed_at_t_now: string;
-  }>;
-
-  // Both M and RW must have non-NULL projections (evidence gate passed).
-  const nonNull = rows.filter((r) => typeof r.projected_score_mid === "number");
-  if (nonNull.length < 2) {
-    logger.warn(
-      "DIAGNOSTIC_BASELINE",
-      "baseline_skipped_evidence_gate",
-      "diagnostic baseline skipped — projection evidence gate not yet cleared",
-      {
-        requestId,
-        userId,
-        sectionCount: nonNull.length,
-        totalRows: rows.length,
-      },
-    );
-    return;
-  }
-
-  // Insert baseline snapshots — plain INSERT; on unique-violation (23505) from the partial
-  // index, treat as idempotent no-op (original baseline preserved). ON CONFLICT cannot
-  // reference a partial unique index in PostgreSQL, so we catch 23505 instead.
-  const baselineRows = nonNull.map((row) => ({
-    student_id: row.student_id,
-    section: row.section,
-    projected_score_mid: row.projected_score_mid,
-    projected_score_low: row.projected_score_low,
-    projected_score_high: row.projected_score_high,
-    range_width: row.range_width,
-    relevant_question_count: row.relevant_question_count,
-    mastery_term: row.mastery_term,
-    fl1_score: row.fl1_score,
-    fl2_score: row.fl2_score,
-    fl_count_used: row.fl_count_used,
-    blend_denominator: row.blend_denominator,
-    projection_constants_hash: row.projection_constants_hash,
-    mastery_model_version: row.mastery_model_version,
-    refreshed_at_t_now: row.refreshed_at_t_now,
-    snapshot_kind: "diagnostic_baseline" as const,
-  }));
-
-  // Once-only enforcement: the partial unique index
-  // idx_baseline_once_per_student_section (student_id, section WHERE
-  // snapshot_kind='diagnostic_baseline') rejects duplicate diagnostic baselines.
-  // Because it's a PARTIAL unique index, Supabase's onConflict parameter can't
-  // reference it — PostgreSQL requires a non-partial constraint for ON CONFLICT.
-  // Instead we do a plain INSERT and treat the unique-violation error (23505)
-  // as success: the original baseline is preserved, exactly the DO NOTHING
-  // semantics we want.
-  const { error: insertError } = await supabaseServer
-    .from("student_section_projection_snapshots")
-    .insert(baselineRows)
-    .select("snapshot_id");
-
-  if (insertError) {
-    // 23505 = unique_violation from the partial unique index → baseline already
-    // captured. This is the expected idempotent path for a second diagnostic.
-    if (insertError.code === "23505") {
-      logger.info(
-        "DIAGNOSTIC_BASELINE",
-        "baseline_already_captured",
-        "[diagnostic] baseline already captured (idempotent no-op)",
-        { requestId, userId },
-      );
-      return;
-    }
-    // Any other error is logged but non-fatal — baseline capture must not block
-    // the answer response.
-    logger.info(
-      "DIAGNOSTIC_BASELINE",
-      "baseline_insert_failed",
-      "[diagnostic] baseline insert failed (non-fatal)",
-      { requestId, userId, error: insertError.message, code: insertError.code },
-    );
-    return;
-  }
-
-  logger.info(
-    "DIAGNOSTIC_BASELINE",
-    "baseline_captured",
-    "[diagnostic] baseline captured",
-    { requestId, userId, sections: nonNull.map((r) => r.section) },
-  );
+  const { completed } = await completeSession({
+    sessionId: opts.sessionId,
+    mode: "diagnostic",
+    metadata: meta,
+    now: opts.now,
+    requestId: opts.requestId,
+  });
+  return { shouldComplete: completed };
 }
 
 export async function submitPracticeAnswer(req: Request, res: Response) {
@@ -3640,6 +3629,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           sessionId: payload.sessionId,
           session,
           now: replayNow,
+          requestId,
         });
         return res.json({
           sessionId: payload.sessionId,
@@ -3741,6 +3731,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           sessionId: payload.sessionId,
           session,
           now: replayNow,
+          requestId,
         });
         return res.json({
           sessionId: payload.sessionId,
@@ -3841,6 +3832,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
           sessionId: payload.sessionId,
           session,
           now: raceNow,
+          requestId,
         });
         return res.json({
           sessionId: payload.sessionId,
@@ -4059,50 +4051,21 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     timedStep("stats", () => getSessionStats(payload.sessionId, userId)),
   );
 
+  let completedNow = false;
   if (shouldComplete) {
-    await timedStep("session_update", () =>
-      updateSessionLifecycle(payload.sessionId, refreshedMeta, {
-        status: "completed",
-        completed_at: now,
+    // SCL-236: completion — for a diagnostic, complete_diagnostic_session stores the diagnostic
+    // projection in the same transaction. The old best-effort copy of the live projection
+    // (captureDiagnosticBaseline) is gone; nothing here reads the live projection.
+    const { completed } = await timedStep("session_update", () =>
+      completeSession({
+        sessionId: payload.sessionId,
+        mode: session.mode,
+        metadata: refreshedMeta,
+        now,
+        requestId,
       }),
     );
-
-    // @spec [Doc-05C §7.4, Vertical-B Slice 2] @implemented 2026-08-12
-    // plain English: on diagnostic completion, capture the current section
-    // projections as a frozen diagnostic_baseline snapshot — a deliberate,
-    // once-only artifact independent of the throttle-driven periodic snapshots.
-    //
-    // Placement: AFTER updateSessionLifecycle (the session is durably completed)
-    // and AFTER compute_section_projection already ran (step 2–5 above fired
-    // the throttle on the 40th mastery event). We READ the already-computed
-    // live projection and INSERT a snapshot with snapshot_kind='diagnostic_baseline'.
-    //
-    // Immutability: the partial unique index idx_baseline_once_per_student_section
-    // (student_id, section) WHERE snapshot_kind='diagnostic_baseline' enforces once-only.
-    // A second insert hits unique-violation (23505), caught as an idempotent no-op
-    // inside captureDiagnosticBaseline — the original baseline is preserved. ON CONFLICT
-    // cannot reference a partial index, so we catch 23505 instead. Best-effort — a
-    // failure here must not block the answer response.
-    if (session.mode === "diagnostic") {
-      try {
-        await captureDiagnosticBaseline(userId, requestId);
-      } catch (baselineErr: unknown) {
-        const baselineMsg =
-          baselineErr instanceof Error
-            ? baselineErr.message
-            : String(baselineErr);
-        logger.warn(
-          "DIAGNOSTIC_BASELINE",
-          "baseline_capture_failed",
-          "diagnostic baseline capture failed (non-fatal)",
-          {
-            requestId,
-            practiceSessionId: payload.sessionId,
-            dbError: baselineMsg,
-          },
-        );
-      }
-    }
+    completedNow = completed;
   } else {
     await timedStep("session_update", () =>
       updateSessionLifecycle(payload.sessionId, refreshedMeta, {
@@ -4125,7 +4088,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     explanation,
     feedback: isCorrect ? "Correct" : "Incorrect",
     stats: statsResult.value,
-    state: shouldComplete ? "completed" : "active",
+    state: completedNow ? "completed" : "active",
   });
 }
 
@@ -4351,11 +4314,17 @@ async function submitPracticeSkip(req: Request, res: Response) {
   );
   const shouldComplete = resolvedCount >= targetQuestionCount;
 
+  let completedNow = false;
   if (shouldComplete) {
-    await updateSessionLifecycle(sessionId, refreshedMeta, {
-      status: "completed",
-      completed_at: now,
-    });
+    // A skip on the last question completes the session too — through the same path, so a
+    // diagnostic finished by a skip stores its projection (SCL-236; it used to store nothing).
+    ({ completed: completedNow } = await completeSession({
+      sessionId,
+      mode: session.mode,
+      metadata: refreshedMeta,
+      now,
+      requestId,
+    }));
   } else {
     await updateSessionLifecycle(sessionId, refreshedMeta, {
       status: "active",
@@ -4369,7 +4338,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
     mode: skipResponseMode,
     feedback: "Skipped",
     stats: await getSessionStats(sessionId, userId),
-    state: shouldComplete ? "completed" : "active",
+    state: completedNow ? "completed" : "active",
   });
 }
 router.post(

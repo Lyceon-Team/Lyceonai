@@ -11,10 +11,10 @@
 --
 -- stale_students IS REPORTED BUT DELIBERATELY NOT IN THE VERDICT.
 -- A non-zero count is a finding about the DATA, not a failure of this MIGRATION.
--- Production is expected to show at least one until baseline-repair.sql has run —
+-- Production is expected to show at least one until diagnostic-projection-backfill.sql has run —
 -- that student is the reason this workstream exists. Folding it into the verdict
 -- would make a correct deployment read as broken and push the reader toward
--- "make the number zero" instead of "read baseline-repair-preview.sql".
+-- "make the number zero" instead of "run diagnostic-projection-backfill.sql" (SCL-236).
 --
 -- EXPECTED
 --   view_present = 1, service_role_can_read = true

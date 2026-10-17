@@ -716,6 +716,77 @@ async function apiCall(
   return json as Record<string, unknown>;
 }
 
+/**
+ * SCL-236 (groups/types.ts `completedDiagnostic`): takes the persona through the whole diagnostic
+ * over the real routes, so the stored diagnostic projection is written by the real completion
+ * path (complete_diagnostic_session). A persona who already completed it is left as is.
+ */
+async function completeDiagnostic(
+  stack: Stack,
+  persona: StudentPersona,
+): Promise<void> {
+  const headers = {
+    "content-type": "application/json",
+    [PERSONA_HEADER]: persona,
+  };
+  const start = await fetch(`${stack.baseUrl}/api/practice/diagnostic/sessions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      client_instance_id: SEED_CLIENT_INSTANCE,
+      idempotency_key: `student-harness-${persona}-diagnostic`,
+    }),
+  });
+  const startJson: unknown = await start.json();
+  const startBody =
+    startJson !== null && typeof startJson === "object"
+      ? (startJson as Record<string, unknown>)
+      : {};
+  // The start route answers a finished diagnostic with 409 `error: "diagnostic_already_completed"`.
+  if (start.status === 409 && startBody.error === "diagnostic_already_completed")
+    return;
+  const sessionId =
+    startBody.sessionId ??
+    (startBody.session !== null && typeof startBody.session === "object"
+      ? (startBody.session as Record<string, unknown>).id
+      : undefined);
+  if (!start.ok || typeof sessionId !== "string")
+    throw new Error(
+      `completeDiagnostic: start answered ${start.status} ${JSON.stringify(startJson).slice(0, 300)}`,
+    );
+  for (let i = 0; i < 200; i += 1) {
+    const res = await fetch(
+      `${stack.baseUrl}/api/practice/sessions/${sessionId}/next?client_instance_id=${SEED_CLIENT_INSTANCE}`,
+      { headers },
+    );
+    // After the last answer the server closes the session: /next answers 409 session_closed.
+    if (res.status === 409) return;
+    const json: unknown = await res.json();
+    const next =
+      json !== null && typeof json === "object"
+        ? (json as Record<string, unknown>)
+        : {};
+    const q =
+      next.question !== null && typeof next.question === "object"
+        ? (next.question as Record<string, unknown>)
+        : null;
+    if (q === null) return;
+    const options = Array.isArray(q.options)
+      ? (q.options as Array<Record<string, unknown>>)
+      : [];
+    const body: Record<string, unknown> = {
+      sessionId,
+      sessionItemId: q.sessionItemId,
+      clientAttemptId: `student-harness-${sessionId}-diag-${i}`,
+      client_instance_id: SEED_CLIENT_INSTANCE,
+    };
+    if (q.inputMode === "numeric_entry") body.answer = i % 2 === 0 ? "1" : "2";
+    else body.selectedOptionId = options[i % Math.max(options.length, 1)]?.id ?? null;
+    await apiCall(stack, persona, "POST", "/api/practice/answer", body);
+  }
+  throw new Error("completeDiagnostic: 200 answers and the diagnostic never closed");
+}
+
 function itemsTable(engine: FreshSession["engine"]): string {
   return engine === "review"
     ? "review_session_items"
@@ -1035,6 +1106,11 @@ async function shootBuilt(
         `${shot.id}: a fresh review prompt needs a seeded student`,
       );
     await clearReviewPrompt(persona);
+  }
+  if (shot.completedDiagnostic === true) {
+    if (persona === null)
+      throw new Error(`${shot.id}: a completed diagnostic needs a seeded student`);
+    await completeDiagnostic(stack, persona);
   }
   if (shot.freshQotd !== undefined) {
     if (persona === null)
@@ -1516,6 +1592,10 @@ function writeIndex(
     if (shot.freshQotd !== undefined)
       lines.push(
         `Today's question unanswered before each capture (scheduled if missing; the persona's answer, qotd session and email-prompt state deleted${shot.freshQotd.priorAsks ? `; ${shot.freshQotd.priorAsks} earlier asks seeded` : ""}).`,
+      );
+    if (shot.completedDiagnostic === true)
+      lines.push(
+        "Diagnostic completed before the capture through the real routes (start, /next, /answer x40), so the stored diagnostic projection is the real completion path's (SCL-236).",
       );
     if (shot.freshQuota === true)
       lines.push(

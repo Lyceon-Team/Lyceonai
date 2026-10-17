@@ -349,8 +349,9 @@ export function rangeText(range: { low: number; high: number }): string {
  *   - baseline_pending is decided FIRST: the student finished the diagnostic and the numbers are
  *     not ready, so nothing may offer to start another (owner ruling Q2, 2026-08-17).
  *   - no_baseline: the diagnostic card, with "Start diagnostic" as the primary.
- *   - computed / baseline_only: the diagnostic is done; the free layout stays and "Go to
- *     practice" is the primary (OQ-39(c)).
+ *   - computed / baseline_only / insufficient_evidence: the diagnostic is done; the free layout
+ *     stays and "Go to practice" is the primary (OQ-39(c)). insufficient_evidence (SCL-236, owner
+ *     ruling D1 (a)) is a finished diagnostic with no number, so it is never offered again.
  *   - unknown (still loading, or the read failed): neither, so nothing is offered on a guess.
  */
 export type FreeHomeStage = "diagnostic" | "pending" | "after" | "unknown";
