@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Response } from "express";
 import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
 import request from "supertest";
 
 const TOKEN = "sb-access-token-SECRET-VALUE";
@@ -34,6 +35,12 @@ vi.mock("../../server/logger", () => ({
 }));
 
 const state = { signedIn: true, refresh: false, authMs: 15, profileMs: 10 };
+const authRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 const pause = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -83,6 +90,7 @@ function app(): express.Express {
   const a = express();
   a.use(requestIdMiddleware);
   a.use(cookieParser());
+  a.use("/api", authRateLimiter);
   a.use(supabaseAuthMiddleware);
   a.get(
     "/api/timed",
