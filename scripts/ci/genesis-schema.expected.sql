@@ -30,6 +30,24 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
+-- Name: mastery_event; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.mastery_event AS (
+	event_id uuid,
+	event_source_kind text,
+	source_family text,
+	section text,
+	domain text,
+	skill text,
+	difficulty smallint,
+	correct boolean,
+	occurred_at timestamp with time zone,
+	question_id text
+);
+
+
+--
 -- Name: profile_role; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -4824,11 +4842,11 @@ $$;
 
 
 --
--- Name: compute_mastery_for_entity(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: compute_mastery_core(public.mastery_event[], jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text DEFAULT NULL::text) RETURNS TABLE(total_events integer, acc_test numeric, acc_practice numeric, acc_review numeric, mastery_score numeric, mastery_pct numeric, mastery_level smallint)
-    LANGUAGE plpgsql STABLE SECURITY DEFINER
+CREATE FUNCTION public.compute_mastery_core(p_events public.mastery_event[], p_constants jsonb) RETURNS TABLE(total_events integer, acc_test numeric, acc_practice numeric, acc_review numeric, mastery_score numeric, mastery_pct numeric, mastery_level smallint)
+    LANGUAGE plpgsql IMMUTABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
@@ -4842,8 +4860,8 @@ DECLARE
   v_bad_correct integer; v_bad_occurred_at integer; v_bad_event_id integer;
   v_mastery_raw numeric; v_mastery_score numeric; v_mastery_pct numeric; v_mastery_level smallint;
 BEGIN
-  -- Step 1: read constants
-  v_constants := public.canonicalize_mastery_constants();
+  -- Step 1: read constants (supplied by the caller: canonicalize_mastery_constants())
+  v_constants := p_constants;
   v_position_half_life := (v_constants->>'POSITION_HALF_LIFE')::numeric;
   v_min_events         := (v_constants->>'MIN_EVENTS_FOR_MASTERY')::integer;
   v_w_test             := (v_constants->>'weight_source_test')::numeric;
@@ -4865,7 +4883,7 @@ BEGIN
 
   -- Step 2: canonical events, positions, validation, per-source accuracy
   WITH canonical_events AS (
-    SELECT * FROM public.canonical_mastery_events(p_student_id, p_entity_type, p_section, p_domain, p_skill)
+    SELECT * FROM unnest(p_events)
   ),
   positioned AS (
     SELECT ce.*, ROW_NUMBER() OVER (ORDER BY ce.occurred_at DESC, ce.event_id DESC) AS pos
@@ -4937,6 +4955,28 @@ BEGIN
   total_events := v_total; acc_test := v_acc_test; acc_practice := v_acc_practice; acc_review := v_acc_review;
   mastery_score := v_mastery_score; mastery_pct := v_mastery_pct; mastery_level := v_mastery_level;
   RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: compute_mastery_for_entity(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text DEFAULT NULL::text) RETURNS TABLE(total_events integer, acc_test numeric, acc_practice numeric, acc_review numeric, mastery_score numeric, mastery_pct numeric, mastery_level smallint)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  RETURN QUERY
+  SELECT c.*
+  FROM public.compute_mastery_core(
+    ARRAY(
+      SELECT ROW(ce.*)::public.mastery_event
+      FROM public.canonical_mastery_events(p_student_id, p_entity_type, p_section, p_domain, p_skill) ce
+    ),
+    public.canonicalize_mastery_constants()
+  ) c;
 END;
 $$;
 
@@ -5075,23 +5115,14 @@ DECLARE
   v_section_max       integer;
   v_section_min       integer;
   v_weights           jsonb;
-  v_min_events        integer;
-  v_gate_passed       boolean;
-  v_weighted_mastery  numeric;
-  v_mastery_term      numeric;
-  v_fl1_score         integer;     -- most recent completed full-length, this section (§5.7)
-  v_fl2_score         integer;     -- second most recent completed full-length, this section
-  v_fl_count_used     integer;
-  v_blend_numerator   numeric;
-  v_blend_denominator integer;
-  v_blended_raw       numeric;
+  v_dm_section        text[];
+  v_dm_domain         text[];
+  v_dm_event_count    integer[];
+  v_dm_score          numeric[];
+  v_fl1_score         integer;
+  v_fl2_score         integer;
   v_relevant_qcount   integer;
-  v_evidence_ratio    numeric;
-  v_projection_delta  numeric;
-  v_mid               integer;
-  v_low               integer;
-  v_high              integer;
-  v_range_width       integer;
+  v_core              record;
   v_constants_hash    text;
   v_result_row        public.student_section_projections;
 BEGIN
@@ -5120,155 +5151,53 @@ BEGIN
          v_mid_round, v_bound_round, v_section_max, v_section_min, v_weights
   FROM public.read_projection_constants();
 
-  -- §5.5 evaluate the Q4 evidence gate (INV-05C-14, RB-05C-V1-01). Anti-join the canonical 8-domain
-  -- set against student_domain_mastery: the gate passes iff NO required (section,domain) pair is
-  -- absent or below mastery_min_events(). The required_domains VALUES set drives the gate, NOT a
-  -- COUNT(*) — duplicate/extra/non-canonical rows cannot make it pass. The 8 strings are byte-
-  -- identical to Parent §10.2 / PROJECTION_DOMAIN_WEIGHTS keys (RB-05C-V1-04).
-  v_min_events := public.mastery_min_events();
-  WITH required_domains(section, domain) AS (
-      VALUES
-          ('M','Algebra'),
-          ('M','Advanced Math'),
-          ('M','Problem Solving and Data Analysis'),
-          ('M','Geometry and Trigonometry'),
-          ('RW','Information and Ideas'),
-          ('RW','Craft and Structure'),
-          ('RW','Expression of Ideas'),
-          ('RW','Standard English Conventions')
-  )
-  SELECT NOT EXISTS (
-      SELECT 1
-      FROM   required_domains rd
-      LEFT JOIN public.student_domain_mastery sdm
-             ON sdm.student_id = p_student_id
-            AND sdm.section    = rd.section
-            AND sdm.domain     = rd.domain
-      WHERE COALESCE(sdm.event_count_total, 0) < v_min_events
-  )
-  INTO v_gate_passed;
+  -- The student's 05B domain mastery (INV-05C-A1: read, never recomputed).
+  SELECT array_agg(sdm.section), array_agg(sdm.domain),
+         array_agg(sdm.event_count_total), array_agg(sdm.mastery_score)
+  INTO   v_dm_section, v_dm_domain, v_dm_event_count, v_dm_score
+  FROM   public.student_domain_mastery sdm
+  WHERE  sdm.student_id = p_student_id;
 
-  IF NOT v_gate_passed THEN
-    -- Emit an explicit NULL projection row (UI shows "not enough evidence yet"), §5.5/§6.2.
-    v_weighted_mastery := NULL;
-    v_mastery_term     := NULL;
-    v_blended_raw      := NULL;
-    v_mid              := NULL;
-    v_low              := NULL;
-    v_high             := NULL;
-    v_range_width      := NULL;
-    v_relevant_qcount  := NULL;
-    v_fl1_score        := NULL;
-    v_fl2_score        := NULL;
-    v_fl_count_used    := 0;
-    v_blend_denominator := 1;
-  ELSE
-    -- §5.6 compute the mastery term (gate passed). Sum over exactly the 4 domains of THIS section,
-    -- weighted by official CB domain weights, to get weighted_mastery ∈ [0,1]. mastery_score is the
-    -- [0,1] decimal from 05B's student_domain_mastery (NEVER recomputed here — INV-05C-A1).
-    SELECT
-        SUM(
-            sdm.mastery_score
-            * ((v_weights -> p_section ->> sdm.domain)::numeric)
-        )
-    INTO v_weighted_mastery
-    FROM public.student_domain_mastery sdm
-    WHERE sdm.student_id = p_student_id
-      AND sdm.section    = p_section
-      AND sdm.mastery_score IS NOT NULL;
+  -- §5.7 the two most recent COMPLETED full-lengths for this section, by completed_at, tiebreak id
+  -- desc — §5.7 verbatim, bound to the 04B surface SCL-157 named (full_length_section_scores;
+  -- is_complete = the session completed, so a partial/abandoned test never contributes, P5). A third,
+  -- older one is never read (P4). No staleness rule in V1.0 (Q1 State D).
+  SELECT fl.section_scaled_score
+  INTO   v_fl1_score
+  FROM   public.full_length_section_scores fl
+  WHERE  fl.student_id  = p_student_id
+    AND  fl.section     = p_section
+    AND  fl.is_complete = true
+  ORDER BY fl.completed_at DESC, fl.id DESC
+  LIMIT 1;
 
-    -- Defensive: gate passed => all 4 section domains must have non-NULL mastery_score and a weight
-    -- entry. A NULL here is a domain/weight key mismatch (data-integrity fault), not a low score
-    -- (RB-05B-V1-02 discipline: surface, never silently COALESCE to 0).
-    IF v_weighted_mastery IS NULL THEN
-      RAISE EXCEPTION
-        'PROJECTION_MASTERY_TERM_NULL: gate passed but weighted mastery is NULL for (%, %) — domain/weight key mismatch',
-        p_student_id, p_section;
-    END IF;
+  SELECT fl.section_scaled_score
+  INTO   v_fl2_score
+  FROM   public.full_length_section_scores fl
+  WHERE  fl.student_id  = p_student_id
+    AND  fl.section     = p_section
+    AND  fl.is_complete = true
+  ORDER BY fl.completed_at DESC, fl.id DESC
+  OFFSET 1 LIMIT 1;
 
-    -- RB-05C-V1-05: map weighted_mastery [0,1] onto the legal SAT section scale
-    -- [SECTION_MIN_SCORE, SECTION_MAX_SCORE] so the mastery term is itself a legal section-scaled
-    -- value (= 200 + weighted_mastery × 600), homogeneous with the full-length terms it blends with.
-    v_mastery_term :=
-        v_section_min + (v_weighted_mastery * (v_section_max - v_section_min));
+  -- §5.8 relevant_question_count = 05B student_section_kpi.events_total (the same evidence
+  -- population 05B aggregates; 05C reads it, never recomputes the union — INV-05C-A1/A2).
+  SELECT ssk.events_total
+  INTO   v_relevant_qcount
+  FROM   public.student_section_kpi ssk
+  WHERE  ssk.student_id = p_student_id
+    AND  ssk.section    = p_section;
 
-    -- §5.7 resolve the full-length terms and compute the blend (INV-05C-13). The two most recent
-    -- COMPLETED full-lengths for this section, by completed_at, tiebreak id desc — §5.7 verbatim,
-    -- bound to the 04B surface SCL-157 named (full_length_section_scores; is_complete = the session
-    -- completed, so a partial/abandoned test never contributes, P5). A third, older one is never
-    -- read (P4). No staleness rule in V1.0 (Q1 State D).
-    SELECT fl.section_scaled_score
-    INTO   v_fl1_score
-    FROM   public.full_length_section_scores fl
-    WHERE  fl.student_id  = p_student_id
-      AND  fl.section     = p_section
-      AND  fl.is_complete = true
-    ORDER BY fl.completed_at DESC, fl.id DESC
-    LIMIT 1;
-
-    SELECT fl.section_scaled_score
-    INTO   v_fl2_score
-    FROM   public.full_length_section_scores fl
-    WHERE  fl.student_id  = p_student_id
-      AND  fl.section     = p_section
-      AND  fl.is_complete = true
-    ORDER BY fl.completed_at DESC, fl.id DESC
-    OFFSET 1 LIMIT 1;
-
-    -- The denominator adapts to how many full-lengths exist (States A/B/C). The mastery term is
-    -- ALWAYS present (INV-05C-13): the projection is never the full-length alone, never a clamp.
-    v_blend_numerator   := v_mastery_term;
-    v_blend_denominator := 1;
-    IF v_fl1_score IS NOT NULL THEN
-      v_blend_numerator   := v_blend_numerator + v_fl1_score;
-      v_blend_denominator := v_blend_denominator + 1;
-    END IF;
-    IF v_fl2_score IS NOT NULL THEN
-      v_blend_numerator   := v_blend_numerator + v_fl2_score;
-      v_blend_denominator := v_blend_denominator + 1;
-    END IF;
-    v_fl_count_used     := v_blend_denominator - 1;        -- 0, 1 or 2
-    v_blended_raw       := v_blend_numerator / v_blend_denominator;
-
-    -- §5.8 bounded range. relevant_question_count = 05B student_section_kpi.events_total (the same
-    -- evidence population 05B aggregates; 05C reads it, never recomputes the union — INV-05C-A1/A2).
-    SELECT COALESCE(ssk.events_total, 0)
-    INTO   v_relevant_qcount
-    FROM   public.student_section_kpi ssk
-    WHERE  ssk.student_id = p_student_id
-      AND  ssk.section    = p_section;
-    -- No KPI row yet (gate can pass on raw events before the KPI refresh commits) => 0 evidence.
-    v_relevant_qcount := COALESCE(v_relevant_qcount, 0);
-
-    -- evidence_ratio in [0,1]: 0 at no evidence, 1 at >= target.
-    v_evidence_ratio := LEAST(
-        GREATEST(v_relevant_qcount::numeric / v_target_qcount::numeric, 0),
-        1
-    );
-
-    -- Shrinking delta: widest at ratio 0, tightest at ratio 1 (locked formula, §6.5).
-    v_projection_delta :=
-        v_max_delta - ((v_max_delta - v_min_delta) * v_evidence_ratio);
-
-    -- Midpoint = rounded blended projection, clamped to legal SAT range.
-    v_mid := public.round_to_step(
-        LEAST(GREATEST(v_blended_raw, v_section_min), v_section_max),
-        v_mid_round
-    );
-
-    -- Bounds: clamp to [section_min, section_max] (the range spec's lower clamp 0 is overridden to
-    -- PROJECTION_SECTION_MIN_SCORE = 200 per §6.5), then round.
-    v_low := public.round_to_step(
-        LEAST(GREATEST(v_mid - v_projection_delta, v_section_min), v_section_max),
-        v_bound_round
-    );
-    v_high := public.round_to_step(
-        LEAST(GREATEST(v_mid + v_projection_delta, v_section_min), v_section_max),
-        v_bound_round
-    );
-
-    v_range_width := v_high - v_low;
-  END IF;
+  -- §5.5-§5.8: gate, mastery term, blend, range (projection_core).
+  SELECT * INTO v_core
+  FROM public.projection_core(
+      p_student_id, p_section,
+      v_dm_section, v_dm_domain, v_dm_event_count, v_dm_score,
+      public.mastery_min_events(),
+      v_fl1_score, v_fl2_score, v_relevant_qcount,
+      v_target_qcount, v_min_delta, v_max_delta,
+      v_mid_round, v_bound_round, v_section_max, v_section_min, v_weights
+  );
 
   -- §5.9 capture the operational projection-constants hash (NOT the formula hash; INV-05C-16). Hash
   -- the CANONICAL serialization (RB-05C-V1-06), not raw jsonb::text. pgcrypto digest lives in the
@@ -5296,10 +5225,10 @@ BEGIN
       computed_at, refreshed_at_t_now
   ) VALUES (
       p_student_id, p_section,
-      v_mid, v_low, v_high,
-      v_range_width, v_relevant_qcount,
-      v_mastery_term, v_fl1_score, v_fl2_score, v_fl_count_used,
-      v_blend_denominator,
+      v_core.projected_score_mid, v_core.projected_score_low, v_core.projected_score_high,
+      v_core.range_width, v_core.relevant_question_count,
+      v_core.mastery_term, v_core.fl1_score, v_core.fl2_score, v_core.fl_count_used,
+      v_core.blend_denominator,
       v_constants_hash, public.mastery_model_version(),
       now(), p_t_now
   )
@@ -10228,6 +10157,181 @@ BEGIN
     );
   END IF;
   RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: projection_core(uuid, text, text[], text[], integer[], numeric[], integer, integer, integer, integer, integer, numeric, numeric, integer, integer, integer, integer, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.projection_core(p_student_id uuid, p_section text, p_dm_section text[], p_dm_domain text[], p_dm_event_count integer[], p_dm_score numeric[], p_min_events integer, p_fl1_score integer, p_fl2_score integer, p_relevant_qcount integer, p_target_qcount integer, p_min_delta numeric, p_max_delta numeric, p_mid_round integer, p_bound_round integer, p_section_max integer, p_section_min integer, p_weights jsonb) RETURNS TABLE(mastery_term numeric, fl1_score integer, fl2_score integer, fl_count_used integer, blend_denominator integer, relevant_question_count integer, projected_score_mid integer, projected_score_low integer, projected_score_high integer, range_width integer)
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_min_delta         numeric := p_min_delta;
+  v_max_delta         numeric := p_max_delta;
+  v_target_qcount     integer := p_target_qcount;
+  v_mid_round         integer := p_mid_round;
+  v_bound_round       integer := p_bound_round;
+  v_section_max       integer := p_section_max;
+  v_section_min       integer := p_section_min;
+  v_weights           jsonb   := p_weights;
+  v_min_events        integer := p_min_events;
+  v_gate_passed       boolean;
+  v_weighted_mastery  numeric;
+  v_mastery_term      numeric;
+  v_fl1_score         integer;
+  v_fl2_score         integer;
+  v_fl_count_used     integer;
+  v_blend_numerator   numeric;
+  v_blend_denominator integer;
+  v_blended_raw       numeric;
+  v_relevant_qcount   integer;
+  v_evidence_ratio    numeric;
+  v_projection_delta  numeric;
+  v_mid               integer;
+  v_low               integer;
+  v_high              integer;
+  v_range_width       integer;
+BEGIN
+  -- §5.5 evaluate the Q4 evidence gate (INV-05C-14, RB-05C-V1-01). Anti-join the canonical 8-domain
+  -- set against the student's domain-mastery rows: the gate passes iff NO required (section,domain)
+  -- pair is absent or below mastery_min_events(). The required_domains VALUES set drives the gate,
+  -- NOT a COUNT(*) — duplicate/extra/non-canonical rows cannot make it pass. The 8 strings are byte-
+  -- identical to Parent §10.2 / PROJECTION_DOMAIN_WEIGHTS keys (RB-05C-V1-04).
+  WITH required_domains(section, domain) AS (
+      VALUES
+          ('M','Algebra'),
+          ('M','Advanced Math'),
+          ('M','Problem Solving and Data Analysis'),
+          ('M','Geometry and Trigonometry'),
+          ('RW','Information and Ideas'),
+          ('RW','Craft and Structure'),
+          ('RW','Expression of Ideas'),
+          ('RW','Standard English Conventions')
+  )
+  SELECT NOT EXISTS (
+      SELECT 1
+      FROM   required_domains rd
+      LEFT JOIN unnest(p_dm_section, p_dm_domain, p_dm_event_count)
+                  AS sdm(section, domain, event_count_total)
+             ON sdm.section    = rd.section
+            AND sdm.domain     = rd.domain
+      WHERE COALESCE(sdm.event_count_total, 0) < v_min_events
+  )
+  INTO v_gate_passed;
+
+  IF NOT v_gate_passed THEN
+    -- Emit an explicit NULL projection row (UI shows "not enough evidence yet"), §5.5/§6.2.
+    v_weighted_mastery := NULL;
+    v_mastery_term     := NULL;
+    v_blended_raw      := NULL;
+    v_mid              := NULL;
+    v_low              := NULL;
+    v_high             := NULL;
+    v_range_width      := NULL;
+    v_relevant_qcount  := NULL;
+    v_fl1_score        := NULL;
+    v_fl2_score        := NULL;
+    v_fl_count_used    := 0;
+    v_blend_denominator := 1;
+  ELSE
+    -- §5.6 compute the mastery term (gate passed). Sum over exactly the 4 domains of THIS section,
+    -- weighted by official CB domain weights, to get weighted_mastery ∈ [0,1]. mastery_score is the
+    -- [0,1] decimal of each domain (05B's student_domain_mastery for the live projection).
+    SELECT
+        SUM(
+            sdm.mastery_score
+            * ((v_weights -> p_section ->> sdm.domain)::numeric)
+        )
+    INTO v_weighted_mastery
+    FROM unnest(p_dm_section, p_dm_domain, p_dm_score) AS sdm(section, domain, mastery_score)
+    WHERE sdm.section    = p_section
+      AND sdm.mastery_score IS NOT NULL;
+
+    -- Defensive: gate passed => all 4 section domains must have non-NULL mastery_score and a weight
+    -- entry. A NULL here is a domain/weight key mismatch (data-integrity fault), not a low score
+    -- (RB-05B-V1-02 discipline: surface, never silently COALESCE to 0).
+    IF v_weighted_mastery IS NULL THEN
+      RAISE EXCEPTION
+        'PROJECTION_MASTERY_TERM_NULL: gate passed but weighted mastery is NULL for (%, %) — domain/weight key mismatch',
+        p_student_id, p_section;
+    END IF;
+
+    -- RB-05C-V1-05: map weighted_mastery [0,1] onto the legal SAT section scale
+    -- [SECTION_MIN_SCORE, SECTION_MAX_SCORE] so the mastery term is itself a legal section-scaled
+    -- value (= 200 + weighted_mastery × 600), homogeneous with the full-length terms it blends with.
+    v_mastery_term :=
+        v_section_min + (v_weighted_mastery * (v_section_max - v_section_min));
+
+    -- §5.7 the full-length terms (resolved by the caller: the two most recent COMPLETED
+    -- full-lengths for this section, by completed_at, tiebreak id desc).
+    v_fl1_score := p_fl1_score;
+    v_fl2_score := p_fl2_score;
+
+    -- The denominator adapts to how many full-lengths exist (States A/B/C). The mastery term is
+    -- ALWAYS present (INV-05C-13): the projection is never the full-length alone, never a clamp.
+    v_blend_numerator   := v_mastery_term;
+    v_blend_denominator := 1;
+    IF v_fl1_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl1_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    IF v_fl2_score IS NOT NULL THEN
+      v_blend_numerator   := v_blend_numerator + v_fl2_score;
+      v_blend_denominator := v_blend_denominator + 1;
+    END IF;
+    v_fl_count_used     := v_blend_denominator - 1;        -- 0, 1 or 2
+    v_blended_raw       := v_blend_numerator / v_blend_denominator;
+
+    -- §5.8 bounded range. relevant_question_count is the caller's evidence count.
+    v_relevant_qcount := p_relevant_qcount;
+    -- No KPI row yet (gate can pass on raw events before the KPI refresh commits) => 0 evidence.
+    v_relevant_qcount := COALESCE(v_relevant_qcount, 0);
+
+    -- evidence_ratio in [0,1]: 0 at no evidence, 1 at >= target.
+    v_evidence_ratio := LEAST(
+        GREATEST(v_relevant_qcount::numeric / v_target_qcount::numeric, 0),
+        1
+    );
+
+    -- Shrinking delta: widest at ratio 0, tightest at ratio 1 (locked formula, §6.5).
+    v_projection_delta :=
+        v_max_delta - ((v_max_delta - v_min_delta) * v_evidence_ratio);
+
+    -- Midpoint = rounded blended projection, clamped to legal SAT range.
+    v_mid := public.round_to_step(
+        LEAST(GREATEST(v_blended_raw, v_section_min), v_section_max),
+        v_mid_round
+    );
+
+    -- Bounds: clamp to [section_min, section_max] (the range spec's lower clamp 0 is overridden to
+    -- PROJECTION_SECTION_MIN_SCORE = 200 per §6.5), then round.
+    v_low := public.round_to_step(
+        LEAST(GREATEST(v_mid - v_projection_delta, v_section_min), v_section_max),
+        v_bound_round
+    );
+    v_high := public.round_to_step(
+        LEAST(GREATEST(v_mid + v_projection_delta, v_section_min), v_section_max),
+        v_bound_round
+    );
+
+    v_range_width := v_high - v_low;
+  END IF;
+
+  mastery_term            := v_mastery_term;
+  fl1_score               := v_fl1_score;
+  fl2_score               := v_fl2_score;
+  fl_count_used           := v_fl_count_used;
+  blend_denominator       := v_blend_denominator;
+  relevant_question_count := v_relevant_qcount;
+  projected_score_mid     := v_mid;
+  projected_score_low     := v_low;
+  projected_score_high    := v_high;
+  range_width             := v_range_width;
+  RETURN NEXT;
 END;
 $$;
 
@@ -24659,6 +24763,14 @@ GRANT ALL ON FUNCTION public.compute_longest_streak_days(p_student_id uuid, p_t_
 
 
 --
+-- Name: FUNCTION compute_mastery_core(p_events public.mastery_event[], p_constants jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.compute_mastery_core(p_events public.mastery_event[], p_constants jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.compute_mastery_core(p_events public.mastery_event[], p_constants jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION compute_mastery_for_entity(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -25606,6 +25718,14 @@ REVOKE ALL ON FUNCTION public.profiles_marketing_consent_guard() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION public.profiles_marketing_consent_log() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION projection_core(p_student_id uuid, p_section text, p_dm_section text[], p_dm_domain text[], p_dm_event_count integer[], p_dm_score numeric[], p_min_events integer, p_fl1_score integer, p_fl2_score integer, p_relevant_qcount integer, p_target_qcount integer, p_min_delta numeric, p_max_delta numeric, p_mid_round integer, p_bound_round integer, p_section_max integer, p_section_min integer, p_weights jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.projection_core(p_student_id uuid, p_section text, p_dm_section text[], p_dm_domain text[], p_dm_event_count integer[], p_dm_score numeric[], p_min_events integer, p_fl1_score integer, p_fl2_score integer, p_relevant_qcount integer, p_target_qcount integer, p_min_delta numeric, p_max_delta numeric, p_mid_round integer, p_bound_round integer, p_section_max integer, p_section_min integer, p_weights jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.projection_core(p_student_id uuid, p_section text, p_dm_section text[], p_dm_domain text[], p_dm_event_count integer[], p_dm_score numeric[], p_min_events integer, p_fl1_score integer, p_fl2_score integer, p_relevant_qcount integer, p_target_qcount integer, p_min_delta numeric, p_max_delta numeric, p_mid_round integer, p_bound_round integer, p_section_max integer, p_section_min integer, p_weights jsonb) TO service_role;
 
 
 --
