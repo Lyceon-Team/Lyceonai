@@ -55,7 +55,7 @@ export function HomeStreakChip({
 }: {
   celebrate: boolean;
 }): JSX.Element | null {
-  const today = useHomeQotd();
+  const today = useHomeQotd({ joinHome: true });
   if (today.data === undefined) return null;
   return <StreakChip streak={today.data.streak} celebrate={celebrate} />;
 }

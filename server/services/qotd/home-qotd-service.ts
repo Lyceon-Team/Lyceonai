@@ -52,7 +52,7 @@ import {
   buildSessionItemInsertRows,
   toCanonicalQuestionForServing,
 } from "../../routes/practice-canonical";
-import { readDailyStreak } from "../activity-streak";
+import { readActiveDays, readDailyStreak } from "../activity-streak";
 import { logger } from "../../logger";
 import { qotdOptionToken } from "./option-tokens";
 import {
@@ -85,7 +85,6 @@ export type HomeQotdSignals = {
   isCorrect: boolean | null;
   sectionCode: "M" | "RW" | null;
   streakExtendedTo: number | null;
-  promptShownAsk: number | null;
 };
 
 const attemptRowSchema = z.object({
@@ -186,7 +185,24 @@ async function readPromptState(
   return promptStateSchema.parse(data);
 }
 
-/** Whether the prompt may show today, given that today's question has been answered. */
+/**
+ * Whether the prompt may show today, given that today's question has been answered.
+ *
+ * @spec [owner ruling (Karl, 2026-10-15, on #1233, item 2): "if the student wasn't asked after
+ *       today's QOTD (left before pressing Done), show the pop-up ONCE on their next Home visit
+ *       the same America/Chicago day … must not show twice that day, must not show on a later
+ *       day for a missed earlier day, must not show if they were already asked after Done"]
+ *       | @implemented [2026-10-15]
+ * plain English: an ASK is now the prompt actually shown, recorded by the client's
+ * `POST /api/qotd/email-prompt/shown` when it opens it (`recordQotdEmailPromptShown`, through the
+ * existing once-per-Chicago-day writer `qotd_email_record_ask`), where it used to be recorded the
+ * moment the answer was saved, before the student had seen anything. So `last_asked_on` is the
+ * server's own "shown today" and the rule needs no new state: the prompt may show while today
+ * (Chicago) is answered, the student is eligible (13+, a student), has not consented, has not
+ * chosen "Don't ask again", has not decided today, and has NOT been shown it today. A later day
+ * only ever asks about that day's own answer. "Don't ask again" is offered when the ask about to
+ * be shown is the 3rd or later (`ask_count + 1`).
+ */
 function promptFlags(
   state: PromptState,
   answeredToday: boolean,
@@ -196,10 +212,12 @@ function promptFlags(
     state.eligible &&
     !state.consented &&
     !state.never_ask &&
-    state.last_decided_on !== state.today;
+    state.last_decided_on !== state.today &&
+    state.last_asked_on !== state.today;
   return {
     show_email_prompt: show,
-    show_dont_ask_again: show && state.ask_count >= QOTD_EMAIL_NEVER_FROM_ASK,
+    show_dont_ask_again:
+      show && state.ask_count + 1 >= QOTD_EMAIL_NEVER_FROM_ASK,
   };
 }
 
@@ -223,15 +241,18 @@ export async function getHomeQotdToday(
   student: HomeQotdStudent,
   now: Date = new Date(),
 ): Promise<HomeQotdTodayResponse> {
-  const [row, streak, state] = await Promise.all([
+  const [row, streak, state, active_days] = await Promise.all([
     readQotd(db(), null),
     readDailyStreak(student.id, now),
     readPromptState(student.id, now),
+    // First-run activation brief (2026-10-13) P1: Home's "This week" ticks these days.
+    readActiveDays(student.id, now),
   ]);
   if (row === null || row.qotd_date !== qotdToday(now)) {
     return homeQotdTodayResponseSchema.parse({
       state: "none",
       streak,
+      active_days,
       show_email_prompt: false,
       show_dont_ask_again: false,
     });
@@ -243,6 +264,7 @@ export async function getHomeQotdToday(
       qotd_date: row.qotd_date,
       question: studentQuestion(row),
       streak,
+      active_days,
       show_email_prompt: false,
       show_dont_ask_again: false,
     });
@@ -253,8 +275,39 @@ export async function getHomeQotdToday(
     question: studentQuestion(row),
     result: resultFor(row, attempt.selected_answer, attempt.is_correct),
     streak,
+    active_days,
     ...promptFlags(state, true),
   });
+}
+
+/**
+ * POST /api/qotd/email-prompt/shown — the client opened the prompt.
+ *
+ * @spec [owner ruling (Karl, 2026-10-15, on #1233, item 2)] | @implemented [2026-10-15]
+ * plain English: records today's one ask, but only when the server itself would show the prompt
+ * now (today's question answered, `promptFlags` true), so a client cannot count an ask the rules
+ * do not allow, and a second call the same Chicago day records nothing (the flag is false once
+ * `last_asked_on` is today; the writer is once-per-day as well). Returns the ask's number when
+ * one was recorded, for the analytics event.
+ */
+export async function recordQotdEmailPromptShown(
+  studentId: string,
+  now: Date = new Date(),
+): Promise<{ recorded: boolean; askNumber: number | null }> {
+  const row = await readQotd(db(), null);
+  if (row === null || row.qotd_date !== qotdToday(now))
+    return { recorded: false, askNumber: null };
+  const attempt = await readAttempt(studentId, row.qotd_date);
+  if (attempt === null) return { recorded: false, askNumber: null };
+  const state = await readPromptState(studentId, now);
+  if (!promptFlags(state, true).show_email_prompt)
+    return { recorded: false, askNumber: null };
+  const { data: count, error } = await db().rpc("qotd_email_record_ask", {
+    p_student_id: studentId,
+    p_now: now.toISOString(),
+  });
+  if (error) throw new Error(`qotd_email_record_ask failed: ${error.message}`);
+  return { recorded: true, askNumber: z.number().int().parse(count) };
 }
 
 /** The practice item snapshot for today's question, built by the practice path's builder. */
@@ -424,23 +477,10 @@ export async function answerHomeQotd(
   }
 
   const streak: Streak = await readDailyStreak(student.id, now);
-  let state = await readPromptState(student.id, now);
-  let flags = promptFlags(state, true);
-  let promptShownAsk: number | null = null;
-  if (flags.show_email_prompt && state.last_asked_on !== state.today) {
-    const { data: count, error: askError } = await db().rpc(
-      "qotd_email_record_ask",
-      {
-        p_student_id: student.id,
-        p_now: now.toISOString(),
-      },
-    );
-    if (askError)
-      throw new Error(`qotd_email_record_ask failed: ${askError.message}`);
-    promptShownAsk = z.number().int().parse(count);
-    state = { ...state, ask_count: promptShownAsk, last_asked_on: state.today };
-    flags = promptFlags(state, true);
-  }
+  // Owner ruling 2026-10-15 (#1233 item 2): the answer no longer counts an ask; the client
+  // records one when it actually shows the prompt (`recordQotdEmailPromptShown`).
+  const state = await readPromptState(student.id, now);
+  const flags = promptFlags(state, true);
 
   const response = homeQotdAnswerResponseSchema.parse({
     qotd_date: today,
@@ -461,7 +501,6 @@ export async function answerHomeQotd(
       isCorrect: outcome.is_correct,
       sectionCode: row.section,
       streakExtendedTo: response.streak_extended ? streak.current : null,
-      promptShownAsk,
     },
   });
 }

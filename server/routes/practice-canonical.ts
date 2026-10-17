@@ -65,6 +65,8 @@ import {
   practiceSessionModeSchema,
 } from "../../packages/shared/src/session-mode";
 import { toSessionCriteria } from "../../packages/shared/src/session-criteria";
+import { sessionSummarySchema } from "../../packages/shared/src/session-summary-schema";
+import { buildSessionSummaryCore } from "../services/session-summary";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
 import { settle } from "../../packages/shared/src/result";
@@ -3010,6 +3012,97 @@ router.get(
       // asked for. A boolean only: neither stored count is sent (register §2, no bank counts).
       shortened: isShortenedSession(metadata),
     });
+  },
+);
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 3; Coding Standards
+ *       §8.1 (auth → parse → domain → serialize), §8.2 ({ data } / { error }), §8.3 (404, 409),
+ *       §10 (mastery from observed events only), §5 (no content)] | @implemented [2026-10-13]
+ * plain English: GET /api/practice/sessions/:sessionId/summary — the end-of-session summary
+ * (`session-summary-schema.ts`) for a COMPLETED practice session the student owns. Another
+ * student's session, or none, is 404 (`hideForbidden`, as /state); an open or abandoned one is
+ * 409 `SESSION_NOT_COMPLETED`, because a summary describes a finished session. The body is built
+ * by `buildSessionSummaryCore` from recorded data only and parsed with the strict shared schema
+ * before it leaves, so nothing else can ride along. `again.criteria` is the session's own
+ * criteria, for "Another 5". No entitlement gate beyond the practice routes' own: practice is free;
+ * the mastery part is gated inside (`mastery_detail`).
+ */
+router.get(
+  "/sessions/:sessionId/summary",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireGuardianLinkForUnder13,
+  async (req, res) => {
+    const requestId = req.requestId;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        error: { code: "AUTH_REQUIRED", message: "You must be signed in" },
+        requestId,
+      });
+    }
+    const parsedId = z.string().uuid().safeParse(req.params.sessionId);
+    if (!parsedId.success) {
+      return res.status(400).json({
+        error: { code: "INVALID_SESSION_ID", message: "sessionId is required" },
+        requestId,
+      });
+    }
+    const owned = await loadOwnedSession(parsedId.data, userId, {
+      hideForbidden: true,
+    });
+    if (!owned) {
+      return res.status(404).json({
+        error: {
+          code: "SESSION_NOT_FOUND",
+          message: "Practice session not found",
+        },
+        requestId,
+      });
+    }
+    const session = owned.session;
+    if (normalizeSessionState(session.status) !== "completed") {
+      return res.status(409).json({
+        error: {
+          code: "SESSION_NOT_COMPLETED",
+          message: "This session is not finished yet",
+        },
+        requestId,
+      });
+    }
+    try {
+      const core = await buildSessionSummaryCore({
+        engine: "practice",
+        sessionId: session.id,
+        studentId: userId,
+        ...(requestId ? { requestId } : {}),
+      });
+      const metadata = asSessionMetadata(session.filters);
+      const data = sessionSummarySchema.parse({
+        engine: "practice",
+        sessionId: session.id,
+        ...core,
+        again: { criteria: toSessionCriteria(metadata.session_spec) },
+      });
+      return res.json({ data });
+    } catch (summaryError) {
+      logger.error(
+        "PRACTICE_SUMMARY",
+        "summary_failed",
+        "the practice session summary could not be built",
+        summaryError,
+        undefined,
+        { userId, ...(requestId ? { requestId } : {}) },
+      );
+      return res.status(500).json({
+        error: {
+          code: "SUMMARY_FAILED",
+          message: "We couldn't load this summary",
+        },
+        requestId,
+      });
+    }
   },
 );
 

@@ -381,6 +381,8 @@ export function SupabaseAuthForm({
                   id="signin-password"
                   testId="input-signin-password"
                   label="Password"
+                  // First-run activation brief (2026-10-13) P1: the placeholder names the field.
+                  placeholder="Password"
                   value={password}
                   onChange={setPassword}
                   autoComplete="current-password"
@@ -492,6 +494,8 @@ export function SupabaseAuthForm({
                   id="signup-password"
                   testId="input-signup-password"
                   label="Password"
+                  // First-run activation brief (2026-10-13) P1: the placeholder names the field.
+                  placeholder="Password"
                   value={password}
                   onChange={setPassword}
                   autoComplete="new-password"

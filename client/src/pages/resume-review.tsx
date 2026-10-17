@@ -43,6 +43,7 @@ import type { EngineSessionStateResponse } from "@lyceon/shared/practice-respons
 import { FullPageLoader } from "@/components/student-ui";
 import CanonicalPracticePage from "@/components/practice/CanonicalPracticePage";
 import { RunnerStateCard } from "@/components/practice/RunnerStateCard";
+import { SessionSummary } from "@/components/practice/SessionSummary";
 import { sessionTitle } from "@/components/home/home-model";
 import { getClientInstanceId } from "@/lib/client-instance";
 import { isApiError } from "@/lib/api-error";
@@ -105,6 +106,19 @@ export default function ResumeReviewPage(): JSX.Element {
 
   // Ruling 17: a closed session is never playable, however the student got here.
   if (session.readOnly) {
+    // First-run activation brief (Karl, 2026-10-13) P0 item 3 | @implemented [2026-10-13]: a
+    // finished review session shows its summary, as practice does.
+    if (session.state === "completed" && sessionId) {
+      const summaryTitle = sessionTitle("review", session.criteria, null);
+      return (
+        <SessionSummary
+          key={sessionId}
+          engine="review"
+          sessionId={sessionId}
+          title={summaryTitle}
+        />
+      );
+    }
     const wasAbandoned = session.state === "abandoned";
     return (
       <RunnerStateCard
@@ -132,6 +146,7 @@ export default function ResumeReviewPage(): JSX.Element {
       sessionId={sessionId}
       engine={REVIEW_ENGINE_CONFIG}
       completionHref="/review"
+      onSessionClosed={() => void refetch()}
     />
   );
 }

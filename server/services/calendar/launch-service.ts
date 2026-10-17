@@ -201,7 +201,11 @@ export async function launchBlock(
     // as dead. Same object then answers `resumeHref`, so the route always belongs to the
     // engine whose session it names.
     const sessionAdapter = deps.adapterFor(latest.engine);
-    const lifecycle = await sessionAdapter.progress(latest.engine_session_id);
+    // SCL-233: `progress` answers for a set of sessions; this branch asks about one.
+    const lifecycle =
+      (await sessionAdapter.progress([latest.engine_session_id])).get(
+        latest.engine_session_id,
+      ) ?? null;
     if (lifecycle !== null && LIVE.includes(lifecycle)) {
       return ok({
         engine: latest.engine,
