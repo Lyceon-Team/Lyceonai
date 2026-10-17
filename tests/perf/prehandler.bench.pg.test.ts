@@ -25,6 +25,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import express, { type Express } from "express";
 import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
 import request from "supertest";
 import fs from "node:fs";
 import http from "node:http";
@@ -130,9 +131,14 @@ async function buildRealChainApp(): Promise<Express> {
     await import("../../server/routes/calendar-routes");
 
   const app = express();
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+  });
   app.use(requestIdMiddleware);
   app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
+  app.use(limiter);
   app.use(supabaseAuthMiddleware);
   app.use(enforceDeletionLock);
   app.use(
