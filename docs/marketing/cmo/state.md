@@ -4,25 +4,13 @@ Re-verify anything here before relying on it. Updated by the CMO after each week
 
 _Last updated: 2026-10-15_
 
-## Internal accounts (exclude from every metric)
+## Internal accounts
 
-Listed by ID only. Karl to confirm the list and add any missing test accounts.
-
-Stripe customers (internal or test):
-- cus_TmPAI2XDmhuWJu — Karl (confirm)
-- cus_V4lNXGNkj7FQH3 — Karl (confirm)
-- cus_UMXbiB68G7E95G — Karl (confirm)
-- cus_VJOVBbFyFqbDL4 — Lyceon mailbox (confirm)
-- cus_VPyjSyEZU9C98R — test account (confirm)
-- cus_TlMSfCmSxP0tKv — family/test? (Karl to confirm)
-- cus_VKhF1iysDgtHfV — family/test? (Karl to confirm)
-
-Supabase profile IDs: role `admin` profiles are excluded automatically; add internal student/guardian test profile IDs here.
+Internal account IDs and all metrics are kept outside the repo while it is public (Karl, 2026-10-15). See the private store: Google Drive folder "CMO reports", file "internal-accounts".
 
 ## Company status
 
 - Post-launch since 2026-10-07. US market.
-- Real revenue to date: $0 (all active premium entitlements are founding-code redemptions as of 2026-10-15).
 - Live subscription price observed in Stripe: $59.99/month (verify before quoting).
 
 ## Key dates
@@ -49,4 +37,4 @@ Supabase profile IDs: role `admin` profiles are excluded automatically; add inte
 
 ## Latest headline numbers
 
-See `reports/2026-10-15-weekly-snapshot.md`.
+In the private store (Google Drive folder "CMO reports").

@@ -24,7 +24,7 @@ What the CMO needs to know about the company. Facts carry the date they were tru
 - **Slogan:** "Study Smarter, Score Higher." Use it across the platform.
 - **Business contact** (legal docs, marketing email footers): Lyceon AI, 5650 Central Ave # E7, Toledo, OH 43615; +1 (419) 415-1885. Karl's mailbox is amingwa@lyceon.ai; marketing email sends as "Karl from Lyceon".
 - **Tooling philosophy:** free or cheap at Lyceon's scale (Supabase, Vercel, PostHog) as long as unit economics make sense; industry standard, nothing bespoke; one standard pattern per integration to avoid drift.
-- **Repo:** `Lyceon-Team/Lyceonai`. Public as of 2026-10-11 to avoid GitHub/Vercel Pro costs at zero revenue; it goes private once revenue covers those costs. Because the repo is public, nothing proprietary goes in it, including in this skill's living files.
+- **Repo:** `Lyceon-Team/Lyceonai`. Public as of 2026-10-11 to avoid GitHub/Vercel Pro costs at zero revenue; it goes private once revenue covers those costs. Because the repo is public, nothing proprietary goes in it, including this skill and its living files: no metrics, revenue, counts, internal account IDs or student data. Those live in the private store (Google Drive folder "CMO reports").
 
 ## 2. The product (what you may say it does)
 
@@ -105,8 +105,7 @@ Verify live in Stripe before quoting; these are observations, not standing facts
 - **Observed 2026-10-15:** the live subscription is $59.99/month. Older $0.99/year subscriptions in Stripe are early test-price subscriptions, mostly Karl's own accounts. Treat them as internal.
 - **Pricing restructuring** is an open area for Karl. You may propose price or free-tier changes with evidence and reasoning (Karl, 2026-10-15); Karl decides.
 - **Founding cohort (from 2026-10-10):** target 30–50 students prepping for the Nov 7 / Dec 5 SAT. Code **ALPHA** gives 100% off, free for two months, no card at checkout; access lapses afterward unless they pay. Redeeming means joining the cohort and accepting study-reminder emails. A reminder email goes to non-redeemers.
-- **The moment of truth:** when founding discounts lapse, roughly two months after each redemption (the first redemptions were 2026-10-10). That's the first real revenue test. Track the exact dates in Stripe and in `state.md`.
-- **As of 2026-10-15:** real revenue is $0. All active premium entitlements are founding-code redemptions.
+- **The moment of truth:** when founding discounts lapse, roughly two months after each redemption (the first redemptions were 2026-10-10). That's the first real revenue test. Track the exact dates from Stripe in the private store.
 
 ## 9. The SAT calendar
 
