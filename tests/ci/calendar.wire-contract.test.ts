@@ -161,7 +161,7 @@ vi.mock("../../server/services/calendar/adapters", () => ({
     engine: "practice" as const,
     create: vi.fn(),
     nextLaunchSize: vi.fn(),
-    progress: vi.fn(async () => null),
+    progress: vi.fn(async () => new Map()),
     activityUnits: vi.fn(async () => []),
   }),
 }));

@@ -53,6 +53,8 @@ export const HOME_QOTD: PageGroup = {
       steps: [
         { click: both(FIRST_CHOICE) },
         { click: both('[data-testid="home-qotd-submit"]') },
+        // First-run activation (2026-10-13): the prompt opens once the explanation is closed.
+        { click: both('[data-testid="home-qotd-done"]') },
       ],
       expectText: "Keep your streak alive 🔥",
       prototype: NO_PROTOTYPE,
@@ -77,6 +79,7 @@ export const HOME_QOTD: PageGroup = {
       steps: [
         { click: both(FIRST_CHOICE) },
         { click: both('[data-testid="home-qotd-submit"]') },
+        { click: both('[data-testid="home-qotd-done"]') },
       ],
       expectText: "Don't ask again",
       prototype: NO_PROTOTYPE,
@@ -156,7 +159,17 @@ export const HOME_QOTD_ONBOARDING: PageGroup = {
         "Onboarding: Name, date of birth, then 'When's your SAT?' ('Not sure yet' first, future official dates, multi-select)",
       persona: "onboarding",
       route: "/profile/complete",
-      waitFor: both('[data-testid="onboarding-sat-dates"]'),
+      // First-run activation (2026-10-13): the date of birth starts empty, and the SAT question
+      // appears once a 13+ date is entered.
+      waitFor: both('[data-testid="input-date-of-birth"]'),
+      steps: [
+        {
+          fill: both('[data-testid="input-date-of-birth"]'),
+          value: "2009-05-01",
+        },
+      ],
+      expectVisible: '[data-testid="onboarding-sat-dates"]',
+
       fullPage: true,
       prototype: NO_PROTOTYPE,
     },

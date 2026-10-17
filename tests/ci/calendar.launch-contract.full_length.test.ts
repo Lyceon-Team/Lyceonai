@@ -549,12 +549,13 @@ describe.skipIf(!PG_AVAILABLE)(
       ]);
       expect(outbox[1].outcome).toBe("applied");
 
-      await expect(fullLengthAdapter.progress(sid)).resolves.toBe("completed");
-      const units = await fullLengthAdapter.activityUnits(
-        STUDENT,
-        today,
-        "UTC",
+      // SCL-233: both methods answer for a set (sessions, days) in one read.
+      expect((await fullLengthAdapter.progress([sid])).get(sid)).toBe(
+        "completed",
       );
+      const units = await fullLengthAdapter.activityUnits(STUDENT, [
+        { local_date: today, timezone: "UTC" },
+      ]);
       expect(units).toHaveLength(1);
       expect(units[0]).toMatchObject({
         engine: "full_length",

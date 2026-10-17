@@ -2803,10 +2803,12 @@ plant "QA5-S1" "a page's chunk wait falls through the App shell to the full-page
 assert s.count(a) == 1
 s = s.replace(a, "          fallback={null}\n", 1)'
 
+# Re-pointed 2026-10-13 (first-run activation P0 item 1): the Focus shell's Suspense now wraps the
+# page's RouteErrorBoundary, so the anchor is the three-line block.
 plant "QA5-S2" "a page's chunk wait falls through the Focus shell" \
   "$QA5_FRAME" \
   "client/src/components/layout/StudentRouteFrame.tsx" \
-  'a = "          <Suspense fallback={<PageSkeleton padded />}>{children}</Suspense>\n"
+  'a = "          <Suspense fallback={<PageSkeleton padded />}>\n            <RouteErrorBoundary layout=\"padded\">{children}</RouteErrorBoundary>\n          </Suspense>\n"
 assert s.count(a) == 1
 s = s.replace(a, "          {children}\n", 1)'
 

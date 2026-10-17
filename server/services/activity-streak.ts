@@ -46,7 +46,14 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { classifyError } from "../lib/redact";
 import { getQuotaResetTimezone } from "../lib/account";
-import { isKnownTimeZone } from "./calendar/adapters/local-day";
+import { isKnownTimeZone, localTodayIn } from "./calendar/adapters/local-day";
+import {
+  addDaysToLocalDate,
+  type LocalDate,
+} from "../../packages/shared/src/calendar/time";
+
+/** The streak's day boundary (SCL-226): the database's `public.chicago_day`. */
+const STREAK_TIME_ZONE = "America/Chicago";
 
 /**
  * The student's own zone: their study profile's `timezone` (Doc 05F §7.1), else the platform
@@ -100,6 +107,50 @@ export async function readDailyStreak(
     today_done: parsed.data.today_done,
     broken: parsed.data.broken,
   };
+}
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: '"This week" ticks days
+ *       with any study activity (same definition as the streak)'; SCL-226] | @implemented [2026-10-13]
+ * plain English: the Chicago days from six days ago through today on which the student answered
+ * at least one question, from any source: `public.student_answer_days`, the very set
+ * `student_streak` counts, so a ticked day and the streak cannot disagree. Ascending. Throws on a
+ * failed read (the caller decides).
+ */
+export const ACTIVE_DAYS_WINDOW = 7;
+
+export async function readActiveDays(
+  studentId: string,
+  now: Date = new Date(),
+): Promise<string[]> {
+  const today = localTodayIn(STREAK_TIME_ZONE, now) as LocalDate;
+  const since = addDaysToLocalDate(today, -(ACTIVE_DAYS_WINDOW - 1));
+  const { data, error } = await supabaseServer.rpc("student_answer_days", {
+    p_student_id: studentId,
+    p_since: since,
+  });
+  if (error) throw new Error(`student_answer_days failed: ${error.message}`);
+  // PostgREST answers a `RETURNS TABLE (day date)` with `[{ day }]`; a client that collapses a
+  // one-row, one-column answer to its bare value (supabase-js does for scalars) is accepted too.
+  const dayValue = z.union([z.string(), z.date()]);
+  const parsed = z
+    .union([
+      z.array(z.union([z.object({ day: dayValue }), dayValue])),
+      dayValue,
+      z.null(),
+    ])
+    .parse(data);
+  const values =
+    parsed === null ? [] : Array.isArray(parsed) ? parsed : [parsed];
+  const days = values
+    .map((v) => {
+      const day = typeof v === "object" && "day" in v ? v.day : v;
+      return typeof day === "string"
+        ? day.slice(0, 10)
+        : day.toISOString().slice(0, 10);
+    })
+    .filter((d) => d >= since && d <= today);
+  return [...new Set(days)].sort();
 }
 
 const streakRowSchema = z.object({

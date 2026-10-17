@@ -8786,11 +8786,14 @@ BEGIN
   -- Step 3: opted in to the daily email, read through the one canonical preference function.
   v_pref := public.qotd_daily_email_preference(p_profile_id);
 
-  -- Step 4: the diagnostic or any answered practice item. Question of the Day answers are
-  -- practice items (mode 'qotd', SCL-224), so they count here too.
-  v_blind := EXISTS (
-    SELECT 1 FROM public.practice_session_items i
-     WHERE i.user_id = p_profile_id AND i.status = 'answered');
+  -- Step 4 (Karl, 2026-10-15): the diagnostic completed, or an answered item in a practice
+  -- session that is not Question of the Day. QOTD answers are practice items (mode 'qotd',
+  -- SCL-224) but count for step 2 only.
+  v_blind := public.student_diagnostic_state(p_profile_id) IN ('baseline_pending', 'baseline_ready')
+    OR EXISTS (
+      SELECT 1 FROM public.practice_session_items i
+        JOIN public.practice_sessions ps ON ps.id = i.session_id
+       WHERE i.user_id = p_profile_id AND i.status = 'answered' AND ps.mode <> 'qotd');
 
   -- Step 5: a review session exists.
   v_review := EXISTS (
@@ -28207,7 +28210,7 @@ GRANT ALL ON TABLE public.student_dream_schools TO service_role;
 -- Name: TABLE student_getting_started_state; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT ON TABLE public.student_getting_started_state TO service_role;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.student_getting_started_state TO service_role;
 
 
 --

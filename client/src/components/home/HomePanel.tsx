@@ -96,15 +96,29 @@ export function ProjectionSection({
   );
 }
 
-/** "This week": Monday to Sunday from the calendar, today filled, and the done line. */
+/**
+ * "This week": Monday to Sunday from the calendar, today filled, and the done line.
+ *
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: '"This week" ticks days
+ *       with any study activity (same definition as the streak); plan completion is a separate
+ *       line'] | @implemented [2026-10-13]
+ * plain English: a day carries a ✓ when it is one of `activeDays`, the server's days with at least
+ * one answered question (`active_days` on GET /api/qotd/today, read from the streak's own day set,
+ * `public.student_answer_days`). It no longer depends on the plan: a student who practised off
+ * plan still sees the day ticked. The plan's completion stays the line under the strip
+ * ("N of M days done"). Screen readers hear "studied" on a ticked day.
+ */
 export function WeekSection({
   days,
   today,
+  activeDays,
 }: {
   days: readonly CalendarDay[];
   today: string;
+  activeDays: readonly string[];
 }): JSX.Element {
   const summary = weekSummary(days);
+  const studied = new Set(activeDays);
   return (
     <section
       aria-labelledby="home-week-h"
@@ -134,6 +148,19 @@ export function WeekSection({
               </span>
               <span className="font-lyc-serif text-[18px] font-semibold">
                 {dayOfMonth(day.local_date)}
+              </span>
+              {/* The tick's row is always there, so a ticked and an unticked day line up. */}
+              <span
+                className="h-5 text-lyc-meta font-semibold leading-5"
+                data-testid="home-week-tick"
+                data-studied={studied.has(day.local_date) ? "true" : "false"}
+              >
+                {studied.has(day.local_date) ? (
+                  <>
+                    <span aria-hidden="true">✓</span>
+                    <span className="sr-only">studied</span>
+                  </>
+                ) : null}
               </span>
             </li>
           );

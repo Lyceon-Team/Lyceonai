@@ -379,3 +379,32 @@ describe("a new entry URL on the open auth page", () => {
     expect(screen.getByTestId("signup-role-guardian")).toBeInTheDocument();
   });
 });
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Sign-up/sign-in page:
+ *       Lyceon logo linking to /; password placeholder 'Password'"] | @implemented [2026-10-13]
+ */
+describe("first-run P1: the sign-in / sign-up card", () => {
+  it("has the Lyceon logo, a link to the homepage, on both tabs", () => {
+    for (const url of ["/login", "/login?mode=signup"]) {
+      renderLoginAt(url);
+      const logo = screen.getByRole("link", { name: "Lyceon home" });
+      expect(logo.getAttribute("href")).toBe("/");
+      expect(logo.textContent).toBe("Lyceon");
+      expect(logo.querySelector("svg")).not.toBeNull();
+      cleanup();
+    }
+  });
+
+  it('the password field says "Password", on Sign In and on Sign Up', () => {
+    renderLoginAt("/login");
+    expect(
+      screen.getByTestId("input-signin-password").getAttribute("placeholder"),
+    ).toBe("Password");
+    cleanup();
+    renderLoginAt("/login?mode=signup");
+    expect(
+      screen.getByTestId("input-signup-password").getAttribute("placeholder"),
+    ).toBe("Password");
+  });
+});

@@ -62,6 +62,8 @@ import {
 const STUDENT = "11111111-1111-1111-1111-111111111111";
 const LOCAL_DATE = "2026-09-21";
 const TIMEZONE = "America/Chicago";
+/** SCL-233: the adapter takes a set of days; these tests ask about one. */
+const DAYS = [{ local_date: LOCAL_DATE, timezone: TIMEZONE }];
 
 let client: FakeClient;
 
@@ -94,7 +96,7 @@ describe("the practice adapter counts retrieval, never skips (H2)", () => {
   it("filters on status = 'answered', not on a timestamp being present", async () => {
     client = emptyItems();
 
-    await practiceAdapter.activityUnits(STUDENT, LOCAL_DATE, TIMEZONE);
+    await practiceAdapter.activityUnits(STUDENT, DAYS);
 
     const query = client.queries.find(
       (entry) => entry.table === "practice_session_items",
@@ -126,7 +128,7 @@ describe("the practice adapter counts retrieval, never skips (H2)", () => {
   it("windows on occurred_at — the column the CHECK guarantees", async () => {
     client = emptyItems();
 
-    await practiceAdapter.activityUnits(STUDENT, LOCAL_DATE, TIMEZONE);
+    await practiceAdapter.activityUnits(STUDENT, DAYS);
 
     const query = client.queries.find(
       (entry) => entry.table === "practice_session_items",
@@ -165,11 +167,7 @@ describe("the practice adapter counts retrieval, never skips (H2)", () => {
       },
     });
 
-    const units = await practiceAdapter.activityUnits(
-      STUDENT,
-      LOCAL_DATE,
-      TIMEZONE,
-    );
+    const units = await practiceAdapter.activityUnits(STUDENT, DAYS);
 
     expect(units).toHaveLength(1);
     expect(units[0]).toMatchObject({
@@ -206,11 +204,7 @@ describe("the practice adapter counts retrieval, never skips (H2)", () => {
       },
     });
 
-    const units = await practiceAdapter.activityUnits(
-      STUDENT,
-      LOCAL_DATE,
-      TIMEZONE,
-    );
+    const units = await practiceAdapter.activityUnits(STUDENT, DAYS);
 
     // Revert the adapter to `answered_at` and this is 0: the old guard
     // (`typeof row.answered_at !== "string"`) drops the row, `activityUnits` returns
@@ -242,9 +236,9 @@ describe("the practice adapter counts retrieval, never skips (H2)", () => {
 
     // The CHECK makes this unreachable in the real table, so this asserts the posture and
     // not a live case: a row with no usable instant is skipped, never dated by a guess.
-    await expect(
-      practiceAdapter.activityUnits(STUDENT, LOCAL_DATE, TIMEZONE),
-    ).resolves.toEqual([]);
+    await expect(practiceAdapter.activityUnits(STUDENT, DAYS)).resolves.toEqual(
+      [],
+    );
   });
 });
 

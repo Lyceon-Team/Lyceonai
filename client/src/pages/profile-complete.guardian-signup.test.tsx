@@ -237,6 +237,10 @@ describe("F13 guardian intent from the homepage", () => {
     fireEvent.change(screen.getByTestId("input-display-name"), {
       target: { value: "Sam Student" },
     });
+    // First-run P1 (2026-10-13): the date of birth starts empty, so the student enters one.
+    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
+      target: { value: "2010-01-01" },
+    });
     await act(async () => {
       fireEvent.click(screen.getByTestId("button-complete-profile"));
     });
