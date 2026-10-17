@@ -416,6 +416,21 @@ describe("/profile/complete", () => {
     expectStudentTokensOnly(bareShell());
   });
 
+  // UI59-P2's guard. The marketing opt-in box only renders once a 13+ date of birth is entered
+  // (the date starts empty since 74525a05), so the card-wide token scan above never saw it and
+  // the plant went green. Enter an eligible date, prove the box is there, then check its tokens.
+  it("the marketing opt-in box is the student checkbox (on student tokens)", async () => {
+    renderRoute("/profile/complete", <ProfileComplete />);
+    await screen.findByTestId("button-complete-profile");
+    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
+      target: { value: "2000-01-01" },
+    });
+    const box = await screen.findByTestId("checkbox-marketing-opt-in");
+    expect(box.getAttribute("data-variant")).toBe("lyc");
+    expect(box.getAttribute("class") ?? "").toContain("border-lyc-ink-strong");
+    expectStudentTokensOnly(bareShell());
+  });
+
   it("the role list portals with its own student root (it reads the tokens off-card)", async () => {
     renderRoute("/profile/complete", <ProfileComplete />);
     const trigger = await screen.findByTestId("select-role");
