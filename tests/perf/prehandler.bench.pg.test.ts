@@ -141,6 +141,11 @@ async function buildRealChainApp(): Promise<Express> {
     max: Math.max(1000, 10 + (N + 2) * 4 * Math.max(1, LATENCIES.length)),
   });
   app.use(requestIdMiddleware);
+  // codeql[js/missing-token-validation]: false positive. CSRF *is* enforced — by the production
+  // double-submit middleware `doubleCsrfProtection` (server/middleware/csrf-double-submit), mounted
+  // in this app exactly where server/index.ts mounts it (per route, after the session check), which
+  // CodeQL's default model does not recognise (it matches only `csurf`). Same pattern and note as
+  // the `app.use(cookieParser())` in server/index.ts.
   app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
   app.use(limiter);
@@ -148,21 +153,14 @@ async function buildRealChainApp(): Promise<Express> {
   app.get("/api/csrf-token", (req, res) => {
     res.json({ csrfToken: generateToken(req, res) });
   });
-  // CSRF: the PRODUCTION middleware (`doubleCsrfProtection`, server/middleware/csrf-double-submit),
-  // not a stub. Production mounts it per router, after the session middleware. Here it sits
-  // app-level, right after the cookie parser and limiter and BEFORE the session middleware,
-  // because the session middleware is itself an app-level handler that reads cookies, and CodeQL
-  // (js/missing-token-validation) wants every cookie-reading handler behind CSRF (production's
-  // own index.ts carries a dismissal note for that same pattern). For the requests measured here
-  // the position costs nothing (an HMAC check, no I/O; GET is exempt); only the PRECEDENCE of two
-  // denials differs — a request failing both CSRF and auth sees 403 here, 401 in production — and
-  // every request below carries a valid token, so that path is never exercised.
-  app.use(doubleCsrfProtection);
   app.use(supabaseAuthMiddleware);
   app.use(enforceDeletionLock);
+  // The three mounts exactly as server/index.ts has them, CSRF included and in the same place:
+  // calendar checks CSRF before the role, practice and review after it.
   app.use(
     "/api/calendar",
     requireSupabaseAuth,
+    doubleCsrfProtection,
     requireStudentOrAdmin,
     calendarRouter,
   );
@@ -170,12 +168,14 @@ async function buildRealChainApp(): Promise<Express> {
     "/api/practice",
     requireSupabaseAuth,
     requireStudentOrAdmin,
+    doubleCsrfProtection,
     practiceRouter,
   );
   app.use(
     "/api/review",
     requireSupabaseAuth,
     requireStudentOrAdmin,
+    doubleCsrfProtection,
     reviewRouter,
   );
   return app;

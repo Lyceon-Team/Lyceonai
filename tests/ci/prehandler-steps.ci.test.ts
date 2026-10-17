@@ -115,6 +115,10 @@ function app(): express.Express {
       res.json({ ok: true });
     }),
   );
+  // codeql[js/missing-token-validation]: false positive. CSRF *is* enforced — by the production
+  // double-submit middleware `doubleCsrfProtection` (server/middleware/csrf-double-submit), mounted
+  // on `api` above, which CodeQL's default model does not recognise (it matches only `csurf`).
+  // Same pattern and note as the `app.use(cookieParser())` in server/index.ts.
   a.use("/api", cookieParser(), authRateLimiter, api);
   return a;
 }
