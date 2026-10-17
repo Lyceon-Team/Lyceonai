@@ -26,7 +26,7 @@ const buildScoreEstimateFromCanonical = vi.fn();
 // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
 // pending Doc 04 rebuild. Dead full-length mocks (buildStudentFullLengthReportView)
 // removed; they stubbed deleted exports and fed no assertion here.
-const readDiagnosticBaseline = vi.fn();
+const readDiagnosticProjection = vi.fn();
 const readDiagnosticState = vi.fn();
 const readAnsweredQuestionCount = vi.fn();
 const canAccessFeature = vi.fn();
@@ -38,9 +38,12 @@ vi.mock("../../server/services/kpi-access", () => ({
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
-  readDiagnosticBaseline,
   readDiagnosticState,
   readAnsweredQuestionCount,
+}));
+
+vi.mock("../../apps/api/src/services/projection-read", () => ({
+  readDiagnosticProjection,
 }));
 
 vi.mock("../../server/services/entitlement-service", () => ({
@@ -56,14 +59,29 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
 
 type JsonBody = Record<string, unknown>;
 
-const BASELINE = {
-  composite: 1000,
-  math: 500,
-  rw: 500,
-  range: { low: 940, high: 1060 },
-  confidence: 0.6,
-  capturedAt: "2026-07-01T00:00:00.000Z",
+/** The stored diagnostic projection (SCL-236) as readDiagnosticProjection returns it. */
+const STORED = {
+  status: "computed",
+  sections: [
+    {
+      section: "M",
+      projectedScoreMid: 500,
+      projectedScoreLow: 470,
+      projectedScoreHigh: 530,
+      relevantQuestionCount: 20,
+      computedAt: "2026-07-01T00:00:00.000Z",
+    },
+    {
+      section: "RW",
+      projectedScoreMid: 500,
+      projectedScoreLow: 470,
+      projectedScoreHigh: 530,
+      relevantQuestionCount: 20,
+      computedAt: "2026-07-01T00:00:00.000Z",
+    },
+  ],
 };
+const NOTHING_STORED = { status: null, sections: [] };
 
 const LIVE_ESTIMATE = {
   composite: 1120,
@@ -74,7 +92,7 @@ const LIVE_ESTIMATE = {
 };
 
 /**
- * The four branches, each set up by the inputs that actually reach it. Naming
+ * The branches, each set up by the inputs that actually reach it. Naming
  * them here is what makes a failure say WHICH surface lies.
  */
 const BRANCHES = [
@@ -82,7 +100,7 @@ const BRANCHES = [
     status: "baseline_pending",
     arrange: () => {
       readDiagnosticState.mockResolvedValue("baseline_pending");
-      readDiagnosticBaseline.mockResolvedValue(null);
+      readDiagnosticProjection.mockResolvedValue(NOTHING_STORED);
       canAccessFeature.mockResolvedValue(false);
     },
   },
@@ -90,7 +108,7 @@ const BRANCHES = [
     status: "no_baseline",
     arrange: () => {
       readDiagnosticState.mockResolvedValue("not_taken");
-      readDiagnosticBaseline.mockResolvedValue(null);
+      readDiagnosticProjection.mockResolvedValue(NOTHING_STORED);
       canAccessFeature.mockResolvedValue(false);
     },
   },
@@ -98,7 +116,23 @@ const BRANCHES = [
     status: "baseline_only",
     arrange: () => {
       readDiagnosticState.mockResolvedValue("baseline_ready");
-      readDiagnosticBaseline.mockResolvedValue(BASELINE);
+      readDiagnosticProjection.mockResolvedValue(STORED);
+      canAccessFeature.mockResolvedValue(false);
+    },
+  },
+  {
+    status: "insufficient_evidence",
+    arrange: () => {
+      readDiagnosticState.mockResolvedValue("baseline_ready");
+      readDiagnosticProjection.mockResolvedValue({
+        status: "insufficient_evidence",
+        sections: STORED.sections.map((s) => ({
+          ...s,
+          projectedScoreMid: null,
+          projectedScoreLow: null,
+          projectedScoreHigh: null,
+        })),
+      });
       canAccessFeature.mockResolvedValue(false);
     },
   },
@@ -106,7 +140,7 @@ const BRANCHES = [
     status: "computed",
     arrange: () => {
       readDiagnosticState.mockResolvedValue("baseline_ready");
-      readDiagnosticBaseline.mockResolvedValue(BASELINE);
+      readDiagnosticProjection.mockResolvedValue(STORED);
       canAccessFeature.mockResolvedValue(true);
       buildScoreEstimateFromCanonical.mockResolvedValue({
         status: "computed",

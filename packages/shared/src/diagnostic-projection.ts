@@ -52,8 +52,8 @@ export type DiagnosticCompletionResult = z.infer<
  * it sees the live projection and never the diagnostic number; one who cannot sees the stored
  * diagnostic projection only.
  */
-export const LIVE_PROJECTION_FEATURE_KEY: EntitlementFeatureKey =
-  "mastery_detail";
+export const LIVE_PROJECTION_FEATURE_KEY =
+  "mastery_detail" as const satisfies EntitlementFeatureKey;
 
 /** `public.diagnostic_projection_repair(limit)` — its jsonb, exactly. */
 export const diagnosticProjectionRepairResultSchema = z.object({

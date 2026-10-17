@@ -189,7 +189,7 @@ async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
   return map;
 }
 
-/** GET /api/progress/projection, `computed` arm, carrying a band and a different range. */
+/** GET /api/progress/projection, `computed` arm (paid: the live projection only, SCL-235). */
 const PROJECTION_ROUTE: EstimateResponse = {
   estimateStatus: "computed",
   estimate: {
@@ -199,14 +199,7 @@ const PROJECTION_ROUTE: EstimateResponse = {
     range: { low: 1130, high: 1230 },
     confidenceBand: "Medium",
   },
-  baseline: {
-    composite: 1050,
-    math: 530,
-    rw: 520,
-    range: { low: 990, high: 1110 },
-    confidenceBand: "Low",
-    capturedAt: "2026-09-20T12:00:00.000Z",
-  },
+  diagnostic: null,
   totalQuestionsAttempted: 214,
   lastUpdated: "2026-10-01T12:00:00.000Z",
   entitlement: {
@@ -232,15 +225,22 @@ function estimateStatusBody(
       ...base,
       estimateStatus: "baseline_only",
       estimate: null,
-      baseline: PROJECTION_ROUTE.baseline,
+      diagnostic: {
+        composite: 1050,
+        math: 530,
+        rw: 520,
+        range: { low: 990, high: 1110 },
+        computedAt: "2026-09-20T12:00:00.000Z",
+      },
       cta: true,
     };
   }
-  return { ...base, estimateStatus: status, estimate: null, baseline: null };
+  return { ...base, estimateStatus: status, estimate: null, diagnostic: null };
 }
 
 const SECTIONS = sectionProjectionsResponseSchema.parse({
   ok: true,
+  kind: "live",
   sections: [
     {
       section: "M",
@@ -260,6 +260,13 @@ const SECTIONS = sectionProjectionsResponseSchema.parse({
     },
   ],
   requestId: "r",
+});
+
+/** SCL-235: a free student's sections route carries the stored diagnostic projection. */
+const DIAGNOSTIC_SECTIONS = sectionProjectionsResponseSchema.parse({
+  ...SECTIONS,
+  kind: "diagnostic",
+  status: "computed",
 });
 
 const MASTERY = masteryDomainsResponseSchema.parse({
@@ -481,7 +488,8 @@ const LAUNCHED_EXAM = "66666666-6666-4666-8666-666666666666";
 type Scenario = {
   calendar?: "ready" | "setup_required";
   estimateStatus?: EstimateResponse["estimateStatus"];
-  projection?: "projected" | "none";
+  /** "insufficient": a free student's stored diagnostic projection is below the gate (D1 (a)). */
+  projection?: "projected" | "none" | "insufficient";
   diagnosticAnswered?: number;
   quota?: number | "unlimited";
   /** OQ-68 (d): the config numbers the routes carry; the seeded values when absent. */
@@ -521,7 +529,7 @@ const GETTING_STARTED_DISMISSED = deriveGettingStarted(
   { plan: "free", lisaAvailable: true },
 );
 
-function install(s: Scenario): void {
+function install(s: Scenario, plan: "paid" | "free"): void {
   const calendarBody =
     s.calendar === "setup_required"
       ? {
@@ -554,10 +562,32 @@ function install(s: Scenario): void {
       if (path === `/api/students/${STUDENT}/mastery/domains`)
         return json(MASTERY);
       if (path === `/api/students/${STUDENT}/projections/sections`)
+        // SCL-235: the server answers by plan — live for paid, the diagnostic one for free.
         return json(
           s.projection === "none"
-            ? { ok: true, sections: [], requestId: "r" }
-            : SECTIONS,
+            ? plan === "paid"
+              ? { ok: true, kind: "live", sections: [], requestId: "r" }
+              : {
+                  ok: true,
+                  kind: "diagnostic",
+                  status: null,
+                  sections: [],
+                  requestId: "r",
+                }
+            : s.projection === "insufficient"
+              ? {
+                  ...DIAGNOSTIC_SECTIONS,
+                  status: "insufficient_evidence",
+                  sections: DIAGNOSTIC_SECTIONS.sections.map((row) => ({
+                    ...row,
+                    projectedScoreMid: null,
+                    projectedScoreLow: null,
+                    projectedScoreHigh: null,
+                  })),
+                }
+              : plan === "paid"
+                ? SECTIONS
+                : DIAGNOSTIC_SECTIONS,
         );
       if (path === "/api/progress/projection")
         return json(estimateStatusBody(s.estimateStatus ?? "computed"));
@@ -644,7 +674,7 @@ async function mount(
   /** QA2-F: a read is held (`net.hold`), so wait for the loading state, not the page. */
   opts: { pending?: boolean; failPath?: RegExp } = {},
 ): Promise<{ container: HTMLElement; history: string[] }> {
-  install(scenario);
+  install(scenario, plan);
   // QA2-F: one read answers 500 (a failed read ends the loading wait).
   const failPath = opts.failPath;
   if (failPath !== undefined)
@@ -1107,6 +1137,70 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
       within(dialog).getByText(UPGRADE_MODAL_COPY.mastery_detail.plan.title),
     ).toBeTruthy();
     expect(net.log.slice(before).filter((l) => /mastery/.test(l))).toEqual([]);
+  });
+
+  // SCL-235 (owner ruling 2026-10-16): a free student sees their diagnostic result, labelled as
+  // such, and the live projection is the locked thing behind the upgrade.
+  it("free, after the diagnostic: 'Your diagnostic result', the band, and an upgrade link for the live projection", async () => {
+    const { container } = await mount("free", {
+      estimateStatus: "baseline_only",
+    });
+    const panel = await screen.findByTestId("home-projection");
+    expect(panel.getAttribute("data-kind")).toBe("diagnostic");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Your diagnostic result",
+    );
+    expect(within(panel).getByTestId("home-projection-range").textContent).toBe(
+      "1140–1300",
+    );
+    expect(panel.textContent).toContain(
+      "From your diagnostic answers. This result doesn’t change.",
+    );
+    // The live-projection copy is a paid sentence; it is not on the free panel.
+    expect(panel.textContent).not.toContain("The range narrows");
+    // DESIGN.md §5: the upgrade is a text link, not a second filled primary.
+    expect(primaries(container)).toEqual([]);
+    const before = net.log.length;
+    fireEvent.click(within(panel).getByTestId("home-projection-upgrade"));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(UPGRADE_MODAL_COPY.mastery_detail.plan.title),
+    ).toBeTruthy();
+    // Opening the modal fetches nothing: no live read is attempted for a free student.
+    expect(net.log.slice(before)).toEqual([]);
+  });
+
+  it("free, a skipped diagnostic (D1 (a)): the honest sentence, no number", async () => {
+    await mount("free", {
+      estimateStatus: "insufficient_evidence",
+      projection: "insufficient",
+    });
+    const panel = await screen.findByTestId("home-projection");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Your diagnostic result",
+    );
+    expect(within(panel).queryByTestId("home-projection-range")).toBeNull();
+    expect(panel.textContent).toContain(
+      "We need more answers in some areas to estimate your score.",
+    );
+    expect(screen.queryByTestId("home-diagnostic")).toBeNull();
+  });
+
+  it("free, before the diagnostic: no upgrade link on the panel, the diagnostic card instead", async () => {
+    await mount("free", { estimateStatus: "no_baseline", projection: "none" });
+    const panel = await screen.findByTestId("home-projection");
+    expect(within(panel).queryByTestId("home-projection-upgrade")).toBeNull();
+  });
+
+  it("paid: the heading stays 'Projected score' and there is no diagnostic label or upgrade link", async () => {
+    await mount("paid", { calendar: "ready" });
+    const panel = await screen.findByTestId("home-projection");
+    expect(panel.getAttribute("data-kind")).toBe("live");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Projected score",
+    );
+    expect(panel.textContent).not.toContain("diagnostic");
+    expect(within(panel).queryByTestId("home-projection-upgrade")).toBeNull();
   });
 
   it("Start diagnostic starts (or resumes) the diagnostic and opens its session", async () => {
