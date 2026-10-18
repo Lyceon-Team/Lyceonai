@@ -7,7 +7,7 @@
  *       passages printed "<u>" and "</u>" instead of underlining the target sentence]
  *       | @implemented [2026-10-11]
  *
- * plain English: the fixtures are the 21 real seeded items, parsed out of
+ * plain English: the fixtures are the 27 real seeded items, parsed out of
  * infra/supabase/seed by the same reader the CI gate uses, so these tests see the passages
  * students saw. Each one goes through MathRenderer (practice, diagnostic, review), StaticMath
  * (prerendered QOTD pages) and the exam passage view, and must show exactly one underline
@@ -42,9 +42,9 @@ async function renderMath(content: string): Promise<HTMLElement> {
   return inner;
 }
 
-describe("the 21 published underlined-sentence items", () => {
+describe("the 27 published underlined-sentence items", () => {
   it("are all present (presence before absence)", () => {
-    expect(UNDERLINED).toHaveLength(21);
+    expect(UNDERLINED).toHaveLength(27);
     for (const q of UNDERLINED) {
       expect(q.stem).toMatch(
         /the underlined (sentence|portion)|most nearly means/,
