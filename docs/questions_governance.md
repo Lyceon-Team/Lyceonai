@@ -387,6 +387,9 @@ Or for LaTeX-rendered figures (preferred when possible):
 - Data tables may be rendered as LaTeX tabular or as structured JSON within the stem
 - Geometry diagrams should include labeled points, angles, and measurements as described in the stem
 
+**No function composition (`COMPOSITION_OFFSPEC` — gate HARD-FAIL).** _(Added 2026-10-18.)_
+The Digital SAT does not test function composition. An OCR audit of 377 official Linear/Nonlinear Functions questions found zero self-compositions and only one weak two-step numeric composite. Composition questions are off-spec. Specifically banned: self-composition (`f(f(x))`, `h(h(x))`, `g(g(x))`), nested-notation composition solved for a variable (`f(g(a)) = k`), and two-function composites in general (`f(g(…))`, `g(f(…))`). Translations are NOT composition and remain allowed: `g(x) = f(x+5)`, `g = f + k`, `h = f - 13`. Gate detector: `/[fgh]\s*\(\s*[fgh]\s*\(/` on stem → REJECT.
+
 **No phantom figure references (`PHANTOM_FIGURE` — gate FLAG, Codex adjudicates).**
 Never reference a visual that is not attached — no "the graph shows", "in the figure", "a scatterplot shows [read a value]" when no asset exists. Make the item self-contained: give the equation, data, slope, or configuration in text. Saying "the graph of $f(x) = …$" is fine when the graph IS the equation and no value must be read from it. Gate flags any stem matching `graph|figure|chart|scatterplot|histogram|diagram|table` when `assets` is NULL. Codex adjudicates whether the item is answerable without a visual or must be reworded/rejected. _(Added 2026-09-27.)_
 
