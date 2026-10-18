@@ -4,5 +4,5 @@
   "audited": 90,
   "errors": [],
   "pass": true,
-  "notes": "Gate initially failed with 16 violations (1 PHANTOM_FIGURE, 12 DUPLICATED_BOUNDARY_WORDS across 3 SEC Boundaries items, 3 BANK_DUPLICATE). Fixed: algebra_a:8 stem 'graph' → 'line'; SEC:1-3 moved blank boundary one word earlier; algebra_a:1,10 and advanced-math_a:10 replaced with new questions. All replacement questions verified by cold re-derivation."
+  "notes": "Blind re-audit 2026-10-18. SATRW2SEKG71 skill-content mismatch (I&I/Central Ideas -> C&S/Text Structure and Purpose) fixed. All 90 keys verified."
 }

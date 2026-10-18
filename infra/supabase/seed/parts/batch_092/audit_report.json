@@ -2,7 +2,9 @@
   "batch": "092",
   "total": 90,
   "audited": 90,
-  "errors": [],
+  "errors": [
+    "SATM2TFNU0A: borderline skill tag — perfect-square trinomial tagged Nonlinear Equations, could be Equivalent Expressions (LOW)"
+  ],
   "pass": true,
-  "notes": "Third audit cycle. Two LOW-severity error_taxonomy label corrections applied post-audit: SATM2GPVBY2 option A sign_error→concept_gap (subtracting legs is conceptual, not sign error), SATM2W0SU2M option A arithmetic_slip→concept_gap (confusing zero discriminant with no solutions is conceptual). Six trailing authoring artifacts removed from RW distractors across audit cycles 2-3. RW_LONGEST_ANSWER_TELL ratio managed: 46.7%→26.7% by lengthening distractors with substantive detail."
+  "notes": "Blind re-audit 2026-10-18. All 90 answer keys independently verified. One borderline skill tag noted (LOW)."
 }
