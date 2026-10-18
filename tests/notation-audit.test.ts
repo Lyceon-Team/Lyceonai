@@ -202,7 +202,7 @@ describe("per-batch notation audit", () => {
           correct_answer: "A",
           explanation: "test",
           section: "M",
-          domain: "Test",
+          domain: "Algebra",
           difficulty: 1,
           item_type: "mcq",
         },
