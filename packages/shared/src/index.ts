@@ -4,6 +4,7 @@ export * from "./mastery-emission.js";
 export * from "./session-mode.js";
 export * from "./diagnostic-eligibility.js";
 export * from "./diagnostic-state.js";
+export * from "./diagnostic-projection.js";
 export * from "./id.js";
 export * from "./rng.js";
 export * from "./env.js";

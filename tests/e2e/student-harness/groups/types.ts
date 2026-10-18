@@ -151,6 +151,14 @@ export type Shot = {
    */
   freshQuota?: true;
   /**
+   * SCL-235 / SCL-236 (owner rulings 2026-10-16/17): the persona has COMPLETED the diagnostic
+   * before the capture — started and answered through the real routes
+   * (POST /api/practice/diagnostic/sessions, /next, /answer), so its stored diagnostic projection
+   * is written by the real completion path. Idempotent: a persona who already completed it
+   * (409 diagnostic_already_completed) is left as is. Listed in the index next to the shot.
+   */
+  completedDiagnostic?: true;
+  /**
    * The visitor already answered the cookie banner (analytics rejected), so the banner does not
    * cover the page's controls. Written as the real consent cookie, in the current banner version,
    * the way the banner itself writes it. Listed in the index next to the shot.

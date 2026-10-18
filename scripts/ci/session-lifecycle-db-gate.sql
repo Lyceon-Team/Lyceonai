@@ -12,16 +12,16 @@
 --   C  in_progress      one active diagnostic
 --   D  baseline_pending completed, zero snapshots — the prod shape this workstream
 --                       exists to fix
---   E  baseline_pending completed + TWO diagnostic_baseline snapshot rows whose
---                       projected_score_mid is NULL.
---                       *** THE DISCRIMINATING ROW ***
---                       compute_section_projection writes an explicit ALL-NULL row
---                       when the Q4 evidence gate fails, so `count(*) >= 2` reads
---                       this student as baseline_ready and shows them a card with
---                       no numbers in it. Only a predicate that also requires a
---                       non-NULL mid gets this right. Without student E the gate
---                       cannot tell the two implementations apart.
---   F  baseline_ready   completed + two real snapshots
+--   E  baseline_pending completed + TWO diagnostic_baseline SNAPSHOT rows with real
+--                       numbers, and NO stored diagnostic projection.
+--                       *** THE DISCRIMINATING ROW *** (re-cut 2026-10-17, SCL-236)
+--                       The old snapshots are audit history and nothing reads them:
+--                       baseline_ready is driven by student_diagnostic_projections
+--                       only. A view still reading the snapshot table would call this
+--                       student baseline_ready.
+--   F  baseline_ready   completed + the two stored diagnostic projection rows
+--                       (one insufficient_evidence: D1 = (a) stores a result even when
+--                       the evidence gate fails, and that IS the student's result)
 --   G  baseline_pending completed AND active at once — production's actual shape
 --                       before resolve-duplicate-diagnostic.sql runs. Proves the
 --                       CASE precedence matches resolveDiagnosticStartDecision,
@@ -86,17 +86,27 @@ BEGIN
     (user_id, mode, target_count, platform, status, actor_id)
   VALUES (v_g, 'diagnostic', 40, 'web', 'active', v_actor);
 
-  -- E: two baseline rows, both all-NULL. This is what the evidence gate writes.
-  INSERT INTO public.student_section_projection_snapshots
-    (student_id, section, projected_score_mid, snapshot_kind)
-  VALUES (v_e, 'M', NULL, 'diagnostic_baseline'),
-         (v_e, 'RW', NULL, 'diagnostic_baseline');
-
-  -- F: a real baseline.
+  -- E: the OLD baseline shape — real numbers in the snapshot table, nothing stored in
+  -- student_diagnostic_projections. Must read baseline_pending (nothing reads the old rows).
   INSERT INTO public.student_section_projection_snapshots
     (student_id, section, projected_score_mid, projected_score_low, projected_score_high, snapshot_kind)
-  VALUES (v_f, 'M', 520, 480, 560, 'diagnostic_baseline'),
-         (v_f, 'RW', 540, 500, 580, 'diagnostic_baseline');
+  VALUES (v_e, 'M', 520, 480, 560, 'diagnostic_baseline'),
+         (v_e, 'RW', 540, 500, 580, 'diagnostic_baseline');
+
+  -- F: the stored diagnostic projection (SCL-236), both sections, one of them
+  -- insufficient_evidence.
+  INSERT INTO public.student_diagnostic_projections
+    (practice_session_id, section, student_id, status,
+     projected_score_mid, projected_score_low, projected_score_high, range_width,
+     relevant_question_count, answered_count, domain_mastery,
+     mastery_constants_hash, projection_constants_hash, mastery_model_version)
+  SELECT ps.id, x.section, v_f, x.status, x.mid, x.low, x.high, x.width, 20, 20, '{}'::jsonb,
+         'ci', 'ci', 'v1.0'
+  FROM public.practice_sessions ps,
+       (VALUES ('M', 'computed', 520, 480, 560, 80),
+               ('RW', 'insufficient_evidence', NULL::int, NULL::int, NULL::int, NULL::int))
+         AS x(section, status, mid, low, high, width)
+  WHERE ps.user_id = v_f AND ps.mode = 'diagnostic';
 END $seed$;
 
 \endif

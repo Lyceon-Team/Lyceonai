@@ -22,6 +22,7 @@
  * optimism — see resolveEstimateStatus.
  */
 import { z } from "zod";
+import type { DiagnosticProjectionStatus } from "./diagnostic-projection.js";
 
 /**
  * The four states, in lifecycle order. MUST match the CASE arms in
@@ -30,8 +31,9 @@ import { z } from "zod";
  *  not_taken        no diagnostic that still counts (includes abandoned-only —
  *                   per ruling Q1 an abandoned diagnostic is not spent)
  *  in_progress      a 'created' or 'active' diagnostic exists; resumable
- *  baseline_pending COMPLETED, but no usable baseline snapshot yet
- *  baseline_ready   COMPLETED and both sections carry a non-NULL baseline mid
+ *  baseline_pending COMPLETED, but the stored diagnostic projection is not written yet
+ *  baseline_ready   COMPLETED and the stored diagnostic projection exists for both sections
+ *                   (computed or insufficient_evidence; SCL-236, migration 20261106010000)
  */
 export const DIAGNOSTIC_STATES = [
   "not_taken",
@@ -44,18 +46,23 @@ export const diagnosticStateSchema = z.enum(DIAGNOSTIC_STATES);
 export type DiagnosticState = z.infer<typeof diagnosticStateSchema>;
 
 /**
- * What /api/progress/projection reports. `baseline_pending` is the member added
- * by step 6; the other three are the shipped contract and their meaning is
- * unchanged.
+ * What /api/progress/projection reports. Re-cut 2026-10-17 for SCL-235 / SCL-236: the number a
+ * free student sees is the STORED diagnostic projection, the number a paid student sees is the
+ * live projection, and neither is ever shown alongside the other.
  *
- *  computed         live rolling projection (paid / admin)
- *  baseline_only    frozen diagnostic baseline, no live projection
- *  baseline_pending diagnostic done, numbers not ready yet
- *  no_baseline      no diagnostic to show a score from
+ *  computed              paid: the live projection
+ *  baseline_only         free: the stored diagnostic projection (both sections scored)
+ *  insufficient_evidence the diagnostic is done but there is no number to show: free — the
+ *                        stored diagnostic projection is `insufficient_evidence` (a skipped
+ *                        question left a domain under the Doc 05C gate; owner ruling D1 (a));
+ *                        paid — the live projection is below the same gate
+ *  baseline_pending      free: diagnostic done, its stored projection not written yet
+ *  no_baseline           the diagnostic is not done (both plans)
  */
 export const ESTIMATE_STATUSES = [
   "computed",
   "baseline_only",
+  "insufficient_evidence",
   "baseline_pending",
   "no_baseline",
 ] as const;
@@ -87,55 +94,57 @@ export const BASELINE_PENDING_HEADLINE = "Your baseline is being calculated.";
 export type EstimateStatusInputs = {
   /** From public.student_diagnostic_state(). */
   diagnosticState: DiagnosticState;
-  /** A usable diagnostic_baseline snapshot exists (both sections, non-NULL mid). */
-  hasBaseline: boolean;
-  /** Entitlement decision for the live rolling projection. */
+  /**
+   * The stored diagnostic projection's aggregate status (`readDiagnosticProjection`), or null
+   * when no row is stored. Only consulted for a subject who cannot see the live projection.
+   */
+  diagnosticProjectionStatus: DiagnosticProjectionStatus | null;
+  /** Entitlement decision for the live projection (`LIVE_PROJECTION_FEATURE_KEY`). */
   canSeeLiveProgression: boolean;
   /** A live section projection was computable right now. */
   hasLiveEstimate: boolean;
 };
 
 /**
- * WHY hasBaseline OUTRANKS diagnosticState
+ * WHY A STORED ROW OUTRANKS diagnosticState
  *
- * The two are read from different places — readDiagnosticBaseline queries the
- * snapshots directly, student_diagnostic_state() aggregates them — so a baseline
- * written between the two reads makes them disagree for one request. When they
- * do, real numbers win: showing "your baseline is being calculated" to a student
- * whose baseline we are holding would be a lie in the safe-sounding direction.
+ * The two are read separately, so a row written between the reads makes them disagree for one
+ * request. Rows exist only for a completed diagnostic, so a stored row proves the diagnostic is
+ * done whatever the state read said.
  *
  * WHY baseline_pending IS CHECKED BEFORE no_baseline
  *
- * They are the same absence with different causes, and the causes need opposite
- * copy. no_baseline invites the student to take a diagnostic; for a student who
- * already took one that invitation is both wrong and unactionable — the start
- * route refuses it (409 diagnostic_already_completed). baseline_pending tells
- * them the truth: the work is done, the numbers are not ready.
+ * They are the same absence with different causes, and the causes need opposite copy.
+ * no_baseline invites the student to take a diagnostic; for a student who already took one that
+ * invitation is both wrong and unactionable — the start route refuses it (409
+ * diagnostic_already_completed). baseline_pending tells them the truth: the work is done, the
+ * numbers are not ready. (A failed read no longer reaches here as an absence: the diagnostic
+ * read throws, which is a 500, not a guess.)
  *
- * in_progress deliberately maps to no_baseline. A student mid-diagnostic has no
- * score to show and the CTA is the correct affordance; making it its own surface
- * state would be new product copy nobody has ruled on.
+ * WHY A PAID STUDENT WHO HAS NOT DONE THE DIAGNOSTIC IS no_baseline
+ *
+ * The status also decides whether Home offers the diagnostic (home-model.ts `freeHomeStage`),
+ * on both plans. Paid Home is unchanged by SCL-235, so this is unchanged too.
+ *
+ * in_progress deliberately maps to no_baseline. A student mid-diagnostic has no score to show
+ * and the CTA is the correct affordance.
  */
 export function resolveEstimateStatus(
   inputs: EstimateStatusInputs,
 ): EstimateStatus {
-  if (!inputs.hasBaseline) {
-    // baseline_ready belongs here too, and the reason is not symmetry.
-    // readDiagnosticBaseline collapses a READ ERROR into null
-    // (server/services/canonical-runtime-views.ts: `if (error || !snapshots) return null`).
-    // So a student whose baseline genuinely exists lands here whenever that query
-    // fails transiently — and mapping them to no_baseline would tell a student who
-    // finished the diagnostic to go take one, which is the exact defect this
-    // module exists to remove, reachable through a dropped connection instead of
-    // through a missing snapshot. "The numbers are not on screen right now" is
-    // true in both cases; "you have not taken it" is true in neither.
-    const diagnosticIsDone =
-      inputs.diagnosticState === "baseline_pending" ||
-      inputs.diagnosticState === "baseline_ready";
-    return diagnosticIsDone ? "baseline_pending" : "no_baseline";
+  const diagnosticIsDone =
+    inputs.diagnosticState === "baseline_pending" ||
+    inputs.diagnosticState === "baseline_ready" ||
+    (!inputs.canSeeLiveProgression &&
+      inputs.diagnosticProjectionStatus !== null);
+  if (!diagnosticIsDone) return "no_baseline";
+
+  if (inputs.canSeeLiveProgression) {
+    return inputs.hasLiveEstimate ? "computed" : "insufficient_evidence";
   }
 
-  if (!inputs.canSeeLiveProgression) return "baseline_only";
-
-  return inputs.hasLiveEstimate ? "computed" : "baseline_only";
+  if (inputs.diagnosticProjectionStatus === null) return "baseline_pending";
+  return inputs.diagnosticProjectionStatus === "computed"
+    ? "baseline_only"
+    : "insufficient_evidence";
 }

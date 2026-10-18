@@ -116,7 +116,7 @@ for sid in "${!EXPECTED[@]}"; do
     S1A_OK=0
   fi
 done
-[ "$S1A_OK" = 1 ] && pass S1-A "all seven students resolve correctly (incl. E: two ALL-NULL baseline rows are NOT a baseline)"
+[ "$S1A_OK" = 1 ] && pass S1-A "all seven students resolve correctly (incl. E: old diagnostic_baseline snapshots are NOT a baseline; F: the stored diagnostic projection is)"
 
 if [ "$(q slc_state_ci "SELECT state FROM public.student_diagnostic_states WHERE student_id='$G'::uuid;")" != "baseline_pending" ]; then
   fail S1-B "a student holding BOTH a completed and an active diagnostic did not resolve completed-first"
@@ -159,7 +159,10 @@ fi
 
 ACTOR_B="$(q slc_state_ci "SELECT actor_id FROM public.profiles WHERE id='$B'::uuid;")"
 S2B="$(sqlstate slc_state_ci "INSERT INTO public.practice_sessions (user_id, mode, target_count, platform, status, actor_id, completed_at) VALUES ('$B'::uuid,'diagnostic',40,'web','completed','$ACTOR_B'::uuid, now());")"
-S2B2="$(sqlstate slc_state_ci "INSERT INTO public.practice_sessions (user_id, mode, target_count, platform, status, actor_id) VALUES ('$G'::uuid,'diagnostic',40,'web','active',(SELECT actor_id FROM public.profiles WHERE id='$G'::uuid));")"
+# D holds ONE completed diagnostic and nothing in flight. (G already holds an active one, and
+# since 2026-10-17 practice_sessions_one_inflight_diagnostic_uq refuses a second in-flight
+# diagnostic per student — a different index from the completed one this case is about.)
+S2B2="$(sqlstate slc_state_ci "INSERT INTO public.practice_sessions (user_id, mode, target_count, platform, status, actor_id) VALUES ('$D'::uuid,'diagnostic',40,'web','active',(SELECT actor_id FROM public.profiles WHERE id='$D'::uuid));")"
 if [ "$S2B" != "OK" ]; then
   fail S2-B "a student whose only other diagnostic is ABANDONED could not complete one ('$S2B') — ruling Q1 says abandonment does not spend the diagnostic"
 elif [ "$S2B2" != "OK" ]; then

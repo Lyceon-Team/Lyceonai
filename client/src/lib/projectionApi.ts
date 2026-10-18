@@ -27,14 +27,13 @@ export interface ScoreEstimate {
 }
 
 /**
- * @spec [Doc-05C §7.4, Doc-01_V8 §20 entitlement_features, Vertical-B Slice 2]
- * @implemented 2026-08-12
+ * @spec [SCL-235, SCL-236 (Doc 05C §12A)] | @implemented [2026-10-17]
  *
- * plain English: frozen diagnostic baseline from the once-only snapshot capture.
- * Served in baseline_only and computed branches so the UI can show starting point
- * alongside live progression.
+ * plain English: the stored diagnostic projection as `/api/progress/projection` prints it to a
+ * free student: computed once from the diagnostic's own answers, never changed. No confidence
+ * figure (F-51). A paid student never receives it (owner ruling 2026-10-16, 4).
  */
-export interface BaselineEstimate {
+export interface DiagnosticEstimate {
   composite: number;
   math: number;
   rw: number;
@@ -42,8 +41,7 @@ export interface BaselineEstimate {
     low: number;
     high: number;
   };
-  confidenceBand: ConfidenceBand;
-  capturedAt: string;
+  computedAt: string | null;
 }
 
 /**
@@ -57,15 +55,19 @@ export interface BaselineEstimate {
  * then, so consumers MUST narrow on estimateStatus/estimate before dereferencing. Once `estimate`
  * can be null, TS forbids .composite/.range/.confidenceBand without a guard — render honest-uncomputed.
  *
- * - no_baseline: student hasn't completed the diagnostic yet. No baseline, no projection.
- * - baseline_pending: diagnostic COMPLETED, baseline not computed yet. Distinct from
- *   no_baseline because the copy must be opposite — there is nothing for the student to
- *   do, and prompting them to take a diagnostic they already took is both false and
+ * Re-cut 2026-10-17 (SCL-235 / SCL-236): a free student's number is the STORED diagnostic
+ * projection, a paid student's is the live projection, never both.
+ * - no_baseline: the diagnostic is not done (both plans).
+ * - baseline_pending: diagnostic COMPLETED, its stored projection not written yet (free).
+ *   Distinct from no_baseline because the copy must be opposite — there is nothing for the
+ *   student to do, and prompting them to take a diagnostic they already took is both false and
  *   unactionable (the start route answers 409 diagnostic_already_completed).
  *   Owner ruling Q2, 2026-08-17.
- * - baseline_only: diagnostic done (baseline exists) but no mastery_detail feature (unpaid).
- *   Frozen baseline + upgrade CTA. No live projection served.
- * - computed: paid — live projection + baseline for comparison.
+ * - baseline_only: free — the stored diagnostic projection + upgrade CTA. No live projection.
+ * - insufficient_evidence: the diagnostic is done but there is no number: free — the stored
+ *   result is below the Doc 05C gate (a skipped question; owner ruling D1 (a)); paid — the live
+ *   projection is below the same gate.
+ * - computed: paid — the live projection only.
  *
  * DRIFT: this union is the client-side mirror of ESTIMATE_STATUSES in
  * packages/shared/src/diagnostic-state.ts. The client has no module path to
@@ -77,7 +79,8 @@ export type EstimateStatus =
   | "computed"
   | "no_baseline"
   | "baseline_pending"
-  | "baseline_only";
+  | "baseline_only"
+  | "insufficient_evidence";
 
 interface EstimateResponseBase {
   /**
@@ -105,34 +108,43 @@ export type EstimateResponse =
   | (EstimateResponseBase & {
       estimateStatus: "computed";
       estimate: ScoreEstimate;
-      baseline: BaselineEstimate;
+      diagnostic: null;
     })
   | (EstimateResponseBase & {
       estimateStatus: "baseline_only";
       estimate: null;
-      baseline: BaselineEstimate;
+      diagnostic: DiagnosticEstimate;
       cta: true;
+    })
+  | (EstimateResponseBase & {
+      estimateStatus: "insufficient_evidence";
+      estimate: null;
+      diagnostic: null;
     })
   | (EstimateResponseBase & {
       estimateStatus: "no_baseline";
       estimate: null;
-      baseline: null;
+      diagnostic: null;
     })
   | (EstimateResponseBase & {
       estimateStatus: "baseline_pending";
       estimate: null;
-      baseline: null;
+      diagnostic: null;
     });
 
 /**
- * @spec [student-UI register OQ-36 (owner ruling 2026-10-02), §8 F-51; Doc 05C (a student reads
- *        their own projection with no entitlement check)] | @implemented [2026-10-03]
+ * @spec [student-UI register OQ-36 (owner ruling 2026-10-02), §8 F-51, F-55; SCL-235 (owner
+ *        ruling 2026-10-16: free sees only the diagnostic projection, paid only the live one)]
+ *        | @implemented [2026-10-03; re-cut 2026-10-17]
  *
- * plain English: Home's two projection reads. The range comes from
- * `GET /api/students/:id/projections/sections` (ungated, both plans), summed by
- * `projectedRange`. `/api/progress/projection` is read for `estimateStatus` ONLY, parsed through
- * a schema that keeps that one field, so its `confidenceBand` never reaches the page (F-51).
- * A body either schema rejects throws: a contract mismatch is an error, not an empty result.
+ * plain English: Home's two projection reads. The NUMBER comes from
+ * `GET /api/students/:id/projections/sections`, which now carries `kind`: the live rows for a
+ * paid student, the stored diagnostic projection for a free one (the server decides; the client
+ * renders what it is given). `/api/progress/projection` is read for `estimateStatus` only — the
+ * diagnostic number it also prints reaches Home through the sections route instead, so it is
+ * not thrown away: Home shows it. (Until 2026-10-17 this read discarded the frozen baseline
+ * and Home showed nobody the diagnostic number.) A body either schema rejects throws: a
+ * contract mismatch is an error, not an empty result.
  */
 export async function fetchSectionProjections(
   studentId: string,
