@@ -44,7 +44,7 @@ async function renderMath(content: string): Promise<HTMLElement> {
 
 describe("the 56 published underlined-sentence items", () => {
   it("are all present (presence before absence)", () => {
-    expect(UNDERLINED).toHaveLength(56);
+    expect(UNDERLINED).toHaveLength(58);
     for (const q of UNDERLINED) {
       expect(q.stem).toMatch(
         /the underlined (sentence|portion)|most nearly means?/,
