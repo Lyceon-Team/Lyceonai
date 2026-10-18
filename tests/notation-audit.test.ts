@@ -6,6 +6,11 @@ import { runNotationAudit } from "../scripts/content/batch-notation-audit.js";
 const TMP_DIR = join("content/official-corpus");
 const BATCH_DIR = "/tmp/notation-audit-test-batch";
 
+const TEST_SKILL_A = "Test Nonlinear Functions Audit";
+const TEST_SKILL_A_SLUG = "test-nonlinear-functions-audit";
+const TEST_SKILL_B = "Test Circles Audit";
+const TEST_SKILL_B_SLUG = "test-circles-audit";
+
 describe("per-batch notation audit", () => {
   beforeAll(() => {
     mkdirSync(BATCH_DIR, { recursive: true });
@@ -15,8 +20,8 @@ describe("per-batch notation audit", () => {
   afterAll(() => {
     rmSync(BATCH_DIR, { recursive: true, force: true });
     for (const f of [
-      join(TMP_DIR, "nonlinear-functions.ndjson"),
-      join(TMP_DIR, "circles.ndjson"),
+      join(TMP_DIR, `${TEST_SKILL_A_SLUG}.ndjson`),
+      join(TMP_DIR, `${TEST_SKILL_B_SLUG}.ndjson`),
     ]) {
       if (existsSync(f)) rmSync(f);
     }
@@ -27,36 +32,36 @@ describe("per-batch notation audit", () => {
       const officialCorpus = [
         {
           official_id: "off-001",
-          skill: "Nonlinear Functions",
+          skill: TEST_SKILL_A,
           difficulty: "Easy",
           ocr_text:
             "If $f(x) = x^2 + 3$ and $g(x) = 2x - 1$, what is $f(5) + g(3)$?",
         },
         {
           official_id: "off-002",
-          skill: "Nonlinear Functions",
+          skill: TEST_SKILL_A,
           difficulty: "Medium",
           ocr_text:
             "The function $f$ is defined by $f(x) = 3x^2 - 5x + 2$. What is $f(-1)$?",
         },
         {
           official_id: "off-003",
-          skill: "Nonlinear Functions",
+          skill: TEST_SKILL_A,
           difficulty: "Hard",
           ocr_text:
             "Given $g(x) = x^3 - 4x$, for what value of $x$ does $g(x) = 0$?",
         },
       ];
       writeFileSync(
-        join(TMP_DIR, "nonlinear-functions.ndjson"),
+        join(TMP_DIR, `${TEST_SKILL_A_SLUG}.ndjson`),
         officialCorpus.map((q) => JSON.stringify(q)).join("\n") + "\n",
       );
 
       const batchQuestions = [
         {
           id: "lyceon-comp-001",
-          skill: "Nonlinear Functions",
-          skill_codes: ["Nonlinear Functions"],
+          skill: TEST_SKILL_A,
+          skill_codes: [TEST_SKILL_A],
           stem: "If $f(x) = x^2$ and $g(x) = x + 1$, what is $f(g(2))$?",
           options: [
             { key: "A", text: "4" },
@@ -98,21 +103,21 @@ describe("per-batch notation audit", () => {
       const officialCorpus = [
         {
           official_id: "off-circ-001",
-          skill: "Circles",
+          skill: TEST_SKILL_B,
           difficulty: "Easy",
           ocr_text:
             "$(x-6)^2 + (y-3)^2 = 81$. The graph is a circle. What is the radius?",
         },
         {
           official_id: "off-circ-002",
-          skill: "Circles",
+          skill: TEST_SKILL_B,
           difficulty: "Medium",
           ocr_text:
             "A circle with center $(0,0)$ has radius 5. An angle of $45^\\circ$ is inscribed.",
         },
       ];
       writeFileSync(
-        join(TMP_DIR, "circles.ndjson"),
+        join(TMP_DIR, `${TEST_SKILL_B_SLUG}.ndjson`),
         officialCorpus.map((q) => JSON.stringify(q)).join("\n") + "\n",
       );
 
@@ -121,8 +126,8 @@ describe("per-batch notation audit", () => {
       const batchQuestions = [
         {
           id: "lyceon-trans-001",
-          skill: "Circles",
-          skill_codes: ["Circles"],
+          skill: TEST_SKILL_B,
+          skill_codes: [TEST_SKILL_B],
           stem: "If $f(x) = x^2$, the graph of $g(x) = f(x+5)$ is a translation 5 units left.",
           options: [
             { key: "A", text: "Left" },
@@ -139,8 +144,8 @@ describe("per-batch notation audit", () => {
         },
         {
           id: "lyceon-degree-001",
-          skill: "Circles",
-          skill_codes: ["Circles"],
+          skill: TEST_SKILL_B,
+          skill_codes: [TEST_SKILL_B],
           stem: "A central angle of $60^\\circ$ subtends an arc. What is the arc length if $r = 5$?",
           options: [
             { key: "A", text: "$\\frac{5\\pi}{3}$" },
