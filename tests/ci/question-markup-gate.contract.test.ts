@@ -32,9 +32,9 @@ function withEdit(
 }
 
 describe("question-markup gate on the seeded bank", () => {
-  it("reads the whole bank, including the 27 underlined items (presence)", () => {
+  it("reads the whole bank, including the 31 underlined items (presence)", () => {
     expect(REAL.length).toBeGreaterThan(6000);
-    expect(UNDERLINED).toHaveLength(27);
+    expect(UNDERLINED).toHaveLength(31);
     expect(MISSING_TARGET_BASELINE.size).toBeGreaterThan(0);
   });
 
