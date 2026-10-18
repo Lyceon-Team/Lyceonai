@@ -47,7 +47,7 @@ describe("the 31 published underlined-sentence items", () => {
     expect(UNDERLINED).toHaveLength(31);
     for (const q of UNDERLINED) {
       expect(q.stem).toMatch(
-        /the underlined (sentence|portion)|most nearly means/,
+        /the underlined (sentence|portion)|most nearly means?/,
       );
       expect(target(q.passage ?? "").trim().length).toBeGreaterThan(0);
     }
