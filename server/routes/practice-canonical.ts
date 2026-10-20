@@ -69,7 +69,7 @@ import { sessionSummarySchema } from "../../packages/shared/src/session-summary-
 import { buildSessionSummaryCore } from "../services/session-summary";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
-import { settle } from "../../packages/shared/src/result";
+import { settle, type Result } from "../../packages/shared/src/result";
 import {
   beginPreHandlerStep,
   beginStep,
@@ -191,6 +191,15 @@ export async function loadPracticeConfig(): Promise<PracticeConfig> {
   return _configInflight;
 }
 
+/**
+ * @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling 2 (bench proofs)] | @implemented [2026-10-20]
+ * plain English: forget the cached config, so a benchmark or test can model the cache miss that
+ * production's `answer_rate_limit` step shows. Test-only; nothing in the server calls it.
+ */
+export function resetPracticeConfigCacheForTests(): void {
+  _configCache = null;
+}
+
 async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
   const { data, error } = await supabaseServer
     .from("practice_runtime_config")
@@ -302,6 +311,61 @@ function getPracticeAnswerRateLimiter(config: PracticeConfig) {
 // No FALLBACK_PRACTICE_CONFIG — config doctrine requires all values from practice_runtime_config.
 // If the DB read fails, loadPracticeConfigFromDb throws (fail-fast).
 
+/**
+ * @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling B ("Run `answer_rate_limit` CONCURRENTLY
+ *        with `deletion_lock` on answer submit ... Denial behaviour must be identical: same status
+ *        codes, same precedence when both would deny")] | @implemented [2026-10-20]
+ *
+ * plain English: the limiter's only round trip is its config read (`loadPracticeConfig`, 30 s
+ * cache); the bucket itself is in memory. This middleware, mounted in `server/index.ts` between
+ * `supabaseAuthMiddleware` and `enforceDeletionLock`, STARTS that read for an authenticated
+ * `POST /api/practice/answer`, so it runs while the deletion lock does its reads. Nothing is
+ * DECIDED here: `practiceAnswerRateLimiter` still runs at its old place in the chain, awaits this
+ * read there, answers 503 there if it failed, and only then counts the request in the bucket.
+ *
+ * So the outcomes and their order are exactly today's. A request the deletion lock (403/503),
+ * CSRF, role, profile or under-13 gate refuses never reaches the limiter, so it is never counted
+ * — no rate-limit token is consumed, as before — and the client sees that refusal, not a 429 or
+ * a config 503. The early read is held in `settle`, so a request refused before the limiter
+ * drops it without an unhandled rejection.
+ *
+ * Measurement: the `answer_rate_limit` pre-step now opens here (so its `at_ms` sits beside
+ * `deletion_lock`'s) and still closes where the limiter lets the request through, so its `ms` now
+ * spans the overlap with the lock and the synchronous gates between them.
+ *
+ * Trade-offs: an authenticated answer the lock then refuses still costs the config read (a
+ * global, cached, content-free read). Only the exact path is matched; any other spelling Express
+ * would route to the same handler (case, trailing slash) falls back to the limiter's own read —
+ * today's sequential behaviour, not a different decision. Skip and review's limiter are unchanged.
+ */
+type AnswerRateLimitPrefetch = {
+  config: Promise<Result<PracticeConfig, unknown>>;
+  endStep: () => void;
+};
+const answerRateLimitPrefetches = new WeakMap<
+  Request,
+  AnswerRateLimitPrefetch
+>();
+const ANSWER_RATE_LIMIT_PREFETCH_PATH = "/api/practice/answer";
+
+export function prefetchAnswerRateLimitConfig(
+  req: Request,
+  _res: Response,
+  next: () => void,
+): void {
+  if (
+    req.method === "POST" &&
+    req.path === ANSWER_RATE_LIMIT_PREFETCH_PATH &&
+    req.user
+  ) {
+    answerRateLimitPrefetches.set(req, {
+      endStep: beginPreHandlerStep(req, "answer_rate_limit"),
+      config: settle(loadPracticeConfig()),
+    });
+  }
+  next();
+}
+
 // Exported 2026-09-21 (brief R3): review reuses this rather than forking a
 // second copy. No signature or behaviour change.
 export async function practiceAnswerRateLimiter(
@@ -312,10 +376,22 @@ export async function practiceAnswerRateLimiter(
   // @spec [owner brief (Karl) 2026-10-15 "next perf PR" item 1] | @implemented [2026-10-15]
   // Timed as a pre-handler step (`route_timing.pre_steps.answer_rate_limit`): the config read
   // (30 s cache) and the limiter, up to the moment it lets the request through. Measurement only.
-  const endLimiterStep = beginPreHandlerStep(req, "answer_rate_limit");
+  // 2026-10-20 (ruling B on #1257): when `prefetchAnswerRateLimitConfig` already started the
+  // config read (and the step), this awaits that read instead of starting a second one. The
+  // decisions below — 503 on a failed read, then the bucket — are unchanged and taken here.
+  const prefetch = answerRateLimitPrefetches.get(req);
+  answerRateLimitPrefetches.delete(req);
+  const endLimiterStep =
+    prefetch?.endStep ?? beginPreHandlerStep(req, "answer_rate_limit");
   let config: PracticeConfig;
   try {
-    config = await loadPracticeConfig();
+    if (prefetch) {
+      const prefetched = await prefetch.config;
+      if (!prefetched.ok) throw prefetched.error;
+      config = prefetched.value;
+    } else {
+      config = await loadPracticeConfig();
+    }
   } catch {
     logger.warn(
       "PRACTICE_ANSWER",

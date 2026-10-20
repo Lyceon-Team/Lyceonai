@@ -16,6 +16,7 @@ import { isProfileGateSatisfied } from "../../packages/shared/src/profile-comple
 import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { beginPreHandlerStep } from "../lib/step-timer";
+import { settle } from "../../packages/shared/src/result";
 
 /**
  * Derive the `@supabase/ssr` access token from the request cookies.
@@ -312,15 +313,49 @@ async function defaultSupabaseDeletionResolver(args: {
   try {
     const admin = getSupabaseAdmin();
 
+    // @spec [Doc-01_V8 §40.3; owner ruling (Karl) 2026-10-20 on #1257, ruling 2 ("run its two reads
+    //        IN PARALLEL. Same decisions, same denial behaviour and ordering of outcomes")]
+    // | @implemented [2026-10-20]
+    // plain English: the two reads below do not depend on each other, so both are STARTED here and
+    // the request waits once instead of twice. The DECISIONS are still taken one after the other,
+    // in the old order, at the points the old code awaited each read: a failed completed-request
+    // read → unavailable (and only its own log line); a completed request → deleted, whatever the
+    // profile read said or did; only then the profile read's failure → unavailable, its
+    // `deleted_at` → pending_deletion; else active. Each read is held in `settle` and started
+    // inside a `.then`, so a read the decision never reaches is dropped without an unhandled
+    // rejection, and a throw while building or running either read is rethrown at its old point
+    // into this `try`, which still fails closed (unavailable).
+    // Trade-offs: a deleted account, or a failed first read, now also costs the profile read (run
+    // in parallel, so no added wait). The profile read is still flag-gated (dormant: one read).
+    const completedRead = settle(
+      Promise.resolve().then(() =>
+        admin
+          .from("account_deletion_requests")
+          .select("status, completion_at")
+          .eq("profile_id", args.userId)
+          .eq("status", "completed")
+          .maybeSingle(),
+      ),
+    );
+    const profileRead =
+      process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === "true"
+        ? settle(
+            Promise.resolve().then(() =>
+              admin
+                .from("profiles")
+                .select("deleted_at")
+                .eq("id", args.userId)
+                .maybeSingle(),
+            ),
+          )
+        : null;
+
     // Hard-deleted (a completed request) takes precedence over the soft-delete grace: the account is
     // anonymized and gone — "deleted" everywhere, no allowlist. Checked FIRST because deleted_at stays
     // set through hard-delete, so a completed row must not be mis-read as a recoverable grace state.
-    const { data: completed, error: completedError } = await admin
-      .from("account_deletion_requests")
-      .select("status, completion_at")
-      .eq("profile_id", args.userId)
-      .eq("status", "completed")
-      .maybeSingle();
+    const completedOutcome = await completedRead;
+    if (!completedOutcome.ok) throw completedOutcome.error;
+    const { data: completed, error: completedError } = completedOutcome.value;
 
     if (completedError && completedError.code !== "PGRST116") {
       logger.error(
@@ -346,12 +381,11 @@ async function defaultSupabaseDeletionResolver(args: {
     // deletion lock (enforceDeletionLock) allow the minimal recovery/cancel/profile allowlist while
     // blocking everything else, instead of a blunt 403 that would strand in-app cancel. Flag-gated
     // (ACCOUNT_DELETION_LIFECYCLE_V2): pre-activation nothing sets deleted_at, so this branch is inert.
-    if (process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === "true") {
-      const { data: profile, error: profileError } = await admin
-        .from("profiles")
-        .select("deleted_at")
-        .eq("id", args.userId)
-        .maybeSingle();
+    // The read was started above, alongside the completed-request read.
+    if (profileRead !== null) {
+      const profileOutcome = await profileRead;
+      if (!profileOutcome.ok) throw profileOutcome.error;
+      const { data: profile, error: profileError } = profileOutcome.value;
 
       if (profileError && profileError.code !== "PGRST116") {
         logger.error(
@@ -387,6 +421,19 @@ async function defaultSupabaseDeletionResolver(args: {
     return { status: "unavailable", executedAt: null };
   }
 }
+
+/**
+ * @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling 2 ("add a narrow test seam that lets a
+ *        test exercise the REAL default resolver's two reads")] | @implemented [2026-10-20]
+ * plain English: the production resolver itself, exported under a test-only name so a test can
+ * hand it to `setDeletionStatusResolverForTests` (or call it) and run its real reads against the
+ * pg harness. Without it every test environment gets `testDefaultDeletionResolver`, so no test
+ * could see the production reads at all. Exporting adds no behaviour: production still reaches
+ * this function only through `resolveDeletionStatus`.
+ */
+export const defaultDeletionStatusResolverForTests: DeletionStatusResolver = (
+  args,
+) => defaultSupabaseDeletionResolver(args);
 
 async function resolveDeletionStatus(args: {
   userId: string;

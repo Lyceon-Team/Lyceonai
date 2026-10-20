@@ -140,7 +140,10 @@ export function beginStep(step: string): () => void {
  *   auth_profile          the `profiles` read behind `req.user`
  *   deletion_lock         the account-deletion lock's reads (flag-gated; absent when dormant)
  *   under13_link          the under-13 guardian-link read (under-13 students only)
- *   answer_rate_limit     practice's answer limiter: its config read (30 s cache) and the bucket
+ *   answer_rate_limit     practice's answer limiter: its config read (30 s cache) and the bucket.
+ *                         On POST /api/practice/answer it opens when the config read starts,
+ *                         alongside `deletion_lock` (ruling B on #1257, 2026-10-20), and closes
+ *                         where the limiter admits the request
  */
 export const PRE_HANDLER_STEPS = [
   "auth_session",
