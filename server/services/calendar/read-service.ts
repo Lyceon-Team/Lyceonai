@@ -83,11 +83,18 @@ import { localTodayIn } from "./adapters/local-day";
 import { loadCalendarConfig, type CalendarConfig } from "./config";
 import { regeneratePlan } from "./plan-service";
 import { timedStep } from "../../lib/step-timer";
+import { settle } from "../../../packages/shared/src/result";
 import {
   FALLBACK_TIMEZONE,
   readStudyProfile,
   resolveStoredTimezone,
 } from "./profile-service";
+
+/** The value of a `settle`d read, or its error rethrown — the sequential code's behaviour. */
+function unwrapSettled<T>(result: Result<T, unknown>): T {
+  if (!result.ok) throw result.error;
+  return result.value;
+}
 
 export type ReadFailure =
   | { kind: "invalid_query"; details: unknown }
@@ -453,16 +460,29 @@ async function assembleRange(
     .filter((id): id is string => typeof id === "string");
   const versionNos = [...new Set(planRows.map((row) => row.version_no))];
 
-  const [blocks, launches, snapshotFacts] = await Promise.all([
-    timedStep("blocks", () => readBlocks(studentId, blockIds, requestId)),
+  // @spec [owner ruling (Karl) 2026-10-15 on #1238 ("the next calendar perf PR targets sequential
+  //        dependency depth")] | @implemented [2026-10-15]
+  // plain English: the three reads still start together, but the activity read no longer waits
+  // for the slowest of them. It needs only each day's date, zone and blocks — the plan rows and
+  // the blocks — so it starts as soon as the blocks are in, alongside the launch rows (and their
+  // lifecycle reads) and the version snapshots. The snapshots' study-day mask is applied to the
+  // days afterwards; nothing the activity read uses depends on it. Same inputs, same values: only
+  // the waiting changes. A throw from any of the three still fails the read (each is awaited and
+  // rethrown); the two read early are held in `settle` so neither can reject unobserved.
+  const blocksRead = timedStep("blocks", () =>
+    readBlocks(studentId, blockIds, requestId),
+  );
+  const launchesRead = settle(
     timedStep("launches", () =>
       readLaunchStates(studentId, blockIds, requestId),
     ),
+  );
+  const snapshotsRead = settle(
     timedStep("snapshots", () =>
       readSnapshotFactsByVersion(studentId, versionNos, requestId),
     ),
-  ]);
-  const masks = snapshotFacts.masks;
+  );
+  const blocks = await blocksRead;
 
   // One entry per date in the window, then the plan rows fill the ones a version owns.
   const byDate = new Map<string, CalendarDayInput>();
@@ -484,14 +504,9 @@ async function assembleRange(
   for (const row of planRows) {
     const day = byDate.get(row.scheduled_date);
     if (day === undefined) continue;
-    const mask = masks.get(row.version_no) ?? profile.study_days_mask;
     day.timezone = row.timezone;
     day.is_user_override = row.is_user_override;
     day.version_no = row.version_no;
-    day.is_study_day = isStudyDay(
-      mask,
-      postgresDowOfLocalDate(row.scheduled_date),
-    );
 
     if (row.block_id === null) continue;
     const block = blocks.get(row.block_id);
@@ -536,9 +551,34 @@ async function assembleRange(
   for (const day of days)
     day.blocks.sort((a, b) => a.display_ordinal - b.display_ordinal);
 
-  const units = await timedStep("activity_units", () =>
-    readActivityUnits(studentId, days, requestId),
+  // Started now, with each day's date, zone and blocks final (see above).
+  const unitsRead = settle(
+    timedStep("activity_units", () =>
+      readActivityUnits(studentId, days, requestId),
+    ),
   );
+
+  const launchesResult = await launchesRead;
+  if (!launchesResult.ok) throw launchesResult.error;
+  const launches = launchesResult.value;
+  const snapshotsResult = await snapshotsRead;
+  if (!snapshotsResult.ok) throw snapshotsResult.error;
+  const snapshotFacts = snapshotsResult.value;
+  const masks = snapshotFacts.masks;
+
+  // The study-day mask IN FORCE for each owned date: its version's snapshot mask, else the
+  // current profile's. A date no version owns keeps the profile mask it was created with.
+  for (const day of days) {
+    if (day.version_no === null) continue;
+    day.is_study_day = isStudyDay(
+      masks.get(day.version_no) ?? profile.study_days_mask,
+      postgresDowOfLocalDate(day.local_date),
+    );
+  }
+
+  const unitsResult = await unitsRead;
+  if (!unitsResult.ok) throw unitsResult.error;
+  const units = unitsResult.value;
   return {
     profile,
     today,
@@ -631,20 +671,20 @@ export async function readCalendar(
   // independent reads, so they run together; the profile is not read at all when the caller
   // already holds it.
   const prefetched = request.stored_profile;
-  const [config, stored] = await Promise.all([
-    timedStep("config", () => loadCalendarConfig()),
+  const configRead = settle(timedStep("config", () => loadCalendarConfig()));
+  const stored =
     prefetched !== undefined
       ? prefetched
-      : timedStep("profile", () =>
+      : await timedStep("profile", () =>
           readStudyProfile(request.student_id, request.request_id),
-        ),
-  ]);
+        );
   // R-08-04 / §17.5's pre-setup state. An empty calendar, not a missing one — so a 200
   // carrying the state, never a 404 (owner ruling on addendum item 26). SCL-223: a row that
   // holds only SAT dates (saved in onboarding or Settings) is still pre-setup, and its dates
   // prefill the setup form.
   const profile = completedStudyProfile(stored);
   if (profile === null) {
+    const config = unwrapSettled(await configRead);
     return ok({
       status: "setup_required",
       defaults: await setupDefaults(
@@ -656,36 +696,48 @@ export async function readCalendar(
     });
   }
 
-  const today = localTodayIn(profile.timezone, request.now);
-  const from = query.from ?? today;
-  // §15: "default today…+13" — the horizon, less the day the horizon starts on.
-  const to = query.to ?? addDaysToLocalDate(from, config.horizonDays - 1);
-
-  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2; Doc-05F_V1.0 R-08-04]
-  // | @implemented [2026-10-13]
+  // @spec [owner brief 2026-10-13 "first-run activation fixes" item 2; owner ruling (Karl)
+  //        2026-10-15 on #1238 (target sequential dependency depth); Doc-05F_V1.0 R-08-04]
+  // | @implemented [2026-10-13; reordered 2026-10-15]
   // plain English: the streak, the diagnostic state and the projection read nothing the plan
-  // owns, so they run alongside the first-open probe (and the generation it may trigger)
-  // instead of after the whole range assembly. The unacknowledged-change read DOES read plan
-  // versions, which the first open may create, so it still starts only after the probe, and
-  // runs alongside the range assembly. Every value reaches the response unchanged; only the
-  // waiting is shorter. Any of these throwing still fails the read, as `Promise.all` did.
-  const [, streak, diagnostic, projection] = await Promise.all([
+  // owns, and the first-open probe reads only plan versions, so all four start NOW — alongside
+  // the config read, not after it — and the range assembly no longer waits for the streak, the
+  // diagnostic or the projection at all: they are collected at the end. The generation the probe
+  // may trigger still waits for the config (it needs `generatorVersion`), and the range and the
+  // unacknowledged-change read still start only after the probe, because the first open may
+  // create a version. Every value reaches the response unchanged; only the waiting is shorter.
+  // Any of these throwing still fails the read: each is held in `settle` and rethrown where it
+  // is consumed.
+  const probeRead = settle(
     timedStep("first_open_probe", () =>
       generateOnFirstOpen(
         request.student_id,
         profile,
-        config.generatorVersion,
+        async () => unwrapSettled(await configRead).generatorVersion,
         request.request_id,
       ),
     ),
+  );
+  const streakRead = settle(
     timedStep("streak", () =>
       getStudentActivityStreak(request.student_id, request.request_id),
     ),
+  );
+  const diagnosticRead = settle(
     timedStep("diagnostic", () => readDiagnosticState(request.student_id)),
+  );
+  const projectionRead = settle(
     timedStep("projection", () =>
       readProjection(request.student_id, request.request_id),
     ),
-  ]);
+  );
+
+  const config = unwrapSettled(await configRead);
+  const today = localTodayIn(profile.timezone, request.now);
+  const from = query.from ?? today;
+  // §15: "default today…+13" — the horizon, less the day the horizon starts on.
+  const to = query.to ?? addDaysToLocalDate(from, config.horizonDays - 1);
+  unwrapSettled(await probeRead);
 
   const [range, change] = await Promise.all([
     assembleRange(
@@ -700,6 +752,9 @@ export async function readCalendar(
       readUnacknowledgedChange(request.student_id, request.request_id),
     ),
   ]);
+  const streak = unwrapSettled(await streakRead);
+  const diagnostic = unwrapSettled(await diagnosticRead);
+  const projection = unwrapSettled(await projectionRead);
   const built = buildCalendarRange({
     today: range.today,
     days: range.days,
@@ -785,7 +840,8 @@ function mismatchOf(
 async function generateOnFirstOpen(
   studentId: string,
   profile: CompletedStudyProfile,
-  generatorVersion: string,
+  /** Asked only on the generate branch, so the probe need not wait for the config read. */
+  generatorVersion: () => Promise<string>,
   requestId?: string,
 ): Promise<void> {
   if (profile.setup_completed_at === null) return;
@@ -812,7 +868,7 @@ async function generateOnFirstOpen(
       student_id: studentId,
       trigger: "setup",
       initiated_by: "student",
-      generator_version: generatorVersion,
+      generator_version: await generatorVersion(),
     },
     requestId,
   );

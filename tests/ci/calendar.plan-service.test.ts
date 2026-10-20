@@ -13,7 +13,7 @@
  * accessor. A default would be a second source of truth for a value the database owns,
  * and the test that a default does NOT appear is the only thing keeping one out.
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CONFIG_ROWS,
   errReply,
@@ -43,9 +43,12 @@ const {
   acknowledgeVersion,
 } = await import("../../server/services/calendar/plan-service");
 const { getStudentActivityStreak } = await import("../../server/services/activity-streak");
-const { loadCalendarConfig, CalendarConfigError, CALENDAR_CONFIG_KEYS } = await import(
-  "../../server/services/calendar/config"
-);
+const {
+  loadCalendarConfig,
+  CalendarConfigError,
+  CALENDAR_CONFIG_KEYS,
+  invalidateCalendarConfigCache,
+} = await import("../../server/services/calendar/config");
 
 function withRpc(replies: Record<string, unknown>): void {
   client = makeFakeClient({
@@ -371,6 +374,9 @@ describe("§14 / sheet item 11 — the streak is student_streak's (SCL-226) with
 });
 
 describe("§18 — a missing config is a loud failure at the accessor", () => {
+  // The accessor is cached (owner ruling 2026-10-15 on #1238). Each case here is a cold read.
+  beforeEach(() => invalidateCalendarConfigCache());
+
   it("reads every key it needs in ONE query PER TABLE, never one per key", async () => {
     client = makeFakeClient({ tables: { calendar_runtime_config: () => okReply(CONFIG_ROWS) } });
 
@@ -394,7 +400,41 @@ describe("§18 — a missing config is a loud failure at the accessor", () => {
       counts[query.table] = (counts[query.table] ?? 0) + 1;
       return counts;
     }, {});
-    expect(byTable).toEqual({ calendar_runtime_config: 1, practice_runtime_config: 1 });
+    // `caching_runtime_config` is the cache's own lifetime row, read on this (cold) miss
+    // alongside the load (Doc 01A §24; owner ruling 2026-10-15 on #1238).
+    expect(byTable).toEqual({
+      calendar_runtime_config: 1,
+      practice_runtime_config: 1,
+      caching_runtime_config: 1,
+    });
+  });
+
+  it("a second read inside the lifetime is served from the cache: no round trip", async () => {
+    client = makeFakeClient({ tables: { calendar_runtime_config: () => okReply(CONFIG_ROWS) } });
+    const first = await loadCalendarConfig();
+    const queriesAfterFirst = client.queries.length;
+    const second = await loadCalendarConfig();
+    expect(second).toEqual(first);
+    expect(client.queries.length).toBe(queriesAfterFirst);
+  });
+
+  it("an EXPIRED entry is never served in place of a failed refresh (§18 stays loud)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      client = makeFakeClient({ tables: { calendar_runtime_config: () => okReply(CONFIG_ROWS) } });
+      await loadCalendarConfig();
+      // Past the 60 s lifetime, the config row goes missing: the read must throw, not fall back.
+      vi.setSystemTime(Date.now() + 61_000);
+      client = makeFakeClient({
+        tables: {
+          calendar_runtime_config: () =>
+            okReply(CONFIG_ROWS.filter((row) => row.key !== "horizon_days")),
+        },
+      });
+      await expect(loadCalendarConfig()).rejects.toBeInstanceOf(CalendarConfigError);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   for (const key of CALENDAR_CONFIG_KEYS) {

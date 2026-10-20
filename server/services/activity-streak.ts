@@ -223,6 +223,20 @@ export async function getStudentActivityStreak(
 ): Promise<StreakSummary> {
   if (!studentId) return UNKNOWN;
 
+  // @spec [owner ruling (Karl) 2026-10-15 on #1238 ("parallelize independent reads (the streak's
+  //        two reads ...)"); SCL-226] | @implemented [2026-10-15]
+  // plain English: the daily streak (`current`) does not depend on the KPI row, so it is read AT
+  // THE SAME TIME as the row instead of after it — one wait, not two. Same values, same order of
+  // decisions: a failed KPI read is still UNKNOWN (the streak's answer is then simply unused), and
+  // `current` is still `currentStreakAsOfToday`'s, which never throws. Trade-off: on a failed KPI
+  // read the streak RPC has already been made.
+  const currentRead = currentStreakAsOfToday({
+    studentId,
+    stored: 0,
+    lastActiveAt: null,
+    ...(requestId === undefined ? {} : { requestId }),
+  });
+
   const { data, error } = await supabaseServer
     .from("student_overall_kpi")
     .select("current_streak_days, longest_streak_days, last_active_at")
@@ -241,12 +255,7 @@ export async function getStudentActivityStreak(
 
   // SCL-226: `current` is the daily answer streak, whether or not the KPI refresh has run.
   // `longest` stays 05B's stored value where there is one, and is never below `current`.
-  const current = await currentStreakAsOfToday({
-    studentId,
-    stored: 0,
-    lastActiveAt: null,
-    ...(requestId === undefined ? {} : { requestId }),
-  });
+  const current = await currentRead;
   if (current === null) return UNKNOWN;
   const storedLongest: unknown = data?.longest_streak_days ?? null;
   const longest =

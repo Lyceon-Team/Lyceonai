@@ -70,6 +70,12 @@ import { buildSessionSummaryCore } from "../services/session-summary";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
 import { settle } from "../../packages/shared/src/result";
+import {
+  beginPreHandlerStep,
+  beginStep,
+  timedRoute,
+  timedStep,
+} from "../lib/step-timer";
 import { diagnosticCompletionResultSchema } from "../../packages/shared/src/diagnostic-projection";
 import { beginStep, timedRoute, timedStep } from "../lib/step-timer";
 
@@ -304,6 +310,10 @@ export async function practiceAnswerRateLimiter(
   res: Response,
   next: () => void,
 ) {
+  // @spec [owner brief (Karl) 2026-10-15 "next perf PR" item 1] | @implemented [2026-10-15]
+  // Timed as a pre-handler step (`route_timing.pre_steps.answer_rate_limit`): the config read
+  // (30 s cache) and the limiter, up to the moment it lets the request through. Measurement only.
+  const endLimiterStep = beginPreHandlerStep(req, "answer_rate_limit");
   let config: PracticeConfig;
   try {
     config = await loadPracticeConfig();
@@ -322,7 +332,10 @@ export async function practiceAnswerRateLimiter(
     return;
   }
   const limiter = getPracticeAnswerRateLimiter(config);
-  limiter(req, res, next);
+  limiter(req, res, () => {
+    endLimiterStep();
+    next();
+  });
 }
 
 const StartSessionBodySchema = z.object({
