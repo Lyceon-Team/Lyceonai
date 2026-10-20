@@ -136,3 +136,82 @@ export async function postMessage(
   );
   return message.ts;
 }
+
+const uploadUrlOk = z.object({
+  ok: z.literal(true),
+  upload_url: z.string().url(),
+  file_id: z.string().min(1),
+});
+const completeOk = z.object({
+  ok: z.literal(true),
+  files: z.array(z.object({ id: z.string() })).min(1),
+});
+
+/** One file for `shareFiles`: its name, its bytes and (for an image) its alt text. */
+export type SlackUpload = { filename: string; bytes: Uint8Array; altText?: string };
+
+/**
+ * @spec [docs/runbooks/slack.md ("one app, one token, one channel variable and one client");
+ *       owner brief "TikTok — October SAT score release" (Karl, 2026-10-16) "posted to #social in
+ *       Slack (existing bot)"] | @implemented [2026-10-16] (moved here from
+ *       scripts/qotd-social/post-to-slack.ts so the QOTD images and the social video share it)
+ *
+ * plain English: Slack's standard external upload. For each file, files.getUploadURLExternal,
+ * then the bytes to the returned URL (only ever an https *.slack.com host; the token never goes
+ * there); then one files.completeUploadExternal shares them all in the channel with one comment.
+ * Returns how many files Slack shared. Any failure throws SlackCallError with no token or payload.
+ */
+export async function shareFiles(
+  config: SlackConfig,
+  files: readonly SlackUpload[],
+  initialComment: string,
+  fetchImpl: FetchLike,
+): Promise<number> {
+  const fileIds: { id: string; title: string }[] = [];
+  for (const file of files) {
+    const form: Record<string, string> = {
+      filename: file.filename,
+      length: String(file.bytes.length),
+    };
+    if (file.altText !== undefined) form.alt_txt = file.altText;
+    const target = await slackCall(
+      fetchImpl,
+      config.token,
+      "files.getUploadURLExternal",
+      { form },
+      uploadUrlOk,
+    );
+    const uploadUrl = new URL(target.upload_url);
+    if (
+      uploadUrl.protocol !== "https:" ||
+      !uploadUrl.hostname.endsWith(".slack.com")
+    ) {
+      throw new SlackCallError(
+        "files.getUploadURLExternal: upload_url is not a Slack https URL",
+      );
+    }
+    const put = await fetchImpl(target.upload_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: new Uint8Array(file.bytes),
+    });
+    if (!put.ok) {
+      throw new SlackCallError(`upload of ${file.filename}: HTTP ${put.status}`);
+    }
+    fileIds.push({ id: target.file_id, title: file.filename });
+  }
+  const shared = await slackCall(
+    fetchImpl,
+    config.token,
+    "files.completeUploadExternal",
+    {
+      json: {
+        files: fileIds,
+        channel_id: config.channel,
+        initial_comment: initialComment,
+      },
+    },
+    completeOk,
+  );
+  return shared.files.length;
+}

@@ -342,6 +342,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/deletion-evidence-gate.mutations.sh
 
+      # SCL-235 / SCL-236 (owner rulings 2026-10-16/17): the stored diagnostic projection, the one
+      # completion path and the free/paid read split. Each rule (session-only events, write-once,
+      # replay/race, one in-flight diagnostic, abandoned, live refresh at completion, repair,
+      # grants, deletion L1-14, the read split, the single-writer guard) is planted and must turn
+      # its named check red.
+      - name: Diagnostic projection mutations (planted defects must fail)
+        if: matrix.group == 'deletion'
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/diagnostic-projection.mutations.sh
+
       # The fourteen review-route assertions (practice-integration, "Review API + queue end-to-end")
       # are worth exactly as much as their plants. This mutates product source once per
       # assertion and fails the build unless that assertion goes red. It patches the working
@@ -407,16 +421,6 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/prod-verify-console-gate.sh
-
-      # captureDiagnosticBaseline is once-only with no retry and silently returns
-      # when the projection is not ready, so a student who completed a diagnostic
-      # during the mastery outage is permanently no_baseline. This guards the
-      # repair — and above all that it stays a repair, never a fabricated score.
-      - name: Baseline repair gate (BUG-1 — repair, not fabrication)
-        if: matrix.group == 'calendar-migrations'
-        run: |
-          export PATH=/usr/lib/postgresql/16/bin:$PATH
-          bash scripts/ci/baseline-repair-gate.sh
 
       # Guards the two read-only files that decide whether a history repair is safe
       # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs

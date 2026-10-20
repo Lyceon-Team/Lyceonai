@@ -338,7 +338,7 @@ const masterySkills = masterySkillsResponseSchema.parse({
 const projection = {
   estimateStatus: "no_baseline",
   estimate: null,
-  baseline: null,
+  diagnostic: null,
   totalQuestionsAttempted: 12,
   lastUpdated: NOW,
   entitlement: {

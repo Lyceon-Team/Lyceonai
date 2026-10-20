@@ -4,9 +4,11 @@ import type { NextFunction, Request, Response } from "express";
 const resolvePaidKpiAccessForUser = vi.fn();
 const buildStudentKpiViewFromCanonical = vi.fn();
 const buildScoreEstimateFromCanonical = vi.fn();
-const readDiagnosticBaseline = vi.fn();
+// SCL-236 (2026-10-17): the free view reads the STORED diagnostic projection through the one
+// diagnostic read, readDiagnosticProjection; the frozen-baseline reader is deleted.
+const readDiagnosticProjection = vi.fn();
 // Step 1 (2026-08-17): the projection route now reads the canonical diagnostic
-// lifecycle state alongside the baseline. Default to baseline_ready — this suite
+// lifecycle state alongside the stored projection. Default to baseline_ready — this suite
 // is about entitlement gating, and every case here has a baseline. The
 // baseline_pending branch has its own coverage in
 // tests/ci/diagnostic-baseline-pending.contract.test.ts.
@@ -28,9 +30,12 @@ vi.mock("../../server/services/kpi-access", async () => {
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
-  readDiagnosticBaseline,
   readDiagnosticState,
   readAnsweredQuestionCount,
+}));
+
+vi.mock("../../apps/api/src/services/projection-read", () => ({
+  readDiagnosticProjection,
 }));
 
 vi.mock("../../server/services/entitlement-service", () => ({
@@ -122,14 +127,27 @@ describe("KPI Gating Contract", () => {
     readDiagnosticState.mockResolvedValue("baseline_ready");
     readAnsweredQuestionCount.mockResolvedValue(40);
 
-    // Vertical-B Slice 2: default baseline exists (diagnostic completed) + unpaid.
-    readDiagnosticBaseline.mockResolvedValue({
-      composite: 1000,
-      math: 500,
-      rw: 500,
-      range: { low: 940, high: 1060 },
-      confidence: 0.6,
-      capturedAt: "2026-07-01T00:00:00.000Z",
+    // Default: the diagnostic is done and its projection is stored (SCL-236) + unpaid.
+    readDiagnosticProjection.mockResolvedValue({
+      status: "computed",
+      sections: [
+        {
+          section: "M",
+          projectedScoreMid: 480,
+          projectedScoreLow: 450,
+          projectedScoreHigh: 510,
+          relevantQuestionCount: 20,
+          computedAt: "2026-07-01T00:00:00.000Z",
+        },
+        {
+          section: "RW",
+          projectedScoreMid: 520,
+          projectedScoreLow: 490,
+          projectedScoreHigh: 550,
+          relevantQuestionCount: 20,
+          computedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
     });
 
     // Free tier → canAccessFeature('mastery_detail') returns false.
@@ -192,9 +210,9 @@ describe("KPI Gating Contract", () => {
     });
   });
 
-  // Vertical-B Slice 2 (2026-08-12): 402→200 contract change. Free-tier students
-  // with a completed diagnostic get baseline_only (frozen baseline + CTA), not 402.
-  it("gates free-tier student to baseline_only (frozen baseline + CTA, no live projection)", async () => {
+  // SCL-235 (2026-10-17): a free student with a completed diagnostic gets baseline_only —
+  // the STORED diagnostic projection + CTA, never the live projection.
+  it("gates free-tier student to baseline_only (stored diagnostic projection + CTA, no live projection)", async () => {
     const { getScoreEstimate } =
       await import("../../server/routes/legacy/progress");
 
@@ -218,14 +236,20 @@ describe("KPI Gating Contract", () => {
     const payload = getBody();
     expect(payload.estimateStatus).toBe("baseline_only");
     expect(payload.cta).toBe(true);
-    // Baseline is served (frozen diagnostic capture).
-    expect(payload.baseline).toMatchObject({
+    // The stored diagnostic projection is served, summed from its two sections.
+    expect(payload.diagnostic).toEqual({
       composite: 1000,
-      math: 500,
-      rw: 500,
+      math: 480,
+      rw: 520,
+      range: { low: 940, high: 1060 },
+      computedAt: "2026-07-01T00:00:00.000Z",
     });
+    expect(payload).not.toHaveProperty("baseline");
     // Live estimate is NOT served.
     expect(payload.estimate).toBeNull();
+    expect(readDiagnosticProjection).toHaveBeenCalledWith({
+      studentId: "student-1",
+    });
     expect(payload.requestId).toBe("req-1");
     expect(payload.entitlement).toMatchObject({
       plan: "free",
@@ -271,14 +295,16 @@ describe("KPI Gating Contract", () => {
     expect(payload.estimateStatus).toBe("computed");
     expect(payload.estimate).toBeDefined();
     expect(payload.estimate.range).toEqual({ low: 1040, high: 1120 });
-    // Baseline is also served for comparison.
-    expect(payload.baseline).toMatchObject({ composite: 1000 });
+    // SCL-235 ruling 4: a paid student sees ONLY the live projection. The diagnostic number
+    // is not served, and not even read.
+    expect(payload.diagnostic).toBeNull();
+    expect(payload).not.toHaveProperty("baseline");
+    expect(readDiagnosticProjection).not.toHaveBeenCalled();
     expect(payload.projection).toBeUndefined();
     // RULE 9 (owner ruling 2026-08-20): the 0-1 confidence float is banded SERVER-side
     // and never crosses the wire. The service mocks above still return 0.7 / 0.6 —
     // that is the point: the route must convert, not forward.
     expect(payload.estimate.confidenceBand).toBe("Medium");
-    expect(payload.baseline.confidenceBand).toBe("Low");
     expect(JSON.stringify(payload)).not.toContain('"confidence"');
   }, 15_000);
 
@@ -326,8 +352,8 @@ describe("KPI Gating Contract", () => {
     const payload = getBody();
     expect(payload.estimateStatus).toBe("baseline_only");
     expect(payload.cta).toBe(true);
-    // Baseline is served (frozen diagnostic capture).
-    expect(payload.baseline).toMatchObject({ composite: 1000 });
+    // The stored diagnostic projection is served (the free view).
+    expect(payload.diagnostic).toMatchObject({ composite: 1000 });
     // Live estimate is NOT served (fail-closed → unpaid view).
     expect(payload.estimate).toBeNull();
     // buildScoreEstimateFromCanonical must NOT be called on entitlement failure.
