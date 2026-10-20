@@ -51,6 +51,11 @@ export const harness: {
   roundTrips: number;
   /** Round trips per table or rpc name, so a test can count one target's reads. */
   calls: Map<string, number>;
+  /**
+   * Every round trip's [start, end] (performance.now), for `sequentialDepth`. Always recorded;
+   * a test reads the slice it made (owner ruling 2026-10-15 on #1238: dependency DEPTH).
+   */
+  intervals: Array<{ start: number; end: number }>;
 } = {
   pool: null,
   setup: null,
@@ -58,7 +63,33 @@ export const harness: {
   latencyMs: 0,
   roundTrips: 0,
   calls: new Map(),
+  intervals: [],
 };
+
+/**
+ * The longest chain of round trips in which each one STARTED after the previous one ENDED — the
+ * number of waits a request sat through one after another. Parallel reads overlap and add one
+ * level; a read that waited for another adds one more. With an injected latency (say 10 ms) per
+ * round trip and local PG answering in well under a millisecond, unrelated parallel reads never
+ * appear ordered, so this is the request's sequential dependency depth.
+ */
+export function sequentialDepth(
+  intervals: ReadonlyArray<{ start: number; end: number }>,
+): number {
+  const sorted = [...intervals].sort((a, b) => a.start - b.start);
+  const depth: number[] = [];
+  let best = 0;
+  for (const [i, current] of sorted.entries()) {
+    let level = 1;
+    for (let j = 0; j < i; j += 1) {
+      const earlier = sorted[j]!;
+      if (earlier.end <= current.start) level = Math.max(level, depth[j]! + 1);
+    }
+    depth.push(level);
+    best = Math.max(best, level);
+  }
+  return best;
+}
 
 function count(target: string): void {
   harness.roundTrips += 1;
@@ -93,15 +124,25 @@ export function transport(): Facade {
       const original = runnable.run.bind(builder);
       runnable.run = async () => {
         count(table);
-        if (harness.latencyMs > 0) await sleep(harness.latencyMs);
-        return original();
+        const start = performance.now();
+        try {
+          if (harness.latencyMs > 0) await sleep(harness.latencyMs);
+          return await original();
+        } finally {
+          harness.intervals.push({ start, end: performance.now() });
+        }
       };
       return builder;
     },
     rpc: async (fn: string, args?: Record<string, unknown>) => {
       count(`rpc:${fn}`);
-      if (harness.latencyMs > 0) await sleep(harness.latencyMs);
-      return sb.rpc(fn, args);
+      const start = performance.now();
+      try {
+        if (harness.latencyMs > 0) await sleep(harness.latencyMs);
+        return await sb.rpc(fn, args);
+      } finally {
+        harness.intervals.push({ start, end: performance.now() });
+      }
     },
   };
 }

@@ -35,6 +35,15 @@ export const CACHE_TTL_CONFIG = {
     key: "skill_catalog_cache_ttl_seconds",
     fallbackSeconds: 600,
   },
+  /**
+   * @spec [owner ruling (Karl) 2026-10-15 on #1238 item (b): "a 60-second cache for the two config
+   *        reads"] | @implemented [2026-10-15] — `calendar_runtime_config` plus practice's
+   * seconds-per-question, as one cached value (`server/services/calendar/config.ts`).
+   */
+  calendarConfig: {
+    key: "calendar_config_cache_ttl_seconds",
+    fallbackSeconds: 60,
+  },
 } as const;
 
 export type CacheTtlName = keyof typeof CACHE_TTL_CONFIG;
