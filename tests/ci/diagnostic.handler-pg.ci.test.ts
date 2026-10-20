@@ -52,6 +52,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { Client } from "pg";
 import fs from "fs";
 import path from "path";
+import { ensureClusterRoles } from "../helpers/pg-supabase";
 
 // ---------------------------------------------------------------------------
 // PG availability gate — skip entirely when no PG is available
@@ -494,6 +495,8 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
       database: "postgres",
     });
     await adminPg.connect();
+    // Roles are cluster-wide: create them once, under the shared lock (tests/helpers/pg-supabase.ts).
+    await ensureClusterRoles(adminPg);
     await adminPg.query(`DROP DATABASE IF EXISTS ${DB_NAME}`);
     await adminPg.query(`CREATE DATABASE ${DB_NAME}`);
 
