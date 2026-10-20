@@ -1,10 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
+import { z } from "zod";
 import {
   ensureProfileForAuthUser,
+  startSpeculativeProfileRead,
   AccountEmailConflictError,
   UnrecognizedRoleError,
+  type SpeculativeProfileRead,
 } from "../lib/profile-bootstrap.js";
 import { ROLE_UNRECOGNIZED } from "../../packages/shared/src/runtime-role-schema";
 import {
@@ -80,6 +83,51 @@ function extractSsrAccessToken(req: Request): string | null {
 
   return null;
 }
+
+/**
+ * @spec [owner ruling (Karl) 2026-10-19 on #1257, ruling 1 (relayed 2026-10-20): "do NOT verify
+ *        sessions locally ... start the profile read IN PARALLEL with the Supabase session check
+ *        (getUser), keyed on the token's (unverified) user id, and DISCARD it if the ids don't
+ *        match"; Coding Standards §6.1] | @implemented [2026-10-20]
+ *
+ * plain English: the user id the session cookie's access token CLAIMS (its `sub`), read without
+ * verifying anything, used only to START the profile read early. It authorizes nothing and decides
+ * nothing: `getUser()` stays the only check, and the early read is used only when its id equals the
+ * id `getUser()` verified. Never logged. No cookie, a malformed token or a `sub` that is not a UUID
+ * gives null, and no early read is started (the request then behaves exactly as before).
+ */
+const claimedSubSchema = z.object({ sub: z.string().uuid() });
+
+function claimedSessionUserId(req: Request): string | null {
+  const token = extractSsrAccessToken(req);
+  if (token === null) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[1]) return null;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
+  } catch {
+    // A token whose payload is not JSON claims nothing: no early read. getUser() still decides.
+    return null;
+  }
+  const parsed = claimedSubSchema.safeParse(payload);
+  return parsed.success ? parsed.data.sub : null;
+}
+
+/**
+ * @spec [owner ruling (Karl) 2026-10-20 on #1271, Q2: "the deletion lock may take deleted_at from
+ *        the profile read the auth step already makes, removing that read (the profile read is
+ *        already the authority for deletion state)"; Doc-01_V8 §40.3] | @implemented [2026-10-20]
+ *
+ * plain English: the `deleted_at` the auth step's profile read returned, for the user it attached,
+ * held per request for `enforceDeletionLock` (same module) and never on `req.user`, so it can never
+ * be serialized into a response. Set only when the row really carried the column (a string or
+ * null); a request without it (a test double, a mocked auth step) makes the lock read it as before.
+ */
+const authProfileDeletionState = new WeakMap<
+  Request,
+  { userId: string; deletedAt: string | null }
+>();
 
 /**
  * Token resolution result with diagnostics
@@ -184,6 +232,11 @@ export type DeletionStatusResult = {
 export type DeletionStatusResolver = (args: {
   userId: string;
   requestId?: string;
+  /**
+   * 2026-10-20 (Q2 on #1271): `profiles.deleted_at` as the auth step's profile read returned it for
+   * this user. Present: the resolver does not read it again. Absent: it reads it as before.
+   */
+  profileDeletedAt?: string | null;
 }) => Promise<DeletionStatusResult>;
 
 type DenialResponseOptions = {
@@ -309,6 +362,7 @@ async function testDefaultDeletionResolver(): Promise<DeletionStatusResult> {
 async function defaultSupabaseDeletionResolver(args: {
   userId: string;
   requestId?: string;
+  profileDeletedAt?: string | null;
 }): Promise<DeletionStatusResult> {
   try {
     const admin = getSupabaseAdmin();
@@ -327,6 +381,13 @@ async function defaultSupabaseDeletionResolver(args: {
     // into this `try`, which still fails closed (unavailable).
     // Trade-offs: a deleted account, or a failed first read, now also costs the profile read (run
     // in parallel, so no added wait). The profile read is still flag-gated (dormant: one read).
+    //
+    // 2026-10-20 (owner ruling Q2 on #1271, Karl): when the auth step's profile read already
+    // returned `deleted_at` for this user (`args.profileDeletedAt`), that value stands in for the
+    // second read (no round trip) and is decided at the same point, in the same order. With the
+    // auth step's read now speculative-parallel with getUser() (ruling 1), the lock is left with
+    // ONE read, the completed-request one. Without it (a direct call, a mocked auth step) the
+    // second read runs as above.
     const completedRead = settle(
       Promise.resolve().then(() =>
         admin
@@ -338,17 +399,24 @@ async function defaultSupabaseDeletionResolver(args: {
       ),
     );
     const profileRead =
-      process.env.ACCOUNT_DELETION_LIFECYCLE_V2 === "true"
-        ? settle(
-            Promise.resolve().then(() =>
-              admin
-                .from("profiles")
-                .select("deleted_at")
-                .eq("id", args.userId)
-                .maybeSingle(),
-            ),
-          )
-        : null;
+      process.env.ACCOUNT_DELETION_LIFECYCLE_V2 !== "true"
+        ? null
+        : args.profileDeletedAt !== undefined
+          ? settle(
+              Promise.resolve({
+                data: { deleted_at: args.profileDeletedAt },
+                error: null,
+              }),
+            )
+          : settle(
+              Promise.resolve().then(() =>
+                admin
+                  .from("profiles")
+                  .select("deleted_at")
+                  .eq("id", args.userId)
+                  .maybeSingle(),
+              ),
+            );
 
     // Hard-deleted (a completed request) takes precedence over the soft-delete grace: the account is
     // anonymized and gone — "deleted" everywhere, no allowlist. Checked FIRST because deleted_at stays
@@ -438,6 +506,7 @@ export const defaultDeletionStatusResolverForTests: DeletionStatusResolver = (
 async function resolveDeletionStatus(args: {
   userId: string;
   requestId?: string;
+  profileDeletedAt?: string | null;
 }): Promise<DeletionStatusResult> {
   if (deletionStatusResolverOverride) {
     return deletionStatusResolverOverride(args);
@@ -561,6 +630,21 @@ export async function supabaseAuthMiddleware(
     // only: what is validated, and how, is untouched.
     const setCookiesBefore = setCookieCount(res);
     const endSessionStep = beginPreHandlerStep(req, "auth_session");
+    // @spec [owner ruling (Karl) 2026-10-19 on #1257, ruling 1 (relayed 2026-10-20)]
+    // | @implemented [2026-10-20]
+    // plain English: the profile read STARTS now, alongside getUser(), for the id the session
+    // cookie claims (`claimedSessionUserId`, unverified). getUser() below is still the only check:
+    // `ensureProfileForAuthUser` uses this read only if the verified id is the same, and otherwise
+    // drops it and reads again with the verified id. No claim (no cookie, malformed token): no
+    // early read, and the request runs exactly as before. The `auth_profile` step opens with the
+    // early read, so its `at_ms` shows the overlap with `auth_session`.
+    const claimedUserId = claimedSessionUserId(req);
+    let endProfileStep: (() => void) | null = null;
+    let speculative: SpeculativeProfileRead | null = null;
+    if (claimedUserId !== null) {
+      endProfileStep = beginPreHandlerStep(req, "auth_profile");
+      speculative = startSpeculativeProfileRead(supabaseAdmin, claimedUserId);
+    }
     const {
       data: { user },
       error: authError,
@@ -585,11 +669,16 @@ export async function supabaseAuthMiddleware(
 
     let emailConflict = false;
     let roleUnrecognized = false;
-    const endProfileStep = beginPreHandlerStep(req, "auth_profile");
-    const profile = await ensureProfileForAuthUser(supabaseAdmin, user, {
-      source: "supabase_auth_middleware",
-      requestId: req.requestId,
-    }).catch((profileError) => {
+    endProfileStep ??= beginPreHandlerStep(req, "auth_profile");
+    const profile = await ensureProfileForAuthUser(
+      supabaseAdmin,
+      user,
+      {
+        source: "supabase_auth_middleware",
+        requestId: req.requestId,
+      },
+      speculative,
+    ).catch((profileError) => {
       // G2-02: a stored role the application does not know. Refuse the SESSION, not the request:
       // no user is attached, public routes still answer (sign-out works), and every route that
       // needs a signed-in user answers 403 ROLE_UNRECOGNIZED. The row is not touched.
@@ -673,6 +762,13 @@ export async function supabaseAuthMiddleware(
       username: profile.email.split("@")[0], // Use email prefix as username
       name: profile.display_name || profile.email.split("@")[0],
     };
+
+    // 2026-10-20 (owner ruling Q2 on #1271): the row's `deleted_at`, kept for the deletion lock
+    // only (`authProfileDeletionState`), never on req.user.
+    const deletedAt: unknown = profile.deleted_at;
+    if (deletedAt === null || typeof deletedAt === "string") {
+      authProfileDeletionState.set(req, { userId: profile.id, deletedAt });
+    }
 
     // Attach the request-scoped RLS-bound Supabase client. AUTH-NATIVE-001: this is ALWAYS the
     // native @supabase/ssr client (cookie-native, carries the getUser()-validated session). No
@@ -780,10 +876,18 @@ export async function enforceDeletionLock(
   }
 
   const endLockStep = beginPreHandlerStep(req, "deletion_lock");
-  const deletionStatus = await resolveDeletionStatus({
-    userId: req.user.id,
-    requestId: req.requestId,
-  });
+  // 2026-10-20 (owner ruling Q2 on #1271): hand the resolver the auth step's `deleted_at` when it
+  // was read for THIS user, so it does not read it again.
+  const fromAuthProfile = authProfileDeletionState.get(req);
+  const deletionStatus = await resolveDeletionStatus(
+    fromAuthProfile !== undefined && fromAuthProfile.userId === req.user.id
+      ? {
+          userId: req.user.id,
+          requestId: req.requestId,
+          profileDeletedAt: fromAuthProfile.deletedAt,
+        }
+      : { userId: req.user.id, requestId: req.requestId },
+  );
   endLockStep();
 
   if (deletionStatus.status === "unavailable") {

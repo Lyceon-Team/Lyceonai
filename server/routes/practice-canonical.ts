@@ -334,9 +334,14 @@ function getPracticeAnswerRateLimiter(config: PracticeConfig) {
  * spans the overlap with the lock and the synchronous gates between them.
  *
  * Trade-offs: an authenticated answer the lock then refuses still costs the config read (a
- * global, cached, content-free read). Only the exact path is matched; any other spelling Express
+ * global, cached, content-free read). Only the exact paths are matched; any other spelling Express
  * would route to the same handler (case, trailing slash) falls back to the limiter's own read —
- * today's sequential behaviour, not a different decision. Skip and review's limiter are unchanged.
+ * today's sequential behaviour, not a different decision.
+ *
+ * 2026-10-20 (owner ruling Q1 on #1271, Karl: "apply the early config read to the skip and
+ * review-answer routes too (same limiter, same denial precedence, same slot behaviour)"): every
+ * route that mounts this limiter is matched — practice answer and skip, review answer and skip
+ * (`ANSWER_RATE_LIMIT_PREFETCH_PATHS`). The limiter still decides at each route's own place.
  */
 type AnswerRateLimitPrefetch = {
   config: Promise<Result<PracticeConfig, unknown>>;
@@ -346,7 +351,13 @@ const answerRateLimitPrefetches = new WeakMap<
   Request,
   AnswerRateLimitPrefetch
 >();
-const ANSWER_RATE_LIMIT_PREFETCH_PATH = "/api/practice/answer";
+/** The POST paths whose route mounts `practiceAnswerRateLimiter` (server/index.ts mounts). */
+const ANSWER_RATE_LIMIT_PREFETCH_PATHS: ReadonlyArray<RegExp> = [
+  /^\/api\/practice\/answer$/,
+  /^\/api\/practice\/sessions\/[^/]+\/skip$/,
+  /^\/api\/review\/answer$/,
+  /^\/api\/review\/sessions\/[^/]+\/skip$/,
+];
 
 export function prefetchAnswerRateLimitConfig(
   req: Request,
@@ -355,7 +366,7 @@ export function prefetchAnswerRateLimitConfig(
 ): void {
   if (
     req.method === "POST" &&
-    req.path === ANSWER_RATE_LIMIT_PREFETCH_PATH &&
+    ANSWER_RATE_LIMIT_PREFETCH_PATHS.some((path) => path.test(req.path)) &&
     req.user
   ) {
     answerRateLimitPrefetches.set(req, {
@@ -3974,12 +3985,62 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   // then awaited where it was always read. The emission block itself is untouched (and still
   // never throws). The completion update and the diagnostic baseline still run only after
   // both have finished, so the baseline still follows the mastery event that fed it.
+  // 2026-10-20 (ruling 3 on #1257): the count is now awaited by `sessionPlanRead` below, which
+  // also runs alongside the emission; the FINISHING update still waits for the emission.
   const resolvedCountRead = settle(
     timedStep("count_resolved", () =>
       countResolvedSessionItems(payload.sessionId),
     ),
   );
   const endMasteryStep = beginStep("mastery_emit");
+  // @spec [owner ruling (Karl) 2026-10-19 on #1257, ruling 3 (relayed 2026-10-20): "Run the stats
+  //        read and the NON-finishing session update concurrently with mastery_emit. The FINISHING
+  //        session update stays sequential after mastery_emit, so no session ever shows
+  //        'completed' before its last mastery event is saved. Diagnostic baseline ordering
+  //        unchanged."; Doc-05A §11] | @implemented [2026-10-20]
+  // plain English: neither the stats read (`practice_session_items` only) nor the decision whether
+  // this answer finishes the session (config + resolved count) depends on the mastery write, and
+  // the NON-finishing update (`practice_sessions`, status active) does not either; so all three are
+  // STARTED here, before the emission block below, and run while it does. A FINISHING answer only
+  // computes `shouldComplete` here: its update (`completeSession`, which for a diagnostic also
+  // stores the diagnostic projection) still runs after the emission, below, as before.
+  // Failures keep their old shape: each early result is held in `settle` and rethrown after the
+  // emission, at the point the old code would have thrown, so the client sees the same response and
+  // the mastery write (best-effort, never throws) has still finished. Trade-off: a failed
+  // non-finishing update can now land while the emission is in flight rather than after it; the
+  // emission completes either way, and a retry replays as before.
+  const statsRead = settle(
+    timedStep("stats", () => getSessionStats(payload.sessionId, userId)),
+  );
+  const sessionPlanRead = settle(
+    (async (): Promise<{
+      shouldComplete: boolean;
+      refreshedMeta: SessionMetadata;
+    }> => {
+      const answerConfig = await loadPracticeConfig();
+      const refreshedMeta = asSessionMetadata(session.filters);
+      refreshedMeta.active_session_item_id = null;
+
+      const resolvedCountResult = await resolvedCountRead;
+      if (!resolvedCountResult.ok) throw resolvedCountResult.error;
+      const resolvedCount = resolvedCountResult.value;
+      const targetQuestionCount = coerceTargetQuestionCount(
+        refreshedMeta.target_question_count,
+        answerConfig.maxSessionCountPremium,
+        answerConfig.defaultSessionCountWeb,
+      );
+      const shouldComplete = resolvedCount >= targetQuestionCount;
+      if (!shouldComplete) {
+        // The NON-finishing update: concurrent with the emission (ruling 3).
+        await timedStep("session_update", () =>
+          updateSessionLifecycle(payload.sessionId, refreshedMeta, {
+            status: "active",
+          }),
+        );
+      }
+      return { shouldComplete, refreshedMeta };
+    })(),
+  );
   try {
     const canonicalId =
       typeof sessionItem.question_id === "string"
@@ -4117,30 +4178,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
   endMasteryStep();
 
-  const answerConfig = await loadPracticeConfig();
-  const refreshedMeta = asSessionMetadata(session.filters);
-  refreshedMeta.active_session_item_id = null;
-
-  const resolvedCountResult = await resolvedCountRead;
-  if (!resolvedCountResult.ok) throw resolvedCountResult.error;
-  const resolvedCount = resolvedCountResult.value;
-  const targetQuestionCount = coerceTargetQuestionCount(
-    refreshedMeta.target_question_count,
-    answerConfig.maxSessionCountPremium,
-    answerConfig.defaultSessionCountWeb,
-  );
-  const shouldComplete = resolvedCount >= targetQuestionCount;
+  // The decision (and, when not finishing, the update) started above the emission block.
+  const sessionPlan = await sessionPlanRead;
+  if (!sessionPlan.ok) throw sessionPlan.error;
+  const { shouldComplete, refreshedMeta } = sessionPlan.value;
 
   // 2026-10-13 (owner brief, first-run activation item 2): the response's stats read only the
   // session's ITEMS, which every write above has already committed and nothing below changes
   // (the lifecycle update and the baseline write the session row and the snapshot table), so it
-  // runs alongside them instead of after them. Same rows, same numbers.
-  const statsRead = settle(
-    timedStep("stats", () => getSessionStats(payload.sessionId, userId)),
-  );
+  // runs alongside them instead of after them. Same rows, same numbers. 2026-10-20 (ruling 3 on
+  // #1257): it now starts above the emission block (`statsRead`), alongside the emission too.
 
   let completedNow = false;
   if (shouldComplete) {
+    // The FINISHING update stays here, after the emission (ruling 3): a session is never
+    // `completed` before its last mastery event is saved, and the diagnostic projection stored by
+    // complete_diagnostic_session still follows the event that fed it.
     // SCL-236: completion — for a diagnostic, complete_diagnostic_session stores the diagnostic
     // projection in the same transaction. The old best-effort copy of the live projection
     // (captureDiagnosticBaseline) is gone; nothing here reads the live projection.
@@ -4154,12 +4207,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       }),
     );
     completedNow = completed;
-  } else {
-    await timedStep("session_update", () =>
-      updateSessionLifecycle(payload.sessionId, refreshedMeta, {
-        status: "active",
-      }),
-    );
   }
 
   const statsResult = await statsRead;

@@ -18,6 +18,11 @@
  * Reported per path: total ms, `pre_handler_ms` (from the route's own `route_timing` line), round
  * trips (database + the Auth stand-in), and sequential depth (`sequentialDepth`).
  *
+ * THE SESSION COOKIE (owner ruling 2026-10-19 on #1257, ruling 1): every request carries an
+ * `@supabase/ssr`-shaped session cookie whose access token claims the acting student's id, as a
+ * browser's does, so the profile read starts beside the `getUser()` stand-in. Set
+ * HOT_PATHS_SESSION_COOKIE=0 to send none (the profile read then waits for getUser(), as before).
+ *
  * THE DELETION LOCK IS ON (owner ruling (Karl) 2026-10-20 on #1257, ruling 2; production has
  * `ACCOUNT_DELETION_LIFECYCLE_V2` on, per Claude chat's read of `route_timing` 2026-10-20). The run
  * sets the flag and hands the lock the REAL default resolver through
@@ -116,6 +121,15 @@ vi.mock("../../server/middleware/rate-limit", () => ({
 const ENABLED = PG_AVAILABLE && process.env.HOT_PATHS_BENCH === "1";
 const N = Number(process.env.HOT_PATHS_N ?? "30");
 const DELETION_LOCK_ON = process.env.HOT_PATHS_DELETION_LOCK !== "0";
+const SESSION_COOKIE_ON = process.env.HOT_PATHS_SESSION_COOKIE !== "0";
+
+/** The `@supabase/ssr` session cookie whose access token claims `sub` (not verified anywhere). */
+function sessionCookie(sub: string): string {
+  const part = (v: string): string => Buffer.from(v).toString("base64url");
+  const jwt = `${part('{"alg":"ES256"}')}.${part(JSON.stringify({ sub }))}.c2lnbmF0dXJl`;
+  const blob = JSON.stringify({ access_token: jwt });
+  return `sb-bench-auth-token=base64-${Buffer.from(blob).toString("base64")}`;
+}
 const LATENCIES = (process.env.HOT_PATHS_LATENCY_MS ?? "0,10")
   .split(",")
   .map((v) => Number(v.trim()))
@@ -169,6 +183,18 @@ async function buildRealChainApp(): Promise<Express> {
     max: Math.max(1000, 10 + (N + 2) * 4 * Math.max(1, LATENCIES.length)),
   });
   app.use(requestIdMiddleware);
+  // The browser's session cookie (see the header), added to whatever the agent's jar sends.
+  if (SESSION_COOKIE_ON) {
+    app.use((req, _res, next) => {
+      req.headers.cookie = [
+        req.headers.cookie,
+        sessionCookie(harness.actingStudent),
+      ]
+        .filter((c): c is string => typeof c === "string" && c.length > 0)
+        .join("; ");
+      next();
+    });
+  }
   // codeql[js/missing-token-validation]: false positive. CSRF *is* enforced — by the production
   // double-submit middleware `doubleCsrfProtection` (server/middleware/csrf-double-submit), mounted
   // in this app exactly where server/index.ts mounts it (per route, after the session check), which
