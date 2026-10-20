@@ -1,6 +1,7 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { logger } from "../logger.js";
 import { parseRuntimeRole, type RuntimeRole } from "./auth-role.js";
+import { settle, type Result } from "../../packages/shared/src/result";
 
 /**
  * @spec [Doc-01_V8 Part I — Identity Model (one profiles row per authenticated user) | contracts/auth-login-e2e.contract.md AL-7]
@@ -41,8 +42,12 @@ export class AccountEmailConflictError extends Error {
 const ACCOUNT_EMAIL_CONFLICT_MESSAGE =
   "An account already exists for this email. Sign in with your original method.";
 
+// 2026-10-20 (owner ruling Q2 on #1271, Karl): `deleted_at` is read here so the account-deletion
+// lock takes it from this read instead of re-reading the same row. It never reaches `req.user`
+// (supabaseAuthMiddleware builds that field by field); the lock reads it through
+// `authProfileDeletionState` in server/middleware/supabase-auth.ts.
 const PROFILE_SELECT =
-  "id, email, display_name, role, is_under_13, guardian_email, student_link_code, profile_completed_at, actor_id";
+  "id, email, display_name, role, is_under_13, guardian_email, student_link_code, profile_completed_at, actor_id, deleted_at";
 
 type ProfileRow = {
   id: string;
@@ -54,7 +59,77 @@ type ProfileRow = {
   student_link_code: string | null;
   profile_completed_at: string | null;
   actor_id: string;
+  /** Soft-delete stamp (Doc-01_V8 §40.3). For the deletion lock only; never copied to req.user. */
+  deleted_at: string | null;
 };
+
+type ProfileReadResponse = {
+  data: unknown;
+  error: { message: string; code?: string } | null;
+};
+
+/** The one read of a profile row by id: the first read of `ensureProfileForAuthUser`. */
+function readProfileRow(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+): PromiseLike<ProfileReadResponse> {
+  return supabaseAdmin
+    .from("profiles")
+    .select(PROFILE_SELECT)
+    .eq("id", userId)
+    .maybeSingle();
+}
+
+/**
+ * @spec [owner ruling (Karl) 2026-10-19 on #1257, ruling 1 (relayed 2026-10-20): "start the profile
+ *        read IN PARALLEL with the Supabase session check (getUser), keyed on the token's
+ *        (unverified) user id, and DISCARD it if the ids don't match"; Coding Standards §6.1]
+ * | @implemented [2026-10-20]
+ *
+ * plain English: the profile read, STARTED before the session is verified, for the id the session
+ * cookie claims. It is only a head start: `ensureProfileForAuthUser` uses its result only when that
+ * id equals the id `getUser()` verified (and the row's own id agrees); otherwise it is dropped and
+ * the read is made again with the verified id, exactly as before. Held in `settle`, so a dropped
+ * read never surfaces as an unhandled rejection, and a failure is rethrown only where it is used.
+ * The claimed id is never logged and never reaches a decision.
+ */
+export type SpeculativeProfileRead = {
+  readonly claimedUserId: string;
+  readonly read: Promise<Result<ProfileReadResponse, unknown>>;
+};
+
+export function startSpeculativeProfileRead(
+  supabaseAdmin: SupabaseClient,
+  claimedUserId: string,
+): SpeculativeProfileRead {
+  return {
+    claimedUserId,
+    read: settle(
+      Promise.resolve().then(() =>
+        readProfileRow(supabaseAdmin, claimedUserId),
+      ),
+    ),
+  };
+}
+
+/**
+ * The speculative read's response, if and only if it was keyed on the verified id. `null` means
+ * "not usable": the caller reads again with the verified id.
+ */
+async function usableSpeculativeRead(
+  speculative: SpeculativeProfileRead | null | undefined,
+  verifiedUserId: string,
+): Promise<ProfileReadResponse | null> {
+  if (!speculative || speculative.claimedUserId !== verifiedUserId) return null;
+  const outcome = await speculative.read;
+  // A thrown read is rethrown exactly where the awaited read used to throw.
+  if (!outcome.ok) throw outcome.error;
+  const row = outcome.value.data as { id?: unknown } | null;
+  // Belt and braces: a row for any other id is never used.
+  if (row !== null && row !== undefined && row.id !== verifiedUserId)
+    return null;
+  return outcome.value;
+}
 
 type EnsureProfileContext = {
   source: "supabase_auth_middleware" | "google_oauth_callback";
@@ -79,13 +154,16 @@ export async function ensureProfileForAuthUser(
   supabaseAdmin: SupabaseClient,
   user: User,
   context: EnsureProfileContext,
+  // 2026-10-20 (ruling 1 on #1257): an optional head start (see startSpeculativeProfileRead). Used
+  // only when keyed on `user.id` (the verified id); otherwise the read below runs as it always did.
+  speculative?: SpeculativeProfileRead | null,
 ): Promise<ProfileRow> {
   const { data: existingProfile, error: existingProfileError } =
-    await supabaseAdmin
-      .from("profiles")
-      .select(PROFILE_SELECT)
-      .eq("id", user.id)
-      .maybeSingle();
+    ((await usableSpeculativeRead(speculative, user.id)) ??
+      (await readProfileRow(supabaseAdmin, user.id))) as {
+      data: (Omit<ProfileRow, "role"> & { role: unknown }) | null;
+      error: { message: string; code?: string } | null;
+    };
 
   if (existingProfileError && existingProfileError.code !== "PGRST116") {
     throw new Error(

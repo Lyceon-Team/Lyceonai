@@ -69,7 +69,7 @@ import { sessionSummarySchema } from "../../packages/shared/src/session-summary-
 import { buildSessionSummaryCore } from "../services/session-summary";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 import type { StudentSafeQuestion } from "../../packages/shared/src/practice-response-schema";
-import { settle } from "../../packages/shared/src/result";
+import { settle, type Result } from "../../packages/shared/src/result";
 import {
   beginPreHandlerStep,
   beginStep,
@@ -191,6 +191,15 @@ export async function loadPracticeConfig(): Promise<PracticeConfig> {
   return _configInflight;
 }
 
+/**
+ * @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling 2 (bench proofs)] | @implemented [2026-10-20]
+ * plain English: forget the cached config, so a benchmark or test can model the cache miss that
+ * production's `answer_rate_limit` step shows. Test-only; nothing in the server calls it.
+ */
+export function resetPracticeConfigCacheForTests(): void {
+  _configCache = null;
+}
+
 async function loadPracticeConfigFromDb(): Promise<PracticeConfig> {
   const { data, error } = await supabaseServer
     .from("practice_runtime_config")
@@ -302,6 +311,72 @@ function getPracticeAnswerRateLimiter(config: PracticeConfig) {
 // No FALLBACK_PRACTICE_CONFIG — config doctrine requires all values from practice_runtime_config.
 // If the DB read fails, loadPracticeConfigFromDb throws (fail-fast).
 
+/**
+ * @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling B ("Run `answer_rate_limit` CONCURRENTLY
+ *        with `deletion_lock` on answer submit ... Denial behaviour must be identical: same status
+ *        codes, same precedence when both would deny")] | @implemented [2026-10-20]
+ *
+ * plain English: the limiter's only round trip is its config read (`loadPracticeConfig`, 30 s
+ * cache); the bucket itself is in memory. This middleware, mounted in `server/index.ts` between
+ * `supabaseAuthMiddleware` and `enforceDeletionLock`, STARTS that read for an authenticated
+ * `POST /api/practice/answer`, so it runs while the deletion lock does its reads. Nothing is
+ * DECIDED here: `practiceAnswerRateLimiter` still runs at its old place in the chain, awaits this
+ * read there, answers 503 there if it failed, and only then counts the request in the bucket.
+ *
+ * So the outcomes and their order are exactly today's. A request the deletion lock (403/503),
+ * CSRF, role, profile or under-13 gate refuses never reaches the limiter, so it is never counted
+ * — no rate-limit token is consumed, as before — and the client sees that refusal, not a 429 or
+ * a config 503. The early read is held in `settle`, so a request refused before the limiter
+ * drops it without an unhandled rejection.
+ *
+ * Measurement: the `answer_rate_limit` pre-step now opens here (so its `at_ms` sits beside
+ * `deletion_lock`'s) and still closes where the limiter lets the request through, so its `ms` now
+ * spans the overlap with the lock and the synchronous gates between them.
+ *
+ * Trade-offs: an authenticated answer the lock then refuses still costs the config read (a
+ * global, cached, content-free read). Only the exact paths are matched; any other spelling Express
+ * would route to the same handler (case, trailing slash) falls back to the limiter's own read —
+ * today's sequential behaviour, not a different decision.
+ *
+ * 2026-10-20 (owner ruling Q1 on #1271, Karl: "apply the early config read to the skip and
+ * review-answer routes too (same limiter, same denial precedence, same slot behaviour)"): every
+ * route that mounts this limiter is matched — practice answer and skip, review answer and skip
+ * (`ANSWER_RATE_LIMIT_PREFETCH_PATHS`). The limiter still decides at each route's own place.
+ */
+type AnswerRateLimitPrefetch = {
+  config: Promise<Result<PracticeConfig, unknown>>;
+  endStep: () => void;
+};
+const answerRateLimitPrefetches = new WeakMap<
+  Request,
+  AnswerRateLimitPrefetch
+>();
+/** The POST paths whose route mounts `practiceAnswerRateLimiter` (server/index.ts mounts). */
+const ANSWER_RATE_LIMIT_PREFETCH_PATHS: ReadonlyArray<RegExp> = [
+  /^\/api\/practice\/answer$/,
+  /^\/api\/practice\/sessions\/[^/]+\/skip$/,
+  /^\/api\/review\/answer$/,
+  /^\/api\/review\/sessions\/[^/]+\/skip$/,
+];
+
+export function prefetchAnswerRateLimitConfig(
+  req: Request,
+  _res: Response,
+  next: () => void,
+): void {
+  if (
+    req.method === "POST" &&
+    ANSWER_RATE_LIMIT_PREFETCH_PATHS.some((path) => path.test(req.path)) &&
+    req.user
+  ) {
+    answerRateLimitPrefetches.set(req, {
+      endStep: beginPreHandlerStep(req, "answer_rate_limit"),
+      config: settle(loadPracticeConfig()),
+    });
+  }
+  next();
+}
+
 // Exported 2026-09-21 (brief R3): review reuses this rather than forking a
 // second copy. No signature or behaviour change.
 export async function practiceAnswerRateLimiter(
@@ -312,10 +387,22 @@ export async function practiceAnswerRateLimiter(
   // @spec [owner brief (Karl) 2026-10-15 "next perf PR" item 1] | @implemented [2026-10-15]
   // Timed as a pre-handler step (`route_timing.pre_steps.answer_rate_limit`): the config read
   // (30 s cache) and the limiter, up to the moment it lets the request through. Measurement only.
-  const endLimiterStep = beginPreHandlerStep(req, "answer_rate_limit");
+  // 2026-10-20 (ruling B on #1257): when `prefetchAnswerRateLimitConfig` already started the
+  // config read (and the step), this awaits that read instead of starting a second one. The
+  // decisions below — 503 on a failed read, then the bucket — are unchanged and taken here.
+  const prefetch = answerRateLimitPrefetches.get(req);
+  answerRateLimitPrefetches.delete(req);
+  const endLimiterStep =
+    prefetch?.endStep ?? beginPreHandlerStep(req, "answer_rate_limit");
   let config: PracticeConfig;
   try {
-    config = await loadPracticeConfig();
+    if (prefetch) {
+      const prefetched = await prefetch.config;
+      if (!prefetched.ok) throw prefetched.error;
+      config = prefetched.value;
+    } else {
+      config = await loadPracticeConfig();
+    }
   } catch {
     logger.warn(
       "PRACTICE_ANSWER",
@@ -3898,12 +3985,62 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   // then awaited where it was always read. The emission block itself is untouched (and still
   // never throws). The completion update and the diagnostic baseline still run only after
   // both have finished, so the baseline still follows the mastery event that fed it.
+  // 2026-10-20 (ruling 3 on #1257): the count is now awaited by `sessionPlanRead` below, which
+  // also runs alongside the emission; the FINISHING update still waits for the emission.
   const resolvedCountRead = settle(
     timedStep("count_resolved", () =>
       countResolvedSessionItems(payload.sessionId),
     ),
   );
   const endMasteryStep = beginStep("mastery_emit");
+  // @spec [owner ruling (Karl) 2026-10-19 on #1257, ruling 3 (relayed 2026-10-20): "Run the stats
+  //        read and the NON-finishing session update concurrently with mastery_emit. The FINISHING
+  //        session update stays sequential after mastery_emit, so no session ever shows
+  //        'completed' before its last mastery event is saved. Diagnostic baseline ordering
+  //        unchanged."; Doc-05A §11] | @implemented [2026-10-20]
+  // plain English: neither the stats read (`practice_session_items` only) nor the decision whether
+  // this answer finishes the session (config + resolved count) depends on the mastery write, and
+  // the NON-finishing update (`practice_sessions`, status active) does not either; so all three are
+  // STARTED here, before the emission block below, and run while it does. A FINISHING answer only
+  // computes `shouldComplete` here: its update (`completeSession`, which for a diagnostic also
+  // stores the diagnostic projection) still runs after the emission, below, as before.
+  // Failures keep their old shape: each early result is held in `settle` and rethrown after the
+  // emission, at the point the old code would have thrown, so the client sees the same response and
+  // the mastery write (best-effort, never throws) has still finished. Trade-off: a failed
+  // non-finishing update can now land while the emission is in flight rather than after it; the
+  // emission completes either way, and a retry replays as before.
+  const statsRead = settle(
+    timedStep("stats", () => getSessionStats(payload.sessionId, userId)),
+  );
+  const sessionPlanRead = settle(
+    (async (): Promise<{
+      shouldComplete: boolean;
+      refreshedMeta: SessionMetadata;
+    }> => {
+      const answerConfig = await loadPracticeConfig();
+      const refreshedMeta = asSessionMetadata(session.filters);
+      refreshedMeta.active_session_item_id = null;
+
+      const resolvedCountResult = await resolvedCountRead;
+      if (!resolvedCountResult.ok) throw resolvedCountResult.error;
+      const resolvedCount = resolvedCountResult.value;
+      const targetQuestionCount = coerceTargetQuestionCount(
+        refreshedMeta.target_question_count,
+        answerConfig.maxSessionCountPremium,
+        answerConfig.defaultSessionCountWeb,
+      );
+      const shouldComplete = resolvedCount >= targetQuestionCount;
+      if (!shouldComplete) {
+        // The NON-finishing update: concurrent with the emission (ruling 3).
+        await timedStep("session_update", () =>
+          updateSessionLifecycle(payload.sessionId, refreshedMeta, {
+            status: "active",
+          }),
+        );
+      }
+      return { shouldComplete, refreshedMeta };
+    })(),
+  );
   try {
     const canonicalId =
       typeof sessionItem.question_id === "string"
@@ -4041,30 +4178,22 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
   }
   endMasteryStep();
 
-  const answerConfig = await loadPracticeConfig();
-  const refreshedMeta = asSessionMetadata(session.filters);
-  refreshedMeta.active_session_item_id = null;
-
-  const resolvedCountResult = await resolvedCountRead;
-  if (!resolvedCountResult.ok) throw resolvedCountResult.error;
-  const resolvedCount = resolvedCountResult.value;
-  const targetQuestionCount = coerceTargetQuestionCount(
-    refreshedMeta.target_question_count,
-    answerConfig.maxSessionCountPremium,
-    answerConfig.defaultSessionCountWeb,
-  );
-  const shouldComplete = resolvedCount >= targetQuestionCount;
+  // The decision (and, when not finishing, the update) started above the emission block.
+  const sessionPlan = await sessionPlanRead;
+  if (!sessionPlan.ok) throw sessionPlan.error;
+  const { shouldComplete, refreshedMeta } = sessionPlan.value;
 
   // 2026-10-13 (owner brief, first-run activation item 2): the response's stats read only the
   // session's ITEMS, which every write above has already committed and nothing below changes
   // (the lifecycle update and the baseline write the session row and the snapshot table), so it
-  // runs alongside them instead of after them. Same rows, same numbers.
-  const statsRead = settle(
-    timedStep("stats", () => getSessionStats(payload.sessionId, userId)),
-  );
+  // runs alongside them instead of after them. Same rows, same numbers. 2026-10-20 (ruling 3 on
+  // #1257): it now starts above the emission block (`statsRead`), alongside the emission too.
 
   let completedNow = false;
   if (shouldComplete) {
+    // The FINISHING update stays here, after the emission (ruling 3): a session is never
+    // `completed` before its last mastery event is saved, and the diagnostic projection stored by
+    // complete_diagnostic_session still follows the event that fed it.
     // SCL-236: completion — for a diagnostic, complete_diagnostic_session stores the diagnostic
     // projection in the same transaction. The old best-effort copy of the live projection
     // (captureDiagnosticBaseline) is gone; nothing here reads the live projection.
@@ -4078,12 +4207,6 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
       }),
     );
     completedNow = completed;
-  } else {
-    await timedStep("session_update", () =>
-      updateSessionLifecycle(payload.sessionId, refreshedMeta, {
-        status: "active",
-      }),
-    );
   }
 
   const statsResult = await statsRead;
