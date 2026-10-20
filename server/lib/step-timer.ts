@@ -137,8 +137,12 @@ export function beginStep(step: string): () => void {
  *   auth_session          `supabase.auth.getUser()` — the Auth server, one call
  *   auth_session_refresh  the same step when the session was refreshed during it (the SSR client
  *                         wrote new auth cookies): a token refresh call plus the user call
- *   auth_profile          the `profiles` read behind `req.user`
- *   deletion_lock         the account-deletion lock's reads (flag-gated; absent when dormant)
+ *   auth_profile          the `profiles` read behind `req.user`. When the session cookie claims
+ *                         an id it opens beside `auth_session` (ruling 1 on #1257, 2026-10-19);
+ *                         a discarded claim's re-read is inside the same step
+ *   deletion_lock         the account-deletion lock's reads (flag-gated; absent when dormant).
+ *                         With `deleted_at` from the auth step (ruling Q2 on #1271, 2026-10-20)
+ *                         one read: the completed-request one
  *   under13_link          the under-13 guardian-link read (under-13 students only)
  *   answer_rate_limit     practice's answer limiter: its config read (30 s cache) and the bucket.
  *                         On POST /api/practice/answer it opens when the config read starts,
