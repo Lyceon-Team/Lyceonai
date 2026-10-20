@@ -21,6 +21,11 @@
  * Served by its own route (`/api/public/guardian-digest-email/unsubscribe`), which writes through
  * the guardian switch's one writer.
  *
+ * REVIEW ASK (Karl's decision 5, 2026-10-20: "Keep the signed one-click 'Stop review requests'
+ * link"): the action `review_ask_stop` signs the recipient's profile id with the same sub-key and
+ * is served by `/api/public/review-ask-email/stop`, which ends the review asks through
+ * `product_review_prompt_stop`. Its own action, so it can neither stop nor be stopped by another.
+ *
  * trade-offs: the token does not expire. An unsubscribe link must keep working for as long as the
  * email exists (industry practice and CAN-SPAM's 30-day minimum), and both actions are safe to
  * repeat. The token names a student id, which is opaque and is not personal data on its own.
@@ -36,6 +41,7 @@ export const QOTD_EMAIL_LINK_ACTIONS = [
   "unsubscribe",
   "resume",
   "guardian_digest_unsubscribe",
+  "review_ask_stop",
 ] as const;
 export type QotdEmailLinkAction = (typeof QOTD_EMAIL_LINK_ACTIONS)[number];
 
@@ -90,6 +96,18 @@ export function guardianDigestUnsubscribeUrl(
     qotdEmailLinkToken("guardian_digest_unsubscribe", guardianId),
   );
   return `${siteUrl}/api/public/guardian-digest-email/unsubscribe?t=${t}`;
+}
+
+/** The review email's one-click "Stop review requests" URL, or null when the site URL is unset. */
+export function reviewAskStopUrl(
+  siteUrl: string,
+  profileId: string,
+): string | null {
+  if (!siteUrl) return null;
+  const t = encodeURIComponent(
+    qotdEmailLinkToken("review_ask_stop", profileId),
+  );
+  return `${siteUrl}/api/public/review-ask-email/stop?t=${t}`;
 }
 
 /** The public URL for a link action, or null when the site URL is not configured. */

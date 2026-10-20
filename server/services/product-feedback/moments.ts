@@ -1,147 +1,90 @@
 /**
- * The review prompt's success moments, verified from data the product already reads.
+ * The review ask's moment checks, verified from data the product already holds.
  *
- * @spec [docs/plans/seo/seo-marketing-vertical.md R30 ("success moments only"); owner Step 0
- *       answers 3 and 4 (2026-10-05): "previous week had ≥1 block and all were completed, shown
- *       on /calendar"; "the dashboard with ≥1 completed block this week"] | @implemented [2026-10-05]
+ * @spec [owner brief "Review ask — in-app prompt + one email, industry standard" (Karl,
+ *       2026-10-20); Karl's Step 0 decisions 3 ("7+ days since signup and 3+ completed sessions
+ *       (QOTD excluded); retire the 'full week completed' moment") and 7 ("never shows while the
+ *       Getting started checklist is active"); owner brief "Student dashboard — Getting started
+ *       checklist" (final brief v2, Karl, 2026-10-13) §3] | @implemented [2026-10-20]
  *
- * plain English: three yes/no checks, each built on an existing read, with no new tracking:
- *   - exam_report: `readExamReport` — the same ownership and entitlement path the report page
- *     uses — says the caller's session is `scored` or `partial_scored`. A report still scoring,
- *     unavailable or someone else's is no.
- *   - study_week: the student's calendar for LAST week (Monday-anchored, in their own time zone,
- *     the plan's R-08-30 week) has blocks_total >= 1 and blocks_completed === blocks_total. Needs
- *     calendar_access, as the calendar does.
- *   - guardian_week: the guardian passes the guardian visibility rule for this student (active
- *     link AND student entitlement — `resolveGuardianViewDecision`, the one derivation), the
- *     access is recorded like every guardian read of a student, and the student's calendar for
- *     THIS week has blocks_completed >= 1.
+ * plain English: two yes/no checks, no new tracking:
+ *   - usageMet: `review_ask_usage_met` in SQL, the trigger's one definition — a student 7+ days
+ *     after signup with 3+ completed sessions (practice except the daily question, review,
+ *     full-length); a guardian with an active link 7+ days old to a student they may see
+ *     (`guardian_view_decision` = 'allow', the one visibility rule) who has 3+. It returns a
+ *     boolean only: nothing about any student leaves the database through it, so no subject
+ *     access is recorded (none is served).
+ *   - checklistActive: the student's Getting started checklist still has an open step. Read the
+ *     way Home reads it (`getting_started_observe`, then `deriveGettingStarted` for the student's
+ *     plan), so the ask and the card can never disagree. A finished card waiting for its Dismiss
+ *     is not active: the ask sits below it.
  *
- * Fail closed: an error, a missing profile, an unentitled or unlinked student is "no moment".
- * The answer never leaves the server except as show / don't show, so nothing about the student
- * reaches the guardian through it.
+ * Fail closed: an error is "no ask" for usageMet and "active" for the checklist, so a failure
+ * never burns one of the two asks.
  */
-import { readExamReport } from "../exam-report-service";
-import { EXAM_FEATURE_KEY } from "../exam-runtime-service";
-import { EntitlementService } from "../entitlement-service";
-import { readCalendar, readGuardianCalendar } from "../calendar/read-service";
-import { readStudyProfile } from "../calendar/profile-service";
-import { localTodayIn } from "../calendar/adapters/local-day";
-import { resolveGuardianViewDecision } from "../guardian-subject";
-import { recordSubjectAccess } from "../subject-access-audit";
-import { CALENDAR_FEATURE_KEY } from "../../routes/calendar-routes";
+import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
+import { defaultAudience } from "../../routes/getting-started-routes";
 import {
-  addDaysToLocalDate,
-  startOfLocalWeek,
-} from "../../../packages/shared/src/calendar/time";
+  deriveGettingStarted,
+  gettingStartedObservationSchema,
+} from "../../../packages/shared/src/getting-started-schema";
 import { logger } from "../../logger";
-import type { MomentChecks } from "./product-feedback-service";
+import type { FeedbackCaller, MomentChecks } from "./product-feedback-service";
 
-const WEEK_DAYS = 7;
-
-function failClosed(check: string, error: unknown, requestId?: string): false {
+function failClosed<T>(
+  check: string,
+  result: T,
+  error: unknown,
+  requestId?: string,
+): T {
   logger.warn(
     "PRODUCT_FEEDBACK",
     "moment_check_failed",
-    "A review-prompt moment check failed; no prompt",
+    "A review-ask moment check failed; no ask",
     {
       check,
       requestId,
       reason: error instanceof Error ? error.message : "unknown",
     },
   );
-  return false;
-}
-
-/** The Monday..Sunday week containing `today`, shifted by `weeksBack`. */
-function weekRange(
-  today: string,
-  weeksBack: number,
-): { from: string; to: string } {
-  const from = addDaysToLocalDate(
-    startOfLocalWeek(today),
-    -WEEK_DAYS * weeksBack,
-  );
-  return { from, to: addDaysToLocalDate(from, WEEK_DAYS - 1) };
+  return result;
 }
 
 export function liveMomentChecks(requestId?: string): MomentChecks {
   return {
-    async examReportReady(studentId, sessionId) {
+    async usageMet(profileId: string): Promise<boolean> {
       try {
-        const read = await readExamReport(studentId, sessionId, () =>
-          EntitlementService.canAccessFeature(studentId, EXAM_FEATURE_KEY),
+        const { data, error } = await supabaseServer.rpc(
+          "review_ask_usage_met",
+          { p_profile_id: profileId },
         );
-        return (
-          read.kind === "report" &&
-          (read.state === "scored" || read.state === "partial_scored")
-        );
+        if (error) throw new Error(error.message);
+        return data === true;
       } catch (error) {
-        return failClosed("exam_report", error, requestId);
+        return failClosed("usage", false, error, requestId);
       }
     },
 
-    async studyWeekCompleted(studentId) {
+    async checklistActive(caller: FeedbackCaller): Promise<boolean> {
       try {
-        if (
-          !(await EntitlementService.canAccessFeature(
-            studentId,
-            CALENDAR_FEATURE_KEY,
-          ))
-        ) {
-          return false;
-        }
-        const profile = await readStudyProfile(studentId, requestId);
-        if (profile === null) return false;
-        const lastWeek = weekRange(localTodayIn(profile.timezone), 1);
-        const result = await readCalendar({
-          student_id: studentId,
-          query: lastWeek,
-          ...(requestId === undefined ? {} : { request_id: requestId }),
-        });
-        if (!result.ok || result.value.status !== "ready") return false;
-        const { blocks_total, blocks_completed } = result.value.facts;
-        return blocks_total >= 1 && blocks_completed === blocks_total;
-      } catch (error) {
-        return failClosed("study_week", error, requestId);
-      }
-    },
-
-    async guardianWeekProgress(guardianId, studentId) {
-      try {
-        const decision = await resolveGuardianViewDecision(
-          guardianId,
-          studentId,
-          requestId,
+        const { data, error } = await supabaseServer.rpc(
+          "getting_started_observe",
+          { p_profile_id: caller.profileId },
         );
-        const recorded = await recordSubjectAccess({
-          principalId: guardianId,
-          studentId,
-          decision,
-          resource: "/api/feedback/prompt#guardian_week",
-          ...(requestId === undefined ? {} : { requestId }),
-        });
-        if (decision !== "allow" || !recorded) return false;
-        if (
-          !(await EntitlementService.canAccessFeature(
-            studentId,
-            CALENDAR_FEATURE_KEY,
-          ))
-        ) {
-          return false;
-        }
-        const profile = await readStudyProfile(studentId, requestId);
-        if (profile === null) return false;
-        const thisWeek = weekRange(localTodayIn(profile.timezone), 0);
-        const result = await readGuardianCalendar({
-          student_id: studentId,
-          query: thisWeek,
-          ...(requestId === undefined ? {} : { request_id: requestId }),
-        });
-        if (!result.ok || result.value.status !== "ready") return false;
-        return result.value.facts.blocks_completed >= 1;
+        if (error) throw new Error(error.message);
+        const obs = gettingStartedObservationSchema.parse(data);
+        const view = deriveGettingStarted(
+          obs,
+          await defaultAudience({
+            id: caller.profileId,
+            // Only the student moment asks (reviewMomentFitsRole).
+            role: "student",
+            is_under_13: caller.isUnder13,
+          }),
+        );
+        return !view.dismissed && !view.complete;
       } catch (error) {
-        return failClosed("guardian_week", error, requestId);
+        return failClosed("checklist", true, error, requestId);
       }
     },
   };

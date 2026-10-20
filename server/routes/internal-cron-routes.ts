@@ -48,6 +48,10 @@ import {
   defaultQotdEmailJobDeps,
   runQotdEmailJob,
 } from "../services/qotd/qotd-email-job.js";
+import {
+  runReviewAskEmailRule,
+  type ReviewAskEmailSummary,
+} from "../services/product-feedback/review-ask-email-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -448,6 +452,11 @@ router.get(
  * is also what delivers the emails quiet hours postponed to 08:00 Chicago (their `not_before`
  * has passed by then), and it is the ONE retry path for every type but `qotd_daily` (the 17:00
  * QOTD run dispatches only its own type). A retried email whose event has expired is dropped.
+ *
+ * REVIEW ASK (Karl, 2026-10-20) | @implemented [2026-10-20]: the review ask's one follow-up
+ * email rule runs here first (review-ask-email-job.ts), inside an existing daily pass rather
+ * than behind a new cron (the owner brief of 2026-09-15's rule for new sweeps), so the emails it
+ * queues go out in this same dispatch. Its failure is logged and does not stop the dispatch.
  */
 router.get(
   "/notification-dispatch-sweep",
@@ -457,6 +466,18 @@ router.get(
       return;
     }
     try {
+      let reviewAsk: ReviewAskEmailSummary | { error: true };
+      try {
+        reviewAsk = await runReviewAskEmailRule(new Date());
+      } catch (err) {
+        logger.error(
+          "NOTIFICATIONS",
+          "review_ask_email_rule_error",
+          "Review ask email rule failed; dispatching anyway",
+          err,
+        );
+        reviewAsk = { error: true };
+      }
       const summary = await dispatchQueuedMessages();
       logger.info(
         "NOTIFICATIONS",
@@ -464,7 +485,7 @@ router.get(
         "Scheduled notification dispatch sweep completed",
         summary,
       );
-      res.json({ ok: true, ...summary });
+      res.json({ ok: true, ...summary, reviewAsk });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",

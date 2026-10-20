@@ -31,7 +31,7 @@
  * not set up, no exams yet) is G4-06; the Dashboard never renders a zero it did not read.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "wouter";
+import { useParams, useSearch } from "wouter";
 import { useGuardianCalendar } from "@/features/calendar/api";
 import {
   browserLocalToday,
@@ -67,9 +67,11 @@ import {
 } from "./GuardianStates";
 import { guardianPaths } from "./paths";
 import { ReviewPrompt } from "@/components/product-feedback/ReviewPrompt";
+import { cameFromReviewEmail } from "@/lib/product-feedback-api";
 
 function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
   const name = useCurrentStudentName();
+  const search = useSearch();
   const today = browserLocalToday();
   const week = rangeForView("week", startOfWeek(today));
   const calendar = useGuardianCalendar(studentId, week.from, week.to);
@@ -105,12 +107,16 @@ function HeaderStrip({ studentId }: { studentId: string }): JSX.Element {
         completed={data.facts.blocks_completed}
         total={data.facts.blocks_total}
       />
-      {/* Plan R30 / Q6 (owner Step 0 answer 4, 2026-10-05): a guardian viewing a week with at
-          least one completed block is a success moment. Asked only then; the server re-derives
-          the visibility rule and the week, then applies the cadence. */}
+      {/* Review ask (Karl's decisions 3 and 7, 2026-10-20): the guardian's dashboard is their
+          home. The server checks the usage trigger (a link 7+ days old to a student they may see
+          with 3+ completed sessions) and the cadence; the review email's link lands here with
+          `?review=email`, which shows the same card without counting an ask. */}
       <ReviewPrompt
-        query={{ moment: "guardian_week", student_id: studentId }}
-        enabled={data.facts.blocks_completed >= 1}
+        query={{
+          moment: cameFromReviewEmail(search)
+            ? "email_return"
+            : "guardian_home",
+        }}
       />
     </div>
   );
