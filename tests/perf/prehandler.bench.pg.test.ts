@@ -18,6 +18,31 @@
  * Reported per path: total ms, `pre_handler_ms` (from the route's own `route_timing` line), round
  * trips (database + the Auth stand-in), and sequential depth (`sequentialDepth`).
  *
+ * THE SESSION COOKIE (owner ruling 2026-10-19 on #1257, ruling 1): every request carries an
+ * `@supabase/ssr`-shaped session cookie whose access token claims the acting student's id, as a
+ * browser's does, so the profile read starts beside the `getUser()` stand-in. Set
+ * HOT_PATHS_SESSION_COOKIE=0 to send none (the profile read then waits for getUser(), as before).
+ *
+ * THE DELETION LOCK IS ON (owner ruling (Karl) 2026-10-20 on #1257, ruling 2; production has
+ * `ACCOUNT_DELETION_LIFECYCLE_V2` on, per Claude chat's read of `route_timing` 2026-10-20). The run
+ * sets the flag and hands the lock the REAL default resolver through
+ * `defaultDeletionStatusResolverForTests`, so its two reads (`account_deletion_requests`,
+ * `profiles.deleted_at`) are counted and slowed like every other round trip. Set
+ * HOT_PATHS_DELETION_LOCK=0 to run with the lock dormant, as #1257 measured.
+ *
+ * `practice.answer_submit.cold_config` is the same answer with the practice config cache cleared
+ * just before it (`resetPracticeConfigCacheForTests`): the cache miss production's
+ * `answer_rate_limit` step shows (95–113 ms, 2026-10-20). Per-step p50s (`deletion_lock`,
+ * `answer_rate_limit`) come from the line's `pre_steps`, and `limiterOverlapsLock` is the share of
+ * requests whose `answer_rate_limit` step started before `deletion_lock` ended.
+ *
+ * A HARNESS ARTIFACT in the cold-config pass: the node-pg pool settles at three connections and
+ * opens one new connection per round (seen as one `connect` and one `remove` pool event per
+ * round, 2026-10-20). With the config read beside the lock's two reads, that third concurrent
+ * read is the one waiting on the fresh connection's handshake (several ms locally), so the
+ * cold-config `deletion_lock` / `answer_rate_limit` step times carry it. Production's PostgREST
+ * transport has no such pool.
+ *
  * OPT-IN: skipped unless HOT_PATHS_BENCH=1 (and PGHOST).
  *   HOT_PATHS_BENCH=1 HOT_PATHS_N=40 HOT_PATHS_BENCH_OUT=out.json \
  *     pnpm exec vitest run tests/perf/prehandler.bench.pg.test.ts
@@ -95,6 +120,16 @@ vi.mock("../../server/middleware/rate-limit", () => ({
 
 const ENABLED = PG_AVAILABLE && process.env.HOT_PATHS_BENCH === "1";
 const N = Number(process.env.HOT_PATHS_N ?? "30");
+const DELETION_LOCK_ON = process.env.HOT_PATHS_DELETION_LOCK !== "0";
+const SESSION_COOKIE_ON = process.env.HOT_PATHS_SESSION_COOKIE !== "0";
+
+/** The `@supabase/ssr` session cookie whose access token claims `sub` (not verified anywhere). */
+function sessionCookie(sub: string): string {
+  const part = (v: string): string => Buffer.from(v).toString("base64url");
+  const jwt = `${part('{"alg":"ES256"}')}.${part(JSON.stringify({ sub }))}.c2lnbmF0dXJl`;
+  const blob = JSON.stringify({ access_token: jwt });
+  return `sb-bench-auth-token=base64-${Buffer.from(blob).toString("base64")}`;
+}
 const LATENCIES = (process.env.HOT_PATHS_LATENCY_MS ?? "0,10")
   .split(",")
   .map((v) => Number(v.trim()))
@@ -105,7 +140,14 @@ type Sample = {
   preHandlerMs: number;
   roundTrips: number;
   depth: number;
+  lockMs: number;
+  limiterMs: number;
+  /** 1 when `answer_rate_limit` started before `deletion_lock` ended, else 0. */
+  overlap: number;
 };
+
+type PreStep = { step: string; ms: number | null; at_ms: number };
+type TimingLine = { preHandlerMs: number; preSteps: PreStep[] };
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return Number.NaN;
@@ -123,7 +165,7 @@ async function buildRealChainApp(): Promise<Express> {
     requireSupabaseAuth,
     requireStudentOrAdmin,
   } = await import("../../server/middleware/supabase-auth");
-  const { default: practiceRouter } =
+  const { default: practiceRouter, prefetchAnswerRateLimitConfig } =
     await import("../../server/routes/practice-canonical");
   const { default: reviewRouter } =
     await import("../../server/routes/review-canonical");
@@ -141,6 +183,18 @@ async function buildRealChainApp(): Promise<Express> {
     max: Math.max(1000, 10 + (N + 2) * 4 * Math.max(1, LATENCIES.length)),
   });
   app.use(requestIdMiddleware);
+  // The browser's session cookie (see the header), added to whatever the agent's jar sends.
+  if (SESSION_COOKIE_ON) {
+    app.use((req, _res, next) => {
+      req.headers.cookie = [
+        req.headers.cookie,
+        sessionCookie(harness.actingStudent),
+      ]
+        .filter((c): c is string => typeof c === "string" && c.length > 0)
+        .join("; ");
+      next();
+    });
+  }
   // codeql[js/missing-token-validation]: false positive. CSRF *is* enforced — by the production
   // double-submit middleware `doubleCsrfProtection` (server/middleware/csrf-double-submit), mounted
   // in this app exactly where server/index.ts mounts it (per route, after the session check), which
@@ -154,6 +208,8 @@ async function buildRealChainApp(): Promise<Express> {
     res.json({ csrfToken: generateToken(req, res) });
   });
   app.use(supabaseAuthMiddleware);
+  // As server/index.ts: the answer limiter's config read starts here, alongside the lock.
+  app.use(prefetchAnswerRateLimitConfig);
   app.use(enforceDeletionLock);
   // The three mounts exactly as server/index.ts has them, CSRF included and in the same place:
   // calendar checks CSRF before the role, practice and review after it.
@@ -191,9 +247,16 @@ describe.skipIf(!ENABLED)(
     let csrfToken = "";
     const ORIGIN = "http://localhost:5000";
     const results: Array<Record<string, unknown>> = [];
-    const preHandler: number[] = [];
+    const lines: TimingLine[] = [];
 
     beforeAll(async () => {
+      if (DELETION_LOCK_ON) {
+        process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";
+        const auth = await import("../../server/middleware/supabase-auth");
+        auth.setDeletionStatusResolverForTests(
+          auth.defaultDeletionStatusResolverForTests,
+        );
+      }
       await bootHarness("prehandler_bench");
       await harness.setup!.query(
         `UPDATE public.practice_runtime_config SET value = '100000'::jsonb
@@ -208,9 +271,15 @@ describe.skipIf(!ENABLED)(
       const original = logger.info.bind(logger);
       vi.spyOn(logger, "info").mockImplementation(((...args: unknown[]) => {
         if (args[0] === "PERF" && args[1] === "route_timing") {
-          const data = args[3] as { pre_handler_ms?: unknown };
+          const data = args[3] as {
+            pre_handler_ms?: unknown;
+            pre_steps?: PreStep[];
+          };
           if (typeof data.pre_handler_ms === "number")
-            preHandler.push(data.pre_handler_ms);
+            lines.push({
+              preHandlerMs: data.pre_handler_ms,
+              preSteps: data.pre_steps ?? [],
+            });
           return;
         }
         if (args[1] === "user_authenticated" || args[1] === "api_request")
@@ -239,6 +308,11 @@ describe.skipIf(!ENABLED)(
       console.table(results);
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await shutdownHarness();
+      if (DELETION_LOCK_ON) {
+        const auth = await import("../../server/middleware/supabase-auth");
+        auth.setDeletionStatusResolverForTests(null);
+        delete process.env.ACCOUNT_DELETION_LIFECYCLE_V2;
+      }
     });
 
     async function timed(
@@ -246,16 +320,29 @@ describe.skipIf(!ENABLED)(
     ): Promise<{ status: number; sample: Sample }> {
       const rt = harness.roundTrips;
       const from = harness.intervals.length;
-      const pre = preHandler.length;
+      const pre = lines.length;
       const start = performance.now();
       const res = await fn();
+      const line = lines[pre];
+      const step = (name: string): PreStep | undefined =>
+        line?.preSteps.find((s) => s.step === name);
+      const lock = step("deletion_lock");
+      const limiter = step("answer_rate_limit");
       return {
         status: res.status,
         sample: {
           ms: performance.now() - start,
-          preHandlerMs: preHandler[pre] ?? Number.NaN,
+          preHandlerMs: line?.preHandlerMs ?? Number.NaN,
           roundTrips: harness.roundTrips - rt,
           depth: sequentialDepth(harness.intervals.slice(from)),
+          lockMs: lock?.ms ?? Number.NaN,
+          limiterMs: limiter?.ms ?? Number.NaN,
+          overlap:
+            lock !== undefined && limiter !== undefined && lock.ms !== null
+              ? limiter.at_ms < lock.at_ms + lock.ms
+                ? 1
+                : 0
+              : Number.NaN,
         },
       };
     }
@@ -266,11 +353,15 @@ describe.skipIf(!ENABLED)(
         const samples: Record<string, Sample[]> = {
           "practice.session_start": [],
           "practice.answer_submit": [],
+          "practice.answer_submit.cold_config": [],
           "review.session_start": [],
           "calendar.read": [],
         };
-        for (let i = 0; i < N + 2; i += 1) {
-          const keep = i >= 2;
+        // Rounds 0..N+1 measure all four paths with a warm config cache; rounds N+2..2N+3 repeat
+        // the answer with the practice config cache cleared just before it.
+        for (let i = 0; i < 2 * (N + 2); i += 1) {
+          const cold = i >= N + 2;
+          const keep = (cold ? i - (N + 2) : i) >= 2;
           harness.latencyMs = 0;
           harness.actingStudent = STUDENT;
           await closeOpenSessions();
@@ -302,6 +393,11 @@ describe.skipIf(!ENABLED)(
           const itemId = String(firstItem.rows[0].id);
           const token = await correctTokenFor(itemId);
 
+          if (cold) {
+            const { resetPracticeConfigCacheForTests } =
+              await import("../../server/routes/practice-canonical");
+            resetPracticeConfigCacheForTests();
+          }
           harness.latencyMs = latencyMs;
           const answer = await timed(() =>
             agent
@@ -316,6 +412,13 @@ describe.skipIf(!ENABLED)(
               }),
           );
           expect(answer.status).toBe(200);
+          if (cold) {
+            if (keep)
+              samples["practice.answer_submit.cold_config"]!.push(
+                answer.sample,
+              );
+            continue;
+          }
           const review = await timed(() =>
             agent
               .post("/api/review/sessions")
@@ -351,6 +454,14 @@ describe.skipIf(!ENABLED)(
             preP95: round(percentile(sorted("preHandlerMs"), 95)),
             roundTripsP50: percentile(sorted("roundTrips"), 50),
             depthP50: percentile(sorted("depth"), 50),
+            lockP50: round(percentile(sorted("lockMs"), 50)),
+            limiterP50: round(percentile(sorted("limiterMs"), 50)),
+            limiterOverlapsLock: round(
+              s.reduce(
+                (a, x) => a + (Number.isNaN(x.overlap) ? 0 : x.overlap),
+                0,
+              ) / Math.max(1, s.length),
+            ),
           });
         }
       }
