@@ -19,13 +19,20 @@
  * operational fault, not a decision about this student.
  *
  * expected outcome: changing `daily_minutes_presets` in the database changes what a
- * profile upsert accepts on the next request, with no deploy and no cache to wait out.
+ * profile upsert accepts within one cache lifetime (60 s as seeded), with no deploy.
  *
- * trade-offs: no cache, following `entitlement-runtime-config.ts`. GET `/api/calendar`
- * pays one extra round trip per request. Inventing a TTL would be an unreviewed constant,
- * and the alternative — a process-lifetime cache — would make an operator's change take
- * effect at a time nobody can predict. When this shows up in a latency budget it should
- * become a config-owned TTL, not a hard-coded one.
+ * trade-offs: CACHED SINCE 2026-10-15, owner ruling (Karl) on #1238: "a 60-second cache for the
+ * two config reads". This used to say "no cache ... when this shows up in a latency budget it
+ * should become a config-owned TTL, not a hard-coded one", and that is what it became: the
+ * lifetime is the `calendar_config_cache_ttl_seconds` row of `caching_runtime_config` (Doc 01A
+ * §24, migration 20261105000000), read on a miss alongside the load, 60 s when the row is absent
+ * or unusable. Both config reads (this table and practice's seconds-per-question) are one cached
+ * value, and on a miss they run together rather than one after the other.
+ *
+ * THE LOUD FAILURE IS KEPT (§18). The cache's hard-staleness bound equals its TTL, so an expired
+ * entry is never served in place of a failed refresh: a missing or unreadable config still throws
+ * `CalendarConfigError` on the first read after the entry expires, exactly as before, and a
+ * failure is never cached.
  *
  * edge cases: `daily_minutes_presets` is an array of integers; the rest are integers. A
  * row whose `value` is a JSON string rather than a number is malformed and throws — it is
@@ -41,6 +48,12 @@ import {
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
 import { classifyError } from "../../lib/redact";
+import { createTtlCache } from "../../lib/ttl-cache";
+import {
+  CACHE_TTL_CONFIG,
+  readCacheTtlMs,
+} from "../../lib/caching-runtime-config";
+import { settle } from "../../../packages/shared/src/result";
 
 /**
  * The keys this layer reads. Every one is asserted present by
@@ -202,7 +215,40 @@ function requireInteger(
  * and a partial result is caught by `requireValue` key by key rather than by counting rows
  * — the count would say "something is missing" and this says which.
  */
+/**
+ * The cached accessor every caller uses. See the header for the TTL, its row and why a failed
+ * refresh still throws.
+ *
+ * @spec [owner ruling (Karl) 2026-10-15 on #1238 item (b); Doc-01A_V1.0 §21, §24, §25;
+ *        Doc-05F_V1.0 §18 "Missing config | Loud failure at accessor"] | @implemented [2026-10-15]
+ */
 export async function loadCalendarConfig(): Promise<CalendarConfig> {
+  return CALENDAR_CONFIG_CACHE.get("all", readCalendarConfig);
+}
+
+const CALENDAR_CONFIG_TTL_MS =
+  CACHE_TTL_CONFIG.calendarConfig.fallbackSeconds * 1000;
+
+const CALENDAR_CONFIG_CACHE = createTtlCache<CalendarConfig>({
+  name: "calendar:runtime_config",
+  ttlMs: CALENDAR_CONFIG_TTL_MS,
+  ttlFrom: () => readCacheTtlMs("calendarConfig"),
+  // Equal to the TTL ON PURPOSE (the cache stores `max(hardStaleMs, ttl)`): a refresh that fails
+  // after expiry throws instead of serving the old value — §18's loud failure.
+  hardStaleMs: CALENDAR_CONFIG_TTL_MS,
+  maxEntries: 1,
+});
+
+/** Drop the cached config (tests, and an operator path if one is ever wanted). */
+export function invalidateCalendarConfigCache(): void {
+  CALENDAR_CONFIG_CACHE.invalidate();
+}
+
+async function readCalendarConfig(): Promise<CalendarConfig> {
+  // Practice's half of the estimate does not depend on this table, so it is read alongside it.
+  // Its result (or failure) is consumed at the same point in the sequence as before, so a
+  // calendar-config failure still wins when both fail.
+  const practiceSecondsRead = settle(loadPracticeSecondsPerQuestion());
   const { data, error } = await supabaseServer
     .from("calendar_runtime_config")
     .select("key, value")
@@ -305,7 +351,9 @@ export async function loadCalendarConfig(): Promise<CalendarConfig> {
   // ITS table — the same row `calendar_build_plan_input` reads. Copying the value into
   // `calendar_runtime_config` would be a second copy of someone else's constant, and the
   // two would drift the first time Doc 02B changed it.
-  const practiceSeconds = await loadPracticeSecondsPerQuestion();
+  const practiceSecondsResult = await practiceSecondsRead;
+  if (!practiceSecondsResult.ok) throw practiceSecondsResult.error;
+  const practiceSeconds = practiceSecondsResult.value;
 
   return {
     bounds: bounds.data,

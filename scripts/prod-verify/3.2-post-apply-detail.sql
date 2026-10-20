@@ -3,13 +3,14 @@
 -- ============================================================================
 -- READ-ONLY listing. Companion to 3.2-post-apply.sql, which carries the verdict.
 -- Run this when the verdict says STOP, or to record the state distribution before
--- and after baseline-repair.sql.
+-- and after diagnostic-projection-backfill.sql (SCL-236; it replaced baseline-repair.sql).
 --
 -- Reading it: a student in baseline_pending finished the diagnostic and has no
 -- usable baseline. If diagnostic_finished_at is days ago, they are the population
--- /api/internal/baseline-pending-sweep alerts on, and baseline-repair.sql is the
--- file that resolves them — provided their live projection is non-NULL. Check
--- baseline-repair-preview.sql before assuming it can.
+-- /api/internal/baseline-pending-sweep now REPAIRS (diagnostic_projection_repair), and
+-- diagnostic-projection-backfill.sql runs the same repair by hand. Since SCL-236 the stored
+-- diagnostic projection is computed from the diagnostic's own answers, so it no longer waits on
+-- the live projection.
 -- ============================================================================
 
 SELECT

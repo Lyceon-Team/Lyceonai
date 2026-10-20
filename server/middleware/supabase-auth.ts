@@ -15,6 +15,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { isProfileGateSatisfied } from "../../packages/shared/src/profile-completion";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
+import { beginPreHandlerStep } from "../lib/step-timer";
 
 /**
  * Derive the `@supabase/ssr` access token from the request cookies.
@@ -243,8 +244,7 @@ export function sendUnauthenticated(res: Response, requestId?: string) {
 export function sendRoleUnrecognized(res: Response, requestId?: string) {
   return sendDenial(res, 403, {
     error: "Account unavailable",
-    message:
-      "This account can't be opened. Please contact support.",
+    message: "This account can't be opened. Please contact support.",
     requestId,
     extra: { code: ROLE_UNRECOGNIZED },
   });
@@ -453,6 +453,16 @@ const supabaseAdmin = new Proxy({} as SupabaseClient, {
  */
 const INTERNAL_API_PREFIX = "/api/internal";
 
+/** How many `Set-Cookie` values the response carries so far (for the refresh marker below). */
+function setCookieCount(res: Response): number {
+  // Measurement must never be able to break authentication: a response object without
+  // `getHeader` (a hand-built test double) simply counts as "no cookies written".
+  if (typeof res.getHeader !== "function") return 0;
+  const header = res.getHeader("Set-Cookie");
+  if (header === undefined) return 0;
+  return Array.isArray(header) ? header.length : 1;
+}
+
 export function isInternalApiPath(path: string): boolean {
   const p = path.toLowerCase();
   return p === INTERNAL_API_PREFIX || p.startsWith(`${INTERNAL_API_PREFIX}/`);
@@ -496,10 +506,23 @@ export async function supabaseAuthMiddleware(
     // native @supabase/ssr getUser() is the ONLY user-auth path — there is NO legacy-token fallback that
     // validates a custom cookie and mints an authorized client. (resolveTokenFromRequest survives for
     // inspect-only CSRF binding / diagnostics; it never authorizes a request here.)
+    //
+    // @spec [owner brief (Karl) 2026-10-15 "next perf PR" item 1] | @implemented [2026-10-15]
+    // Timed as a pre-handler step (`route_timing.pre_steps`). The SSR adapter writes auth cookies
+    // only when it refreshed the session, so a grown `Set-Cookie` list after the call marks this
+    // request's step as `auth_session_refresh` (a refresh call plus the user call). Measurement
+    // only: what is validated, and how, is untouched.
+    const setCookiesBefore = setCookieCount(res);
+    const endSessionStep = beginPreHandlerStep(req, "auth_session");
     const {
       data: { user },
       error: authError,
     } = await ssrClient.auth.getUser();
+    endSessionStep(
+      setCookieCount(res) > setCookiesBefore
+        ? "auth_session_refresh"
+        : "auth_session",
+    );
 
     if (authError || !user) {
       if (authError) {
@@ -515,6 +538,7 @@ export async function supabaseAuthMiddleware(
 
     let emailConflict = false;
     let roleUnrecognized = false;
+    const endProfileStep = beginPreHandlerStep(req, "auth_profile");
     const profile = await ensureProfileForAuthUser(supabaseAdmin, user, {
       source: "supabase_auth_middleware",
       requestId: req.requestId,
@@ -559,6 +583,7 @@ export async function supabaseAuthMiddleware(
       );
       return null;
     });
+    endProfileStep();
 
     if (roleUnrecognized) {
       req.roleUnrecognized = true;
@@ -707,10 +732,12 @@ export async function enforceDeletionLock(
     return next();
   }
 
+  const endLockStep = beginPreHandlerStep(req, "deletion_lock");
   const deletionStatus = await resolveDeletionStatus({
     userId: req.user.id,
     requestId: req.requestId,
   });
+  endLockStep();
 
   if (deletionStatus.status === "unavailable") {
     // Fail closed: if we can't determine the state, do not let a possibly-deleted user through.
@@ -868,9 +895,11 @@ export async function requireGuardianLinkForUnder13(
   }
 
   let linked: boolean;
+  const endLinkStep = beginPreHandlerStep(req, "under13_link");
   try {
     linked = await hasActiveGuardianLink(supabaseServer, user.id);
   } catch (err) {
+    endLinkStep();
     logger.error(
       "AUTH",
       "guardian_link_read_failed",
@@ -887,6 +916,7 @@ export async function requireGuardianLinkForUnder13(
       .json({ error: "Internal server error", requestId: req.requestId });
     return;
   }
+  endLinkStep();
 
   if (linked) {
     next();
@@ -981,7 +1011,9 @@ export function requireProfileComplete(
  * The tutor's age test, on its own so the feature-access map (OQ-29) asks the exact question
  * `requireStudentOnly` asks. Fail-closed: only an explicit `false` passes.
  */
-export function passesTutorAgeGate(user: Pick<SupabaseUser, "is_under_13">): boolean {
+export function passesTutorAgeGate(
+  user: Pick<SupabaseUser, "is_under_13">,
+): boolean {
   return user.is_under_13 === false;
 }
 

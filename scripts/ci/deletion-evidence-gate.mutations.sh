@@ -34,6 +34,8 @@ MIGFK="supabase/migrations/20260917130000_declarative_fk_delete_actions.sql"
 # the pipeline keeps. Resolved, not named, so a later redefinition (E6b: 20260930080000) cannot
 # silently turn M2/M3 into plants on an overwritten copy.
 MIGCASCADE="$(grep -l 'FUNCTION public.execute_account_deletion_cascade(' supabase/migrations/*.sql | sort | tail -1)"
+# The crisis-hold CHECK and message trigger (not function bodies; see C-01 below).
+MIGCRISIS="supabase/migrations/20261027000001_crisis_hold_on_account_deletion.sql"
 # The LATEST migration that (re)defines apply_audit_logs_retention, resolved for the same reason:
 # 20261027000000 (C-02, consent rows kept) replaced 20260917100000's body, which turned M32 into a
 # plant on an overwritten copy until it was re-pointed here.
@@ -65,6 +67,7 @@ cp "$DISPATCH" "$BACKUP/dispatch.ts"
 cp "$RECONSENT" "$BACKUP/reconsent.ts"
 cp "$MIGFK" "$BACKUP/migfk.sql"
 cp "$MIGCASCADE" "$BACKUP/migcascade.sql"
+cp "$MIGCRISIS" "$BACKUP/migcrisis.sql"
 cp "$MIGAUDITRET" "$BACKUP/migauditret.sql"
 cp "$GUARD" "$BACKUP/guard.sql"
 cp "$MIG6" "$BACKUP/mig6.sql"
@@ -95,6 +98,7 @@ restore() {
   cp "$BACKUP/reconsent.ts" "$RECONSENT"
   cp "$BACKUP/migfk.sql" "$MIGFK"
   cp "$BACKUP/migcascade.sql" "$MIGCASCADE"
+  cp "$BACKUP/migcrisis.sql" "$MIGCRISIS"
   cp "$BACKUP/migauditret.sql" "$MIGAUDITRET"
   cp "$BACKUP/guard.sql" "$GUARD"
   cp "$BACKUP/mig6.sql" "$MIG6"
@@ -393,8 +397,10 @@ echo "==> (M32) the audit_logs identity strip stops nulling target_profile_id"
 plant M32 "$MIGAUDITRET" "s.replace('       SET actor_profile_id  = NULL,\n           target_profile_id = NULL', '       SET actor_profile_id  = NULL,\n           target_profile_id = target_profile_id', 1)"
 expect_red M32 "P6.6 the deleted profile's uuid survives NOWHERE"
 
-# C-01: the crisis hold on account deletion. MIGCASCADE resolves to its last definition
-# (20261027000001), which also carries the CHECK and the message trigger.
+# C-01: the crisis hold on account deletion. The hold itself is in the cascade body (MIGCASCADE,
+# its LAST definer). The CHECK and the message trigger are NOT function bodies: they live only in
+# 20261027000001 (MIGCRISIS), so M101/M102 target that file directly. Re-pointed 2026-10-17 when
+# 20261106010000 (SCL-236) became the cascade's last definer and MIGCASCADE stopped holding them.
 echo "==> (M99) the cascade holds no flagged conversation"
 plant M99 "$MIGCASCADE" 's.replace("   WHERE c.student_id = p_profile_id\n     AND (EXISTS", "   WHERE false AND c.student_id = p_profile_id\n     AND (EXISTS", 1)'
 expect_red M99 "P6.8 (hard_delete)"
@@ -404,11 +410,11 @@ plant M100 "$MIGCASCADE" 's.replace("\n       OR EXISTS (SELECT 1 FROM public.cr
 expect_red M100 "P6.8 (hard_delete)"
 
 echo "==> (M101) the conversation CHECK admits a NULL student on an unflagged row"
-plant M101 "$MIGCASCADE" 's.replace("CHECK (student_id IS NOT NULL OR crisis_flagged);", "CHECK (true);", 1)'
+plant M101 "$MIGCRISIS" 's.replace("CHECK (student_id IS NOT NULL OR crisis_flagged);", "CHECK (true);", 1)'
 expect_red M101 "P6.9 a NULL student_id is refused on an unflagged conversation"
 
 echo "==> (M102) the message trigger admits a NULL student outside a held conversation"
-plant M102 "$MIGCASCADE" 's.replace("  IF NEW.student_id IS NULL AND NOT EXISTS (", "  IF false AND NOT EXISTS (", 1)'
+plant M102 "$MIGCRISIS" 's.replace("  IF NEW.student_id IS NULL AND NOT EXISTS (", "  IF false AND NOT EXISTS (", 1)'
 expect_red M102 "P6.10 a NULL student_id is refused on a message"
 
 # =============================================================================

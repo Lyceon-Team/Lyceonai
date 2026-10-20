@@ -7,7 +7,7 @@
 -- would pass over a view whose CASE returns the wrong arm for every student.
 --
 -- The behavioural assertion is on 3f18cbe2: production's one student with a
--- completed diagnostic. Before scripts/prod-verify/baseline-repair.sql runs, their
+-- completed diagnostic. Before scripts/prod-verify/diagnostic-projection-backfill.sql runs, their
 -- state must be 'baseline_pending' — the whole point of the state existing. After
 -- the repair it becomes 'baseline_ready'. Either is a pass here; 'not_taken' and
 -- 'in_progress' are not, because both mean the derivation has lost the completed
