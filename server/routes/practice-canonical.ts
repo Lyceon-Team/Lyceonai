@@ -77,7 +77,6 @@ import {
   timedStep,
 } from "../lib/step-timer";
 import { diagnosticCompletionResultSchema } from "../../packages/shared/src/diagnostic-projection";
-import { beginStep, timedRoute, timedStep } from "../lib/step-timer";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
