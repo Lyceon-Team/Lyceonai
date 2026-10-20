@@ -28,6 +28,7 @@ import Stripe from "stripe";
 import { Client } from "pg";
 import fs from "fs";
 import path from "path";
+import { ensureClusterRoles } from "../helpers/pg-supabase";
 
 // ---------------------------------------------------------------------------
 // PG availability gate
@@ -334,6 +335,8 @@ describe.skipIf(!CAN_RUN)("Entitlement write-path → real PG proof", () => {
       database: "postgres",
     });
     await adminPg.connect();
+    // Roles are cluster-wide: create them once, under the shared lock (tests/helpers/pg-supabase.ts).
+    await ensureClusterRoles(adminPg);
     await adminPg.query(`DROP DATABASE IF EXISTS ${DB_NAME}`);
     await adminPg.query(`CREATE DATABASE ${DB_NAME}`);
 
