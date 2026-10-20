@@ -52,6 +52,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { Client } from "pg";
 import fs from "fs";
 import path from "path";
+import { ensureClusterRoles } from "../helpers/pg-supabase";
 
 // ---------------------------------------------------------------------------
 // PG availability gate — skip entirely when no PG is available
@@ -307,7 +308,9 @@ class PgQueryBuilder {
         return { data: result.rows[0] ?? null, error: null };
       }
       const { sql: whereSql, params } = this.buildWhere(1);
-      const sql = `SELECT * FROM public."${this.table}"${whereSql}${this.buildOrderLimit()} LIMIT 1`;
+      // .limit(n) already emits LIMIT; append one only when the chain set none (a second LIMIT
+      // is a syntax error the real PostgREST builder never produces).
+      const sql = `SELECT * FROM public."${this.table}"${whereSql}${this.buildOrderLimit()}${this.limitN === null ? " LIMIT 1" : ""}`;
       const result = await this.pgClient.query(sql, params);
       return { data: result.rows[0] ?? null, error: null };
     } catch (err: unknown) {
@@ -419,7 +422,13 @@ function createPgBackedSupabase(pgClient: Client): Record<string, unknown> {
         const values = keys.map((k) => params[k]);
         const sql = `SELECT * FROM public.${fnName}(${placeholders})`;
         const result = await pgClient.query(sql, values);
-        return { data: result.rows[0] ?? null, error: null };
+        const row = result.rows[0] ?? null;
+        // PostgREST returns a SCALAR function's value itself (e.g. the jsonb of
+        // complete_diagnostic_session), not a one-column row named after the function.
+        if (row && Object.keys(row).length === 1 && fnName in row) {
+          return { data: row[fnName], error: null };
+        }
+        return { data: row, error: null };
       } catch (err: unknown) {
         return { data: null, error: { message: (err as Error).message } };
       }
@@ -486,6 +495,8 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
       database: "postgres",
     });
     await adminPg.connect();
+    // Roles are cluster-wide: create them once, under the shared lock (tests/helpers/pg-supabase.ts).
+    await ensureClusterRoles(adminPg);
     await adminPg.query(`DROP DATABASE IF EXISTS ${DB_NAME}`);
     await adminPg.query(`CREATE DATABASE ${DB_NAME}`);
 
@@ -535,11 +546,12 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     }
 
     // ---------------------------------------------------------------
-    // 4b. Raise rate-limit ceiling so 40 rapid answers don't 429
+    // 4b. Raise rate-limit ceiling so the suite's rapid answers don't 429 (six diagnostics of
+    //     40 answers plus replays run inside one limiter window)
     // ---------------------------------------------------------------
     await testPg.query(
       `UPDATE public.practice_runtime_config
-         SET value = '200'
+         SET value = '5000'
        WHERE key = 'answer_rate_limit_max'`,
     );
 
@@ -830,188 +842,351 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     expect(auditResult.rows[0]!.cnt).toBe(40);
   }, 120_000);
 
-  // -------------------------------------------------------------------
-  // F. Assert: diagnostic completion captures exactly one diagnostic_baseline
-  //    snapshot per section (M + RW), values match the live projection at
-  //    completion time.
-  // @spec [Doc-05C §7.4, Vertical-B Slice 2]
-  // @implemented 2026-08-12
-  // -------------------------------------------------------------------
-  it("diagnostic completion writes exactly one diagnostic_baseline per section, values match live projection", async () => {
-    const baselineResult = await testPg!.query(
-      `SELECT student_id, section, snapshot_kind,
-              projected_score_mid, projected_score_low, projected_score_high
-         FROM public.student_section_projection_snapshots
-         WHERE student_id = $1
-           AND snapshot_kind = 'diagnostic_baseline'
-         ORDER BY section`,
-      [TEST_USER_ID],
-    );
-
-    // Exactly 2 baseline rows: one for M, one for RW.
-    expect(baselineResult.rows.length).toBe(2);
-
-    const sections = baselineResult.rows.map(
-      (r: Record<string, unknown>) => r.section,
-    );
-    expect(sections).toContain("M");
-    expect(sections).toContain("RW");
-
-    // Each baseline has a non-NULL projected_score_mid (evidence gate passed).
-    for (const row of baselineResult.rows) {
-      expect(row.projected_score_mid).not.toBeNull();
-      expect(row.snapshot_kind).toBe("diagnostic_baseline");
-    }
-
-    // FIX B (Codex REVISE): assert captured baseline values EQUAL the live
-    // projection in student_section_projections at completion time.
-    const liveResult = await testPg!.query(
-      `SELECT section, projected_score_mid, projected_score_low, projected_score_high
-         FROM public.student_section_projections
-         WHERE student_id = $1
-         ORDER BY section`,
-      [TEST_USER_ID],
-    );
-    expect(liveResult.rows.length).toBe(2);
-
-    for (const baseline of baselineResult.rows) {
-      const live = liveResult.rows.find(
-        (r: Record<string, unknown>) => r.section === baseline.section,
-      );
-      expect(
-        live,
-        `live projection missing for section ${baseline.section}`,
-      ).toBeDefined();
-      expect(baseline.projected_score_mid).toEqual(live!.projected_score_mid);
-      expect(baseline.projected_score_low).toEqual(live!.projected_score_low);
-      expect(baseline.projected_score_high).toEqual(live!.projected_score_high);
-    }
-  }, 30_000);
-
-  // -------------------------------------------------------------------
-  // G. Assert: second diagnostic baseline capture through the PRODUCTION
-  //    code path (.insert() + catch-23505) is a harmless no-op — original
-  //    baseline values preserved (immutability proof).
+  // ===================================================================
+  // SCL-236 — the stored diagnostic projection and the ONE completion path
+  // @spec [SCL-236 (Doc 05C §12A, §12); owner rulings 2026-10-16 and 2026-10-17 (constraints 2-4)]
+  // @implemented 2026-10-17
   //
-  //    This test calls the exported captureDiagnosticBaseline function
-  //    directly — the same code the handler calls on diagnostic completion.
-  //    The function reads live projections, attempts a plain INSERT (no
-  //    ON CONFLICT), and catches error code 23505 from the partial unique
-  //    index as an idempotent no-op. If the catch-23505 were removed,
-  //    the function would log "baseline insert failed" instead of
-  //    "baseline already captured" — the spied logger assertion below
-  //    detects that regression.
-  // @spec [Doc-05C §7.4, Vertical-B Slice 2]
-  // @implemented 2026-08-13
-  // -------------------------------------------------------------------
-  it("second baseline capture via production path is blocked — original preserved (immutability)", async () => {
-    // Capture original baseline values.
-    const originalResult = await testPg!.query(
-      `SELECT snapshot_id, section, projected_score_mid, projected_score_low, projected_score_high, snapshot_at
-         FROM public.student_section_projection_snapshots
-         WHERE student_id = $1
-           AND snapshot_kind = 'diagnostic_baseline'
-         ORDER BY section`,
+  // Every completion path below — the 40th answer, a skip on the last question, next-question
+  // with nothing left, a replay of the final answer, two concurrent final answers — must leave
+  // exactly two write-once rows in student_diagnostic_projections, computed from that session's
+  // answers, with completed_at stamped once.
+  // ===================================================================
+
+  type StoredRow = {
+    section: string;
+    status: string;
+    projected_score_mid: number | null;
+    projected_score_low: number | null;
+    projected_score_high: number | null;
+    computed_at: Date;
+  };
+
+  async function storedRows(sessionId: string): Promise<StoredRow[]> {
+    const r = await testPg!.query(
+      `SELECT section, status, projected_score_mid, projected_score_low,
+              projected_score_high, computed_at
+         FROM public.student_diagnostic_projections
+        WHERE practice_session_id = $1
+        ORDER BY section`,
+      [sessionId],
+    );
+    return r.rows as StoredRow[];
+  }
+
+  async function sessionRow(
+    sessionId: string,
+  ): Promise<{ status: string; completed_at: Date | null }> {
+    const r = await testPg!.query(
+      `SELECT status, completed_at FROM public.practice_sessions WHERE id = $1`,
+      [sessionId],
+    );
+    return r.rows[0] as { status: string; completed_at: Date | null };
+  }
+
+  async function actAs(userId: string): Promise<void> {
+    const authModule = await import("../../server/middleware/supabase-auth");
+    vi.spyOn(authModule, "supabaseAuthMiddleware").mockImplementation(
+      (req: Request, _res: Response, next: NextFunction) => {
+        (req as Record<string, unknown>).user = {
+          id: userId,
+          email: `${userId}@example.com`,
+          role: "student",
+          isAdmin: false,
+          isGuardian: false,
+          display_name: "Path Student",
+        };
+        next();
+      },
+    );
+  }
+
+  /** A fresh student with an ACTIVE 40-item diagnostic, every item served. */
+  async function seedDiagnostic(tag: number): Promise<{
+    userId: string;
+    sessionId: string;
+    itemId: (ordinal: number) => string;
+  }> {
+    const hex = tag.toString(16).padStart(2, "0");
+    const userId = `a1a1a1a1-0000-4000-8000-0000000000${hex}`;
+    const sessionId = `b1b1b1b1-0000-4000-8000-0000000000${hex}`;
+    const itemId = (ordinal: number): string =>
+      `c1c1c1c1-00${hex}-4000-8000-${ordinal.toString(16).padStart(12, "0")}`;
+    await testPg!.query(`INSERT INTO auth.users (id, email) VALUES ($1, $2)`, [
+      userId,
+      `${userId}@example.com`,
+    ]);
+    await testPg!.query(
+      `INSERT INTO public.practice_sessions
+          (id, user_id, actor_id, mode, filters, target_count, platform, status)
+        VALUES ($1, $2, $2, 'diagnostic',
+          '{"target_question_count": 40, "prebuilt": true}', 40, 'web', 'active')`,
+      [sessionId, userId],
+    );
+    let ordinal = 0;
+    for (let d = 0; d < 8; d++) {
+      const [section, domain, skillCode] = CANONICAL_DOMAINS[d]!;
+      for (let q = 1; q <= 5; q++) {
+        ordinal++;
+        await testPg!.query(
+          `INSERT INTO public.practice_session_items
+              (id, session_id, user_id, actor_id, ordinal,
+               question_id, question_stem, question_options,
+               question_correct_answer, question_explanation,
+               question_option_metadata,
+               question_domain, question_skill, question_difficulty,
+               question_section, status, question_item_type,
+               option_order, option_token_map)
+            VALUES ($1, $2, $3, $3, $4,
+              $5, $6,
+              '[{"key":"A","text":"Option A"},{"key":"B","text":"Option B"},{"key":"C","text":"Option C"},{"key":"D","text":"Option D"}]'::jsonb,
+              'B', $7,
+              '{"A":{"role":"distractor","error_taxonomy":"common-misconception"},"B":{"role":"correct","error_taxonomy":null},"C":{"role":"distractor","error_taxonomy":"common-misconception"},"D":{"role":"distractor","error_taxonomy":"common-misconception"}}'::jsonb,
+              $8, $9, $10, $11, 'served', 'mcq',
+              ARRAY['A','B','C','D']::text[],
+              '{"opt_tok_A":"A","opt_tok_B":"B","opt_tok_C":"C","opt_tok_D":"D"}'::jsonb)`,
+          [
+            itemId(ordinal),
+            sessionId,
+            userId,
+            ordinal,
+            questionId(d, q),
+            `Diagnostic ${domain} Q${q}`,
+            `Explanation for ${domain} Q${q}`,
+            domain,
+            skillCode,
+            DIFFICULTIES[q - 1],
+            section,
+          ],
+        );
+      }
+    }
+    return { userId, sessionId, itemId };
+  }
+
+  /** Answer items 1..n through the handler; correct on odd ordinals (a real spread). */
+  async function answerThrough(
+    sessionId: string,
+    n: number,
+  ): Promise<request.Response[]> {
+    const out: request.Response[] = [];
+    for (let i = 1; i <= n; i++) {
+      const res = await request(app)
+        .post("/api/practice/answer")
+        .send({
+          sessionId,
+          questionId: questionId(Math.floor((i - 1) / 5), ((i - 1) % 5) + 1),
+          selectedAnswer: i % 2 === 1 ? "opt_tok_B" : "opt_tok_A",
+        });
+      expect(res.status, `answer ${i}: ${JSON.stringify(res.body)}`).toBe(200);
+      out.push(res);
+    }
+    return out;
+  }
+
+  it("40th answer: stores exactly two computed diagnostic projection rows; for a fresh student they equal the live projection refreshed at completion", async () => {
+    const rows = await storedRows(TEST_SESSION_ID);
+    expect(rows.map((r) => [r.section, r.status])).toEqual([
+      ["M", "computed"],
+      ["RW", "computed"],
+    ]);
+    const live = await testPg!.query(
+      `SELECT section, projected_score_mid, projected_score_low, projected_score_high
+         FROM public.student_section_projections WHERE student_id = $1 ORDER BY section`,
       [TEST_USER_ID],
     );
-    expect(originalResult.rows.length).toBe(2);
-    const originalM = originalResult.rows.find(
-      (r: Record<string, unknown>) => r.section === "M",
+    for (const row of rows) {
+      const l = live.rows.find(
+        (x: Record<string, unknown>) => x.section === row.section,
+      );
+      expect(row.projected_score_mid).not.toBeNull();
+      expect([
+        row.projected_score_mid,
+        row.projected_score_low,
+        row.projected_score_high,
+      ]).toEqual([
+        l!.projected_score_mid,
+        l!.projected_score_low,
+        l!.projected_score_high,
+      ]);
+    }
+    // Nothing writes the retired snapshot kind any more.
+    const old = await testPg!.query(
+      `SELECT count(*)::int AS n FROM public.student_section_projection_snapshots
+        WHERE student_id = $1 AND snapshot_kind = 'diagnostic_baseline'`,
+      [TEST_USER_ID],
     );
-    const originalRW = originalResult.rows.find(
-      (r: Record<string, unknown>) => r.section === "RW",
-    );
-    expect(originalM).toBeDefined();
-    expect(originalRW).toBeDefined();
-
-    // Spy on logger to verify the 23505 idempotent path is taken.
-    const { logger } = await import("../../server/logger");
-    const infoSpy = vi.spyOn(logger, "info");
-
-    // Call the PRODUCTION baseline-capture function a second time.
-    // This exercises: supabaseServer.from(...).insert(rows) → PG raises
-    // 23505 from the partial unique index → production catches it as a no-op.
-    const { captureDiagnosticBaseline } =
-      await import("../../server/routes/practice-canonical");
-    await captureDiagnosticBaseline(TEST_USER_ID, "req-immutability-proof");
-
-    // The production catch-23505 path logs "baseline already captured".
-    // If the 23505 catch were removed, the fallback logs "baseline insert
-    // failed" — this assertion would fail, detecting the regression.
-    // F-34 (2026-09-30): the call now has the logger's full signature, so the event is
-    // matched on (component, operation) and the message is asserted — this used to match
-    // `args[0]`, which pinned the short-arity call that wrote the prose into `component`.
-    const capturedCall = infoSpy.mock.calls.find(
-      (args) =>
-        args[0] === "DIAGNOSTIC_BASELINE" &&
-        args[1] === "baseline_already_captured",
-    );
+    expect(old.rows[0]!.n).toBe(0);
     expect(
-      capturedCall,
-      'Expected logger.info("DIAGNOSTIC_BASELINE", "baseline_already_captured", …) — ' +
-        "the production catch-23505 path must be exercised",
-    ).toBeDefined();
-    expect(capturedCall?.[2]).toBe(
-      "[diagnostic] baseline already captured (idempotent no-op)",
-    );
+      (
+        await testPg!.query(`SELECT public.student_diagnostic_state($1) AS s`, [
+          TEST_USER_ID,
+        ])
+      ).rows[0]!.s,
+    ).toBe("baseline_ready");
+  }, 30_000);
 
-    infoSpy.mockRestore();
-
-    // Verify original values are preserved (not overwritten).
-    const afterResult = await testPg!.query(
-      `SELECT snapshot_id, section, projected_score_mid, projected_score_low, projected_score_high, snapshot_at
-         FROM public.student_section_projection_snapshots
-         WHERE student_id = $1
-           AND snapshot_kind = 'diagnostic_baseline'
-         ORDER BY section`,
-      [TEST_USER_ID],
-    );
-    expect(afterResult.rows.length).toBe(2);
-
-    const afterM = afterResult.rows.find(
-      (r: Record<string, unknown>) => r.section === "M",
-    );
-    const afterRW = afterResult.rows.find(
-      (r: Record<string, unknown>) => r.section === "RW",
-    );
-
-    // snapshot_id unchanged (same row, not replaced).
-    expect(afterM!.snapshot_id).toEqual(originalM!.snapshot_id);
-    expect(afterRW!.snapshot_id).toEqual(originalRW!.snapshot_id);
-    // Scores unchanged (original preserved).
-    expect(afterM!.projected_score_mid).toEqual(originalM!.projected_score_mid);
-    expect(afterM!.projected_score_low).toEqual(originalM!.projected_score_low);
-    expect(afterM!.projected_score_high).toEqual(
-      originalM!.projected_score_high,
-    );
-    expect(afterRW!.projected_score_mid).toEqual(
-      originalRW!.projected_score_mid,
-    );
-    expect(afterRW!.projected_score_low).toEqual(
-      originalRW!.projected_score_low,
-    );
-    expect(afterRW!.projected_score_high).toEqual(
-      originalRW!.projected_score_high,
+  it("replaying the final answer stores nothing new, changes no value, and keeps completed_at", async () => {
+    const before = await storedRows(TEST_SESSION_ID);
+    const sessBefore = await sessionRow(TEST_SESSION_ID);
+    const res = await request(app)
+      .post("/api/practice/answer")
+      .send({
+        sessionId: TEST_SESSION_ID,
+        questionId: questionId(7, 5),
+        selectedAnswer: "opt_tok_B",
+      });
+    expect([200, 409]).toContain(res.status);
+    expect(await storedRows(TEST_SESSION_ID)).toEqual(before);
+    expect((await sessionRow(TEST_SESSION_ID)).completed_at).toEqual(
+      sessBefore.completed_at,
     );
   }, 30_000);
 
-  // -------------------------------------------------------------------
-  // H. Assert: regular practice completion writes NO diagnostic_baseline.
-  //    The mode gate (session.mode === 'diagnostic') is correct in code;
-  //    this proves it against real Postgres.
-  // @spec [Doc-05C §7.4, Vertical-B Slice 2]
-  // @implemented 2026-08-12
-  // -------------------------------------------------------------------
-  it("regular practice session writes no diagnostic_baseline snapshot", async () => {
+  it("THE FAILURE THIS FIXES: mastery emission broken, live projection empty — the 40th answer still stores the diagnostic projection", async () => {
+    const { userId, sessionId } = await seedDiagnostic(1);
+    await actAs(userId);
+    // Every apply_mastery_event call now fails, exactly like the mastery outage: the answers are
+    // recorded, no mastery is written, the live projection can never clear its gate.
+    await testPg!.query(
+      `ALTER FUNCTION public.apply_mastery_event(uuid, text, text, text, smallint, text, text, boolean, timestamptz, uuid, text, text) RENAME TO apply_mastery_event_disabled`,
+    );
+    try {
+      const responses = await answerThrough(sessionId, 40);
+      expect(responses[39]!.body.state).toBe("completed");
+    } finally {
+      await testPg!.query(
+        `ALTER FUNCTION public.apply_mastery_event_disabled(uuid, text, text, text, smallint, text, text, boolean, timestamptz, uuid, text, text) RENAME TO apply_mastery_event`,
+      );
+    }
+    const live = await testPg!.query(
+      `SELECT count(*)::int AS n FROM public.student_section_projections
+        WHERE student_id = $1 AND projected_score_mid IS NOT NULL`,
+      [userId],
+    );
+    expect(live.rows[0]!.n).toBe(0);
+    const rows = await storedRows(sessionId);
+    expect(rows.map((r) => r.status)).toEqual(["computed", "computed"]);
+    expect(rows.every((r) => r.projected_score_mid !== null)).toBe(true);
+  }, 120_000);
+
+  it("skip on the last question completes the diagnostic through the same path and stores its projection (insufficient_evidence: that domain has 4 answers)", async () => {
+    const { userId, sessionId, itemId } = await seedDiagnostic(2);
+    await actAs(userId);
+    await answerThrough(sessionId, 39);
+    const res = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/skip`)
+      .send({ sessionItemId: itemId(40) });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.state).toBe("completed");
+    expect((await sessionRow(sessionId)).status).toBe("completed");
+    const rows = await storedRows(sessionId);
+    expect(rows.map((r) => [r.section, r.status])).toEqual([
+      ["M", "insufficient_evidence"],
+      ["RW", "insufficient_evidence"],
+    ]);
+    expect(rows.every((r) => r.projected_score_mid === null)).toBe(true);
+  }, 120_000);
+
+  it("next-question with nothing left completes the diagnostic and stores its projection", async () => {
+    const { userId, sessionId } = await seedDiagnostic(3);
+    await actAs(userId);
+    // Every item resolved, the session still active: the shape a lost final-answer response
+    // leaves behind. Asking for the next question is what completes it.
+    await testPg!.query(
+      `UPDATE public.practice_session_items
+          SET status = 'answered', selected_answer = 'B', is_correct = (ordinal % 2 = 1),
+              outcome = CASE WHEN ordinal % 2 = 1 THEN 'correct' ELSE 'incorrect' END,
+              answered_at = now() - make_interval(mins => 40 - ordinal),
+              occurred_at = now() - make_interval(mins => 40 - ordinal)
+        WHERE session_id = $1`,
+      [sessionId],
+    );
+    const res = await request(app).get(
+      `/api/practice/sessions/${sessionId}/next?client_instance_id=path-test`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("session_closed");
+    expect((await sessionRow(sessionId)).status).toBe("completed");
+    const rows = await storedRows(sessionId);
+    expect(rows.map((r) => r.status)).toEqual(["computed", "computed"]);
+  }, 120_000);
+
+  it("replay of the final answer after a lost completion completes the diagnostic and stores its projection", async () => {
+    const { userId, sessionId, itemId } = await seedDiagnostic(4);
+    await actAs(userId);
+    await answerThrough(sessionId, 39);
+    // The first request for item 40 committed the answer and then died before completing the
+    // session (the Codex Fix A case). The client retries with the same attempt id.
+    await testPg!.query(
+      `UPDATE public.practice_session_items
+          SET status = 'answered', selected_answer = 'B', is_correct = false, outcome = 'incorrect',
+              answered_at = now(), occurred_at = now(), client_attempt_id = 'attempt-40'
+        WHERE id = $1`,
+      [itemId(40)],
+    );
+    const res = await request(app)
+      .post("/api/practice/answer")
+      .send({
+        sessionId,
+        questionId: questionId(7, 5),
+        selectedAnswer: "opt_tok_A",
+        clientAttemptId: "attempt-40",
+      });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.state).toBe("completed");
+    expect(res.body.idempotentRetried).toBe(true);
+    const rows = await storedRows(sessionId);
+    expect(rows.map((r) => r.status)).toEqual(["computed", "computed"]);
+  }, 120_000);
+
+  it("two concurrent final answers: one completion, two rows, one completed_at", async () => {
+    const { userId, sessionId } = await seedDiagnostic(5);
+    await actAs(userId);
+    await answerThrough(sessionId, 39);
+    const final = {
+      sessionId,
+      questionId: questionId(7, 5),
+      selectedAnswer: "opt_tok_B",
+    };
+    const [a, b] = await Promise.all([
+      request(app).post("/api/practice/answer").send(final),
+      request(app).post("/api/practice/answer").send(final),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses[0]).toBe(200);
+    expect([200, 409]).toContain(statuses[1]);
+    expect((await sessionRow(sessionId)).status).toBe("completed");
+    const rows = await storedRows(sessionId);
+    expect(rows).toHaveLength(2);
+    const firstCompletedAt = (await sessionRow(sessionId)).completed_at;
+    // A third call after the race changes nothing.
+    await request(app).post("/api/practice/answer").send(final);
+    expect(await storedRows(sessionId)).toEqual(rows);
+    expect((await sessionRow(sessionId)).completed_at).toEqual(
+      firstCompletedAt,
+    );
+  }, 120_000);
+
+  it("terminate on a completed diagnostic is refused and leaves it completed", async () => {
+    const userId = "a1a1a1a1-0000-4000-8000-000000000001";
+    const sessionId = "b1b1b1b1-0000-4000-8000-000000000001";
+    await actAs(userId);
+    const before = await sessionRow(sessionId);
+    const res = await request(app)
+      .post(`/api/practice/sessions/${sessionId}/terminate`)
+      .send({});
+    expect(res.status).toBe(409);
+    expect(await sessionRow(sessionId)).toEqual(before);
+  }, 30_000);
+
+  it("a regular practice session completes normally and stores no diagnostic projection", async () => {
     const REGULAR_USER_ID = "dddddddd-dddd-dddd-dddd-dddddddddddd";
     const REGULAR_SESSION_ID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
-
-    // Create a regular (non-diagnostic) user + session + 5 items
     await testPg!.query(
       `INSERT INTO auth.users (id, email) VALUES ($1, 'regular-pg-ci@example.com')`,
       [REGULAR_USER_ID],
     );
-
     await testPg!.query(
       `INSERT INTO public.practice_sessions
           (id, user_id, actor_id, mode, filters, target_count, platform, status)
@@ -1019,10 +1194,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
           '{"target_question_count": 5}', 5, 'web', 'active')`,
       [REGULAR_SESSION_ID, REGULAR_USER_ID],
     );
-
-    // Serve 5 items (reuse first domain's questions)
     for (let q = 1; q <= 5; q++) {
-      const qid = questionId(0, q);
       const iid = `ffffffff-ffff-ffff-ffff-ffffffff${String(q).padStart(4, "0")}`;
       await testPg!.query(
         `INSERT INTO public.practice_session_items
@@ -1046,7 +1218,7 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
           REGULAR_SESSION_ID,
           REGULAR_USER_ID,
           q,
-          qid,
+          questionId(0, q),
           `Regular Algebra Q${q}`,
           `Explanation for Algebra Q${q}`,
           "Algebra",
@@ -1056,60 +1228,23 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
         ],
       );
     }
-
-    // Submit all 5 answers (completing the session)
-    // Mock auth to use the regular user for these requests
-    const authModule = await import("../../server/middleware/supabase-auth");
-    vi.spyOn(authModule, "supabaseAuthMiddleware").mockImplementation(
-      (req: Request, _res: Response, next: NextFunction) => {
-        (req as Record<string, unknown>).user = {
-          id: REGULAR_USER_ID,
-          email: "regular-pg-ci@example.com",
-          role: "student",
-          isAdmin: false,
-          isGuardian: false,
-          display_name: "Regular Student",
-        };
-        next();
-      },
-    );
-
+    await actAs(REGULAR_USER_ID);
     for (let q = 1; q <= 5; q++) {
-      const qid = questionId(0, q);
-      const res = await request(app).post("/api/practice/answer").send({
-        sessionId: REGULAR_SESSION_ID,
-        questionId: qid,
-        selectedAnswer: "opt_tok_B",
-      });
-      expect(
-        res.status,
-        `regular answer ${q} (${qid}) failed: ${JSON.stringify(res.body)}`,
-      ).toBe(200);
+      const res = await request(app)
+        .post("/api/practice/answer")
+        .send({
+          sessionId: REGULAR_SESSION_ID,
+          questionId: questionId(0, q),
+          selectedAnswer: "opt_tok_B",
+        });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      if (q === 5) expect(res.body.state).toBe("completed");
     }
-
-    // Assert: NO diagnostic_baseline snapshot for the regular user.
-    const baselineResult = await testPg!.query(
-      `SELECT count(*)::integer AS cnt
-         FROM public.student_section_projection_snapshots
-         WHERE student_id = $1
-           AND snapshot_kind = 'diagnostic_baseline'`,
+    expect((await sessionRow(REGULAR_SESSION_ID)).status).toBe("completed");
+    const n = await testPg!.query(
+      `SELECT count(*)::int AS n FROM public.student_diagnostic_projections WHERE student_id = $1`,
       [REGULAR_USER_ID],
     );
-    expect(baselineResult.rows[0]!.cnt).toBe(0);
-
-    // Restore auth mock to diagnostic user for any subsequent tests.
-    vi.spyOn(authModule, "supabaseAuthMiddleware").mockImplementation(
-      (req: Request, _res: Response, next: NextFunction) => {
-        (req as Record<string, unknown>).user = {
-          id: TEST_USER_ID,
-          email: "handler-pg-ci@example.com",
-          role: "student",
-          isAdmin: false,
-          isGuardian: false,
-          display_name: "Test Student",
-        };
-        next();
-      },
-    );
+    expect(n.rows[0]!.n).toBe(0);
   }, 120_000);
 });

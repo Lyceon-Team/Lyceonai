@@ -42,6 +42,7 @@
  */
 import { useState } from "react";
 import type { FeatureLockReason } from "@lyceon/shared/feature-access";
+import { LIVE_PROJECTION_FEATURE_KEY } from "@lyceon/shared/diagnostic-projection";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
@@ -262,6 +263,11 @@ export function FreeHome({
             range={projection.range}
             stage={stage}
             targetScore={null}
+            kind={projection.kind ?? "diagnostic"}
+            diagnosticInsufficient={projection.diagnosticInsufficient}
+            onUpgrade={() =>
+              upgrade.open(LIVE_PROJECTION_FEATURE_KEY, masteryLock)
+            }
           />
           <LockedMasteryCard
             onSeeWhatsIncluded={() =>

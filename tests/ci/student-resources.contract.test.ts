@@ -39,6 +39,7 @@ import {
   STUDENT_EXAM_PATHS,
   STUDENT_RESOURCE_PATHS,
   guardianKpiOverallResponseSchema,
+  sectionProjectionsResponseSchema,
   studentKpiOverallResponseSchema,
 } from "../../packages/shared/src/student-resources";
 
@@ -61,6 +62,15 @@ const failingReads = new Set<string>();
  * source), proved against real SQL in tests/ci/home-qotd.pg.ci.test.ts (A4). Here it is the RPC's
  * answer, so these cases prove the ROUTES carry that one number on every surface.
  */
+/**
+ * SCL-235: whether the SUBJECT holds an active entitlement, as `entitlement_active` answers it.
+ * `canAccessFeature` consults it after the feature row, so flipping this is how a case makes the
+ * subject free without removing feature rows (which would also 402 every other gated path).
+ * `"error"` makes the RPC fail, which `canAccessFeature` turns into false (fail-closed).
+ */
+let entitlementActive: boolean | "error" = true;
+/** `.neq(column, value)` calls, by table — the fake ignores filters, so the filter is recorded. */
+const neqCalls: Array<{ table: string; column: string; value: unknown }> = [];
 let streakRpc:
   | { kind: "row"; current: number; todayDone: boolean }
   | { kind: "error" } = { kind: "row", current: 3, todayDone: true };
@@ -123,6 +133,29 @@ function resetRows() {
   ];
   rows.student_section_projection_snapshots = [
     { section: "M", projected_score_mid: 590, projected_score_low: 560, projected_score_high: 620, relevant_question_count: 35, snapshot_at: "2026-07-01", snapshot_kind: "periodic", ...POISON },
+  ];
+  // SCL-236: the stored diagnostic projection. Numbers DIFFERENT from the live row (600) so a
+  // payload can be told apart by value, and the columns the read must never serve —
+  // domain_mastery, mastery_term, the hashes — carried on the row as the table carries them.
+  rows.student_diagnostic_projections = [
+    {
+      practice_session_id: "55555555-5555-4555-8555-555555555555",
+      section: "M", status: "computed",
+      projected_score_mid: 480, projected_score_low: 450, projected_score_high: 510,
+      relevant_question_count: 20, computed_at: "2026-07-02T00:00:00.000Z",
+      domain_mastery: { Algebra: 0.61 }, mastery_term: 0.42, answered_count: 20,
+      mastery_constants_hash: "h1", projection_constants_hash: "h2", mastery_model_version: "v",
+      ...POISON,
+    },
+    {
+      practice_session_id: "55555555-5555-4555-8555-555555555555",
+      section: "RW", status: "computed",
+      projected_score_mid: 520, projected_score_low: 490, projected_score_high: 550,
+      relevant_question_count: 20, computed_at: "2026-07-02T00:00:00.000Z",
+      domain_mastery: { "Craft and Structure": 0.7 }, mastery_term: 0.5, answered_count: 20,
+      mastery_constants_hash: "h1", projection_constants_hash: "h2", mastery_model_version: "v",
+      ...POISON,
+    },
   ];
   // The KPI view labels its windows with the platform-wide zone from
   // practice_runtime_config (Doc 02B §41). The accessor throws when the row is missing,
@@ -248,7 +281,10 @@ function fakeClient() {
           return builder;
         },
         eq: () => builder,
-        neq: () => builder,
+        neq: (column: string, value: unknown) => {
+          neqCalls.push({ table, column, value });
+          return builder;
+        },
         gt: () => builder,
         // The calendar read filters a date range on occurred_at. They ignore
         // their arguments like every other filter here: this fake is the ROW layer, and a
@@ -269,7 +305,11 @@ function fakeClient() {
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
       if (fn === "guardian_view_decision") return { data: decision(args), error: null };
-      if (fn === "entitlement_active") return { data: true, error: null };
+      if (fn === "entitlement_active") {
+        return entitlementActive === "error"
+          ? { data: null, error: { message: "entitlement_active unavailable" } }
+          : { data: entitlementActive, error: null };
+      }
       if (fn === "student_streak") {
         return streakRpc.kind === "error"
           ? { data: null, error: { message: "student_streak unavailable" } }
@@ -359,6 +399,8 @@ describe("subject-scoped resources — one route, two callers", () => {
     vi.clearAllMocks();
     resetRows();
     failingReads.clear();
+    entitlementActive = true;
+    neqCalls.length = 0;
     streakRpc = { kind: "row", current: 3, todayDone: true };
     decision.mockReturnValue("allow");
   });
@@ -729,11 +771,14 @@ describe("subject-scoped resources — one route, two callers", () => {
           // G1 (04C §2.6 condition 2): exam results need the full-length feature.
           STUDENT_EXAM_PATHS.tests,
           STUDENT_EXAM_PATHS.testReport,
+          // SCL-235 (2026-10-17): the live projection's history is Premium-only.
+          STUDENT_RESOURCE_PATHS.projectionsSnapshots,
         ].sort(),
       );
       expect(gated.map(([, key]) => key).sort()).toEqual(
         [
           "calendar_access",
+          "mastery_detail",
           "mastery_detail",
           "mastery_detail",
           "exam_full_length",
@@ -745,8 +790,9 @@ describe("subject-scoped resources — one route, two callers", () => {
           STUDENT_RESOURCE_PATHS.kpiSections,
           STUDENT_RESOURCE_PATHS.kpiDomains,
           STUDENT_RESOURCE_PATHS.kpiOverall,
+          // Open, but WHICH projection it serves is the subject's entitlement (SCL-235),
+          // asserted in the SCL-235 block below.
           STUDENT_RESOURCE_PATHS.projectionsSections,
-          STUDENT_RESOURCE_PATHS.projectionsSnapshots,
         ].sort(),
       );
     });
@@ -787,6 +833,169 @@ describe("subject-scoped resources — one route, two callers", () => {
       rows.entitlement_features = [];
       const res = await call(STUDENT, STUDENT, path);
       expect(res.status).toBe(200);
+    });
+  });
+
+  // -- SCL-235 / SCL-236: free sees the diagnostic projection, paid the live one ----------
+  /**
+   * @spec [SCL-235 (Doc 02B §12 as amended), SCL-236 (Doc 05C §12A); owner rulings 2026-10-16
+   *        (1, 3, 4) and 2026-10-17 (constraint 5, D3, D4)] | @implemented [2026-10-17]
+   *
+   * Every case asserts PRESENCE before absence: the expected payload is non-trivial (a known
+   * value is there) before the other projection's value is shown to be missing. The live row
+   * says 600 and the diagnostic row 480, so each payload is identifiable by value.
+   */
+  describe("SCL-235 — the free/paid projection split, enforced by the server", () => {
+    const sections = STUDENT_RESOURCE_PATHS.projectionsSections;
+    const snapshots = STUDENT_RESOURCE_PATHS.projectionsSnapshots;
+
+    it("FREE: /projections/sections serves the stored diagnostic projection and only that", async () => {
+      entitlementActive = false;
+      const res = await call(STUDENT, STUDENT, sections);
+      expect(res.status).toBe(200);
+      expect(sectionProjectionsResponseSchema.parse(res.body)).toEqual(res.body);
+      expect(res.body.kind).toBe("diagnostic");
+      expect(res.body.status).toBe("computed");
+      // Presence first: both stored sections, by value.
+      expect(res.body.sections).toEqual([
+        {
+          section: "M",
+          projectedScoreMid: 480,
+          projectedScoreLow: 450,
+          projectedScoreHigh: 510,
+          relevantQuestionCount: 20,
+          computedAt: "2026-07-02T00:00:00.000Z",
+        },
+        {
+          section: "RW",
+          projectedScoreMid: 520,
+          projectedScoreLow: 490,
+          projectedScoreHigh: 550,
+          relevantQuestionCount: 20,
+          computedAt: "2026-07-02T00:00:00.000Z",
+        },
+      ]);
+      // Then absence: no live value, no per-domain mastery, no blend anchors, no hashes.
+      const body = JSON.stringify(res.body);
+      expect(body).not.toContain("600");
+      for (const key of [
+        "domain_mastery", "mastery_term", "answered_count",
+        "mastery_constants_hash", "projection_constants_hash", "mastery_model_version",
+        "practice_session_id",
+      ]) {
+        expect(allKeys(res.body)).not.toContain(key);
+      }
+      expect(findRule4Keys(res.body)).toEqual([]);
+    });
+
+    it("FREE: /projections/snapshots is denied — 402 naming mastery_detail", async () => {
+      entitlementActive = false;
+      const res = await call(STUDENT, STUDENT, snapshots);
+      expect(res.status).toBe(402);
+      expect(readEntitlementDenial(res.body)).toEqual({
+        feature: "mastery_detail",
+        message: "An active subscription is required to see this.",
+      });
+      expect(JSON.stringify(res.body)).not.toContain("590");
+    });
+
+    it("FREE, before the diagnostic is stored: kind diagnostic, status null, no rows — never the live rows", async () => {
+      entitlementActive = false;
+      rows.student_diagnostic_projections = [];
+      const res = await call(STUDENT, STUDENT, sections);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        ok: true,
+        kind: "diagnostic",
+        status: null,
+        sections: [],
+        requestId: "req-sr",
+      });
+    });
+
+    it("FREE, a skipped diagnostic (D1 (a)): insufficient_evidence with null scores, never invented", async () => {
+      entitlementActive = false;
+      rows.student_diagnostic_projections = (
+        rows.student_diagnostic_projections as Array<Record<string, unknown>>
+      ).map((r, i) =>
+        i === 0
+          ? { ...r, status: "insufficient_evidence", projected_score_mid: null, projected_score_low: null, projected_score_high: null }
+          : r,
+      );
+      const res = await call(STUDENT, STUDENT, sections);
+      expect(res.body.kind).toBe("diagnostic");
+      expect(res.body.status).toBe("insufficient_evidence");
+      expect(res.body.sections[0]).toMatchObject({ section: "M", projectedScoreMid: null });
+      expect(res.body.sections[1]).toMatchObject({ section: "RW", projectedScoreMid: 520 });
+    });
+
+    it("FREE: rows from two sessions are never mixed — only the most recently computed session's", async () => {
+      entitlementActive = false;
+      // The read orders by computed_at DESC; this fake does not order, so the newest rows lead,
+      // as the database would return them. The older session carries a value (300) that must
+      // not reach the payload.
+      rows.student_diagnostic_projections = [
+        ...(rows.student_diagnostic_projections as Array<Record<string, unknown>>),
+        {
+          practice_session_id: "66666666-6666-4666-8666-666666666666",
+          section: "M", status: "computed",
+          projected_score_mid: 300, projected_score_low: 280, projected_score_high: 320,
+          relevant_question_count: 20, computed_at: "2026-06-01T00:00:00.000Z",
+        },
+      ];
+      const res = await call(STUDENT, STUDENT, sections);
+      expect(res.body.sections).toHaveLength(2);
+      expect(res.body.sections[0]).toMatchObject({ section: "M", projectedScoreMid: 480 });
+      expect(JSON.stringify(res.body)).not.toContain("300");
+    });
+
+    it("FAIL-CLOSED: an entitlement read failure serves the diagnostic payload, never the live one", async () => {
+      entitlementActive = "error";
+      const res = await call(STUDENT, STUDENT, sections);
+      expect(res.status).toBe(200);
+      expect(res.body.kind).toBe("diagnostic");
+      expect(JSON.stringify(res.body)).not.toContain("600");
+    });
+
+    it("PAID: /projections/sections serves the live projection only — the diagnostic number is absent", async () => {
+      const res = await call(STUDENT, STUDENT, sections);
+      expect(res.status).toBe(200);
+      expect(sectionProjectionsResponseSchema.parse(res.body)).toEqual(res.body);
+      expect(res.body.kind).toBe("live");
+      expect(res.body.sections[0]).toMatchObject({ section: "M", projectedScoreMid: 600 });
+      const body = JSON.stringify(res.body);
+      expect(body).not.toContain("480");
+      expect(body).not.toContain("520");
+      expect(res.body).not.toHaveProperty("status");
+    });
+
+    it("PAID: /projections/snapshots is served and excludes the retired diagnostic_baseline kind (D4)", async () => {
+      const res = await call(STUDENT, STUDENT, snapshots);
+      expect(res.status).toBe(200);
+      expect(res.body.snapshots[0]).toMatchObject({ projectedScoreMid: 590 });
+      expect(neqCalls).toContainEqual({
+        table: "student_section_projection_snapshots",
+        column: "snapshot_kind",
+        value: "diagnostic_baseline",
+      });
+    });
+
+    it("GUARDIAN of a free student: still 402 on both projection routes (ruling 3: unchanged)", async () => {
+      entitlementActive = false;
+      decision.mockReturnValue("student_unentitled");
+      for (const path of [sections, snapshots]) {
+        const res = await call(GUARDIAN, STUDENT, path);
+        expect(res.status).toBe(402);
+        expect(res.body.code).toBe("PAYMENT_REQUIRED");
+        expect(JSON.stringify(res.body)).not.toContain("480");
+      }
+    });
+
+    it("GUARDIAN of a paid student: the live projection, as before", async () => {
+      const res = await call(GUARDIAN, STUDENT, sections);
+      expect(res.status).toBe(200);
+      expect(res.body.kind).toBe("live");
+      expect(res.body.sections[0]).toMatchObject({ projectedScoreMid: 600 });
     });
   });
 

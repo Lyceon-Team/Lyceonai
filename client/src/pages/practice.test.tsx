@@ -394,18 +394,22 @@ function projectionBody(
     },
   };
   return status === "no_baseline"
-    ? { ...base, estimateStatus: "no_baseline", estimate: null, baseline: null }
+    ? {
+        ...base,
+        estimateStatus: "no_baseline",
+        estimate: null,
+        diagnostic: null,
+      }
     : {
         ...base,
         estimateStatus: "baseline_only",
         estimate: null,
-        baseline: {
+        diagnostic: {
           composite: 1050,
           math: 530,
           rw: 520,
           range: { low: 990, high: 1110 },
-          confidenceBand: "Low",
-          capturedAt: "2026-09-20T12:00:00.000Z",
+          computedAt: "2026-09-20T12:00:00.000Z",
         },
         cta: true,
       };

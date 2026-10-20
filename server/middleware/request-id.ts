@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../logger';
 import { loggableIp } from '../lib/client-ip';
+import type { PreHandlerStepRecord } from '../lib/step-timer';
 
 declare global {
   namespace Express {
@@ -15,6 +16,12 @@ declare global {
        * logged as a timestamp.
        */
       requestStartedAt?: number;
+      /**
+       * @spec [owner brief (Karl) 2026-10-15 "next perf PR" item 1] | @implemented [2026-10-15]
+       * plain English: the timed middleware steps before the handler, written by
+       * `beginPreHandlerStep` and read once by the route's `route_timing` line.
+       */
+      preHandlerSteps?: PreHandlerStepRecord[];
     }
   }
 }

@@ -263,6 +263,8 @@ describe("the free Home's stage", () => {
     expect(freeHomeStage("baseline_pending")).toBe("pending");
     expect(freeHomeStage("no_baseline")).toBe("diagnostic");
     expect(freeHomeStage("baseline_only")).toBe("after");
+    // SCL-236 / D1 (a): a finished diagnostic with no number is never offered again.
+    expect(freeHomeStage("insufficient_evidence")).toBe("after");
     expect(freeHomeStage("computed")).toBe("after");
     expect(freeHomeStage(undefined)).toBe("unknown");
   });
