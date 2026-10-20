@@ -49,6 +49,11 @@ export default function ContactPage(): JSX.Element {
               {SUPPORT_EMAIL}
             </a>
           </p>
+          <p className="text-muted-foreground">
+            If something isn't working, tell us which page you were on, what you
+            expected to happen and what happened instead. Please never send a
+            password or payment details by email.
+          </p>
         </section>
 
         <section
@@ -60,6 +65,10 @@ export default function ContactPage(): JSX.Element {
           </h2>
           <p data-testid="contact-signed-in">
             Signed in? Use <strong>Send feedback</strong> in your account menu.
+          </p>
+          <p className="text-muted-foreground">
+            Choose Bug, Idea or Something else, write your message and send it.
+            It goes to our team along with the page you were on.
           </p>
         </section>
 

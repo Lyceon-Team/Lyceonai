@@ -19,6 +19,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import HomePage from "./home";
 import ContactPage from "./contact";
+import { SUPPORT_EMAIL } from "../../../packages/shared/src/support-contact";
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
@@ -165,9 +166,7 @@ describe("/contact", () => {
   it("shows the support email, the postal address and the signed-in line, with no form", () => {
     const { container } = withClient(<ContactPage />);
     const page = screen.getByTestId("contact-page");
-    expect(screen.getByTestId("contact-email").textContent).toBe(
-      "support@lyceon.ai",
-    );
+    expect(screen.getByTestId("contact-email").textContent).toBe(SUPPORT_EMAIL);
     expect(screen.getByTestId("contact-address").textContent).toBe(
       "Lyceon AI, 5650 Central Ave # E7, Toledo, OH 43615",
     );

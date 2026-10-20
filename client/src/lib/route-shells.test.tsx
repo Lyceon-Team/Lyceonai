@@ -65,6 +65,7 @@ vi.mock("@/pages/admin/CrisisReviewList", pageStub);
 vi.mock("@/pages/blog", pageStub);
 vi.mock("@/pages/blog-post", pageStub);
 vi.mock("@/pages/calendar", pageStub);
+vi.mock("@/pages/contact", pageStub);
 vi.mock("@/pages/chat", pageStub);
 vi.mock("@/pages/digital-sat", pageStub);
 vi.mock("@/pages/sat-question-of-the-day", pageStub);
