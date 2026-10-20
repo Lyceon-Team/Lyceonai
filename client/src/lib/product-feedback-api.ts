@@ -29,10 +29,12 @@ import {
 } from "../../../packages/shared/src/marketing-consent-schema";
 import {
   feedbackAudienceFor,
+  feedbackReplyAllowed,
   reviewPromptResponseSchema,
   submitAckSchema,
   trustpilotReviewUrlFrom,
   type FeedbackSource,
+  type FeedbackType,
   type ReviewAudience,
   type ReviewPromptQuery,
   type ReviewPromptRespond,
@@ -162,6 +164,10 @@ export async function submitFeedback(input: {
   body: string;
   source: FeedbackSource;
   idempotencyKey: string;
+  type: FeedbackType;
+  replyOk: boolean;
+  routePattern: string | null;
+  appVersion: string | null;
 }): Promise<SubmitAck> {
   const res = await apiRequest(`${FEEDBACK_API}/feedback`, {
     method: "POST",
@@ -169,8 +175,23 @@ export async function submitFeedback(input: {
       body: input.body,
       source: input.source,
       idempotency_key: input.idempotencyKey,
+      type: input.type,
+      reply_ok: input.replyOk,
+      route_pattern: input.routePattern,
+      app_version: input.appVersion,
     }),
   });
   const body = (await res.json()) as { data?: unknown };
   return submitAckSchema.parse(body.data);
+}
+
+/**
+ * "May we reply by email?" is shown only when the account may ask for it (display only; the
+ * server refuses it for a student under 13 or of unknown age, final brief 2026-10-20 §3).
+ */
+export function useFeedbackReplyAllowed(): boolean {
+  const { data } = useProfileQuery();
+  const user = data?.authenticated ? data.user : null;
+  if (!user) return false;
+  return feedbackReplyAllowed(user.role, user.dateOfBirth, new Date());
 }

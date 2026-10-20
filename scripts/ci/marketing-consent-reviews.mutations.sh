@@ -38,6 +38,10 @@ MIG_F83="supabase/migrations/20261029000000_test_dates_and_consent_guard.sql"
 # product_review_prompt_dismiss. C8 and C9 are re-pointed here (C9 now guards
 # product_review_prompt_respond, the dismissal's replacement); the RA plants are new.
 MIG_RA="supabase/migrations/20261107000000_review_ask.sql"
+# Private feedback's context (20261108000000) REPLACED product_feedback_submit (new signature,
+# the old one dropped): RA15 is re-pointed here; the FB plants are new (final brief "Trustpilot
+# card + Feedback", Karl 2026-10-20).
+MIG_FB="supabase/migrations/20261108000000_feedback_context.sql"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/mcr-mut.XXXX)"
 
@@ -46,6 +50,15 @@ FILES=(
   "$MIG_SYNC"
   "$MIG_F83"
   "$MIG_RA"
+  "$MIG_FB"
+  "server/lib/feedback-slack.ts"
+  "client/src/components/product-feedback/FeedbackDialog.tsx"
+  "client/src/components/marketing/TrustpilotReviewCard.tsx"
+  "client/src/components/layout/Footer.tsx"
+  "client/src/components/layout/app-shell.tsx"
+  "client/src/pages/home.tsx"
+  "client/src/pages/contact.tsx"
+  "client/src/lib/route-shells.ts"
   "server/lib/notifications/review-ask-send-context.ts"
   "server/lib/notifications/templates/review-ask.ts"
   "server/lib/notifications/dispatch.ts"
@@ -93,6 +106,11 @@ ONBOARD_UI=client/src/pages/profile-complete.marketing-opt-in.test.tsx
 SIGNUP_PG=tests/ci/signup-analytics.pg.ci.test.ts
 FIRST_TOUCH=client/src/lib/analytics/first-touch.test.ts
 PG_RA=tests/ci/review-ask.pg.ci.test.ts
+PG_FB=tests/ci/feedback-context.pg.ci.test.ts
+FB_CONTRACT=tests/ci/feedback-context.contract.test.ts
+FB_DIALOG=client/src/components/product-feedback/FeedbackDialog.test.tsx
+HOME_UI=client/src/pages/home.trustpilot.test.tsx
+SHELL_UI=client/src/components/layout/app-shell.rail.test.tsx
 
 HAVE_PG=1
 pg_isready -q -h "$PGHOST" -p "$PGPORT" 2>/dev/null || HAVE_PG=0
@@ -124,12 +142,12 @@ run() {
 
 echo "=== (0) GREEN BASELINE ==="
 if [ "$HAVE_PG" = 1 ]; then
-  OUT="$(check "$PG_DB" "$PG_ROUTES" "$SIGNUP_PG" "$PG_RA")"; RC=$?
+  OUT="$(check "$PG_DB" "$PG_ROUTES" "$SIGNUP_PG" "$PG_RA" "$PG_FB")"; RC=$?
   [ "$RC" = 0 ] && ok "PG suites green" || { bad "PG suites not green"; echo "$OUT" | tail -30; }
 else
   echo "  SKIP  PG plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(check "$CONTRACT" "$PROMPT_UI" "$ONBOARD_UI" "$FIRST_TOUCH")"; RC=$?
+OUT="$(check "$CONTRACT" "$PROMPT_UI" "$ONBOARD_UI" "$FIRST_TOUCH" "$FB_CONTRACT" "$FB_DIALOG" "$HOME_UI" "$SHELL_UI")"; RC=$?
 [ "$RC" = 0 ] && ok "contract + UI tests green" || { bad "contract + UI tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "MARKETING/REVIEWS MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -305,9 +323,43 @@ if [ "$HAVE_PG" = 1 ]; then
   run "RA14 function grants as service_role" "anon and authenticated cannot execute any of them" "$PG_RA"
 
   echo "=== RA (15) feedback sent from the ask no longer ends the asks ==="
-  need_last product_feedback_submit RA15 "$MIG_RA"
-  plant "$MIG_RA" "  IF v_rows = 1 AND p_source = 'prompt' THEN" "  IF false THEN" || { bad "RA15 STALE"; exit 1; }
+  need_last product_feedback_submit RA15 "$MIG_FB"
+  plant "$MIG_FB" "  IF v_rows = 1 AND p_source = 'prompt' THEN" "  IF false THEN" || { bad "RA15 STALE"; exit 1; }
   run "RA15 prompt feedback ends asks" "feedback sent from the ask ends the asks" "$PG_RA"
+
+  # ── Feedback context (final brief, Karl 2026-10-20): one plant per rule ──────────────────────
+  echo "=== FB (1) the table stores a real id in the page ==="
+  plant "$MIG_FB" \
+    "        AND route_pattern ~ '^(/|(/([a-z][a-z-]*|:[a-zA-Z]+))+)\$'));" \
+    "        AND route_pattern ~ '^/'));" || { bad "FB1 STALE"; exit 1; }
+  run "FB1 route pattern CHECK" "the table refuses a real id, a query string" "$PG_FB"
+
+  echo "=== FB (2) the database lets an under-13 ask for a reply ==="
+  need_last product_feedback_submit FB2 "$MIG_FB"
+  plant "$MIG_FB" \
+    "  IF p_reply_ok AND NOT public.product_feedback_reply_allowed(p_profile_id) THEN" \
+    "  IF false THEN" || { bad "FB2 STALE"; exit 1; }
+  run "FB2 reply refused (SQL)" "reply-OK is refused for an under-13 or unknown-age student" "$PG_FB"
+
+  echo "=== FB (3) service_role loses EXECUTE on the writer ==="
+  plant "$MIG_FB" \
+    "GRANT EXECUTE ON FUNCTION
+  public.product_feedback_reply_allowed(uuid),
+  public.product_feedback_submit(uuid, text, text, text, uuid, text, boolean, text, text)
+  TO service_role;" \
+    "GRANT EXECUTE ON FUNCTION
+  public.product_feedback_reply_allowed(uuid)
+  TO service_role;" || { bad "FB3 STALE"; exit 1; }
+  run "FB3 grants as service_role" "service_role writes through both functions" "$PG_FB"
+
+  echo "=== FB (4) the reply check forgets the age rule ==="
+  need_last product_feedback_reply_allowed FB4 "$MIG_FB"
+  plant "$MIG_FB" \
+    "    SELECT p.role <> 'student' OR public.marketing_opt_in_age_eligible(p.date_of_birth)" \
+    "    SELECT true" || { bad "FB4 STALE"; exit 1; }
+  run "FB4 reply check age rule" "reply-OK is refused for an under-13 or unknown-age student" "$PG_FB"
+
+
 
   echo "=== RA (16) review content creeps into the cadence table ==="
   plant "$MIG_RA" \
@@ -481,6 +533,157 @@ plant server/routes/product-feedback-routes.ts \
   "          source: parsed.data.source,
           text: parsed.data.body," || { bad "C20 STALE"; exit 1; }
 run "C20 no content in logs" "never logs the text" "$CONTRACT"
+
+echo "=== FB (5) the server lets an under-13 ask for a reply ==="
+plant server/services/product-feedback/product-feedback-service.ts \
+  "    !feedbackReplyAllowed(caller.role, caller.dateOfBirth, deps.now())" \
+  "    false" || { bad "FB5 STALE"; exit 1; }
+run "FB5 reply refused (server)" "an under-13 student cannot ask for a reply" "$FB_CONTRACT"
+
+echo "=== FB (6) the dialog shows the reply checkbox to an under-13 ==="
+plant client/src/components/product-feedback/FeedbackDialog.tsx \
+  "            {replyAllowed ? (" \
+  "            {true ? (" || { bad "FB6 STALE"; exit 1; }
+run "FB6 reply hidden (UI)" "an under-13 student never sees the reply checkbox" "$FB_DIALOG"
+
+echo "=== FB (7) the client keeps real ids in the page ==="
+plant packages/shared/src/product-feedback-schema.ts \
+  '    parts.map((seg) => (/^[a-z][a-z-]*$/.test(seg) ? seg : ":id")).join("/");' \
+  '    parts.join("/");' || { bad "FB7 STALE"; exit 1; }
+run "FB7 route pattern (client)" "a known route reads as its pattern" "$FB_CONTRACT"
+
+echo "=== FB (8) the server accepts any page string ==="
+plant packages/shared/src/product-feedback-schema.ts \
+  "  .max(ROUTE_PATTERN_MAX_LENGTH)
+  .regex(ROUTE_PATTERN_RE);" \
+  "  .max(ROUTE_PATTERN_MAX_LENGTH);" || { bad "FB8 STALE"; exit 1; }
+run "FB8 route pattern (server)" "the server refuses anything shaped like a URL" "$FB_CONTRACT"
+
+echo "=== FB (9) any string passes as the app version ==="
+plant packages/shared/src/product-feedback-schema.ts \
+  'export const APP_VERSION_RE = /^([0-9a-f]{7}|dev)$/;' \
+  'export const APP_VERSION_RE = /^.+$/;' || { bad "FB9 STALE"; exit 1; }
+run "FB9 app version" "the app version is a short commit or dev" "$FB_CONTRACT"
+
+echo "=== FB (10) the 2,000-character cap is gone ==="
+plant packages/shared/src/product-feedback-schema.ts \
+  "    body: z.string().trim().min(1).max(FEEDBACK_MAX_LENGTH),
+    source: feedbackSourceSchema," \
+  "    body: z.string().trim().min(1),
+    source: feedbackSourceSchema," || { bad "FB10 STALE"; exit 1; }
+run "FB10 length cap" "capped at 2,000" "$FB_CONTRACT"
+
+echo "=== FB (11) feedback leaves the per-profile rate-limit bucket ==="
+plant server/routes/product-feedback-routes.ts \
+  '    singleBucketRateLimit("product_feedback", COMPONENT),' \
+  '    singleBucketRateLimit("product_feedback_unlimited", COMPONENT),' || { bad "FB11 STALE"; exit 1; }
+run "FB11 rate limit" "on the per-profile bucket" "$FB_CONTRACT"
+
+echo "=== FB (12) an under-18's text reaches Slack ==="
+plant server/lib/feedback-slack.ts \
+  '  if (ageBand !== "18+") return null;' \
+  '' || { bad "FB12 STALE"; exit 1; }
+run "FB12 Slack: no text under 18" "never the text" "$FB_CONTRACT"
+
+echo "=== FB (13) Slack text is cut at 400, not 300 ==="
+plant server/lib/feedback-slack.ts \
+  "export const FEEDBACK_SLACK_TEXT_MAX = 300;" \
+  "export const FEEDBACK_SLACK_TEXT_MAX = 400;" || { bad "FB13 STALE"; exit 1; }
+run "FB13 Slack: 300 characters" "the text cut at 300 characters" "$FB_CONTRACT"
+
+echo "=== FB (14) an id reaches the Slack line ==="
+plant server/routes/product-feedback-routes.ts \
+  "              routePattern: parsed.data.route_pattern," \
+  "              routePattern: caller.profileId," || { bad "FB14 STALE"; exit 1; }
+run "FB14 Slack: no id" "Slack never carries a name, an email or an id" "$FB_CONTRACT"
+
+echo "=== FB (15) a Slack failure fails the submission ==="
+plant server/lib/feedback-slack.ts \
+  '    return "failed";' \
+  '    throw error;' || { bad "FB15 STALE"; exit 1; }
+run "FB15 Slack failure is not the user's" "a Slack failure" "$FB_CONTRACT"
+
+echo "=== FB (16) feedback text reaches the log ==="
+plant server/routes/product-feedback-routes.ts \
+  "          type: parsed.data.type,
+          requestId: req.requestId," \
+  "          type: parsed.data.type,
+          note: parsed.data.body,
+          requestId: req.requestId," || { bad "FB16 STALE"; exit 1; }
+run "FB16 text never logged" "feedback text is never logged" "$FB_CONTRACT"
+
+echo "=== FB (17) analytics carry the page ==="
+plant server/routes/product-feedback-routes.ts \
+  "              type: parsed.data.type,
+              role: caller.role,
+            })," \
+  "              type: parsed.data.type,
+              role: caller.role,
+              page: parsed.data.route_pattern,
+            })," || { bad "FB17 STALE"; exit 1; }
+run "FB17 counts only" "feedback_submitted with the type and role only" "$FB_CONTRACT"
+
+echo "=== FB (18) students lose Send feedback ==="
+plant client/src/components/layout/app-shell.tsx \
+  "          {feedback.item}" \
+  "" || { bad "FB18 STALE"; exit 1; }
+run "FB18 student menu" "a student's menu adds Send feedback after Help" "$SHELL_UI"
+
+echo "=== FB (19) the practice runner gets the account menu ==="
+plant client/src/lib/route-shells.ts \
+  '  "/practice/session/:sessionId": focus("Practice", "/practice", false, null),' \
+  '  "/practice/session/:sessionId": app(360, true, "column", null),' || { bad "FB19 STALE"; exit 1; }
+run "FB19 not mid-question" "the practice runner, review runner, exam and report routes use the focus layout" "$FB_CONTRACT"
+
+echo "=== FB (20) the homepage card shows without a review URL ==="
+plant client/src/pages/home.tsx \
+  "  const reviewUrl = trustpilotReviewUrl();
+  if (reviewUrl === null) return null;" \
+  '  const reviewUrl =
+    trustpilotReviewUrl() ?? "https://www.trustpilot.com/evaluate/lyceon.ai";' || { bad "FB20 STALE"; exit 1; }
+run "FB20 card needs the URL" "without the review URL" "$HOME_UI"
+
+echo "=== FB (21) the card moves below the final call to action ==="
+plant client/src/pages/home.tsx \
+  '      <TrustpilotSection />
+
+      <section aria-label="Get started" className={SECTION}>' \
+  '      <section aria-label="Get started" className={SECTION}>' || { bad "FB21 STALE"; exit 1; }
+plant client/src/pages/home.tsx \
+  "    </PublicLayout>" \
+  "      <TrustpilotSection />
+    </PublicLayout>" || { bad "FB21 STALE"; exit 1; }
+run "FB21 card position" "between the FAQ and the final call to action" "$HOME_UI"
+
+echo "=== FB (22) the card loads a Trustpilot image ==="
+plant client/src/components/marketing/TrustpilotReviewCard.tsx \
+  '      <div className="flex flex-col gap-1.5">' \
+  '      <img src="https://widget.trustpilot.com/stars.svg" alt="" />
+      <div className="flex flex-col gap-1.5">' || { bad "FB22 STALE"; exit 1; }
+run "FB22 no third-party request" "is text only and asks nothing of Trustpilot" "$HOME_UI"
+
+echo "=== FB (23) the footer Trustpilot link shows without a URL ==="
+plant client/src/components/layout/Footer.tsx \
+  "              {trustpilotUrl !== null ? (" \
+  "              {true ? (" || { bad "FB23 STALE"; exit 1; }
+run "FB23 footer link needs the URL" "without the review URL" "$HOME_UI"
+
+echo "=== FB (24) Feedback in the footer goes somewhere else ==="
+plant client/src/components/layout/Footer.tsx \
+  '                  href="/contact"' \
+  '                  href="/help"' || { bad "FB24 STALE"; exit 1; }
+run "FB24 footer Feedback" "Feedback goes to /contact" "$HOME_UI"
+
+echo "=== FB (25) /contact grows a form ==="
+plant client/src/pages/contact.tsx \
+  "        </section>
+      </div>
+    </PublicLayout>" \
+  "        </section>
+        <form><input name=\"email\" /></form>
+      </div>
+    </PublicLayout>" || { bad "FB25 STALE"; exit 1; }
+run "FB25 /contact has no form" "with no form" "$HOME_UI"
 
 echo "=== Q5 (21) the onboarding checkbox is shown to an under-13 student ==="
 plant client/src/pages/profile-complete.tsx \

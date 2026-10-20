@@ -22,6 +22,7 @@
  * No open or click tracking (contract C12.3): the links are plain.
  */
 import type { ReviewAskPayload } from "../../../../packages/shared/src/notifications-schema";
+import { LYCEON_POSTAL_ADDRESS } from "../../../../packages/shared/src/support-contact";
 import {
   emailRender,
   escapeHtml,
@@ -34,8 +35,7 @@ export const REVIEW_ASK_SUBJECT = "How's Lyceon working for you?";
 export const REVIEW_ASK_PREVIEW = "Good or bad, we'd like to hear it.";
 export const REVIEW_ASK_FOOTER =
   "You're getting this because you have a Lyceon account.";
-export const REVIEW_ASK_ADDRESS =
-  "Lyceon AI, 5650 Central Ave # E7, Toledo, OH 43615";
+export const REVIEW_ASK_ADDRESS = LYCEON_POSTAL_ADDRESS;
 
 /** Where the app link lands: the person's own home, which opens the ask without counting it. */
 export function reviewAskAppPath(

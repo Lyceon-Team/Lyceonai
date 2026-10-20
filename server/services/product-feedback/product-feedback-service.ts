@@ -30,6 +30,7 @@ import type { RpcClient } from "../../lib/rpc-client";
 import {
   decideReviewPrompt,
   feedbackAudienceFor,
+  feedbackReplyAllowed,
   REVIEW_ASK_LAST_RESPONSES,
   reviewAudienceFor,
   reviewMomentFitsRole,
@@ -204,7 +205,10 @@ export async function markTrustpilot(
 
 export type SubmitResult =
   | { ok: true; outcome: "created" | "replayed" }
-  | { ok: false; reason: "not_eligible" | "already_reviewed" };
+  | {
+      ok: false;
+      reason: "not_eligible" | "already_reviewed" | "reply_not_allowed";
+    };
 
 export async function submitReview(
   deps: FeedbackDeps,
@@ -239,6 +243,14 @@ export async function submitFeedback(
 ): Promise<SubmitResult> {
   const audience = feedbackAudienceFor(caller.role);
   if (audience === null) return { ok: false, reason: "not_eligible" };
+  // Final brief §3 (Karl, 2026-10-20): "May we reply by email?" is refused for a student under 13
+  // (or of unknown age). The SQL writer refuses it too.
+  if (
+    feedback.reply_ok &&
+    !feedbackReplyAllowed(caller.role, caller.dateOfBirth, deps.now())
+  ) {
+    return { ok: false, reason: "reply_not_allowed" };
+  }
   const result = outcomeSchema.parse(
     await call(deps.client, "product_feedback_submit", {
       p_profile_id: caller.profileId,
@@ -246,6 +258,10 @@ export async function submitFeedback(
       p_body: feedback.body,
       p_source: feedback.source,
       p_idempotency_key: feedback.idempotency_key,
+      p_type: feedback.type,
+      p_reply_ok: feedback.reply_ok,
+      p_route_pattern: feedback.route_pattern,
+      p_app_version: feedback.app_version,
     }),
   );
   if (result.outcome === "conflict") {

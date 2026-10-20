@@ -85,6 +85,10 @@ export function trustpilotReviewUrlFrom(configured: unknown): string | null {
   return configured;
 }
 
+/** Lyceon's public Trustpilot profile ("See reviews"; final brief, Karl 2026-10-20 §1). */
+export const TRUSTPILOT_PROFILE_URL =
+  "https://www.trustpilot.com/review/lyceon.ai";
+
 /** An optional free-text field: trimmed, and empty means absent. */
 const optionalText = z
   .string()
@@ -110,11 +114,98 @@ export const FEEDBACK_SOURCES = ["prompt", "settings", "help", "menu"] as const;
 export const feedbackSourceSchema = z.enum(FEEDBACK_SOURCES);
 export type FeedbackSource = z.infer<typeof feedbackSourceSchema>;
 
+// ── Feedback context (final brief "Trustpilot card + Feedback", Karl 2026-10-20, §3–§5) ──────
+
+/** Bug · Idea · Something else. */
+export const FEEDBACK_TYPES = ["bug", "idea", "other"] as const;
+export const feedbackTypeSchema = z.enum(FEEDBACK_TYPES);
+export type FeedbackType = z.infer<typeof feedbackTypeSchema>;
+export const FEEDBACK_TYPE_LABELS: Readonly<Record<FeedbackType, string>> = {
+  bug: "Bug",
+  idea: "Idea",
+  other: "Something else",
+};
+
+/**
+ * A route PATTERN, never a URL: lowercase path words and `:name` placeholders only, so a real id
+ * (it has digits), a query string or a fragment cannot pass. The same rule is the table's CHECK
+ * (20261108000000_feedback_context.sql).
+ */
+export const ROUTE_PATTERN_MAX_LENGTH = 120;
+export const ROUTE_PATTERN_RE = /^(\/|(\/([a-z][a-z-]*|:[a-zA-Z]+))+)$/;
+export const routePatternSchema = z
+  .string()
+  .max(ROUTE_PATTERN_MAX_LENGTH)
+  .regex(ROUTE_PATTERN_RE);
+
+/** The deploy's short commit (VERCEL_GIT_COMMIT_SHA), or `dev` for a local build. */
+export const APP_VERSION_RE = /^([0-9a-f]{7}|dev)$/;
+export const appVersionSchema = z.string().regex(APP_VERSION_RE);
+
+function segmentsMatch(pattern: string[], path: string[]): boolean {
+  return (
+    pattern.length === path.length &&
+    pattern.every((seg, i) => seg.startsWith(":") || seg === path[i])
+  );
+}
+
+/**
+ * The route pattern for a location. The query string and fragment are dropped; a known pattern
+ * (`/practice/session/:sessionId`) wins; otherwise every segment that is not a plain lowercase
+ * word (an id, a date, anything with a digit or capital) becomes `:id`. Null when nothing safe
+ * can be said (too long). Pure; the server re-checks the result against ROUTE_PATTERN_RE.
+ */
+export function toRoutePattern(
+  location: string,
+  knownPatterns: readonly string[],
+): string | null {
+  const path = (location.split(/[?#]/, 1)[0] ?? "").replace(/\/+$/, "");
+  if (path === "") return "/";
+  const parts = path.split("/").slice(1);
+  for (const known of knownPatterns) {
+    if (segmentsMatch(known.split("/").slice(1), parts)) return known;
+  }
+  const generic =
+    "/" +
+    parts.map((seg) => (/^[a-z][a-z-]*$/.test(seg) ? seg : ":id")).join("/");
+  return routePatternSchema.safeParse(generic).success ? generic : null;
+}
+
+/** The Slack line's age band (§5). Unknown (no date of birth) never earns the message text. */
+export type FeedbackAgeBand = "18+" | "13–17" | "under 13" | "unknown";
+
+export function feedbackAgeBand(
+  dateOfBirth: string | null,
+  today: Date,
+): FeedbackAgeBand {
+  const age = dateOfBirth === null ? null : ageInYears(dateOfBirth, today);
+  if (age === null) return "unknown";
+  if (age >= TRUSTPILOT_MIN_AGE) return "18+";
+  if (age >= REVIEW_MIN_AGE) return "13–17";
+  return "under 13";
+}
+
+/** "May we reply by email?" is hidden for, and refused to, a student not known to be 13+. */
+export function feedbackReplyAllowed(
+  role: string,
+  dateOfBirth: string | null,
+  today: Date,
+): boolean {
+  if (role !== "student") return true;
+  const age = dateOfBirth === null ? null : ageInYears(dateOfBirth, today);
+  return age !== null && age >= REVIEW_MIN_AGE;
+}
+
 export const feedbackSubmitSchema = z
   .object({
     body: z.string().trim().min(1).max(FEEDBACK_MAX_LENGTH),
     source: feedbackSourceSchema,
     idempotency_key: z.string().uuid(),
+    // Defaults keep a browser still holding the previous bundle working during a deploy.
+    type: feedbackTypeSchema.default("other"),
+    reply_ok: z.boolean().default(false),
+    route_pattern: routePatternSchema.nullable().default(null),
+    app_version: appVersionSchema.nullable().default(null),
   })
   .strict();
 export type FeedbackSubmit = z.infer<typeof feedbackSubmitSchema>;
