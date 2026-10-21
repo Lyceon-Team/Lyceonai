@@ -22,9 +22,9 @@ import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { diagnosticProjectionRepairResultSchema } from "../../packages/shared/src/diagnostic-projection.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import {
-  defaultReminderDeps,
-  runLifecycleReminderRule,
-  type ReminderRuleSummary,
+  defaultLifecycleRuleDeps,
+  runLifecycleRule,
+  type LifecycleRuleSummary,
 } from "../lib/lifecycle-email.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
 import {
@@ -463,10 +463,8 @@ router.get(
  * than behind a new cron (the owner brief of 2026-09-15's rule for new sweeps), so the emails it
  * queues go out in this same dispatch. Its failure is logged and does not stop the dispatch.
  *
- * FOUNDING REMINDER (owner brief "Lifecycle emails: reminder timing fix", Karl 2026-10-21;
- * SCL-239) | @implemented [2026-10-21]: `lyceon.reminder_due` is decided here, in the morning
- * (08:00–09:00 Chicago), instead of 72 h after signup by a Resend delay. Run after the dispatch;
- * its failure is logged and changes nothing else in the sweep.
+ * Lifecycle email (the founding reminder from #1279, then the behaviour triggers) ran here until
+ * the owner rulings on #1284 (Karl, 2026-10-21) moved it to GET /api/internal/lifecycle-email.
  */
 router.get(
   "/notification-dispatch-sweep",
@@ -495,22 +493,7 @@ router.get(
         "Scheduled notification dispatch sweep completed",
         summary,
       );
-      let lifecycleReminder: ReminderRuleSummary | { error: true };
-      try {
-        lifecycleReminder = await runLifecycleReminderRule(
-          new Date(),
-          defaultReminderDeps(),
-        );
-      } catch (err) {
-        logger.error(
-          "NOTIFICATIONS",
-          "lifecycle_reminder_rule_error",
-          "Lifecycle reminder rule failed",
-          err,
-        );
-        lifecycleReminder = { error: true };
-      }
-      res.json({ ok: true, ...summary, reviewAsk, lifecycleReminder });
+      res.json({ ok: true, ...summary, reviewAsk });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",
@@ -893,6 +876,47 @@ router.get(
         err,
       );
       res.status(500).json({ error: "marketing_email_reconcile_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/lifecycle-email
+ * @spec [owner rulings on #1284 (Karl, 2026-10-21) §2: weekdays `0 22 * * 1-5`, weekends
+ *        `0 15 * * 0,6`, no time-zone or DST logic, "fold into existing crons if the Hobby cron
+ *        count is tight" — it is not: 18 crons in vercel.json against Vercel's 100 per project,
+ *        each still at most daily; contracts/notifications.contract.md C6.2, C14A.4–C14A.5]
+ *        | @implemented [2026-10-21]
+ *
+ * plain English: the one place lifecycle emails are sent (the founding reminder and the three
+ * behaviour triggers). Two crons call it, 22:00 UTC Monday to Friday and 15:00 UTC Saturday and
+ * Sunday; the rule itself refuses any other hour (`isLifecycleSendSlot`), and quiet hours stay as
+ * a backstop. Safe to rerun: every email is claimed once in the ledger. 500 when the rule throws,
+ * so the run shows as failed.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/lifecycle-email",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      const summary: LifecycleRuleSummary = await runLifecycleRule(
+        new Date(),
+        defaultLifecycleRuleDeps(),
+      );
+      res.json({ ok: true, job: "lifecycle_email", summary });
+    } catch (err) {
+      logger.error(
+        "LIFECYCLE_EMAIL",
+        "lifecycle_email_job_error",
+        "Scheduled lifecycle email run failed",
+        err,
+      );
+      res.status(500).json({ error: "lifecycle_email_failed" });
     }
   },
 );

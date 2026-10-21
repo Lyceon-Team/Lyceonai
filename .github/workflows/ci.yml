@@ -1231,6 +1231,7 @@ jobs:
             tests/ci/lifecycle-email.pg.ci.test.ts \
             tests/ci/funnel-events.pg.ci.test.ts \
             tests/ci/lifecycle-reminder.pg.ci.test.ts \
+            tests/ci/lifecycle-triggers.pg.ci.test.ts \
             tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
@@ -1308,6 +1309,7 @@ jobs:
             --file tests/ci/lifecycle-email.pg.ci.test.ts \
             --file tests/ci/funnel-events.pg.ci.test.ts \
             --file tests/ci/lifecycle-reminder.pg.ci.test.ts \
+            --file tests/ci/lifecycle-triggers.pg.ci.test.ts \
             --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             --file tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
