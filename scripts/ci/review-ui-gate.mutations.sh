@@ -2433,19 +2433,20 @@ plant "FU-N8" "the exam session page asks the check itself" \
   'i = s.index("\nimport ") + 1
 s = s[:i] + "import { useFullLengthPhonePrecheck } from \"../lib/useFullLengthPhonePrecheck\";\nvoid useFullLengthPhonePrecheck;\n" + s[i:]'
 
+# Re-pointed 2026-10-21 (#1277 Part A): the call now sits inside notify.confirm(...), two spaces deeper.
 plant "FU-C1" "a calendar full-length block launches without the check" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
-  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+  'a = "              blockType === \"full_length\"\n                ? precheck.run("
 assert s.count(a) == 1
-s = s.replace(a, "            false\n              ? precheck.run(", 1)'
+s = s.replace(a, "              false\n                ? precheck.run(", 1)'
 
 plant "FU-C2" "every calendar block asks the check (practice too)" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
-  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+  'a = "              blockType === \"full_length\"\n                ? precheck.run("
 assert s.count(a) == 1
-s = s.replace(a, "            true\n              ? precheck.run(", 1)'
+s = s.replace(a, "              true\n                ? precheck.run(", 1)'
 
 plant "FU-C3" "the block sheet falls back under the phone tab bar (Start untappable at 390)" \
   "$T55" \
