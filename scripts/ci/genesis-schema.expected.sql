@@ -12853,6 +12853,63 @@ $$;
 
 
 --
+-- Name: review_close_oldest_open_sessions(uuid, integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone DEFAULT now()) RETURNS uuid[]
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_closed uuid[];
+BEGIN
+  IF p_student_id IS NULL OR p_max_open IS NULL OR p_max_open < 1 THEN
+    RAISE EXCEPTION 'review_close_oldest_open_sessions: a student and max_open >= 1 are required'
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM public.review_open_sessions_lock(p_student_id);
+
+  WITH open_sessions AS (
+    SELECT s.id,
+           row_number() OVER (ORDER BY s.created_at DESC, s.id DESC) AS newest_rank
+      FROM public.review_sessions s
+     WHERE s.student_id = p_student_id
+       AND s.status IN ('created', 'active')
+  ),
+  to_close AS (
+    -- Keep the newest (max_open - 1); everything older is closed.
+    SELECT id FROM open_sessions WHERE newest_rank >= p_max_open
+  ),
+  closed AS (
+    UPDATE public.review_sessions s
+       SET status = 'abandoned',
+           abandoned_at = p_now,
+           completed_at = NULL,
+           updated_at = p_now,
+           filters = COALESCE(s.filters, '{}'::jsonb)
+                     || jsonb_build_object('active_session_item_id', NULL,
+                                           'client_instance_id', NULL,
+                                           'calculator_state', NULL)
+      FROM to_close c
+     WHERE s.id = c.id
+     RETURNING s.id, s.created_at
+  )
+  SELECT COALESCE(array_agg(id ORDER BY created_at, id), ARRAY[]::uuid[]) INTO v_closed FROM closed;
+
+  RETURN v_closed;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone) IS 'F-81 (owner brief 2026-10-21 Part B). Makes room for one new review session: abandons the student''s oldest open review sessions (created_at, then id) until at most max_open - 1 stay open, as terminate does (abandoned_at set, completed_at NULL). Answered items stay; unanswered items'' queue entries were never changed, so they are back in the pool. Per-student advisory lock; idempotent. Service role only.';
+
+
+--
 -- Name: review_item_resolve(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -12943,6 +13000,18 @@ $$;
 --
 
 COMMENT ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id uuid) IS 'W4-7 / Doc 02B §16: true when the student sent >=1 message to LISA on this review item''s conversation. Telemetry only — never read by mastery, scoring, selection or UI. Never raises: an error returns false with a WARNING.';
+
+
+--
+-- Name: review_open_sessions_lock(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_open_sessions_lock(p_student_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT pg_advisory_xact_lock(hashtextextended('review_open_sessions:' || p_student_id::text, 0));
+$$;
 
 
 --
@@ -13045,6 +13114,34 @@ $$;
 --
 
 COMMENT ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) IS 'Ruled plan §3 ruling 12. The only writer of review_schedule entries. Takes the (student, question) advisory lock before reading, replays on (source_engine, source_item_id), supersedes the open entry, inserts the new one.';
+
+
+--
+-- Name: review_session_items_one_open_question(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_session_items_one_open_question() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM public.review_open_sessions_lock(NEW.student_id);
+  IF EXISTS (
+    SELECT 1
+      FROM public.review_session_items i
+      JOIN public.review_sessions s ON s.id = i.session_id
+     WHERE i.student_id = NEW.student_id
+       AND i.question_id = NEW.question_id
+       AND i.session_id <> NEW.session_id
+       AND s.status IN ('created', 'active')
+  ) THEN
+    RAISE EXCEPTION 'review_question_already_open'
+      USING ERRCODE = '23505',
+            DETAIL = 'This question is already in another open review session of the same student.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
 
 --
@@ -21640,6 +21737,13 @@ CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.rev
 
 
 --
+-- Name: review_session_items review_session_items_one_open_question; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER review_session_items_one_open_question BEFORE INSERT ON public.review_session_items FOR EACH ROW EXECUTE FUNCTION public.review_session_items_one_open_question();
+
+
+--
 -- Name: student_diagnostic_projections student_diagnostic_projections_no_update; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -26496,6 +26600,14 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 
 --
+-- Name: FUNCTION review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION review_item_resolve(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -26510,6 +26622,14 @@ REVOKE ALL ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_i
 
 
 --
+-- Name: FUNCTION review_open_sessions_lock(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_open_sessions_lock(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_open_sessions_lock(p_student_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -26521,6 +26641,13 @@ REVOKE ALL ON FUNCTION public.review_queue_graduate(p_student_id uuid, p_questio
 --
 
 REVOKE ALL ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_session_items_one_open_question(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_session_items_one_open_question() FROM PUBLIC;
 
 
 --

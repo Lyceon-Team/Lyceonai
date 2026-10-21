@@ -1,10 +1,9 @@
-import { startOrReplayReviewSession } from "../../../../server/routes/review-canonical";
-
 /**
  * @spec [CLAUDE.md "derive the fixture from real output"; "one scenario, shared"; owner re-test
  *       (Karl, 2026-10-08) item A, the review cap] | @implemented [2026-10-08]
  *
- * plain English: test-only. The review cap's refusal body is the REAL
+ * plain English: test-only. (2026-10-21: see `reviewCapRefusal` — since F-81 the current producer
+ * no longer refuses at the cap.) The review cap's refusal body WAS the REAL
  * `startOrReplayReviewSession` output (server/routes/review-canonical.ts, the function both
  * `POST /api/review/sessions` and the calendar's review adapter create through), not a
  * hand-written `{ code: "SESSION_LIMIT_EXCEEDED" }`. The tests fake only the two database reads
@@ -60,23 +59,30 @@ export function capTables(table: string): unknown {
   throw new Error(`the review cap reads no table ${table}`);
 }
 
-/** The refusal, as the real producer builds it for a student at the cap. */
+/**
+ * The refusal the DEPLOYED producer sends at the cap.
+ *
+ * F-81 (owner brief 2026-10-21, Part B, #1277): `startOrReplayReviewSession` no longer refuses
+ * at the cap — it closes the oldest open session and proceeds — so the current producer cannot
+ * build this body any more, and running it here would need the whole create path faked. Until
+ * #1277 is deployed, production still answers a start at the cap with exactly this: the body is
+ * that producer's literal at `origin/cleanup` 6dcf9ae3 (server/routes/review-canonical.ts:591-602),
+ * transcribed with `CAP_OPEN` for both `sessions.length` and `max_concurrent_sessions` (the
+ * values `capTables` gives it). It is the one hand-transcribed fixture here, by necessity. The
+ * client keeps the notice for that window (and the calendar adapter's pass-through, F-92); its
+ * retirement after deploy is a question for the owner in #1277.
+ */
 export async function reviewCapRefusal(): Promise<{
   status: number;
   body: Record<string, unknown>;
 }> {
-  const result = await startOrReplayReviewSession({
-    studentId: "00000000-0000-4000-8000-0000000000ca",
-    actorId: "00000000-0000-4000-8000-0000000000cb",
-    poolSpec: { mode: "queue" },
-    clientInstanceId: "tab-cap",
-    idempotencyKey: "cap-key",
-    targetCount: null,
-  });
-  if (result.ok) throw new Error("the producer did not refuse at the cap");
-  if (result.body.code !== "SESSION_LIMIT_EXCEEDED")
-    throw new Error(
-      `the producer refused for another reason: ${String(result.body.code)}`,
-    );
-  return { status: result.status, body: result.body };
+  return {
+    status: 403,
+    body: {
+      error: "session_limit_exceeded",
+      code: "SESSION_LIMIT_EXCEEDED",
+      message: `You already have ${CAP_OPEN} open review sessions. Finish or end one first.`,
+      maxConcurrentSessions: CAP_OPEN,
+    },
+  };
 }
