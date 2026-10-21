@@ -17,7 +17,7 @@ set -uo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-MIG="supabase/migrations/20261109000000_analytics_funnel_milestones.sql"
+MIG="supabase/migrations/20261110000000_analytics_funnel_milestones.sql"
 FUNNEL="server/lib/analytics/funnel-events.ts"
 EMIT="server/lib/analytics/emit-event.ts"
 REGISTRY="server/lib/analytics/event-registry.generated.ts"
