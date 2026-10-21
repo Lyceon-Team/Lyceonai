@@ -12,3 +12,9 @@ paths-ignore:
   # reference artifact, never built or shipped. Code-quality autofixes rewrote it
   # 13 times and were reverted (owner ruling, Karl, 2026-10-03).
   - docs/plans/student-ui/design/prototype/**
+  # Test code: vitest suites, harnesses and benches under tests/, never built into or
+  # served by the app. Their in-process Express apps raised "missing CSRF / rate
+  # limiting" alerts (#1257) that cannot apply to code that never takes a request from
+  # a network (owner ruling, Karl, 2026-10-19, ruling 4 on #1257). Production
+  # middleware stays scanned in server/ and apps/.
+  - tests/**

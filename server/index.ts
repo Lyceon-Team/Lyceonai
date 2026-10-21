@@ -66,7 +66,9 @@ import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
-import practiceCanonicalRouter from "./routes/practice-canonical";
+import practiceCanonicalRouter, {
+  prefetchAnswerRateLimitConfig,
+} from "./routes/practice-canonical";
 import reviewCanonicalRouter from "./routes/review-canonical";
 import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
@@ -231,6 +233,13 @@ app.get("/api/csrf-token", (req: Request, res: Response) => {
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);
+
+// @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling B] | @implemented [2026-10-20]
+// Starts the answer limiter's config read for an authenticated POST to a route that mounts it
+// (practice and review answer and skip; ruling Q1 on #1271, 2026-10-20), so it runs alongside the
+// deletion lock's reads below. It decides nothing: the limiter still answers (503/429) at its own
+// place on the route, after the lock and every gate before it.
+app.use(prefetchAnswerRateLimitConfig);
 
 // @spec [Doc-01_V8 §40.3] Account-deletion lock — the ONE structural enforcement point. Mounted here
 // (after req.user is set, before every API router) so deleted/pending-deletion users are default-denied
