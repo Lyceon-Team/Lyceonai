@@ -692,7 +692,7 @@ describe.skipIf(!PG_AVAILABLE)(
   },
 );
 
-const FIX_MIGRATION = "20261109000000_analytics_funnel_milestones.sql";
+const FIX_MIGRATION = "20261110000000_analytics_funnel_milestones.sql";
 
 describe.skipIf(!PG_AVAILABLE)(
   "Server-side funnel events — the backfill",

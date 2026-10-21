@@ -9,7 +9,7 @@
  * of their non-numeric properties. The full payload shapes, with `additionalProperties: false`, are
  * the registry entries in infra/event-schema-registry.yaml, which emitEvent validates every send
  * against; these enums are the same values, used by the server code that builds the payloads and by
- * the milestones table's CHECK (supabase/migrations/20261109000000_analytics_funnel_milestones.sql).
+ * the milestones table's CHECK (supabase/migrations/20261110000000_analytics_funnel_milestones.sql).
  */
 import { z } from "zod";
 
