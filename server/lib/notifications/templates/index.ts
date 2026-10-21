@@ -146,6 +146,11 @@ export function renderInApp(
         return err("review_ask payload does not match its schema");
       return ok(reviewAskInApp(parsed.data));
     }
+    // A record only (20261109000000): emitted with no recipients, so never rendered here.
+    case "lifecycle_reminder_due":
+      return err(
+        "lifecycle_reminder_due has no in-app notice (Resend sends its email)",
+      );
   }
 }
 
@@ -231,6 +236,10 @@ export function renderEmail(
         return err("review_ask payload does not match its schema");
       return ok(reviewAskEmail(parsed.data, ctx));
     }
+    case "lifecycle_reminder_due":
+      return err(
+        "lifecycle_reminder_due is sent by Resend, never by the dispatcher",
+      );
   }
 }
 
