@@ -20,7 +20,14 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "vite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The live blog set is computed from the clock at import time: freeze Date before any import
+// runs, so this file sees the same posts on every day (tests/lib/content-clock.ts).
+await vi.hoisted(async () => {
+  const { pinContentClock } = await import("../lib/content-clock");
+  pinContentClock();
+});
 import { contentSchedulePlugin } from "../../vite-plugin-content-schedule";
 import {
   ALL_BLOG_POSTS,
