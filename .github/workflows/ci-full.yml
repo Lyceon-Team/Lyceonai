@@ -518,6 +518,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-consent-reviews.mutations.sh
 
+      # Lifecycle emails PR 1 (Karl, 2026-10-21; SCL-239): plants the founding reminder before 3
+      # days, for an entitled, under-13, deleted, deletion-pending, guardian or pre-cutover
+      # student, twice, during quiet hours, to a denylisted address, with a message row, kept
+      # after a refused send, open to authenticated, missing from the sweep, or logging an
+      # address. Each must turn its guarding test red on a name.
+      - name: Lifecycle reminder mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/lifecycle-reminder.mutations.sh
+
       # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
       # new-account test ignoring the account's age, email signup recording only on a client
       # consent claim, and a disabled Continue with Google. Each must turn its test red by name.

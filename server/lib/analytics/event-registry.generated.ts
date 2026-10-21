@@ -8,7 +8,7 @@
  */
 export const GENERATED_EVENT_REGISTRY: unknown = {
   "schema_version": "1.0.0",
-  "last_updated": "2026-10-09",
+  "last_updated": "2026-10-20",
   "owner_doc": "07A V1.0",
   "events": [
     {
@@ -742,6 +742,334 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
         "analytics_user_id": "opaque_id_only",
         "schema_version": "not_pii",
         "streak_current": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "review_ask_shown",
+      "schema_tier": "strict",
+      "canonical_event_class": "system",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "The in-app review ask was shown and counted (Karl, 2026-10-20). Counts only: the ask number (1 or 2), the audience and an age band; never a rating, text or date of birth.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "audience",
+          "age_band",
+          "ask_number"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "review_ask_shown"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian"
+            ]
+          },
+          "age_band": {
+            "type": "string",
+            "enum": [
+              "13_17",
+              "18_plus"
+            ]
+          },
+          "ask_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "audience": "not_pii",
+        "age_band": "not_pii",
+        "ask_number": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "review_ask_clicked",
+      "schema_tier": "strict",
+      "canonical_event_class": "system",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "The person chose an option on the review ask: Trustpilot, an in-app review stored, or private feedback sent from the ask. The destination only; never the rating or any text.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "audience",
+          "age_band",
+          "destination"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "review_ask_clicked"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian"
+            ]
+          },
+          "age_band": {
+            "type": "string",
+            "enum": [
+              "13_17",
+              "18_plus"
+            ]
+          },
+          "destination": {
+            "type": "string",
+            "enum": [
+              "trustpilot",
+              "in_app_review",
+              "private_feedback"
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "audience": "not_pii",
+        "age_band": "not_pii",
+        "destination": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "review_ask_snoozed",
+      "schema_tier": "strict",
+      "canonical_event_class": "system",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "The review ask was put off for 30 days: Not now or the close button.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "audience",
+          "age_band",
+          "via"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "review_ask_snoozed"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian"
+            ]
+          },
+          "age_band": {
+            "type": "string",
+            "enum": [
+              "13_17",
+              "18_plus"
+            ]
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "not_now",
+              "close"
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "audience": "not_pii",
+        "age_band": "not_pii",
+        "via": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "review_ask_email_sent",
+      "schema_tier": "strict",
+      "canonical_event_class": "system",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "The one follow-up review email was sent (adults only, 18+). The audience only.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "audience"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "review_ask_email_sent"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian"
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "audience": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "feedback_submitted",
+      "schema_tier": "strict",
+      "canonical_event_class": "system",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "A student or guardian sent private feedback (final brief, Karl 2026-10-20). Counts only: the type and the role; never the text, the page or anything about the person.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "type",
+          "role"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "feedback_submitted"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "idea",
+              "other"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian"
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "type": "not_pii",
+        "role": "not_pii"
       },
       "retention_class": "standard_analytics"
     }

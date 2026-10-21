@@ -593,14 +593,37 @@ async function clearTodaysQuota(persona: StudentPersona): Promise<void> {
 
 async function clearReviewPrompt(persona: StudentPersona): Promise<void> {
   const db = await harnessDb();
+  const id = PERSONAS[persona].id;
   try {
     await db.query(
       "DELETE FROM public.product_review_prompt_state WHERE profile_id = $1",
-      [PERSONAS[persona].id],
+      [id],
     );
     await db.query("DELETE FROM public.product_reviews WHERE profile_id = $1", [
-      PERSONAS[persona].id,
+      id,
     ]);
+    // Review ask (Karl, 2026-10-20): the usage trigger needs 7+ days since signup and 3+
+    // completed sessions, and Home holds the ask while the Getting started checklist is active.
+    // In the harness database only: the account is dated 8 days back, completed practice
+    // sessions are added up to 3 (never QOTD), and the checklist is dismissed.
+    await db.query(
+      "UPDATE public.profiles SET created_at = LEAST(created_at, now() - interval '8 days') WHERE id = $1",
+      [id],
+    );
+    await db.query(
+      `INSERT INTO public.practice_sessions
+         (user_id, actor_id, mode, target_count, platform, status, completed_at)
+       SELECT p.id, p.actor_id, 'structured', 3, 'web', 'completed', now() - interval '1 day'
+         FROM public.profiles p, generate_series(1, GREATEST(0, 3 - public.review_ask_completed_sessions($1)))
+        WHERE p.id = $1`,
+      [id],
+    );
+    await db.query(
+      `INSERT INTO public.student_getting_started_state (profile_id, dismissed_at)
+       VALUES ($1, now())
+       ON CONFLICT (profile_id) DO UPDATE SET dismissed_at = COALESCE(student_getting_started_state.dismissed_at, now())`,
+      [id],
+    );
   } finally {
     await db.end();
   }
@@ -729,21 +752,27 @@ async function completeDiagnostic(
     "content-type": "application/json",
     [PERSONA_HEADER]: persona,
   };
-  const start = await fetch(`${stack.baseUrl}/api/practice/diagnostic/sessions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      client_instance_id: SEED_CLIENT_INSTANCE,
-      idempotency_key: `student-harness-${persona}-diagnostic`,
-    }),
-  });
+  const start = await fetch(
+    `${stack.baseUrl}/api/practice/diagnostic/sessions`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        client_instance_id: SEED_CLIENT_INSTANCE,
+        idempotency_key: `student-harness-${persona}-diagnostic`,
+      }),
+    },
+  );
   const startJson: unknown = await start.json();
   const startBody =
     startJson !== null && typeof startJson === "object"
       ? (startJson as Record<string, unknown>)
       : {};
   // The start route answers a finished diagnostic with 409 `error: "diagnostic_already_completed"`.
-  if (start.status === 409 && startBody.error === "diagnostic_already_completed")
+  if (
+    start.status === 409 &&
+    startBody.error === "diagnostic_already_completed"
+  )
     return;
   const sessionId =
     startBody.sessionId ??
@@ -781,10 +810,14 @@ async function completeDiagnostic(
       client_instance_id: SEED_CLIENT_INSTANCE,
     };
     if (q.inputMode === "numeric_entry") body.answer = i % 2 === 0 ? "1" : "2";
-    else body.selectedOptionId = options[i % Math.max(options.length, 1)]?.id ?? null;
+    else
+      body.selectedOptionId =
+        options[i % Math.max(options.length, 1)]?.id ?? null;
     await apiCall(stack, persona, "POST", "/api/practice/answer", body);
   }
-  throw new Error("completeDiagnostic: 200 answers and the diagnostic never closed");
+  throw new Error(
+    "completeDiagnostic: 200 answers and the diagnostic never closed",
+  );
 }
 
 function itemsTable(engine: FreshSession["engine"]): string {
@@ -1109,7 +1142,9 @@ async function shootBuilt(
   }
   if (shot.completedDiagnostic === true) {
     if (persona === null)
-      throw new Error(`${shot.id}: a completed diagnostic needs a seeded student`);
+      throw new Error(
+        `${shot.id}: a completed diagnostic needs a seeded student`,
+      );
     await completeDiagnostic(stack, persona);
   }
   if (shot.freshQotd !== undefined) {
@@ -1603,7 +1638,7 @@ function writeIndex(
       );
     if (shot.freshReviewPrompt === true)
       lines.push(
-        "No review-prompt state before each capture (the persona's `product_review_prompt_state` and `product_reviews` rows are deleted from the harness database), so the real cadence shows the prompt in every viewport and theme.",
+        "No review-ask state before each capture (the persona's `product_review_prompt_state` and `product_reviews` rows are deleted from the harness database), and the persona meets the usage trigger there (account dated 8 days back, completed practice sessions up to 3, the Getting started checklist dismissed), so the real trigger and cadence show the ask in every viewport and theme.",
       );
     if (shot.freshCalendarProfile === true)
       lines.push(

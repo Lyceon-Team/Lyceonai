@@ -41,6 +41,16 @@ export default defineConfig(({ mode, isSsrBuild }) => {
         "@assets": path.resolve(import.meta.dirname, "attached_assets"),
       },
     },
+    // Final brief "Trustpilot card + Feedback" (Karl, 2026-10-20) §3: feedback carries the app
+    // version — the deploy's short commit (Vercel sets VERCEL_GIT_COMMIT_SHA at build), or `dev`
+    // for a local build. Read through `appVersion()` (client/src/lib/app-version.ts).
+    define: {
+      "import.meta.env.VITE_APP_VERSION": JSON.stringify(
+        /^[0-9a-f]{7,40}$/.test(env.VERCEL_GIT_COMMIT_SHA ?? "")
+          ? (env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 7)
+          : "dev",
+      ),
+    },
     root: path.resolve(import.meta.dirname, "client"),
     // Dev server only. Without this, Vite finds dependencies as the browser first imports them,
     // re-bundles, and reloads every open page ("optimized dependencies changed. reloading"). On
