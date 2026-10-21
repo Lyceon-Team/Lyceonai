@@ -55,6 +55,11 @@ import {
   fireLifecycle,
   sendEntitledEvents,
 } from "../lifecycle-email";
+import {
+  classifyUpgradeVia,
+  fireUpgraded,
+} from "../analytics/funnel-events";
+import type { FunnelUpgradeVia } from "../../../packages/shared/src/funnel-events-schema";
 import { getTier1Countries } from "../entitlement-runtime-config";
 import {
   evaluateCountryEligibility,
@@ -598,6 +603,37 @@ async function readEntitledForAnnouncement(
 }
 
 /**
+ * `upgraded.via` for the server-side funnel (Karl, 2026-10-21). Re-reads the subscription with its
+ * discounts' coupons expanded and classifies it (classifyUpgradeVia). A failed read is null, and
+ * the funnel releases its claim rather than guess. Ids are never logged.
+ */
+async function readUpgradeVia(
+  subscriptionId: string,
+  payerProfileId: string | null,
+  studentProfileId: string,
+): Promise<FunnelUpgradeVia | null> {
+  try {
+    const subscription = await getStripeClient().subscriptions.retrieve(
+      subscriptionId,
+      { expand: ["discounts.source.coupon"] },
+    );
+    return classifyUpgradeVia({
+      discounts: subscription.discounts,
+      payerProfileId,
+      studentProfileId,
+    });
+  } catch (error: unknown) {
+    logger.warn(
+      "STRIPE_WEBHOOK",
+      "upgrade_via_read_failed",
+      "Could not read the subscription's discounts; upgraded not sent",
+      { error: error instanceof Error ? error.name : "unknown" },
+    );
+    return null;
+  }
+}
+
+/**
  * Onboarding events to Resend Automations (Karl, 2026-10-12): when this write took the student
  * from not entitled to entitled, tell Resend — `lyceon.entitled` and the contact property
  * `entitled = "true"` for the student and, when a guardian paid, the payer. Both sides of the
@@ -609,10 +645,17 @@ async function announceIfNewlyEntitled(
   before: { ok: true; active: boolean } | { ok: false },
   studentProfileId: string,
   payerProfileId: string | null,
+  subscriptionId: string,
 ): Promise<void> {
   if (!before.ok || before.active) return;
   const after = await readEntitledForAnnouncement(studentProfileId);
   if (!after.ok || !after.active) return;
+  // Server-side funnel (Karl, 2026-10-21): `upgraded`, once ever per student, on the same
+  // not-active → active edge. `via` is read only after the once-only claim succeeds (one Stripe
+  // read per first activation). Fire-and-forget: the webhook's result never waits on it.
+  fireUpgraded(studentProfileId, () =>
+    readUpgradeVia(subscriptionId, payerProfileId, studentProfileId),
+  );
   fireLifecycle("entitled", studentProfileId, () =>
     sendEntitledEvents(
       { studentProfileId, payerProfileId },
@@ -811,6 +854,7 @@ async function writeEntitlementFromSubscription(
     wasEntitled,
     studentProfileId,
     subscription.metadata?.payer_profile_id ?? null,
+    subscription.id,
   );
   // W3-3: record the billing country on the same grant. Revocations leave the
   // last known country in place — a lapsed student in crisis still gets theirs.
@@ -1490,6 +1534,7 @@ async function writeEntitlementsForAllItems(
       wasEntitled,
       studentProfileId,
       payerProfileId,
+      subscription.id,
     );
     if (grantCountry?.source === "provided") {
       await setProfileCountryCode(studentProfileId, grantCountry.country);
