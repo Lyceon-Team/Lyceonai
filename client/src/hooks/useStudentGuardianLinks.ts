@@ -18,6 +18,7 @@
  * read "has at least one active link", which ignored the entitlement half of the recipient rule.
  */
 import { useQuery } from "@tanstack/react-query";
+import type { z } from "zod";
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
 // Module-specific import, NOT the `@lyceon/shared` barrel (it re-exports the server env
@@ -25,7 +26,6 @@ import { parseApiErrorFromResponse } from "@/lib/api-error";
 import {
   studentLinksUrl,
   studentGuardianLinksViewSchema,
-  type StudentGuardianLinkView,
 } from "../../../packages/shared/src/student-resources";
 
 const STUDENT_GUARDIAN_LINKS_QUERY_KEY = ["student-guardian-links"] as const;
@@ -35,14 +35,9 @@ export function studentGuardianLinksQueryKey(studentId: string) {
   return [...STUDENT_GUARDIAN_LINKS_QUERY_KEY, studentId] as const;
 }
 
-export type StudentGuardianLinks = {
-  links: StudentGuardianLinkView[];
-  guardian_notified: boolean;
-};
-
 export async function readStudentGuardianLinks(
   studentId: string,
-): Promise<StudentGuardianLinks> {
+): Promise<z.infer<typeof studentGuardianLinksViewSchema>> {
   const res = await csrfFetch(studentLinksUrl(studentId), {
     credentials: "include",
   });

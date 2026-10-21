@@ -63,7 +63,7 @@ export const CALENDAR_ACTIONS = [
 export type CalendarActionKind = (typeof CALENDAR_ACTIONS)[number];
 
 /** The four schedule fields the profile trigger compares (SCL-230). */
-export type ScheduleFields = Pick<
+type ScheduleFields = Pick<
   StudyProfile,
   | "study_days_mask"
   | "daily_minutes"

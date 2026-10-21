@@ -41,7 +41,7 @@ import {
 } from "../copy/guardian-notice";
 import type { ViewDay } from "./view-model";
 
-export type GuardianNotifyConfirm = {
+type GuardianNotifyConfirm = {
   /** Run `write` now, or after "Make change" when the action will notify the guardian. */
   confirm: (action: CalendarAction, write: () => void) => void;
   /** The dialog. Render it once in the consumer's tree; closed, it renders nothing. */
