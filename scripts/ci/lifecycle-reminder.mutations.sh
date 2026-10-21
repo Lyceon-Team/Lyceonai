@@ -131,6 +131,12 @@ plant "$MIG" "       AND NOT EXISTS (SELECT 1 FROM public.notification_events e
                         WHERE e.event_id = public.notification_event_id(
                                              'lifecycle_reminder_due', p.id::text))
 " "" || { bad "LR8 STALE"; exit 1; }
+# Both "never twice" guards go: the claim's filter and the re-check under the lock (which exists
+# for overlapping runs and would otherwise hold the line on its own).
+plant "$MIG" "    CONTINUE WHEN EXISTS (SELECT 1 FROM public.notification_events e
+                           WHERE e.event_id = public.notification_event_id(
+                                                'lifecycle_reminder_due', v_id::text));
+" "" || { bad "LR8 STALE (re-check)"; exit 1; }
 run "LR8 never twice" "R7 never twice" "$PG_LR"
 
 echo "=== LR (9) the reminder is sent during quiet hours ==="
@@ -179,6 +185,11 @@ plant "$LIB" "        event: REMINDER_DUE_EVENT,
         email: target.profile.email,
 " || { bad "LR16 STALE"; exit 1; }
 run "LR16 no address logged" "L1 no address" "$PG_LR"
+
+echo "=== LR (17) no upper bound: a swept record lets the reminder go out again ==="
+plant "$MIG" "       AND p.profile_completed_at >  p_now - interval '14 days'
+" "" || { bad "LR17 STALE"; exit 1; }
+run "LR17 days 3 to 14 only" "R13 due only on days 3 to 14" "$PG_LR"
 
 echo "=== RESTORED: re-check green ==="
 OUT="$(check "$PG_LR" "$WIRING")"; RC=$?

@@ -20,11 +20,17 @@
 --     fixed instant, not the apply time, so the schema is the same on every apply (genesis gate).
 --  3. `lifecycle_reminder_claim(p_now, p_limit)` records the reminder for every student due at
 --     p_now and returns their ids, in one transaction:
---       onboarding completed at least 3 days before p_now and not before the cutover; a student;
+--       onboarding completed 3 to 14 days before p_now and not before the cutover; a student;
 --       not deleted, no pending deletion request; known to be 13 or over
 --       (marketing_opt_in_age_eligible); not entitled (entitlement_active); not already recorded.
---     Rows are locked FOR UPDATE SKIP LOCKED, so two overlapping runs cannot both claim a
---     student; the ledger's insert-once event id makes a repeat claim impossible after commit.
+--     Rows are locked FOR UPDATE SKIP LOCKED and the ledger is re-checked under the lock, so two
+--     overlapping runs cannot both claim a student.
+--     WHY 14 DAYS: the notification retention sweep deletes every ledger row older than its
+--     window (90 days, notification_retention_days()), this one included. The upper bound means a
+--     student is only ever due inside days 3–14, long before the record could be swept, so a swept
+--     record can never let the reminder be sent again. It also lets a missed morning (an outage,
+--     a refused send) catch up for eleven days. A student past day 14 who was never reminded is
+--     not reminded late.
 --     The caller (server/lib/lifecycle-email.ts) applies the address checks Postgres cannot see
 --     (the LIFECYCLE_EMAIL_DENYLIST env var, a `test` address) and sends `lyceon.reminder_due`.
 --  4. `lifecycle_reminder_release(p_profile_id)` undoes one claim when Resend refused the event,
@@ -101,6 +107,7 @@ BEGIN
        AND p.profile_completed_at IS NOT NULL
        AND p.profile_completed_at >= public.lifecycle_reminder_since()
        AND p.profile_completed_at <= p_now - interval '3 days'
+       AND p.profile_completed_at >  p_now - interval '14 days'
        AND p.deleted_at IS NULL
        AND public.marketing_opt_in_age_eligible(p.date_of_birth)
        AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
@@ -113,6 +120,11 @@ BEGIN
      LIMIT p_limit
      FOR UPDATE OF p SKIP LOCKED
   LOOP
+    -- Re-checked under the row lock with a fresh snapshot: a run that committed this student's
+    -- row after this statement began is seen here, so two overlapping runs never both claim.
+    CONTINUE WHEN EXISTS (SELECT 1 FROM public.notification_events e
+                           WHERE e.event_id = public.notification_event_id(
+                                                'lifecycle_reminder_due', v_id::text));
     -- No recipients: no notification_messages row; Resend sends the email.
     PERFORM public.emit_notification_event(
       public.notification_event_id('lifecycle_reminder_due', v_id::text),

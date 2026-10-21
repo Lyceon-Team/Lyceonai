@@ -9455,6 +9455,7 @@ BEGIN
        AND p.profile_completed_at IS NOT NULL
        AND p.profile_completed_at >= public.lifecycle_reminder_since()
        AND p.profile_completed_at <= p_now - interval '3 days'
+       AND p.profile_completed_at >  p_now - interval '14 days'
        AND p.deleted_at IS NULL
        AND public.marketing_opt_in_age_eligible(p.date_of_birth)
        AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
@@ -9467,6 +9468,11 @@ BEGIN
      LIMIT p_limit
      FOR UPDATE OF p SKIP LOCKED
   LOOP
+    -- Re-checked under the row lock with a fresh snapshot: a run that committed this student's
+    -- row after this statement began is seen here, so two overlapping runs never both claim.
+    CONTINUE WHEN EXISTS (SELECT 1 FROM public.notification_events e
+                           WHERE e.event_id = public.notification_event_id(
+                                                'lifecycle_reminder_due', v_id::text));
     -- No recipients: no notification_messages row; Resend sends the email.
     PERFORM public.emit_notification_event(
       public.notification_event_id('lifecycle_reminder_due', v_id::text),

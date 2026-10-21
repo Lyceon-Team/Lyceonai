@@ -26,6 +26,8 @@
  *   R10 a refused send releases the claim; the next morning sends it
  *   R11 the ledger row has no message, so the dispatcher never sees it
  *   R12 grants: anon and authenticated execute nothing; service_role runs claim and release
+ *   R13 past day 14: never reminded late
+ *   R14 the retention sweep deletes the record (90 days); the student is never reminded again
  * Runs only where PGHOST is set; named by file in CI.
  */
 import type { Client } from "pg";
@@ -396,6 +398,40 @@ describe.skipIf(!PG_AVAILABLE)("founding reminder → real PG", () => {
     });
     expect(released).toBe(true);
     expect(await recorded(id)).toBe(0);
+  });
+
+  it("R13 due only on days 3 to 14: past day 14 a student is never reminded late", async () => {
+    await clearReminders();
+    const at = new Date(SINCE.getTime() + 60_000);
+    const id = await person({ completedAt: at.toISOString() });
+    const day = (d: number) => new Date(at.getTime() + d * 86_400_000);
+    expect(await claim(day(14))).toEqual([]);
+    expect(await claim(new Date(day(14).getTime() - 60_000))).toEqual([id]);
+  });
+
+  it("R14 the retention sweep deletes the record; the student is never reminded again", async () => {
+    await clearReminders();
+    const retention = await pg.query<{ d: number }>(
+      `SELECT public.notification_retention_days() AS d`,
+    );
+    // The bound only holds while the window is shorter than retention.
+    expect(retention.rows[0]?.d).toBeGreaterThan(14);
+    const id = await person();
+    expect((await runRule(morning())).sent).toHaveLength(1);
+    await pg.query(
+      `UPDATE public.notification_events SET created_at = now() - interval '91 days'
+        WHERE event_type = 'lifecycle_reminder_due' AND subject_profile_id = $1`,
+      [id],
+    );
+    await asProbe(() =>
+      pg.query(`SELECT * FROM public.sweep_notification_retention(1000)`),
+    );
+    expect(await recorded(id)).toBe(0); // presence of the sweep's effect
+    // The sweep can only take a record 90+ days after it was written, so every real re-run is
+    // that late: the student is long past day 14.
+    for (const days of [95, 120, 400]) {
+      expect((await runRule(morning(days))).sent, String(days)).toEqual([]);
+    }
   });
 
   it("L1 no address appears in any log line", async () => {
