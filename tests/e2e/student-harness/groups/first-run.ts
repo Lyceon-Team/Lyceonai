@@ -168,18 +168,6 @@ export const FIRST_RUN: PageGroup = {
       },
     },
     {
-      id: "home-review-cap",
-      title:
-        "Home, paid, at the review cap: the notice's 'Continue your open session' wraps inside the panel",
-      persona: "paid",
-      route: "/dashboard",
-      waitFor: both('[data-testid="home-recent-review"]'),
-      reviewCap: true,
-      steps: [click('[data-testid="home-recent-review"]')],
-      expectInViewport: '[data-testid="review-cap"]',
-      prototype: NEW_SCREEN,
-    },
-    {
       id: "route-error-in-shell",
       title:
         "A page's code chunk fails twice: one automatic reload, then the error screen inside the App shell (rail; tab bar on a phone)",

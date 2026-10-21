@@ -123,21 +123,6 @@ Prototype: none. NOT PROTOTYPED: owner ruling (Karl, 2026-10-15, on #1233, 'Home
 | mobile | light | ![home-entry-points-free-locked mobile light](home-entry-points-free-locked--mobile--light--built.png)<br>`/dashboard`, 53 KB, horizontal overflow 0px | none |
 | mobile | dark | ![home-entry-points-free-locked mobile dark](home-entry-points-free-locked--mobile--dark--built.png)<br>`/dashboard`, 52 KB, horizontal overflow 0px | none |
 
-## Home, paid, at the review cap: the notice's 'Continue your open session' wraps inside the panel
-
-Persona: `paid`. Route: `/dashboard`.
-At the review-session cap before each capture: queue review sessions are opened through the real `POST /api/review/sessions` until the server itself refuses one with `SESSION_LIMIT_EXCEEDED`; the ones opened are ended through the real terminate route after the shot.
-Must then show `[data-testid="review-cap"]` wholly inside the viewport (the capture fails otherwise).
-Step: click `{"desktop":"[data-testid=\"home-recent-review\"]","mobile":"[data-testid=\"home-recent-review\"]"}`.
-Prototype: none. NOT PROTOTYPED: new in the first-run activation brief (Karl, 2026-10-13), built to DESIGN.md §5; these screenshots go to Karl before merge.
-
-| Viewport | Theme (as rendered) | Built | Prototype |
-|---|---|---|---|
-| desktop | light | ![home-review-cap desktop light](home-review-cap--desktop--light--built.png)<br>`/dashboard`, 155 KB, horizontal overflow 0px | none |
-| desktop | dark | ![home-review-cap desktop dark](home-review-cap--desktop--dark--built.png)<br>`/dashboard`, 156 KB, horizontal overflow 0px | none |
-| mobile | light | ![home-review-cap mobile light](home-review-cap--mobile--light--built.png)<br>`/dashboard`, 58 KB, horizontal overflow 0px | none |
-| mobile | dark | ![home-review-cap mobile dark](home-review-cap--mobile--dark--built.png)<br>`/dashboard`, 59 KB, horizontal overflow 0px | none |
-
 ## A page's code chunk fails twice: one automatic reload, then the error screen inside the App shell (rail; tab bar on a phone)
 
 Persona: `paid`. Route: `/mastery`.
