@@ -24,8 +24,10 @@ describe("notifications schema", () => {
   // 2026-09-30 (SCL-191, 20261015000000); the daily-question reminder `qotd_daily` on 2026-10-09
   // (owner ruling on #1166 item 1, 20261029020000); the four guardian-accountability types on
   // 2026-10-13 (owner brief "Guardian accountability loop", 20261101000000); the review ask's one
-  // email `review_ask` on 2026-10-20 (owner brief "Review ask", 20261107000000).
-  it("names exactly the twelve event types, in the CHECK's own order", () => {
+  // email `review_ask` on 2026-10-20 (owner brief "Review ask", 20261107000000); the founding
+  // reminder's record `lifecycle_reminder_due` on 2026-10-21 (owner brief "Lifecycle emails",
+  // 20261109000000, SCL-239).
+  it("names exactly the thirteen event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",
       "guardian_unlinked",
@@ -39,6 +41,7 @@ describe("notifications schema", () => {
       "back_on_track",
       "guardian_daily_digest",
       "review_ask",
+      "lifecycle_reminder_due",
     ]);
   });
 
