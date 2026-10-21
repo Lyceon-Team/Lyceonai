@@ -42,7 +42,6 @@ import { longDate } from "../lib/dates";
 import { reviewCountChoices } from "../lib/members";
 import { MixRows, type MixEntry } from "./MixRows";
 import { TONE_LABEL } from "../lib/blocks";
-import { GUARDIAN_NOTICE_LINE } from "../copy/guardian-notice";
 import type { ViewBlock, ViewDay } from "../lib/view-model";
 
 export type BlockSheetActions = {
@@ -57,11 +56,9 @@ export type BlockSheetActions = {
   onDoItNow: () => void;
   onMove: (toDate: string) => void;
   launchPending: boolean;
-  /**
-   * Owner brief 2026-10-13 ("Transparency"): true when the student has an active guardian link,
-   * which is when removing or moving this block is reported to a guardian.
-   */
-  guardianNotice?: boolean;
+  // The guardian line this panel drew (owner brief 2026-10-13) is gone: a removal or move the
+  // guardian will hear about asks "Your guardian will be notified" before the write instead
+  // (SCL-238, owner brief 2026-10-21 Part A; `useGuardianNotifyConfirm`, pages/calendar.tsx).
 };
 
 type BlockSheetProps = {
@@ -337,17 +334,6 @@ export function BlockSheet({
                 }}
               />
             </div>
-          ) : null}
-
-          {actions !== undefined &&
-          !locked &&
-          actions.guardianNotice === true ? (
-            <p
-              className="field-note"
-              data-testid="calendar-block-guardian-notice"
-            >
-              {GUARDIAN_NOTICE_LINE}
-            </p>
           ) : null}
         </div>
 

@@ -114,6 +114,16 @@ export type StudentGuardianLinkView = z.infer<
 >;
 export const studentGuardianLinksViewSchema = z.object({
   links: z.array(studentGuardianLinkViewSchema),
+  /**
+   * @spec [owner brief "student cleanups" (Karl, 2026-10-21) Part A ("'Active guardian link AND
+   *       active entitlement' must come from the server"); SCL-238] | @implemented [2026-10-21]
+   * True when a plan change the accountability loop records would reach at least one guardian
+   * right now: the server's `accountability_guardian_recipients` (active links filtered by
+   * `guardian_view_decision` = allow, i.e. link active AND the student's entitlement active) is
+   * not empty. The calendar's "Your guardian will be notified" dialog reads this and nothing
+   * else; a link list alone ignores the entitlement half.
+   */
+  guardian_notified: z.boolean(),
 });
 
 /** Full client-side path for the student's active links, e.g. `/api/students/<id>/links`. */
