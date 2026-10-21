@@ -661,10 +661,6 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
     const body = { mode: "queue", idempotency_key: "create-key-1" };
     const first = await createSession(body);
-    // F-81 (2026-10-21): a start whose questions are all held by an open session resumes it,
-    // which would make the second create return the same id WITHOUT the key. A new miss
-    // between the two presses means only the key's replay can return the first session.
-    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
     const second = await createSession(body);
 
     expect(first.status).toBe(200);
@@ -1030,9 +1026,6 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     const queue = await createSession({ mode: "queue" });
     expect(queue.status).toBe(200);
 
-    // F-81 (owner brief 2026-10-21): the queue session holds Q_ALG, and a question is never in
-    // two open sessions, so the filter session needs a question of its own.
-    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
     const filter = await createSession({
       mode: "filter",
       filters: { sections: ["M"] },
@@ -1193,8 +1186,10 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
   // A14 — response shape parity with practice (owner ruling 2026-09-21)
   // -------------------------------------------------------------------------
   // -------------------------------------------------------------------------
-  // B — F-81 (owner brief 2026-10-21, Part B): the open-session cap never refuses a start;
-  // the oldest open session is closed instead; no question is in two open sessions.
+  // B — F-81 (owner brief 2026-10-21, Part B; owner rulings on #1277, Karl, 2026-10-21,
+  // rulings 1 and 2): the open-session cap never refuses a start; every start is a NEW session
+  // of at most `session_size` questions; the open sessions holding its questions, then the
+  // oldest, are closed instead; no question is in two open sessions.
   // -------------------------------------------------------------------------
   async function maxOpen(): Promise<number> {
     const r = await testPg!.query<{ value: string }>(
@@ -1343,35 +1338,8 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     );
   });
 
-  it("B3: no question is in two open sessions — a second start takes only questions no open session holds, and resumes when there are none", async () => {
-    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
-    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
-    const first = await createSession({ idempotency_key: "b3-first" });
-    expect(first.status).toBe(200);
-
-    // Everything queued is in the first session: the second start resumes it.
-    const second = await createSession({
-      idempotency_key: "b3-second",
-      client_instance_id: "ci-2",
-    });
-    expect(second.status).toBe(200);
-    expect(second.body.sessionId).toBe(first.body.sessionId);
-    expect(second.body.replayed).toBe(true);
-
-    // A new miss arrives: the third start takes it, and only it.
-    await enqueue(testPg!, { questionId: Q_RW, queuedAt: T3 });
-    const third = await createSession({
-      idempotency_key: "b3-third",
-      client_instance_id: "ci-3",
-    });
-    expect(third.status).toBe(200);
-    expect(third.body.sessionId).not.toBe(first.body.sessionId);
-    const taken = await testPg!.query<{ question_id: string }>(
-      `SELECT question_id FROM public.review_session_items WHERE session_id = $1`,
-      [third.body.sessionId],
-    );
-    expect(taken.rows.map((r) => r.question_id)).toEqual([Q_RW]);
-
+  /** Questions that are items of more than one OPEN review session of student A. */
+  async function duplicatedOpenQuestions(): Promise<number> {
     const dupes = await testPg!.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM (
          SELECT i.question_id FROM public.review_session_items i
@@ -1380,9 +1348,171 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
           GROUP BY i.question_id HAVING count(*) > 1) d`,
       [STUDENT_A],
     );
-    // Presence: two open sessions hold three questions between them.
-    expect(await openCount()).toBe(2);
-    expect(Number(dupes.rows[0]?.n)).toBe(0);
+    return Number(dupes.rows[0]?.n);
+  }
+
+  it("B3: a filtered start whose questions an open session holds is a NEW session; the holder is closed, its answered item kept, and no question is in two open sessions", async () => {
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
+    await enqueue(testPg!, { questionId: Q_RW, queuedAt: T3 });
+    const first = await createSession({ idempotency_key: "b3-first" });
+    expect(first.status).toBe(200);
+    const firstId = first.body.sessionId as string;
+    // The holder has an ANSWERED item (Q_ALG, served first) and unanswered ones.
+    const served = await nextItem(firstId);
+    const answeredItemId = served.body.sessionItemId as string;
+    const answered = await request(app)
+      .post("/api/review/answer")
+      .send({
+        sessionId: firstId,
+        sessionItemId: answeredItemId,
+        selectedAnswer: await tokenFor(answeredItemId, "A"),
+      });
+    expect(answered.status).toBe(200);
+    // Presence: the first session holds every Math question the filter will ask for.
+    const held = await testPg!.query<{ question_id: string }>(
+      `SELECT question_id FROM public.review_session_items WHERE session_id = $1 ORDER BY question_id`,
+      [firstId],
+    );
+    expect(held.rows.map((r) => r.question_id)).toEqual(
+      [Q_ALG, Q_ADV, Q_RW].sort(),
+    );
+
+    const filtered = await createSession({
+      mode: "filter",
+      filters: { sections: ["M"] },
+      idempotency_key: "b3-filter",
+      client_instance_id: "ci-2",
+    });
+    expect(filtered.status).toBe(200);
+    // A NEW session, never the holder resumed.
+    expect(filtered.body.sessionId).not.toBe(firstId);
+    expect(filtered.body.replayed).toBe(false);
+    // The holder is closed as terminate leaves it.
+    expect(await statusOf(firstId)).toMatchObject({
+      status: "abandoned",
+      completed_at: null,
+    });
+    // Its answered item and attempt stay recorded.
+    const kept = await testPg!.query(
+      `SELECT status FROM public.review_session_items WHERE id = $1`,
+      [answeredItemId],
+    );
+    expect(kept.rows[0]?.status).toBe("answered");
+    const attempts = await testPg!.query(
+      `SELECT count(*)::int AS n FROM public.review_error_attempts WHERE session_item_id = $1`,
+      [answeredItemId],
+    );
+    expect(Number(attempts.rows[0]?.n)).toBe(1);
+    // The new session took the Math questions still queued (the unanswered Q_ADV at least).
+    const taken = await testPg!.query<{ question_id: string }>(
+      `SELECT question_id FROM public.review_session_items WHERE session_id = $1`,
+      [filtered.body.sessionId],
+    );
+    expect(taken.rows.map((r) => r.question_id)).toContain(Q_ADV);
+    expect(taken.rows.map((r) => r.question_id)).not.toContain(Q_RW);
+
+    // A second, identical-pool start is again a NEW session, and closes the one before it.
+    const again = await createSession({
+      mode: "filter",
+      filters: { sections: ["M"] },
+      idempotency_key: "b3-filter-2",
+      client_instance_id: "ci-3",
+    });
+    expect(again.status).toBe(200);
+    expect(again.body.sessionId).not.toBe(filtered.body.sessionId);
+    expect((await statusOf(filtered.body.sessionId as string)).status).toBe(
+      "abandoned",
+    );
+    // Presence: an open session holds questions; none is in two.
+    expect(await openCount()).toBe(1);
+    expect(await duplicatedOpenQuestions()).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // S — session size (owner rulings on #1277, Karl, 2026-10-21, ruling 1)
+  // -------------------------------------------------------------------------
+  async function setSessionSize(value: number): Promise<void> {
+    await testPg!.query(
+      `UPDATE public.review_runtime_config SET value = to_jsonb($1::int) WHERE key = 'session_size'`,
+      [value],
+    );
+    // The router's own instance of the cache (the router was imported the same way).
+    const { invalidateReviewConfigCache } =
+      await import("../../server/services/review-config");
+    invalidateReviewConfigCache();
+  }
+
+  async function itemCount(sessionId: string): Promise<number> {
+    const r = await testPg!.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM public.review_session_items WHERE session_id = $1`,
+      [sessionId],
+    );
+    return Number(r.rows[0]?.n);
+  }
+
+  it("S1: the session size is seeded as 10 with bounds 5..20, and a default start takes 10 of a 14-question queue", async () => {
+    const seeded = await testPg!.query(
+      `SELECT value, min_value, max_value FROM public.review_runtime_config WHERE key = 'session_size'`,
+    );
+    expect(seeded.rows[0]).toEqual({ value: 10, min_value: 5, max_value: 20 });
+    await setSessionSize(10);
+    await seedPastSessions(14);
+    // Presence: the queue is larger than a session.
+    const queued = await testPg!.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM public.review_schedule WHERE student_id = $1 AND status = 'active'`,
+      [STUDENT_A],
+    );
+    expect(Number(queued.rows[0]?.n)).toBe(14);
+    const created = await createSession({ idempotency_key: "s1" });
+    expect(created.status).toBe(200);
+    expect(await itemCount(created.body.sessionId as string)).toBe(10);
+  });
+
+  it("S2: with the key at 5 a start takes 5, no deploy", async () => {
+    await seedPastSessions(14);
+    await setSessionSize(5);
+    try {
+      const created = await createSession({ idempotency_key: "s2" });
+      expect(created.status).toBe(200);
+      expect(await itemCount(created.body.sessionId as string)).toBe(5);
+    } finally {
+      await setSessionSize(10);
+    }
+  });
+
+  it("S3: a caller's larger size is capped at the key; a smaller one is honoured", async () => {
+    await seedPastSessions(14);
+    await setSessionSize(10);
+    const big = await createSession({
+      idempotency_key: "s3-big",
+      target_count: 15,
+    });
+    expect(big.status).toBe(200);
+    expect(await itemCount(big.body.sessionId as string)).toBe(10);
+    const small = await createSession({
+      idempotency_key: "s3-small",
+      client_instance_id: "ci-2",
+      target_count: 3,
+    });
+    expect(small.status).toBe(200);
+    expect(await itemCount(small.body.sessionId as string)).toBe(3);
+  });
+
+  it("S4: a key outside its bounds is a loud 500, never clamped or defaulted", async () => {
+    await seedPastSessions(3);
+    await setSessionSize(3); // below min_value 5
+    try {
+      const created = await createSession({ idempotency_key: "s4" });
+      expect(created.status).toBe(500);
+      const rows = await testPg!.query(
+        `SELECT count(*)::int AS n FROM public.review_sessions WHERE student_id = $1`,
+        [STUDENT_A],
+      );
+      expect(Number(rows.rows[0]?.n)).toBe(0);
+    } finally {
+      await setSessionSize(10);
+    }
   });
 
   it("B4: the database refuses a question already in another open session (23505), and admits it once that session is closed", async () => {

@@ -12853,35 +12853,51 @@ $$;
 
 
 --
--- Name: review_close_oldest_open_sessions(uuid, integer, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+-- Name: review_admit_session_start(uuid, integer, text[], timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone DEFAULT now()) RETURNS uuid[]
+CREATE FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone DEFAULT now()) RETURNS uuid[]
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_closed uuid[];
+  v_to_close uuid[];
+  v_closed   uuid[];
 BEGIN
   IF p_student_id IS NULL OR p_max_open IS NULL OR p_max_open < 1 THEN
-    RAISE EXCEPTION 'review_close_oldest_open_sessions: a student and max_open >= 1 are required'
+    RAISE EXCEPTION 'review_admit_session_start: a student and max_open >= 1 are required'
       USING ERRCODE = '22023';
   END IF;
 
   PERFORM public.review_open_sessions_lock(p_student_id);
 
   WITH open_sessions AS (
-    SELECT s.id,
-           row_number() OVER (ORDER BY s.created_at DESC, s.id DESC) AS newest_rank
+    SELECT s.id, s.created_at,
+           EXISTS (
+             SELECT 1 FROM public.review_session_items i
+              WHERE i.session_id = s.id
+                AND i.question_id = ANY (COALESCE(p_question_ids, ARRAY[]::text[]))
+           ) AS holds
       FROM public.review_sessions s
      WHERE s.student_id = p_student_id
        AND s.status IN ('created', 'active')
   ),
-  to_close AS (
-    -- Keep the newest (max_open - 1); everything older is closed.
-    SELECT id FROM open_sessions WHERE newest_rank >= p_max_open
-  ),
-  closed AS (
+  kept AS (
+    -- The sessions holding none of the new session's questions, newest first: the newest
+    -- (max_open - 1) of them stay open, everything older is closed to make room.
+    SELECT id,
+           row_number() OVER (ORDER BY created_at DESC, id DESC) AS newest_rank
+      FROM open_sessions
+     WHERE NOT holds
+  )
+  SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) INTO v_to_close
+    FROM (
+      SELECT id FROM open_sessions WHERE holds
+      UNION
+      SELECT id FROM kept WHERE newest_rank >= p_max_open
+    ) c;
+
+  WITH closed AS (
     UPDATE public.review_sessions s
        SET status = 'abandoned',
            abandoned_at = p_now,
@@ -12891,8 +12907,7 @@ BEGIN
                      || jsonb_build_object('active_session_item_id', NULL,
                                            'client_instance_id', NULL,
                                            'calculator_state', NULL)
-      FROM to_close c
-     WHERE s.id = c.id
+     WHERE s.id = ANY (v_to_close)
      RETURNING s.id, s.created_at
   )
   SELECT COALESCE(array_agg(id ORDER BY created_at, id), ARRAY[]::uuid[]) INTO v_closed FROM closed;
@@ -12903,10 +12918,10 @@ $$;
 
 
 --
--- Name: FUNCTION review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+-- Name: FUNCTION review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone) IS 'F-81 (owner brief 2026-10-21 Part B). Makes room for one new review session: abandons the student''s oldest open review sessions (created_at, then id) until at most max_open - 1 stay open, as terminate does (abandoned_at set, completed_at NULL). Answered items stay; unanswered items'' queue entries were never changed, so they are back in the pool. Per-student advisory lock; idempotent. Service role only.';
+COMMENT ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) IS 'F-81 (owner rulings on #1277, Karl, 2026-10-21, ruling 2). Makes room for one NEW review session that will take p_question_ids: abandons every open review session of the student holding any of them, then the oldest of the rest (created_at, then id) until at most max_open - 1 stay open, as terminate does (abandoned_at set, completed_at NULL). Answered items stay; unanswered items'' queue entries were never changed, so they are back in the pool. Per-student advisory lock; idempotent. Service role only.';
 
 
 --
@@ -26600,11 +26615,11 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 
 --
--- Name: FUNCTION review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.review_close_oldest_open_sessions(p_student_id uuid, p_max_open integer, p_now timestamp with time zone) TO service_role;
+REVOKE ALL ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) TO service_role;
 
 
 --

@@ -33,13 +33,15 @@ SWEEP="server/lib/review-stale-session-sweep.ts"
 PRACTICE="server/routes/practice-canonical.ts"
 CSRF="server/middleware/csrf-double-submit.ts"
 INDEX="server/index.ts"
-# F-81 (owner brief 2026-10-21, Part B): the auto-close and one-open-question SQL.
+# F-81 (owner brief 2026-10-21, Part B; owner rulings on #1277, 2026-10-21, rulings 1-2): the
+# session-size seed, the admit and one-open-question SQL, and the size reader.
 ADMISSION="supabase/migrations/20261109000000_review_open_session_admission.sql"
+CONFIG="server/services/review-config.ts"
 
 BACKUP="$(mktemp -d)"
 trap 'restore_all; rm -rf "$BACKUP"' EXIT
 
-SOURCES=("$ROUTES" "$POOL" "$SWEEP" "$PRACTICE" "$CSRF" "$INDEX" "$ADMISSION")
+SOURCES=("$ROUTES" "$POOL" "$SWEEP" "$PRACTICE" "$CSRF" "$INDEX" "$ADMISSION" "$CONFIG")
 
 snapshot_all() {
   for f in "${SOURCES[@]}"; do
@@ -267,26 +269,62 @@ mutate "$ROUTES" \
   '    totalItems: await countSessionItems(args.sessionId),' || exit 2
 run_plant A14 "A14:" "rename totalQuestions in the next-item response"
 
-# --- B1-B4: F-81 (owner brief 2026-10-21, Part B) ---------------------------
+# --- B1-B4, S1-S4: F-81 (owner brief 2026-10-21, Part B; rulings 1-2 on #1277, 2026-10-21) --
+# Re-pointed 2026-10-21 (ruling 2): `review_close_oldest_open_sessions` and the route's
+# "resume the newest holder" path are gone, so B1/B3 now bite the admit step that replaced them
+# (`review_admit_session_start`, the only definition, in $ADMISSION) and its call site.
 mutate "$ROUTES" \
-  '  if (sessions.length >= config.maxConcurrentSessions) {' \
-  '  if (false) {' || exit 2
-run_plant B1 "B1:" "skip the auto-close at the cap"
+  '    if (sessions.length > 0 || attempt > 1) {' \
+  '    if (false) {' || exit 2
+run_plant B1 "B1:" "skip the admit step (nothing closed at the cap)"
 
 mutate "$ADMISSION" \
-  'row_number() OVER (ORDER BY s.created_at DESC, s.id DESC) AS newest_rank' \
-  'row_number() OVER (ORDER BY s.created_at DESC, s.id ASC) AS newest_rank' || exit 2
+  'row_number() OVER (ORDER BY created_at DESC, id DESC) AS newest_rank' \
+  'row_number() OVER (ORDER BY created_at DESC, id ASC) AS newest_rank' || exit 2
 run_plant B1tie "B1:" "break a created_at tie by the higher id"
 
+mutate "$ADMISSION" \
+  '      SELECT id FROM open_sessions WHERE holds
+      UNION' \
+  '      SELECT id FROM open_sessions WHERE false
+      UNION' || exit 2
+run_plant B3 "B3:" "leave open the session holding the new session's questions"
+
 mutate "$ROUTES" \
-  '  const free = pool.filter((row) => !holder.has(row.question.id));' \
-  '  const free = pool.filter(() => true);' || exit 2
-run_plant B3 "B3:" "stop excluding questions held by another open session"
+  '            p_question_ids: built.selected.map((row) => row.question.id),' \
+  '            p_question_ids: [],' || exit 2
+run_plant B3ids "B3:" "admit without telling the database which questions the start takes"
 
 mutate "$ADMISSION" \
   '       AND i.session_id <> NEW.session_id' \
   '       AND false' || exit 2
 run_plant B4 "B4:" "let the one-open-question trigger admit a duplicate"
+
+mutate "$ADMISSION" \
+  "  ('session_size', '10'::jsonb, 'integer', '5'::jsonb, '20'::jsonb, 'product'," \
+  "  ('session_size', '20'::jsonb, 'integer', '5'::jsonb, '20'::jsonb, 'product'," || exit 2
+run_plant S1seed "S1:" "seed the session size at 20 instead of the ruled 10"
+
+mutate "$ROUTES" \
+  '  return { ok: true, selected: pool.slice(0, size) };' \
+  '  return { ok: true, selected: pool };' || exit 2
+run_plant S1 "S1:" "a start takes the whole queue again"
+
+mutate "$ROUTES" \
+  '  return { ok: true, selected: pool.slice(0, size) };' \
+  '  return { ok: true, selected: pool.slice(0, 10) };' || exit 2
+run_plant S2 "S2:" "the size is a constant 10, not the runtime key"
+
+mutate "$CONFIG" \
+  '  return requested !== null && requested > 0 ? Math.min(requested, key) : key;' \
+  '  return requested !== null && requested > 0 ? requested : key;' || exit 2
+run_plant S3 "S3:" "a caller's larger size is not capped by the key"
+
+mutate "$CONFIG" \
+  '    value < 1 ||
+    (min !== null && value < min) ||' \
+  '    value < 1 ||' || exit 2
+run_plant S4 "S4:" "a key below its min_value is used instead of refused"
 
 # --- A16a-d: the past-session picker is paged (register UI-16, 2026-09-29) ---
 mutate "$POOL" \
