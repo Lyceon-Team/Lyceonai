@@ -889,7 +889,11 @@ describe("Slack: fails loudly, never silently", () => {
 
   it("a user token, or a missing or malformed channel, fails the same way", () => {
     expect(slackConfig({ ...ENV, SLACK_BOT_TOKEN: "xoxp-user-token" })).toEqual(
-      { ok: false, error: "SLACK_BOT_TOKEN is not a bot token (xoxb-…)" },
+      {
+        ok: false,
+        error: "SLACK_BOT_TOKEN is not a bot token (xoxb-…)",
+        reason: "token_not_bot",
+      },
     );
     for (const channel of [undefined, "", "#social", "social", "U0123456789"]) {
       const r = slackConfig({ ...ENV, SLACK_CHANNEL_ID: channel });

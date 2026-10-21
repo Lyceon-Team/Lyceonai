@@ -14,8 +14,21 @@
  * the account's name, email or any id) and is the one place the age rule for the text lives.
  * `postFeedbackToSlack` sends it with the shared Slack client (shared/slack/client.ts), reading the
  * bot token and the channel from SLACK_BOT_TOKEN and SOCIAL_SLACK_CHANNEL_ID through the env
- * schema. It never throws: unset settings, a Slack error or a timeout (3 s) is logged as a WARN
- * carrying only Slack's error code, and the caller's submission has already been stored.
+ * schema. It never throws, and the caller's submission has already been stored.
+ *
+ * @spec [owner brief "Feedback → Slack: log the real reason when it can't post" (Karl,
+ *        2026-10-21)] | @implemented [2026-10-21]
+ *
+ * plain English (the logs): in production every refusal used to read "not set", even with both
+ * settings present and the channel ID simply in the wrong format. Now one WARN per submission
+ * names what is wrong:
+ *   * `feedback_slack_misconfigured` with `reason` env_invalid (and the offending `fields`, names
+ *     only), token_missing, token_not_bot or channel_invalid (with `channel` redacted to its first
+ *     character and length, e.g. "#…(7)", or "unset");
+ *   * `feedback_slack_failed` with `reason` slack_error and Slack's own `slack_error` code
+ *     (not_in_channel, invalid_auth, http_500, …), or request_failed and the error's class name
+ *     (a timeout, a network failure).
+ * Never the token or any part of it, never the message text, never a user identifier.
  */
 import { feedbackSlackEnvSchema } from "../../packages/shared/src/env";
 import {
@@ -26,8 +39,10 @@ import {
 import {
   escapeMrkdwn,
   postMessage,
+  SlackCallError,
   slackConfig,
   type FetchLike,
+  type SlackConfigReason,
 } from "../../shared/slack/client";
 import { logger } from "../logger";
 
@@ -69,7 +84,18 @@ export function feedbackSlackText(input: FeedbackSlackInput): string {
     : `${escapeMrkdwn(head)}\n> ${escapeMrkdwn(quote)}`;
 }
 
-export type FeedbackSlackOutcome = "posted" | "not_configured" | "failed";
+export type FeedbackSlackOutcome = "posted" | "misconfigured" | "failed";
+
+/** Why a Slack line could not even be attempted. */
+export type FeedbackSlackMisconfiguredReason =
+  | "env_invalid"
+  | SlackConfigReason;
+
+/** A channel ID as a log may show it: its first character and its length, never the rest. */
+export function redactChannel(raw: string | undefined): string {
+  const value = raw?.trim() ?? "";
+  return value === "" ? "unset" : `${value.slice(0, 1)}…(${value.length})`;
+}
 
 export async function postFeedbackToSlack(
   input: FeedbackSlackInput,
@@ -79,21 +105,37 @@ export async function postFeedbackToSlack(
     requestId?: string;
   } = {},
 ): Promise<FeedbackSlackOutcome> {
-  const env = feedbackSlackEnvSchema.safeParse(deps.env ?? process.env);
-  const config = slackConfig({
-    SLACK_BOT_TOKEN: env.success ? env.data.SLACK_BOT_TOKEN : undefined,
-    SLACK_CHANNEL_ID: env.success
-      ? env.data.SOCIAL_SLACK_CHANNEL_ID
-      : undefined,
-  });
-  if (!config.ok) {
+  const misconfigured = (
+    reason: FeedbackSlackMisconfiguredReason,
+    detail: Record<string, unknown> = {},
+  ): FeedbackSlackOutcome => {
     logger.warn(
       "PRODUCT_FEEDBACK",
-      "feedback_slack_not_configured",
-      "Feedback stored; no Slack line (SLACK_BOT_TOKEN / SOCIAL_SLACK_CHANNEL_ID not set)",
-      { requestId: deps.requestId },
+      "feedback_slack_misconfigured",
+      "Feedback stored; no Slack line (SLACK_BOT_TOKEN / SOCIAL_SLACK_CHANNEL_ID unusable)",
+      { requestId: deps.requestId, reason, ...detail },
     );
-    return "not_configured";
+    return "misconfigured";
+  };
+  const env = feedbackSlackEnvSchema.safeParse(deps.env ?? process.env);
+  if (!env.success) {
+    // Field names only: an issue's message or input could echo the value.
+    const fields = [
+      ...new Set(env.error.issues.map((issue) => String(issue.path[0]))),
+    ].sort();
+    return misconfigured("env_invalid", { fields });
+  }
+  const config = slackConfig({
+    SLACK_BOT_TOKEN: env.data.SLACK_BOT_TOKEN,
+    SLACK_CHANNEL_ID: env.data.SOCIAL_SLACK_CHANNEL_ID,
+  });
+  if (!config.ok) {
+    return misconfigured(
+      config.reason,
+      config.reason === "channel_invalid"
+        ? { channel: redactChannel(env.data.SOCIAL_SLACK_CHANNEL_ID) }
+        : {},
+    );
   }
   const fetchImpl: FetchLike =
     deps.fetchImpl ??
@@ -113,12 +155,19 @@ export async function postFeedbackToSlack(
       "PRODUCT_FEEDBACK",
       "feedback_slack_failed",
       "Feedback stored; the Slack line failed",
-      {
-        requestId: deps.requestId,
-        // SlackCallError carries the method and Slack's code only; never the token or the text.
-        reason:
-          error instanceof Error ? error.message.slice(0, 120) : "unknown",
-      },
+      error instanceof SlackCallError
+        ? // Slack's code only (SlackCallError keeps it to [a-z0-9_]); never the token or text.
+          {
+            requestId: deps.requestId,
+            reason: "slack_error",
+            slack_error: error.code,
+          }
+        : // A timeout or network failure: its class name, never its message.
+          {
+            requestId: deps.requestId,
+            reason: "request_failed",
+            error_name: error instanceof Error ? error.name : "unknown",
+          },
     );
     return "failed";
   }

@@ -33,8 +33,23 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export type SlackConfig = { token: string; channel: string };
 
+/**
+ * Why `slackConfig` refused, as a code a log can carry (owner brief "Feedback → Slack: log the
+ * real reason", Karl 2026-10-21): the human-readable `error` stays for the CLI jobs.
+ */
+export const SLACK_CONFIG_REASONS = [
+  "token_missing",
+  "token_not_bot",
+  "channel_invalid",
+] as const;
+export type SlackConfigReason = (typeof SLACK_CONFIG_REASONS)[number];
+
+export type SlackConfigResult =
+  | { ok: true; value: SlackConfig }
+  | { ok: false; error: string; reason: SlackConfigReason };
+
 /** The bot token and channel from the environment; missing or malformed fails, never defaults. */
-export function slackConfig(env: NodeJS.ProcessEnv): Result<SlackConfig> {
+export function slackConfig(env: NodeJS.ProcessEnv): SlackConfigResult {
   const token = env.SLACK_BOT_TOKEN?.trim() ?? "";
   const channel = env.SLACK_CHANNEL_ID?.trim() ?? "";
   if (token === "") {
@@ -42,15 +57,21 @@ export function slackConfig(env: NodeJS.ProcessEnv): Result<SlackConfig> {
       ok: false,
       error:
         "SLACK_BOT_TOKEN is not set (GitHub secret SLACK_BOT_TOKEN; see docs/runbooks/slack.md)",
+      reason: "token_missing",
     };
   }
   if (!token.startsWith("xoxb-")) {
-    return { ok: false, error: "SLACK_BOT_TOKEN is not a bot token (xoxb-…)" };
+    return {
+      ok: false,
+      error: "SLACK_BOT_TOKEN is not a bot token (xoxb-…)",
+      reason: "token_not_bot",
+    };
   }
   if (!/^[CG][A-Z0-9]{8,}$/.test(channel)) {
     return {
       ok: false,
       error: `SLACK_CHANNEL_ID is not set or is not a channel ID (GitHub variable ${SOCIAL_CHANNEL_VARIABLE}, e.g. C0123456789)`,
+      reason: "channel_invalid",
     };
   }
   return { ok: true, value: { token, channel } };
@@ -77,7 +98,18 @@ export type FetchLike = (
   },
 ) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
-export class SlackCallError extends Error {}
+/**
+ * A failed Slack call. `code` is safe to log: Slack's own error code (`not_in_channel`,
+ * `invalid_auth`, …), `http_<status>`, or a fixed word of ours; never the token or the payload.
+ */
+export class SlackCallError extends Error {
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "SlackCallError";
+    this.code = /^[a-z0-9_]{1,64}$/.test(code) ? code : "unrecognised";
+  }
+}
 
 const slackError = z.object({ ok: z.literal(false), error: z.string() });
 export const postMessageOk = z.object({ ok: z.literal(true), ts: z.string() });
@@ -109,14 +141,18 @@ export async function slackCall<T>(
           body: new URLSearchParams(body.form).toString(),
         };
   const res = await fetchImpl(`${SLACK_API}/${method}`, init);
-  if (!res.ok) throw new SlackCallError(`${method}: HTTP ${res.status}`);
+  if (!res.ok) {
+    throw new SlackCallError(
+      `${method}: HTTP ${res.status}`,
+      `http_${res.status}`,
+    );
+  }
   const payload: unknown = await res.json();
   const good = okSchema.safeParse(payload);
   if (good.success) return good.data;
   const bad = slackError.safeParse(payload);
-  throw new SlackCallError(
-    `${method}: ${bad.success ? bad.data.error : "unexpected response"}`,
-  );
+  const code = bad.success ? bad.data.error : "unexpected_response";
+  throw new SlackCallError(`${method}: ${code}`, code);
 }
 
 /** chat.postMessage, link previews off. Returns the message timestamp. */
@@ -197,6 +233,7 @@ export async function shareFiles(
     ) {
       throw new SlackCallError(
         "files.getUploadURLExternal: upload_url is not a Slack https URL",
+        "bad_upload_url",
       );
     }
     const put = await fetchImpl(target.upload_url, {
@@ -207,6 +244,7 @@ export async function shareFiles(
     if (!put.ok) {
       throw new SlackCallError(
         `upload of ${file.filename}: HTTP ${put.status}`,
+        `http_${put.status}`,
       );
     }
     fileIds.push({ id: target.file_id, title: file.filename });
