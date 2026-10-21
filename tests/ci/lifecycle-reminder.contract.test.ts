@@ -38,12 +38,12 @@ vi.mock("../../server/services/product-feedback/review-ask-email-job", () => ({
   runReviewAskEmailRule: reviewAskMock,
 }));
 vi.mock("../../server/lib/lifecycle-email.js", () => ({
-  runLifecycleReminderRule: ruleMock,
-  defaultReminderDeps: () => ({ marker: "default-deps" }),
+  runLifecycleRule: ruleMock,
+  defaultLifecycleRuleDeps: () => ({ marker: "default-deps" }),
 }));
 vi.mock("../../server/lib/lifecycle-email", () => ({
-  runLifecycleReminderRule: ruleMock,
-  defaultReminderDeps: () => ({ marker: "default-deps" }),
+  runLifecycleRule: ruleMock,
+  defaultLifecycleRuleDeps: () => ({ marker: "default-deps" }),
 }));
 
 const SWEEP = "/api/internal/notification-dispatch-sweep";

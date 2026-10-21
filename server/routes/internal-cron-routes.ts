@@ -22,9 +22,9 @@ import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { diagnosticProjectionRepairResultSchema } from "../../packages/shared/src/diagnostic-projection.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import {
-  defaultReminderDeps,
-  runLifecycleReminderRule,
-  type ReminderRuleSummary,
+  defaultLifecycleRuleDeps,
+  runLifecycleRule,
+  type LifecycleRuleSummary,
 } from "../lib/lifecycle-email.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
 import {
@@ -467,6 +467,10 @@ router.get(
  * SCL-239) | @implemented [2026-10-21]: `lyceon.reminder_due` is decided here, in the morning
  * (08:00–09:00 Chicago), instead of 72 h after signup by a Resend delay. Run after the dispatch;
  * its failure is logged and changes nothing else in the sweep.
+ *
+ * BEHAVIOUR TRIGGERS (same brief, PR 2; SCL-240) | @implemented [2026-10-21]: the same rule
+ * (`runLifecycleRule`) also sends the diagnostic, Pro and practising nudges, at most one lifecycle
+ * email per student per 3 days, in priority order.
  */
 router.get(
   "/notification-dispatch-sweep",
@@ -495,11 +499,11 @@ router.get(
         "Scheduled notification dispatch sweep completed",
         summary,
       );
-      let lifecycleReminder: ReminderRuleSummary | { error: true };
+      let lifecycleReminder: LifecycleRuleSummary | { error: true };
       try {
-        lifecycleReminder = await runLifecycleReminderRule(
+        lifecycleReminder = await runLifecycleRule(
           new Date(),
-          defaultReminderDeps(),
+          defaultLifecycleRuleDeps(),
         );
       } catch (err) {
         logger.error(

@@ -146,10 +146,13 @@ export function renderInApp(
         return err("review_ask payload does not match its schema");
       return ok(reviewAskInApp(parsed.data));
     }
-    // A record only (20261109000000): emitted with no recipients, so never rendered here.
+    // Records only (20261109000000, 20261110000000): no recipients, so never rendered here.
     case "lifecycle_reminder_due":
+    case "lifecycle_diagnostic_unfinished":
+    case "lifecycle_pro_no_plan":
+    case "lifecycle_practising_free":
       return err(
-        "lifecycle_reminder_due has no in-app notice (Resend sends its email)",
+        "a lifecycle record has no in-app notice (Resend sends its email)",
       );
   }
 }
@@ -237,8 +240,11 @@ export function renderEmail(
       return ok(reviewAskEmail(parsed.data, ctx));
     }
     case "lifecycle_reminder_due":
+    case "lifecycle_diagnostic_unfinished":
+    case "lifecycle_pro_no_plan":
+    case "lifecycle_practising_free":
       return err(
-        "lifecycle_reminder_due is sent by Resend, never by the dispatcher",
+        "a lifecycle email is sent by Resend, never by the dispatcher",
       );
   }
 }

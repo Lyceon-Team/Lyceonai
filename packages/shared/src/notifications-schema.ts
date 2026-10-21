@@ -53,6 +53,11 @@ import { z } from "zod";
  * fix"; 20261109000000; SCL-239): the record that the founding reminder was handed to Resend
  * (`lyceon.reminder_due`), once per student, ever. Emitted with NO recipients, so it has no
  * notification_messages row and the dispatcher never renders or sends it.
+ *
+ * `lifecycle_diagnostic_unfinished`, `lifecycle_pro_no_plan` and `lifecycle_practising_free`
+ * joined on 2026-10-21 (same brief, PR 2; 20261110000000; SCL-240): the behaviour triggers'
+ * records, likewise without recipients. Their payload is `{ state: "pending" | "sent" |
+ * "resolved", sent_at?, resolved_at? }`; Resend sends the emails.
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
@@ -68,6 +73,9 @@ export const NOTIFICATION_EVENT_TYPES = [
   "guardian_daily_digest",
   "review_ask",
   "lifecycle_reminder_due",
+  "lifecycle_diagnostic_unfinished",
+  "lifecycle_pro_no_plan",
+  "lifecycle_practising_free",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;

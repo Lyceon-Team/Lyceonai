@@ -9438,49 +9438,91 @@ $$;
 
 
 --
--- Name: lifecycle_reminder_claim(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: lifecycle_claim(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.lifecycle_reminder_claim(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 500) RETURNS SETOF uuid
+CREATE FUNCTION public.lifecycle_claim(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 500) RETURNS TABLE(profile_id uuid, event_type text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_id uuid;
+  -- The priority order (owner brief): the founding reminder, then 1, 2, 3.
+  c_types CONSTANT text[] := ARRAY['lifecycle_reminder_due',
+                                   'lifecycle_diagnostic_unfinished',
+                                   'lifecycle_pro_no_plan',
+                                   'lifecycle_practising_free'];
+  v_student uuid;
+  v_type    text;
+  v_id      uuid;
+  v_state   text;
+  v_due     boolean;
+  v_sent    integer := 0;
 BEGIN
-  FOR v_id IN
+  FOR v_student IN
     SELECT p.id
       FROM public.profiles p
      WHERE p.role = 'student'
-       AND p.profile_completed_at IS NOT NULL
-       AND p.profile_completed_at >= public.lifecycle_reminder_since()
-       AND p.profile_completed_at <= p_now - interval '3 days'
-       AND p.profile_completed_at >  p_now - interval '14 days'
        AND p.deleted_at IS NULL
-       AND public.marketing_opt_in_age_eligible(p.date_of_birth)
-       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
-                        WHERE d.profile_id = p.id AND d.status = 'pending')
-       AND NOT public.entitlement_active(p.id)
-       AND NOT EXISTS (SELECT 1 FROM public.notification_events e
-                        WHERE e.event_id = public.notification_event_id(
-                                             'lifecycle_reminder_due', p.id::text))
-     ORDER BY p.profile_completed_at, p.id
-     LIMIT p_limit
+       AND (   p.profile_completed_at > p_now - interval '14 days'
+            OR EXISTS (SELECT 1 FROM public.practice_sessions ps
+                        WHERE ps.user_id = p.id AND ps.mode = 'diagnostic'
+                          AND ps.status IN ('created', 'active')
+                          AND ps.created_at > p_now - interval '14 days')
+            OR EXISTS (SELECT 1 FROM public.entitlements e
+                        WHERE e.profile_id = p.id AND e.created_at > p_now - interval '14 days')
+            OR EXISTS (SELECT 1 FROM public.practice_session_items i
+                        WHERE i.user_id = p.id AND i.status = 'answered'
+                          AND i.answered_at > p_now - interval '14 days')
+            OR EXISTS (SELECT 1 FROM public.notification_events e
+                        WHERE e.subject_profile_id = p.id
+                          AND e.event_type = ANY (c_types)
+                          AND e.payload ->> 'state' = 'pending'))
+     ORDER BY p.id
      FOR UPDATE OF p SKIP LOCKED
   LOOP
-    -- Re-checked under the row lock with a fresh snapshot: a run that committed this student's
-    -- row after this statement began is seen here, so two overlapping runs never both claim.
-    CONTINUE WHEN EXISTS (SELECT 1 FROM public.notification_events e
-                           WHERE e.event_id = public.notification_event_id(
-                                                'lifecycle_reminder_due', v_id::text));
-    -- No recipients: no notification_messages row; Resend sends the email.
-    PERFORM public.emit_notification_event(
-      public.notification_event_id('lifecycle_reminder_due', v_id::text),
-      'lifecycle_reminder_due',
-      v_id,
-      '[]'::jsonb,
-      '{}'::jsonb);
-    RETURN NEXT v_id;
+    -- (a) Record newly due triggers; resolve pending ones that are no longer due. Each re-check
+    --     reads committed state under the row lock, so overlapping runs agree.
+    FOREACH v_type IN ARRAY c_types LOOP
+      v_id := public.notification_event_id(v_type, v_student::text);
+      SELECT CASE WHEN e.payload = '{}'::jsonb THEN 'sent' ELSE e.payload ->> 'state' END
+        INTO v_state
+        FROM public.notification_events e WHERE e.event_id = v_id;
+      v_due := public.lifecycle_due(v_type, v_student, p_now);
+      IF v_state IS NULL AND v_due THEN
+        PERFORM public.emit_notification_event(
+          v_id, v_type, v_student, '[]'::jsonb, jsonb_build_object('state', 'pending'));
+      ELSIF v_state = 'pending' AND NOT v_due THEN
+        UPDATE public.notification_events
+           SET payload = jsonb_build_object('state', 'resolved', 'resolved_at', p_now)
+         WHERE event_id = v_id;
+      END IF;
+    END LOOP;
+
+    -- (b) The cap: no lifecycle email to this student in the last 3 days.
+    CONTINUE WHEN EXISTS (
+      SELECT 1 FROM public.notification_events e
+       WHERE e.subject_profile_id = v_student
+         AND e.event_type = ANY (c_types)
+         AND (   (e.payload = '{}'::jsonb AND e.created_at > p_now - interval '3 days')
+              OR (e.payload ->> 'state' = 'sent'
+                  AND (e.payload ->> 'sent_at')::timestamptz > p_now - interval '3 days')));
+
+    -- (c) Send the first pending one, in priority order.
+    FOREACH v_type IN ARRAY c_types LOOP
+      v_id := public.notification_event_id(v_type, v_student::text);
+      UPDATE public.notification_events e
+         SET payload = jsonb_build_object('state', 'sent', 'sent_at', p_now)
+       WHERE e.event_id = v_id AND e.payload ->> 'state' = 'pending';
+      IF FOUND THEN
+        profile_id := v_student;
+        event_type := v_type;
+        RETURN NEXT;
+        v_sent := v_sent + 1;
+        EXIT;
+      END IF;
+    END LOOP;
+
+    EXIT WHEN v_sent >= p_limit;
   END LOOP;
   RETURN;
 END;
@@ -9488,20 +9530,102 @@ $$;
 
 
 --
--- Name: lifecycle_reminder_release(uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: lifecycle_due(text, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) RETURNS boolean
+CREATE FUNCTION public.lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_at timestamptz;
+BEGIN
+  -- Shared exclusions (C14A.2's database half; the denylist is applied by the server).
+  IF NOT EXISTS (
+       SELECT 1 FROM public.profiles p
+        WHERE p.id = p_profile_id
+          AND p.role = 'student'
+          AND p.deleted_at IS NULL
+          AND public.marketing_opt_in_age_eligible(p.date_of_birth))
+     OR EXISTS (SELECT 1 FROM public.account_deletion_requests d
+                 WHERE d.profile_id = p_profile_id AND d.status = 'pending') THEN
+    RETURN false;
+  END IF;
+
+  IF p_event_type = 'lifecycle_reminder_due' THEN
+    -- PR 1's condition, unchanged: onboarded 3 to 14 days ago, after its cutover, not entitled.
+    SELECT p.profile_completed_at INTO v_at FROM public.profiles p WHERE p.id = p_profile_id;
+    RETURN v_at IS NOT NULL
+       AND v_at >= public.lifecycle_reminder_since()
+       AND v_at <= p_now - interval '3 days'
+       AND v_at >  p_now - interval '14 days'
+       AND NOT public.entitlement_active(p_profile_id);
+
+  ELSIF p_event_type = 'lifecycle_diagnostic_unfinished' THEN
+    -- The diagnostic in flight (at most one), started 48 h to 14 days ago, none completed.
+    SELECT ps.created_at INTO v_at
+      FROM public.practice_sessions ps
+     WHERE ps.user_id = p_profile_id
+       AND ps.mode = 'diagnostic'
+       AND ps.status IN ('created', 'active');
+    RETURN v_at IS NOT NULL
+       AND v_at >= public.lifecycle_triggers_since()
+       AND v_at <= p_now - interval '48 hours'
+       AND v_at >  p_now - interval '14 days'
+       AND public.student_diagnostic_state(p_profile_id) = 'in_progress';
+
+  ELSIF p_event_type = 'lifecycle_pro_no_plan' THEN
+    -- Entitled, the entitlement row created 48 h to 14 days ago (owner answer: created_at), and
+    -- no study plan.
+    SELECT e.created_at INTO v_at FROM public.entitlements e WHERE e.profile_id = p_profile_id;
+    RETURN v_at IS NOT NULL
+       AND public.entitlement_active(p_profile_id)
+       AND v_at >= public.lifecycle_triggers_since()
+       AND v_at <= p_now - interval '48 hours'
+       AND v_at >  p_now - interval '14 days'
+       AND NOT EXISTS (SELECT 1 FROM public.calendar_current_plan c
+                        WHERE c.student_id = p_profile_id);
+
+  ELSIF p_event_type = 'lifecycle_practising_free' THEN
+    -- Not entitled; the 10th answered item (QOTD excluded; the diagnostic counts, owner answer)
+    -- answered within the last 14 days and after the cutover.
+    SELECT COALESCE(i.answered_at, i.occurred_at) INTO v_at
+      FROM public.practice_session_items i
+      JOIN public.practice_sessions ps ON ps.id = i.session_id
+     WHERE i.user_id = p_profile_id
+       AND i.status = 'answered'
+       AND ps.mode <> 'qotd'
+     ORDER BY COALESCE(i.answered_at, i.occurred_at), i.id
+    OFFSET 9 LIMIT 1;
+    RETURN v_at IS NOT NULL
+       AND NOT public.entitlement_active(p_profile_id)
+       AND v_at >= public.lifecycle_triggers_since()
+       AND v_at <= p_now
+       AND v_at >  p_now - interval '14 days';
+  END IF;
+
+  RAISE EXCEPTION 'lifecycle_due: unknown event type %', p_event_type USING ERRCODE = '22023';
+END;
+$$;
+
+
+--
+-- Name: lifecycle_release(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lifecycle_release(p_profile_id uuid, p_event_type text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_rows integer;
 BEGIN
-  DELETE FROM public.notification_events e
-   WHERE e.event_id = public.notification_event_id('lifecycle_reminder_due', p_profile_id::text)
-     AND e.event_type = 'lifecycle_reminder_due'
-     AND NOT EXISTS (SELECT 1 FROM public.notification_messages m WHERE m.event_id = e.event_id);
+  UPDATE public.notification_events e
+     SET payload = jsonb_build_object('state', 'pending')
+   WHERE e.event_id = public.notification_event_id(p_event_type, p_profile_id::text)
+     AND e.event_type = p_event_type
+     AND e.event_type LIKE 'lifecycle\_%'
+     AND e.payload ->> 'state' = 'sent';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   RETURN v_rows = 1;
 END;
@@ -9522,6 +9646,22 @@ CREATE FUNCTION public.lifecycle_reminder_since() RETURNS timestamp with time zo
 --
 
 COMMENT ON FUNCTION public.lifecycle_reminder_since() IS 'The cutover (2026-10-23 14:00 UTC, the Resend Automation split). Students who completed onboarding earlier stay on the old Automation (its own 72 h reminder) and never get lyceon.reminder_due.';
+
+
+--
+-- Name: lifecycle_triggers_since(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lifecycle_triggers_since() RETURNS timestamp with time zone
+    LANGUAGE sql IMMUTABLE
+    AS $$ SELECT timestamptz '2026-10-27 14:00:00+00' $$;
+
+
+--
+-- Name: FUNCTION lifecycle_triggers_since(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.lifecycle_triggers_since() IS 'The behaviour triggers'' cutover (2026-10-27 14:00 UTC): a diagnostic started, an entitlement created, or a 10th item answered before it never triggers a lifecycle email.';
 
 
 --
@@ -17426,7 +17566,7 @@ CREATE TABLE public.notification_events (
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text, 'review_ask'::text, 'lifecycle_reminder_due'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text, 'review_ask'::text, 'lifecycle_reminder_due'::text, 'lifecycle_diagnostic_unfinished'::text, 'lifecycle_pro_no_plan'::text, 'lifecycle_practising_free'::text])))
 );
 
 
@@ -26061,19 +26201,27 @@ GRANT ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id t
 
 
 --
--- Name: FUNCTION lifecycle_reminder_claim(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION lifecycle_claim(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.lifecycle_reminder_claim(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.lifecycle_reminder_claim(p_now timestamp with time zone, p_limit integer) TO service_role;
+REVOKE ALL ON FUNCTION public.lifecycle_claim(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_claim(p_now timestamp with time zone, p_limit integer) TO service_role;
 
 
 --
--- Name: FUNCTION lifecycle_reminder_release(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION lifecycle_release(p_profile_id uuid, p_event_type text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.lifecycle_release(p_profile_id uuid, p_event_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_release(p_profile_id uuid, p_event_type text) TO service_role;
 
 
 --
@@ -26082,6 +26230,14 @@ GRANT ALL ON FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) TO se
 
 REVOKE ALL ON FUNCTION public.lifecycle_reminder_since() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.lifecycle_reminder_since() TO service_role;
+
+
+--
+-- Name: FUNCTION lifecycle_triggers_since(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.lifecycle_triggers_since() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_triggers_since() TO service_role;
 
 
 --
