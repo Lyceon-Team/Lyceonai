@@ -661,6 +661,10 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
     const body = { mode: "queue", idempotency_key: "create-key-1" };
     const first = await createSession(body);
+    // F-81 (2026-10-21): a start whose questions are all held by an open session resumes it,
+    // which would make the second create return the same id WITHOUT the key. A new miss
+    // between the two presses means only the key's replay can return the first session.
+    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
     const second = await createSession(body);
 
     expect(first.status).toBe(200);
@@ -1026,6 +1030,9 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     const queue = await createSession({ mode: "queue" });
     expect(queue.status).toBe(200);
 
+    // F-81 (owner brief 2026-10-21): the queue session holds Q_ALG, and a question is never in
+    // two open sessions, so the filter session needs a question of its own.
+    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
     const filter = await createSession({
       mode: "filter",
       filters: { sections: ["M"] },
@@ -1185,6 +1192,225 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
   // -------------------------------------------------------------------------
   // A14 — response shape parity with practice (owner ruling 2026-09-21)
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // B — F-81 (owner brief 2026-10-21, Part B): the open-session cap never refuses a start;
+  // the oldest open session is closed instead; no question is in two open sessions.
+  // -------------------------------------------------------------------------
+  async function maxOpen(): Promise<number> {
+    const r = await testPg!.query<{ value: string }>(
+      `SELECT value::text AS value FROM public.practice_runtime_config WHERE key = 'max_concurrent_sessions'`,
+    );
+    const n = Number(String(r.rows[0]?.value ?? "").replace(/"/g, ""));
+    expect(n).toBeGreaterThanOrEqual(2);
+    return n;
+  }
+
+  /** An open review session with no items, started at `createdAt` (a fixture, not a route). */
+  async function openSessionAt(
+    createdAt: string,
+    id?: string,
+  ): Promise<string> {
+    const r = await testPg!.query<{ id: string }>(
+      `INSERT INTO public.review_sessions
+         (id, student_id, actor_id, status, client_instance_id, mode, target_count, platform, filters, created_at, updated_at, last_activity_at)
+       VALUES (COALESCE($3::uuid, gen_random_uuid()), $1, $1, 'active', 'ci-fixture', 'queue', 1, 'web', '{}'::jsonb, $2, $2, $2)
+       RETURNING id::text AS id`,
+      [STUDENT_A, createdAt, id ?? null],
+    );
+    return String(r.rows[0]?.id);
+  }
+
+  async function statusOf(id: string): Promise<{
+    status: string;
+    abandoned_at: string | null;
+    completed_at: string | null;
+  }> {
+    const r = await testPg!.query(
+      `SELECT status, abandoned_at::text, completed_at::text FROM public.review_sessions WHERE id = $1`,
+      [id],
+    );
+    return r.rows[0] as {
+      status: string;
+      abandoned_at: string | null;
+      completed_at: string | null;
+    };
+  }
+
+  async function openCount(): Promise<number> {
+    const r = await testPg!.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM public.review_sessions
+        WHERE student_id = $1 AND status IN ('created','active')`,
+      [STUDENT_A],
+    );
+    return Number(r.rows[0]?.n);
+  }
+
+  it("B1: a start at the cap closes the OLDEST open session (created_at, then id) and proceeds; a replay closes nothing more", async () => {
+    const max = await maxOpen();
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+    // Two share the oldest instant, so the id breaks the tie: the lower id goes first.
+    const tieLow = await openSessionAt(
+      "2026-08-01T00:00:00Z",
+      "00000000-0000-4000-8000-0000000000a1",
+    );
+    const tieHigh = await openSessionAt(
+      "2026-08-01T00:00:00Z",
+      "00000000-0000-4000-8000-0000000000a2",
+    );
+    const rest: string[] = [];
+    for (let i = 2; i < max; i += 1) {
+      rest.push(await openSessionAt(`2026-08-0${(i % 8) + 2}T00:00:00Z`));
+    }
+    // Presence: the student is AT the cap before the start.
+    expect(await openCount()).toBe(max);
+
+    const created = await createSession({ idempotency_key: "b1-start" });
+    expect(created.status).toBe(200);
+    expect(created.body.replayed).toBe(false);
+
+    expect(await statusOf(tieLow)).toMatchObject({
+      status: "abandoned",
+      completed_at: null,
+    });
+    expect((await statusOf(tieLow)).abandoned_at).not.toBeNull();
+    expect((await statusOf(tieHigh)).status).toBe("active");
+    for (const id of rest) expect((await statusOf(id)).status).toBe("active");
+    expect(await openCount()).toBe(max);
+
+    // The same press again (TanStack's retry of it) is the same session and closes nothing.
+    const again = await createSession({ idempotency_key: "b1-start" });
+    expect(again.status).toBe(200);
+    expect(again.body.sessionId).toBe(created.body.sessionId);
+    expect(again.body.replayed).toBe(true);
+    expect((await statusOf(tieHigh)).status).toBe("active");
+    expect(await openCount()).toBe(max);
+  });
+
+  it("B2: the closed session's answered item stays recorded; its unanswered items are back in the queue and the new session takes them", async () => {
+    const max = await maxOpen();
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
+    await enqueue(testPg!, { questionId: Q_RW, queuedAt: T3 });
+    const first = await createSession({ idempotency_key: "b2-first" });
+    const firstId = first.body.sessionId as string;
+    const served = await nextItem(firstId);
+    const itemId = served.body.sessionItemId as string;
+    const answered = await request(app)
+      .post("/api/review/answer")
+      .send({
+        sessionId: firstId,
+        sessionItemId: itemId,
+        selectedAnswer: await tokenFor(itemId, "A"),
+      });
+    expect(answered.status).toBe(200);
+    // Fill the cap with NEWER sessions, so the first is the oldest.
+    for (let i = 1; i < max; i += 1) {
+      await openSessionAt(new Date(Date.now() + i * 1000).toISOString());
+    }
+    expect(await openCount()).toBe(max);
+    const unanswered = await testPg!.query<{ question_id: string }>(
+      `SELECT question_id FROM public.review_session_items
+        WHERE session_id = $1 AND status <> 'answered' ORDER BY question_id`,
+      [firstId],
+    );
+    // Presence: there ARE unanswered items to return.
+    expect(unanswered.rows.length).toBe(2);
+
+    const next = await createSession({
+      idempotency_key: "b2-next",
+      client_instance_id: "ci-2",
+    });
+    expect(next.status).toBe(200);
+    expect((await statusOf(firstId)).status).toBe("abandoned");
+
+    const kept = await testPg!.query(
+      `SELECT status FROM public.review_session_items WHERE id = $1`,
+      [itemId],
+    );
+    expect(kept.rows[0]?.status).toBe("answered");
+    const attempts = await testPg!.query(
+      `SELECT count(*)::int AS n FROM public.review_error_attempts WHERE session_item_id = $1`,
+      [itemId],
+    );
+    expect(Number(attempts.rows[0]?.n)).toBe(1);
+
+    const taken = await testPg!.query<{ question_id: string }>(
+      `SELECT question_id FROM public.review_session_items WHERE session_id = $1 ORDER BY question_id`,
+      [next.body.sessionId],
+    );
+    expect(taken.rows.map((r) => r.question_id)).toEqual(
+      expect.arrayContaining(unanswered.rows.map((r) => r.question_id)),
+    );
+  });
+
+  it("B3: no question is in two open sessions — a second start takes only questions no open session holds, and resumes when there are none", async () => {
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+    await enqueue(testPg!, { questionId: Q_ADV, queuedAt: T2 });
+    const first = await createSession({ idempotency_key: "b3-first" });
+    expect(first.status).toBe(200);
+
+    // Everything queued is in the first session: the second start resumes it.
+    const second = await createSession({
+      idempotency_key: "b3-second",
+      client_instance_id: "ci-2",
+    });
+    expect(second.status).toBe(200);
+    expect(second.body.sessionId).toBe(first.body.sessionId);
+    expect(second.body.replayed).toBe(true);
+
+    // A new miss arrives: the third start takes it, and only it.
+    await enqueue(testPg!, { questionId: Q_RW, queuedAt: T3 });
+    const third = await createSession({
+      idempotency_key: "b3-third",
+      client_instance_id: "ci-3",
+    });
+    expect(third.status).toBe(200);
+    expect(third.body.sessionId).not.toBe(first.body.sessionId);
+    const taken = await testPg!.query<{ question_id: string }>(
+      `SELECT question_id FROM public.review_session_items WHERE session_id = $1`,
+      [third.body.sessionId],
+    );
+    expect(taken.rows.map((r) => r.question_id)).toEqual([Q_RW]);
+
+    const dupes = await testPg!.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM (
+         SELECT i.question_id FROM public.review_session_items i
+           JOIN public.review_sessions s ON s.id = i.session_id
+          WHERE s.student_id = $1 AND s.status IN ('created','active')
+          GROUP BY i.question_id HAVING count(*) > 1) d`,
+      [STUDENT_A],
+    );
+    // Presence: two open sessions hold three questions between them.
+    expect(await openCount()).toBe(2);
+    expect(Number(dupes.rows[0]?.n)).toBe(0);
+  });
+
+  it("B4: the database refuses a question already in another open session (23505), and admits it once that session is closed", async () => {
+    await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
+    const first = await createSession({ idempotency_key: "b4-first" });
+    const firstId = first.body.sessionId as string;
+    const otherId = await openSessionAt(new Date().toISOString());
+    const copy = `INSERT INTO public.review_session_items
+         (session_id, student_id, actor_id, ordinal, question_id, question_stem, question_options,
+          question_correct_answer, question_explanation, question_domain, question_skill,
+          question_difficulty, question_section, client_instance_id)
+       SELECT $2, student_id, actor_id, 1, question_id, question_stem, question_options,
+              question_correct_answer, question_explanation, question_domain, question_skill,
+              question_difficulty, question_section, 'ci-fixture'
+         FROM public.review_session_items WHERE session_id = $1 LIMIT 1`;
+    await expect(testPg!.query(copy, [firstId, otherId])).rejects.toMatchObject(
+      {
+        code: "23505",
+        message: "review_question_already_open",
+      },
+    );
+    const ended = await request(app)
+      .post(`/api/review/sessions/${firstId}/terminate`)
+      .send({});
+    expect(ended.status).toBe(200);
+    await expect(testPg!.query(copy, [firstId, otherId])).resolves.toBeTruthy();
+  });
+
   it("A14: review's five loop responses satisfy practice's response types", async () => {
     await enqueue(testPg!, { questionId: Q_ALG, queuedAt: T1 });
     await enqueue(testPg!, { questionId: Q_RW, queuedAt: T2 });

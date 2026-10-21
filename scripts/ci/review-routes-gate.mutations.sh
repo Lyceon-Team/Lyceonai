@@ -33,11 +33,13 @@ SWEEP="server/lib/review-stale-session-sweep.ts"
 PRACTICE="server/routes/practice-canonical.ts"
 CSRF="server/middleware/csrf-double-submit.ts"
 INDEX="server/index.ts"
+# F-81 (owner brief 2026-10-21, Part B): the auto-close and one-open-question SQL.
+ADMISSION="supabase/migrations/20261109000000_review_open_session_admission.sql"
 
 BACKUP="$(mktemp -d)"
 trap 'restore_all; rm -rf "$BACKUP"' EXIT
 
-SOURCES=("$ROUTES" "$POOL" "$SWEEP" "$PRACTICE" "$CSRF" "$INDEX")
+SOURCES=("$ROUTES" "$POOL" "$SWEEP" "$PRACTICE" "$CSRF" "$INDEX" "$ADMISSION")
 
 snapshot_all() {
   for f in "${SOURCES[@]}"; do
@@ -264,6 +266,27 @@ mutate "$ROUTES" \
   '    totalQuestions: await countSessionItems(args.sessionId),' \
   '    totalItems: await countSessionItems(args.sessionId),' || exit 2
 run_plant A14 "A14:" "rename totalQuestions in the next-item response"
+
+# --- B1-B4: F-81 (owner brief 2026-10-21, Part B) ---------------------------
+mutate "$ROUTES" \
+  '  if (sessions.length >= config.maxConcurrentSessions) {' \
+  '  if (false) {' || exit 2
+run_plant B1 "B1:" "skip the auto-close at the cap"
+
+mutate "$ADMISSION" \
+  'row_number() OVER (ORDER BY s.created_at DESC, s.id DESC) AS newest_rank' \
+  'row_number() OVER (ORDER BY s.created_at DESC, s.id ASC) AS newest_rank' || exit 2
+run_plant B1tie "B1:" "break a created_at tie by the higher id"
+
+mutate "$ROUTES" \
+  '  const free = pool.filter((row) => !holder.has(row.question.id));' \
+  '  const free = pool.filter(() => true);' || exit 2
+run_plant B3 "B3:" "stop excluding questions held by another open session"
+
+mutate "$ADMISSION" \
+  '       AND i.session_id <> NEW.session_id' \
+  '       AND false' || exit 2
+run_plant B4 "B4:" "let the one-open-question trigger admit a duplicate"
 
 # --- A16a-d: the past-session picker is paged (register UI-16, 2026-09-29) ---
 mutate "$POOL" \

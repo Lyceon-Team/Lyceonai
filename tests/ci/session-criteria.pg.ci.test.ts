@@ -389,6 +389,20 @@ describe.skipIf(!PG_AVAILABLE)("OQ-22 session criteria → real PG", () => {
   // create routes (so their stored `filters` are what production writes), a miss is queued
   // against each, and the pool is read through the REAL route.
   it("F-52: /api/review/pool sessions[].filters is exactly the four criteria, for practice and review sources", async () => {
+    // Fixture: the review sessions the cases above opened hold every queued Advanced Math
+    // question, and since F-81 (owner brief 2026-10-21, Part B) a start whose questions are all
+    // in an open session RESUMES that session rather than duplicating them. End them through
+    // the real terminate route, so this case creates the filter session it is about.
+    const open = await testPg!.query<{ id: string }>(
+      `SELECT id FROM public.review_sessions WHERE student_id = $1 AND status IN ('created','active')`,
+      [STUDENT],
+    );
+    for (const row of open.rows) {
+      const ended = await request(app)
+        .post(`/api/review/sessions/${row.id}/terminate`)
+        .send({});
+      expect(ended.status).toBe(200);
+    }
     const practice = await request(app)
       .post("/api/practice/sessions")
       .send({
