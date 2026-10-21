@@ -39,6 +39,10 @@
  * Postgres and compares. The minute figures use the estimates the calendar read serves (§15),
  * the same constants the version is planned against.
  *
+ * RULED: lowering a block's count keeps the dialog (owner rulings on #1277, Karl, 2026-10-21,
+ * ruling 7). It lowers the day's planned minutes, which the SQL records as `day_reduced` and the
+ * guardian is told about, so the confirmation before it is correct as built, not an open question.
+ *
  * edge cases: a day edit that swaps one block for a shorter one lowers the minutes and is
  * recorded; one that swaps for a longer one is not. Editing a full-length's form or timing keeps
  * a full-length on the day and is not recorded. A save with no profile yet (first setup) is not
