@@ -21,6 +21,11 @@ import { sweepStaleReviewSessions } from "../lib/review-stale-session-sweep.js";
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
 import { diagnosticProjectionRepairResultSchema } from "../../packages/shared/src/diagnostic-projection.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
+import {
+  defaultReminderDeps,
+  runLifecycleReminderRule,
+  type ReminderRuleSummary,
+} from "../lib/lifecycle-email.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
 import {
   sweepOperationalLogRetention,
@@ -457,6 +462,11 @@ router.get(
  * email rule runs here first (review-ask-email-job.ts), inside an existing daily pass rather
  * than behind a new cron (the owner brief of 2026-09-15's rule for new sweeps), so the emails it
  * queues go out in this same dispatch. Its failure is logged and does not stop the dispatch.
+ *
+ * FOUNDING REMINDER (owner brief "Lifecycle emails: reminder timing fix", Karl 2026-10-21;
+ * SCL-239) | @implemented [2026-10-21]: `lyceon.reminder_due` is decided here, in the morning
+ * (08:00–09:00 Chicago), instead of 72 h after signup by a Resend delay. Run after the dispatch;
+ * its failure is logged and changes nothing else in the sweep.
  */
 router.get(
   "/notification-dispatch-sweep",
@@ -485,7 +495,22 @@ router.get(
         "Scheduled notification dispatch sweep completed",
         summary,
       );
-      res.json({ ok: true, ...summary, reviewAsk });
+      let lifecycleReminder: ReminderRuleSummary | { error: true };
+      try {
+        lifecycleReminder = await runLifecycleReminderRule(
+          new Date(),
+          defaultReminderDeps(),
+        );
+      } catch (err) {
+        logger.error(
+          "NOTIFICATIONS",
+          "lifecycle_reminder_rule_error",
+          "Lifecycle reminder rule failed",
+          err,
+        );
+        lifecycleReminder = { error: true };
+      }
+      res.json({ ok: true, ...summary, reviewAsk, lifecycleReminder });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",

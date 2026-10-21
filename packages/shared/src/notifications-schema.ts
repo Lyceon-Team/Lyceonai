@@ -48,6 +48,11 @@ import { z } from "zod";
  * `review_ask` joined on 2026-10-20 (owner brief "Review ask"; 20261107000000): the one
  * follow-up review email, email only, once per person ever (source id = the profile id), to
  * students and guardians aged 18+ (see reviewAskPayloadSchema).
+ *
+ * `lifecycle_reminder_due` joined on 2026-10-21 (owner brief "Lifecycle emails: reminder timing
+ * fix"; 20261109000000; SCL-239): the record that the founding reminder was handed to Resend
+ * (`lyceon.reminder_due`), once per student, ever. Emitted with NO recipients, so it has no
+ * notification_messages row and the dispatcher never renders or sends it.
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
@@ -62,6 +67,7 @@ export const NOTIFICATION_EVENT_TYPES = [
   "back_on_track",
   "guardian_daily_digest",
   "review_ask",
+  "lifecycle_reminder_due",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
