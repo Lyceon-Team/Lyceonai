@@ -82,13 +82,13 @@ fi
 
 CONTRACT=tests/ci/student-resources.contract.test.ts
 GATING=tests/ci/kpi.gating.contract.test.ts
-HOME=client/src/pages/lyceon-dashboard.test.tsx
+DASHBOARD_TEST=client/src/pages/lyceon-dashboard.test.tsx
 HANDLER=tests/ci/diagnostic.handler-pg.ci.test.ts
 
 echo "=== (0) GREEN BASELINE ==="
 OUT="$(gates)"; RC=$?
 [ "$RC" = 0 ] && ok "gates green" || { bad "gates not green"; echo "$OUT" | tail -30; }
-OUT="$(vt "$CONTRACT" "$GATING" "$HOME" "$HANDLER")"; RC=$?
+OUT="$(vt "$CONTRACT" "$GATING" "$DASHBOARD_TEST" "$HANDLER")"; RC=$?
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 OUT="$(guard)"; RC=$?
 [ "$RC" = 0 ] && ok "single-path guard green" || { bad "single-path guard not green"; echo "$OUT"; }
@@ -172,7 +172,7 @@ run_vt "R6 paid also gets the diagnostic number" "returns computed estimate payl
 
 echo "=== (B) client — the free panel says it is the diagnostic result ==="
 plant "$PANEL" '        {diagnostic ? "Your diagnostic result" : "Projected score"}' '        {"Projected score"}' || { bad "U1 STALE"; exit 1; }
-run_vt "U1 free panel unlabelled" "free, after the diagnostic: 'Your diagnostic result'" "$HOME"
+run_vt "U1 free panel unlabelled" "free, after the diagnostic: 'Your diagnostic result'" "$DASHBOARD_TEST"
 
 echo "=== (B) server — every diagnostic completion goes through the SQL path ==="
 plant "$CANON" '  if (args.mode === "diagnostic") {
