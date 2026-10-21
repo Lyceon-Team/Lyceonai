@@ -18,7 +18,9 @@ let height = 0;
 const listeners = new Set<() => void>();
 
 function publish(next: number): void {
-  const rounded = Math.max(0, Math.round(next));
+  // UP, never to nearest (F-72, owner brief 2026-10-21 Part E): the bar measures 65.296875px at
+  // 390; Math.round published 65 and the banner's bottom edge sat 0.3px inside the bar.
+  const rounded = Math.max(0, Math.ceil(next));
   if (rounded === height) return;
   height = rounded;
   for (const listener of listeners) listener();

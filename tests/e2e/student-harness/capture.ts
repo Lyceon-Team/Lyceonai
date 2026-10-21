@@ -1145,7 +1145,9 @@ async function shootBuilt(
       ]);
     }
     await localOnly(context, fontCss);
-    await context.addCookies([answeredConsentCookie(stack.baseUrl)]);
+    // F-72 (owner brief 2026-10-21, Part E): a shot about the banner itself leaves it unanswered.
+    if (shot.cookieBannerShown !== true)
+      await context.addCookies([answeredConsentCookie(stack.baseUrl)]);
     await context.addInitScript(
       (arg: {
         theme: string;
@@ -1317,6 +1319,32 @@ async function shootBuilt(
         throw new Error(
           `${shot.id} ${size.name} ${theme}: ${shot.expectInViewport} is not wholly in the viewport ` +
             `(box ${JSON.stringify(box)}, viewport height ${height})`,
+        );
+    }
+    const noOverlap = shot.expectNoOverlap?.[size.selectors] ?? null;
+    if (noOverlap !== null) {
+      // F-72 (owner brief 2026-10-21, Part E): two elements that must not overlap on screen
+      // (the cookie banner and the phone tab bar). Both must be visible: an absent element
+      // would make "no overlap" true for the wrong reason.
+      const [a, b] = await Promise.all(
+        [noOverlap.a, noOverlap.b].map((sel) =>
+          page.locator(sel).first().boundingBox({ timeout: 20_000 }),
+        ),
+      );
+      if (a === null || b === null || a === undefined || b === undefined)
+        throw new Error(
+          `${shot.id} ${size.name} ${theme}: expectNoOverlap needs both elements on screen ` +
+            `(${noOverlap.a}: ${JSON.stringify(a)}, ${noOverlap.b}: ${JSON.stringify(b)})`,
+        );
+      const overlaps =
+        a.x < b.x + b.width &&
+        b.x < a.x + a.width &&
+        a.y < b.y + b.height &&
+        b.y < a.y + a.height;
+      if (overlaps)
+        throw new Error(
+          `${shot.id} ${size.name} ${theme}: ${noOverlap.a} ${JSON.stringify(a)} overlaps ` +
+            `${noOverlap.b} ${JSON.stringify(b)}`,
         );
     }
     if (shot.expectText !== undefined)

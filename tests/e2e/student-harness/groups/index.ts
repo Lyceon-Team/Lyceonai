@@ -28,6 +28,7 @@ import { GUARDIAN_NOTICE } from "./guardian-notice";
 import { QMH, QMH_EXAM } from "./qmh";
 import { FIRST_RUN, FIRST_RUN_ONBOARDING } from "./first-run";
 import { DIAGNOSTIC_PROJECTION } from "./diagnostic-projection";
+import { COOKIE_BANNER } from "./cookie-banner";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -60,4 +61,5 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [FIRST_RUN.id]: FIRST_RUN,
   [FIRST_RUN_ONBOARDING.id]: FIRST_RUN_ONBOARDING,
   [DIAGNOSTIC_PROJECTION.id]: DIAGNOSTIC_PROJECTION,
+  [COOKIE_BANNER.id]: COOKIE_BANNER,
 };

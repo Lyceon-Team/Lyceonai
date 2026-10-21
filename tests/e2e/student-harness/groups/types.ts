@@ -204,6 +204,17 @@ export type Shot = {
    */
   expectInViewport?: string;
   /**
+   * F-72 (owner brief 2026-10-21, Part E): the visitor has NOT answered the cookie banner (no
+   * consent cookie is set), so the banner is on screen. Every other shot answers it first.
+   */
+  cookieBannerShown?: true;
+  /**
+   * F-72: after `steps`, per viewport, the first elements matching `a` and `b` must both be on
+   * screen and their boxes must not intersect (the cookie banner and the phone tab bar, which
+   * exists below `lg` only). `null` checks nothing at that viewport. The capture fails otherwise.
+   */
+  expectNoOverlap?: Record<Viewport, { a: string; b: string } | null>;
+  /**
    * QA2-A (owner re-test, 2026-10-08): the persona is at the concurrent review-session cap before
    * every capture. capture.ts opens review sessions through the REAL create route
    * (`POST /api/review/sessions`, queue mode) until the server itself refuses one with
