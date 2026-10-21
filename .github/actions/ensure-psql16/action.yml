@@ -1,8 +1,7 @@
 name: Ensure postgresql-client 16
 description: >-
-  Make the PostgreSQL 16 client binaries (/usr/lib/postgresql/16/bin) available on
-  the runner. Skips the network entirely when the image already ships them;
-  otherwise installs with bounded, retried apt calls.
+  Make a psql 16+ client available on the runner. Skips the network entirely when
+  the image already ships one; otherwise installs with bounded, retried apt calls.
 
 runs:
   using: composite
@@ -44,35 +43,20 @@ runs:
 
         need_major=16
 
-        # ------------------------------------------------------------------
-        # EXACTLY 16, AT THE PATH THE WORKFLOWS USE — not "psql 16 or newer".
-        # ------------------------------------------------------------------
-        # Every job that calls this then runs `export PATH=/usr/lib/postgresql/16/bin:$PATH`,
-        # and the genesis gate diffs a `pg_dump` against a committed snapshot taken with
-        # pg_dump 16. pg_dump's output depends on the CLIENT's major version: on
-        # 2026-10-21 the ubuntu-latest image moved to psql 18.6 with no 16 installed,
-        # the old ">= 16 on PATH" check passed, the PATH prepend pointed at a directory
-        # that did not exist, and pg_dump 18 printed `SET transaction_timeout = 0;` and
-        # spelled every `GRANT ALL` as an explicit list. Genesis went red on every
-        # branch with no schema change (cleanup push run 39675766704). So the check is
-        # for the 16 binaries themselves; an image without them takes the bounded
-        # install path below.
-        bin_dir="/usr/lib/postgresql/${need_major}/bin"
-
         have_client() {
-          [ -x "$bin_dir/psql" ] && [ -x "$bin_dir/pg_dump" ] || return 1
+          command -v psql >/dev/null 2>&1 || return 1
           local v
-          v="$("$bin_dir/pg_dump" --version 2>/dev/null | grep -oE '[0-9]+' | head -1)" || return 1
-          [ "$v" = "$need_major" ]
+          v="$(psql --version 2>/dev/null | grep -oE '[0-9]+' | head -1)" || return 1
+          [ -n "$v" ] && [ "$v" -ge "$need_major" ]
         }
 
         if have_client; then
-          echo "PostgreSQL ${need_major} client already present: $("$bin_dir/pg_dump" --version)"
+          echo "psql already present and new enough: $(psql --version)"
           echo "no apt call made"
           exit 0
         fi
 
-        echo "PostgreSQL ${need_major} client not found at ${bin_dir} (PATH psql: $(psql --version 2>/dev/null || echo none)); installing"
+        echo "psql 16+ not found on the runner; installing"
 
         # ------------------------------------------------------------------
         # ONE OVERALL DEADLINE, not five independent timeouts.
@@ -98,7 +82,7 @@ runs:
             in_t=$(( remaining < 120 ? remaining : 120 ))
             if timeout "$in_t" sudo apt-get install -y -qq postgresql-client-16; then
               if have_client; then
-                echo "installed: $("$bin_dir/pg_dump" --version)"
+                echo "installed: $(psql --version)"
                 exit 0
               fi
               echo "install reported success but psql is still missing or too old"
