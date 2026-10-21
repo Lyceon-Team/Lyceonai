@@ -46,6 +46,7 @@ import {
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { logger } from "../../logger";
 import { classifyError } from "../../lib/redact";
+import { firePlanCreated } from "../../lib/analytics/funnel-events";
 
 export type PlanInitiator = "student" | "system" | "admin";
 
@@ -311,6 +312,10 @@ async function callWriter(
     "a calendar plan version was accepted",
     { operation, version_no: envelope.versionNo, requestId: context.requestId },
   );
+  // Server-side funnel (Karl, 2026-10-21: `plan_created` = the first plan generated). Every
+  // accepted version on every path passes here; the once-only claim makes all but the student's
+  // first a no-op (plans that predate this were claimed by the migration). Fire-and-forget.
+  firePlanCreated(context.studentId);
   return ok({ version_no: envelope.versionNo });
 }
 

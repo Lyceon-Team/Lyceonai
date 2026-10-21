@@ -589,6 +589,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/getting-started.mutations.sh
 
+      # Server-side funnel events (Karl, 2026-10-21): every rule (once per student, exact
+      # properties incl. a forbidden-property plant, the salted distinct id, fire-and-forget,
+      # under-13 exclusion, analytics off, the onboarding delay, QOTD vs practice, alpha = 100% off,
+      # service_role grants, the backfill, and each route hook) is planted and must turn its named
+      # test red.
+      - name: Server-side funnel events mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/funnel-events.mutations.sh
+
       # QOTD resilience (Karl, 2026-10-09): every alert rule (horizon < 7, once per condition per
       # day, one recovery, the independent check, channel independence, one unset-webhook warning),
       # the no-question skip, the summary line, no address in logs, and both collapsed cards are

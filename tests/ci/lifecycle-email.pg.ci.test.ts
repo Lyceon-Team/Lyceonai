@@ -85,6 +85,21 @@ vi.mock("@vercel/functions", () => ({
   },
 }));
 
+/**
+ * The server-side funnel's `onboarding_completed` (Karl, 2026-10-21) has its own waitUntil and its
+ * own suite (funnel-events.pg.ci.test.ts); here only the route's call is recorded, so `vercel.kept`
+ * still counts the lifecycle send alone.
+ */
+const funnelOnboarding = vi.hoisted(() => [] as string[]);
+vi.mock("../../server/lib/analytics/funnel-events", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../server/lib/analytics/funnel-events")
+  >()),
+  fireOnboardingCompleted: (profileId: string): void => {
+    funnelOnboarding.push(profileId);
+  },
+}));
+
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   get supabaseServer() {
     return makePgSupabase(pg);
@@ -274,6 +289,7 @@ describe.skipIf(!PG_AVAILABLE)(
       resend.contacts.clear();
       resend.beforeResponse = 0;
       vercel.kept.length = 0;
+      funnelOnboarding.length = 0;
       vercel.current = null;
       vercel.holdEndMs = 0;
       process.env.RESEND_API_KEY = "re_test_lifecycle";
@@ -348,6 +364,9 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(again.status).toBe(200);
       await new Promise((r) => setTimeout(r, 300));
       expect(resend.calls).toEqual([]);
+
+      // Funnel: `onboarding_completed` is fired by the first completion only.
+      expect(funnelOnboarding).toEqual([USER.id]);
 
       // L1: no address in any log line.
       expect(JSON.stringify(logged)).not.toContain(USER.email);

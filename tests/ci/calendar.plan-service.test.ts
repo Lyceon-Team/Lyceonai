@@ -35,6 +35,14 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   },
 }));
 
+/** `plan_created` (server-side funnel, Karl 2026-10-21): the students it was fired for. */
+const planCreated = vi.hoisted(() => [] as string[]);
+vi.mock("../../server/lib/analytics/funnel-events", () => ({
+  firePlanCreated: (studentId: string) => {
+    planCreated.push(studentId);
+  },
+}));
+
 const {
   regeneratePlan,
   regenerateDay,
@@ -471,5 +479,55 @@ describe("§18 — a missing config is a loud failure at the accessor", () => {
     });
 
     await expect(loadCalendarConfig()).rejects.toBeInstanceOf(CalendarConfigError);
+  });
+});
+
+describe("plan_created funnel event — fired from the one place a version is accepted", () => {
+  beforeEach(() => {
+    planCreated.length = 0;
+  });
+
+  it("an accepted version fires it once, for that student (the once-only claim is the funnel's)", async () => {
+    withRpc({
+      calendar_persist_version: okReply({ version_no: 1, validator_result: "accepted" }),
+    });
+    const result = await regeneratePlan({
+      student_id: STUDENT,
+      trigger: "initial",
+      initiated_by: "system",
+      generator_version: GENERATOR,
+    });
+    expect(result.ok).toBe(true);
+    expect(planCreated).toEqual([STUDENT]);
+  });
+
+  it("a rejected version or a writer refusal fires nothing", async () => {
+    withRpc({
+      calendar_persist_version: okReply({
+        version_no: 1,
+        validator_result: "rejected",
+        violations: [V05],
+      }),
+    });
+    const rejected = await regeneratePlan({
+      student_id: STUDENT,
+      trigger: "initial",
+      initiated_by: "system",
+      generator_version: GENERATOR,
+    });
+    expect(rejected.ok).toBe(false);
+
+    client = makeFakeClient({
+      tables: {},
+      rpcs: { calendar_regenerate_day: () => errReply("deadlock detected") },
+    });
+    const refused = await regenerateDay({
+      student_id: STUDENT,
+      date: "2026-09-22",
+      trigger: "day_regenerate",
+      generator_version: GENERATOR,
+    });
+    expect(refused.ok).toBe(false);
+    expect(planCreated).toEqual([]);
   });
 });

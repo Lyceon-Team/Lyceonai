@@ -603,6 +603,37 @@ COMMENT ON FUNCTION public.actor_id_integrity_violations() IS 'Doc 05E §6 INV-0
 
 
 --
+-- Name: analytics_funnel_claim(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.analytics_funnel_claim(p_profile_id uuid, p_milestone text) RETURNS boolean
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH inserted AS (
+    INSERT INTO public.analytics_funnel_milestones (profile_id, milestone)
+    VALUES (p_profile_id, p_milestone)
+    ON CONFLICT (profile_id, milestone) DO NOTHING
+    RETURNING 1
+  )
+  SELECT EXISTS (SELECT 1 FROM inserted);
+$$;
+
+
+--
+-- Name: analytics_funnel_release(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.analytics_funnel_release(p_profile_id uuid, p_milestone text) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  DELETE FROM public.analytics_funnel_milestones
+   WHERE profile_id = p_profile_id AND milestone = p_milestone;
+$$;
+
+
+--
 -- Name: apply_audit_logs_retention(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -15414,6 +15445,25 @@ COMMENT ON TABLE public.accountability_state IS 'Owner brief 2026-10-13 (guardia
 
 
 --
+-- Name: analytics_funnel_milestones; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.analytics_funnel_milestones (
+    profile_id uuid NOT NULL,
+    milestone text NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT analytics_funnel_milestones_milestone_check CHECK ((milestone = ANY (ARRAY['onboarding_completed'::text, 'first_answer'::text, 'first_practice'::text, 'diagnostic_completed'::text, 'plan_created'::text, 'upgraded'::text])))
+);
+
+
+--
+-- Name: TABLE analytics_funnel_milestones; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.analytics_funnel_milestones IS 'Server-side funnel events (Karl, 2026-10-21): one row per student per milestone already claimed, so each event is sent at most once ever. Names and timestamps only. Written only by analytics_funnel_claim / analytics_funnel_release. ON DELETE CASCADE from profiles.';
+
+
+--
 -- Name: anonymized_actors; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19122,6 +19172,14 @@ ALTER TABLE ONLY public.accountability_state
 
 
 --
+-- Name: analytics_funnel_milestones analytics_funnel_milestones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analytics_funnel_milestones
+    ADD CONSTRAINT analytics_funnel_milestones_pkey PRIMARY KEY (profile_id, milestone);
+
+
+--
 -- Name: anonymized_actors anonymized_actors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -22051,6 +22109,14 @@ ALTER TABLE ONLY public.accountability_state
 
 
 --
+-- Name: analytics_funnel_milestones analytics_funnel_milestones_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analytics_funnel_milestones
+    ADD CONSTRAINT analytics_funnel_milestones_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: auth_mfa_config_history auth_mfa_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -23297,6 +23363,12 @@ ALTER TABLE public.account_deletion_runtime_config_history ENABLE ROW LEVEL SECU
 --
 
 ALTER TABLE public.accountability_state ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: analytics_funnel_milestones; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.analytics_funnel_milestones ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: anonymized_actors; Type: ROW SECURITY; Schema: public; Owner: -
@@ -24932,6 +25004,22 @@ GRANT ALL ON FUNCTION public.accountability_student_first_name(p_student_id uuid
 
 REVOKE ALL ON FUNCTION public.actor_id_integrity_violations() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.actor_id_integrity_violations() TO service_role;
+
+
+--
+-- Name: FUNCTION analytics_funnel_claim(p_profile_id uuid, p_milestone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.analytics_funnel_claim(p_profile_id uuid, p_milestone text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.analytics_funnel_claim(p_profile_id uuid, p_milestone text) TO service_role;
+
+
+--
+-- Name: FUNCTION analytics_funnel_release(p_profile_id uuid, p_milestone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.analytics_funnel_release(p_profile_id uuid, p_milestone text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.analytics_funnel_release(p_profile_id uuid, p_milestone text) TO service_role;
 
 
 --
@@ -27123,6 +27211,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_deletion_runtime_confi
 --
 
 GRANT SELECT ON TABLE public.accountability_state TO service_role;
+
+
+--
+-- Name: TABLE analytics_funnel_milestones; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE public.analytics_funnel_milestones TO service_role;
 
 
 --

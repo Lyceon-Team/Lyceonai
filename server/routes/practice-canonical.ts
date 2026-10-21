@@ -3,6 +3,10 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import * as crypto from "node:crypto";
 import { logger } from "../logger";
+import {
+  fireAnswerMilestones,
+  fireDiagnosticCompleted,
+} from "../lib/analytics/funnel-events";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   requireSupabaseAuth,
@@ -1518,6 +1522,8 @@ async function updateSessionLifecycle(
  */
 async function completeSession(args: {
   sessionId: string;
+  /** The session's owner (server-resolved), for the once-only `diagnostic_completed` event. */
+  studentId: string;
   mode: string;
   metadata: SessionMetadata;
   now: string;
@@ -1568,6 +1574,9 @@ async function completeSession(args: {
         logFields,
       );
     }
+    // Server-side funnel (Karl, 2026-10-21): every diagnostic completion path lands here, and
+    // `completed_now` is true for exactly one of them. Fire-and-forget; once ever per student.
+    if (result.data.completed_now) fireDiagnosticCompleted(args.studentId);
     return { completed: result.data.state === "completed" };
   }
 
@@ -2389,6 +2398,7 @@ async function serveNextForSession(args: {
     metadata.active_session_item_id = null;
     await completeSession({
       sessionId: args.sessionId,
+      studentId: args.userId,
       mode: session.mode,
       metadata,
       now: new Date().toISOString(),
@@ -3511,6 +3521,7 @@ async function reEmitDiagnosticMasteryIfNeeded(opts: {
  */
 async function reconcileDiagnosticCompletionOnReplay(opts: {
   sessionId: string;
+  studentId: string;
   session: { filters: unknown };
   now: string;
   requestId?: string;
@@ -3531,6 +3542,7 @@ async function reconcileDiagnosticCompletionOnReplay(opts: {
 
   const { completed } = await completeSession({
     sessionId: opts.sessionId,
+    studentId: opts.studentId,
     mode: "diagnostic",
     metadata: meta,
     now: opts.now,
@@ -3726,6 +3738,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         });
         const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
           sessionId: payload.sessionId,
+          studentId: userId,
           session,
           now: replayNow,
           requestId,
@@ -3828,6 +3841,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         });
         const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
           sessionId: payload.sessionId,
+          studentId: userId,
           session,
           now: replayNow,
           requestId,
@@ -3929,6 +3943,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
         });
         const { shouldComplete } = await reconcileDiagnosticCompletionOnReplay({
           sessionId: payload.sessionId,
+          studentId: userId,
           session,
           now: raceNow,
           requestId,
@@ -4200,6 +4215,7 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
     const { completed } = await timedStep("session_update", () =>
       completeSession({
         sessionId: payload.sessionId,
+        studentId: userId,
         mode: session.mode,
         metadata: refreshedMeta,
         now,
@@ -4211,6 +4227,11 @@ export async function submitPracticeAnswer(req: Request, res: Response) {
 
   const statsResult = await statsRead;
   if (!statsResult.ok) throw statsResult.error;
+
+  // Server-side funnel (Karl, 2026-10-21): this answer was recorded now (every replay returned
+  // above), so it may be the student's first answer and first non-QOTD answer. Once ever each;
+  // fire-and-forget, after the answer is saved and without delaying this response.
+  fireAnswerMilestones(userId, session.mode);
 
   return res.json({
     sessionId: payload.sessionId,
@@ -4455,6 +4476,7 @@ async function submitPracticeSkip(req: Request, res: Response) {
     // diagnostic finished by a skip stores its projection (SCL-236; it used to store nothing).
     ({ completed: completedNow } = await completeSession({
       sessionId,
+      studentId: userId,
       mode: session.mode,
       metadata: refreshedMeta,
       now,
