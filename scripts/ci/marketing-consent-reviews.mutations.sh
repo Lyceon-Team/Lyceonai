@@ -52,6 +52,7 @@ FILES=(
   "$MIG_RA"
   "$MIG_FB"
   "server/lib/feedback-slack.ts"
+  "shared/slack/client.ts"
   "client/src/components/product-feedback/FeedbackDialog.tsx"
   "client/src/components/marketing/TrustpilotReviewCard.tsx"
   "client/src/components/layout/Footer.tsx"
@@ -601,7 +602,7 @@ echo "=== FB (15) a Slack failure fails the submission ==="
 plant server/lib/feedback-slack.ts \
   '    return "failed";' \
   '    throw error;' || { bad "FB15 STALE"; exit 1; }
-run "FB15 Slack failure is not the user's" "a Slack failure" "$FB_CONTRACT"
+run "FB15 Slack failure is not the user's" "a Slack API error logs Slack's own code" "$FB_CONTRACT"
 
 echo "=== FB (16) feedback text reaches the log ==="
 plant server/routes/product-feedback-routes.ts \
@@ -684,6 +685,85 @@ plant client/src/pages/contact.tsx \
       </div>
     </PublicLayout>" || { bad "FB25 STALE"; exit 1; }
 run "FB25 /contact has no form" "with no form" "$HOME_UI"
+
+# ── Owner brief "Feedback → Slack: log the real reason when it can't post" (Karl, 2026-10-21):
+#    one plant per rule. ──
+SLACK_CLIENT=shared/slack/client.ts
+SLACK_FB=server/lib/feedback-slack.ts
+
+echo "=== FS (1) an env-schema failure is reported as something else ==="
+plant "$SLACK_FB" \
+  '    return misconfigured("env_invalid", { fields });' \
+  '    return misconfigured("token_missing");' || { bad "FS1 STALE"; exit 1; }
+run "FS1 reason env_invalid" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (2) a missing token is reported as a bad channel ==="
+plant "$SLACK_CLIENT" \
+  '      reason: "token_missing",' \
+  '      reason: "channel_invalid",' || { bad "FS2 STALE"; exit 1; }
+run "FS2 reason token_missing" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (3) a user token is reported as a missing one ==="
+plant "$SLACK_CLIENT" \
+  '      reason: "token_not_bot",' \
+  '      reason: "token_missing",' || { bad "FS3 STALE"; exit 1; }
+run "FS3 reason token_not_bot" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (4) a malformed channel is reported as a missing token ==="
+plant "$SLACK_CLIENT" \
+  '      reason: "channel_invalid",' \
+  '      reason: "token_missing",' || { bad "FS4 STALE"; exit 1; }
+run "FS4 reason channel_invalid" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (5) the channel ID is logged unredacted ==="
+plant "$SLACK_FB" \
+  '        ? { channel: redactChannel(env.data.SOCIAL_SLACK_CHANNEL_ID) }' \
+  '        ? { channel: env.data.SOCIAL_SLACK_CHANNEL_ID }' || { bad "FS5 STALE"; exit 1; }
+run "FS5 channel redacted" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (6) the token reaches the misconfiguration log ==="
+plant "$SLACK_FB" \
+  '      { requestId: deps.requestId, reason, ...detail },' \
+  '      { requestId: deps.requestId, reason, ...detail, token: process.env.SLACK_BOT_TOKEN },' || { bad "FS6 STALE"; exit 1; }
+run "FS6 token never logged (misconfigured)" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (7) the token reaches the post-failure log ==="
+plant "$SLACK_FB" \
+  '            slack_error: error.code,' \
+  '            slack_error: error.code,
+            token: config.value.token,' || { bad "FS7 STALE"; exit 1; }
+run "FS7 token never logged (failed)" "a Slack API error logs Slack's own code" "$FB_CONTRACT"
+
+echo "=== FS (8) Slack's error code is lost ==="
+plant "$SLACK_FB" \
+  '            slack_error: error.code,' \
+  '            slack_error: "unknown",' || { bad "FS8 STALE"; exit 1; }
+run "FS8 Slack's code logged" "a Slack API error logs Slack's own code" "$FB_CONTRACT"
+
+echo "=== FS (9) a network error's message is logged ==="
+plant "$SLACK_FB" \
+  '            error_name: error instanceof Error ? error.name : "unknown",' \
+  '            error_name: error instanceof Error ? error.message : "unknown",' || { bad "FS9 STALE"; exit 1; }
+run "FS9 no error message" "a Slack API error logs Slack's own code" "$FB_CONTRACT"
+
+echo "=== FS (10) a misconfiguration warns twice ==="
+plant "$SLACK_FB" \
+  '    return misconfigured("env_invalid", { fields });' \
+  '    misconfigured("env_invalid", { fields });
+    return misconfigured("env_invalid", { fields });' || { bad "FS10 STALE"; exit 1; }
+run "FS10 one warning per submission" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (11) a misconfiguration fails the submission ==="
+plant "$SLACK_FB" \
+  '    return "misconfigured";' \
+  '    throw new Error("misconfigured");' || { bad "FS11 STALE"; exit 1; }
+run "FS11 submission unchanged" "Slack settings that are unusable" "$FB_CONTRACT"
+
+echo "=== FS (12) SlackCallError passes any text through as its code ==="
+plant "$SLACK_CLIENT" \
+  '    this.code = /^[a-z0-9_]{1,64}$/.test(code) ? code : "unrecognised";' \
+  '    this.code = code;' || { bad "FS12 STALE"; exit 1; }
+run "FS12 code-shaped only" "SlackCallError keeps only a code-shaped value" "$FB_CONTRACT"
 
 echo "=== Q5 (21) the onboarding checkbox is shown to an under-13 student ==="
 plant client/src/pages/profile-complete.tsx \

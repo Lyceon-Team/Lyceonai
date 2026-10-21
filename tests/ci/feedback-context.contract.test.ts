@@ -33,6 +33,8 @@ import {
   toRoutePattern,
 } from "../../packages/shared/src/product-feedback-schema";
 import { STUDENT_ROUTE_SHELLS } from "../../client/src/lib/route-shells";
+import { SlackCallError } from "../../shared/slack/client";
+import { redactChannel } from "../../server/lib/feedback-slack";
 
 const rateLimitBuckets: string[] = [];
 vi.mock("../../server/middleware/rate-limit", () => ({
@@ -415,36 +417,161 @@ describe("POST /api/feedback/feedback", () => {
     expect(text).not.toMatch(/@|[0-9a-f]{8}-[0-9a-f]{4}/);
   });
 
-  it("a Slack failure (an error, an HTTP 500, a network throw) never fails the submission", async () => {
-    for (const fail of [
-      async () => Response.json({ ok: false, error: "channel_not_found" }),
-      async () => new Response("down", { status: 500 }),
-      async () => {
-        throw new Error("network down");
-      },
-    ]) {
-      slackAnswer = fail;
-      logged.length = 0;
-      const h = harness({ role: "student", date_of_birth: AGE(19) });
-      const res = await request(await h.app())
-        .post("/api/feedback/feedback")
-        .send(send());
-      expect(res.status).toBe(201);
-      expect(JSON.stringify(logged)).toContain("feedback_slack_failed");
-      expect(JSON.stringify(logged)).not.toContain(SECRET);
-      expect(JSON.stringify(logged)).not.toContain("xoxb-");
-    }
-  });
+  // ── Owner brief "Feedback → Slack: log the real reason when it can't post" (Karl, 2026-10-21):
+  //    one WARN per submission naming what is wrong; never the token, the text or an identifier;
+  //    the submission stored and answered 201 exactly as before. ──
 
-  it("no Slack settings: stored all the same, one warning, no call", async () => {
-    vi.stubEnv("SLACK_BOT_TOKEN", "");
+  const TOKEN = "xoxb-1111-2222-SUPERSECRETTOKENVALUE";
+  const warnings = (op: string): Record<string, unknown>[] =>
+    logged
+      .filter((l): l is unknown[] => Array.isArray(l) && l[1] === op)
+      .map((l) => (l[3] ?? {}) as Record<string, unknown>);
+
+  async function submitUnder(): Promise<{
+    status: number;
+    stored: number;
+    log: string;
+  }> {
+    logged.length = 0;
+    slackCalls.length = 0;
     const h = harness({ role: "student", date_of_birth: AGE(19) });
     const res = await request(await h.app())
       .post("/api/feedback/feedback")
       .send(send());
-    expect(res.status).toBe(201);
-    expect(slackCalls).toEqual([]);
-    expect(JSON.stringify(logged)).toContain("feedback_slack_not_configured");
+    const stored = h.calls.filter(
+      (c) =>
+        c.fn === "product_feedback_submit" &&
+        c.args.p_type === "bug" &&
+        c.args.p_route_pattern === "/practice/session/:sessionId",
+    ).length;
+    return { status: res.status, stored, log: JSON.stringify(logged) };
+  }
+
+  function expectNothingSensitive(log: string): void {
+    expect(log.length).toBeGreaterThan(2); // presence before absence
+    for (const secret of [
+      "SUPERSECRETTOKENVALUE",
+      "xoxb-",
+      "xoxp-",
+      SECRET,
+      PROFILE_ID,
+      KEY,
+    ]) {
+      expect(log, secret).not.toContain(secret);
+    }
+  }
+
+  it("Slack settings that are unusable: each logs its own reason, and the submission is unchanged", async () => {
+    const cases: {
+      name: string;
+      token: string | undefined;
+      channel: string | undefined;
+      expected: Record<string, unknown>;
+    }[] = [
+      {
+        name: "env_invalid (an empty value fails the env schema)",
+        token: "",
+        channel: "C0123456789",
+        expected: { reason: "env_invalid", fields: ["SLACK_BOT_TOKEN"] },
+      },
+      {
+        name: "token_missing",
+        token: undefined,
+        channel: "C0123456789",
+        expected: { reason: "token_missing" },
+      },
+      {
+        name: "token_not_bot",
+        token: "xoxp-1111-2222-SUPERSECRETTOKENVALUE",
+        channel: "C0123456789",
+        expected: { reason: "token_not_bot" },
+      },
+      {
+        name: "channel_invalid (a channel name, not its ID)",
+        token: TOKEN,
+        channel: "#social",
+        expected: { reason: "channel_invalid", channel: "#…(7)" },
+      },
+      {
+        name: "channel_invalid (unset)",
+        token: TOKEN,
+        channel: undefined,
+        expected: { reason: "channel_invalid", channel: "unset" },
+      },
+    ];
+    for (const c of cases) {
+      vi.stubEnv("SLACK_BOT_TOKEN", c.token);
+      vi.stubEnv("SOCIAL_SLACK_CHANNEL_ID", c.channel);
+      const r = await submitUnder();
+      expect(r.status, c.name).toBe(201);
+      expect(r.stored, c.name).toBe(1);
+      expect(slackCalls, c.name).toEqual([]);
+      const w = warnings("feedback_slack_misconfigured");
+      expect(w, c.name).toHaveLength(1);
+      expect(w[0], c.name).toMatchObject(c.expected);
+      expect(r.log, c.name).not.toContain("social");
+      expect(r.log, c.name).not.toContain("1111-2222");
+      expectNothingSensitive(r.log);
+    }
+  });
+
+  it("a Slack API error logs Slack's own code; a network failure its class name; the submission is unchanged", async () => {
+    vi.stubEnv("SLACK_BOT_TOKEN", TOKEN);
+    const cases: {
+      answer: () => Promise<Response>;
+      expected: Record<string, unknown>;
+    }[] = [
+      {
+        answer: async () =>
+          Response.json({ ok: false, error: "not_in_channel" }),
+        expected: { reason: "slack_error", slack_error: "not_in_channel" },
+      },
+      {
+        answer: async () => Response.json({ ok: false, error: "invalid_auth" }),
+        expected: { reason: "slack_error", slack_error: "invalid_auth" },
+      },
+      {
+        answer: async () => new Response("down", { status: 500 }),
+        expected: { reason: "slack_error", slack_error: "http_500" },
+      },
+      {
+        answer: async () => {
+          throw new TypeError(`network down near ${TOKEN}`);
+        },
+        expected: { reason: "request_failed", error_name: "TypeError" },
+      },
+    ];
+    for (const c of cases) {
+      slackAnswer = c.answer;
+      const r = await submitUnder();
+      expect(r.status).toBe(201);
+      expect(r.stored).toBe(1);
+      expect(slackCalls).toHaveLength(1); // the post was attempted
+      const w = warnings("feedback_slack_failed");
+      expect(w).toHaveLength(1);
+      expect(w[0]).toMatchObject(c.expected);
+      expect(r.log).not.toContain("network down");
+      expectNothingSensitive(r.log);
+    }
+  });
+
+  it("a successful post logs no Slack warning at all", async () => {
+    vi.stubEnv("SLACK_BOT_TOKEN", TOKEN);
+    const r = await submitUnder();
+    expect(r.status).toBe(201);
+    expect(slackCalls).toHaveLength(1);
+    expect(warnings("feedback_slack_misconfigured")).toEqual([]);
+    expect(warnings("feedback_slack_failed")).toEqual([]);
+    expectNothingSensitive(r.log);
+  });
+
+  it("SlackCallError keeps only a code-shaped value, so a log can carry it", () => {
+    expect(new SlackCallError("x", "not_in_channel").code).toBe(
+      "not_in_channel",
+    );
+    expect(new SlackCallError("x", `bad ${TOKEN}`).code).toBe("unrecognised");
+    expect(redactChannel("C0123456789")).toBe("C…(11)");
+    expect(redactChannel("  ")).toBe("unset");
   });
 
   it("a replay posts nothing twice and counts nothing twice", async () => {
