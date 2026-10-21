@@ -26,6 +26,20 @@ So the same two values are also needed in **Vercel** (Production), under the sam
 per submission). Moving the line to a dedicated `#feedback` channel later is a change of
 `SOCIAL_SLACK_CHANNEL_ID` in Vercel only (invite the bot to that channel first).
 
+**When no line arrives** (owner brief, Karl 2026-10-21), search the Vercel logs for the one WARN
+each submission leaves; its `reason` says what to fix:
+
+| Log event | `reason` | Fix |
+|---|---|---|
+| `feedback_slack_misconfigured` | `env_invalid` (`fields` names the variable) | the variable is set but empty |
+| `feedback_slack_misconfigured` | `token_missing` | add `SLACK_BOT_TOKEN` |
+| `feedback_slack_misconfigured` | `token_not_bot` | use the bot token (`xoxb-…`), not a user token |
+| `feedback_slack_misconfigured` | `channel_invalid` (`channel` shows the first character and length) | use the channel **ID** (`C…`, from the channel's details), not `#social` |
+| `feedback_slack_failed` | `slack_error` with Slack's code, e.g. `not_in_channel`, `invalid_auth`, `http_500` | invite the bot to the channel; rotate the token; or Slack was down |
+| `feedback_slack_failed` | `request_failed` with `error_name` (e.g. `TimeoutError`) | a network failure or the 3 s timeout |
+
+None of these ever carries the token, the message text or who sent it.
+
 ## Jobs that post
 
 | Job                  | Workflow                   | When                                                       | What it posts                                                | Runbook                        |
