@@ -27,6 +27,13 @@ const ROOT = resolve(__dirname, "../..");
 const LIB = join(ROOT, "scripts/ci/lib/migration-versions.sh");
 const GATE = join(ROOT, "scripts/ci/migration-inventory-gate.sh");
 const MIGRATIONS = join(ROOT, "supabase/migrations");
+/**
+ * The version every fixture duplicate uses: one no real migration can have. Fixtures that reused
+ * real-looking versions (20261109000000) collided with the real tree once `main` brought in
+ * 20261109000000_lifecycle_reminder_due.sql, and D3 went red on cleanup (2026-10-21). D0 proves
+ * this stays unused.
+ */
+const FIXTURE_VERSION = "29991231000000";
 
 type Run = { status: number | null; stdout: string };
 
@@ -63,6 +70,13 @@ function copyOfReal(): string {
 }
 
 describe("duplicate migration versions", () => {
+  it("D0: no real migration uses the fixture version", () => {
+    const real = readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql"));
+    // Presence first: the directory was read.
+    expect(real.length).toBeGreaterThan(100);
+    expect(real.filter((f) => f.startsWith(FIXTURE_VERSION))).toEqual([]);
+  });
+
   it("D1: the real migration directory is clean against the frozen list", () => {
     // Presence first: the frozen list is non-empty and every entry is a real duplicate today, so
     // "clean" is not the vacuous result of an empty list or an unreadable directory.
@@ -84,22 +98,26 @@ describe("duplicate migration versions", () => {
 
   it("D2: a new duplicate version fails and names both files", () => {
     const dir = copyOfReal();
-    writeFileSync(join(dir, "20261109000000_lifecycle_reminder_due.sql"), "");
+    // The shape of the 2026-10-21 incident (two workstreams, one version), at the fixture version.
     writeFileSync(
-      join(dir, "20261109000000_analytics_funnel_milestones.sql"),
+      join(dir, `${FIXTURE_VERSION}_lifecycle_reminder_due.sql`),
+      "",
+    );
+    writeFileSync(
+      join(dir, `${FIXTURE_VERSION}_analytics_funnel_milestones.sql`),
       "",
     );
     const r = findings(dir);
     expect(r.status).toBe(1);
     expect(r.stdout.trim()).toBe(
-      "NEW 20261109000000 is shared by: 20261109000000_analytics_funnel_milestones.sql 20261109000000_lifecycle_reminder_due.sql",
+      `NEW ${FIXTURE_VERSION} is shared by: ${FIXTURE_VERSION}_analytics_funnel_milestones.sql ${FIXTURE_VERSION}_lifecycle_reminder_due.sql`,
     );
   });
 
   it("D3: a version that only shares a prefix with another is not a duplicate", () => {
     const dir = copyOfReal();
-    writeFileSync(join(dir, "20261109000000_a.sql"), "");
-    writeFileSync(join(dir, "202611090000001_b.sql"), "");
+    writeFileSync(join(dir, `${FIXTURE_VERSION}_a.sql`), "");
+    writeFileSync(join(dir, `${FIXTURE_VERSION}1_b.sql`), "");
     expect(findings(dir)).toEqual({ status: 0, stdout: "" });
   });
 
@@ -128,8 +146,8 @@ describe("duplicate migration versions", () => {
 
   it("D6: the inventory gate stops on I0, before Postgres, when a duplicate is added", () => {
     const dir = copyOfReal();
-    writeFileSync(join(dir, "20261109000000_a.sql"), "");
-    writeFileSync(join(dir, "20261109000000_b.sql"), "");
+    writeFileSync(join(dir, `${FIXTURE_VERSION}_a.sql`), "");
+    writeFileSync(join(dir, `${FIXTURE_VERSION}_b.sql`), "");
     const r = spawnSync("bash", [GATE], {
       encoding: "utf8",
       // An unreachable Postgres: if I0 did not stop the gate, I1 would fail on provisioning
@@ -145,7 +163,7 @@ describe("duplicate migration versions", () => {
     expect(r.status).toBe(1);
     expect(r.stdout).toContain("FAIL [I0]: duplicate migration versions");
     expect(r.stdout).toContain(
-      "NEW 20261109000000 is shared by: 20261109000000_a.sql 20261109000000_b.sql",
+      `NEW ${FIXTURE_VERSION} is shared by: ${FIXTURE_VERSION}_a.sql ${FIXTURE_VERSION}_b.sql\n`,
     );
     expect(r.stdout).not.toContain("==> (I1)");
   });
