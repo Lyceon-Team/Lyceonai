@@ -173,6 +173,8 @@ function renderShell(
   opts: {
     path?: string;
     node?: React.ReactElement;
+    /** The profile's user (null: the shell's own tests, which need no account). */
+    profileUser?: Record<string, unknown> | null;
   } = {},
 ): Rendered {
   const { hook, history } = memoryLocation({
@@ -186,7 +188,7 @@ function renderShell(
   queryClient.setQueryData(PROFILE_QUERY_KEY, {
     authenticated: true,
     featureAccess: map,
-    user: null,
+    user: opts.profileUser ?? null,
   });
   const rendered = render(
     <QueryClientProvider client={queryClient}>
@@ -583,6 +585,37 @@ describe("mobile (owner ruling, Karl, 2026-10-05; supersedes OQ-4, OQ-48 and the
     openMenuItemIds();
     fireEvent.click(screen.getByTestId("menu-help"));
     expect(history.at(-1)).toBe(HELP_PATH);
+  });
+
+  it("a student's menu adds Send feedback after Help (final brief 2026-10-20 §3), and it opens the dialog", async () => {
+    renderShell(await serverMap({ paid: true, under13: false }), {
+      profileUser: {
+        id: STUDENT_ID,
+        email: "student@example.test",
+        display_name: "Sam",
+        name: "Sam",
+        username: null,
+        role: "student",
+        isAdmin: false,
+        isGuardian: false,
+        is_under_13: false,
+        dateOfBirth: "2009-03-01",
+        marketingOptIn: false,
+        profileCompletedAt: "2026-09-01T00:00:00Z",
+        requiredProfileComplete: true,
+        guardianConsentRequired: false,
+        outstandingLegal: [],
+        hasPassword: true,
+      },
+    });
+    expect(openMenuItemIds()).toEqual([
+      "menu-profile",
+      "menu-help",
+      "menu-send-feedback",
+      "menu-logout",
+    ]);
+    fireEvent.click(screen.getByTestId("menu-send-feedback"));
+    expect(await screen.findByTestId("feedback-dialog")).toBeTruthy();
   });
 
   it("an admin keeps the menu at every width: Settings, Help, Crisis review, Sign out (OQ-48)", async () => {

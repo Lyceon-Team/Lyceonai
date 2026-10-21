@@ -55,7 +55,7 @@ export type GettingStartedRouteDeps = {
 };
 
 export async function defaultAudience(
-  user: SupabaseUser,
+  user: Pick<SupabaseUser, "id" | "role" | "is_under_13">,
 ): Promise<GettingStartedAudience> {
   const access = await resolveFeatureAccess(user);
   const granted = (key: "calendar_access" | "mastery_detail"): boolean =>

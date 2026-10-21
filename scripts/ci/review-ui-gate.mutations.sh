@@ -2237,11 +2237,9 @@ s = s.replace(a, "  \"practice\",\n  \"review\",\n", 1)'
 plant "FU-M3" "Full-Length back in the avatar menu (#1108's menu)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      items={\n        <MenuLink\n"
-b = "          icon={CircleHelp}\n        />\n      }\n"
-assert s.count(a) == 1 and s.count(b) == 1
-s = s.replace(a, "      items={\n        <>\n        <MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" icon={CircleHelp} />\n        <MenuLink\n", 1)
-s = s.replace(b, "          icon={CircleHelp}\n        />\n        </>\n      }\n", 1)'
+  'a = "      items={\n        <>\n          <MenuLink\n            href={HELP_PATH}\n"
+assert s.count(a) == 1
+s = s.replace(a, "      items={\n        <>\n          <MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" icon={CircleHelp} />\n          <MenuLink\n            href={HELP_PATH}\n", 1)'
 
 plant "FU-M4" "Calendar off the phone tab bar" \
   "$T41_RAIL" \

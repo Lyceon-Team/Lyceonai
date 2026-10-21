@@ -20,6 +20,7 @@ import {
   guardianUnlinkedPayloadSchema,
   postExamNoticePayloadSchema,
   qotdDailyPayloadSchema,
+  reviewAskPayloadSchema,
   type NotificationEventType,
 } from "../../../../packages/shared/src/notifications-schema";
 import { err, ok, type Result } from "../../../../packages/shared/src/result";
@@ -51,6 +52,7 @@ import {
   studyPlanChangedEmail,
   studyPlanChangedInApp,
 } from "./accountability";
+import { reviewAskEmail, reviewAskInApp } from "./review-ask";
 import type { EmailRender, InAppRender, RenderContext } from "./shared";
 
 export type { EmailRender, InAppRender, RenderContext } from "./shared";
@@ -137,6 +139,13 @@ export function renderInApp(
         return err("guardian_daily_digest payload does not match its schema");
       return ok(guardianDailyDigestInApp(parsed.data, ctx));
     }
+    // Owner brief "Review ask" (Karl, 2026-10-20).
+    case "review_ask": {
+      const parsed = reviewAskPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("review_ask payload does not match its schema");
+      return ok(reviewAskInApp(parsed.data));
+    }
   }
 }
 
@@ -215,6 +224,12 @@ export function renderEmail(
       if (!parsed.success)
         return err("guardian_daily_digest payload does not match its schema");
       return ok(guardianDailyDigestEmail(parsed.data, ctx));
+    }
+    case "review_ask": {
+      const parsed = reviewAskPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("review_ask payload does not match its schema");
+      return ok(reviewAskEmail(parsed.data, ctx));
     }
   }
 }

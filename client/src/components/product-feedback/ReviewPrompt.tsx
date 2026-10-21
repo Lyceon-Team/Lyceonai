@@ -1,40 +1,53 @@
 /**
- * The review prompt: one neutral card, three options side by side, always dismissible.
+ * The review ask: one neutral card, the options side by side, always dismissible.
  *
  * @spec [docs/plans/seo/seo-marketing-vertical.md R28 ("One neutral review prompt for everyone —
- *       no review gating. Options side by side: in-app anonymous review ..., Trustpilot (guardians
- *       + 18+ ...), private feedback"), R29 (anonymous), R30 (cadence), row Q6; Doctrine §0.8
- *       (no review gating); owner answers 2026-10-05 (Trustpilot click = reviewed; choosing
- *       private feedback = shown)] | @implemented [2026-10-05]
+ *       no review gating"), R29 (anonymous), R30 (cadence, as amended 2026-10-20), row Q6;
+ *       Doctrine §0.8 (no review gating); owner brief "Review ask" (Karl, 2026-10-20) and
+ *       Karl's Step 0 decisions: 1 (no public review site for 13–17s: in-app review and private
+ *       feedback), 2 (the in-app star review stays for everyone), 4 ("Not now" snoozes 30 days),
+ *       6 (Trustpilot hidden until VITE_TRUSTPILOT_REVIEW_URL is set), 7 (the wording approved
+ *       as drafted; a card on desktop, a bottom sheet on phone; Home only, never while the
+ *       Getting started checklist is active, never during practice, review or a test); owner
+ *       answers 2026-10-05 (a Trustpilot click counts as reviewed)]
+ *       | @implemented [2026-10-05; review ask 2026-10-20]
  *
- * plain English: mount it on a success-moment page with the moment it stands for. It asks the
- * server once; the server checks the moment really happened, applies the cadence, and records
- * the showing. If the answer is yes, the card appears with:
- *   - "Leave a review": a 1–5 rating, optional text, and an UNTICKED "Lyceon may quote this
- *     anonymously";
- *   - "Review on Trustpilot": only when the server says the person is 18+ (guardians and adult
- *     students) AND `VITE_TRUSTPILOT_REVIEW_URL` is set;
- *   - "Send private feedback".
+ * plain English: mount it on a home page with its moment (`home` on the student's Home,
+ * `guardian_home` on the guardian dashboard, `email_return` when the person followed the review
+ * email back). It asks the server once; the server checks the usage trigger and the cadence and
+ * records the ask. If the answer is yes, the card appears with:
+ *   - "Leave a review on Trustpilot": only when the server says the person is 18+ AND
+ *     `VITE_TRUSTPILOT_REVIEW_URL` is set;
+ *   - "Leave a review": the in-app review — a 1–5 rating, optional text, and an UNTICKED
+ *     "Lyceon may quote this anonymously";
+ *   - "Send private feedback";
+ *   - "Not now".
+ * On a phone it is a sheet fixed to the bottom of the screen; from `sm` up it is a card in the
+ * page's column. No overlay either way: the page underneath stays usable.
  *
  * NO GATING, BY CONSTRUCTION: nothing asks how the person feels before the options appear, and
  * every option is offered whatever rating is chosen — the rating never changes what is shown.
+ * Only age changes which public site is offered, per that site's own rules.
  *
- * "Not now" and the close button are a dismissal (counted once per showing on the server). A
- * review or the Trustpilot button ends the prompt for good; sending private feedback just closes
- * it (it was shown; it is not a dismissal).
+ * ONE PRIMARY PER SCREEN (DESIGN.md §5): the card sits on a page that already has its primary,
+ * so every option here is outlined; "Not now" is quiet.
+ *
+ * "Not now" snoozes and the close button dismisses: both put the ask off for 30 days (recorded
+ * once per ask on the server). A review, the Trustpilot button or private feedback sent from
+ * here ends the asks for good.
  *
  * Privacy: the review area carries `ph-no-capture`.
  */
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Star, X } from "lucide-react";
+import { ExternalLink, Star, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  dismissReviewPrompt,
   recordTrustpilotClick,
+  respondToReviewPrompt,
   submitReview,
   trustpilotReviewUrl,
   useReviewPrompt,
@@ -110,7 +123,7 @@ export function ReviewPrompt({
   const [quote, setQuote] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
-  const dismiss = useMutation({ mutationFn: dismissReviewPrompt });
+  const respond = useMutation({ mutationFn: respondToReviewPrompt });
   const trustpilot = useMutation({ mutationFn: recordTrustpilotClick });
   const review = useMutation({
     mutationFn: () =>
@@ -137,20 +150,24 @@ export function ReviewPrompt({
     ? trustpilotReviewUrl()
     : null;
 
-  const close = (): void => {
-    if (phase === "options" || phase === "review") dismiss.mutate();
+  // The close button dismisses and "Not now" snoozes: both put the ask off for 30 days.
+  const putOff = (response: "snoozed" | "dismissed"): void => {
+    if (phase === "options" || phase === "review") respond.mutate(response);
     setPhase("closed");
   };
+  const body = prompt.data.trustpilot_eligible
+    ? "Good or bad, we'd like to hear it. A review helps other families decide, and private feedback goes straight to our team."
+    : "Good or bad, we'd like to hear it. Leave a short review, or send our team a private note.";
 
   return (
     <section
       aria-labelledby="review-prompt-title"
-      className={`relative ${look.box}`}
+      className={`${look.box} fixed inset-x-0 ${look.sheetBottom} z-40 max-h-[70vh] overflow-y-auto rounded-b-none shadow-lg sm:relative sm:inset-auto sm:z-auto sm:max-h-none sm:overflow-visible sm:rounded-b-lg sm:shadow-none`}
       data-testid="review-prompt"
     >
       <button
         type="button"
-        onClick={close}
+        onClick={() => putOff("dismissed")}
         aria-label="Close"
         data-testid="review-prompt-close"
         className="absolute right-3 top-3 rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -178,11 +195,10 @@ export function ReviewPrompt({
         <div className="space-y-4 pr-8">
           <div className="space-y-1">
             <h2 id="review-prompt-title" className={look.title}>
-              Share your thoughts on Lyceon
+              How&apos;s Lyceon working for you?
             </h2>
-            <p className={look.muted}>
-              Leave a review, or send the team a private note. It takes a
-              minute, and it&apos;s up to you.
+            <p className={look.muted} data-testid="review-prompt-body">
+              {body}
             </p>
           </div>
 
@@ -191,13 +207,6 @@ export function ReviewPrompt({
               className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"
               data-testid="review-prompt-options"
             >
-              <Button
-                variant={look.primary}
-                onClick={() => setPhase("review")}
-                data-testid="review-prompt-leave-review"
-              >
-                Leave a review
-              </Button>
               {trustpilotUrl !== null ? (
                 <Button variant={look.outline} asChild>
                   <a
@@ -210,10 +219,22 @@ export function ReviewPrompt({
                       setPhase("closed");
                     }}
                   >
-                    Review on Trustpilot
+                    Leave a review on Trustpilot
+                    <ExternalLink
+                      className="ml-1.5 h-4 w-4"
+                      aria-hidden="true"
+                    />
+                    <span className="sr-only"> (opens in a new tab)</span>
                   </a>
                 </Button>
               ) : null}
+              <Button
+                variant={look.outline}
+                onClick={() => setPhase("review")}
+                data-testid="review-prompt-leave-review"
+              >
+                Leave a review
+              </Button>
               <Button
                 variant={look.outline}
                 onClick={() => {
@@ -226,7 +247,7 @@ export function ReviewPrompt({
               </Button>
               <Button
                 variant={look.quiet}
-                onClick={close}
+                onClick={() => putOff("snoozed")}
                 data-testid="review-prompt-not-now"
               >
                 Not now
@@ -294,7 +315,7 @@ export function ReviewPrompt({
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="submit"
-                  variant={look.primary}
+                  variant={look.outline}
                   disabled={rating === null || review.isPending}
                   data-testid="review-submit"
                 >

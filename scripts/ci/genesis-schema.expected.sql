@@ -10215,20 +10215,52 @@ $$;
 
 
 --
--- Name: product_feedback_submit(uuid, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: product_feedback_reply_allowed(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) RETURNS jsonb
+CREATE FUNCTION public.product_feedback_reply_allowed(p_profile_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE((
+    SELECT p.role <> 'student' OR public.marketing_opt_in_age_eligible(p.date_of_birth)
+      FROM public.profiles p
+     WHERE p.id = p_profile_id), false);
+$$;
+
+
+--
+-- Name: product_feedback_submit(uuid, text, text, text, uuid, text, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text DEFAULT 'other'::text, p_reply_ok boolean DEFAULT false, p_route_pattern text DEFAULT NULL::text, p_app_version text DEFAULT NULL::text) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_rows integer;
 BEGIN
-  INSERT INTO public.product_feedback (profile_id, audience, body, source, idempotency_key)
-  VALUES (p_profile_id, p_audience, p_body, p_source, p_idempotency_key)
+  IF p_reply_ok AND NOT public.product_feedback_reply_allowed(p_profile_id) THEN
+    RAISE EXCEPTION 'product_feedback_submit: reply_ok is not allowed for this account'
+      USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.product_feedback
+    (profile_id, audience, body, source, idempotency_key, type, reply_ok, route_pattern, app_version)
+  VALUES
+    (p_profile_id, p_audience, p_body, p_source, p_idempotency_key, p_type, p_reply_ok,
+     p_route_pattern, p_app_version)
   ON CONFLICT (profile_id, idempotency_key) DO NOTHING;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
+
+  IF v_rows = 1 AND p_source = 'prompt' THEN
+    INSERT INTO public.product_review_prompt_state (profile_id, last_response)
+    VALUES (p_profile_id, 'feedback')
+    ON CONFLICT (profile_id) DO UPDATE
+       SET last_response = 'feedback', updated_at = now()
+     WHERE product_review_prompt_state.reviewed_at IS NULL
+       AND product_review_prompt_state.last_response IS DISTINCT FROM 'stopped';
+  END IF;
   RETURN jsonb_build_object('outcome', CASE WHEN v_rows = 1 THEN 'created' ELSE 'replayed' END);
 END;
 $$;
@@ -10242,12 +10274,13 @@ CREATE FUNCTION public.product_review_mark_external(p_profile_id uuid) RETURNS v
     LANGUAGE sql
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via)
-  VALUES (p_profile_id, now(), 'trustpilot')
+  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via, last_response)
+  VALUES (p_profile_id, now(), 'trustpilot', 'reviewed')
   ON CONFLICT (profile_id) DO UPDATE
-     SET reviewed_at  = COALESCE(product_review_prompt_state.reviewed_at, now()),
-         reviewed_via = COALESCE(product_review_prompt_state.reviewed_via, 'trustpilot'),
-         updated_at   = now();
+     SET reviewed_at   = COALESCE(product_review_prompt_state.reviewed_at, now()),
+         reviewed_via  = COALESCE(product_review_prompt_state.reviewed_via, 'trustpilot'),
+         last_response = 'reviewed',
+         updated_at    = now();
 $$;
 
 
@@ -10262,12 +10295,20 @@ CREATE FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_expected
 DECLARE
   v_rows integer;
 BEGIN
-  INSERT INTO public.product_review_prompt_state (profile_id, last_shown_at)
-  VALUES (p_profile_id, now())
+  INSERT INTO public.product_review_prompt_state (profile_id, last_shown_at, ask_count)
+  VALUES (p_profile_id, now(), 1)
   ON CONFLICT (profile_id) DO UPDATE
-     SET last_shown_at = now(), updated_at = now()
+     SET last_shown_at = now(),
+         ask_count     = product_review_prompt_state.ask_count + 1,
+         last_response = NULL,
+         updated_at    = now()
    WHERE product_review_prompt_state.last_shown_at IS NOT DISTINCT FROM p_expected
-     AND product_review_prompt_state.reviewed_at IS NULL;
+     AND product_review_prompt_state.reviewed_at IS NULL
+     AND product_review_prompt_state.ask_count < 2
+     AND (product_review_prompt_state.last_response IS NULL
+          OR product_review_prompt_state.last_response IN ('snoozed', 'dismissed'))
+     AND (product_review_prompt_state.snoozed_until IS NULL
+          OR product_review_prompt_state.snoozed_until <= now());
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   RETURN v_rows = 1;
 END;
@@ -10275,22 +10316,29 @@ $$;
 
 
 --
--- Name: product_review_prompt_dismiss(uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: product_review_prompt_respond(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) RETURNS boolean
+CREATE FUNCTION public.product_review_prompt_respond(p_profile_id uuid, p_response text) RETURNS boolean
     LANGUAGE plpgsql
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_rows integer;
 BEGIN
+  IF p_response IS NULL OR p_response NOT IN ('snoozed', 'dismissed') THEN
+    RAISE EXCEPTION 'product_review_prompt_respond: p_response must be snoozed or dismissed'
+      USING ERRCODE = '22023';
+  END IF;
   UPDATE public.product_review_prompt_state
-     SET dismiss_count = dismiss_count + 1, last_dismissed_at = now(), updated_at = now()
+     SET last_response     = p_response,
+         snoozed_until     = now() + interval '30 days',
+         last_dismissed_at = now(),
+         updated_at        = now()
    WHERE profile_id = p_profile_id
      AND last_shown_at IS NOT NULL
      AND reviewed_at IS NULL
-     AND (last_dismissed_at IS NULL OR last_dismissed_at < last_shown_at);
+     AND last_response IS NULL;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   RETURN v_rows = 1;
 END;
@@ -10306,11 +10354,31 @@ CREATE FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) RETURN
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT jsonb_build_object(
-           'last_shown_at', s.last_shown_at,
-           'dismiss_count', s.dismiss_count,
-           'reviewed_at',   s.reviewed_at)
+           'last_shown_at',   s.last_shown_at,
+           'ask_count',       s.ask_count,
+           'snoozed_until',   s.snoozed_until,
+           'last_response',   s.last_response,
+           'reviewed_at',     s.reviewed_at,
+           'email_queued_at', s.email_queued_at)
     FROM public.product_review_prompt_state s
    WHERE s.profile_id = p_profile_id;
+$$;
+
+
+--
+-- Name: product_review_prompt_stop(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_review_prompt_stop(p_profile_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.product_review_prompt_state (profile_id, last_response)
+  VALUES (p_profile_id, 'stopped')
+  ON CONFLICT (profile_id) DO UPDATE
+     SET last_response = CASE WHEN product_review_prompt_state.reviewed_at IS NULL
+                              THEN 'stopped' ELSE product_review_prompt_state.last_response END,
+         updated_at    = now();
 $$;
 
 
@@ -10341,12 +10409,13 @@ BEGIN
     RETURN jsonb_build_object('outcome', 'conflict');
   END IF;
 
-  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via)
-  VALUES (p_profile_id, now(), 'in_app')
+  INSERT INTO public.product_review_prompt_state (profile_id, reviewed_at, reviewed_via, last_response)
+  VALUES (p_profile_id, now(), 'in_app', 'reviewed')
   ON CONFLICT (profile_id) DO UPDATE
-     SET reviewed_at  = COALESCE(product_review_prompt_state.reviewed_at, now()),
-         reviewed_via = COALESCE(product_review_prompt_state.reviewed_via, 'in_app'),
-         updated_at   = now();
+     SET reviewed_at   = COALESCE(product_review_prompt_state.reviewed_at, now()),
+         reviewed_via  = COALESCE(product_review_prompt_state.reviewed_via, 'in_app'),
+         last_response = 'reviewed',
+         updated_at    = now();
   RETURN jsonb_build_object('outcome', 'created');
 END;
 $$;
@@ -12849,6 +12918,100 @@ BEGIN
 
   RETURN v_profile_id;
 END;
+$$;
+
+
+--
+-- Name: review_ask_completed_sessions(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_ask_completed_sessions(p_student_id uuid) RETURNS integer
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT ((SELECT count(*) FROM public.practice_sessions ps
+            WHERE ps.user_id = p_student_id AND ps.status = 'completed' AND ps.mode <> 'qotd')
+        + (SELECT count(*) FROM public.review_sessions rs
+            WHERE rs.student_id = p_student_id AND rs.status = 'completed')
+        + (SELECT count(*) FROM public.test_sessions ts
+            WHERE ts.student_id = p_student_id AND ts.state = 'completed'))::integer;
+$$;
+
+
+--
+-- Name: review_ask_email_notify(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_ask_email_notify(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 500) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row     record;
+  v_emitted integer := 0;
+BEGIN
+  FOR v_row IN
+    SELECT p.id, p.role,
+           split_part(btrim(COALESCE(p.display_name, '')), ' ', 1) AS first_name
+      FROM public.product_review_prompt_state s
+      JOIN public.profiles p ON p.id = s.profile_id
+     WHERE s.ask_count = 1
+       AND s.last_response IS NULL
+       AND s.reviewed_at IS NULL
+       AND s.email_queued_at IS NULL
+       AND s.last_shown_at <= p_now - interval '3 days'
+       AND s.last_shown_at >  p_now - interval '14 days'
+       AND p.role IN ('student', 'guardian')
+       AND p.deleted_at IS NULL
+       AND p.date_of_birth IS NOT NULL
+       AND p.date_of_birth <= ((p_now AT TIME ZONE 'UTC')::date - interval '18 years')::date
+       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
+                        WHERE d.profile_id = p.id AND d.status = 'pending')
+     ORDER BY s.last_shown_at, p.id
+     LIMIT p_limit
+     FOR UPDATE OF s SKIP LOCKED
+  LOOP
+    PERFORM public.emit_notification_event(
+      public.notification_event_id('review_ask', v_row.id::text),
+      'review_ask',
+      v_row.id,
+      jsonb_build_array(jsonb_build_object('profile_id', v_row.id,
+                                           'channels', jsonb_build_array('email'))),
+      jsonb_build_object('first_name', v_row.first_name, 'audience', v_row.role),
+      p_now + interval '7 days');
+    UPDATE public.product_review_prompt_state
+       SET email_queued_at = p_now, updated_at = now()
+     WHERE profile_id = v_row.id;
+    v_emitted := v_emitted + 1;
+  END LOOP;
+  RETURN jsonb_build_object('emitted', v_emitted);
+END;
+$$;
+
+
+--
+-- Name: review_ask_usage_met(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_ask_usage_met(p_profile_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE((
+    SELECT CASE p.role
+      WHEN 'student' THEN
+        p.created_at <= p_now - interval '7 days'
+        AND public.review_ask_completed_sessions(p.id) >= 3
+      WHEN 'guardian' THEN EXISTS (
+        SELECT 1 FROM public.guardian_links l
+         WHERE l.guardian_profile_id = p.id
+           AND l.status = 'active'
+           AND COALESCE(l.accepted_at, l.created_at) <= p_now - interval '7 days'
+           AND public.guardian_view_decision(p.id, l.student_profile_id) = 'allow'
+           AND public.review_ask_completed_sessions(l.student_profile_id) >= 3)
+      ELSE false END
+      FROM public.profiles p
+     WHERE p.id = p_profile_id AND p.deleted_at IS NULL), false);
 $$;
 
 
@@ -17176,7 +17339,7 @@ CREATE TABLE public.notification_events (
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text, 'review_ask'::text])))
 );
 
 
@@ -17331,9 +17494,16 @@ CREATE TABLE public.product_feedback (
     source text NOT NULL,
     idempotency_key uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    type text DEFAULT 'other'::text NOT NULL,
+    reply_ok boolean DEFAULT false NOT NULL,
+    route_pattern text,
+    app_version text,
+    CONSTRAINT product_feedback_app_version_check CHECK (((app_version IS NULL) OR (app_version ~ '^([0-9a-f]{7}|dev)$'::text))),
     CONSTRAINT product_feedback_audience_check CHECK ((audience = ANY (ARRAY['student'::text, 'guardian'::text]))),
     CONSTRAINT product_feedback_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 2000))),
-    CONSTRAINT product_feedback_source_check CHECK ((source = ANY (ARRAY['prompt'::text, 'settings'::text, 'help'::text, 'menu'::text])))
+    CONSTRAINT product_feedback_route_pattern_check CHECK (((route_pattern IS NULL) OR ((char_length(route_pattern) <= 120) AND (route_pattern ~ '^(/|(/([a-z][a-z-]*|:[a-zA-Z]+))+)$'::text)))),
+    CONSTRAINT product_feedback_source_check CHECK ((source = ANY (ARRAY['prompt'::text, 'settings'::text, 'help'::text, 'menu'::text]))),
+    CONSTRAINT product_feedback_type_check CHECK ((type = ANY (ARRAY['bug'::text, 'idea'::text, 'other'::text])))
 );
 
 
@@ -17341,7 +17511,7 @@ CREATE TABLE public.product_feedback (
 -- Name: TABLE product_feedback; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.product_feedback IS 'Plan R28: private feedback, stored only (owner answer 8, 2026-10-05). Never displayed, never forwarded. Written only by product_feedback_submit. ON DELETE CASCADE from profiles.';
+COMMENT ON TABLE public.product_feedback IS 'Plan R28: private feedback (owner answer 8, 2026-10-05; amended 2026-10-20). Stored, and since 2026-10-20 each new row is also posted to Slack #social by the server: type, page, role, age band and reply-OK always; the text only for senders 18+, at most 300 characters (SCL-237). Never displayed in the product. type / route_pattern (a route pattern, never a real id or query) / app_version / reply_ok added 2026-10-20. Written only by product_feedback_submit. ON DELETE CASCADE from profiles.';
 
 
 --
@@ -17370,8 +17540,14 @@ CREATE TABLE public.product_review_prompt_state (
     reviewed_at timestamp with time zone,
     reviewed_via text,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    ask_count smallint DEFAULT 0 NOT NULL,
+    snoozed_until timestamp with time zone,
+    last_response text,
+    email_queued_at timestamp with time zone,
+    CONSTRAINT product_review_prompt_state_ask_count_check CHECK (((ask_count >= 0) AND (ask_count <= 2))),
     CONSTRAINT product_review_prompt_state_check CHECK (((reviewed_at IS NULL) = (reviewed_via IS NULL))),
     CONSTRAINT product_review_prompt_state_dismiss_count_check CHECK ((dismiss_count >= 0)),
+    CONSTRAINT product_review_prompt_state_last_response_check CHECK ((last_response = ANY (ARRAY['reviewed'::text, 'feedback'::text, 'snoozed'::text, 'dismissed'::text, 'stopped'::text]))),
     CONSTRAINT product_review_prompt_state_reviewed_via_check CHECK ((reviewed_via = ANY (ARRAY['in_app'::text, 'trustpilot'::text])))
 );
 
@@ -17380,7 +17556,14 @@ CREATE TABLE public.product_review_prompt_state (
 -- Name: TABLE product_review_prompt_state; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.product_review_prompt_state IS 'Plan R30: the review prompt''s cadence facts per profile. The decision is packages/shared/src/review-prompt.ts; these functions only record. ON DELETE CASCADE from profiles.';
+COMMENT ON TABLE public.product_review_prompt_state IS 'Plan R30 (amended 2026-10-20, review ask): the review prompt''s cadence facts per profile — asks so far (max 2), the 30-day snooze, the response to the latest ask, and when the one follow-up email was queued. No review content. The decision is decideReviewPrompt (packages/shared/src/product-feedback-schema.ts); these functions record and hold the hard limits. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: COLUMN product_review_prompt_state.dismiss_count; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product_review_prompt_state.dismiss_count IS 'Legacy (before 2026-10-20): dismissals under the 120-day cadence. Backfilled into ask_count / last_response; no longer written.';
 
 
 --
@@ -26042,11 +26225,19 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 
 
 --
--- Name: FUNCTION product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION product_feedback_reply_allowed(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.product_feedback_reply_allowed(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_feedback_reply_allowed(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text, p_reply_ok boolean, p_route_pattern text, p_app_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text, p_reply_ok boolean, p_route_pattern text, p_app_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text, p_reply_ok boolean, p_route_pattern text, p_app_version text) TO service_role;
 
 
 --
@@ -26066,11 +26257,11 @@ GRANT ALL ON FUNCTION public.product_review_prompt_claim(p_profile_id uuid, p_ex
 
 
 --
--- Name: FUNCTION product_review_prompt_dismiss(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION product_review_prompt_respond(p_profile_id uuid, p_response text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.product_review_prompt_respond(p_profile_id uuid, p_response text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_respond(p_profile_id uuid, p_response text) TO service_role;
 
 
 --
@@ -26079,6 +26270,14 @@ GRANT ALL ON FUNCTION public.product_review_prompt_dismiss(p_profile_id uuid) TO
 
 REVOKE ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.product_review_prompt_state_for(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_review_prompt_stop(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_review_prompt_stop(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_review_prompt_stop(p_profile_id uuid) TO service_role;
 
 
 --
@@ -26493,6 +26692,30 @@ GRANT ALL ON FUNCTION public.resolve_deletion_billing_record(p_log_id uuid, p_fi
 
 REVOKE ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text) TO service_role;
+
+
+--
+-- Name: FUNCTION review_ask_completed_sessions(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_ask_completed_sessions(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_ask_completed_sessions(p_student_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION review_ask_email_notify(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_ask_email_notify(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_ask_email_notify(p_now timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION review_ask_usage_met(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_ask_usage_met(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_ask_usage_met(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
 
 
 --
