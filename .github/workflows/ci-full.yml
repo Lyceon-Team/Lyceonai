@@ -438,6 +438,12 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-inventory-gate.sh
 
+      # Karl, 2026-10-21: I0 (no new duplicate migration versions) and its frozen list are
+      # planted and must turn their named test red. No Postgres: I0 stops the gate first.
+      - name: Migration duplicate-version mutations (planted defects must fail)
+        if: matrix.group == 'calendar-migrations'
+        run: bash scripts/ci/migration-duplicate-version.mutations.sh
+
       # Proves the gate above can fail, and fails on the assertion each mutation names.
       # M3 is the load-bearing one: without it "counted" and "excluded" are the same test.
       - name: KPI quarantine gate — mutation proof
