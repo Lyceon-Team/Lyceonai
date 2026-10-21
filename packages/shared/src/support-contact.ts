@@ -16,3 +16,10 @@
  */
 export const SUPPORT_EMAIL = "support@lyceon.ai";
 export const PRIVACY_EMAIL = "privacy@lyceon.ai";
+
+/**
+ * The business's postal address, as public copy (the review email's footer, the /contact page;
+ * final brief "Trustpilot card + Feedback", Karl 2026-10-20). One definition, like the mailboxes.
+ */
+export const LYCEON_POSTAL_ADDRESS =
+  "Lyceon AI, 5650 Central Ave # E7, Toledo, OH 43615";

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { TrustpilotReviewCard } from "@/components/marketing/TrustpilotReviewCard";
+import { trustpilotReviewUrl } from "@/lib/product-feedback-api";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Check } from "lucide-react";
@@ -120,6 +122,26 @@ const HERO_TEXT_LINK =
 const SECTION = "border-t border-[var(--home-rule)]";
 const CARD = "rounded-2xl border border-border bg-card";
 const INSET = "rounded-xl border border-[var(--home-rule)] bg-background";
+
+function TrustpilotSection(): JSX.Element | null {
+  const reviewUrl = trustpilotReviewUrl();
+  if (reviewUrl === null) return null;
+  return (
+    <section
+      aria-label="Reviews"
+      className={SECTION}
+      data-testid="home-trustpilot"
+    >
+      <div className="mx-auto max-w-[860px] px-4 py-12 sm:px-6">
+        <TrustpilotReviewCard
+          cardClass={CARD}
+          buttonClass={OUTLINE_BUTTON}
+          reviewUrl={reviewUrl}
+        />
+      </div>
+    </section>
+  );
+}
 
 function ExampleMeter({ level }: { level: MasteryLevelKey }): JSX.Element {
   const filled = masteryMeterFill(level);
@@ -512,6 +534,11 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* Final brief "Trustpilot card + Feedback" (Karl, 2026-10-20) §1: between the FAQ and the
+          final call to action, so the page still ends on "Start the free diagnostic". Static,
+          text-only, no third-party request; absent when no review URL was set at build. */}
+      <TrustpilotSection />
 
       <section aria-label="Get started" className={SECTION}>
         <div className="mx-auto flex max-w-[1180px] flex-col items-center gap-4 px-4 py-16 text-center sm:px-6">

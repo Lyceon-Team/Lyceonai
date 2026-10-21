@@ -1,19 +1,21 @@
 // @vitest-environment jsdom
 /**
- * Plan Q6: the review prompt's options — neutral, side by side, always dismissible, Trustpilot
- * only for 18+ and only once its URL exists.
+ * Plan Q6 and the review ask: the options — neutral, side by side, always dismissible, Trustpilot
+ * only for 18+ and only once its URL exists, the approved wording.
  *
  * @spec [docs/plans/seo/seo-marketing-vertical.md R28 ("One neutral review prompt ... no review
  *       gating. Options side by side ... Trustpilot (guardians + 18+)"), R30 ("always
- *       dismissible"), row Q6; Doctrine §0.8 (no review gating); owner answers 2026-10-05]
- *       | @implemented [2026-10-05]
+ *       dismissible"), row Q6; Doctrine §0.8 (no review gating); owner answers 2026-10-05;
+ *       owner brief "Review ask" and Karl's Step 0 decisions 1, 2, 4, 6, 7 (2026-10-20)]
+ *       | @implemented [2026-10-05; review ask 2026-10-20]
  *
  * plain English: the real component with a real React Query client; only the network is
  * stubbed, answering GET /api/feedback/prompt with what the server would say. Proved: nothing
  * renders without a "show"; every option is offered BEFORE anything is asked (no sentiment
  * first, nothing hidden behind a rating); the Trustpilot option needs both the server's 18+ and
  * VITE_TRUSTPILOT_REVIEW_URL; the quote box starts unticked and is sent as chosen; "Not now"
- * records one dismissal and closes.
+ * records one snooze and the close button one dismissal, and each closes; the approved title and
+ * bodies (adult and 13–17) word for word; the options do not change with the rating chosen.
  */
 import React from "react";
 import {
@@ -62,7 +64,7 @@ function mount(): void {
   });
   render(
     <QueryClientProvider client={client}>
-      <ReviewPrompt query={{ moment: "study_week" }} />
+      <ReviewPrompt query={{ moment: "home" }} />
     </QueryClientProvider>,
   );
 }
@@ -88,8 +90,10 @@ describe("ReviewPrompt", () => {
     net.prompt = { show: true, trustpilot_eligible: true };
     mount();
     const options = await screen.findByTestId("review-prompt-options");
-    expect(options.textContent).toContain("Leave a review");
-    expect(options.textContent).toContain("Review on Trustpilot");
+    expect(options.textContent).toContain("Leave a review on Trustpilot");
+    expect(screen.getByTestId("review-prompt-leave-review").textContent).toBe(
+      "Leave a review",
+    );
     expect(options.textContent).toContain("Send private feedback");
     expect(options.textContent).toContain("Not now");
     // Nothing about how the person feels is asked before the options.
@@ -126,7 +130,7 @@ describe("ReviewPrompt", () => {
     );
   });
 
-  it("'Not now' records one dismissal and closes", async () => {
+  it("'Not now' records one snooze and closes; the close button records one dismissal", async () => {
     net.prompt = { show: true, trustpilot_eligible: false };
     mount();
     fireEvent.click(await screen.findByTestId("review-prompt-not-now"));
@@ -134,8 +138,79 @@ describe("ReviewPrompt", () => {
       expect(screen.queryByTestId("review-prompt")).toBeNull(),
     );
     expect(
-      net.log.filter((c) => c.url === "/api/feedback/prompt/dismiss"),
-    ).toHaveLength(1);
+      net.log.filter((c) => c.url === "/api/feedback/prompt/respond"),
+    ).toEqual([
+      {
+        method: "POST",
+        url: "/api/feedback/prompt/respond",
+        body: { response: "snoozed" },
+      },
+    ]);
+    cleanup();
+    net.log = [];
+    mount();
+    fireEvent.click(await screen.findByTestId("review-prompt-close"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("review-prompt")).toBeNull(),
+    );
+    expect(
+      net.log
+        .filter((c) => c.url === "/api/feedback/prompt/respond")
+        .map((c) => c.body),
+    ).toEqual([{ response: "dismissed" }]);
+  });
+
+  it("the approved wording: one title, and the adult or 13–17 body by the server's age answer", async () => {
+    net.prompt = { show: true, trustpilot_eligible: true };
+    mount();
+    expect((await screen.findByRole("heading", { level: 2 })).textContent).toBe(
+      "How's Lyceon working for you?",
+    );
+    expect(screen.getByTestId("review-prompt-body").textContent).toBe(
+      "Good or bad, we'd like to hear it. A review helps other families decide, and private feedback goes straight to our team.",
+    );
+    cleanup();
+    net.prompt = { show: true, trustpilot_eligible: false };
+    mount();
+    expect((await screen.findByTestId("review-prompt-body")).textContent).toBe(
+      "Good or bad, we'd like to hear it. Leave a short review, or send our team a private note.",
+    );
+    // 13–17: no public review site; the in-app review and private feedback are offered.
+    expect(screen.queryByTestId("review-prompt-trustpilot")).toBeNull();
+    expect(screen.getByTestId("review-prompt-leave-review")).toBeTruthy();
+    expect(screen.getByTestId("review-prompt-feedback")).toBeTruthy();
+  });
+
+  it("no option has a filled primary look: the page it sits on already has its one primary", async () => {
+    net.prompt = { show: true, trustpilot_eligible: true };
+    mount();
+    await screen.findByTestId("review-prompt-options");
+    const source = (await import("node:fs")).readFileSync(
+      "client/src/components/product-feedback/ReviewPrompt.tsx",
+      "utf8",
+    );
+    expect(source).toContain("variant={look.outline}");
+    expect(source).not.toContain("variant={look.primary}");
+  });
+
+  it("the rating never changes what is offered or sent (identical invitation whatever the sentiment)", async () => {
+    const sentFor = async (stars: number): Promise<unknown> => {
+      cleanup();
+      net.log = [];
+      net.prompt = { show: true, trustpilot_eligible: true };
+      mount();
+      const before = (await screen.findByTestId("review-prompt-options"))
+        .textContent;
+      fireEvent.click(screen.getByTestId("review-prompt-leave-review"));
+      fireEvent.click(screen.getByTestId(`review-rating-${stars}`));
+      fireEvent.click(screen.getByTestId("review-submit"));
+      await screen.findByText("Thanks for your review");
+      return {
+        before,
+        calls: net.log.filter((c) => c.method === "POST").map((c) => c.url),
+      };
+    };
+    expect(await sentFor(1)).toEqual(await sentFor(5));
   });
 
   it("the quote box starts unticked and the review is sent as chosen", async () => {

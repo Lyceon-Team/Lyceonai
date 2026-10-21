@@ -61,6 +61,7 @@ import publicPricingRoutes from "./routes/public-pricing-routes";
 import publicQotdRoutes from "./routes/public-qotd-routes";
 import publicQotdEmailRoutes from "./routes/public-qotd-email-routes";
 import publicGuardianDigestEmailRoutes from "./routes/public-guardian-digest-email-routes";
+import publicReviewAskEmailRoutes from "./routes/public-review-ask-email-routes";
 import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -569,6 +570,12 @@ app.use("/api/public/qotd-email", publicQotdEmailRoutes);
 // only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
 // CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
 app.use("/api/public/guardian-digest-email", publicGuardianDigestEmailRoutes);
+// Review ask "Stop review requests" (UNAUTHENTICATED BY DESIGN — Karl's decision 5, 2026-10-20:
+// "Keep the signed one-click 'Stop review requests' link"). The digest's shape above: the GET
+// renders a button, the POST (the RFC 8058 target) ends the review asks, only on a valid
+// HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
+app.use("/api/public/review-ask-email", publicReviewAskEmailRoutes);
 
 // Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
 // Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no

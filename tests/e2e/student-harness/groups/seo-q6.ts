@@ -6,12 +6,16 @@
  * @spec [docs/plans/seo/seo-marketing-vertical.md R26, R28, R30, rows Q5/Q6 ("SHOT of prompt
  *       states"); owner Step 0 answers 2026-10-05] | @implemented [2026-10-05]
  *
- * plain English: nothing is faked. The prompt is the REAL server's answer: the "exam-history"
- * seed walks a full-length test to a scored report through the real exam routes, the real
- * /api/feedback route verifies that moment (the student's own scored report), applies the
- * cadence and claims the showing; `freshReviewPrompt` clears the persona's prompt state before
- * every capture so each viewport is a first showing. The paid student is 17 (2009-09-03), so the
- * Trustpilot option is absent, as it is for every under-18 student.
+ * plain English: nothing is faked. The ask is the REAL server's answer on Home (review ask, Karl
+ * 2026-10-20): the real /api/feedback route checks the usage trigger and the Getting started
+ * checklist, applies the cadence and claims the ask; `freshReviewPrompt` clears the persona's
+ * prompt state and makes the persona meet the trigger in the harness database before every
+ * capture, so each viewport is a first ask. Desktop shows the card below today's question; the
+ * phone shows the bottom sheet. The paid student is 17 (2009-09-03), so the 13–17 wording and no
+ * Trustpilot option, as for every under-18 student.
+ *
+ * @spec (review ask) [owner brief "Review ask" (Karl, 2026-10-20); Karl's Step 0 decision 7
+ *       (placement)] | @implemented [2026-10-20]
  */
 import type { PageGroup } from "./types";
 
@@ -19,7 +23,7 @@ const PROMPT = {
   desktop: '[data-testid="review-prompt"]',
   mobile: '[data-testid="review-prompt"]',
 };
-const REPORT = "/tests/{paid.scoredExamSessionId}/report";
+const HOME = "/dashboard";
 const NO_PROTOTYPE = {
   kind: "none" as const,
   reason:
@@ -36,14 +40,14 @@ export const SEO_Q6: PageGroup = {
     {
       id: "prompt",
       title:
-        "The review prompt under a scored full-length report: Leave a review, Send private feedback, Not now, and a close button. No Trustpilot (the student is 17).",
+        "The review ask on Home: \"How's Lyceon working for you?\" with Leave a review, Send private feedback, Not now and a close button — a card below today's question on desktop, a bottom sheet on the phone. 13–17 wording, no Trustpilot (the student is 17).",
       persona: "paid",
       cookieChoiceMade: true,
-      route: REPORT,
+      route: HOME,
       freshReviewPrompt: true,
       waitFor: PROMPT,
-      // The report scrolls inside the Focus shell, not the document, so a full-page shot stops at
-      // the fold; focusing "Not now" (the card's last control) scrolls the whole card into view.
+      // Home scrolls inside the App shell, not the document, so a full-page shot stops at the
+      // fold; focusing "Not now" (the card's last control) scrolls the whole card into view.
       steps: [
         {
           focus: {
@@ -61,7 +65,7 @@ export const SEO_Q6: PageGroup = {
         "Leave a review: a 1–5 rating, optional text, and the unticked 'Lyceon may quote this anonymously'",
       persona: "paid",
       cookieChoiceMade: true,
-      route: REPORT,
+      route: HOME,
       freshReviewPrompt: true,
       waitFor: PROMPT,
       steps: [
