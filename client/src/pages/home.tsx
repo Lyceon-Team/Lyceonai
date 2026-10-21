@@ -114,6 +114,9 @@ const PRIMARY_BUTTON =
   "inline-flex min-h-11 items-center justify-center rounded-xl bg-foreground no-underline px-6 py-3.5 text-base font-semibold text-background hover:opacity-90 transition-opacity sm:text-[17px]";
 const OUTLINE_BUTTON =
   "inline-flex min-h-11 items-center justify-center rounded-xl border-[1.5px] no-underline border-foreground px-6 py-3 text-base font-semibold text-foreground hover:bg-card transition-colors sm:text-[17px]";
+/** F-98: the hero's secondary paths, as text links (never a second button). */
+const HERO_TEXT_LINK =
+  "inline-flex min-h-11 items-center font-semibold text-foreground underline underline-offset-4 hover:opacity-80";
 const SECTION = "border-t border-[var(--home-rule)]";
 const CARD = "rounded-2xl border border-border bg-card";
 const INSET = "rounded-xl border border-[var(--home-rule)] bg-background";
@@ -179,9 +182,10 @@ export default function HomePage() {
     >
       <section id="top" className="px-4 sm:px-6">
         <div className="mx-auto flex max-w-[820px] flex-col items-center gap-5 py-16 text-center sm:gap-6 sm:py-20 lg:py-24">
-          <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[var(--home-eyebrow)]">
-            SAT prep for families
-          </p>
+          {/* F-98 (owner brief "student cleanups", Karl, 2026-10-21, Part F): the hero speaks to the
+              student — one sentence, ONE primary button. The parent-facing eyebrow ("SAT prep for
+              families") is gone; "Sign in" and the guardian path are secondary text links, with
+              their targets (mode / role / next) unchanged. */}
           <h1
             id={HERO_TITLE_ID}
             className="text-[2.5rem] font-extrabold leading-[1.08] tracking-[-0.02em] sm:text-5xl lg:text-[56px]"
@@ -203,19 +207,31 @@ export default function HomePage() {
               className={PRIMARY_BUTTON}
               data-testid="button-start-diagnostic"
               {...ctaClickHandlers(() =>
-                trackCtaClick("Start the free diagnostic"),
+                trackCtaClick("Start free diagnostic"),
               )}
             >
-              Start the free diagnostic
+              Start free diagnostic
+            </Link>
+          </div>
+          <p
+            className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-base"
+            data-testid="hero-secondary-links"
+          >
+            <Link
+              href={SIGN_IN_HREF}
+              className={HERO_TEXT_LINK}
+              data-testid="hero-link-sign-in"
+            >
+              Sign in
             </Link>
             <Link
               href={GUARDIAN_SIGNUP_HREF}
-              className={OUTLINE_BUTTON}
+              className={HERO_TEXT_LINK}
               data-testid="button-guardian-signup"
             >
               I'm a parent or guardian
             </Link>
-          </div>
+          </p>
           <p className="text-sm text-[var(--home-caption)]">
             No credit card required · We don't sell student data
           </p>

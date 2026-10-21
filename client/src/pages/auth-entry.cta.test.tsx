@@ -148,6 +148,8 @@ const HOMEPAGE_CTAS: ReadonlyArray<readonly [string, Expectation]> = [
   ["Get started", { tab: "signup", guardian: false }],
   ["Get started free", { tab: "signup", guardian: false }],
   ["Start the free diagnostic", { tab: "signup", guardian: false }],
+  // F-98 (owner brief 2026-10-21, Part F): the hero's one primary button.
+  ["Start free diagnostic", { tab: "signup", guardian: false }],
   ["I'm a parent or guardian", { tab: "signup", guardian: true }],
   ["Start practicing free →", { tab: "signup", guardian: false }],
 ];
@@ -406,5 +408,61 @@ describe("first-run P1: the sign-in / sign-up card", () => {
     expect(
       screen.getByTestId("input-signup-password").getAttribute("placeholder"),
     ).toBe("Password");
+  });
+});
+
+// F-98 (owner brief "student cleanups", Karl, 2026-10-21, Part F): ONE primary button in the hero,
+// "Start free diagnostic"; "Sign in" and "I'm a parent or guardian" are secondary text links whose
+// targets keep their mode / role / next parameters; no parent-facing label above the hero.
+describe("F-98: the homepage hero", () => {
+  function hero(): HTMLElement {
+    const section = document.getElementById("top");
+    if (section === null) throw new Error("no hero section");
+    return section;
+  }
+
+  it("has exactly one button-styled link, 'Start free diagnostic', to sign up then the diagnostic", () => {
+    withClient(<HomePage />);
+    const links = Array.from(hero().querySelectorAll("a"));
+    // Presence first: the hero draws its three paths.
+    expect(links.map((a) => a.textContent)).toEqual([
+      "Start free diagnostic",
+      "Sign in",
+      "I'm a parent or guardian",
+    ]);
+    const buttons = links.filter((a) =>
+      a.className.split(" ").includes("rounded-xl"),
+    );
+    expect(buttons.map((a) => a.textContent)).toEqual([
+      "Start free diagnostic",
+    ]);
+    const primary = new URL(
+      buttons[0]?.getAttribute("href") ?? "",
+      "https://x.test",
+    );
+    expect(primary.searchParams.get("mode")).toBe("signup");
+    expect(primary.searchParams.get("next")).toBe("/practice/diagnostic");
+  });
+
+  it("the secondary links are text links that keep their parameters", () => {
+    withClient(<HomePage />);
+    const signIn = hero().querySelector('[data-testid="hero-link-sign-in"]');
+    const guardian = hero().querySelector(
+      '[data-testid="button-guardian-signup"]',
+    );
+    expect(signIn?.className).toContain("underline");
+    expect(guardian?.className).toContain("underline");
+    const s = new URL(signIn?.getAttribute("href") ?? "", "https://x.test");
+    expect(s.searchParams.get("mode")).toBe("signin");
+    const g = new URL(guardian?.getAttribute("href") ?? "", "https://x.test");
+    expect(g.searchParams.get("mode")).toBe("signup");
+    expect(g.searchParams.get("role")).toBe("guardian");
+    expect(g.searchParams.get("next")).toBe("/guardian");
+  });
+
+  it("draws no parent-facing label above the student hero", () => {
+    withClient(<HomePage />);
+    expect(hero().querySelector("h1")).not.toBeNull();
+    expect(hero().textContent).not.toContain("SAT prep for families");
   });
 });
