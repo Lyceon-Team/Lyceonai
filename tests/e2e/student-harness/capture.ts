@@ -78,7 +78,10 @@ import {
  * ("Reject analytics", the strictly necessary consent cookie only, in the app's own format), so
  * the banner is not drawn over them. The banner itself is the SEO vertical's surface, not shot here.
  */
-function answeredConsentCookie(baseUrl: string): {
+function answeredConsentCookie(
+  baseUrl: string,
+  analytics: boolean,
+): {
   name: string;
   value: string;
   url: string;
@@ -88,7 +91,7 @@ function answeredConsentCookie(baseUrl: string): {
     value: encodeURIComponent(
       formatConsentCookieValue({
         consentId: "5e55c000-0000-4000-8000-000000000063",
-        analytics: false,
+        analytics,
         bannerVersion: COOKIE_BANNER_VERSION,
         decidedAtSeconds: Math.floor(Date.now() / 1000),
       }),
@@ -1099,7 +1102,12 @@ async function shootBuilt(
     await localOnly(context, fontCss);
     // F-72 (owner brief 2026-10-21, Part E): a shot about the banner itself leaves it unanswered.
     if (shot.cookieBannerShown !== true)
-      await context.addCookies([answeredConsentCookie(stack.baseUrl)]);
+      await context.addCookies([
+        answeredConsentCookie(
+          stack.baseUrl,
+          shot.analyticsConsentAccepted === true,
+        ),
+      ]);
     await context.addInitScript(
       (arg: {
         theme: string;
@@ -1548,6 +1556,10 @@ function writeIndex(
     if (shot.freshSession)
       lines.push(
         `Fresh session per capture (real create route, ended after the shot): \`${shot.freshSession.engine} ${JSON.stringify(shot.freshSession.body)}\`.`,
+      );
+    if (shot.analyticsConsentAccepted === true)
+      lines.push(
+        "Cookie banner answered with analytics ACCEPTED (the real `lyceon_consent` cookie, current banner version), so a stored hero-experiment variant is shown.",
       );
     if (shot.cookieChoiceMade === true)
       lines.push(

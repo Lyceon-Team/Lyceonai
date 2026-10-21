@@ -438,6 +438,13 @@ body:has(.home-palette) .consent-surface:not(.dark) {
   --tw-prose-th-borders: var(--rule-strong);
   --tw-prose-td-borders: var(--rule);
 }
+/* At 16px a wide legal table (the privacy policy's) is wider than a 390px phone; it scrolls
+   inside itself rather than scrolling the page sideways (it overflowed the page by 21px). */
+.legal-prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
 
 /*
  * @spec [LYCEON legal versioning Phase 3 §4; Coding Standards §11]

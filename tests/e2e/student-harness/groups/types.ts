@@ -209,6 +209,12 @@ export type Shot = {
    */
   cookieBannerShown?: true;
   /**
+   * Owner rulings on #1277 (Karl, 2026-10-21), ruling 4: the banner is answered with analytics
+   * ACCEPTED instead of refused, so the homepage hero experiment shows a variant stored in
+   * `localStorage` (Variant B is only ever shown to a visitor with valid analytics consent).
+   */
+  analyticsConsentAccepted?: true;
+  /**
    * F-72: after `steps`, per viewport, the first elements matching `a` and `b` must both be on
    * screen and their boxes must not intersect (the cookie banner and the phone tab bar, which
    * exists below `lg` only). `null` checks nothing at that viewport. The capture fails otherwise.

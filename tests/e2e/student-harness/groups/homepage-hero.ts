@@ -7,10 +7,16 @@
  *        links."), Part G ("Render in dark mode with the student tokens; no text below 14px."),
  *        "screenshots for UI changes (light/dark, 1440/390)"] | @implemented [2026-10-21]
  *
- * plain English: signed out, banner answered. The homepage is light only by ruling (public pages
+ * plain English: signed out, banner answered. The hero is shot for both experiment variants
+ * (owner rulings on #1277, Karl, 2026-10-21, ruling 4: Variant B keeps running, conformed to F-98):
+ * Control A, and Variant B with analytics accepted and B stored as posthog-client.ts stores it. The homepage is light only by ruling (public pages
  * are light; its palette is `.home-palette`), so its dark rows record that the device theme is not
  * applied there. The legal hub and one legal document are shot in both themes.
  */
+import {
+  HERO_COPY,
+  HERO_VARIANT_STORAGE_KEY,
+} from "../../../../client/src/lib/analytics/hero-experiment";
 import type { PageGroup } from "./types";
 
 const NONE = {
@@ -34,6 +40,22 @@ export const HOMEPAGE_HERO: PageGroup = {
         desktop: '[data-testid="button-start-diagnostic"]',
         mobile: '[data-testid="button-start-diagnostic"]',
       },
+      expectVisible: '[data-testid="hero-secondary-links"]',
+      prototype: NONE,
+    },
+    {
+      id: "home-hero-variant-b",
+      title:
+        "Homepage hero, experiment Variant B (analytics accepted, B stored): its own H1 and sentence over the same F-98 hero, one filled button, two text links, no label above the title (ruling 4, 2026-10-21)",
+      persona: "signed-out",
+      route: "/",
+      analyticsConsentAccepted: true,
+      localStorage: { [HERO_VARIANT_STORAGE_KEY]: "test" },
+      waitFor: {
+        desktop: '[data-testid="button-start-diagnostic"]',
+        mobile: '[data-testid="button-start-diagnostic"]',
+      },
+      expectText: HERO_COPY.test.title,
       expectVisible: '[data-testid="hero-secondary-links"]',
       prototype: NONE,
     },

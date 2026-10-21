@@ -57,9 +57,12 @@ export const HERO_SUB_ID = "hero-sub";
  * A's sub is shortened to one sentence built only from claims the approved sub already made (free
  * daily practice, a worked explanation for every question, and the paid study plan adapting to
  * weak areas, which keeps the H1's "adapts" scoped to the paid plan as claim H33 did; claim
- * inventory H33a, docs/compliance/claim-inventory.md). PROPOSED, awaiting Karl's written
- * approval in #1277 (Public Disclosure Doctrine §5). Variant B is unchanged (its text is in the
- * swap script, whose hash vercel.json pins); whether B stays parent-facing is asked in #1277.
+ * inventory H33a, docs/compliance/claim-inventory.md). APPROVED by Karl in writing, 2026-10-21
+ * (owner rulings on #1277, ruling 4: "The sentence is APPROVED"; Public Disclosure Doctrine §5).
+ * Variant B: RULED the same day (ruling 4: "Keep hero variant B running, but conform it to F-98:
+ * one primary button, no parent label stacked over the student hero"). Its text is unchanged (it
+ * lives in the swap script, whose sha256 vercel.json pins, so the hash is unchanged too); both
+ * variants share the one F-98 hero markup, which auth-entry.cta.test.tsx proves per variant.
  */
 export const HERO_COPY: Readonly<
   Record<HeroVariant, { title: string; sub: string }>
