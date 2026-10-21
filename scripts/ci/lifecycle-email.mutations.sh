@@ -310,6 +310,19 @@ echo "=== LT (19) the Pro nudge reaches Resend as the wrong event ==="
 plant "$LIB" '  lifecycle_pro_no_plan: "lyceon.pro_no_plan",' '  lifecycle_pro_no_plan: "lyceon.practising_free",' || stale LT19
 run "LT19 event names" "E1 each trigger" "$PG_LT"
 
+echo "=== LT (20) PR 1's reminder rows stop counting toward the cap ==="
+plant "$MIG" "         AND (   (e.payload = '{}'::jsonb AND e.created_at > p_now - interval '3 days')
+              OR (e.payload ->> 'state' = 'sent'" "         AND (   (e.payload ->> 'state' = 'sent'" || stale LT20
+run "LT20 legacy rows in the cap" "L2 PR 1's reminder rows" "$PG_LT"
+
+echo "=== LT (21) the sweep takes FOR UPDATE and blocks students' own writes ==="
+plant "$MIG" "     FOR NO KEY UPDATE OF p SKIP LOCKED" "     FOR UPDATE OF p SKIP LOCKED" || stale LT21
+run "LT21 lock mode" "K1 the sweep never blocks" "$PG_LT"
+
+echo "=== LT (22) the candidate filter reads answered_at alone ==="
+plant "$MIG" "                          AND COALESCE(i.answered_at, i.occurred_at) > p_now - interval '14 days')" "                          AND i.answered_at > p_now - interval '14 days')" || stale LT22
+run "LT22 occurred_at" "F3 practising" "$PG_LT"
+
 echo "=== RESTORED: re-check green ==="
 OUT="$(check "$PG_LR" "$PG_LT" "$WIRING")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"

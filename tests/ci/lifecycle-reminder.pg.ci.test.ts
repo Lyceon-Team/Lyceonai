@@ -249,12 +249,14 @@ describe.skipIf(!PG_AVAILABLE)("founding reminder → real PG", () => {
   it("L1 no address appears in any log line", async () => {
     await db.clear();
     await db.person({ email: "maria.santos@school.example" });
+    await db.person({ email: "zed.skipped@lyceon.ai" }); // the skipped path logs too
     logged.length = 0;
-    await db.runRule(morning());
+    await db.runRule(morning(), { denylist: "lyceon.ai" });
     await db.runRule(morning(8), { refuse: true });
     const text = JSON.stringify(logged);
     expect(text.length).toBeGreaterThan(2);
     expect(text).not.toContain("maria.santos");
+    expect(text).not.toContain("zed.skipped");
     expect(text).not.toContain("@school.example");
   });
 });

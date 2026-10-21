@@ -42,7 +42,8 @@ link.
 
 General, encouraging and short. Never "we saw you did X", never a score, prediction or number
 from the student's data, nothing about how Lyceon works inside (Public Disclosure Doctrine §2).
-Pro features are quoted only from approved claim-inventory row **W2**.
+Product wording is quoted only from approved claim-inventory rows: **W2** (Pro features), **H38**
+("see where you stand in every SAT section") and **V3** ("Practice every day for free").
 
 ### `lyceon.diagnostic_unfinished`
 
@@ -51,20 +52,19 @@ Pro features are quoted only from approved claim-inventory row **W2**.
 - **Body:**
   > Hi {{first_name|there}},
   >
-  > Great start with Lyceon. Find your blind spots shows which SAT skills to focus on first, so
-  > your practice goes where it helps most. You can finish it any time from Home.
+  > Great start with Lyceon. Find your blind spots lets you see where you stand in every SAT
+  > section. You can finish it any time from Home.
 - **Button:** Open Lyceon → `https://lyceon.ai/?utm_source=resend&utm_medium=email&utm_campaign=lifecycle&utm_content=diagnostic_unfinished`
 
 ### `lyceon.pro_no_plan`
 
 - **Subject:** Set up your study plan
-- **Preview:** It takes a couple of minutes.
+- **Preview:** Your study plan is one step away.
 - **Body:**
   > Hi {{first_name|there}},
   >
-  > Thanks for joining Lyceon Pro. A study plan built around your weak areas spreads your
-  > practice across the days you choose, up to your test date. Setting it up takes a couple of
-  > minutes.
+  > Thanks for joining Lyceon Pro. Your next step: set up a study plan built around your weak
+  > areas from your Calendar.
 - **Button:** Set up my plan → `https://lyceon.ai/calendar?utm_source=resend&utm_medium=email&utm_campaign=lifecycle&utm_content=pro_no_plan`
 
 ### `lyceon.practising_free`
@@ -79,6 +79,7 @@ Pro features are quoted only from approved claim-inventory row **W2**.
   > built around your weak areas and an AI tutor for step-by-step help.
 - **Button:** See Lyceon Pro → `https://lyceon.ai/upgrade?utm_source=resend&utm_medium=email&utm_campaign=lifecycle&utm_content=practising_free`
 
-Open points for Karl: "a couple of minutes" (plan setup) is a timing claim; drop it if not
-wanted. "Keep going with free daily practice" leans on approved V3 ("Practice every day for
-free"). The Pro link goes to `/upgrade`, the in-app plans page.
+Open points for Karl: the subject lines, previews and the opening lines ("Great start with
+Lyceon", "Thanks for joining Lyceon Pro", "Great start on your SAT practice") are generic and new;
+approve or replace. "Keep going with free daily practice" leans on approved V3. The Pro link goes
+to `/upgrade`, the in-app plans page; the plan link to `/calendar`.

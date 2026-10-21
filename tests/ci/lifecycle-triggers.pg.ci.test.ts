@@ -29,6 +29,9 @@
  *   Q1 quiet hours: nothing claimed or sent
  *   X1 exclusions: under 13, unknown age, deleted, deletion pending, a guardian, denylisted
  *   E1 each trigger reaches Resend as its own event, with an empty payload
+ *   L2 PR 1's reminder rows (payload {}) count toward the cap and are never re-sent
+ *   K1 the sweep never blocks a student's own writes (FK checks on profiles)
+ *   W1 the retention sweep deletes a sent row; no trigger ever fires again
  * Runs only where PGHOST is set; named by file in CI.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -89,6 +92,13 @@ describe.skipIf(!PG_AVAILABLE)("lifecycle behaviour triggers → real PG", () =>
     expect(await db.state(id, DIAG)).toBeNull();
     expect(await db.claim(at(started, 48 * HOUR))).toEqual([[id, DIAG]]);
     expect(await db.state(id, DIAG)).toBe("sent");
+    // 'created' is in flight too (a session row before its first item).
+    await db.clear();
+    const created = await student();
+    await db.session(created.id, "diagnostic", started, "created");
+    expect(await db.claim(at(started, 48 * HOUR))).toEqual([
+      [created.id, DIAG],
+    ]);
   });
 
   it("D2 diagnostic: completed, abandoned, started before T, or older than 14 days: never", async () => {
@@ -162,6 +172,17 @@ describe.skipIf(!PG_AVAILABLE)("lifecycle behaviour triggers → real PG", () =>
     await db.answer(withQotd.id, 1, at(T, 2 * DAY), "qotd");
     expect(await db.claim(at(T, 3 * DAY))).toEqual([[withDiagnostic.id, FREE]]);
     expect(await db.state(withQotd.id, FREE)).toBeNull();
+  });
+
+  it("F3 practising: items with only occurred_at (answered_at unset) still count, and still window", async () => {
+    await db.clear();
+    const { id } = await student();
+    await db.answer(id, 10, at(T, 2 * DAY), "structured", true);
+    expect(await db.claim(at(T, 2 * DAY + 60_000))).toEqual([[id, FREE]]);
+    await db.clear();
+    const old = await student();
+    await db.answer(old.id, 10, at(T, 2 * DAY), "structured", true);
+    expect(await db.claim(at(T, 16 * DAY + 60_000))).toEqual([]);
   });
 
   it("F2 practising: 9 items, entitled, or the 10th before T: never", async () => {
@@ -316,5 +337,74 @@ describe.skipIf(!PG_AVAILABLE)("lifecycle behaviour triggers → real PG", () =>
         [free.email, "lyceon.practising_free", {}],
       ].sort(),
     );
+  });
+
+  it("L2 PR 1's reminder rows (payload {}) count toward the cap and are never re-sent", async () => {
+    await db.clear();
+    // Onboarded so the reminder is still in its window, and reminded by PR 1 two days ago.
+    const { id } = await db.person({
+      completedAt: at(T, -4 * DAY).toISOString(),
+    });
+    await db.session(id, "diagnostic", at(T, HOUR));
+    const m = morningAfter(T, 3);
+    const sentByPr1 = at(m, -2 * DAY);
+    await db.legacyReminder(id, sentByPr1);
+    expect(await db.claim(m)).toEqual([]); // the cap, from the legacy row
+    expect(await db.state(id, DIAG)).toBe("pending");
+    expect(await db.claim(at(sentByPr1, 3 * DAY))).toEqual([[id, DIAG]]);
+    expect(await db.claim(at(sentByPr1, 6 * DAY))).toEqual([]); // no second reminder
+    expect(await db.state(id, REMINDER)).toBe("sent");
+  });
+
+  it("K1 the sweep never blocks a student's own writes (FK checks on profiles)", async () => {
+    await db.clear();
+    const { id } = await student();
+    await db.answer(id, 3, at(T, DAY)); // recent activity: a claim candidate, so it is locked
+    const other = await db.otherConnection();
+    try {
+      await db.pg.query("BEGIN");
+      await db.claim(at(T, 2 * DAY)); // holds its row locks until COMMIT
+      await other.query("SET lock_timeout = '2s'");
+      const ins = await other.query<{ id: string }>(
+        `INSERT INTO public.practice_sessions
+           (user_id, actor_id, mode, target_count, platform, status)
+         VALUES ($1, $1, 'structured', 10, 'web', 'active') RETURNING id`,
+        [id],
+      );
+      expect(ins.rows).toHaveLength(1);
+      await other.query(`DELETE FROM public.practice_sessions WHERE id = $1`, [
+        ins.rows[0]!.id,
+      ]);
+    } finally {
+      await db.pg.query("ROLLBACK");
+      await other.end();
+    }
+  });
+
+  it("W1 the retention sweep deletes a sent row; no trigger ever fires again", async () => {
+    await db.clear();
+    const diag = await student();
+    await db.session(diag.id, "diagnostic", at(T, HOUR));
+    const pro = await student();
+    await db.entitle(pro.id, at(T, HOUR));
+    const free = await student();
+    await db.answer(free.id, 10, at(T, 2 * DAY));
+    expect((await db.runRule(morningAfter(T, 3))).sent).toHaveLength(3);
+    await db.pg.query(
+      `UPDATE public.notification_events SET created_at = now() - interval '91 days'
+        WHERE event_type LIKE 'lifecycle\\_%'`,
+    );
+    await db.asProbe(() =>
+      db.pg.query(`SELECT * FROM public.sweep_notification_retention(1000)`),
+    );
+    for (const p of [diag, pro, free]) {
+      for (const t of [DIAG, PRO, FREE]) {
+        expect(await db.state(p.id, t)).toBeNull(); // the sweep's effect
+      }
+    }
+    // The sweep can only take a row 90+ days after it was written: every window is long shut.
+    for (const d of [95, 120, 400]) {
+      expect(await db.claim(morningAfter(T, d)), String(d)).toEqual([]);
+    }
   });
 });

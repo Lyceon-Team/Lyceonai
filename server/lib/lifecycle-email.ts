@@ -4,7 +4,7 @@
  * @spec [owner brief "Email lane — send onboarding events to Resend" + ruling (Karl, 2026-10-12):
  *       industry standard, no new infrastructure; contracts/notifications.contract.md §0 (the
  *       onboarding lane) and §14 (the reconcile leaves these contacts alone)] |
- * @implemented [2026-10-12]
+ * @implemented [2026-10-12; reminder 2026-10-21 (SCL-239); behaviour triggers 2026-10-21 (SCL-240)]
  *
  * plain English: the founding-cohort emails (welcomes, a 3-day reminder) are a Resend Automation
  * that Karl edits in Resend. Lyceon tells Resend two facts and nothing else:
@@ -302,9 +302,12 @@ export async function sendEntitledEvents(
 }
 
 /**
- * The lifecycle triggers (owner brief "Lifecycle emails", Karl 2026-10-21; SCL-239, SCL-240):
- * each ledger type, in the priority order `lifecycle_claim` applies, and the Resend event that
- * starts its Automation. Resend holds every template.
+ * @spec [owner brief "Lifecycle emails: reminder timing fix + behaviour triggers" (Karl,
+ *       2026-10-21) PR 1 and PR 2; contracts/notifications.contract.md C14A.4–C14A.5; SCL-239,
+ *       SCL-240] | @implemented [2026-10-21]
+ *
+ * plain English: each ledger type, in the priority order `lifecycle_claim` applies, and the
+ * Resend event that starts its Automation. Resend holds every template.
  */
 export const LIFECYCLE_TRIGGER_EVENTS = {
   lifecycle_reminder_due: REMINDER_DUE_EVENT,
@@ -341,6 +344,9 @@ export const LIFECYCLE_CLAIM_BATCH = 500;
 const LIFECYCLE_MAX_BATCHES = 20;
 
 /**
+ * @spec [same brief, PR 2 "Rules"; contracts/notifications.contract.md C14A.5, C6.6; SCL-240]
+ *       | @implemented [2026-10-21]
+ *
  * Every lifecycle email that is due this morning: `lifecycle_claim` records, resolves and picks
  * (once per trigger, ever; at most one per student per 3 days; the reminder first, then the
  * diagnostic, Pro and practising nudges), then each is told to Resend. Never during quiet hours:

@@ -217,19 +217,23 @@ BEGIN
                         WHERE e.profile_id = p.id AND e.created_at > p_now - interval '14 days')
             OR EXISTS (SELECT 1 FROM public.practice_session_items i
                         WHERE i.user_id = p.id AND i.status = 'answered'
-                          AND i.answered_at > p_now - interval '14 days')
+                          AND COALESCE(i.answered_at, i.occurred_at) > p_now - interval '14 days')
             OR EXISTS (SELECT 1 FROM public.notification_events e
                         WHERE e.subject_profile_id = p.id
                           AND e.event_type = ANY (c_types)
                           AND e.payload ->> 'state' = 'pending'))
      ORDER BY p.id
-     FOR UPDATE OF p SKIP LOCKED
+     -- NO KEY UPDATE: claimers still exclude each other, but the FK checks of a student's own
+     -- writes (a new session, an answer) take KEY SHARE and are never blocked by the sweep.
+     FOR NO KEY UPDATE OF p SKIP LOCKED
   LOOP
     -- (a) Record newly due triggers; resolve pending ones that are no longer due. Each re-check
     --     reads committed state under the row lock, so overlapping runs agree.
     FOREACH v_type IN ARRAY c_types LOOP
       v_id := public.notification_event_id(v_type, v_student::text);
-      SELECT CASE WHEN e.payload = '{}'::jsonb THEN 'sent' ELSE e.payload ->> 'state' END
+      -- A PR 1 reminder row (payload '{}') has no state: re-emitting it is a no-op (insert-once
+      -- id) and only a 'pending' row is ever sent, so it is never sent again.
+      SELECT e.payload ->> 'state'
         INTO v_state
         FROM public.notification_events e WHERE e.event_id = v_id;
       v_due := public.lifecycle_due(v_type, v_student, p_now);
@@ -243,7 +247,8 @@ BEGIN
       END IF;
     END LOOP;
 
-    -- (b) The cap: no lifecycle email to this student in the last 3 days.
+    -- (b) The cap: no lifecycle email to this student in the last 3 days. A PR 1 reminder row
+    --     (payload '{}') was sent when it was written, so its created_at is its sent_at.
     CONTINUE WHEN EXISTS (
       SELECT 1 FROM public.notification_events e
        WHERE e.subject_profile_id = v_student

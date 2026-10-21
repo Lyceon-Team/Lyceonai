@@ -15,8 +15,8 @@
  * is measured from a cutover (`lifecycle_reminder_since()` / `lifecycle_triggers_since()`),
  * never the wall clock.
  */
-import type { Client } from "pg";
-import { bootstrapPgDatabase } from "../helpers/pg-supabase";
+import { Client } from "pg";
+import { bootstrapPgDatabase, pgConnConfig } from "../helpers/pg-supabase";
 
 export const PROBE_ROLE = "lc_service_role_probe";
 export const DAY = 86_400_000;
@@ -169,12 +169,17 @@ export async function setupLifecycleDb(dbName: string, idPrefix: string) {
     return sid;
   }
 
-  /** `count` answered items in a session of `mode`, the last one answered at `lastAt`. */
+  /**
+   * `count` answered items in a session of `mode`, the last one answered at `lastAt`. With
+   * `answeredAtNull`, only `occurred_at` is set (the one column the CHECK guarantees for a
+   * resolved item), so a reader that windows on `answered_at` alone would miss them.
+   */
   async function answer(
     id: string,
     count: number,
     lastAt: Date,
     mode = "structured",
+    answeredAtNull = false,
   ): Promise<void> {
     const sid = await session(
       id,
@@ -190,8 +195,8 @@ export async function setupLifecycleDb(dbName: string, idPrefix: string) {
             question_correct_answer, question_explanation, question_domain, question_skill,
             question_difficulty, question_section, status, occurred_at, answered_at)
          VALUES ($1, $2, $2, $3, $4, 'stem', '[]'::jsonb, 'A', 'e', 'Algebra', 'S', 1, 'M',
-                 'answered', $5, $5)`,
-        [sid, id, k + 1, questionId(k), at.toISOString()],
+                 'answered', $5, CASE WHEN $6 THEN NULL ELSE $5::timestamptz END)`,
+        [sid, id, k + 1, questionId(k), at.toISOString(), answeredAtNull],
       );
     }
   }
@@ -212,6 +217,24 @@ export async function setupLifecycleDb(dbName: string, idPrefix: string) {
        VALUES ($1, $2, '2026-11-02', 'America/Chicago', false)`,
       [v, id],
     );
+  }
+
+  /** A row exactly as PR 1 wrote it (payload `{}`, sent when written). */
+  async function legacyReminder(id: string, sentAt: Date): Promise<void> {
+    await pg.query(
+      `INSERT INTO public.notification_events
+         (event_id, event_type, subject_profile_id, payload, created_at)
+       VALUES (public.notification_event_id('lifecycle_reminder_due', $1::text),
+               'lifecycle_reminder_due', $1::uuid, '{}'::jsonb, $2)`,
+      [id, sentAt.toISOString()],
+    );
+  }
+
+  /** A second connection, as another server request would hold. */
+  async function otherConnection(): Promise<Client> {
+    const c = new Client(pgConnConfig(dbName));
+    await c.connect();
+    return c;
   }
 
   /** lifecycle_claim at `at`, as the probe role: [profile, trigger] pairs. */
@@ -347,6 +370,8 @@ export async function setupLifecycleDb(dbName: string, idPrefix: string) {
     answer,
     plan,
     claim,
+    legacyReminder,
+    otherConnection,
     state,
     runRule,
     clear,
