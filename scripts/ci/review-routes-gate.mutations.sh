@@ -35,7 +35,7 @@ CSRF="server/middleware/csrf-double-submit.ts"
 INDEX="server/index.ts"
 # F-81 (owner brief 2026-10-21, Part B; owner rulings on #1277, 2026-10-21, rulings 1-2): the
 # session-size seed, the admit and one-open-question SQL, and the size reader.
-ADMISSION="supabase/migrations/20261109000000_review_open_session_admission.sql"
+ADMISSION="supabase/migrations/20261109000001_review_open_session_admission.sql"
 CONFIG="server/services/review-config.ts"
 
 BACKUP="$(mktemp -d)"

@@ -6,7 +6,7 @@
  *        without a code change ... No session ever takes the whole queue. Any caller-provided
  *        size is capped by this key"; Doc-01A_V1.0 §24 (TTL + hard staleness; "Values live
  *        per-service in the respective *_runtime_config table"); migration
- *        20261109000000_review_open_session_admission.sql (the seed: 10, min 5, max 20)]
+ *        20261109000001_review_open_session_admission.sql (the seed: 10, min 5, max 20)]
  * | @implemented [2026-10-21]
  *
  * plain English: every review start (the Review page's, Home's, a calendar block's) is capped at

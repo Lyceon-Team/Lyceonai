@@ -26,12 +26,23 @@
  * Trade-offs: no outbox, so a crash or a Resend outage between the change and the call loses that
  * event (logged). Two concurrent first completions can both send `lyceon.onboarded` (accepted,
  * Karl 2026-10-13).
+ *
+ * A THIRD FACT (owner brief "Lifecycle emails: reminder timing fix", Karl 2026-10-21; SCL-239):
+ * `lyceon.reminder_due` `{}`, once per student, ever. Resend Automation delays are durations, so
+ * the founding reminder fired exactly 72 h after signup — at night for a night signup. Lyceon
+ * now decides WHEN: `runLifecycleReminderRule` runs in the morning dispatch sweep (14:00 UTC,
+ * 08:00–09:00 Chicago, inside the quiet-hours window and guarded by it), claims every student
+ * whose onboarding is 3+ days old (since the cutover), not entitled, 13+, not deleted or
+ * deletion-pending (`lifecycle_reminder_claim`, recorded once in the notification ledger), then
+ * applies the denylist and sends the event. A refused send releases the claim, so the next
+ * morning tries again. Resend holds the template and checks `entitled` once more.
  */
 import { waitUntil } from "@vercel/functions";
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { lifecycleEmailEnvSchema } from "../../packages/shared/src/env";
 import { marketingOptInEligible } from "../../packages/shared/src/marketing-consent-schema";
+import { quietHoursDeferral } from "./notifications/quiet-hours";
 import {
   defaultContactsTransport,
   normaliseAddress,
@@ -41,6 +52,7 @@ import { logger } from "../logger";
 
 export const ONBOARDED_EVENT = "lyceon.onboarded";
 export const ENTITLED_EVENT = "lyceon.entitled";
+export const REMINDER_DUE_EVENT = "lyceon.reminder_due";
 
 export type LifecycleRole = "student" | "guardian";
 
@@ -153,6 +165,16 @@ async function eligibleProfile(
   deps: LifecycleDeps,
   event: string,
 ): Promise<Eligible | null> {
+  const result = await eligibility(profileId, deps, event);
+  return "skip" in result ? null : result;
+}
+
+/** Why not, or who: `deletion_state_unreadable` is the one transient reason. */
+async function eligibility(
+  profileId: string,
+  deps: LifecycleDeps,
+  event: string,
+): Promise<Eligible | { skip: SkipReason | "deletion_state_unreadable" }> {
   const profile = await deps.loadProfile(profileId);
   const pending = profile ? await deps.hasPendingDeletion(profileId) : false;
   if (pending === null) {
@@ -161,7 +183,7 @@ async function eligibleProfile(
       event,
       reason: "deletion_state_unreadable",
     });
-    return null;
+    return { skip: "deletion_state_unreadable" };
   }
   const parsed = lifecycleEmailEnvSchema.safeParse(deps.env);
   const reason = lifecycleSkipReason(profile, {
@@ -177,7 +199,7 @@ async function eligibleProfile(
       event,
       reason,
     });
-    return null;
+    return { skip: reason ?? "no_email" };
   }
   return {
     profile: { ...profile, email: profile.email },
@@ -270,6 +292,152 @@ export async function sendEntitledEvents(
     outcomes.push("sent");
   }
   return outcomes;
+}
+
+export type ReminderClaimDeps = {
+  /** lifecycle_reminder_claim: the students claimed at `now`; null when the call failed. */
+  claimDue: (now: Date, limit: number) => Promise<string[] | null>;
+  /** lifecycle_reminder_release: undo one claim so the next sweep tries again. */
+  release: (profileId: string) => Promise<boolean>;
+};
+
+export type ReminderRuleSummary = {
+  ran: boolean;
+  claimed: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+};
+
+export const REMINDER_CLAIM_BATCH = 500;
+const REMINDER_MAX_BATCHES = 20;
+
+/**
+ * `lyceon.reminder_due`: claim every due student (once, ever), then tell Resend. Never during
+ * quiet hours: outside the window it claims nothing and the next morning's sweep picks them up.
+ * A permanent skip (under 13, deleted, denylisted, no address …) keeps the claim — that student
+ * is never reminded; a refused send or an unreadable deletion state releases it.
+ */
+export async function runLifecycleReminderRule(
+  now: Date,
+  deps: LifecycleDeps & ReminderClaimDeps,
+): Promise<ReminderRuleSummary> {
+  const summary: ReminderRuleSummary = {
+    ran: false,
+    claimed: 0,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+  };
+  if (quietHoursDeferral(now) !== null) {
+    logger.info(
+      "LIFECYCLE_EMAIL",
+      "reminder_rule_quiet_hours",
+      "Reminder rule skipped: quiet hours",
+      {},
+    );
+    return summary;
+  }
+  summary.ran = true;
+  for (let batch = 0; batch < REMINDER_MAX_BATCHES; batch++) {
+    const claimed = await deps.claimDue(now, REMINDER_CLAIM_BATCH);
+    if (claimed === null) {
+      summary.failed += 1;
+      break;
+    }
+    summary.claimed += claimed.length;
+    for (const profileId of claimed) {
+      const target = await eligibility(profileId, deps, REMINDER_DUE_EVENT);
+      if ("skip" in target) {
+        // A read that failed (the claim proves the profile exists) is transient: retry tomorrow.
+        if (
+          target.skip === "deletion_state_unreadable" ||
+          target.skip === "no_profile"
+        ) {
+          await deps.release(profileId);
+        }
+        summary.skipped += 1;
+        continue;
+      }
+      const sent = await deps.contacts.sendEvent(
+        REMINDER_DUE_EVENT,
+        target.profile.email,
+        {},
+        { recipientProfileId: profileId },
+      );
+      if (!sent.ok) {
+        await deps.release(profileId);
+        summary.failed += 1;
+        continue;
+      }
+      logger.info("LIFECYCLE_EMAIL", "sent", "Lifecycle event sent", {
+        profileId,
+        event: REMINDER_DUE_EVENT,
+        role: target.role,
+      });
+      summary.sent += 1;
+    }
+    if (claimed.length < REMINDER_CLAIM_BATCH) break;
+  }
+  logger.info("LIFECYCLE_EMAIL", "reminder_rule", "Reminder rule ran", summary);
+  return summary;
+}
+
+const claimedIdsSchema = z.array(z.string().uuid());
+
+async function claimDueInDb(
+  now: Date,
+  limit: number,
+): Promise<string[] | null> {
+  const { data, error } = await supabaseServer.rpc("lifecycle_reminder_claim", {
+    p_now: now.toISOString(),
+    p_limit: limit,
+  });
+  if (error) {
+    logger.error(
+      "LIFECYCLE_EMAIL",
+      "reminder_claim_failed",
+      "Reminder claim failed",
+      { code: error.code },
+    );
+    return null;
+  }
+  const parsed = claimedIdsSchema.safeParse(data ?? []);
+  if (!parsed.success) {
+    logger.error(
+      "LIFECYCLE_EMAIL",
+      "reminder_claim_shape_invalid",
+      "Reminder claim returned an unexpected shape",
+      {},
+    );
+    return null;
+  }
+  return parsed.data;
+}
+
+async function releaseInDb(profileId: string): Promise<boolean> {
+  const { data, error } = await supabaseServer.rpc(
+    "lifecycle_reminder_release",
+    { p_profile_id: profileId },
+  );
+  if (error) {
+    logger.error(
+      "LIFECYCLE_EMAIL",
+      "reminder_release_failed",
+      "Reminder release failed; this student will not be retried",
+      { profileId, code: error.code },
+    );
+    return false;
+  }
+  return data === true;
+}
+
+export function defaultReminderDeps(): LifecycleDeps & ReminderClaimDeps {
+  return {
+    ...defaultLifecycleDeps(),
+    claimDue: claimDueInDb,
+    release: releaseInDb,
+  };
 }
 
 async function loadProfileFromDb(

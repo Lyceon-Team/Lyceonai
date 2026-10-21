@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import { LyceonMark } from "@/components/common/LyceonMark";
 import { openCookieSettings } from "@/lib/analytics/consent";
+import { trustpilotReviewUrl } from "@/lib/product-feedback-api";
 import { SocialLinks } from "./SocialLinks";
 
 /**
@@ -11,6 +12,7 @@ export type FooterTone = "default" | "navy";
 
 export default function Footer({ tone = "default" }: { tone?: FooterTone }) {
   const currentYear = new Date().getFullYear();
+  const trustpilotUrl = trustpilotReviewUrl();
   const navy = tone === "navy";
   const linkClass = navy
     ? "text-sm text-[var(--home-footer-text)] underline-offset-2 hover:underline"
@@ -82,6 +84,32 @@ export default function Footer({ tone = "default" }: { tone?: FooterTone }) {
                 }
               />
             </div>
+            {/* Final brief "Trustpilot card + Feedback" (Karl, 2026-10-20) §2: Feedback (the static
+                /contact page) and, when a review URL was set at build, Review us on Trustpilot. */}
+            <ul className="mt-4 space-y-2" data-testid="footer-feedback-links">
+              <li>
+                <Link
+                  href="/contact"
+                  className={linkClass}
+                  data-testid="footer-feedback"
+                >
+                  Feedback
+                </Link>
+              </li>
+              {trustpilotUrl !== null ? (
+                <li>
+                  <a
+                    href={trustpilotUrl}
+                    target="_blank"
+                    rel="noopener"
+                    className={linkClass}
+                    data-testid="footer-trustpilot"
+                  >
+                    Review us on Trustpilot ↗
+                  </a>
+                </li>
+              ) : null}
+            </ul>
           </div>
 
           <div>

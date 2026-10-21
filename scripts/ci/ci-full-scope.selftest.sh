@@ -39,7 +39,7 @@ chmod +x "$TMP/bin/gh"
 scope() {
   local label="$1" out="$TMP/out"
   : >"$out"
-  PATH="$TMP/bin:$PATH" GITHUB_OUTPUT="$out" EVENT_NAME="$2" BASE_REF="$3" HAS_LABEL="$4" \
+  env PATH="$TMP/bin:$PATH" GITHUB_OUTPUT="$out" EVENT_NAME="$2" BASE_REF="$3" HAS_LABEL="$4" \
     FAKE_SATISFIED="$5" REPO="Lyceon-Team/Lyceonai" GH_TOKEN="" bash "$SCOPE" >/dev/null 2>&1
   local run required
   run="$(sed -n 's/^run=//p' "$out")"

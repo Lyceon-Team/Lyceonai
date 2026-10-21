@@ -386,7 +386,7 @@ BEGIN
   SELECT actor_id INTO v_actor FROM public.profiles WHERE id = v_student;
 
   -- Fixture: the gates above leave this student's earlier review sessions open on the same
-  -- question, and since F-81 (20261109000000, owner brief 2026-10-21) a question may be in only
+  -- question, and since F-81 (20261109000001, owner brief 2026-10-21) a question may be in only
   -- one open review session (`review_session_items_one_open_question`). End them as terminate
   -- would, so this block's session is the only open one.
   UPDATE public.review_sessions
