@@ -1009,6 +1009,69 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
         "audience": "not_pii"
       },
       "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "feedback_submitted",
+      "schema_tier": "strict",
+      "canonical_event_class": "system",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "A student or guardian sent private feedback (final brief, Karl 2026-10-20). Counts only: the type and the role; never the text, the page or anything about the person.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "type",
+          "role"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "feedback_submitted"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "idea",
+              "other"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian"
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "type": "not_pii",
+        "role": "not_pii"
+      },
+      "retention_class": "standard_analytics"
     }
   ],
   "person_properties": [

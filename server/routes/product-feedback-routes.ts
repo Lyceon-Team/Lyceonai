@@ -19,6 +19,9 @@
  *   POST /prompt/trustpilot    204, or 403 for anyone under 18. Counts as reviewed.
  *   POST /reviews              201 created / 200 replay / 409 a different review exists / 403.
  *   POST /feedback             201 created / 200 replay (same idempotency_key) / 403 / 429.
+ *                              Carries the type, reply-OK, the route pattern and the app version
+ *                              (final brief, Karl 2026-10-20); a new row posts one line to Slack
+ *                              #social (feedback-slack.ts) and counts `feedback_submitted`.
  *
  * The caller's role and date of birth are read from their profile here, never taken from the
  * request; the audience bucket is derived from them. No entitlement gate: reviews and feedback
@@ -40,6 +43,7 @@ import {
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { toIsoDate } from "../lib/role-choice";
 import { emitEvent } from "../lib/analytics/emit-event";
+import { postFeedbackToSlack } from "../lib/feedback-slack";
 import { logger } from "../logger";
 import {
   markTrustpilot,
@@ -53,6 +57,7 @@ import {
 } from "../services/product-feedback/product-feedback-service";
 import { liveMomentChecks } from "../services/product-feedback/moments";
 import {
+  feedbackAgeBand,
   feedbackSubmitSchema,
   reviewAskAnalytics,
   reviewPromptQuerySchema,
@@ -378,6 +383,14 @@ export function createProductFeedbackRouter(
           parsed.data,
         );
         if (!result.ok) {
+          if (result.reason === "reply_not_allowed") {
+            return sendError(
+              res,
+              403,
+              "REPLY_NOT_ALLOWED",
+              "We can't reply by email to this account.",
+            );
+          }
           return sendError(
             res,
             403,
@@ -388,8 +401,35 @@ export function createProductFeedbackRouter(
         logger.info(COMPONENT, "feedback_stored", "Feedback stored", {
           outcome: result.outcome,
           source: parsed.data.source,
+          type: parsed.data.type,
           requestId: req.requestId,
         });
+        if (
+          result.outcome === "created" &&
+          (caller.role === "student" || caller.role === "guardian")
+        ) {
+          // Final brief §5 (Karl, 2026-10-20; SCL-237): one line to #social. Never blocks or fails
+          // the submission: postFeedbackToSlack never throws and logs no content.
+          await postFeedbackToSlack(
+            {
+              type: parsed.data.type,
+              routePattern: parsed.data.route_pattern,
+              role: caller.role,
+              ageBand: feedbackAgeBand(caller.dateOfBirth, deps.now()),
+              replyOk: parsed.data.reply_ok,
+              body: parsed.data.body,
+            },
+            { requestId: req.requestId },
+          );
+          // Final brief §6: counts only — the type and the role.
+          await emitSafely(
+            emitEvent(caller.profileId, "feedback_submitted", {
+              type: parsed.data.type,
+              role: caller.role,
+            }),
+            req.requestId,
+          );
+        }
         const bucket = reviewAskAnalytics(
           caller.role,
           caller.dateOfBirth,

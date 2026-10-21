@@ -207,6 +207,8 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/blog/:slug": "public-marketing",
   "/sat-question-of-the-day": "public-marketing",
   "/sat-question-of-the-day/:date": "public-marketing",
+  // Final brief "Trustpilot card + 'Feedback' across the site" (Karl, 2026-10-20) §2.
+  "/contact": "public-marketing",
   "/trust": "public-legal",
   "/legal": "public-legal",
   "/legal/:slug": "public-legal",

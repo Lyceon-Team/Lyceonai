@@ -401,6 +401,7 @@ describe("registry module", () => {
       "consent_captured",
       "exam_section_submitted",
       "exam_started",
+      "feedback_submitted",
       "qotd_answered",
       "qotd_email_consent",
       "qotd_email_prompt_shown",

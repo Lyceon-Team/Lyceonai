@@ -10215,18 +10215,41 @@ $$;
 
 
 --
--- Name: product_feedback_submit(uuid, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: product_feedback_reply_allowed(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) RETURNS jsonb
+CREATE FUNCTION public.product_feedback_reply_allowed(p_profile_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE((
+    SELECT p.role <> 'student' OR public.marketing_opt_in_age_eligible(p.date_of_birth)
+      FROM public.profiles p
+     WHERE p.id = p_profile_id), false);
+$$;
+
+
+--
+-- Name: product_feedback_submit(uuid, text, text, text, uuid, text, boolean, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text DEFAULT 'other'::text, p_reply_ok boolean DEFAULT false, p_route_pattern text DEFAULT NULL::text, p_app_version text DEFAULT NULL::text) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_rows integer;
 BEGIN
-  INSERT INTO public.product_feedback (profile_id, audience, body, source, idempotency_key)
-  VALUES (p_profile_id, p_audience, p_body, p_source, p_idempotency_key)
+  IF p_reply_ok AND NOT public.product_feedback_reply_allowed(p_profile_id) THEN
+    RAISE EXCEPTION 'product_feedback_submit: reply_ok is not allowed for this account'
+      USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO public.product_feedback
+    (profile_id, audience, body, source, idempotency_key, type, reply_ok, route_pattern, app_version)
+  VALUES
+    (p_profile_id, p_audience, p_body, p_source, p_idempotency_key, p_type, p_reply_ok,
+     p_route_pattern, p_app_version)
   ON CONFLICT (profile_id, idempotency_key) DO NOTHING;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
 
@@ -17471,9 +17494,16 @@ CREATE TABLE public.product_feedback (
     source text NOT NULL,
     idempotency_key uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    type text DEFAULT 'other'::text NOT NULL,
+    reply_ok boolean DEFAULT false NOT NULL,
+    route_pattern text,
+    app_version text,
+    CONSTRAINT product_feedback_app_version_check CHECK (((app_version IS NULL) OR (app_version ~ '^([0-9a-f]{7}|dev)$'::text))),
     CONSTRAINT product_feedback_audience_check CHECK ((audience = ANY (ARRAY['student'::text, 'guardian'::text]))),
     CONSTRAINT product_feedback_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 2000))),
-    CONSTRAINT product_feedback_source_check CHECK ((source = ANY (ARRAY['prompt'::text, 'settings'::text, 'help'::text, 'menu'::text])))
+    CONSTRAINT product_feedback_route_pattern_check CHECK (((route_pattern IS NULL) OR ((char_length(route_pattern) <= 120) AND (route_pattern ~ '^(/|(/([a-z][a-z-]*|:[a-zA-Z]+))+)$'::text)))),
+    CONSTRAINT product_feedback_source_check CHECK ((source = ANY (ARRAY['prompt'::text, 'settings'::text, 'help'::text, 'menu'::text]))),
+    CONSTRAINT product_feedback_type_check CHECK ((type = ANY (ARRAY['bug'::text, 'idea'::text, 'other'::text])))
 );
 
 
@@ -17481,7 +17511,7 @@ CREATE TABLE public.product_feedback (
 -- Name: TABLE product_feedback; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.product_feedback IS 'Plan R28: private feedback, stored only (owner answer 8, 2026-10-05). Never displayed, never forwarded. Written only by product_feedback_submit. ON DELETE CASCADE from profiles.';
+COMMENT ON TABLE public.product_feedback IS 'Plan R28: private feedback (owner answer 8, 2026-10-05; amended 2026-10-20). Stored, and since 2026-10-20 each new row is also posted to Slack #social by the server: type, page, role, age band and reply-OK always; the text only for senders 18+, at most 300 characters (SCL-237). Never displayed in the product. type / route_pattern (a route pattern, never a real id or query) / app_version / reply_ok added 2026-10-20. Written only by product_feedback_submit. ON DELETE CASCADE from profiles.';
 
 
 --
@@ -26195,11 +26225,19 @@ GRANT ALL ON FUNCTION public.prevent_update_delete() TO service_role;
 
 
 --
--- Name: FUNCTION product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION product_feedback_reply_allowed(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.product_feedback_reply_allowed(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_feedback_reply_allowed(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text, p_reply_ok boolean, p_route_pattern text, p_app_version text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text, p_reply_ok boolean, p_route_pattern text, p_app_version text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.product_feedback_submit(p_profile_id uuid, p_audience text, p_body text, p_source text, p_idempotency_key uuid, p_type text, p_reply_ok boolean, p_route_pattern text, p_app_version text) TO service_role;
 
 
 --

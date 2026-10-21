@@ -757,7 +757,7 @@ describe.skipIf(!PG_AVAILABLE)("review ask → real PG", () => {
         "product_review_prompt_stop(uuid)",
         "product_review_submit(uuid, text, smallint, text, boolean)",
         "product_review_mark_external(uuid)",
-        "product_feedback_submit(uuid, text, text, text, uuid)",
+        "product_feedback_submit(uuid, text, text, text, uuid, text, boolean, text, text)",
         "review_ask_completed_sessions(uuid)",
         "review_ask_usage_met(uuid, timestamptz)",
         "review_ask_email_notify(timestamptz, integer)",
