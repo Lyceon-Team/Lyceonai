@@ -5,20 +5,20 @@
  *        explanation content is served"; student-UI register F-57; docs/questions_governance.md
  *        §A.1 (`version` increments on a content edit), §A.6] | @implemented [2026-10-21]
  *
- * plain English: genesis + every migration, then the two questions exactly as their proving
- * batches inserted them (the INSERT line is read from the seed file, not restated), published.
- * SATM26DQWW4 carries its de-lettered text (deletter_explanations.sql), SATM2IRA60X its original
- * letter-naming text. The correction file is applied as Karl applies it; the test reads what
- * serving reads (`servable_questions`, the view every engine's snapshot is built from) and
- * requires the corrected text, a version bump of exactly one, no choice named by letter, and an
- * unchanged row on a second application.
+ * plain English: genesis + every migration, then SATM26DQWW4 exactly as its proving batch
+ * inserted it (the INSERT line is read from the seed file, not restated) with its de-lettered
+ * text (deletter_explanations.sql), published. The correction file is applied as Karl applies
+ * it; the test reads what serving reads (`servable_questions`, the view every engine's snapshot
+ * is built from) and requires the corrected text, a version bump of exactly one, and an
+ * unchanged row on a second application. F-57 is CLOSED (owner rulings on #1277, Karl,
+ * 2026-10-21: its pattern found 0 rows in production), so the file changes that one question
+ * and nothing else, which the last case proves against a row the file must not touch.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bootstrapPgDatabase, PG_AVAILABLE } from "../helpers/pg-supabase";
-import { explanationNamesChoiceLetter } from "../../shared/practice/letter-reference";
 
 const ROOT = join(__dirname, "..", "..");
 const SEED = join(ROOT, "infra/supabase/seed");
@@ -26,7 +26,6 @@ const CORRECTIONS = join(
   SEED,
   "migrations/explanation_corrections_2026-10-21.sql",
 );
-const F57_PATTERN = "\\m(choice|option|answer)\\s+[A-D]\\M";
 
 let pg: Client;
 
@@ -68,6 +67,7 @@ describe.skipIf(!PG_AVAILABLE)(
       pg = await bootstrapPgDatabase("explanation_corrections_ci");
       await pg.query(seedInsert("proving_batch_003.sql", "SATM26DQWW4"));
       await pg.query(deletterUpdate("SATM26DQWW4"));
+      // A letter-naming explanation the file must NOT touch since F-57 closed.
       await pg.query(seedInsert("proving_batch_004.sql", "SATM2IRA60X"));
       await pg.query(
         `UPDATE public.questions SET status = 'published' WHERE id IN ('SATM26DQWW4', 'SATM2IRA60X')`,
@@ -78,7 +78,7 @@ describe.skipIf(!PG_AVAILABLE)(
       if (pg) await pg.end();
     });
 
-    it("before: the 2(x − 3) + 5 = 3x − 4 explanation gives the wrong reasons, and SATM2IRA60X names a choice by letter", async () => {
+    it("before: the 2(x − 3) + 5 = 3x − 4 explanation gives the wrong reasons; SATM2IRA60X (the untouched control) names a choice by letter", async () => {
       const algebra = await served("SATM26DQWW4");
       expect(algebra?.explanation).toContain(
         "$-3$ results from a sign error when combining $-6 + 5$",
@@ -87,7 +87,7 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(lettered?.explanation).toMatch(/option [A-D]\b/);
     });
 
-    it("after: the corrected explanations are what serving reads, version + 1, no letter", async () => {
+    it("after: the corrected explanation is what serving reads, version + 1; nothing else changes", async () => {
       const before = {
         algebra: (await served("SATM26DQWW4"))?.version ?? 0,
         lettered: (await served("SATM2IRA60X"))?.version ?? 0,
@@ -105,15 +105,10 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(algebra?.explanation).not.toContain("combining $-6 + 5$");
       expect(algebra?.version).toBe(before.algebra + 1);
 
+      // F-57 closed: the file no longer re-states any other explanation.
       const lettered = await served("SATM2IRA60X");
-      expect(explanationNamesChoiceLetter(lettered?.explanation)).toBe(false);
-      expect(lettered?.version).toBe(before.lettered + 1);
-
-      const left = await pg.query<{ n: number }>(
-        `SELECT count(*)::int AS n FROM public.servable_questions WHERE explanation ~ $1`,
-        [F57_PATTERN],
-      );
-      expect(Number(left.rows[0]?.n)).toBe(0);
+      expect(lettered?.explanation).toMatch(/option [A-D]\b/);
+      expect(lettered?.version).toBe(before.lettered);
     });
 
     it("a second application changes nothing", async () => {

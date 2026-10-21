@@ -29,6 +29,12 @@
  * staleness bound equal to the TTL, so an expired entry is never served in place of a failed
  * refresh. Lowering the size to 5 therefore reaches every instance within one TTL, no deploy.
  *
+ * CALENDAR (owner follow-up rulings on #1277, Karl, 2026-10-21, ruling 2): calendar review blocks
+ * are to ask for at most this same key, with post-exam misses spread over several one-session
+ * blocks. Recorded as SCL-242 (PROPOSED); not built yet, because the planner's oracle and fixtures
+ * in docs/Spec encode the old sizes and must be amended first. Until then the cap rule above is
+ * what keeps a larger calendar block's launch to one session.
+ *
  * edge cases: the value is read as JSON; a JSON string ("10") is malformed, not coerced.
  */
 import { z } from "zod";
