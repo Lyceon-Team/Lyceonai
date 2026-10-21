@@ -9643,14 +9643,14 @@ $$;
 
 CREATE FUNCTION public.lifecycle_reminder_since() RETURNS timestamp with time zone
     LANGUAGE sql IMMUTABLE
-    AS $$ SELECT timestamptz '2026-10-23 14:00:00+00' $$;
+    AS $$ SELECT timestamptz '2026-10-21 08:00:00+00' $$;
 
 
 --
 -- Name: FUNCTION lifecycle_reminder_since(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.lifecycle_reminder_since() IS 'The cutover (2026-10-23 14:00 UTC, the Resend Automation split). Students who completed onboarding earlier stay on the old Automation (its own 72 h reminder) and never get lyceon.reminder_due.';
+COMMENT ON FUNCTION public.lifecycle_reminder_since() IS 'The founding reminder''s cutover (2026-10-21 08:00 UTC, when Resend became welcome-only plus the app-sent reminder). Students who completed onboarding earlier stay on the old Automation''s reminder and never get lyceon.reminder_due.';
 
 
 --
@@ -9659,14 +9659,14 @@ COMMENT ON FUNCTION public.lifecycle_reminder_since() IS 'The cutover (2026-10-2
 
 CREATE FUNCTION public.lifecycle_triggers_since() RETURNS timestamp with time zone
     LANGUAGE sql IMMUTABLE
-    AS $$ SELECT timestamptz '2026-10-27 14:00:00+00' $$;
+    AS $$ SELECT timestamptz '2026-10-21 08:00:00+00' $$;
 
 
 --
 -- Name: FUNCTION lifecycle_triggers_since(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.lifecycle_triggers_since() IS 'The behaviour triggers'' cutover (2026-10-27 14:00 UTC): a diagnostic started, an entitlement created, or a 10th item answered before it never triggers a lifecycle email.';
+COMMENT ON FUNCTION public.lifecycle_triggers_since() IS 'The behaviour triggers'' cutover (2026-10-21 08:00 UTC): a diagnostic started, an entitlement created, or a 10th item answered before it never triggers a lifecycle email.';
 
 
 --

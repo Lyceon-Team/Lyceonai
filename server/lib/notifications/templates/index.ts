@@ -146,7 +146,7 @@ export function renderInApp(
         return err("review_ask payload does not match its schema");
       return ok(reviewAskInApp(parsed.data));
     }
-    // Records only (20261109000000, 20261110000000): no recipients, so never rendered here.
+    // Records only (20261109000000, 20261111000000): no recipients, so never rendered here.
     case "lifecycle_reminder_due":
     case "lifecycle_diagnostic_unfinished":
     case "lifecycle_pro_no_plan":

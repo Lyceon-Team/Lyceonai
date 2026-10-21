@@ -22,24 +22,25 @@
 --     trigger's own condition, its window (due from its threshold to 14 days after the event
 --     that started it) and the cutover (`lifecycle_triggers_since()`; the reminder keeps
 --     `lifecycle_reminder_since()`).
---  4. `lifecycle_claim(p_now, p_limit)` runs every morning (the 14:00 UTC sweep) and, per
---     student, under a row lock:
+--  4. `lifecycle_claim(p_now, p_limit)` runs in the two lifecycle send slots (22:00 UTC Monday–
+--     Friday, 15:00 UTC Saturday–Sunday; GET /api/internal/lifecycle-email) and, per student,
+--     under a row lock:
 --       records a newly due trigger as pending; resolves a pending one that is no longer due;
 --       then, when no lifecycle email went to this student in the last 3 days (the cap; the QOTD
 --       email is not a lifecycle email), sends the first pending one in priority order —
 --       reminder, diagnostic, Pro, practising — and returns (student, type). The rest wait and
---       are re-checked the next morning.
+--       are re-checked in the next slot.
 --  5. `lifecycle_release(student, type)` puts a refused send back to pending, so the next
---     morning tries again (and the cap is not spent).
+--     send slot tries again (and the cap is not spent).
 --  6. The 14-day windows keep every row far inside the 90-day notification retention (the sweep
 --     deletes by created_at): a swept row can never re-open a trigger.
 --  7. Replaces `lifecycle_reminder_claim` / `lifecycle_reminder_release` (20261109000000): the
 --     reminder now goes through the same claim so the cap and the priority cover it. Its
 --     condition and cutover are unchanged.
 --
--- OWNER-RUN. Karl applies to prod after 20261109000000_lifecycle_reminder_due.sql. DO NOT
--- auto-apply. The cutover below is the morning PR 2's Resend Automations go live; if it ships
--- later, move it to that morning before applying.
+-- OWNER-RUN. Karl applies to prod after 20261109000000_lifecycle_reminder_due.sql, after merge.
+-- DO NOT auto-apply. Both cutovers are 2026-10-21 08:00 UTC (owner ruling); this file redefines
+-- lifecycle_reminder_since() from the 2026-10-23 instant already live.
 -- LYCEON-MIGRATION-REVIEWED
 --
 -- rollback (in this order):
@@ -47,6 +48,7 @@
 --   DROP FUNCTION IF EXISTS public.lifecycle_claim(timestamptz, integer);
 --   DROP FUNCTION IF EXISTS public.lifecycle_due(text, uuid, timestamptz);
 --   DROP FUNCTION IF EXISTS public.lifecycle_triggers_since();
+--   -- re-run section 2 of 20261109000000_lifecycle_reminder_due.sql (lifecycle_reminder_since)
 --   DELETE FROM public.notification_events WHERE event_type IN
 --     ('lifecycle_diagnostic_unfinished', 'lifecycle_pro_no_plan', 'lifecycle_practising_free');
 --   -- re-run sections 1, 3, 4 and 5 of 20261109000000_lifecycle_reminder_due.sql
@@ -79,18 +81,28 @@ ALTER TABLE public.notification_events
                         'lifecycle_practising_free'));
 
 -- ---------------------------------------------------------------------------
--- 2. The triggers' cutover: a fixed instant (the schema is the same on every apply)
+-- 2. The cutovers: one fixed instant for all four (the schema is the same on every apply)
 -- ---------------------------------------------------------------------------
--- 2026-10-27 14:00 UTC (09:00 Chicago): the morning the three Resend Automations go live. Only a
--- situation that arises after it (a diagnostic started, an entitlement created, the 10th item
--- answered) can trigger an email; nobody already in one at launch gets a burst on day one.
+-- 2026-10-21 08:00 UTC, when Claude split Resend (owner rulings on #1284, Karl 2026-10-21: "no
+-- cutovers to wait for"). The reminder's cutover was 2026-10-23 14:00 UTC in 20261109000000,
+-- which is already applied in production; this file redefines it. Only a situation that arises
+-- after the instant (onboarding completed, a diagnostic started, an entitlement created, the 10th
+-- item answered) can trigger an email; nobody already in one at launch gets a burst on day one.
+CREATE OR REPLACE FUNCTION public.lifecycle_reminder_since()
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+AS $fn$ SELECT timestamptz '2026-10-21 08:00:00+00' $fn$;
+COMMENT ON FUNCTION public.lifecycle_reminder_since() IS
+  'The founding reminder''s cutover (2026-10-21 08:00 UTC, when Resend became welcome-only plus the app-sent reminder). Students who completed onboarding earlier stay on the old Automation''s reminder and never get lyceon.reminder_due.';
+
 CREATE OR REPLACE FUNCTION public.lifecycle_triggers_since()
 RETURNS timestamptz
 LANGUAGE sql
 IMMUTABLE
-AS $fn$ SELECT timestamptz '2026-10-27 14:00:00+00' $fn$;
+AS $fn$ SELECT timestamptz '2026-10-21 08:00:00+00' $fn$;
 COMMENT ON FUNCTION public.lifecycle_triggers_since() IS
-  'The behaviour triggers'' cutover (2026-10-27 14:00 UTC): a diagnostic started, an entitlement created, or a 10th item answered before it never triggers a lifecycle email.';
+  'The behaviour triggers'' cutover (2026-10-21 08:00 UTC): a diagnostic started, an entitlement created, or a 10th item answered before it never triggers a lifecycle email.';
 
 -- ---------------------------------------------------------------------------
 -- 3. Each condition, in one place

@@ -55,7 +55,7 @@ import { z } from "zod";
  * notification_messages row and the dispatcher never renders or sends it.
  *
  * `lifecycle_diagnostic_unfinished`, `lifecycle_pro_no_plan` and `lifecycle_practising_free`
- * joined on 2026-10-21 (same brief, PR 2; 20261110000000; SCL-240): the behaviour triggers'
+ * joined on 2026-10-21 (same brief, PR 2; 20261111000000; SCL-240): the behaviour triggers'
  * records, likewise without recipients. Their payload is `{ state: "pending" | "sent" |
  * "resolved", sent_at?, resolved_at? }`; Resend sends the emails.
  */

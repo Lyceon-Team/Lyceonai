@@ -46,18 +46,22 @@ export const yearsAgo = (years: number): string => {
   return d.toISOString().slice(0, 10);
 };
 
-/** `base`'s day + N at 15:00 UTC: 09:00–10:00 Chicago, inside the quiet-hours window. */
+/**
+ * The lifecycle send slot on `base`'s day + N (owner rulings on #1284): 22:00 UTC on a weekday,
+ * 15:00 UTC on a weekend.
+ */
 export function morningAfter(base: Date, daysAhead: number): Date {
   const d = new Date(base);
   d.setUTCDate(d.getUTCDate() + daysAhead);
-  d.setUTCHours(15, 0, 0, 0);
+  const weekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
+  d.setUTCHours(weekend ? 15 : 22, 0, 0, 0);
   return d;
 }
 
-/** 03:00 Chicago on that day: quiet hours. */
+/** The same day at 14:00 UTC (the old morning sweep): not a send slot. */
 export function nightAfter(base: Date, daysAhead: number): Date {
   const d = morningAfter(base, daysAhead);
-  d.setUTCHours(8, 0, 0, 0);
+  d.setUTCHours(14, 0, 0, 0);
   return d;
 }
 

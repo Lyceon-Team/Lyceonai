@@ -27,7 +27,7 @@ describe("notifications schema", () => {
   // email `review_ask` on 2026-10-20 (owner brief "Review ask", 20261107000000); the founding
   // reminder's record `lifecycle_reminder_due` on 2026-10-21 (owner brief "Lifecycle emails",
   // 20261109000000, SCL-239); the three behaviour triggers' records on 2026-10-21 (same brief,
-  // PR 2, 20261110000000, SCL-240).
+  // PR 2, 20261111000000, SCL-240).
   it("names exactly the sixteen event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",

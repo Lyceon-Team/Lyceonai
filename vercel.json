@@ -75,6 +75,14 @@
     {
       "path": "/api/internal/guardian-daily-digest",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/internal/lifecycle-email",
+      "schedule": "0 22 * * 1-5"
+    },
+    {
+      "path": "/api/internal/lifecycle-email",
+      "schedule": "0 15 * * 0,6"
     }
   ],
   "routes": [

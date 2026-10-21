@@ -18,7 +18,7 @@
  *       the cutover: never
  *   R7  never twice (claim, rule, claim again)
  *   R8  denylisted: claimed and kept, never sent
- *   R9  quiet hours: the rule claims and sends nothing
+ *   R9  outside the two send slots (the old 14:00 sweep): the rule claims and sends nothing
  *   R10 a refused send puts it back to pending; the next morning sends it
  *   R11 the ledger row has no message, so the dispatcher never sees it
  *   R12 grants: anon and authenticated execute nothing; service_role runs claim and release
@@ -141,7 +141,7 @@ describe.skipIf(!PG_AVAILABLE)("founding reminder → real PG", () => {
     expect((await db.runRule(morning(8))).sent).toEqual([]);
   });
 
-  it("R9 quiet hours: the rule claims and sends nothing; the morning run does", async () => {
+  it("R9 outside a send slot (the old 14:00 sweep): the rule claims and sends nothing; the slot run does", async () => {
     await db.clear();
     const { id } = await db.person();
     const quiet = await db.runRule(nightAfter(db.REMINDER_SINCE, 4));

@@ -16,7 +16,7 @@
 #
 # SQL plants edit the migration that DEFINES the function today, and the harness re-checks that
 # it is still the LAST definer (CLAUDE.md, "a migration that replaces a function body orphans its
-# mutations"). PR 2 (20261110000000) replaced PR 1's claim: every reminder plant is re-pointed
+# mutations"). PR 2 (20261111000000) replaced PR 1's claim: every reminder plant is re-pointed
 # into `lifecycle_due` / `lifecycle_claim` there. Where a rule has two guards (the claim's cheap
 # candidate filter and the condition itself), the plant removes both, or the second would hold
 # the line alone and the plant would read as "not caught".
@@ -26,16 +26,18 @@ set -uo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-MIG="supabase/migrations/20261110000000_lifecycle_triggers.sql"
+MIG="supabase/migrations/20261111000000_lifecycle_triggers.sql"
 LIB="server/lib/lifecycle-email.ts"
 ROUTE="server/routes/internal-cron-routes.ts"
 PG_LR=tests/ci/lifecycle-reminder.pg.ci.test.ts
 PG_LT=tests/ci/lifecycle-triggers.pg.ci.test.ts
 WIRING=tests/ci/lifecycle-reminder.contract.test.ts
+SLOTS=tests/ci/lifecycle-send-slots.contract.test.ts
+CRONS=tests/ci/vercel-cron-schedules.contract.test.ts
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/lc-mut.XXXX)"
 
-FILES=("$MIG" "$LIB" "$ROUTE")
+FILES=("$MIG" "$LIB" "$ROUTE" "vercel.json")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -86,13 +88,15 @@ run() {
 stale() { bad "$1 STALE"; exit 1; }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(check "$PG_LR" "$PG_LT" "$WIRING")"; RC=$?
+OUT="$(check "$PG_LR" "$PG_LT" "$WIRING" "$SLOTS" "$CRONS")"; RC=$?
 if [ "$RC" = 0 ]; then ok "baseline green"; else bad "baseline not green"; echo "$OUT" | tail -30; fi
 if [ "$FAIL" -gt 0 ]; then echo "LIFECYCLE EMAIL MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 need_last lifecycle_due LC
 need_last lifecycle_claim LC
 need_last lifecycle_release LC
+need_last lifecycle_reminder_since LC
+need_last lifecycle_triggers_since LC
 
 # ── The founding reminder (PR 1's rules, now in lifecycle_due / lifecycle_claim) ──────────────
 
@@ -139,9 +143,9 @@ plant "$MIG" "       WHERE e.event_id = v_id AND e.payload ->> 'state' = 'pendin
          AND public.lifecycle_due(v_type, v_student, p_now);" || stale LR8
 run "LR8 never twice" "R7 never twice" "$PG_LR"
 
-echo "=== LR (9) lifecycle email during quiet hours ==="
-plant "$LIB" "  if (quietHoursDeferral(now) !== null) {" "  if (quietHoursDeferral(now) === undefined) {" || stale LR9
-run "LR9 quiet hours" "R9 quiet hours" "$PG_LR"
+echo "=== LR (9) lifecycle email outside the two send slots ==="
+plant "$LIB" "  if (!isLifecycleSendSlot(now)) {" "  if (false) {" || stale LR9
+run "LR9 send slots only" "R9 outside a send slot" "$PG_LR"
 
 echo "=== LR (10) a denylisted address gets lifecycle email ==="
 plant "$LIB" '  if (isDenylisted(profile.email, facts.denylist)) return "denylisted";
@@ -174,12 +178,18 @@ plant "$MIG" "GRANT EXECUTE ON FUNCTION
   public.lifecycle_due(text, uuid, timestamptz)," || stale LR14
 run "LR14 service_role runs it" "R12 grants" "$PG_LR"
 
-echo "=== LR (15) the sweep no longer runs the rule ==="
-plant "$ROUTE" "        lifecycleReminder = await runLifecycleRule(
-          new Date(),
-          defaultLifecycleRuleDeps(),
-        );" "        lifecycleReminder = { error: true };" || stale LR15
-run "LR15 in the sweep" "runs the rule once, after the dispatch" "$WIRING"
+echo "=== LR (15) the lifecycle route no longer runs the rule ==="
+plant "$ROUTE" "      const summary: LifecycleRuleSummary = await runLifecycleRule(
+        new Date(),
+        defaultLifecycleRuleDeps(),
+      );" "      const summary: LifecycleRuleSummary = {
+        ran: false,
+        claimed: 0,
+        sent: 0,
+        skipped: 0,
+        failed: 0,
+      };" || stale LR15
+run "LR15 the lifecycle route" "runs the rule once, with the default deps" "$WIRING"
 
 echo "=== LR (16) the address reaches the log ==="
 plant "$LIB" "        profileId: claim.profileId,
@@ -323,8 +333,57 @@ echo "=== LT (22) the candidate filter reads answered_at alone ==="
 plant "$MIG" "                          AND COALESCE(i.answered_at, i.occurred_at) > p_now - interval '14 days')" "                          AND i.answered_at > p_now - interval '14 days')" || stale LT22
 run "LT22 occurred_at" "F3 practising" "$PG_LT"
 
+# ── Owner rulings on #1284 (Karl, 2026-10-21): fixed send times, one cutover ──────────────────
+
+echo "=== LS (1) the weekday slot drifts to 21:00 UTC ==="
+plant "$LIB" "  weekdayHourUtc: 22," "  weekdayHourUtc: 21," || stale LS1
+run "LS1 weekday 22:00" "only 22:00 UTC Monday–Friday" "$SLOTS"
+
+echo "=== LS (2) Saturday counts as a weekday ==="
+plant "$LIB" "  const weekend = day === 0 || day === 6;" "  const weekend = day === 0;" || stale LS2
+run "LS2 weekend days" "only 22:00 UTC Monday–Friday" "$SLOTS"
+
+echo "=== LS (3) the weekend slot moves to 13:00 UTC (into quiet hours in winter) ==="
+plant "$LIB" "  weekendHourUtc: 15," "  weekendHourUtc: 13," || stale LS3
+run "LS3 inside the window all year" "both slots sit inside the quiet-hours window" "$SLOTS"
+
+echo "=== LS (4) the weekend cron runs every day ==="
+plant vercel.json '"schedule": "0 15 * * 0,6"' '"schedule": "0 15 * * *"' || stale LS4
+run "LS4 the two crons" "two crons call the lifecycle route" "$WIRING"
+
+echo "=== LS (5) the 14:00 sweep sends lifecycle email again ==="
+plant "$ROUTE" "      const summary = await dispatchQueuedMessages();
+" "      const summary = await dispatchQueuedMessages();
+      await runLifecycleRule(new Date(), defaultLifecycleRuleDeps());
+" || stale LS5
+run "LS5 not in the sweep" "the 14:00 dispatch sweep no longer sends" "$WIRING"
+
+echo "=== LS (6) the reminder's cutover is back on 2026-10-23 ==="
+plant "$MIG" 'FUNCTION public.lifecycle_reminder_since()
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+AS $fn$ SELECT timestamptz '"'"'2026-10-21 08:00:00+00'"'"' $fn$;' 'FUNCTION public.lifecycle_reminder_since()
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+AS $fn$ SELECT timestamptz '"'"'2026-10-23 14:00:00+00'"'"' $fn$;' || stale LS6
+run "LS6 reminder cutover" "T1 both cutovers are 2026-10-21 08:00 UTC" "$PG_LT"
+
+echo "=== LS (7) the triggers' cutover is back on 2026-10-27 ==="
+plant "$MIG" 'FUNCTION public.lifecycle_triggers_since()
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+AS $fn$ SELECT timestamptz '"'"'2026-10-21 08:00:00+00'"'"' $fn$;' 'FUNCTION public.lifecycle_triggers_since()
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+AS $fn$ SELECT timestamptz '"'"'2026-10-27 14:00:00+00'"'"' $fn$;' || stale LS7
+run "LS7 triggers cutover" "T1 both cutovers are 2026-10-21 08:00 UTC" "$PG_LT"
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(check "$PG_LR" "$PG_LT" "$WIRING")"; RC=$?
+OUT="$(check "$PG_LR" "$PG_LT" "$WIRING" "$SLOTS" "$CRONS")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "LIFECYCLE EMAIL MUTATIONS: $PASS passed, $FAIL failed"

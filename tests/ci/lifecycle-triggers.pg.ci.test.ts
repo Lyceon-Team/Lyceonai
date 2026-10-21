@@ -11,9 +11,9 @@
  *       windows); contracts/notifications.contract.md C14A.5; SCL-240] | @implemented [2026-10-21]
  *
  * plain English: the shared scenario (tests/ci/lifecycle.pg-harness.ts), times measured from
- * the triggers' cutover T (`lifecycle_triggers_since()`). Students here completed onboarding
- * long before the reminder's cutover, so the founding reminder stays out of every case except the
- * ones about the cap and the priority order. Grants are covered by the reminder suite's R12 (the
+ * the triggers' cutover T (`lifecycle_triggers_since()`, the same instant as the reminder's).
+ * Students here completed onboarding long before it, so the founding reminder stays out of every
+ * case except the ones about the cap and the priority order. Grants are covered by the reminder suite's R12 (the
  * same functions).
  *   D1 diagnostic: due exactly 48 h after it started; not before
  *   D2 diagnostic: completed or abandoned, started before T, or older than 14 days: never
@@ -26,7 +26,8 @@
  *   O1 the priority order: reminder, diagnostic, Pro, practising (Pro and practising are never
  *      due together: one needs an entitlement, the other none)
  *   S1 self-cancel: a waiting trigger the student has since acted on is resolved, never sent
- *   Q1 quiet hours: nothing claimed or sent
+ *   Q1 outside the two send slots: nothing claimed or sent
+ *   T1 both cutovers are 2026-10-21 08:00 UTC (owner rulings on #1284)
  *   X1 exclusions: under 13, unknown age, deleted, deletion pending, a guardian, denylisted
  *   E1 each trigger reaches Resend as its own event, with an empty payload
  *   L2 PR 1's reminder rows (payload {}) count toward the cap and are never re-sent
@@ -215,33 +216,24 @@ describe.skipIf(!PG_AVAILABLE)("lifecycle behaviour triggers → real PG", () =>
 
   it("C1 the cap: one lifecycle email per 3 days, across every trigger and the reminder", async () => {
     await db.clear();
-    // Due for the reminder at T, then the diagnostic nudge two days later.
-    const { id } = await db.person({
-      completedAt: at(T, -4 * DAY).toISOString(),
-    });
-    await db.session(id, "diagnostic", at(T, -HOUR));
-    // (Started before T: never a diagnostic nudge. A fresh one below.)
-    await db.pg.query(
-      `UPDATE public.practice_sessions SET created_at = $2 WHERE user_id = $1`,
-      [id, at(T, HOUR).toISOString()],
-    );
-    const m0 = morningAfter(T, 1); // reminder due (onboarded 5 days ago), diagnostic not yet
+    // Onboarded just after the cutover, and a diagnostic started two days later: on the 4th
+    // day's slot both the reminder and the diagnostic nudge are due.
+    const { id } = await db.person({ completedAt: at(T, HOUR).toISOString() });
+    await db.session(id, "diagnostic", at(T, 2 * DAY));
+    const m0 = morningAfter(T, 4);
     expect(await db.claim(m0)).toEqual([[id, REMINDER]]);
-    const m1 = morningAfter(T, 3); // diagnostic due, but the reminder went 2 days ago
-    expect(await db.claim(m1)).toEqual([]);
     expect(await db.state(id, DIAG)).toBe("pending");
+    expect(await db.claim(at(m0, 2 * DAY))).toEqual([]); // the reminder went 2 days ago
     expect(await db.claim(at(m0, 3 * DAY - 60_000))).toEqual([]);
     expect(await db.claim(at(m0, 3 * DAY))).toEqual([[id, DIAG]]); // the cap clears
   });
 
   it("O1 the priority order: reminder, then diagnostic, then practising; diagnostic before Pro", async () => {
     await db.clear();
-    const three = await db.person({
-      completedAt: at(T, -4 * DAY).toISOString(),
-    });
+    const three = await db.person({ completedAt: at(T, HOUR).toISOString() });
     await db.session(three.id, "diagnostic", at(T, HOUR));
     await db.answer(three.id, 10, at(T, 2 * DAY));
-    const m = morningAfter(T, 2); // all three due at once
+    const m = morningAfter(T, 4); // all three due at once
     expect(await db.claim(m)).toEqual([[three.id, REMINDER]]);
     expect(await db.state(three.id, DIAG)).toBe("pending");
     expect(await db.state(three.id, FREE)).toBe("pending");
@@ -272,7 +264,7 @@ describe.skipIf(!PG_AVAILABLE)("lifecycle behaviour triggers → real PG", () =>
     expect(await db.claim(at(m, 6 * DAY))).toEqual([]); // and never later
   });
 
-  it("Q1 quiet hours: the rule claims and sends nothing; the morning run does", async () => {
+  it("Q1 outside a send slot (the old 14:00 sweep): the rule claims and sends nothing; the slot run does", async () => {
     await db.clear();
     const { id } = await student();
     await db.session(id, "diagnostic", at(T, HOUR));
@@ -406,5 +398,17 @@ describe.skipIf(!PG_AVAILABLE)("lifecycle behaviour triggers → real PG", () =>
     for (const d of [95, 120, 400]) {
       expect(await db.claim(morningAfter(T, d)), String(d)).toEqual([]);
     }
+  });
+
+  it("T1 both cutovers are 2026-10-21 08:00 UTC; a trigger a second before never fires", async () => {
+    expect(T.toISOString()).toBe("2026-10-21T08:00:00.000Z");
+    expect(db.REMINDER_SINCE.toISOString()).toBe("2026-10-21T08:00:00.000Z");
+    await db.clear();
+    const after = await student();
+    await db.session(after.id, "diagnostic", at(T, 0));
+    const before = await student();
+    await db.session(before.id, "diagnostic", at(T, -1000));
+    expect(await db.claim(morningAfter(T, 3))).toEqual([[after.id, DIAG]]);
+    expect(await db.state(before.id, DIAG)).toBeNull();
   });
 });
