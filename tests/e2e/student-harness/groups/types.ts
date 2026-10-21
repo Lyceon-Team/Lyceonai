@@ -128,9 +128,11 @@ export type Shot = {
    */
   freshCalendarProfile?: true;
   /**
-   * SEO Wave 2, plan Q6: the persona's review-prompt state and review are deleted from the harness
-   * database before every capture, so the real cadence answers "show" in each viewport and theme
-   * (a showing is recorded, and would otherwise hold the prompt back for 120 days).
+   * SEO Wave 2, plan Q6, and the review ask (2026-10-20): the persona's review-prompt state and
+   * review are deleted from the harness database before every capture, and the persona is made to
+   * meet the usage trigger there (8 days old, 3 completed sessions, checklist dismissed), so the
+   * real trigger and cadence answer "show" in each viewport and theme (an ask is recorded, and
+   * would otherwise hold the next one back for 30 days).
    */
   freshReviewPrompt?: true;
   /**
@@ -150,6 +152,14 @@ export type Shot = {
    * daily quota is unused and a `playThrough` session can run in each viewport and theme.
    */
   freshQuota?: true;
+  /**
+   * SCL-235 / SCL-236 (owner rulings 2026-10-16/17): the persona has COMPLETED the diagnostic
+   * before the capture — started and answered through the real routes
+   * (POST /api/practice/diagnostic/sessions, /next, /answer), so its stored diagnostic projection
+   * is written by the real completion path. Idempotent: a persona who already completed it
+   * (409 diagnostic_already_completed) is left as is. Listed in the index next to the shot.
+   */
+  completedDiagnostic?: true;
   /**
    * The visitor already answered the cookie banner (analytics rejected), so the banner does not
    * cover the page's controls. Written as the real consent cookie, in the current banner version,

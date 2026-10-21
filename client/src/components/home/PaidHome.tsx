@@ -86,6 +86,7 @@ import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { DiagnosticCard } from "./DiagnosticCard";
 import { GettingStartedCard } from "./GettingStartedCard";
+import { HomeReviewAsk } from "./HomeReviewAsk";
 import { HomeEntryPoints } from "./HomeEntryPoints";
 import { useGettingStarted } from "@/hooks/useGettingStarted";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
@@ -309,6 +310,10 @@ export function PaidHome({
           SAT-date card come right after the greeting and the streak chip, before the next step
           (below the Getting started checklist while it is active, final brief v2 §4). */}
       <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
+
+      {/* Review ask (Karl's decision 7, 2026-10-20): below the checklist and today's question;
+          never while the checklist has an open step. A bottom sheet on a phone. */}
+      <HomeReviewAsk checklist={checklist} />
 
       {failed ? (
         <Notice

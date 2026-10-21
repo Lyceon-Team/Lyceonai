@@ -19,6 +19,7 @@ import {
 } from "../lib/stale-session-sweep.js";
 import { sweepStaleReviewSessions } from "../lib/review-stale-session-sweep.js";
 import { readBaselinePendingReport } from "../lib/baseline-pending.js";
+import { diagnosticProjectionRepairResultSchema } from "../../packages/shared/src/diagnostic-projection.js";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch.js";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
 import {
@@ -47,6 +48,10 @@ import {
   defaultQotdEmailJobDeps,
   runQotdEmailJob,
 } from "../services/qotd/qotd-email-job.js";
+import {
+  runReviewAskEmailRule,
+  type ReviewAskEmailSummary,
+} from "../services/product-feedback/review-ask-email-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -322,22 +327,20 @@ router.get(
 
 /**
  * GET /api/internal/baseline-pending-sweep
- * @spec [Doc-01A_V1.0 §18 alert routing; Doc-05C_V1.0 §7.4; owner ruling Q2]
- * @implemented 2026-08-17
+ * @spec [Doc-01A_V1.0 §18 alert routing; SCL-236 (Doc 05C §12A); owner ruling 2026-10-17
+ *        ("Replace the alert-only baseline-pending-sweep with a sweep that repairs")]
+ * @implemented 2026-08-17 | @changed 2026-10-17
  *
- * plain English: alerts when a student has been sitting in baseline_pending long
- * enough that the pipeline, not the clock, explains it. Read-only — this endpoint
- * repairs nothing. Repair is scripts/prod-verify/baseline-repair.sql, which Karl
- * runs deliberately after reading the preview.
+ * plain English: REPAIRS, then alerts. First it stores the diagnostic projection for every
+ * completed diagnostic that has none (public.diagnostic_projection_repair — the same function the
+ * owner-run backfill calls, so there is one repair, not two). Then it reads who is STILL
+ * baseline_pending and alerts on age, exactly as before, plus on any session the repair could not
+ * store. A completed diagnostic now stores its projection in the completing transaction, so a
+ * non-zero repair count is itself worth a log line: it means a completion path missed it.
  *
  * WHY IT ALERTS ON AGE, NOT COUNT: every student who finishes a diagnostic is
  * briefly pending. An alert on count > 0 fires on every healthy completion and is
  * muted within a week.
- *
- * trade-offs: alerting only, matching crisis-sla-sweep. At V1 the structured
- * ERROR log is the signal; the substrate that consumes it is the open Doc-01A §18
- * question already raised on the mastery-emission workstream, not re-litigated
- * here.
  *
  * SCHEDULE — DAILY, AND NOT BY CHOICE. The threshold is 24h, so an hourly check
  * would surface a stuck student within an hour of crossing it; daily means up to
@@ -345,6 +348,9 @@ router.get(
  * than once per day (the deploy fails outright, it does not degrade), so daily is
  * the most frequent schedule this plan permits. Raised as an owner question.
  */
+/** Sessions repaired per run; the backlog at launch is single digits. */
+const DIAGNOSTIC_REPAIR_BATCH = 500;
+
 router.get(
   "/baseline-pending-sweep",
   async (req: Request, res: Response): Promise<void> => {
@@ -353,6 +359,35 @@ router.get(
       return;
     }
     try {
+      const repairCall = await getSupabaseAdmin().rpc(
+        "diagnostic_projection_repair",
+        { p_limit: DIAGNOSTIC_REPAIR_BATCH },
+      );
+      if (repairCall.error) {
+        throw new Error(
+          `diagnostic_projection_repair_failed: ${repairCall.error.message}`,
+        );
+      }
+      const repair = diagnosticProjectionRepairResultSchema.parse(
+        repairCall.data,
+      );
+      if (repair.failed > 0) {
+        logger.error(
+          "BASELINE_PENDING",
+          "diagnostic_projection_repair_failures",
+          `${repair.failed} completed diagnostic(s) could not have their projection stored`,
+          undefined,
+          { ...repair },
+        );
+      } else if (repair.examined > 0) {
+        logger.warn(
+          "BASELINE_PENDING",
+          "diagnostic_projection_repaired",
+          `stored the diagnostic projection for ${repair.examined} completed diagnostic(s) that had none`,
+          { ...repair },
+        );
+      }
+
       const report = await readBaselinePendingReport(getSupabaseAdmin());
 
       if (report.staleCount > 0) {
@@ -385,6 +420,8 @@ router.get(
 
       res.json({
         ok: true,
+        repaired: repair.examined - repair.failed,
+        repairFailed: repair.failed,
         pendingCount: report.pendingCount,
         staleCount: report.staleCount,
       });
@@ -415,6 +452,11 @@ router.get(
  * is also what delivers the emails quiet hours postponed to 08:00 Chicago (their `not_before`
  * has passed by then), and it is the ONE retry path for every type but `qotd_daily` (the 17:00
  * QOTD run dispatches only its own type). A retried email whose event has expired is dropped.
+ *
+ * REVIEW ASK (Karl, 2026-10-20) | @implemented [2026-10-20]: the review ask's one follow-up
+ * email rule runs here first (review-ask-email-job.ts), inside an existing daily pass rather
+ * than behind a new cron (the owner brief of 2026-09-15's rule for new sweeps), so the emails it
+ * queues go out in this same dispatch. Its failure is logged and does not stop the dispatch.
  */
 router.get(
   "/notification-dispatch-sweep",
@@ -424,6 +466,18 @@ router.get(
       return;
     }
     try {
+      let reviewAsk: ReviewAskEmailSummary | { error: true };
+      try {
+        reviewAsk = await runReviewAskEmailRule(new Date());
+      } catch (err) {
+        logger.error(
+          "NOTIFICATIONS",
+          "review_ask_email_rule_error",
+          "Review ask email rule failed; dispatching anyway",
+          err,
+        );
+        reviewAsk = { error: true };
+      }
       const summary = await dispatchQueuedMessages();
       logger.info(
         "NOTIFICATIONS",
@@ -431,7 +485,7 @@ router.get(
         "Scheduled notification dispatch sweep completed",
         summary,
       );
-      res.json({ ok: true, ...summary });
+      res.json({ ok: true, ...summary, reviewAsk });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",

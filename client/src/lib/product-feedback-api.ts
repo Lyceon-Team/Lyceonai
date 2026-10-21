@@ -31,9 +31,11 @@ import {
   feedbackAudienceFor,
   reviewPromptResponseSchema,
   submitAckSchema,
+  trustpilotReviewUrlFrom,
   type FeedbackSource,
   type ReviewAudience,
   type ReviewPromptQuery,
+  type ReviewPromptRespond,
   type ReviewPromptResponse,
   type ReviewSubmit,
   type SubmitAck,
@@ -44,11 +46,7 @@ export const MARKETING_CONSENT_PATH = "/api/profile/marketing-consent" as const;
 
 /** The Trustpilot review link (Wave 4). Absent → the Trustpilot option is not rendered at all. */
 export function trustpilotReviewUrl(): string | null {
-  const configured: unknown = import.meta.env.VITE_TRUSTPILOT_REVIEW_URL;
-  if (typeof configured !== "string" || !configured.startsWith("https://")) {
-    return null;
-  }
-  return configured;
+  return trustpilotReviewUrlFrom(import.meta.env.VITE_TRUSTPILOT_REVIEW_URL);
 }
 
 // ── Who may see what (display only; the server re-checks) ──────────────────
@@ -103,12 +101,16 @@ export function useSetMarketingConsent() {
 
 // ── The review prompt ──────────────────────────────────────────────────────
 
+/** The query the review email's app link carries (server templates/review-ask.ts). */
+export const REVIEW_EMAIL_RETURN_SEARCH = "?review=email";
+
+/** True when the page was opened from the review email's app link. */
+export function cameFromReviewEmail(search: string): boolean {
+  return new URLSearchParams(search).get("review") === "email";
+}
+
 function promptUrl(query: ReviewPromptQuery): string {
   const params = new URLSearchParams({ moment: query.moment });
-  if (query.moment === "exam_report")
-    params.set("session_id", query.session_id);
-  if (query.moment === "guardian_week")
-    params.set("student_id", query.student_id);
   return `${FEEDBACK_API}/prompt?${params.toString()}`;
 }
 
@@ -133,8 +135,14 @@ export function useReviewPrompt(
   });
 }
 
-export async function dismissReviewPrompt(): Promise<void> {
-  await apiRequest(`${FEEDBACK_API}/prompt/dismiss`, { method: "POST" });
+/** "Not now" (snoozed) or the close button (dismissed): both put the ask off for 30 days. */
+export async function respondToReviewPrompt(
+  response: ReviewPromptRespond["response"],
+): Promise<void> {
+  await apiRequest(`${FEEDBACK_API}/prompt/respond`, {
+    method: "POST",
+    body: JSON.stringify({ response }),
+  });
 }
 
 export async function recordTrustpilotClick(): Promise<void> {

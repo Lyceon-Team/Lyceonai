@@ -44,6 +44,10 @@ import { z } from "zod";
  * calendar writer; guardians in-app), `missed_plan_alert` and `back_on_track` (the missed-day
  * rule; student in-app + email 13+, guardians in-app) and `guardian_daily_digest` (one email per
  * guardian per Chicago day). Channel-agnostic: each emitter names its channels.
+ *
+ * `review_ask` joined on 2026-10-20 (owner brief "Review ask"; 20261107000000): the one
+ * follow-up review email, email only, once per person ever (source id = the profile id), to
+ * students and guardians aged 18+ (see reviewAskPayloadSchema).
  */
 export const NOTIFICATION_EVENT_TYPES = [
   "guardian_linked",
@@ -57,6 +61,7 @@ export const NOTIFICATION_EVENT_TYPES = [
   "missed_plan_alert",
   "back_on_track",
   "guardian_daily_digest",
+  "review_ask",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -428,6 +433,25 @@ export type GuardianDailyDigestPayload = z.infer<
  */
 export const GUARDIAN_DIGEST_PREFERENCE_PATH =
   "/notification-preferences/daily-digest";
+// ── Review ask (owner brief "Review ask", Karl 2026-10-20) ─────────────────────
+
+/**
+ * @spec [owner brief "Review ask — in-app prompt + one email, industry standard" (Karl,
+ *        2026-10-20) Behaviour 3; Karl's Step 0 decisions 4, 5, 7 (2026-10-20);
+ *        contracts/notifications.contract.md §2.3, §8.1] | @implemented [2026-10-20]
+ *
+ * The one follow-up review email, emitted by `review_ask_email_notify` (once per person, ever;
+ * adults only). The payload is the greeting's first name and the audience (which page the app
+ * link opens). No rating, review or feedback text exists to carry, and none is carried.
+ */
+export const reviewAskPayloadSchema = z
+  .object({
+    first_name: z.string(),
+    audience: z.enum(["student", "guardian"]),
+  })
+  .strict();
+export type ReviewAskPayload = z.infer<typeof reviewAskPayloadSchema>;
+
 export const guardianDigestPreferenceSchema = z
   .object({ enabled: z.boolean() })
   .strict();

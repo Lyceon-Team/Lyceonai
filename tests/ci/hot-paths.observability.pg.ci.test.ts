@@ -112,6 +112,7 @@ function assertContentFree(line: TimingLine, forbidden: string[]): void {
   expect(Object.keys(line.data).sort()).toEqual(
     [
       "pre_handler_ms",
+      "pre_steps",
       "route",
       "status",
       "step_count",

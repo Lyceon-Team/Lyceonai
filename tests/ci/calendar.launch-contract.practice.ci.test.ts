@@ -32,6 +32,7 @@ import {
   assertSessionIdResolves,
   launchResumingExistingSession,
 } from "../helpers/launch-landing";
+import { ensureClusterRoles } from "../helpers/pg-supabase";
 
 const recorded: { args: Record<string, unknown> | null } = { args: null };
 
@@ -199,6 +200,8 @@ describe.skipIf(!CAN_RUN)("the database accepts and honours that filter", () => 
     };
     admin = new Client({ ...base, database: "postgres" });
     await admin.connect();
+    // Roles are cluster-wide: create them once, under the shared lock (tests/helpers/pg-supabase.ts).
+    await ensureClusterRoles(admin);
     await admin.query(`DROP DATABASE IF EXISTS ${DB_NAME}`);
     await admin.query(`CREATE DATABASE ${DB_NAME}`);
 

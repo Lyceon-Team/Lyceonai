@@ -30,6 +30,7 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { classifyError } from "../lib/redact";
+import { settle } from "../../packages/shared/src/result";
 
 export type EntitlementActiveResult = {
   active: boolean;
@@ -137,6 +138,19 @@ export class EntitlementService {
     }
 
     try {
+      // @spec [owner ruling (Karl) 2026-10-15 on #1238 ("parallelize independent reads (the
+      //        streak's two reads, entitlement's two reads ...)"); SCL-029] | @implemented [2026-10-15]
+      // plain English: the entitlement predicate does not depend on the feature row, so it is
+      // asked AT THE SAME TIME as the row rather than after it — one wait instead of two. The
+      // DECISION is unchanged and taken in the same order: unknown, disabled or unreadable feature
+      // → false; free → true; premium → the predicate. The early answer is held in `settle`, so on
+      // the branches that never need it its result is dropped without an unhandled rejection, and
+      // on the premium branch a throw rethrows into this `try` exactly as the awaited call did.
+      // Trade-off: a free, disabled or unknown feature now also costs the predicate's one RPC
+      // (run in parallel, so no added wait); its own failure log can appear on those branches.
+      const activeRead = settle(
+        EntitlementService.isEntitlementActiveForProfile(profileId),
+      );
       const { data: feature, error: featureError } = await supabaseServer
         .from("entitlement_features")
         .select("required_tier, enabled")
@@ -163,11 +177,12 @@ export class EntitlementService {
         return true;
       }
 
-      // Premium feature: delegate to the canonical entitlement predicate.
-      // await is required so a thrown/rejected RPC is caught by the surrounding
-      // try/catch and fails closed (return false). Without await, an un-awaited
-      // promise rejection escapes the catch block.
-      return await EntitlementService.isEntitlementActiveForProfile(profileId);
+      // Premium feature: the canonical entitlement predicate, started above. A thrown/rejected
+      // RPC is rethrown HERE, inside the surrounding try/catch, so it fails closed (return
+      // false) exactly as the awaited call used to.
+      const active = await activeRead;
+      if (!active.ok) throw active.error;
+      return active.value;
     } catch {
       // Unexpected error → fail closed.
       logger.error(
