@@ -75,7 +75,7 @@ done
 
 # Pipeline order is kept: the migrations BEFORE the one under test go into a template once; each
 # plant clones it, applies the (planted) migration, then every migration AFTER it. A later
-# migration that builds on this one's tables (20261104000000_lisa_video_library.sql ALTERs
+# migration that builds on this one's tables (20261104010000_lisa_video_library.sql ALTERs
 # video_resources, created here) fails to apply when it runs first — the template must never hold
 # a migration that sorts after $MIG. (Learned 2026-10-17, #1255: the template applied "every
 # migration but this one", so the video library's ALTER ran before video_resources existed.)

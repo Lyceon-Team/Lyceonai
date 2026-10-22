@@ -9,6 +9,9 @@
 --       Karl 2026-10-15)] | @implemented [2026-10-15]
 --
 -- DO NOT APPLY TO PROD — Karl applies after review.
+-- Renumbered 2026-10-22 from 20261104000000, which main's
+-- 20261104000000_getting_started_service_role_grants.sql (committed earlier) also holds;
+-- migration inventory gate I0. The body is unchanged.
 -- LYCEON-MIGRATION-REVIEWED (INV-06): rollback reviewed — see DOWN MIGRATION at the foot.
 --
 -- plain English:

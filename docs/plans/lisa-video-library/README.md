@@ -7,7 +7,7 @@ Extends `video_resources` (created by #1228; no second table).
 
 | Piece                                                                           | Where                                                                                                                               |
 | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Migration (Karl applies)                                                        | `supabase/migrations/20261104000000_lisa_video_library.sql`                                                                         |
+| Migration (Karl applies)                                                        | `supabase/migrations/20261104010000_lisa_video_library.sql`                                                                         |
 | Gates (CI `pg` job)                                                             | `scripts/ci/video-library-gates.sql` (L1, L2, R1, R2, T1)                                                                           |
 | Tagging (Gemini, title + description + chapters)                                | `scripts/rag/tag-videos.ts` → `video-tags-review.csv`                                                                               |
 | Write the reviewed file (owner-run)                                             | `scripts/rag/apply-video-library.ts`                                                                                                |
