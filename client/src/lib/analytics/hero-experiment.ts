@@ -51,13 +51,25 @@ export const HERO_VARIANT_STORAGE_KEY = "ph_lyceon_homepage_hero";
 export const HERO_TITLE_ID = "hero-title";
 export const HERO_SUB_ID = "hero-sub";
 
-/** Approved by Karl 2026-10-05 (F13 brief; Control A sub and Variant B per Step 0 rulings 1, 2). */
+/**
+ * Approved by Karl 2026-10-05 (F13 brief; Control A sub and Variant B per Step 0 rulings 1, 2).
+ * 2026-10-21 (owner brief "student cleanups" Part F, F-98: "One student-facing sentence"): Control
+ * A's sub is shortened to one sentence built only from claims the approved sub already made (free
+ * daily practice, a worked explanation for every question, and the paid study plan adapting to
+ * weak areas, which keeps the H1's "adapts" scoped to the paid plan as claim H33 did; claim
+ * inventory H33a, docs/compliance/claim-inventory.md). APPROVED by Karl in writing, 2026-10-21
+ * (owner rulings on #1277, ruling 4: "The sentence is APPROVED"; Public Disclosure Doctrine §5).
+ * Variant B: RULED the same day (ruling 4: "Keep hero variant B running, but conform it to F-98:
+ * one primary button, no parent label stacked over the student hero"). Its text is unchanged (it
+ * lives in the swap script, whose sha256 vercel.json pins, so the hash is unchanged too); both
+ * variants share the one F-98 hero markup, which auth-entry.cta.test.tsx proves per variant.
+ */
 export const HERO_COPY: Readonly<
   Record<HeroVariant, { title: string; sub: string }>
 > = {
   control: {
     title: "SAT prep that adapts to you.",
-    sub: "An always-available alternative to private tutoring: free daily practice with a worked explanation for every question, and on paid plans a study plan that adapts to your weak areas, LISA your AI tutor, full-length practice tests and a progress view for parents.",
+    sub: "Practice free every day with a worked explanation for every question, and on paid plans your study plan adapts to your weak areas.",
   },
   test: {
     title: "See real SAT progress before test day.",

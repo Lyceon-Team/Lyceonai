@@ -66,10 +66,11 @@ Each source was fetched on 2026-10-03 and its text read for the facts the copy s
 
 | ID | Claim | Where | Cat | Note |
 |---|---|---|---|---|
-| H31 | "SAT prep for families" | hero eyebrow | a | |
+| H31 | "SAT prep for families" | hero eyebrow | a | REMOVED 2026-10-21 (F-98, owner brief "student cleanups" Part F: no parent-facing label above the student hero) |
 | H32 | "SAT prep that adapts to you." | hero H1, Control A (prerendered) | e | adaptivity is the paid plan's; H33 scopes it (R15) |
 | H33 | "An always-available alternative to private tutoring: free daily practice with a worked explanation for every question, and on paid plans a study plan that adapts to your weak areas, LISA your AI tutor, full-length practice tests and a progress view for parents." | hero sub, Control A | e | comparison ("alternative to private tutoring") approved; Step 0 decision 1 rewrite |
-| H34 | "See real SAT progress before test day." | hero H1, Variant B (experiment `homepage-hero`, after consent only) | e | outcome sentence, approved |
+| H33a | "Practice free every day with a worked explanation for every question, and on paid plans your study plan adapts to your weak areas." | hero sub, Control A (replaces H33, 2026-10-21, F-98: "One student-facing sentence") | e | **APPROVED by Karl in writing, 2026-10-21** (owner rulings on #1277, ruling 4: "The sentence is APPROVED"). Every part is a claim H33 made and Karl approved: free daily practice (H37), a worked explanation for every question (`questions.explanation` NOT NULL), the paid plan's study plan adapting to weak areas (Step 0 decision 1, R15) — which keeps H32's "adapts" scoped to the paid plan. Drops H33's comparison ("alternative to private tutoring") and its list of paid features |
+| H34 | "See real SAT progress before test day." | hero H1, Variant B (experiment `homepage-hero`, after consent only) | e | outcome sentence, approved. Variant B kept running, conformed to F-98 (one primary button, no parent label above the hero), owner ruling 4 on #1277, 2026-10-21; text unchanged |
 | H35 | "Your student practices every day. You see a read-only progress summary by section and topic while they are on a paid plan, without scheduling a single session." | hero sub, Variant B | e | "topic", not "skill": guardians see no skills (Step 0 decision 2) |
 | H36 | "No credit card required · We don't sell student data" | under the hero buttons | e | H8; Privacy Policy v4 |
 | H37 | "Free daily practice" · "Worked explanation for every question" · "No credit card required" · "We don't sell student data" | trust strip | e | explanation NOT NULL; free tier |

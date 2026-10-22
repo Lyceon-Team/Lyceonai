@@ -1200,6 +1200,9 @@ jobs:
             tests/ci/notifications-retention-page.pg.ci.test.ts \
             tests/ci/guardian-access-audit.pg.ci.test.ts \
             tests/ci/guardian-unlinked.pg.ci.test.ts \
+            tests/ci/guardian-notify.parity.pg.ci.test.ts \
+            tests/ci/guardian-accountability.pg.ci.test.ts \
+            tests/ci/explanation-corrections.pg.ci.test.ts \
             tests/ci/guardian-invite.pg.ci.test.ts \
             tests/ci/guardian-payment-access.pg.ci.test.ts \
             tests/ci/deletion-completed-notice.pg.ci.test.ts \
@@ -1278,6 +1281,9 @@ jobs:
             --file tests/ci/notifications-retention-page.pg.ci.test.ts \
             --file tests/ci/guardian-access-audit.pg.ci.test.ts \
             --file tests/ci/guardian-unlinked.pg.ci.test.ts \
+            --file tests/ci/guardian-notify.parity.pg.ci.test.ts \
+            --file tests/ci/guardian-accountability.pg.ci.test.ts \
+            --file tests/ci/explanation-corrections.pg.ci.test.ts \
             --file tests/ci/guardian-invite.pg.ci.test.ts \
             --file tests/ci/guardian-payment-access.pg.ci.test.ts \
             --file tests/ci/deletion-completed-notice.pg.ci.test.ts \

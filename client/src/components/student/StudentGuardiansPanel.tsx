@@ -98,7 +98,7 @@ export function StudentGuardiansPanel({
     },
   });
 
-  const links = data ?? [];
+  const links = data?.links ?? [];
   const noneLinked = !isLoading && !error && links.length === 0;
 
   return (

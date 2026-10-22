@@ -1,17 +1,18 @@
 /**
- * The calendar's guardian line: "Your guardian is notified when you change your study plan."
+ * The calendar's guardian confirmation: "Your guardian will be notified".
  *
- * @spec [owner brief "Guardian accountability loop" (Karl, 2026-10-13) "Transparency
- *        (student-facing)"; DESIGN.md §5 ("Every new screen is checked against this list in its
- *        PR description … with screenshots attached (light and dark, 1440 and 390)")]
- *        | @implemented [2026-10-13]
+ * @spec [owner brief "student cleanups" (Karl, 2026-10-21) Part A ("When the student has an active
+ *        guardian link and active entitlement, any action the accountability loop records shows
+ *        a confirmation dialog BEFORE the write"; "screenshots for UI changes (light/dark,
+ *        1440/390)"); SCL-238; DESIGN.md §5] | @implemented [2026-10-13; rewritten 2026-10-21]
  *
  * plain English: the paid persona is the exam harness's student, who has an ACTIVE guardian
- * link (personas.ts), so the line shows wherever the student can clear a day or remove or move a
- * block: the day ⋯ menu (where "Block out this day" clears it), the block panel (Remove,
- * Move to…) and, since SCL-230 was approved (Karl, 2026-10-13), the schedule sheet. The seed is UI-55's ("calendar-goal"): the plan is the one the real generator builds
- * on first open, and today holds a review block that is not started. UI-55's own shots are the
- * control for a student whose surfaces draw nothing new.
+ * link and an active entitlement (personas.ts), so `guardian_notified` is true. Each shot
+ * performs a recorded action — Block out this day (clears a day), Remove a block, and a schedule
+ * save that changes the minutes per day (60 → 30) — and is shot with the dialog open, before
+ * anything is written. The static line these surfaces drew until 2026-10-21 is gone. The seed is
+ * UI-55's ("calendar-goal"): the plan the real generator builds on first open, with today's
+ * review block not started.
  */
 import type { PageGroup } from "./types";
 
@@ -24,47 +25,63 @@ const PAID_WEEK = {
 const DAY_MENU = "button.dmenu";
 /** Today's review block (QA2-G: the first `rev` card). */
 const REVIEW_BLOCK = "button.block.rev";
+const DIALOG = '[data-testid="guardian-notify-confirm"]';
+const NO_PROTOTYPE = {
+  kind: "none",
+  reason:
+    "The confirmation is new (owner brief 2026-10-21, SCL-238); no prototype screen has it. It is the shared student Modal (UI-46).",
+} as const;
 
 export const GUARDIAN_NOTICE: PageGroup = {
   id: "GUARDIAN-NOTICE",
   title:
-    "Guardian accountability: the calendar's guardian line in the day menu and the block panel (active link); light and dark, 1440 and 390",
+    "Guardian confirmation (SCL-238): 'Your guardian will be notified' before a recorded calendar change (block out a day, remove a block, save fewer minutes); light and dark, 1440 and 390",
   seed: "calendar-goal",
   shots: [
     {
-      id: "day-menu",
+      id: "block-out-day",
       title:
-        'The day ⋯ menu open: Block out this day, Regenerate day, then a rule and the one muted line "Your guardian is notified when you change your study plan." (14px, the menu\'s note style)',
+        "Day ⋯ menu → Block out this day: the dialog asks first (title, body, filled 'Make change', outline 'Cancel'); nothing is written until 'Make change'",
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
-      steps: [{ click: { desktop: DAY_MENU, mobile: DAY_MENU } }],
-      expectVisible: '[data-testid^="day-menu-guardian-notice-"]',
-      prototype: {
-        kind: "none",
-        reason:
-          "The line is new (owner brief 2026-10-13); the prototype's day menu has no guardian line.",
-      },
+      steps: [
+        { click: { desktop: DAY_MENU, mobile: DAY_MENU } },
+        {
+          click: {
+            desktop: '[data-testid^="day-block-"]',
+            mobile: '[data-testid^="day-block-"]',
+          },
+        },
+      ],
+      expectVisible: DIALOG,
+      prototype: NO_PROTOTYPE,
     },
     {
-      id: "block-sheet",
+      id: "remove-block",
       title:
-        "The block panel of a block the student can change: Move to…, then the guardian line under it (field-note style), then Start and Remove in the footer",
+        "Block panel → Remove: the dialog over the sheet; the panel no longer carries a guardian line",
       persona: "paid",
       route: "/calendar",
       waitFor: PAID_WEEK,
-      steps: [{ click: { desktop: REVIEW_BLOCK, mobile: REVIEW_BLOCK } }],
-      expectVisible: '[data-testid="calendar-block-guardian-notice"]',
-      prototype: {
-        kind: "none",
-        reason:
-          "The line is new (owner brief 2026-10-13); the prototype's block sheet has no guardian line.",
-      },
+      steps: [
+        { click: { desktop: REVIEW_BLOCK, mobile: REVIEW_BLOCK } },
+        {
+          click: {
+            desktop:
+              '[data-testid="calendar-block-sheet"] button:has-text("Remove")',
+            mobile:
+              '[data-testid="calendar-block-sheet"] button:has-text("Remove")',
+          },
+        },
+      ],
+      expectVisible: DIALOG,
+      prototype: NO_PROTOTYPE,
     },
     {
-      id: "settings-sheet",
+      id: "save-schedule",
       title:
-        "Edit schedule (SCL-230, approved by Karl 2026-10-13): the schedule sheet with the guardian line under the live readout, above Cancel / Save changes (at 390 the sheet is opened from the '⋯' menu)",
+        "Edit schedule → 30 min → Save changes: the dialog over the schedule sheet (at 390 the sheet is opened from the '⋯' menu)",
       persona: "paid",
       route: "/calendar",
       waitFor: {
@@ -84,13 +101,23 @@ export const GUARDIAN_NOTICE: PageGroup = {
             mobile: '[data-testid="calendar-more-edit-schedule"]',
           },
         },
+        {
+          click: {
+            desktop:
+              '[data-testid="settings-minutes"] button:has-text("30 min")',
+            mobile:
+              '[data-testid="settings-minutes"] button:has-text("30 min")',
+          },
+        },
+        {
+          click: {
+            desktop: '[data-testid="settings-save"]',
+            mobile: '[data-testid="settings-save"]',
+          },
+        },
       ],
-      expectVisible: '[data-testid="settings-guardian-notice"]',
-      prototype: {
-        kind: "none",
-        reason:
-          "The line is new (SCL-230, approved 2026-10-13); the prototype's schedule sheet has no guardian line.",
-      },
+      expectVisible: DIALOG,
+      prototype: NO_PROTOTYPE,
     },
   ],
 };

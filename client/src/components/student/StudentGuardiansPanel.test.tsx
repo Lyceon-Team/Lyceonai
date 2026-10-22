@@ -47,6 +47,7 @@ const oneLink = {
         linked_at: "2026-09-10T10:00:00.000Z",
       },
     ],
+    guardian_notified: true,
   },
 };
 
@@ -79,7 +80,9 @@ describe("student guardians panel", () => {
   });
 
   it("shows the empty state when no guardian is linked", async () => {
-    csrfFetchMock.mockResolvedValue(jsonResponse({ data: { links: [] } }));
+    csrfFetchMock.mockResolvedValue(
+      jsonResponse({ data: { links: [], guardian_notified: false } }),
+    );
     renderPanel();
     expect(await screen.findByTestId("student-guardians-empty")).toBeTruthy();
   });

@@ -158,6 +158,39 @@ describe.skipIf(!PG_AVAILABLE)(
       return r.rows as Array<{ question_id: string; outcome: string }>;
     }
 
+    /**
+     * The REAL pool producer's answer for `poolSpec` (the rows a start picks from, in pool
+     * order), and the session size every start is capped at (owner rulings on #1277, Karl,
+     * 2026-10-21, ruling 1: `review_runtime_config.session_size`, no session takes the whole
+     * pool). A session is then exactly the first `size` rows of this pool.
+     */
+    async function realPool(
+      poolSpec:
+        | { mode: "queue" }
+        | {
+            mode: "session";
+            source: { source_engine: "full_length"; source_session_id: string };
+          },
+    ): Promise<Array<{ entryId: string; questionId: string }>> {
+      const { buildReviewPool } =
+        await import("../../server/services/review-pool");
+      const built = await buildReviewPool({ studentId: STUDENT, poolSpec });
+      if (!built.ok) throw new Error(built.error);
+      return built.value.map((row) => ({
+        entryId: row.entry.id,
+        questionId: row.question.id,
+      }));
+    }
+
+    async function sessionSize(): Promise<number> {
+      const r = await testPg!.query<{ v: number }>(
+        `SELECT value::int AS v FROM public.review_runtime_config WHERE key = 'session_size'`,
+      );
+      const v = r.rows[0]?.v;
+      if (typeof v !== "number") throw new Error("session_size not seeded");
+      return v;
+    }
+
     async function itemsOf(
       reviewSessionId: string,
     ): Promise<
@@ -441,8 +474,19 @@ describe.skipIf(!PG_AVAILABLE)(
       const examEntries = (await queue(STUDENT)).filter(
         (r) => r.source_engine === "full_length" && r.status === "active",
       );
-      expect(items.map((i) => i.queue_entry_id).sort()).toEqual(
+      // The pool is exactly that exam's open misses (the real producer)...
+      const pool = await realPool({
+        mode: "session",
+        source: { source_engine: "full_length", source_session_id: examSid },
+      });
+      expect(pool.map((r) => r.entryId).sort()).toEqual(
         examEntries.map((e) => e.id).sort(),
+      );
+      // ...and the session is its first `session_size` rows (ruling 1, 2026-10-21).
+      const size = await sessionSize();
+      expect(pool.length).toBeGreaterThan(size);
+      expect(items.map((i) => i.queue_entry_id)).toEqual(
+        pool.slice(0, size).map((r) => r.entryId),
       );
       expect(items.some((i) => i.question_id === PRACTICE_QUESTION)).toBe(
         false,
@@ -467,15 +511,22 @@ describe.skipIf(!PG_AVAILABLE)(
       const active = (await queue(STUDENT)).filter(
         (r) => r.status === "active",
       );
-      expect(items.map((i) => i.queue_entry_id).sort()).toEqual(
+      // The complete queue's pool is every active entry, through the one path...
+      const pool = await realPool({ mode: "queue" });
+      expect(pool.map((r) => r.entryId).sort()).toEqual(
         active.map((e) => e.id).sort(),
       );
       const engines = new Set(
         active
-          .filter((e) => items.some((i) => i.queue_entry_id === e.id))
+          .filter((e) => pool.some((r) => r.entryId === e.id))
           .map((e) => e.source_engine),
       );
       expect([...engines].sort()).toEqual(["full_length", "practice"]);
+      // ...and the session is its first `session_size` rows (ruling 1, 2026-10-21).
+      const size = await sessionSize();
+      expect(items.map((i) => i.queue_entry_id)).toEqual(
+        pool.slice(0, size).map((r) => r.entryId),
+      );
       const terminated = await request(app)
         .post(
           `/api/review/sessions/${String(created.body.sessionId)}/terminate`,
@@ -614,13 +665,27 @@ describe.skipIf(!PG_AVAILABLE)(
         });
       expect(again.status).toBe(200);
       const againItems = await itemsOf(String(again.body.sessionId));
-      expect(againItems.some((i) => i.question_id === firstQ.question_id)).toBe(
+      // The test's pool (the real producer) still holds the requeued question and not the
+      // graduated one; the session is capped at `session_size` (ruling 1, 2026-10-21), and
+      // the requeue is the newest entry, so it is in the pool rather than the first session.
+      const againPool = await realPool({
+        mode: "session",
+        source: { source_engine: "full_length", source_session_id: examSid },
+      });
+      expect(againPool.some((r) => r.questionId === firstQ.question_id)).toBe(
         true,
+      );
+      expect(againPool.some((r) => r.questionId === secondQ.question_id)).toBe(
+        false,
+      );
+      expect(againPool).toHaveLength(before - 1);
+      const size = await sessionSize();
+      expect(againItems.map((i) => i.queue_entry_id)).toEqual(
+        againPool.slice(0, size).map((r) => r.entryId),
       );
       expect(
         againItems.some((i) => i.question_id === secondQ.question_id),
       ).toBe(false);
-      expect(againItems).toHaveLength(before - 1);
       await request(app)
         .post(`/api/review/sessions/${String(again.body.sessionId)}/terminate`)
         .set("x-test-user", STUDENT)
@@ -653,7 +718,10 @@ describe.skipIf(!PG_AVAILABLE)(
           WHERE sec.test_session_id = $1 AND sec.section = 'M'`,
         [partSid],
       );
-      expect(math.rows[0]).toMatchObject({ state: "module1_submitted", m2_served: 0 });
+      expect(math.rows[0]).toMatchObject({
+        state: "module1_submitted",
+        m2_served: 0,
+      });
       expect(math.rows[0].m1_served).toBeGreaterThan(0);
       const mathQuestions = new Set(
         (

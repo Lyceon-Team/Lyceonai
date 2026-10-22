@@ -131,7 +131,6 @@ FILES=(
   "client/src/pages/practice.tsx"
   "client/src/lib/session-reads.ts"
   "client/src/components/home/HomePanel.tsx"
-  "client/src/components/review/ReviewCapNotice.tsx"
   "client/src/components/student-ui/filter-bar/FilterBar.tsx"
   "client/src/components/MathRenderer.tsx"
   "client/src/features/calendar/lib/dates.ts"
@@ -2432,19 +2431,20 @@ plant "FU-N8" "the exam session page asks the check itself" \
   'i = s.index("\nimport ") + 1
 s = s[:i] + "import { useFullLengthPhonePrecheck } from \"../lib/useFullLengthPhonePrecheck\";\nvoid useFullLengthPhonePrecheck;\n" + s[i:]'
 
+# Re-pointed 2026-10-21 (#1277 Part A): the call now sits inside notify.confirm(...), two spaces deeper.
 plant "FU-C1" "a calendar full-length block launches without the check" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
-  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+  'a = "              blockType === \"full_length\"\n                ? precheck.run("
 assert s.count(a) == 1
-s = s.replace(a, "            false\n              ? precheck.run(", 1)'
+s = s.replace(a, "              false\n                ? precheck.run(", 1)'
 
 plant "FU-C2" "every calendar block asks the check (practice too)" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
-  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+  'a = "              blockType === \"full_length\"\n                ? precheck.run("
 assert s.count(a) == 1
-s = s.replace(a, "            true\n              ? precheck.run(", 1)'
+s = s.replace(a, "              true\n                ? precheck.run(", 1)'
 
 plant "FU-C3" "the block sheet falls back under the phone tab bar (Start untappable at 390)" \
   "$T55" \
@@ -3110,88 +3110,13 @@ s = s.replace(a, "", 1)'
 # ── END QA-FLOWS
 
 # ── QA2-A — owner re-test (Karl, 2026-10-08) item A: the review cap at the pressed start ──────
-# "Review cap (5 open sessions): show the error at the clicked button (inline or toast), never
-# below the fold, with 'Continue your open session' and 'End a session' actions. Same on Home and
-# Review." Each plant mutates the line the named page test runs (checked by line number).
+# RETIRED with the cap notice (owner rulings, Karl, 2026-10-21, on #1277, ruling 3): since F-81
+# the server never refuses a review start for the open-session cap, so ReviewCapNotice, its copy
+# and its plants (QA2A-C1/C2/I1/N1-N4/R1-R4/R6/R7/H1/H2) are gone with the code they mutated.
+# What stays: `?focus=open-sessions` (R5), and the replacements below, which prove a refusal is
+# still shown as the plain failure at Review and at Home's recent rows (the new F-81 tests).
 QA2A_REVIEW="client/src/pages/review.test.tsx"
 QA2A_HOME="client/src/pages/lyceon-dashboard.test.tsx"
-
-plant "QA2A-C1" "the cap is recognised by its 403 status again (a 409 cap goes dark)" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
-assert s.count(a) == 1
-s = s.replace(a, "      if (res.status === 403 && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {", 1)'
-
-plant "QA2A-C2" "any refusal is taken for the cap (the code is not read)" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
-assert s.count(a) == 1
-s = s.replace(a, "      if (!res.ok) {", 1)'
-
-plant "QA2A-I1" "a cap refusal no longer re-reads the open sessions it offers" \
-  "$QA2A_REVIEW" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      if (result.failure.kind === \"session_limit\")\n        void queryClient.invalidateQueries({"
-assert s.count(a) == 1
-s = s.replace(a, "      if (result.failure.kind === \"pool_empty\")\n        void queryClient.invalidateQueries({", 1)'
-
-plant "QA2A-N3" "Continue opens the oldest open session instead of the latest" \
-  "$QA2A_REVIEW" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      Date.parse(s.created_at) > Date.parse(latest.created_at)"
-assert s.count(a) == 1
-s = s.replace(a, "      Date.parse(s.created_at) < Date.parse(latest.created_at)", 1)'
-
-plant "QA2A-N1" "the cap message is not scrolled into view (it can sit below the fold)" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/components/review/ReviewCapNotice.tsx" \
-  'a = "      el.scrollIntoView({ block: \"nearest\" });"
-assert s.count(a) == 1
-s = s.replace(a, "      void el;", 1)'
-
-plant "QA2A-N2" "Continue goes to the Review list instead of the open session" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/components/review/ReviewCapNotice.tsx" \
-  'a = "              onAction: () => navigate(reviewSessionHref(latest.id)),"
-assert s.count(a) == 1
-s = s.replace(a, "              onAction: () => navigate(REVIEW_OPEN_SESSIONS_HREF),", 1)'
-
-plant "QA2A-N4" "Home's End a session lands on Review without its open sessions in view" \
-  "$QA2A_HOME" \
-  "client/src/components/review/ReviewCapNotice.tsx" \
-  'a = "          onEndSession ?? (() => navigate(REVIEW_OPEN_SESSIONS_HREF))"
-assert s.count(a) == 1
-s = s.replace(a, "          onEndSession ?? (() => navigate(\"/review\"))", 1)'
-
-plant "QA2A-R1" "Start reviewing's refusal is not drawn under it" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
-assert s.count(a) == 1
-s = s.replace(a, "            {null}", 1)'
-
-plant "QA2A-R2" "every refusal is drawn under Start reviewing too (a Redo's lands at the top)" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
-assert s.count(a) == 1
-s = s.replace(a, "            {capKey !== null ? <div className=\"mt-3\">{cap}</div> : null}", 1)'
-
-plant "QA2A-R3" "starts are disabled at the open-session limit again (nothing to press)" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "  const canStart = !create.isStarting && starting === null;"
-assert s.count(a) == 1
-s = s.replace(a, "  const canStart =\n    !create.isStarting &&\n    starting === null &&\n    open.sessions.length < (open.maxConcurrentSessions ?? Infinity);", 1)'
-
-plant "QA2A-R4" "Review's End a session does not bring the open sessions into view" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "        onEndSession={showOpenSessions}"
-assert s.count(a) == 1
-s = s.replace(a, "        onEndSession={() => undefined}", 1)'
 
 plant "QA2A-R5" "the page reads ?focus=open-sessions the wrong way round" \
   "$QA2A_REVIEW" \
@@ -3200,33 +3125,19 @@ plant "QA2A-R5" "the page reads ?focus=open-sessions the wrong way round" \
 assert s.count(a) == 1
 s = s.replace(a, "    if (focusOpen || !openRowsDrawn || focusedOpen.current) return;", 1)'
 
-plant "QA2A-R6" "a Redo's refusal is not drawn in its row" \
+plant "F81-U1" "Review hides a refused start (the old cap's carve-out, aimed at every refusal)" \
   "$QA2A_REVIEW" \
   "client/src/pages/review.tsx" \
-  'a = "                      {capKey === redoStartKey(row) ? ("
+  'a = "          {startFailure !== null ? ("
 assert s.count(a) == 1
-s = s.replace(a, "                      {false ? (", 1)'
+s = s.replace(a, "          {startFailure !== null && startFailure.kind !== \"other\" ? (", 1)'
 
-plant "QA2A-R7" "the topic picker's refusal is not drawn in the picker" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "              cap={capKey === \"filter\" ? cap : null}"
-assert s.count(a) == 1
-s = s.replace(a, "              cap={null}", 1)'
-
-plant "QA2A-H1" "Home draws the cap under every recent row, not the pressed one" \
-  "$QA2A_HOME" \
-  "client/src/components/home/HomePanel.tsx" \
-  'a = "                {capFor === recentRowKey(s) ? ("
-assert s.count(a) == 1
-s = s.replace(a, "                {capFor !== null ? (", 1)'
-
-plant "QA2A-H2" "Home's cap goes back to the red line under the list" \
+plant "F81-U2" "Home's recent rows hide a refused review start" \
   "$QA2A_HOME" \
   "client/src/components/home/PaidHome.tsx" \
-  'a = "            capFor={reviewCap?.row ?? null}"
+  'a = "            failure={reviewFailure?.message ?? null}"
 assert s.count(a) == 1
-s = s.replace(a, "            capFor={null}", 1)'
+s = s.replace(a, "            failure={null}", 1)'
 
 # ── END QA2-A
 
