@@ -12,7 +12,14 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+
+// The live blog set is computed from the clock at import time: freeze Date before any import
+// runs, so this file sees the same posts on every day (tests/lib/content-clock.ts).
+await vi.hoisted(async () => {
+  const { pinContentClock } = await import("../lib/content-clock");
+  pinContentClock();
+});
 import {
   draftPostProblems,
   type PrerenderedSite,

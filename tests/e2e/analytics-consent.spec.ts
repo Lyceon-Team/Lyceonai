@@ -572,10 +572,17 @@ test.describe("F-72: the banner never blocks the phone tab bar or a sheet's acti
     const tabs = '[data-testid="app-tab-bar"] a';
     expect(await page.locator(tabs).count()).toBe(5);
     expect(await onTop(page, tabs)).toEqual([true, true, true, true, true]);
-    // The banner ends where the tab bar starts.
+    // The banner ends where the tab bar starts: never inside it, and less than 1px above it.
+    // (F-72, #1277 Part E: the tab bar is 65.296875px tall; the offset is rounded UP, so the
+    // banner no longer sits 0.3px inside the bar. The earlier check compared both edges rounded
+    // to whole pixels, which only passed while the banner overlapped the bar.)
     const b = await banner.boundingBox();
     const t = await tabBar.boundingBox();
-    expect(b && t && Math.round(b.y + b.height)).toBe(t && Math.round(t.y));
+    if (b === null || t === null)
+      throw new Error("banner or tab bar has no box");
+    const gap = t.y - (b.y + b.height);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThan(1);
     // A real tap (Playwright refuses to click a covered element), with the banner still up.
     await tabBar.getByRole("link", { name: /Practice/ }).click();
     await page.waitForURL(/\/practice/);

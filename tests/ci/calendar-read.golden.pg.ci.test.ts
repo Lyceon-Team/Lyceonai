@@ -43,6 +43,7 @@ import { PG_AVAILABLE } from "../helpers/pg-supabase";
 import {
   bootHarness,
   harness,
+  sequentialDepth,
   shutdownHarness,
 } from "../perf/hot-paths.harness";
 
@@ -762,6 +763,11 @@ async function counted<T>(fn: () => Promise<T>): Promise<{
  * session — not one per day, not one per launched block. `test_sessions` serves both halves for
  * full-length, so it is read twice. Before the fold this fixture made 42 activity reads and 5
  * lifecycle reads here (61 round trips in all); after it, 20.
+ *
+ * WARM, since 2026-10-15 (owner ruling on #1238 item (b)): the two config reads are cached for
+ * 60 s, so the counted read is the second of two and makes 18 — the 20 above less the two config
+ * reads. The first (cold) read makes 21: the 20 plus the cache's own lifetime row
+ * (`caching_runtime_config`), read alongside the load on a miss.
  */
 const ENGINE_READS = {
   practice_session_items: 1,
@@ -770,7 +776,9 @@ const ENGINE_READS = {
   practice_sessions: 1,
   review_sessions: 1,
 } as const;
-const STUDENT_READ_ROUND_TRIPS = 20;
+const STUDENT_READ_ROUND_TRIPS = 18;
+const COLD_CONFIG_ROUND_TRIPS = 3;
+const STUDENT_READ_DEPTH = 5;
 
 describe.skipIf(!PG_AVAILABLE)(
   "calendar read: golden equivalence over a three-zone, three-engine fixture (real PG)",
@@ -787,6 +795,38 @@ describe.skipIf(!PG_AVAILABLE)(
     it("student read, 09-10..09-23: every day shape, pinned byte for byte", async () => {
       const { readCalendar } =
         await import("../../server/services/calendar/read-service");
+      const { invalidateCalendarConfigCache } =
+        await import("../../server/services/calendar/config");
+      // A cold read first, so the counted read below is the steady state (config cached).
+      invalidateCalendarConfigCache();
+      harness.latencyMs = 10;
+      const coldIntervalsFrom = harness.intervals.length;
+      const cold = await counted(() =>
+        readCalendar({
+          student_id: S,
+          query: {
+            from: "2026-09-10",
+            to: "2026-09-23",
+            device_timezone: "America/New_York",
+          },
+          now: NOW,
+        }),
+      ).finally(() => {
+        harness.latencyMs = 0;
+      });
+      // Cold, the two config reads (and the cache's lifetime row) run TOGETHER and alongside the
+      // probe/streak/diagnostic/projection wave, so a cold read is no deeper than a warm one.
+      expect(sequentialDepth(harness.intervals.slice(coldIntervalsFrom))).toBe(
+        STUDENT_READ_DEPTH,
+      );
+      expect(
+        (cold.byTarget.calendar_runtime_config ?? 0) +
+          (cold.byTarget.practice_runtime_config ?? 0) +
+          (cold.byTarget.caching_runtime_config ?? 0),
+      ).toBe(COLD_CONFIG_ROUND_TRIPS);
+      // The warm read runs with 10 ms per round trip so its dependency depth can be measured.
+      harness.latencyMs = 10;
+      const intervalsFrom = harness.intervals.length;
       const {
         value: result,
         roundTrips,
@@ -801,7 +841,10 @@ describe.skipIf(!PG_AVAILABLE)(
           },
           now: NOW,
         }),
-      );
+      ).finally(() => {
+        harness.latencyMs = 0;
+      });
+      const depth = sequentialDepth(harness.intervals.slice(intervalsFrom));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       const body = result.value;
@@ -824,6 +867,16 @@ describe.skipIf(!PG_AVAILABLE)(
         });
       }
       expect(roundTrips).toBe(STUDENT_READ_ROUND_TRIPS);
+      // Dependency depth (owner ruling 2026-10-15 on #1238). This service-level call reads the
+      // profile itself (the route hands it in): profile; then probe, streak (its two reads
+      // together), diagnostic and projection in one wave, config cached; then the plan; then
+      // blocks, launch rows and snapshots; then activity alongside the lifecycle reads. Was 8.
+      expect(depth).toBe(STUDENT_READ_DEPTH);
+      expect(cold.roundTrips).toBe(
+        STUDENT_READ_ROUND_TRIPS + COLD_CONFIG_ROUND_TRIPS,
+      );
+      // The cold and warm reads answer identically: the cache changes waiting, never bytes.
+      expect(JSON.stringify(cold.value)).toBe(JSON.stringify(result));
       await expect(goldenJson(body)).toMatchFileSnapshot(
         "./__golden__/calendar-read.student.json",
       );

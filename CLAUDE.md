@@ -325,3 +325,4 @@ When compacting, always preserve: the spec sections referenced this session, the
    previously broke this `@import` parse is gone, so the standards now auto-load)
 - Domain skills load on demand once promoted into `.claude/skills/` (see SKILL-BUILD-PLAN.md): anti-leak, auth-entitlements, determinism-idempotency, stripe-billing, practice-engine, mastery-kpi, tutor-runtime, frontend, testing-audit
 - Marketing and content requests from Slack (#marketing) route to the `ai-cmo` skill (`.claude/skills/ai-cmo/SKILL.md`); it proposes and drafts, never publishes. Post-launch (Karl, 2026-10-07).
+- Executive marketing and growth requests (/cmo, KPIs, reports, attribution, pricing or free-tier proposals, gates, "what's working") route to the cmo skill (.claude/skills/cmo/SKILL.md). Content drafting and the Doc 10B pipeline stay with ai-cmo and content-ops, unchanged (Karl, 2026-10-15).

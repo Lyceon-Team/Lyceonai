@@ -109,23 +109,27 @@ const FIXED_SITES: ReadonlyArray<{
     operation: "quota_dry_run_unavailable",
     message: "Quota dry-run unavailable at session creation; failing closed",
   },
+  // SCL-236 (2026-10-17): captureDiagnosticBaseline and its three DIAGNOSTIC_BASELINE events are
+  // gone; completeSession reports the stored diagnostic projection instead.
   {
     file: "server/routes/practice-canonical.ts",
-    component: "DIAGNOSTIC_BASELINE",
-    operation: "baseline_already_captured",
-    message: "[diagnostic] baseline already captured (idempotent no-op)",
+    component: "DIAGNOSTIC_PROJECTION",
+    operation: "diagnostic_projection_failed",
+    message:
+      "diagnostic completed but its projection could not be stored; the repair sweep retries it",
   },
   {
     file: "server/routes/practice-canonical.ts",
-    component: "DIAGNOSTIC_BASELINE",
-    operation: "baseline_insert_failed",
-    message: "[diagnostic] baseline insert failed (non-fatal)",
+    component: "DIAGNOSTIC_PROJECTION",
+    operation: "diagnostic_completion_conflict",
+    message:
+      "a second diagnostic reached completion for a student who already completed one",
   },
   {
     file: "server/routes/practice-canonical.ts",
-    component: "DIAGNOSTIC_BASELINE",
-    operation: "baseline_captured",
-    message: "[diagnostic] baseline captured",
+    component: "DIAGNOSTIC_PROJECTION",
+    operation: "diagnostic_completed",
+    message: "diagnostic completed and its projection stored",
   },
   {
     file: "server/routes/diagnostic-routes.ts",

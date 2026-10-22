@@ -38,6 +38,7 @@ import { z } from "zod";
 import { emitEvent } from "../lib/analytics/emit-event";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { timedRoute, timedStep } from "../lib/step-timer";
 import { EntitlementService } from "../services/entitlement-service";
 // resolveFullEnvelope: context resolver lives in tutor-context.ts.
 // hasAnswerLeak was previously imported here but is now internal to the
@@ -899,7 +900,22 @@ router.post(
 // POST /messages — §6 Append Turn (19-step pipeline, §6.5)
 // ============================================================================
 
-router.post("/messages", async (req: Request, res: Response): Promise<void> => {
+/**
+ * @spec [Doc-03B_V4.1 §6 (Append Turn, the 19-step pipeline); owner rulings on #1277 (Karl,
+ *        2026-10-21), ruling 6: "H1 approved. Add the existing step timer to the tutor reply path:
+ *        observability only, fixed literal step names, NEVER log prompts, responses or student
+ *        content; no behaviour change"; server/lib/step-timer.ts] | @implemented [2026-10-21]
+ *
+ * plain English: the handler is unchanged; it is now a named function so the route can be
+ * registered through `timedRoute("tutor.message", ...)`, and its slow steps (entitlement, the
+ * crisis classifier, the context envelope, both Model Armor scans, the model call, the serializer,
+ * the writes) are wrapped in `timedStep` with literal names. One `route_timing` line per request
+ * carries those names and their milliseconds, and nothing else: no message, reply, prompt,
+ * conversation id or student id can reach it, because nothing but the literals and numbers is
+ * read into it (step-timer.ts "WHAT IT CAN CARRY"). The crisis and retry branches return before
+ * the later steps, so their lines simply list fewer steps.
+ */
+async function postTutorMessage(req: Request, res: Response): Promise<void> {
   // Step 1: Validate JWT and role — already enforced at mount.
   if (!req.user) {
     sendTutorError(res, "unauthenticated");
@@ -908,7 +924,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
   const studentId = req.user.id;
 
   // Step 2: Check entitlement (per-boundary, INV-03-18).
-  if (await denyIfNotEntitled(studentId, res)) return;
+  if (await timedStep("entitlement", () => denyIfNotEntitled(studentId, res)))
+    return;
 
   // Step 3: Age gate (INV-03-07, Doc-03B_V4.1 §3.2).
   // Enforced by the `requireStudentOnly` middleware mounted at /api/tutor
@@ -1168,7 +1185,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // messages in the conversation — not just the current turn.
     const { sanitized } = sanitizeInput(input.message);
     const patternScan = scanForInjectionPatterns(sanitized);
-    const signatureScan = await checkSignatureTable(sanitized);
+    const signatureScan = await timedStep("injection_scan", () =>
+      checkSignatureTable(sanitized),
+    );
     const injectionDetected = patternScan.detected || signatureScan.matched;
     // A resumed turn was already scanned and logged on its first attempt;
     // logging again would double-count a severity-5 abuse incident.
@@ -1193,7 +1212,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // way — fail closed with crisis-safe response.
     let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
     try {
-      crisisResult = await runCrisisClassifier(sanitized);
+      crisisResult = await timedStep("crisis_classifier", () =>
+        runCrisisClassifier(sanitized),
+      );
     } catch (crisisErr: unknown) {
       // B1.5: Unexpected infrastructure failure in the entire classifier
       // pipeline. We cannot determine Layer 1 state, so fail closed — return
@@ -1649,10 +1670,12 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     //     boolean) and correct_answer (null pre-submit, real post-submit).
     // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3,
     //        LISA-FULL-007]
-    const preSubmit = await isPreSubmitForSurface(
-      conversation.source_surface,
-      effectiveScope.source_session_item_id,
-      supabaseServer,
+    const preSubmit = await timedStep("pre_submit", () =>
+      isPreSubmitForSurface(
+        conversation.source_surface,
+        effectiveScope.source_session_item_id,
+        supabaseServer,
+      ),
     );
     const isPostSubmit = !preSubmit;
 
@@ -1662,11 +1685,14 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // The envelope gate (tutor-context.ts) decides what reaches the wire:
     //   correct_answer: isPostSubmit ? correctAnswer : null
     // @spec [Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3]
-    const correctAnswerResult = effectiveScope.source_question_row_id
-      ? await getCorrectAnswerForScope(
-          effectiveScope.source_question_row_id,
-          conversation.source_surface,
-          effectiveScope.source_session_item_id,
+    const questionRowId = effectiveScope.source_question_row_id;
+    const correctAnswerResult = questionRowId
+      ? await timedStep("correct_answer", () =>
+          getCorrectAnswerForScope(
+            questionRowId,
+            conversation.source_surface,
+            effectiveScope.source_session_item_id,
+          ),
         )
       : ({ value: null, failed: false } as CorrectAnswerResult);
 
@@ -1674,20 +1700,24 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // null on the wire pre-submit (Doc 03D §6.3). The real value stays
     // BFF-local for the output scan; the envelope carries is_post_submit
     // so the worker gates on a server-derived boolean, not on field presence.
-    const recentMessages = await getRecentMessages(conversation.id);
-    const envelope = await resolveFullEnvelope({
-      conversationId: conversation.id,
-      studentId,
-      entryMode: conversation.entry_mode,
-      sourceSurface: conversation.source_surface,
-      sourceSessionId: effectiveScope.source_session_id,
-      sourceSessionItemId: effectiveScope.source_session_item_id,
-      sourceQuestionRowId: effectiveScope.source_question_row_id,
-      recentMessages,
-      runtimeLimits: { maxOutputTokens: 2048, timeoutMs: 30_000 },
-      correctAnswer: correctAnswerResult.value,
-      isPostSubmit,
-    });
+    const recentMessages = await timedStep("recent_messages", () =>
+      getRecentMessages(conversation.id),
+    );
+    const envelope = await timedStep("context_envelope", () =>
+      resolveFullEnvelope({
+        conversationId: conversation.id,
+        studentId,
+        entryMode: conversation.entry_mode,
+        sourceSurface: conversation.source_surface,
+        sourceSessionId: effectiveScope.source_session_id,
+        sourceSessionItemId: effectiveScope.source_session_item_id,
+        sourceQuestionRowId: effectiveScope.source_question_row_id,
+        recentMessages,
+        runtimeLimits: { maxOutputTokens: 2048, timeoutMs: 30_000 },
+        correctAnswer: correctAnswerResult.value,
+        isPostSubmit,
+      }),
+    );
 
     await logContextResolution({
       conversationId: conversation.id,
@@ -1717,10 +1747,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     // skipped scan (logged at ERROR) lets the turn proceed. A block skips the
     // model entirely and answers with the neutral substitution.
     // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
-    const armorInput = await scanWithModelArmor(
-      "input",
-      input.message,
-      conversation.id,
+    const armorInput = await timedStep("armor_input", () =>
+      scanWithModelArmor("input", input.message, conversation.id),
     );
 
     // Step 13c (closure plan W3-5, owner ruling 2026-09-24): an input block on
@@ -1824,7 +1852,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
               learner_observation: null,
             },
           } as const)
-        : await orchestrateTurn(envelope, preSubmit, correctAnswerResult.value);
+        : await timedStep("model", () =>
+            orchestrateTurn(envelope, preSubmit, correctAnswerResult.value),
+          );
 
     if (!orchestrationResult.ok) {
       logger.error(
@@ -1879,7 +1909,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     const armorOutput =
       armorInput.kind === "blocked"
         ? null
-        : await scanWithModelArmor("output", tutorResponse, conversation.id);
+        : await timedStep("armor_output", () =>
+            scanWithModelArmor("output", tutorResponse, conversation.id),
+          );
     const armorOutputBlocked = armorOutput?.kind === "blocked";
 
     // Step 15: LISA-FULL-007 — mandatory output serializer (belt-and-suspenders).
@@ -1905,9 +1937,8 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       // Video library (brief §7): a YouTube link to anything outside this set is redacted.
       allowedVideoIds: offeredVideos.map((v) => v.video_id),
     };
-    const serialized = await serializeTutorOutput(
-      tutorResponse,
-      appendScanContext,
+    const serialized = await timedStep("serialize", () =>
+      serializeTutorOutput(tutorResponse, appendScanContext),
     );
     const safeContent = serialized.content;
     // Anti-leak scan classes only: a Model Armor block is logged by the
@@ -1921,24 +1952,27 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
       scans.correctAnswerGateBlocked;
 
     // Step 16: Persist tutor message.
-    const { data: tutorMessageRow, error: tutorMessageError } =
-      await supabaseServer
-        .from("tutor_messages")
-        .insert({
-          conversation_id: conversation.id,
-          student_id: studentId,
-          role: "tutor",
-          content_kind: orchestration.response.content_kind,
-          message: safeContent,
-          source_session_id: effectiveScope.source_session_id,
-          source_session_item_id: effectiveScope.source_session_item_id,
-          source_question_row_id: effectiveScope.source_question_row_id,
-          source_question_canonical_id:
-            effectiveScope.source_question_canonical_id,
-          client_turn_id: input.client_turn_id,
-        })
-        .select("id")
-        .single();
+    const { data: tutorMessageRow, error: tutorMessageError } = await timedStep(
+      "tutor_message_insert",
+      () =>
+        supabaseServer
+          .from("tutor_messages")
+          .insert({
+            conversation_id: conversation.id,
+            student_id: studentId,
+            role: "tutor",
+            content_kind: orchestration.response.content_kind,
+            message: safeContent,
+            source_session_id: effectiveScope.source_session_id,
+            source_session_item_id: effectiveScope.source_session_item_id,
+            source_question_row_id: effectiveScope.source_question_row_id,
+            source_question_canonical_id:
+              effectiveScope.source_question_canonical_id,
+            client_turn_id: input.client_turn_id,
+          })
+          .select("id")
+          .single(),
+    );
 
     if (isClientTurnUniqueViolation(tutorMessageError)) {
       sendClientTurnUniqueViolation(res, conversation.id, "tutor");
@@ -2160,7 +2194,9 @@ router.post("/messages", async (req: Request, res: Response): Promise<void> => {
     }
     sendTutorError(res, "orchestration_failed");
   }
-});
+}
+
+router.post("/messages", timedRoute("tutor.message", postTutorMessage));
 
 // ============================================================================
 // GET /conversations/:conversationId — §7 Replay

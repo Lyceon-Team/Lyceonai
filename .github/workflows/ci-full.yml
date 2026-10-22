@@ -342,6 +342,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/deletion-evidence-gate.mutations.sh
 
+      # SCL-235 / SCL-236 (owner rulings 2026-10-16/17): the stored diagnostic projection, the one
+      # completion path and the free/paid read split. Each rule (session-only events, write-once,
+      # replay/race, one in-flight diagnostic, abandoned, live refresh at completion, repair,
+      # grants, deletion L1-14, the read split, the single-writer guard) is planted and must turn
+      # its named check red.
+      - name: Diagnostic projection mutations (planted defects must fail)
+        if: matrix.group == 'deletion'
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/diagnostic-projection.mutations.sh
+
       # The fourteen review-route assertions (practice-integration, "Review API + queue end-to-end")
       # are worth exactly as much as their plants. This mutates product source once per
       # assertion and fails the build unless that assertion goes red. It patches the working
@@ -408,16 +422,6 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/prod-verify-console-gate.sh
 
-      # captureDiagnosticBaseline is once-only with no retry and silently returns
-      # when the projection is not ready, so a student who completed a diagnostic
-      # during the mastery outage is permanently no_baseline. This guards the
-      # repair — and above all that it stays a repair, never a fabricated score.
-      - name: Baseline repair gate (BUG-1 — repair, not fabrication)
-        if: matrix.group == 'calendar-migrations'
-        run: |
-          export PATH=/usr/lib/postgresql/16/bin:$PATH
-          bash scripts/ci/baseline-repair-gate.sh
-
       # Guards the two read-only files that decide whether a history repair is safe
       # (ruling Q9 puts the repair itself in the Supabase CLI's hands). Parity runs
       # FIRST and must be strict: it is the only thing between a hand-applied schema
@@ -433,6 +437,12 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-inventory-gate.sh
+
+      # Karl, 2026-10-21: I0 (no new duplicate migration versions) and its frozen list are
+      # planted and must turn their named test red. No Postgres: I0 stops the gate first.
+      - name: Migration duplicate-version mutations (planted defects must fail)
+        if: matrix.group == 'calendar-migrations'
+        run: bash scripts/ci/migration-duplicate-version.mutations.sh
 
       # Proves the gate above can fail, and fails on the assertion each mutation names.
       # M3 is the load-bearing one: without it "counted" and "excluded" are the same test.
@@ -507,6 +517,21 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-consent-reviews.mutations.sh
+
+      # Lifecycle emails (Karl, 2026-10-21; SCL-239, SCL-240): plants the founding reminder and
+      # the three behaviour triggers off their thresholds, cutovers and windows; for an entitled,
+      # under-13, deleted, deletion-pending, guardian or denylisted student; twice; during quiet
+      # hours; past the cap or out of priority order; without the self-cancel; with a message row;
+      # kept after a refused send; open to authenticated; missing from the sweep; or logging an
+      # address. Each must turn its guarding test red on a name.
+      - name: Lifecycle email mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/lifecycle-email.mutations.sh
 
       # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
       # new-account test ignoring the account's age, email signup recording only on a client
@@ -584,6 +609,20 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/getting-started.mutations.sh
+
+      # Server-side funnel events (Karl, 2026-10-21): every rule (once per student, exact
+      # properties incl. a forbidden-property plant, the salted distinct id, fire-and-forget,
+      # under-13 exclusion, analytics off, the onboarding delay, QOTD vs practice, alpha = 100% off,
+      # service_role grants, the backfill, and each route hook) is planted and must turn its named
+      # test red.
+      - name: Server-side funnel events mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/funnel-events.mutations.sh
 
       # QOTD resilience (Karl, 2026-10-09): every alert rule (horizon < 7, once per condition per
       # day, one recovery, the independent check, channel independence, one unset-webhook warning),

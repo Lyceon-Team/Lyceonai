@@ -26,6 +26,7 @@ describe("Diagnostic prompting contract", () => {
     for (const status of [
       "baseline_pending",
       "baseline_only",
+      "insufficient_evidence",
       "computed",
       undefined,
     ] as const) {

@@ -11,7 +11,7 @@
  * the server's values. Every heading is a panel heading (h2, 20px serif) as in the prototype.
  * The page renders these inside `AppShellPanel`, so on a phone they stack under the main column.
  */
-import { Fragment, type ReactNode } from "react";
+import { Fragment } from "react";
 import { Link } from "wouter";
 import type { CalendarDay } from "@lyceon/shared/calendar";
 import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
@@ -47,24 +47,49 @@ const PANEL_LINK =
 /** The empty state the prototype's free panel shows before the diagnostic. */
 const BEFORE_DIAGNOSTIC = `Your projected score appears here when you finish ${BLIND_SPOTS_NAME}.`;
 
+/** The free panel's line under the diagnostic band (SCL-236: written once, never changed). */
+const DIAGNOSTIC_RESULT_LINE =
+  "From your diagnostic answers. This result doesn’t change.";
+/** D1 (a): the diagnostic is done and a skipped question left an area under the gate. */
+const DIAGNOSTIC_INSUFFICIENT =
+  "We need more answers in some areas to estimate your score. Skipped questions don’t count as answers.";
+/** The upgrade link: the live projection is the locked thing (SCL-235). */
+const LIVE_PROJECTION_UPGRADE = "See your score update as you practice";
+
 /**
- * "Projected score": the band (both plans), else the sentence for why there is none. Paid adds
- * "Your target is N." from the calendar profile when one is set.
+ * "Projected score" (paid: the live band) or "Your diagnostic result" (free: the stored
+ * diagnostic band, SCL-235), else the sentence for why there is none. Paid adds "Your target is
+ * N." from the calendar profile when one is set. `kind` is the server's word for which band this
+ * is; before it lands the heading follows the plan the page already knows.
+ *
+ * @spec [SCL-235 / SCL-236; owner rulings 2026-10-16 (1, 4) and D1 (a); DESIGN.md §5 (one filled
+ *        primary per screen: the upgrade is a text link)] | @implemented [2026-10-03; free
+ *        diagnostic result 2026-10-17]
  */
 export function ProjectionSection({
   range,
   stage,
   targetScore,
+  kind = "live",
+  diagnosticInsufficient = false,
+  onUpgrade,
 }: {
   range: ProjectedRange | null;
   /** Which "no band yet" sentence applies; the free Home's stage, or "after" for paid. */
   stage: FreeHomeStage;
   targetScore: number | null;
+  kind?: "live" | "diagnostic";
+  diagnosticInsufficient?: boolean;
+  /** Free only: opens the upgrade modal for the live projection. */
+  onUpgrade?: () => void;
 }): JSX.Element {
+  const diagnostic = kind === "diagnostic";
   let empty: string | null = null;
   if (range === null) {
     if (stage === "diagnostic") empty = BEFORE_DIAGNOSTIC;
     else if (stage === "pending") empty = BASELINE_PENDING_HEADLINE;
+    else if (diagnostic && diagnosticInsufficient)
+      empty = DIAGNOSTIC_INSUFFICIENT;
     else if (stage === "after") empty = ABSENT_COPY.student.projection;
   }
   return (
@@ -72,9 +97,10 @@ export function ProjectionSection({
       aria-labelledby="home-proj-h"
       className="flex flex-col gap-2"
       data-testid="home-projection"
+      data-kind={kind}
     >
       <h2 id="home-proj-h" className={PANEL_H2}>
-        Projected score
+        {diagnostic ? "Your diagnostic result" : "Projected score"}
       </h2>
       {range !== null ? (
         <>
@@ -85,12 +111,30 @@ export function ProjectionSection({
             {rangeText(range)}
           </p>
           <p className="m-0 text-base leading-normal text-lyc-muted">
-            {targetScore !== null ? `Your target is ${targetScore}. ` : null}
-            The range narrows as you answer more questions.
+            {diagnostic ? (
+              DIAGNOSTIC_RESULT_LINE
+            ) : (
+              <>
+                {targetScore !== null
+                  ? `Your target is ${targetScore}. `
+                  : null}
+                The range narrows as you answer more questions.
+              </>
+            )}
           </p>
         </>
       ) : empty !== null ? (
         <p className="m-0 text-[17px] leading-normal text-lyc-muted">{empty}</p>
+      ) : null}
+      {diagnostic && onUpgrade !== undefined && stage !== "diagnostic" ? (
+        <button
+          type="button"
+          onClick={onUpgrade}
+          className={cn(PANEL_LINK, "bg-transparent p-0", LYC_FOCUS)}
+          data-testid="home-projection-upgrade"
+        >
+          {LIVE_PROJECTION_UPGRADE}
+        </button>
       ) : null}
     </section>
   );
@@ -205,8 +249,6 @@ export function RecentSessionsSection({
   onReview,
   startingId,
   failure,
-  capFor,
-  cap,
 }: {
   sessions: readonly ReviewPoolSourceSession[];
   todayKey: string;
@@ -218,15 +260,12 @@ export function RecentSessionsSection({
   onReview: (session: ReviewPoolSourceSession) => void;
   /** The source session whose review start is in flight (item 5: that row says "Starting…"). */
   startingId: string | null;
-  /** Why the last start failed, in the student's words, or null. */
-  failure: string | null;
   /**
-   * QA2-A (owner re-test, Karl, 2026-10-08) | @implemented [2026-10-08]: the row whose start the
-   * review cap refused (`recentRowKey`), drawn directly under that row; null when none.
+   * Why the last start failed, in the student's words, or null. (The QA2-A review-cap notice
+   * drawn under a row is retired: owner rulings, Karl, 2026-10-21, on #1277, ruling 3; the server
+   * never refuses a start for the cap since F-81.)
    */
-  capFor: string | null;
-  /** The cap's refusal (`ReviewCapNotice`), shown under the `capFor` row. */
-  cap: ReactNode;
+  failure: string | null;
 }): JSX.Element {
   return (
     <section
@@ -287,11 +326,6 @@ export function RecentSessionsSection({
                     {starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}
                   </button>
                 </li>
-                {capFor === recentRowKey(s) ? (
-                  <li className="px-1 py-2" data-testid="home-recent-cap">
-                    {cap}
-                  </li>
-                ) : null}
               </Fragment>
             );
           })}
@@ -310,7 +344,7 @@ export function RecentSessionsSection({
 }
 
 /** QA2-A: one recent-session row's identity (its source engine and session). */
-export function recentRowKey(row: ReviewPoolSourceSession): string {
+function recentRowKey(row: ReviewPoolSourceSession): string {
   return `${row.source_engine}:${row.source_session_id}`;
 }
 

@@ -28,8 +28,8 @@
  * through `usePractice`; review: its pool, with `target_count` 5). One filled primary: "Review
  * misses" when there are misses, else "Another 5"; the other is outline. RULED: owner ruling (Karl,
  * 2026-10-15, on #1233, item 1) keeps this as built. Each start's refusal is
- * shown under the actions: the review cap with the shared ReviewCapNotice, an empty pool or a used
- * quota as a notice, in the student's words.
+ * shown under the actions: an empty pool or a used quota as a notice, in the student's words. (The
+ * review cap's notice is retired: owner rulings, Karl, 2026-10-21, on #1277, ruling 3.)
  *
  * Anti-leak: the summary holds no question content; nothing here can show an answer.
  */
@@ -39,14 +39,12 @@ import { ANOTHER_SESSION_SIZE } from "@lyceon/shared/session-summary-schema";
 import type { SessionSummary as Summary } from "@lyceon/shared/session-summary-schema";
 import { LevelPill } from "@/components/mastery/LevelPill";
 import { UPGRADE_PLANS_DESTINATION } from "@/components/billing/upgrade-modal";
-import { ReviewCapNotice } from "@/components/review/ReviewCapNotice";
 import { ClampedLabel, Notice } from "@/components/student-ui";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePractice } from "@/hooks/usePractice";
 import {
   reviewSessionHref,
-  useActiveReviewSessions,
   useCreateReviewSession,
   type ReviewStartFailure,
   type ReviewStartSpec,
@@ -143,7 +141,6 @@ function SummaryBody({ data }: { data: Summary }): JSX.Element {
   const [, navigate] = useLocation();
   const practice = usePractice();
   const createReview = useCreateReviewSession();
-  const openReviews = useActiveReviewSessions();
   const [pending, setPending] = useState<Pending>(null);
   const [reviewFailure, setReviewFailure] = useState<ReviewStartFailure | null>(
     null,
@@ -328,12 +325,7 @@ function SummaryBody({ data }: { data: Summary }): JSX.Element {
             {pending === "another" ? STARTING_LABEL : ANOTHER_LABEL}
           </Button>
         </div>
-        {reviewFailure?.kind === "session_limit" ? (
-          <ReviewCapNotice
-            message={reviewFailure.message}
-            sessions={openReviews.sessions}
-          />
-        ) : reviewFailure !== null ? (
+        {reviewFailure !== null ? (
           <Notice
             tone={reviewFailure.kind === "pool_empty" ? "neutral" : "danger"}
             title={

@@ -416,12 +416,14 @@ describe("/profile/complete", () => {
     expectStudentTokensOnly(bareShell());
   });
 
-  // UI59-P2's guard. The marketing opt-in box only renders once a 13+ date of birth is entered
-  // (the date starts empty since 74525a05), so the card-wide token scan above never saw it and
-  // the plant went green. Enter an eligible date, prove the box is there, then check its tokens.
-  it("the marketing opt-in box is the student checkbox (on student tokens)", async () => {
+  // The date of birth starts empty (74525a05, 2026-10-13), and the marketing box appears only once
+  // a 13+ date is entered, so the cases above never draw the page's one checkbox. This case
+  // enters a fixed date (always 13+ from here on) and scans the box with the rest of the card;
+  // without it UI59-P2 (the lyc checkbox off the student tokens) has nothing to turn red.
+  it("a 13+ date of birth draws the marketing box on the student checkbox", async () => {
     renderRoute("/profile/complete", <ProfileComplete />);
     await screen.findByTestId("button-complete-profile");
+    expect(screen.queryByTestId("checkbox-marketing-opt-in")).toBeNull();
     fireEvent.change(screen.getByTestId("input-date-of-birth"), {
       target: { value: "2000-01-01" },
     });

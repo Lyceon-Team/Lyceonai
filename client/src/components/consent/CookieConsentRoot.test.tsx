@@ -370,6 +370,23 @@ describe("F-72: above the student shell's phone tab bar (owner brief 2026-10-05)
     ).not.toContain("calc(");
   });
 
+  // F-72 (owner brief 2026-10-21, Part E): the real tab bar measures a fractional height
+  // (65.296875px at 390, harness COOKIE-BANNER); rounding it DOWN left the banner's bottom
+  // 0.3px inside the bar. The offset must never be less than the bar.
+  it("a fractional tab-bar height is rounded UP, so the banner never overlaps the bar", async () => {
+    await mountFresh();
+    let unmount = (): void => undefined;
+    await act(async () => {
+      unmount = await mountTabBar(65.296875);
+    });
+    expect(screen.getByTestId("cookie-banner").getAttribute("style")).toMatch(
+      /bottom: calc\(66px \+ env\(.*safe-area-inset-bottom/,
+    );
+    await act(async () => {
+      unmount();
+    });
+  });
+
   it("the GPC notice takes the same offset", async () => {
     setGpc(true);
     await mountFresh();

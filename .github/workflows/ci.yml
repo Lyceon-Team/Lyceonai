@@ -569,6 +569,12 @@ jobs:
       - name: Diagnostic state drift gate (SQL <-> shared <-> client)
         run: node scripts/ci/diagnostic-state-drift-gate.mjs
 
+      # SCL-236 (owner ruling 2026-10-17, constraint 3): complete_diagnostic_session is the only
+      # code that marks a diagnostic completed. Fails if any other TS or SQL writes
+      # status = 'completed' to practice_sessions.
+      - name: Diagnostic completion — one path
+        run: node scripts/ci/diagnostic-completion-single-path.mjs
+
       - name: Guards proven by planted violations (B-WS3-1 §E)
         run: bash scripts/ci/guards-selftest.sh
 
@@ -1083,6 +1089,16 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/05c-projection-gates.sh
 
+      - name: SCL-236 diagnostic projection gates (stored, write-once, one completion path, race, deletion)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/diagnostic-projection-gates.sh
+
       - name: Guardian-mirror gates (denial by absence + one gate form + view-only + carve-outs)
         env:
           PGHOST: localhost
@@ -1184,6 +1200,9 @@ jobs:
             tests/ci/notifications-retention-page.pg.ci.test.ts \
             tests/ci/guardian-access-audit.pg.ci.test.ts \
             tests/ci/guardian-unlinked.pg.ci.test.ts \
+            tests/ci/guardian-notify.parity.pg.ci.test.ts \
+            tests/ci/guardian-accountability.pg.ci.test.ts \
+            tests/ci/explanation-corrections.pg.ci.test.ts \
             tests/ci/guardian-invite.pg.ci.test.ts \
             tests/ci/guardian-payment-access.pg.ci.test.ts \
             tests/ci/deletion-completed-notice.pg.ci.test.ts \
@@ -1213,6 +1232,9 @@ jobs:
             tests/ci/qotd-resilience.pg.ci.test.ts \
             tests/ci/signup-analytics.pg.ci.test.ts \
             tests/ci/lifecycle-email.pg.ci.test.ts \
+            tests/ci/funnel-events.pg.ci.test.ts \
+            tests/ci/lifecycle-reminder.pg.ci.test.ts \
+            tests/ci/lifecycle-triggers.pg.ci.test.ts \
             tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
@@ -1259,6 +1281,9 @@ jobs:
             --file tests/ci/notifications-retention-page.pg.ci.test.ts \
             --file tests/ci/guardian-access-audit.pg.ci.test.ts \
             --file tests/ci/guardian-unlinked.pg.ci.test.ts \
+            --file tests/ci/guardian-notify.parity.pg.ci.test.ts \
+            --file tests/ci/guardian-accountability.pg.ci.test.ts \
+            --file tests/ci/explanation-corrections.pg.ci.test.ts \
             --file tests/ci/guardian-invite.pg.ci.test.ts \
             --file tests/ci/guardian-payment-access.pg.ci.test.ts \
             --file tests/ci/deletion-completed-notice.pg.ci.test.ts \
@@ -1288,6 +1313,9 @@ jobs:
             --file tests/ci/qotd-resilience.pg.ci.test.ts \
             --file tests/ci/signup-analytics.pg.ci.test.ts \
             --file tests/ci/lifecycle-email.pg.ci.test.ts \
+            --file tests/ci/funnel-events.pg.ci.test.ts \
+            --file tests/ci/lifecycle-reminder.pg.ci.test.ts \
+            --file tests/ci/lifecycle-triggers.pg.ci.test.ts \
             --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             --file tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \

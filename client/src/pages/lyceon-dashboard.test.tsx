@@ -44,15 +44,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
@@ -84,10 +76,6 @@ import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { practiceAdapter } from "../../../server/services/calendar/adapters/practice";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
 import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
-import {
-  capTables,
-  reviewCapRefusal,
-} from "@/components/review/review-cap.fixture";
 import LyceonDashboard from "./lyceon-dashboard";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
@@ -146,18 +134,13 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: () => undefined }),
 }));
 
-// The server modules the producers import reach for a database; only the review cap's producer
-// reads one, through `db.from`, while its refusal is built (QA2-A, review-cap.fixture.ts).
-const db = vi.hoisted(() => ({
-  from: null as null | ((table: string) => unknown),
-}));
+// The server modules the producers import reach for a database; none is read in this test.
 vi.mock("../../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     rpc: () => {
       throw new Error("no database in this test");
     },
-    from: (table: string) => {
-      if (db.from !== null) return db.from(table);
+    from: () => {
       throw new Error("no database in this test");
     },
   },
@@ -189,7 +172,7 @@ async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
   return map;
 }
 
-/** GET /api/progress/projection, `computed` arm, carrying a band and a different range. */
+/** GET /api/progress/projection, `computed` arm (paid: the live projection only, SCL-235). */
 const PROJECTION_ROUTE: EstimateResponse = {
   estimateStatus: "computed",
   estimate: {
@@ -199,14 +182,7 @@ const PROJECTION_ROUTE: EstimateResponse = {
     range: { low: 1130, high: 1230 },
     confidenceBand: "Medium",
   },
-  baseline: {
-    composite: 1050,
-    math: 530,
-    rw: 520,
-    range: { low: 990, high: 1110 },
-    confidenceBand: "Low",
-    capturedAt: "2026-09-20T12:00:00.000Z",
-  },
+  diagnostic: null,
   totalQuestionsAttempted: 214,
   lastUpdated: "2026-10-01T12:00:00.000Z",
   entitlement: {
@@ -232,15 +208,22 @@ function estimateStatusBody(
       ...base,
       estimateStatus: "baseline_only",
       estimate: null,
-      baseline: PROJECTION_ROUTE.baseline,
+      diagnostic: {
+        composite: 1050,
+        math: 530,
+        rw: 520,
+        range: { low: 990, high: 1110 },
+        computedAt: "2026-09-20T12:00:00.000Z",
+      },
       cta: true,
     };
   }
-  return { ...base, estimateStatus: status, estimate: null, baseline: null };
+  return { ...base, estimateStatus: status, estimate: null, diagnostic: null };
 }
 
 const SECTIONS = sectionProjectionsResponseSchema.parse({
   ok: true,
+  kind: "live",
   sections: [
     {
       section: "M",
@@ -260,6 +243,13 @@ const SECTIONS = sectionProjectionsResponseSchema.parse({
     },
   ],
   requestId: "r",
+});
+
+/** SCL-235: a free student's sections route carries the stored diagnostic projection. */
+const DIAGNOSTIC_SECTIONS = sectionProjectionsResponseSchema.parse({
+  ...SECTIONS,
+  kind: "diagnostic",
+  status: "computed",
 });
 
 const MASTERY = masteryDomainsResponseSchema.parse({
@@ -481,7 +471,8 @@ const LAUNCHED_EXAM = "66666666-6666-4666-8666-666666666666";
 type Scenario = {
   calendar?: "ready" | "setup_required";
   estimateStatus?: EstimateResponse["estimateStatus"];
-  projection?: "projected" | "none";
+  /** "insufficient": a free student's stored diagnostic projection is below the gate (D1 (a)). */
+  projection?: "projected" | "none" | "insufficient";
   diagnosticAnswered?: number;
   quota?: number | "unlimited";
   /** OQ-68 (d): the config numbers the routes carry; the seeded values when absent. */
@@ -521,7 +512,7 @@ const GETTING_STARTED_DISMISSED = deriveGettingStarted(
   { plan: "free", lisaAvailable: true },
 );
 
-function install(s: Scenario): void {
+function install(s: Scenario, plan: "paid" | "free"): void {
   const calendarBody =
     s.calendar === "setup_required"
       ? {
@@ -554,10 +545,32 @@ function install(s: Scenario): void {
       if (path === `/api/students/${STUDENT}/mastery/domains`)
         return json(MASTERY);
       if (path === `/api/students/${STUDENT}/projections/sections`)
+        // SCL-235: the server answers by plan — live for paid, the diagnostic one for free.
         return json(
           s.projection === "none"
-            ? { ok: true, sections: [], requestId: "r" }
-            : SECTIONS,
+            ? plan === "paid"
+              ? { ok: true, kind: "live", sections: [], requestId: "r" }
+              : {
+                  ok: true,
+                  kind: "diagnostic",
+                  status: null,
+                  sections: [],
+                  requestId: "r",
+                }
+            : s.projection === "insufficient"
+              ? {
+                  ...DIAGNOSTIC_SECTIONS,
+                  status: "insufficient_evidence",
+                  sections: DIAGNOSTIC_SECTIONS.sections.map((row) => ({
+                    ...row,
+                    projectedScoreMid: null,
+                    projectedScoreLow: null,
+                    projectedScoreHigh: null,
+                  })),
+                }
+              : plan === "paid"
+                ? SECTIONS
+                : DIAGNOSTIC_SECTIONS,
         );
       if (path === "/api/progress/projection")
         return json(estimateStatusBody(s.estimateStatus ?? "computed"));
@@ -644,7 +657,7 @@ async function mount(
   /** QA2-F: a read is held (`net.hold`), so wait for the loading state, not the page. */
   opts: { pending?: boolean; failPath?: RegExp } = {},
 ): Promise<{ container: HTMLElement; history: string[] }> {
-  install(scenario);
+  install(scenario, plan);
   // QA2-F: one read answers 500 (a failed read ends the loading wait).
   const failPath = opts.failPath;
   if (failPath !== undefined)
@@ -1107,6 +1120,70 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
       within(dialog).getByText(UPGRADE_MODAL_COPY.mastery_detail.plan.title),
     ).toBeTruthy();
     expect(net.log.slice(before).filter((l) => /mastery/.test(l))).toEqual([]);
+  });
+
+  // SCL-235 (owner ruling 2026-10-16): a free student sees their diagnostic result, labelled as
+  // such, and the live projection is the locked thing behind the upgrade.
+  it("free, after the diagnostic: 'Your diagnostic result', the band, and an upgrade link for the live projection", async () => {
+    const { container } = await mount("free", {
+      estimateStatus: "baseline_only",
+    });
+    const panel = await screen.findByTestId("home-projection");
+    expect(panel.getAttribute("data-kind")).toBe("diagnostic");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Your diagnostic result",
+    );
+    expect(within(panel).getByTestId("home-projection-range").textContent).toBe(
+      "1140–1300",
+    );
+    expect(panel.textContent).toContain(
+      "From your diagnostic answers. This result doesn’t change.",
+    );
+    // The live-projection copy is a paid sentence; it is not on the free panel.
+    expect(panel.textContent).not.toContain("The range narrows");
+    // DESIGN.md §5: the upgrade is a text link, not a second filled primary.
+    expect(primaries(container)).toEqual([]);
+    const before = net.log.length;
+    fireEvent.click(within(panel).getByTestId("home-projection-upgrade"));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(UPGRADE_MODAL_COPY.mastery_detail.plan.title),
+    ).toBeTruthy();
+    // Opening the modal fetches nothing: no live read is attempted for a free student.
+    expect(net.log.slice(before)).toEqual([]);
+  });
+
+  it("free, a skipped diagnostic (D1 (a)): the honest sentence, no number", async () => {
+    await mount("free", {
+      estimateStatus: "insufficient_evidence",
+      projection: "insufficient",
+    });
+    const panel = await screen.findByTestId("home-projection");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Your diagnostic result",
+    );
+    expect(within(panel).queryByTestId("home-projection-range")).toBeNull();
+    expect(panel.textContent).toContain(
+      "We need more answers in some areas to estimate your score.",
+    );
+    expect(screen.queryByTestId("home-diagnostic")).toBeNull();
+  });
+
+  it("free, before the diagnostic: no upgrade link on the panel, the diagnostic card instead", async () => {
+    await mount("free", { estimateStatus: "no_baseline", projection: "none" });
+    const panel = await screen.findByTestId("home-projection");
+    expect(within(panel).queryByTestId("home-projection-upgrade")).toBeNull();
+  });
+
+  it("paid: the heading stays 'Projected score' and there is no diagnostic label or upgrade link", async () => {
+    await mount("paid", { calendar: "ready" });
+    const panel = await screen.findByTestId("home-projection");
+    expect(panel.getAttribute("data-kind")).toBe("live");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Projected score",
+    );
+    expect(panel.textContent).not.toContain("diagnostic");
+    expect(within(panel).queryByTestId("home-projection-upgrade")).toBeNull();
   });
 
   it("Start diagnostic starts (or resumes) the diagnostic and opens its session", async () => {
@@ -1955,33 +2032,9 @@ describe("QA item 15: one empty-day sentence", () => {
   });
 });
 
-// ── Owner re-test (Karl, 2026-10-08) item A: the review cap ───────────────────────────────────
+// ── The review cap notice: RETIRED (owner rulings, Karl, 2026-10-21, on #1277, ruling 3) ──────
 
-describe("QA2-A: a recent session's review start, refused by the review cap, is answered at that row", () => {
-  /** The real producer's cap refusal (review-cap.fixture.ts). */
-  let CAP_BODY: Record<string, unknown>;
-  beforeAll(async () => {
-    db.from = capTables;
-    try {
-      CAP_BODY = (await reviewCapRefusal()).body;
-    } finally {
-      db.from = null;
-    }
-  });
-
-  let scrolled: ReturnType<typeof vi.fn>;
-  beforeEach(() => {
-    scrolled = vi.fn();
-    Object.defineProperty(Element.prototype, "scrollIntoView", {
-      configurable: true,
-      writable: true,
-      value: scrolled,
-    });
-  });
-  afterEach(() => {
-    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-  });
-
+describe("F-81: a recent session's refused review start is a plain failure line; there is no cap notice", () => {
   function refuseCreate(body: unknown, status: number): void {
     net.handlers.unshift((url, init) =>
       init?.method === "POST" && url === "/api/review/sessions"
@@ -2000,50 +2053,33 @@ describe("QA2-A: a recent session's review start, refused by the review cap, is 
     return first;
   }
 
-  it.each([403, 409])(
-    "refused with %i: the message directly under the pressed row, scrolled into view; Continue opens the open session",
-    async (status) => {
-      const { history } = await mount("paid", { calendar: "ready" });
-      expect(CAP_BODY.code).toBe("SESSION_LIMIT_EXCEEDED");
-      refuseCreate(CAP_BODY, status);
-      const pressed = await pressFirstRecent();
-      const cap = await screen.findByTestId("review-cap");
-      expect(screen.getAllByTestId("review-cap")).toHaveLength(1);
-      expect(cap.textContent).toContain("Too many open review sessions");
-      expect(cap.textContent).toContain(String(CAP_BODY.message));
-      // At the pressed row: the list item right after it holds the notice.
-      const row = pressed.closest("li");
-      expect(row?.nextElementSibling?.contains(cap)).toBe(true);
-      expect(row?.nextElementSibling?.getAttribute("data-testid")).toBe(
-        "home-recent-cap",
-      );
-      // Not the old red line under the whole list.
-      expect(
-        within(screen.getByTestId("home-recent")).queryByRole("alert"),
-      ).toBeNull();
-      // Never below the fold.
-      expect(scrolled.mock.contexts).toContain(cap.parentElement);
-      // The row is not left pending.
-      expect(pressed.textContent).toBe("Review this session");
-
-      fireEvent.click(
-        within(cap).getByRole("button", { name: "Continue your open session" }),
-      );
-      expect(history.at(-1)).toBe(`/review/session/${REVIEW_ID}`);
-    },
-  );
-
-  it("End a session goes to Review's open sessions, focused there", async () => {
-    const { history } = await mount("paid", { calendar: "ready" });
-    refuseCreate(CAP_BODY, 409);
-    await pressFirstRecent();
-    const cap = await screen.findByTestId("review-cap");
-    fireEvent.click(within(cap).getByRole("button", { name: "End a session" }));
-    expect(history.at(-1)).toBe("/review?focus=open-sessions");
+  it("an old server's cap refusal is the plain failure line in its words, with no cap notice or actions", async () => {
+    await mount("paid", { calendar: "ready" });
+    refuseCreate(
+      {
+        error: "session_limit_exceeded",
+        code: "SESSION_LIMIT_EXCEEDED",
+        message:
+          "You already have 5 open review sessions. Finish or end one first.",
+        maxConcurrentSessions: 5,
+      },
+      403,
+    );
+    const pressed = await pressFirstRecent();
+    const recent = screen.getByTestId("home-recent");
+    expect((await within(recent).findByRole("alert")).textContent).toBe(
+      "You already have 5 open review sessions. Finish or end one first.",
+    );
+    expect(screen.queryByTestId("review-cap")).toBeNull();
+    expect(screen.queryByTestId("home-recent-cap")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Continue your open session" }),
+    ).toBeNull();
+    expect(pressed.textContent).toBe("Review this session");
   });
 
   it.each([403, 409])(
-    "a different refusal under %i is not the cap: the plain failure line, no cap actions",
+    "a refusal under %i: the plain failure line, no cap actions",
     async (status) => {
       await mount("paid", { calendar: "ready" });
       refuseCreate(

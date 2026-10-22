@@ -20,6 +20,10 @@ import { GuardianShell } from "@/components/layout/GuardianShell";
 import { Button } from "@/components/ui/button";
 import { useGuardianStudents } from "@/hooks/useGuardianStudents";
 import { linkCodeFromSearch } from "@/lib/link-code-prefill";
+import {
+  cameFromReviewEmail,
+  REVIEW_EMAIL_RETURN_SEARCH,
+} from "@/lib/product-feedback-api";
 import { guardianPaths } from "./paths";
 import { AddStudentButton, AddStudentDialog } from "./AddStudentDialog";
 import { GuardianTemplatePreview } from "./GuardianTemplatePreview";
@@ -68,7 +72,13 @@ function GuardianHomeBody(): JSX.Element {
   const [adding, setAdding] = useState(prefill.length > 0);
   const first = data?.students[0];
   if (first !== undefined && !adding) {
-    return <Redirect to={guardianPaths.dashboard(first.id)} replace />;
+    // The review email's link (`/guardian?review=email`) opens the ask on the Dashboard it lands on.
+    const review =
+      typeof window !== "undefined" &&
+      cameFromReviewEmail(window.location.search)
+        ? REVIEW_EMAIL_RETURN_SEARCH
+        : "";
+    return <Redirect to={guardianPaths.dashboard(first.id) + review} replace />;
   }
   return (
     <GuardianShell actions={<AddStudentButton />}>

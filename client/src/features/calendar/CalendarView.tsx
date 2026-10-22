@@ -245,12 +245,8 @@ type CalendarViewProps = {
   /** G4-04: the guardian Calendar tab hides "← Dashboard" (the Dashboard is the tab beside it). */
   hideBackLink?: boolean;
   mutations?: CalendarMutations;
-  /**
-   * Owner brief 2026-10-13 ("Transparency"): the student has an active guardian link, so the
-   * day menu and the block panel say "Your guardian is notified when you change your study
-   * plan." Rides on the action objects, which a guardian never receives.
-   */
-  guardianNotice?: boolean;
+  // `guardianNotice` (owner brief 2026-10-13) is gone: the page asks "Your guardian will be
+  // notified" before a recorded write instead (SCL-238; `useGuardianNotifyConfirm`).
 };
 
 export function CalendarView({
@@ -271,7 +267,6 @@ export function CalendarView({
   backHref,
   hideBackLink = false,
   mutations,
-  guardianNotice = false,
 }: CalendarViewProps): JSX.Element {
   const [view, setView] = useState<"week" | "month">("week");
   const [cursor, setCursor] = useState(() => startOfWeek(today));
@@ -368,7 +363,6 @@ export function CalendarView({
           onUndoBlockOut: mutations.resetDay,
           onRegenerateDay: mutations.regenerateDay,
           onResetDay: mutations.resetDay,
-          guardianNotice,
         };
 
   const sensors = useSensors(
@@ -489,9 +483,8 @@ export function CalendarView({
         setOpenBlockId(null);
       },
       launchPending: mutations.launchPending,
-      guardianNotice,
     };
-  }, [mutations, opened, guardianNotice]);
+  }, [mutations, opened]);
 
   const daysToTest =
     targetExamDate === null
@@ -668,7 +661,6 @@ export function CalendarView({
           onClose={() => setSettingsOpen(false)}
           pending={schedule.pending}
           error={schedule.error}
-          guardianNotice={guardianNotice}
           replanOffer={
             schedule.offerReplan
               ? {

@@ -215,6 +215,8 @@ const SatQuestionOfTheDayArchive = lazy(
 const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
+// Final brief "Trustpilot card + Feedback" (Karl, 2026-10-20) §2: the static contact page.
+const ContactPage = lazy(() => import("@/pages/contact"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const CrisisReviewList = lazy(() => import("@/pages/admin/CrisisReviewList"));
@@ -288,6 +290,7 @@ export function Router() {
 
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
+        <Route path="/contact" component={ContactPage} />
         {/* @spec [owner ruling 2026-09-29, UI-04] | @implemented [2026-09-29] |
             plain English: the old tutor page is retired; /tutor now sends
             everyone to /chat, whose guard handles sign-in (next=/chat). */}

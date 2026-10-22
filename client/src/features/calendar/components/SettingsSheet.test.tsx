@@ -517,25 +517,18 @@ describe("the SAT dates save with the schedule", () => {
   });
 });
 
-// SCL-230, approved by Karl 2026-10-13: a change to study days, minutes or the practice-test
-// frequency is reported to a linked guardian, so the sheet says so — only with an active link.
-describe("the guardian line (owner brief 2026-10-13, SCL-230)", () => {
-  it("is drawn with an active guardian link", () => {
-    renderSheet({ guardianNotice: true });
-    expect(screen.getByTestId("settings-guardian-notice")).toHaveTextContent(
-      "Your guardian is notified when you change your study plan.",
-    );
-  });
-
-  it("is not drawn without one (the sheet itself is)", () => {
-    renderSheet({ guardianNotice: false });
-    expect(screen.getByTestId("settings-save")).toBeTruthy();
-    expect(screen.queryByTestId("settings-guardian-notice")).toBeNull();
-  });
-
-  it("is not drawn when the page says nothing", () => {
+// SCL-238 (owner brief 2026-10-21, Part A): the static guardian line (SCL-230, 2026-10-13) is
+// gone; the page asks "Your guardian will be notified" before a recorded save instead
+// (client/src/pages/calendar.guardian-confirm.test.tsx).
+describe("no static guardian line (SCL-238)", () => {
+  it("the sheet draws, and no guardian line with it", () => {
     renderSheet();
     expect(screen.getByTestId("settings-save")).toBeTruthy();
     expect(screen.queryByTestId("settings-guardian-notice")).toBeNull();
+    expect(
+      screen.queryByText(
+        "Your guardian is notified when you change your study plan.",
+      ),
+    ).toBeNull();
   });
 });

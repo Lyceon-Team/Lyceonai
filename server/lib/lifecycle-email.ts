@@ -4,7 +4,7 @@
  * @spec [owner brief "Email lane — send onboarding events to Resend" + ruling (Karl, 2026-10-12):
  *       industry standard, no new infrastructure; contracts/notifications.contract.md §0 (the
  *       onboarding lane) and §14 (the reconcile leaves these contacts alone)] |
- * @implemented [2026-10-12]
+ * @implemented [2026-10-12; reminder 2026-10-21 (SCL-239); behaviour triggers 2026-10-21 (SCL-240)]
  *
  * plain English: the founding-cohort emails (welcomes, a 3-day reminder) are a Resend Automation
  * that Karl edits in Resend. Lyceon tells Resend two facts and nothing else:
@@ -26,12 +26,31 @@
  * Trade-offs: no outbox, so a crash or a Resend outage between the change and the call loses that
  * event (logged). Two concurrent first completions can both send `lyceon.onboarded` (accepted,
  * Karl 2026-10-13).
+ *
+ * BEHAVIOUR TRIGGERS (same brief, PR 2; SCL-240): `lyceon.diagnostic_unfinished`,
+ * `lyceon.pro_no_plan` and `lyceon.practising_free` join the reminder on the same path. One rule
+ * (`runLifecycleRule`) and one claim (`lifecycle_claim`) decide all four, so the cap (one
+ * lifecycle email per student per 3 days; the QOTD email is not one) and the priority order
+ * (reminder, diagnostic, Pro, practising) cover them together; each is re-checked at send time
+ * and a trigger the student has since acted on is marked resolved and never sent.
+ *
+ * A THIRD FACT (owner brief "Lifecycle emails: reminder timing fix", Karl 2026-10-21; SCL-239):
+ * `lyceon.reminder_due` `{}`, once per student, ever. Resend Automation delays are durations, so
+ * the founding reminder fired exactly 72 h after signup — at night for a night signup. Lyceon
+ * now decides WHEN: the lifecycle rule (`runLifecycleRule`) runs in two fixed UTC send slots
+ * (22:00 Monday–Friday, 15:00 Saturday–Sunday; owner rulings on #1284, Karl 2026-10-21 — it ran in
+ * the 14:00 UTC sweep before), with quiet hours as a backstop, claims every student
+ * whose onboarding is 3+ days old (since the cutover), not entitled, 13+, not deleted or
+ * deletion-pending (`lifecycle_claim`, recorded once in the notification ledger), then
+ * applies the denylist and sends the event. A refused send releases the claim, so the next
+ * slot tries again. Resend holds the template and checks `entitled` once more.
  */
 import { waitUntil } from "@vercel/functions";
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { lifecycleEmailEnvSchema } from "../../packages/shared/src/env";
 import { marketingOptInEligible } from "../../packages/shared/src/marketing-consent-schema";
+import { quietHoursDeferral } from "./notifications/quiet-hours";
 import {
   defaultContactsTransport,
   normaliseAddress,
@@ -41,6 +60,7 @@ import { logger } from "../logger";
 
 export const ONBOARDED_EVENT = "lyceon.onboarded";
 export const ENTITLED_EVENT = "lyceon.entitled";
+export const REMINDER_DUE_EVENT = "lyceon.reminder_due";
 
 export type LifecycleRole = "student" | "guardian";
 
@@ -153,6 +173,16 @@ async function eligibleProfile(
   deps: LifecycleDeps,
   event: string,
 ): Promise<Eligible | null> {
+  const result = await eligibility(profileId, deps, event);
+  return "skip" in result ? null : result;
+}
+
+/** Why not, or who: `deletion_state_unreadable` is the one transient reason. */
+async function eligibility(
+  profileId: string,
+  deps: LifecycleDeps,
+  event: string,
+): Promise<Eligible | { skip: SkipReason | "deletion_state_unreadable" }> {
   const profile = await deps.loadProfile(profileId);
   const pending = profile ? await deps.hasPendingDeletion(profileId) : false;
   if (pending === null) {
@@ -161,7 +191,7 @@ async function eligibleProfile(
       event,
       reason: "deletion_state_unreadable",
     });
-    return null;
+    return { skip: "deletion_state_unreadable" };
   }
   const parsed = lifecycleEmailEnvSchema.safeParse(deps.env);
   const reason = lifecycleSkipReason(profile, {
@@ -177,7 +207,7 @@ async function eligibleProfile(
       event,
       reason,
     });
-    return null;
+    return { skip: reason ?? "no_email" };
   }
   return {
     profile: { ...profile, email: profile.email },
@@ -270,6 +300,230 @@ export async function sendEntitledEvents(
     outcomes.push("sent");
   }
   return outcomes;
+}
+
+/**
+ * @spec [owner brief "Lifecycle emails: reminder timing fix + behaviour triggers" (Karl,
+ *       2026-10-21) PR 1 and PR 2; contracts/notifications.contract.md C14A.4–C14A.5; SCL-239,
+ *       SCL-240] | @implemented [2026-10-21]
+ *
+ * plain English: each ledger type, in the priority order `lifecycle_claim` applies, and the
+ * Resend event that starts its Automation. Resend holds every template.
+ */
+export const LIFECYCLE_TRIGGER_EVENTS = {
+  lifecycle_reminder_due: REMINDER_DUE_EVENT,
+  lifecycle_diagnostic_unfinished: "lyceon.diagnostic_unfinished",
+  lifecycle_pro_no_plan: "lyceon.pro_no_plan",
+  lifecycle_practising_free: "lyceon.practising_free",
+} as const;
+export type LifecycleTrigger = keyof typeof LIFECYCLE_TRIGGER_EVENTS;
+const lifecycleTriggerSchema = z.enum([
+  "lifecycle_reminder_due",
+  "lifecycle_diagnostic_unfinished",
+  "lifecycle_pro_no_plan",
+  "lifecycle_practising_free",
+]);
+
+export type LifecycleClaim = { profileId: string; trigger: LifecycleTrigger };
+
+/**
+ * @spec [owner rulings on #1284 (Karl, 2026-10-21) §2: "Fixed UTC send times; no time-zone or
+ *       DST logic: cron `0 22 * * 1-5` (weekdays) and `0 15 * * 0,6` (weekends) … Keep quiet hours
+ *       as a backstop"] | @implemented [2026-10-21]
+ *
+ * plain English: lifecycle emails go out only in two fixed UTC runs — 22:00 Monday to Friday
+ * (16:00/17:00 Chicago) and 15:00 Saturday and Sunday (09:00/10:00 Chicago). The rule checks the
+ * hour itself, so a run at any other time (a retried cron, a manual call) sends nothing. Vercel
+ * Hobby crons fire somewhere within their hour, so the check is on the UTC hour, not the minute.
+ */
+export const LIFECYCLE_SEND_SLOTS = {
+  weekdayHourUtc: 22,
+  weekendHourUtc: 15,
+} as const;
+
+export function isLifecycleSendSlot(now: Date): boolean {
+  const day = now.getUTCDay(); // 0 Sunday … 6 Saturday
+  const hour = now.getUTCHours();
+  const weekend = day === 0 || day === 6;
+  return weekend
+    ? hour === LIFECYCLE_SEND_SLOTS.weekendHourUtc
+    : hour === LIFECYCLE_SEND_SLOTS.weekdayHourUtc;
+}
+
+export type LifecycleClaimDeps = {
+  /** lifecycle_claim: at most one email per student, decided at `now`; null when the call failed. */
+  claimDue: (now: Date, limit: number) => Promise<LifecycleClaim[] | null>;
+  /** lifecycle_release: put a refused send back to pending, so the next sweep tries again. */
+  release: (claim: LifecycleClaim) => Promise<boolean>;
+};
+
+export type LifecycleRuleSummary = {
+  ran: boolean;
+  claimed: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+};
+
+export const LIFECYCLE_CLAIM_BATCH = 500;
+const LIFECYCLE_MAX_BATCHES = 20;
+
+/**
+ * @spec [same brief, PR 2 "Rules"; contracts/notifications.contract.md C14A.5, C6.6; SCL-240]
+ *       | @implemented [2026-10-21]
+ *
+ * Every lifecycle email that is due in this send slot: `lifecycle_claim` records, resolves and picks
+ * (once per trigger, ever; at most one per student per 3 days; the reminder first, then the
+ * diagnostic, Pro and practising nudges), then each is told to Resend. Only in a send slot
+ * (`isLifecycleSendSlot`), and never during quiet hours (a backstop): at any other time it claims
+ * nothing and the next slot picks them up. A permanent
+ * skip (under 13, deleted, denylisted, no address …) keeps the claim — that student never gets
+ * this email; a refused send or an unreadable profile or deletion state releases it.
+ */
+export async function runLifecycleRule(
+  now: Date,
+  deps: LifecycleDeps & LifecycleClaimDeps,
+): Promise<LifecycleRuleSummary> {
+  const summary: LifecycleRuleSummary = {
+    ran: false,
+    claimed: 0,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+  };
+  if (!isLifecycleSendSlot(now)) {
+    logger.info(
+      "LIFECYCLE_EMAIL",
+      "lifecycle_rule_not_send_slot",
+      "Lifecycle rule skipped: not a lifecycle send slot",
+      {},
+    );
+    return summary;
+  }
+  // Backstop: both slots sit inside 08:00–21:00 Chicago all year, so this never fires today.
+  if (quietHoursDeferral(now) !== null) {
+    logger.info(
+      "LIFECYCLE_EMAIL",
+      "lifecycle_rule_quiet_hours",
+      "Lifecycle rule skipped: quiet hours",
+      {},
+    );
+    return summary;
+  }
+  summary.ran = true;
+  for (let batch = 0; batch < LIFECYCLE_MAX_BATCHES; batch++) {
+    const claimed = await deps.claimDue(now, LIFECYCLE_CLAIM_BATCH);
+    if (claimed === null) {
+      summary.failed += 1;
+      break;
+    }
+    summary.claimed += claimed.length;
+    for (const claim of claimed) {
+      const event = LIFECYCLE_TRIGGER_EVENTS[claim.trigger];
+      const target = await eligibility(claim.profileId, deps, event);
+      if ("skip" in target) {
+        // A read that failed (the claim proves the profile exists) is transient: retry tomorrow.
+        if (
+          target.skip === "deletion_state_unreadable" ||
+          target.skip === "no_profile"
+        ) {
+          await deps.release(claim);
+        }
+        summary.skipped += 1;
+        continue;
+      }
+      const sent = await deps.contacts.sendEvent(
+        event,
+        target.profile.email,
+        {},
+        { recipientProfileId: claim.profileId },
+      );
+      if (!sent.ok) {
+        await deps.release(claim);
+        summary.failed += 1;
+        continue;
+      }
+      logger.info("LIFECYCLE_EMAIL", "sent", "Lifecycle event sent", {
+        profileId: claim.profileId,
+        event,
+        role: target.role,
+      });
+      summary.sent += 1;
+    }
+    if (claimed.length < LIFECYCLE_CLAIM_BATCH) break;
+  }
+  logger.info(
+    "LIFECYCLE_EMAIL",
+    "lifecycle_rule",
+    "Lifecycle rule ran",
+    summary,
+  );
+  return summary;
+}
+
+const claimedRowsSchema = z.array(
+  z.object({
+    profile_id: z.string().uuid(),
+    event_type: lifecycleTriggerSchema,
+  }),
+);
+
+async function claimDueInDb(
+  now: Date,
+  limit: number,
+): Promise<LifecycleClaim[] | null> {
+  const { data, error } = await supabaseServer.rpc("lifecycle_claim", {
+    p_now: now.toISOString(),
+    p_limit: limit,
+  });
+  if (error) {
+    logger.error(
+      "LIFECYCLE_EMAIL",
+      "lifecycle_claim_failed",
+      "Lifecycle claim failed",
+      { code: error.code },
+    );
+    return null;
+  }
+  const parsed = claimedRowsSchema.safeParse(data ?? []);
+  if (!parsed.success) {
+    logger.error(
+      "LIFECYCLE_EMAIL",
+      "lifecycle_claim_shape_invalid",
+      "Lifecycle claim returned an unexpected shape",
+      {},
+    );
+    return null;
+  }
+  return parsed.data.map((row) => ({
+    profileId: row.profile_id,
+    trigger: row.event_type,
+  }));
+}
+
+async function releaseInDb(claim: LifecycleClaim): Promise<boolean> {
+  const { data, error } = await supabaseServer.rpc("lifecycle_release", {
+    p_profile_id: claim.profileId,
+    p_event_type: claim.trigger,
+  });
+  if (error) {
+    logger.error(
+      "LIFECYCLE_EMAIL",
+      "lifecycle_release_failed",
+      "Lifecycle release failed; this email will not be retried",
+      { profileId: claim.profileId, trigger: claim.trigger, code: error.code },
+    );
+    return false;
+  }
+  return data === true;
+}
+
+export function defaultLifecycleRuleDeps(): LifecycleDeps & LifecycleClaimDeps {
+  return {
+    ...defaultLifecycleDeps(),
+    claimDue: claimDueInDb,
+    release: releaseInDb,
+  };
 }
 
 async function loadProfileFromDb(

@@ -13,10 +13,32 @@ Don't add a second.
 | App     | `Lyceon bot`, bot scopes `chat:write` and `files:write` | api.slack.com/apps                        |
 | Token   | the `xoxb-` Bot User OAuth Token                        | GitHub secret `SLACK_BOT_TOKEN`           |
 | Channel | the ID of `#social` (e.g. `C0123456789`)                | GitHub variable `SOCIAL_SLACK_CHANNEL_ID` |
-| Client  | reads both, calls Slack, parses every reply             | `scripts/slack/client.ts`                 |
+| Client  | reads both, calls Slack, parses every reply             | `shared/slack/client.ts` (re-exported by `scripts/slack/client.ts`) |
 
 The credential lives where the job runs: GitHub Actions secrets, read only in the one step that
-posts. It is never logged, never in the repository, never in Vercel.
+posts. It is never logged and never in the repository.
+
+**Since 2026-10-20 the server also posts** (final brief "Trustpilot card + Feedback", Karl, §5):
+each new piece of private feedback goes to `#social` as one line (`server/lib/feedback-slack.ts`).
+So the same two values are also needed in **Vercel** (Production), under the same names:
+`SLACK_BOT_TOKEN` (Sensitive) and `SOCIAL_SLACK_CHANNEL_ID`. They are read through the env schema
+(`packages/shared/src/env.ts`). Unset means feedback is still stored and no line is posted (a WARN
+per submission). Moving the line to a dedicated `#feedback` channel later is a change of
+`SOCIAL_SLACK_CHANNEL_ID` in Vercel only (invite the bot to that channel first).
+
+**When no line arrives** (owner brief, Karl 2026-10-21), search the Vercel logs for the one WARN
+each submission leaves; its `reason` says what to fix:
+
+| Log event | `reason` | Fix |
+|---|---|---|
+| `feedback_slack_misconfigured` | `env_invalid` (`fields` names the variable) | the variable is set but empty |
+| `feedback_slack_misconfigured` | `token_missing` | add `SLACK_BOT_TOKEN` |
+| `feedback_slack_misconfigured` | `token_not_bot` | use the bot token (`xoxb-…`), not a user token |
+| `feedback_slack_misconfigured` | `channel_invalid` (`channel` shows the first character and length) | use the channel **ID** (`C…`, from the channel's details), not `#social` |
+| `feedback_slack_failed` | `slack_error` with Slack's code, e.g. `not_in_channel`, `invalid_auth`, `http_500` | invite the bot to the channel; rotate the token; or Slack was down |
+| `feedback_slack_failed` | `request_failed` with `error_name` (e.g. `TimeoutError`) | a network failure or the 3 s timeout |
+
+None of these ever carries the token, the message text or who sent it.
 
 ## Jobs that post
 
@@ -24,6 +46,8 @@ posts. It is never logged, never in the repository, never in Vercel.
 | -------------------- | -------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------ |
 | QOTD social assets   | `qotd-social.yml`          | daily, 06:20 UTC                                           | the day's two images, then the caption and alt text          | `docs/runbooks/qotd-slack.md`  |
 | Content batch notify | `content-batch-notify.yml` | a batch or plan pull request into `social` is marked ready | titles, publish dates, Codex verdicts, the pull request link | `docs/runbooks/content-ops.md` |
+| Oct scores TikTok    | `oct-scores-tiktok.yml`    | manual run, or the `post-to-social` label on its PR        | the MP4 for review, then its caption                         | `brag-output-2026-10-16-oct-scores/brag-plan.md` |
+| New feedback (server) | the API, `POST /api/feedback/feedback` | each new piece of private feedback | type, page (route pattern), role, age band, reply OK; the text only for 18+, at most 300 characters; never a name, email or id (SCL-237) | this file |
 
 ## One-time setup (Karl)
 
@@ -52,7 +76,7 @@ batch notifications by owner answer 12, 2026-10-11).
 ## Adding a job that posts
 
 Import `slackConfig`, `postMessage` (or `slackCall` for other methods) and `escapeMrkdwn` from
-`scripts/slack/client.ts`. Put `SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}` and
+`scripts/slack/client.ts` (a job) or `shared/slack/client.ts` (the server). Put `SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}` and
 `SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}` in the env of the posting step only, add the
 job to the table above, and test it against a fake Slack (`tests/ci/content-batch-notify.test.ts`
 is the pattern). If it needs a scope beyond the two above, that is Karl's call first.

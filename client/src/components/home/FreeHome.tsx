@@ -42,6 +42,7 @@
  */
 import { useState } from "react";
 import type { FeatureLockReason } from "@lyceon/shared/feature-access";
+import { LIVE_PROJECTION_FEATURE_KEY } from "@lyceon/shared/diagnostic-projection";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
@@ -57,6 +58,7 @@ import { HomeLoading } from "./HomeLoading";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
 import { DiagnosticCard } from "./DiagnosticCard";
 import { GettingStartedCard } from "./GettingStartedCard";
+import { HomeReviewAsk } from "./HomeReviewAsk";
 import { HomeEntryPoints } from "./HomeEntryPoints";
 import { useGettingStarted } from "@/hooks/useGettingStarted";
 import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
@@ -189,6 +191,10 @@ export function FreeHome({
           (below the Getting started checklist while it is active, final brief v2 §4). */}
       <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
 
+      {/* Review ask (Karl's decision 7, 2026-10-20): below the checklist and today's question;
+          never while the checklist has an open step. A bottom sheet on a phone. */}
+      <HomeReviewAsk checklist={checklist} />
+
       {failed ? (
         <Notice
           title="We couldn’t load part of your dashboard."
@@ -262,6 +268,11 @@ export function FreeHome({
             range={projection.range}
             stage={stage}
             targetScore={null}
+            kind={projection.kind ?? "diagnostic"}
+            diagnosticInsufficient={projection.diagnosticInsufficient}
+            onUpgrade={() =>
+              upgrade.open(LIVE_PROJECTION_FEATURE_KEY, masteryLock)
+            }
           />
           <LockedMasteryCard
             onSeeWhatsIncluded={() =>
