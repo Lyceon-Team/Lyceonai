@@ -844,6 +844,32 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
   });
 
+  it("LISA (review, phone panel) gets the served item id and 'Question N of M' — no choices, no letters, no correctness", async () => {
+    mockWidth(390);
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    await click(screen.getByTestId("practice-tutor-toggle"));
+    // Presence first: the panel mounted with props.
+    expect(tutorProps.last).not.toBeNull();
+    const props = tutorProps.last!;
+    expect(Object.keys(props).sort()).toEqual([
+      "onHide",
+      "questionLabel",
+      "revealKey",
+      "revealOnOpen",
+      "sessionItemId",
+      "sourceSurface",
+    ]);
+    expect(props.sourceSurface).toBe("review");
+    expect(props.sessionItemId).toBe("item-1");
+    expect(props.questionLabel).toBe("Question 1 of 3");
+    const serialised = JSON.stringify(props);
+    for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
+      expect(serialised).not.toContain(leak);
+    }
+  });
+
   it("QA2-D: a tap on the phone opens LISA told to reveal itself", async () => {
     mockWidth(390);
     installNetwork({ total: 3 });

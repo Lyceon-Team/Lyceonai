@@ -107,6 +107,8 @@ FILES=(
   "client/src/components/auth/RequireRole.tsx"
   "client/src/components/layout/BareCardShell.tsx"
   "client/src/components/tutor/ScopedTutorPanel.tsx"
+  "client/src/components/tutor/TutorConversationBody.tsx"
+  "client/src/components/tutor/ChatDock.tsx"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
@@ -673,6 +675,15 @@ plant "UI53-T1" "LISA handed the choices" \
 assert s.count(a) == 1
 s = s.replace(a, "        sessionItemId={sessionItemId}\n        {...{ choices: question?.options }}\n", 1)'
 
+# 2026-10-22 (#1300): from 768px up LISA is the chat dock, handed a scope object instead of panel
+# props. The same rule (LISA is handed the item id and the label, never the choices) on its scope.
+plant "UI53-T2" "the dock's scope handed the choices" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "            questionLabel,\n          }}\n"
+assert s.count(a) == 1
+s = s.replace(a, "            questionLabel,\n            ...{ choices: question?.options },\n          }}\n", 1)'
+
 plant "UI53-O1" "no shorter-session note" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
@@ -811,12 +822,15 @@ plant "OQ54-K2" "question chip back to 12px legacy text" \
 assert s.count(a) == 1
 s = s.replace(a, "px-2.5 py-0.5 text-xs font-medium text-lyc-ink\";", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "OQ54-K3" "opener body back on the legacy muted colour" \
   "$T54L" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
-  'a = "<p className=\"m-0 mt-1 text-lyc-body text-lyc-muted\">{OPENER_BODY}</p>"
+  "client/src/components/tutor/TutorConversationBody.tsx" \
+  'a = "className={`m-0 text-lyc-body text-lyc-muted ${copy.title !== null ? \"mt-1\" : \"\"}`}"
 assert s.count(a) == 1
-s = s.replace(a, "<p className=\"m-0 mt-1 text-lyc-body text-muted-foreground\">{OPENER_BODY}</p>", 1)'
+s = s.replace(a, "className={`m-0 text-lyc-body text-muted-foreground ${copy.title !== null ? \"mt-1\" : \"\"}`}", 1)'
 
 plant "OQ54-K4" "Hide LISA falls back to the base 14px shadcn size" \
   "$T54L" \
@@ -825,19 +839,25 @@ plant "OQ54-K4" "Hide LISA falls back to the base 14px shadcn size" \
 assert s.count(a) == 1
 s = s.replace(a, "className=\"shrink-0\"", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "OQ54-K5" "opener title drawn with a raw hex colour" \
   "$T54L" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
   'a = "<p className=\"m-0 text-lyc-body font-semibold text-lyc-ink-strong\">"
 assert s.count(a) == 1
 s = s.replace(a, "<p className=\"m-0 text-lyc-body font-semibold text-[#1a1a1a]\">", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "OQ54-K6" "the first-message composer loses the panel inset" \
   "$T54L" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
-  'a = "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n            inset=\"panel\"\n"
+  "client/src/components/tutor/TutorConversationBody.tsx" \
+  'a = "pendingMessage ? \"LISA is responding...\" : copy.placeholder\n        }\n        inset=\"panel\"\n"
 assert s.count(a) == 1
-s = s.replace(a, "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n", 1)'
+s = s.replace(a, "pendingMessage ? \"LISA is responding...\" : copy.placeholder\n        }\n", 1)'
 
 plant "OQ54-K7" "a thread turn label back to 12px legacy text" \
   "$T54L" \
@@ -1221,9 +1241,11 @@ plant "UI56-D1" "the disclaimer is the old two-sentence copy" \
 assert s.count(a) == 1
 s = s.replace(a, "  \"LISA can make mistakes. Your practice results are the source of truth.\";", 1)'
 
+# Re-pointed 2026-10-22 (#1300): LISA_COMPOSER_PLACEHOLDER moved from pages/chat.tsx into
+# TutorThreadParts, so /chat and the chat dock share one string; the plant follows it.
 plant "UI56-D2" "the composer placeholder is the old one" \
   "$T56" \
-  "client/src/pages/chat.tsx" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
   'a = "export const LISA_COMPOSER_PLACEHOLDER = \"Ask LISA about a question or a skill\";"
 assert s.count(a) == 1
 s = s.replace(a, "export const LISA_COMPOSER_PLACEHOLDER = \"Message LISA...\";", 1)'
@@ -1346,16 +1368,22 @@ plant "QA5-F1" "a first message (no conversation open) is not pending while its 
 assert s.count(a) == 1
 s = s.replace(a, "  const composerPending = isThinking;", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "QA5-P1" "the panel thread draws Send enabled before it sends the first message" \
   "$TQA_PANEL" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
   'a = "pending={isThinking || firstAwaiting}"
 assert s.count(a) == 1
 s = s.replace(a, "pending={isThinking}", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "QA5-P2" "the panel opener is not pending while the conversation is created" \
   "$TQA_PANEL" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
   'a = "pending={!!pendingMessage}"
 assert s.count(a) == 1
 s = s.replace(a, "pending={false}", 1)'
@@ -1388,22 +1416,28 @@ plant "QA8-R3" "the reveal keeps chasing after the student scrolls" \
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
+# Re-pointed 2026-10-22 (#1300): the panel is the phone's alone now (from 768px up LISA is the
+# chat dock), so the reveal no longer needs the side-by-side check.
 plant "QA8-W1" "the runner never tells the panel it was opened" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+  'a = "revealOnOpen={tutorOpenedForItem === sessionItemId}"
 assert s.count(a) == 1
 s = s.replace(a, "revealOnOpen={false}", 1)'
 
 # Re-pointed 2026-10-08 (QA2-D): side by side the toggle no longer records an opening (only the
 # phone layout's tap does), so dropping the layout check alone changed nothing; the plant now
 # tells a side-by-side panel to reveal itself outright.
-plant "QA8-W2" "side by side, Show LISA scrolls the runner too" \
+# Replaced 2026-10-22 (owner brief "LISA chat dock", #1300): the side-by-side panel this guarded
+# ("side by side, Show LISA scrolls nothing") is removed by the brief; from 768px up LISA is the
+# chat dock. The equivalent rule on the new code: from 768px up the scrolling panel is never
+# mounted (and so can never scroll the runner); on a phone it still opens only on a tap.
+plant "QA8-W2" "from 768px up the stacked (scrolling) panel is mounted again" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+  'a = "    canAskTutor &&\n    isPhoneWidth &&\n"
 assert s.count(a) == 1
-s = s.replace(a, "revealOnOpen={tutorSideBySide || tutorOpenedForItem === sessionItemId}", 1)'
+s = s.replace(a, "    canAskTutor &&\n", 1)'
 
 plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
   "$T56" \
@@ -3433,12 +3467,14 @@ plant "QA2-B3" "a root pinned light (the timed module) no longer keeps Desmos li
 assert s.count(a) == 1
 s = s.replace(a, "  return false ||\n", 1)'
 
+# Re-pointed 2026-10-22 (#1300): the side-by-side branch (and `tutorHiddenForItem`) went with the
+# desktop panel; the phone condition is now the whole expression's tail.
 plant "QA2-D1" "on the phone layout LISA is open on load again" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "      : tutorShownForItem === sessionItemId);"
+  'a = "    tutorShownForItem === sessionItemId;\n"
 assert s.count(a) == 1
-s = s.replace(a, "      : tutorHiddenForItem !== sessionItemId);", 1)'
+s = s.replace(a, "    true;\n", 1)'
 
 plant "QA2-D2" "a tap on an open LISA scrolled out of view closes it instead of bringing it into view" \
   "$TQA_RUNNER" \
