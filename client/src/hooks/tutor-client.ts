@@ -285,6 +285,42 @@ export function useItemConversation(
 }
 
 /**
+ * @spec [Doc-03B_V4.1 §8.3, §8.5; owner brief "LISA chat dock" (Karl, 2026-10-22): "One
+ *       conversation thread shared with the LISA page"] | @implemented [2026-10-22]
+ *
+ * plain English: the conversation the chat dock shows in general mode (Home, Review): the
+ * student's most recently updated ACTIVE standalone conversation, which is the one at the top of
+ * the LISA page's "Your sessions". Found with a GET of the existing list route (the server
+ * orders by `updated_at` desc), never a POST, so opening the dock creates nothing. Resolves to
+ * null when there is none; the dock's first message then creates a general conversation exactly
+ * as /chat does, and that one is what the LISA page lists. Keyed under
+ * `tutorConversationsQueryKey`, so a create, a send or an end refreshes it.
+ *
+ * edge cases: an ended conversation is never picked (it has no composer); the next active one,
+ * or none, is. No new route and no new storage: the list route already filters by surface and
+ * status.
+ */
+export function useLatestStandaloneConversation(
+  enabled: boolean,
+): UseQueryResult<string | null, HttpApiError> {
+  return useQuery({
+    queryKey: [...tutorConversationsQueryKey, "latest-standalone"],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        surface: "standalone",
+        status: "active",
+        limit: "1",
+      });
+      const list = await tutorRequest<TutorConversationsList>(
+        `/conversations?${params.toString()}`,
+      );
+      return list.conversations[0]?.conversation_id ?? null;
+    },
+    enabled,
+  });
+}
+
+/**
  * @spec [Doc-03B_V4.1 §8.3, §8.5] | @implemented [2026-09-29]
  *
  * plain English: the standalone sessions list, one server page at a time.

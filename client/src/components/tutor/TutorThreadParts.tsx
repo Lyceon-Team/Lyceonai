@@ -116,8 +116,18 @@ export function TutorMessageContent({ text }: { text: string }) {
 // LISA Avatar
 // ---------------------------------------------------------------------------
 
-export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
-  const dim = size === "lg" ? "h-12 w-12 text-lg" : "h-8 w-8 text-lyc-meta";
+/**
+ * The LISA mark. "bubble" (2026-10-22, owner brief "LISA chat dock") is the chat dock's floating
+ * round button: 56px, the same mark at the size a floating chat bubble uses.
+ */
+const LISA_AVATAR_SIZE: Readonly<Record<"sm" | "lg" | "bubble", string>> = {
+  sm: "h-8 w-8 text-lyc-meta",
+  lg: "h-12 w-12 text-lg",
+  bubble: "h-14 w-14 text-[26px]",
+};
+
+export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" | "bubble" }) {
+  const dim = LISA_AVATAR_SIZE[size];
   return (
     <div
       aria-hidden="true"
@@ -374,6 +384,22 @@ export function PausedBar({
 /** DESIGN.md §4 LISA; prototype Lisa.dc.html, word for word. */
 export const LISA_DISCLAIMER =
   "LISA can make mistakes; your practice results are the source of truth.";
+
+/**
+ * Prototype Lisa.dc.html composer placeholder, for a conversation that is not about one question
+ * (/chat, and the chat dock in general mode). Moved here from `pages/chat.tsx` on 2026-10-22 so
+ * the dock and the page share one string (owner brief "LISA chat dock").
+ */
+export const LISA_COMPOSER_PLACEHOLDER = "Ask LISA about a question or a skill";
+
+/**
+ * QA 2026-10-07 item 15: the short prompt an empty general LISA column shows (/chat, and the chat
+ * dock in general mode). A presentation line, not a message: never sent, never stored, gone once
+ * a message is on screen. Moved here from `pages/chat.tsx` on 2026-10-22 (one string for both).
+ * PROPOSED WORDING: new in-app copy, awaiting Karl's approval (QA 2026-10-07 report).
+ */
+export const LISA_EMPTY_PROMPT =
+  "Ask LISA about a question you missed or a skill you're working on.";
 
 /**
  * Where a thread's bottom bar (composer, paused bar) sits. "page": the /chat column, 16px sides

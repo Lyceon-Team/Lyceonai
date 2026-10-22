@@ -74,6 +74,25 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
     return <div data-testid="scoped-tutor-panel-mock" />;
   },
 }));
+// 2026-10-22 (owner brief "LISA chat dock"): from 768px up LISA is the dock. Its own behaviour is
+// ChatDock.contract.test.tsx's; here only what the runner hands it, and how often it mounts.
+const dockProps = vi.hoisted(() => ({
+  last: null as Record<string, unknown> | null,
+  mounts: 0,
+}));
+vi.mock("@/components/tutor/ChatDock", async () => {
+  const React = await import("react");
+  return {
+    DOCK_CLEARANCE_PX: 80,
+    ChatDock: (props: Record<string, unknown>) => {
+      dockProps.last = props;
+      React.useEffect(() => {
+        dockProps.mounts += 1;
+      }, []);
+      return <div data-testid="chat-dock-mock" />;
+    },
+  };
+});
 
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
 const EXPLANATION = "Subtract 3 from both sides, then divide by 2, so x = 4.";
@@ -326,12 +345,35 @@ async function click(el: HTMLElement): Promise<void> {
   });
 }
 
-/** From 1024 (TUTOR_SIDE_BY_SIDE_BREAKPOINT) LISA sits beside the question. */
+/**
+ * A viewport `width` wide: `(min-width: Npx)` answered truthfully, and its `not all and (...)`
+ * negation (the phone queries in hooks/use-mobile.tsx).
+ */
+function mockWidth(width: number): void {
+  vi.spyOn(window, "matchMedia").mockImplementation((query: string) => {
+    const m = /min-width:\s*(\d+)px/.exec(query);
+    const atLeast = m ? width >= Number(m[1]) : false;
+    return {
+      matches: query.startsWith("not all and") ? !atLeast : atLeast,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    } as MediaQueryList;
+  });
+}
+
+/** From 1024 the runner is the wide layout (and, from 768, LISA is the dock). */
 function mockSideBySide(): void {
   vi.spyOn(window, "matchMedia").mockImplementation(
     (query: string) =>
       ({
-        matches: /min-width:\s*1024px/.test(query),
+        matches:
+          /min-width:\s*(1024|768)px/.test(query) &&
+          !query.startsWith("not all and"),
         media: query,
         onchange: null,
         addListener: () => undefined,
@@ -365,6 +407,8 @@ const submitButton = (): HTMLButtonElement =>
 
 beforeEach(() => {
   tutorProps.last = null;
+  dockProps.last = null;
+  dockProps.mounts = 0;
   window.history.replaceState(null, "", `/practice/session/${SESSION_ID}`);
 });
 
@@ -739,31 +783,46 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(net.nextCount()).toBe(1);
   });
 
-  it("LISA (review) gets the served item id and 'Question N of M' — no choices, no letters, no correctness", async () => {
-    // Side by side, where LISA is open on load (W4-4); on a phone it starts closed (QA2-D).
-    mockSideBySide();
+  it("LISA (review, from 768px): the dock gets the served item id and 'Question N of M' — no choices, no letters, no correctness", async () => {
+    mockWidth(1440);
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
-    expect(tutorProps.last).not.toBeNull();
-    const props = tutorProps.last!;
-    expect(Object.keys(props).sort()).toEqual([
-      "onHide",
-      "questionLabel",
-      "revealKey",
-      "revealOnOpen",
-      "sessionItemId",
-      "sourceSurface",
-    ]);
-    // QA-8: LISA is simply there on load (W4-4), so it is not scrolled to.
-    expect(props.revealOnOpen).toBe(false);
-    expect(props.sourceSurface).toBe("review");
-    expect(props.sessionItemId).toBe("item-1");
-    expect(props.questionLabel).toBe("Question 1 of 3");
+    // Presence first: the served question is on screen, and the dock was handed a scope.
+    expect(screen.getByText(/Question 1: if 2x \+ 3 = 11/)).toBeTruthy();
+    expect(dockProps.last).not.toBeNull();
+    const props = dockProps.last!;
+    expect(Object.keys(props)).toEqual(["scope"]);
+    expect(props.scope).toEqual({
+      kind: "question",
+      sourceSurface: "review",
+      sessionItemId: "item-1",
+      questionLabel: "Question 1 of 3",
+    });
     const serialised = JSON.stringify(props);
     for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
       expect(serialised).not.toContain(leak);
     }
+    // The dock replaces the panel: no side panel and no bar toggle.
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+  });
+
+  it("the dock follows Next to the second question without remounting (one dock per runner visit)", async () => {
+    mockWidth(1024);
+    installNetwork({ total: 3 });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    const mountsBefore = dockProps.mounts;
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await click(await screen.findByRole("button", { name: "Next question" }));
+    await loaded(2);
+    expect(dockProps.last?.scope).toMatchObject({
+      sessionItemId: "item-2",
+      questionLabel: "Question 2 of 3",
+    });
+    expect(dockProps.mounts).toBe(mountsBefore);
   });
 
   // QA 2026-10-07 item 8 (Karl: "Phone LISA in the runner: opening it brings the panel into
@@ -773,7 +832,8 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
   // layout, opened and told to reveal by the icon, and an icon tap on an open panel that is
   // scrolled out of view reveals it again rather than closing it.
   it("QA2-D: on the phone layout LISA is closed on load and the icon offers it", async () => {
-    // The test DOM's default matchMedia answers "no match": below 1024, LISA stacks.
+    // A phone (below 768px since 2026-10-22): LISA stacks, and there is no dock.
+    mockWidth(390);
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
@@ -781,9 +841,11 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     expect(tutorProps.last).toBeNull();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
   });
 
   it("QA2-D: a tap on the phone opens LISA told to reveal itself", async () => {
+    mockWidth(390);
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
@@ -796,6 +858,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
   });
 
   it("QA2-D: open but scrolled out of view, a tap brings it back into view and does not close it", async () => {
+    mockWidth(390);
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
@@ -818,6 +881,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
   });
 
   it("QA2-D: open and in view, a tap closes it", async () => {
+    mockWidth(390);
     installNetwork({ total: 3 });
     mountRunner({ engine: REVIEW_ENGINE_CONFIG });
     await loaded();
@@ -830,28 +894,18 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("QA2-D: side by side LISA is still open on load, and the toggle still hides it", async () => {
-    mockSideBySide();
-    installNetwork({ total: 3 });
-    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
-    await loaded();
-    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
-    // Even scrolled away, a tap side by side is the plain toggle.
-    layOut({ panelTop: 1400 });
-    await click(screen.getByTestId("practice-tutor-toggle"));
-    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
-  });
-
-  it("QA-8: side by side (from lg) Show LISA does not scroll anything", async () => {
-    mockSideBySide();
-    installNetwork({ total: 3 });
-    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
-    await loaded();
-    const toggle = screen.getByTestId("practice-tutor-toggle");
-    await click(toggle);
-    await click(toggle);
-    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
-    expect(tutorProps.last?.revealOnOpen).toBe(false);
+  it("2026-10-22: tablet and desktop (768, 1024, 1440) never draw the side panel or its toggle", async () => {
+    for (const width of [768, 1024, 1440]) {
+      vi.restoreAllMocks();
+      mockWidth(width);
+      installNetwork({ total: 3 });
+      const view = mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+      await loaded();
+      expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
+      expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+      expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+      view.unmount();
+    }
   });
 });
 
