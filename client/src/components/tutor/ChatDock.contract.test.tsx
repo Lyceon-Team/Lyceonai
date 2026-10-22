@@ -139,7 +139,9 @@ vi.mock("@/lib/queryClient", async (importOriginal) => {
               .set("Content-Type", "application/json")
               .send(options?.body ?? "{}")
           : await agent.get(url);
-      const text = JSON.stringify(res.body);
+      // The response as the server sent it (its own bytes, whatever their formatting), so the
+      // leak walker below reads the wire, not a re-serialisation of it.
+      const text = res.text;
       calls.push({
         method,
         path: url,
@@ -349,6 +351,52 @@ async function mount(
     </QueryClientProvider>,
   );
   return { client, history };
+}
+
+/**
+ * Every key on the answer side of the reveal matrix, as the wire spells it in either case style.
+ * A pre-submit payload may carry them only as null (Coding Standards §5.2).
+ */
+const ANSWER_KEYS = new Set([
+  "correct_answer",
+  "correctAnswer",
+  "correct_option_id",
+  "correctOptionId",
+  "explanation",
+]);
+
+/**
+ * The paths at which `value` carries an answer-side key with a non-null value. Parsed and walked
+ * (objects and arrays, any depth), so it does not depend on how the JSON is formatted, which key
+ * order the server used, or what shape the leaked value has: a regex over the text matched only
+ * one compact spelling.
+ */
+function answerLeaks(value: unknown, at = "$"): string[] {
+  if (Array.isArray(value))
+    return value.flatMap((v, i) => answerLeaks(v, `${at}[${i}]`));
+  if (value === null || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, v]) => [
+    ...(ANSWER_KEYS.has(key) && v !== null && v !== undefined
+      ? [`${at}.${key}`]
+      : []),
+    ...answerLeaks(v, `${at}.${key}`),
+  ]);
+}
+
+/**
+ * The shared anti-leak check over every tutor response the dock read: each is parsed and walked
+ * for an answer-side key with a value, and searched for the explanation's sentinel text.
+ * Presence first: the caller proves the payload was non-trivial before calling this.
+ */
+function expectNoAnswerOnTheWire(responses: readonly Call[]): void {
+  expect(responses.length).toBeGreaterThan(0);
+  for (const c of responses) {
+    const parsed: unknown = JSON.parse(c.response);
+    expect(answerLeaks(parsed), `${c.method} ${c.path}`).toEqual([]);
+    expect(c.response, `${c.method} ${c.path}`).not.toContain(
+      "zqx-dock-explanation",
+    );
+  }
 }
 
 function tutorCalls(): Call[] {
@@ -593,6 +641,24 @@ describe("one thread: the dock (general mode) and the LISA page share the conver
     send(STUDENT_TEXT);
     await within(dialog()).findByText(TUTOR_TEXT);
 
+    // Anti-leak in general mode too. Presence first: the dock read a non-trivial thread from the
+    // server (the student's turn and LISA's reply in a conversation detail).
+    const detailReads = tutorCalls().filter(
+      (c) =>
+        c.method === "GET" &&
+        /^\/api\/tutor\/conversations\/[^/?]+$/.test(c.path),
+    );
+    expect(
+      detailReads.some((c) => {
+        const body = JSON.parse(c.response) as {
+          data?: { messages?: Array<{ message?: string }> };
+        };
+        const texts = (body.data?.messages ?? []).map((m) => m.message);
+        return texts.includes(STUDENT_TEXT) && texts.includes(TUTOR_TEXT);
+      }),
+    ).toBe(true);
+    expectNoAnswerOnTheWire(tutorCalls());
+
     // The dock created ONE general conversation, which is the LISA page's kind (standalone).
     const rows = db.current.rows("tutor_conversations");
     expect(rows).toHaveLength(1);
@@ -717,10 +783,7 @@ describe("question scope (the review runner): the item's own conversation, and n
     expect(JSON.stringify(env)).not.toContain("zqx-dock-explanation");
     // ...in any response the dock read (presence first: it read some)...
     expect(tutorCalls().length).toBeGreaterThan(2);
-    for (const c of tutorCalls()) {
-      expect(c.response).not.toContain("zqx-dock-explanation");
-      expect(c.response).not.toMatch(/"correct_answer":"B"/);
-    }
+    expectNoAnswerOnTheWire(tutorCalls());
     // ...and on screen, in every dock state: open, then minimized and reopened.
     expect(dialog().textContent).toContain(TUTOR_TEXT);
     expect(document.body.textContent).not.toContain("zqx-dock-explanation");
