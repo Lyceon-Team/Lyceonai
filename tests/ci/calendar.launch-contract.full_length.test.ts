@@ -709,9 +709,10 @@ describe.skipIf(!PG_AVAILABLE)(
            FROM public.review_sessions WHERE id = $1`,
         [body.session_id],
       );
-      // Owner rulings on #1277 (Karl, 2026-10-21), ruling 1: no review session takes more than
-      // `review_runtime_config.session_size`, a calendar block's size included, so the block
-      // asks for every miss and the session it launches takes the first `session_size` of them.
+      // Owner ruling (Karl, 2026-10-22, correcting #1277's ruling 1): review_runtime_config
+      // .session_size caps only student-initiated starts, so the session this calendar block
+      // launches takes every miss the block asks for. Presence: the block is larger than the
+      // student cap, so a capped launch could not pass.
       const sizeRows = await q(
         `SELECT value::int AS size FROM public.review_runtime_config WHERE key = 'session_size'`,
       );
@@ -722,7 +723,7 @@ describe.skipIf(!PG_AVAILABLE)(
           mode: "session",
           source_engine: "full_length",
           source_session_id: sid,
-          target_count: Math.min(missed, size),
+          target_count: missed,
         },
       ]);
       const links = await q(
