@@ -4,7 +4,9 @@
 # ============================================================================
 # @spec [owner brief "migration inventory gate fails on duplicate versions" (Karl, 2026-10-21):
 #       "make the migration inventory gate fail on any duplicate migration version (two files
-#       sharing the same leading timestamp)"] | @implemented [2026-10-21]
+#       sharing the same leading timestamp)"; Karl's ruling 2026-10-21 (#1288): keep the frozen
+#       list of the 15 pre-existing duplicates, no renames, the gate blocks only new duplicates]
+#       | @implemented [2026-10-21]
 #
 # plain English: a migration's version is the digits before its first underscore. Two files with
 # the same version are two migrations Supabase's ledger cannot tell apart, and the order they apply
@@ -12,8 +14,9 @@
 # reminder + funnel milestones) through CI without one gate failing; that is the case this closes.
 #
 # Fifteen duplicates already existed when this was written, all applied in production long ago and
-# named by later migrations, mutation scripts and the SCL log. Renaming them is a separate decision,
-# so they are frozen below as EXACT file sets:
+# named by later migrations, mutation scripts and the SCL log. RULED (Karl, 2026-10-21, #1288): they
+# stay as they are and are NOT renamed, because they are applied in production. So they are frozen
+# below as EXACT file sets, and the gate blocks only new duplicates:
 #   - a version not in the list with two or more files fails  (a NEW duplicate)
 #   - a listed version whose file set changed fails            (e.g. a third file joins it)
 #   - a listed version that is no longer duplicated fails      (STALE: delete its line, so the
