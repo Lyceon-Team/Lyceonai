@@ -112,6 +112,17 @@ vi.mock("../../server/lib/analytics/emit-event", () => ({
     return { ok: true };
   },
 }));
+// Server-side funnel (Karl, 2026-10-21): the route's hook is recorded, not sent. The once-ever
+// rule is proved in tests/ci/funnel-events.pg.ci.test.ts.
+const funnelAnswers = vi.hoisted(() => [] as Array<[string, string]>);
+vi.mock("../../server/lib/analytics/funnel-events", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../server/lib/analytics/funnel-events")
+  >()),
+  fireAnswerMilestones: (profileId: string, mode: string) => {
+    funnelAnswers.push([profileId, mode]);
+  },
+}));
 vi.mock("../../server/logger", () => {
   const record = (...args: unknown[]): void => {
     logs.push(
@@ -521,6 +532,11 @@ describe.skipIf(!PG_AVAILABLE)(
       });
       expect(second.status).toBe(409);
       expect(second.body.error.code).toBe("qotd_already_answered");
+      // Funnel: the first answer calls the hook once with source qotd; the replay and the
+      // refused second answer call it never.
+      expect(funnelAnswers.filter(([id]) => id === REPLAYER)).toEqual([
+        [REPLAYER, "qotd"],
+      ]);
       expect(
         await count(
           `SELECT count(*)::int AS n FROM public.practice_session_items WHERE user_id = $1`,
