@@ -1431,13 +1431,15 @@ s = s.replace(a, "revealOnOpen={false}", 1)'
 # Replaced 2026-10-22 (owner brief "LISA chat dock", #1300): the side-by-side panel this guarded
 # ("side by side, Show LISA scrolls nothing") is removed by the brief; from 768px up LISA is the
 # chat dock. The equivalent rule on the new code: from 768px up the scrolling panel is never
-# mounted (and so can never scroll the runner); on a phone it still opens only on a tap.
-plant "QA8-W2" "from 768px up the stacked (scrolling) panel is mounted again" \
+# reachable (and so can never scroll the runner): its only way in, the bar's Show LISA toggle, is
+# not drawn there. (Dropping the panel's own phone check is unreachable without that toggle, so it
+# changed nothing: observed green, 2026-10-22.) On a phone it still opens only on a tap.
+plant "QA8-W2" "from 768px up the bar's Show LISA (the stacked panel's way in) is drawn again" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "    canAskTutor &&\n    isPhoneWidth &&\n"
+  'a = "{canAskTutor && isPhoneWidth && sessionItemId ? ("
 assert s.count(a) == 1
-s = s.replace(a, "    canAskTutor &&\n", 1)'
+s = s.replace(a, "{canAskTutor && sessionItemId ? (", 1)'
 
 plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
   "$T56" \
