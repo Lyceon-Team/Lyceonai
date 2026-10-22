@@ -15,7 +15,6 @@ import { UI_57 } from "./ui-57";
 import { UI_58 } from "./ui-58";
 import { UI_59 } from "./ui-59";
 import { SEO_Q6 } from "./seo-q6";
-import { QA2_A } from "./qa2-a";
 import { W6_UI_65, W6_UI_66 } from "./w6-code";
 import { W6_OQ_68A } from "./oq68";
 import { W6_UI_64 } from "./w6-ui-64";
@@ -28,6 +27,8 @@ import { GUARDIAN_NOTICE } from "./guardian-notice";
 import { QMH, QMH_EXAM } from "./qmh";
 import { FIRST_RUN, FIRST_RUN_ONBOARDING } from "./first-run";
 import { DIAGNOSTIC_PROJECTION } from "./diagnostic-projection";
+import { COOKIE_BANNER } from "./cookie-banner";
+import { HOMEPAGE_HERO } from "./homepage-hero";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -42,7 +43,6 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_58.id]: UI_58,
   [UI_59.id]: UI_59,
   [SEO_Q6.id]: SEO_Q6,
-  [QA2_A.id]: QA2_A,
   [W6_UI_65.id]: W6_UI_65,
   [W6_UI_66.id]: W6_UI_66,
   [W6_OQ_68A.id]: W6_OQ_68A,
@@ -60,4 +60,6 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [FIRST_RUN.id]: FIRST_RUN,
   [FIRST_RUN_ONBOARDING.id]: FIRST_RUN_ONBOARDING,
   [DIAGNOSTIC_PROJECTION.id]: DIAGNOSTIC_PROJECTION,
+  [COOKIE_BANNER.id]: COOKIE_BANNER,
+  [HOMEPAGE_HERO.id]: HOMEPAGE_HERO,
 };

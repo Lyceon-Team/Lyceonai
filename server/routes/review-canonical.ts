@@ -93,6 +93,10 @@ import {
 import type { ReviewSessionItemRow } from "../../packages/shared/src/review-table-schema";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
 import { timedRoute, timedStep } from "../lib/step-timer";
+import {
+  ReviewConfigError,
+  reviewSessionSize,
+} from "../services/review-config";
 
 const router = Router();
 
@@ -518,8 +522,9 @@ type CreateResult =
  * @spec [ruled plan §2 rows 4/7, rulings 10/15; brief R3 §2.2/§2.3] | @implemented [2026-09-21]
  *
  * plain English: start a review session, or return the one an identical
- * `idempotency_key` already started. expected outcome: a session prefilled with the
- * whole pool, oldest mistake first, its first item already served.
+ * `idempotency_key` already started. expected outcome: a NEW session prefilled with the
+ * oldest mistakes first, at most `review_runtime_config.session_size` of them (10), its first
+ * item already served.
  *
  * trade-offs: the idempotency mechanism is practice's, verbatim — an opaque key inside
  * `filters`, scanned across OPEN sessions (owner ruling, R2 check 8). It is neither
@@ -532,7 +537,24 @@ type CreateResult =
  *   - the concurrent-session cap is review's own count, using practice's configured
  *     value (owner ruling 2026-09-21), so five open practice sessions do not block a
  *     review session and vice versa;
- *   - a question already open in another review session is NOT excluded (ruling 15).
+ *   - SESSION SIZE (owner rulings on #1277, Karl, 2026-10-21, ruling 1): no session takes the
+ *     whole queue. The size is `reviewSessionSize(targetCount)` =
+ *     min(targetCount > 0 ? targetCount : key, key), with the key
+ *     `review_runtime_config.session_size` (10, bounds 5..20): the review page asks for none and
+ *     gets the key; a calendar block asking for more (its target can be up to
+ *     `review_block_max` = 30) is cut to the key. An unusable key is a 500, never a default.
+ *   - EVERY START IS A NEW SESSION (ruling 2, 2026-10-21; it replaced the 2026-10-21 Part B
+ *     "resume the newest holder" path, which is removed): the start takes the first `size`
+ *     questions of its pool, then `review_admit_session_start` closes, in one transaction under
+ *     the per-student advisory lock, every open review session holding any of them and then the
+ *     oldest of the rest (created_at, then id) until the new one fits under the cap. Closed is
+ *     `abandoned` as terminate leaves it: answered items stay recorded; unanswered items' queue
+ *     entries were never changed by serving, so they are back in the queue. The cap therefore
+ *     NEVER refuses a start (F-81; it replaced a 403 `SESSION_LIMIT_EXCEEDED`).
+ *   - No question is in two open review sessions (ruling 15 of the review plan reversed by the
+ *     2026-10-21 brief): the admit step clears the holders, and the
+ *     `review_session_items_one_open_question` trigger refuses one a concurrent start slipped in
+ *     between (23505); the start then admits and inserts once more.
  */
 /**
  * EXPORTED for the calendar's review adapter (Doc 05F §9.3), and for nothing else.
@@ -587,20 +609,6 @@ export async function startOrReplayReviewSession(args: {
       ) ?? null;
   }
 
-  const config = await timedStep("config", () => loadPracticeConfig());
-  if (!replay && sessions.length >= config.maxConcurrentSessions) {
-    return {
-      ok: false,
-      status: 403,
-      body: {
-        error: "session_limit_exceeded",
-        code: "SESSION_LIMIT_EXCEEDED",
-        message: `You already have ${sessions.length} open review sessions. Finish or end one first.`,
-        maxConcurrentSessions: config.maxConcurrentSessions,
-      },
-    };
-  }
-
   if (replay) {
     return {
       ok: true,
@@ -610,6 +618,79 @@ export async function startOrReplayReviewSession(args: {
     };
   }
 
+  // Ruling 1 (Karl, 2026-10-21): the size this start takes, capped by the runtime key.
+  let size: number;
+  let maxOpen: number;
+  try {
+    const [practice, capped] = await timedStep("config", () =>
+      Promise.all([loadPracticeConfig(), reviewSessionSize(args.targetCount)]),
+    );
+    size = capped;
+    maxOpen = practice.maxConcurrentSessions;
+  } catch (err) {
+    if (!(err instanceof ReviewConfigError)) throw err;
+    return {
+      ok: false,
+      status: 500,
+      body: { error: "session_create_failed", message: err.message },
+    };
+  }
+
+  // One retry: a concurrent start can take a question between our admit and our insert, which
+  // the trigger refuses (23505 `review_question_already_open`); the retry admits again.
+  for (let attempt = 1; ; attempt += 1) {
+    const built = await buildReviewStartPool(args, size);
+    if (!built.ok) return built.result;
+    // Ruling 2 (Karl, 2026-10-21): make room for THIS new session. With no open session there
+    // is nothing to close, so the round trip is skipped; a retry always admits, because the
+    // session it collided with is not in `sessions`.
+    if (sessions.length > 0 || attempt > 1) {
+      const { data: closedIds, error: admitErr } = await timedStep(
+        "admit",
+        () =>
+          supabaseServer.rpc("review_admit_session_start", {
+            p_student_id: args.studentId,
+            p_max_open: maxOpen,
+            p_question_ids: built.selected.map((row) => row.question.id),
+          }),
+      );
+      if (admitErr) {
+        return {
+          ok: false,
+          status: 500,
+          body: { error: "session_create_failed", message: admitErr.message },
+        };
+      }
+      const closedCount = Array.isArray(closedIds) ? closedIds.length : 0;
+      if (closedCount > 0) {
+        logger.info(
+          "REVIEW",
+          "session_start_closed_open",
+          "Closed open review session(s) to start a new one",
+          { requestId: args.requestId, closedCount },
+        );
+      }
+    }
+    const created = await createReviewSession(args, built.selected);
+    if (created.ok) return created;
+    if (!created.questionTaken || attempt >= 2) return created.result;
+  }
+}
+
+type StartPool =
+  | { ok: true; selected: ReviewPoolRow[] }
+  | { ok: false; result: CreateResult };
+
+/**
+ * The questions a new session takes: the first `size` rows of the pool, in pool order (oldest
+ * mistake first, ruling 7). Questions another open session holds are NOT filtered out here: the
+ * admit step closes their holder instead (ruling 2), so a filtered start is never left with
+ * nothing and never resumes a different session.
+ */
+async function buildReviewStartPool(
+  args: Parameters<typeof startOrReplayReviewSession>[0],
+  size: number,
+): Promise<StartPool> {
   const poolResult = await timedStep("review_pool", () =>
     buildReviewPool({
       studentId: args.studentId,
@@ -620,33 +701,39 @@ export async function startOrReplayReviewSession(args: {
   if (!poolResult.ok) {
     return {
       ok: false,
-      status: 500,
-      body: {
-        error: "session_create_failed",
-        message: poolResult.error,
+      result: {
+        ok: false,
+        status: 500,
+        body: { error: "session_create_failed", message: poolResult.error },
       },
     };
   }
-
   const pool = poolResult.value;
   if (pool.length === 0) {
     return {
       ok: false,
-      status: 422,
-      body: {
-        error: "empty_pool",
-        code: "REVIEW_POOL_EMPTY",
-        message: "You have nothing to review in this selection.",
+      result: {
+        ok: false,
+        status: 422,
+        body: {
+          error: "empty_pool",
+          code: "REVIEW_POOL_EMPTY",
+          message: "You have nothing to review in this selection.",
+        },
       },
     };
   }
+  return { ok: true, selected: pool.slice(0, size) };
+}
 
-  // Ruling 15 / plan §2 row 4: the WHOLE pool, or the calendar's size when it asks.
-  const selected =
-    args.targetCount && args.targetCount > 0
-      ? pool.slice(0, args.targetCount)
-      : pool;
+type CreatedSession =
+  | Extract<CreateResult, { ok: true }>
+  | { ok: false; questionTaken: boolean; result: CreateResult };
 
+async function createReviewSession(
+  args: Parameters<typeof startOrReplayReviewSession>[0],
+  selected: ReviewPoolRow[],
+): Promise<CreatedSession> {
   const now = new Date().toISOString();
   const metadata: ReviewSessionMetadata = {
     ...poolSpecToFilters(args.poolSpec),
@@ -683,10 +770,15 @@ export async function startOrReplayReviewSession(args: {
   if (insertErr || !inserted) {
     return {
       ok: false,
-      status: 500,
-      body: {
-        error: "session_create_failed",
-        message: insertErr?.message ?? "review session insert returned no row",
+      questionTaken: false,
+      result: {
+        ok: false,
+        status: 500,
+        body: {
+          error: "session_create_failed",
+          message:
+            insertErr?.message ?? "review session insert returned no row",
+        },
       },
     };
   }
@@ -706,8 +798,14 @@ export async function startOrReplayReviewSession(args: {
     await cleanupFailedReviewMaterialization(session.id);
     return {
       ok: false,
-      status: 500,
-      body: { error: "session_create_failed", message: materialized.error },
+      questionTaken: materialized.error.includes(
+        "review_question_already_open",
+      ),
+      result: {
+        ok: false,
+        status: 500,
+        body: { error: "session_create_failed", message: materialized.error },
+      },
     };
   }
 

@@ -140,12 +140,17 @@ export function legalFetch(sourceDir: string): typeof fetch {
 export function legalContentPlugin(repoRoot: string): Plugin {
   const sourceDir = path.resolve(repoRoot, "legal");
   let ssrBuild = false;
+  // The client build's own output directory: dist/public in every repo build, and whatever
+  // `--outDir` names otherwise (the student screenshot harness builds into test-results/, and
+  // with dist/public hard-coded its legal pages had no documents to load; 2026-10-21, Part G).
+  let clientOutDir = path.resolve(repoRoot, "dist/public");
 
   return {
     name: "lyceon-legal-content",
 
     configResolved(config) {
       ssrBuild = Boolean(config.build.ssr);
+      clientOutDir = path.resolve(config.root, config.build.outDir);
     },
 
     configureServer(server) {
@@ -173,7 +178,7 @@ export function legalContentPlugin(repoRoot: string): Plugin {
       // SSR build (F1) writes to dist/prerender and must not re-copy over dist/public.
       if (ssrBuild) return;
       if (!fs.existsSync(sourceDir)) return;
-      const outDir = path.resolve(repoRoot, "dist/public/legal");
+      const outDir = path.join(clientOutDir, "legal");
 
       // Copy INTO the directory, never over it.
       //

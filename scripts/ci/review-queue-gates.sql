@@ -385,6 +385,14 @@ DECLARE
 BEGIN
   SELECT actor_id INTO v_actor FROM public.profiles WHERE id = v_student;
 
+  -- Fixture: the gates above leave this student's earlier review sessions open on the same
+  -- question, and since F-81 (20261109000001, owner brief 2026-10-21) a question may be in only
+  -- one open review session (`review_session_items_one_open_question`). End them as terminate
+  -- would, so this block's session is the only open one.
+  UPDATE public.review_sessions
+     SET status = 'abandoned', abandoned_at = now(), completed_at = NULL
+   WHERE student_id = v_student AND status IN ('created', 'active');
+
   INSERT INTO public.review_sessions (id, student_id, status, mode, filters, target_count, platform, actor_id)
   VALUES (v_rs, v_student, 'active', 'queue', '{}'::jsonb, 5, 'web', v_actor);
 

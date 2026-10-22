@@ -709,12 +709,20 @@ describe.skipIf(!PG_AVAILABLE)(
            FROM public.review_sessions WHERE id = $1`,
         [body.session_id],
       );
+      // Owner rulings on #1277 (Karl, 2026-10-21), ruling 1: no review session takes more than
+      // `review_runtime_config.session_size`, a calendar block's size included, so the block
+      // asks for every miss and the session it launches takes the first `session_size` of them.
+      const sizeRows = await q(
+        `SELECT value::int AS size FROM public.review_runtime_config WHERE key = 'session_size'`,
+      );
+      const size = Number(sizeRows[0]?.size);
+      expect(missed).toBeGreaterThan(size);
       expect(session).toEqual([
         {
           mode: "session",
           source_engine: "full_length",
           source_session_id: sid,
-          target_count: missed,
+          target_count: Math.min(missed, size),
         },
       ]);
       const links = await q(

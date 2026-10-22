@@ -11,7 +11,7 @@
  * the server's values. Every heading is a panel heading (h2, 20px serif) as in the prototype.
  * The page renders these inside `AppShellPanel`, so on a phone they stack under the main column.
  */
-import { Fragment, type ReactNode } from "react";
+import { Fragment } from "react";
 import { Link } from "wouter";
 import type { CalendarDay } from "@lyceon/shared/calendar";
 import type { ReviewPoolSourceSession } from "@lyceon/shared/review-schema";
@@ -249,8 +249,6 @@ export function RecentSessionsSection({
   onReview,
   startingId,
   failure,
-  capFor,
-  cap,
 }: {
   sessions: readonly ReviewPoolSourceSession[];
   todayKey: string;
@@ -262,15 +260,12 @@ export function RecentSessionsSection({
   onReview: (session: ReviewPoolSourceSession) => void;
   /** The source session whose review start is in flight (item 5: that row says "Starting…"). */
   startingId: string | null;
-  /** Why the last start failed, in the student's words, or null. */
-  failure: string | null;
   /**
-   * QA2-A (owner re-test, Karl, 2026-10-08) | @implemented [2026-10-08]: the row whose start the
-   * review cap refused (`recentRowKey`), drawn directly under that row; null when none.
+   * Why the last start failed, in the student's words, or null. (The QA2-A review-cap notice
+   * drawn under a row is retired: owner rulings, Karl, 2026-10-21, on #1277, ruling 3; the server
+   * never refuses a start for the cap since F-81.)
    */
-  capFor: string | null;
-  /** The cap's refusal (`ReviewCapNotice`), shown under the `capFor` row. */
-  cap: ReactNode;
+  failure: string | null;
 }): JSX.Element {
   return (
     <section
@@ -331,11 +326,6 @@ export function RecentSessionsSection({
                     {starting ? STARTING_LABEL : REVIEW_SESSION_LABEL}
                   </button>
                 </li>
-                {capFor === recentRowKey(s) ? (
-                  <li className="px-1 py-2" data-testid="home-recent-cap">
-                    {cap}
-                  </li>
-                ) : null}
               </Fragment>
             );
           })}
@@ -354,7 +344,7 @@ export function RecentSessionsSection({
 }
 
 /** QA2-A: one recent-session row's identity (its source engine and session). */
-export function recentRowKey(row: ReviewPoolSourceSession): string {
+function recentRowKey(row: ReviewPoolSourceSession): string {
   return `${row.source_engine}:${row.source_session_id}`;
 }
 

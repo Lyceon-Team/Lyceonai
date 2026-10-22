@@ -206,13 +206,22 @@ export type Shot = {
    */
   expectInViewport?: string;
   /**
-   * QA2-A (owner re-test, 2026-10-08): the persona is at the concurrent review-session cap before
-   * every capture. capture.ts opens review sessions through the REAL create route
-   * (`POST /api/review/sessions`, queue mode) until the server itself refuses one with
-   * `SESSION_LIMIT_EXCEEDED`, and ends the ones it opened through the real terminate route after
-   * the screenshot. The refusal the page then meets is the server's own, not a stub.
+   * F-72 (owner brief 2026-10-21, Part E): the visitor has NOT answered the cookie banner (no
+   * consent cookie is set), so the banner is on screen. Every other shot answers it first.
    */
-  reviewCap?: true;
+  cookieBannerShown?: true;
+  /**
+   * Owner rulings on #1277 (Karl, 2026-10-21), ruling 4: the banner is answered with analytics
+   * ACCEPTED instead of refused, so the homepage hero experiment shows a variant stored in
+   * `localStorage` (Variant B is only ever shown to a visitor with valid analytics consent).
+   */
+  analyticsConsentAccepted?: true;
+  /**
+   * F-72: after `steps`, per viewport, the first elements matching `a` and `b` must both be on
+   * screen and their boxes must not intersect (the cookie banner and the phone tab bar, which
+   * exists below `lg` only). `null` checks nothing at that viewport. The capture fails otherwise.
+   */
+  expectNoOverlap?: Record<Viewport, { a: string; b: string } | null>;
   /**
    * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
    * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`
