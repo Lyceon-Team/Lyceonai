@@ -8,6 +8,13 @@ The locked spec corpus under `docs/Spec/` is the single source of truth. It is *
 
 If a task seems to require changing a spec, STOP and surface it to Karl. Do not work around it.
 
+**One exception: executable reference artifacts, in lockstep with an OPEN SCL.** When Karl marks an
+SCL **OPEN**, the PR that builds it may update `docs/Spec`'s executable reference artifacts (e.g.
+`calendar_formula_reference.py`, `calendar_formula_fixtures.json`) in the same change as the code,
+so the parity checks keep enforcing the new behaviour. Prose spec documents are **not** amended; the
+SCL is the record. Every reference-artifact change cites its SCL. A PROPOSED SCL authorises nothing.
+(Owner ruling, Karl, 2026-10-21, on #1277 / SCL-242.)
+
 ## The non-negotiable invariants (true every turn)
 
 These are hard stops. Generating any of them is a defect, not a tradeoff:
