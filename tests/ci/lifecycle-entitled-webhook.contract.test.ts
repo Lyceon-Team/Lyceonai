@@ -49,6 +49,11 @@ const predicate = vi.hoisted(() => ({
 const lifecycle = vi.hoisted(() => ({
   sendEntitledEvents: vi.fn(async () => ["sent"]),
 }));
+/** The `upgraded` funnel event: who it was fired for, and the `via` resolver it was handed. */
+const funnel = vi.hoisted(() => ({
+  upgraded: [] as string[],
+  resolvers: [] as (() => Promise<unknown>)[],
+}));
 
 vi.mock("../../server/lib/stripe/client", async () => {
   const StripeSdk = (await import("stripe")).default;
@@ -94,6 +99,15 @@ vi.mock("../../server/lib/lifecycle-email", () => ({
     void task();
   },
   sendEntitledEvents: lifecycle.sendEntitledEvents,
+}));
+vi.mock("../../server/lib/analytics/funnel-events", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../server/lib/analytics/funnel-events")
+  >()),
+  fireUpgraded: (id: string, resolveVia: () => Promise<unknown>) => {
+    funnel.upgraded.push(id);
+    funnel.resolvers.push(resolveVia);
+  },
 }));
 vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -168,6 +182,8 @@ async function run(event: { body: Buffer; signature: string }) {
 beforeEach(() => {
   vi.clearAllMocks();
   predicate.answers.clear();
+  funnel.upgraded.length = 0;
+  funnel.resolvers.length = 0;
   process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
 });
 
@@ -183,6 +199,17 @@ describe("lyceon.entitled on the grant paths", () => {
       { studentProfileId: STUDENT, payerProfileId: null },
       expect.anything(),
     );
+    // upgraded: once, for the student; its `via` is read from the subscription's expanded discounts.
+    expect(funnel.upgraded).toEqual([STUDENT]);
+    stripeApi.subscriptionsRetrieve.mockClear();
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_1",
+      discounts: [{ source: { coupon: { percent_off: 100 } } }],
+    });
+    await expect(funnel.resolvers[0]?.()).resolves.toBe("alpha");
+    expect(stripeApi.subscriptionsRetrieve).toHaveBeenCalledWith("sub_1", {
+      expand: ["discounts.source.coupon"],
+    });
   });
 
   it("E2 a renewal (already active before the write): nothing", async () => {
@@ -191,6 +218,7 @@ describe("lyceon.entitled on the grant paths", () => {
     await run(checkout("evt_e2"));
     expect(accountMocks.upsertEntitlement).toHaveBeenCalledTimes(1);
     expect(lifecycle.sendEntitledEvents).not.toHaveBeenCalled();
+    expect(funnel.upgraded).toEqual([]);
   });
 
   it("E3 a write that leaves it inactive (canceled): nothing", async () => {
@@ -199,6 +227,7 @@ describe("lyceon.entitled on the grant paths", () => {
     await run(checkout("evt_e3"));
     expect(accountMocks.upsertEntitlement).toHaveBeenCalledTimes(1);
     expect(lifecycle.sendEntitledEvents).not.toHaveBeenCalled();
+    expect(funnel.upgraded).toEqual([]);
   });
 
   it("E4 the predicate unreadable or throwing: nothing is sent, and the grant is still written", async () => {
@@ -213,6 +242,7 @@ describe("lyceon.entitled on the grant paths", () => {
       expect(accountMocks.upsertEntitlement).toHaveBeenCalledTimes(1);
       expect(lifecycle.sendEntitledEvents).not.toHaveBeenCalled();
     }
+    expect(funnel.upgraded).toEqual([]);
   });
 
   it("E5 a guardian subscription for two students: one send per student, the guardian as payer", async () => {
@@ -271,5 +301,11 @@ describe("lyceon.entitled on the grant paths", () => {
       { studentProfileId: STUDENT, payerProfileId: GUARDIAN },
       { studentProfileId: STUDENT_B, payerProfileId: GUARDIAN },
     ]);
+    expect(funnel.upgraded).toEqual([STUDENT, STUDENT_B]);
+    stripeApi.subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_g",
+      discounts: [],
+    });
+    await expect(funnel.resolvers[1]?.()).resolves.toBe("guardian_paid");
   });
 });

@@ -28,6 +28,7 @@ import {
   fireLifecycle,
   sendOnboardedEvent,
 } from "../lib/lifecycle-email";
+import { fireOnboardingCompleted } from "../lib/analytics/funnel-events";
 import { signupSourceSchema } from "../../packages/shared/src/analytics-consent-schema";
 import {
   dateOfBirthSchema,
@@ -710,6 +711,9 @@ router.patch("/", async (req: Request, res: Response) => {
         await responded;
         return sendOnboardedEvent(userId, defaultLifecycleDeps());
       });
+      // Server-side funnel (Karl, 2026-10-21): `onboarding_completed`, once ever, sent about ten
+      // seconds from now so the SAT date and score the form saves next are seen. Fire-and-forget.
+      fireOnboardingCompleted(userId);
     }
 
     return res.json({
