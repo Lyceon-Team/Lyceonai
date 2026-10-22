@@ -32,6 +32,12 @@
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { getGcpCredentials } from "../lib/gcp-credentials";
 import { logger } from "../logger";
+import {
+  CRISIS_CLASSIFIER_GENERATION,
+  CRISIS_CLASSIFIER_SYSTEM_PROMPT,
+  type ClassifierResult,
+  parseClassifierResponse,
+} from "./crisis-classifier-prompt";
 import { notifyCrisisEvent } from "./crisis-notification";
 import {
   crisisFlagResultSchema,
@@ -67,11 +73,6 @@ type SignatureResult = {
   category: CrisisCategory | null;
   /** True when the signature set returned zero crisis rows — Layer 1 is inert. */
   layer1Empty: boolean;
-};
-
-type ClassifierResult = {
-  isCrisis: boolean;
-  confidence: number;
 };
 
 export type NotificationPolicyInput = {
@@ -425,51 +426,16 @@ async function invokeClassifier(
         parts: [{ text }],
       },
     ],
+    // The prompt, settings and parser are shared with the CI golden-set gate
+    // (crisis-classifier-prompt.ts), so the gate tests exactly what runs here.
     config: {
-      systemInstruction: {
-        parts: [
-          {
-            text: [
-              "You are a crisis detection classifier for a student tutoring platform.",
-              "Your ONLY job is to determine if the student's message indicates a crisis:",
-              "self-harm ideation, suicide ideation, severe emotional distress, or danger to self or others.",
-              "",
-              "Respond with ONLY a JSON object, no other text:",
-              '{"isCrisis": true, "confidence": 0.95}',
-              "",
-              "isCrisis: true if the message indicates a crisis situation, false otherwise.",
-              "confidence: a number between 0 and 1 indicating your confidence in the classification.",
-              "",
-              "Be sensitive. When in doubt, classify as crisis (fail toward safety).",
-              "Do NOT classify normal academic frustration or test anxiety as crisis.",
-            ].join("\n"),
-          },
-        ],
-      },
-      temperature: 0,
-      maxOutputTokens: 64,
+      systemInstruction: { parts: [{ text: CRISIS_CLASSIFIER_SYSTEM_PROMPT }] },
+      ...CRISIS_CLASSIFIER_GENERATION,
     },
   });
 
-  const raw = response.text?.trim() ?? "";
-  // Parse the JSON response, stripping any markdown fencing the model may add
-  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-
-  try {
-    const parsed = JSON.parse(jsonStr) as {
-      isCrisis?: boolean;
-      confidence?: number;
-    };
-    return {
-      isCrisis: parsed.isCrisis === true,
-      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
-    };
-  } catch {
-    // Model returned unparseable output — treat as failure (caller handles retry)
-    throw new Error(
-      `Crisis classifier returned unparseable response: ${raw.slice(0, 200)}`,
-    );
-  }
+  // Unparseable output throws; classifyCrisis retries once, then Layer 1 stands.
+  return parseClassifierResponse(response.text ?? "");
 }
 
 // ── Combined Classifier ────────────────────────────────────────────────
