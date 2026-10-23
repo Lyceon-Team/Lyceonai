@@ -181,10 +181,19 @@ describe("review adapter — the §9.1 contract", () => {
       "actorId",
       "clientInstanceId",
       "idempotencyKey",
+      "origin",
       "poolSpec",
       "studentId",
       "targetCount",
     ]);
+  });
+
+  it("(2f) marks the start as a CALENDAR launch, so its size is not capped by session_size", async () => {
+    // Owner ruling (Karl, 2026-10-22, correcting #1277's ruling 1): review_runtime_config
+    // .session_size caps only student-initiated starts. The adapter is the one caller that may
+    // say "calendar"; the HTTP route always says "student".
+    await reviewAdapter.create(BLOCK, 5, CTX);
+    expect(recorded.args?.origin).toBe("calendar");
   });
 
   it("(2e) sends a non-null clientInstanceId, which the signature requires", async () => {
@@ -274,6 +283,7 @@ describe.skipIf(!PG_AVAILABLE)(
         poolSpec: { mode: "queue" },
         clientInstanceId: CTX.client_instance_id,
         idempotencyKey: CTX.idempotency_key,
+        origin: "calendar",
         targetCount: 3,
       });
 
@@ -302,6 +312,7 @@ describe.skipIf(!PG_AVAILABLE)(
         poolSpec: { mode: "queue" },
         clientInstanceId: CTX.client_instance_id,
         idempotencyKey: CTX.idempotency_key,
+        origin: "calendar",
         targetCount: 3,
       });
 

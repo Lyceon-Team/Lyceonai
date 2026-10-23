@@ -887,6 +887,8 @@ router.post(
  * display name and when the link went active — identity only, nothing about the guardian's
  * account beyond a name. Edge case: `via === 'guardian'` is a 404, not a 403 — a guardian
  * reading a student's OTHER guardians is on the wrong route and learns nothing.
+ * 2026-10-21 (SCL-238): also `guardian_notified`, the accountability loop's recipient rule
+ * asked of the database, which the calendar's confirmation dialog reads.
  */
 router.get(
   `/:studentId${STUDENT_LINK_PATHS.links}`,
@@ -936,6 +938,31 @@ router.get(
       }
     }
 
+    // SCL-238 (owner brief 2026-10-21, Part A): whether a recorded plan change reaches a
+    // guardian NOW is the accountability loop's own recipient rule, asked of the database —
+    // active link AND student entitlement (`guardian_view_decision`) — so the calendar's
+    // confirmation can never disagree with who is actually told. Fails closed to a 500: a
+    // guessed `false` would let a change reach a guardian unannounced.
+    let guardianNotified = false;
+    if (links.length > 0) {
+      const { data: recipients, error: recipientsError } =
+        await supabaseServer.rpc("accountability_guardian_recipients", {
+          p_student_id: subject.studentId,
+        });
+      if (recipientsError) {
+        logger.error(
+          "STUDENT_RESOURCES",
+          "links_read",
+          "Failed to read guardian recipients",
+          { requestId, reason: recipientsError.message },
+        );
+        return res
+          .status(500)
+          .json({ error: "Internal server error", requestId });
+      }
+      guardianNotified = Array.isArray(recipients) && recipients.length > 0;
+    }
+
     return res.json({
       data: {
         links: links.map((l) => ({
@@ -943,6 +970,7 @@ router.get(
           guardian_display_name: names.get(l.guardian_profile_id) ?? "",
           linked_at: l.accepted_at ?? l.created_at,
         })),
+        guardian_notified: guardianNotified,
       },
       requestId,
     });

@@ -44,6 +44,15 @@ export const CACHE_TTL_CONFIG = {
     key: "calendar_config_cache_ttl_seconds",
     fallbackSeconds: 60,
   },
+  /**
+   * @spec [owner rulings on #1277 (Karl, 2026-10-21), ruling 1 (review session size as a runtime
+   *        config key)] | @implemented [2026-10-21] — `review_runtime_config.session_size`
+   * (`server/services/review-config.ts`).
+   */
+  reviewConfig: {
+    key: "review_config_cache_ttl_seconds",
+    fallbackSeconds: 60,
+  },
 } as const;
 
 export type CacheTtlName = keyof typeof CACHE_TTL_CONFIG;

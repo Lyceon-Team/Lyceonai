@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import { logger } from "../logger.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
 import { drainAllPendingLegalAcceptances } from "../lib/legal-acceptance.js";
@@ -8,6 +9,10 @@ import {
   isDeletionLifecycleV2Enabled,
 } from "../lib/account-deletion-execute.js";
 import { getBreachedCases } from "../services/crisis-review-queue";
+import {
+  runVideoLinkCheck,
+  youtubeFetcher,
+} from "../services/video-link-check";
 import { notifySlaBreaches } from "../services/crisis-notification";
 import {
   oidcAuthMiddlewareWithConfigGuard,
@@ -1055,6 +1060,115 @@ router.get(
         err,
       );
       res.status(500).json({ error: "ops_alert_test_failed" });
+    }
+  },
+);
+
+/**
+ * POST /api/internal/video-link-check
+ * @spec [CC Brief "Video Library (ships now)", Karl 2026-10-15, §10 (link rot: scheduled
+ *       YouTube Data API check; the Cloud Scheduler pattern)] | @implemented 2026-10-15
+ *
+ * plain English: the daily link-rot check for the LISA video library. Caller: Cloud Scheduler
+ * (`google_cloud_scheduler_job.video_link_check`, infra/terraform/
+ * cloud-scheduler-video-link-check.tf), OIDC-signed like the crisis sweep: `aud` must equal
+ * VIDEO_LINK_CHECK_OIDC_AUDIENCE and `email` CLOUD_TASKS_SERVICE_ACCOUNT, no fallback.
+ * YOUTUBE_DATA_API_KEY unset → 500 + ERROR, nothing checked (fail closed). The rules, and the
+ * breaker that refuses to mark most of the library unavailable in one run, are in
+ * server/services/video-link-check.ts. Logs carry counts and ids, never titles.
+ */
+const readVideoLinkCheckOidcConfig: OidcConfigReader = () => ({
+  expectedAudience: process.env.VIDEO_LINK_CHECK_OIDC_AUDIENCE,
+  expectedServiceAccount: process.env.CLOUD_TASKS_SERVICE_ACCOUNT,
+});
+
+router.post(
+  "/video-link-check",
+  oidcAuthMiddlewareWithConfigGuard(readVideoLinkCheckOidcConfig),
+  async (_req: Request, res: Response): Promise<void> => {
+    const apiKey = process.env.YOUTUBE_DATA_API_KEY;
+    if (apiKey === undefined || apiKey === "") {
+      logger.error(
+        "VIDEO_LIBRARY",
+        "video_link_check_config_missing",
+        "YOUTUBE_DATA_API_KEY is not set; the link check did not run",
+      );
+      res.status(500).json({ error: "video_link_check_config_missing" });
+      return;
+    }
+    try {
+      const db = getSupabaseAdmin();
+      const outcome = await runVideoLinkCheck({
+        // Paged, so PostgREST's row cap can never silently leave part of the library
+        // unchecked; Zod at the boundary.
+        listVideoIds: async () => {
+          const page = 1000;
+          const ids: string[] = [];
+          for (let from = 0; ; from += page) {
+            const { data, error } = await db
+              .from("video_resources")
+              .select("video_id")
+              .order("video_id")
+              .range(from, from + page - 1);
+            if (error) throw error;
+            const rows = z
+              .array(z.object({ video_id: z.string() }))
+              .parse(data ?? []);
+            ids.push(...rows.map((r) => r.video_id));
+            if (rows.length < page) return ids;
+          }
+        },
+        fetchVideos: youtubeFetcher(apiKey),
+        markChecked: async ({ available, unavailable }) => {
+          const now = new Date().toISOString();
+          for (const [status, ids] of [
+            ["available", available],
+            ["unavailable", unavailable],
+          ] as const) {
+            if (ids.length === 0) continue;
+            const { error } = await db
+              .from("video_resources")
+              .update({ status, last_checked_at: now })
+              .in("video_id", ids);
+            if (error) throw error;
+          }
+        },
+      });
+      if (outcome.kind === "breaker_tripped") {
+        logger.error(
+          "VIDEO_LIBRARY",
+          "video_link_check_breaker_tripped",
+          "most of the library came back unavailable; nothing was written",
+          undefined,
+          {
+            checked: outcome.checked,
+            unavailableCount: outcome.unavailable.length,
+          },
+        );
+        res.status(500).json({ error: "video_link_check_breaker_tripped" });
+        return;
+      }
+      if (outcome.unavailable.length > 0) {
+        logger.warn(
+          "VIDEO_LIBRARY",
+          "video_link_check_unavailable",
+          `${outcome.unavailable.length} video(s) marked unavailable`,
+          { unavailableIds: outcome.unavailable },
+        );
+      }
+      res.json({
+        ok: true,
+        checked: outcome.checked,
+        unavailable: outcome.unavailable.length,
+      });
+    } catch (err) {
+      logger.error(
+        "VIDEO_LIBRARY",
+        "video_link_check_error",
+        "Video link check failed",
+        err,
+      );
+      res.status(500).json({ error: "video_link_check_failed" });
     }
   },
 );

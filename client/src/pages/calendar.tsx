@@ -42,7 +42,7 @@ import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
-import { useHasActiveGuardianLink } from "@/hooks/useStudentGuardianLinks";
+import { useGuardianNotified } from "@/hooks/useStudentGuardianLinks";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 import {
   calendarKeys,
@@ -79,7 +79,11 @@ import {
 } from "@/features/calendar/lib/dates";
 import { membersCleared } from "@/features/calendar/lib/members";
 import { openingSchedule } from "@/features/calendar/lib/setup";
-import { studentViewModel } from "@/features/calendar/lib/view-model";
+import { dayAt, studentViewModel } from "@/features/calendar/lib/view-model";
+import {
+  dayBlocksBefore,
+  useGuardianNotifyConfirm,
+} from "@/features/calendar/lib/useGuardianNotifyConfirm";
 import { toUserFacingMessage } from "@/lib/api-error";
 // The student calendar's whole stylesheet. `calendar.css` is the guardian calendar's alone
 // (owner ruling, Karl, 2026-10-05, "split it"); `calendar.ui55.test.tsx` fails if this page's
@@ -97,9 +101,14 @@ export default function CalendarPage(): JSX.Element {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { user } = useSupabaseAuth();
-  // Owner brief 2026-10-13 ("Transparency"): the day menu and the block panel say the guardian
-  // is notified only when an active link exists. The same query Settings → Guardian reads.
-  const guardianNotice = useHasActiveGuardianLink(user?.id ?? null);
+  // SCL-238 (owner brief 2026-10-21, Part A): a write the accountability loop records asks
+  // "Your guardian will be notified" first, when the SERVER says a guardian would be told
+  // (`guardian_notified`: active link AND student entitlement). The predicate is the shared one
+  // (`willNotifyGuardian`); every calendar write below goes through `notify.confirm`, so the
+  // predicate, not this page, decides which ones ask. It replaced the static line the day menu,
+  // the block panel and the schedule sheet drew (owner brief 2026-10-13, "Transparency").
+  const guardianNotified = useGuardianNotified(user?.id ?? null);
+  const notify = useGuardianNotifyConfirm(guardianNotified);
 
   // OQ-29: the map decides free or paid; nothing is read until the profile has answered.
   const profileQuery = useProfileQuery();
@@ -382,85 +391,141 @@ export default function CalendarPage(): JSX.Element {
           estimates: response.estimates,
           examPlanning: response.exam_planning,
           onSave: (draft) =>
-            saveProfile(
+            notify.confirm(
               {
-                timezone: draft.timezone,
-                study_days_mask: draft.study_days_mask,
-                daily_minutes: draft.daily_minutes,
-                target_exam_dates: draft.target_exam_dates,
-                target_score: draft.target_score,
-                full_length_weekday: draft.full_length_weekday,
-                // Both halves, always. `calendarProfileUpsertSchema` refuses a body that
-                // names one and not the other (Brief 14 Step 2), so omitting this — as this
-                // call site did until the pair landed — makes every schedule save that touches
-                // the exam a 400 rather than a silent half-write. The sheet's own chips move
-                // both halves together for the same reason.
-                full_length_interval_weeks: draft.full_length_interval_weeks,
-                planner_mode: draft.planner_mode,
+                kind: "save_schedule",
+                before: response.profile,
+                after: {
+                  study_days_mask: draft.study_days_mask,
+                  daily_minutes: draft.daily_minutes,
+                  full_length_weekday: draft.full_length_weekday,
+                  full_length_interval_weeks: draft.full_length_interval_weeks,
+                },
               },
-              {
-                onSuccess: (result) =>
-                  // No version number means nothing was replanned, which in practice means a
-                  // `custom` student. Offer, never act.
-                  setReplanOffered(result.version_no === undefined),
-              },
+              () =>
+                saveProfile(
+                  {
+                    timezone: draft.timezone,
+                    study_days_mask: draft.study_days_mask,
+                    daily_minutes: draft.daily_minutes,
+                    target_exam_dates: draft.target_exam_dates,
+                    target_score: draft.target_score,
+                    full_length_weekday: draft.full_length_weekday,
+                    // Both halves, always. `calendarProfileUpsertSchema` refuses a body that
+                    // names one and not the other (Brief 14 Step 2), so omitting this — as this
+                    // call site did until the pair landed — makes every schedule save that touches
+                    // the exam a 400 rather than a silent half-write. The sheet's own chips move
+                    // both halves together for the same reason.
+                    full_length_interval_weeks:
+                      draft.full_length_interval_weeks,
+                    planner_mode: draft.planner_mode,
+                  },
+                  {
+                    onSuccess: (result) =>
+                      // No version number means nothing was replanned, which in practice means a
+                      // `custom` student. Offer, never act.
+                      setReplanOffered(result.version_no === undefined),
+                  },
+                ),
             ),
           pending: profile.isPending,
           error: profileError,
           offerReplan: replanOffered,
           onConfirmReplan: () => {
-            regeneratePlan.mutate(newIntent({}));
+            notify.confirm({ kind: "regenerate_plan" }, () =>
+              regeneratePlan.mutate(newIntent({})),
+            );
             setReplanOffered(false);
           },
           onDismissReplan: () => setReplanOffered(false),
         }}
-        guardianNotice={guardianNotice}
         mutations={{
           // One fresh key per user intent; `newIntent` is the only minter, and TanStack reuses
           // the same variables object on retry, which is what makes a retry idempotent (§7.8).
-          editDay: (date, members, hint: EditHint) =>
-            editDay.mutate(
-              newIntent({
-                date,
-                members,
-                ...("removeBlockId" in hint && hint.removeBlockId === ""
-                  ? {}
-                  : {
-                      optimisticBlocks:
-                        "removeBlockId" in hint
-                          ? { removeBlockId: hint.removeBlockId }
-                          : { blockId: hint.blockId, edited: hint.edited },
-                    }),
-              }),
-            ),
+          editDay: (date, members, hint: EditHint) => {
+            const day = dayAt(model, date);
+            notify.confirm(
+              {
+                kind: "edit_day",
+                before: day === null ? [] : dayBlocksBefore(day),
+                after: members,
+                estimates: response.estimates,
+              },
+              () =>
+                editDay.mutate(
+                  newIntent({
+                    date,
+                    members,
+                    ...("removeBlockId" in hint && hint.removeBlockId === ""
+                      ? {}
+                      : {
+                          optimisticBlocks:
+                            "removeBlockId" in hint
+                              ? { removeBlockId: hint.removeBlockId }
+                              : { blockId: hint.blockId, edited: hint.edited },
+                        }),
+                  }),
+                ),
+            );
+          },
           moveBlock: (blockId, toDate) =>
-            moveBlock.mutate(newIntent({ blockId, toDate })),
+            notify.confirm({ kind: "move_block" }, () =>
+              moveBlock.mutate(newIntent({ blockId, toDate })),
+            ),
           // DESIGN.md §4: "Regenerate plan" (`POST /api/calendar/plan/regenerate`), one key
           // per press.
-          regeneratePlan: () => regeneratePlan.mutate(newIntent({})),
-          regenerateDay: (date) => regenerateDay.mutate(newIntent({ date })),
-          resetDay: (date) => resetDay.mutate(newIntent({ date })),
+          regeneratePlan: () =>
+            notify.confirm({ kind: "regenerate_plan" }, () =>
+              regeneratePlan.mutate(newIntent({})),
+            ),
+          regenerateDay: (date) =>
+            notify.confirm({ kind: "regenerate_day" }, () =>
+              regenerateDay.mutate(newIntent({ date })),
+            ),
+          resetDay: (date) =>
+            notify.confirm({ kind: "reset_day" }, () =>
+              resetDay.mutate(newIntent({ date })),
+            ),
           // §12.4: blocking out a day is an edit to an empty member list, not a status of
           // its own. No optimistic hint -- the prediction would have to guess which blocks
           // the server carries (V-12), and guessing wrong would flash the wrong day at the
           // student. The settle-invalidate brings back what actually happened.
-          blockOutDay: (date) =>
-            editDay.mutate(newIntent({ date, members: membersCleared() })),
-          doItNow: (blockId) => doItNow.mutate(newIntent({ blockId, today })),
+          blockOutDay: (date) => {
+            const day = dayAt(model, date);
+            notify.confirm(
+              {
+                kind: "edit_day",
+                before: day === null ? [] : dayBlocksBefore(day),
+                after: membersCleared(),
+                estimates: response.estimates,
+              },
+              () =>
+                editDay.mutate(newIntent({ date, members: membersCleared() })),
+            );
+          },
+          doItNow: (blockId) =>
+            notify.confirm({ kind: "do_it_now" }, () =>
+              doItNow.mutate(newIntent({ blockId, today })),
+            ),
           // OQ-63: a full-length block asks the shared phone pre-start check first.
           launch: (blockId, blockType) =>
-            blockType === "full_length"
-              ? precheck.run(() => void launch(blockId, blockType))
-              : void launch(blockId, blockType),
+            notify.confirm({ kind: "launch_block" }, () =>
+              blockType === "full_length"
+                ? precheck.run(() => void launch(blockId, blockType))
+                : void launch(blockId, blockType),
+            ),
           // §12.7 is monotonic, so this route takes no idempotency key.
           acknowledge: (versionNo) =>
-            acknowledge.mutate({ version_no: versionNo }),
+            notify.confirm({ kind: "acknowledge" }, () =>
+              acknowledge.mutate({ version_no: versionNo }),
+            ),
           refreshPending: regeneratePlan.isPending,
           regenerated: regeneratePlan.isSuccess,
           launchPending,
         }}
       />
       {precheck.dialog}
+      {notify.dialog}
     </>
   );
 }

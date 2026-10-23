@@ -367,7 +367,10 @@ function serve(opts: Serve): void {
     }
     if (path === LINKS_URL) {
       return json({
-        data: studentGuardianLinksViewSchema.parse({ links: opts.links ?? [] }),
+        data: studentGuardianLinksViewSchema.parse({
+          links: opts.links ?? [],
+          guardian_notified: (opts.links ?? []).length > 0,
+        }),
       });
     }
     if (path?.startsWith(`${LINKS_URL}/`) && method === "DELETE") {

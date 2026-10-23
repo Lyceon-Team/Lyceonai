@@ -83,6 +83,44 @@ jobs:
       - name: Verify GCP auth (one command proof)
         run: gcloud auth list
 
+  # Layer 2 crisis classifier golden set against the real model, every night (CC Brief "P1: Stop
+  # False Crisis Positives", 2026-10-21): ci.yml runs it on a change to the classifier; this run
+  # catches a change on the model's side that no commit makes. scripts/ci/crisis-classifier-golden-set.ts.
+  crisis-classifier-golden-set:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/480325859530/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: lyceon-ci-eval@replit-cop.iam.gserviceaccount.com
+
+      - name: Golden set (academic must not trigger; crisis must)
+        env:
+          VERTEX_CLASSIFIER_CLASS_MODEL: gemini-3.1-flash-lite
+          VERTEX_CLASSIFIER_LOCATION: global
+          VERTEX_PROJECT_ID: replit-cop
+        run: pnpm exec tsx scripts/ci/crisis-classifier-golden-set.ts
+
   # The exam and calendar browser specs (owner decision 2026-10-07, CI audit item 6). They had run
   # in no job. The REAL client (Vite dev) against the E7b exam harness: the real /api/tests,
   # /api/calendar, /api/students and /api/guardian routers over a database built from

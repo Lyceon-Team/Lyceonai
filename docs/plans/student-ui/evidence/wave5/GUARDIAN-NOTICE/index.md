@@ -1,6 +1,6 @@
-# Guardian accountability: the calendar's guardian line in the day menu and the block panel (active link); light and dark, 1440 and 390
+# Guardian confirmation (SCL-238): 'Your guardian will be notified' before a recorded calendar change (block out a day, remove a block, save fewer minutes); light and dark, 1440 and 390
 
-Generated 2026-10-13T06:21:10.598Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts GUARDIAN-NOTICE` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-21T04:37:39.763Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts GUARDIAN-NOTICE` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -9,52 +9,56 @@ Conditions, read before comparing:
 - No external requests: the built app's Google Fonts (Inter, Poppins) are blocked, so legacy page bodies fall back to system faces; Source Sans 3 / Source Serif 4 are self-hosted and load for both sides.
 - Prototype data is illustrative; built data is the seeded personas' real payloads.
 
-## The day ⋯ menu open: Block out this day, Regenerate day, then a rule and the one muted line "Your guardian is notified when you change your study plan." (14px, the menu's note style)
+## Day ⋯ menu → Block out this day: the dialog asks first (title, body, filled 'Make change', outline 'Cancel'); nothing is written until 'Make change'
 
 Persona: `paid`. Route: `/calendar`.
 Step: click `{"desktop":"button.dmenu","mobile":"button.dmenu"}`.
-Must then show `[data-testid^="day-menu-guardian-notice-"]` (the capture fails otherwise).
-Prototype: none. The line is new (owner brief 2026-10-13); the prototype's day menu has no guardian line.
+Step: click `{"desktop":"[data-testid^=\"day-block-\"]","mobile":"[data-testid^=\"day-block-\"]"}`.
+Must then show `[data-testid="guardian-notify-confirm"]` (the capture fails otherwise).
+Prototype: none. The confirmation is new (owner brief 2026-10-21, SCL-238); no prototype screen has it. It is the shared student Modal (UI-46).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![day-menu desktop light](day-menu--desktop--light--built.png)<br>`/calendar`, 177 KB, horizontal overflow 0px | none |
-| desktop | dark | ![day-menu desktop dark](day-menu--desktop--dark--built.png)<br>`/calendar`, 179 KB, horizontal overflow 0px | none |
-| mobile | light | ![day-menu mobile light](day-menu--mobile--light--built.png)<br>`/calendar`, 54 KB, horizontal overflow 0px | none |
-| mobile | dark | ![day-menu mobile dark](day-menu--mobile--dark--built.png)<br>`/calendar`, 55 KB, horizontal overflow 0px | none |
+| desktop | light | ![block-out-day desktop light](block-out-day--desktop--light--built.png)<br>`/calendar`, 142 KB, horizontal overflow 0px | none |
+| desktop | dark | ![block-out-day desktop dark](block-out-day--desktop--dark--built.png)<br>`/calendar`, 139 KB, horizontal overflow 0px | none |
+| mobile | light | ![block-out-day mobile light](block-out-day--mobile--light--built.png)<br>`/calendar`, 55 KB, horizontal overflow 0px | none |
+| mobile | dark | ![block-out-day mobile dark](block-out-day--mobile--dark--built.png)<br>`/calendar`, 54 KB, horizontal overflow 0px | none |
 
-## The block panel of a block the student can change: Move to…, then the guardian line under it (field-note style), then Start and Remove in the footer
+## Block panel → Remove: the dialog over the sheet; the panel no longer carries a guardian line
 
 Persona: `paid`. Route: `/calendar`.
 Step: click `{"desktop":"button.block.rev","mobile":"button.block.rev"}`.
-Must then show `[data-testid="calendar-block-guardian-notice"]` (the capture fails otherwise).
-Prototype: none. The line is new (owner brief 2026-10-13); the prototype's block sheet has no guardian line.
+Step: click `{"desktop":"[data-testid=\"calendar-block-sheet\"] button:has-text(\"Remove\")","mobile":"[data-testid=\"calendar-block-sheet\"] button:has-text(\"Remove\")"}`.
+Must then show `[data-testid="guardian-notify-confirm"]` (the capture fails otherwise).
+Prototype: none. The confirmation is new (owner brief 2026-10-21, SCL-238); no prototype screen has it. It is the shared student Modal (UI-46).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![block-sheet desktop light](block-sheet--desktop--light--built.png)<br>`/calendar`, 156 KB, horizontal overflow 0px | none |
-| desktop | dark | ![block-sheet desktop dark](block-sheet--desktop--dark--built.png)<br>`/calendar`, 151 KB, horizontal overflow 0px | none |
-| mobile | light | ![block-sheet mobile light](block-sheet--mobile--light--built.png)<br>`/calendar`, 46 KB, horizontal overflow 0px | none |
-| mobile | dark | ![block-sheet mobile dark](block-sheet--mobile--dark--built.png)<br>`/calendar`, 46 KB, horizontal overflow 0px | none |
+| desktop | light | ![remove-block desktop light](remove-block--desktop--light--built.png)<br>`/calendar`, 142 KB, horizontal overflow 0px | none |
+| desktop | dark | ![remove-block desktop dark](remove-block--desktop--dark--built.png)<br>`/calendar`, 139 KB, horizontal overflow 0px | none |
+| mobile | light | ![remove-block mobile light](remove-block--mobile--light--built.png)<br>`/calendar`, 55 KB, horizontal overflow 0px | none |
+| mobile | dark | ![remove-block mobile dark](remove-block--mobile--dark--built.png)<br>`/calendar`, 54 KB, horizontal overflow 0px | none |
 
-## Edit schedule (SCL-230, approved by Karl 2026-10-13): the schedule sheet with the guardian line under the live readout, above Cancel / Save changes (at 390 the sheet is opened from the '⋯' menu)
+## Edit schedule → 30 min → Save changes: the dialog over the schedule sheet (at 390 the sheet is opened from the '⋯' menu)
 
 Persona: `paid`. Route: `/calendar`.
 Step: click `{"desktop":"[data-testid=\"topbar-edit-schedule\"]","mobile":"[data-testid=\"calendar-more-actions\"]"}`.
 Step: click `{"desktop":null,"mobile":"[data-testid=\"calendar-more-edit-schedule\"]"}`.
-Must then show `[data-testid="settings-guardian-notice"]` (the capture fails otherwise).
-Prototype: none. The line is new (SCL-230, approved 2026-10-13); the prototype's schedule sheet has no guardian line.
+Step: click `{"desktop":"[data-testid=\"settings-minutes\"] button:has-text(\"30 min\")","mobile":"[data-testid=\"settings-minutes\"] button:has-text(\"30 min\")"}`.
+Step: click `{"desktop":"[data-testid=\"settings-save\"]","mobile":"[data-testid=\"settings-save\"]"}`.
+Must then show `[data-testid="guardian-notify-confirm"]` (the capture fails otherwise).
+Prototype: none. The confirmation is new (owner brief 2026-10-21, SCL-238); no prototype screen has it. It is the shared student Modal (UI-46).
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![settings-sheet desktop light](settings-sheet--desktop--light--built.png)<br>`/calendar`, 184 KB, horizontal overflow 0px | none |
-| desktop | dark | ![settings-sheet desktop dark](settings-sheet--desktop--dark--built.png)<br>`/calendar`, 180 KB, horizontal overflow 0px | none |
-| mobile | light | ![settings-sheet mobile light](settings-sheet--mobile--light--built.png)<br>`/calendar`, 53 KB, horizontal overflow 0px | none |
-| mobile | dark | ![settings-sheet mobile dark](settings-sheet--mobile--dark--built.png)<br>`/calendar`, 53 KB, horizontal overflow 0px | none |
+| desktop | light | ![save-schedule desktop light](save-schedule--desktop--light--built.png)<br>`/calendar`, 152 KB, horizontal overflow 0px | none |
+| desktop | dark | ![save-schedule desktop dark](save-schedule--desktop--dark--built.png)<br>`/calendar`, 145 KB, horizontal overflow 0px | none |
+| mobile | light | ![save-schedule mobile light](save-schedule--mobile--light--built.png)<br>`/calendar`, 52 KB, horizontal overflow 0px | none |
+| mobile | dark | ![save-schedule mobile dark](save-schedule--mobile--dark--built.png)<br>`/calendar`, 51 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"16c92ca5-a6c7-4517-a10b-3592a62b8f8c","openPracticeSessionId":"ea2f8f8d-f51d-4d01-8db5-f8b9be219025","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"d52d88dd-0b11-497e-a201-0f5f654ec15d","openPracticeSessionId":"a61c924c-90ce-4d84-87f5-8a88e39410fb","openReviewSessionId":null,"diagnosticSessionId":"8862ac8e-ce7f-451d-a1b5-5841257562ed","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"cb061bee-928b-4871-a54b-431f1dbf4ed6","openPracticeSessionId":"624bdd3a-1959-45f9-a3c2-35f101c15b24","openReviewSessionId":null,"diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":13},"paid":{"completedPracticeSessionId":"08c07515-00f9-408a-a77c-6afc2ec42b92","openPracticeSessionId":"bdd69970-d49a-49b9-97d9-50f8f25d377e","openReviewSessionId":null,"diagnosticSessionId":"1a19fb25-b000-413d-a4de-9c5b6635a1a8","scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":53}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - Desmos (QA2-B, opt-in `STUDENT_HARNESS_DESMOS=1`): not loaded (a local-only run; the calculator shows its unavailable line)
 - External hosts blocked: none

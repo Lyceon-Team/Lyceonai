@@ -12,3 +12,4 @@ export * from "./allocate.js";
 export * from "./read-model.js";
 export * from "./api.js";
 export * from "./accountability.js";
+export * from "./guardian-notify.js";

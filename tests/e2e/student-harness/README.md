@@ -52,12 +52,10 @@ the site-wide cookie banner: capture.ts sets the strictly necessary consent cook
 refused, the app's own `lyceon_consent` format) on each browser context, so the banner is not
 drawn over the pages under review.
 
-QA2-A (the review cap, 2026-10-08) adds two. `reviewCap: true` puts the persona at the server's
-own concurrent review-session cap before each capture: queue review sessions are opened through
-the real `POST /api/review/sessions` until the route itself refuses one with
-`SESSION_LIMIT_EXCEEDED`, and the ones opened are ended through the real terminate route after the
-shot. `expectInViewport` fails the capture unless the named element lies wholly inside the window
-after the steps (the cap's message, never below the fold).
+QA2-A (2026-10-08) added `expectInViewport`: it fails the capture unless the named element lies
+wholly inside the window after the steps. (QA2-A's `reviewCap`, which put the persona at the
+review-session cap, is retired with the cap notice: owner rulings, Karl, 2026-10-21, on #1277,
+ruling 3.)
 
 QA2 (2026-10-08) adds three more. `expectInView` fails the capture unless an element's top edge
 is inside the viewport after the steps (the phone LISA panel brought into view by a tap).

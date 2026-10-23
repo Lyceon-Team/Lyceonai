@@ -27,6 +27,14 @@ export const GROUPS = {
   fixture_canonicality: ["scripts/ci/test-fixture-canonicality-gate."],
   guardian_dead_code: ["scripts/ci/guardian-dead-code-gate."],
   deps: ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "packages/shared/package.json", "apps/workers/tutor-orchestrator/package.json"],
+  // The Layer 2 crisis classifier: its prompt, its caller, its golden set, and the Layer 1 seed
+  // the golden set's must-trigger list is read from (CC Brief "P1: Stop False Crisis Positives").
+  crisis_classifier: [
+    "server/services/crisis-classifier-prompt.ts",
+    "server/services/tutor-crisis.ts",
+    "scripts/ci/crisis-classifier-golden-set.ts",
+    "supabase/migrations/20260917000001_layer1_crisis_pattern_seed_v1.sql",
+  ],
   question_tooling: [
     "scripts/assemble-batch.ts",
     "shared/question-ingestion-qa.ts",

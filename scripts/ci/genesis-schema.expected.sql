@@ -13185,6 +13185,78 @@ $$;
 
 
 --
+-- Name: review_admit_session_start(uuid, integer, text[], timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone DEFAULT now()) RETURNS uuid[]
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_to_close uuid[];
+  v_closed   uuid[];
+BEGIN
+  IF p_student_id IS NULL OR p_max_open IS NULL OR p_max_open < 1 THEN
+    RAISE EXCEPTION 'review_admit_session_start: a student and max_open >= 1 are required'
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM public.review_open_sessions_lock(p_student_id);
+
+  WITH open_sessions AS (
+    SELECT s.id, s.created_at,
+           EXISTS (
+             SELECT 1 FROM public.review_session_items i
+              WHERE i.session_id = s.id
+                AND i.question_id = ANY (COALESCE(p_question_ids, ARRAY[]::text[]))
+           ) AS holds
+      FROM public.review_sessions s
+     WHERE s.student_id = p_student_id
+       AND s.status IN ('created', 'active')
+  ),
+  kept AS (
+    -- The sessions holding none of the new session's questions, newest first: the newest
+    -- (max_open - 1) of them stay open, everything older is closed to make room.
+    SELECT id,
+           row_number() OVER (ORDER BY created_at DESC, id DESC) AS newest_rank
+      FROM open_sessions
+     WHERE NOT holds
+  )
+  SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) INTO v_to_close
+    FROM (
+      SELECT id FROM open_sessions WHERE holds
+      UNION
+      SELECT id FROM kept WHERE newest_rank >= p_max_open
+    ) c;
+
+  WITH closed AS (
+    UPDATE public.review_sessions s
+       SET status = 'abandoned',
+           abandoned_at = p_now,
+           completed_at = NULL,
+           updated_at = p_now,
+           filters = COALESCE(s.filters, '{}'::jsonb)
+                     || jsonb_build_object('active_session_item_id', NULL,
+                                           'client_instance_id', NULL,
+                                           'calculator_state', NULL)
+     WHERE s.id = ANY (v_to_close)
+     RETURNING s.id, s.created_at
+  )
+  SELECT COALESCE(array_agg(id ORDER BY created_at, id), ARRAY[]::uuid[]) INTO v_closed FROM closed;
+
+  RETURN v_closed;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) IS 'F-81 (owner rulings on #1277, Karl, 2026-10-21, ruling 2). Makes room for one NEW review session that will take p_question_ids: abandons every open review session of the student holding any of them, then the oldest of the rest (created_at, then id) until at most max_open - 1 stay open, as terminate does (abandoned_at set, completed_at NULL). Answered items stay; unanswered items'' queue entries were never changed, so they are back in the pool. Per-student advisory lock; idempotent. Service role only.';
+
+
+--
 -- Name: review_ask_completed_sessions(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -13372,6 +13444,18 @@ COMMENT ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id u
 
 
 --
+-- Name: review_open_sessions_lock(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_open_sessions_lock(p_student_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT pg_advisory_xact_lock(hashtextextended('review_open_sessions:' || p_student_id::text, 0));
+$$;
+
+
+--
 -- Name: review_queue_graduate(uuid, text, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -13471,6 +13555,34 @@ $$;
 --
 
 COMMENT ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) IS 'Ruled plan §3 ruling 12. The only writer of review_schedule entries. Takes the (student, question) advisory lock before reading, replays on (source_engine, source_item_id), supersedes the open entry, inserts the new one.';
+
+
+--
+-- Name: review_session_items_one_open_question(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_session_items_one_open_question() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM public.review_open_sessions_lock(NEW.student_id);
+  IF EXISTS (
+    SELECT 1
+      FROM public.review_session_items i
+      JOIN public.review_sessions s ON s.id = i.session_id
+     WHERE i.student_id = NEW.student_id
+       AND i.question_id = NEW.question_id
+       AND i.session_id <> NEW.session_id
+       AND s.status IN ('created', 'active')
+  ) THEN
+    RAISE EXCEPTION 'review_question_already_open'
+      USING ERRCODE = '23505',
+            DETAIL = 'This question is already in another open review session of the same student.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
 
 --
@@ -15511,6 +15623,78 @@ $_$;
 --
 
 COMMENT ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) IS 'Doc 06D §6.3 layer-coverage scan for a deleted profile. Catalog-driven: every uuid column of every base table in schema public is tested for the uuid, so detection does not depend on a maintained table list. The mastery and lisa layers ATTRIBUTE a hit by table-name convention; the identity layer is the whole-schema sweep and is what the outcome rests on. Only deletion_verification_records.deleted_profile_id is excluded — it exists to hold this uuid so the scan can be re-derived later.';
+
+
+--
+-- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.video_resources AS v
+    (video_id, title, channel_name, duration_seconds, status, last_checked_at,
+     skill_codes, domain, start_seconds, tagged_by, tagged_at)
+  VALUES (p_video_id, p_title, p_channel_name, p_duration_seconds, 'available', now(),
+          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now())
+  ON CONFLICT (video_id) DO UPDATE SET
+    title            = EXCLUDED.title,
+    channel_name     = EXCLUDED.channel_name,
+    duration_seconds = EXCLUDED.duration_seconds,
+    skill_codes      = EXCLUDED.skill_codes,
+    domain           = EXCLUDED.domain,
+    start_seconds    = EXCLUDED.start_seconds,
+    tagged_by        = EXCLUDED.tagged_by,
+    tagged_at        = EXCLUDED.tagged_at,
+    -- A changed tag set loses its approval; an unchanged one keeps it.
+    approved_by = CASE
+      WHEN (v.skill_codes, v.domain, v.start_seconds)
+           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+        THEN v.approved_by ELSE NULL END,
+    approved_at = CASE
+      WHEN (v.skill_codes, v.domain, v.start_seconds)
+           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+        THEN v.approved_at ELSE NULL END;
+$$;
+
+
+--
+-- Name: video_resources_approve(text[], uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resources_approve(p_video_ids text[], p_approver uuid) RETURNS integer
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH done AS (
+    UPDATE public.video_resources
+       SET approved_by = p_approver, approved_at = now()
+     WHERE video_id = ANY (p_video_ids)
+       AND cardinality(skill_codes) >= 1
+       AND p_approver IS NOT NULL
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM done;
+$$;
+
+
+--
+-- Name: video_resources_for_skills(text[], integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) RETURNS TABLE(video_id text, title text, channel_name text, duration_seconds integer, start_seconds integer)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT v.video_id, v.title, v.channel_name, v.duration_seconds, v.start_seconds
+  FROM public.video_resources v
+  WHERE v.status = 'available'
+    AND v.approved_by IS NOT NULL
+    AND v.skill_codes && p_skill_codes        -- GIN index: the skill filter, in the statement
+  ORDER BY v.duration_seconds, v.video_id     -- shortest first for a stuck student; stable
+  LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
+$$;
 
 
 --
@@ -19326,8 +19510,21 @@ CREATE TABLE public.video_resources (
     status text DEFAULT 'available'::text NOT NULL,
     last_checked_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    skill_codes text[] DEFAULT '{}'::text[] NOT NULL,
+    domain text,
+    start_seconds integer,
+    tagged_by text,
+    tagged_at timestamp with time zone,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    CONSTRAINT video_resources_approved_has_tags CHECK (((approved_by IS NULL) OR (cardinality(skill_codes) >= 1))),
+    CONSTRAINT video_resources_approved_pair CHECK (((approved_by IS NULL) = (approved_at IS NULL))),
+    CONSTRAINT video_resources_domain_check CHECK (((domain IS NULL) OR (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text, 'Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text])))),
     CONSTRAINT video_resources_duration_check CHECK ((duration_seconds > 0)),
+    CONSTRAINT video_resources_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
+    CONSTRAINT video_resources_start_check CHECK (((start_seconds IS NULL) OR ((start_seconds >= 0) AND (start_seconds < duration_seconds)))),
     CONSTRAINT video_resources_status_check CHECK ((status = ANY (ARRAY['available'::text, 'unavailable'::text]))),
+    CONSTRAINT video_resources_tagged_pair CHECK (((tagged_by IS NULL) = (tagged_at IS NULL))),
     CONSTRAINT video_resources_video_id_check CHECK ((video_id ~ '^[A-Za-z0-9_-]{11}$'::text))
 );
 
@@ -19336,7 +19533,7 @@ CREATE TABLE public.video_resources (
 -- Name: TABLE video_resources; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.video_resources IS 'Per-video facts for the LISA video card, joined at render time by the video id in curriculum_chunks.provenance. Service role only.';
+COMMENT ON TABLE public.video_resources IS 'Per-video facts and skill tags: the LISA video library (offered whole, by skill) and the render-time join for curriculum_chunks.provenance. Service role only.';
 
 
 --
@@ -21840,6 +22037,13 @@ CREATE UNIQUE INDEX uq_usage_rate_limit_ledger_dedupe ON public.usage_rate_limit
 
 
 --
+-- Name: video_resources_skills_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX video_resources_skills_idx ON public.video_resources USING gin (skill_codes);
+
+
+--
 -- Name: abuse_score_incidents abuse_score_incidents_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -22110,6 +22314,13 @@ CREATE TRIGGER review_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE O
 --
 
 CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.review_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
+
+
+--
+-- Name: review_session_items review_session_items_one_open_question; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER review_session_items_one_open_question BEFORE INSERT ON public.review_session_items FOR EACH ROW EXECUTE FUNCTION public.review_session_items_one_open_question();
 
 
 --
@@ -27055,6 +27266,14 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 
 --
+-- Name: FUNCTION review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION review_ask_completed_sessions(p_student_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -27093,6 +27312,14 @@ REVOKE ALL ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_i
 
 
 --
+-- Name: FUNCTION review_open_sessions_lock(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_open_sessions_lock(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_open_sessions_lock(p_student_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -27104,6 +27331,13 @@ REVOKE ALL ON FUNCTION public.review_queue_graduate(p_student_id uuid, p_questio
 --
 
 REVOKE ALL ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_session_items_one_open_question(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_session_items_one_open_question() FROM PUBLIC;
 
 
 --
@@ -27427,6 +27661,30 @@ GRANT ALL ON FUNCTION public.validate_memory_summary_schema() TO service_role;
 
 REVOKE ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resources_approve(p_video_ids text[], p_approver uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resources_approve(p_video_ids text[], p_approver uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resources_approve(p_video_ids text[], p_approver uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resources_for_skills(p_skill_codes text[], p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) TO service_role;
 
 
 --

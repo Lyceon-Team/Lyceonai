@@ -370,6 +370,59 @@ describe("F-72: above the student shell's phone tab bar (owner brief 2026-10-05)
     ).not.toContain("calc(");
   });
 
+  // F-72 (owner brief 2026-10-21, Part E): the real tab bar measures a fractional height
+  // (65.296875px at 390, harness COOKIE-BANNER); rounding it DOWN left the banner's bottom
+  // 0.3px inside the bar. The offset must never be less than the bar.
+  it("a fractional tab-bar height is rounded UP, so the banner never overlaps the bar", async () => {
+    await mountFresh();
+    let unmount = (): void => undefined;
+    await act(async () => {
+      unmount = await mountTabBar(65.296875);
+    });
+    expect(screen.getByTestId("cookie-banner").getAttribute("style")).toMatch(
+      /bottom: calc\(66px \+ env\(.*safe-area-inset-bottom/,
+    );
+    await act(async () => {
+      unmount();
+    });
+  });
+
+  // Owner brief "LISA chat dock" (Karl, 2026-10-22): the LISA bubble sits above the banner, read
+  // through the same measured mechanism (the `consent` layer); the banner itself still reads the
+  // tab bar only.
+  it("the banner and the GPC notice report their own height as the `consent` layer while shown", async () => {
+    const proto = HTMLElement.prototype;
+    const original = proto.getBoundingClientRect;
+    proto.getBoundingClientRect = function rect(this: HTMLElement) {
+      const id = this.dataset.testid;
+      return id === "cookie-banner" || id === "gpc-notice"
+        ? ({ height: 148.5 } as DOMRect)
+        : original.call(this);
+    };
+    try {
+      await mountFresh();
+      const chrome = await import("@/lib/bottom-chrome");
+      // Presence: the banner is on screen.
+      expect(screen.getByTestId("cookie-banner")).toBeTruthy();
+      expect(chrome.bottomChromeHeight(["consent"])).toBe(149);
+      // The banner's own offset is still the tab bar's alone (none here).
+      expect(chrome.bottomChromeHeight()).toBe(0);
+      expect(
+        screen.getByTestId("cookie-banner").getAttribute("style") ?? "",
+      ).not.toContain("calc(");
+      cleanup();
+      expect(chrome.bottomChromeHeight(["consent"])).toBe(0);
+
+      setGpc(true);
+      await mountFresh();
+      const gpcChrome = await import("@/lib/bottom-chrome");
+      expect(screen.getByTestId("gpc-notice")).toBeTruthy();
+      expect(gpcChrome.bottomChromeHeight(["consent"])).toBe(149);
+    } finally {
+      proto.getBoundingClientRect = original;
+    }
+  });
+
   it("the GPC notice takes the same offset", async () => {
     setGpc(true);
     await mountFresh();

@@ -22,6 +22,7 @@
 import type { PromptArtifact } from "./types.js";
 import { LISA_DEFAULT_V1 } from "./lisa-default-v1.js";
 import { LISA_DEFAULT_V2 } from "./lisa-default-v2.js";
+import { LISA_DEFAULT_V3 } from "./lisa-default-v3.js";
 import { logEvent } from "../lib/vertex-client.js";
 
 // ── Artifact registry (loaded at bootstrap per §4.3) ────────────────
@@ -30,23 +31,24 @@ import { logEvent } from "../lib/vertex-client.js";
 const ARTIFACTS_BY_VERSION: ReadonlyMap<string, PromptArtifact> = new Map([
   [LISA_DEFAULT_V1.version, LISA_DEFAULT_V1],
   [LISA_DEFAULT_V2.version, LISA_DEFAULT_V2],
+  [LISA_DEFAULT_V3.version, LISA_DEFAULT_V3],
 ]);
 
 /** Latest artifact version per policy variant (Doc 03A §11.4). */
 const LATEST_BY_VARIANT: ReadonlyMap<string, PromptArtifact> = new Map([
-  ["default", LISA_DEFAULT_V2],
+  ["default", LISA_DEFAULT_V3],
   // V1 starter set per Doc 03A §11.4 — all four variants resolve to the
   // same artifact. When variant-specific artifacts are authored, each entry
-  // points to its own artifact. v2 (2026-09-25, W3-2) is the latest; v1 stays
-  // resolvable by exact version for attribution.
-  ["scaffolded", LISA_DEFAULT_V2],
-  ["socratic", LISA_DEFAULT_V2],
-  ["concise", LISA_DEFAULT_V2],
-  ["strategy_first", LISA_DEFAULT_V2],
+  // points to its own artifact. v3 (2026-10-15, video library: v2 + the video
+  // offer) is the latest; v1 and v2 stay resolvable by exact version for attribution.
+  ["scaffolded", LISA_DEFAULT_V3],
+  ["socratic", LISA_DEFAULT_V3],
+  ["concise", LISA_DEFAULT_V3],
+  ["strategy_first", LISA_DEFAULT_V3],
 ]);
 
 /** The absolute fallback artifact — used when both variant and version miss. */
-const FALLBACK_ARTIFACT: PromptArtifact = LISA_DEFAULT_V2;
+const FALLBACK_ARTIFACT: PromptArtifact = LISA_DEFAULT_V3;
 
 // ── Public API ──────────────────────────────────────────────────────
 

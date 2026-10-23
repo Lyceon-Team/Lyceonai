@@ -67,6 +67,13 @@ const PORT = Number(process.env.HARNESS_PORT ?? "5056");
  * every other run, so their pages and payloads do not change.
  */
 const BARE_PAGES = process.env.STUDENT_HARNESS_SEED === "bare-pages";
+/**
+ * Owner brief "LISA chat dock" (Karl, 2026-10-22): the dock's group and browser spec need, in one
+ * run, the review history (Review's queue and a review runner session), the exam history (a live
+ * timed module, where the dock must never appear) and the LISA history (the conversation the dock
+ * opens on in general mode). Each is the existing seed, unchanged.
+ */
+const LISA_DOCK = process.env.STUDENT_HARNESS_SEED === "lisa-dock";
 if (BARE_PAGES) process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";
 // The Home QOTD's option tokens are an HMAC under the public secret (option-tokens.ts); a
 // throwaway value here, never a real one.
@@ -323,15 +330,17 @@ async function main(): Promise<void> {
   const server = app.listen(PORT, () => {
     void seedPracticeHistory(`http://localhost:${PORT}`, {
       // capture.ts passes the group's `seed` (groups/types.ts); only UI-52 asks for this.
-      reviewHistory: process.env.STUDENT_HARNESS_SEED === "review-history",
+      reviewHistory:
+        process.env.STUDENT_HARNESS_SEED === "review-history" || LISA_DOCK,
       // UI-54: a scored and an in-progress full-length test for the paid student.
-      examHistory: process.env.STUDENT_HARNESS_SEED === "exam-history",
+      examHistory:
+        process.env.STUDENT_HARNESS_SEED === "exam-history" || LISA_DOCK,
       // UI-55: the paid student's SAT date inside the current week (the starred test day).
       calendarGoal: process.env.STUDENT_HARNESS_SEED === "calendar-goal",
     })
       .then(async (seeded) => {
         // UI-56: the paid student's LISA history (seed.ts `seedLisaHistory`).
-        if (process.env.STUDENT_HARNESS_SEED === "lisa-history") {
+        if (process.env.STUDENT_HARNESS_SEED === "lisa-history" || LISA_DOCK) {
           seeded.paid.lisaConversationId = await seedLisaHistory(
             `http://localhost:${PORT}`,
             pg,

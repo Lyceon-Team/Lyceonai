@@ -44,15 +44,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
@@ -84,10 +76,6 @@ import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { practiceAdapter } from "../../../server/services/calendar/adapters/practice";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
 import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
-import {
-  capTables,
-  reviewCapRefusal,
-} from "@/components/review/review-cap.fixture";
 import LyceonDashboard from "./lyceon-dashboard";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
@@ -146,18 +134,13 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: () => undefined }),
 }));
 
-// The server modules the producers import reach for a database; only the review cap's producer
-// reads one, through `db.from`, while its refusal is built (QA2-A, review-cap.fixture.ts).
-const db = vi.hoisted(() => ({
-  from: null as null | ((table: string) => unknown),
-}));
+// The server modules the producers import reach for a database; none is read in this test.
 vi.mock("../../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     rpc: () => {
       throw new Error("no database in this test");
     },
-    from: (table: string) => {
-      if (db.from !== null) return db.from(table);
+    from: () => {
       throw new Error("no database in this test");
     },
   },
@@ -2049,33 +2032,9 @@ describe("QA item 15: one empty-day sentence", () => {
   });
 });
 
-// ── Owner re-test (Karl, 2026-10-08) item A: the review cap ───────────────────────────────────
+// ── The review cap notice: RETIRED (owner rulings, Karl, 2026-10-21, on #1277, ruling 3) ──────
 
-describe("QA2-A: a recent session's review start, refused by the review cap, is answered at that row", () => {
-  /** The real producer's cap refusal (review-cap.fixture.ts). */
-  let CAP_BODY: Record<string, unknown>;
-  beforeAll(async () => {
-    db.from = capTables;
-    try {
-      CAP_BODY = (await reviewCapRefusal()).body;
-    } finally {
-      db.from = null;
-    }
-  });
-
-  let scrolled: ReturnType<typeof vi.fn>;
-  beforeEach(() => {
-    scrolled = vi.fn();
-    Object.defineProperty(Element.prototype, "scrollIntoView", {
-      configurable: true,
-      writable: true,
-      value: scrolled,
-    });
-  });
-  afterEach(() => {
-    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-  });
-
+describe("F-81: a recent session's refused review start is a plain failure line; there is no cap notice", () => {
   function refuseCreate(body: unknown, status: number): void {
     net.handlers.unshift((url, init) =>
       init?.method === "POST" && url === "/api/review/sessions"
@@ -2094,50 +2053,33 @@ describe("QA2-A: a recent session's review start, refused by the review cap, is 
     return first;
   }
 
-  it.each([403, 409])(
-    "refused with %i: the message directly under the pressed row, scrolled into view; Continue opens the open session",
-    async (status) => {
-      const { history } = await mount("paid", { calendar: "ready" });
-      expect(CAP_BODY.code).toBe("SESSION_LIMIT_EXCEEDED");
-      refuseCreate(CAP_BODY, status);
-      const pressed = await pressFirstRecent();
-      const cap = await screen.findByTestId("review-cap");
-      expect(screen.getAllByTestId("review-cap")).toHaveLength(1);
-      expect(cap.textContent).toContain("Too many open review sessions");
-      expect(cap.textContent).toContain(String(CAP_BODY.message));
-      // At the pressed row: the list item right after it holds the notice.
-      const row = pressed.closest("li");
-      expect(row?.nextElementSibling?.contains(cap)).toBe(true);
-      expect(row?.nextElementSibling?.getAttribute("data-testid")).toBe(
-        "home-recent-cap",
-      );
-      // Not the old red line under the whole list.
-      expect(
-        within(screen.getByTestId("home-recent")).queryByRole("alert"),
-      ).toBeNull();
-      // Never below the fold.
-      expect(scrolled.mock.contexts).toContain(cap.parentElement);
-      // The row is not left pending.
-      expect(pressed.textContent).toBe("Review this session");
-
-      fireEvent.click(
-        within(cap).getByRole("button", { name: "Continue your open session" }),
-      );
-      expect(history.at(-1)).toBe(`/review/session/${REVIEW_ID}`);
-    },
-  );
-
-  it("End a session goes to Review's open sessions, focused there", async () => {
-    const { history } = await mount("paid", { calendar: "ready" });
-    refuseCreate(CAP_BODY, 409);
-    await pressFirstRecent();
-    const cap = await screen.findByTestId("review-cap");
-    fireEvent.click(within(cap).getByRole("button", { name: "End a session" }));
-    expect(history.at(-1)).toBe("/review?focus=open-sessions");
+  it("an old server's cap refusal is the plain failure line in its words, with no cap notice or actions", async () => {
+    await mount("paid", { calendar: "ready" });
+    refuseCreate(
+      {
+        error: "session_limit_exceeded",
+        code: "SESSION_LIMIT_EXCEEDED",
+        message:
+          "You already have 5 open review sessions. Finish or end one first.",
+        maxConcurrentSessions: 5,
+      },
+      403,
+    );
+    const pressed = await pressFirstRecent();
+    const recent = screen.getByTestId("home-recent");
+    expect((await within(recent).findByRole("alert")).textContent).toBe(
+      "You already have 5 open review sessions. Finish or end one first.",
+    );
+    expect(screen.queryByTestId("review-cap")).toBeNull();
+    expect(screen.queryByTestId("home-recent-cap")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Continue your open session" }),
+    ).toBeNull();
+    expect(pressed.textContent).toBe("Review this session");
   });
 
   it.each([403, 409])(
-    "a different refusal under %i is not the cap: the plain failure line, no cap actions",
+    "a refusal under %i: the plain failure line, no cap actions",
     async (status) => {
       await mount("paid", { calendar: "ready" });
       refuseCreate(
