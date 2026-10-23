@@ -192,9 +192,16 @@ function normalize(text: string): string {
 /**
  * Pure. Where `quote` occurs in `text` within [from, to): [start, end) offsets of the match in
  * the ORIGINAL text, or null. `last` picks the last occurrence in the range instead of the
- * first. A quote that normalizes to fewer than 12 characters is refused (too short to place one
- * boundary unambiguously).
+ * first. A quote that normalizes to fewer than 12 characters is accepted only when it occurs
+ * exactly once in the range, and never below 5: OCR markdown makes short heading quotes normal
+ * ("### B. Two Dashes" is 10, "#### Their" 5; 23 of the Meltzer headings are under 12), and one
+ * occurrence places the boundary unambiguously however short it is.
  */
+/** Normalized length from which a quote places a boundary by itself; below it, only if unique. */
+const UNAMBIGUOUS_QUOTE = 12;
+/** Normalized length below which a quote is refused even when unique. */
+const SHORT_QUOTE_FLOOR = 5;
+
 export function locateQuote(
   text: string,
   quote: string,
@@ -202,12 +209,14 @@ export function locateQuote(
   opts: { to?: number; last?: boolean } = {},
 ): { start: number; end: number } | null {
   const q = normalize(quote);
-  if (q.length < 12) return null;
+  if (q.length < SHORT_QUOTE_FLOOR) return null;
   const to = opts.to ?? text.length;
   const { norm, map } = normalizeWithMap(text);
   const fromNorm = map.findIndex((o) => o >= from);
   if (fromNorm === -1) return null;
   let found = -1;
+  let count = 0;
+  const short = q.length < UNAMBIGUOUS_QUOTE;
   for (
     let at = norm.indexOf(q, fromNorm);
     at !== -1;
@@ -215,10 +224,11 @@ export function locateQuote(
   ) {
     const last = map[at + q.length - 1];
     if (last === undefined || last >= to) break;
-    found = at;
-    if (opts.last !== true) break;
+    count += 1;
+    if (count === 1 || opts.last === true) found = at;
+    if (opts.last !== true && !short) break;
   }
-  if (found === -1) return null;
+  if (found === -1 || (short && count !== 1)) return null;
   const start = map[found];
   const last = map[found + q.length - 1];
   if (start === undefined || last === undefined) return null;

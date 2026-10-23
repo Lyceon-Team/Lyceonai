@@ -103,6 +103,25 @@ describe("boundaries", () => {
     expect(locateQuote(text, "beta")).toBeNull(); // too short to place a boundary
   });
 
+  it("accepts a short heading quote only when it occurs once in the range", () => {
+    const text =
+      "### A. Two Commas\nThe first rule.\n\n### B. Two Dashes\nThe second rule.\n\n### B. Two Items\nx\n\n### B. Two Items\ny";
+    // 10 characters, once: placed.
+    const d = locateQuote(text, "B. Two Dashes");
+    expect(text.slice(d?.start, d?.end)).toBe("B. Two Dashes");
+    // 9 characters, twice in the range: ambiguous, refused.
+    expect(locateQuote(text, "B. Two Items")).toBeNull();
+    // ...but once after the first of them: placed at the second.
+    const second = text.lastIndexOf("### B. Two Items");
+    expect(locateQuote(text, "B. Two Items", second)?.start).toBe(second + 4);
+    // the range end counts: once before `to`, so placed even with `last`.
+    expect(
+      locateQuote(text, "B. Two Items", 0, { to: second, last: true })?.start,
+    ).toBe(text.indexOf("B. Two Items"));
+    // a 12+ character quote that recurs is still placed (first, or last with `last`).
+    expect(locateQuote(text, "### B. Two Items x", 0)).not.toBeNull();
+  });
+
   it("an end phrase that recurs inside the unit ends the unit at its LAST occurrence", () => {
     const b = new BookText([SPLICE]);
     const [rule, example] = locateUnits(b, 0, b.text.length, [
