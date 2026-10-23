@@ -13,8 +13,9 @@
  * credentials: attached by the session's egress proxy (or ADC on a workstation); nothing is
  *  read from the environment, and fetch must go through the proxy (NODE_USE_ENV_PROXY=1).
  *
- * transport: Gemini is called on streamGenerateContent (SSE) and the events folded into one
- *  response, because the egress proxy cuts a request that is silent for 30 s.
+ * transport: Gemini is called on streamGenerateContent (SSE) with thought summaries streamed,
+ *  and the answer's events folded into one response, because the egress proxy cuts a request
+ *  that is silent for 30 s and a long think is otherwise silent.
  *
  * edge cases: 429 and 5xx retry with backoff (6 tries, 5 s doubling, jitter); anything else, or a response that
  *  fails its schema, throws with the status and the step name. Response bodies are not
@@ -38,7 +39,7 @@ export function assertProxied(): void {
 
 /**
  * Pure. A streamGenerateContent (alt=sse) body folded into one generateContent response: the
- * text parts of every event joined in order, the last finishReason and the last usageMetadata
+ * answer's text parts of every event joined in order (thought-summary parts left out), the last finishReason and the last usageMetadata
  * (Vertex sends the totals on the final event). Throws when the body holds no event, so a
  * truncated or non-SSE 200 is retried like a non-JSON one.
  */
@@ -55,7 +56,12 @@ export function foldSse(text: string): unknown {
           content: z
             .object({
               parts: z
-                .array(z.object({ text: z.string().optional() }))
+                .array(
+                  z.object({
+                    text: z.string().optional(),
+                    thought: z.boolean().optional(),
+                  }),
+                )
                 .optional(),
             })
             .optional(),
@@ -71,7 +77,8 @@ export function foldSse(text: string): unknown {
   for (const raw of events) {
     const e = eventSchema.parse(raw);
     const c = e.candidates?.[0];
-    for (const part of c?.content?.parts ?? []) out += part.text ?? "";
+    for (const part of c?.content?.parts ?? [])
+      if (part.thought !== true) out += part.text ?? "";
     finishReason = c?.finishReason ?? finishReason;
     usageMetadata = e.usageMetadata ?? usageMetadata;
   }
@@ -261,10 +268,13 @@ export async function generateJson<T>(opts: {
             },
           },
         ];
-  // Streamed: the egress proxy ends a request that sends nothing for 30 s with a 502
-  // "upstream request failed" (measured 2026-10-23: a 3,000-word segment window at full
-  // reasoning failed at 30.4 s on generateContent six times in six, and returned in 38 s on
-  // streamGenerateContent). The events are folded back into one response (foldSse).
+  // Streamed, with thought summaries: the egress proxy ends a request that sends nothing for
+  // 30 s with a 502 "upstream request failed". Streaming alone is not enough, because the
+  // first event waits for the thinking to finish (measured 2026-10-23 on a 3,300-word segment
+  // window at full reasoning: 502 at 30.5 s streamed without thoughts; with includeThoughts
+  // the first byte came at 2.1 s, the longest silence was 1.5 s and the answer at 40 s).
+  // The summaries are dropped and the events folded back into one response (foldSse); the
+  // thinking itself, and its billing, is the same either way.
   const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/global/publishers/google/models/${opts.model}:streamGenerateContent?alt=sse`;
   // A response with no usable candidate (no content parts) is retried twice before it fails;
   // the failure names the finishReason, so a blocked answer is told apart from a blip.
@@ -299,9 +309,12 @@ export async function generateJson<T>(opts: {
           temperature: 0,
           responseMimeType: "application/json",
           responseSchema: opts.responseSchema,
-          ...(opts.thinking === undefined
-            ? {}
-            : { thinkingConfig: { thinkingLevel: opts.thinking } }),
+          thinkingConfig: {
+            includeThoughts: true,
+            ...(opts.thinking === undefined
+              ? {}
+              : { thinkingLevel: opts.thinking }),
+          },
         },
       },
       opts.step,

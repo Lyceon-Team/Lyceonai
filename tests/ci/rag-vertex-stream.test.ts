@@ -3,7 +3,8 @@
  *
  * plain English: foldSse in scripts/rag/vertex.ts turns a streamGenerateContent (alt=sse) body
  * back into the one-response shape generateJson parses. The fixture is a real Vertex stream
- * (gemini-3.5-flash, captured 2026-10-23): six events, the JSON text split across five, the
+ * (gemini-3.5-flash, includeThoughts, captured 2026-10-23): ten events, three thought
+ * summaries (thought: true) that must be left out, then the JSON text split across six, the
  * finishReason and full usage only on the last; the earlier events carry a usageMetadata of
  * {trafficType} alone, which must not win.
  */
@@ -18,8 +19,9 @@ const BODY = readFileSync(
 );
 
 describe("foldSse", () => {
-  it("joins the text of every event, in order, into one JSON answer", () => {
-    expect(BODY.split("\n").filter((l) => l.startsWith("data:")).length).toBe(6);
+  it("joins the answer text of every event, in order, without the thoughts", () => {
+    expect(BODY.split("\n").filter((l) => l.startsWith("data:")).length).toBe(10);
+    expect(BODY).toContain('"thought": true');
     const folded = foldSse(BODY) as {
       candidates: { content: { parts: { text: string }[] }; finishReason?: string }[];
     };
@@ -28,15 +30,16 @@ describe("foldSse", () => {
       colors: string[];
     };
     expect(answer.colors.length).toBeGreaterThan(20);
+    expect(folded.candidates[0]?.content.parts[0]?.text.startsWith('{"colors":')).toBe(true);
     expect(answer.colors[0]).toBe("Red");
     expect(folded.candidates[0]?.finishReason).toBe("STOP");
   });
 
   it("keeps the final event's usage, not an earlier partial one", () => {
     const folded = foldSse(BODY) as { usageMetadata?: Record<string, unknown> };
-    expect(folded.usageMetadata?.promptTokenCount).toBe(69);
-    expect(folded.usageMetadata?.candidatesTokenCount).toBe(95);
-    expect(folded.usageMetadata?.thoughtsTokenCount).toBe(317);
+    expect(folded.usageMetadata?.promptTokenCount).toBeGreaterThan(0);
+    expect(folded.usageMetadata?.candidatesTokenCount).toBeGreaterThan(0);
+    expect(folded.usageMetadata?.thoughtsTokenCount).toBe(1377);
   });
 
   it("throws on a body with no events, so a non-SSE 200 is retried", () => {
