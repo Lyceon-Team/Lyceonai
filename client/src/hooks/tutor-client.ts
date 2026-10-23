@@ -33,6 +33,10 @@ import type {
   ConversationSummary,
   ListConversationsResponse,
 } from "@lyceon/shared/tutor-lifecycle-schema";
+import {
+  tutorTurnTimingSchema,
+  type TutorTurnTiming,
+} from "@lyceon/shared/tutor-turn-timing-schema";
 import { apiRequest } from "@/lib/queryClient";
 import { type HttpApiError } from "@/lib/api-error";
 
@@ -180,11 +184,12 @@ const TUTOR_API_BASE = "/api/tutor";
 
 async function tutorRequest<T>(
   path: string,
-  init?: { method?: string; body?: unknown },
+  init?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<T> {
   const res = await apiRequest(`${TUTOR_API_BASE}${path}`, {
     method: init?.method ?? "GET",
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    ...(init?.headers !== undefined ? { headers: init.headers } : {}),
   });
   const payload = (await res.json()) as { data: T };
   return payload.data;
@@ -227,18 +232,29 @@ export function useCreateConversation(): UseMutationResult<
   });
 }
 
+/**
+ * The send's variables: the body, plus (P2 H1) the id the client gives the request. It goes as
+ * `X-Request-Id`, which the server adopts as the request's id (server/middleware/request-id.ts),
+ * so the turn's `route_timing` line and the client's turn-timing beacon share it. Never in the
+ * body.
+ */
+export type SendMessageVariables = SendMessageInput & { request_id?: string };
+
 export function useSendMessage(): UseMutationResult<
   SendMessageResponse,
   HttpApiError,
-  SendMessageInput
+  SendMessageVariables
 > {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: SendMessageInput) =>
+    mutationFn: ({ request_id, ...input }: SendMessageVariables) =>
       tutorRequest<SendMessageResponse>("/messages", {
         method: "POST",
         body: input,
+        ...(request_id !== undefined
+          ? { headers: { "X-Request-Id": request_id } }
+          : {}),
       }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
@@ -246,6 +262,28 @@ export function useSendMessage(): UseMutationResult<
       });
       queryClient.invalidateQueries({
         queryKey: tutorConversationsQueryKey,
+      });
+    },
+  });
+}
+
+/**
+ * @spec [owner brief "P2 Revised" (Karl, 2026-10-23) §2 H1 (time-to-first-visible-text)]
+ * | @implemented [2026-10-23]
+ * plain English: posts one reply turn's timing (packages/shared tutor-turn-timing-schema) to
+ * /api/perf/tutor-turn. Fire and forget: a failed report leaves the turn exactly as it was, and
+ * the mutation's error state is the record of it. Numbers and the send's request id only.
+ */
+export function useTurnTimingReport(): UseMutationResult<
+  void,
+  HttpApiError,
+  TutorTurnTiming
+> {
+  return useMutation({
+    mutationFn: async (timing: TutorTurnTiming) => {
+      await apiRequest("/api/perf/tutor-turn", {
+        method: "POST",
+        body: JSON.stringify(tutorTurnTimingSchema.parse(timing)),
       });
     },
   });

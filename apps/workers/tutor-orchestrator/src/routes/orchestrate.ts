@@ -75,8 +75,10 @@ import {
   orchestrateRequestSchema,
   type OrchestrateRequest,
   type OrchestrateResponse,
+  type OrchestrationTiming,
 } from "../lib/schema.js";
 import {
+  VertexAttemptTimings,
   generateTutorResponse,
   logEvent,
   type ModelAlias,
@@ -303,6 +305,7 @@ export function buildOrchestrateResponse(
   vertexResponse: VertexResponse,
   request: OrchestrateRequest,
   promptVersion: string,
+  timing?: OrchestrationTiming,
 ): OrchestrateResponse {
   // Worker-side anti-leak scan: fires PRE-SUBMIT ONLY (defense-in-depth).
   // Post-submit the model is EXPECTED to discuss the answer — suppressing it
@@ -381,6 +384,7 @@ export function buildOrchestrateResponse(
       prompt_version: promptVersion,
       cache_used: false,
       compaction_recommended: isCompactionRecommended(request),
+      ...(timing !== undefined ? { timing } : {}),
     },
     learner_observation: null,
   };
@@ -424,6 +428,9 @@ function mapVertexErrorToStatus(code: VertexErrorCode): number {
 // this worker trusts the boundary, never re-derives role/entitlement state.
 
 orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
+  // P2 H1 (Karl, 2026-10-23): numbers-only timings returned in orchestration_meta.timing.
+  const workerStartedAt = performance.now();
+  const vertexTimings = new VertexAttemptTimings(workerStartedAt);
   const parsed = orchestrateRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -475,6 +482,7 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
       maxOutputTokens: request.runtime_limits.max_output_tokens,
       timeoutMs: request.runtime_limits.timeout_ms,
     },
+    vertexTimings,
   );
 
   if (!result.ok) {
@@ -499,6 +507,10 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
     result.value,
     request,
     promptVersion,
+    {
+      worker_ms: Math.round((performance.now() - workerStartedAt) * 10) / 10,
+      vertex_attempts: vertexTimings.attempts,
+    },
   );
   res.status(200).json(response);
 });
