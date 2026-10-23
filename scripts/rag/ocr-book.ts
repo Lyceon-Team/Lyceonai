@@ -24,7 +24,9 @@
  * re-run is free and identical.
  *
  * Usage: NODE_USE_ENV_PROXY=1 pnpm exec tsx scripts/rag/ocr-book.ts --pdf <file> --slug <slug>
- *        [--pages 3-5] [--model gemini-3.5-flash] [--dpi 200]
+ *        [--pages 3-5] [--out ocr] [--dpi 200]
+ *        [--transcribe-model M] [--transcribe-thinking default|MINIMAL|LOW|MEDIUM|HIGH]
+ *        [--labels-model M] [--labels-thinking ...]
  */
 import { execFileSync } from "node:child_process";
 import {
@@ -232,12 +234,24 @@ export function parsePages(spec: string, max: number): number[] {
 
 /**
  * The configuration each stage runs on (CC Brief "Tune the Book Pipeline for Cost", Karl,
- * 2026-10-23). Transcription and the label list are reading, not reasoning; the defaults are
- * the cheapest configuration measured to reproduce the accepted extraction exactly.
+ * 2026-10-23). Transcription and the label list are reading, not reasoning. Measured on the
+ * 30-page Meltzer guide against the accepted extraction (scripts/rag/ocr-compare.ts):
+ *  - transcription, gemini-3.5-flash at its default thinking: $0.025/page, about 1,300 thinking
+ *    tokens per page. At LOW: $0.008/page. Labels identical (148), layout pages exact, and
+ *    where grammar-point emphasis differs from the accepted text, the page image showed LOW
+ *    right (black bold the accepted run dropped) or the difference was the same punctuation-at-
+ *    the-edge variation a re-run of the default configuration shows. It writes straight
+ *    quotes where the default often wrote curly ones (same count). MINIMAL ($0.007/page) was
+ *    rejected: it adds underlines that are not on the page and doubles quote marks.
+ *    gemini-3.1-flash-lite transcription ($0.001/page) was rejected: it drops and invents
+ *    grammar points (16 pages).
+ *  - label check, gemini-3.1-flash-lite (no thinking): $0.0006/page, against $0.012 on flash.
+ *    Its reading agrees with the accepted labels on all 30 pages, and flipping any one of
+ *    the 148 accepted labels is caught by the guard (148/148).
  */
 export const TRANSCRIBE_MODEL = GENERATION_MODEL_DEFAULT;
-export const TRANSCRIBE_THINKING = "default";
-export const LABELS_MODEL = GENERATION_MODEL_DEFAULT;
+export const TRANSCRIBE_THINKING = "LOW";
+export const LABELS_MODEL = "gemini-3.1-flash-lite";
 export const LABELS_THINKING = "default";
 
 type StageConfig = { model: string; thinking: ThinkingLevel | undefined };
@@ -410,6 +424,8 @@ async function main(): Promise<void> {
         transcribe: tUsage,
         labels: lUsage,
       };
+    // Written after every page, so a run that dies part-way keeps what it measured.
+    if (fresh) writeFileSync(metricsPath, JSON.stringify(metrics, null, 1));
     const ms = metrics[mkey]?.ms ?? 0;
     tUsage = metrics[mkey]?.transcribe ?? tUsage;
     lUsage = metrics[mkey]?.labels ?? lUsage;
