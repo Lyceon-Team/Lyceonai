@@ -85,6 +85,8 @@ import {
   embedTexts,
   generateJson,
   usageCostUsd,
+  EMBEDDING_DIMENSIONS,
+  EMBEDDING_MODEL,
 } from "./vertex";
 
 export const WINDOW_WORDS = 3_000;
@@ -299,16 +301,27 @@ async function main(): Promise<void> {
   const rewriteSchema = rewriteSchemaFor(skills);
 
   let usage: Usage = ZERO_USAGE;
-  const onUsage = (u: Usage): void => {
-    usage = addUsage(usage, u);
-  };
+  // Per stage as well as in total, so the report shows where the money goes.
+  const byStage = new Map<string, Usage>();
+  const onStage =
+    (stage: string) =>
+    (u: Usage): void => {
+      usage = addUsage(usage, u);
+      byStage.set(stage, addUsage(byStage.get(stage) ?? ZERO_USAGE, u));
+    };
 
   const pages = extractPages(pdf);
   const book = new BookText(pages);
   process.stdout.write(
     `${pdf}: ${pages.length} pages, ${wordCount(book.text)} words after furniture\n`,
   );
-  const seg = await segmentBook(book, dir, model, windowWords, onUsage);
+  const seg = await segmentBook(
+    book,
+    dir,
+    model,
+    windowWords,
+    onStage("segment"),
+  );
 
   const chapterNos = resolveChapters(seg.units);
   const chapters = new Map<LocatedUnit, number>(
@@ -376,7 +389,7 @@ async function main(): Promise<void> {
               user,
               responseSchema: rewriteResponseSchema(skills),
               schema: rewriteSchema,
-              onUsage,
+              onUsage: onStage(attempt === 0 ? "rewrite" : "rewrite (repair)"),
             }),
         )
       ).value;
@@ -412,7 +425,7 @@ async function main(): Promise<void> {
               user: auditUser,
               responseSchema: auditResponseSchema,
               schema: auditSchema,
-              onUsage,
+              onUsage: onStage(attempt === 0 ? "audit" : "audit (repair)"),
             }),
         )
       ).value;
@@ -467,14 +480,29 @@ async function main(): Promise<void> {
   if (new Set(provenance).size !== provenance.length)
     throw new Error("provenance collision; nothing written");
 
-  const vectors =
-    chunks.length === 0
+  // Embeddings are cached by model and content hash like every model answer, so a re-run
+  // embeds only chunks whose text changed (text-embedding-005 returns identical vectors for
+  // identical text; measured 2026-10-22).
+  const vecDir = resolve(dir, "embeddings");
+  mkdirSync(vecDir, { recursive: true });
+  const vecPath = (c: BookChunk): string =>
+    resolve(vecDir, `${sha256(`${EMBEDDING_MODEL}\u0000${c.content}`)}.json`);
+  const vectorSchema = z.array(z.number()).length(EMBEDDING_DIMENSIONS);
+  const missing = chunks.filter((c) => !existsSync(vecPath(c)));
+  const fresh =
+    missing.length === 0
       ? []
       : await embedTexts(
-          chunks.map((c) => c.content),
+          missing.map((c) => c.content),
           "RETRIEVAL_DOCUMENT",
         );
-  const embedChars = chunks.reduce((n, c) => n + c.content.length, 0);
+  missing.forEach((c, i) =>
+    writeFileSync(vecPath(c), JSON.stringify(fresh[i] ?? [])),
+  );
+  const vectors = chunks.map((c) =>
+    vectorSchema.parse(JSON.parse(readFileSync(vecPath(c), "utf8"))),
+  );
+  const embedChars = missing.reduce((n, c) => n + c.content.length, 0);
 
   writeFileSync(
     resolve(dir, "chunks.jsonl"),
@@ -544,8 +572,15 @@ async function main(): Promise<void> {
     "",
     "## Cost",
     "",
+    "| stage | calls | input | output | of which thinking | USD |",
+    "|---|---|---|---|---|---|",
+    ...[...byStage].map(
+      ([k, u]) =>
+        `| ${k} | ${u.calls} | ${u.prompt} | ${u.output} | ${u.thoughts} | $${u.usd.toFixed(4)} |`,
+    ),
+    "",
     `- generation: ${usage.calls} calls, ${usage.prompt} prompt tokens (${usage.cached} cached), ${usage.output} output tokens: $${genCost.toFixed(3)} (cached answers cost nothing and are not counted)`,
-    `- embedding: ${chunks.length} chunks, ${embedChars} characters: $${embedCost.toFixed(4)} at $${EMBED_PRICE_PER_MCHAR}/1M characters (unverified list price)`,
+    `- embedding: ${missing.length} of ${chunks.length} chunks embedded (the rest cached), ${embedChars} characters: $${embedCost.toFixed(4)} at $${EMBED_PRICE_PER_MCHAR}/1M characters (unverified list price)`,
     "",
   ].join("\n");
   writeFileSync(resolve(dir, "report.md"), report);

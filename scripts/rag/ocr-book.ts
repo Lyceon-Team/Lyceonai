@@ -43,6 +43,7 @@ import { BOOK_SLUG_RE, sha256 } from "./book";
 import { CACHE_DIR } from "./fetch-transcripts";
 import {
   GENERATION_MODEL_DEFAULT,
+  type ThinkingLevel,
   type Usage,
   ZERO_USAGE,
   usageSchema,
@@ -229,6 +230,37 @@ export function parsePages(spec: string, max: number): number[] {
   return [...out].sort((x, y) => x - y);
 }
 
+/**
+ * The configuration each stage runs on (CC Brief "Tune the Book Pipeline for Cost", Karl,
+ * 2026-10-23). Transcription and the label list are reading, not reasoning; the defaults are
+ * the cheapest configuration measured to reproduce the accepted extraction exactly.
+ */
+export const TRANSCRIBE_MODEL = GENERATION_MODEL_DEFAULT;
+export const TRANSCRIBE_THINKING = "default";
+export const LABELS_MODEL = GENERATION_MODEL_DEFAULT;
+export const LABELS_THINKING = "default";
+
+type StageConfig = { model: string; thinking: ThinkingLevel | undefined };
+function stageConfig(
+  model: string | undefined,
+  thinking: string | undefined,
+): StageConfig {
+  const level = z
+    .enum(["default", "MINIMAL", "LOW", "MEDIUM", "HIGH"])
+    .parse(thinking ?? "default");
+  return {
+    model: z.string().min(1).parse(model),
+    thinking: level === "default" ? undefined : level,
+  };
+}
+function cacheTag(c: StageConfig): string {
+  return c.thinking === undefined ? c.model : `${c.model}\u0000${c.thinking}`;
+}
+function stageLine(us: Usage[]): string {
+  const u = us.reduce(addUsage, ZERO_USAGE);
+  return `${u.calls} calls, ${u.prompt} in / ${u.output - u.thoughts} out / ${u.thoughts} thinking tokens, $${u.usd.toFixed(4)} ($${(u.usd / Math.max(1, us.length)).toFixed(4)}/page)`;
+}
+
 async function cached<T>(
   dir: string,
   key: string,
@@ -250,6 +282,8 @@ async function cached<T>(
 }
 
 type PageResult = {
+  transcribeUsage: Usage;
+  labelsUsage: Usage;
   page: number;
   printed: number | null;
   ms: number;
@@ -266,17 +300,29 @@ async function main(): Promise<void> {
       pdf: { type: "string" },
       slug: { type: "string" },
       pages: { type: "string" },
-      model: { type: "string", default: GENERATION_MODEL_DEFAULT },
+      "transcribe-model": { type: "string", default: TRANSCRIBE_MODEL },
+      "transcribe-thinking": { type: "string", default: TRANSCRIBE_THINKING },
+      "labels-model": { type: "string", default: LABELS_MODEL },
+      "labels-thinking": { type: "string", default: LABELS_THINKING },
       dpi: { type: "string", default: "200" },
+      out: { type: "string", default: "ocr" },
     },
   });
   assertProxied();
   const pdf = z.string().min(1).parse(values.pdf);
   if (!existsSync(pdf)) throw new Error(`no such PDF: ${pdf}`);
   const slug = z.string().regex(BOOK_SLUG_RE).parse(values.slug);
-  const model = z.string().min(1).parse(values.model);
+  const transcribe = stageConfig(
+    values["transcribe-model"],
+    values["transcribe-thinking"],
+  );
+  const labels = stageConfig(values["labels-model"], values["labels-thinking"]);
   const dpi = z.coerce.number().int().min(72).max(400).parse(values.dpi);
-  const outDir = resolve(CACHE_DIR, `book-${slug}`, "ocr");
+  const outName = z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .parse(values.out);
+  const outDir = resolve(CACHE_DIR, `book-${slug}`, outName);
   const callDir = resolve(outDir, "calls");
   mkdirSync(outDir, { recursive: true });
 
@@ -299,7 +345,11 @@ async function main(): Promise<void> {
   // each page cost when it was read.
   const metricsPath = resolve(outDir, "metrics.json");
   const metricsSchema = z.record(
-    z.object({ ms: z.number(), usage: usageSchema }),
+    z.object({
+      ms: z.number(),
+      transcribe: usageSchema,
+      labels: usageSchema,
+    }),
   );
   const metrics = existsSync(metricsPath)
     ? metricsSchema.parse(JSON.parse(readFileSync(metricsPath, "utf8")))
@@ -309,42 +359,67 @@ async function main(): Promise<void> {
     const path = images.get(page);
     if (path === undefined) throw new Error(`page ${page} did not render`);
     const data = readFileSync(path);
-    const key = `${model}\u0000${sha256(data.toString("base64"))}`;
-    let usage: Usage = ZERO_USAGE;
-    const onUsage = (u: Usage): void => {
-      usage = addUsage(usage, u);
-    };
+    const image = sha256(data.toString("base64"));
+    // The default configuration keeps the key shape the accepted run was cached under.
+    const tKey = `transcribe\u0000${cacheTag(transcribe)}\u0000${image}`;
+    const lKey = `labels\u0000${cacheTag(labels)}\u0000${image}`;
+    let tUsage: Usage = ZERO_USAGE;
+    let lUsage: Usage = ZERO_USAGE;
     const started = Date.now();
     const [t, l] = await Promise.all([
-      cached(callDir, `transcribe\u0000${key}`, transcribeSchema, () =>
+      cached(callDir, tKey, transcribeSchema, () =>
         generateJson({
           step: `transcribe p${page}`,
-          model,
+          model: transcribe.model,
+          ...(transcribe.thinking === undefined
+            ? {}
+            : { thinking: transcribe.thinking }),
           system: TRANSCRIBE_SYSTEM,
           user: "Transcribe this page.",
           image: { mimeType: "image/png", data },
           responseSchema: transcribeResponseSchema,
           schema: transcribeSchema,
-          onUsage,
+          onUsage: (u) => {
+            tUsage = addUsage(tUsage, u);
+          },
         }),
       ),
-      cached(callDir, `labels\u0000${key}`, labelsSchema, () =>
+      cached(callDir, lKey, labelsSchema, () =>
         generateJson({
           step: `labels p${page}`,
-          model,
+          model: labels.model,
+          ...(labels.thinking === undefined
+            ? {}
+            : { thinking: labels.thinking }),
           system: LABELS_SYSTEM,
           user: "List the example labels on this page.",
           image: { mimeType: "image/png", data },
           responseSchema: labelsResponseSchema,
           schema: labelsSchema,
-          onUsage,
+          onUsage: (u) => {
+            lUsage = addUsage(lUsage, u);
+          },
         }),
       ),
     ]);
+    const mkey = `${tKey}\u0000${lKey}`;
     const fresh = !(t.cached && l.cached);
-    if (fresh) metrics[key] = { ms: Date.now() - started, usage };
-    const ms = metrics[key]?.ms ?? 0;
-    usage = metrics[key]?.usage ?? usage;
+    if (fresh)
+      metrics[mkey] = {
+        ms: Date.now() - started,
+        transcribe: tUsage,
+        labels: lUsage,
+      };
+    const ms = metrics[mkey]?.ms ?? 0;
+    tUsage = metrics[mkey]?.transcribe ?? tUsage;
+    lUsage = metrics[mkey]?.labels ?? lUsage;
+    const usage = addUsage(tUsage, lUsage);
+    // The independent reading is kept beside the page, so the guard can be re-checked later
+    // without another model call.
+    writeFileSync(
+      resolve(outDir, `page-${String(page).padStart(2, "0")}.labels.json`),
+      JSON.stringify(l.value.labels, null, 1),
+    );
     const mdLabels = labelsInMarkdown(t.value.markdown);
     const disagreements = compareLabels(mdLabels, l.value.labels);
     results.push({
@@ -352,6 +427,8 @@ async function main(): Promise<void> {
       printed: t.value.printed_page,
       ms,
       usage,
+      transcribeUsage: tUsage,
+      labelsUsage: lUsage,
       cached: t.cached && l.cached,
       t: t.value,
       disagreements,
@@ -388,7 +465,9 @@ async function main(): Promise<void> {
   const report = [
     `# OCR: ${slug}`,
     "",
-    `model ${model}, ${dpi} dpi, prompt ${OCR_PROMPT_VERSION}; ${results.length} pages; ${results.reduce((n, r) => n + r.labels, 0)} example labels`,
+    `transcribe ${cacheTag(transcribe)}; labels ${cacheTag(labels)}; ${dpi} dpi, prompt ${OCR_PROMPT_VERSION}; ${results.length} pages; ${results.reduce((n, r) => n + r.labels, 0)} example labels`,
+    `transcribe: ${stageLine(results.map((r) => r.transcribeUsage))}`,
+    `labels: ${stageLine(results.map((r) => r.labelsUsage))}`,
     `total: ${total.calls} calls, ${total.prompt} prompt / ${total.output} output tokens, $${usageCostUsd(total).toFixed(4)}, ${(results.reduce((n, r) => n + r.ms, 0) / 1000).toFixed(1)}s (as first read; cached re-runs are free)`,
     "",
     "| PDF page | printed | labels | label check | unclear | ACT-only | seconds | prompt tok | output tok | cost |",
