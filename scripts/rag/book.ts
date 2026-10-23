@@ -169,10 +169,11 @@ export class BookText {
 function normalizeWithMap(text: string): { norm: string; map: number[] } {
   let norm = "";
   const map: number[] = [];
-  // Markup tags (<u>, </u> in OCR markdown) are not text: their letters would otherwise break a
-  // quote that spans an underline ("<u>Although</u> London" must match "Although London").
+  // Markup tags (<u>, </u> in OCR markdown) and the "[ACT NOTE]" marker are not text: their
+  // letters would otherwise break a quote that spans them ("<u>Although</u> London" must match
+  // "Although London").
   const tags = new Set<number>();
-  for (const m of text.matchAll(/<\/?[a-z]+>/gi))
+  for (const m of text.matchAll(/<\/?[a-z]+>|\[ACT NOTE\]/gi))
     for (let k = m.index ?? 0; k < (m.index ?? 0) + m[0].length; k += 1)
       tags.add(k);
   for (let i = 0; i < text.length; i += 1) {
@@ -267,9 +268,12 @@ const HEADING_RE = /^(#{1,4})\s+(.*)$/;
  *  - a heading followed by an "[ACT ONLY]" line drops that heading's section, up to the next
  *    heading of the same or a higher level (in the Meltzer guide: "Who's vs. Whose (Primarily
  *    ACT)" and "Then vs. Than (ACT)").
- * "[ACT NOTE]" paragraphs are KEPT, with the marker removed: the flag means "mentions the ACT",
- * not "ACT-only" (printed page 11 is a general comma rule the SAT can test). Every dropped
- * section is returned with its page and size, so the cut can be checked.
+ * "[ACT NOTE]" paragraphs are KEPT, and so is their marker: the flag means "mentions the ACT",
+ * not "ACT-only" (printed page 11 is a general comma rule the SAT can test), and the rewrite
+ * and the audit need to see it to drop the ACT-scoped advice from an entry rather than state
+ * it as general (Karl, 2026-10-23: chunks 9:2 and 5:1 did that with the marker stripped). Quote
+ * matching skips the marker (normalizeWithMap). Every dropped section is returned with its
+ * page and size, so the cut can be checked.
  */
 export function dropActSections(pages: OcrPage[]): {
   pages: OcrPage[];
@@ -326,7 +330,7 @@ export function dropActSections(pages: OcrPage[]): {
         continue;
       }
       if (line.trim() === "[ACT ONLY]") continue;
-      kept.push(line.replace(/^\[ACT NOTE\]\s*/, ""));
+      kept.push(line);
     }
     const body = kept
       .join("\n")
@@ -335,6 +339,29 @@ export function dropActSections(pages: OcrPage[]): {
     if (body !== "") out.push({ ...page, body });
   }
   return { pages: out, dropped };
+}
+
+/**
+ * Pure. Whether the unit [start, end) of `text` starts or ends at a lettered-subsection heading
+ * ("### ", OCR markdown) inside a numbered rule ("## "): the boundary where one rule was split
+ * into units. Measured on drops (Karl, 2026-10-23: 8 of 10 audit drops sat on one when the
+ * segmenter put each lettered subsection in its own unit). Blank space at the edges is skipped.
+ */
+export function onSubsectionBoundary(
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  const lineStartAt = (i: number): boolean => i === 0 || text[i - 1] === "\n";
+  const subAt = (i: number): boolean =>
+    i < text.length && lineStartAt(i) && text.startsWith("### ", i);
+  let s0 = start;
+  while (s0 < end && /\s/.test(text[s0] ?? "")) s0 += 1;
+  let e0 = end;
+  while (e0 < text.length && /\s/.test(text[e0] ?? "")) e0 += 1;
+  const ruleBefore = (i: number): boolean =>
+    [...text.slice(0, i).matchAll(/^## /gm)].length > 0;
+  return (subAt(s0) && ruleBefore(s0)) || (subAt(e0) && ruleBefore(e0));
 }
 
 export const UNIT_KINDS = [

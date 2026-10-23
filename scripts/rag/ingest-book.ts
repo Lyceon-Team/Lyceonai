@@ -60,6 +60,7 @@ import {
   assignProvenance,
   locateUnits,
   nextCursor,
+  onSubsectionBoundary,
   resolveChapters,
   sha256,
   splitPages,
@@ -89,6 +90,7 @@ import {
   GENERATION_MODEL_DEFAULT,
   type Usage,
   ZERO_USAGE,
+  usageSchema,
   addUsage,
   assertProxied,
   embedTexts,
@@ -101,7 +103,10 @@ import {
 export const WINDOW_WORDS = 3_000;
 const MAX_WINDOW_GROWTH = 4;
 const CONTEXT_WORDS = 250;
+// An un-scoped ACT point is repairable: the rewrite can leave it out and the entry is audited
+// again; what it must never do is keep the advice without its scope.
 const REPAIRABLE: ReadonlySet<string> = new Set([
+  "audit_act_generalised",
   "audit_unfaithful",
   "audit_incorrect",
   "audit_not_self_contained",
@@ -113,12 +118,29 @@ export function bookDir(slug: string): string {
   return resolve(CACHE_DIR, `book-${slug}`);
 }
 
-/** A model call whose answer is cached on disk, keyed by the prompt version and its input. */
+/**
+ * Token usage, per stage, two ways: `billed` is what this run's calls cost; `fresh` is what
+ * every call the run used cost when it was made, cached or not, so the report measures a
+ * fresh-cache run even when it took several attempts. `unrecorded` counts cached answers from
+ * before usage was stored with them.
+ */
+type Tally = {
+  billed: (stage: string, u: Usage) => void;
+  fresh: (stage: string, u: Usage) => void;
+  unrecorded: () => void;
+};
+
+/**
+ * A model call whose answer is cached on disk, keyed by the prompt version and its input, with
+ * the usage of the call that produced it (all of its tries, e.g. a segment window re-asked once).
+ */
 async function cachedCall<T>(
   dir: string,
   key: string,
   schema: z.ZodType<T>,
-  call: () => Promise<T>,
+  stage: string,
+  tally: Tally,
+  call: (onUsage: (u: Usage) => void) => Promise<T>,
 ): Promise<{ value: T; cached: boolean }> {
   const path = resolve(
     dir,
@@ -126,12 +148,26 @@ async function cachedCall<T>(
     `${sha256(`${BOOK_PROMPT_VERSION}\u0000${key}`)}.json`,
   );
   if (existsSync(path)) {
-    const hit = schema.safeParse(JSON.parse(readFileSync(path, "utf8")));
-    if (hit.success) return { value: hit.data, cached: true };
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    const hit = z.object({ value: schema, usage: usageSchema }).safeParse(raw);
+    if (hit.success) {
+      tally.fresh(stage, hit.data.usage);
+      return { value: hit.data.value, cached: true };
+    }
+    const old = schema.safeParse(raw);
+    if (old.success) {
+      tally.unrecorded();
+      return { value: old.data, cached: true };
+    }
   }
-  const value = await call();
+  let spent: Usage = ZERO_USAGE;
+  const value = await call((u) => {
+    spent = addUsage(spent, u);
+    tally.billed(stage, u);
+  });
+  tally.fresh(stage, spent);
   mkdirSync(resolve(dir, "calls"), { recursive: true });
-  writeFileSync(path, JSON.stringify(value));
+  writeFileSync(path, JSON.stringify({ value, usage: spent }));
   return { value, cached: false };
 }
 
@@ -223,7 +259,7 @@ async function segmentBook(
   dir: string,
   model: string,
   windowWords: number,
-  onUsage: (u: Usage) => void,
+  tally: Tally,
 ): Promise<Segmented> {
   const units: LocatedUnit[] = [];
   let cursor = 0;
@@ -250,7 +286,9 @@ async function segmentBook(
         dir,
         `segment\u0000${model}\u0000${user}`,
         segmentSchema,
-        async () => {
+        "segment",
+        tally,
+        async (onUsage) => {
           let feedback = "";
           for (let attempt = 0; ; attempt += 1) {
             const answer = await generateJson({
@@ -306,6 +344,8 @@ export type DropRow = {
   kind: string;
   reason: string;
   detail: string;
+  /** The unit starts or ends at a lettered-subsection heading inside one numbered rule. */
+  subsection_boundary: boolean;
 };
 
 type Kept = {
@@ -351,14 +391,22 @@ async function main(): Promise<void> {
   const rewriteSchema = rewriteSchemaFor(skills);
 
   let usage: Usage = ZERO_USAGE;
+  let freshUsage: Usage = ZERO_USAGE;
+  let unrecorded = 0;
   // Per stage as well as in total, so the report shows where the money goes.
   const byStage = new Map<string, Usage>();
-  const onStage =
-    (stage: string) =>
-    (u: Usage): void => {
+  const tally: Tally = {
+    billed: (_stage, u) => {
       usage = addUsage(usage, u);
+    },
+    fresh: (stage, u) => {
+      freshUsage = addUsage(freshUsage, u);
       byStage.set(stage, addUsage(byStage.get(stage) ?? ZERO_USAGE, u));
-    };
+    },
+    unrecorded: () => {
+      unrecorded += 1;
+    },
+  };
 
   const input = loadInput(values.pdf, values.markdown);
   const pages = input.pages;
@@ -366,13 +414,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${input.source}: ${pages.length} pages, ${wordCount(book.text)} words${input.dropped.length > 0 ? `; dropped ${input.dropped.map((d) => `"${d.heading}" (p${d.page}, ${d.words} words)`).join(", ")}` : ""}\n`,
   );
-  const seg = await segmentBook(
-    book,
-    dir,
-    model,
-    windowWords,
-    onStage("segment"),
-  );
+  const seg = await segmentBook(book, dir, model, windowWords, tally);
 
   const chapterNos = resolveChapters(seg.units);
   const chapters = new Map<LocatedUnit, number>(
@@ -389,6 +431,7 @@ async function main(): Promise<void> {
       kind: u.kind,
       reason,
       detail,
+      subsection_boundary: onSubsectionBoundary(book.text, u.start, u.end),
     });
   };
 
@@ -400,6 +443,7 @@ async function main(): Promise<void> {
       kind: "none",
       reason: "unassigned_text",
       detail: `${g.words} words no unit covered`,
+      subsection_boundary: false,
     });
   }
 
@@ -432,7 +476,9 @@ async function main(): Promise<void> {
           dir,
           `rewrite\u0000${model}\u0000${user}`,
           rewriteSchema,
-          () =>
+          attempt === 0 ? "rewrite" : "rewrite (repair)",
+          tally,
+          (onUsage) =>
             generateJson({
               step: "rewrite",
               model,
@@ -440,7 +486,7 @@ async function main(): Promise<void> {
               user,
               responseSchema: rewriteResponseSchema(skills),
               schema: rewriteSchema,
-              onUsage: onStage(attempt === 0 ? "rewrite" : "rewrite (repair)"),
+              onUsage,
             }),
         )
       ).value;
@@ -468,7 +514,9 @@ async function main(): Promise<void> {
           dir,
           `audit\u0000${model}\u0000${auditUser}`,
           auditSchema,
-          () =>
+          attempt === 0 ? "audit" : "audit (repair)",
+          tally,
+          (onUsage) =>
             generateJson({
               step: "audit",
               model,
@@ -476,7 +524,7 @@ async function main(): Promise<void> {
               user: auditUser,
               responseSchema: auditResponseSchema,
               schema: auditSchema,
-              onUsage: onStage(attempt === 0 ? "audit" : "audit (repair)"),
+              onUsage,
             }),
         )
       ).value;
@@ -577,6 +625,8 @@ async function main(): Promise<void> {
   };
   const words = chunks.map((c) => wordCount(c.content)).sort((a, b) => a - b);
   const genCost = usageCostUsd(usage);
+  const freshCost = usageCostUsd(freshUsage);
+  const bookWords = wordCount(book.text);
   const embedCost = (embedChars / 1_000_000) * EMBED_PRICE_PER_MCHAR;
   const gaps = chunks
     .map((c) => c.taxonomy_gap)
@@ -624,6 +674,8 @@ async function main(): Promise<void> {
     "",
     ...count(drops, (d) => d.reason).map(([k, n]) => `- ${k}: ${n}`),
     "",
+    `on a lettered-subsection boundary (the unit starts or ends at a "### " heading inside one numbered rule): ${drops.filter((d) => d.subsection_boundary).length} of ${drops.length} drops`,
+    "",
     "## Taxonomy gaps the model named",
     "",
     ...(gaps.length === 0
@@ -632,6 +684,8 @@ async function main(): Promise<void> {
     "",
     "## Cost",
     "",
+    `Every call this run used, at what it cost when it was made (cached or not), i.e. a run on a fresh cache${unrecorded > 0 ? `; ${unrecorded} cached answers predate usage recording and are not counted` : ""}:`,
+    "",
     "| stage | calls | input | output | of which thinking | USD |",
     "|---|---|---|---|---|---|",
     ...[...byStage].map(
@@ -639,7 +693,8 @@ async function main(): Promise<void> {
         `| ${k} | ${u.calls} | ${u.prompt} | ${u.output} | ${u.thoughts} | $${u.usd.toFixed(4)} |`,
     ),
     "",
-    `- generation: ${usage.calls} calls, ${usage.prompt} prompt tokens (${usage.cached} cached), ${usage.output} output tokens: $${genCost.toFixed(3)} (cached answers cost nothing and are not counted)`,
+    `- fresh-cache generation: ${freshUsage.calls} calls, ${freshUsage.output} output tokens of which ${freshUsage.thoughts} thinking (${freshUsage.output === 0 ? 0 : Math.round((100 * freshUsage.thoughts) / freshUsage.output)}%): $${freshCost.toFixed(3)}; $${(chunks.length === 0 ? 0 : freshCost / chunks.length).toFixed(4)} per kept chunk; $${(bookWords === 0 ? 0 : (1000 * freshCost) / bookWords).toFixed(4)} per 1,000 words of input (${bookWords} words)`,
+    `- billed by this run: ${usage.calls} calls, $${genCost.toFixed(3)} (cached answers are not billed again)`,
     `- embedding: ${missing.length} of ${chunks.length} chunks embedded (the rest cached), ${embedChars} characters: $${embedCost.toFixed(4)} at $${EMBED_PRICE_PER_MCHAR}/1M characters (unverified list price)`,
     "",
   ].join("\n");

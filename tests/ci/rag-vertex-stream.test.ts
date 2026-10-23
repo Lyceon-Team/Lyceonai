@@ -20,17 +20,26 @@ const BODY = readFileSync(
 
 describe("foldSse", () => {
   it("joins the answer text of every event, in order, without the thoughts", () => {
-    expect(BODY.split("\n").filter((l) => l.startsWith("data:")).length).toBe(10);
+    expect(BODY.split("\n").filter((l) => l.startsWith("data:")).length).toBe(
+      10,
+    );
     expect(BODY).toContain('"thought": true');
     const folded = foldSse(BODY) as {
-      candidates: { content: { parts: { text: string }[] }; finishReason?: string }[];
+      candidates: {
+        content: { parts: { text: string }[] };
+        finishReason?: string;
+      }[];
     };
     expect(folded.candidates).toHaveLength(1);
-    const answer = JSON.parse(folded.candidates[0]?.content.parts[0]?.text ?? "") as {
+    const answer = JSON.parse(
+      folded.candidates[0]?.content.parts[0]?.text ?? "",
+    ) as {
       colors: string[];
     };
     expect(answer.colors.length).toBeGreaterThan(20);
-    expect(folded.candidates[0]?.content.parts[0]?.text.startsWith('{"colors":')).toBe(true);
+    expect(
+      folded.candidates[0]?.content.parts[0]?.text.startsWith('{"colors":'),
+    ).toBe(true);
     expect(answer.colors[0]).toBe("Red");
     expect(folded.candidates[0]?.finishReason).toBe("STOP");
   });
@@ -52,7 +61,9 @@ describe("foldSse", () => {
   });
 
   it("gives no candidate when the stream carried no text and no finish", () => {
-    expect(foldSse('data: {"usageMetadata": {"trafficType": "ON_DEMAND"}}\n')).toEqual({
+    expect(
+      foldSse('data: {"usageMetadata": {"trafficType": "ON_DEMAND"}}\n'),
+    ).toEqual({
       candidates: [],
       usageMetadata: { trafficType: "ON_DEMAND" },
     });

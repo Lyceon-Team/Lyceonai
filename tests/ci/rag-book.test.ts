@@ -28,6 +28,7 @@ import {
   parseOcrPage,
   assignProvenance,
   locateQuote,
+  onSubsectionBoundary,
   locateUnits,
   nextCursor,
   parseBookReviewCsv,
@@ -276,6 +277,7 @@ describe("the audit decides what is kept", () => {
     faithful: true,
     self_contained: true,
     correct: true,
+    act_scope_respected: true,
     issues: "",
   };
   it("passes only when every check passes", () => {
@@ -288,6 +290,10 @@ describe("the audit decides what is kept", () => {
     expect(auditFailure({ ...pass, correct: false })).toBe("audit_incorrect");
     expect(auditFailure({ ...pass, self_contained: false })).toBe(
       "audit_not_self_contained",
+    );
+    // ACT advice stated as general fails on its own, whatever else passed.
+    expect(auditFailure({ ...pass, act_scope_respected: false })).toBe(
+      "audit_act_generalised",
     );
   });
 });
@@ -445,15 +451,29 @@ describe("OCR markdown input and the ACT-only ruling", () => {
     expect(kept.map((p) => p.printed)).toEqual([2, 3]);
   });
 
-  it("keeps [ACT NOTE] paragraphs (a general rule may mention the ACT), without the marker", () => {
+  it("keeps [ACT NOTE] paragraphs (a general rule may mention the ACT) and their marker", () => {
     const text = dropActSections(pages)
       .pages.map((p) => p.body)
       .join("\n");
+    // The marker stays: the rewrite and the audit need it to keep ACT-scoped advice out of an
+    // entry rather than state it as general (Karl, 2026-10-23).
     expect(text).toContain(
-      "**Note:** ACT grammar questions testing *however* use a semicolon.",
+      "[ACT NOTE] **Note:** ACT grammar questions testing *however* use a semicolon.",
     );
-    expect(text).not.toContain("[ACT NOTE]");
     expect(text).not.toContain("[ACT ONLY]");
+  });
+
+  it("quote matching skips the [ACT NOTE] marker", () => {
+    const text =
+      "A rule.\n\n[ACT NOTE]\nIn addition, if there is an OMIT option, check it first.";
+    const m = locateQuote(
+      text,
+      "A rule. In addition, if there is an OMIT option",
+    );
+    expect(m).not.toBeNull();
+    expect(text.slice(m?.start, m?.end)).toBe(
+      "A rule.\n\n[ACT NOTE]\nIn addition, if there is an OMIT option",
+    );
   });
 
   it("on the accepted Meltzer extraction: exactly the ruled sections go", () => {
@@ -502,5 +522,38 @@ describe("quotes across OCR markup", () => {
     expect(text.slice(m?.start, m?.end)).toBe(
       "Although</u> London is a very old **city, it** has many",
     );
+  });
+});
+
+describe("onSubsectionBoundary", () => {
+  const text = [
+    "## 6. NON-ESSENTIAL CLAUSES",
+    "Non-essential information can be removed.",
+    "",
+    "### A. Two Commas",
+    "Use two commas.",
+    "",
+    "### B. Two Dashes",
+    "Use two dashes.",
+    "",
+    "## 7. NAMES AND TITLES",
+    "Commas around a name.",
+  ].join("\n");
+  const at = (q: string): number => text.indexOf(q);
+
+  it("is true for a unit that ends at a sibling subsection", () => {
+    expect(onSubsectionBoundary(text, 0, at("### B."))).toBe(true);
+  });
+  it("is true for a unit that starts at a subsection inside a rule", () => {
+    expect(onSubsectionBoundary(text, at("### B."), at("## 7."))).toBe(true);
+  });
+  it("is false for a whole numbered rule, siblings and all", () => {
+    expect(onSubsectionBoundary(text, 0, at("## 7."))).toBe(false);
+    expect(onSubsectionBoundary(text, at("## 7."), text.length)).toBe(false);
+  });
+  it("is false for a split inside a subsection's prose", () => {
+    expect(
+      onSubsectionBoundary(text, at("Use two commas."), at("Use two dashes.")),
+    ).toBe(false);
   });
 });

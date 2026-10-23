@@ -16,9 +16,11 @@
  *     chunk, or a drop with its reason; skills from the enumerated taxonomy only; content type;
  *     surface gate.
  *  3. AUDIT: a second, independent call that reads the source, the surrounding text and the
- *     chunk, and checks the three ways a chunk is wrong in use while reading fine alone:
- *     incomplete (part of the rule lives outside it), unfaithful (it says something the book
- *     does not), or dependent (it leans on context it does not carry). Any failure drops it.
+ *     chunk, and checks the ways a chunk is wrong in use while reading fine alone: incomplete
+ *     (part of the rule lives outside it), unfaithful (it says something the book does not),
+ *     dependent (it leans on context it does not carry), or ACT advice un-scoped (it tells an
+ *     SAT student something the book says only of the ACT; Karl, 2026-10-23: worse than a
+ *     missing chunk, because the student cannot tell). Any failure drops it.
  * The model never sees provenance (brief §5). `BOOK_PROMPT_VERSION` is stamped on every cached
  * result; changing any prompt changes it and invalidates the cache.
  */
@@ -48,7 +50,7 @@ Units must cover the window in order without overlapping. Classify every stretch
 
 The text marks where each page of the book begins with "[page n]"; never quote those markers.
 
-The text may be a markdown transcription of the book. Then "## " starts a numbered rule, "### " a lettered subsection of it, and "#### " a minor heading; a paragraph that opens with a bold label such as "**Correct:**" or "**Incorrect:**" is a labelled example, and "**...**" inside it marks the grammar point. Use that structure. Each lettered subsection ("### A. ...", "### B. ...") is its own unit, together with its explanation and its labelled examples: never put two lettered subsections in one unit. A numbered rule's opening explanation, before its first lettered subsection, goes in the unit of that first subsection. Labelled examples always stay in the same unit as the rule they illustrate, never in a unit of their own. A unit far over 400 words almost always holds more than one idea and must be split at the idea boundary; keep it whole only when it is a single rule that genuinely needs the length. In quotes you may leave out the markdown symbols (#, *, <u>); copy the words exactly.`;
+The text may be a markdown transcription of the book. Then "## " starts a numbered rule, "### " a lettered subsection of it, and "#### " a minor heading; a paragraph that opens with a bold label such as "**Correct:**" or "**Incorrect:**" is a labelled example, and "**...**" inside it marks the grammar point. Use that structure. The lettered subsections of one numbered rule ("### A. ...", "### B. ...") usually share the rule's opening explanation and continue one idea (two commas, two dashes and two parentheses are all non-essential punctuation), so keep a numbered rule together with all of its lettered subsections in ONE unit when the whole rule is under about 400 words. Split a numbered rule only when it is genuinely long, and then only at a lettered-subsection heading, never inside a subsection; the rule's opening explanation goes in the unit of its first subsection. Labelled examples always stay in the same unit as the rule they illustrate, never in a unit of their own. A unit far over 400 words almost always holds more than one idea and must be split at the idea boundary; keep it whole only when it is a single rule that genuinely needs the length. In quotes you may leave out the markdown symbols (#, *, <u>); copy the words exactly.`;
 
 export function segmentResponseSchema(): Record<string, unknown> {
   return {
@@ -104,6 +106,7 @@ Never write:
 - A reference with no antecedent ("this rule", "the example above"): name the rule or include the example.
 - Anything the unit does not support. You may use the surrounding text ONLY to understand what a reference in the unit points to; never import a rule, example or claim that is not in the unit itself. Do not add rules, exceptions, examples or numbers of your own.
 - Exercises, answer choices for practice questions, or answer keys.
+- Advice the unit limits to the ACT, stated as general or as true of the SAT. The student is taking the SAT. ACT-scoped advice is a test-taking tip, shortcut or answer pattern that the unit ties to the ACT ("if there is an OMIT/DELETE option on the ACT", "when the ACT tests it's vs. its, the answer is almost always its", "more applicable to the ACT than the SAT"): leave it out of the entry entirely, and never restate it without the ACT, as "the test", or as "usually" or "always" true. A paragraph marked "[ACT NOTE]" mentions the ACT; it is not ACT-only. Judge each sentence by what it says: a rule of standard English (where a comma goes, which form is correct) is never ACT-scoped, even under the marker and even when the unit adds that the ACT tests it often; keep the rule and leave out the mention of the ACT. When the unit says a method works less well on the SAT, either keep that limitation in the entry or leave the method out. Never write the marker "[ACT NOTE]" into the entry.
 
 Drop the unit instead of rewriting it (keep = false) when:
 - not_sat_specific: it teaches nothing a student would use on the SAT (book introductions, study motivation, admissions, general advice);
@@ -163,11 +166,12 @@ export function rewriteSchemaFor(skills: readonly [string, ...string[]]) {
 export const AUDIT_SYSTEM = `You check one entry of Lyceon's SAT tutoring knowledge base against the book passage it was written from. A tutor will show the entry to a student with nothing around it. An entry can read well on its own and still be wrong in use; find out whether this one is.
 
 You are given the SOURCE (the passage the entry was written from), the CONTEXT BEFORE and CONTEXT AFTER (the book text around the source), and the ENTRY. Answer:
-- complete: true only if the entry teaches the whole rule, method or example. False if the source or the context shows that a condition, exception, step or the conclusion of the idea is missing from the entry, for example because the idea started before the source or continues after it.
+- complete: true only if the entry teaches the whole rule, method or example. False if the source or the context shows that a condition, exception, step or the conclusion of the idea is missing from the entry, for example because the idea started before the source or continues after it. ACT-scoped advice (defined under act_scope_respected) that the entry leaves out is not missing: leaving it out is required.
 - starts_mid_idea: true if the source begins partway through an idea that started in the context before it.
 - faithful: true only if every rule, claim, example and number in the entry is supported by the SOURCE itself. False if the entry adds a rule, an exception, an example or a number the source does not contain, or states a rule differently from the source. Material that appears only in the CONTEXT BEFORE or CONTEXT AFTER, and not in the SOURCE, makes the entry unfaithful even when it is correct.
 - self_contained: true only if a student could understand the entry with nothing else: no reference to an example, rule, page, chapter or exercise that the entry does not itself include.
 - correct: true only if the entry is correct about the SAT and standard English or mathematics. False if it states something wrong, even if the source says it.
+- act_scope_respected: the student is taking the SAT. ACT-scoped advice is a test-taking tip, shortcut or answer pattern that the SOURCE ties to the ACT ("if there is an OMIT/DELETE option on the ACT", "when the ACT tests it's vs. its, the answer is almost always its", "more applicable to the ACT than the SAT"). False if the entry states any ACT-scoped advice as general, as true of the SAT or of "the test", or as "usually" or "always" true; or if the entry gives a method the source says works less well on the SAT without that limitation. True if the entry leaves the ACT-scoped advice out, or if the source has none. A paragraph marked "[ACT NOTE]" mentions the ACT; it is not ACT-only, so judge each sentence by what it says: a rule of standard English (where a comma goes, which form is correct) is never ACT-scoped, even under the marker and even when the source adds that the ACT tests it often, and stating that rule is correct.
 - issues: one or two short sentences naming any problem, or an empty string.`;
 
 export const auditResponseSchema = {
@@ -178,6 +182,7 @@ export const auditResponseSchema = {
     faithful: { type: "BOOLEAN" },
     self_contained: { type: "BOOLEAN" },
     correct: { type: "BOOLEAN" },
+    act_scope_respected: { type: "BOOLEAN" },
     issues: { type: "STRING" },
   },
   required: [
@@ -186,6 +191,7 @@ export const auditResponseSchema = {
     "faithful",
     "self_contained",
     "correct",
+    "act_scope_respected",
     "issues",
   ],
 } as const;
@@ -195,6 +201,7 @@ export const auditSchema = z.object({
   faithful: z.boolean(),
   self_contained: z.boolean(),
   correct: z.boolean(),
+  act_scope_respected: z.boolean(),
   issues: z.string(),
 });
 export type Audit = z.infer<typeof auditSchema>;
@@ -203,6 +210,7 @@ export type Audit = z.infer<typeof auditSchema>;
 export function auditFailure(a: Audit): string | null {
   if (a.starts_mid_idea) return "audit_starts_mid_idea";
   if (!a.complete) return "audit_incomplete";
+  if (!a.act_scope_respected) return "audit_act_generalised";
   if (!a.faithful) return "audit_unfaithful";
   if (!a.correct) return "audit_incorrect";
   if (!a.self_contained) return "audit_not_self_contained";
