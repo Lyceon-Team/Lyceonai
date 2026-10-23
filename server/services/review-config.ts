@@ -4,18 +4,25 @@
  * @spec [owner rulings on #1277 (Karl, 2026-10-21), ruling 1: "Review session size defaults to
  *        10, stored as a runtime config key with bounds (min 5), so it can be lowered to 5
  *        without a code change ... No session ever takes the whole queue. Any caller-provided
- *        size is capped by this key"; Doc-01A_V1.0 §24 (TTL + hard staleness; "Values live
+ *        size is capped by this key" — its scope CORRECTED by owner ruling (Karl, 2026-10-22) to
+ *        student-initiated starts only, below; Doc-01A_V1.0 §24 (TTL + hard staleness; "Values live
  *        per-service in the respective *_runtime_config table"); migration
  *        20261109000001_review_open_session_admission.sql (the seed: 10, min 5, max 20)]
  * | @implemented [2026-10-21]
  *
- * plain English: every review start (the Review page's, Home's, a calendar block's) is capped at
- * this many questions. `reviewSessionSize(requested)` is the cap rule, in one place:
+ * SCOPE (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1 of 2026-10-21): the key caps
+ * STUDENT-INITIATED review starts only (the Review page, Home: `POST /api/review/sessions`). A
+ * calendar-launched session takes its block's requested size, uncapped (the planner's
+ * time-based sizing stands; SCL-242 was withdrawn the same day); `startOrReplayReviewSession`
+ * decides by its server-side `origin`, never by anything the client sends.
+ *
+ * plain English: every student-initiated review start is capped at this many questions.
+ * `reviewSessionSize(requested)` is the cap rule, in one place:
  *
  *     size = min(requested > 0 ? requested : key, key)
  *
  * so a start that asks for nothing takes the key's value, a smaller request is honoured, and a
- * larger one (a calendar block whose target is 15 or 30) is cut to the key.
+ * larger one is cut to the key.
  *
  * NO FALLBACK, ON PURPOSE. A missing row, a non-integer value, or a value outside the row's own
  * `min_value..max_value` (or below 1) is a LOUD failure: an ERROR log and a thrown
@@ -28,12 +35,6 @@
  * .review_config_cache_ttl_seconds` (60 s seeded; 60 s when that row is unusable), with the hard
  * staleness bound equal to the TTL, so an expired entry is never served in place of a failed
  * refresh. Lowering the size to 5 therefore reaches every instance within one TTL, no deploy.
- *
- * CALENDAR (owner follow-up rulings on #1277, Karl, 2026-10-21, ruling 2): calendar review blocks
- * are to ask for at most this same key, with post-exam misses spread over several one-session
- * blocks. Recorded as SCL-242 (PROPOSED); not built yet, because the planner's oracle and fixtures
- * in docs/Spec encode the old sizes and must be amended first. Until then the cap rule above is
- * what keeps a larger calendar block's launch to one session.
  *
  * edge cases: the value is read as JSON; a JSON string ("10") is malformed, not coerced.
  */
@@ -113,9 +114,9 @@ export function invalidateReviewConfigCache(): void {
 }
 
 /**
- * The size of the review session a start with `requested` questions gets (ruling 1's cap rule):
- * `min(requested > 0 ? requested : key, key)`. Throws `ReviewConfigError` when the key is
- * unusable.
+ * The size of a STUDENT-INITIATED review session that asks for `requested` questions:
+ * `min(requested > 0 ? requested : key, key)` (owner ruling, Karl, 2026-10-22: student starts only;
+ * calendar launches do not call this). Throws `ReviewConfigError` when the key is unusable.
  */
 export async function reviewSessionSize(
   requested: number | null,

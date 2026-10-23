@@ -108,7 +108,11 @@ async function create(
     // §9.2's rule, applied to the second engine: forwarded UNCHANGED. The calendar owns
     // the key format, the engine owns what a repeated key means.
     idempotencyKey: ctx.idempotency_key,
-    // THIS launch's size, not the block target (§9.1).
+    // THIS launch's size, not the block target (§9.1), computed by the launch service from the
+    // block it loaded server-side. A calendar launch is NOT capped by review_runtime_config
+    // .session_size (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1): the planner's
+    // time-based sizing stands.
+    origin: "calendar",
     targetCount: size,
   });
 

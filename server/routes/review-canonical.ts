@@ -537,12 +537,16 @@ type CreateResult =
  *   - the concurrent-session cap is review's own count, using practice's configured
  *     value (owner ruling 2026-09-21), so five open practice sessions do not block a
  *     review session and vice versa;
- *   - SESSION SIZE (owner rulings on #1277, Karl, 2026-10-21, ruling 1): no session takes the
- *     whole queue. The size is `reviewSessionSize(targetCount)` =
- *     min(targetCount > 0 ? targetCount : key, key), with the key
- *     `review_runtime_config.session_size` (10, bounds 5..20): the review page asks for none and
- *     gets the key; a calendar block asking for more (its target can be up to
- *     `review_block_max` = 30) is cut to the key. An unusable key is a 500, never a default.
+ *   - SESSION SIZE (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1 of 2026-10-21): the key
+ *     `review_runtime_config.session_size` (10, bounds 5..20) caps ONLY student-initiated starts
+ *     (`origin: "student"`, `POST /api/review/sessions` from the Review page and Home):
+ *     `reviewSessionSize(targetCount)` = min(targetCount > 0 ? targetCount : key, key), so a
+ *     student start never takes the whole queue. A calendar launch (`origin: "calendar"`, only
+ *     the calendar's review adapter passes it, with the size the launch service computed from
+ *     the server's own block record) takes exactly the block's requested size, uncapped: the
+ *     planner's time-based sizing stands (SCL-242 withdrawn the same day). The origin is never
+ *     read from a request: the HTTP route always passes "student". An unusable key is a 500 for a
+ *     student start, never a default.
  *   - EVERY START IS A NEW SESSION (ruling 2, 2026-10-21; it replaced the 2026-10-21 Part B
  *     "resume the newest holder" path, which is removed): the start takes the first `size`
  *     questions of its pool, then `review_admit_session_start` closes, in one transaction under
@@ -566,15 +570,30 @@ type CreateResult =
  * from a calendar block and a launch from the review page behave identically by
  * construction rather than by two implementations agreeing.
  */
-export async function startOrReplayReviewSession(args: {
-  studentId: string;
-  actorId: string;
-  poolSpec: ReviewPoolSpec;
-  clientInstanceId: string;
-  idempotencyKey: string | null;
-  targetCount: number | null;
-  requestId?: string;
-}): Promise<CreateResult> {
+export async function startOrReplayReviewSession(
+  args: {
+    studentId: string;
+    actorId: string;
+    poolSpec: ReviewPoolSpec;
+    clientInstanceId: string;
+    idempotencyKey: string | null;
+    requestId?: string;
+  } & (
+    | {
+        /** POST /api/review/sessions (Review page, Home): capped by `session_size`. */
+        origin: "student";
+        targetCount: number | null;
+      }
+    | {
+        /**
+         * The calendar's review adapter only: `targetCount` is the launch size the launch
+         * service derived from the block it loaded server-side for this student. Uncapped.
+         */
+        origin: "calendar";
+        targetCount: number;
+      }
+  ),
+): Promise<CreateResult> {
   const { data: openSessions, error: openErr } = await timedStep(
     "open_sessions",
     () =>
@@ -618,14 +637,30 @@ export async function startOrReplayReviewSession(args: {
     };
   }
 
-  // Ruling 1 (Karl, 2026-10-21): the size this start takes, capped by the runtime key.
+  // The size this start takes (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1 of 2026-10-21): a student start is capped by
+  // the runtime key; a calendar launch takes its block's size.
+  if (args.origin === "calendar" && !(args.targetCount >= 1)) {
+    return {
+      ok: false,
+      status: 500,
+      body: {
+        error: "session_create_failed",
+        message: "calendar launch size must be at least 1",
+      },
+    };
+  }
   let size: number;
   let maxOpen: number;
   try {
-    const [practice, capped] = await timedStep("config", () =>
-      Promise.all([loadPracticeConfig(), reviewSessionSize(args.targetCount)]),
+    const [practice, sized] = await timedStep("config", () =>
+      Promise.all([
+        loadPracticeConfig(),
+        args.origin === "calendar"
+          ? args.targetCount
+          : reviewSessionSize(args.targetCount),
+      ]),
     );
-    size = capped;
+    size = sized;
     maxOpen = practice.maxConcurrentSessions;
   } catch (err) {
     if (!(err instanceof ReviewConfigError)) throw err;
@@ -1761,6 +1796,8 @@ router.post(
       poolSpec: spec.value.poolSpec,
       clientInstanceId,
       idempotencyKey: spec.value.idempotencyKey,
+      // Every HTTP start is the student's own: capped by `session_size` (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1 of 2026-10-21).
+      origin: "student",
       targetCount: spec.value.targetCount,
       requestId,
     });
