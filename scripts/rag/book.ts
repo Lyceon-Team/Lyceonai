@@ -352,16 +352,23 @@ export function onSubsectionBoundary(
   start: number,
   end: number,
 ): boolean {
-  const lineStartAt = (i: number): boolean => i === 0 || text[i - 1] === "\n";
-  const subAt = (i: number): boolean =>
-    i < text.length && lineStartAt(i) && text.startsWith("### ", i);
+  // Unit edges sit on letters and digits (quotes are matched on those), so a start lands after
+  // the "### " the model left out of its quote, and an end before the sentence's last period:
+  // a start is at a heading when only "#" and blanks precede it on its line, and an end is at
+  // one when only punctuation and blanks lie between it and the next "### ".
+  const lineOf = (i: number): number => text.lastIndexOf("\n", i - 1) + 1;
+  const subLineAt = (i: number): boolean => text.startsWith("### ", i);
   let s0 = start;
   while (s0 < end && /\s/.test(text[s0] ?? "")) s0 += 1;
+  const startLine = lineOf(s0);
+  const startsAtSub =
+    subLineAt(startLine) && /^[#\s]*$/.test(text.slice(startLine, s0));
   let e0 = end;
-  while (e0 < text.length && /\s/.test(text[e0] ?? "")) e0 += 1;
+  while (e0 < text.length && /[^\p{L}\p{N}#]/u.test(text[e0] ?? "")) e0 += 1;
+  const endsAtSub = lineOf(e0) === e0 && subLineAt(e0);
   const ruleBefore = (i: number): boolean =>
     [...text.slice(0, i).matchAll(/^## /gm)].length > 0;
-  return (subAt(s0) && ruleBefore(s0)) || (subAt(e0) && ruleBefore(e0));
+  return (startsAtSub && ruleBefore(s0)) || (endsAtSub && ruleBefore(e0));
 }
 
 export const UNIT_KINDS = [

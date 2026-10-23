@@ -552,6 +552,18 @@ describe("onSubsectionBoundary", () => {
     expect(onSubsectionBoundary(text, 0, at("## 7."))).toBe(false);
     expect(onSubsectionBoundary(text, at("## 7."), text.length)).toBe(false);
   });
+  // Real unit edges, as locateEdge places them on the Meltzer text (2026-10-23): a start after
+  // the "### " the model left out of its quote, an end before the sentence's final period.
+  it("is true for real-shaped edges: start after '### ', end before the last period", () => {
+    const realStart = text.indexOf("B. Two Dashes");
+    expect(onSubsectionBoundary(text, realStart, at("## 7."))).toBe(true);
+    const realEnd = text.indexOf("Use two commas.") + "Use two commas".length;
+    expect(onSubsectionBoundary(text, 0, realEnd)).toBe(true);
+  });
+  it("is false for an end mid-sentence before a subsection", () => {
+    const mid = text.indexOf("Use two commas.") + "Use two".length;
+    expect(onSubsectionBoundary(text, 0, mid)).toBe(false);
+  });
   it("is false for a split inside a subsection's prose", () => {
     expect(
       onSubsectionBoundary(text, at("Use two commas."), at("Use two dashes.")),
