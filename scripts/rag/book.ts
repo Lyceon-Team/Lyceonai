@@ -207,7 +207,7 @@ export function locateQuote(
   text: string,
   quote: string,
   from = 0,
-  opts: { to?: number; last?: boolean } = {},
+  opts: { to?: number; last?: boolean; unique?: boolean } = {},
 ): { start: number; end: number } | null {
   const q = normalize(quote);
   if (q.length < SHORT_QUOTE_FLOOR) return null;
@@ -217,7 +217,7 @@ export function locateQuote(
   if (fromNorm === -1) return null;
   let found = -1;
   let count = 0;
-  const short = q.length < UNAMBIGUOUS_QUOTE;
+  const short = q.length < UNAMBIGUOUS_QUOTE || opts.unique === true;
   for (
     let at = norm.indexOf(q, fromNorm);
     at !== -1;
@@ -406,6 +406,40 @@ export const MAX_GAP_WORDS = 30;
  *    unit holds: rejected, so the caller asks again rather than losing part of a rule.
  * Throws on any of these.
  */
+/**
+ * Pure. A unit's start (or end) quote located in [from, to). The quote as given first, with
+ * locateQuote's rules; failing that, its longest word-prefix (for a start) or word-suffix (for
+ * an end) that normalizes to at least 12 characters and occurs exactly once in the range. The
+ * model sometimes joins headings across skipped lines ("15. FAULTY COMPARISONS A. Singular
+ * Comparison Though the work", measured 2026-10-23: two intro paragraphs lie between); the
+ * edge of a unit is fixed by the words at that edge, and a unique 12-character run places it as
+ * firmly as any quote the matcher accepts.
+ */
+export function locateEdge(
+  text: string,
+  quote: string,
+  from: number,
+  to: number,
+  side: "start" | "end",
+): { start: number; end: number } | null {
+  const whole = locateQuote(text, quote, from, { to, last: side === "end" });
+  if (whole !== null) return whole;
+  const words = quote.trim().split(/\s+/);
+  for (let k = words.length - 1; k >= 1; k -= 1) {
+    const part = (
+      side === "start" ? words.slice(0, k) : words.slice(words.length - k)
+    ).join(" ");
+    if (normalize(part).length < UNAMBIGUOUS_QUOTE) break;
+    const m = locateQuote(text, part, from, {
+      to,
+      last: side === "end",
+      unique: true,
+    });
+    if (m !== null) return m;
+  }
+  return null;
+}
+
 export function locateUnits(
   book: BookText,
   winStart: number,
@@ -416,7 +450,7 @@ export function locateUnits(
   const starts: number[] = [];
   let from = 0;
   for (const [i, u] of units.entries()) {
-    const s = locateQuote(win, u.start_quote, from);
+    const s = locateEdge(win, u.start_quote, from, win.length, "start");
     if (s === null)
       throw new Error(
         `unit ${i + 1}: start_quote ${JSON.stringify(u.start_quote.slice(0, 120))} not found in the window after unit ${i}'s start`,
@@ -426,10 +460,13 @@ export function locateUnits(
   }
   const located = units.map((u, i) => {
     const start = starts[i] ?? 0;
-    const e = locateQuote(win, u.end_quote, start, {
-      to: starts[i + 1] ?? win.length,
-      last: true,
-    });
+    const e = locateEdge(
+      win,
+      u.end_quote,
+      start,
+      starts[i + 1] ?? win.length,
+      "end",
+    );
     if (e === null)
       throw new Error(
         `unit ${i + 1}: end_quote ${JSON.stringify(u.end_quote.slice(0, 120))} not found between its start and the next unit`,

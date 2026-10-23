@@ -27,6 +27,7 @@ import {
   dropActSections,
   parseOcrPage,
   assignProvenance,
+  locateEdge,
   locateQuote,
   onSubsectionBoundary,
   locateUnits,
@@ -555,5 +556,62 @@ describe("onSubsectionBoundary", () => {
     expect(
       onSubsectionBoundary(text, at("Use two commas."), at("Use two dashes.")),
     ).toBe(false);
+  });
+});
+
+describe("locateEdge", () => {
+  // The shape of the Meltzer failure (2026-10-23): a heading, two intro paragraphs, a
+  // subsection heading and its first example; the model quoted the headings and the example
+  // as if they were adjacent.
+  const text = [
+    "## 14. MODIFIERS",
+    "A modifier sits next to what it modifies.",
+    "",
+    "## 15. FAULTY COMPARISONS",
+    "",
+    "Comparisons must be made between equivalent items.",
+    "",
+    "On the SAT and ACT, comparisons can be singular or plural.",
+    "",
+    "### A. Singular Comparison",
+    "",
+    "**Incorrect:** Though the work of architect Benjamin Marshall is well known.",
+  ].join("\n");
+  const joined =
+    "15. FAULTY COMPARISONS A. Singular Comparison Though the work";
+
+  it("places a start by the quote's longest unique prefix when the whole is not in the text", () => {
+    expect(locateQuote(text, joined)).toBeNull();
+    const m = locateEdge(text, joined, 0, text.length, "start");
+    expect(m?.start).toBe(text.indexOf("15. FAULTY"));
+  });
+  it("places an end by the quote's longest unique suffix", () => {
+    const m = locateEdge(
+      text,
+      "equivalent items. Singular Comparison Though the work of architect Benjamin Marshall",
+      0,
+      text.length,
+      "end",
+    );
+    expect(text.slice(0, m?.end).endsWith("Benjamin Marshall")).toBe(true);
+  });
+  it("refuses a prefix that recurs in the range", () => {
+    const twice = `${text}\n\n${text}`;
+    expect(locateEdge(twice, joined, 0, twice.length, "start")).toBeNull();
+  });
+  it("refuses a prefix under 12 characters", () => {
+    expect(
+      locateEdge(text, "15. FAULTY nothing like this", 0, text.length, "start"),
+    ).toBeNull();
+  });
+  it("takes the whole quote first, with its ordinary rules", () => {
+    const m = locateEdge(
+      text,
+      "Comparisons must be made between",
+      0,
+      text.length,
+      "start",
+    );
+    expect(m?.start).toBe(text.indexOf("Comparisons must"));
   });
 });
