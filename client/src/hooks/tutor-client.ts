@@ -337,18 +337,26 @@ export function useLatestStandaloneConversation(
  * history includes ended sessions"): no `status` filter, so the server returns
  * active and ended conversations alike (its default is both). An ended one
  * opens read-only: the page draws no composer for it.
+ *
+ * @updated 2026-10-23 — register F-91, owner ruling 1 on #1300 (Karl): the runner's
+ * per-question conversations are listed too, so no `surface` filter either: the server's list
+ * route returns every surface by default (server/routes/tutor-runtime.ts, the list handler
+ * filters by surface only when asked). They are the same rows, under the same retention, as the
+ * LISA page's own; nothing new is stored or served. The page labels each with its question and
+ * opens it read-only.
  */
 export function useConversations(): UseInfiniteQueryResult<
   TutorConversationsList,
   HttpApiError
 > {
   return useInfiniteQuery({
-    queryKey: [...tutorConversationsQueryKey, "standalone"],
+    queryKey: [...tutorConversationsQueryKey, "history"],
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ surface: "standalone" });
+      const params = new URLSearchParams();
       if (pageParam) params.set("cursor", pageParam);
+      const query = params.toString();
       return tutorRequest<TutorConversationsList>(
-        `/conversations?${params.toString()}`,
+        query ? `/conversations?${query}` : "/conversations",
       );
     },
     initialPageParam: null as string | null,

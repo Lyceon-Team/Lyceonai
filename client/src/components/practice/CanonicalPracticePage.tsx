@@ -49,8 +49,13 @@
  * bubble's width clear on its right, so it never covers Submit, Next or a choice. The W4-4
  * side-by-side layout (LISA open on every question from 1024px, the three-panel breakpoint, the
  * calculator covering LISA's column) is gone with the panel it laid out. Below 768px (phones)
- * nothing changed: LISA stacks under the question, closed until Show LISA (QA2-D). Which engine
- * has LISA is unchanged: review only (`features.tutor`).
+ * nothing changed: LISA stacks under the question, closed until Show LISA (QA2-D). Review has
+ * LISA throughout (`features.tutor`).
+ *
+ * @updated 2026-10-23 — owner rulings on #1300 (Karl): (2) practice gets the dock POST-SUBMIT
+ * only (`features.tutorAfterSubmit`), never in the diagnostic and never on a phone; (5) the bubble
+ * never covers the calculator: beside the question, Desmos keeps the bubble's measured footprint
+ * (the `dock-bubble` bottom-chrome layer) clear at its bottom.
  */
 import React from "react";
 import { useLocation } from "wouter";
@@ -59,7 +64,11 @@ import QuestionRenderer from "@/components/question-renderer";
 import { QuestionMetaHeader } from "@/components/practice/QuestionMetaHeader";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
-import { ChatDock, DOCK_CLEARANCE_PX } from "@/components/tutor/ChatDock";
+import {
+  ChatDock,
+  DOCK_CLEARANCE_PX,
+  dockBubbleClearance,
+} from "@/components/tutor/ChatDock";
 import {
   CHECKING_LABEL,
   LOADING_LABEL,
@@ -84,7 +93,11 @@ import {
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { ScopedTutorPanel } from "@/components/tutor/ScopedTutorPanel";
 import { PHONE_WIDTH_QUERY, useMediaQuery } from "@/hooks/use-mobile";
-import { useReportBottomChrome } from "@/lib/bottom-chrome";
+import {
+  useBottomChromeHeight,
+  useReportBottomChrome,
+  type BottomChromeLayer,
+} from "@/lib/bottom-chrome";
 import {
   type EngineConfig,
   type ReviewSessionSpec,
@@ -120,6 +133,9 @@ const QUESTION_COLUMN_PX = 760;
  * content sits 16px inside its edge (`px-4`), hence the 16 back.
  */
 const DOCK_COLUMN_CLEAR_PX = QUESTION_COLUMN_PX + 2 * (DOCK_CLEARANCE_PX - 16); // 888
+
+/** The LISA bubble's bottom-chrome layer (lib/bottom-chrome.ts), read by the side calculator. */
+const DOCK_BUBBLE_LAYER: readonly BottomChromeLayer[] = ["dock-bubble"];
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the sentence, verbatim, with no number. */
 const SHORTER_SESSION_NOTE =
@@ -518,12 +534,19 @@ export default function CanonicalPracticePage(props: {
   const useSidePanel = showCalculator && isCalculatorExpanded && splitEnabled;
 
   // W4-1: LISA scoped to the served item, in an engine that has it (review). Practice has no
-  // LISA and no entry point: `features.tutor` is off there, and that is unchanged.
+  // phone panel and no bar entry point (`features.tutor` is off there); since 2026-10-23 it has
+  // the dock once the current question is submitted (`dockTutor` below).
   // 2026-10-22: on a phone, the stacked panel (closed until Show LISA, QA2-D); from 768px up,
   // the chat dock, mounted for the whole runner so its open state lasts the visit.
   const tutorSurface = engine.domain === "review" ? "review" : "practice";
   const canAskTutor = engine.features.tutor && !!sessionItemId && !!question;
-  const dockTutor = engine.features.tutor && !isPhoneWidth;
+  // Owner ruling 2 on #1300 (Karl, 2026-10-23): practice gets the dock post-submit only (the
+  // bubble appears once the current question is answered or skipped and goes with Next); never
+  // in the diagnostic, never on a phone.
+  const dockTutor =
+    !isPhoneWidth &&
+    (engine.features.tutor ||
+      (engine.features.tutorAfterSubmit && showResult && !isDiagnostic));
   const tutorVisible =
     canAskTutor &&
     isPhoneWidth &&
@@ -815,8 +838,21 @@ export default function CanonicalPracticePage(props: {
     </RunnerFooter>
   ) : null;
 
+  // Owner ruling 5 on #1300 (Karl, 2026-10-23): the bubble never covers the calculator. Beside the
+  // question (from SPLIT_BREAKPOINT) Desmos runs down to the footer, under the bubble, so it keeps
+  // the bubble's measured footprint clear at its bottom. Stacked (below it), the calculator is in
+  // the question column, which already clears the bubble (DOCK_COLUMN_CLEAR_PX and the gutter).
+  const calcBubbleClear = dockBubbleClearance(
+    useBottomChromeHeight(DOCK_BUBBLE_LAYER),
+  );
   const sidePanelCalculator = (
-    <div className="flex h-full flex-col py-4 pr-4">
+    <div
+      className="flex h-full flex-col py-4 pr-4"
+      style={
+        calcBubbleClear > 0 ? { paddingBottom: calcBubbleClear } : undefined
+      }
+      data-testid="side-panel-calculator"
+    >
       <DesmosCalculator
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}

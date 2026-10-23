@@ -34,8 +34,11 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
 }));
 // 2026-10-22: the chat dock as it draws itself from 768px up: a non-modal dialog holding a real
 // textarea (ChatDock.tsx). The runner's keys must not act on what is typed there.
-vi.mock("@/components/tutor/ChatDock", () => ({
-  DOCK_CLEARANCE_PX: 80,
+vi.mock("@/components/tutor/ChatDock", async () => ({
+  // The real constants and helpers; only the component is stubbed.
+  ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
+    "@/components/tutor/ChatDock",
+  )),
   ChatDock: () => (
     <section role="dialog" aria-modal="false" aria-label="LISA">
       <textarea aria-label="Message" data-testid="dock-composer" />

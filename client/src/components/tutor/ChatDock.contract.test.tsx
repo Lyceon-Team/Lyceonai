@@ -208,7 +208,7 @@ import {
   getCrisisResponse,
   runCrisisClassifier,
 } from "../../../../server/services/tutor-crisis";
-import { useReportBottomChrome } from "@/lib/bottom-chrome";
+import { bottomChromeHeight, useReportBottomChrome } from "@/lib/bottom-chrome";
 import ChatPage from "@/pages/chat";
 import { ChatDock, type ChatDockScope } from "./ChatDock";
 
@@ -274,6 +274,30 @@ function seedReviewItem(): string {
   }).id as string;
 }
 
+/** A practice item, as the practice runtime writes it (owner column `user_id`). */
+function seedPracticeItem(status: "served" | "answered"): string {
+  const session = db.current.seed("practice_sessions", {
+    user_id: STUDENT_ID,
+  });
+  return db.current.seed("practice_session_items", {
+    session_id: session.id,
+    user_id: STUDENT_ID,
+    question_id: QUESTION_ID,
+    status,
+    ordinal: 1,
+    question_stem: STEM,
+    question_passage: null,
+    question_options: [
+      { key: "A", text: "3" },
+      { key: "B", text: "5" },
+    ],
+    question_item_type: "mcq",
+    question_explanation: EXPLANATION,
+    question_correct_answer: "B",
+    selected_answer: status === "answered" ? "B" : null,
+  }).id as string;
+}
+
 type Plan = "paid" | "free" | "under13";
 
 async function accessMap(plan: Plan): Promise<FeatureAccessMap> {
@@ -309,11 +333,11 @@ function DockPage({
 
 async function mount(
   plan: Plan,
-  opts: { scope?: ChatDockScope; onChoice?: () => void } = {},
+  opts: { scope?: ChatDockScope; onChoice?: () => void; path?: string } = {},
 ): Promise<{ client: QueryClient; history: string[] }> {
   const map = await accessMap(plan);
   const { hook, history } = memoryLocation({
-    path: "/dashboard",
+    path: opts.path ?? "/dashboard",
     record: true,
   });
   const client = new QueryClient({
@@ -568,6 +592,25 @@ describe("expanded: a non-modal, labelled panel; Esc minimizes", () => {
     expect(tutorCalls().filter((c) => c.method === "POST")).toHaveLength(0);
   });
 
+  // Owner ruling (Karl, 2026-10-23, ruling 4 on #1300): Send in the dock is an outline icon button
+  // (a paper plane) named "Send", so the page keeps its one filled button.
+  it("Send is an outline paper-plane icon button named 'Send': the dock adds no filled button", async () => {
+    await mount("paid");
+    fireEvent.click(bubble());
+    const panel = dialog();
+    await within(panel).findByRole("textbox", { name: "Message" });
+    // Presence first: the Send control is there, with its icon.
+    const send = within(panel).getByRole("button", { name: "Send" });
+    expect(send.querySelector("svg")).not.toBeNull();
+    expect(send.className).toContain("border-lyc-ink-strong");
+    expect(send.className).not.toContain("bg-lyc-primary-bg");
+    // No filled (primary) button anywhere in the dock.
+    const filled = within(panel)
+      .getAllByRole("button")
+      .filter((b) => b.className.includes("bg-lyc-primary-bg"));
+    expect(filled).toEqual([]);
+  });
+
   it("non-modal: with the dock open the page's controls still take clicks, and the dock stays open", async () => {
     const onChoice = vi.fn();
     await mount("paid", { onChoice });
@@ -795,6 +838,174 @@ describe("question scope (the review runner): the item's own conversation, and n
   });
 });
 
+// ── Practice scope (owner ruling 2 on #1300): the dock after submit ─────────────────────────
+
+describe("practice scope (the practice runner, after submit): the answered item's conversation; the server still gates", () => {
+  type Envelope = {
+    source_surface: string;
+    is_post_submit: boolean;
+    correct_answer: string | null;
+    question_content: { stem: string; explanation: string | null } | null;
+  };
+
+  async function askInPractice(itemId: string): Promise<Envelope> {
+    await mount("paid", {
+      scope: {
+        kind: "question",
+        sourceSurface: "practice",
+        sessionItemId: itemId,
+        questionLabel: "Question 1 of 5",
+      },
+    });
+    fireEvent.click(bubble());
+    await within(dialog()).findByRole("textbox", { name: "Message" });
+    send("why is it B?");
+    await within(dialog()).findByText(TUTOR_TEXT);
+    const creates = tutorCalls().filter(
+      (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
+    );
+    expect(creates).toHaveLength(1);
+    expect(creates[0]?.body).toMatchObject({
+      entry_mode: "scoped_question",
+      source_surface: "practice",
+      source_session_item_id: itemId,
+    });
+    return orchestrateTurn.mock.calls[0]?.[0] as Envelope;
+  }
+
+  it("after submit: the practice conversation is created for the answered item, and LISA may see the explanation (the post-submit reveal)", async () => {
+    const env = await askInPractice(seedPracticeItem("answered"));
+    expect(env.source_surface).toBe("practice");
+    expect(env.question_content?.stem).toBe(STEM);
+    expect(env.is_post_submit).toBe(true);
+    expect(env.question_content?.explanation).toBe(EXPLANATION);
+  });
+
+  it("if a practice item were not yet submitted, the server still withholds the answer and explanation, on the wire and in every response", async () => {
+    const env = await askInPractice(seedPracticeItem("served"));
+    // Presence: the envelope carries the question itself.
+    expect(env.question_content?.stem).toBe(STEM);
+    expect(env.is_post_submit).toBe(false);
+    expect(env.correct_answer).toBeNull();
+    expect(env.question_content?.explanation).toBeNull();
+    expect(JSON.stringify(env)).not.toContain("zqx-dock-explanation");
+    expectNoAnswerOnTheWire(tutorCalls());
+    expect(document.body.textContent).not.toContain("zqx-dock-explanation");
+  });
+});
+
+// ── F-91 (owner ruling 1 on #1300): the runner's conversations on the LISA page ─────────────
+
+describe("F-91: the LISA page lists the runner's per-question conversations, labelled with their question, read-only", () => {
+  /** A review question's conversation as the runner's dock writes it, with one turn each way. */
+  function seedScopedConversation(itemId: string): string {
+    const convId = db.current.seed("tutor_conversations", {
+      student_id: STUDENT_ID,
+      entry_mode: "scoped_question",
+      source_surface: "review",
+      surface: "review",
+      source_session_id: null,
+      source_session_item_id: itemId,
+      source_question_row_id: QUESTION_ID,
+      source_question_canonical_id: QUESTION_ID,
+      status: "active",
+      crisis_flagged: false,
+      deleted_at: null,
+      updated_at: "2026-09-23T11:30:00.000Z",
+      closed_at: null,
+      title: "where do I start?",
+      crisis_paused_at: null,
+      ended_at: null,
+    }).id as string;
+    db.current.seed("tutor_messages", {
+      conversation_id: convId,
+      student_id: STUDENT_ID,
+      role: "student",
+      content_kind: "message",
+      message: "where do I start?",
+      client_turn_id: crypto.randomUUID(),
+      created_at: "2026-09-23T11:30:00.000Z",
+    });
+    db.current.seed("tutor_messages", {
+      conversation_id: convId,
+      student_id: STUDENT_ID,
+      role: "tutor",
+      content_kind: "message",
+      message: TUTOR_TEXT,
+      client_turn_id: null,
+      created_at: "2026-09-23T11:30:01.000Z",
+    });
+    return convId;
+  }
+
+  it("the history lists it, labelled 'Review question', with no answer content in the label or on the wire (the item is not yet submitted)", async () => {
+    const convId = seedScopedConversation(seedReviewItem());
+    await mount("paid", { path: "/chat" });
+    const items = await screen.findAllByTestId("lisa-history-item");
+    const row = items.find(
+      (a) => a.getAttribute("href") === `/chat?conversationId=${convId}`,
+    );
+    // Presence first: the row is there, with its title and its question label.
+    expect(row).toBeTruthy();
+    expect(within(row!).getByTestId("lisa-history-scope").textContent).toBe(
+      "Review question",
+    );
+    expect(row!.textContent).toContain("where do I start?");
+    // The label names the question by its surface only: no stem, no answer, no explanation.
+    expect(row!.textContent).not.toContain(STEM);
+    expect(row!.textContent).not.toContain("zqx-dock-explanation");
+    expectNoAnswerOnTheWire(tutorCalls());
+  });
+
+  it("opened on the LISA page it shows its turns read-only: no composer, no End session, the note; the wire carries no answer", async () => {
+    const convId = seedScopedConversation(seedReviewItem());
+    await mount("paid", { path: `/chat?conversationId=${convId}` });
+    const page = await screen.findByTestId("lisa-page");
+    // Presence first: the conversation's turns, read back from the server.
+    const tutor = await within(page).findByTestId("tutor-bubble");
+    expect(tutor.textContent).toContain(TUTOR_TEXT);
+    expect(within(page).getByTestId("student-bubble").textContent).toContain(
+      "where do I start?",
+    );
+    expect(within(page).getByTestId("lisa-scoped-note")).toBeTruthy();
+    expect(within(page).queryByRole("textbox", { name: "Message" })).toBeNull();
+    expect(
+      within(page).queryByRole("button", { name: "End session" }),
+    ).toBeNull();
+    expect(page.textContent).not.toContain("zqx-dock-explanation");
+    expectNoAnswerOnTheWire(tutorCalls());
+  });
+
+  it("the LISA page's own conversations are unchanged: no question label, and the composer", async () => {
+    const convId = db.current.seed("tutor_conversations", {
+      student_id: STUDENT_ID,
+      entry_mode: "general",
+      source_surface: "dashboard",
+      surface: "standalone",
+      source_session_id: null,
+      source_session_item_id: null,
+      source_question_row_id: null,
+      source_question_canonical_id: null,
+      status: "active",
+      crisis_flagged: false,
+      deleted_at: null,
+      updated_at: "2026-09-23T11:00:00.000Z",
+      closed_at: null,
+      title: "Slope",
+      crisis_paused_at: null,
+      ended_at: null,
+    }).id as string;
+    await mount("paid", { path: `/chat?conversationId=${convId}` });
+    const items = await screen.findAllByTestId("lisa-history-item");
+    expect(items).toHaveLength(1);
+    expect(within(items[0]!).queryByTestId("lisa-history-scope")).toBeNull();
+    expect(
+      await screen.findByRole("textbox", { name: "Message" }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("lisa-scoped-note")).toBeNull();
+  });
+});
+
 // ── The crisis flow ────────────────────────────────────────────────────────────────────────
 
 describe("the crisis flow inside the dock: flag → pause → Continue, as on the LISA page", () => {
@@ -855,6 +1066,30 @@ describe("placement: the dock sits above the tab bar + cookie banner, or the run
 
   // jsdom's CSS parser garbles `env(...)` inside `calc()`, so the safe-area term is asserted only
   // as present; the measured px part is what this test pins.
+  // Owner ruling 5 on #1300: the bubble reports itself (the `dock-bubble` layer) while drawn, so
+  // the runner's side calculator can keep clear of it; the open panel replaces it, and reports 0.
+  it("the drawn bubble reports its height as the `dock-bubble` layer, and stops when the panel opens", async () => {
+    const proto = HTMLElement.prototype;
+    const original = proto.getBoundingClientRect;
+    proto.getBoundingClientRect = function rect(this: HTMLElement) {
+      return this.dataset.testid === "chat-dock-bubble"
+        ? ({ height: 56 } as DOMRect)
+        : original.call(this);
+    };
+    try {
+      await mount("paid");
+      expect(bubble()).toBeTruthy();
+      await waitFor(() => expect(bottomChromeHeight(["dock-bubble"])).toBe(56));
+      fireEvent.click(bubble());
+      expect(dialog()).toBeTruthy();
+      expect(bottomChromeHeight(["dock-bubble"])).toBe(0);
+      fireEvent.keyDown(dialog(), { key: "Escape" });
+      await waitFor(() => expect(bottomChromeHeight(["dock-bubble"])).toBe(56));
+    } finally {
+      proto.getBoundingClientRect = original;
+    }
+  });
+
   it("bottom = max(tab bar + banner, footer) + 16px, plus the safe area", async () => {
     const proto = HTMLElement.prototype;
     const original = proto.getBoundingClientRect;

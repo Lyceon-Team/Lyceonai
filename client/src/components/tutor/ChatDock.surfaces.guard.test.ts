@@ -12,8 +12,9 @@
  *   1. exactly three production modules import it, and each draws `<ChatDock`: Home
  *      (`pages/lyceon-dashboard.tsx`), Review (`pages/review.tsx`) and the question runner
  *      (`components/practice/CanonicalPracticePage.tsx`) — one component, three hosts;
- *   2. the runner draws it only for an engine with LISA (`features.tutor`), which is review alone,
- *      as before this change (practice and the diagnostic have no LISA);
+ *   2. the runner draws it for review throughout (`features.tutor`) and, since owner ruling 2 on
+ *      #1300 (2026-10-23), for practice once the current question is submitted
+ *      (`features.tutorAfterSubmit`); never in the diagnostic, never on a phone;
  *   3. from the app root's static imports (the shells, providers, the cookie banner) it is not
  *      reachable, so it is never global;
  *   4. from every full-length exam page, every guardian route, the LISA page itself and the
@@ -150,14 +151,17 @@ describe("the chat dock's surfaces", () => {
     }
   });
 
-  it("the runner draws it only for an engine with LISA, which is review alone (unchanged), and only the review runner's page uses that engine", () => {
+  // Owner ruling 2 on #1300 (Karl, 2026-10-23): practice gets the dock post-submit only.
+  it("the runner draws it for review throughout and for practice only after submit (never in the diagnostic, never on a phone), and only the review runner's page uses the review engine", () => {
     const runner = fs.readFileSync(path.join(SRC, HOSTS[0] ?? ""), "utf8");
     expect(runner).toMatch(
-      /const dockTutor = engine\.features\.tutor && !isPhoneWidth;/,
+      /const dockTutor =\s*!isPhoneWidth &&\s*\(engine\.features\.tutor \|\|\s*\(engine\.features\.tutorAfterSubmit && showResult && !isDiagnostic\)\);/,
     );
     expect(runner).toMatch(/\{dockTutor \? \(\s*<ChatDock/);
     expect(REVIEW_ENGINE_CONFIG.features.tutor).toBe(true);
+    expect(REVIEW_ENGINE_CONFIG.features.tutorAfterSubmit).toBe(false);
     expect(PRACTICE_ENGINE_CONFIG.features.tutor).toBe(false);
+    expect(PRACTICE_ENGINE_CONFIG.features.tutorAfterSubmit).toBe(true);
     const reviewEngineUsers = productionFiles(SRC)
       .filter((f) =>
         /import\s*\{[^}]*\bREVIEW_ENGINE_CONFIG\b[^}]*\}\s*from/.test(

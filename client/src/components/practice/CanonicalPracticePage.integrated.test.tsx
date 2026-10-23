@@ -8,6 +8,15 @@ vi.mock("@/components/math/DesmosCalculator", () => ({
   default: () => <div data-testid="desmos-mock" />,
 }));
 
+// 2026-10-23: practice now draws the chat dock after submit; its own behaviour is
+// ChatDock.contract.test.tsx's. Stubbed so this file tests the round trip alone.
+vi.mock("@/components/tutor/ChatDock", async () => ({
+  ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
+    "@/components/tutor/ChatDock",
+  )),
+  ChatDock: () => <div data-testid="chat-dock-stub" />,
+}));
+
 vi.mock("@/components/math/MathReferenceSheet", () => ({
   default: () => null,
 }));

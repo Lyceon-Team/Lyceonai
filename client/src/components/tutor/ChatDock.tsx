@@ -53,6 +53,7 @@ import {
   useRef,
   useState,
   type MutableRefObject,
+  type ReactNode,
 } from "react";
 import { Link } from "wouter";
 import { Lock, Minus, X } from "lucide-react";
@@ -72,6 +73,7 @@ import {
 } from "@/hooks/useKeyboardShortcuts";
 import {
   useBottomChromeHeight,
+  useReportBottomChrome,
   type BottomChromeLayer,
 } from "@/lib/bottom-chrome";
 import { ScopedTutorBody } from "@/components/tutor/ScopedTutorPanel";
@@ -111,6 +113,14 @@ const DOCK_EDGE_PX = 16;
  * column would reach into it keeps this much clear on its right (CanonicalPracticePage).
  */
 export const DOCK_CLEARANCE_PX = DOCK_EDGE_PX + DOCK_BUBBLE_PX + 8;
+
+/**
+ * What a box ending at the runner footer's top keeps clear under a drawn bubble of `bubblePx`
+ * (the `dock-bubble` layer): the bubble sits DOCK_EDGE_PX above the footer, plus an 8px gap.
+ */
+export function dockBubbleClearance(bubblePx: number): number {
+  return bubblePx > 0 ? bubblePx + DOCK_EDGE_PX + 8 : 0;
+}
 
 /** Fixed chrome that stacks (the cookie banner sits on top of the phone tab bar). */
 const STACKED_CHROME: readonly BottomChromeLayer[] = ["tab-bar", "consent"];
@@ -214,42 +224,63 @@ export function ChatDock({
         />
       ) : null}
       {isOpen ? null : (
-        <button
-          ref={bubbleRef}
-          type="button"
-          aria-label={bubbleLabel}
-          aria-haspopup={locked ? "dialog" : undefined}
-          aria-expanded={locked ? undefined : false}
-          data-testid="chat-dock-bubble"
-          data-locked={locked ? "true" : undefined}
-          className={`${LYC_FOCUS} pointer-events-auto relative cursor-pointer rounded-full border-0 bg-transparent p-0`}
-          style={{ width: DOCK_BUBBLE_PX, height: DOCK_BUBBLE_PX }}
-          onClick={() => {
-            if (lockReason !== null) {
-              upgrade.open("tutor_access", lockReason);
-              return;
-            }
-            focusTarget.current = "panel";
-            setView("open");
-          }}
-        >
-          <LisaAvatar size="bubble" />
-          {locked ? (
-            <span
-              aria-hidden="true"
-              className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border border-lyc-rule bg-lyc-paper"
-            >
-              <Lock
-                data-testid="chat-dock-lock"
-                className="h-3.5 w-3.5 text-lyc-lock"
-                strokeWidth={2.25}
-              />
-            </span>
-          ) : null}
-        </button>
+        <DockBubbleReport bubbleRef={bubbleRef}>
+          <button
+            ref={bubbleRef}
+            type="button"
+            aria-label={bubbleLabel}
+            aria-haspopup={locked ? "dialog" : undefined}
+            aria-expanded={locked ? undefined : false}
+            data-testid="chat-dock-bubble"
+            data-locked={locked ? "true" : undefined}
+            className={`${LYC_FOCUS} pointer-events-auto relative cursor-pointer rounded-full border-0 bg-transparent p-0`}
+            style={{ width: DOCK_BUBBLE_PX, height: DOCK_BUBBLE_PX }}
+            onClick={() => {
+              if (lockReason !== null) {
+                upgrade.open("tutor_access", lockReason);
+                return;
+              }
+              focusTarget.current = "panel";
+              setView("open");
+            }}
+          >
+            <LisaAvatar size="bubble" />
+            {locked ? (
+              <span
+                aria-hidden="true"
+                className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border border-lyc-rule bg-lyc-paper"
+              >
+                <Lock
+                  data-testid="chat-dock-lock"
+                  className="h-3.5 w-3.5 text-lyc-lock"
+                  strokeWidth={2.25}
+                />
+              </span>
+            ) : null}
+          </button>
+        </DockBubbleReport>
       )}
     </div>
   );
+}
+
+/**
+ * @spec [owner ruling 5 on #1300 (Karl, 2026-10-23): "the bubble must never cover the
+ *       calculator ... reuse the existing bottom-chrome/layer mechanism"] | @implemented [2026-10-23]
+ * plain English: while the bubble is drawn, its measured height is the `dock-bubble` layer of
+ * lib/bottom-chrome.ts; the runner's side-panel calculator keeps that much (plus the bubble's
+ * distance from the footer) clear at its bottom. Its own component so the report starts and stops
+ * with the bubble (the open panel replaces it, and then nothing is reported).
+ */
+function DockBubbleReport({
+  bubbleRef,
+  children,
+}: {
+  bubbleRef: MutableRefObject<HTMLButtonElement | null>;
+  children: ReactNode;
+}): JSX.Element {
+  useReportBottomChrome(bubbleRef, "dock-bubble");
+  return <>{children}</>;
 }
 
 /**
@@ -383,6 +414,8 @@ function DockHeader({
  * of the page's history), else a general conversation created on the first message, the way
  * /chat creates one. After the student ends it here, the dock starts a fresh one on the next
  * message (as /chat's End leaves an empty column), instead of falling back to an older thread.
+ *
+ * "Open in LISA": approved wording (Karl, 2026-10-23, ruling 3 on #1300).
  */
 function GeneralDockBody(): JSX.Element {
   const [freshAfterEnd, setFreshAfterEnd] = useState(false);

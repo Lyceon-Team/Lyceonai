@@ -83,7 +83,10 @@ const dockProps = vi.hoisted(() => ({
 vi.mock("@/components/tutor/ChatDock", async () => {
   const React = await import("react");
   return {
-    DOCK_CLEARANCE_PX: 80,
+    // The real constants and helpers; only the component is stubbed.
+    ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
+      "@/components/tutor/ChatDock",
+    )),
     ChatDock: (props: Record<string, unknown>) => {
       dockProps.last = props;
       React.useEffect(() => {
@@ -806,6 +809,41 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     // The dock replaces the panel: no side panel and no bar toggle.
     expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+  });
+
+  // Owner ruling 2 on #1300 (Karl, 2026-10-23): practice gets the dock POST-SUBMIT only.
+  it("practice (from 768px): no dock before submit; after submit the dock gets the answered item and its label, never the choices; Next takes it away", async () => {
+    mockWidth(1440);
+    installNetwork({ total: 3 });
+    mountRunner({ engine: PRACTICE_ENGINE_CONFIG });
+    await loaded();
+    // Presence before absence: the question is served and unanswered, and no dock is drawn.
+    expect(submitButton()).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
+    expect(dockProps.last).toBeNull();
+
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await screen.findByRole("button", { name: "Next question" });
+    // Post-submit: the explanation is on the page, and the dock is handed only the scope.
+    expect(screen.getByText(EXPLANATION)).toBeTruthy();
+    expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
+    const props = dockProps.last!;
+    expect(props.scope).toEqual({
+      kind: "question",
+      sourceSurface: "practice",
+      sessionItemId: "item-1",
+      questionLabel: "Question 1 of 3",
+    });
+    const serialised = JSON.stringify(props);
+    for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
+      expect(serialised).not.toContain(leak);
+    }
+
+    await click(screen.getByRole("button", { name: "Next question" }));
+    await loaded(2);
+    expect(submitButton()).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
   });
 
   it("the dock follows Next to the second question without remounting (one dock per runner visit)", async () => {

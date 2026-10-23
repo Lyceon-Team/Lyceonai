@@ -29,7 +29,7 @@ import { FIRST_RUN, FIRST_RUN_ONBOARDING } from "./first-run";
 import { DIAGNOSTIC_PROJECTION } from "./diagnostic-projection";
 import { COOKIE_BANNER } from "./cookie-banner";
 import { HOMEPAGE_HERO } from "./homepage-hero";
-import { LISA_DOCK } from "./lisa-dock";
+import { LISA_DOCK, LISA_DOCK_2 } from "./lisa-dock";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -64,4 +64,5 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [COOKIE_BANNER.id]: COOKIE_BANNER,
   [HOMEPAGE_HERO.id]: HOMEPAGE_HERO,
   [LISA_DOCK.id]: LISA_DOCK,
+  [LISA_DOCK_2.id]: LISA_DOCK_2,
 };

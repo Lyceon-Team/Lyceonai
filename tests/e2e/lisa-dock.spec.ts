@@ -66,7 +66,12 @@ const MANIFEST = JSON.parse(
 const BUBBLE = '[data-testid="chat-dock-bubble"]';
 const PANEL = '[data-testid="chat-dock-panel"]';
 const WIDTHS = [768, 1024, 1440] as const;
-const HEIGHT_FOR: Record<number, number> = { 768: 1024, 1024: 768, 1440: 900 };
+const HEIGHT_FOR: Record<number, number> = {
+  768: 1024,
+  1024: 768,
+  1062: 800,
+  1440: 900,
+};
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -140,6 +145,73 @@ async function openRunner(page: Page, sessionId: string): Promise<string> {
     question?: { sessionItemId?: string } | null;
   };
   await page.locator('[data-testid="runner-choice"]').first().waitFor();
+  const id = body.question?.sessionItemId ?? body.sessionItemId;
+  if (typeof id !== "string") throw new Error("no served item");
+  return id;
+}
+
+/**
+ * A fresh session of `engine` in `sections`, through the real create route, bound to the seed's
+ * client instance (#1300 follow-ups, 2026-10-23: practice and Math sessions too).
+ */
+async function freshSession(
+  api: APIRequestContext,
+  engine: "practice" | "review",
+  sections: readonly ("M" | "RW")[],
+): Promise<string> {
+  freshCounter += 1;
+  const data =
+    engine === "review"
+      ? {
+          mode: "filter",
+          filters: { sections },
+          target_count: 10,
+          client_instance_id: SEED_CLIENT_INSTANCE,
+          idempotency_key: `lisa-dock-spec-${process.pid}-${freshCounter}`,
+        }
+      : {
+          section: sections[0],
+          mode: "balanced",
+          target_question_count: 5,
+          client_instance_id: SEED_CLIENT_INSTANCE,
+        };
+  const res = await api.post(`${BASE}/api/${engine}/sessions`, {
+    headers: { [PERSONA_HEADER]: "paid", "content-type": "application/json" },
+    data,
+  });
+  expect(res.status(), await res.text()).toBeLessThan(400);
+  const json = (await res.json()) as { sessionId?: unknown };
+  if (typeof json.sessionId !== "string") throw new Error("no sessionId");
+  return json.sessionId;
+}
+
+async function endSession(
+  api: APIRequestContext,
+  engine: "practice" | "review",
+  sessionId: string,
+): Promise<void> {
+  await api.post(`${BASE}/api/${engine}/sessions/${sessionId}/terminate`, {
+    headers: { [PERSONA_HEADER]: "paid", "content-type": "application/json" },
+    data: { client_instance_id: SEED_CLIENT_INSTANCE },
+  });
+}
+
+/** Opens `engine`'s runner on `sessionId` and returns the served item's id (from /next). */
+async function openAnyRunner(
+  page: Page,
+  engine: "practice" | "review",
+  sessionId: string,
+): Promise<string> {
+  const next = page.waitForResponse(
+    (r) =>
+      new RegExp(`/api/${engine}/sessions/[^/]+/next`).test(r.url()) && r.ok(),
+  );
+  await page.goto(`${BASE}/${engine}/session/${sessionId}`);
+  const body = (await (await next).json()) as {
+    sessionItemId?: string;
+    question?: { sessionItemId?: string } | null;
+  };
+  await page.locator('[data-testid="runner-submit"]').waitFor();
   const id = body.question?.sessionItemId ?? body.sessionItemId;
   if (typeof id !== "string") throw new Error("no served item");
   return id;
@@ -325,7 +397,7 @@ test("the dock opens scoped to the current question: the chip names it, and the 
     await panel
       .locator('textarea[aria-label="Message"]')
       .fill("Where do I start?");
-    await panel.locator('button[aria-label="Send message"]').click();
+    await panel.locator('button[aria-label="Send"]').click();
     const body = (await create).postDataJSON() as Record<string, unknown>;
     expect(body.entry_mode).toBe("scoped_question");
     expect(body.source_surface).toBe("review");
@@ -389,6 +461,115 @@ for (const width of WIDTHS) {
       ).toBe(false);
     } finally {
       await endReviewSession(request, sessionId);
+    }
+  });
+}
+
+// ── #1300 follow-ups (owner rulings, Karl, 2026-10-23) ──────────────────────────────────────
+
+// Ruling 2: practice gets the dock POST-SUBMIT only.
+test("practice runner (1440): no bubble before submit; after submit the bubble, clear of Next, opening scoped to the answered item", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await asPersona(page, "paid");
+  const sessionId = await freshSession(request, "practice", ["RW"]);
+  try {
+    const itemId = await openAnyRunner(page, "practice", sessionId);
+    // Presence before absence: the question is served and settled, unanswered.
+    await expect(
+      page.locator('[data-testid="runner-choice"]').first(),
+    ).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator(BUBBLE)).toHaveCount(0);
+
+    await page.locator('[data-testid="runner-choice"]').first().click();
+    await page.locator('[data-testid="runner-submit"]').click();
+    const nextButton = page.locator('[data-testid="runner-next"]');
+    await expect(nextButton).toBeVisible();
+    const bubble = page.locator(BUBBLE);
+    await expect(bubble).toBeVisible();
+    expect(overlaps(await box(bubble), await box(nextButton))).toBe(false);
+    expect(
+      overlaps(
+        await box(bubble),
+        await box(page.locator('[data-testid="runner-footer"]')),
+      ),
+    ).toBe(false);
+
+    await bubble.click();
+    const panel = page.locator(PANEL);
+    await expect(
+      panel.locator('[data-testid="tutor-question-chip"]'),
+    ).toHaveText(/^Question 1 of \d+$/);
+    // Ruling 4: Send is the outline paper-plane icon button named "Send".
+    await expect(panel.getByRole("button", { name: "Send" })).toBeVisible();
+    const create = page.waitForRequest(
+      (r) =>
+        r.method() === "POST" && r.url().endsWith("/api/tutor/conversations"),
+    );
+    await panel
+      .locator('textarea[aria-label="Message"]')
+      .fill("Why is this one right?");
+    await panel.getByRole("button", { name: "Send" }).click();
+    const body = (await create).postDataJSON() as Record<string, unknown>;
+    expect(body.entry_mode).toBe("scoped_question");
+    expect(body.source_surface).toBe("practice");
+    expect(body.source_session_item_id).toBe(itemId);
+  } finally {
+    await endSession(request, "practice", sessionId);
+  }
+});
+
+// Ruling 5: the bubble never covers the calculator, at the stacked width (1024), the split
+// breakpoint (1062) and desktop (1440).
+for (const width of [1024, 1062, 1440] as const) {
+  test(`${width}px Math review runner with the calculator open: the bubble clears the calculator, Submit and the footer`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height: HEIGHT_FOR[width] ?? 800 });
+    await asPersona(page, "paid");
+    const sessionId = await freshSession(request, "review", ["M"]);
+    try {
+      await openAnyRunner(page, "review", sessionId);
+      await page.locator('[data-testid="practice-calculator-toggle"]').click();
+      // The calculator itself (the Desmos shell, modes bar included), inside whichever layout
+      // holds it: beside the question from the split breakpoint, stacked under it below.
+      const holder =
+        width >= 1062
+          ? page.locator('[data-testid="side-panel-calculator"]')
+          : page.locator('[data-testid="stacked-calculator-container"]');
+      await expect(holder).toBeVisible();
+      const calculator = holder.locator(
+        '[data-testid="desmos-calculator-shell"]',
+      );
+      // Presence first: the calculator is open, the bubble drawn.
+      await expect(calculator).toBeVisible();
+      const bubble = page.locator(BUBBLE);
+      await expect(bubble).toBeVisible();
+      await calculator.scrollIntoViewIfNeeded();
+      // Let the side panel take the bubble's footprint (measured after the bubble reports).
+      await page.waitForTimeout(300);
+      expect(
+        overlaps(await box(bubble), await box(calculator)),
+        `bubble ${JSON.stringify(await box(bubble))} over calculator ${JSON.stringify(await box(calculator))}`,
+      ).toBe(false);
+      expect(
+        overlaps(
+          await box(bubble),
+          await box(page.locator('[data-testid="runner-submit"]')),
+        ),
+      ).toBe(false);
+      expect(
+        overlaps(
+          await box(bubble),
+          await box(page.locator('[data-testid="runner-footer"]')),
+        ),
+      ).toBe(false);
+    } finally {
+      await endSession(request, "review", sessionId);
     }
   });
 }

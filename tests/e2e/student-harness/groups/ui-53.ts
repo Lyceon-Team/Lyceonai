@@ -75,19 +75,31 @@ const SHORTENED: FreshSession = {
 const CLIENT = { lyceon_client_instance_id: SEED_CLIENT_INSTANCE } as const;
 /**
  * QA2-D (2026-10-08): on a phone LISA starts closed, so a shot that needs the panel there first
- * taps the bar's LISA icon (desktop: LISA is already open beside the question).
+ * taps the bar's LISA icon. (Desktop since 2026-10-22, owner brief "LISA chat dock" on #1300: LISA
+ * is the chat dock, so `OPEN_LISA` opens it from its bubble; there is no side panel to be open.)
  */
 const OPEN_LISA_ON_PHONE: Step = {
   click: { desktop: null, mobile: '[data-testid="practice-tutor-toggle"]' },
 };
+const DOCK_BUBBLE = '[data-testid="chat-dock-bubble"]';
+/** #1300: open LISA: the dock's bubble at 1024 and 1440, the bar's LISA icon on a phone. */
+const OPEN_LISA: Step = {
+  click: {
+    desktop: DOCK_BUBBLE,
+    mobile: '[data-testid="practice-tutor-toggle"]',
+  },
+};
+/** LISA's frame wherever it is drawn: the phone panel or the chat dock's panel. */
+const LISA_FRAME =
+  '[data-testid="scoped-tutor-panel"], [data-testid="chat-dock-panel"]';
 /** QA2-D: wait for the composer on desktop; on a phone, for the runner (LISA starts closed). */
 const LISA_OR_RUNNER = {
-  desktop: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
+  desktop: DOCK_BUBBLE,
   mobile: '[data-testid="runner-choice"]',
 } as const;
 /** The review runner's LISA composer (ScopedTutorPanel). */
 const LISA_COMPOSER = {
-  desktop: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
+  desktop: '[data-testid="chat-dock-panel"] textarea[aria-label="Message"]',
   mobile: '[data-testid="scoped-tutor-panel"] textarea[aria-label="Message"]',
 } as const;
 /**
@@ -166,7 +178,7 @@ export const UI_53: PageGroup = {
     {
       id: "review-selected",
       title:
-        "Review runner, a choice selected, before submitting (LISA beside the question at 1440)",
+        "Review runner, a choice selected, before submitting (from 768px LISA is the chat dock's bubble, bottom-right)",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
@@ -220,7 +232,7 @@ export const UI_53: PageGroup = {
     {
       id: "review-lisa-typing",
       title:
-        "Review runner, LISA panel in use (OQ-54 (a), ruling 2026-10-05: student tokens, follows the device theme): a first message typed and sent creates the item's conversation (real POST /api/tutor/conversations); the student's bubble and LISA's typing dots show in the panel, and Send reads 'Sending…' (QA 2026-10-07 item 5). The turn request is held in the browser, so no turn runs. On a phone the panel stacks under the question; typing into it scrolls it into view",
+        "Review runner, LISA in use (OQ-54 (a), ruling 2026-10-05: student tokens, follows the device theme): at 1024 and 1440 in the chat dock (#1300), on a phone in the panel under the question. A first message typed and sent creates the item's conversation (real POST /api/tutor/conversations); the student's bubble and LISA's typing dots show, and Send (the outline icon button, ruling 4 on #1300) is pending (QA 2026-10-07 item 5). The turn request is held in the browser, so no turn runs",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
@@ -228,7 +240,7 @@ export const UI_53: PageGroup = {
       waitFor: LISA_OR_RUNNER,
       holdRequest: { method: "POST", path: "/api/tutor/messages" },
       steps: [
-        OPEN_LISA_ON_PHONE,
+        OPEN_LISA,
         {
           fill: {
             desktop: LISA_COMPOSER.desktop,
@@ -236,12 +248,18 @@ export const UI_53: PageGroup = {
           },
           value: "How should I start this one?",
         },
-        both(
-          '[data-testid="scoped-tutor-panel"] button[aria-label="Send message"]',
-        ),
+        {
+          click: {
+            desktop:
+              '[data-testid="chat-dock-panel"] button[aria-label="Send"]',
+            mobile:
+              '[data-testid="scoped-tutor-panel"] button[aria-label="Send"]',
+          },
+        },
       ],
+      // Owner ruling 4 on #1300 (2026-10-23): Send is the outline icon button named "Send".
       expectVisible:
-        '[data-testid="scoped-tutor-panel"] button[aria-label="Send message"][data-pending="true"]',
+        '[data-testid="chat-dock-panel"] button[aria-label="Send"][data-pending="true"], [data-testid="scoped-tutor-panel"] button[aria-label="Send"][data-pending="true"]',
       expectFitsViewport: FITS,
       prototype: {
         kind: "none",
@@ -252,14 +270,14 @@ export const UI_53: PageGroup = {
     {
       id: "review-lisa-focused",
       title:
-        "Review runner, the LISA composer focused (F-69, owner ruling 2026-10-05): the Focus shell's top bar stays in view and the document is the viewport's height (no blank band under the footer); on a phone the focus scrolls the panel into view inside the shell, never the window",
+        "Review runner, the LISA composer focused (F-69, owner ruling 2026-10-05): the Focus shell's top bar stays in view and the document is the viewport's height (no blank band under the footer); at 1024 and 1440 the composer is the open chat dock's (#1300); on a phone the focus scrolls the panel into view inside the shell, never the window",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
       localStorage: CLIENT,
       waitFor: LISA_OR_RUNNER,
       steps: [
-        OPEN_LISA_ON_PHONE,
+        OPEN_LISA,
         {
           focus: {
             desktop: LISA_COMPOSER.desktop,
@@ -277,23 +295,15 @@ export const UI_53: PageGroup = {
     {
       id: "review-lisa-show",
       title:
-        "QA 2026-10-07 item 8 and QA2-D (2026-10-08): at 1440 LISA hidden with the bar's toggle, then shown again beside the question (nothing scrolls). On a phone LISA starts closed, and one tap on the bar's LISA icon opens it scrolled into view inside the shell, its header at the top of the runner's scroll area",
+        "QA 2026-10-07 item 8 and QA2-D (2026-10-08): at 1024 and 1440 the chat dock's bubble opens LISA (#1300; nothing scrolls). On a phone LISA starts closed, and one tap on the bar's LISA icon opens it scrolled into view inside the shell, its header at the top of the runner's scroll area",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
       localStorage: CLIENT,
       waitFor: LISA_OR_RUNNER,
-      steps: [
-        {
-          click: {
-            desktop: '[data-testid="practice-tutor-toggle"]',
-            mobile: null,
-          },
-        },
-        both('[data-testid="practice-tutor-toggle"]'),
-      ],
-      expectVisible: '[data-testid="scoped-tutor-panel"]',
-      expectInView: '[data-testid="scoped-tutor-panel"]',
+      steps: [OPEN_LISA],
+      expectVisible: LISA_FRAME,
+      expectInView: LISA_FRAME,
       expectFitsViewport: FITS,
       prototype: {
         kind: "none",
@@ -304,7 +314,7 @@ export const UI_53: PageGroup = {
     {
       id: "review-lisa-phone-return",
       title:
-        'QA2-D (Karl, 2026-10-08: "tapping the icon always brings it into view"): on a phone LISA opened, then the runner scrolled back up to the question (the first choice focused), then the LISA icon tapped again: the open panel is brought back into view, not closed. Desktop: LISA beside the question, untouched (control)',
+        'QA2-D (Karl, 2026-10-08: "tapping the icon always brings it into view"): on a phone LISA opened, then the runner scrolled back up to the question (the first choice focused), then the LISA icon tapped again: the open panel is brought back into view, not closed. Desktop: the chat dock bubble, untouched (control; #1300)',
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,
@@ -315,8 +325,9 @@ export const UI_53: PageGroup = {
         { focus: { desktop: null, mobile: '[data-testid="runner-choice"]' } },
         OPEN_LISA_ON_PHONE,
       ],
-      expectVisible: '[data-testid="scoped-tutor-panel"]',
-      expectInView: '[data-testid="scoped-tutor-panel"]',
+      // Desktop (control): the chat dock's bubble, untouched (#1300).
+      expectVisible: `${LISA_FRAME}, ${DOCK_BUBBLE}`,
+      expectInView: `${LISA_FRAME}, ${DOCK_BUBBLE}`,
       expectFitsViewport: FITS,
       prototype: {
         kind: "none",
@@ -333,15 +344,23 @@ export const UI_53: PageGroup = {
       freshSession: REVIEW,
       localStorage: CLIENT,
       waitFor: {
-        desktop: '[data-testid="lisa-upgrade"]',
+        desktop: DOCK_BUBBLE,
         mobile: '[data-testid="runner-choice"]',
       },
+      // #1300: at 1024 and 1440 the free student's bubble carries the lock and opens the upgrade
+      // modal itself (no tutor request); on a phone the panel's refused lookup draws the card.
       steps: [
-        OPEN_LISA_ON_PHONE,
+        OPEN_LISA,
         both('[data-testid="upgrade-modal"] button:has-text("Not now")'),
-        both('[data-testid="tutor-question-chip"]'),
+        {
+          click: {
+            desktop: null,
+            mobile: '[data-testid="tutor-question-chip"]',
+          },
+        },
       ],
-      expectVisible: '[data-testid="lisa-upgrade-unlock"]',
+      expectVisible:
+        '[data-testid="lisa-upgrade-unlock"], [data-testid="chat-dock-lock"]',
       expectGone: '[data-testid="upgrade-modal"]',
       prototype: {
         kind: "none",
@@ -392,7 +411,7 @@ export const UI_53: PageGroup = {
     {
       id: "review-lisa-phone-default",
       title:
-        'QA2-D (Karl, 2026-10-08: "Phone: the LISA panel defaults closed"): the review runner on load. At 390 (LISA stacks under the question) the panel is closed and the bar\'s LISA icon offers it; at 1024 and 1440 LISA is beside the question, open, as before',
+        "QA2-D (Karl, 2026-10-08: \"Phone: the LISA panel defaults closed\"): the review runner on load. At 390 (LISA stacks under the question) the panel is closed and the bar's LISA icon offers it; at 1024 and 1440 LISA is the chat dock's bubble, collapsed (#1300)",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW,

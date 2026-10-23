@@ -130,7 +130,10 @@ const dockMounts = vi.hoisted(() => ({ count: 0 }));
 vi.mock("@/components/tutor/ChatDock", async () => {
   const React = await import("react");
   return {
-    DOCK_CLEARANCE_PX: 80,
+    // The real constants and helpers; only the component is stubbed.
+    ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
+      "@/components/tutor/ChatDock",
+    )),
     ChatDock: (p: {
       scope: {
         kind: string;
@@ -1229,6 +1232,50 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
     expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
   });
 
+  // Owner ruling 5 on #1300 (Karl, 2026-10-23): the bubble never covers the calculator. The bubble
+  // reports its height as the `dock-bubble` layer; the side-panel calculator keeps it clear.
+  it("the side-panel calculator keeps the drawn bubble's footprint clear at its bottom, and nothing when there is no bubble", async () => {
+    const { useReportBottomChrome } = await import("@/lib/bottom-chrome");
+    function FakeBubble(): JSX.Element {
+      const ref = React.useRef<HTMLElement>(null);
+      useReportBottomChrome(ref, "dock-bubble");
+      return <span ref={ref} data-testid="fake-bubble" />;
+    }
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function rect(this: Element) {
+      return (this as HTMLElement).dataset?.testid === "fake-bubble"
+        ? ({ height: 56 } as DOMRect)
+        : original.call(this);
+    };
+    try {
+      mockViewport(1600);
+      const view = renderReview();
+      fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
+      // Presence first: the calculator is open beside the question.
+      const panel = screen.getByTestId("side-panel-calculator");
+      expect(within(panel).getByTestId("desmos-mock").textContent).toBe(
+        "expanded",
+      );
+      expect(panel.style.paddingBottom).toBe("");
+      const bubble = render(<FakeBubble />);
+      await waitFor(() =>
+        // 56 (the bubble) + 16 (its distance from the footer) + 8 (a gap).
+        expect(
+          screen.getByTestId("side-panel-calculator").style.paddingBottom,
+        ).toBe("80px"),
+      );
+      bubble.unmount();
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("side-panel-calculator").style.paddingBottom,
+        ).toBe(""),
+      );
+      view.unmount();
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+    }
+  });
+
   it("review with the calculator from the split breakpoint: the standard side-by-side calculator, no LISA column", () => {
     mockViewport(1600);
     renderReview();
@@ -1281,7 +1328,7 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
     expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
   });
 
-  it("practice is untouched: no LISA, no dock, no entry point, its own layout", () => {
+  it("practice BEFORE submit: no LISA, no dock, no entry point, its own layout", () => {
     mockViewport(1600);
     hookMock.useCanonicalPractice.mockReturnValue(
       buildHookState("M", { sessionItemId: "prac-item-1" }),
@@ -1293,10 +1340,75 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
         engine={PRACTICE_ENGINE_CONFIG}
       />,
     );
+    // Presence first: the question is on screen, unanswered.
+    expect(screen.getByText("What is 1 + 1?")).toBeTruthy();
+    expect(screen.getByTestId("runner-submit")).toBeTruthy();
     expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
     expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     expect(screen.queryByTestId("review-tutor-layout")).toBeNull();
     expect(screen.queryByText(/LISA/)).toBeNull();
+  });
+
+  // Owner ruling 2 on #1300 (Karl, 2026-10-23): practice gets the dock POST-SUBMIT only.
+  for (const width of [DOCK_FROM_PX, 1024, 1440]) {
+    it(`practice AFTER submit at ${width}px: the dock, scoped to the answered practice item; still no phone panel or toggle`, () => {
+      mockViewport(width);
+      hookMock.useCanonicalPractice.mockReturnValue(
+        buildHookState("M", {
+          sessionItemId: "prac-item-1",
+          currentIndex: 0,
+          totalQuestions: 5,
+          showResult: true,
+        }),
+      );
+      render(
+        <CanonicalPracticePage
+          title="Math Practice"
+          section="M"
+          engine={PRACTICE_ENGINE_CONFIG}
+        />,
+      );
+      const dock = screen.getByTestId("chat-dock-mock");
+      expect(dock.getAttribute("data-kind")).toBe("question");
+      expect(dock.getAttribute("data-surface")).toBe("practice");
+      expect(dock.getAttribute("data-item")).toBe("prac-item-1");
+      expect(dock.getAttribute("data-label")).toBe("Question 1 of 5");
+      expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+      expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+    });
+  }
+
+  it("practice after submit, but the diagnostic or a phone: no dock", () => {
+    mockViewport(1440);
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", { sessionItemId: "diag-item-1", showResult: true }),
+    );
+    const diagnostic = render(
+      <CanonicalPracticePage
+        title="Diagnostic Assessment"
+        section="M"
+        engine={PRACTICE_ENGINE_CONFIG}
+        isDiagnostic
+      />,
+    );
+    expect(screen.getByTestId("runner-next")).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
+    diagnostic.unmount();
+
+    mockViewport(390);
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", { sessionItemId: "prac-item-1", showResult: true }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        section="M"
+        engine={PRACTICE_ENGINE_CONFIG}
+      />,
+    );
+    expect(screen.getByTestId("runner-next")).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
+    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
   });
 });
