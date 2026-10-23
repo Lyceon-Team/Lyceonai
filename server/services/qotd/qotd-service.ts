@@ -18,23 +18,25 @@
  *   * gradeQotd: the shared gradeAnswer (shared/practice/grade.ts), the same function practice and
  *     review use, over the day's recomputed token map (option-tokens.ts).
  *
- * Owner ruling 2026-10-05 (QOTD follow-up, items 1 and 4) | updated [2026-10-05]: today's options
- * are shuffled on EVERY request with the same unseeded Fisher-Yates practice uses
- * (`fisherYates`, shared/question-bank-contract.ts) and each is sent as an opaque token, never
- * the canonical letter. On submit only one of the day's four tokens is accepted: a raw letter
- * or any other string is `invalid_answer` (400) before grading, because the shared resolver
- * would otherwise fall back to reading a bare "A"-"D" as a canonical key. No payload carries the
- * canonical question id.
+ * Owner ruling 2026-10-05 (QOTD follow-up, items 1 and 4), superseded on order by Karl's ruling
+ * 2026-10-23 ("QOTD social: TikTok 3-slide carousel + fixed answer order"): today's options are
+ * served in CANONICAL (authored) order on every request, the same order the archive, the home
+ * card, the social images and the Reddit reveal use, so the letter a reveal names is the letter
+ * the question showed. What 2026-10-05 put in place and still holds: each option is sent as an
+ * opaque token, never the canonical letter, and on submit only one of the day's four tokens is
+ * accepted: a raw letter or any other string is `invalid_answer` (400) before grading, because
+ * the shared resolver would otherwise fall back to reading a bare "A"-"D" as a canonical key.
+ * Tokens do not depend on display order, so a visitor who loaded the page before the 2026-10-23
+ * deploy (a shuffled order) still submits a valid token and is graded correctly. No payload
+ * carries the canonical question id. Practice and diagnostic shuffling are unchanged.
  */
 import { z } from "zod";
 import {
-  fisherYates,
   mapGenesisQuestionRow,
   parseCanonicalMcOptions,
   projectStudentSafeQuestion,
 } from "../../../shared/question-bank-contract";
 import { qotdOptionToken, qotdOptionTokenMap } from "./option-tokens";
-import { explanationNamesChoiceLetter } from "../../../shared/practice/letter-reference";
 import {
   qotdCorrectOptionId,
   qotdRowSchema,
@@ -146,21 +148,13 @@ export function toArchiveIndexResponse(
 }
 
 /**
- * Today's options: a fresh unseeded shuffle per call, each option carrying only its token.
- *
- * Read-time guard for days scheduled before the scheduler screened letter references
- * (owner ruling 2026-10-05; spec audit the same day): if the explanation names a choice letter,
- * the options are served in CANONICAL order — still as tokens — so the on-screen letters match
- * the explanation. A wrong "choice B" for most visitors is the worse outcome; new days never
- * reach this branch because the scheduler skips such questions.
+ * Today's options in canonical (authored) order, each carrying only its token (Karl's ruling
+ * 2026-10-23: no shuffle for the QOTD). The order is the archive's (qotdServedOptions) and the
+ * home card's, so every surface letters the same choice the same way.
  */
-function shuffledTokenOptions(row: QotdRow): { id: string; text: string }[] {
+function canonicalTokenOptions(row: QotdRow): { id: string; text: string }[] {
   if (row.item_type === "grid_in") return [];
-  const options = parseCanonicalMcOptions(row.options);
-  const ordered = explanationNamesChoiceLetter(row.explanation)
-    ? options
-    : fisherYates(options);
-  return ordered.map((o) => ({
+  return parseCanonicalMcOptions(row.options).map((o) => ({
     id: qotdOptionToken(row.qotd_date, o.key),
     text: o.text,
   }));
@@ -179,7 +173,7 @@ export function toTodayResponse(row: QotdRow): QotdTodayResponse {
       item_type: projected.item_type,
       stem: projected.stem,
       passage: projected.passage,
-      options: shuffledTokenOptions(row),
+      options: canonicalTokenOptions(row),
       correct_answer: projected.correct_answer,
       explanation: projected.explanation,
     },

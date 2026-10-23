@@ -102,7 +102,9 @@ router.get(
             ),
           );
       }
-      // Owner ruling 2026-10-05: every response carries its own shuffle, so nothing may cache it.
+      // Not cached: "today" turns over at the day boundary and a cached payload would serve
+      // yesterday's question as today's. (Set 2026-10-05 for the per-request shuffle, which
+      // Karl's ruling 2026-10-23 removed; kept for the day boundary.)
       res.setHeader("Cache-Control", "private, no-store");
       return res.json({ data: toTodayResponse(row) });
     } catch (err: unknown) {

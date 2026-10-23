@@ -31,6 +31,10 @@
  *     text, then "Yesterday's reveal" (yesterday's date, section and domain, the answer, the
  *     worked explanation and the archive link), both from post.json, which the generator built
  *     from yesterday's PUBLIC archive data only. A withheld yesterday is the notice alone.
+ *   * Last, the TikTok carousel (Karl, 2026-10-23): yesterday's question as three slides, shared
+ *     together with its title as the comment, then the title and caption in code blocks. When
+ *     post.json says it was skipped (yesterday withheld or missing on the archive, or it does not
+ *     fit), one line says so instead. The slides must exist, be PNGs and carry yesterday's date.
  *   * Not idempotent: nothing records that a day was posted, so re-running a run posts it again.
  *     Ruled acceptable by Karl, 2026-10-10 (re-runs are only for failed posts;
  *     docs/runbooks/qotd-slack.md §3).
@@ -60,7 +64,22 @@ const PNG_SIGNATURE = Buffer.from([
 export type LoadedPost = {
   manifest: QotdSocialPostManifest;
   images: { format: string; file: string; bytes: Buffer }[];
+  /** The TikTok slides, in order; empty when the carousel was skipped. */
+  tiktokSlides: { file: string; bytes: Buffer }[];
 };
+
+/** A PNG that exists, is not empty and is one, or why not. */
+function readPng(dir: string, file: string): Result<Buffer> {
+  const path = join(dir, file);
+  if (!existsSync(path) || statSync(path).size === 0) {
+    return { ok: false, error: `${file} is missing` };
+  }
+  const bytes = readFileSync(path);
+  if (!bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    return { ok: false, error: `${file} is not a PNG` };
+  }
+  return { ok: true, value: bytes };
+}
 
 /** The day to post, from DIR; refused unless the manifest exists, parses and matches the files. */
 export function loadPost(dir: string): Result<LoadedPost> {
@@ -110,17 +129,30 @@ export function loadPost(dir: string): Result<LoadedPost> {
         error: `${image.file} is not ${manifest.qotd_date}'s image`,
       };
     }
-    const path = join(dir, image.file);
-    if (!existsSync(path) || statSync(path).size === 0) {
-      return { ok: false, error: `${image.file} is missing` };
-    }
-    const bytes = readFileSync(path);
-    if (!bytes.subarray(0, 8).equals(PNG_SIGNATURE)) {
-      return { ok: false, error: `${image.file} is not a PNG` };
-    }
-    images.push({ format: image.format, file: basename(path), bytes });
+    const png = readPng(dir, image.file);
+    if (!png.ok) return png;
+    images.push({
+      format: image.format,
+      file: basename(image.file),
+      bytes: png.value,
+    });
   }
-  return { ok: true, value: { manifest, images } };
+  const tiktokSlides: LoadedPost["tiktokSlides"] = [];
+  if (manifest.tiktok.status === "built") {
+    for (const file of manifest.tiktok.slides) {
+      // The schema already pins each name to the carousel's day (yesterday); checked again here.
+      if (!file.includes(manifest.tiktok.qotd_date)) {
+        return {
+          ok: false,
+          error: `${file} is not ${manifest.tiktok.qotd_date}'s slide`,
+        };
+      }
+      const png = readPng(dir, file);
+      if (!png.ok) return png;
+      tiktokSlides.push({ file: basename(file), bytes: png.value });
+    }
+  }
+  return { ok: true, value: { manifest, images, tiktokSlides } };
 }
 
 /** The heading posted with the images: the date and section. */
@@ -186,6 +218,37 @@ export function slackRevealMessage(m: QotdSocialPostManifest): string {
   ].join("\n");
 }
 
+/** The comment shared with the three slides: what they are and whose day. */
+export function slackTiktokSlidesComment(m: QotdSocialPostManifest): string {
+  return `*TikTok carousel* · yesterday's question, ${formatSocialDate(m.tiktok.qotd_date)} · 3 slides, post in order`;
+}
+
+/**
+ * The TikTok title and caption, ready to copy; or, when there is no carousel, the one line that
+ * says why (Karl, 2026-10-23).
+ */
+export function slackTiktokMessage(m: QotdSocialPostManifest): string {
+  const t = m.tiktok;
+  if (t.status === "skipped") {
+    return `*TikTok carousel* · no carousel today: yesterday's question (${formatSocialDate(t.qotd_date)}) ${
+      t.reason === "withheld"
+        ? "is withheld or missing on the archive"
+        : "does not fit three slides"
+    }.`;
+  }
+  return [
+    `*TikTok carousel* · title and caption (${formatSocialDate(t.qotd_date)})`,
+    "*Title*",
+    "```",
+    escapeMrkdwn(t.title),
+    "```",
+    "*Caption*",
+    "```",
+    escapeMrkdwn(t.caption),
+    "```",
+  ].join("\n");
+}
+
 /** Post the day: images (with the date and section) first, then the caption and alt text. */
 export async function postToSlack(
   config: SlackConfig,
@@ -196,6 +259,8 @@ export async function postToSlack(
   messageTs: string;
   redditTs: string;
   revealTs: string;
+  tiktokSlidesShared: number;
+  tiktokTs: string;
 }> {
   const { manifest } = post;
   // The shared upload in scripts/slack/client.ts (moved there 2026-10-16, unchanged behaviour).
@@ -224,11 +289,31 @@ export async function postToSlack(
     slackRevealMessage(manifest),
     fetchImpl,
   );
+  const tiktokSlidesShared =
+    manifest.tiktok.status === "built"
+      ? await shareFiles(
+          config,
+          post.tiktokSlides.map((slide, i) => ({
+            filename: slide.file,
+            bytes: slide.bytes,
+            altText: `SAT Question of the Day TikTok slide ${i + 1} of 3`,
+          })),
+          slackTiktokSlidesComment(manifest),
+          fetchImpl,
+        )
+      : 0;
+  const tiktokTs = await postMessage(
+    config,
+    slackTiktokMessage(manifest),
+    fetchImpl,
+  );
   return {
     imagesShared,
     messageTs,
     redditTs,
     revealTs,
+    tiktokSlidesShared,
+    tiktokTs,
   };
 }
 
@@ -254,8 +339,9 @@ export async function run(
     slackCopyMessage(manifest);
     slackRedditMessage(manifest);
     slackRevealMessage(manifest);
+    slackTiktokMessage(manifest);
     log.out(
-      `qotd-slack: dry run: ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}) would post ${post.value.images.length} image(s), the caption, the Reddit post and yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}); nothing sent`,
+      `qotd-slack: dry run: ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}) would post ${post.value.images.length} image(s), the caption, the Reddit post, yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}) and the TikTok carousel (${manifest.tiktok.qotd_date}: ${manifest.tiktok.status}, ${post.value.tiktokSlides.length} slide(s)); nothing sent`,
     );
     return 0;
   }
@@ -267,7 +353,7 @@ export async function run(
   try {
     const sent = await postToSlack(config.value, post.value, fetchImpl);
     log.out(
-      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}): ${sent.imagesShared} image(s) and the caption, message ${sent.messageTs}; Reddit post ${sent.redditTs}; yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}) ${sent.revealTs}`,
+      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}): ${sent.imagesShared} image(s) and the caption, message ${sent.messageTs}; Reddit post ${sent.redditTs}; yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}) ${sent.revealTs}; TikTok (${manifest.tiktok.qotd_date}: ${manifest.tiktok.status}) ${sent.tiktokSlidesShared} slide(s), message ${sent.tiktokTs}`,
     );
     return 0;
   } catch (e: unknown) {
