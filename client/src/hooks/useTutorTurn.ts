@@ -268,11 +268,9 @@ export function useTutorTurn(
 
         const timing = turnTimingRef.current;
         if (timing !== null && timing.requestId === requestId) {
-          if (response.response.crisis_category) {
-            turnTimingRef.current = null;
-          } else {
-            timing.postMs = performance.now() - timing.startedAt;
-          }
+          const crisisTurn = Boolean(response.response.crisis_category);
+          if (crisisTurn) turnTimingRef.current = null;
+          else timing.postMs = performance.now() - timing.startedAt;
         }
 
         if (response.response.crisis_category) {
