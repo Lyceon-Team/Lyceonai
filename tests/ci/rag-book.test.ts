@@ -470,3 +470,18 @@ describe("OCR markdown input and the ACT-only ruling", () => {
     expect(b.marked(0, b.text.length)).toContain("[page 14]");
   });
 });
+
+describe("quotes across OCR markup", () => {
+  it("a quote matches across <u> tags, mapped to the original offsets", () => {
+    const text =
+      "**Correct:** <u>Although</u> London is a very old **city, it** has many modern buildings.";
+    const m = locateQuote(
+      text,
+      "Although London is a very old city, it has many",
+    );
+    expect(m).not.toBeNull();
+    expect(text.slice(m?.start, m?.end)).toBe(
+      "Although</u> London is a very old **city, it** has many",
+    );
+  });
+});

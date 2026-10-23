@@ -169,9 +169,15 @@ export class BookText {
 function normalizeWithMap(text: string): { norm: string; map: number[] } {
   let norm = "";
   const map: number[] = [];
+  // Markup tags (<u>, </u> in OCR markdown) are not text: their letters would otherwise break a
+  // quote that spans an underline ("<u>Although</u> London" must match "Although London").
+  const tags = new Set<number>();
+  for (const m of text.matchAll(/<\/?[a-z]+>/gi))
+    for (let k = m.index ?? 0; k < (m.index ?? 0) + m[0].length; k += 1)
+      tags.add(k);
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i] ?? "";
-    if (/[\p{L}\p{N}]/u.test(ch)) {
+    if (!tags.has(i) && /[\p{L}\p{N}]/u.test(ch)) {
       norm += ch.toLowerCase();
       map.push(i);
     }
