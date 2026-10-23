@@ -366,11 +366,19 @@ export async function orchestrateTurn(
     studentMessages,
   );
 
+  // Video library (CC brief 2026-10-15 §7): a video offer belongs to the text that made it.
+  // When that text was substituted, the offer goes too — the student never sees a card the
+  // fallback did not offer. Other actions are unchanged.
+  const substituted = content !== result.value.response.content;
   const scannedResponse: OrchestrateResponse = {
     ...result.value,
     response: {
       ...result.value.response,
       content,
+      ...(substituted &&
+      result.value.response.suggested_action.type === "recommend_video"
+        ? { suggested_action: { type: "none" as const, label: null } }
+        : {}),
     },
   };
 

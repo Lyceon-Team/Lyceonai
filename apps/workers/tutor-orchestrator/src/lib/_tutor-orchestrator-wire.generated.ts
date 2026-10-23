@@ -232,6 +232,24 @@ export const questionContentSchema = z.object({
   attempt_number: z.number().int().nonnegative(),
 });
 
+// ── Offered videos (video library, CC brief 2026-10-15 §6/§7) ─────────
+// @spec [CC Brief "Video Library (ships now)" §7]: the model never emits a video
+// identifier. The BFF retrieves up to three approved videos for the item's skills at
+// Step 13d, keeps their ids BFF-local, and sends the worker only a 1-based index and the
+// facts LISA may say aloud. The model offers one by index; the BFF attaches the id.
+// Strict: an offered video carries no identifier, and a request that tries to send one (a
+// video_id, a URL) is refused at the worker's parse rather than stripped silently (CC Brief
+// "Video Library" §7: the model never sees a video identifier).
+export const offeredVideoSchema = z
+  .object({
+    index: z.number().int().min(1).max(3),
+    title: z.string(),
+    channel_name: z.string(),
+    duration_seconds: z.number().int().positive(),
+  })
+  .strict();
+export type OfferedVideo = z.infer<typeof offeredVideoSchema>;
+
 // ── Request schema ───────────────────────────────────────────────────
 
 export const orchestrateRequestSchema = z.object({
@@ -274,6 +292,10 @@ export const orchestrateRequestSchema = z.object({
   // two-step change (worker schema first, then the BFF) — closure plan W3-4.
   model_armor_input_template_id: z.string().nullable(),
   model_armor_output_template_id: z.string().nullable(),
+  // ── Video library (CC brief 2026-10-15) ────────────────────────────
+  // Optional so either side can deploy first: an older worker ignores it, and an
+  // older BFF never sends it.
+  offered_videos: z.array(offeredVideoSchema).max(3).optional(),
 });
 
 // ── Response sub-schemas ─────────────────────────────────────────────
@@ -337,8 +359,15 @@ export const orchestrateResponseSchema = z.object({
         "offer_broader_coaching",
         "offer_stay_focused",
         "start_practice",
+        // recommend_video (video library, CC brief 2026-10-15 §7): LISA offers one of
+        // the turn's offered_videos by index. Same DEPLOY ORDER as start_practice: the
+        // BFF must carry this value before the worker emits it.
+        "recommend_video",
       ]),
       label: z.string().nullable(),
+      // 1-based index into the request's offered_videos; present only with
+      // recommend_video. Never a video identifier.
+      video_index: z.number().int().min(1).max(3).optional(),
     }),
     ui_hints: z.object({
       show_accept_decline: z.boolean(),

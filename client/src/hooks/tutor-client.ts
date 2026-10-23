@@ -98,12 +98,25 @@ export type TutorSuggestedActionType =
   | "offer_broader_coaching"
   | "offer_stay_focused"
   // W3-2: LISA's handoff to practice (general mode) — rendered as a link.
-  | "start_practice";
+  | "start_practice"
+  // Video library (CC brief 2026-10-15): LISA offered a video; the server attached it.
+  | "recommend_video";
 
-export type TutorSuggestedAction = {
-  type: TutorSuggestedActionType;
-  label: string | null;
+/** A video the server attached to a recommend_video action (never chosen by the model). */
+export type TutorVideo = {
+  video_id: string;
+  title: string;
+  channel_name: string;
+  duration_seconds: number;
+  start_seconds: number | null;
 };
+
+export type TutorSuggestedAction =
+  | {
+      type: Exclude<TutorSuggestedActionType, "recommend_video">;
+      label: string | null;
+    }
+  | { type: "recommend_video"; label: string | null; video: TutorVideo };
 
 export type TutorUiHints = {
   show_accept_decline: boolean;

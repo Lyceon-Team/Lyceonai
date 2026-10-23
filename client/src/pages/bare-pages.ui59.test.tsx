@@ -429,6 +429,7 @@ describe("/profile/complete", () => {
     });
     const box = await screen.findByTestId("checkbox-marketing-opt-in");
     expect(box.getAttribute("data-variant")).toBe("lyc");
+    expect(box.getAttribute("class") ?? "").toContain("border-lyc-ink-strong");
     expectStudentTokensOnly(bareShell());
   });
 

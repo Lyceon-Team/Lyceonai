@@ -135,7 +135,10 @@ echo "=== (9) the assembly gate stops reporting markup violations ==="
 plant "$ASSEMBLE" \
   "      v(mv.field, mv.message);" \
   "      void mv;" || { bad "M9 STALE"; exit 1; }
-run "M9 authoring unguarded" "rejects an underlined-sentence stem whose passage lost its <u>...</u>" "$ASSEMBLE_T"
+# Named on the two-span case, which only this path checks. The missing-target case it first named
+# is ALSO caught by assemble-batch.ts Rule 11 (fc85c67a, merged from questions on 2026-10-13), so
+# with this plant applied that test stayed green and M9 failed: red, but not on its name.
+run "M9 authoring unguarded" "rejects an underlined-sentence stem with two <u>...</u> spans" "$ASSEMBLE_T"
 
 echo "=== (10) restored: everything green again ==="
 OUT="$(check "$RENDER_T" "$GATE_T" "$ASSEMBLE_T")"; RC=$?
