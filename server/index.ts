@@ -17,6 +17,7 @@ import rateLimit from "express-rate-limit";
 // Any duplicate tutor route under apps/api/** must remain unmounted.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
 import tutorRuntimeRouter from "./routes/tutor-runtime";
+import tutorTurnTimingRouter from "./routes/tutor-turn-timing";
 import { TutorConfig } from "./services/tutor-config";
 import { legalRouter } from "./routes/legal-routes.js";
 import { getQuestionStats } from "./routes/questions-runtime";
@@ -260,6 +261,14 @@ const tutorLimiter = rateLimit({
   message: { error: "Too many tutor requests" },
 });
 
+// P2 H1 (Karl, 2026-10-23): the turn-timing beacon's own limiter — one beacon per reply turn, so
+// it sits apart from tutorLimiter rather than spending the student's tutor slots.
+const perfBeaconLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  message: { error: "Too many timing reports" },
+});
+
 const googleOAuthCallbackLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
@@ -314,6 +323,17 @@ app.use(
   doubleCsrfProtection,
   awaitTutorConfig,
   tutorRuntimeRouter,
+);
+
+// POST /api/perf/tutor-turn — LISA's time to first visible text, reported by the client (P2 H1,
+// server/routes/tutor-turn-timing.ts). The tutor mount's gates, its own limiter.
+app.use(
+  "/api/perf",
+  perfBeaconLimiter,
+  requireSupabaseAuth,
+  requireStudentOnly,
+  doubleCsrfProtection,
+  tutorTurnTimingRouter,
 );
 
 // Native Supabase OAuth landing route (PKCE).

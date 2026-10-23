@@ -92,6 +92,7 @@ const REPLY_PATH_STEPS = [
   "recent_messages",
   "context_envelope",
   "armor_input",
+  "video_retrieval",
   "model",
   "armor_output",
   "serialize",

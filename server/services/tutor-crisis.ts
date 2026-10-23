@@ -31,6 +31,7 @@
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { getGcpCredentials } from "../lib/gcp-credentials";
+import { timedStep } from "../lib/step-timer";
 import { logger } from "../logger";
 import {
   CRISIS_CLASSIFIER_GENERATION,
@@ -345,7 +346,10 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
   // Attempt classification with retry-once on failure
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const result = await invokeClassifier(text, modelAlias);
+      // H1 (P2 Revised §2): one `crisis_model` step per attempt (route_timing; no content).
+      const result = await timedStep("crisis_model", () =>
+        invokeClassifier(text, modelAlias),
+      );
       return result;
     } catch (err: unknown) {
       if (attempt === 0) {

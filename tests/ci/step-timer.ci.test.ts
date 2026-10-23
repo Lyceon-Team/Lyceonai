@@ -72,7 +72,7 @@ function app(): express.Express {
   a.post(
     "/many",
     timedRoute("review.session_start", async (_req, res) => {
-      for (let i = 0; i < 70; i += 1) await timedStep("loop", () => i);
+      for (let i = 0; i < 134; i += 1) await timedStep("loop", () => i);
       res.json({ ok: true });
     }),
   );
@@ -157,7 +157,7 @@ describe("timedRoute / timedStep", () => {
   it("caps the steps on one line and counts the overflow", async () => {
     await request(app()).post("/many").send({});
     const { data } = timingCalls()[0]!;
-    expect(data.step_count).toBe(64);
+    expect(data.step_count).toBe(128);
     expect(data.steps_dropped).toBe(6);
   });
 
