@@ -357,7 +357,24 @@ describe("H1: time to first visible text", () => {
     send(STUDENT_TEXT);
     await screen.findByRole("button", { name: /try again/i });
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(calls.some((c) => c.path === "/api/perf/tutor-turn")).toBe(false);
-    expect(perfLines("tutor_turn_visible")).toHaveLength(0);
+    const sendCall = calls.find(
+      (c) => c.method === "POST" && c.path === "/api/tutor/messages",
+    );
+    const requestId = sendCall?.headers["X-Request-Id"];
+    expect(requestId).toMatch(UUID);
+    // Matched on this turn's own id: a report still in flight from another test cannot satisfy
+    // or break it.
+    expect(
+      calls.some(
+        (c) =>
+          c.path === "/api/perf/tutor-turn" &&
+          (c.body as { request_id?: unknown }).request_id === requestId,
+      ),
+    ).toBe(false);
+    expect(
+      perfLines("tutor_turn_visible").filter(
+        (l) => l.data.turn_request_id === requestId,
+      ),
+    ).toHaveLength(0);
   });
 });
