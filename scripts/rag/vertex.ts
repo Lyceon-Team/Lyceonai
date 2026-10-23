@@ -135,6 +135,8 @@ export async function generateJson<T>(opts: {
   schema: z.ZodType<T>;
   /** Gemini watches this clip before reading the text (R-14, Karl 2026-10-15). */
   video?: VideoClip;
+  /** An image Gemini reads before the text (book OCR, scripts/rag/ocr-book.ts). */
+  image?: { mimeType: "image/png" | "image/jpeg"; data: Buffer };
   /** Receives the call's token usage. */
   onUsage?: (u: Usage) => void;
 }): Promise<T> {
@@ -158,7 +160,25 @@ export async function generateJson<T>(opts: {
     url,
     {
       systemInstruction: { parts: [{ text: opts.system }] },
-      contents: [{ role: "user", parts: [...videoParts, { text: opts.user }] }],
+      contents: [
+        {
+          role: "user",
+          parts: [
+            ...videoParts,
+            ...(opts.image === undefined
+              ? []
+              : [
+                  {
+                    inlineData: {
+                      mimeType: opts.image.mimeType,
+                      data: opts.image.data.toString("base64"),
+                    },
+                  },
+                ]),
+            { text: opts.user },
+          ],
+        },
+      ],
       generationConfig: {
         temperature: 0,
         responseMimeType: "application/json",
