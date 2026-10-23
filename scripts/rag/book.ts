@@ -381,7 +381,9 @@ export function locateUnits(
   for (const [i, u] of units.entries()) {
     const s = locateQuote(win, u.start_quote, from);
     if (s === null)
-      throw new Error(`unit ${i + 1}: start_quote not found in the window`);
+      throw new Error(
+        `unit ${i + 1}: start_quote ${JSON.stringify(u.start_quote.slice(0, 120))} not found in the window after unit ${i}'s start`,
+      );
     starts.push(s.start);
     from = s.start + 1;
   }
@@ -393,7 +395,7 @@ export function locateUnits(
     });
     if (e === null)
       throw new Error(
-        `unit ${i + 1}: end_quote not found between its start and the next unit`,
+        `unit ${i + 1}: end_quote ${JSON.stringify(u.end_quote.slice(0, 120))} not found between its start and the next unit`,
       );
     return { ...u, start: winStart + start, end: winStart + e.end };
   });

@@ -152,7 +152,7 @@ describe("boundaries", () => {
           end_quote: "x",
         }),
       ]),
-    ).toThrow(/start_quote not found/);
+    ).toThrow(/start_quote ".*" not found/);
   });
 
   const located = (start: number, end: number, ends: boolean): LocatedUnit => ({
