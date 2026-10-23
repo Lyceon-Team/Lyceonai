@@ -22,6 +22,7 @@ export {
   memoryStructuredFieldsSchema,
   questionOptionSchema,
   questionContentSchema,
+  offeredVideoSchema,
   learnerObservationSchema,
   orchestrateRequestSchema,
   questionLinkSchema,
@@ -41,4 +42,5 @@ export {
   type KpiState,
   type ExplanationForm,
   type QuestionContent,
+  type OfferedVideo,
 } from "./_tutor-orchestrator-wire.generated.js";

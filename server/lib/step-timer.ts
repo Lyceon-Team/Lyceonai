@@ -44,12 +44,19 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { Request, Response } from "express";
 import { logger } from "../logger";
 
-/** The routes the brief names. A closed union: a new route is a reviewed addition. */
+/**
+ * The routes the brief names. A closed union: a new route is a reviewed addition.
+ * `tutor.message` (POST /api/tutor/messages, LISA's reply path) was added by the owner's approval
+ * of H1 (Karl, 2026-10-21, rulings on #1277, ruling 6): observability only, fixed literal step
+ * names, and the same guarantee as every other route here, that no prompt, reply or student
+ * content can reach the line.
+ */
 export type RouteTimingName =
   | "practice.session_start"
   | "practice.answer_submit"
   | "review.session_start"
-  | "calendar.read";
+  | "calendar.read"
+  | "tutor.message";
 
 type StepRecord = { step: string; ms: number | null; at_ms: number };
 

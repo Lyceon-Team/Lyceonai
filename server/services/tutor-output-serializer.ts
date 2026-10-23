@@ -104,6 +104,13 @@ export type OutputScanContext = {
    *        scans above, which are unchanged] | @implemented 2026-09-24
    */
   armorOutputBlocked?: boolean;
+  /**
+   * The video ids offered this turn (video library, CC brief 2026-10-15 §7). A YouTube
+   * link to any other video is redacted from the reply. Omitted = none offered, so every
+   * YouTube link is redacted.
+   * @implemented 2026-10-15
+   */
+  allowedVideoIds?: readonly string[];
 };
 
 /**
@@ -115,6 +122,8 @@ export type SerializedOutput = {
   blocked: boolean;
   scanResults: {
     metadataCleaned: boolean;
+    /** a YouTube link outside the turn's offered set was removed (not a block) */
+    youtubeLinkRedacted: boolean;
     answerLeakDetected: boolean;
     canonicalIdLeakDetected: boolean;
     systemPromptLeakDetected: boolean;
@@ -233,6 +242,27 @@ function emitScannerSli(
 
 // ── The Serializer ──────────────────────────────────────────────────────
 
+// youtube.com/watch?v=ID, youtube.com/embed|shorts|live/ID, youtube-nocookie.com/embed/ID,
+// youtu.be/ID — with or without scheme, www. or m., and any trailing query string.
+const YOUTUBE_LINK_PATTERN =
+  /(?:https?:\/\/)?(?:(?:www|m)\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^\s"'<>]*?&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})[^\s"'<>)\]]*/gi;
+
+/**
+ * Pure. Removes every YouTube link whose video id is not in `allowed` (video library, CC brief
+ * 2026-10-15 §7). LISA is told never to write a link; this is the second layer, so a link to
+ * a video Lyceon did not offer — invented, or recalled — never reaches the student. Allowed
+ * links are left as written.
+ */
+export function redactUnlistedYoutubeLinks(
+  text: string,
+  allowed: readonly string[],
+): string {
+  const keep = new Set(allowed);
+  return text.replace(YOUTUBE_LINK_PATTERN, (match: string, id: string) =>
+    keep.has(id) ? match : "",
+  );
+}
+
 /**
  * THE single mandatory output serializer for all student-facing LISA content.
  * Every response path MUST call this before content reaches the client.
@@ -258,6 +288,7 @@ export async function serializeTutorOutput(
 ): Promise<SerializedOutput> {
   const scanResults: SerializedOutput["scanResults"] = {
     metadataCleaned: false,
+    youtubeLinkRedacted: false,
     answerLeakDetected: false,
     canonicalIdLeakDetected: false,
     systemPromptLeakDetected: false,
@@ -313,8 +344,15 @@ async function runAllScans(
   const detectedClasses: ScanClass[] = [];
 
   // ── 1. Internal metadata cleanup (always applied) ─────────────────
-  const cleaned = removeInternalMetadataMentions(rawText);
-  scanResults.metadataCleaned = cleaned !== rawText;
+  const metadataFree = removeInternalMetadataMentions(rawText);
+  scanResults.metadataCleaned = metadataFree !== rawText;
+  // ── 1b. YouTube links outside this turn's offered set (video library §7) ──
+  // Non-blocking, like the metadata strip: the link is removed, the reply stands.
+  const cleaned = redactUnlistedYoutubeLinks(
+    metadataFree,
+    context.allowedVideoIds ?? [],
+  );
+  scanResults.youtubeLinkRedacted = cleaned !== metadataFree;
 
   // ── 2. Correct-answer resolution gate (LISA-FULL-007) ─────────────
   // If pre-submit AND correct_answer resolution FAILED, block. We cannot

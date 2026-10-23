@@ -262,17 +262,20 @@ describe("outcome claims: only the sentences Karl approved (F13, 2026-10-05)", (
     expect(home).toBeDefined();
     const html = home?.html ?? "";
     expect(violations("/", html)).toEqual([]);
+    // Anchored on the hero title (F-98, 2026-10-21, removed the "SAT prep for families" eyebrow
+    // this plant used to anchor on).
     const planted = html.replace(
-      "SAT prep for families",
-      "SAT prep for families. Raise your score by 200 points.",
+      "SAT prep that adapts to you.",
+      "SAT prep that adapts to you. Raise your score by 200 points.",
     );
     expect(planted).not.toBe(html);
     expect(violations("/", planted).length).toBeGreaterThan(0);
     // An approved sentence moved into another sentence is no longer the approved sentence.
     const reworded = html.replace(
-      "SAT prep for families",
+      "SAT prep that adapts to you.",
       "Real progress, guaranteed",
     );
+    expect(reworded).not.toBe(html);
     expect(violations("/", reworded).length).toBeGreaterThan(0);
   });
 });

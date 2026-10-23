@@ -71,6 +71,8 @@ import {
   Composer,
   CrisisSupportCard,
   FailedTurnNotice,
+  LISA_COMPOSER_PLACEHOLDER,
+  LISA_EMPTY_PROMPT,
   MessageBubble,
   PausedBar,
   SuggestedActionLink,
@@ -83,9 +85,6 @@ import {
 } from "@/components/tutor/LisaUpgradeCard";
 import { dayMonth } from "@/features/exam/lib/tests-home-model";
 
-/** Prototype Lisa.dc.html composer placeholder. */
-export const LISA_COMPOSER_PLACEHOLDER = "Ask LISA about a question or a skill";
-
 /** Shipped title of a conversation with none yet (the server titles it on the first turn). */
 const UNTITLED = "New session";
 
@@ -96,14 +95,6 @@ const UNTITLED = "New session";
  * that began with a crisis message carries that message as its title; the page never shows it.
  */
 const NEUTRAL_TITLE = "Conversation";
-
-/**
- * QA 2026-10-07 item 15: the short prompt an empty LISA column shows. A presentation line, not a
- * message: never sent, never stored, gone once a message is on screen.
- * PROPOSED WORDING: new in-app copy, awaiting Karl's approval (QA 2026-10-07 report).
- */
-const LISA_EMPTY_PROMPT =
-  "Ask LISA about a question you missed or a skill you're working on.";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -515,7 +506,8 @@ function LisaConversation(): JSX.Element {
           ) : null}
 
           {turnState.kind === "idle" &&
-          suggestedAction?.type === "start_practice" ? (
+          (suggestedAction?.type === "start_practice" ||
+            suggestedAction?.type === "recommend_video") ? (
             <li>
               <SuggestedActionLink action={suggestedAction} />
             </li>

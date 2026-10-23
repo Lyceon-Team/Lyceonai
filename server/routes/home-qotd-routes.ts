@@ -36,6 +36,7 @@ import { Router, type Request, type Response } from "express";
 import { requireRequestUser } from "../middleware/supabase-auth";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { emitEvent } from "../lib/analytics/emit-event";
+import { fireAnswerMilestones } from "../lib/analytics/funnel-events";
 import { logger } from "../logger";
 import {
   answerHomeQotd,
@@ -192,6 +193,9 @@ export function createHomeQotdRouter(
         }
         const { response, signals } = result.value;
         await emitAnswerSignals(user.id, signals, req.requestId);
+        // Server-side funnel (Karl, 2026-10-21): a first-time answer (never a replay) may be the
+        // student's first answer of any kind. Once ever; fire-and-forget.
+        if (signals.answeredNow) fireAnswerMilestones(user.id, "qotd");
         return res
           .status(signals.answeredNow ? 201 : 200)
           .json({ data: response });

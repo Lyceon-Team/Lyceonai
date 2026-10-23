@@ -18,6 +18,10 @@ package-lock.json
 # Data exports - prevent leaking question answers
 *.csv
 !docs/samples/*.csv
+# The LISA video library review file: public YouTube metadata and taxonomy skill names only
+# (no question content). It is the reviewed artifact apply-video-library.ts writes, so it is
+# tracked (CC Brief "Video Library" §5, 2026-10-15).
+!docs/plans/lisa-video-library/video-tags-review.csv
 
 # Audit outputs
 audit-output.json

@@ -50,65 +50,63 @@
  * 2026-09-27), so a refused student's message is never read at all.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  useConversation,
-  useCreateConversation,
-  useEndConversation,
   useItemConversation,
-  type TutorMessage,
   type TutorSourceSurface,
 } from "@/hooks/tutor-client";
-import { useTutorTurn } from "@/hooks/useTutorTurn";
 import { Pill } from "@/components/student-ui";
+import { LisaAvatar } from "@/components/tutor/TutorThreadParts";
 import {
-  LisaUpgradeCard,
-  isLisaEntitlementDenial,
-} from "@/components/tutor/LisaUpgradeCard";
-import {
-  Composer,
-  CrisisSupportCard,
-  FailedTurnNotice,
-  LisaAvatar,
-  MessageBubble,
-  PausedBar,
-  SuggestedActionLink,
-  ThinkingIndicator,
-  useScrollToBottomOnChange,
-} from "@/components/tutor/TutorThreadParts";
+  TutorConversationBody,
+  existingFromQuery,
+  type TutorBodyCopy,
+} from "@/components/tutor/TutorConversationBody";
 
 /** Owner copy (W4-4 brief). The second line is true: the pre-submit gate enforces it. */
 export const OPENER_TITLE = "Need help with this question?";
 export const OPENER_BODY =
   "I can walk you through it. I won't give you the answer before you submit.";
 
-const COMPOSER_PLACEHOLDER = "Ask about this question...";
+/** The question-scoped body's copy: the panel's and the dock's in question scope. */
+const QUESTION_SCOPE_COPY: TutorBodyCopy = {
+  opener: { title: OPENER_TITLE, body: OPENER_BODY },
+  placeholder: "Ask about this question...",
+  logLabel: "Conversation with LISA about this question",
+};
 
 /**
- * The invitation shown on an item with no conversation yet. Presentation
- * only: not a message, not in the thread, never sent or stored.
+ * LISA scoped to one session item: the existing conversation for the item (a GET filtered to it,
+ * never a POST), else the opener, with the first message creating the item's conversation. The
+ * client sends only the item id; what LISA may see is decided on the server.
  */
-function TutorOpener() {
+export function ScopedTutorBody({
+  sourceSurface,
+  sessionItemId,
+  onEnded,
+}: {
+  sourceSurface: Extract<TutorSourceSurface, "review" | "practice">;
+  sessionItemId: string;
+  onEnded: () => void;
+}): JSX.Element {
+  // Looking is a GET. Nothing here creates a conversation on load.
+  const existing = useItemConversation(sourceSurface, sessionItemId);
   return (
-    <div
-      className="flex gap-3 rounded-lg border border-lyc-rule bg-lyc-paper p-4"
-      data-testid="tutor-opener"
-    >
-      <LisaAvatar />
-      <div className="min-w-0">
-        <p className="m-0 text-lyc-body font-semibold text-lyc-ink-strong">
-          {OPENER_TITLE}
-        </p>
-        <p className="m-0 mt-1 text-lyc-body text-lyc-muted">{OPENER_BODY}</p>
-      </div>
-    </div>
+    <TutorConversationBody
+      scopeKey={sessionItemId}
+      lookup={existingFromQuery(existing)}
+      createInput={{
+        entry_mode: "scoped_question",
+        source_surface: sourceSurface,
+        source_session_item_id: sessionItemId,
+      }}
+      copy={QUESTION_SCOPE_COPY}
+      onEnded={onEnded}
+    />
   );
 }
-
-/** A conversation this panel created for an item, with the message that created it. */
-type Started = { itemId: string; conversationId: string; firstMessage: string };
 
 export function ScopedTutorPanel({
   sourceSurface,
@@ -178,67 +176,6 @@ export function ScopedTutorPanel({
       for (const type of inputs) window.removeEventListener(type, stop);
     };
   }, [revealKey]);
-  // Looking is a GET. Nothing here creates a conversation on load.
-  const existing = useItemConversation(sourceSurface, sessionItemId);
-  const createConversation = useCreateConversation();
-  const [started, setStarted] = useState<Started | null>(null);
-  // The first message while its conversation is being created.
-  const [pending, setPending] = useState<{
-    itemId: string;
-    text: string;
-  } | null>(null);
-  const [draft, setDraft] = useState("");
-
-  const startedHere = started?.itemId === sessionItemId ? started : null;
-  const conversationId = startedHere?.conversationId ?? existing.data ?? null;
-  const pendingHere = pending?.itemId === sessionItemId ? pending : null;
-
-  const startConversation = (text: string): void => {
-    const itemId = sessionItemId;
-    setPending({ itemId, text });
-    setDraft("");
-    createConversation.mutate(
-      {
-        entry_mode: "scoped_question",
-        source_surface: sourceSurface,
-        source_session_item_id: itemId,
-        idempotency_key: crypto.randomUUID(),
-      },
-      {
-        onSuccess: (conv) => {
-          setStarted({
-            itemId,
-            conversationId: conv.conversation_id,
-            firstMessage: text,
-          });
-          setPending(null);
-        },
-        onError: () => {
-          // The student's text goes back in the composer, never lost.
-          setPending(null);
-          setDraft(text);
-        },
-      },
-    );
-  };
-
-  const createError = createConversation.error;
-  // Refused by the server, on load or on the first send. Never inferred here.
-  const denied =
-    isLisaEntitlementDenial(existing.error) ||
-    isLisaEntitlementDenial(createError);
-
-  const pendingMessage: TutorMessage | null = pendingHere
-    ? {
-        message_id: "pending-first-message",
-        role: "student",
-        content_kind: "message",
-        message: pendingHere.text,
-        created_at: new Date(0).toISOString(),
-        client_turn_id: null,
-      }
-    : null;
-
   return (
     // SCL-204 / R32: `ph-no-capture` — the LISA conversation is never recorded (Coding Standards §12).
     <section
@@ -271,227 +208,11 @@ export function ScopedTutorPanel({
         </Button>
       </header>
 
-      {conversationId ? (
-        <ScopedThread
-          key={conversationId}
-          conversationId={conversationId}
-          firstMessage={startedHere?.firstMessage ?? null}
-          onEnded={onHide}
-        />
-      ) : denied ? (
-        <LisaUpgradeCard />
-      ) : existing.isLoading ? (
-        <div
-          className="flex flex-1 items-center justify-center p-6"
-          role="status"
-          aria-label="Opening LISA"
-        >
-          <Loader2
-            aria-hidden="true"
-            className="h-6 w-6 animate-spin text-lyc-muted"
-          />
-        </div>
-      ) : (
-        <>
-          <div
-            className="flex-1 space-y-4 overflow-y-auto p-4"
-            role="log"
-            aria-live="polite"
-            aria-atomic="false"
-            aria-label="Conversation with LISA about this question"
-          >
-            {pendingMessage ? (
-              <>
-                <MessageBubble message={pendingMessage} pending />
-                <ThinkingIndicator />
-              </>
-            ) : (
-              <TutorOpener />
-            )}
-            {!pendingMessage && createError && (
-              <p className="m-0 text-lyc-body text-lyc-muted" role="alert">
-                LISA isn&apos;t available right now. Your message is still below
-                — try sending it again.
-              </p>
-            )}
-          </div>
-          <Composer
-            draft={draft}
-            onDraftChange={setDraft}
-            onSubmit={() => {
-              if (draft.trim()) startConversation(draft.trim());
-            }}
-            disabled={false}
-            pending={!!pendingMessage}
-            placeholder={
-              pendingMessage ? "LISA is responding..." : COMPOSER_PLACEHOLDER
-            }
-            inset="panel"
-          />
-        </>
-      )}
+      <ScopedTutorBody
+        sourceSurface={sourceSurface}
+        sessionItemId={sessionItemId}
+        onEnded={onHide}
+      />
     </section>
-  );
-}
-
-function ScopedThread({
-  conversationId,
-  firstMessage,
-  onEnded,
-}: {
-  conversationId: string;
-  /** The student's first message, when this panel just created the conversation for it. */
-  firstMessage: string | null;
-  onEnded: () => void;
-}) {
-  const {
-    data: detail,
-    isLoading,
-    error: detailError,
-  } = useConversation(conversationId);
-  const endConversation = useEndConversation();
-  const [draft, setDraft] = useState("");
-  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
-
-  const messages = detail?.messages ?? [];
-  const conversation = detail?.conversation;
-  const {
-    turnState,
-    optimisticMessage,
-    crisisLane,
-    effectiveCrisisContent,
-    showCrisisCard,
-    showPausedBar,
-    premiumReason,
-    suggestedAction,
-    send,
-    retry,
-    resume,
-    resumePending,
-  } = useTutorTurn(conversationId, messages, conversation);
-
-  const isPaused = !!conversation?.crisis_paused_at;
-  const isEnded = conversation?.status === "ended";
-  const isThinking = turnState.kind === "thinking";
-  const hasMessages = messages.length > 0 || optimisticMessage !== null;
-  // Entitlement lapsed: the thread would not load, or the last send was refused.
-  const denied = isLisaEntitlementDenial(detailError) || premiumReason !== null;
-
-  useScrollToBottomOnChange(
-    scrollAnchorRef,
-    (messages.length + (optimisticMessage ? 1 : 0)) * 2 + (isThinking ? 1 : 0),
-  );
-
-  // The message that created this conversation is sent once, through the
-  // same turn machine as every other — a server call, so an effect; the ref
-  // keeps it to one send.
-  const firstSent = useRef(false);
-  // QA-5: between this thread mounting and that effect sending the first message, the message
-  // is still on its way: Send stays pending (it was pending in the opener), with no enabled
-  // frame in between. Read during render on purpose; the send it guards re-renders the thread.
-  const firstAwaiting = firstMessage !== null && !firstSent.current;
-  useEffect(() => {
-    if (firstMessage === null || firstSent.current) return;
-    firstSent.current = true;
-    void send(firstMessage);
-    // Mount-only: `send` is stable for this conversation's first turn.
-  }, []);
-
-  const submit = (): void => {
-    if (!draft.trim()) return;
-    const text = draft;
-    setDraft("");
-    void send(text);
-  };
-
-  const end = (): void => {
-    endConversation.mutate(conversationId, { onSuccess: onEnded });
-  };
-
-  return (
-    <>
-      <div
-        className="flex-1 space-y-4 overflow-y-auto p-4"
-        role="log"
-        aria-live="polite"
-        aria-atomic="false"
-        aria-label="Conversation with LISA about this question"
-      >
-        {isLoading && (
-          <div
-            className="flex justify-center py-8"
-            role="status"
-            aria-label="Loading conversation"
-          >
-            <Loader2
-              aria-hidden="true"
-              className="h-6 w-6 animate-spin text-lyc-muted"
-            />
-          </div>
-        )}
-
-        {/* A conversation with no messages yet (e.g. one opened before
-            W4-4) still shows the invitation, not an empty thread. */}
-        {!isLoading && !denied && !hasMessages && firstMessage === null && (
-          <TutorOpener />
-        )}
-
-        {!isLoading &&
-          messages.map((message) => (
-            <MessageBubble key={message.message_id} message={message} />
-          ))}
-
-        {!isLoading && optimisticMessage && (
-          <MessageBubble
-            key={optimisticMessage.message_id}
-            message={optimisticMessage}
-            pending
-          />
-        )}
-
-        {turnState.kind === "idle" && (
-          <SuggestedActionLink action={suggestedAction} />
-        )}
-
-        {isThinking && <ThinkingIndicator />}
-
-        {turnState.kind === "failed" && <FailedTurnNotice onRetry={retry} />}
-
-        {showCrisisCard && crisisLane && effectiveCrisisContent && (
-          <CrisisSupportCard
-            lane={crisisLane}
-            content={effectiveCrisisContent}
-          />
-        )}
-
-        <div ref={scrollAnchorRef} />
-      </div>
-
-      {showPausedBar || isPaused ? (
-        <PausedBar
-          onEnd={end}
-          onContinue={resume}
-          endPending={endConversation.isPending}
-          resumePending={resumePending}
-          inset="panel"
-        />
-      ) : isEnded ? null : denied ? (
-        <LisaUpgradeCard />
-      ) : (
-        <Composer
-          draft={draft}
-          onDraftChange={setDraft}
-          onSubmit={submit}
-          disabled={isPaused || isEnded}
-          pending={isThinking || firstAwaiting}
-          placeholder={
-            isThinking || firstAwaiting
-              ? "LISA is responding..."
-              : COMPOSER_PLACEHOLDER
-          }
-          inset="panel"
-        />
-      )}
-    </>
   );
 }

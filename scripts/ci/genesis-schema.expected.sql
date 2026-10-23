@@ -603,6 +603,37 @@ COMMENT ON FUNCTION public.actor_id_integrity_violations() IS 'Doc 05E §6 INV-0
 
 
 --
+-- Name: analytics_funnel_claim(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.analytics_funnel_claim(p_profile_id uuid, p_milestone text) RETURNS boolean
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH inserted AS (
+    INSERT INTO public.analytics_funnel_milestones (profile_id, milestone)
+    VALUES (p_profile_id, p_milestone)
+    ON CONFLICT (profile_id, milestone) DO NOTHING
+    RETURNING 1
+  )
+  SELECT EXISTS (SELECT 1 FROM inserted);
+$$;
+
+
+--
+-- Name: analytics_funnel_release(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.analytics_funnel_release(p_profile_id uuid, p_milestone text) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  DELETE FROM public.analytics_funnel_milestones
+   WHERE profile_id = p_profile_id AND milestone = p_milestone;
+$$;
+
+
+--
 -- Name: apply_audit_logs_retention(text, uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9438,49 +9469,96 @@ $$;
 
 
 --
--- Name: lifecycle_reminder_claim(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+-- Name: lifecycle_claim(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.lifecycle_reminder_claim(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 500) RETURNS SETOF uuid
+CREATE FUNCTION public.lifecycle_claim(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 500) RETURNS TABLE(profile_id uuid, event_type text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_id uuid;
+  -- The priority order (owner brief): the founding reminder, then 1, 2, 3.
+  c_types CONSTANT text[] := ARRAY['lifecycle_reminder_due',
+                                   'lifecycle_diagnostic_unfinished',
+                                   'lifecycle_pro_no_plan',
+                                   'lifecycle_practising_free'];
+  v_student uuid;
+  v_type    text;
+  v_id      uuid;
+  v_state   text;
+  v_due     boolean;
+  v_sent    integer := 0;
 BEGIN
-  FOR v_id IN
+  FOR v_student IN
     SELECT p.id
       FROM public.profiles p
      WHERE p.role = 'student'
-       AND p.profile_completed_at IS NOT NULL
-       AND p.profile_completed_at >= public.lifecycle_reminder_since()
-       AND p.profile_completed_at <= p_now - interval '3 days'
-       AND p.profile_completed_at >  p_now - interval '14 days'
        AND p.deleted_at IS NULL
-       AND public.marketing_opt_in_age_eligible(p.date_of_birth)
-       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
-                        WHERE d.profile_id = p.id AND d.status = 'pending')
-       AND NOT public.entitlement_active(p.id)
-       AND NOT EXISTS (SELECT 1 FROM public.notification_events e
-                        WHERE e.event_id = public.notification_event_id(
-                                             'lifecycle_reminder_due', p.id::text))
-     ORDER BY p.profile_completed_at, p.id
-     LIMIT p_limit
-     FOR UPDATE OF p SKIP LOCKED
+       AND (   p.profile_completed_at > p_now - interval '14 days'
+            OR EXISTS (SELECT 1 FROM public.practice_sessions ps
+                        WHERE ps.user_id = p.id AND ps.mode = 'diagnostic'
+                          AND ps.status IN ('created', 'active')
+                          AND ps.created_at > p_now - interval '14 days')
+            OR EXISTS (SELECT 1 FROM public.entitlements e
+                        WHERE e.profile_id = p.id AND e.created_at > p_now - interval '14 days')
+            OR EXISTS (SELECT 1 FROM public.practice_session_items i
+                        WHERE i.user_id = p.id AND i.status = 'answered'
+                          AND COALESCE(i.answered_at, i.occurred_at) > p_now - interval '14 days')
+            OR EXISTS (SELECT 1 FROM public.notification_events e
+                        WHERE e.subject_profile_id = p.id
+                          AND e.event_type = ANY (c_types)
+                          AND e.payload ->> 'state' = 'pending'))
+     ORDER BY p.id
+     -- NO KEY UPDATE: claimers still exclude each other, but the FK checks of a student's own
+     -- writes (a new session, an answer) take KEY SHARE and are never blocked by the sweep.
+     FOR NO KEY UPDATE OF p SKIP LOCKED
   LOOP
-    -- Re-checked under the row lock with a fresh snapshot: a run that committed this student's
-    -- row after this statement began is seen here, so two overlapping runs never both claim.
-    CONTINUE WHEN EXISTS (SELECT 1 FROM public.notification_events e
-                           WHERE e.event_id = public.notification_event_id(
-                                                'lifecycle_reminder_due', v_id::text));
-    -- No recipients: no notification_messages row; Resend sends the email.
-    PERFORM public.emit_notification_event(
-      public.notification_event_id('lifecycle_reminder_due', v_id::text),
-      'lifecycle_reminder_due',
-      v_id,
-      '[]'::jsonb,
-      '{}'::jsonb);
-    RETURN NEXT v_id;
+    -- (a) Record newly due triggers; resolve pending ones that are no longer due. Each re-check
+    --     reads committed state under the row lock, so overlapping runs agree.
+    FOREACH v_type IN ARRAY c_types LOOP
+      v_id := public.notification_event_id(v_type, v_student::text);
+      -- A PR 1 reminder row (payload '{}') has no state: re-emitting it is a no-op (insert-once
+      -- id) and only a 'pending' row is ever sent, so it is never sent again.
+      SELECT e.payload ->> 'state'
+        INTO v_state
+        FROM public.notification_events e WHERE e.event_id = v_id;
+      v_due := public.lifecycle_due(v_type, v_student, p_now);
+      IF v_state IS NULL AND v_due THEN
+        PERFORM public.emit_notification_event(
+          v_id, v_type, v_student, '[]'::jsonb, jsonb_build_object('state', 'pending'));
+      ELSIF v_state = 'pending' AND NOT v_due THEN
+        UPDATE public.notification_events
+           SET payload = jsonb_build_object('state', 'resolved', 'resolved_at', p_now)
+         WHERE event_id = v_id;
+      END IF;
+    END LOOP;
+
+    -- (b) The cap: no lifecycle email to this student in the last 3 days. A PR 1 reminder row
+    --     (payload '{}') was sent when it was written, so its created_at is its sent_at.
+    CONTINUE WHEN EXISTS (
+      SELECT 1 FROM public.notification_events e
+       WHERE e.subject_profile_id = v_student
+         AND e.event_type = ANY (c_types)
+         AND (   (e.payload = '{}'::jsonb AND e.created_at > p_now - interval '3 days')
+              OR (e.payload ->> 'state' = 'sent'
+                  AND (e.payload ->> 'sent_at')::timestamptz > p_now - interval '3 days')));
+
+    -- (c) Send the first pending one, in priority order.
+    FOREACH v_type IN ARRAY c_types LOOP
+      v_id := public.notification_event_id(v_type, v_student::text);
+      UPDATE public.notification_events e
+         SET payload = jsonb_build_object('state', 'sent', 'sent_at', p_now)
+       WHERE e.event_id = v_id AND e.payload ->> 'state' = 'pending';
+      IF FOUND THEN
+        profile_id := v_student;
+        event_type := v_type;
+        RETURN NEXT;
+        v_sent := v_sent + 1;
+        EXIT;
+      END IF;
+    END LOOP;
+
+    EXIT WHEN v_sent >= p_limit;
   END LOOP;
   RETURN;
 END;
@@ -9488,20 +9566,102 @@ $$;
 
 
 --
--- Name: lifecycle_reminder_release(uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: lifecycle_due(text, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) RETURNS boolean
+CREATE FUNCTION public.lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_at timestamptz;
+BEGIN
+  -- Shared exclusions (C14A.2's database half; the denylist is applied by the server).
+  IF NOT EXISTS (
+       SELECT 1 FROM public.profiles p
+        WHERE p.id = p_profile_id
+          AND p.role = 'student'
+          AND p.deleted_at IS NULL
+          AND public.marketing_opt_in_age_eligible(p.date_of_birth))
+     OR EXISTS (SELECT 1 FROM public.account_deletion_requests d
+                 WHERE d.profile_id = p_profile_id AND d.status = 'pending') THEN
+    RETURN false;
+  END IF;
+
+  IF p_event_type = 'lifecycle_reminder_due' THEN
+    -- PR 1's condition, unchanged: onboarded 3 to 14 days ago, after its cutover, not entitled.
+    SELECT p.profile_completed_at INTO v_at FROM public.profiles p WHERE p.id = p_profile_id;
+    RETURN v_at IS NOT NULL
+       AND v_at >= public.lifecycle_reminder_since()
+       AND v_at <= p_now - interval '3 days'
+       AND v_at >  p_now - interval '14 days'
+       AND NOT public.entitlement_active(p_profile_id);
+
+  ELSIF p_event_type = 'lifecycle_diagnostic_unfinished' THEN
+    -- The diagnostic in flight (at most one), started 48 h to 14 days ago, none completed.
+    SELECT ps.created_at INTO v_at
+      FROM public.practice_sessions ps
+     WHERE ps.user_id = p_profile_id
+       AND ps.mode = 'diagnostic'
+       AND ps.status IN ('created', 'active');
+    RETURN v_at IS NOT NULL
+       AND v_at >= public.lifecycle_triggers_since()
+       AND v_at <= p_now - interval '48 hours'
+       AND v_at >  p_now - interval '14 days'
+       AND public.student_diagnostic_state(p_profile_id) = 'in_progress';
+
+  ELSIF p_event_type = 'lifecycle_pro_no_plan' THEN
+    -- Entitled, the entitlement row created 48 h to 14 days ago (owner answer: created_at), and
+    -- no study plan.
+    SELECT e.created_at INTO v_at FROM public.entitlements e WHERE e.profile_id = p_profile_id;
+    RETURN v_at IS NOT NULL
+       AND public.entitlement_active(p_profile_id)
+       AND v_at >= public.lifecycle_triggers_since()
+       AND v_at <= p_now - interval '48 hours'
+       AND v_at >  p_now - interval '14 days'
+       AND NOT EXISTS (SELECT 1 FROM public.calendar_current_plan c
+                        WHERE c.student_id = p_profile_id);
+
+  ELSIF p_event_type = 'lifecycle_practising_free' THEN
+    -- Not entitled; the 10th answered item (QOTD excluded; the diagnostic counts, owner answer)
+    -- answered within the last 14 days and after the cutover.
+    SELECT COALESCE(i.answered_at, i.occurred_at) INTO v_at
+      FROM public.practice_session_items i
+      JOIN public.practice_sessions ps ON ps.id = i.session_id
+     WHERE i.user_id = p_profile_id
+       AND i.status = 'answered'
+       AND ps.mode <> 'qotd'
+     ORDER BY COALESCE(i.answered_at, i.occurred_at), i.id
+    OFFSET 9 LIMIT 1;
+    RETURN v_at IS NOT NULL
+       AND NOT public.entitlement_active(p_profile_id)
+       AND v_at >= public.lifecycle_triggers_since()
+       AND v_at <= p_now
+       AND v_at >  p_now - interval '14 days';
+  END IF;
+
+  RAISE EXCEPTION 'lifecycle_due: unknown event type %', p_event_type USING ERRCODE = '22023';
+END;
+$$;
+
+
+--
+-- Name: lifecycle_release(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lifecycle_release(p_profile_id uuid, p_event_type text) RETURNS boolean
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
   v_rows integer;
 BEGIN
-  DELETE FROM public.notification_events e
-   WHERE e.event_id = public.notification_event_id('lifecycle_reminder_due', p_profile_id::text)
-     AND e.event_type = 'lifecycle_reminder_due'
-     AND NOT EXISTS (SELECT 1 FROM public.notification_messages m WHERE m.event_id = e.event_id);
+  UPDATE public.notification_events e
+     SET payload = jsonb_build_object('state', 'pending')
+   WHERE e.event_id = public.notification_event_id(p_event_type, p_profile_id::text)
+     AND e.event_type = p_event_type
+     AND e.event_type LIKE 'lifecycle\_%'
+     AND e.payload ->> 'state' = 'sent';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   RETURN v_rows = 1;
 END;
@@ -9514,14 +9674,30 @@ $$;
 
 CREATE FUNCTION public.lifecycle_reminder_since() RETURNS timestamp with time zone
     LANGUAGE sql IMMUTABLE
-    AS $$ SELECT timestamptz '2026-10-23 14:00:00+00' $$;
+    AS $$ SELECT timestamptz '2026-10-21 08:00:00+00' $$;
 
 
 --
 -- Name: FUNCTION lifecycle_reminder_since(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.lifecycle_reminder_since() IS 'The cutover (2026-10-23 14:00 UTC, the Resend Automation split). Students who completed onboarding earlier stay on the old Automation (its own 72 h reminder) and never get lyceon.reminder_due.';
+COMMENT ON FUNCTION public.lifecycle_reminder_since() IS 'The founding reminder''s cutover (2026-10-21 08:00 UTC, when Resend became welcome-only plus the app-sent reminder). Students who completed onboarding earlier stay on the old Automation''s reminder and never get lyceon.reminder_due.';
+
+
+--
+-- Name: lifecycle_triggers_since(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lifecycle_triggers_since() RETURNS timestamp with time zone
+    LANGUAGE sql IMMUTABLE
+    AS $$ SELECT timestamptz '2026-10-21 08:00:00+00' $$;
+
+
+--
+-- Name: FUNCTION lifecycle_triggers_since(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.lifecycle_triggers_since() IS 'The behaviour triggers'' cutover (2026-10-21 08:00 UTC): a diagnostic started, an entitlement created, or a 10th item answered before it never triggers a lifecycle email.';
 
 
 --
@@ -13009,6 +13185,78 @@ $$;
 
 
 --
+-- Name: review_admit_session_start(uuid, integer, text[], timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone DEFAULT now()) RETURNS uuid[]
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_to_close uuid[];
+  v_closed   uuid[];
+BEGIN
+  IF p_student_id IS NULL OR p_max_open IS NULL OR p_max_open < 1 THEN
+    RAISE EXCEPTION 'review_admit_session_start: a student and max_open >= 1 are required'
+      USING ERRCODE = '22023';
+  END IF;
+
+  PERFORM public.review_open_sessions_lock(p_student_id);
+
+  WITH open_sessions AS (
+    SELECT s.id, s.created_at,
+           EXISTS (
+             SELECT 1 FROM public.review_session_items i
+              WHERE i.session_id = s.id
+                AND i.question_id = ANY (COALESCE(p_question_ids, ARRAY[]::text[]))
+           ) AS holds
+      FROM public.review_sessions s
+     WHERE s.student_id = p_student_id
+       AND s.status IN ('created', 'active')
+  ),
+  kept AS (
+    -- The sessions holding none of the new session's questions, newest first: the newest
+    -- (max_open - 1) of them stay open, everything older is closed to make room.
+    SELECT id,
+           row_number() OVER (ORDER BY created_at DESC, id DESC) AS newest_rank
+      FROM open_sessions
+     WHERE NOT holds
+  )
+  SELECT COALESCE(array_agg(id), ARRAY[]::uuid[]) INTO v_to_close
+    FROM (
+      SELECT id FROM open_sessions WHERE holds
+      UNION
+      SELECT id FROM kept WHERE newest_rank >= p_max_open
+    ) c;
+
+  WITH closed AS (
+    UPDATE public.review_sessions s
+       SET status = 'abandoned',
+           abandoned_at = p_now,
+           completed_at = NULL,
+           updated_at = p_now,
+           filters = COALESCE(s.filters, '{}'::jsonb)
+                     || jsonb_build_object('active_session_item_id', NULL,
+                                           'client_instance_id', NULL,
+                                           'calculator_state', NULL)
+     WHERE s.id = ANY (v_to_close)
+     RETURNING s.id, s.created_at
+  )
+  SELECT COALESCE(array_agg(id ORDER BY created_at, id), ARRAY[]::uuid[]) INTO v_closed FROM closed;
+
+  RETURN v_closed;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) IS 'F-81 (owner rulings on #1277, Karl, 2026-10-21, ruling 2). Makes room for one NEW review session that will take p_question_ids: abandons every open review session of the student holding any of them, then the oldest of the rest (created_at, then id) until at most max_open - 1 stay open, as terminate does (abandoned_at set, completed_at NULL). Answered items stay; unanswered items'' queue entries were never changed, so they are back in the pool. Per-student advisory lock; idempotent. Service role only.';
+
+
+--
 -- Name: review_ask_completed_sessions(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -13196,6 +13444,18 @@ COMMENT ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_id u
 
 
 --
+-- Name: review_open_sessions_lock(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_open_sessions_lock(p_student_id uuid) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT pg_advisory_xact_lock(hashtextextended('review_open_sessions:' || p_student_id::text, 0));
+$$;
+
+
+--
 -- Name: review_queue_graduate(uuid, text, uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -13295,6 +13555,34 @@ $$;
 --
 
 COMMENT ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) IS 'Ruled plan §3 ruling 12. The only writer of review_schedule entries. Takes the (student, question) advisory lock before reading, replays on (source_engine, source_item_id), supersedes the open entry, inserts the new one.';
+
+
+--
+-- Name: review_session_items_one_open_question(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.review_session_items_one_open_question() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  PERFORM public.review_open_sessions_lock(NEW.student_id);
+  IF EXISTS (
+    SELECT 1
+      FROM public.review_session_items i
+      JOIN public.review_sessions s ON s.id = i.session_id
+     WHERE i.student_id = NEW.student_id
+       AND i.question_id = NEW.question_id
+       AND i.session_id <> NEW.session_id
+       AND s.status IN ('created', 'active')
+  ) THEN
+    RAISE EXCEPTION 'review_question_already_open'
+      USING ERRCODE = '23505',
+            DETAIL = 'This question is already in another open review session of the same student.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
 
 --
@@ -15338,6 +15626,78 @@ COMMENT ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) IS 'Doc 06D
 
 
 --
+-- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  INSERT INTO public.video_resources AS v
+    (video_id, title, channel_name, duration_seconds, status, last_checked_at,
+     skill_codes, domain, start_seconds, tagged_by, tagged_at)
+  VALUES (p_video_id, p_title, p_channel_name, p_duration_seconds, 'available', now(),
+          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now())
+  ON CONFLICT (video_id) DO UPDATE SET
+    title            = EXCLUDED.title,
+    channel_name     = EXCLUDED.channel_name,
+    duration_seconds = EXCLUDED.duration_seconds,
+    skill_codes      = EXCLUDED.skill_codes,
+    domain           = EXCLUDED.domain,
+    start_seconds    = EXCLUDED.start_seconds,
+    tagged_by        = EXCLUDED.tagged_by,
+    tagged_at        = EXCLUDED.tagged_at,
+    -- A changed tag set loses its approval; an unchanged one keeps it.
+    approved_by = CASE
+      WHEN (v.skill_codes, v.domain, v.start_seconds)
+           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+        THEN v.approved_by ELSE NULL END,
+    approved_at = CASE
+      WHEN (v.skill_codes, v.domain, v.start_seconds)
+           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+        THEN v.approved_at ELSE NULL END;
+$$;
+
+
+--
+-- Name: video_resources_approve(text[], uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resources_approve(p_video_ids text[], p_approver uuid) RETURNS integer
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH done AS (
+    UPDATE public.video_resources
+       SET approved_by = p_approver, approved_at = now()
+     WHERE video_id = ANY (p_video_ids)
+       AND cardinality(skill_codes) >= 1
+       AND p_approver IS NOT NULL
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM done;
+$$;
+
+
+--
+-- Name: video_resources_for_skills(text[], integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) RETURNS TABLE(video_id text, title text, channel_name text, duration_seconds integer, start_seconds integer)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT v.video_id, v.title, v.channel_name, v.duration_seconds, v.start_seconds
+  FROM public.video_resources v
+  WHERE v.status = 'available'
+    AND v.approved_by IS NOT NULL
+    AND v.skill_codes && p_skill_codes        -- GIN index: the skill filter, in the statement
+  ORDER BY v.duration_seconds, v.video_id     -- shortest first for a stuck student; stable
+  LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
+$$;
+
+
+--
 -- Name: abuse_score_incidents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -15498,6 +15858,25 @@ CREATE TABLE public.accountability_state (
 --
 
 COMMENT ON TABLE public.accountability_state IS 'Owner brief 2026-10-13 (guardian accountability): the missed-planned-day run per student (consecutive_missed, alert_open, last_evaluated_date in the student''s calendar dates) and the digest day''s block completion. Written ONLY by accountability_record_day_outcomes. Service role only. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: analytics_funnel_milestones; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.analytics_funnel_milestones (
+    profile_id uuid NOT NULL,
+    milestone text NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT analytics_funnel_milestones_milestone_check CHECK ((milestone = ANY (ARRAY['onboarding_completed'::text, 'first_answer'::text, 'first_practice'::text, 'diagnostic_completed'::text, 'plan_created'::text, 'upgraded'::text])))
+);
+
+
+--
+-- Name: TABLE analytics_funnel_milestones; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.analytics_funnel_milestones IS 'Server-side funnel events (Karl, 2026-10-21): one row per student per milestone already claimed, so each event is sent at most once ever. Names and timestamps only. Written only by analytics_funnel_claim / analytics_funnel_release. ON DELETE CASCADE from profiles.';
 
 
 --
@@ -17426,7 +17805,7 @@ CREATE TABLE public.notification_events (
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text, 'review_ask'::text, 'lifecycle_reminder_due'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text, 'review_ask'::text, 'lifecycle_reminder_due'::text, 'lifecycle_diagnostic_unfinished'::text, 'lifecycle_pro_no_plan'::text, 'lifecycle_practising_free'::text])))
 );
 
 
@@ -19131,8 +19510,21 @@ CREATE TABLE public.video_resources (
     status text DEFAULT 'available'::text NOT NULL,
     last_checked_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    skill_codes text[] DEFAULT '{}'::text[] NOT NULL,
+    domain text,
+    start_seconds integer,
+    tagged_by text,
+    tagged_at timestamp with time zone,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    CONSTRAINT video_resources_approved_has_tags CHECK (((approved_by IS NULL) OR (cardinality(skill_codes) >= 1))),
+    CONSTRAINT video_resources_approved_pair CHECK (((approved_by IS NULL) = (approved_at IS NULL))),
+    CONSTRAINT video_resources_domain_check CHECK (((domain IS NULL) OR (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text, 'Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text])))),
     CONSTRAINT video_resources_duration_check CHECK ((duration_seconds > 0)),
+    CONSTRAINT video_resources_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
+    CONSTRAINT video_resources_start_check CHECK (((start_seconds IS NULL) OR ((start_seconds >= 0) AND (start_seconds < duration_seconds)))),
     CONSTRAINT video_resources_status_check CHECK ((status = ANY (ARRAY['available'::text, 'unavailable'::text]))),
+    CONSTRAINT video_resources_tagged_pair CHECK (((tagged_by IS NULL) = (tagged_at IS NULL))),
     CONSTRAINT video_resources_video_id_check CHECK ((video_id ~ '^[A-Za-z0-9_-]{11}$'::text))
 );
 
@@ -19141,7 +19533,7 @@ CREATE TABLE public.video_resources (
 -- Name: TABLE video_resources; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.video_resources IS 'Per-video facts for the LISA video card, joined at render time by the video id in curriculum_chunks.provenance. Service role only.';
+COMMENT ON TABLE public.video_resources IS 'Per-video facts and skill tags: the LISA video library (offered whole, by skill) and the render-time join for curriculum_chunks.provenance. Service role only.';
 
 
 --
@@ -19206,6 +19598,14 @@ ALTER TABLE ONLY public.account_deletion_runtime_config
 
 ALTER TABLE ONLY public.accountability_state
     ADD CONSTRAINT accountability_state_pkey PRIMARY KEY (student_id);
+
+
+--
+-- Name: analytics_funnel_milestones analytics_funnel_milestones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analytics_funnel_milestones
+    ADD CONSTRAINT analytics_funnel_milestones_pkey PRIMARY KEY (profile_id, milestone);
 
 
 --
@@ -21637,6 +22037,13 @@ CREATE UNIQUE INDEX uq_usage_rate_limit_ledger_dedupe ON public.usage_rate_limit
 
 
 --
+-- Name: video_resources_skills_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX video_resources_skills_idx ON public.video_resources USING gin (skill_codes);
+
+
+--
 -- Name: abuse_score_incidents abuse_score_incidents_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -21910,6 +22317,13 @@ CREATE TRIGGER review_runtime_config_notify AFTER INSERT OR UPDATE ON public.rev
 
 
 --
+-- Name: review_session_items review_session_items_one_open_question; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER review_session_items_one_open_question BEFORE INSERT ON public.review_session_items FOR EACH ROW EXECUTE FUNCTION public.review_session_items_one_open_question();
+
+
+--
 -- Name: student_diagnostic_projections student_diagnostic_projections_no_update; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -22135,6 +22549,14 @@ ALTER TABLE ONLY public.account_deletion_runtime_config
 
 ALTER TABLE ONLY public.accountability_state
     ADD CONSTRAINT accountability_state_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: analytics_funnel_milestones analytics_funnel_milestones_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analytics_funnel_milestones
+    ADD CONSTRAINT analytics_funnel_milestones_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -23384,6 +23806,12 @@ ALTER TABLE public.account_deletion_runtime_config_history ENABLE ROW LEVEL SECU
 --
 
 ALTER TABLE public.accountability_state ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: analytics_funnel_milestones; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.analytics_funnel_milestones ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: anonymized_actors; Type: ROW SECURITY; Schema: public; Owner: -
@@ -25022,6 +25450,22 @@ GRANT ALL ON FUNCTION public.actor_id_integrity_violations() TO service_role;
 
 
 --
+-- Name: FUNCTION analytics_funnel_claim(p_profile_id uuid, p_milestone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.analytics_funnel_claim(p_profile_id uuid, p_milestone text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.analytics_funnel_claim(p_profile_id uuid, p_milestone text) TO service_role;
+
+
+--
+-- Name: FUNCTION analytics_funnel_release(p_profile_id uuid, p_milestone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.analytics_funnel_release(p_profile_id uuid, p_milestone text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.analytics_funnel_release(p_profile_id uuid, p_milestone text) TO service_role;
+
+
+--
 -- Name: FUNCTION apply_audit_logs_retention(p_action text, p_profile_id uuid, p_batch_size integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -26061,19 +26505,27 @@ GRANT ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id t
 
 
 --
--- Name: FUNCTION lifecycle_reminder_claim(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION lifecycle_claim(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.lifecycle_reminder_claim(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.lifecycle_reminder_claim(p_now timestamp with time zone, p_limit integer) TO service_role;
+REVOKE ALL ON FUNCTION public.lifecycle_claim(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_claim(p_now timestamp with time zone, p_limit integer) TO service_role;
 
 
 --
--- Name: FUNCTION lifecycle_reminder_release(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_due(p_event_type text, p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION lifecycle_release(p_profile_id uuid, p_event_type text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.lifecycle_release(p_profile_id uuid, p_event_type text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_release(p_profile_id uuid, p_event_type text) TO service_role;
 
 
 --
@@ -26082,6 +26534,14 @@ GRANT ALL ON FUNCTION public.lifecycle_reminder_release(p_profile_id uuid) TO se
 
 REVOKE ALL ON FUNCTION public.lifecycle_reminder_since() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.lifecycle_reminder_since() TO service_role;
+
+
+--
+-- Name: FUNCTION lifecycle_triggers_since(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.lifecycle_triggers_since() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.lifecycle_triggers_since() TO service_role;
 
 
 --
@@ -26806,6 +27266,14 @@ GRANT ALL ON FUNCTION public.restore_account_deletion(p_recovery_token_hash text
 
 
 --
+-- Name: FUNCTION review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_admit_session_start(p_student_id uuid, p_max_open integer, p_question_ids text[], p_now timestamp with time zone) TO service_role;
+
+
+--
 -- Name: FUNCTION review_ask_completed_sessions(p_student_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -26844,6 +27312,14 @@ REVOKE ALL ON FUNCTION public.review_item_used_tutor(p_student_id uuid, p_item_i
 
 
 --
+-- Name: FUNCTION review_open_sessions_lock(p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_open_sessions_lock(p_student_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.review_open_sessions_lock(p_student_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION review_queue_graduate(p_student_id uuid, p_question_id text, p_review_item_id uuid, p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -26855,6 +27331,13 @@ REVOKE ALL ON FUNCTION public.review_queue_graduate(p_student_id uuid, p_questio
 --
 
 REVOKE ALL ON FUNCTION public.review_queue_record(p_student_id uuid, p_question_id text, p_source_engine text, p_source_session_id uuid, p_source_item_id uuid, p_source_outcome text, p_at timestamp with time zone) FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION review_session_items_one_open_question(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.review_session_items_one_open_question() FROM PUBLIC;
 
 
 --
@@ -27181,6 +27664,30 @@ GRANT ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) TO servic
 
 
 --
+-- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resources_approve(p_video_ids text[], p_approver uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resources_approve(p_video_ids text[], p_approver uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resources_approve(p_video_ids text[], p_approver uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resources_for_skills(p_skill_codes text[], p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) TO service_role;
+
+
+--
 -- Name: TABLE abuse_score_incidents; Type: ACL; Schema: public; Owner: -
 --
 
@@ -27234,6 +27741,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.account_deletion_runtime_confi
 --
 
 GRANT SELECT ON TABLE public.accountability_state TO service_role;
+
+
+--
+-- Name: TABLE analytics_funnel_milestones; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE ON TABLE public.analytics_funnel_milestones TO service_role;
 
 
 --

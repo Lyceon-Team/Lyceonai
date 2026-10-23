@@ -477,6 +477,32 @@ vi.mock("../../server/middleware/csrf-double-submit", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Server-side funnel hooks (Karl, 2026-10-21): recorded, not sent. The route must call
+// `fireAnswerMilestones` once per FRESH answer (never a replay) and `fireDiagnosticCompleted`
+// exactly once per completed diagnostic, whichever path completes it. The once-ever rule itself
+// (the claim) is proved in tests/ci/funnel-events.pg.ci.test.ts.
+// ---------------------------------------------------------------------------
+const funnelCalls = vi.hoisted(() => ({
+  answers: [] as Array<[string, string]>,
+  diagnosticCompleted: [] as string[],
+}));
+vi.mock("../../server/lib/analytics/funnel-events", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../server/lib/analytics/funnel-events")
+  >()),
+  fireAnswerMilestones: (profileId: string, mode: string) => {
+    funnelCalls.answers.push([profileId, mode]);
+  },
+  fireDiagnosticCompleted: (profileId: string) => {
+    funnelCalls.diagnosticCompleted.push(profileId);
+  },
+}));
+const answersFor = (id: string): Array<[string, string]> =>
+  funnelCalls.answers.filter(([p]) => p === id);
+const completionsFor = (id: string): number =>
+  funnelCalls.diagnosticCompleted.filter((p) => p === id).length;
+
+// ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
 describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
@@ -806,9 +832,18 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     );
     expect(sessionResult.rows[0]!.status).toBe("completed");
     expect(sessionResult.rows[0]!.completed_at).not.toBeNull();
+
+    // F-R1 (funnel): one answer hook per fresh answer, with the session's mode; one completion.
+    expect(answersFor(TEST_USER_ID)).toHaveLength(40);
+    expect(
+      answersFor(TEST_USER_ID).every(([, mode]) => mode === "diagnostic"),
+    ).toBe(true);
+    expect(completionsFor(TEST_USER_ID)).toBe(1);
   }, 120_000);
 
   it("replay same 40 answers → no duplicate audit rows (idempotency)", async () => {
+    const answersBefore = answersFor(TEST_USER_ID).length;
+    const completionsBefore = completionsFor(TEST_USER_ID);
     // Replay: submit the same 40 answers again with clientAttemptId.
     // All should succeed (idempotent) and no new audit rows should appear.
     for (let i = 1; i <= 40; i++) {
@@ -840,6 +875,10 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
       [TEST_SESSION_ID],
     );
     expect(auditResult.rows[0]!.cnt).toBe(40);
+
+    // F-R2 (funnel): a replay calls neither hook.
+    expect(answersFor(TEST_USER_ID)).toHaveLength(answersBefore);
+    expect(completionsFor(TEST_USER_ID)).toBe(completionsBefore);
   }, 120_000);
 
   // ===================================================================
@@ -1086,6 +1125,8 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
       ["RW", "insufficient_evidence"],
     ]);
     expect(rows.every((r) => r.projected_score_mid === null)).toBe(true);
+    // F-R3 (funnel): a diagnostic completed by a skip is completed once.
+    expect(completionsFor(userId)).toBe(1);
   }, 120_000);
 
   it("next-question with nothing left completes the diagnostic and stores its projection", async () => {
@@ -1110,6 +1151,8 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     expect((await sessionRow(sessionId)).status).toBe("completed");
     const rows = await storedRows(sessionId);
     expect(rows.map((r) => r.status)).toEqual(["computed", "computed"]);
+    // F-R4 (funnel): completed by next-question, once.
+    expect(completionsFor(userId)).toBe(1);
   }, 120_000);
 
   it("replay of the final answer after a lost completion completes the diagnostic and stores its projection", async () => {
@@ -1138,6 +1181,10 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     expect(res.body.idempotentRetried).toBe(true);
     const rows = await storedRows(sessionId);
     expect(rows.map((r) => r.status)).toEqual(["computed", "computed"]);
+    // F-R5 (funnel): the replayed final answer is not a fresh answer; the completion it
+    // reconciles counts once.
+    expect(answersFor(userId)).toHaveLength(39);
+    expect(completionsFor(userId)).toBe(1);
   }, 120_000);
 
   it("two concurrent final answers: one completion, two rows, one completed_at", async () => {
@@ -1166,6 +1213,9 @@ describe.skipIf(!CAN_RUN)("Diagnostic handler → real PG proof", () => {
     expect((await sessionRow(sessionId)).completed_at).toEqual(
       firstCompletedAt,
     );
+    // F-R6 (funnel): two concurrent final answers, one fresh answer and one completion.
+    expect(answersFor(userId)).toHaveLength(40);
+    expect(completionsFor(userId)).toBe(1);
   }, 120_000);
 
   it("terminate on a completed diagnostic is refused and leaves it completed", async () => {

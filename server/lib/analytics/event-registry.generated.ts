@@ -8,7 +8,7 @@
  */
 export const GENERATED_EVENT_REGISTRY: unknown = {
   "schema_version": "1.0.0",
-  "last_updated": "2026-10-20",
+  "last_updated": "2026-10-21",
   "owner_doc": "07A V1.0",
   "events": [
     {
@@ -1070,6 +1070,357 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
         "schema_version": "not_pii",
         "type": "not_pii",
         "role": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "onboarding_completed",
+      "schema_tier": "strict",
+      "canonical_event_class": "auth",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "Server-side funnel (Karl, 2026-10-21): a student or guardian completed onboarding for the first time. Sent once ever, about ten seconds after completion so the separately saved SAT date and target score are seen. Coarse facts only: role, age band, and whether a test date and a target score were given; never the date, the score, a name or a birth date.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "role",
+          "age_band",
+          "has_test_date",
+          "has_target_score"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "onboarding_completed"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "student",
+              "guardian"
+            ]
+          },
+          "age_band": {
+            "type": "string",
+            "enum": [
+              "13-17",
+              "18+"
+            ]
+          },
+          "has_test_date": {
+            "type": "boolean"
+          },
+          "has_target_score": {
+            "type": "boolean"
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "role": "not_pii",
+        "age_band": "not_pii",
+        "has_test_date": "not_pii",
+        "has_target_score": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "first_answer",
+      "schema_tier": "strict",
+      "canonical_event_class": "practice",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "Server-side funnel (Karl, 2026-10-21): the student's first answered question of any kind. Sent once ever. Which surface, and whole hours since the account was created; never the question, the answer or its correctness.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "source",
+          "hours_since_signup"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "first_answer"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "qotd",
+              "practice",
+              "diagnostic"
+            ]
+          },
+          "hours_since_signup": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "source": "not_pii",
+        "hours_since_signup": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "first_practice",
+      "schema_tier": "strict",
+      "canonical_event_class": "practice",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "Server-side funnel (Karl, 2026-10-21): the student's first answered item outside the Question of the Day. Sent once ever. Which surface, and whole hours since the account was created.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "source",
+          "hours_since_signup"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "first_practice"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "practice",
+              "diagnostic"
+            ]
+          },
+          "hours_since_signup": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "source": "not_pii",
+        "hours_since_signup": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "diagnostic_completed",
+      "schema_tier": "strict",
+      "canonical_event_class": "practice",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "Server-side funnel (Karl, 2026-10-21): the student's diagnostic was completed (the one completion path, complete_diagnostic_session). Sent once ever. Whole days since the account was created; never a score, a projection or an item.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "days_since_signup"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "diagnostic_completed"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "days_since_signup": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "days_since_signup": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "plan_created",
+      "schema_tier": "strict",
+      "canonical_event_class": "practice",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "Server-side funnel (Karl, 2026-10-21): the student's first study plan was generated (first accepted calendar version). Sent once ever. Whole days since the account was created; never the plan's contents.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "days_since_signup"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "plan_created"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "days_since_signup": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "days_since_signup": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "upgraded",
+      "schema_tier": "strict",
+      "canonical_event_class": "billing",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.0.0",
+      "description": "Server-side funnel (Karl, 2026-10-21): the student's entitlement became active for the first time. Sent once ever. How (a 100%-off founding code, a guardian's payment, or their own) and whole days since the account was created; never an amount, a Stripe id or the payer.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "via",
+          "days_since_signup"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "upgraded"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "alpha",
+              "paid",
+              "guardian_paid"
+            ]
+          },
+          "days_since_signup": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "via": "not_pii",
+        "days_since_signup": "not_pii"
       },
       "retention_class": "standard_analytics"
     }

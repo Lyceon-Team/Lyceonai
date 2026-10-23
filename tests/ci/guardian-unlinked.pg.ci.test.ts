@@ -547,4 +547,47 @@ describe.skipIf(!PG_AVAILABLE)("guardian_unlinked — real Postgres", () => {
     );
     expect(afterRevoke.body.data.links).toEqual([]);
   });
+
+  // SCL-238 (owner brief 2026-10-21, Part A): the calendar's "Your guardian will be notified"
+  // dialog reads `guardian_notified`, the accountability loop's OWN recipient rule
+  // (`accountability_guardian_recipients`: active link AND student entitlement), never the
+  // link list alone.
+  it("SCL-238: guardian_notified is true only with an active link AND an active student entitlement", async () => {
+    const app = await buildApp();
+    session.id = STUDENT;
+    session.role = "student";
+    const none = await request(app).get(`/api/students/${STUDENT}/links`);
+    expect(none.status).toBe(200);
+    expect(none.body.data).toEqual({ links: [], guardian_notified: false });
+
+    const linkId = await link(app);
+    session.id = STUDENT;
+    session.role = "student";
+    // Presence first: the link IS listed, so `false` below is the entitlement half deciding.
+    const unentitled = await request(app).get(`/api/students/${STUDENT}/links`);
+    expect(unentitled.body.data.links).toHaveLength(1);
+    expect(unentitled.body.data.guardian_notified).toBe(false);
+
+    await pg.query(
+      `INSERT INTO public.entitlements (profile_id, tier, status, stripe_subscription_id, stripe_subscription_item_id)
+       VALUES ($1, 'premium', 'active', 'sub_scl238', 'si_scl238')`,
+      [STUDENT],
+    );
+    try {
+      const entitled = await request(app).get(`/api/students/${STUDENT}/links`);
+      expect(entitled.body.data.links).toHaveLength(1);
+      expect(entitled.body.data.guardian_notified).toBe(true);
+
+      await request(app).delete(`/api/students/${STUDENT}/links/${linkId}`);
+      const revoked = await request(app).get(`/api/students/${STUDENT}/links`);
+      expect(revoked.body.data).toEqual({
+        links: [],
+        guardian_notified: false,
+      });
+    } finally {
+      await pg.query(`DELETE FROM public.entitlements WHERE profile_id = $1`, [
+        STUDENT,
+      ]);
+    }
+  });
 });

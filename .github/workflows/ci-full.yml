@@ -438,6 +438,12 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/migration-inventory-gate.sh
 
+      # Karl, 2026-10-21: I0 (no new duplicate migration versions) and its frozen list are
+      # planted and must turn their named test red. No Postgres: I0 stops the gate first.
+      - name: Migration duplicate-version mutations (planted defects must fail)
+        if: matrix.group == 'calendar-migrations'
+        run: bash scripts/ci/migration-duplicate-version.mutations.sh
+
       # Proves the gate above can fail, and fails on the assertion each mutation names.
       # M3 is the load-bearing one: without it "counted" and "excluded" are the same test.
       - name: KPI quarantine gate — mutation proof
@@ -512,19 +518,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/marketing-consent-reviews.mutations.sh
 
-      # Lifecycle emails PR 1 (Karl, 2026-10-21; SCL-239): plants the founding reminder before 3
-      # days, for an entitled, under-13, deleted, deletion-pending, guardian or pre-cutover
-      # student, twice, during quiet hours, to a denylisted address, with a message row, kept
-      # after a refused send, open to authenticated, missing from the sweep, or logging an
+      # Lifecycle emails (Karl, 2026-10-21; SCL-239, SCL-240): plants the founding reminder and
+      # the three behaviour triggers off their thresholds, cutovers and windows; for an entitled,
+      # under-13, deleted, deletion-pending, guardian or denylisted student; twice; during quiet
+      # hours; past the cap or out of priority order; without the self-cancel; with a message row;
+      # kept after a refused send; open to authenticated; missing from the sweep; or logging an
       # address. Each must turn its guarding test red on a name.
-      - name: Lifecycle reminder mutations (planted defects must fail)
+      - name: Lifecycle email mutations (planted defects must fail)
         if: matrix.group == 'review-marketing'
         env:
           PGHOST: localhost
           PGPORT: "5433"
           PGUSER: postgres
           PGPASSWORD: postgres
-        run: bash scripts/ci/lifecycle-reminder.mutations.sh
+        run: bash scripts/ci/lifecycle-email.mutations.sh
 
       # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
       # new-account test ignoring the account's age, email signup recording only on a client
@@ -602,6 +609,20 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/getting-started.mutations.sh
+
+      # Server-side funnel events (Karl, 2026-10-21): every rule (once per student, exact
+      # properties incl. a forbidden-property plant, the salted distinct id, fire-and-forget,
+      # under-13 exclusion, analytics off, the onboarding delay, QOTD vs practice, alpha = 100% off,
+      # service_role grants, the backfill, and each route hook) is planted and must turn its named
+      # test red.
+      - name: Server-side funnel events mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/funnel-events.mutations.sh
 
       # QOTD resilience (Karl, 2026-10-09): every alert rule (horizon < 7, once per condition per
       # day, one recovery, the independent check, channel independence, one unset-webhook warning),
