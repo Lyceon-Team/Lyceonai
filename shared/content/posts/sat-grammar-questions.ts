@@ -27,7 +27,7 @@ const post: ScheduledPostSpec = {
   page: {
     title: "SAT Grammar Questions: What They Test | Lyceon",
     description:
-      "The grammar questions on the SAT Reading and Writing section test two things: sentence boundaries and word forms. Here's each skill, with examples.",
+      "The grammar questions on the SAT Reading and Writing section cover two areas: boundaries, and form, structure and sense. Here's each skill, with examples.",
     h1: "SAT Grammar Questions: What They Test",
     intro: [
       {
@@ -80,7 +80,7 @@ const post: ScheduledPostSpec = {
         blocks: [
           {
             type: "p",
-            text: "These questions ask which form of a word fits the sentence. College Board's list has six skills:",
+            text: "These questions ask whether a word form or a sentence's structure fits its meaning. College Board's list has six skills:",
             sources: [CB_ASSESSMENT_FRAMEWORK],
           },
           {

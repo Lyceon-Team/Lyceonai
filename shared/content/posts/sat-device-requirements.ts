@@ -86,8 +86,8 @@ const post: ScheduledPostSpec = {
           },
           {
             type: "p",
-            text: "Your device needs Bluebook installed and exam setup finished when you arrive. Fix any problem before Monday, so setup doesn't turn up a surprise.",
-            sources: [CB_BLUEBOOK_SAT_WEEKEND],
+            text: "If you're using your own, a school's or a friend's device, it needs Bluebook installed and exam setup finished when you arrive. Fix any problem before Monday, so setup doesn't turn up a surprise. If you're borrowing a device from College Board, you pick it up at the test center and complete exam setup there, so arrive 30 minutes before the standard check-in time.",
+            sources: [CB_BLUEBOOK_SAT_WEEKEND, CB_DEVICE_LENDING],
           },
         ],
       },

@@ -62,7 +62,7 @@ const post: ScheduledPostSpec = {
           },
           {
             type: "p",
-            text: "The whole sheet covers geometry. You don't have to memorize it, but you'll work faster if you've used each formula enough to know where it applies.",
+            text: "The whole sheet covers geometry. You don't have to memorize it, but it helps to look it over before test day so you know what's on it and what isn't.",
             sources: [CB_BLUEBOOK_TEST_DIRECTIONS],
           },
         ],
