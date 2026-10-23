@@ -228,10 +228,18 @@ export type OcrPage = { pdfPage: number; printed: number | null; body: string };
 /** Pure. One page-NN.md file → its printed page (from the header comment) and its body. */
 export function parseOcrPage(pdfPage: number, text: string): OcrPage {
   const printed = /<!-- PDF page \d+; printed page (\d+) -->/.exec(text)?.[1];
+
+  let body = text;
+  let previous: string;
+  do {
+    previous = body;
+    body = body.replace(/<!--[\s\S]*?-->/g, "");
+  } while (body !== previous);
+
   return {
     pdfPage,
     printed: printed === undefined ? null : Number(printed),
-    body: text.replace(/<!--[\s\S]*?-->/g, "").trim(),
+    body: body.trim(),
   };
 }
 
