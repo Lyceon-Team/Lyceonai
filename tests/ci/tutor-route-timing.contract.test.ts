@@ -21,11 +21,27 @@ import { FakeTutorDb } from "../helpers/fake-tutor-db";
 
 const db = { current: new FakeTutorDb() };
 
-vi.mock("../../apps/api/src/lib/supabase-server", () => ({
-  get supabaseServer() {
-    return db.current.client();
-  },
-}));
+// H1 (P2 Revised §2, 2026-10-23): the real server client times each round trip through its fetch
+// (`timedFetch`, apps/api/src/lib/supabase-server.ts). The in-memory DB has no fetch, so each
+// query it serves makes one call through `timedFetch` to a no-op, as the real client would make
+// one request: the route's `{ databaseTrips: true }` is what turns those into `db.*` steps.
+vi.mock("../../apps/api/src/lib/supabase-server", async () => {
+  const { timedFetch } = await import("../../server/lib/step-timer");
+  const trip = timedFetch(async () => new Response("[]"));
+  return {
+    get supabaseServer() {
+      const client = db.current.client();
+      return {
+        from: (table: string) => {
+          void trip(`https://fake.supabase.co/rest/v1/${table}`, {
+            method: "GET",
+          });
+          return client.from(table);
+        },
+      };
+    },
+  };
+});
 const logged = vi.hoisted(() => ({
   info: [] as unknown[][],
 }));
@@ -236,7 +252,13 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
     expect(data.route).toBe("tutor.message");
     expect(data.status).toBe(200);
     const steps = data.steps as Array<{ step: string; ms: number | null }>;
-    expect(steps.map((s) => s.step)).toEqual(REPLY_PATH_STEPS);
+    expect(
+      steps.map((s) => s.step).filter((name) => !name.startsWith("db.")),
+    ).toEqual(REPLY_PATH_STEPS);
+    // H1: the route opted in, so its database round trips are steps too.
+    expect(steps.some((s) => s.step === "db.read.tutor_conversations")).toBe(
+      true,
+    );
     for (const s of steps) expect(typeof s.ms).toBe("number");
   });
 
@@ -263,10 +285,12 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
       ].sort(),
     );
     const steps = line!.data.steps as Array<Record<string, unknown>>;
-    expect(steps.length).toBe(REPLY_PATH_STEPS.length);
+    expect(steps.length).toBeGreaterThan(REPLY_PATH_STEPS.length);
     for (const step of steps) {
       expect(Object.keys(step).sort()).toEqual(["at_ms", "ms", "step"]);
-      expect(step.step).toMatch(/^[a-z_]+$/);
+      expect(step.step).toMatch(
+        /^(?:[a-z_]+|db\.(?:read|insert|update|delete|rpc|auth|other)\.[a-z][a-z0-9_]*)$/,
+      );
     }
     const serialised = JSON.stringify(line!.data);
     expect(serialised).not.toMatch(UUID_ANYWHERE);

@@ -79,8 +79,9 @@ export function useTutorTurn(
   // | @implemented [2026-10-23]
   // plain English: the reply turn in flight, timed from the press of send. `postMs` is set when
   // the send resolves with an ordinary reply; the effect below reports once the thread carries
-  // the tutor row with this turn's client_turn_id and a frame has painted it. A crisis turn, a
-  // failure or a newer send drops the measurement (nothing is reported for it). A ref, not
+  // the tutor row with this turn's client_turn_id and a frame has painted it. A crisis turn drops
+  // the measurement; a failed turn never sets `postMs` and writes no tutor row, and a retry or a
+  // newer send replaces it, so neither reports. A ref, not
   // state: timing must not re-render the thread. The report carries the send's request id and
   // two numbers — never the message or the reply.
   const turnTimingRef = useRef<{
@@ -296,9 +297,6 @@ export function useTutorTurn(
         }
       } catch (err: unknown) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        if (turnTimingRef.current?.requestId === requestId) {
-          turnTimingRef.current = null;
-        }
         if (
           err instanceof HttpApiError &&
           err.code === "conversation_crisis_paused"
