@@ -38,6 +38,7 @@ import {
   QOTD_RW_MAX_PASSAGE_CHARS,
   QOTD_RW_MAX_TOTAL_CHARS,
 } from "../../shared/qotd/readability";
+import { QOTD_SECTION_NAME } from "../../shared/qotd/social";
 import { buildTiktokCarousel } from "../../shared/qotd/tiktok";
 import { toArchiveResponse } from "../../shared/qotd/projection";
 import { QOTD_ARCHIVE_ROWS } from "../../tests/lib/qotd-fixture";
@@ -88,7 +89,7 @@ export function worstCases(): Record<string, QotdTiktokCarousel> {
         stem: rwStem,
         options: [0, 1, 2, 3].map((i) => ({ text: rwChoice(i) })),
       },
-      section: "Reading and Writing",
+      section: QOTD_SECTION_NAME.RW,
       answer: { kind: "choice", letter: "C", text: rwChoice(2) },
       why: why(),
     }),
@@ -103,7 +104,7 @@ export function worstCases(): Record<string, QotdTiktokCarousel> {
         stem: prose(QOTD_MATH_MAX_CHARS),
         options: [0, 1, 2, 3].map((i) => ({ text: mChoice(i) })),
       },
-      section: "Math",
+      section: QOTD_SECTION_NAME.M,
       answer: { kind: "choice", letter: "D", text: mChoice(3) },
       why: why(),
     }),
@@ -118,7 +119,7 @@ export function worstCases(): Record<string, QotdTiktokCarousel> {
         stem: prose(QOTD_MATH_MAX_CHARS),
         options: [],
       },
-      section: "Math",
+      section: QOTD_SECTION_NAME.M,
       answer: { kind: "value", value: "-12.75" },
       why: why(),
     }),
