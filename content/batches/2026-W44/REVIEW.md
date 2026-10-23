@@ -61,7 +61,10 @@ changed, or why not. One revision round: an item still not approved is carried t
 
 | Item | Finding | Response | Commit |
 | --- | --- | --- | --- |
-| `slug` | The finding. | Fixed: what changed. | abc1234 |
+| `sat-grammar-questions` | R2/R3: description and Form, Structure, and Sense introduction reduce the group to word forms, omitting sentence structure and modifier placement. | Fixed: the description now says the questions cover boundaries, and form, structure and sense; the section introduction now says they ask whether a word form or a sentence's structure fits its meaning. | 34fac00 |
+| `sat-math-formulas` | R1/R2: "you'll work faster if you've used each formula enough" asserts a speed benefit the cited directions do not support. | Fixed: recast as practical advice with no promised effect: look the sheet over before test day to know what is on it and what is not. | 34fac00 |
+| `sat-device-requirements` | R3: the blanket instruction to arrive with exam setup finished omits the College Board loan-device exception. | Fixed: the instruction is scoped to your own, a school's or a friend's device; added that a College Board loan device is picked up and set up at the test center, so arrive 30 minutes before the standard check-in time (device lending page added as a source). | 34fac00 |
+| all items | R11: main CI red on the audited head (pg job, Genesis fresh-apply + determinism + anti-leak gate). | Not changed by this batch: the batch touches only content modules and this record. Gates run locally on the revised head: build, gate:seo-output, the four content vitest files, Vale and lychee all pass. Green main CI on the revised head is awaited from CI. | n/a |
 
 ## 4. Karl decision
 
