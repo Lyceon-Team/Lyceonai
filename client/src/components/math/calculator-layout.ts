@@ -15,9 +15,9 @@ export const DESMOS_HOST_MIN_PX = 480;
 export const CALC_PANEL_PAD_PX = 16;
 export const CALC_MIN_PX = DESMOS_HOST_MIN_PX + CALC_PANEL_PAD_PX; // 496
 export const QUESTION_MIN_PX = 500;
-export const DIVIDER_PX = 14; // conservative; actual CSS is w-px, but grip + hit area widen
-export const APP_HORIZONTAL_PADDING = 32;
-export const BREAKPOINT_EXTRA = 20;
+const DIVIDER_PX = 14; // conservative; actual CSS is w-px, but grip + hit area widen
+const APP_HORIZONTAL_PADDING = 32;
+const BREAKPOINT_EXTRA = 20;
 export const SPLIT_BREAKPOINT =
   CALC_MIN_PX +
   QUESTION_MIN_PX +

@@ -19,15 +19,22 @@
  * Review tiles, "Score Trend Analysis", the "Alpha" recommendations card, the diagnostic prompt
  * modal and CTA card): the new Home's diagnostic card and right panel carry what they showed
  * that is still allowed, from the routes the wiring table names.
+ *
+ * @updated 2026-10-22 — owner brief "LISA chat dock" (Karl): the LISA bubble (`ChatDock`, general
+ * mode) on both Homes, at tablet and desktop widths.
  */
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
 import { FreeHome } from "@/components/home/FreeHome";
 import { HomeLoading } from "@/components/home/HomeLoading";
 import { PaidHome } from "@/components/home/PaidHome";
+import { ChatDock, type ChatDockScope } from "@/components/tutor/ChatDock";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { browserLocalToday } from "@/features/calendar/lib/dates";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
+
+/** The LISA bubble on Home opens LISA in general mode (owner brief, 2026-10-22). */
+const GENERAL_DOCK: ChatDockScope = { kind: "general" };
 
 /** The paid Home needs both of the paid features it reads. */
 function isPaidHome(access: FeatureAccessMap | null): boolean {
@@ -47,23 +54,28 @@ export default function LyceonDashboard(): JSX.Element {
   if (user === null || profile.isLoading) return <HomeLoading />;
 
   const name = user.display_name ?? null;
-  if (isPaidHome(access)) {
-    return (
-      <PaidHome
-        studentId={user.id}
-        name={name}
-        today={browserLocalToday()}
-        hour={new Date().getHours()}
-        examGranted={access?.exam_full_length.access === "granted"}
-      />
-    );
-  }
   const mastery = access?.mastery_detail;
   return (
-    <FreeHome
-      studentId={user.id}
-      name={name}
-      masteryLock={mastery?.access === "locked" ? mastery.reason : "plan"}
-    />
+    <>
+      {isPaidHome(access) ? (
+        <PaidHome
+          studentId={user.id}
+          name={name}
+          today={browserLocalToday()}
+          hour={new Date().getHours()}
+          examGranted={access?.exam_full_length.access === "granted"}
+        />
+      ) : (
+        <FreeHome
+          studentId={user.id}
+          name={name}
+          masteryLock={mastery?.access === "locked" ? mastery.reason : "plan"}
+        />
+      )}
+      {/* Owner brief "LISA chat dock" (Karl, 2026-10-22): the LISA bubble, general mode, at
+          tablet and desktop widths (ChatDock draws nothing on a phone). Locked for a free
+          student by the rail's own check (the upgrade modal; no tutor request). */}
+      <ChatDock scope={GENERAL_DOCK} />
+    </>
   );
 }

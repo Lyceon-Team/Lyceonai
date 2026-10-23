@@ -58,6 +58,7 @@ import {
 } from "@/components/home/home-model";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
+import { ChatDock, type ChatDockScope } from "@/components/tutor/ChatDock";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
 import {
   canonicalDomainNodes,
@@ -121,6 +122,9 @@ function facetMap(
 ): Map<string, number> {
   return new Map((facets ?? []).map((f) => [f.key, f.count]));
 }
+
+/** The LISA bubble on Review opens LISA in general mode (owner brief, 2026-10-22). */
+const GENERAL_DOCK: ChatDockScope = { kind: "general" };
 
 export default function ReviewPage(): JSX.Element {
   const { user } = useSupabaseAuth();
@@ -392,6 +396,9 @@ export default function ReviewPage(): JSX.Element {
           </section>
         </div>
       </AppShellPanel>
+      {/* Owner brief "LISA chat dock" (Karl, 2026-10-22): the LISA bubble, general mode, at
+          tablet and desktop widths (ChatDock draws nothing on a phone). */}
+      <ChatDock scope={GENERAL_DOCK} />
     </div>
   );
 }

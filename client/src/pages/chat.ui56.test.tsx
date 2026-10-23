@@ -217,7 +217,8 @@ import {
   runCrisisClassifier,
 } from "../../../server/services/tutor-crisis";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
-import ChatPage, { LISA_COMPOSER_PLACEHOLDER } from "./chat";
+import ChatPage from "./chat";
+import { LISA_COMPOSER_PLACEHOLDER } from "@/components/tutor/TutorThreadParts";
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────────────────
 
