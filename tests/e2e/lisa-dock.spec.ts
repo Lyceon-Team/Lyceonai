@@ -26,7 +26,15 @@
  *   E2E_BASE_URL=http://localhost:5184 STUDENT_HARNESS_MANIFEST_FILE=<file holding the ready-line
  *     JSON> PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
  *     pnpm exec playwright test tests/e2e/lisa-dock.spec.ts
- * Not part of `pnpm test` (vitest) and not in CI's browser job: it needs the local stack.
+ * Not part of `pnpm test` (vitest). CI runs it in ci-full's `lisa-dock-browser` job
+ * (tests/e2e/run-lisa-dock-e2e.sh starts the same stack).
+ *
+ * @updated 2026-10-23 (owner brief "LISA launcher redesign + placement", Karl, option D): the
+ * round bubble is now the "Ask LISA" speech-bubble launcher (same `chat-dock-bubble` test id),
+ * anchored in the column the student works in: on Home and Review inside the middle column, never
+ * over the rail or the right panel; in a runner above Submit/Next and clear of the calculator.
+ * After a wrong answer, "Still confused? Ask LISA" under the explanation opens it scoped to that
+ * question; each surface has its opening line.
  * The harness keeps production's global limiter (1000 requests per 15 minutes): many runs in a row
  * against one server start answering 429, which the app reads as signed out (the login page). Wait
  * out the window or restart the server.
@@ -257,9 +265,11 @@ for (const width of WIDTHS) {
         );
         // Collapsed on every load: it never opens by itself.
         await expect(page.locator(PANEL)).toHaveCount(0);
-        // Bottom-right.
+        // Bottom-right of the middle column (owner brief 2026-10-23), not of the screen.
         const b = await box(bubble);
-        expect(b.x + b.width).toBeGreaterThan(width - 40);
+        const column = await box(page.locator("main#main"));
+        expect(b.x + b.width).toBeGreaterThan(column.x + column.width - 40);
+        expect(b.x + b.width).toBeLessThanOrEqual(column.x + column.width);
       }
     }
   });
@@ -570,6 +580,328 @@ for (const width of [1024, 1062, 1440] as const) {
       ).toBe(false);
     } finally {
       await endSession(request, "review", sessionId);
+    }
+  });
+}
+
+// ── The launcher (owner brief "LISA launcher redesign + placement", Karl, 2026-10-23) ──────────
+
+/** `inner` lies wholly inside `outer`. */
+function within(inner: Box, outer: Box): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+/** The launcher in the middle column, clear of the rail and the right panel, in view. */
+async function expectInMiddleColumn(
+  page: Page,
+  what: Locator,
+  label: string,
+): Promise<void> {
+  const b = await box(what);
+  const column = await box(page.locator("main#main"));
+  const rail = await box(page.locator('[data-testid="app-shell-header"]'));
+  const panel = await box(page.locator('[data-testid="app-shell-panel"]'));
+  expect(
+    within(b, column),
+    `${label} ${JSON.stringify(b)} inside the column ${JSON.stringify(column)}`,
+  ).toBe(true);
+  expect(overlaps(b, rail), `${label} over the rail`).toBe(false);
+  expect(
+    overlaps(b, panel),
+    `${label} ${JSON.stringify(b)} over the right panel ${JSON.stringify(panel)}`,
+  ).toBe(false);
+  // In view: from lg the column IS the viewport's height, so "inside the column" above already
+  // says it (a separate in-view check could never fail on its own here, so there is none).
+}
+
+for (const width of [1024, 1440] as const) {
+  for (const route of ["/dashboard", "/review"] as const) {
+    test(`${width}px ${route}: the launcher and its open panel stay in the middle column, clear of the rail and the right panel, while the column scrolls`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: HEIGHT_FOR[width] ?? 900 });
+      await asPersona(page, "paid");
+      await page.goto(`${BASE}${route}`);
+      const launcher = page.locator(BUBBLE);
+      // Presence first: the shell's three columns and the launcher are drawn.
+      await expect(launcher).toBeVisible();
+      await expect(
+        page.locator('[data-testid="app-shell-panel"]'),
+      ).toBeVisible();
+      await expect(page.locator('[data-testid="app-rail"]')).toBeVisible();
+      await expectInMiddleColumn(page, launcher, "launcher");
+      // The column scrolls; the launcher stays in it and in view.
+      await page
+        .locator("main#main")
+        .evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      await page.waitForTimeout(100);
+      await expectInMiddleColumn(page, launcher, "launcher after scrolling");
+      await launcher.click();
+      const panel = page.locator(PANEL);
+      await expect(panel).toBeVisible();
+      await expectInMiddleColumn(page, panel, "open panel");
+      const column = await box(page.locator("main#main"));
+      // min(380px, column width - 24px).
+      expect(Math.round((await box(panel)).width)).toBe(
+        Math.round(Math.min(380, column.width - 24)),
+      );
+    });
+  }
+}
+
+test("the launcher's shape: a 40px speech bubble (14px corners, the bottom-right 4px), the sparkle, 'Ask LISA', the accent fill; the free variant the same with the lock", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const persona of ["paid", "free"] as const) {
+    await asPersona(page, persona);
+    await page.goto(`${BASE}/dashboard`);
+    const launcher = page.locator(BUBBLE);
+    await expect(launcher).toBeVisible();
+    const style = await launcher.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return {
+        tl: cs.borderTopLeftRadius,
+        tr: cs.borderTopRightRadius,
+        bl: cs.borderBottomLeftRadius,
+        br: cs.borderBottomRightRadius,
+        height: el.getBoundingClientRect().height,
+        bg: cs.backgroundColor,
+        color: cs.color,
+      };
+    });
+    expect(style).toMatchObject({
+      tl: "14px",
+      tr: "14px",
+      bl: "14px",
+      br: "4px",
+      height: 40,
+    });
+    // The accent and its on-accent ink, from the tokens.
+    const tokens = await page
+      .locator(".lyc")
+      .first()
+      .evaluate((el) => {
+        const probe = document.createElement("div");
+        probe.style.backgroundColor = "var(--primary-bg)";
+        probe.style.color = "var(--primary-ink)";
+        el.appendChild(probe);
+        const cs = getComputedStyle(probe);
+        const out = { bg: cs.backgroundColor, color: cs.color };
+        probe.remove();
+        return out;
+      });
+    expect(style.bg).toBe(tokens.bg);
+    expect(style.color).toBe(tokens.color);
+    await expect(launcher).toHaveText("Ask LISA");
+    if (persona === "paid") {
+      await expect(launcher).toHaveAccessibleName("Ask LISA");
+      await expect(
+        launcher.locator('[data-testid="lisa-sparkle"]'),
+      ).toBeVisible();
+      await expect(
+        launcher.locator('[data-testid="chat-dock-lock"]'),
+      ).toHaveCount(0);
+    } else {
+      await expect(launcher).toHaveAccessibleName(
+        "Ask LISA, included with a paid plan",
+      );
+      await expect(
+        launcher.locator('[data-testid="chat-dock-lock"]'),
+      ).toBeVisible();
+      await expect(
+        launcher.locator('[data-testid="lisa-sparkle"]'),
+      ).toHaveCount(0);
+    }
+    // A visible focus ring.
+    await launcher.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await expect(launcher).toBeFocused();
+    // The student focus ring (DESIGN.md §1): 3px solid --focus.
+    const ring = await launcher.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const probe = document.createElement("div");
+      probe.style.color = "var(--focus)";
+      el.parentElement?.appendChild(probe);
+      const focus = getComputedStyle(probe).color;
+      probe.remove();
+      return {
+        style: cs.outlineStyle,
+        width: cs.outlineWidth,
+        color: cs.outlineColor,
+        focus,
+      };
+    });
+    expect(ring).toEqual({
+      style: "solid",
+      width: "3px",
+      color: ring.focus,
+      focus: ring.focus,
+    });
+  }
+});
+
+/** Ends every active LISA-page conversation of the paid student; returns how many it ended. */
+async function endActiveStandalone(api: APIRequestContext): Promise<number> {
+  const headers = {
+    [PERSONA_HEADER]: "paid",
+    "content-type": "application/json",
+  };
+  const res = await api.get(
+    `${BASE}/api/tutor/conversations?surface=standalone&status=active&limit=100`,
+    { headers },
+  );
+  expect(res.status(), await res.text()).toBe(200);
+  const json = (await res.json()) as {
+    data?: { conversations?: Array<{ conversation_id?: unknown }> };
+  };
+  const ids = (json.data?.conversations ?? [])
+    .map((c) => c.conversation_id)
+    .filter((id): id is string => typeof id === "string");
+  for (const id of ids) {
+    const end = await api.post(`${BASE}/api/tutor/conversations/${id}/end`, {
+      headers,
+      data: {},
+    });
+    expect(end.status(), await end.text()).toBeLessThan(400);
+  }
+  return ids.length;
+}
+
+test("opening lines: Home 'What do you want to work on?', Review 'Want help with your past mistakes?', the review runner before submit unchanged", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await asPersona(page, "paid");
+  // The seed's paid student has active LISA-page conversations (the history), and general mode
+  // opens the latest; the opening line shows on a fresh one. End them first, through the real
+  // route (presence first: there were some to end).
+  expect(await endActiveStandalone(request)).toBeGreaterThan(0);
+  const lines: Record<string, string> = {
+    "/dashboard": "What do you want to work on?",
+    "/review": "Want help with your past mistakes?",
+  };
+  for (const [route, line] of Object.entries(lines)) {
+    await page.goto(`${BASE}${route}`);
+    await page.locator(BUBBLE).click();
+    await expect(
+      page.locator(`${PANEL} [data-testid="tutor-opener"]`),
+    ).toContainText(line);
+  }
+  const sessionId = await freshReviewSession(request);
+  try {
+    await openRunner(page, sessionId);
+    await page.locator(BUBBLE).click();
+    const opener = page.locator(`${PANEL} [data-testid="tutor-opener"]`);
+    await expect(opener).toContainText("Need help with this question?");
+    await expect(opener).toContainText(
+      "I can walk you through it. I won't give you the answer before you submit.",
+    );
+    // Before submit: no "Still confused?" link either.
+    await expect(page.locator('[data-testid="runner-ask-lisa"]')).toHaveCount(
+      0,
+    );
+  } finally {
+    await endReviewSession(request, sessionId);
+  }
+});
+
+/**
+ * Answers the current item with its first choice and returns whether the server marked it
+ * correct (its own answer response; nothing inferred).
+ */
+async function answerFirstChoice(
+  page: Page,
+  engine: "practice" | "review",
+): Promise<boolean> {
+  const answer = page.waitForResponse(
+    (r) =>
+      r.request().method() === "POST" &&
+      r.url().endsWith(`/api/${engine}/answer`),
+  );
+  await page.locator('[data-testid="runner-choice"]').first().click();
+  await page.locator('[data-testid="runner-submit"]').click();
+  const body = (await (await answer).json()) as { isCorrect?: unknown };
+  await expect(page.locator('[data-testid="runner-feedback"]')).toBeVisible();
+  return body.isCorrect === true;
+}
+
+for (const engine of ["practice", "review"] as const) {
+  test(`${engine} runner (1440): 'Still confused? Ask LISA' only after a wrong answer; it opens the panel scoped to that item, with the after-submit line`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await asPersona(page, "paid");
+    const sessionId = await freshSession(request, engine, ["RW"]);
+    const link = page.locator('[data-testid="runner-ask-lisa"]');
+    try {
+      let itemId = await openAnyRunner(page, engine, sessionId);
+      // Before submit: the question is served, and there is no link.
+      await expect(page.locator('[data-testid="runner-submit"]')).toBeVisible();
+      await expect(link).toHaveCount(0);
+      for (let i = 0; i < 5; i += 1) {
+        const correct = await answerFirstChoice(page, engine);
+        if (!correct) break;
+        // After a correct answer: the result is on screen, and there is no link.
+        await expect(page.locator('[data-testid="runner-next"]')).toBeVisible();
+        await expect(link).toHaveCount(0);
+        const next = page.waitForResponse(
+          (r) =>
+            new RegExp(`/api/${engine}/sessions/[^/]+/next`).test(r.url()) &&
+            r.ok(),
+        );
+        await page.locator('[data-testid="runner-next"]').click();
+        const body = (await (await next).json()) as {
+          sessionItemId?: string;
+          question?: { sessionItemId?: string } | null;
+        };
+        const id = body.question?.sessionItemId ?? body.sessionItemId;
+        if (typeof id !== "string") throw new Error("no served item");
+        itemId = id;
+        await expect(
+          page.locator('[data-testid="runner-submit"]'),
+        ).toBeVisible();
+      }
+      // A wrong answer: the link, under the explanation, muted.
+      await expect(link).toBeVisible();
+      await expect(link).toHaveText("Still confused? Ask LISA");
+      const explanation = await box(
+        page.locator('[data-testid="runner-explanation"]'),
+      );
+      expect((await box(link)).y).toBeGreaterThan(
+        explanation.y + explanation.height - 1,
+      );
+      await link.click();
+      const panel = page.locator(PANEL);
+      await expect(panel).toBeVisible();
+      await expect(panel.locator('[data-testid="tutor-opener"]')).toContainText(
+        "Want to walk through this one? Ask me about any step.",
+      );
+      await expect(
+        panel.locator('[data-testid="tutor-opener"]'),
+      ).not.toContainText("I won't give you the answer before you submit.");
+      const create = page.waitForRequest(
+        (r) =>
+          r.method() === "POST" && r.url().endsWith("/api/tutor/conversations"),
+      );
+      await panel
+        .locator('textarea[aria-label="Message"]')
+        .fill("Why not my answer?");
+      await panel.getByRole("button", { name: "Send" }).click();
+      const sent = (await create).postDataJSON() as Record<string, unknown>;
+      expect(sent.entry_mode).toBe("scoped_question");
+      expect(sent.source_surface).toBe(engine);
+      expect(sent.source_session_item_id).toBe(itemId);
+    } finally {
+      await endSession(request, engine, sessionId);
     }
   });
 }

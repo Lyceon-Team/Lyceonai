@@ -87,13 +87,18 @@ vi.mock("@/components/tutor/ChatDock", async () => {
     ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
       "@/components/tutor/ChatDock",
     )),
-    ChatDock: (props: Record<string, unknown>) => {
+    // A forwardRef stub, as the real dock is (the runner holds its handle for "Still confused?
+    // Ask LISA"); the handle is not exercised here.
+    ChatDock: React.forwardRef(function ChatDockStub(
+      props: Record<string, unknown>,
+      _ref: React.ForwardedRef<unknown>,
+    ) {
       dockProps.last = props;
       React.useEffect(() => {
         dockProps.mounts += 1;
       }, []);
       return <div data-testid="chat-dock-mock" />;
-    },
+    }),
   };
 });
 
@@ -795,14 +800,20 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(screen.getByText(/Question 1: if 2x \+ 3 = 11/)).toBeTruthy();
     expect(dockProps.last).not.toBeNull();
     const props = dockProps.last!;
-    expect(Object.keys(props)).toEqual(["scope"]);
+    // The scope, and (owner brief 2026-10-23) the column it anchors to: the runner's question
+    // area, a DOM ref the dock measures for geometry only.
+    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
+    expect((props.anchor as { current: unknown }).current).toBe(
+      screen.getByTestId("runner-scroll"),
+    );
     expect(props.scope).toEqual({
       kind: "question",
       sourceSurface: "review",
       sessionItemId: "item-1",
       questionLabel: "Question 1 of 3",
+      submitted: false,
     });
-    const serialised = JSON.stringify(props);
+    const serialised = JSON.stringify(props.scope);
     for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
       expect(serialised).not.toContain(leak);
     }
@@ -829,13 +840,15 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(screen.getByText(EXPLANATION)).toBeTruthy();
     expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
     const props = dockProps.last!;
+    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
     expect(props.scope).toEqual({
       kind: "question",
       sourceSurface: "practice",
       sessionItemId: "item-1",
       questionLabel: "Question 1 of 3",
+      submitted: true,
     });
-    const serialised = JSON.stringify(props);
+    const serialised = JSON.stringify(props.scope);
     for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
       expect(serialised).not.toContain(leak);
     }

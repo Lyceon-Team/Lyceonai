@@ -68,6 +68,7 @@ import {
   ChatDock,
   DOCK_CLEARANCE_PX,
   dockBubbleClearance,
+  type ChatDockHandle,
 } from "@/components/tutor/ChatDock";
 import {
   CHECKING_LABEL,
@@ -128,11 +129,20 @@ const QUESTION_COLUMN_PX = 760;
 
 /**
  * 2026-10-22 (owner brief "LISA chat dock": the bubble never covers the answer choices): from this
- * width the centred 760px column ends left of the bubble on its own. Below it (768px to 887px)
- * the runner keeps DOCK_CLEARANCE_PX clear on the right of the scroll area instead. The column's
- * content sits 16px inside its edge (`px-4`), hence the 16 back.
+ * width the centred 760px column ends left of the launcher on its own. Below it the runner keeps
+ * DOCK_CLEARANCE_PX clear on the right of the scroll area instead. The column's content sits 16px
+ * inside its edge (`px-4`), hence the 16 back.
+ * @updated 2026-10-23 (owner brief "LISA launcher", option D): the launcher is 132px wide where
+ * the bubble was 56px, so the clearance is 156px and this width 1040px (was 888px): from 768px to
+ * 1039px the scroll area keeps the launcher's strip clear.
  */
-const DOCK_COLUMN_CLEAR_PX = QUESTION_COLUMN_PX + 2 * (DOCK_CLEARANCE_PX - 16); // 888
+const DOCK_COLUMN_CLEAR_PX = QUESTION_COLUMN_PX + 2 * (DOCK_CLEARANCE_PX - 16); // 1040
+
+/**
+ * Owner copy (Karl, 2026-10-23, LISA launcher brief): the contextual entry point under the
+ * explanation after a wrong answer.
+ */
+const ASK_LISA_AFTER_MISS = "Still confused? Ask LISA";
 
 /** The LISA bubble's bottom-chrome layer (lib/bottom-chrome.ts), read by the side calculator. */
 const DOCK_BUBBLE_LAYER: readonly BottomChromeLayer[] = ["dock-bubble"];
@@ -349,6 +359,8 @@ export default function CanonicalPracticePage(props: {
   >(null);
   const [tutorRevealKey, setTutorRevealKey] = React.useState(0);
   const runnerScrollRef = React.useRef<HTMLDivElement | null>(null);
+  // The chat dock, opened by "Still confused? Ask LISA" (owner brief 2026-10-23).
+  const dockRef = React.useRef<ChatDockHandle | null>(null);
   const tutorAsideRef = React.useRef<HTMLDivElement | null>(null);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
     unknown | null
@@ -762,6 +774,24 @@ export default function CanonicalPracticePage(props: {
         disabled={isSubmitting || isLoading}
         onMissingMcChoices={handleMissingMcChoices}
       />
+      {/* Owner brief "LISA launcher" (Karl, 2026-10-23): after a WRONG answer, under the
+          explanation, one muted text link that opens the dock already scoped to this question.
+          Only where the dock is: `dockTutor` already excludes the diagnostic and phones (a
+          separate `!isDiagnostic` here could never be observed failing, so it is not repeated);
+          never after a correct answer or before submit. `isCorrect` is the server's submit
+          response (useCanonicalPractice), never inferred here. */}
+      {dockTutor && showResult && isCorrect === false ? (
+        <p className="m-0 mt-3">
+          <button
+            type="button"
+            onClick={() => dockRef.current?.open()}
+            className={`${LYC_FOCUS} cursor-pointer rounded-sm border-0 bg-transparent p-0 text-lyc-body text-lyc-muted underline underline-offset-2 hover:text-lyc-ink-strong`}
+            data-testid="runner-ask-lisa"
+          >
+            {ASK_LISA_AFTER_MISS}
+          </button>
+        </p>
+      ) : null}
     </div>
   ) : (
     stateBody
@@ -976,8 +1006,8 @@ export default function CanonicalPracticePage(props: {
       <div
         ref={runnerScrollRef}
         className="min-h-0 flex-1 overflow-y-auto"
-        // 2026-10-22: where the question column would reach under the LISA bubble (768px to
-        // 887px), the scroll area keeps the bubble's width clear on its right.
+        // 2026-10-22: where the question column would reach under the LISA launcher (768px to
+        // 1039px since 2026-10-23), the scroll area keeps the launcher's width clear on its right.
         style={
           dockTutor && !dockClearsColumn
             ? { paddingRight: DOCK_CLEARANCE_PX }
@@ -988,13 +1018,18 @@ export default function CanonicalPracticePage(props: {
         {tutorVisible ? reviewTutorLayout : standardLayout}
       </div>
       {footer}
+      {/* Owner brief 2026-10-23: the launcher belongs to the question area (the scroll area
+          above Submit/Next), and its opener follows the item's submit state. */}
       {dockTutor ? (
         <ChatDock
+          ref={dockRef}
+          anchor={runnerScrollRef}
           scope={{
             kind: "question",
             sourceSurface: tutorSurface,
             sessionItemId: question ? sessionItemId : null,
             questionLabel,
+            submitted: showResult,
           }}
         />
       ) : null}

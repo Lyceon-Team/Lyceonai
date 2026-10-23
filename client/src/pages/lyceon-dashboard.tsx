@@ -33,8 +33,11 @@ import { browserLocalToday } from "@/features/calendar/lib/dates";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
 
-/** The LISA bubble on Home opens LISA in general mode (owner brief, 2026-10-22). */
-const GENERAL_DOCK: ChatDockScope = { kind: "general" };
+/**
+ * The LISA launcher on Home opens LISA in general mode (owner brief, 2026-10-22), with Home's
+ * opening line (owner brief "LISA launcher", Karl, 2026-10-23).
+ */
+const GENERAL_DOCK: ChatDockScope = { kind: "general", surface: "home" };
 
 /** The paid Home needs both of the paid features it reads. */
 function isPaidHome(access: FeatureAccessMap | null): boolean {

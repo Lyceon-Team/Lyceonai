@@ -118,16 +118,15 @@ export function TutorMessageContent({ text }: { text: string }) {
 // ---------------------------------------------------------------------------
 
 /**
- * The LISA mark. "bubble" (2026-10-22, owner brief "LISA chat dock") is the chat dock's floating
- * round button: 56px, the same mark at the size a floating chat bubble uses.
+ * The LISA mark. (The chat dock's 56px "bubble" size went with the round bubble: owner brief "LISA
+ * launcher", Karl, 2026-10-23, option D; the dock's launcher draws `LisaSparkle` instead.)
  */
-const LISA_AVATAR_SIZE: Readonly<Record<"sm" | "lg" | "bubble", string>> = {
+const LISA_AVATAR_SIZE: Readonly<Record<"sm" | "lg", string>> = {
   sm: "h-8 w-8 text-lyc-meta",
   lg: "h-12 w-12 text-lg",
-  bubble: "h-14 w-14 text-[26px]",
 };
 
-export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" | "bubble" }) {
+export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
   const dim = LISA_AVATAR_SIZE[size];
   return (
     <div

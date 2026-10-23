@@ -210,7 +210,7 @@ import {
 } from "../../../../server/services/tutor-crisis";
 import { bottomChromeHeight, useReportBottomChrome } from "@/lib/bottom-chrome";
 import ChatPage from "@/pages/chat";
-import { ChatDock, type ChatDockScope } from "./ChatDock";
+import { ChatDock, type ChatDockHandle, type ChatDockScope } from "./ChatDock";
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────────────────
 
@@ -311,29 +311,36 @@ async function accessMap(plan: Plan): Promise<FeatureAccessMap> {
   return map;
 }
 
-const GENERAL: ChatDockScope = { kind: "general" };
+const GENERAL: ChatDockScope = { kind: "general", surface: "home" };
 
 /** A page with a choice beside the dock: the "answer choices stay clickable" stand-in. */
 function DockPage({
   scope,
   onChoice,
+  handle,
 }: {
   scope: ChatDockScope;
   onChoice: () => void;
+  handle?: React.Ref<ChatDockHandle>;
 }): JSX.Element {
   return (
     <>
       <button type="button" data-testid="page-choice" onClick={onChoice}>
         Choice A
       </button>
-      <ChatDock scope={scope} />
+      <ChatDock ref={handle} scope={scope} />
     </>
   );
 }
 
 async function mount(
   plan: Plan,
-  opts: { scope?: ChatDockScope; onChoice?: () => void; path?: string } = {},
+  opts: {
+    scope?: ChatDockScope;
+    onChoice?: () => void;
+    path?: string;
+    handle?: React.Ref<ChatDockHandle>;
+  } = {},
 ): Promise<{ client: QueryClient; history: string[] }> {
   const map = await accessMap(plan);
   const { hook, history } = memoryLocation({
@@ -366,6 +373,7 @@ async function mount(
                 <DockPage
                   scope={opts.scope ?? GENERAL}
                   onChoice={opts.onChoice ?? (() => undefined)}
+                  handle={opts.handle}
                 />
               </AppShell>
             </Route>
@@ -421,6 +429,15 @@ function expectNoAnswerOnTheWire(responses: readonly Call[]): void {
       "zqx-dock-explanation",
     );
   }
+}
+
+/** The opener's words (its lines, joined), without the avatar mark beside them. */
+function openerText(panel: HTMLElement): string {
+  return Array.from(
+    within(panel).getByTestId("tutor-opener").querySelectorAll("p"),
+  )
+    .map((line) => line.textContent ?? "")
+    .join(" ");
 }
 
 function tutorCalls(): Call[] {
@@ -500,13 +517,30 @@ afterEach(() => {
 
 // ── The bubble and the lock ────────────────────────────────────────────────────────────────
 
-describe("collapsed: a round LISA bubble named 'Ask LISA', bottom-right, that never opens by itself", () => {
-  it("paid: the bubble is drawn, collapsed, and nothing is asked of the tutor until it is clicked", async () => {
+/**
+ * Owner brief "LISA launcher" (Karl, 2026-10-23, option D): the speech-bubble launcher. 14px
+ * corners with the bottom-right one 4px, the sparkle (lucide `Sparkles`, one component), the
+ * label "Ask LISA", the accent fill and its on-accent ink, 40px tall, the focus ring.
+ */
+function expectLauncherShape(b: HTMLElement): void {
+  expect(b.tagName).toBe("BUTTON");
+  expect(b.className).toContain("rounded-[14px]");
+  expect(b.className).toContain("rounded-br-[4px]");
+  expect(b.className).toContain("bg-lyc-primary-bg");
+  expect(b.className).toContain("text-lyc-primary-ink");
+  expect(b.className).toContain("focus-visible:outline-lyc-focus");
+  expect(b.style.height).toBe("40px");
+  expect(b.textContent).toBe("Ask LISA");
+}
+
+describe("collapsed: the 'Ask LISA' speech-bubble launcher, bottom-right, that never opens by itself", () => {
+  it("paid: the launcher is drawn (shape, sparkle, name), collapsed, and nothing is asked of the tutor until it is clicked", async () => {
     await mount("paid");
     const b = bubble();
     expect(b.getAttribute("aria-label")).toBe("Ask LISA");
     expect(b.getAttribute("aria-expanded")).toBe("false");
-    expect(b.querySelector("[aria-hidden='true']")?.textContent).toBe("L");
+    expectLauncherShape(b);
+    expect(within(b).getByTestId("lisa-sparkle")).toBeTruthy();
     expect(screen.getByTestId("chat-dock").getAttribute("data-view")).toBe(
       "collapsed",
     );
@@ -522,7 +556,10 @@ describe("collapsed: a round LISA bubble named 'Ask LISA', bottom-right, that ne
     const b = bubble();
     // The same lock the rail draws for LISA, from the same map.
     expect(screen.getByTestId("rail-lisa-lock")).toBeTruthy();
-    expect(screen.getByTestId("chat-dock-lock")).toBeTruthy();
+    // The same launcher shape, the lock in the sparkle's place.
+    expectLauncherShape(b);
+    expect(within(b).getByTestId("chat-dock-lock")).toBeTruthy();
+    expect(within(b).queryByTestId("lisa-sparkle")).toBeNull();
     expect(b.getAttribute("aria-label")).toBe(
       "Ask LISA, included with a paid plan",
     );
@@ -585,9 +622,13 @@ describe("expanded: a non-modal, labelled panel; Esc minimizes", () => {
     expect(
       within(panel).getByRole("button", { name: "Close LISA" }),
     ).toBeTruthy();
-    // General mode: the LISA page's empty prompt, and its composer.
+    // Owner brief 2026-10-23: the header shows the sparkle and "LISA".
+    const header = within(panel).getByRole("heading", { name: "LISA" })
+      .parentElement as HTMLElement;
+    expect(within(header).getByTestId("lisa-sparkle")).toBeTruthy();
+    // General mode on Home: Home's opening line, and the composer.
     await within(panel).findByRole("textbox", { name: "Message" });
-    expect(within(panel).getByTestId("tutor-opener")).toBeTruthy();
+    expect(openerText(panel)).toBe("What do you want to work on?");
     // Looking is a GET; opening creates nothing.
     expect(tutorCalls().filter((c) => c.method === "POST")).toHaveLength(0);
   });
@@ -790,6 +831,7 @@ describe("question scope (the review runner): the item's own conversation, and n
         sourceSurface: "review",
         sessionItemId: itemId,
         questionLabel: "Question 1 of 5",
+        submitted: false,
       },
     });
     fireEvent.click(bubble());
@@ -848,13 +890,17 @@ describe("practice scope (the practice runner, after submit): the answered item'
     question_content: { stem: string; explanation: string | null } | null;
   };
 
-  async function askInPractice(itemId: string): Promise<Envelope> {
+  async function askInPractice(
+    itemId: string,
+    submitted: boolean,
+  ): Promise<Envelope> {
     await mount("paid", {
       scope: {
         kind: "question",
         sourceSurface: "practice",
         sessionItemId: itemId,
         questionLabel: "Question 1 of 5",
+        submitted,
       },
     });
     fireEvent.click(bubble());
@@ -874,7 +920,7 @@ describe("practice scope (the practice runner, after submit): the answered item'
   }
 
   it("after submit: the practice conversation is created for the answered item, and LISA may see the explanation (the post-submit reveal)", async () => {
-    const env = await askInPractice(seedPracticeItem("answered"));
+    const env = await askInPractice(seedPracticeItem("answered"), true);
     expect(env.source_surface).toBe("practice");
     expect(env.question_content?.stem).toBe(STEM);
     expect(env.is_post_submit).toBe(true);
@@ -882,7 +928,7 @@ describe("practice scope (the practice runner, after submit): the answered item'
   });
 
   it("if a practice item were not yet submitted, the server still withholds the answer and explanation, on the wire and in every response", async () => {
-    const env = await askInPractice(seedPracticeItem("served"));
+    const env = await askInPractice(seedPracticeItem("served"), false);
     // Presence: the envelope carries the question itself.
     expect(env.question_content?.stem).toBe(STEM);
     expect(env.is_post_submit).toBe(false);
@@ -1119,6 +1165,132 @@ describe("placement: the dock sits above the tab bar + cookie banner, or the run
       footer.unmount();
     } finally {
       proto.getBoundingClientRect = original;
+    }
+  });
+});
+
+// ── The launcher brief (owner brief, Karl, 2026-10-23) ──────────────────────────────────────
+
+describe("opening lines per surface (owner brief, Karl, 2026-10-23)", () => {
+  it("Review (general mode): 'Want help with your past mistakes?'", async () => {
+    await mount("paid", { scope: { kind: "general", surface: "review" } });
+    fireEvent.click(bubble());
+    await within(dialog()).findByRole("textbox", { name: "Message" });
+    expect(openerText(dialog())).toBe("Want help with your past mistakes?");
+  });
+
+  // Owner ruling (Karl, 2026-10-23): before submit the W4-4 opener, UNCHANGED; after submit the
+  // walk-through line, on practice and on review.
+  it("review, BEFORE submit: the W4-4 opener, unchanged", async () => {
+    const itemId = seedReviewItem();
+    await mount("paid", {
+      scope: {
+        kind: "question",
+        sourceSurface: "review",
+        sessionItemId: itemId,
+        questionLabel: "Question 1 of 5",
+        submitted: false,
+      },
+    });
+    fireEvent.click(bubble());
+    await within(dialog()).findByRole("textbox", { name: "Message" });
+    expect(openerText(dialog())).toBe(
+      "Need help with this question? " +
+        "I can walk you through it. I won't give you the answer before you submit.",
+    );
+  });
+
+  for (const surface of ["review", "practice"] as const) {
+    it(`${surface}, AFTER submit: 'Want to walk through this one? Ask me about any step.'`, async () => {
+      const itemId =
+        surface === "review" ? seedReviewItem() : seedPracticeItem("answered");
+      await mount("paid", {
+        scope: {
+          kind: "question",
+          sourceSurface: surface,
+          sessionItemId: itemId,
+          questionLabel: "Question 1 of 5",
+          submitted: true,
+        },
+      });
+      fireEvent.click(bubble());
+      await within(dialog()).findByRole("textbox", { name: "Message" });
+      expect(openerText(dialog())).toBe(
+        "Want to walk through this one? Ask me about any step.",
+      );
+    });
+  }
+});
+
+describe("the dock's handle: open() is the launcher's click (\"Still confused? Ask LISA\")", () => {
+  it("paid: open() opens the panel, focused", async () => {
+    const handle = React.createRef<ChatDockHandle>();
+    await mount("paid", { handle });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => handle.current?.open());
+    expect(dialog()).toBeTruthy();
+    expect(document.activeElement).toBe(dialog());
+  });
+
+  it("free: open() opens the upgrade modal, never the panel, and calls no tutor route", async () => {
+    const handle = React.createRef<ChatDockHandle>();
+    await mount("free", { handle });
+    act(() => handle.current?.open());
+    expect(await screen.findByTestId("upgrade-modal")).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
+    expect(tutorCalls()).toHaveLength(0);
+  });
+});
+
+describe("placement in the column (owner brief, Karl, 2026-10-23): bottom-right of the middle column", () => {
+  it("right = the column's right edge + 16px; bottom never below the column's bottom edge; the panel min(380, column - 24)", async () => {
+    const proto = HTMLElement.prototype;
+    const originalRect = proto.getBoundingClientRect;
+    const originalWidth = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      "clientWidth",
+    );
+    const column = { left: 96, width: 568, bottom: 700 };
+    proto.getBoundingClientRect = function rect(this: HTMLElement) {
+      return this.id === "main"
+        ? ({
+            left: column.left,
+            width: column.width,
+            right: column.left + column.width,
+            bottom: column.bottom,
+            top: 0,
+            height: column.bottom,
+          } as DOMRect)
+        : originalRect.call(this);
+    };
+    Object.defineProperty(Element.prototype, "clientWidth", {
+      configurable: true,
+      get(this: Element) {
+        return this.id === "main" ? column.width : 0;
+      },
+    });
+    try {
+      await mount("paid");
+      const dock = screen.getByTestId("chat-dock");
+      // Presence: the column was measured (jsdom's window is 1024 × 768).
+      await waitFor(() =>
+        expect(dock.style.right).toBe(`${1024 - (96 + 568) + 16}px`),
+      );
+      // 768 - 700 = 68px of screen under the column's bottom edge, then the 16px.
+      expect(dock.style.bottom).toMatch(/^calc\(84px \+ env\(/);
+      fireEvent.click(bubble());
+      expect(dialog().style.width).toBe("380px");
+      // A narrower column: the panel takes the column's width less 24px.
+      column.width = 300;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(dialog().style.width).toBe("276px");
+      expect(dock.style.right).toBe(`${1024 - (96 + 300) + 16}px`);
+    } finally {
+      proto.getBoundingClientRect = originalRect;
+      if (originalWidth)
+        Object.defineProperty(Element.prototype, "clientWidth", originalWidth);
     }
   });
 });

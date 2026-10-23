@@ -173,6 +173,24 @@ describe("the chat dock's surfaces", () => {
     expect(reviewEngineUsers).toEqual(["pages/resume-review.tsx"]);
   });
 
+  // Owner brief "LISA launcher" (Karl, 2026-10-23): "Still confused? Ask LISA" never shows in the
+  // diagnostic or the full-length test. The diagnostic is CanonicalPracticePage.test.tsx's; the
+  // full-length test has its own runner, which must not carry the link at all.
+  it("'Still confused? Ask LISA' lives in the practice/review runner only, gated on a wrong answer after submit where the dock is", () => {
+    const holders = productionFiles(SRC)
+      .filter((f) =>
+        fs.readFileSync(f, "utf8").includes('"Still confused? Ask LISA"'),
+      )
+      .map((f) => path.relative(SRC, f));
+    // Presence first: the runner holds it.
+    expect(holders).toEqual([HOSTS[0]]);
+    const runner = fs.readFileSync(path.join(SRC, HOSTS[0] ?? ""), "utf8");
+    expect(runner).toMatch(
+      /\{dockTutor && showResult && isCorrect === false \? \(/,
+    );
+    expect(holders.some((f) => f.startsWith("features/exam/"))).toBe(false);
+  });
+
   it("it is not global: the app root's static imports (shells, providers, the cookie banner) never reach it", () => {
     // Presence first: the walk does reach what the root mounts statically.
     expect(

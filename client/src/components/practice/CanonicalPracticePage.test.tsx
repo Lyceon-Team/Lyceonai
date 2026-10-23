@@ -26,12 +26,13 @@ import CanonicalPracticePage from "./CanonicalPracticePage";
 
 /**
  * 2026-10-22 (owner brief "LISA chat dock"): the dock's widths, asserted as literals. 768 = the
- * phone line (PHONE_WIDTH_QUERY); 888 = the width from which the 760px column clears the bubble
- * (760 + 2 × (80 − 16)); 80 = the bubble's clearance (16 + 56 + 8).
+ * phone line (PHONE_WIDTH_QUERY). 2026-10-23 (owner brief "LISA launcher", option D): the 132px
+ * launcher replaces the 56px bubble, so 1040 = the width from which the 760px column clears it
+ * (760 + 2 × (156 − 16)) and 156 = its clearance (16 + 132 + 8).
  */
 const DOCK_FROM_PX = 768;
-const DOCK_COLUMN_CLEAR_PX = 888;
-const DOCK_CLEARANCE_PX = 80;
+const DOCK_COLUMN_CLEAR_PX = 1040;
+const DOCK_CLEARANCE_PX = 156;
 
 /* ── MockResizeObserver: no-op stub (DesmosCalculator uses ResizeObserver) ── */
 class MockResizeObserver {
@@ -126,7 +127,7 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
 
 // 2026-10-22: the dock's own behaviour (lock, open, Esc, scope on the wire, the shared thread)
 // is proven in ChatDock.contract.test.tsx; here only what the runner hands it.
-const dockMounts = vi.hoisted(() => ({ count: 0 }));
+const dockMounts = vi.hoisted(() => ({ count: 0, opens: 0 }));
 vi.mock("@/components/tutor/ChatDock", async () => {
   const React = await import("react");
   return {
@@ -134,14 +135,25 @@ vi.mock("@/components/tutor/ChatDock", async () => {
     ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
       "@/components/tutor/ChatDock",
     )),
-    ChatDock: (p: {
-      scope: {
-        kind: string;
-        sourceSurface?: string;
-        sessionItemId?: string | null;
-        questionLabel?: string;
-      };
-    }) => {
+    // A forwardRef stub with the real handle's shape: `open()` is counted, so "Still confused?
+    // Ask LISA" is proven to open THIS dock (owner brief 2026-10-23).
+    ChatDock: React.forwardRef(function ChatDockStub(
+      p: {
+        scope: {
+          kind: string;
+          sourceSurface?: string;
+          sessionItemId?: string | null;
+          questionLabel?: string;
+          submitted?: boolean;
+        };
+      },
+      ref: React.ForwardedRef<{ open: () => void }>,
+    ) {
+      React.useImperativeHandle(ref, () => ({
+        open: () => {
+          dockMounts.opens += 1;
+        },
+      }));
       React.useEffect(() => {
         dockMounts.count += 1;
       }, []);
@@ -152,9 +164,10 @@ vi.mock("@/components/tutor/ChatDock", async () => {
           data-surface={p.scope.sourceSurface}
           data-item={p.scope.sessionItemId ?? "none"}
           data-label={p.scope.questionLabel}
+          data-submitted={String(p.scope.submitted)}
         />
       );
-    },
+    }),
   };
 });
 
@@ -1410,5 +1423,119 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
     expect(screen.getByTestId("runner-next")).toBeTruthy();
     expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+  });
+});
+
+/**
+ * Owner brief "LISA launcher" (Karl, 2026-10-23): after a WRONG answer (practice and review,
+ * post-submit only) one muted text link under the explanation, "Still confused? Ask LISA", that
+ * opens the dock already scoped to that question. Never after a correct answer, before submit, in
+ * the diagnostic or on a phone (the full-length test is ChatDock.surfaces.guard.test.ts's). The
+ * dock's opener follows the item's submit state (`scope.submitted`).
+ */
+describe("Still confused? Ask LISA (owner brief, Karl, 2026-10-23)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dockMounts.count = 0;
+    dockMounts.opens = 0;
+  });
+
+  function renderPracticeResult(isCorrect: boolean, isDiagnostic = false) {
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        sessionItemId: "prac-item-1",
+        currentIndex: 0,
+        totalQuestions: 5,
+        showResult: true,
+        isCorrect,
+      }),
+    );
+    return render(
+      <CanonicalPracticePage
+        title={isDiagnostic ? "Diagnostic Assessment" : "Math Practice"}
+        section="M"
+        engine={PRACTICE_ENGINE_CONFIG}
+        isDiagnostic={isDiagnostic}
+      />,
+    );
+  }
+
+  for (const width of [1024, 1440]) {
+    it(`practice, wrong answer at ${width}px: the link under the explanation opens the dock scoped to the answered item`, () => {
+      mockViewport(width);
+      renderPracticeResult(false);
+      const feedback = screen.getByTestId("runner-feedback");
+      const link = screen.getByTestId("runner-ask-lisa");
+      expect(link.tagName).toBe("BUTTON");
+      expect(link.textContent).toBe("Still confused? Ask LISA");
+      // Under the explanation: after the feedback panel in the document.
+      expect(
+        feedback.compareDocumentPosition(link) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // Muted text link, not a button-shaped control; tokens only.
+      expect(link.className).toContain("text-lyc-muted");
+      expect(link.className).toContain("underline");
+      expect(link.className).not.toContain("bg-lyc-primary-bg");
+      const dock = screen.getByTestId("chat-dock-mock");
+      expect(dock.getAttribute("data-item")).toBe("prac-item-1");
+      expect(dock.getAttribute("data-submitted")).toBe("true");
+      expect(dockMounts.opens).toBe(0);
+      fireEvent.click(link);
+      expect(dockMounts.opens).toBe(1);
+    });
+  }
+
+  it("practice, correct answer: the dock, but no link", () => {
+    mockViewport(1440);
+    renderPracticeResult(true);
+    // Presence before absence: the result is on screen and the dock is drawn.
+    expect(screen.getByTestId("runner-feedback")).toBeTruthy();
+    expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
+    expect(screen.queryByTestId("runner-ask-lisa")).toBeNull();
+  });
+
+  it("the diagnostic, wrong answer: no link (and no dock)", () => {
+    mockViewport(1440);
+    renderPracticeResult(false, true);
+    expect(screen.getByTestId("runner-feedback")).toBeTruthy();
+    expect(screen.queryByTestId("runner-ask-lisa")).toBeNull();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
+  });
+
+  it("a phone, wrong answer: no link", () => {
+    mockViewport(390);
+    renderPracticeResult(false);
+    expect(screen.getByTestId("runner-feedback")).toBeTruthy();
+    expect(screen.queryByTestId("runner-ask-lisa")).toBeNull();
+  });
+
+  it("review: before submit no link and the dock says not submitted; after a wrong answer the link, and the dock says submitted", () => {
+    mockViewport(1440);
+    const before = renderReview();
+    // Presence before absence: the unanswered question and its Submit.
+    expect(screen.getByTestId("runner-submit")).toBeTruthy();
+    expect(screen.queryByTestId("runner-feedback")).toBeNull();
+    expect(screen.queryByTestId("runner-ask-lisa")).toBeNull();
+    expect(
+      screen.getByTestId("chat-dock-mock").getAttribute("data-submitted"),
+    ).toBe("false");
+    before.unmount();
+
+    renderReview({ showResult: true, isCorrect: false });
+    const link = screen.getByTestId("runner-ask-lisa");
+    expect(link.textContent).toBe("Still confused? Ask LISA");
+    expect(
+      screen.getByTestId("chat-dock-mock").getAttribute("data-submitted"),
+    ).toBe("true");
+    fireEvent.click(link);
+    expect(dockMounts.opens).toBe(1);
+  });
+
+  it("review, correct answer: no link", () => {
+    mockViewport(1440);
+    renderReview({ showResult: true, isCorrect: true });
+    expect(screen.getByTestId("runner-feedback")).toBeTruthy();
+    expect(screen.queryByTestId("runner-ask-lisa")).toBeNull();
   });
 });
