@@ -38,8 +38,19 @@
  * what LISA may read is decided on the server (tutor-context.ts), choices in displayed order
  * with display letters (Step 0b).
  *
- * The calculator layout (pixel floor, three panels with LISA) is unchanged from W4-4/E10b:
- * see the constants and the notes beside each layout below.
+ * The calculator layout (pixel floor) is unchanged from W4-4/E10b: see the constants and the
+ * notes beside each layout below.
+ *
+ * @updated 2026-10-22 — owner brief "LISA chat dock" (Karl): from 768px up (tablet and desktop)
+ * LISA is the chat dock (`ChatDock`), a floating bubble bottom-right that opens a panel in the
+ * current question's scope, instead of the 360px panel beside the question. The bubble sits above
+ * the Submit / Next footer (the footer reports its height through lib/bottom-chrome.ts), and where
+ * the question column would reach under it (below DOCK_COLUMN_CLEAR_PX) the column keeps the
+ * bubble's width clear on its right, so it never covers Submit, Next or a choice. The W4-4
+ * side-by-side layout (LISA open on every question from 1024px, the three-panel breakpoint, the
+ * calculator covering LISA's column) is gone with the panel it laid out. Below 768px (phones)
+ * nothing changed: LISA stacks under the question, closed until Show LISA (QA2-D). Which engine
+ * has LISA is unchanged: review only (`features.tutor`).
  */
 import React from "react";
 import { useLocation } from "wouter";
@@ -48,6 +59,7 @@ import QuestionRenderer from "@/components/question-renderer";
 import { QuestionMetaHeader } from "@/components/practice/QuestionMetaHeader";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
+import { ChatDock, DOCK_CLEARANCE_PX } from "@/components/tutor/ChatDock";
 import {
   CHECKING_LABEL,
   LOADING_LABEL,
@@ -60,13 +72,10 @@ import {
 } from "@/hooks/useCanonicalPractice";
 import DesmosCalculator from "@/components/math/DesmosCalculator";
 import {
-  APP_HORIZONTAL_PADDING,
-  BREAKPOINT_EXTRA,
   CALC_COLUMN_HEIGHT_PX,
   CALC_DEFAULT_PCT,
   CALC_MIN_PCT,
   CALC_MIN_PX,
-  DIVIDER_PX,
   QUESTION_DEFAULT_PCT,
   QUESTION_MIN_PCT,
   QUESTION_MIN_PX,
@@ -74,6 +83,8 @@ import {
 } from "@/components/math/calculator-layout";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { ScopedTutorPanel } from "@/components/tutor/ScopedTutorPanel";
+import { PHONE_WIDTH_QUERY, useMediaQuery } from "@/hooks/use-mobile";
+import { useReportBottomChrome } from "@/lib/bottom-chrome";
 import {
   type EngineConfig,
   type ReviewSessionSpec,
@@ -93,26 +104,22 @@ import {
   useKeyboardShortcuts,
 } from "@/hooks/useKeyboardShortcuts";
 
-/*
- * W4-4 — review with LISA always open. Three panels share the width:
- *   question (≥ QUESTION_MIN_PX) | Desmos (≥ CALC_MIN_PX, when opened) | LISA.
- * Below THREE_PANEL_BREAKPOINT the calculator can no longer sit beside both,
- * so opening it expands Desmos over LISA's column (owner ruling 2026-09-25);
- * LISA stays mounted underneath, so its thread and turn state survive. Below
- * `lg` everything stacks: question, LISA, calculator.
+/**
+ * Below 1024px the runner is the stacked (phone) layout: on a phone after Submit the feedback
+ * panel is scrolled into view (first-run activation brief, 2026-10-13).
  */
-const TUTOR_PANEL_PX = 360;
-const TUTOR_GAP_PX = 24;
-const THREE_PANEL_BREAKPOINT =
-  QUESTION_MIN_PX +
-  DIVIDER_PX +
-  CALC_MIN_PX +
-  TUTOR_GAP_PX +
-  TUTOR_PANEL_PX +
-  APP_HORIZONTAL_PADDING +
-  BREAKPOINT_EXTRA; // 1446
-/** Tailwind's `lg`: below it, the review layout is a single column. */
-const TUTOR_SIDE_BY_SIDE_BREAKPOINT = 1024;
+const STACKED_LAYOUT_BELOW_PX = 1024;
+
+/** The question column's width (`max-w-[760px]` below). */
+const QUESTION_COLUMN_PX = 760;
+
+/**
+ * 2026-10-22 (owner brief "LISA chat dock": the bubble never covers the answer choices): from this
+ * width the centred 760px column ends left of the bubble on its own. Below it (768px to 887px)
+ * the runner keeps DOCK_CLEARANCE_PX clear on the right of the scroll area instead. The column's
+ * content sits 16px inside its edge (`px-4`), hence the 16 back.
+ */
+const DOCK_COLUMN_CLEAR_PX = QUESTION_COLUMN_PX + 2 * (DOCK_CLEARANCE_PX - 16); // 888
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the sentence, verbatim, with no number. */
 const SHORTER_SESSION_NOTE =
@@ -191,6 +198,32 @@ function panelTopInView(
 
 function useSplitEnabled(): boolean {
   return useMinWidth(SPLIT_BREAKPOINT);
+}
+
+/**
+ * @spec [owner brief "LISA chat dock" (Karl, 2026-10-22): the bubble "never covers Submit/Next
+ *       ... it offsets above them"] | @implemented [2026-10-22]
+ * plain English: the runner's footer (Skip, Submit, Next question). It reports its measured
+ * height as the `runner-footer` bottom-chrome layer while it is on screen, so the LISA bubble
+ * sits above it. Its own component so the report starts when the footer mounts (the footer is
+ * drawn only once a question is served).
+ */
+function RunnerFooter({
+  children,
+}: {
+  children: React.ReactNode;
+}): JSX.Element {
+  const ref = React.useRef<HTMLElement>(null);
+  useReportBottomChrome(ref, "runner-footer");
+  return (
+    <footer
+      ref={ref}
+      data-testid="runner-footer"
+      className="flex shrink-0 flex-col items-end gap-2 border-t border-lyc-rule bg-lyc-paper px-4 py-4 lg:px-8"
+    >
+      {children}
+    </footer>
+  );
 }
 
 /**
@@ -279,12 +312,6 @@ export default function CanonicalPracticePage(props: {
 
   const [isCalculatorExpanded, setIsCalculatorExpanded] = React.useState(false);
   const [isReferenceOpen, setIsReferenceOpen] = React.useState(false);
-  // W4-4: side by side (from 1024) LISA is open on every question; "Hide LISA" hides it for
-  // the current one only. Derived per item, so it returns on the next. On the phone layout it
-  // starts closed instead (QA2-D, `tutorShownForItem` below).
-  const [tutorHiddenForItem, setTutorHiddenForItem] = React.useState<
-    string | null
-  >(null);
   // QA 2026-10-07 item 8: the item whose LISA toggle the student last pressed. A panel that
   // mounts for it was opened by Show LISA, so on the phone layout (LISA stacked under the
   // question) it opens scrolled into view; LISA shown on load (W4-4) is not.
@@ -295,12 +322,11 @@ export default function CanonicalPracticePage(props: {
    * @spec [production QA 2026-10-08 item D (Karl: "Phone: the LISA panel defaults closed;
    *       tapping the icon always brings it into view."); W4-4 (LISA open on every question)
    *       kept where LISA sits beside the question] | @implemented [2026-10-08]
-   * plain English: on the phone layout (below TUTOR_SIDE_BY_SIDE_BREAKPOINT, where LISA stacks
-   * under the question) LISA starts closed on every question, and is open only for the item the
-   * student opened it on. Side by side (from 1024) nothing changes: open on every question,
-   * hidden for the current one by the toggle (`tutorHiddenForItem`). `tutorRevealKey` is bumped
-   * when the icon is tapped while LISA is open but scrolled out of view: the panel reveals itself
-   * again instead of closing (see the toggle below).
+   * plain English: on a phone (below 768px since 2026-10-22, where LISA stacks under the
+   * question) LISA starts closed on every question, and is open only for the item the student
+   * opened it on. `tutorRevealKey` is bumped when the icon is tapped while LISA is open but
+   * scrolled out of view: the panel reveals itself again instead of closing (see the toggle
+   * below). From 768px up LISA is the chat dock instead.
    */
   const [tutorShownForItem, setTutorShownForItem] = React.useState<
     string | null
@@ -313,13 +339,15 @@ export default function CanonicalPracticePage(props: {
   >(null);
 
   const splitEnabled = useSplitEnabled();
-  const threePanelEnabled = useMinWidth(THREE_PANEL_BREAKPOINT);
-  const tutorSideBySide = useMinWidth(TUTOR_SIDE_BY_SIDE_BREAKPOINT);
+  const wideLayout = useMinWidth(STACKED_LAYOUT_BELOW_PX);
+  // 2026-10-22: phones keep the stacked panel; tablet and desktop get the chat dock.
+  const isPhoneWidth = useMediaQuery(PHONE_WIDTH_QUERY, false);
+  const dockClearsColumn = useMinWidth(DOCK_COLUMN_CLEAR_PX);
 
   /**
    * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Phone: after submit,
    *       scroll the explanation into view"] | @implemented [2026-10-13]
-   * plain English: on the phone layout (below TUTOR_SIDE_BY_SIDE_BREAKPOINT, the stacked one) the
+   * plain English: on the phone layout (below STACKED_LAYOUT_BELOW_PX, the stacked one) the
    * feedback panel with the explanation appears under the choices, usually below the fold, and
    * nothing moved: the student saw no change after Submit. Once per answered item, when its
    * feedback first shows, the runner scrolls the panel's top into view, instantly (DESIGN.md §1:
@@ -327,7 +355,7 @@ export default function CanonicalPracticePage(props: {
    */
   const feedbackScrolledFor = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (!showResult || tutorSideBySide || !sessionItemId) return;
+    if (!showResult || wideLayout || !sessionItemId) return;
     if (feedbackScrolledFor.current === sessionItemId) return;
     feedbackScrolledFor.current = sessionItemId;
     const panel = runnerScrollRef.current?.querySelector<HTMLElement>(
@@ -335,7 +363,7 @@ export default function CanonicalPracticePage(props: {
     );
     if (!panel || typeof panel.scrollIntoView !== "function") return;
     panel.scrollIntoView({ block: "start", behavior: "auto" });
-  }, [showResult, tutorSideBySide, sessionItemId]);
+  }, [showResult, wideLayout, sessionItemId]);
   const panelGroupRef = React.useRef<HTMLDivElement | null>(null);
   const calcPanelRef = React.useRef<ImperativePanelHandle | null>(null);
 
@@ -489,31 +517,31 @@ export default function CanonicalPracticePage(props: {
   const showCalculator = isMathSection(question?.section);
   const useSidePanel = showCalculator && isCalculatorExpanded && splitEnabled;
 
-  // W4-1 / W4-4: LISA beside the question, scoped to the served item, open
-  // on every question in an engine that has it (review). Practice has no
-  // LISA and no entry point: `features.tutor` is off there.
+  // W4-1: LISA scoped to the served item, in an engine that has it (review). Practice has no
+  // LISA and no entry point: `features.tutor` is off there, and that is unchanged.
+  // 2026-10-22: on a phone, the stacked panel (closed until Show LISA, QA2-D); from 768px up,
+  // the chat dock, mounted for the whole runner so its open state lasts the visit.
+  const tutorSurface = engine.domain === "review" ? "review" : "practice";
   const canAskTutor = engine.features.tutor && !!sessionItemId && !!question;
+  const dockTutor = engine.features.tutor && !isPhoneWidth;
   const tutorVisible =
     canAskTutor &&
+    isPhoneWidth &&
     !!sessionItemId &&
-    (tutorSideBySide
-      ? tutorHiddenForItem !== sessionItemId
-      : tutorShownForItem === sessionItemId);
+    tutorShownForItem === sessionItemId;
   const position =
     typeof totalQuestions === "number"
       ? questionPosition(currentIndex, totalQuestions)
       : null;
+  const questionLabel = position ?? `Question ${currentIndex + 1}`;
   const tutorPanel =
     tutorVisible && sessionItemId ? (
       <ScopedTutorPanel
-        sourceSurface={engine.domain === "review" ? "review" : "practice"}
+        sourceSurface={tutorSurface}
         sessionItemId={sessionItemId}
-        questionLabel={position ?? `Question ${currentIndex + 1}`}
-        onHide={() => {
-          setTutorHiddenForItem(sessionItemId);
-          setTutorShownForItem(null);
-        }}
-        revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}
+        questionLabel={questionLabel}
+        onHide={() => setTutorShownForItem(null)}
+        revealOnOpen={tutorOpenedForItem === sessionItemId}
         revealKey={tutorRevealKey}
       />
     ) : null;
@@ -590,16 +618,11 @@ export default function CanonicalPracticePage(props: {
             </button>
           </>
         ) : null}
-        {canAskTutor && sessionItemId ? (
+        {canAskTutor && isPhoneWidth && sessionItemId ? (
           <button
             type="button"
             className={BAR_BUTTON}
             onClick={() => {
-              if (tutorSideBySide) {
-                // Side by side: a plain toggle, as before.
-                setTutorHiddenForItem(tutorVisible ? sessionItemId : null);
-                return;
-              }
               // QA2-D, phone layout: the icon always brings LISA into view. Closed: open it,
               // revealed. Open but scrolled away: reveal it again (never close what the student
               // cannot see). Open and in view: close it.
@@ -731,10 +754,7 @@ export default function CanonicalPracticePage(props: {
   );
 
   const footer = question ? (
-    <footer
-      data-testid="runner-footer"
-      className="flex shrink-0 flex-col items-end gap-2 border-t border-lyc-rule bg-lyc-paper px-4 py-4 lg:px-8"
-    >
+    <RunnerFooter>
       {!showResult && submitBlocked ? (
         <p
           className="m-0 text-lyc-meta-lg text-lyc-danger"
@@ -792,7 +812,7 @@ export default function CanonicalPracticePage(props: {
           </Button>
         )}
       </div>
-    </footer>
+    </RunnerFooter>
   ) : null;
 
   const sidePanelCalculator = (
@@ -882,87 +902,25 @@ export default function CanonicalPracticePage(props: {
     </>
   );
 
-  // W4-4: review with LISA. Question and LISA side by side from `lg`; the
-  // calculator sits between them from THREE_PANEL_BREAKPOINT, and below it
-  // expands over LISA's column (LISA stays mounted underneath).
-  const calcOpen = showCalculator && isCalculatorExpanded;
-  const calcBesideQuestion = calcOpen && threePanelEnabled;
-  const calcOverTutor = calcOpen && tutorSideBySide && !threePanelEnabled;
-  const calcStacked = calcOpen && !tutorSideBySide;
+  // Phones: review with LISA open stacks question, LISA, then the calculator (QA2-D).
+  const calcStacked = showCalculator && isCalculatorExpanded;
 
   const reviewTutorLayout = (
-    <div
-      className="flex flex-col gap-6 lg:flex-row lg:items-start lg:px-4"
-      data-testid="review-tutor-layout"
-    >
-      <div className="min-w-0 flex-1">
-        {calcBesideQuestion ? (
-          <div ref={panelGroupRef} data-testid="practice-panel-group-container">
-            <ResizablePanelGroup
-              direction="horizontal"
-              autoSaveId="lyceon-review-calc-panel-px"
-              onLayout={handleGroupLayout}
-              className="min-h-[600px]"
-            >
-              <ResizablePanel
-                defaultSize={QUESTION_DEFAULT_PCT}
-                minSize={questionMinPct}
-                style={{ minWidth: QUESTION_MIN_PX }}
-              >
-                <div className="h-full overflow-y-auto">{questionColumn}</div>
-              </ResizablePanel>
-              <ResizableHandle
-                withHandle
-                aria-label="Resize question and calculator panels"
-                aria-orientation="vertical"
-                data-testid="practice-resize-handle"
-              />
-              <ResizablePanel
-                ref={calcPanelRef}
-                defaultSize={CALC_DEFAULT_PCT}
-                minSize={calcMinPct}
-                style={{ minWidth: CALC_MIN_PX }}
-                onResize={handleCalcPanelResize}
-                data-testid="practice-calc-panel"
-              >
-                {sidePanelCalculator}
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </div>
-        ) : (
-          questionColumn
-        )}
-      </div>
+    <div className="flex flex-col gap-6" data-testid="review-tutor-layout">
+      <div className="min-w-0 flex-1">{questionColumn}</div>
 
       <div
-        className="relative w-full px-4 pt-8 lg:sticky lg:top-0 lg:shrink-0 lg:px-0"
-        style={
-          tutorSideBySide
-            ? {
-                height: CALC_COLUMN_HEIGHT_PX,
-                width: calcOverTutor ? CALC_MIN_PX : TUTOR_PANEL_PX,
-              }
-            : { height: CALC_COLUMN_HEIGHT_PX }
-        }
+        className="relative w-full px-4 pt-8"
+        style={{ height: CALC_COLUMN_HEIGHT_PX }}
         data-testid="review-tutor-column"
       >
-        {/* LISA is never unmounted by the calculator: covered, not closed. */}
         <div
           ref={tutorAsideRef}
-          className={calcOverTutor ? "invisible h-full" : "h-full"}
-          aria-hidden={calcOverTutor || undefined}
+          className="h-full"
           data-testid="practice-tutor-aside"
         >
           {tutorPanel}
         </div>
-        {calcOverTutor ? (
-          <div
-            className="absolute inset-0 z-10"
-            data-testid="review-calc-over-tutor"
-          >
-            {sidePanelCalculator}
-          </div>
-        ) : null}
       </div>
 
       {calcStacked ? (
@@ -982,11 +940,28 @@ export default function CanonicalPracticePage(props: {
       <div
         ref={runnerScrollRef}
         className="min-h-0 flex-1 overflow-y-auto"
+        // 2026-10-22: where the question column would reach under the LISA bubble (768px to
+        // 887px), the scroll area keeps the bubble's width clear on its right.
+        style={
+          dockTutor && !dockClearsColumn
+            ? { paddingRight: DOCK_CLEARANCE_PX }
+            : undefined
+        }
         data-testid="runner-scroll"
       >
         {tutorVisible ? reviewTutorLayout : standardLayout}
       </div>
       {footer}
+      {dockTutor ? (
+        <ChatDock
+          scope={{
+            kind: "question",
+            sourceSurface: tutorSurface,
+            sessionItemId: question ? sessionItemId : null,
+            questionLabel,
+          }}
+        />
+      ) : null}
       {showCalculator ? (
         <MathReferenceSheet
           open={isReferenceOpen}

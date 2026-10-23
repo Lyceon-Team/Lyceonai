@@ -1443,6 +1443,13 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     invalidateReviewConfigCache();
   }
 
+  async function sessionSize(): Promise<number> {
+    const r = await testPg!.query<{ v: number }>(
+      `SELECT value::int AS v FROM public.review_runtime_config WHERE key = 'session_size'`,
+    );
+    return Number(r.rows[0]?.v);
+  }
+
   async function itemCount(sessionId: string): Promise<number> {
     const r = await testPg!.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM public.review_session_items WHERE session_id = $1`,
@@ -1513,6 +1520,97 @@ describe.skipIf(!PG_AVAILABLE)("Review API → real PG proof (A1-A14)", () => {
     } finally {
       await setSessionSize(10);
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // O — who the size cap applies to (owner ruling, Karl, 2026-10-22, correcting #1277's
+  // ruling 1): review_runtime_config.session_size caps only student-initiated starts; a
+  // calendar launch takes its block's size. Through the REAL calendar review adapter, the
+  // one caller that says origin "calendar", over the real start path and real Postgres.
+  // -------------------------------------------------------------------------
+  /** A calendar review block of `target` (the launch service hands the adapter this size). */
+  async function calendarLaunch(
+    target: number,
+    key: string,
+  ): Promise<{ ok: boolean; sessionId: string | null }> {
+    const { reviewAdapter } =
+      await import("../../server/services/calendar/adapters/review");
+    const result = await reviewAdapter.create(
+      {
+        block_id: "00000000-0000-4000-8000-0000000c0de1",
+        scheduled_date: "2026-10-22",
+        block_type: "review",
+        section: null,
+        scope: { mode: "queue" },
+        target_count: target,
+        source: "auto",
+        derived_from_block_id: null,
+        explanation_key: "review_due",
+        display_ordinal: 1,
+        membership_type: "created",
+      },
+      target,
+      {
+        student_id: STUDENT_A,
+        actor_id: STUDENT_A,
+        role: "student",
+        client_instance_id: "ci-cal",
+        platform: "web",
+        idempotency_key: key,
+      },
+    );
+    return {
+      ok: result.ok,
+      sessionId: result.ok ? result.value.session_id : null,
+    };
+  }
+
+  it("O1: a calendar review block of 30 launches a 30-item session while session_size is 10", async () => {
+    await setSessionSize(10);
+    await seedPastSessions(35);
+    // Presence: the block is larger than the student cap, so a capped launch could not pass.
+    expect(await sessionSize()).toBe(10);
+    const launched = await calendarLaunch(30, "calendar:block:o1:1");
+    expect(launched.ok).toBe(true);
+    expect(await itemCount(String(launched.sessionId))).toBe(30);
+  });
+
+  it("O2: a Review-page start asking for 30 is capped at session_size (10)", async () => {
+    await setSessionSize(10);
+    await seedPastSessions(35);
+    const created = await createSession({
+      idempotency_key: "o2",
+      target_count: 30,
+    });
+    expect(created.status).toBe(200);
+    expect(await itemCount(created.body.sessionId as string)).toBe(10);
+  });
+
+  it("O3: no question is in two open sessions, whichever path starts next", async () => {
+    await setSessionSize(10);
+    await seedPastSessions(12);
+    // A student start holds the 10 oldest; a calendar launch of 12 needs them all.
+    const student = await createSession({ idempotency_key: "o3-student" });
+    expect(student.status).toBe(200);
+    const studentId = student.body.sessionId as string;
+    expect(await itemCount(studentId)).toBe(10);
+    const launched = await calendarLaunch(12, "calendar:block:o3:1");
+    expect(launched.ok).toBe(true);
+    expect(await itemCount(String(launched.sessionId))).toBe(12);
+    expect((await statusOf(studentId)).status).toBe("abandoned");
+    expect(await duplicatedOpenQuestions()).toBe(0);
+    // And back: a student start needs questions the calendar session holds.
+    const again = await createSession({
+      idempotency_key: "o3-student-2",
+      client_instance_id: "ci-2",
+    });
+    expect(again.status).toBe(200);
+    expect((await statusOf(String(launched.sessionId))).status).toBe(
+      "abandoned",
+    );
+    // Presence: one open session holds questions; none is in two.
+    expect(await openCount()).toBe(1);
+    expect(await duplicatedOpenQuestions()).toBe(0);
   });
 
   it("B4: the database refuses a question already in another open session (23505), and admits it once that session is closed", async () => {

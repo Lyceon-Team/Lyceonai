@@ -39,6 +39,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
   ScopedTutorPanel: () => <div data-testid="scoped-tutor-panel-stub" />,
 }));
+// 2026-10-22 (owner brief "LISA chat dock"): from 768px up LISA is the dock; its own behaviour is
+// ChatDock.contract.test.tsx's. Stubbed for the same reason as the panel.
+vi.mock("@/components/tutor/ChatDock", () => ({
+  DOCK_CLEARANCE_PX: 80,
+  ChatDock: () => <div data-testid="chat-dock-stub" />,
+}));
 vi.mock("@/components/math/DesmosCalculator", () => ({
   default: () => <div data-testid="desmos-mock" />,
 }));

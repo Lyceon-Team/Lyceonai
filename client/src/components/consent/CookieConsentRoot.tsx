@@ -26,9 +26,11 @@
  */
 import {
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type RefObject,
 } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -46,7 +48,10 @@ import {
   subscribeSignedInSurface,
 } from "@/lib/signed-in-surface";
 import { readPaintedTheme, subscribePaintedTheme } from "@/lib/theme";
-import { useBottomChromeHeight } from "@/lib/bottom-chrome";
+import {
+  useBottomChromeHeight,
+  useReportBottomChrome,
+} from "@/lib/bottom-chrome";
 import {
   closeCookieSettings,
   getConsentSnapshot,
@@ -203,11 +208,27 @@ function useBottomBarStyle(): CSSProperties | undefined {
     : undefined;
 }
 
+/**
+ * @spec [owner brief "LISA chat dock" (Karl, 2026-10-22): the LISA bubble "respects ... the
+ *       cookie banner (reuse the existing measured bottom-chrome mechanism, don't fork one)"]
+ *       | @implemented [2026-10-22]
+ * plain English: the bar reports its own measured height as the `consent` layer while it is on
+ * screen, so the LISA bubble (which reads that layer) sits above it. The bar itself still reads
+ * the tab bar only, exactly as before.
+ */
+function useConsentBarRef(): RefObject<HTMLElement> {
+  const ref = useRef<HTMLElement>(null);
+  useReportBottomChrome(ref, "consent");
+  return ref;
+}
+
 function CookieBanner(): JSX.Element {
   const themeClass = useSurfaceThemeClass();
   const bottomBarStyle = useBottomBarStyle();
+  const barRef = useConsentBarRef();
   return (
     <section
+      ref={barRef}
       aria-labelledby="cookie-banner-heading"
       data-testid="cookie-banner"
       className={`${themeClass} ${BOTTOM_BAR_CLASS}`}
@@ -265,8 +286,10 @@ function CookieBanner(): JSX.Element {
 function GpcNotice({ onClose }: { onClose: () => void }): JSX.Element {
   const themeClass = useSurfaceThemeClass();
   const bottomBarStyle = useBottomBarStyle();
+  const barRef = useConsentBarRef();
   return (
     <section
+      ref={barRef}
       aria-label="Global Privacy Control"
       data-testid="gpc-notice"
       className={`${themeClass} ${BOTTOM_BAR_CLASS}`}
