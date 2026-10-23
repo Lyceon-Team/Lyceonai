@@ -169,9 +169,16 @@ export class BookText {
 function normalizeWithMap(text: string): { norm: string; map: number[] } {
   let norm = "";
   const map: number[] = [];
+  // Markup tags (<u>, </u> in OCR markdown) and the "[ACT NOTE]" marker are not text: their
+  // letters would otherwise break a quote that spans them ("<u>Although</u> London" must match
+  // "Although London").
+  const tags = new Set<number>();
+  for (const m of text.matchAll(/<\/?[a-z]+>|\[ACT NOTE\]/gi))
+    for (let k = m.index ?? 0; k < (m.index ?? 0) + m[0].length; k += 1)
+      tags.add(k);
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i] ?? "";
-    if (/[\p{L}\p{N}]/u.test(ch)) {
+    if (!tags.has(i) && /[\p{L}\p{N}]/u.test(ch)) {
       norm += ch.toLowerCase();
       map.push(i);
     }
@@ -186,22 +193,31 @@ function normalize(text: string): string {
 /**
  * Pure. Where `quote` occurs in `text` within [from, to): [start, end) offsets of the match in
  * the ORIGINAL text, or null. `last` picks the last occurrence in the range instead of the
- * first. A quote that normalizes to fewer than 12 characters is refused (too short to place one
- * boundary unambiguously).
+ * first. A quote that normalizes to fewer than 12 characters is accepted only when it occurs
+ * exactly once in the range, and never below 5: OCR markdown makes short heading quotes normal
+ * ("### B. Two Dashes" is 10, "#### Their" 5; 23 of the Meltzer headings are under 12), and one
+ * occurrence places the boundary unambiguously however short it is.
  */
+/** Normalized length from which a quote places a boundary by itself; below it, only if unique. */
+const UNAMBIGUOUS_QUOTE = 12;
+/** Normalized length below which a quote is refused even when unique. */
+const SHORT_QUOTE_FLOOR = 5;
+
 export function locateQuote(
   text: string,
   quote: string,
   from = 0,
-  opts: { to?: number; last?: boolean } = {},
+  opts: { to?: number; last?: boolean; unique?: boolean } = {},
 ): { start: number; end: number } | null {
   const q = normalize(quote);
-  if (q.length < 12) return null;
+  if (q.length < SHORT_QUOTE_FLOOR) return null;
   const to = opts.to ?? text.length;
   const { norm, map } = normalizeWithMap(text);
   const fromNorm = map.findIndex((o) => o >= from);
   if (fromNorm === -1) return null;
   let found = -1;
+  let count = 0;
+  const short = q.length < UNAMBIGUOUS_QUOTE || opts.unique === true;
   for (
     let at = norm.indexOf(q, fromNorm);
     at !== -1;
@@ -209,10 +225,11 @@ export function locateQuote(
   ) {
     const last = map[at + q.length - 1];
     if (last === undefined || last >= to) break;
-    found = at;
-    if (opts.last !== true) break;
+    count += 1;
+    if (count === 1 || opts.last === true) found = at;
+    if (opts.last !== true && !short) break;
   }
-  if (found === -1) return null;
+  if (found === -1 || (short && count !== 1)) return null;
   const start = map[found];
   const last = map[found + q.length - 1];
   if (start === undefined || last === undefined) return null;
@@ -259,9 +276,12 @@ const HEADING_RE = /^(#{1,4})\s+(.*)$/;
  *  - a heading followed by an "[ACT ONLY]" line drops that heading's section, up to the next
  *    heading of the same or a higher level (in the Meltzer guide: "Who's vs. Whose (Primarily
  *    ACT)" and "Then vs. Than (ACT)").
- * "[ACT NOTE]" paragraphs are KEPT, with the marker removed: the flag means "mentions the ACT",
- * not "ACT-only" (printed page 11 is a general comma rule the SAT can test). Every dropped
- * section is returned with its page and size, so the cut can be checked.
+ * "[ACT NOTE]" paragraphs are KEPT, and so is their marker: the flag means "mentions the ACT",
+ * not "ACT-only" (printed page 11 is a general comma rule the SAT can test), and the rewrite
+ * and the audit need to see it to drop the ACT-scoped advice from an entry rather than state
+ * it as general (Karl, 2026-10-23: chunks 9:2 and 5:1 did that with the marker stripped). Quote
+ * matching skips the marker (normalizeWithMap). Every dropped section is returned with its
+ * page and size, so the cut can be checked.
  */
 export function dropActSections(pages: OcrPage[]): {
   pages: OcrPage[];
@@ -318,7 +338,7 @@ export function dropActSections(pages: OcrPage[]): {
         continue;
       }
       if (line.trim() === "[ACT ONLY]") continue;
-      kept.push(line.replace(/^\[ACT NOTE\]\s*/, ""));
+      kept.push(line);
     }
     const body = kept
       .join("\n")
@@ -327,6 +347,36 @@ export function dropActSections(pages: OcrPage[]): {
     if (body !== "") out.push({ ...page, body });
   }
   return { pages: out, dropped };
+}
+
+/**
+ * Pure. Whether the unit [start, end) of `text` starts or ends at a lettered-subsection heading
+ * ("### ", OCR markdown) inside a numbered rule ("## "): the boundary where one rule was split
+ * into units. Measured on drops (Karl, 2026-10-23: 8 of 10 audit drops sat on one when the
+ * segmenter put each lettered subsection in its own unit). Blank space at the edges is skipped.
+ */
+export function onSubsectionBoundary(
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  // Unit edges sit on letters and digits (quotes are matched on those), so a start lands after
+  // the "### " the model left out of its quote, and an end before the sentence's last period:
+  // a start is at a heading when only "#" and blanks precede it on its line, and an end is at
+  // one when only punctuation and blanks lie between it and the next "### ".
+  const lineOf = (i: number): number => text.lastIndexOf("\n", i - 1) + 1;
+  const subLineAt = (i: number): boolean => text.startsWith("### ", i);
+  let s0 = start;
+  while (s0 < end && /\s/.test(text[s0] ?? "")) s0 += 1;
+  const startLine = lineOf(s0);
+  const startsAtSub =
+    subLineAt(startLine) && /^[#\s]*$/.test(text.slice(startLine, s0));
+  let e0 = end;
+  while (e0 < text.length && /[^\p{L}\p{N}#]/u.test(text[e0] ?? "")) e0 += 1;
+  const endsAtSub = lineOf(e0) === e0 && subLineAt(e0);
+  const ruleBefore = (i: number): boolean =>
+    [...text.slice(0, i).matchAll(/^## /gm)].length > 0;
+  return (startsAtSub && ruleBefore(s0)) || (endsAtSub && ruleBefore(e0));
 }
 
 export const UNIT_KINDS = [
@@ -371,6 +421,40 @@ export const MAX_GAP_WORDS = 30;
  *    unit holds: rejected, so the caller asks again rather than losing part of a rule.
  * Throws on any of these.
  */
+/**
+ * Pure. A unit's start (or end) quote located in [from, to). The quote as given first, with
+ * locateQuote's rules; failing that, its longest word-prefix (for a start) or word-suffix (for
+ * an end) that normalizes to at least 12 characters and occurs exactly once in the range. The
+ * model sometimes joins headings across skipped lines ("15. FAULTY COMPARISONS A. Singular
+ * Comparison Though the work", measured 2026-10-23: two intro paragraphs lie between); the
+ * edge of a unit is fixed by the words at that edge, and a unique 12-character run places it as
+ * firmly as any quote the matcher accepts.
+ */
+export function locateEdge(
+  text: string,
+  quote: string,
+  from: number,
+  to: number,
+  side: "start" | "end",
+): { start: number; end: number } | null {
+  const whole = locateQuote(text, quote, from, { to, last: side === "end" });
+  if (whole !== null) return whole;
+  const words = quote.trim().split(/\s+/);
+  for (let k = words.length - 1; k >= 1; k -= 1) {
+    const part = (
+      side === "start" ? words.slice(0, k) : words.slice(words.length - k)
+    ).join(" ");
+    if (normalize(part).length < UNAMBIGUOUS_QUOTE) break;
+    const m = locateQuote(text, part, from, {
+      to,
+      last: side === "end",
+      unique: true,
+    });
+    if (m !== null) return m;
+  }
+  return null;
+}
+
 export function locateUnits(
   book: BookText,
   winStart: number,
@@ -381,21 +465,26 @@ export function locateUnits(
   const starts: number[] = [];
   let from = 0;
   for (const [i, u] of units.entries()) {
-    const s = locateQuote(win, u.start_quote, from);
+    const s = locateEdge(win, u.start_quote, from, win.length, "start");
     if (s === null)
-      throw new Error(`unit ${i + 1}: start_quote not found in the window`);
+      throw new Error(
+        `unit ${i + 1}: start_quote ${JSON.stringify(u.start_quote.slice(0, 120))} not found in the window after unit ${i}'s start`,
+      );
     starts.push(s.start);
     from = s.start + 1;
   }
   const located = units.map((u, i) => {
     const start = starts[i] ?? 0;
-    const e = locateQuote(win, u.end_quote, start, {
-      to: starts[i + 1] ?? win.length,
-      last: true,
-    });
+    const e = locateEdge(
+      win,
+      u.end_quote,
+      start,
+      starts[i + 1] ?? win.length,
+      "end",
+    );
     if (e === null)
       throw new Error(
-        `unit ${i + 1}: end_quote not found between its start and the next unit`,
+        `unit ${i + 1}: end_quote ${JSON.stringify(u.end_quote.slice(0, 120))} not found between its start and the next unit`,
       );
     return { ...u, start: winStart + start, end: winStart + e.end };
   });
