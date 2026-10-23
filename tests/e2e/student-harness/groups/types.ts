@@ -312,6 +312,8 @@ export type PageGroup = {
    * "quota-config" (W6 UI-64, OQ-68 (d)): `daily_quota_free` 37 and the diagnostic 6 × 8 = 48 in
    * the harness database after the base seed (db.ts `applyQuotaConfig`), so the copy's numbers
    * visibly come from the server config.
+   * "lisa-dock" (owner brief "LISA chat dock", 2026-10-22): "review-history", "exam-history" and
+   * "lisa-history" together, unchanged, for the dock's group and browser spec.
    * Off by default, so the other groups' payloads do not change.
    */
   seed?:
@@ -322,7 +324,8 @@ export type PageGroup = {
     | "mastery-skills"
     | "bare-pages"
     | "notifications"
-    | "quota-config";
+    | "quota-config"
+    | "lisa-dock";
   /**
    * Where the group's evidence goes, relative to the repo root. Defaults to the student-UI Wave 5
    * evidence directory; the SEO vertical's groups write under docs/plans/seo/evidence/.
