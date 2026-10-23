@@ -35,7 +35,13 @@
  *   ... --execute     (with DATABASE_URL)
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 // pg ships no types and @types/pg is not a dependency; scripts/ci/types/pg.d.ts declares the
@@ -46,6 +52,9 @@ import {
   BOOK_SLUG_RE,
   BookText,
   type BookChunk,
+  type DroppedSection,
+  dropActSections,
+  parseOcrPage,
   type LocatedUnit,
   TEACHING_KINDS,
   assignProvenance,
@@ -167,6 +176,46 @@ function offsetByWords(text: string, at: number, words: number): number {
   return starts[Math.max(0, starts.length + words)] ?? 0;
 }
 
+type Input = {
+  source: string;
+  pages: string[];
+  labels: (number | null)[];
+  dropped: DroppedSection[];
+};
+
+/**
+ * The book's text: from a PDF's text layer (pdftotext), or from the accepted OCR markdown
+ * (scripts/rag/ocr-book.ts, one page-NN.md per PDF page) with the ACT-only sections dropped
+ * (dropActSections). Markdown pages keep their printed page numbers for provenance.
+ */
+function loadInput(
+  pdf: string | undefined,
+  markdown: string | undefined,
+): Input {
+  if (pdf !== undefined) {
+    if (!existsSync(pdf)) throw new Error(`no such PDF: ${pdf}`);
+    return { source: pdf, pages: extractPages(pdf), labels: [], dropped: [] };
+  }
+  const dir = z.string().min(1).parse(markdown);
+  const files = readdirSync(dir)
+    .map((f) => /^page-(\d+)\.md$/.exec(f))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ file: m[0], pdfPage: Number(m[1]) }))
+    .sort((a, b) => a.pdfPage - b.pdfPage);
+  if (files.length === 0) throw new Error(`${dir}: no page-NN.md files`);
+  const { pages, dropped } = dropActSections(
+    files.map((f) =>
+      parseOcrPage(f.pdfPage, readFileSync(resolve(dir, f.file), "utf8")),
+    ),
+  );
+  return {
+    source: dir,
+    pages: pages.map((p) => p.body),
+    labels: pages.map((p) => p.printed),
+    dropped,
+  };
+}
+
 type Segmented = { units: LocatedUnit[]; windows: number; regrown: number };
 
 async function segmentBook(
@@ -276,6 +325,7 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       pdf: { type: "string" },
+      markdown: { type: "string" },
       slug: { type: "string" },
       model: { type: "string", default: GENERATION_MODEL_DEFAULT },
       samples: { type: "string", default: "5" },
@@ -284,7 +334,8 @@ async function main(): Promise<void> {
     },
   });
   assertProxied();
-  const pdf = z.string().min(1).parse(values.pdf);
+  if ((values.pdf === undefined) === (values.markdown === undefined))
+    throw new Error("pass exactly one of --pdf <file> or --markdown <ocr dir>");
   const slug = z.string().regex(BOOK_SLUG_RE).parse(values.slug);
   const model = z.string().min(1).parse(values.model);
   const perSkill = z.coerce.number().int().min(1).max(50).parse(values.samples);
@@ -294,7 +345,6 @@ async function main(): Promise<void> {
     .min(300)
     .max(20_000)
     .parse(values["window-words"]);
-  if (!existsSync(pdf)) throw new Error(`no such PDF: ${pdf}`);
   const dir = bookDir(slug);
   mkdirSync(dir, { recursive: true });
   const { skills } = loadTaxonomy();
@@ -310,10 +360,11 @@ async function main(): Promise<void> {
       byStage.set(stage, addUsage(byStage.get(stage) ?? ZERO_USAGE, u));
     };
 
-  const pages = extractPages(pdf);
-  const book = new BookText(pages);
+  const input = loadInput(values.pdf, values.markdown);
+  const pages = input.pages;
+  const book = new BookText(pages, input.labels);
   process.stdout.write(
-    `${pdf}: ${pages.length} pages, ${wordCount(book.text)} words after furniture\n`,
+    `${input.source}: ${pages.length} pages, ${wordCount(book.text)} words${input.dropped.length > 0 ? `; dropped ${input.dropped.map((d) => `"${d.heading}" (p${d.page}, ${d.words} words)`).join(", ")}` : ""}\n`,
   );
   const seg = await segmentBook(
     book,
@@ -559,6 +610,15 @@ async function main(): Promise<void> {
     ...skills.map((s) => `| ${s} | ${bySkill.get(s)?.length ?? 0} |`),
     "",
     `**No chunks (${skills.filter((s) => (bySkill.get(s)?.length ?? 0) === 0).length} of ${skills.length}):** ${skills.filter((s) => (bySkill.get(s)?.length ?? 0) === 0).join("; ")}`,
+    "",
+    "## ACT-only sections removed before chunking",
+    "",
+    ...(input.dropped.length === 0
+      ? ["- none"]
+      : input.dropped.map(
+          (d) =>
+            `- ${d.reason}: "${d.heading}" (page ${d.page}, ${d.words} words)`,
+        )),
     "",
     "## Dropped",
     "",

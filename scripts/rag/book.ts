@@ -114,7 +114,11 @@ export class BookText {
   readonly text: string;
   private readonly pageStarts: number[];
 
-  constructor(pages: string[]) {
+  /** Printed page numbers by page index, when the source knows them (OCR input). */
+  private readonly labels: readonly (number | null)[];
+
+  constructor(pages: string[], labels: readonly (number | null)[] = []) {
+    this.labels = labels;
     const starts: number[] = [];
     let text = "";
     for (const p of pages) {
@@ -126,6 +130,7 @@ export class BookText {
     this.pageStarts = starts;
   }
 
+  /** The page an offset is on: its printed number when known, else its 1-based index. */
   pageAt(offset: number): number {
     let lo = 0;
     let hi = this.pageStarts.length - 1;
@@ -134,7 +139,7 @@ export class BookText {
       if ((this.pageStarts[mid] ?? 0) <= offset) lo = mid;
       else hi = mid - 1;
     }
-    return lo + 1;
+    return this.labels[lo] ?? lo + 1;
   }
 
   /** The text of [start, end) with a "[page n]" marker where each page begins. */
@@ -143,7 +148,7 @@ export class BookText {
     let at = start;
     for (const [i, s] of this.pageStarts.entries()) {
       if (s > at && s < end) {
-        out += this.text.slice(at, s) + `[page ${i + 1}]\n`;
+        out += this.text.slice(at, s) + `[page ${this.labels[i] ?? i + 1}]\n`;
         at = s;
       }
     }
@@ -212,6 +217,108 @@ export function locateQuote(
   const last = map[found + q.length - 1];
   if (start === undefined || last === undefined) return null;
   return { start, end: last + 1 };
+}
+
+// ---------------------------------------------------------------------------------------------
+// OCR markdown input (scripts/rag/ocr-book.ts output)
+// ---------------------------------------------------------------------------------------------
+
+export type OcrPage = { pdfPage: number; printed: number | null; body: string };
+
+/** Pure. One page-NN.md file → its printed page (from the header comment) and its body. */
+export function parseOcrPage(pdfPage: number, text: string): OcrPage {
+  const printed = /<!-- PDF page \d+; printed page (\d+) -->/.exec(text)?.[1];
+  return {
+    pdfPage,
+    printed: printed === undefined ? null : Number(printed),
+    body: text.replace(/<!--[\s\S]*?-->/g, "").trim(),
+  };
+}
+
+export type DroppedSection = {
+  heading: string;
+  page: number;
+  words: number;
+  reason: "act_only_section" | "act_only_subsection";
+};
+
+const HEADING_RE = /^(#{1,4})\s+(.*)$/;
+
+/**
+ * Pure. The pages with ACT-only material removed, by SECTION, as ruled by Karl (2026-10-23):
+ *  - an "ACT ONLY" banner heading drops everything from the banner to the end of the book
+ *    (in the Meltzer guide: rules 17-20 and the idiom table);
+ *  - a heading followed by an "[ACT ONLY]" line drops that heading's section, up to the next
+ *    heading of the same or a higher level (in the Meltzer guide: "Who's vs. Whose (Primarily
+ *    ACT)" and "Then vs. Than (ACT)").
+ * "[ACT NOTE]" paragraphs are KEPT, with the marker removed: the flag means "mentions the ACT",
+ * not "ACT-only" (printed page 11 is a general comma rule the SAT can test). Every dropped
+ * section is returned with its page and size, so the cut can be checked.
+ */
+export function dropActSections(pages: OcrPage[]): {
+  pages: OcrPage[];
+  dropped: DroppedSection[];
+} {
+  const dropped: DroppedSection[] = [];
+  const out: OcrPage[] = [];
+  let banner = false;
+  let skipLevel: number | null = null;
+  let current: DroppedSection | null = null;
+  for (const page of pages) {
+    const lines = page.body.split("\n");
+    const kept: string[] = [];
+    for (const [i, line] of lines.entries()) {
+      const h = HEADING_RE.exec(line);
+      const level = h?.[1]?.length ?? 0;
+      const title = (h?.[2] ?? "").trim();
+      if (!banner && h !== null && /^ACT ONLY$/i.test(title)) {
+        banner = true;
+        current = {
+          heading: title,
+          page: page.printed ?? page.pdfPage,
+          words: 0,
+          reason: "act_only_section",
+        };
+        dropped.push(current);
+        continue;
+      }
+      if (banner) {
+        if (current !== null) current.words += wordCount(line);
+        continue;
+      }
+      if (skipLevel !== null && h !== null && level <= skipLevel) {
+        skipLevel = null;
+        current = null;
+      }
+      if (skipLevel === null && h !== null) {
+        const next = lines.slice(i + 1).find((l) => l.trim() !== "");
+        if (next?.trim() === "[ACT ONLY]") {
+          skipLevel = level;
+          current = {
+            heading: title,
+            page: page.printed ?? page.pdfPage,
+            words: 0,
+            reason: "act_only_subsection",
+          };
+          dropped.push(current);
+          continue;
+        }
+      }
+      if (skipLevel !== null) {
+        if (current !== null && line.trim() !== "[ACT ONLY]")
+          current.words += wordCount(line);
+        continue;
+      }
+      if (line.trim() === "[ACT ONLY]") continue;
+      kept.push(line.replace(/^\[ACT NOTE\]\s*/, ""));
+    }
+    const body = kept
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (body !== "") out.push({ ...page, body });
+  }
+  return { pages: out, dropped };
 }
 
 export const UNIT_KINDS = [
