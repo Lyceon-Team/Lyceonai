@@ -44,8 +44,26 @@ async function postJson(
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (response.ok) return response.json();
-    const retryable = response.status === 429 || response.status >= 500;
+    // A 200 whose body is not JSON ("upstream request failed" from the egress proxy, seen
+    // 2026-10-23) is a transport failure like a 5xx, and is retried the same way.
+    let parsed: unknown = undefined;
+    let jsonOk = false;
+    if (response.ok) {
+      const text = await response.text();
+      try {
+        parsed = JSON.parse(text);
+        jsonOk = true;
+      } catch (err: unknown) {
+        if (attempt >= 5)
+          throw new Error(
+            `${step}: Vertex returned 200 with a non-JSON body after ${attempt + 1} tries`,
+            { cause: err },
+          );
+      }
+      if (jsonOk) return parsed;
+    }
+    const retryable =
+      response.ok || response.status === 429 || response.status >= 500;
     if (!retryable || attempt >= 5) {
       // The error body is Vertex's (or the proxy's) status text, never model output.
       const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 200);
@@ -53,7 +71,7 @@ async function postJson(
         `${step}: Vertex returned ${response.status} after ${attempt + 1} tries: ${detail}`,
       );
     }
-    await response.body?.cancel();
+    if (!response.ok) await response.body?.cancel();
     // 5, 10, 20, 40, 80 s plus jitter: a video-token quota (429) needs longer than a blip.
     await new Promise((r) =>
       setTimeout(r, 5_000 * 2 ** attempt + Math.floor(Math.random() * 1_000)),
@@ -191,42 +209,62 @@ export async function generateJson<T>(opts: {
           },
         ];
   const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/global/publishers/google/models/${opts.model}:generateContent`;
-  const raw = await postJson(
-    url,
-    {
-      systemInstruction: { parts: [{ text: opts.system }] },
-      contents: [
-        {
-          role: "user",
-          parts: [
-            ...videoParts,
-            ...(opts.image === undefined
-              ? []
-              : [
-                  {
-                    inlineData: {
-                      mimeType: opts.image.mimeType,
-                      data: opts.image.data.toString("base64"),
+  // A response with no usable candidate (no content parts) is retried twice before it fails;
+  // the failure names the finishReason, so a blocked answer is told apart from a blip.
+  let parsed:
+    | z.SafeParseReturnType<unknown, z.infer<typeof generateResponseSchema>>
+    | undefined;
+  for (let attempt = 0; ; attempt += 1) {
+    const raw = await postJson(
+      url,
+      {
+        systemInstruction: { parts: [{ text: opts.system }] },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              ...videoParts,
+              ...(opts.image === undefined
+                ? []
+                : [
+                    {
+                      inlineData: {
+                        mimeType: opts.image.mimeType,
+                        data: opts.image.data.toString("base64"),
+                      },
                     },
-                  },
-                ]),
-            { text: opts.user },
-          ],
+                  ]),
+              { text: opts.user },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: "application/json",
+          responseSchema: opts.responseSchema,
+          ...(opts.thinking === undefined
+            ? {}
+            : { thinkingConfig: { thinkingLevel: opts.thinking } }),
         },
-      ],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: "application/json",
-        responseSchema: opts.responseSchema,
-        ...(opts.thinking === undefined
-          ? {}
-          : { thinkingConfig: { thinkingLevel: opts.thinking } }),
       },
-    },
-    opts.step,
-  );
-  const parsed = generateResponseSchema.safeParse(raw);
-  if (!parsed.success)
+      opts.step,
+    );
+    parsed = generateResponseSchema.safeParse(raw);
+    if (parsed.success) break;
+    if (attempt >= 2) {
+      const reason = z
+        .object({
+          candidates: z
+            .array(z.object({ finishReason: z.string().optional() }))
+            .optional(),
+        })
+        .safeParse(raw);
+      throw new Error(
+        `${opts.step}: unexpected response shape after ${attempt + 1} tries (finishReason ${reason.success ? (reason.data.candidates?.[0]?.finishReason ?? "none") : "unreadable"})`,
+      );
+    }
+  }
+  if (!parsed?.success)
     throw new Error(`${opts.step}: unexpected response shape`);
   const m = parsed.data.usageMetadata;
   const prompt = m?.promptTokenCount ?? 0;
