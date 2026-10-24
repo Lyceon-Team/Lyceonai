@@ -11,9 +11,10 @@
  *
  * plain English:
  *   * socialInputFromToday / socialInputFromArchive turn the public payloads into the strict
- *     no-answer input (qotdSocialInputSchema). Today's options arrive shuffled per request, so
- *     they are put in token order: the same order every run of the same day. A past day keeps
- *     its canonical order. The archive's answer and explanation are dropped here, before anything
+ *     no-answer input (qotdSocialInputSchema). Both keep the order they are served in, which is
+ *     canonical for today and for a past day alike (Karl's ruling 2026-10-23: no shuffle for the
+ *     QOTD; the earlier re-sort into token order lettered the image differently from the
+ *     archive and the Reddit reveal). The archive's answer and explanation are dropped here, before anything
  *     is built.
  *   * buildSocialCopy writes the approved caption and an alt text that reads the question out in
  *     full. Maths is spoken through a short fixed table; anything outside it (or an alt text over
@@ -72,14 +73,12 @@ const HASHTAGS: Record<"M" | "RW", string> = {
 /** X's alt-text limit, the tightest of the platforms the QOTD is posted to. */
 export const QOTD_ALT_TEXT_MAX = 1000;
 
-/** Today's public payload -> the social input. Options in token order: fixed for the day. */
+/** Today's public payload -> the social input. Options in the order served: canonical. */
 export function socialInputFromToday(
   today: QotdTodayResponse,
 ): QotdSocialInput {
   const q = today.question;
-  const options = [...q.options]
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map((o) => ({ text: o.text }));
+  const options = q.options.map((o) => ({ text: o.text }));
   return qotdSocialInputSchema.parse({
     qotd_date: today.qotd_date,
     section_code: q.section_code,
@@ -581,4 +580,99 @@ export function socialAssetLeaks(
     }
   }
   return leaks;
+}
+
+/**
+ * Every way the TikTok carousel (its three slides' visible text, its caption and its title)
+ * carries TODAY's question or answer. Empty = no leak found.
+ *
+ * @spec [Doc 10A §7; owner brief "QOTD social: TikTok 3-slide carousel" (Karl, 2026-10-23):
+ *       "uses YESTERDAY's question only and must never contain today's answer; leak checks must
+ *       still block today's answer"] | @implemented [2026-10-23]
+ *
+ * plain English: the carousel shows yesterday's answer on purpose, so the check is against
+ * today. Today's question text (its stem, or its passage) must not appear at all, which needs no
+ * answer and so runs every day. When today's answer is known (a past day rebuilt with --date),
+ * the same answer checks as socialAssetLeaks also run: a run of today's explanation, today's
+ * grid-in value, or today's correct choice. Anything yesterday's own question, answer or
+ * explanation already says is not counted, since the carousel is allowed to show it.
+ */
+export function tiktokCarouselLeaks(
+  output: { slides: readonly string[]; caption: string; title: string },
+  carouselDay: QotdArchiveResponse,
+  today: { input: QotdSocialInput; revealed: QotdArchiveResponse | null },
+): string[] {
+  const yq = carouselDay.question;
+  const allowed = normalize(
+    [
+      questionText(socialInputFromArchive(carouselDay)),
+      yq.explanation,
+      plainMathText(yq.explanation),
+      yq.correct_answer ?? "",
+      // The carousel's own date, long and short: a choice like "22" is not a leak on Oct 22.
+      formatSocialDate(carouselDay.qotd_date),
+      new Date(`${carouselDay.qotd_date}T00:00:00Z`).toLocaleDateString(
+        "en-US",
+        { timeZone: "UTC", month: "short", day: "numeric" },
+      ),
+    ].join(" \n "),
+  );
+  const fields: (readonly [string, string])[] = [
+    ...output.slides.map((text, i) => [`tiktok slide ${i + 1}`, text] as const),
+    ["tiktok caption", output.caption],
+    ["tiktok title", output.title],
+  ];
+  const leaks: string[] = [];
+  const todayText = [today.input.stem, today.input.passage ?? ""].filter(
+    (t) => t.trim().length > 0,
+  );
+  const answer = today.revealed?.question ?? null;
+  const explanationWords =
+    answer === null ? [] : normalize(answer.explanation).trim().split(" ");
+  const correct =
+    answer?.item_type === "mcq"
+      ? answer.options.find((o) => o.id === answer.correct_option_id)
+      : undefined;
+  for (const [field, text] of fields) {
+    const haystack = normalize(text);
+    for (const t of todayText) {
+      for (const form of [t, plainMathText(t)]) {
+        if (containsPhrase(haystack, form) && !containsPhrase(allowed, form)) {
+          leaks.push(`${field}: carries today's question`);
+        }
+      }
+    }
+    for (let k = 0; k + EXPLANATION_WINDOW <= explanationWords.length; k += 1) {
+      const window = explanationWords
+        .slice(k, k + EXPLANATION_WINDOW)
+        .join(" ");
+      if (
+        haystack.includes(` ${window} `) &&
+        !allowed.includes(` ${window} `)
+      ) {
+        leaks.push(`${field}: carries today's explanation ("${window}")`);
+        break;
+      }
+    }
+    const todayValue =
+      answer?.item_type === "grid_in" ? answer.correct_answer : null;
+    if (
+      todayValue !== null &&
+      containsPhrase(haystack, todayValue) &&
+      !containsPhrase(allowed, todayValue)
+    ) {
+      leaks.push(`${field}: carries today's grid-in answer "${todayValue}"`);
+    }
+    if (correct) {
+      for (const form of [correct.text, plainMathText(correct.text)]) {
+        if (containsPhrase(haystack, form) && !containsPhrase(allowed, form)) {
+          leaks.push(
+            `${field}: names today's correct choice "${correct.text}"`,
+          );
+          break;
+        }
+      }
+    }
+  }
+  return [...new Set(leaks)];
 }
