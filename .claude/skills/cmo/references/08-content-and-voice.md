@@ -76,7 +76,7 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - Faceless videos for now; 2 a week. Open inside the product in the first seconds; one premise; a new beat before attention drops.
 - Student register on TikTok and Instagram; parent register on Facebook.
 - Karl applies platform AI labels at publish time; the content never mentions how it was made.
-- Delivered to Slack #social for Karl's approval; automated posting (Blotato) comes later.
+- Delivered to Slack #social for Karl's approval; posted by hand today (QOTD to Reddit and TikTok nightly). Automated posting is planned on Buffer's free plan when the schedule expands across platforms, Blotato if its limits bind; Reddit never (SCL-243).
 
 ### Landing pages and the homepage
 - Order by the Hierarchy of Skepticism for parents: who we are and is it safe, then can it help, will my kid use it, then price.
