@@ -29,6 +29,7 @@ import {
   RefreshCw,
   AlertCircle,
   Heart,
+  Send,
   Shield,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -117,16 +118,15 @@ export function TutorMessageContent({ text }: { text: string }) {
 // ---------------------------------------------------------------------------
 
 /**
- * The LISA mark. "bubble" (2026-10-22, owner brief "LISA chat dock") is the chat dock's floating
- * round button: 56px, the same mark at the size a floating chat bubble uses.
+ * The LISA mark. (The chat dock's 56px "bubble" size went with the round bubble: owner brief "LISA
+ * launcher", Karl, 2026-10-23, option D; the dock's launcher draws `LisaSparkle` instead.)
  */
-const LISA_AVATAR_SIZE: Readonly<Record<"sm" | "lg" | "bubble", string>> = {
+const LISA_AVATAR_SIZE: Readonly<Record<"sm" | "lg", string>> = {
   sm: "h-8 w-8 text-lyc-meta",
   lg: "h-12 w-12 text-lg",
-  bubble: "h-14 w-14 text-[26px]",
 };
 
-export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" | "bubble" }) {
+export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
   const dim = LISA_AVATAR_SIZE[size];
   return (
     <div
@@ -452,6 +452,8 @@ export function Composer({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const blocked = disabled || pending;
+  const iconSend = inset === "panel";
+  const sendLabel = pending ? LISA_SEND_PENDING_LABEL : "Send";
 
   // @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3] | @implemented [2026-10-03]
   // plain English: Enter sends and Shift+Enter adds a new line, through the one shared hook
@@ -489,21 +491,39 @@ export function Composer({
             aria-label="Message"
             aria-busy={pending || undefined}
           />
+          {/* Owner ruling (Karl, 2026-10-23, ruling 4 on #1300): in the panel (the chat dock and
+              the runner's phone panel) Send is an OUTLINE icon button, a paper plane named
+              "Send", so the page under it keeps its one filled button (Submit / Next in the
+              runner, Home's own primary); /chat keeps its filled, labelled Send. Pending reads
+              the same in both: disabled, aria-busy, full strength, and the label says
+              "Sending…" (visually hidden in the icon button, whose name stays "Send"). */}
           <Button
             type="submit"
-            variant="lyc-primary"
-            size="lyc"
+            variant={iconSend ? "lyc-outline" : "lyc-primary"}
+            size={iconSend ? "lyc-icon" : "lyc"}
             disabled={blocked}
-            className={`h-[50px] min-w-[118px] shrink-0 px-[22px] text-[17px] ${
+            className={`h-[50px] shrink-0 ${
+              iconSend
+                ? "w-[50px] text-lyc-body"
+                : "min-w-[118px] px-[22px] text-[17px]"
+            } ${
               pending
                 ? "disabled:cursor-progress disabled:opacity-100"
                 : "disabled:cursor-not-allowed disabled:opacity-45"
             }`}
-            aria-label="Send message"
+            aria-label={iconSend ? "Send" : "Send message"}
             aria-busy={pending || undefined}
             data-pending={pending ? "true" : undefined}
+            data-testid={iconSend ? "composer-send-icon" : undefined}
           >
-            {pending ? LISA_SEND_PENDING_LABEL : "Send"}
+            {iconSend ? (
+              <>
+                <Send aria-hidden="true" className="h-5 w-5" />
+                <span className="sr-only">{sendLabel}</span>
+              </>
+            ) : (
+              sendLabel
+            )}
           </Button>
         </div>
         <p className="m-0 text-lyc-meta text-lyc-muted">{LISA_DISCLAIMER}</p>

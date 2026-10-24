@@ -46,6 +46,37 @@ const REVIEW: FreshSession = {
   mcqFirst: true,
 };
 
+/** #1300 follow-ups: a practice session (ruling 2: the dock after submit). */
+const PRACTICE: FreshSession = {
+  engine: "practice",
+  body: { sections: ["RW"], target_question_count: 5 },
+  mcqFirst: true,
+};
+/** #1300 follow-ups: Math review (the calculator; ruling 5). */
+const REVIEW_MATH: FreshSession = {
+  engine: "review",
+  body: { mode: "filter", filters: { sections: ["M"] }, target_count: 10 },
+};
+/** The split breakpoint (calculator-layout.ts SPLIT_BREAKPOINT): Desmos beside the question. */
+const W1062 = {
+  name: "w1062",
+  width: 1062,
+  height: 800,
+  selectors: "desktop",
+} as const;
+const SUBMIT: Step = {
+  click: {
+    desktop: '[data-testid="runner-submit"]',
+    mobile: '[data-testid="runner-submit"]',
+  },
+};
+const CALC: Step = {
+  click: {
+    desktop: '[data-testid="practice-calculator-toggle"]',
+    mobile: '[data-testid="practice-calculator-toggle"]',
+  },
+};
+
 const NO_PROTOTYPE =
   'No prototype draws the chat dock: it is the owner brief of 2026-10-22 ("LISA chat dock", floating bubble, no bar); DESIGN.md §3 and §4 describe it.';
 
@@ -167,6 +198,64 @@ export const LISA_DOCK: PageGroup = {
       themes: ["light"],
       expectGone: BUBBLE,
       extraViewports: [W1024],
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+  ],
+};
+
+/**
+ * LISA-DOCK-2 (owner rulings on #1300, Karl, 2026-10-23): the practice runner's dock after submit
+ * (ruling 2), Send as the outline icon button (ruling 4) and the calculator kept clear of the bubble
+ * at 1024, 1062 and 1440 (ruling 5). Its own group (its own fresh harness run): one run of both
+ * groups' shots passes the harness's 1000-requests-per-15-minutes limiter.
+ */
+export const LISA_DOCK_2: PageGroup = {
+  id: "LISA-DOCK-2",
+  title:
+    "LISA chat dock, follow-ups: the practice runner before and after submit (the dock only after), Send as the outline icon, the calculator clear of the bubble; light and dark, 1440, 1062, 1024 and 390",
+  seed: "lisa-dock",
+  shots: [
+    {
+      id: "practice-before-submit",
+      title:
+        "Practice runner (paid), before submitting: no bubble (owner ruling 2 on #1300: the dock comes only after submit)",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "first" }],
+      expectGone: BUBBLE,
+      extraViewports: [W1024],
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    {
+      id: "practice-after-submit-open",
+      title:
+        "Practice runner (paid), after submitting: the bubble appears above the footer; opened, the dock is scoped to the answered question, with Send as the outline paper-plane icon button (rulings 2 and 4 on #1300). Phone: unchanged, no LISA in practice",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "first" }, SUBMIT, OPEN_DOCK],
+      extraViewports: [W1024],
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    {
+      id: "runner-calculator",
+      title:
+        "Math review runner with the calculator open (ruling 5 on #1300): beside the question (1062, 1440) Desmos keeps the bubble's footprint clear at its bottom; stacked (1024) the column already clears it",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW_MATH,
+      localStorage: CLIENT,
+      waitFor: {
+        desktop: '[data-testid="runner-submit"]',
+        mobile: '[data-testid="runner-submit"]',
+      },
+      steps: [CALC],
+      extraViewports: [W1024, W1062],
       prototype: { kind: "none", reason: NO_PROTOTYPE },
     },
   ],

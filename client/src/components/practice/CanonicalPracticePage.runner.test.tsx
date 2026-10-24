@@ -83,14 +83,22 @@ const dockProps = vi.hoisted(() => ({
 vi.mock("@/components/tutor/ChatDock", async () => {
   const React = await import("react");
   return {
-    DOCK_CLEARANCE_PX: 80,
-    ChatDock: (props: Record<string, unknown>) => {
+    // The real constants and helpers; only the component is stubbed.
+    ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
+      "@/components/tutor/ChatDock",
+    )),
+    // A forwardRef stub, as the real dock is (the runner holds its handle for "Still confused?
+    // Ask LISA"); the handle is not exercised here.
+    ChatDock: React.forwardRef(function ChatDockStub(
+      props: Record<string, unknown>,
+      _ref: React.ForwardedRef<unknown>,
+    ) {
       dockProps.last = props;
       React.useEffect(() => {
         dockProps.mounts += 1;
       }, []);
       return <div data-testid="chat-dock-mock" />;
-    },
+    }),
   };
 });
 
@@ -792,20 +800,63 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(screen.getByText(/Question 1: if 2x \+ 3 = 11/)).toBeTruthy();
     expect(dockProps.last).not.toBeNull();
     const props = dockProps.last!;
-    expect(Object.keys(props)).toEqual(["scope"]);
+    // The scope, and (owner brief 2026-10-23) the column it anchors to: the runner's question
+    // area, a DOM ref the dock measures for geometry only.
+    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
+    expect((props.anchor as { current: unknown }).current).toBe(
+      screen.getByTestId("runner-scroll"),
+    );
     expect(props.scope).toEqual({
       kind: "question",
       sourceSurface: "review",
       sessionItemId: "item-1",
       questionLabel: "Question 1 of 3",
+      submitted: false,
     });
-    const serialised = JSON.stringify(props);
+    const serialised = JSON.stringify(props.scope);
     for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
       expect(serialised).not.toContain(leak);
     }
     // The dock replaces the panel: no side panel and no bar toggle.
     expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+  });
+
+  // Owner ruling 2 on #1300 (Karl, 2026-10-23): practice gets the dock POST-SUBMIT only.
+  it("practice (from 768px): no dock before submit; after submit the dock gets the answered item and its label, never the choices; Next takes it away", async () => {
+    mockWidth(1440);
+    installNetwork({ total: 3 });
+    mountRunner({ engine: PRACTICE_ENGINE_CONFIG });
+    await loaded();
+    // Presence before absence: the question is served and unanswered, and no dock is drawn.
+    expect(submitButton()).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
+    expect(dockProps.last).toBeNull();
+
+    await click(choice(CORRECT_TEXT));
+    await click(submitButton());
+    await screen.findByRole("button", { name: "Next question" });
+    // Post-submit: the explanation is on the page, and the dock is handed only the scope.
+    expect(screen.getByText(EXPLANATION)).toBeTruthy();
+    expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
+    const props = dockProps.last!;
+    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
+    expect(props.scope).toEqual({
+      kind: "question",
+      sourceSurface: "practice",
+      sessionItemId: "item-1",
+      questionLabel: "Question 1 of 3",
+      submitted: true,
+    });
+    const serialised = JSON.stringify(props.scope);
+    for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
+      expect(serialised).not.toContain(leak);
+    }
+
+    await click(screen.getByRole("button", { name: "Next question" }));
+    await loaded(2);
+    expect(submitButton()).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
   });
 
   it("the dock follows Next to the second question without remounting (one dock per runner visit)", async () => {
