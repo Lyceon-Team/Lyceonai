@@ -14,11 +14,14 @@
  *
  * plain English: the main column is the welcome, the diagnostic card — "Find your blind spots"
  * (only while the student has no baseline: a ruler of their own progress and the start button)
- * — the Practice and Review buttons, and "How Lyceon works" (three steps tagged Free or Paid
- * plans). Final brief v2 (Karl, 2026-10-13): while the Getting started checklist is active it
+ * — "How Lyceon works" (three steps tagged Free or Paid plans), and, last, the three equal entry
+ * points. Final brief v2 (Karl, 2026-10-13): while the Getting started checklist is active it
  * sits above today's question, replaces "How Lyceon works" and owns the one primary (the blind
- * spots button is outlined until it is dismissed); Practice and Review are outlined buttons; the
- * locked full-length card (owner ruling 2026-10-05) is removed from Home. The
+ * spots button is outlined until it is dismissed). Owner ruling (Karl, 2026-10-15, on #1233):
+ * Practice, Review and Full-Length are three equal text-link rows at the bottom of the column
+ * (HomeEntryPoints.tsx; Full-Length locked opens the upgrade modal); they replace the brief's
+ * Practice and Review outline buttons and its removal of the full-length card. The review
+ * pool's total (GET /api/review/pool, ungated) is read for the Review row's count. The
  * right panel is the projected score (or why there is none yet), the locked mastery card
  * ("See what's included" opens the upgrade modal for `mastery_detail`) and today's quota.
  *
@@ -39,6 +42,7 @@
  */
 import { useState } from "react";
 import type { FeatureLockReason } from "@lyceon/shared/feature-access";
+import { LIVE_PROJECTION_FEATURE_KEY } from "@lyceon/shared/diagnostic-projection";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
@@ -46,13 +50,16 @@ import { Notice, PageHeader } from "@/components/student-ui";
 import { useActiveSessions } from "@/hooks/useActiveSessions";
 import { useHomeProjection } from "@/hooks/useHomeProjection";
 import { usePracticeQuota } from "@/hooks/usePracticeQuota";
+import { useReviewPool } from "@/hooks/useReview";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
+import { homeQotdFirstLoad, useHomeQotd } from "@/hooks/useHomeQotd";
 import { HomeLoading } from "./HomeLoading";
 import { ProjectionSection, QuotaSection } from "./HomePanel";
 import { DiagnosticCard } from "./DiagnosticCard";
 import { GettingStartedCard } from "./GettingStartedCard";
-import { HomePracticeReview } from "./HomePracticeReview";
+import { HomeReviewAsk } from "./HomeReviewAsk";
+import { HomeEntryPoints } from "./HomeEntryPoints";
 import { useGettingStarted } from "@/hooks/useGettingStarted";
 import { BLIND_SPOTS_NAME } from "@/lib/blind-spots-copy";
 import {
@@ -122,14 +129,18 @@ export function FreeHome({
   // The streak chip zooms once when this visit's QOTD answer extended the streak.
   const [celebrate, setCelebrate] = useState(false);
   const projection = useHomeProjection(studentId);
+  const qotd = useHomeQotd();
   const practice = useActiveSessions();
   const quota = usePracticeQuota();
+  // Ruling 2026-10-15 (#1233): the Review row's count, the review pool's own total.
+  const pool = useReviewPool();
   const gettingStarted = useGettingStarted();
   const stage = freeHomeStage(projection.estimateStatus);
 
   const trimmed = name?.trim() ?? "";
 
-  const failed = projection.isError || practice.isError || quota.isError;
+  const failed =
+    projection.isError || practice.isError || quota.isError || pool.isError;
   // QA2-F (Karl, 2026-10-08: "Full-Length cards: no layout shift on load"): the stage (the
   // diagnostic card above "How Lyceon works") and the panel come from these reads, so the page
   // is drawn once they have answered or failed (HomeLoading.tsx).
@@ -137,7 +148,10 @@ export function FreeHome({
     !projection.isLoading &&
     !practice.isLoading &&
     !quota.isLoading &&
-    !gettingStarted.isLoading;
+    !pool.isLoading &&
+    !gettingStarted.isLoading &&
+    // First-run activation brief (Karl, 2026-10-13) P1: the QOTD card lands with the page.
+    !homeQotdFirstLoad(qotd);
   if (!settled) return <HomeLoading />;
   // Final brief v2 §4: while the Getting started checklist is active it sits above today's
   // question and replaces "How Lyceon works"; after dismissal the 2026-10-08/09 order returns.
@@ -177,6 +191,10 @@ export function FreeHome({
           (below the Getting started checklist while it is active, final brief v2 §4). */}
       <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
 
+      {/* Review ask (Karl's decision 7, 2026-10-20): below the checklist and today's question;
+          never while the checklist has an open step. A bottom sheet on a phone. */}
+      <HomeReviewAsk checklist={checklist} />
+
       {failed ? (
         <Notice
           title="We couldn’t load part of your dashboard."
@@ -186,6 +204,7 @@ export function FreeHome({
             projection.refetch();
             void practice.refetch();
             void quota.refetch();
+            pool.refetch();
           }}
           data-testid="home-load-error"
         />
@@ -194,8 +213,6 @@ export function FreeHome({
       {stage === "diagnostic" ? (
         <DiagnosticCard practice={practice} primary={checklist === null} />
       ) : null}
-
-      <HomePracticeReview />
 
       {checklist === null ? (
         <section
@@ -239,8 +256,11 @@ export function FreeHome({
         </section>
       ) : null}
 
-      {/* Final brief v2 §4 (Karl, 2026-10-13): the full-length card is gone from Home; full-length
-          tests stay on their own page and in the calendar. */}
+      {/* Owner ruling (Karl, 2026-10-15, on #1233): three equal entry points, Practice, Review
+          and Full-Length, at the bottom of the main column at every width (Home's only way to
+          Full-Length on a phone). Supersedes final brief v2 §4's removal of the full-length
+          card and its Practice and Review outline buttons. */}
+      <HomeEntryPoints reviewWaiting={pool.pool?.total ?? null} />
 
       <AppShellPanel>
         <div className="flex flex-col gap-10" data-testid="home-panel">
@@ -248,6 +268,11 @@ export function FreeHome({
             range={projection.range}
             stage={stage}
             targetScore={null}
+            kind={projection.kind ?? "diagnostic"}
+            diagnosticInsufficient={projection.diagnosticInsufficient}
+            onUpgrade={() =>
+              upgrade.open(LIVE_PROJECTION_FEATURE_KEY, masteryLock)
+            }
           />
           <LockedMasteryCard
             onSeeWhatsIncluded={() =>

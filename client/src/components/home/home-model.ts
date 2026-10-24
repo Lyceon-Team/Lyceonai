@@ -235,6 +235,34 @@ export function answeredLine(answered: number, total: number): string {
   return `${answered} of ${total} answered`;
 }
 
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: '"Resume diagnostic ·
+ *       question N of 40" when one is open'; final brief v2 §7 (Karl, 2026-10-13): in-app
+ *       "Diagnostic" becomes "Find your blind spots"] | @implemented [2026-10-13; reconciled
+ *       with the rename 2026-10-15]
+ * plain English: with no diagnostic in progress the action starts one (the shared
+ * BLIND_SPOTS_NAME, "Find your blind spots"); with one in progress it says "Resume · question N
+ * of 40" (the card's title already names it, and the rename keeps "diagnostic" out of the
+ * student's words), which is where the student will land: the question after every resolved one
+ * (`answered_items` counts answers and skips, F-88, which is exactly where resume serves), of the
+ * diagnostic's length (the session's own target, else the server's configured length). Never past
+ * the last question.
+ */
+export function diagnosticActionLabel(
+  inProgress: { answered_items: number; target_question_count: number } | null,
+  configuredTotal: number | null,
+): string {
+  if (inProgress === null) return BLIND_SPOTS_NAME;
+  const total =
+    inProgress.target_question_count > 0
+      ? inProgress.target_question_count
+      : configuredTotal;
+  // No length known (the config read failed): no invented number.
+  if (total === null || total <= 0) return "Resume";
+  const next = Math.min(inProgress.answered_items + 1, total);
+  return `Resume · question ${next} of ${total}`;
+}
+
 /** "3 to review" — the student's own queue (register §2 allows these counts). */
 export function toReviewLine(openCount: number): string {
   return `${openCount} to review`;
@@ -321,8 +349,9 @@ export function rangeText(range: { low: number; high: number }): string {
  *   - baseline_pending is decided FIRST: the student finished the diagnostic and the numbers are
  *     not ready, so nothing may offer to start another (owner ruling Q2, 2026-08-17).
  *   - no_baseline: the diagnostic card, with "Start diagnostic" as the primary.
- *   - computed / baseline_only: the diagnostic is done; the free layout stays and "Go to
- *     practice" is the primary (OQ-39(c)).
+ *   - computed / baseline_only / insufficient_evidence: the diagnostic is done; the free layout
+ *     stays and "Go to practice" is the primary (OQ-39(c)). insufficient_evidence (SCL-236, owner
+ *     ruling D1 (a)) is a finished diagnostic with no number, so it is never offered again.
  *   - unknown (still loading, or the read failed): neither, so nothing is offered on a guess.
  */
 export type FreeHomeStage = "diagnostic" | "pending" | "after" | "unknown";

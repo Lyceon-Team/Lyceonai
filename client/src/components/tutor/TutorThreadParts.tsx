@@ -34,6 +34,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MathRenderer } from "@/components/MathRenderer";
+import { VideoRecommendationCard } from "./VideoRecommendationCard";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import {
   buildLisaComposerKeymap,
@@ -116,8 +117,18 @@ export function TutorMessageContent({ text }: { text: string }) {
 // LISA Avatar
 // ---------------------------------------------------------------------------
 
-export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
-  const dim = size === "lg" ? "h-12 w-12 text-lg" : "h-8 w-8 text-lyc-meta";
+/**
+ * The LISA mark. "bubble" (2026-10-22, owner brief "LISA chat dock") is the chat dock's floating
+ * round button: 56px, the same mark at the size a floating chat bubble uses.
+ */
+const LISA_AVATAR_SIZE: Readonly<Record<"sm" | "lg" | "bubble", string>> = {
+  sm: "h-8 w-8 text-lyc-meta",
+  lg: "h-12 w-12 text-lg",
+  bubble: "h-14 w-14 text-[26px]",
+};
+
+export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" | "bubble" }) {
+  const dim = LISA_AVATAR_SIZE[size];
   return (
     <div
       aria-hidden="true"
@@ -376,6 +387,22 @@ export const LISA_DISCLAIMER =
   "LISA can make mistakes; your practice results are the source of truth.";
 
 /**
+ * Prototype Lisa.dc.html composer placeholder, for a conversation that is not about one question
+ * (/chat, and the chat dock in general mode). Moved here from `pages/chat.tsx` on 2026-10-22 so
+ * the dock and the page share one string (owner brief "LISA chat dock").
+ */
+export const LISA_COMPOSER_PLACEHOLDER = "Ask LISA about a question or a skill";
+
+/**
+ * QA 2026-10-07 item 15: the short prompt an empty general LISA column shows (/chat, and the chat
+ * dock in general mode). A presentation line, not a message: never sent, never stored, gone once
+ * a message is on screen. Moved here from `pages/chat.tsx` on 2026-10-22 (one string for both).
+ * PROPOSED WORDING: new in-app copy, awaiting Karl's approval (QA 2026-10-07 report).
+ */
+export const LISA_EMPTY_PROMPT =
+  "Ask LISA about a question you missed or a skill you're working on.";
+
+/**
  * Where a thread's bottom bar (composer, paused bar) sits. "page": the /chat column, 16px sides
  * and 40px from `lg` (Lisa.dc.html). "panel": the review runner's 360px LISA panel (UI-53,
  * OQ-54 (a), ruling 2026-10-05), 16px sides at every width, so the textarea keeps its room.
@@ -515,15 +542,24 @@ export function useScrollToBottomOnChange(
 export const PRACTICE_HANDOFF_HREF = "/practice";
 
 /**
- * Renders the action LISA offered on its last turn. Only `start_practice` has
- * a surface today: LISA never writes a question — it hands off to practice,
- * which owns selection, serving, anti-leak, grading and mastery.
+ * Renders the action LISA offered on its last turn. `start_practice`: LISA never writes a
+ * question — it hands off to practice, which owns selection, serving, anti-leak, grading and
+ * mastery. `recommend_video` (2026-10-15): a video from Lyceon's reviewed library, attached by
+ * the server, shown as a card.
  */
 export function SuggestedActionLink({
   action,
 }: {
   action: TutorSuggestedAction | null;
 }) {
+  // Video library (CC brief 2026-10-15 §8): the server-attached video, as a card.
+  if (action?.type === "recommend_video") {
+    return (
+      <div className="flex justify-start">
+        <VideoRecommendationCard video={action.video} label={action.label} />
+      </div>
+    );
+  }
   if (action?.type !== "start_practice") return null;
   return (
     <div className="flex justify-start">

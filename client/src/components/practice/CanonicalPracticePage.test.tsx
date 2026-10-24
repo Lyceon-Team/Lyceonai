@@ -25,11 +25,13 @@ import {
 import CanonicalPracticePage from "./CanonicalPracticePage";
 
 /**
- * W4-4 review layout widths, asserted as literals: the page keeps them private. 1446 =
- * question 500 + divider + calculator 496 + gap 24 + LISA 360 + padding (see the boundary test).
+ * 2026-10-22 (owner brief "LISA chat dock"): the dock's widths, asserted as literals. 768 = the
+ * phone line (PHONE_WIDTH_QUERY); 888 = the width from which the 760px column clears the bubble
+ * (760 + 2 × (80 − 16)); 80 = the bubble's clearance (16 + 56 + 8).
  */
-const THREE_PANEL_BREAKPOINT = 1446;
-const TUTOR_PANEL_PX = 360;
+const DOCK_FROM_PX = 768;
+const DOCK_COLUMN_CLEAR_PX = 888;
+const DOCK_CLEARANCE_PX = 80;
 
 /* ── MockResizeObserver: no-op stub (DesmosCalculator uses ResizeObserver) ── */
 class MockResizeObserver {
@@ -121,6 +123,37 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
     </div>
   ),
 }));
+
+// 2026-10-22: the dock's own behaviour (lock, open, Esc, scope on the wire, the shared thread)
+// is proven in ChatDock.contract.test.tsx; here only what the runner hands it.
+const dockMounts = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@/components/tutor/ChatDock", async () => {
+  const React = await import("react");
+  return {
+    DOCK_CLEARANCE_PX: 80,
+    ChatDock: (p: {
+      scope: {
+        kind: string;
+        sourceSurface?: string;
+        sessionItemId?: string | null;
+        questionLabel?: string;
+      };
+    }) => {
+      React.useEffect(() => {
+        dockMounts.count += 1;
+      }, []);
+      return (
+        <div
+          data-testid="chat-dock-mock"
+          data-kind={p.scope.kind}
+          data-surface={p.scope.sourceSurface}
+          data-item={p.scope.sessionItemId ?? "none"}
+          data-label={p.scope.questionLabel}
+        />
+      );
+    },
+  };
+});
 
 vi.mock("@/components/math/DesmosCalculator", () => ({
   default: ({
@@ -1088,12 +1121,16 @@ describe("CanonicalPracticePage grid-in rendering", () => {
   });
 });
 
-/** matchMedia that answers `(min-width: Npx)` truthfully for a viewport width. */
+/**
+ * matchMedia that answers `(min-width: Npx)` truthfully for a viewport width, and its
+ * `not all and (...)` negation (the phone queries in hooks/use-mobile.tsx).
+ */
 function mockViewport(width: number): void {
   window.matchMedia = vi.fn((query: string) => {
     const m = /min-width:\s*(\d+)px/.exec(query);
+    const atLeast = m ? width >= Number(m[1]) : false;
     return {
-      matches: m ? width >= Number(m[1]) : false,
+      matches: query.startsWith("not all and") ? !atLeast : atLeast,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     };
@@ -1118,91 +1155,98 @@ function renderReview(overrides: Record<string, unknown> = {}) {
   );
 }
 
-describe("W4-4 — LISA always open in review, three panels", () => {
+describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the runner's panel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    dockMounts.count = 0;
   });
 
-  it("LISA is open on load with no interaction, on the served item, naming the question", () => {
+  for (const width of [DOCK_FROM_PX, 1024, 1440]) {
+    it(`${width}px: no side panel and no Show/Hide LISA; the dock, scoped to the served item and named by "Question N of M"`, () => {
+      mockViewport(width);
+      renderReview();
+      const dock = screen.getByTestId("chat-dock-mock");
+      expect(dock.getAttribute("data-kind")).toBe("question");
+      expect(dock.getAttribute("data-surface")).toBe("review");
+      expect(dock.getAttribute("data-item")).toBe("rev-item-7");
+      expect(dock.getAttribute("data-label")).toBe("Question 3 of 10");
+      expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+      expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+      expect(screen.queryByTestId("review-tutor-layout")).toBeNull();
+      // The question is still the page's (presence before absence).
+      expect(screen.getByText("What is 1 + 1?")).toBeTruthy();
+    });
+  }
+
+  it("the dock follows the next question without remounting (its state lasts the visit)", () => {
+    mockViewport(1440);
+    const view = renderReview();
+    expect(dockMounts.count).toBe(1);
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        sessionItemId: "rev-item-8",
+        currentIndex: 3,
+        totalQuestions: 10,
+      }),
+    );
+    view.rerender(
+      <CanonicalPracticePage
+        title="Review"
+        section="M"
+        engine={REVIEW_ENGINE_CONFIG}
+      />,
+    );
+    const dock = screen.getByTestId("chat-dock-mock");
+    expect(dock.getAttribute("data-item")).toBe("rev-item-8");
+    expect(dock.getAttribute("data-label")).toBe("Question 4 of 10");
+    expect(dockMounts.count).toBe(1);
+  });
+
+  it("between questions (no served item) the dock stays mounted, scoped to no item", () => {
+    mockViewport(1440);
+    renderReview({ sessionItemId: null });
+    expect(screen.getByTestId("chat-dock-mock").getAttribute("data-item")).toBe(
+      "none",
+    );
+    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
+  });
+
+  it(`below ${DOCK_COLUMN_CLEAR_PX}px the scroll area keeps the bubble's ${DOCK_CLEARANCE_PX}px clear on its right; from ${DOCK_COLUMN_CLEAR_PX}px the column clears it on its own`, () => {
+    mockViewport(DOCK_FROM_PX);
+    const narrow = renderReview();
+    expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe(
+      `${DOCK_CLEARANCE_PX}px`,
+    );
+    narrow.unmount();
+    mockViewport(DOCK_COLUMN_CLEAR_PX - 1);
+    const below = renderReview();
+    expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe(
+      `${DOCK_CLEARANCE_PX}px`,
+    );
+    below.unmount();
+    mockViewport(DOCK_COLUMN_CLEAR_PX);
+    renderReview();
+    expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
+  });
+
+  it("review with the calculator from the split breakpoint: the standard side-by-side calculator, no LISA column", () => {
     mockViewport(1600);
     renderReview();
-    const panel = screen.getByTestId("scoped-tutor-panel-mock");
-    expect(panel.getAttribute("data-surface")).toBe("review");
-    expect(panel.getAttribute("data-item")).toBe("rev-item-7");
-    expect(panel.getAttribute("data-label")).toBe("Question 3 of 10");
-    expect(screen.getByTestId("practice-tutor-toggle").textContent).toContain(
-      "Hide LISA",
-    );
-  });
-
-  it(`≥ ${THREE_PANEL_BREAKPOINT}px: question, calculator and LISA render together — Desmos opens beside LISA, not over it`, () => {
-    mockViewport(THREE_PANEL_BREAKPOINT);
-    renderReview();
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
-
     const calcPanel = screen.getByTestId("practice-calc-panel");
     expect(within(calcPanel).getByTestId("desmos-mock").textContent).toBe(
       "expanded",
     );
-    // Question in the left panel of the same group as the calculator.
-    const group = screen.getByTestId("practice-panel-group-container");
-    expect(within(group).getByText("What is 1 + 1?")).toBeTruthy();
-    // LISA present and NOT covered.
-    const aside = screen.getByTestId("practice-tutor-aside");
-    expect(within(aside).getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
-    expect(aside.className).not.toContain("invisible");
-    expect(aside.getAttribute("aria-hidden")).toBeNull();
-    expect(screen.queryByTestId("review-calc-over-tutor")).toBeNull();
-    // The calculator keeps its pixel floor; LISA keeps its column.
     expect(calcPanel.style.minWidth).toBe(`${CALC_MIN_PX}px`);
-    expect(screen.getByTestId("review-tutor-column").style.width).toBe(
-      `${TUTOR_PANEL_PX}px`,
-    );
+    expect(screen.queryByTestId("review-tutor-column")).toBeNull();
+    expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
   });
 
-  it("the three-panel breakpoint is exactly 1446px: at 1445 the calculator covers LISA, at 1446 it sits beside her", () => {
-    mockViewport(THREE_PANEL_BREAKPOINT - 1);
-    const below = renderReview();
-    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
-    expect(screen.getByTestId("review-calc-over-tutor")).toBeTruthy();
-    below.unmount();
-
-    mockViewport(THREE_PANEL_BREAKPOINT);
-    renderReview();
-    fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
-    expect(screen.queryByTestId("review-calc-over-tutor")).toBeNull();
-    expect(screen.getByTestId("review-tutor-column").style.width).toBe("360px");
-  });
-
-  it("1024–1445px: opening the calculator expands Desmos over LISA's column; LISA stays mounted underneath and returns when it closes", () => {
-    mockViewport(1280);
-    renderReview();
-    const toggle = screen.getByTestId("practice-calculator-toggle");
-    fireEvent.click(toggle);
-
-    const over = screen.getByTestId("review-calc-over-tutor");
-    expect(within(over).getByTestId("desmos-mock").textContent).toBe(
-      "expanded",
-    );
-    expect(screen.getByTestId("review-tutor-column").style.width).toBe(
-      `${CALC_MIN_PX}px`,
-    );
-    const aside = screen.getByTestId("practice-tutor-aside");
-    expect(aside.className).toContain("invisible");
-    // Covered, not closed: the panel (and its thread state) is still mounted.
-    expect(within(aside).getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
-
-    fireEvent.click(toggle);
-    expect(screen.queryByTestId("review-calc-over-tutor")).toBeNull();
-    expect(screen.getByTestId("practice-tutor-aside").className).not.toContain(
-      "invisible",
-    );
-  });
-
-  it("below 1024px: one column — question, then LISA, then the calculator", () => {
+  it(`phones (below ${DOCK_FROM_PX}px) are unchanged: no dock; Show LISA stacks question, then LISA, then the calculator`, () => {
     mockViewport(390);
     renderReview();
-    // QA2-D: below 1024 LISA starts closed; the student opens it from the bar.
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
+    // QA2-D: LISA starts closed; the student opens it from the bar.
     expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     fireEvent.click(screen.getByTestId("practice-calculator-toggle"));
@@ -1222,10 +1266,10 @@ describe("W4-4 — LISA always open in review, three panels", () => {
     );
   });
 
-  it("Hide LISA hides it for this question; it returns on the next", () => {
-    mockViewport(1600);
-    const view = renderReview();
-    // The panel's own control (the header toggle carries the same name).
+  it("phones: the panel's Hide LISA closes it, and the bar brings it back", () => {
+    mockViewport(390);
+    renderReview();
+    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     fireEvent.click(
       within(screen.getByTestId("scoped-tutor-panel-mock")).getByRole(
         "button",
@@ -1233,46 +1277,11 @@ describe("W4-4 — LISA always open in review, three panels", () => {
       ),
     );
     expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
-    expect(screen.getByTestId("practice-tutor-toggle").textContent).toContain(
-      "Show LISA",
-    );
-
-    // Next question.
-    hookMock.useCanonicalPractice.mockReturnValue(
-      buildHookState("M", {
-        sessionItemId: "rev-item-8",
-        currentIndex: 3,
-        totalQuestions: 10,
-      }),
-    );
-    view.rerender(
-      <CanonicalPracticePage
-        title="Review"
-        section="M"
-        engine={REVIEW_ENGINE_CONFIG}
-      />,
-    );
-    const panel = screen.getByTestId("scoped-tutor-panel-mock");
-    expect(panel.getAttribute("data-item")).toBe("rev-item-8");
-  });
-
-  it("the header toggle can bring LISA back on the same question", () => {
-    mockViewport(1600);
-    renderReview();
-    fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
-    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
   });
 
-  it("review with no served item: no LISA and no toggle", () => {
-    mockViewport(1600);
-    renderReview({ sessionItemId: null });
-    expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
-    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
-  });
-
-  it("practice is untouched: no LISA, no entry point, its own layout", () => {
+  it("practice is untouched: no LISA, no dock, no entry point, its own layout", () => {
     mockViewport(1600);
     hookMock.useCanonicalPractice.mockReturnValue(
       buildHookState("M", { sessionItemId: "prac-item-1" }),
@@ -1284,6 +1293,7 @@ describe("W4-4 — LISA always open in review, three panels", () => {
         engine={PRACTICE_ENGINE_CONFIG}
       />,
     );
+    expect(screen.queryByTestId("chat-dock-mock")).toBeNull();
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
     expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     expect(screen.queryByTestId("review-tutor-layout")).toBeNull();

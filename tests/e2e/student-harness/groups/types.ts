@@ -75,6 +75,14 @@ export type FreshSession = {
   mcqFirst?: boolean;
   /** QA 2026-10-07: the reverse of `mcqFirst`, for a grid-in shot (retries until one leads). */
   gridInFirst?: true;
+  /**
+   * First-run activation brief (2026-10-13) P0 item 3: play the session to its end through the
+   * REAL routes before the page loads (one `/next`, then an answer or a skip, per entry; then the
+   * closing `/next`), so the page opens on a completed session (its summary). "correct" and
+   * "incorrect" are resolved from the served item in the harness database (its option token map
+   * and keyed answer); the client never knows which is which.
+   */
+  playThrough?: readonly ("correct" | "incorrect" | "skip")[];
 };
 
 export type PrototypePairing =
@@ -120,9 +128,11 @@ export type Shot = {
    */
   freshCalendarProfile?: true;
   /**
-   * SEO Wave 2, plan Q6: the persona's review-prompt state and review are deleted from the harness
-   * database before every capture, so the real cadence answers "show" in each viewport and theme
-   * (a showing is recorded, and would otherwise hold the prompt back for 120 days).
+   * SEO Wave 2, plan Q6, and the review ask (2026-10-20): the persona's review-prompt state and
+   * review are deleted from the harness database before every capture, and the persona is made to
+   * meet the usage trigger there (8 days old, 3 completed sessions, checklist dismissed), so the
+   * real trigger and cadence answer "show" in each viewport and theme (an ask is recorded, and
+   * would otherwise hold the next one back for 30 days).
    */
   freshReviewPrompt?: true;
   /**
@@ -131,8 +141,25 @@ export type Shot = {
    * persona's QOTD answer for today, its one-item practice session and its daily-email prompt
    * state are deleted, so each viewport and theme starts unanswered. `priorAsks` seeds that many
    * earlier prompt asks (on earlier days), e.g. 2 so the next answer is the 3rd ask.
+   * `answeredEarlier` (owner ruling, Karl, 2026-10-15, on #1233, item 2) then answers today's
+   * question through the REAL routes (GET /api/qotd/today, POST /api/qotd/answer) before the page
+   * loads, and reports nothing shown: the student who left before Done, now on the next visit.
    */
-  freshQotd?: { priorAsks?: number };
+  freshQotd?: { priorAsks?: number; answeredEarlier?: true };
+  /**
+   * Owner ruling (Karl, 2026-10-15, on #1233, item 3): the free student's practice answered in
+   * the last day is moved a day back in the harness database before every capture, so the free
+   * daily quota is unused and a `playThrough` session can run in each viewport and theme.
+   */
+  freshQuota?: true;
+  /**
+   * SCL-235 / SCL-236 (owner rulings 2026-10-16/17): the persona has COMPLETED the diagnostic
+   * before the capture — started and answered through the real routes
+   * (POST /api/practice/diagnostic/sessions, /next, /answer), so its stored diagnostic projection
+   * is written by the real completion path. Idempotent: a persona who already completed it
+   * (409 diagnostic_already_completed) is left as is. Listed in the index next to the shot.
+   */
+  completedDiagnostic?: true;
   /**
    * The visitor already answered the cookie banner (analytics rejected), so the banner does not
    * cover the page's controls. Written as the real consent cookie, in the current banner version,
@@ -179,13 +206,22 @@ export type Shot = {
    */
   expectInViewport?: string;
   /**
-   * QA2-A (owner re-test, 2026-10-08): the persona is at the concurrent review-session cap before
-   * every capture. capture.ts opens review sessions through the REAL create route
-   * (`POST /api/review/sessions`, queue mode) until the server itself refuses one with
-   * `SESSION_LIMIT_EXCEEDED`, and ends the ones it opened through the real terminate route after
-   * the screenshot. The refusal the page then meets is the server's own, not a stub.
+   * F-72 (owner brief 2026-10-21, Part E): the visitor has NOT answered the cookie banner (no
+   * consent cookie is set), so the banner is on screen. Every other shot answers it first.
    */
-  reviewCap?: true;
+  cookieBannerShown?: true;
+  /**
+   * Owner rulings on #1277 (Karl, 2026-10-21), ruling 4: the banner is answered with analytics
+   * ACCEPTED instead of refused, so the homepage hero experiment shows a variant stored in
+   * `localStorage` (Variant B is only ever shown to a visitor with valid analytics consent).
+   */
+  analyticsConsentAccepted?: true;
+  /**
+   * F-72: after `steps`, per viewport, the first elements matching `a` and `b` must both be on
+   * screen and their boxes must not intersect (the cookie banner and the phone tab bar, which
+   * exists below `lg` only). `null` checks nothing at that viewport. The capture fails otherwise.
+   */
+  expectNoOverlap?: Record<Viewport, { a: string; b: string } | null>;
   /**
    * UI-56: a request the browser holds unanswered for the whole capture and then aborts, so an
    * in-flight state can be shot (LISA's typing indicator while `POST /api/tutor/messages`
@@ -276,6 +312,8 @@ export type PageGroup = {
    * "quota-config" (W6 UI-64, OQ-68 (d)): `daily_quota_free` 37 and the diagnostic 6 × 8 = 48 in
    * the harness database after the base seed (db.ts `applyQuotaConfig`), so the copy's numbers
    * visibly come from the server config.
+   * "lisa-dock" (owner brief "LISA chat dock", 2026-10-22): "review-history", "exam-history" and
+   * "lisa-history" together, unchanged, for the dock's group and browser spec.
    * Off by default, so the other groups' payloads do not change.
    */
   seed?:
@@ -286,7 +324,8 @@ export type PageGroup = {
     | "mastery-skills"
     | "bare-pages"
     | "notifications"
-    | "quota-config";
+    | "quota-config"
+    | "lisa-dock";
   /**
    * Where the group's evidence goes, relative to the repo root. Defaults to the student-UI Wave 5
    * evidence directory; the SEO vertical's groups write under docs/plans/seo/evidence/.

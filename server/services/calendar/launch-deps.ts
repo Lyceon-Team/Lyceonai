@@ -214,7 +214,9 @@ async function activityUnits(
 ): Promise<ActivityUnit[]> {
   const settled = await Promise.allSettled(
     engines.map((engine) =>
-      adapterFor(engine).activityUnits(studentId, localDate, timezone),
+      adapterFor(engine).activityUnits(studentId, [
+        { local_date: localDate, timezone },
+      ]),
     ),
   );
   const units: ActivityUnit[] = [];

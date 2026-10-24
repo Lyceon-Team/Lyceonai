@@ -47,7 +47,7 @@ function vertex(text: string): VertexResponse {
 }
 
 describe("W3-2 — the prompt LISA runs on", () => {
-  it("latest is v2 for every variant, and v1 still resolves by exact version", () => {
+  it("latest is v3 (v2 + video offer, 2026-10-15) for every variant; v1 and v2 still resolve by exact version", () => {
     for (const variant of [
       "default",
       "scaffolded",
@@ -56,11 +56,14 @@ describe("W3-2 — the prompt LISA runs on", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v2",
+        "lisa-default-v3",
       );
     }
     expect(resolvePromptArtifact("default", "lisa-default-v1").version).toBe(
       "lisa-default-v1",
+    );
+    expect(resolvePromptArtifact("default", "lisa-default-v2").version).toBe(
+      "lisa-default-v2",
     );
   });
 

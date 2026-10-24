@@ -26,7 +26,7 @@ const buildScoreEstimateFromCanonical = vi.fn();
 // E1 exam deletion ruling, 2026-09-23: pre-baseline full-length runtime removed
 // pending Doc 04 rebuild. Dead full-length mocks (buildStudentFullLengthReportView)
 // removed; they stubbed deleted exports and fed no assertion here.
-const readDiagnosticBaseline = vi.fn();
+const readDiagnosticProjection = vi.fn();
 const readDiagnosticState = vi.fn();
 const readAnsweredQuestionCount = vi.fn();
 const canAccessFeature = vi.fn();
@@ -38,9 +38,13 @@ vi.mock("../../server/services/kpi-access", () => ({
 vi.mock("../../server/services/canonical-runtime-views", () => ({
   buildScoreEstimateFromCanonical,
   buildStudentKpiViewFromCanonical,
-  readDiagnosticBaseline,
   readDiagnosticState,
   readAnsweredQuestionCount,
+}));
+
+// SCL-236: the one diagnostic read (constraint 5), shared with /projections/sections.
+vi.mock("../../apps/api/src/services/projection-read", () => ({
+  readDiagnosticProjection,
 }));
 
 vi.mock("../../server/services/entitlement-service", () => ({
@@ -94,8 +98,8 @@ describe("baseline_pending — a completed diagnostic is never asked for again",
       reason: "free",
     });
     canAccessFeature.mockResolvedValue(false);
-    // The production shape: the diagnostic completed, the baseline never landed.
-    readDiagnosticBaseline.mockResolvedValue(null);
+    // The production shape: the diagnostic completed, the stored projection not written yet.
+    readDiagnosticProjection.mockResolvedValue({ status: null, sections: [] });
     readDiagnosticState.mockResolvedValue("baseline_pending");
     readAnsweredQuestionCount.mockResolvedValue(40);
   });
@@ -129,19 +133,36 @@ describe("baseline_pending — a completed diagnostic is never asked for again",
   it("serves no numbers it does not have", async () => {
     const { body } = await callProjection();
     expect(body.estimate).toBeNull();
-    expect(body.baseline).toBeNull();
+    expect(body.diagnostic).toBeNull();
+    // The retired frozen-baseline field is gone, not nulled (constraint 4).
+    expect(body).not.toHaveProperty("baseline");
   });
 
   /**
-   * The failure mode that produced this whole workstream: a read error is
-   * indistinguishable from "no baseline" inside readDiagnosticBaseline, which
-   * returns null for both. A student mid-outage must not be told to retake.
+   * The state view and the stored rows are read separately. A baseline_ready student whose
+   * rows the read did not return is still told the truth ("being calculated"), never asked to
+   * retake.
    */
-  it("still refuses no_baseline when the baseline read fails for a baseline_ready student", async () => {
+  it("still refuses no_baseline when no stored row is returned for a baseline_ready student", async () => {
     readDiagnosticState.mockResolvedValue("baseline_ready");
-    readDiagnosticBaseline.mockResolvedValue(null);
+    readDiagnosticProjection.mockResolvedValue({ status: null, sections: [] });
     const { body } = await callProjection();
     expect(body.estimateStatus).toBe("baseline_pending");
+  });
+
+  /**
+   * The failure mode that produced the old workstream was a read error collapsed into
+   * "no baseline". The diagnostic read now THROWS, so an outage is a 500 — never a status, and
+   * so never an invitation to retake.
+   */
+  it("a failed diagnostic read is a 500, not a status", async () => {
+    readDiagnosticState.mockResolvedValue("baseline_ready");
+    readDiagnosticProjection.mockRejectedValue(
+      new Error("diagnostic_projection_query_failed: boom"),
+    );
+    const { status, body } = await callProjection();
+    expect(status).toBe(500);
+    expect(body).not.toHaveProperty("estimateStatus");
   });
 
   it("falls back to the shipped behaviour when the state read itself fails", async () => {
@@ -219,9 +240,17 @@ describe("surfaces gated on no_baseline collapse for a pending student", () => {
       "",
     );
     // Final brief v2 §7 (Karl, 2026-10-13): the button says "Find your blind spots" (the
-    // shared BLIND_SPOTS_NAME); still exactly one start button.
+    // shared BLIND_SPOTS_NAME); first-run activation P1 (2026-10-13, reconciled 2026-10-15): the
+    // words come from `diagnosticActionLabel` (home-model.ts: BLIND_SPOTS_NAME, or "Resume ·
+    // question N of 40" while one is open), drawn once, on the card's one start.
+    expect(card.split("diagnosticActionLabel(").length - 1).toBe(1);
     expect(card).not.toContain("Start diagnostic");
-    expect(card).toMatch(/: BLIND_SPOTS_NAME\}/);
+    const model = read("client/src/components/home/home-model.ts").replace(
+      /\/\*[\s\S]*?\*\//g,
+      "",
+    );
+    expect(model).toMatch(/if \(inProgress === null\) return BLIND_SPOTS_NAME;/);
+    expect(model).not.toContain('"Start diagnostic"');
     expect(card.split("void startDiagnostic()").length - 1).toBe(1);
   });
 

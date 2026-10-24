@@ -36,6 +36,15 @@ export type RenderContext = {
   guardianDigestEmail?: {
     unsubscribeUrl: string | null;
   };
+  /**
+   * `review_ask` email only (Karl, 2026-10-20): the signed one-click "Stop review requests" link
+   * and the Trustpilot review URL (null until VITE_TRUSTPILOT_REVIEW_URL is set), both looked up
+   * by the dispatcher at send time and never stored.
+   */
+  reviewAskEmail?: {
+    stopUrl: string | null;
+    trustpilotUrl: string | null;
+  };
 };
 
 export type InAppRender = {

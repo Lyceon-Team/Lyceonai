@@ -74,6 +74,15 @@ export const envSchema = z.object({
   SLACK_ALERTS_WEBHOOK_URL: z.string().url().optional(),
   OPS_ALERT_EMAIL: z.string().email().optional(),
 
+  // New feedback to Slack (final brief "Trustpilot card + Feedback", Karl 2026-10-20, §5). Read at:
+  //   SLACK_BOT_TOKEN          server/lib/feedback-slack.ts (the "Lyceon Social" bot's `xoxb-`
+  //                            token — a credential, never logged; the same token GitHub holds)
+  //   SOCIAL_SLACK_CHANNEL_ID  server/lib/feedback-slack.ts (the #social channel ID; a variable so
+  //                            a dedicated #feedback later is a value change)
+  // Optional: unset means feedback is stored and no Slack line is posted (one WARN per post).
+  SLACK_BOT_TOKEN: z.string().min(1).optional(),
+  SOCIAL_SLACK_CHANNEL_ID: z.string().min(1).optional(),
+
   // Marketing email lane (contracts/notifications.contract.md §14). Read at:
   //   RESEND_SEGMENT_ID_STUDENTS   server/lib/marketing-email-sync.ts
   //   RESEND_SEGMENT_ID_GUARDIANS  server/lib/marketing-email-sync.ts
@@ -128,6 +137,12 @@ export const lifecycleEmailEnvSchema = envSchema.pick({
 });
 
 /** The analytics lane's variables, parsed by the emission wrapper (Doc 07A §9). */
+export const feedbackSlackEnvSchema = envSchema.pick({
+  SLACK_BOT_TOKEN: true,
+  SOCIAL_SLACK_CHANNEL_ID: true,
+});
+export type FeedbackSlackEnv = z.infer<typeof feedbackSlackEnvSchema>;
+
 export const analyticsEnvSchema = envSchema.pick({
   POSTHOG_API_KEY: true,
   POSTHOG_HOST: true,

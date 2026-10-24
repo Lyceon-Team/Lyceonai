@@ -13,6 +13,7 @@ import {
   notificationPatchBodySchema,
   resendWebhookEventSchema,
   qotdDailyPayloadSchema,
+  reviewAskPayloadSchema,
 } from "../notifications-schema";
 
 describe("notifications schema", () => {
@@ -22,8 +23,12 @@ describe("notifications schema", () => {
   // notices joined on 2026-09-27 (Brief 14 Step 5, 20261012000000); the two post-exam notices on
   // 2026-09-30 (SCL-191, 20261015000000); the daily-question reminder `qotd_daily` on 2026-10-09
   // (owner ruling on #1166 item 1, 20261029020000); the four guardian-accountability types on
-  // 2026-10-13 (owner brief "Guardian accountability loop", 20261101000000).
-  it("names exactly the eleven event types, in the CHECK's own order", () => {
+  // 2026-10-13 (owner brief "Guardian accountability loop", 20261101000000); the review ask's one
+  // email `review_ask` on 2026-10-20 (owner brief "Review ask", 20261107000000); the founding
+  // reminder's record `lifecycle_reminder_due` on 2026-10-21 (owner brief "Lifecycle emails",
+  // 20261109000000, SCL-239); the three behaviour triggers' records on 2026-10-21 (same brief,
+  // PR 2, 20261111000000, SCL-240).
+  it("names exactly the sixteen event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",
       "guardian_unlinked",
@@ -36,7 +41,25 @@ describe("notifications schema", () => {
       "missed_plan_alert",
       "back_on_track",
       "guardian_daily_digest",
+      "review_ask",
+      "lifecycle_reminder_due",
+      "lifecycle_diagnostic_unfinished",
+      "lifecycle_pro_no_plan",
+      "lifecycle_practising_free",
     ]);
+  });
+
+  // C8.1 for `review_ask`: a first name for the greeting and the audience for the app link —
+  // never a rating, a review or feedback text.
+  it("the review_ask payload is first_name + audience and nothing else (C8.1)", () => {
+    const base = { first_name: "Robin", audience: "student" };
+    expect(reviewAskPayloadSchema.safeParse(base).success).toBe(true);
+    expect(
+      reviewAskPayloadSchema.safeParse({ ...base, rating: 5 }).success,
+    ).toBe(false);
+    expect(
+      reviewAskPayloadSchema.safeParse({ ...base, audience: "admin" }).success,
+    ).toBe(false);
   });
 
   // C8.1 for `qotd_daily`: the day, the streak and the email variant — never question content.

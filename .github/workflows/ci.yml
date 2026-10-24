@@ -57,6 +57,7 @@ jobs:
       guardian_dead_code: ${{ steps.groups.outputs.guardian_dead_code }}
       deps: ${{ steps.groups.outputs.deps }}
       question_tooling: ${{ steps.groups.outputs.question_tooling }}
+      crisis_classifier: ${{ steps.groups.outputs.crisis_classifier }}
     steps:
       - name: Checkout (with parents, for the PR diff)
         uses: actions/checkout@v4
@@ -568,6 +569,12 @@ jobs:
       # the client cannot name renders a blank card, not a type error.
       - name: Diagnostic state drift gate (SQL <-> shared <-> client)
         run: node scripts/ci/diagnostic-state-drift-gate.mjs
+
+      # SCL-236 (owner ruling 2026-10-17, constraint 3): complete_diagnostic_session is the only
+      # code that marks a diagnostic completed. Fails if any other TS or SQL writes
+      # status = 'completed' to practice_sessions.
+      - name: Diagnostic completion — one path
+        run: node scripts/ci/diagnostic-completion-single-path.mjs
 
       - name: Guards proven by planted violations (B-WS3-1 §E)
         run: bash scripts/ci/guards-selftest.sh
@@ -1083,6 +1090,16 @@ jobs:
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/05c-projection-gates.sh
 
+      - name: SCL-236 diagnostic projection gates (stored, write-once, one completion path, race, deletion)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          export PATH=/usr/lib/postgresql/16/bin:$PATH
+          bash scripts/ci/diagnostic-projection-gates.sh
+
       - name: Guardian-mirror gates (denial by absence + one gate form + view-only + carve-outs)
         env:
           PGHOST: localhost
@@ -1184,6 +1201,9 @@ jobs:
             tests/ci/notifications-retention-page.pg.ci.test.ts \
             tests/ci/guardian-access-audit.pg.ci.test.ts \
             tests/ci/guardian-unlinked.pg.ci.test.ts \
+            tests/ci/guardian-notify.parity.pg.ci.test.ts \
+            tests/ci/guardian-accountability.pg.ci.test.ts \
+            tests/ci/explanation-corrections.pg.ci.test.ts \
             tests/ci/guardian-invite.pg.ci.test.ts \
             tests/ci/guardian-payment-access.pg.ci.test.ts \
             tests/ci/deletion-completed-notice.pg.ci.test.ts \
@@ -1213,6 +1233,9 @@ jobs:
             tests/ci/qotd-resilience.pg.ci.test.ts \
             tests/ci/signup-analytics.pg.ci.test.ts \
             tests/ci/lifecycle-email.pg.ci.test.ts \
+            tests/ci/funnel-events.pg.ci.test.ts \
+            tests/ci/lifecycle-reminder.pg.ci.test.ts \
+            tests/ci/lifecycle-triggers.pg.ci.test.ts \
             tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
@@ -1259,6 +1282,9 @@ jobs:
             --file tests/ci/notifications-retention-page.pg.ci.test.ts \
             --file tests/ci/guardian-access-audit.pg.ci.test.ts \
             --file tests/ci/guardian-unlinked.pg.ci.test.ts \
+            --file tests/ci/guardian-notify.parity.pg.ci.test.ts \
+            --file tests/ci/guardian-accountability.pg.ci.test.ts \
+            --file tests/ci/explanation-corrections.pg.ci.test.ts \
             --file tests/ci/guardian-invite.pg.ci.test.ts \
             --file tests/ci/guardian-payment-access.pg.ci.test.ts \
             --file tests/ci/deletion-completed-notice.pg.ci.test.ts \
@@ -1288,6 +1314,9 @@ jobs:
             --file tests/ci/qotd-resilience.pg.ci.test.ts \
             --file tests/ci/signup-analytics.pg.ci.test.ts \
             --file tests/ci/lifecycle-email.pg.ci.test.ts \
+            --file tests/ci/funnel-events.pg.ci.test.ts \
+            --file tests/ci/lifecycle-reminder.pg.ci.test.ts \
+            --file tests/ci/lifecycle-triggers.pg.ci.test.ts \
             --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             --file tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
@@ -1390,6 +1419,27 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/qotd-schema-gates.sql
 
+      # LISA curriculum retrieval store (LISA_Video_RAG_Plan.md Step C, pgvector; SCL-231). Same
+      # database as above, the full pipeline applied on pg17 with pgvector; the gate writes only
+      # inside one transaction and rolls back. R3 proves the skill filter cannot come back short.
+      - name: LISA curriculum_chunks schema + retrieval gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/curriculum-chunks-gates.sql
+
+      # LISA video library (CC brief 2026-10-15): video_resources tags, approval and the one
+      # retrieval query. Same database; one transaction, rolled back.
+      - name: LISA video library schema + retrieval gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-library-gates.sql
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost
@@ -1443,6 +1493,52 @@ jobs:
         run: |
           export PATH=/usr/lib/postgresql/16/bin:$PATH
           bash scripts/ci/calendar-postgrest-gate.sh
+
+  # ---------------------------------------------------------------------------
+  # Layer 2 crisis classifier golden set — against the REAL model (CC Brief "P1: Stop False
+  # Crisis Positives", Karl 2026-10-21, §4.3). BLOCKING when the classifier's prompt, its caller,
+  # the golden set or the Layer 1 seed changes; nightly.yml runs it every night regardless, so a
+  # change on the model's side is caught too. Academic phrasings must come back not-crisis;
+  # every Layer 1 seed pattern and every ambiguous phrasing must come back crisis; 3 runs each.
+  # Vertex through Workload Identity (lyceon-ci-eval); the fixtures are written phrases, no
+  # student content.
+  # ---------------------------------------------------------------------------
+  crisis-classifier-golden-set:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.crisis_classifier == 'true' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/480325859530/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: lyceon-ci-eval@replit-cop.iam.gserviceaccount.com
+
+      - name: Golden set (academic must not trigger; crisis must)
+        env:
+          VERTEX_CLASSIFIER_CLASS_MODEL: gemini-3.1-flash-lite
+          VERTEX_CLASSIFIER_LOCATION: global
+          VERTEX_PROJECT_ID: replit-cop
+        run: pnpm exec tsx scripts/ci/crisis-classifier-golden-set.ts
 
   # ---------------------------------------------------------------------------
   # Browser, every pull request: consent and minor exclusion (no PostHog traffic without

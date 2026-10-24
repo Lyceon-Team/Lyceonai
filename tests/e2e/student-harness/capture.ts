@@ -78,7 +78,10 @@ import {
  * ("Reject analytics", the strictly necessary consent cookie only, in the app's own format), so
  * the banner is not drawn over them. The banner itself is the SEO vertical's surface, not shot here.
  */
-function answeredConsentCookie(baseUrl: string): {
+function answeredConsentCookie(
+  baseUrl: string,
+  analytics: boolean,
+): {
   name: string;
   value: string;
   url: string;
@@ -88,7 +91,7 @@ function answeredConsentCookie(baseUrl: string): {
     value: encodeURIComponent(
       formatConsentCookieValue({
         consentId: "5e55c000-0000-4000-8000-000000000063",
-        analytics: false,
+        analytics,
         bannerVersion: COOKIE_BANNER_VERSION,
         decidedAtSeconds: Math.floor(Date.now() / 1000),
       }),
@@ -567,16 +570,63 @@ async function clearCalendarProfile(persona: StudentPersona): Promise<void> {
  * SEO Wave 2 (groups/types.ts `freshReviewPrompt`): removes the persona's review-prompt state and
  * review, so the next page load is a never-prompted account again.
  */
-async function clearReviewPrompt(persona: StudentPersona): Promise<void> {
+/**
+ * Owner ruling (Karl, 2026-10-15, on #1233, item 3), groups/types.ts `freshQuota`: the persona's
+ * practice answers and skips from the last day (the ones the free daily quota counts) are dated a
+ * day earlier, in the harness database only.
+ */
+async function clearTodaysQuota(persona: StudentPersona): Promise<void> {
   const db = await harnessDb();
   try {
     await db.query(
-      "DELETE FROM public.product_review_prompt_state WHERE profile_id = $1",
+      `UPDATE public.practice_session_items psi
+          SET occurred_at = psi.occurred_at - interval '1 day'
+         FROM public.practice_sessions ps
+        WHERE ps.id = psi.session_id
+          AND psi.user_id = $1
+          AND psi.status IN ('answered', 'skipped')
+          AND psi.occurred_at >= now() - interval '1 day'
+          AND ps.mode NOT IN ('diagnostic', 'qotd')`,
       [PERSONAS[persona].id],
     );
+  } finally {
+    await db.end();
+  }
+}
+
+async function clearReviewPrompt(persona: StudentPersona): Promise<void> {
+  const db = await harnessDb();
+  const id = PERSONAS[persona].id;
+  try {
+    await db.query(
+      "DELETE FROM public.product_review_prompt_state WHERE profile_id = $1",
+      [id],
+    );
     await db.query("DELETE FROM public.product_reviews WHERE profile_id = $1", [
-      PERSONAS[persona].id,
+      id,
     ]);
+    // Review ask (Karl, 2026-10-20): the usage trigger needs 7+ days since signup and 3+
+    // completed sessions, and Home holds the ask while the Getting started checklist is active.
+    // In the harness database only: the account is dated 8 days back, completed practice
+    // sessions are added up to 3 (never QOTD), and the checklist is dismissed.
+    await db.query(
+      "UPDATE public.profiles SET created_at = LEAST(created_at, now() - interval '8 days') WHERE id = $1",
+      [id],
+    );
+    await db.query(
+      `INSERT INTO public.practice_sessions
+         (user_id, actor_id, mode, target_count, platform, status, completed_at)
+       SELECT p.id, p.actor_id, 'structured', 3, 'web', 'completed', now() - interval '1 day'
+         FROM public.profiles p, generate_series(1, GREATEST(0, 3 - public.review_ask_completed_sessions($1)))
+        WHERE p.id = $1`,
+      [id],
+    );
+    await db.query(
+      `INSERT INTO public.student_getting_started_state (profile_id, dismissed_at)
+       VALUES ($1, now())
+       ON CONFLICT (profile_id) DO UPDATE SET dismissed_at = COALESCE(student_getting_started_state.dismissed_at, now())`,
+      [id],
+    );
   } finally {
     await db.end();
   }
@@ -633,6 +683,45 @@ async function resetQotd(
   }
 }
 
+/**
+ * Owner ruling (Karl, 2026-10-15, on #1233, item 2), groups/types.ts `freshQotd.answeredEarlier`:
+ * today's question answered through the REAL routes, as an earlier visit that left before Done
+ * would have (the first option, right or wrong); "prompt shown" is never reported.
+ */
+async function answerQotdEarlier(
+  stack: Stack,
+  persona: StudentPersona,
+): Promise<void> {
+  const res = await fetch(`${stack.baseUrl}/api/qotd/today`, {
+    headers: { [PERSONA_HEADER]: persona },
+  });
+  const json: unknown = await res.json();
+  const data =
+    json !== null && typeof json === "object" && "data" in json
+      ? (json as { data: unknown }).data
+      : null;
+  if (
+    res.status !== 200 ||
+    data === null ||
+    typeof data !== "object" ||
+    !("state" in data) ||
+    data.state !== "unanswered" ||
+    !("qotd_date" in data) ||
+    !("question" in data)
+  )
+    throw new Error(
+      `answeredEarlier: /api/qotd/today -> ${res.status}, not an unanswered question`,
+    );
+  const question = data.question as { options: { id: string }[] };
+  const first = question.options[0];
+  if (first === undefined) throw new Error("answeredEarlier: no options");
+  await apiCall(stack, persona, "POST", "/api/qotd/answer", {
+    qotd_date: data.qotd_date,
+    option_token: first.id,
+    idempotency_key: crypto.randomUUID(),
+  });
+}
+
 async function apiCall(
   stack: Stack,
   persona: StudentPersona,
@@ -651,6 +740,87 @@ async function apiCall(
       `${persona} ${method} ${apiPath} -> ${res.status} ${JSON.stringify(json).slice(0, 300)}`,
     );
   return json as Record<string, unknown>;
+}
+
+/**
+ * SCL-236 (groups/types.ts `completedDiagnostic`): takes the persona through the whole diagnostic
+ * over the real routes, so the stored diagnostic projection is written by the real completion
+ * path (complete_diagnostic_session). A persona who already completed it is left as is.
+ */
+async function completeDiagnostic(
+  stack: Stack,
+  persona: StudentPersona,
+): Promise<void> {
+  const headers = {
+    "content-type": "application/json",
+    [PERSONA_HEADER]: persona,
+  };
+  const start = await fetch(
+    `${stack.baseUrl}/api/practice/diagnostic/sessions`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        client_instance_id: SEED_CLIENT_INSTANCE,
+        idempotency_key: `student-harness-${persona}-diagnostic`,
+      }),
+    },
+  );
+  const startJson: unknown = await start.json();
+  const startBody =
+    startJson !== null && typeof startJson === "object"
+      ? (startJson as Record<string, unknown>)
+      : {};
+  // The start route answers a finished diagnostic with 409 `error: "diagnostic_already_completed"`.
+  if (
+    start.status === 409 &&
+    startBody.error === "diagnostic_already_completed"
+  )
+    return;
+  const sessionId =
+    startBody.sessionId ??
+    (startBody.session !== null && typeof startBody.session === "object"
+      ? (startBody.session as Record<string, unknown>).id
+      : undefined);
+  if (!start.ok || typeof sessionId !== "string")
+    throw new Error(
+      `completeDiagnostic: start answered ${start.status} ${JSON.stringify(startJson).slice(0, 300)}`,
+    );
+  for (let i = 0; i < 200; i += 1) {
+    const res = await fetch(
+      `${stack.baseUrl}/api/practice/sessions/${sessionId}/next?client_instance_id=${SEED_CLIENT_INSTANCE}`,
+      { headers },
+    );
+    // After the last answer the server closes the session: /next answers 409 session_closed.
+    if (res.status === 409) return;
+    const json: unknown = await res.json();
+    const next =
+      json !== null && typeof json === "object"
+        ? (json as Record<string, unknown>)
+        : {};
+    const q =
+      next.question !== null && typeof next.question === "object"
+        ? (next.question as Record<string, unknown>)
+        : null;
+    if (q === null) return;
+    const options = Array.isArray(q.options)
+      ? (q.options as Array<Record<string, unknown>>)
+      : [];
+    const body: Record<string, unknown> = {
+      sessionId,
+      sessionItemId: q.sessionItemId,
+      clientAttemptId: `student-harness-${sessionId}-diag-${i}`,
+      client_instance_id: SEED_CLIENT_INSTANCE,
+    };
+    if (q.inputMode === "numeric_entry") body.answer = i % 2 === 0 ? "1" : "2";
+    else
+      body.selectedOptionId =
+        options[i % Math.max(options.length, 1)]?.id ?? null;
+    await apiCall(stack, persona, "POST", "/api/practice/answer", body);
+  }
+  throw new Error(
+    "completeDiagnostic: 200 answers and the diagnostic never closed",
+  );
 }
 
 function itemsTable(engine: FreshSession["engine"]): string {
@@ -706,12 +876,97 @@ async function startFreshSession(
   }
 }
 
+/**
+ * First-run activation (2026-10-13), groups/types.ts `playThrough`: answers or skips each item
+ * through the real routes, then asks `/next` once more so the server closes the session (409
+ * `session_closed`), as the runner's "Done" does.
+ */
+async function playFreshSession(
+  stack: Stack,
+  persona: StudentPersona,
+  fresh: FreshSession,
+  sessionId: string,
+  plan: readonly ("correct" | "incorrect" | "skip")[],
+): Promise<void> {
+  const db = await harnessDb();
+  const nextUrl = `${stack.baseUrl}/api/${fresh.engine}/sessions/${sessionId}/next?client_instance_id=${SEED_CLIENT_INSTANCE}`;
+  const headers = { [PERSONA_HEADER]: persona };
+  try {
+    for (let i = 0; i < plan.length; i += 1) {
+      const res = await fetch(nextUrl, { headers });
+      const next = (await res.json()) as { sessionItemId?: unknown };
+      if (res.status !== 200 || typeof next.sessionItemId !== "string")
+        throw new Error(`playThrough: /next ${i + 1} answered ${res.status}`);
+      const itemId = next.sessionItemId;
+      freshCounter += 1;
+      const attempt = `student-harness-play-${process.pid}-${freshCounter}`;
+      if (plan[i] === "skip") {
+        await apiCall(
+          stack,
+          persona,
+          "POST",
+          `/api/${fresh.engine}/sessions/${sessionId}/skip`,
+          {
+            sessionItemId: itemId,
+            clientAttemptId: attempt,
+            client_instance_id: SEED_CLIENT_INSTANCE,
+          },
+        );
+        continue;
+      }
+      const r = await db.query<{
+        option_token_map: Record<string, string> | null;
+        question_correct_answer: string | null;
+        question_item_type: string | null;
+      }>(
+        `SELECT option_token_map, question_correct_answer, question_item_type
+           FROM public.${itemsTable(fresh.engine)} WHERE id = $1`,
+        [itemId],
+      );
+      const row = r.rows[0];
+      if (!row) throw new Error(`playThrough: item ${itemId} not found`);
+      const right = plan[i] === "correct";
+      let choice: Record<string, string>;
+      if (row.question_item_type === "grid_in") {
+        choice = {
+          answer: right ? (row.question_correct_answer ?? "") : "-987",
+        };
+      } else {
+        const entries = Object.entries(row.option_token_map ?? {});
+        const token = entries.find(([, key]) =>
+          right
+            ? key === row.question_correct_answer
+            : key !== row.question_correct_answer,
+        )?.[0];
+        if (!token) throw new Error(`playThrough: no token on ${itemId}`);
+        choice = { selectedOptionId: token };
+      }
+      await apiCall(stack, persona, "POST", `/api/${fresh.engine}/answer`, {
+        sessionId,
+        sessionItemId: itemId,
+        ...choice,
+        clientAttemptId: attempt,
+        client_instance_id: SEED_CLIENT_INSTANCE,
+      });
+    }
+    const closing = await fetch(nextUrl, { headers });
+    if (closing.status !== 409)
+      throw new Error(
+        `playThrough: the closing /next answered ${closing.status}, not 409`,
+      );
+  } finally {
+    await db.end();
+  }
+}
+
 async function endFreshSession(
   stack: Stack,
   persona: StudentPersona,
   fresh: FreshSession,
   sessionId: string,
 ): Promise<void> {
+  // A session played to its end (`playThrough`) is completed: nothing to end.
+  if (fresh.playThrough !== undefined) return;
   await apiCall(
     stack,
     persona,
@@ -719,48 +974,6 @@ async function endFreshSession(
     `/api/${fresh.engine}/sessions/${sessionId}/terminate`,
     { client_instance_id: SEED_CLIENT_INSTANCE },
   );
-}
-
-/**
- * QA2-A (groups/types.ts `reviewCap`): opens queue review sessions through the real create route
- * until the server refuses one with its concurrent-session cap, and returns the ids it opened (so
- * they can be ended after the shot). Any other refusal, or no refusal within twenty starts, fails
- * the capture: the state is the server's own cap or nothing.
- */
-async function fillReviewCap(
-  stack: Stack,
-  persona: StudentPersona,
-): Promise<string[]> {
-  const opened: string[] = [];
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    freshCounter += 1;
-    const res = await fetch(`${stack.baseUrl}/api/review/sessions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [PERSONA_HEADER]: persona,
-      },
-      body: JSON.stringify({
-        mode: "queue",
-        client_instance_id: SEED_CLIENT_INSTANCE,
-        idempotency_key: `student-harness-cap-${process.pid}-${freshCounter}`,
-      }),
-    });
-    const json: unknown = await res.json();
-    const body =
-      json !== null && typeof json === "object"
-        ? (json as Record<string, unknown>)
-        : {};
-    if (res.ok && typeof body.sessionId === "string") {
-      opened.push(body.sessionId);
-      continue;
-    }
-    if (body.code === "SESSION_LIMIT_EXCEEDED") return opened;
-    throw new Error(
-      `review cap: create answered ${res.status} ${JSON.stringify(json).slice(0, 300)}`,
-    );
-  }
-  throw new Error("review cap: twenty starts and the server never refused one");
 }
 
 /**
@@ -859,14 +1072,15 @@ async function shootBuilt(
   const fresh = shot.freshSession ?? null;
   if (fresh && persona === null)
     throw new Error(`${shot.id}: a fresh session needs a signed-in persona`);
+  if (shot.freshQuota === true) {
+    if (persona === null)
+      throw new Error(`${shot.id}: a fresh quota needs a seeded student`);
+    await clearTodaysQuota(persona);
+  }
   const sessionId =
     fresh && persona ? await startFreshSession(stack, persona, fresh) : null;
-  if (shot.reviewCap === true && persona === null)
-    throw new Error(`${shot.id}: the review cap needs a seeded student`);
-  const capOpened =
-    shot.reviewCap === true && persona
-      ? await fillReviewCap(stack, persona)
-      : [];
+  if (fresh?.playThrough !== undefined && persona && sessionId !== null)
+    await playFreshSession(stack, persona, fresh, sessionId, fresh.playThrough);
   if (shot.freshCalendarProfile === true) {
     if (persona === null)
       throw new Error(
@@ -881,10 +1095,19 @@ async function shootBuilt(
       );
     await clearReviewPrompt(persona);
   }
+  if (shot.completedDiagnostic === true) {
+    if (persona === null)
+      throw new Error(
+        `${shot.id}: a completed diagnostic needs a seeded student`,
+      );
+    await completeDiagnostic(stack, persona);
+  }
   if (shot.freshQotd !== undefined) {
     if (persona === null)
       throw new Error(`${shot.id}: a fresh QOTD needs a seeded student`);
     await resetQotd(persona, shot.freshQotd.priorAsks ?? 0);
+    if (shot.freshQotd.answeredEarlier === true)
+      await answerQotdEarlier(stack, persona);
   }
   const context = await browser.newContext({
     viewport: { width: size.width, height: HEIGHT_OVERRIDE ?? size.height },
@@ -912,7 +1135,14 @@ async function shootBuilt(
       ]);
     }
     await localOnly(context, fontCss);
-    await context.addCookies([answeredConsentCookie(stack.baseUrl)]);
+    // F-72 (owner brief 2026-10-21, Part E): a shot about the banner itself leaves it unanswered.
+    if (shot.cookieBannerShown !== true)
+      await context.addCookies([
+        answeredConsentCookie(
+          stack.baseUrl,
+          shot.analyticsConsentAccepted === true,
+        ),
+      ]);
     await context.addInitScript(
       (arg: {
         theme: string;
@@ -1086,6 +1316,32 @@ async function shootBuilt(
             `(box ${JSON.stringify(box)}, viewport height ${height})`,
         );
     }
+    const noOverlap = shot.expectNoOverlap?.[size.selectors] ?? null;
+    if (noOverlap !== null) {
+      // F-72 (owner brief 2026-10-21, Part E): two elements that must not overlap on screen
+      // (the cookie banner and the phone tab bar). Both must be visible: an absent element
+      // would make "no overlap" true for the wrong reason.
+      const [a, b] = await Promise.all(
+        [noOverlap.a, noOverlap.b].map((sel) =>
+          page.locator(sel).first().boundingBox({ timeout: 20_000 }),
+        ),
+      );
+      if (a === null || b === null || a === undefined || b === undefined)
+        throw new Error(
+          `${shot.id} ${size.name} ${theme}: expectNoOverlap needs both elements on screen ` +
+            `(${noOverlap.a}: ${JSON.stringify(a)}, ${noOverlap.b}: ${JSON.stringify(b)})`,
+        );
+      const overlaps =
+        a.x < b.x + b.width &&
+        b.x < a.x + a.width &&
+        a.y < b.y + b.height &&
+        b.y < a.y + a.height;
+      if (overlaps)
+        throw new Error(
+          `${shot.id} ${size.name} ${theme}: ${noOverlap.a} ${JSON.stringify(a)} overlaps ` +
+            `${noOverlap.b} ${JSON.stringify(b)}`,
+        );
+    }
     if (shot.expectText !== undefined)
       await page
         .getByText(shot.expectText, { exact: true })
@@ -1203,14 +1459,6 @@ async function shootBuilt(
     await context.close();
     if (fresh && persona && sessionId !== null)
       await endFreshSession(stack, persona, fresh, sessionId);
-    if (persona)
-      for (const opened of capOpened)
-        await endFreshSession(
-          stack,
-          persona,
-          { engine: "review", body: {} },
-          opened,
-        );
   }
 }
 
@@ -1344,13 +1592,13 @@ function writeIndex(
       lines.push(
         `Fresh session per capture (real create route, ended after the shot): \`${shot.freshSession.engine} ${JSON.stringify(shot.freshSession.body)}\`.`,
       );
+    if (shot.analyticsConsentAccepted === true)
+      lines.push(
+        "Cookie banner answered with analytics ACCEPTED (the real `lyceon_consent` cookie, current banner version), so a stored hero-experiment variant is shown.",
+      );
     if (shot.cookieChoiceMade === true)
       lines.push(
         "Cookie banner already answered (the real `lyceon_consent` cookie, analytics rejected, current banner version).",
-      );
-    if (shot.reviewCap === true)
-      lines.push(
-        "At the review-session cap before each capture: queue review sessions are opened through the real `POST /api/review/sessions` until the server itself refuses one with `SESSION_LIMIT_EXCEEDED`; the ones opened are ended through the real terminate route after the shot.",
       );
     if (shot.expectInViewport !== undefined)
       lines.push(
@@ -1360,9 +1608,17 @@ function writeIndex(
       lines.push(
         `Today's question unanswered before each capture (scheduled if missing; the persona's answer, qotd session and email-prompt state deleted${shot.freshQotd.priorAsks ? `; ${shot.freshQotd.priorAsks} earlier asks seeded` : ""}).`,
       );
+    if (shot.completedDiagnostic === true)
+      lines.push(
+        "Diagnostic completed before the capture through the real routes (start, /next, /answer x40), so the stored diagnostic projection is the real completion path's (SCL-236).",
+      );
+    if (shot.freshQuota === true)
+      lines.push(
+        "Today's free quota unused before each capture (the persona's practice answers and skips from the last day are dated a day earlier in the harness database).",
+      );
     if (shot.freshReviewPrompt === true)
       lines.push(
-        "No review-prompt state before each capture (the persona's `product_review_prompt_state` and `product_reviews` rows are deleted from the harness database), so the real cadence shows the prompt in every viewport and theme.",
+        "No review-ask state before each capture (the persona's `product_review_prompt_state` and `product_reviews` rows are deleted from the harness database), and the persona meets the usage trigger there (account dated 8 days back, completed practice sessions up to 3, the Getting started checklist dismissed), so the real trigger and cadence show the ask in every viewport and theme.",
       );
     if (shot.freshCalendarProfile === true)
       lines.push(

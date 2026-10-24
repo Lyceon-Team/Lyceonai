@@ -270,3 +270,43 @@ export const CB_QUESTION_BANK: Source = {
   label: "College Board: how to use the Student Question Bank",
   url: "https://satsuite.collegeboard.org/practice/student-question-bank",
 };
+
+// Content pipeline sources (batch 2026-W44). Each page was fetched on 2026-10-21 and the quoted
+// text found on it; the quotes are in the claim inventory's "Content pipeline sources (batch
+// 2026-W44)" table.
+
+/** Reading and Writing and Math content domains, skills and testing points, with the Standard English Conventions skill list. */
+export const CB_ASSESSMENT_FRAMEWORK: Source = {
+  label: "College Board: Assessment Framework for the Digital SAT Suite",
+  url: "https://satsuite.collegeboard.org/media/pdf/assessment-framework-for-digital-sat-suite.pdf",
+};
+
+/** The Math module directions and the reference sheet as Bluebook displays them. */
+export const CB_BLUEBOOK_TEST_DIRECTIONS: Source = {
+  label: "College Board: Bluebook test directions (Math reference sheet)",
+  url: "https://satsuite.collegeboard.org/media/pdf/english-sat-test-directions-bb.pdf",
+};
+
+/** The Bluebook testing tools, including the Math reference sheet. */
+export const CB_BLUEBOOK_TOOLS: Source = {
+  label: "College Board: Bluebook testing tools",
+  url: "https://bluebook.collegeboard.org/students/tools",
+};
+
+/** Approved devices: Windows, Mac, iPad, school-managed Chromebook; no personal Chromebook or phone; space, battery, keyboards. */
+export const CB_BLUEBOOK_APPROVED_DEVICES: Source = {
+  label: "College Board: Bluebook approved devices",
+  url: "https://bluebook.collegeboard.org/students/prepare-your-device/approved-devices",
+};
+
+/** SAT Weekend: the timeline before test day (exam setup 5 days before) and what to bring. */
+export const CB_BLUEBOOK_SAT_WEEKEND: Source = {
+  label: "College Board: Bluebook for SAT Weekend",
+  url: "https://bluebook.collegeboard.org/students/sat-weekend",
+};
+
+/** Device lending: when to request, who is eligible, what is lent, no score difference by device. */
+export const CB_DEVICE_LENDING: Source = {
+  label: "College Board: SAT device lending",
+  url: "https://satsuite.collegeboard.org/sat/device-lending",
+};

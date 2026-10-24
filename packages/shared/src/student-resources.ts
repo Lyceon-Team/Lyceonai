@@ -24,6 +24,7 @@
  */
 import { z } from "zod";
 import { masterySectionSchema } from "./mastery-levels.js";
+import { diagnosticProjectionStatusSchema } from "./diagnostic-projection.js";
 
 /** Mounted at this prefix; every path below is relative to `${STUDENT_RESOURCE_MOUNT}/:studentId`. */
 export const STUDENT_RESOURCE_MOUNT = "/api/students";
@@ -113,6 +114,16 @@ export type StudentGuardianLinkView = z.infer<
 >;
 export const studentGuardianLinksViewSchema = z.object({
   links: z.array(studentGuardianLinkViewSchema),
+  /**
+   * @spec [owner brief "student cleanups" (Karl, 2026-10-21) Part A ("'Active guardian link AND
+   *       active entitlement' must come from the server"); SCL-238] | @implemented [2026-10-21]
+   * True when a plan change the accountability loop records would reach at least one guardian
+   * right now: the server's `accountability_guardian_recipients` (active links filtered by
+   * `guardian_view_decision` = allow, i.e. link active AND the student's entitlement active) is
+   * not empty. The calendar's "Your guardian will be notified" dialog reads this and nothing
+   * else; a link list alone ignores the entitlement half.
+   */
+  guardian_notified: z.boolean(),
 });
 
 /** Full client-side path for the student's active links, e.g. `/api/students/<id>/links`. */
@@ -213,15 +224,52 @@ export const sectionProjectionSchema = z.object({
 export type SectionProjectionDto = z.infer<typeof sectionProjectionSchema>;
 
 /**
- * `GET /api/students/:studentId/projections/sections` as `resource()` sends it:
- * `{ ok: true, sections, requestId }`. Ungated (Doc 05C: a student reads their own projection
- * with no entitlement check), so Home reads it on both plans (UI-50; OQ-36).
+ * The stored diagnostic projection as the one server read returns it (SCL-236): the per-section
+ * band, and the aggregate status — `computed` only when every stored section is, exactly as
+ * `complete_diagnostic_session` aggregates it. `null` = no rows stored.
  */
-export const sectionProjectionsResponseSchema = z.object({
+export const diagnosticProjectionReadSchema = z.object({
+  status: diagnosticProjectionStatusSchema.nullable(),
+  sections: z.array(sectionProjectionSchema),
+});
+export type DiagnosticProjectionRead = z.infer<
+  typeof diagnosticProjectionReadSchema
+>;
+
+/**
+ * @spec [SCL-235 (Doc 02B §12 as amended: a free student sees only the stored diagnostic
+ *        projection; the ongoing projection is Premium-only), SCL-236 (Doc 05C §12A); owner
+ *        rulings 2026-10-16 (1, 4) and 2026-10-17 (constraint 5, D3)] | @implemented [2026-10-17]
+ *
+ * plain English: `GET /api/students/:studentId/projections/sections` as `resource()` sends it.
+ * WHICH projection is decided by the SUBJECT's entitlement to `LIVE_PROJECTION_FEATURE_KEY`
+ * (`mastery_detail`), never by who is asking:
+ *   - `kind: "live"`       the subject can see the ongoing projection (Premium). Only the live
+ *                          rows; the diagnostic number is never in this payload (ruling 4).
+ *   - `kind: "diagnostic"` the subject cannot (free). Only the stored diagnostic projection
+ *                          (`readDiagnosticProjection`, the one diagnostic read). `status` is null
+ *                          when nothing is stored: the diagnostic is not finished, or it is
+ *                          finished and the stored rows have not been written yet. Per-section
+ *                          `insufficient_evidence` rows arrive with null scores.
+ * A guardian reaches this route only for an entitled student (the resolver's 402 otherwise),
+ * so in practice a guardian reads `kind: "live"` exactly as before.
+ */
+const liveSectionProjectionsResponseSchema = z.object({
   ok: z.literal(true),
+  kind: z.literal("live"),
   sections: z.array(sectionProjectionSchema),
   requestId: z.string().optional(),
 });
+const diagnosticSectionProjectionsResponseSchema =
+  diagnosticProjectionReadSchema.extend({
+    ok: z.literal(true),
+    kind: z.literal("diagnostic"),
+    requestId: z.string().optional(),
+  });
+export const sectionProjectionsResponseSchema = z.discriminatedUnion("kind", [
+  liveSectionProjectionsResponseSchema,
+  diagnosticSectionProjectionsResponseSchema,
+]);
 export type SectionProjectionsResponse = z.infer<
   typeof sectionProjectionsResponseSchema
 >;

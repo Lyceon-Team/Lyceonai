@@ -46,6 +46,35 @@ apply_pipeline() {  # $1 = db name — apply every migration in sorted order
 
 norm() { grep -vE '^\\(un)?restrict ' | grep -vE '^-- Dumped (from|by)'; }
 
+# ── pg_dump at the SERVER's major version ────────────────────────────────────
+# pg_dump's output depends on the CLIENT's major version, and the committed
+# snapshot was dumped with a client matching the server (16). On 2026-10-21 the
+# ubuntu-latest image moved to psql/pg_dump 18 and its apt sources carry no
+# postgresql-client-16, so the host client printed `SET transaction_timeout = 0;`
+# and spelled every `GRANT ALL` as an explicit list: this gate went red on every
+# branch with no schema change (cleanup push run 39675766704). psql -f is not
+# affected; only the dump is. So: dump with the host client when its major
+# matches the server's; otherwise run pg_dump inside the Postgres container that
+# publishes $PGPORT (the CI service container), which matches by construction and
+# needs no network. If neither is available, fail closed: a dump from another
+# major is never compared against the snapshot.
+SERVER_MAJOR="$(psql_db postgres -tAc "SELECT current_setting('server_version_num')::int / 10000")"
+CLIENT_MAJOR="$(pg_dump --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
+if [ "$CLIENT_MAJOR" = "$SERVER_MAJOR" ]; then
+  dump_schema() { pg_dump -d "$1" --schema-only --schema=public --no-owner; }
+  echo "==> pg_dump: host client $CLIENT_MAJOR matches server $SERVER_MAJOR"
+else
+  PG_CONTAINER="$(docker ps -q --filter "publish=$PGPORT" 2>/dev/null | head -1 || true)"
+  if [ -z "$PG_CONTAINER" ]; then
+    echo "FAIL: pg_dump client is ${CLIENT_MAJOR:-missing} but the server is $SERVER_MAJOR, and no container"
+    echo "      publishes port $PGPORT to dump from. Install postgresql-client-$SERVER_MAJOR or run against"
+    echo "      a server of the client's major. A dump from another major cannot be compared to the snapshot."
+    exit 1
+  fi
+  dump_schema() { docker exec "$PG_CONTAINER" pg_dump -U "$PGUSER" -d "$1" --schema-only --schema=public --no-owner; }
+  echo "==> pg_dump: host client ${CLIENT_MAJOR:-missing} != server $SERVER_MAJOR; dumping inside container $PG_CONTAINER"
+fi
+
 echo "==> fresh DBs"
 psql_db postgres -c "DROP DATABASE IF EXISTS $DB1;" -c "DROP DATABASE IF EXISTS $DB2;" \
                  -c "CREATE DATABASE $DB1;" -c "CREATE DATABASE $DB2;" >/dev/null
@@ -55,8 +84,8 @@ stub "$DB1"; apply_pipeline "$DB1"
 stub "$DB2"; apply_pipeline "$DB2"
 
 echo "==> A.1 determinism"
-pg_dump -d "$DB1" --schema-only --schema=public --no-owner | norm > /tmp/_g1.sql
-pg_dump -d "$DB2" --schema-only --schema=public --no-owner | norm > /tmp/_g2.sql
+dump_schema "$DB1" | norm > /tmp/_g1.sql
+dump_schema "$DB2" | norm > /tmp/_g2.sql
 diff -q /tmp/_g1.sql /tmp/_g2.sql >/dev/null || { echo "FAIL: non-deterministic apply"; diff /tmp/_g1.sql /tmp/_g2.sql | head; exit 1; }
 echo "    OK deterministic"
 

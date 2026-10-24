@@ -61,11 +61,14 @@ import publicPricingRoutes from "./routes/public-pricing-routes";
 import publicQotdRoutes from "./routes/public-qotd-routes";
 import publicQotdEmailRoutes from "./routes/public-qotd-email-routes";
 import publicGuardianDigestEmailRoutes from "./routes/public-guardian-digest-email-routes";
+import publicReviewAskEmailRoutes from "./routes/public-review-ask-email-routes";
 import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
-import practiceCanonicalRouter from "./routes/practice-canonical";
+import practiceCanonicalRouter, {
+  prefetchAnswerRateLimitConfig,
+} from "./routes/practice-canonical";
 import reviewCanonicalRouter from "./routes/review-canonical";
 import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
@@ -230,6 +233,13 @@ app.get("/api/csrf-token", (req: Request, res: Response) => {
 
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);
+
+// @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling B] | @implemented [2026-10-20]
+// Starts the answer limiter's config read for an authenticated POST to a route that mounts it
+// (practice and review answer and skip; ruling Q1 on #1271, 2026-10-20), so it runs alongside the
+// deletion lock's reads below. It decides nothing: the limiter still answers (503/429) at its own
+// place on the route, after the lock and every gate before it.
+app.use(prefetchAnswerRateLimitConfig);
 
 // @spec [Doc-01_V8 §40.3] Account-deletion lock — the ONE structural enforcement point. Mounted here
 // (after req.user is set, before every API router) so deleted/pending-deletion users are default-denied
@@ -560,6 +570,12 @@ app.use("/api/public/qotd-email", publicQotdEmailRoutes);
 // only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
 // CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
 app.use("/api/public/guardian-digest-email", publicGuardianDigestEmailRoutes);
+// Review ask "Stop review requests" (UNAUTHENTICATED BY DESIGN — Karl's decision 5, 2026-10-20:
+// "Keep the signed one-click 'Stop review requests' link"). The digest's shape above: the GET
+// renders a button, the POST (the RFC 8058 target) ends the review asks, only on a valid
+// HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
+app.use("/api/public/review-ask-email", publicReviewAskEmailRoutes);
 
 // Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
 // Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no

@@ -87,6 +87,10 @@ import {
 import { resolvePromptArtifact } from "../prompts/prompt-registry.js";
 import { renderStateBlocks } from "../prompts/render-state-blocks.js";
 import {
+  VIDEO_OFFER_LABEL,
+  extractVideoOffer,
+} from "../prompts/lisa-default-v3.js";
+import {
   PRACTICE_HANDOFF_LABEL,
   extractPracticeHandoff,
 } from "../prompts/lisa-default-v2.js";
@@ -316,13 +320,28 @@ export function buildOrchestrateResponse(
   // W3-2: the handoff marker never reaches the student. It becomes the
   // start_practice action only when no bank item is attached (general mode);
   // inside practice or review LISA stays on the item.
+  //
+  // Video library (CC brief 2026-10-15 §7): every [OFFER_VIDEO n] marker is stripped too. A
+  // marker naming a video in this turn's offered_videos becomes recommend_video carrying the
+  // index — never an identifier; the BFF resolves it. A video offer takes precedence over a
+  // practice offer in the same message (one action per turn).
   const handoff = extractPracticeHandoff(vertexResponse.text);
+  const video = extractVideoOffer(
+    handoff.content,
+    request.offered_videos?.length ?? 0,
+  );
   const suggestedAction: OrchestrateResponse["response"]["suggested_action"] =
-    handoff.offered && request.question_content === null
-      ? { type: "start_practice", label: PRACTICE_HANDOFF_LABEL }
-      : { type: "none", label: null };
+    video.index !== null
+      ? {
+          type: "recommend_video",
+          label: VIDEO_OFFER_LABEL,
+          video_index: video.index,
+        }
+      : handoff.offered && request.question_content === null
+        ? { type: "start_practice", label: PRACTICE_HANDOFF_LABEL }
+        : { type: "none", label: null };
 
-  let content = handoff.content;
+  let content = video.content;
   if (!request.is_post_submit && request.correct_answer !== null) {
     const leaked = hasAnswerLeak(
       content,

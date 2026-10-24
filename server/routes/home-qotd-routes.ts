@@ -12,6 +12,9 @@
  *   POST /answer         { data: HomeQotdAnswerResponse }: 201 first answer, 200 replay of the
  *                        same idempotency_key, 409 a second different answer the same day (or the
  *                        day changed under the client), 400 not one of today's options.
+ *   POST /email-prompt/shown  { data: { recorded } }: the client opened the email prompt; today's
+ *                        one ask is recorded when the server's own rule allows it (ruling
+ *                        2026-10-15 on #1233), else nothing (`recorded: false`).
  *   POST /email-consent  { data: { consented, show_email_prompt:false } }: 403 under-13 or not
  *                        eligible; 409 "never" before it is offered (3rd ask).
  *   GET  /email-preference  { data: QotdEmailPreference } — Settings → Notifications' toggle.
@@ -33,12 +36,14 @@ import { Router, type Request, type Response } from "express";
 import { requireRequestUser } from "../middleware/supabase-auth";
 import { singleBucketRateLimit } from "../middleware/rate-limit";
 import { emitEvent } from "../lib/analytics/emit-event";
+import { fireAnswerMilestones } from "../lib/analytics/funnel-events";
 import { logger } from "../logger";
 import {
   answerHomeQotd,
   decideHomeQotdEmail,
   getHomeQotdToday,
   getQotdEmailPreference,
+  recordQotdEmailPromptShown,
   setQotdEmailPreference,
   type HomeQotdSignals,
 } from "../services/qotd/home-qotd-service";
@@ -47,6 +52,7 @@ import {
   homeQotdEmailConsentRequestSchema,
   homeQotdEmailConsentResponseSchema,
   qotdEmailPreferenceUpdateSchema,
+  qotdEmailPromptShownResponseSchema,
 } from "../../packages/shared/src/home-qotd-schema";
 
 const COMPONENT = "HOME_QOTD";
@@ -106,14 +112,6 @@ async function emitAnswerSignals(
     await emitSafely(
       emitEvent(studentId, "streak_extended", {
         streak_current: signals.streakExtendedTo,
-      }),
-      requestId,
-    );
-  }
-  if (signals.promptShownAsk !== null) {
-    await emitSafely(
-      emitEvent(studentId, "qotd_email_prompt_shown", {
-        ask_number: signals.promptShownAsk,
       }),
       requestId,
     );
@@ -195,11 +193,44 @@ export function createHomeQotdRouter(
         }
         const { response, signals } = result.value;
         await emitAnswerSignals(user.id, signals, req.requestId);
+        // Server-side funnel (Karl, 2026-10-21): a first-time answer (never a replay) may be the
+        // student's first answer of any kind. Once ever; fire-and-forget.
+        if (signals.answeredNow) fireAnswerMilestones(user.id, "qotd");
         return res
           .status(signals.answeredNow ? 201 : 200)
           .json({ data: response });
       } catch {
         return fail(req, res, "answer");
+      }
+    },
+  );
+
+  // Owner ruling (Karl, 2026-10-15, on #1233, item 2) | @implemented [2026-10-15]: the client
+  // opened the email prompt; the server records today's one ask if its own rule allows it
+  // (`recordQotdEmailPromptShown`), and the analytics event is emitted then, when it was shown.
+  router.post(
+    "/email-prompt/shown",
+    singleBucketRateLimit("qotd_email_consent", COMPONENT),
+    async (req: Request, res: Response) => {
+      const user = requireRequestUser(req, res);
+      if (!user) return;
+      try {
+        const result = await recordQotdEmailPromptShown(user.id, deps.now());
+        if (result.askNumber !== null) {
+          await emitSafely(
+            emitEvent(user.id, "qotd_email_prompt_shown", {
+              ask_number: result.askNumber,
+            }),
+            req.requestId,
+          );
+        }
+        return res.status(200).json({
+          data: qotdEmailPromptShownResponseSchema.parse({
+            recorded: result.recorded,
+          }),
+        });
+      } catch {
+        return fail(req, res, "email_prompt_shown");
       }
     },
   );

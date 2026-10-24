@@ -541,6 +541,56 @@ export function pgConnConfig(database: string): {
   };
 }
 
+/** Cluster-wide advisory-lock key for role creation (an arbitrary constant, used nowhere else). */
+const CLUSTER_ROLE_LOCK_KEY = 7_311_204_617;
+
+/**
+ * Create every Postgres role the schema needs, once, serialized across every test process.
+ *
+ * @implemented [2026-10-20] | plain English: roles are CLUSTER-wide, while each suite gets its own
+ * database. The migrations create their roles with `IF NOT EXISTS (SELECT FROM pg_roles ...)` and
+ * then `CREATE ROLE`. That check-then-create is not atomic across sessions, so two suites
+ * bootstrapping in parallel on a fresh cluster can both see "absent". The second then fails with
+ * `duplicate key value violates unique constraint "pg_authid_rolname_index"`. That is what
+ * reddened `pg-mutations (review-marketing)` on #1264, in
+ * `tests/ci/marketing-consent-routes.pg.ci.test.ts`.
+ *
+ * Fix: before any migration runs, take one advisory lock on the shared `postgres` database. Advisory
+ * locks are per-database, so the lock is taken there and not in the throwaway DB. Under that lock,
+ * create the Supabase roles plus every role a migration names in `CREATE ROLE <name>`, read from the
+ * migration files themselves, so a new migration's role is covered without editing this list. The
+ * migrations' own existence checks then always see the role, and their `CREATE ROLE` never runs
+ * concurrently. `CREATE ROLE` without options is NOLOGIN, so creating them NOLOGIN here matches.
+ */
+export async function ensureClusterRoles(admin: Client): Promise<void> {
+  const dir = path.resolve(
+    path.dirname(new URL(import.meta.url).pathname),
+    "../../supabase/migrations",
+  );
+  const names = new Set<string>(["anon", "authenticated", "service_role"]);
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".sql"))) {
+    const sql = fs.readFileSync(path.join(dir, f), "utf8");
+    for (const m of sql.matchAll(/\bCREATE\s+ROLE\s+([a-z_][a-z0-9_]*)/gi)) {
+      const name = m[1];
+      if (name !== undefined) names.add(name.toLowerCase());
+    }
+  }
+  await admin.query("SELECT pg_advisory_lock($1)", [CLUSTER_ROLE_LOCK_KEY]);
+  try {
+    for (const name of [...names].sort()) {
+      await admin.query(
+        `DO $$ BEGIN
+           IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${name}') THEN
+             CREATE ROLE ${name} NOLOGIN;
+           END IF;
+         END $$;`,
+      );
+    }
+  } finally {
+    await admin.query("SELECT pg_advisory_unlock($1)", [CLUSTER_ROLE_LOCK_KEY]);
+  }
+}
+
 /**
  * Create a throwaway database, apply the real genesis + migration pipeline to it, and
  * return a connected client.
@@ -573,6 +623,7 @@ export async function bootstrapPgDatabase(
 ): Promise<Client> {
   const admin = new Client(pgConnConfig("postgres"));
   await admin.connect();
+  await ensureClusterRoles(admin);
   await admin.query(`DROP DATABASE IF EXISTS ${dbName}`);
   await admin.query(`CREATE DATABASE ${dbName}`);
   await admin.end();

@@ -367,7 +367,11 @@ function posthogClient(apiKey: string, host: string | undefined): PostHog {
   return client;
 }
 
-const defaultDeps: EmitDeps = {
+/**
+ * The production dependencies, exported so a caller that needs `emitEventWith` (to inject them in
+ * tests) uses exactly these in production. Server-side funnel events (Karl, 2026-10-21).
+ */
+export const defaultEmitDeps: EmitDeps = {
   env: process.env,
   async loadProfile(profileId) {
     const { data, error } = await supabaseServer
@@ -435,5 +439,5 @@ export function emitEvent(
   payload: Record<string, unknown>,
   options: EmitOptions = {},
 ): Promise<EmitResult> {
-  return emitEventWith(defaultDeps, profileId, eventName, payload, options);
+  return emitEventWith(defaultEmitDeps, profileId, eventName, payload, options);
 }

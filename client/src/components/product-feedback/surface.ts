@@ -26,6 +26,8 @@ export const SURFACE = {
     checkbox: "default",
     star: "text-foreground",
     starOff: "text-muted-foreground",
+    /** The phone bottom sheet's offset: guardian pages have no bottom tab bar. */
+    sheetBottom: "bottom-0",
   },
   lyc: {
     box: "rounded-lg border border-lyc-rule bg-lyc-sheet px-5 py-6 text-lyc-ink sm:px-7",
@@ -42,5 +44,7 @@ export const SURFACE = {
     checkbox: "lyc",
     star: "text-lyc-ink-strong",
     starOff: "text-lyc-muted",
+    /** The phone bottom sheet sits on the student shell's 76px tab bar (app-shell.tsx), not under it. */
+    sheetBottom: "bottom-[76px]",
   },
 } as const;

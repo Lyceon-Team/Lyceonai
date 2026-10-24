@@ -44,15 +44,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import type { FeatureAccessMap } from "@lyceon/shared/feature-access";
@@ -84,10 +76,6 @@ import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { practiceAdapter } from "../../../server/services/calendar/adapters/practice";
 import { reviewAdapter } from "../../../server/services/calendar/adapters/review";
 import { fullLengthAdapter } from "../../../server/services/calendar/adapters/full-length";
-import {
-  capTables,
-  reviewCapRefusal,
-} from "@/components/review/review-cap.fixture";
 import LyceonDashboard from "./lyceon-dashboard";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
@@ -146,18 +134,13 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: () => undefined }),
 }));
 
-// The server modules the producers import reach for a database; only the review cap's producer
-// reads one, through `db.from`, while its refusal is built (QA2-A, review-cap.fixture.ts).
-const db = vi.hoisted(() => ({
-  from: null as null | ((table: string) => unknown),
-}));
+// The server modules the producers import reach for a database; none is read in this test.
 vi.mock("../../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     rpc: () => {
       throw new Error("no database in this test");
     },
-    from: (table: string) => {
-      if (db.from !== null) return db.from(table);
+    from: () => {
       throw new Error("no database in this test");
     },
   },
@@ -189,7 +172,7 @@ async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
   return map;
 }
 
-/** GET /api/progress/projection, `computed` arm, carrying a band and a different range. */
+/** GET /api/progress/projection, `computed` arm (paid: the live projection only, SCL-235). */
 const PROJECTION_ROUTE: EstimateResponse = {
   estimateStatus: "computed",
   estimate: {
@@ -199,14 +182,7 @@ const PROJECTION_ROUTE: EstimateResponse = {
     range: { low: 1130, high: 1230 },
     confidenceBand: "Medium",
   },
-  baseline: {
-    composite: 1050,
-    math: 530,
-    rw: 520,
-    range: { low: 990, high: 1110 },
-    confidenceBand: "Low",
-    capturedAt: "2026-09-20T12:00:00.000Z",
-  },
+  diagnostic: null,
   totalQuestionsAttempted: 214,
   lastUpdated: "2026-10-01T12:00:00.000Z",
   entitlement: {
@@ -232,15 +208,22 @@ function estimateStatusBody(
       ...base,
       estimateStatus: "baseline_only",
       estimate: null,
-      baseline: PROJECTION_ROUTE.baseline,
+      diagnostic: {
+        composite: 1050,
+        math: 530,
+        rw: 520,
+        range: { low: 990, high: 1110 },
+        computedAt: "2026-09-20T12:00:00.000Z",
+      },
       cta: true,
     };
   }
-  return { ...base, estimateStatus: status, estimate: null, baseline: null };
+  return { ...base, estimateStatus: status, estimate: null, diagnostic: null };
 }
 
 const SECTIONS = sectionProjectionsResponseSchema.parse({
   ok: true,
+  kind: "live",
   sections: [
     {
       section: "M",
@@ -260,6 +243,13 @@ const SECTIONS = sectionProjectionsResponseSchema.parse({
     },
   ],
   requestId: "r",
+});
+
+/** SCL-235: a free student's sections route carries the stored diagnostic projection. */
+const DIAGNOSTIC_SECTIONS = sectionProjectionsResponseSchema.parse({
+  ...SECTIONS,
+  kind: "diagnostic",
+  status: "computed",
 });
 
 const MASTERY = masteryDomainsResponseSchema.parse({
@@ -481,7 +471,8 @@ const LAUNCHED_EXAM = "66666666-6666-4666-8666-666666666666";
 type Scenario = {
   calendar?: "ready" | "setup_required";
   estimateStatus?: EstimateResponse["estimateStatus"];
-  projection?: "projected" | "none";
+  /** "insufficient": a free student's stored diagnostic projection is below the gate (D1 (a)). */
+  projection?: "projected" | "none" | "insufficient";
   diagnosticAnswered?: number;
   quota?: number | "unlimited";
   /** OQ-68 (d): the config numbers the routes carry; the seeded values when absent. */
@@ -492,6 +483,10 @@ type Scenario = {
   fullLengthToday?: boolean;
   /** QA item 15: the fixture week as of another day (its Sunday has no blocks). */
   today?: string;
+  /** First-run activation P1: the days with an answered question (the streak's day set). */
+  activeDays?: string[];
+  /** Ruling 2026-10-15 (#1233): the review pool's `total` (the fixture's is 5). */
+  poolTotal?: number;
   /**
    * Final brief v2 (Karl, 2026-10-13): the Getting started checklist as the server answers it.
    * Absent: dismissed, so a case sees Home's after-dismissal order unless it asks otherwise.
@@ -517,7 +512,7 @@ const GETTING_STARTED_DISMISSED = deriveGettingStarted(
   { plan: "free", lisaAvailable: true },
 );
 
-function install(s: Scenario): void {
+function install(s: Scenario, plan: "paid" | "free"): void {
   const calendarBody =
     s.calendar === "setup_required"
       ? {
@@ -550,10 +545,32 @@ function install(s: Scenario): void {
       if (path === `/api/students/${STUDENT}/mastery/domains`)
         return json(MASTERY);
       if (path === `/api/students/${STUDENT}/projections/sections`)
+        // SCL-235: the server answers by plan — live for paid, the diagnostic one for free.
         return json(
           s.projection === "none"
-            ? { ok: true, sections: [], requestId: "r" }
-            : SECTIONS,
+            ? plan === "paid"
+              ? { ok: true, kind: "live", sections: [], requestId: "r" }
+              : {
+                  ok: true,
+                  kind: "diagnostic",
+                  status: null,
+                  sections: [],
+                  requestId: "r",
+                }
+            : s.projection === "insufficient"
+              ? {
+                  ...DIAGNOSTIC_SECTIONS,
+                  status: "insufficient_evidence",
+                  sections: DIAGNOSTIC_SECTIONS.sections.map((row) => ({
+                    ...row,
+                    projectedScoreMid: null,
+                    projectedScoreLow: null,
+                    projectedScoreHigh: null,
+                  })),
+                }
+              : plan === "paid"
+                ? SECTIONS
+                : DIAGNOSTIC_SECTIONS,
         );
       if (path === "/api/progress/projection")
         return json(estimateStatusBody(s.estimateStatus ?? "computed"));
@@ -579,6 +596,8 @@ function install(s: Scenario): void {
           data: homeQotdTodayResponseSchema.parse({
             state: "none",
             streak: { current: 0, today_done: false, broken: false },
+            // First-run P1: the days "This week" ticks (the streak's own day set).
+            active_days: s.activeDays ?? [],
             show_email_prompt: false,
             show_dont_ask_again: false,
           }),
@@ -586,7 +605,10 @@ function install(s: Scenario): void {
       if (method === "GET" && path === "/api/calendar/profile")
         return json({ profile: null, requestId: "r" });
       if (path === "/api/review/sessions/open") return json(REVIEW_OPEN);
-      if (path === "/api/review/pool") return json(POOL);
+      if (path === "/api/review/pool")
+        return json(
+          s.poolTotal === undefined ? POOL : { ...POOL, total: s.poolTotal },
+        );
       if (path === "/api/tests/forms") return json(FORMS);
       if (path === "/api/practice/quota")
         return json(
@@ -635,7 +657,7 @@ async function mount(
   /** QA2-F: a read is held (`net.hold`), so wait for the loading state, not the page. */
   opts: { pending?: boolean; failPath?: RegExp } = {},
 ): Promise<{ container: HTMLElement; history: string[] }> {
-  install(scenario);
+  install(scenario, plan);
   // QA2-F: one read answers 500 (a failed read ends the loading wait).
   const failPath = opts.failPath;
   if (failPath !== undefined)
@@ -686,6 +708,7 @@ async function mount(
  * setup's does.
  */
 const SETUP_MATCH_MEDIA = window.matchMedia;
+const SETUP_INNER_WIDTH = window.innerWidth;
 function installPhone(): void {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -745,6 +768,7 @@ afterEach(() => {
     value: SETUP_MATCH_MEDIA,
   });
   window.sessionStorage.clear();
+  window.innerWidth = SETUP_INNER_WIDTH;
 });
 
 // ── Paid ───────────────────────────────────────────────────────────────────────────────────
@@ -1098,6 +1122,70 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
     expect(net.log.slice(before).filter((l) => /mastery/.test(l))).toEqual([]);
   });
 
+  // SCL-235 (owner ruling 2026-10-16): a free student sees their diagnostic result, labelled as
+  // such, and the live projection is the locked thing behind the upgrade.
+  it("free, after the diagnostic: 'Your diagnostic result', the band, and an upgrade link for the live projection", async () => {
+    const { container } = await mount("free", {
+      estimateStatus: "baseline_only",
+    });
+    const panel = await screen.findByTestId("home-projection");
+    expect(panel.getAttribute("data-kind")).toBe("diagnostic");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Your diagnostic result",
+    );
+    expect(within(panel).getByTestId("home-projection-range").textContent).toBe(
+      "1140–1300",
+    );
+    expect(panel.textContent).toContain(
+      "From your diagnostic answers. This result doesn’t change.",
+    );
+    // The live-projection copy is a paid sentence; it is not on the free panel.
+    expect(panel.textContent).not.toContain("The range narrows");
+    // DESIGN.md §5: the upgrade is a text link, not a second filled primary.
+    expect(primaries(container)).toEqual([]);
+    const before = net.log.length;
+    fireEvent.click(within(panel).getByTestId("home-projection-upgrade"));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(UPGRADE_MODAL_COPY.mastery_detail.plan.title),
+    ).toBeTruthy();
+    // Opening the modal fetches nothing: no live read is attempted for a free student.
+    expect(net.log.slice(before)).toEqual([]);
+  });
+
+  it("free, a skipped diagnostic (D1 (a)): the honest sentence, no number", async () => {
+    await mount("free", {
+      estimateStatus: "insufficient_evidence",
+      projection: "insufficient",
+    });
+    const panel = await screen.findByTestId("home-projection");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Your diagnostic result",
+    );
+    expect(within(panel).queryByTestId("home-projection-range")).toBeNull();
+    expect(panel.textContent).toContain(
+      "We need more answers in some areas to estimate your score.",
+    );
+    expect(screen.queryByTestId("home-diagnostic")).toBeNull();
+  });
+
+  it("free, before the diagnostic: no upgrade link on the panel, the diagnostic card instead", async () => {
+    await mount("free", { estimateStatus: "no_baseline", projection: "none" });
+    const panel = await screen.findByTestId("home-projection");
+    expect(within(panel).queryByTestId("home-projection-upgrade")).toBeNull();
+  });
+
+  it("paid: the heading stays 'Projected score' and there is no diagnostic label or upgrade link", async () => {
+    await mount("paid", { calendar: "ready" });
+    const panel = await screen.findByTestId("home-projection");
+    expect(panel.getAttribute("data-kind")).toBe("live");
+    expect(within(panel).getByRole("heading").textContent).toBe(
+      "Projected score",
+    );
+    expect(panel.textContent).not.toContain("diagnostic");
+    expect(within(panel).queryByTestId("home-projection-upgrade")).toBeNull();
+  });
+
   it("Start diagnostic starts (or resumes) the diagnostic and opens its session", async () => {
     const { history } = await mount("free", { estimateStatus: "no_baseline" });
     const startButton = await screen.findByTestId("home-start-diagnostic");
@@ -1112,7 +1200,7 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
     expect(net.log).toContain("POST /api/practice/diagnostic/sessions");
   });
 
-  it("a finished diagnostic (baseline_pending) offers no diagnostic; Practice and Review are outlined buttons", async () => {
+  it("a finished diagnostic (baseline_pending) offers no diagnostic; Practice and Review are text-link rows (ruling 2026-10-15)", async () => {
     const { container } = await mount("free", {
       estimateStatus: "baseline_pending",
       projection: "none",
@@ -1124,17 +1212,17 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
     );
     expect(screen.queryByTestId("home-diagnostic")).toBeNull();
     expect(screen.queryByText("Start diagnostic")).toBeNull();
-    // Final brief v2 §4: Practice and Review are outlined buttons on both plans.
+    // Ruling 2026-10-15 (#1233): Practice and Review are text-link rows on both plans.
     expect(primaries(container)).toEqual([]);
-    expect(screen.getByTestId("home-go-practice").getAttribute("href")).toBe(
-      "/practice",
-    );
-    expect(screen.getByTestId("home-go-review").getAttribute("href")).toBe(
-      "/review",
-    );
+    expect(
+      screen.getByTestId("home-entry-practice-action").getAttribute("href"),
+    ).toBe("/practice");
+    expect(
+      screen.getByTestId("home-entry-review-action").getAttribute("href"),
+    ).toBe("/review");
   });
 
-  it("after the diagnostic (OQ-39(c)): the projection range; Practice and Review outlined (final brief v2 §4)", async () => {
+  it("after the diagnostic (OQ-39(c)): the projection range; Practice and Review are text-link rows (ruling 2026-10-15)", async () => {
     const { container } = await mount("free", {
       estimateStatus: "baseline_only",
     });
@@ -1142,9 +1230,9 @@ describe("Home, free (featureAccess locks calendar and mastery)", () => {
     expect(range.textContent).toBe("1140–1300");
     expect(screen.queryByTestId("home-diagnostic")).toBeNull();
     expect(primaries(container)).toEqual([]);
-    expect(screen.getByTestId("home-go-practice").getAttribute("href")).toBe(
-      "/practice",
-    );
+    expect(
+      screen.getByTestId("home-entry-practice-action").getAttribute("href"),
+    ).toBe("/practice");
   });
 });
 
@@ -1188,23 +1276,247 @@ describe("Home shows no raw accuracy, bank count or confidence (register §2; F-
   });
 });
 
-// ── The full-length card (owner ruling, Karl, 2026-10-05, item 4) ─────────────────────────
+// ── Three equal entry points (owner ruling, Karl, 2026-10-15, on #1233; wording 2026-10-15) ─
 
-describe("No full-length card on Home (final brief v2 §4, Karl, 2026-10-13)", () => {
-  it("paid: the page draws without it; full-length tests stay on /tests and in the calendar", async () => {
-    await mount("paid", { calendar: "ready" });
-    // Presence first: the page is drawn (today's plan and the Practice and Review buttons).
-    expect(await screen.findByTestId("home-plan")).toBeTruthy();
-    expect(screen.getByTestId("home-practice-review")).toBeTruthy();
-    expect(screen.queryByTestId("home-full-length")).toBeNull();
-    expect(screen.queryByTestId("home-full-length-start")).toBeNull();
+/**
+ * @spec [owner ruling (Karl, 2026-10-15, on #1233) "Home: three equal entry points"; owner
+ *       wording ruling (Karl, 2026-10-15, after #1233 merged)] | @implemented [2026-10-15]
+ * plain English: one compact section at the bottom of Home's main column on both plans, rows in
+ * the order Practice, Review, Full-Length with Karl's words ("Work on new questions", "Fix past
+ * mistakes", "Take a full-length test"), each action "Start", named by its row's title; no filled
+ * button. Review's line is the review pool's total ("{N} waiting", "All caught up" at 0, no line
+ * when the read failed). Full-Length is the phone's way to the Full-Length page (locked for
+ * free: the upgrade modal, in place).
+ */
+describe("Home: three equal entry points (owner ruling, Karl, 2026-10-15, on #1233)", () => {
+  type Row = {
+    title: string;
+    line: string | null;
+    action: HTMLElement;
+    li: HTMLElement;
+  };
+  function entryRows(): Row[] {
+    const section = screen.getByTestId("home-entry-points");
+    return Array.from(section.querySelectorAll<HTMLElement>("li")).map((li) => {
+      const action = li.querySelector<HTMLElement>("a, button");
+      if (action === null) throw new Error("a row without an action");
+      const line = li.querySelector('[data-testid="home-entry-line"]');
+      return {
+        title: li.querySelector("span")?.textContent ?? "",
+        line: line === null ? null : (line.textContent ?? ""),
+        action,
+        li,
+      };
+    });
+  }
+
+  const PAID_NAMES = [
+    "Start Work on new questions",
+    "Start Fix past mistakes",
+    "Start Take a full-length test",
+  ];
+  const FREE_LOCKED_NAME =
+    "Start Take a full-length test (included with a paid plan)";
+
+  /** Nothing on the section or above it (to <main>) hides it at any width. */
+  function expectShownAtEverySize(el: HTMLElement): void {
+    const HIDE = /(^|\s)((sm|md|lg|xl|max-lg|max-md):)?hidden(\s|$)/;
+    for (
+      let node: HTMLElement | null = el;
+      node !== null && node.tagName !== "MAIN";
+      node = node.parentElement
+    ) {
+      expect([
+        node.getAttribute("data-testid"),
+        HIDE.test(node.className),
+      ]).toEqual([node.getAttribute("data-testid"), false]);
+    }
+  }
+
+  it("paid: the three rows in order with Karl's words, each Start named by its row, at the bottom of the column", async () => {
+    const { container } = await mount("paid", { calendar: "ready" });
+    const section = await screen.findByTestId("home-entry-points");
+    const rows = entryRows();
+    expect(rows.map((r) => [r.title, r.line, r.action.textContent])).toEqual([
+      ["Work on new questions", "Any skill, any difficulty", "Start"],
+      ["Fix past mistakes", "5 waiting", "Start"],
+      ["Take a full-length test", "Timed, like test day", "Start"],
+    ]);
+    // Three "Start"s, three distinct names, each reaching its own page.
+    const links = PAID_NAMES.map((name) =>
+      within(section).getByRole("link", { name }),
+    );
+    expect(links).toEqual(rows.map((r) => r.action));
+    expect(links.map((l) => l.getAttribute("href"))).toEqual([
+      "/practice",
+      "/review",
+      "/tests",
+    ]);
+    expect(within(section).queryAllByRole("link", { name: "Start" })).toEqual(
+      [],
+    );
+    // The rows do not repeat the rail's section names.
+    for (const name of ["Practice", "Review", "Full-Length"])
+      expect(rows.map((r) => r.title)).not.toContain(name);
+    // Bottom of the main column: after today's plan, Mastery and Pick up, last of the column.
+    await waitFor(() =>
+      expect(screen.getByTestId("home-mastery")).toBeTruthy(),
+    );
+    const home = screen.getByTestId("home");
+    for (const id of ["home-plan", "home-mastery", "home-resume"]) {
+      expect(
+        screen.getByTestId(id).compareDocumentPosition(section) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    const columnSections = Array.from(home.children).filter(
+      (el) => el.tagName === "SECTION",
+    );
+    expect(columnSections.at(-1)).toBe(section);
+    expectShownAtEverySize(section);
+    // Equal weight, no filled button: one row style, text links, Home's one primary unchanged.
+    expect(new Set(rows.map((r) => r.li.className)).size).toBe(1);
+    expect(new Set(rows.map((r) => r.action.className)).size).toBe(1);
+    expect(
+      within(section)
+        .queryAllByRole("link")
+        .concat(within(section).queryAllByRole("button"))
+        .filter((el) =>
+          /bg-lyc-primary-bg|lyc-outline|border/.test(el.className),
+        ),
+    ).toEqual([]);
+    expect(primaries(container)).toEqual([
+      screen.getByTestId("home-start-plan"),
+    ]);
+    expect(screen.queryByTestId("home-entry-full-length-lock")).toBeNull();
   });
 
-  it("free: the page draws without it, and nothing opens the full-length upgrade from Home", async () => {
-    await mount("free", { estimateStatus: "baseline_only" });
-    expect(await screen.findByTestId("home-practice-review")).toBeTruthy();
-    expect(screen.queryByTestId("home-full-length")).toBeNull();
-    expect(screen.queryByTestId("home-full-length-lock")).toBeNull();
+  it("Review's line is the server's pool total: '{N} waiting', and 0 says 'All caught up'", async () => {
+    await mount("paid", { calendar: "ready", poolTotal: 17 });
+    await screen.findByTestId("home-entry-points");
+    expect(entryRows()[1]?.line).toBe("17 waiting");
+    cleanup();
+    await mount("free", { estimateStatus: "baseline_only", poolTotal: 0 });
+    await screen.findByTestId("home-entry-points");
+    expect(entryRows()[1]?.line).toBe("All caught up");
+    expect(gets()).toContain("/api/review/pool");
+  });
+
+  it("the review pool fails to load: Review has no muted line and no number, and keeps the rows' height", async () => {
+    await mount(
+      "paid",
+      { calendar: "ready" },
+      { failPath: /^\/api\/review\/pool/ },
+    );
+    // Presence first: the page drew (its load notice) and the other rows have their lines.
+    expect(await screen.findByTestId("home-load-error")).toBeTruthy();
+    const rows = entryRows();
+    expect(rows.map((r) => r.line)).toEqual([
+      "Any skill, any difficulty",
+      null,
+      "Timed, like test day",
+    ]);
+    const review = rows[1];
+    if (review === undefined) throw new Error("three rows");
+    expect(review.title).toBe("Fix past mistakes");
+    expect(review.li.textContent).not.toMatch(/\d/);
+    expect(review.li.textContent).not.toMatch(/waiting|caught up/);
+    // One row height for all three: the text block keeps a second, invisible, unread line.
+    const blocks = rows.map((r) => r.li.firstElementChild);
+    expect(blocks.map((b) => b?.childElementCount)).toEqual([2, 2, 2]);
+    const spacer = blocks[1]?.lastElementChild;
+    expect(spacer?.getAttribute("aria-hidden")).toBe("true");
+    expect(spacer?.className.split(/\s+/)).toContain("invisible");
+    expect(
+      within(screen.getByTestId("home-entry-points")).getByRole("link", {
+        name: "Start Fix past mistakes",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("free: the same rows last in the column, with the same words; Full-Length locked, named with the rail's words", async () => {
+    const { container } = await mount("free", {
+      estimateStatus: "baseline_only",
+    });
+    const section = await screen.findByTestId("home-entry-points");
+    const rows = entryRows();
+    expect(rows.map((r) => [r.title, r.line, r.action.textContent])).toEqual([
+      ["Work on new questions", "Any skill, any difficulty", "Start"],
+      ["Fix past mistakes", "5 waiting", "Start"],
+      ["Take a full-length test", "Timed, like test day", "Start"],
+    ]);
+    expect(
+      Array.from(screen.getByTestId("home").children)
+        .filter((el) => el.tagName === "SECTION")
+        .at(-1),
+    ).toBe(section);
+    expect(
+      screen.getByTestId("home-how").compareDocumentPosition(section) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      within(section).getByRole("link", { name: PAID_NAMES[0] }),
+    ).toBeTruthy();
+    expect(
+      within(section).getByRole("link", { name: PAID_NAMES[1] }),
+    ).toBeTruthy();
+    const full = within(section).getByRole("button", {
+      name: FREE_LOCKED_NAME,
+    });
+    expect(full).toBe(rows[2]?.action);
+    expect(full.getAttribute("href")).toBeNull();
+    expect(
+      within(section).getByTestId("home-entry-full-length-lock"),
+    ).toBeTruthy();
+    expect(primaries(container)).toEqual([]);
+  });
+
+  it("390px, free: 'Take a full-length test' is shown and its Start opens the upgrade modal in place (no navigation, no gated request)", async () => {
+    installPhone();
+    window.innerWidth = 390;
+    const { history } = await mount("free", {
+      estimateStatus: "baseline_only",
+    });
+    const section = await screen.findByTestId("home-entry-points");
+    expectShownAtEverySize(section);
+    const before = net.log.length;
+    fireEvent.click(
+      within(section).getByRole("button", { name: FREE_LOCKED_NAME }),
+    );
+    const modal = await screen.findByTestId("upgrade-modal");
+    expect(modal.textContent).toContain(
+      UPGRADE_MODAL_COPY.exam_full_length.plan.title,
+    );
+    expect(history).toEqual(["/dashboard"]);
+    expect(
+      net.log.slice(before).filter((l) => /\/api\/(tests|exam)/.test(l)),
+    ).toEqual([]);
+    expect(gets().filter((p) => /^\/api\/(tests|exam)/.test(p))).toEqual([]);
+  });
+
+  it("390px, paid: 'Start Take a full-length test' goes to the Full-Length page (its starts ask the phone check there)", async () => {
+    installPhone();
+    window.innerWidth = 390;
+    const { history } = await mount("paid", { calendar: "ready" });
+    const section = await screen.findByTestId("home-entry-points");
+    expectShownAtEverySize(section);
+    const start = within(section).getByRole("link", { name: PAID_NAMES[2] });
+    fireEvent.click(start);
+    expect(history.at(-1)).toBe("/tests");
+    // The link starts nothing: no launch, and the phone check belongs to the page's own starts.
+    expect(screen.queryByTestId("full-length-phone-notice")).toBeNull();
+    expect(net.log.filter((l) => l.startsWith("POST "))).toEqual([]);
+  });
+
+  it("each Start, found by its name, goes to its own page", async () => {
+    const { history } = await mount("paid", { calendar: "ready" });
+    const section = await screen.findByTestId("home-entry-points");
+    fireEvent.click(within(section).getByRole("link", { name: PAID_NAMES[0] }));
+    expect(history.at(-1)).toBe("/practice");
+    fireEvent.click(within(section).getByRole("link", { name: PAID_NAMES[1] }));
+    expect(history.at(-1)).toBe("/review");
+    fireEvent.click(within(section).getByRole("link", { name: PAID_NAMES[2] }));
+    expect(history.at(-1)).toBe("/tests");
   });
 });
 
@@ -1398,6 +1710,108 @@ describe("QA item 4: every Home CTA lands on its exact destination (owner ruling
   });
 });
 
+describe("first-run P1: the Question of the Day card lands with the page (no layout shift)", () => {
+  for (const plan of ["paid", "free"] as const) {
+    it(`${plan}: while today's question loads, Home holds its loading state; then the page and the card together`, async () => {
+      let release: () => void = () => undefined;
+      net.hold = {
+        pattern: /^\/api\/qotd\/today/,
+        gate: new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+      };
+      await mount(
+        plan,
+        plan === "paid"
+          ? { calendar: "ready" }
+          : { estimateStatus: "no_baseline" },
+        { pending: true },
+      );
+      await waitFor(() => expect(gets()).toContain("/api/qotd/today"));
+      expect(screen.getByTestId("home-loading")).toBeTruthy();
+      expect(screen.queryByTestId("home")).toBeNull();
+      await act(async () => {
+        release();
+      });
+      await screen.findByTestId("home");
+      // The card is there in the same render as the page, never pushed in after it.
+      expect(screen.getByTestId("home-qotd")).toBeTruthy();
+    });
+  }
+});
+
+describe("first-run P1: a failed QOTD read ends Home's wait, once (no reload loop)", () => {
+  for (const plan of ["paid", "free"] as const) {
+    it(`${plan}: the page draws with the card's error, and today's question is asked for once`, async () => {
+      await mount(
+        plan,
+        plan === "paid"
+          ? { calendar: "ready" }
+          : { estimateStatus: "no_baseline" },
+        { failPath: /^\/api\/qotd\/today/ },
+      );
+      expect(await screen.findByTestId("home-qotd-error")).toBeTruthy();
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 300));
+      });
+      expect(screen.getByTestId("home")).toBeTruthy();
+      expect(gets().filter((p) => p === "/api/qotd/today")).toHaveLength(1);
+    });
+  }
+});
+
+describe("first-run P1: 'This week' ticks the days with study activity", () => {
+  it("ticks exactly the server's active days (the streak's day set), whatever the plan says; the plan line stays separate", async () => {
+    await mount("paid", {
+      calendar: "ready",
+      activeDays: ["2026-09-29", "2026-10-01"],
+    });
+    const week = await screen.findByTestId("home-week");
+    const days = within(week).getAllByRole("listitem");
+    expect(days).toHaveLength(7);
+    const ticked = days
+      .filter(
+        (li) =>
+          within(li)
+            .getByTestId("home-week-tick")
+            .getAttribute("data-studied") === "true",
+      )
+      .map((li) => li.textContent);
+    // Presence first: two days carry the tick, each named "studied" for screen readers.
+    expect(ticked).toEqual(["Tue29✓studied", "Thu1✓studied"]);
+    // Plan completion is its own line, unchanged by the ticks.
+    expect(within(week).getByText("1 of 6 days done.")).toBeTruthy();
+  });
+
+  it("no active days: no tick at all", async () => {
+    await mount("paid", { calendar: "ready" });
+    const week = await screen.findByTestId("home-week");
+    expect(week.textContent).not.toContain("✓");
+    expect(week.textContent).not.toContain("studied");
+  });
+});
+
+describe("first-run P1: today's plan rows act through text links", () => {
+  it("each row's action is a text link; 'Start today's plan' is Home's only filled button", async () => {
+    const { container } = await mount("paid", { calendar: "ready" });
+    const rows = await screen.findAllByTestId("home-plan-start");
+    // Presence first: the fixture day has rows.
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const classes = row.className.split(/\s+/);
+      expect(classes).toContain("underline");
+      expect(classes).not.toContain("border");
+      expect(classes).not.toContain("bg-lyc-primary-bg");
+    }
+    await waitFor(() =>
+      expect(screen.getByTestId("home-mastery")).toBeTruthy(),
+    );
+    expect(primaries(container)).toEqual([
+      screen.getByTestId("home-start-plan"),
+    ]);
+  });
+});
+
 describe("QA item 5: Home's starts show a pending state from the first click", () => {
   it("'Start today's plan': 'Starting…', disabled and busy while the launch is in flight; one launch", async () => {
     let release: () => void = () => undefined;
@@ -1469,7 +1883,9 @@ describe("QA item 5: Home's starts show a pending state from the first click", (
     const start = (await screen.findByTestId(
       "home-start-diagnostic",
     )) as HTMLButtonElement;
-    expect(start.textContent).toBe("Find your blind spots");
+    // First-run P1 (reconciled with the rename 2026-10-15): the fixture's diagnostic is in
+    // progress (12 resolved of 40).
+    expect(start.textContent).toBe("Resume · question 13 of 40");
     await act(async () => {
       fireEvent.click(start);
     });
@@ -1616,33 +2032,9 @@ describe("QA item 15: one empty-day sentence", () => {
   });
 });
 
-// ── Owner re-test (Karl, 2026-10-08) item A: the review cap ───────────────────────────────────
+// ── The review cap notice: RETIRED (owner rulings, Karl, 2026-10-21, on #1277, ruling 3) ──────
 
-describe("QA2-A: a recent session's review start, refused by the review cap, is answered at that row", () => {
-  /** The real producer's cap refusal (review-cap.fixture.ts). */
-  let CAP_BODY: Record<string, unknown>;
-  beforeAll(async () => {
-    db.from = capTables;
-    try {
-      CAP_BODY = (await reviewCapRefusal()).body;
-    } finally {
-      db.from = null;
-    }
-  });
-
-  let scrolled: ReturnType<typeof vi.fn>;
-  beforeEach(() => {
-    scrolled = vi.fn();
-    Object.defineProperty(Element.prototype, "scrollIntoView", {
-      configurable: true,
-      writable: true,
-      value: scrolled,
-    });
-  });
-  afterEach(() => {
-    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-  });
-
+describe("F-81: a recent session's refused review start is a plain failure line; there is no cap notice", () => {
   function refuseCreate(body: unknown, status: number): void {
     net.handlers.unshift((url, init) =>
       init?.method === "POST" && url === "/api/review/sessions"
@@ -1661,50 +2053,33 @@ describe("QA2-A: a recent session's review start, refused by the review cap, is 
     return first;
   }
 
-  it.each([403, 409])(
-    "refused with %i: the message directly under the pressed row, scrolled into view; Continue opens the open session",
-    async (status) => {
-      const { history } = await mount("paid", { calendar: "ready" });
-      expect(CAP_BODY.code).toBe("SESSION_LIMIT_EXCEEDED");
-      refuseCreate(CAP_BODY, status);
-      const pressed = await pressFirstRecent();
-      const cap = await screen.findByTestId("review-cap");
-      expect(screen.getAllByTestId("review-cap")).toHaveLength(1);
-      expect(cap.textContent).toContain("Too many open review sessions");
-      expect(cap.textContent).toContain(String(CAP_BODY.message));
-      // At the pressed row: the list item right after it holds the notice.
-      const row = pressed.closest("li");
-      expect(row?.nextElementSibling?.contains(cap)).toBe(true);
-      expect(row?.nextElementSibling?.getAttribute("data-testid")).toBe(
-        "home-recent-cap",
-      );
-      // Not the old red line under the whole list.
-      expect(
-        within(screen.getByTestId("home-recent")).queryByRole("alert"),
-      ).toBeNull();
-      // Never below the fold.
-      expect(scrolled.mock.contexts).toContain(cap.parentElement);
-      // The row is not left pending.
-      expect(pressed.textContent).toBe("Review this session");
-
-      fireEvent.click(
-        within(cap).getByRole("button", { name: "Continue your open session" }),
-      );
-      expect(history.at(-1)).toBe(`/review/session/${REVIEW_ID}`);
-    },
-  );
-
-  it("End a session goes to Review's open sessions, focused there", async () => {
-    const { history } = await mount("paid", { calendar: "ready" });
-    refuseCreate(CAP_BODY, 409);
-    await pressFirstRecent();
-    const cap = await screen.findByTestId("review-cap");
-    fireEvent.click(within(cap).getByRole("button", { name: "End a session" }));
-    expect(history.at(-1)).toBe("/review?focus=open-sessions");
+  it("an old server's cap refusal is the plain failure line in its words, with no cap notice or actions", async () => {
+    await mount("paid", { calendar: "ready" });
+    refuseCreate(
+      {
+        error: "session_limit_exceeded",
+        code: "SESSION_LIMIT_EXCEEDED",
+        message:
+          "You already have 5 open review sessions. Finish or end one first.",
+        maxConcurrentSessions: 5,
+      },
+      403,
+    );
+    const pressed = await pressFirstRecent();
+    const recent = screen.getByTestId("home-recent");
+    expect((await within(recent).findByRole("alert")).textContent).toBe(
+      "You already have 5 open review sessions. Finish or end one first.",
+    );
+    expect(screen.queryByTestId("review-cap")).toBeNull();
+    expect(screen.queryByTestId("home-recent-cap")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Continue your open session" }),
+    ).toBeNull();
+    expect(pressed.textContent).toBe("Review this session");
   });
 
   it.each([403, 409])(
-    "a different refusal under %i is not the cap: the plain failure line, no cap actions",
+    "a refusal under %i: the plain failure line, no cap actions",
     async (status) => {
       await mount("paid", { calendar: "ready" });
       refuseCreate(
@@ -1777,7 +2152,7 @@ describe("Getting started on Home (final brief v2 §4, Karl, 2026-10-13)", () =>
     const checklist = await screen.findByTestId("getting-started");
     const qotd = screen.getByTestId("home-qotd");
     const blind = screen.getByTestId("home-diagnostic");
-    const buttons = screen.getByTestId("home-practice-review");
+    const buttons = screen.getByTestId("home-entry-points");
     const header = screen.getByRole("heading", { level: 1 });
     expect(precedes(header, checklist)).toBe(true);
     expect(precedes(checklist, qotd)).toBe(true);
@@ -1874,14 +2249,14 @@ describe("QA2-F: Home is drawn once, complete", () => {
     await waitFor(() => expect(gets()).toContain("/api/calendar"));
     expect(screen.getByTestId("home-loading")).toBeTruthy();
     expect(screen.queryByTestId("home")).toBeNull();
-    expect(screen.queryByTestId("home-practice-review")).toBeNull();
+    expect(screen.queryByTestId("home-entry-points")).toBeNull();
     expect(screen.getByTestId("home-panel-loading")).toBeTruthy();
     await act(async () => {
       release();
     });
     await screen.findByTestId("home");
     expect(screen.getByTestId("home-plan")).toBeTruthy();
-    expect(screen.getByTestId("home-practice-review")).toBeTruthy();
+    expect(screen.getByTestId("home-entry-points")).toBeTruthy();
     expect(screen.getByTestId("home-mastery")).toBeTruthy();
     expect(screen.getByTestId("home-panel")).toBeTruthy();
     expect(screen.queryByTestId("home-loading")).toBeNull();
@@ -1891,12 +2266,12 @@ describe("QA2-F: Home is drawn once, complete", () => {
     const release = holdUntilReleased(/^\/api\/review\/pool/);
     await mount("paid", { calendar: "ready" }, { pending: true });
     await waitFor(() => expect(gets()).toContain("/api/review/pool"));
-    expect(screen.queryByTestId("home-practice-review")).toBeNull();
+    expect(screen.queryByTestId("home-entry-points")).toBeNull();
     await act(async () => {
       release();
     });
     await screen.findByTestId("home");
-    expect(screen.getByTestId("home-practice-review")).toBeTruthy();
+    expect(screen.getByTestId("home-entry-points")).toBeTruthy();
   });
 
   it("free, the projection status (which decides the diagnostic card above the card) in flight: only the placeholder", async () => {
@@ -1908,12 +2283,12 @@ describe("QA2-F: Home is drawn once, complete", () => {
     );
     await waitFor(() => expect(gets()).toContain("/api/progress/projection"));
     expect(screen.queryByTestId("home")).toBeNull();
-    expect(screen.queryByTestId("home-practice-review")).toBeNull();
+    expect(screen.queryByTestId("home-entry-points")).toBeNull();
     await act(async () => {
       release();
     });
     await screen.findByTestId("home");
-    expect(screen.getByTestId("home-practice-review")).toBeTruthy();
+    expect(screen.getByTestId("home-entry-points")).toBeTruthy();
   });
 
   it("the placeholder reserves the screen, so the footer under it starts below the screen", async () => {
@@ -1931,6 +2306,6 @@ describe("QA2-F: Home is drawn once, complete", () => {
       { failPath: /^\/api\/review\/pool/ },
     );
     expect(await screen.findByTestId("home-load-error")).toBeTruthy();
-    expect(screen.getByTestId("home-practice-review")).toBeTruthy();
+    expect(screen.getByTestId("home-entry-points")).toBeTruthy();
   });
 });

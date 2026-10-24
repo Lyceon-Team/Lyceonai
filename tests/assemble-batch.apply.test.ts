@@ -18,7 +18,10 @@ import pg from "pg";
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRATCH = resolve(ROOT, "tests/__fixtures__/assemble-batch-apply");
 const ASSEMBLE_BATCH_SCRIPT = resolve(ROOT, "scripts/assemble-batch.ts");
-const PROD_CORPUS_PATH = resolve(ROOT, "content/canonical/prod_dedup_corpus.txt");
+const PROD_CORPUS_PATH = resolve(
+  ROOT,
+  "content/canonical/prod_dedup_corpus.txt",
+);
 
 /**
  * Seed a throwaway dedup corpus from the real one and return its path.
@@ -369,7 +372,10 @@ describe("assemble-batch apply-proof (ephemeral PG)", () => {
           D: { role: "distractor", error_taxonomy: "evidence_mismatch" },
         },
         explanation:
-          "The correct answer is B. The mother's letter directly contradicts Thomas's claim. Option A illustrates Thomas's own narration. Option C is a qualified reflection. Option D is neutral.",
+          // Choices named by content, never by letter: the gate hard-fails OPTION_LETTER_REF
+          // (scripts/assemble-batch.ts, "Option A") since cd4351ed. The embedded double quotes
+          // stay, because carrying them through the SQL is what this case proves.
+          'The mother\'s letter, "I worry about the boys constantly fighting," directly contradicts Thomas\'s claim. Thomas\'s own statement only repeats his narration. The "childhood has layers" reflection is a qualified reflection. The holiday dinner in the epilogue is neutral.',
         estimated_time_seconds: 120,
       };
 

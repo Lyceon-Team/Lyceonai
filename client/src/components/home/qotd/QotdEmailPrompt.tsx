@@ -21,16 +21,23 @@ import type { QotdEmailDecision } from "@/hooks/useHomeQotd";
 export function QotdEmailPrompt({
   open,
   showDontAskAgain,
-  pending,
+  pendingDecision,
   error,
   onDecide,
 }: {
   open: boolean;
   showDontAskAgain: boolean;
-  pending: boolean;
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "the spinner shows
+   *       only on the tapped button"] | @implemented [2026-10-13]
+   * plain English: the decision being saved, or null. Every action is disabled while one saves;
+   * only the pressed one draws the spinner (it used to be "Yes" whatever was pressed).
+   */
+  pendingDecision: QotdEmailDecision | null;
   error: string | null;
   onDecide: (decision: QotdEmailDecision) => void;
 }): JSX.Element {
+  const pending = pendingDecision !== null;
   return (
     <Modal
       open={open}
@@ -53,7 +60,7 @@ export function QotdEmailPrompt({
               variant="lyc-primary"
               size="lyc-lg"
               autoFocus
-              pending={pending}
+              pending={pendingDecision === "grant"}
               disabled={pending}
               onClick={() => onDecide("grant")}
               data-testid="qotd-email-yes"
@@ -64,6 +71,7 @@ export function QotdEmailPrompt({
               type="button"
               variant="lyc-outline"
               size="lyc-lg"
+              pending={pendingDecision === "not_now"}
               disabled={pending}
               onClick={() => onDecide("not_now")}
               data-testid="qotd-email-not-now"

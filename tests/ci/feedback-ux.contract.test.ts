@@ -58,8 +58,13 @@ describe("Feedback UX hardening contract", () => {
     expect(chat).toMatch(/upgrade\.open\("tutor_access", "plan"\)/);
     expect(chat).toMatch(/if \(denied\) return <LisaLocked reason="plan" \/>;/);
     expect(chat).not.toContain("<LisaUpgradeCard");
+    // 2026-10-22 (owner brief "LISA chat dock"): the panel's body, card included, moved verbatim
+    // into TutorConversationBody, which the phone panel and the chat dock both draw.
+    expect(
+      read("client/src/components/tutor/TutorConversationBody.tsx"),
+    ).toContain("<LisaUpgradeCard />");
     expect(read("client/src/components/tutor/ScopedTutorPanel.tsx")).toContain(
-      "<LisaUpgradeCard />",
+      "<TutorConversationBody",
     );
     // OQ-54 (a) / OQ-57 (f), owner ruling 2026-10-05: the in-review card leaves this list too.
     // It is /chat's locked card in the panel: the approved copy from the modal's table and

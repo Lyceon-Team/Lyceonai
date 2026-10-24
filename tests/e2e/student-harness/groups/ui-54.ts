@@ -128,12 +128,12 @@ export const UI_54: PageGroup = {
     {
       id: "home-practice-review-load-shift",
       title:
-        "QA2-F: Home (paid) to its Practice and Review buttons (the full-length card they replaced is gone, final brief v2 §4), loaded over a slow network (every `/api/` answer 600ms late): the page's layout shift during load must stay under 0.01 (the run fails otherwise); the measured sum and its largest shifts are under each shot",
+        "QA2-F: Home (paid) to its Practice, Review and Full-Length rows at the bottom of the column (owner ruling, Karl, 2026-10-15, on #1233), loaded over a slow network (every `/api/` answer 600ms late): the page's layout shift during load must stay under 0.01 (the run fails otherwise); the measured sum and its largest shifts are under each shot",
       persona: "paid",
       route: "/dashboard",
       waitFor: {
-        desktop: '[data-testid="home-practice-review"]',
-        mobile: '[data-testid="home-practice-review"]',
+        desktop: '[data-testid="home-entry-points"]',
+        mobile: '[data-testid="home-entry-points"]',
       },
       layoutShift: { max: 0.01, apiDelayMs: 600 },
       extraViewports: [W1024],
@@ -145,12 +145,12 @@ export const UI_54: PageGroup = {
     {
       id: "home-practice-review-load-shift-free",
       title:
-        "QA2-F: Home (free, with the Getting started checklist) to its Practice and Review buttons, loaded over a slow network: layout shift during load under 0.01",
+        "QA2-F: Home (free, with the Getting started checklist) to its Practice, Review and Full-Length rows, loaded over a slow network: layout shift during load under 0.01",
       persona: "free",
       route: "/dashboard",
       waitFor: {
-        desktop: '[data-testid="home-practice-review"]',
-        mobile: '[data-testid="home-practice-review"]',
+        desktop: '[data-testid="home-entry-points"]',
+        mobile: '[data-testid="home-entry-points"]',
       },
       layoutShift: { max: 0.01, apiDelayMs: 600 },
       extraViewports: [W1024],
