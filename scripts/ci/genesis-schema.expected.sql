@@ -9469,6 +9469,111 @@ $$;
 
 
 --
+-- Name: landing_claim_open(uuid, integer, text, text[], text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone) RETURNS TABLE(show_id uuid, arm text, eligible_arms text[], first_in_window boolean)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+#variable_conflict use_column
+DECLARE
+  v_first   boolean;
+  v_arm     text;
+  v_elig    text[];
+  v_show_id uuid;
+BEGIN
+  INSERT INTO public.landing_windows
+    (profile_id, window_index, arm, eligible_arms, assigned_at, device_class)
+  VALUES (p_profile_id, p_window_index, p_arm, p_eligible_arms, p_now, p_device_class)
+  ON CONFLICT (profile_id, window_index) DO NOTHING;
+  v_first := FOUND;
+
+  -- The window's stored arm wins: a second open (or a racing one) never re-draws.
+  SELECT w.arm, w.eligible_arms INTO v_arm, v_elig
+    FROM public.landing_windows w
+   WHERE w.profile_id = p_profile_id AND w.window_index = p_window_index;
+
+  INSERT INTO public.landing_shows
+    (profile_id, window_index, chicago_day, shown_at, arm, device_class)
+  VALUES (p_profile_id, p_window_index, public.chicago_day(p_now), p_now, v_arm, p_device_class)
+  ON CONFLICT (profile_id, window_index, chicago_day) DO NOTHING
+  RETURNING id INTO v_show_id;
+
+  IF v_show_id IS NULL THEN
+    RETURN;  -- already shown this Chicago day in this window: no landing
+  END IF;
+  RETURN QUERY SELECT v_show_id, v_arm, v_elig, v_first;
+END;
+$$;
+
+
+--
+-- Name: landing_claim_summaries(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_claim_summaries(p_now timestamp with time zone, p_limit integer) RETURNS TABLE(show_id uuid, profile_id uuid, window_index integer, arm text, device_class text, questions_answered integer)
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH due AS (
+    SELECT s.id
+      FROM public.landing_shows s
+     WHERE s.summarized_at IS NULL
+       AND s.chicago_day < public.chicago_day(p_now)
+     ORDER BY s.chicago_day, s.id
+     LIMIT p_limit
+     FOR UPDATE SKIP LOCKED
+  ), claimed AS (
+    UPDATE public.landing_shows s
+       SET summarized_at = p_now
+      FROM due
+     WHERE s.id = due.id
+    RETURNING s.id, s.profile_id, s.window_index, s.arm, s.device_class, s.shown_at,
+              s.chicago_day
+  ), bounded AS (
+    SELECT c.*,
+           LEAST(
+             COALESCE((SELECT min(n.shown_at) FROM public.landing_shows n
+                        WHERE n.profile_id = c.profile_id AND n.shown_at > c.shown_at),
+                      'infinity'::timestamptz),
+             ((c.chicago_day + 1)::timestamp AT TIME ZONE 'America/Chicago')
+           ) AS ends_at
+      FROM claimed c
+  )
+  SELECT b.id, b.profile_id, b.window_index, b.arm, b.device_class,
+         ((SELECT count(*) FROM public.practice_session_items i
+            WHERE i.user_id = b.profile_id AND i.status = 'answered'
+              AND i.answered_at >= b.shown_at AND i.answered_at < b.ends_at)
+          + (SELECT count(*) FROM public.review_session_items r
+              WHERE r.student_id = b.profile_id AND r.status = 'answered'
+                AND r.answered_at >= b.shown_at AND r.answered_at < b.ends_at))::integer
+    FROM bounded b;
+$$;
+
+
+--
+-- Name: landing_record_escape(uuid, uuid, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) RETURNS TABLE(window_index integer, arm text, device_class text)
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.landing_shows s
+     SET escaped_at = p_now
+   WHERE s.id = p_show_id
+     AND s.profile_id = p_profile_id
+     AND s.escaped_at IS NULL
+     AND s.arm <> 'dashboard'
+     AND s.fallback_reason IS NULL
+     AND p_now >= s.shown_at
+     AND p_now <= s.shown_at + make_interval(secs => p_max_seconds)
+  RETURNING s.window_index, s.arm, s.device_class;
+$$;
+
+
+--
 -- Name: lifecycle_claim(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -17225,6 +17330,45 @@ CREATE TABLE public.internal_service_auth_config_history (
 
 
 --
+-- Name: landing_shows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_shows (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_id uuid NOT NULL,
+    window_index integer NOT NULL,
+    chicago_day date NOT NULL,
+    shown_at timestamp with time zone NOT NULL,
+    arm text NOT NULL,
+    device_class text NOT NULL,
+    fallback_reason text,
+    escaped_at timestamp with time zone,
+    summarized_at timestamp with time zone,
+    CONSTRAINT landing_shows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
+    CONSTRAINT landing_shows_fallback_reason_check CHECK ((fallback_reason = ANY (ARRAY['quota_exhausted'::text, 'session_limit'::text, 'no_questions'::text, 'qotd_unavailable'::text, 'no_block_today'::text, 'not_entitled'::text, 'error'::text])))
+);
+
+
+--
+-- Name: landing_windows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_windows (
+    profile_id uuid NOT NULL,
+    window_index integer NOT NULL,
+    arm text NOT NULL,
+    eligible_arms text[] NOT NULL,
+    assigned_at timestamp with time zone DEFAULT now() NOT NULL,
+    device_class text NOT NULL,
+    CONSTRAINT landing_windows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]))),
+    CONSTRAINT landing_windows_arm_is_eligible CHECK ((arm = ANY (eligible_arms))),
+    CONSTRAINT landing_windows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
+    CONSTRAINT landing_windows_eligible_known CHECK (((eligible_arms <@ ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]) AND ('dashboard'::text = ANY (eligible_arms)))),
+    CONSTRAINT landing_windows_window_index_check CHECK ((window_index >= 0))
+);
+
+
+--
 -- Name: legal_acceptance_outbox; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20033,6 +20177,30 @@ ALTER TABLE ONLY public.internal_service_auth_config
 
 
 --
+-- Name: landing_shows landing_shows_one_per_day; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_one_per_day UNIQUE (profile_id, window_index, chicago_day);
+
+
+--
+-- Name: landing_shows landing_shows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: landing_windows landing_windows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_windows
+    ADD CONSTRAINT landing_windows_pkey PRIMARY KEY (profile_id, window_index);
+
+
+--
 -- Name: legal_acceptance_outbox legal_acceptance_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21869,6 +22037,13 @@ CREATE INDEX idx_usage_rate_limit_ledger_student_user ON public.usage_rate_limit
 
 
 --
+-- Name: landing_shows_unsummarized_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX landing_shows_unsummarized_idx ON public.landing_shows USING btree (chicago_day) WHERE (summarized_at IS NULL);
+
+
+--
 -- Name: marketing_consent_log_profile; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -22973,6 +23148,30 @@ ALTER TABLE ONLY public.internal_service_auth_config_history
 
 ALTER TABLE ONLY public.internal_service_auth_config
     ADD CONSTRAINT internal_service_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_shows landing_shows_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_shows landing_shows_window_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_window_fk FOREIGN KEY (profile_id, window_index) REFERENCES public.landing_windows(profile_id, window_index) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_windows landing_windows_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_windows
+    ADD CONSTRAINT landing_windows_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -24210,6 +24409,18 @@ ALTER TABLE public.internal_service_auth_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.internal_service_auth_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: landing_shows; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.landing_shows ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: landing_windows; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.landing_windows ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: legal_acceptance_outbox; Type: ROW SECURITY; Schema: public; Owner: -
@@ -26505,6 +26716,30 @@ GRANT ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id t
 
 
 --
+-- Name: FUNCTION landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION landing_claim_summaries(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_claim_summaries(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_claim_summaries(p_now timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) TO service_role;
+
+
+--
 -- Name: FUNCTION lifecycle_claim(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28536,6 +28771,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.internal_service_auth_config T
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.internal_service_auth_config_history TO service_role;
+
+
+--
+-- Name: TABLE landing_shows; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.landing_shows TO service_role;
+
+
+--
+-- Name: TABLE landing_windows; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.landing_windows TO service_role;
 
 
 --

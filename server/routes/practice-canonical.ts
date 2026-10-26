@@ -81,6 +81,10 @@ import {
   timedStep,
 } from "../lib/step-timer";
 import { diagnosticCompletionResultSchema } from "../../packages/shared/src/diagnostic-projection";
+import {
+  planLandingDraws,
+  type LandingSetKind,
+} from "../services/landing/assignment";
 
 /**
  * Runtime idempotency contract (practice/review/full-length):
@@ -147,6 +151,8 @@ type SessionMetadata = {
   selection_mode?: "exact" | "exact_reuse";
   session_start_idempotency_key?: string | null;
   last_served_ordinal?: number;
+  /** Set on a smart-landing set: how its draws were composed (audit only). */
+  landing_composition?: LandingSetKind;
 };
 
 type CanonicalSessionSpec = {
@@ -1615,6 +1621,12 @@ export async function startOrReplaySession(args: {
   idempotencyKey: string | null;
   targetQuestionCount: number;
   sessionSpec: CanonicalSessionSpec;
+  /**
+   * SERVER-ONLY. A smart-landing set (owner brief "Smart landing", Karl, 2026-10-26): the items
+   * are drawn as `planLandingDraws` orders them, so the first two are easy or medium. Never read
+   * from a request body; only the landing service and the calendar launch it drives set it.
+   */
+  composition?: LandingSetKind;
 }): Promise<
   | {
       ok: true;
@@ -1846,6 +1858,9 @@ export async function startOrReplaySession(args: {
     session_spec: args.sessionSpec,
     prebuilt: false,
     session_start_idempotency_key: args.idempotencyKey,
+    ...(args.composition === undefined
+      ? {}
+      : { landing_composition: args.composition }),
   };
 
   // @spec [Doc-02B_V4 §14/§15; SCL-P-ADAPTIVE] | @implemented [2026-06-27]
@@ -1871,21 +1886,59 @@ export async function startOrReplaySession(args: {
     d === "easy" ? 1 : d === "hard" ? 3 : 2,
   );
 
-  // 3. Call DB-side random selection
-  const { data: poolRows, error: poolError } = await timedStep(
-    "pool_select",
-    () =>
+  // 3. Call DB-side random selection. One draw for an ordinary start; for a smart-landing set,
+  //    the ordered draws of `planLandingDraws` (owner brief "Smart landing", Karl, 2026-10-26:
+  //    "the first 2 items are easy or medium, then normal selection"; ruling D: math first = 5
+  //    Math then 5 Reading and Writing). Every draw is this same RPC with the session's own
+  //    filters, so selection inside a draw is unchanged; each draw excludes what the earlier
+  //    ones took. An easy/medium draw keeps only 1 and 2 of the session's own difficulties.
+  const draws =
+    args.composition === undefined
+      ? [
+          {
+            sections: sectionCodes,
+            difficulties: difficultyInts,
+            limit: requestedCount,
+          },
+        ]
+      : planLandingDraws(args.composition, requestedCount, sectionCodes).map(
+          (draw) => ({
+            sections: draw.sections,
+            difficulties: draw.easyMediumOnly
+              ? (difficultyInts.length > 0 ? difficultyInts : [1, 2]).filter(
+                  (d) => d <= 2,
+                )
+              : difficultyInts,
+            limit: draw.limit,
+          }),
+        );
+  const poolRows: unknown[] = [];
+  let poolError: { message: string } | null = null;
+  const drawnIds: string[] = [];
+  for (const draw of draws) {
+    const exclude = [...excludeIds, ...drawnIds];
+    const { data, error } = await timedStep("pool_select", () =>
       supabaseServer.rpc("select_practice_pool_random", {
-        p_sections: sectionCodes.length > 0 ? sectionCodes : null,
+        p_sections: draw.sections.length > 0 ? draw.sections : null,
         p_domains:
           args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null,
         p_skills:
           args.sessionSpec.skills.length > 0 ? args.sessionSpec.skills : null,
-        p_difficulties: difficultyInts.length > 0 ? difficultyInts : null,
-        p_exclude_ids: excludeIds.length > 0 ? excludeIds : null,
-        p_limit: requestedCount,
+        p_difficulties: draw.difficulties.length > 0 ? draw.difficulties : null,
+        p_exclude_ids: exclude.length > 0 ? exclude : null,
+        p_limit: draw.limit,
       }),
-  );
+    );
+    if (error) {
+      poolError = error;
+      break;
+    }
+    for (const row of (data ?? []) as unknown[]) {
+      poolRows.push(row);
+      const id = (row as { id?: unknown }).id;
+      if (typeof id === "string") drawnIds.push(id);
+    }
+  }
 
   if (poolError) {
     return {
@@ -1899,7 +1952,7 @@ export async function startOrReplaySession(args: {
   }
 
   // 4. Validate and convert DB rows through the canonical pipeline
-  const mappedRows = ((poolRows ?? []) as unknown[]).map((row) =>
+  const mappedRows = poolRows.map((row) =>
     mapGenesisQuestionRow(row as CanonicalQuestionRowLike),
   );
   const validPool = mappedRows
