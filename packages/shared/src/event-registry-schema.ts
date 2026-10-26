@@ -27,7 +27,11 @@ export const EVENT_REDACTION_METHODS = [
 export const eventRedactionMethodSchema = z.enum(EVENT_REDACTION_METHODS);
 export type EventRedactionMethod = z.infer<typeof eventRedactionMethodSchema>;
 
-/** Doc 07A §6.1, with the cohort class of §6.0. */
+/**
+ * Doc 07A §6.1, with the cohort class of §6.0. `experiment` added for the smart landing test's
+ * events (Karl's rulings on Smart landing Step 0, 2026-10-26: "add an `experiment` event class to
+ * the shared schema").
+ */
 export const canonicalEventClassSchema = z.enum([
   "auth",
   "cohort",
@@ -37,6 +41,7 @@ export const canonicalEventClassSchema = z.enum([
   "tutor",
   "mastery",
   "system",
+  "experiment",
 ]);
 
 /** Doc 07A §6.1: the four base fields every payload carries, injected by the wrapper only. */

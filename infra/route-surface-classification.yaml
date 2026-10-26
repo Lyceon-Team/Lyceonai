@@ -639,6 +639,19 @@ routes:
     requires_hmac: false
     prerender: false
     indexable: false
+  # Smart landing (owner brief, Karl, 2026-10-26, ruling D): the full-screen Question of the Day
+  # the `qotd_then_more` landing opens; Home's QOTD card, then "5 more?".
+  - path_pattern: /qotd
+    surface_class: authenticated_student
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-05
+    last_classified_at: 2026-10-26
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
   - path_pattern: /practice/session/:sessionId
     surface_class: authenticated_student
     clarity_allowed: false

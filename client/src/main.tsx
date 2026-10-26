@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App";
 import { captureFirstTouch } from "./lib/analytics/first-touch";
+import { captureBootEntry } from "./lib/landing-entry";
 import "./index.css";
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: the math stylesheet is no longer imported here. MathRenderer.tsx imports it
@@ -39,6 +40,9 @@ window.__BUILD__ = `${new Date().toISOString().slice(0, 10)}-${Date.now().toStri
 // No network. Kept in sessionStorage only once analytics is accepted (first-touch.ts); until
 // then, memory only — so it is safe to run before consent is known.
 captureFirstTouch();
+// Smart landing (Karl, 2026-10-26, ruling A): remember whether this page load is a default entry
+// (Home with nothing else in the address), before the router can change the address.
+captureBootEntry(window.location);
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

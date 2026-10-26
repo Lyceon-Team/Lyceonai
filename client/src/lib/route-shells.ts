@@ -153,6 +153,9 @@ export const STUDENT_ROUTE_SHELLS = {
   // (ScopedTutorPanel) and its denial card (LisaUpgradeCard, now /chat's locked card with the
   // approved copy) followed, so nothing in the review runner reads the light tokens; off the lock.
   "/practice/session/:sessionId": focus("Practice", "/practice", false, null),
+  // Owner brief "Smart landing" (Karl, 2026-10-26), ruling D: the full-screen QOTD of the
+  // `qotd_then_more` landing. Student tokens only, so off the light lock like the runner.
+  "/qotd": focus("Question of the Day", "/dashboard", false, null),
   // Owner brief 2026-10-10 rule 3: the diagnostic start page hands straight over to the session
   // above, so it is drawn in the same Focus frame (no shell change between the two).
   "/practice/diagnostic": focus("Practice", "/practice", false, null),
