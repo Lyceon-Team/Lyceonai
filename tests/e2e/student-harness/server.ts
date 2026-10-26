@@ -33,6 +33,10 @@ import express, {
 import rateLimit from "express-rate-limit";
 import { setHarnessPg } from "../exam-harness/pg";
 import {
+  HARNESS_RATE_LIMIT_WINDOW_MS,
+  harnessRateLimitMax,
+} from "./rate-limit";
+import {
   applyQuotaConfig,
   buildStudentHarnessDb,
   seedPaidNotifications,
@@ -148,12 +152,13 @@ async function main(): Promise<void> {
 
   const app = express();
   app.use(express.json());
-  // The same global limiter, with the same values, that server/index.ts mounts before every
-  // route, so the harness's persona lookup and routes sit behind it as production's do.
+  // The same global limiter that server/index.ts mounts before every route, so the harness's
+  // persona lookup and routes sit behind it as production's do; the same window, and a higher
+  // ceiling for the test server only (rate-limit.ts; owner ruling, Karl, 2026-10-24).
   app.use(
     rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: 1000,
+      windowMs: HARNESS_RATE_LIMIT_WINDOW_MS,
+      max: harnessRateLimitMax(),
       standardHeaders: true,
       legacyHeaders: false,
     }),

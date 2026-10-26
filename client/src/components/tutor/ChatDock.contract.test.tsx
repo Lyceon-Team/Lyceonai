@@ -943,13 +943,21 @@ describe("practice scope (the practice runner, after submit): the answered item'
 // ── F-91 (owner ruling 1 on #1300): the runner's conversations on the LISA page ─────────────
 
 describe("F-91: the LISA page lists the runner's per-question conversations, labelled with their question, read-only", () => {
-  /** A review question's conversation as the runner's dock writes it, with one turn each way. */
-  function seedScopedConversation(itemId: string): string {
+  /**
+   * A question's conversation as the runner's dock writes it, with one turn each way. Started on
+   * September 21 and last active on September 23 (owner ruling 2026-10-24: the label's date is
+   * when the chat happened, `created_at`), so the two dates can tell the fields apart.
+   */
+  function seedScopedConversation(
+    itemId: string,
+    surface: "review" | "practice" = "review",
+  ): string {
     const convId = db.current.seed("tutor_conversations", {
       student_id: STUDENT_ID,
       entry_mode: "scoped_question",
-      source_surface: "review",
-      surface: "review",
+      source_surface: surface,
+      surface,
+      created_at: "2026-09-21T15:00:00.000Z",
       source_session_id: null,
       source_session_item_id: itemId,
       source_question_row_id: QUESTION_ID,
@@ -993,8 +1001,9 @@ describe("F-91: the LISA page lists the runner's per-question conversations, lab
     );
     // Presence first: the row is there, with its title and its question label.
     expect(row).toBeTruthy();
+    // Owner ruling 2026-10-24: type and the day it happened (created_at), U+00B7 between.
     expect(within(row!).getByTestId("lisa-history-scope").textContent).toBe(
-      "Review question",
+      "Review question \u00b7 Sep 21",
     );
     expect(row!.textContent).toContain("where do I start?");
     // The label names the question by its surface only: no stem, no answer, no explanation.
@@ -1013,13 +1022,32 @@ describe("F-91: the LISA page lists the runner's per-question conversations, lab
     expect(within(page).getByTestId("student-bubble").textContent).toContain(
       "where do I start?",
     );
-    expect(within(page).getByTestId("lisa-scoped-note")).toBeTruthy();
+    // Approved wording (Karl, 2026-10-24).
+    expect(within(page).getByTestId("lisa-scoped-note").textContent).toBe(
+      "This chat was about one question. To keep going, open that question and ask LISA there.",
+    );
     expect(within(page).queryByRole("textbox", { name: "Message" })).toBeNull();
     expect(
       within(page).queryByRole("button", { name: "End session" }),
     ).toBeNull();
     expect(page.textContent).not.toContain("zqx-dock-explanation");
     expectNoAnswerOnTheWire(tutorCalls());
+  });
+
+  it("a practice question's conversation is labelled 'Practice question · Sep 21'", async () => {
+    const convId = seedScopedConversation(
+      seedPracticeItem("answered"),
+      "practice",
+    );
+    await mount("paid", { path: "/chat" });
+    const items = await screen.findAllByTestId("lisa-history-item");
+    const row = items.find(
+      (a) => a.getAttribute("href") === `/chat?conversationId=${convId}`,
+    );
+    expect(row).toBeTruthy();
+    expect(within(row!).getByTestId("lisa-history-scope").textContent).toBe(
+      "Practice question \u00b7 Sep 21",
+    );
   });
 
   it("the LISA page's own conversations are unchanged: no question label, and the composer", async () => {

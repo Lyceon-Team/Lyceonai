@@ -4218,6 +4218,49 @@ plant "LL-21" "the launcher drops the student focus ring classes" \
 assert s.count(a) == 1
 s = s.replace(a, "className={`pointer-events-auto", 1)'
 
+# ── LISA history follow-ups (owner rulings, Karl, 2026-10-24, on #1305/#1310) ─────────────────
+# The approved read-only note, and the history label "Practice question · Oct 21" (type and the
+# conversation's created_at, through the one formatter's short month-day).
+LH_CHAT="client/src/pages/chat.tsx"
+
+plant "LH-1" "the read-only note goes back to the unapproved wording" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  \"This chat was about one question. To keep going, open that question and ask LISA there.\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"This conversation is about one question. To keep going, open LISA on that question.\";", 1)'
+
+plant "LH-2" "the history label dates the chat by its last activity" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  const day = formatDate(conv.created_at, \"short-month-day\");"
+assert s.count(a) == 1
+s = s.replace(a, "  const day = formatDate(conv.updated_at, \"short-month-day\");", 1)
+a = "  created_at: string;\n}): string | null {"
+assert s.count(a) == 1
+s = s.replace(a, "  created_at: string;\n  updated_at: string;\n}): string | null {", 1)'
+
+plant "LH-3" "the history label drops the date" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  return day === null ? type : `${type} \\u00b7 ${day}`;"
+assert s.count(a) == 1
+s = s.replace(a, "  return type;", 1)'
+
+plant "LH-4" "the history label's separator is a hyphen" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  return day === null ? type : `${type} \\u00b7 ${day}`;"
+assert s.count(a) == 1
+s = s.replace(a, "  return day === null ? type : `${type} - ${day}`;", 1)'
+
+plant "LH-5" "the short month-day spells the month in full" \
+  "$LD_DOCK client/src/lib/format-date.test.ts" \
+  "client/src/lib/format-date.ts" \
+  'a = "      const d = dayParts(p, { month: \"short\", day: \"numeric\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "      const d = dayParts(p, { month: \"long\", day: \"numeric\" });\n", 1)'
+
 plant "LL-20" "the launcher loses its accent fill" \
   "$LD_DOCK client/src/pages/lyceon-dashboard.test.tsx" \
   "$LL_LAUNCHER" \
