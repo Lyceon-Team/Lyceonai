@@ -98,6 +98,8 @@ import {
   slackRevealMessage,
   slackTiktokMessage,
   slackTiktokSlidesComment,
+  slackPostPlan,
+  SLACK_POST_LABELS,
 } from "../../scripts/qotd-social/post-to-slack";
 import { slackConfig, type FetchLike } from "../../scripts/slack/client";
 import { QOTD_RW_MAX_PASSAGE_CHARS } from "../../shared/qotd/readability";
@@ -783,10 +785,16 @@ type Call = {
 
 /** A Slack that answers every method with ok: true (or with ERROR for one method). */
 function fakeSlack(
-  opts: { error?: [method: string, code: string]; httpStatus?: number } = {},
+  opts: {
+    error?: [method: string, code: string];
+    httpStatus?: number;
+    /** files.info answers "not shared yet" this many times per file before it is shared. */
+    sharePending?: number;
+  } = {},
 ): { fetch: FetchLike; calls: Call[] } {
   const calls: Call[] = [];
   let n = 0;
+  const pending = new Map<string, number>();
   const fetch: FetchLike = async (url, init) => {
     calls.push({ url, body: init.body, auth: init.headers?.Authorization });
     const method = url.replace("https://slack.com/api/", "");
@@ -809,9 +817,30 @@ function fakeSlack(
     }
     if (url.startsWith("https://files.slack.com/")) return reply(200, {});
     if (method === "files.completeUploadExternal") {
+      const body = JSON.parse(String(init.body)) as { files: { id: string }[] };
+      for (const f of body.files) pending.set(f.id, opts.sharePending ?? 0);
       return reply(200, {
         ok: true,
-        files: [{ id: "F0001" }, { id: "F0002" }],
+        files: body.files.map((f) => ({ id: f.id })),
+      });
+    }
+    if (method === "files.info") {
+      const id = new URLSearchParams(String(init.body)).get("file") ?? "";
+      const left = pending.get(id) ?? 0;
+      pending.set(id, left - 1);
+      return reply(200, {
+        ok: true,
+        file: {
+          id,
+          shares:
+            left > 0
+              ? {}
+              : {
+                  public: {
+                    [ENV.SLACK_CHANNEL_ID]: [{ ts: "1760000000.000001" }],
+                  },
+                },
+        },
       });
     }
     if (method === "chat.postMessage") {
@@ -826,6 +855,30 @@ const ENV = {
   SLACK_BOT_TOKEN: "xoxb-test-token-not-real",
   SLACK_CHANNEL_ID: "C0TESTCHAN1",
 };
+
+/** What reached Slack, in order: each message's text, and each share's comment. */
+function posted(calls: Call[]): { kind: "message" | "share"; text: string }[] {
+  return calls.flatMap((c) => {
+    if (c.url.endsWith("chat.postMessage")) {
+      return [
+        {
+          kind: "message" as const,
+          text: (JSON.parse(String(c.body)) as { text: string }).text,
+        },
+      ];
+    }
+    if (c.url.endsWith("files.completeUploadExternal")) {
+      return [
+        {
+          kind: "share" as const,
+          text: (JSON.parse(String(c.body)) as { initial_comment: string })
+            .initial_comment,
+        },
+      ];
+    }
+    return [];
+  });
+}
 
 function logs() {
   const out: string[] = [];
@@ -904,43 +957,49 @@ describe("Slack: posts only after the leak check passes", () => {
     expect(l.err.join("\n")).toMatch(/refused: no post\.json/);
   });
 
-  it("a passing day is posted: two uploads, one share with the date and section, then the copy", async () => {
+  it("a passing day is posted: the five numbered items in order, uploads confirmed before the next", async () => {
     const manifest = manifestFor(pastSource(publishable()[0]!));
     const dir = builtDir(manifest);
     const slack = fakeSlack();
     const l = logs();
     expect(await run(["--dir", dir], ENV, slack.fetch, l.log)).toBe(0);
+    // This day's yesterday is not in the archive: no carousel, items 2 and 3 say so.
+    expect(manifest.tiktok.status).toBe("skipped");
     expect(slack.calls.map((c) => c.url)).toEqual([
-      "https://slack.com/api/files.getUploadURLExternal",
+      "https://slack.com/api/chat.postMessage", // 1/5 reveal
+      "https://slack.com/api/chat.postMessage", // 2/5 no TikTok title or caption
+      "https://slack.com/api/chat.postMessage", // 3/5 no carousel
+      "https://slack.com/api/chat.postMessage", // 4/5 Reddit post
+      "https://slack.com/api/files.getUploadURLExternal", // 5/5 images
       "https://files.slack.com/upload/v1/test-1",
       "https://slack.com/api/files.getUploadURLExternal",
       "https://files.slack.com/upload/v1/test-2",
       "https://slack.com/api/files.completeUploadExternal",
-      "https://slack.com/api/chat.postMessage",
-      "https://slack.com/api/chat.postMessage",
-      "https://slack.com/api/chat.postMessage",
-      "https://slack.com/api/chat.postMessage",
+      "https://slack.com/api/files.info",
+      "https://slack.com/api/files.info",
+      "https://slack.com/api/chat.postMessage", // 5/5 caption and alt text
     ]);
-    // This day's yesterday is not in the archive: no carousel, the one-line note instead.
-    expect(manifest.tiktok.status).toBe("skipped");
     // The token goes to Slack's API only, never to the upload URL.
-    expect(slack.calls.map((c) => c.auth)).toEqual([
-      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-      undefined,
-      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-      undefined,
-      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-      `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-    ]);
-    const first = new URLSearchParams(String(slack.calls[0]!.body));
+    for (const c of slack.calls) {
+      expect(c.auth).toBe(
+        c.url.startsWith("https://files.slack.com/")
+          ? undefined
+          : `Bearer ${ENV.SLACK_BOT_TOKEN}`,
+      );
+    }
+    const upload = slack.calls.find((c) =>
+      c.url.endsWith("files.getUploadURLExternal"),
+    )!;
+    const first = new URLSearchParams(String(upload.body));
     expect(first.get("filename")).toBe(manifest.images[0]!.file);
     expect(first.get("length")).toBe(String(PNG.length));
     expect(first.get("alt_txt")).toBe(manifest.alt_text);
-    expect(Buffer.from(slack.calls[1]!.body as Uint8Array)).toEqual(PNG);
-    const share = JSON.parse(String(slack.calls[4]!.body)) as {
+    const share = JSON.parse(
+      String(
+        slack.calls.find((c) => c.url.endsWith("files.completeUploadExternal"))!
+          .body,
+      ),
+    ) as {
       files: { id: string }[];
       channel_id: string;
       initial_comment: string;
@@ -948,23 +1007,34 @@ describe("Slack: posts only after the leak check passes", () => {
     expect(share.files.map((f) => f.id)).toEqual(["F0001", "F0002"]);
     expect(share.channel_id).toBe(ENV.SLACK_CHANNEL_ID);
     expect(share.initial_comment).toContain(manifest.section);
-    expect(share.initial_comment).toMatch(/\d{4}/);
-    const message = JSON.parse(String(slack.calls[5]!.body)) as {
-      channel: string;
-      text: string;
-    };
-    expect(message.channel).toBe(ENV.SLACK_CHANNEL_ID);
-    expect(message.text).toBe(slackCopyMessage(manifest));
-    // Then today's Reddit post, then yesterday's reveal (owner brief 2026-10-15).
-    const texts = slack.calls
-      .slice(6)
-      .map((c) => (JSON.parse(String(c.body)) as { text: string }).text);
-    expect(texts).toEqual([
-      slackRedditMessage(manifest),
-      slackRevealMessage(manifest),
-      slackTiktokMessage(manifest),
+    // The content of each message is unchanged; only the label line is new.
+    expect(posted(slack.calls)).toEqual([
+      {
+        kind: "message",
+        text: `*1/5 · Reddit: comment on yesterday's post*\n${slackRevealMessage(manifest)}`,
+      },
+      {
+        kind: "message",
+        text: "*2/5 · TikTok: no title or caption today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+      },
+      {
+        kind: "message",
+        text: "*3/5 · TikTok: no carousel today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+      },
+      {
+        kind: "message",
+        text: `*4/5 · Reddit: today's post*\n${slackRedditMessage(manifest)}`,
+      },
+      {
+        kind: "share",
+        text: `*5/5 · Today's question images*\n${slackImagesComment(manifest)}`,
+      },
+      {
+        kind: "message",
+        text: `*5/5 · Today's question images*\n${slackCopyMessage(manifest)}`,
+      },
     ]);
-    // The log names the day and Slack's message id; never the token or the question.
+    // The log names the day and the items; never the token or the question.
     const all = [...l.out, ...l.err].join("\n");
     expect(all).toContain(manifest.qotd_date);
     expect(all).not.toContain(ENV.SLACK_BOT_TOKEN);
@@ -1065,8 +1135,9 @@ describe("Slack: fails loudly, never silently", () => {
     const slack = fakeSlack({ httpStatus: 503 });
     const l = logs();
     expect(await run(["--dir", dir], ENV, slack.fetch, l.log)).toBe(1);
+    // Item 1 is the first call now (Karl, 2026-10-26), so it is the one that fails.
     expect(l.err).toEqual([
-      "qotd-slack: NOT POSTED: files.getUploadURLExternal: HTTP 503",
+      "qotd-slack: NOT POSTED: chat.postMessage: HTTP 503",
     ]);
   });
 });
@@ -1300,12 +1371,20 @@ describe("Slack: the edges the audit named", () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ ok: true, upload_url: bad, file_id: "F1" }),
+          json: async () =>
+            url.endsWith("chat.postMessage")
+              ? { ok: true, ts: "1760000000.000100" }
+              : { ok: true, upload_url: bad, file_id: "F1" },
         };
       };
       const l = logs();
       expect(await run(["--dir", dir], ENV, fetch, l.log)).toBe(1);
+      // Items 1 to 4 are messages on this day (no carousel); the first upload is refused.
       expect(calls).toEqual([
+        "https://slack.com/api/chat.postMessage",
+        "https://slack.com/api/chat.postMessage",
+        "https://slack.com/api/chat.postMessage",
+        "https://slack.com/api/chat.postMessage",
         "https://slack.com/api/files.getUploadURLExternal",
       ]);
       expect(l.err).toEqual([
@@ -1630,14 +1709,13 @@ describe("A withheld yesterday posts no reveal (owner brief 2026-10-15)", () => 
     expect(
       await run(["--dir", builtDir(m)], ENV, slack.fetch, logs().log),
     ).toBe(0);
-    // The reveal, then the TikTok note (Karl, 2026-10-23): no carousel either.
-    const [reveal, note] = slack.calls
-      .slice(-2)
-      .map((c) => (JSON.parse(String(c.body)) as { text: string }).text);
-    expect(reveal).toBe(slackRevealMessage(m));
-    expect(reveal).toContain("Withheld");
-    expect(note).toBe(slackTiktokMessage(m));
-    expect(note).toContain("no carousel today");
+    // Item 1 is the reveal (here the withheld notice); item 3 says there is no carousel either.
+    const texts = posted(slack.calls).map((p) => p.text);
+    expect(texts[0]).toBe(
+      `*1/5 · Reddit: comment on yesterday's post*\n${slackRevealMessage(m)}`,
+    );
+    expect(texts[0]).toContain("Withheld");
+    expect(texts[2]).toMatch(/^\*3\/5 · TikTok: no carousel today\*/);
   });
 
   it("any other archive failure fails the run loudly (never a silent missing reveal)", async () => {
@@ -1896,13 +1974,12 @@ describe("TikTok carousel: withheld or missing yesterday (Karl, 2026-10-23)", ()
       c.url.endsWith("files.getUploadURLExternal"),
     );
     expect(uploads).toHaveLength(m.images.length);
-    const note = (
-      JSON.parse(String(slack.calls.at(-1)!.body)) as { text: string }
-    ).text;
-    expect(note).toBe(slackTiktokMessage(m));
-    expect(note).toBe(
-      "*TikTok carousel* · no carousel today: yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive.",
-    );
+    // The skipped carousel keeps its number (Karl, 2026-10-26).
+    const note = posted(slack.calls)[2]!;
+    expect(note).toEqual({
+      kind: "message",
+      text: "*3/5 · TikTok: no carousel today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+    });
   });
 });
 
@@ -1916,11 +1993,12 @@ describe("TikTok carousel: posted to Slack after the reveal (Karl, 2026-10-23)",
     const uploads = slack.calls.filter((c) =>
       c.url.endsWith("files.getUploadURLExternal"),
     );
+    // Slides (item 3) before the question images (item 5), each set in its own order.
     expect(
       uploads.map((c) => new URLSearchParams(String(c.body)).get("filename")),
     ).toEqual([
-      ...m.images.map((i) => i.file),
       ...(m.tiktok.status === "built" ? m.tiktok.slides : []),
+      ...m.images.map((i) => i.file),
     ]);
     const shares = slack.calls
       .filter((c) => c.url.endsWith("files.completeUploadExternal"))
@@ -1932,13 +2010,15 @@ describe("TikTok carousel: posted to Slack after the reveal (Karl, 2026-10-23)",
           },
       );
     expect(shares).toHaveLength(2);
-    expect(shares[1]!.files).toHaveLength(3);
-    expect(shares[1]!.initial_comment).toBe(slackTiktokSlidesComment(m));
-    const last = (
-      JSON.parse(String(slack.calls.at(-1)!.body)) as { text: string }
-    ).text;
-    expect(last).toBe(slackTiktokMessage(m));
-    expect(last).toContain("Follow for daily SAT questions 👆");
+    expect(shares[0]!.files).toHaveLength(3);
+    expect(shares[0]!.initial_comment).toBe(
+      `*3/5 · TikTok: carousel*\n${slackTiktokSlidesComment(m)}`,
+    );
+    const titleAndCaption = posted(slack.calls)[1]!;
+    expect(titleAndCaption.text).toBe(
+      `*2/5 · TikTok: title and caption*\n${slackTiktokMessage(m)}`,
+    );
+    expect(titleAndCaption.text).toContain("Follow for daily SAT questions 👆");
   });
 
   it("a missing or non-PNG slide is refused before anything is sent", async () => {
@@ -2147,5 +2227,153 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
     const q = yesterdayDay().question;
     expect(m.tiktok.title).not.toContain(q.stem.slice(0, 12));
     expect(m.tiktok.title).not.toContain(q.domain);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// #social order and labels (owner brief "QOTD #social posts: fixed order, numbered labels",
+// Karl, 2026-10-26).
+// ---------------------------------------------------------------------------------------------
+
+/** No real waiting in tests: the poll loop still runs, the clock does not. */
+const NO_WAIT = { timeoutMs: 5_000, intervalMs: 1_000, sleep: async () => {} };
+
+describe("#social: five numbered items, always in this order (Karl, 2026-10-26)", () => {
+  it("a day with a carousel posts 1/5 to 5/5 in order, each opening with its label", async () => {
+    const m = manifestFor(todaySource());
+    expect(m.tiktok.status).toBe("built");
+    const slack = fakeSlack();
+    expect(
+      await run(["--dir", builtDir(m)], ENV, slack.fetch, logs().log, NO_WAIT),
+    ).toBe(0);
+    const items = posted(slack.calls);
+    expect(items.map((p) => [p.kind, p.text.split("\n")[0]])).toEqual([
+      ["message", "*1/5 · Reddit: comment on yesterday's post*"],
+      ["message", "*2/5 · TikTok: title and caption*"],
+      ["share", "*3/5 · TikTok: carousel*"],
+      ["message", "*4/5 · Reddit: today's post*"],
+      ["share", "*5/5 · Today's question images*"],
+      ["message", "*5/5 · Today's question images*"],
+    ]);
+    // The labels are the brief's, word for word.
+    expect([...SLACK_POST_LABELS]).toEqual([
+      "1/5 · Reddit: comment on yesterday's post",
+      "2/5 · TikTok: title and caption",
+      "3/5 · TikTok: carousel",
+      "4/5 · Reddit: today's post",
+      "5/5 · Today's question images",
+    ]);
+    // The carousel's three slides go up in slide order.
+    const slideUploads = slack.calls
+      .filter((c) => c.url.endsWith("files.getUploadURLExternal"))
+      .slice(0, 3)
+      .map((c) => new URLSearchParams(String(c.body)).get("filename"));
+    expect(slideUploads).toEqual(
+      m.tiktok.status === "built" ? m.tiktok.slides : [],
+    );
+  });
+
+  it("each upload is confirmed shared before the next step starts (no parallel posting)", async () => {
+    const m = manifestFor(todaySource());
+    // Slack takes two looks per file before it reports the share.
+    const slack = fakeSlack({ sharePending: 2 });
+    expect(
+      await run(["--dir", builtDir(m)], ENV, slack.fetch, logs().log, NO_WAIT),
+    ).toBe(0);
+    const urls = slack.calls.map((c) =>
+      c.url.replace("https://slack.com/api/", ""),
+    );
+    const completes = urls.flatMap((u, i) =>
+      u === "files.completeUploadExternal" ? [i] : [],
+    );
+    expect(completes).toHaveLength(2);
+    for (const at of completes) {
+      // Between this share and the next step: only files.info, until every file is shared
+      // (3 looks per file: 2 pending, 1 shared).
+      const after = urls.slice(at + 1);
+      const next = after.findIndex((u) => u !== "files.info");
+      const files = (
+        JSON.parse(String(slack.calls[at]!.body)) as { files: unknown[] }
+      ).files.length;
+      expect(next === -1 ? after.length : next).toBe(files * 3);
+    }
+    // And nothing at all is sent while an upload is in flight.
+    for (let i = 0; i < urls.length - 1; i += 1) {
+      if (urls[i] === "files.getUploadURLExternal") {
+        expect(slack.calls[i + 1]!.url).toMatch(
+          /^https:\/\/files\.slack\.com\//,
+        );
+      }
+    }
+  });
+
+  it("a share Slack never confirms fails the run loudly and posts nothing after it", async () => {
+    const m = manifestFor(todaySource());
+    const slack = fakeSlack({ sharePending: 1_000 });
+    const l = logs();
+    expect(
+      await run(["--dir", builtDir(m)], ENV, slack.fetch, l.log, NO_WAIT),
+    ).toBe(1);
+    expect(l.err.join("\n")).toContain("not shared in the channel");
+    // Items 1 and 2 went out, item 3's share never confirmed: item 4 is never posted.
+    expect(posted(slack.calls).map((p) => p.text.split("\n")[0])).toEqual([
+      "*1/5 · Reddit: comment on yesterday's post*",
+      "*2/5 · TikTok: title and caption*",
+      "*3/5 · TikTok: carousel*",
+    ]);
+  });
+
+  it("without the files:read scope the run fails loudly instead of posting out of order", async () => {
+    const m = manifestFor(todaySource());
+    const slack = fakeSlack({ error: ["files.info", "missing_scope"] });
+    const l = logs();
+    expect(
+      await run(["--dir", builtDir(m)], ENV, slack.fetch, l.log, NO_WAIT),
+    ).toBe(1);
+    expect(l.err).toEqual([
+      "qotd-slack: NOT POSTED: files.info: missing_scope",
+    ]);
+    expect(posted(slack.calls).at(-1)!.text.split("\n")[0]).toBe(
+      "*3/5 · TikTok: carousel*",
+    );
+  });
+
+  it("a skipped carousel still yields a 2/5 and a 3/5 message, so the numbering never shifts", () => {
+    const m = manifestFor(pastSource(archiveDay("2026-10-02")));
+    expect(m.tiktok.status).toBe("skipped");
+    const dir = builtDir(m);
+    const loaded = loadPost(dir);
+    if (!loaded.ok) throw new Error(loaded.error);
+    const plan = slackPostPlan(loaded.value);
+    expect(plan.map((s) => [s.item, s.kind])).toEqual([
+      [1, "message"],
+      [2, "message"],
+      [3, "message"],
+      [4, "message"],
+      [5, "files"],
+      [5, "message"],
+    ]);
+    const three = plan[2]!;
+    expect(three.kind === "message" && three.text).toBe(
+      "*3/5 · TikTok: no carousel today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+    );
+  });
+
+  it("the dry run prints the sequence, in order, and sends nothing", async () => {
+    const m = manifestFor(todaySource());
+    const slack = fakeSlack();
+    const l = logs();
+    expect(
+      await run(["--dir", builtDir(m), "--dry-run"], {}, slack.fetch, l.log),
+    ).toBe(0);
+    expect(slack.calls).toEqual([]);
+    expect(l.out.slice(0, 6)).toEqual([
+      "qotd-slack: dry run: 1/5 · Reddit: comment on yesterday's post: *1/5 · Reddit: comment on yesterday's post*",
+      "qotd-slack: dry run: 2/5 · TikTok: title and caption: *2/5 · TikTok: title and caption*",
+      "qotd-slack: dry run: 3/5 · TikTok: carousel: 3 file(s), then wait until shared",
+      "qotd-slack: dry run: 4/5 · Reddit: today's post: *4/5 · Reddit: today's post*",
+      `qotd-slack: dry run: 5/5 · Today's question images: ${m.images.length} file(s), then wait until shared`,
+      "qotd-slack: dry run: 5/5 · Today's question images: *5/5 · Today's question images*",
+    ]);
   });
 });
