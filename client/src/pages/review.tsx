@@ -123,8 +123,8 @@ function facetMap(
   return new Map((facets ?? []).map((f) => [f.key, f.count]));
 }
 
-/** The LISA bubble on Review opens LISA in general mode (owner brief, 2026-10-22). */
-const GENERAL_DOCK: ChatDockScope = { kind: "general" };
+/** The LISA launcher on Review opens LISA in general mode (2026-10-22), with Review's opening line (2026-10-23). */
+const GENERAL_DOCK: ChatDockScope = { kind: "general", surface: "review" };
 
 export default function ReviewPage(): JSX.Element {
   const { user } = useSupabaseAuth();

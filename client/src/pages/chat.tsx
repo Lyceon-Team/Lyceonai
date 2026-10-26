@@ -117,6 +117,34 @@ export function historyWhen(iso: string, now: Date = new Date()): string {
   return sameDay ? "Today" : dayMonth(iso);
 }
 
+/**
+ * @spec [register F-91; owner ruling 1 on #1300 (Karl, 2026-10-23): "show the runner's
+ *       per-question conversations in the LISA page history, each labelled with its question"]
+ *       | @implemented [2026-10-23]
+ *
+ * plain English: which question a conversation is about, as the history and the header name it:
+ * "Review question" or "Practice question" for a question-scoped conversation, null otherwise. It
+ * is built from the conversation's own surface only, never from the question's content (no stem,
+ * no answer, no explanation), so it is safe before the question is submitted.
+ */
+function questionScopeLabel(conv: {
+  entry_mode: string;
+  source_surface: string;
+}): string | null {
+  if (conv.entry_mode !== "scoped_question") return null;
+  if (conv.source_surface === "review") return "Review question";
+  if (conv.source_surface === "practice") return "Practice question";
+  return null;
+}
+
+/**
+ * A question-scoped conversation opened here is read-only: it belongs to its question (the server
+ * builds LISA's view of it from that question's state), so it is continued from the question.
+ * PROPOSED WORDING: new in-app copy, awaiting Karl's approval (#1300 follow-up, 2026-10-23).
+ */
+const SCOPED_READ_ONLY_NOTE =
+  "This conversation is about one question. To keep going, open LISA on that question.";
+
 function chatHref(conversationId: string): string {
   return `/chat?conversationId=${encodeURIComponent(conversationId)}`;
 }
@@ -277,6 +305,8 @@ function LisaConversation(): JSX.Element {
 
   const isPaused = !!conversation?.crisis_paused_at;
   const isEnded = conversation?.status === "ended";
+  // F-91 (2026-10-23): a runner conversation (one question) opens read-only here.
+  const scopedLabel = conversation ? questionScopeLabel(conversation) : null;
   const hasMessages = messages.length > 0 || optimisticMessage !== null;
 
   // W4-11: the server refused this student LISA — on the session list, the conversation,
@@ -443,7 +473,7 @@ function LisaConversation(): JSX.Element {
         >
           {headerTitle}
         </h1>
-        {conversationId && hasMessages && !isEnded ? (
+        {conversationId && hasMessages && !isEnded && scopedLabel === null ? (
           <Button
             type="button"
             variant="lyc-outline"
@@ -545,7 +575,16 @@ function LisaConversation(): JSX.Element {
         <div ref={scrollAnchorRef} />
       </div>
 
-      {showPausedBar || isPaused ? (
+      {scopedLabel !== null ? (
+        <div
+          className="shrink-0 border-t border-lyc-rule bg-lyc-paper px-4 py-4 lg:px-10"
+          data-testid="lisa-scoped-note"
+        >
+          <p className="m-0 mx-auto max-w-[760px] text-lyc-body text-lyc-muted">
+            {SCOPED_READ_ONLY_NOTE}
+          </p>
+        </div>
+      ) : showPausedBar || isPaused ? (
         <PausedBar
           onEnd={() => setEndModalOpen(true)}
           onContinue={handleResume}
@@ -669,6 +708,14 @@ function HistoryPanel({
                   <span className="break-words text-lyc-body font-semibold">
                     {displayTitle(conv.title, conv.crisis_flagged)}
                   </span>
+                  {questionScopeLabel(conv) !== null ? (
+                    <span
+                      className="text-lyc-meta font-semibold text-lyc-ink"
+                      data-testid="lisa-history-scope"
+                    >
+                      {questionScopeLabel(conv)}
+                    </span>
+                  ) : null}
                   <span className="text-lyc-meta text-lyc-muted">
                     {historyWhen(conv.updated_at)}
                   </span>
