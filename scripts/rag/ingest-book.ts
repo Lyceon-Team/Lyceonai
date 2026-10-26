@@ -83,6 +83,11 @@ import {
   auditFailure,
   auditResponseSchema,
   auditUserMessage,
+  EXAMPLE_CHECK_SYSTEM,
+  exampleCheckFailure,
+  exampleCheckResponseSchema,
+  exampleCheckSchema,
+  exampleCheckUserMessage,
   rewriteRuleOpening,
   auditSchema,
   rewriteResponseSchema,
@@ -608,6 +613,33 @@ async function main(): Promise<void> {
         drop(u, failed, audit.issues);
         return null;
       }
+      // The example check (book-prompts.ts EXAMPLE_CHECK_SYSTEM), on the entry the audit passed,
+      // against itself only. Any mismatch drops it; never repaired, so it cannot become a
+      // correction (Karl, 2026-10-26).
+      const check = (
+        await cachedCall(
+          dir,
+          `example-check\u0000${model}\u0000${content}`,
+          exampleCheckSchema,
+          "example check",
+          tally,
+          (onUsage) =>
+            generateJson({
+              step: "example-check",
+              model,
+              system: EXAMPLE_CHECK_SYSTEM,
+              user: exampleCheckUserMessage(content),
+              responseSchema: exampleCheckResponseSchema,
+              schema: exampleCheckSchema,
+              onUsage,
+            }),
+        )
+      ).value;
+      const contradiction = exampleCheckFailure(check);
+      if (contradiction !== null) {
+        drop(u, "audit_self_contradictory", contradiction);
+        return null;
+      }
       return {
         unit: u,
         chapter: chapterOf(u),
@@ -762,14 +794,18 @@ async function main(): Promise<void> {
     "",
     "## Book errors",
     "",
-    "Units the audit dropped as incorrect: the book may be wrong there (Karl, 2026-10-26: a rule the book gets wrong is dropped, never corrected and never kept with the error).",
+    "Units dropped as incorrect, or because the entry contradicts itself (usually a book error carried into the entry): the book may be wrong there (Karl, 2026-10-26: a rule the book gets wrong is dropped, never corrected and never kept with the error).",
     "",
     ...(() => {
       const rows = drops
-        .filter((d) => d.reason === "audit_incorrect")
+        .filter(
+          (d) =>
+            d.reason === "audit_incorrect" ||
+            d.reason === "audit_self_contradictory",
+        )
         .map(
           (d) =>
-            `- page ${d.page}, ${d.section_title}: dropped, the audit found it incorrect: ${d.detail}`,
+            `- page ${d.page}, ${d.section_title}: dropped, ${d.reason === "audit_incorrect" ? "the audit found it incorrect" : "the entry contradicts itself (example check)"}: ${d.detail}`,
         );
       return rows.length === 0 ? ["- none"] : rows;
     })(),

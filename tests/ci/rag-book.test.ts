@@ -44,7 +44,11 @@ import {
   toReviewCsv,
   unassignedGaps,
 } from "../../scripts/rag/book";
-import { auditFailure } from "../../scripts/rag/book-prompts";
+import {
+  auditFailure,
+  exampleCheckFailure,
+  exampleCheckSchema,
+} from "../../scripts/rag/book-prompts";
 import { loadTaxonomy } from "../../scripts/rag/tag-videos";
 
 const SKILLS = new Set(loadTaxonomy().skills);
@@ -283,7 +287,6 @@ describe("the audit decides what is kept", () => {
     self_contained: true,
     correct: true,
     act_scope_respected: true,
-    self_consistent: true,
     issues: "",
   };
   it("passes only when every check passes", () => {
@@ -297,14 +300,6 @@ describe("the audit decides what is kept", () => {
     expect(auditFailure({ ...pass, self_contained: false })).toBe(
       "audit_not_self_contained",
     );
-    // A self-contradicting entry fails first, before any repairable reason, so it is never
-    // rewritten into a "corrected" entry: drop-only.
-    expect(auditFailure({ ...pass, self_consistent: false })).toBe(
-      "audit_self_contradictory",
-    );
-    expect(
-      auditFailure({ ...pass, self_consistent: false, faithful: false }),
-    ).toBe("audit_self_contradictory");
     // ACT advice stated as general fails on its own, whatever else passed.
     expect(auditFailure({ ...pass, act_scope_respected: false })).toBe(
       "audit_act_generalised",
@@ -914,5 +909,54 @@ describe("ruleOpening", () => {
     const realStart = at("6. NON-ESSENTIAL");
     const realEnd = at("Use two commas.") + "Use two commas".length;
     expect(ruleOpening(text, realStart, realEnd)).toBe(opening);
+  });
+});
+
+describe("the example check decides in code", () => {
+  const pair = (statement: string, shows: boolean) => ({
+    statement,
+    example: "London (which is a very old city), has some modern parts.",
+    example_shows_it: shows,
+    why: shows ? "" : "the comma is after the close parenthesis",
+  });
+
+  it("drops on any pair whose example does not show what the statement says", () => {
+    const why = exampleCheckFailure({
+      pairs: [
+        pair("A comma before an open parenthesis is always incorrect.", true),
+        pair(
+          "A comma before a close parenthesis is almost always wrong.",
+          false,
+        ),
+      ],
+    });
+    expect(why).toContain("A comma before a close parenthesis");
+  });
+  it("passes when every pair matches, and when there are none", () => {
+    expect(
+      exampleCheckFailure({ pairs: [pair("x", true), pair("y", true)] }),
+    ).toBeNull();
+    expect(exampleCheckFailure({ pairs: [] })).toBeNull();
+  });
+
+  // Real model responses (2026-10-26) on the real chunks: Meltzer 6:1, which teaches "a comma
+  // before a close parenthesis" over an example with the comma after it, and 8:6, a correct
+  // chunk with several described examples. Book text, so they live in the gitignored cache.
+  it("on the real responses: 6:1 is dropped, the control passes", () => {
+    const file = resolve(
+      import.meta.dirname,
+      "../../scripts/rag/.cache/book-meltzer-grammar/example-check-real.json",
+    );
+    if (!existsSync(file)) return; // the book is not in the repo
+    const real = JSON.parse(readFileSync(file, "utf8")) as Record<
+      string,
+      { response: unknown }
+    >;
+    const six = exampleCheckSchema.parse(real.six_one?.response);
+    const control = exampleCheckSchema.parse(real.control_8_6?.response);
+    expect(six.pairs.length).toBeGreaterThan(0);
+    expect(control.pairs.length).toBeGreaterThan(0);
+    expect(exampleCheckFailure(six)).toContain("before a close parenthesis");
+    expect(exampleCheckFailure(control)).toBeNull();
   });
 });

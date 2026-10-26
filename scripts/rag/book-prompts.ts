@@ -28,10 +28,17 @@
  * "incorrect"), never corrected and never kept with the error; a missing rule is recoverable,
  * a wrong one taught confidently is not.
  * An entry that contradicts itself (describes its example one way while the example shows
- * another; Meltzer rule 6, chunk 6:1, passed the audit five times out of five) fails
- * self_consistent and drops. It is drop-only, unlike the reverted mechanism: it never permits
- * an omission or a correction, so its failure mode is a lost correct rule, which is countable,
- * never a wrong rule taught (Karl, 2026-10-26).
+ * another: Meltzer chunk 6:1, "a comma before a close parenthesis" over an example with the
+ * comma after it, passed the audit five times out of five) is caught by EXAMPLE CHECK, a
+ * separate call: the model lists each statement that describes an example with the example,
+ * quoted, and whether the example shows it; the code drops the chunk on any mismatch
+ * (exampleCheckFailure). Drop-only, never repaired, the entry judged only against itself: its
+ * failure mode is a lost correct rule, which is counted (Karl, 2026-10-26).
+ * NOT AS AN AUDIT FIELD: a "self_consistent" yes/no in the audit was built first and removed
+ * on Karl's ruling of 2026-10-26. On the real 6:1 it said consistent on 3 runs of 3 (and on
+ * 0 of 96 correct-chunk audits did it flag anything): it catches nothing. Asked one question
+ * among six, the model does not compare the description with the example; made to quote each
+ * pair, it does (6:1 caught 3 of 3 in the prototype).
  * The model never sees provenance (brief §5). `BOOK_PROMPT_VERSION` is stamped on every cached
  * result; changing any prompt changes it and invalidates the cache.
  */
@@ -183,7 +190,6 @@ You are given the SOURCE (the passage the entry was written from), the CONTEXT B
 - self_contained: true only if a student could understand the entry with nothing else: no reference to an example, rule, page, chapter or exercise that the entry does not itself include.
 - correct: true only if the entry is correct about the SAT and standard English or mathematics. False if it states something wrong, even if the source says it.
 - act_scope_respected: the student is taking the SAT. ACT-scoped advice is a test-taking tip, shortcut or answer pattern that the SOURCE ties to the ACT ("if there is an OMIT/DELETE option on the ACT", "when the ACT tests it's vs. its, the answer is almost always its", "more applicable to the ACT than the SAT"). False if the entry states any ACT-scoped advice as general, as true of the SAT or of "the test", or as "usually" or "always" true; or if the entry gives a method the source says works less well on the SAT without that limitation. True if the entry leaves the ACT-scoped advice out, or if the source has none. A paragraph marked "[ACT NOTE]" mentions the ACT; it is not ACT-only, so judge each sentence by what it says: a rule of standard English (where a comma goes, which form is correct) is never ACT-scoped, even under the marker and even when the source adds that the ACT tests it often, and stating that rule is correct.
-- self_consistent: judge the ENTRY against itself only, not against the book or your own knowledge. False if the entry contradicts itself: it describes an example as showing one thing while the example it gives shows another (it says a comma comes "before" a word and its example puts the comma after it), or two of its statements say incompatible things about the same case. Wording you find awkward, a rule you think is wrong, or an example you would label differently is NOT a contradiction; only two parts of the entry that cannot both be true. True otherwise.
 - issues: one or two short sentences naming any problem, or an empty string.`;
 
 /** The audit's user message; one function so the pipeline and the plant runner send the same. */
@@ -218,7 +224,6 @@ export const auditResponseSchema = {
     self_contained: { type: "BOOLEAN" },
     correct: { type: "BOOLEAN" },
     act_scope_respected: { type: "BOOLEAN" },
-    self_consistent: { type: "BOOLEAN" },
     issues: { type: "STRING" },
   },
   required: [
@@ -228,7 +233,6 @@ export const auditResponseSchema = {
     "self_contained",
     "correct",
     "act_scope_respected",
-    "self_consistent",
     "issues",
   ],
 } as const;
@@ -239,16 +243,12 @@ export const auditSchema = z.object({
   self_contained: z.boolean(),
   correct: z.boolean(),
   act_scope_respected: z.boolean(),
-  self_consistent: z.boolean(),
   issues: z.string(),
 });
 export type Audit = z.infer<typeof auditSchema>;
 
 /** The audit drop reason for a failed audit, or null when every check passed. */
 export function auditFailure(a: Audit): string | null {
-  // First, and never repaired (ingest-book REPAIRABLE): drop-only, so a self-contradicting entry
-  // is never rewritten into a "corrected" one (Karl, 2026-10-26).
-  if (!a.self_consistent) return "audit_self_contradictory";
   if (a.starts_mid_idea) return "audit_starts_mid_idea";
   if (!a.complete) return "audit_incomplete";
   if (!a.act_scope_respected) return "audit_act_generalised";
@@ -256,6 +256,54 @@ export function auditFailure(a: Audit): string | null {
   if (!a.correct) return "audit_incorrect";
   if (!a.self_contained) return "audit_not_self_contained";
   return null;
+}
+
+export const EXAMPLE_CHECK_SYSTEM = `You check one entry of an SAT grammar knowledge base for one thing only: whether it describes its own examples correctly. Go through the entry and find every statement that describes a specific example sentence the entry gives: where a punctuation mark sits relative to a word, a parenthesis or a clause ("a comma before X", "after Y", "between A and B"), which word form is used, or what is wrong with it. For each such statement, quote the statement and the example exactly as the entry gives them, then look at the example character by character and say whether it actually shows what the statement says. Judge only the entry against itself, never the book and never your own view of the grammar.`;
+
+export const exampleCheckResponseSchema = {
+  type: "OBJECT",
+  properties: {
+    pairs: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          statement: { type: "STRING" },
+          example: { type: "STRING" },
+          example_shows_it: { type: "BOOLEAN" },
+          why: { type: "STRING" },
+        },
+        required: ["statement", "example", "example_shows_it", "why"],
+      },
+    },
+  },
+  required: ["pairs"],
+} as const;
+export const exampleCheckSchema = z.object({
+  pairs: z.array(
+    z.object({
+      statement: z.string(),
+      example: z.string(),
+      example_shows_it: z.boolean(),
+      why: z.string(),
+    }),
+  ),
+});
+export type ExampleCheck = z.infer<typeof exampleCheckSchema>;
+
+/** The example check's user message: the entry alone, never the book. */
+export function exampleCheckUserMessage(entry: string): string {
+  return `ENTRY:\n${entry}`;
+}
+
+/**
+ * Pure. Why the entry contradicts itself, or null: the first statement whose example does not
+ * show what it says. The model only reports pairs; this decides, and any mismatch drops the
+ * chunk (audit_self_contradictory, never repaired).
+ */
+export function exampleCheckFailure(c: ExampleCheck): string | null {
+  const bad = c.pairs.find((p) => !p.example_shows_it);
+  return bad === undefined ? null : `"${bad.statement}": ${bad.why}`;
 }
 
 export const BOOK_PROMPT_VERSION = createHash("sha256")
@@ -267,6 +315,8 @@ export const BOOK_PROMPT_VERSION = createHash("sha256")
       JSON.stringify(rewriteResponseSchema(["x"])),
       AUDIT_SYSTEM,
       JSON.stringify(auditResponseSchema),
+      EXAMPLE_CHECK_SYSTEM,
+      JSON.stringify(exampleCheckResponseSchema),
     ].join("\n"),
   )
   .digest("hex")
