@@ -950,7 +950,10 @@ for (const engine of ["practice", "review"] as const) {
 
 // ── The docked runner (owner brief "restore the pre-#1300 runner layout", Karl, 2026-10-26) ───
 
+// Owner ruling on #1322 (Karl, 2026-10-26): from 1338px LISA's panel is 360px; from W3
+// (1278px) to 1337px it is 300px, the three columns still side by side (1280x650 here).
 for (const [width, height] of [
+  [1280, 650],
   [1366, 650],
   [1440, 900],
   [1920, 1080],
@@ -977,6 +980,18 @@ for (const [width, height] of [
       const calc = await box(calculator);
       const lisa = await box(panel);
       const question = await box(page.locator('[data-testid="runner-body"]'));
+      // LISA's width for the tier: 300px below 1338, 360px from it.
+      expect(Math.round(lisa.width), "LISA's width").toBe(
+        width < 1338 ? 300 : 360,
+      );
+      // The question's panel meets the calculator at the resize handle (1px): one gutter.
+      const questionPanel = await box(
+        page.locator('[data-testid="practice-question-panel"]'),
+      );
+      expect(
+        Math.abs(questionPanel.x + questionPanel.width - calc.x),
+        `question panel ${JSON.stringify(questionPanel)} | calculator ${JSON.stringify(calc)}`,
+      ).toBeLessThanOrEqual(2);
       // One shared boundary: the calculator's right edge is LISA's left edge (±1px).
       expect(
         Math.abs(calc.x + calc.width - lisa.x),
@@ -1102,3 +1117,56 @@ test("review runner (1440): Enter in LISA's input sends exactly once and never s
     await endReviewSession(request, sessionId);
   }
 });
+
+// Owner ruling on #1322 (Karl, 2026-10-26): below W3 (1278px) the calculator and the docked LISA
+// column take turns: opening the calculator minimizes LISA to the launcher, reopening LISA closes
+// the calculator, the last one opened winning. No overlap at any step.
+for (const [width, height] of [
+  [1277, 650],
+  [1024, 768],
+] as const) {
+  test(`${width}x${height} (below W3) Math review runner: the calculator and LISA take turns, twice, never overlapping`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await asPersona(page, "paid");
+    const sessionId = await freshSession(request, "review", ["M"]);
+    const panel = page.locator(PANEL);
+    const launcher = page.locator(BUBBLE);
+    const toggle = page.locator('[data-testid="practice-calculator-toggle"]');
+    const shell = page.locator(
+      '[data-testid="desmos-calculator-shell"]:visible',
+    );
+    const submit = page.locator('[data-testid="runner-submit"]');
+    try {
+      await openAnyRunner(page, "review", sessionId);
+      // Presence first: LISA docked open, the calculator closed.
+      await expect(panel).toBeVisible();
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      for (let round = 1; round <= 2; round += 1) {
+        // The calculator opened: LISA yields to its launcher.
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "true");
+        await expect(panel, `round ${round}: LISA yields`).toBeHidden();
+        await expect(launcher).toBeVisible();
+        await expect(shell.first()).toBeVisible();
+        await shell.first().scrollIntoViewIfNeeded();
+        await page.waitForTimeout(200);
+        expect(
+          overlaps(await box(launcher), await box(shell.first())),
+          `round ${round}: the launcher over the calculator`,
+        ).toBe(false);
+        expect(overlaps(await box(launcher), await box(submit))).toBe(false);
+        // LISA reopened from its launcher: the calculator closes.
+        await launcher.click();
+        await expect(panel, `round ${round}: LISA back`).toBeVisible();
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expect(shell).toHaveCount(0);
+        expect(overlaps(await box(panel), await box(submit))).toBe(false);
+      }
+    } finally {
+      await endSession(request, "review", sessionId);
+    }
+  });
+}

@@ -110,6 +110,7 @@ FILES=(
   "client/src/components/tutor/TutorConversationBody.tsx"
   "client/src/components/tutor/ChatDock.tsx"
   "client/src/components/tutor/LisaLauncher.tsx"
+  "client/src/components/math/calculator-layout.ts"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
@@ -4280,6 +4281,65 @@ plant "LDK-8" "the docked panel sizes itself instead of filling the column" \
   'a = "          ? { width: \"100%\", height: \"100%\" }\n"
 assert s.count(a) == 1
 s = s.replace(a, "          ? { width, height: \"70vh\" }\n", 1)'
+
+# ── The docked runner's width tiers (owner ruling on #1322, Karl, 2026-10-26): 360px from 1338,
+# 300px from W3 (1278) with the three columns side by side, and below W3 the calculator and LISA
+# take turns (the last opened wins; the automatic yield is not the student's minimize).
+plant "LT-1" "the narrow tier's LISA column is not 300px" \
+  "$LD_RUNNER_UNIT" \
+  "client/src/components/math/calculator-layout.ts" \
+  'a = "export const DOCKED_LISA_NARROW_COLUMN_PX = 300 + DOCKED_LISA_INSET_PX; // 312"
+assert s.count(a) == 1
+s = s.replace(a, "export const DOCKED_LISA_NARROW_COLUMN_PX = 340 + DOCKED_LISA_INSET_PX; // 312", 1)'
+
+plant "LT-2" "LISA's column stays narrow at 1338px and up" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const lisaColumnPx = lisaColumnWide\n    ? DOCKED_LISA_COLUMN_PX\n    : DOCKED_LISA_NARROW_COLUMN_PX;"
+assert s.count(a) == 1
+s = s.replace(a, "  const lisaColumnPx = DOCKED_LISA_NARROW_COLUMN_PX;", 1)'
+
+plant "LT-3" "the three columns need 1338px again (W3 ignored)" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const threeColumnsFit = useMinWidth(DOCKED_NARROW_SPLIT_BREAKPOINT);"
+assert s.count(a) == 1
+s = s.replace(a, "  const threeColumnsFit = useMinWidth(DOCKED_SPLIT_BREAKPOINT);", 1)'
+
+plant "LT-4" "below W3 LISA never yields to the calculator" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "    lastToolOpened === \"calc\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "    false;\n", 1)'
+
+plant "LT-5" "below W3 reopening LISA leaves the calculator open" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "              if (!threeColumnsFit && isCalculatorExpanded)\n                setIsCalculatorExpanded(false);\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LT-6" "opening the calculator is not recorded as the last tool opened" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LT-7" "the automatic yield counts as the student's minimize" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n                if (!isCalculatorExpanded && !threeColumnsFit) setReviewLisaDocked(false);\n", 1)'
+
+plant "LT-8" "a suppressed dock still draws its panel" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "    const shownView = suppressed && view === \"open\" ? \"minimized\" : view;"
+assert s.count(a) == 1
+s = s.replace(a, "    const shownView = view;", 1)'
 
 # ── LISA history follow-ups (owner rulings, Karl, 2026-10-24, on #1305/#1310) ─────────────────
 # The approved read-only note, and the history label "Practice question · Oct 21" (type and the

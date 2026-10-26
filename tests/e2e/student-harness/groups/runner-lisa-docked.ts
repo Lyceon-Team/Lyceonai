@@ -28,10 +28,27 @@ const W1280 = {
   selectors: "desktop",
 } as const;
 
+/** Just below W3 (1278px, owner ruling on #1322): the calculator and LISA take turns. */
+const W1277 = {
+  name: "w1277",
+  width: 1277,
+  height: 650,
+  selectors: "desktop",
+} as const;
+
 const PANEL = '[data-testid="chat-dock-panel"]';
+// Below W3 LISA's launcher; at 1440 (where both stay open) the step lands on LISA's own header
+// chip, a no-op, so the same shot runs at every size.
+const LAUNCHER: Step = {
+  click: {
+    desktop:
+      '[data-testid="chat-dock-bubble"]:visible, [data-testid="tutor-question-chip"]:visible',
+    mobile: null,
+  },
+};
 const RUNNER = {
   desktop: PANEL,
-  mobile: '[data-testid="runner-choice"]',
+  mobile: '[data-testid="runner-submit"]',
 } as const;
 const CLIENT = { lyceon_client_instance_id: SEED_CLIENT_INSTANCE } as const;
 const REVIEW_RW: FreshSession = {
@@ -39,10 +56,11 @@ const REVIEW_RW: FreshSession = {
   body: { mode: "filter", filters: { sections: ["RW"] }, target_count: 10 },
   mcqFirst: true,
 };
+// No mcqFirst: the calculator shots do not need choices, and the Math pool can lead with a
+// grid-in for several starts in a row.
 const REVIEW_MATH: FreshSession = {
   engine: "review",
   body: { mode: "filter", filters: { sections: ["M"] }, target_count: 10 },
-  mcqFirst: true,
 };
 const CALC: Step = {
   click: {
@@ -60,7 +78,7 @@ const NO_PROTOTYPE =
 export const RUNNER_LISA_DOCKED: PageGroup = {
   id: "RUNNER-LISA-DOCKED",
   title:
-    "Runner with LISA docked as the right column: LISA alone, the calculator between the question and LISA, LISA minimized to the launcher; light and dark, 1440x900, 1366x650, 1280x650 and 390",
+    "Runner with LISA docked as the right column: LISA alone, the calculator between the question and LISA (360px and 300px tiers), the below-W3 turn-taking, LISA minimized to the launcher; light and dark, 1440x900, 1366x650, 1280x650, 1277x650 and 390",
   seed: "lisa-dock",
   shots: [
     {
@@ -78,7 +96,7 @@ export const RUNNER_LISA_DOCKED: PageGroup = {
     {
       id: "calculator-and-lisa",
       title:
-        "Math review runner (paid), the calculator opened: between the question and LISA, its right edge LISA's left edge (from 1338px; at 1280 it opens under the question, for the Chromebook report)",
+        "Math review runner (paid), the calculator opened: between the question and LISA, its right edge LISA's left edge; LISA 360px from 1338px, 300px from W3 (1278px) to 1337px, so 1280x650 keeps all three side by side (owner ruling on #1322, Karl, 2026-10-26)",
       persona: "paid",
       route: "/review/session/{session}",
       freshSession: REVIEW_MATH,
@@ -93,6 +111,32 @@ export const RUNNER_LISA_DOCKED: PageGroup = {
         },
         mobile: null,
       },
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    {
+      id: "below-w3-calculator",
+      title:
+        "Below W3 (1277x650): the calculator opened takes LISA's place; LISA shows as its launcher (the last tool opened wins). At 1440 and on the phone the same steps show the wide and phone layouts",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW_MATH,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [CALC],
+      extraViewports: [W1277],
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    {
+      id: "below-w3-lisa",
+      title:
+        "Below W3 (1277x650): LISA reopened from its launcher; the calculator closes (its state kept) and LISA's column is back",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW_MATH,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [CALC, LAUNCHER],
+      extraViewports: [W1277],
       prototype: { kind: "none", reason: NO_PROTOTYPE },
     },
     {

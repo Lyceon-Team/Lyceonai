@@ -277,6 +277,17 @@ export type ChatDockDocked = {
   defaultOpen: boolean;
   /** Told on every open, minimize and close, so the runner lays its column out. */
   onOpenChange: (open: boolean) => void;
+  /**
+   * @spec [owner ruling on #1322 (Karl, 2026-10-26): below W3 "the calculator and the docked
+   *       LISA column are mutually exclusive ... the most recently opened tool wins"; "an
+   *       automatic fallback-minimize should not count as the student's own minimize"]
+   *       | @implemented [2026-10-26]
+   * plain English: the runner has given LISA's place to the calculator. The dock SHOWS as
+   * minimized (the launcher, the panel hidden with its draft and thread) without changing its
+   * own open state, so the student's own choice is untouched; the launcher (or the runner's
+   * link) then opens it as usual, which tells the runner LISA is wanted again.
+   */
+  suppressed?: boolean;
 };
 
 type ChatDockProps = {
@@ -317,14 +328,17 @@ export const ChatDock = forwardRef<ChatDockHandle, ChatDockProps>(
     // Where focus goes after the view changes: into the panel on open, back to the bubble after.
     const focusTarget = useRef<"panel" | "bubble" | null>(null);
 
-    const isOpen = view === "open";
+    // What is drawn: a docked dock the runner has suppressed shows as minimized (2026-10-26).
+    const suppressed = docked?.suppressed === true;
+    const shownView = suppressed && view === "open" ? "minimized" : view;
+    const isOpen = shownView === "open";
     // Opening and closing are the student's clicks (and Esc); focus follows them, once each.
     useEffect(() => {
       const target = focusTarget.current;
       focusTarget.current = null;
       if (target === "panel") panelRef.current?.focus();
       if (target === "bubble") bubbleRef.current?.focus();
-    }, [view]);
+    }, [shownView]);
 
     const openFromLauncher = (): void => {
       if (lockReason !== null) {
@@ -384,7 +398,7 @@ export const ChatDock = forwardRef<ChatDockHandle, ChatDockProps>(
         style={{ bottom, right }}
         data-testid="chat-dock"
         data-scope={scope.kind}
-        data-view={view}
+        data-view={shownView}
         data-placement={docked === undefined ? "floating" : "docked"}
       >
         {docked === undefined

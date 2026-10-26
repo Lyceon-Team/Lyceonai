@@ -323,7 +323,11 @@ function DockPage({
   scope: ChatDockScope;
   onChoice: () => void;
   handle?: React.Ref<ChatDockHandle>;
-  docked?: { defaultOpen: boolean; onOpenChange: (open: boolean) => void };
+  docked?: {
+    defaultOpen: boolean;
+    onOpenChange: (open: boolean) => void;
+    suppressed?: boolean;
+  };
 }): JSX.Element {
   // 2026-10-26: a runner's docked column, as CanonicalPracticePage gives it (a slot element).
   const [slot, setSlot] = React.useState<HTMLDivElement | null>(null);
@@ -351,7 +355,11 @@ async function mount(
     onChoice?: () => void;
     path?: string;
     handle?: React.Ref<ChatDockHandle>;
-    docked?: { defaultOpen: boolean; onOpenChange: (open: boolean) => void };
+    docked?: {
+      defaultOpen: boolean;
+      onOpenChange: (open: boolean) => void;
+      suppressed?: boolean;
+    };
   } = {},
 ): Promise<{ client: QueryClient; history: string[] }> {
   const map = await accessMap(plan);
@@ -1416,5 +1424,23 @@ describe("docked: in a runner the open panel is the runner's right column, not a
     await mount("free", { docked: { defaultOpen: true, onOpenChange } });
     expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
     expect(tutorCalls()).toHaveLength(0);
+  });
+});
+
+describe("docked and suppressed (owner ruling on #1322, Karl, 2026-10-26): below W3 the calculator has LISA's place", () => {
+  it("open but suppressed: drawn as the launcher (panel kept, hidden), without touching its own open state; the launcher asks for LISA back", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", {
+      docked: { defaultOpen: true, onOpenChange, suppressed: true },
+    });
+    // Presence first: the panel exists (it was open), hidden; the launcher is drawn.
+    const kept = await screen.findByTestId("chat-dock-panel");
+    expect(kept.hidden).toBe(true);
+    expect(screen.getByTestId("chat-dock").getAttribute("data-view")).toBe(
+      "minimized",
+    );
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(bubble());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
   });
 });

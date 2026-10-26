@@ -67,9 +67,10 @@ export const CALC_COLUMN_HEIGHT_PX = 640;
  * plain English: the practice and review runners with LISA docked as their right column (from
  * 768px). The column is the pre-#1300 360px panel plus a 12px inset from the top-right corner.
  * With it open, the calculator opens beside the question (between the question and LISA) from
- * DOCKED_SPLIT_BREAKPOINT; below it, it stacks under the question as it does below
- * SPLIT_BREAKPOINT without LISA, so it never sits behind or over LISA's column.
+ * DOCKED_SPLIT_BREAKPOINT with the 360px panel; below it, the 300px tier and the
+ * take-turns tier (below), so it never sits behind or over LISA's column.
  *
+ * APPROVED (Karl, ruling of 2026-10-26 on #1322): the 420px question floor while LISA is docked.
  * trade-offs: the question's floor beside both is 420px, not QUESTION_MIN_PX (500): with 500 the
  * three columns need 1434px, so the owner's 1366px case would stack. Pre-#1300 the calculator
  * covered LISA's column below 1446px (owner ruling 2026-09-25), which the 2026-10-26 brief rules
@@ -98,3 +99,20 @@ export const DOCKED_CALC_MIN_PCT = Math.ceil(
 export const DOCKED_QUESTION_MIN_PCT = Math.ceil(
   (QUESTION_MIN_DOCKED_PX / DOCKED_CONTAINER_AT_BREAKPOINT) * 100,
 ); // 45
+
+/**
+ * @spec [owner ruling on #1322 (Karl, 2026-10-26): "below 1338px, LISA's docked column narrows to
+ *       ~300px so question, calculator and LISA stay side by side with a shared boundary ... Only
+ *       below W3, fall back to option (a): the calculator and the docked LISA column are mutually
+ *       exclusive"] | @implemented [2026-10-26]
+ *
+ * plain English: the three tiers. From DOCKED_SPLIT_BREAKPOINT (1338) LISA's panel is 360px;
+ * from DOCKED_NARROW_SPLIT_BREAKPOINT (W3, 1278) up to 1337 it is 300px and the three columns
+ * still fit (the same 420px question floor, Desmos floor, divider, padding and 20px slack); below
+ * W3 the calculator and the docked column take turns (CanonicalPracticePage).
+ */
+export const DOCKED_LISA_NARROW_COLUMN_PX = 300 + DOCKED_LISA_INSET_PX; // 312
+export const DOCKED_NARROW_SPLIT_BREAKPOINT =
+  DOCKED_SPLIT_BREAKPOINT -
+  DOCKED_LISA_COLUMN_PX +
+  DOCKED_LISA_NARROW_COLUMN_PX; // 1278 (W3)

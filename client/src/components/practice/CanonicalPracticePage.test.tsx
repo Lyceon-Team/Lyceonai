@@ -141,6 +141,7 @@ const dockMounts = vi.hoisted(() => ({
     slot: HTMLElement | null;
     defaultOpen: boolean;
     onOpenChange: (open: boolean) => void;
+    suppressed?: boolean;
   },
 }));
 vi.mock("@/components/tutor/ChatDock", async () => {
@@ -165,6 +166,7 @@ vi.mock("@/components/tutor/ChatDock", async () => {
           slot: HTMLElement | null;
           defaultOpen: boolean;
           onOpenChange: (open: boolean) => void;
+          suppressed?: boolean;
         };
       },
       ref: React.ForwardedRef<{ open: () => void }>,
@@ -196,11 +198,17 @@ vi.mock("@/components/math/DesmosCalculator", () => ({
   default: ({
     expanded,
     onStateChange,
+    initialState,
   }: {
     expanded: boolean;
     onStateChange?: (state: unknown) => void;
+    initialState?: unknown;
   }) => (
-    <div data-testid="desmos-mock">
+    <div
+      data-testid="desmos-mock"
+      // 2026-10-26: the state a (re)mounted calculator starts from, for the take-turns tier.
+      data-initial={JSON.stringify(initialState ?? null)}
+    >
       {expanded ? "expanded" : "collapsed"}
       <button
         type="button"
@@ -1608,5 +1616,102 @@ describe("Still confused? Ask LISA (owner brief, Karl, 2026-10-23)", () => {
     renderReview({ showResult: true, isCorrect: true });
     expect(screen.getByTestId("runner-feedback")).toBeTruthy();
     expect(screen.queryByTestId("runner-ask-lisa")).toBeNull();
+  });
+});
+
+/**
+ * Owner ruling on #1322 (Karl, 2026-10-26): the width tiers of the docked runner. From 1338px
+ * LISA's column is 360px (+12 inset); from W3 = 1278px to 1337px it is 300px and the calculator
+ * still opens between the question and LISA; below W3 the two take turns, the last one opened
+ * winning, and the automatic yield is not the student's own minimize.
+ */
+describe("docked LISA: the width tiers (owner ruling on #1322, Karl, 2026-10-26)", () => {
+  const W3 = 1278;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dockMounts.count = 0;
+    dockMounts.docked = null;
+  });
+
+  function column(): HTMLElement {
+    return screen.getByTestId("runner-lisa-column");
+  }
+  function calcToggle(): HTMLElement {
+    return screen.getByTestId("practice-calculator-toggle");
+  }
+
+  it("from 1338px LISA's column is 360px (372 with its inset); from W3 to 1337px it is 300px (312)", () => {
+    mockViewport(1338);
+    const wide = renderReview();
+    expect(column().style.width).toBe("372px");
+    wide.unmount();
+    mockViewport(1337);
+    const narrow = renderReview();
+    expect(column().style.width).toBe("312px");
+    narrow.unmount();
+    mockViewport(W3);
+    renderReview();
+    expect(column().style.width).toBe("312px");
+  });
+
+  it("at W3 (1278) and 1280 the calculator opens BETWEEN the question and LISA: both shown, nothing yields", () => {
+    for (const width of [W3, 1280]) {
+      mockViewport(width);
+      const view = renderReview();
+      fireEvent.click(calcToggle());
+      expect(screen.getByTestId("side-panel-calculator")).toBeTruthy();
+      expect(column().getAttribute("data-open")).toBe("true");
+      expect(dockMounts.docked?.suppressed).toBe(false);
+      view.unmount();
+    }
+  });
+
+  for (const width of [W3 - 1, 1024]) {
+    it(`below W3 (${width}px) they take turns, the last opened winning, twice over`, () => {
+      mockViewport(width);
+      renderReview();
+      // Presence first: LISA docked open, the calculator closed.
+      expect(column().getAttribute("data-open")).toBe("true");
+      expect(calcToggle().getAttribute("aria-expanded")).toBe("false");
+      for (let round = 0; round < 2; round += 1) {
+        // The calculator opened: LISA yields to its launcher.
+        fireEvent.click(calcToggle());
+        expect(calcToggle().getAttribute("aria-expanded")).toBe("true");
+        expect(column().getAttribute("data-open")).toBe("false");
+        expect(dockMounts.docked?.suppressed).toBe(true);
+        // LISA reopened (its launcher): the calculator closes.
+        act(() => dockMounts.docked?.onOpenChange(true));
+        expect(column().getAttribute("data-open")).toBe("true");
+        expect(dockMounts.docked?.suppressed).toBe(false);
+        expect(calcToggle().getAttribute("aria-expanded")).toBe("false");
+      }
+    });
+  }
+
+  it("below W3 the yield is not the student's minimize: closing the calculator gives LISA back on its own", () => {
+    mockViewport(W3 - 1);
+    renderReview();
+    fireEvent.click(calcToggle());
+    expect(column().getAttribute("data-open")).toBe("false");
+    // The student's own choice is untouched: still "open".
+    expect(dockMounts.docked?.defaultOpen).toBe(true);
+    fireEvent.click(calcToggle());
+    expect(column().getAttribute("data-open")).toBe("true");
+    expect(dockMounts.docked?.suppressed).toBe(false);
+  });
+
+  it("below W3 the calculator's state survives the turn-taking: a reopened calculator starts from it", () => {
+    mockViewport(W3 - 1);
+    renderReview();
+    fireEvent.click(calcToggle());
+    // The student works in the calculator (its state reported up).
+    fireEvent.click(screen.getAllByTestId("desmos-emit-state")[0]!);
+    act(() => dockMounts.docked?.onOpenChange(true));
+    expect(calcToggle().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(calcToggle());
+    const desmos = screen.getAllByTestId("desmos-mock");
+    expect(desmos.length).toBeGreaterThan(0);
+    for (const d of desmos)
+      expect(d.getAttribute("data-initial")).toBe('{"expressions":[]}');
   });
 });

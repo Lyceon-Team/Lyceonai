@@ -88,6 +88,8 @@ import {
   CALC_MIN_PX,
   DOCKED_CALC_MIN_PCT,
   DOCKED_LISA_COLUMN_PX,
+  DOCKED_LISA_NARROW_COLUMN_PX,
+  DOCKED_NARROW_SPLIT_BREAKPOINT,
   DOCKED_QUESTION_MIN_PCT,
   DOCKED_SPLIT_BREAKPOINT,
   QUESTION_DEFAULT_PCT,
@@ -391,9 +393,25 @@ export default function CanonicalPracticePage(props: {
   >(null);
 
   const splitEnabled = useSplitEnabled();
-  // 2026-10-26: beside LISA's docked column the calculator opens between the question and LISA
-  // from this width (calculator-layout.ts); below it, it stacks under the question.
-  const dockedSplitEnabled = useMinWidth(DOCKED_SPLIT_BREAKPOINT);
+  // 2026-10-26 (owner ruling on #1322): LISA's docked column is 360px from
+  // DOCKED_SPLIT_BREAKPOINT (1338) and 300px below it; the calculator opens between the question
+  // and LISA from W3 (DOCKED_NARROW_SPLIT_BREAKPOINT, 1278); below W3 the two take turns.
+  const lisaColumnWide = useMinWidth(DOCKED_SPLIT_BREAKPOINT);
+  const threeColumnsFit = useMinWidth(DOCKED_NARROW_SPLIT_BREAKPOINT);
+  /**
+   * @spec [owner ruling on #1322 (Karl, 2026-10-26): below W3 "opening the calculator minimizes
+   *       LISA to the launcher; reopening LISA closes/minimizes the calculator; the most recently
+   *       opened tool wins. Neither state loses data"; "an automatic fallback-minimize should not
+   *       count as the student's own minimize"] | @implemented [2026-10-26]
+   * plain English: which of the two the student opened last. Below W3, with both wanted, the
+   * last one opened is shown: the calculator (LISA then shows as its launcher, the dock told
+   * `suppressed`, the student's own open/minimized choice untouched) or LISA (opening it closes
+   * the calculator, which keeps its Desmos state as any close does). Closing the calculator, or
+   * a wider window, gives LISA back on its own, because the student never minimized it.
+   */
+  const [lastToolOpened, setLastToolOpened] = React.useState<"calc" | "lisa">(
+    "lisa",
+  );
   const wideLayout = useMinWidth(STACKED_LAYOUT_BELOW_PX);
   // 2026-10-22: phones keep the stacked panel; tablet and desktop get the chat dock.
   const isPhoneWidth = useMediaQuery(PHONE_WIDTH_QUERY, false);
@@ -587,15 +605,26 @@ export default function CanonicalPracticePage(props: {
       (engine.features.tutorAfterSubmit && showResult && !isDiagnostic));
   // 2026-10-26: LISA's docked right column is open (see reviewLisaDocked above).
   const isReviewEngine = engine.domain === "review";
-  const lisaColumnOpen =
+  // The student's own choice (open or minimized), then what is drawn.
+  const lisaWanted =
     dockTutor &&
     (isReviewEngine
       ? reviewLisaDocked
       : sessionItemId !== null && practiceLisaDockedItem === sessionItemId);
+  const lisaYieldsToCalculator =
+    lisaWanted &&
+    !threeColumnsFit &&
+    showCalculator &&
+    isCalculatorExpanded &&
+    lastToolOpened === "calc";
+  const lisaColumnOpen = lisaWanted && !lisaYieldsToCalculator;
+  const lisaColumnPx = lisaColumnWide
+    ? DOCKED_LISA_COLUMN_PX
+    : DOCKED_LISA_NARROW_COLUMN_PX;
   const useSidePanel =
     showCalculator &&
     isCalculatorExpanded &&
-    (lisaColumnOpen ? dockedSplitEnabled : splitEnabled);
+    (lisaColumnOpen ? threeColumnsFit : splitEnabled);
   const tutorVisible =
     canAskTutor &&
     isPhoneWidth &&
@@ -670,7 +699,11 @@ export default function CanonicalPracticePage(props: {
             <button
               type="button"
               className={BAR_BUTTON}
-              onClick={() => setIsCalculatorExpanded((prev) => !prev)}
+              onClick={() => {
+                // 2026-10-26: opening it makes the calculator the last tool opened.
+                if (!isCalculatorExpanded) setLastToolOpened("calc");
+                setIsCalculatorExpanded(!isCalculatorExpanded);
+              }}
               aria-expanded={isCalculatorExpanded}
               aria-label="Calculator"
               data-testid="practice-calculator-toggle"
@@ -961,6 +994,9 @@ export default function CanonicalPracticePage(props: {
   // 2026-10-26: beside LISA's docked column the group fills the runner body exactly (no 600px
   // floor, so the body never scrolls and no scrollbar comes between the calculator and LISA),
   // keeps no right padding, sizes from the docked percentages and keeps its own saved layout.
+  // The same no-floor body wherever the runner has the dock (2026-10-26, owner ruling on #1322):
+  // on a short screen (650px tall) a 600px calculator ran down under the floating launcher,
+  // below the fold, where the launcher's clearance at its bottom could not help.
   const standardLayout = useSidePanel ? (
     <div
       ref={panelGroupRef}
@@ -976,7 +1012,7 @@ export default function CanonicalPracticePage(props: {
             : "lyceon-practice-calc-panel-px"
         }
         onLayout={handleGroupLayout}
-        className={lisaColumnOpen ? "h-full" : "h-full min-h-[600px]"}
+        className={dockTutor ? "h-full" : "h-full min-h-[600px]"}
       >
         <ResizablePanel
           defaultSize={
@@ -986,6 +1022,7 @@ export default function CanonicalPracticePage(props: {
           style={{
             minWidth: lisaColumnOpen ? QUESTION_MIN_DOCKED_PX : QUESTION_MIN_PX,
           }}
+          data-testid="practice-question-panel"
         >
           <div className="h-full overflow-y-auto">{questionColumn}</div>
         </ResizablePanel>
@@ -1086,7 +1123,7 @@ export default function CanonicalPracticePage(props: {
                 ? "flex min-h-0 shrink-0 flex-col pb-3 pr-3 pt-3"
                 : "hidden"
             }
-            style={{ width: DOCKED_LISA_COLUMN_PX }}
+            style={{ width: lisaColumnPx }}
             data-testid="runner-lisa-column"
             data-open={lisaColumnOpen ? "true" : "false"}
           />
@@ -1105,7 +1142,14 @@ export default function CanonicalPracticePage(props: {
             onOpenChange: (open) => {
               if (isReviewEngine) setReviewLisaDocked(open);
               else setPracticeLisaDockedItem(open ? sessionItemId : null);
+              if (!open) return;
+              // 2026-10-26: below W3, opening LISA makes it the last tool opened and closes the
+              // calculator (its Desmos state kept, as on any close).
+              setLastToolOpened("lisa");
+              if (!threeColumnsFit && isCalculatorExpanded)
+                setIsCalculatorExpanded(false);
             },
+            suppressed: lisaYieldsToCalculator,
           }}
           scope={{
             kind: "question",
