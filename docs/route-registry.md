@@ -79,6 +79,7 @@ This document records, for those routes:
 | `/math-practice` | student, admin | entitled† | MathPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/reading-writing-practice` | student, admin | entitled† | ReadingWritingPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | ACTIVE |
 | `/practice/diagnostic` | student, admin | free | DiagnosticStart (starts or resumes the diagnostic, then replaces itself with `/practice/session/:sessionId`; owner brief 2026-10-10 rule 3) | `/api/practice/diagnostic/sessions` | ACTIVE |
+| `/qotd` | student, admin | free | QotdLanding (Home's Question of the Day full screen, then "5 more?"; smart landing, Karl 2026-10-26, ruling D) | `/api/qotd/today`, `/api/qotd/answer`, `/api/landing/more` | ACTIVE |
 | `/practice/session/:sessionId` | student, admin | entitled† | ResumePractice | `/api/practice/sessions/:sessionId/state`, `/api/practice/sessions/:sessionId/next` | ACTIVE |
 | `/review` | student, admin | free | Review | `/api/review/pool`, `/api/review/sessions/open`, `/api/review/sessions`, `/api/practice/topics` | ACTIVE |
 | `/review/session/:sessionId` | student, admin | free | ResumeReview | `/api/review/sessions/:sessionId/state`, `/api/review/sessions/:sessionId/next`, `/api/review/answer`, `/api/review/sessions/:sessionId/skip` | ACTIVE |

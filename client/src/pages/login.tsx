@@ -13,6 +13,7 @@ import {
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
 import { authEntryFromSearch } from "@lyceon/shared/auth-entry";
+import { notePostAuthDestination } from "@/lib/landing-entry";
 
 /**
  * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (login, signup);
@@ -106,15 +107,18 @@ export default function Login() {
       // request until a guardian connects, so a `next` there would only bounce. Onboarding
       // still comes first, exactly as on `main`.
       const onboardingFirst = user.role !== "admin" && needsOnboarding;
-      navigate(
+      const destination =
         !onboardingFirst && needsGuardianLink
           ? "/guardian-required"
           : postAuthDestination({
               role: user.role,
               needsOnboarding: onboardingFirst,
               next,
-            }),
-      );
+            });
+      // Smart landing (Karl, 2026-10-26, ruling A): "no return path, so the default Home" is a
+      // default entry; a `next` is a deep link and wins.
+      notePostAuthDestination(destination, next);
+      navigate(destination);
     }
   }, [isAuthenticated, authLoading, user, navigate]);
 

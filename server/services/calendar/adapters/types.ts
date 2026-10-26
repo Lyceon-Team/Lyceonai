@@ -45,6 +45,12 @@ export type EngineCreateContext = {
    * and that ownership is what makes two concurrent first launches one session.
    */
   idempotency_key: string;
+  /**
+   * SERVER-ONLY: a smart-landing launch (`session_today`, owner brief "Smart landing", Karl,
+   * 2026-10-26) asks the practice engine for an easy/medium lead of two. Absent on every launch
+   * the calendar route makes; other engines ignore it.
+   */
+  landing_lead?: true;
 };
 
 export type EngineLaunch = {

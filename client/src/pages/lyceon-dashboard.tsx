@@ -32,6 +32,7 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { browserLocalToday } from "@/features/calendar/lib/dates";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
+import { useSmartLanding } from "@/hooks/useSmartLanding";
 
 /**
  * The LISA launcher on Home opens LISA in general mode (owner brief, 2026-10-22), with Home's
@@ -52,9 +53,15 @@ export default function LyceonDashboard(): JSX.Element {
   const { user } = useSupabaseAuth();
   const profile = useProfileQuery();
   const access = useFeatureAccess();
+  // Owner brief "Smart landing" (Karl, 2026-10-26): on a default entry the server decides where
+  // this open lands; Home waits (its loading state) for that one answer, then shows or is
+  // replaced. The server enforces students only; this only decides whether to ask.
+  const landing = useSmartLanding(user?.role === "student");
 
   // QA2-F: the same placeholder the paid and free Home show until their own reads answer.
-  if (user === null || profile.isLoading) return <HomeLoading />;
+  if (user === null || profile.isLoading || landing.pending) {
+    return <HomeLoading />;
+  }
 
   const name = user.display_name ?? null;
   const mastery = access?.mastery_detail;
