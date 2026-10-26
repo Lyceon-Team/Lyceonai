@@ -1207,14 +1207,17 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
   });
 
   for (const width of [DOCK_FROM_PX, 1024, 1440]) {
-    it(`${width}px: no side panel and no Show/Hide LISA; the dock, scoped to the served item and named by "Question N of M"`, () => {
+    it(`${width}px: no side panel and no Show/Hide LISA; the dock, scoped to the served item and named by "Question N of M" (from 1338px) or "N of M" (the 300px column)`, () => {
       mockViewport(width);
       renderReview();
       const dock = screen.getByTestId("chat-dock-mock");
       expect(dock.getAttribute("data-kind")).toBe("question");
       expect(dock.getAttribute("data-surface")).toBe("review");
       expect(dock.getAttribute("data-item")).toBe("rev-item-7");
-      expect(dock.getAttribute("data-label")).toBe("Question 3 of 10");
+      // Owner ruling on #1322 (Karl, 2026-10-26): the compact form in the 300px column.
+      expect(dock.getAttribute("data-label")).toBe(
+        width >= 1338 ? "Question 3 of 10" : "3 of 10",
+      );
       expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
       expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
       expect(screen.queryByTestId("review-tutor-layout")).toBeNull();
@@ -1465,7 +1468,9 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
       expect(dock.getAttribute("data-kind")).toBe("question");
       expect(dock.getAttribute("data-surface")).toBe("practice");
       expect(dock.getAttribute("data-item")).toBe("prac-item-1");
-      expect(dock.getAttribute("data-label")).toBe("Question 1 of 5");
+      expect(dock.getAttribute("data-label")).toBe(
+        width >= 1338 ? "Question 1 of 5" : "1 of 5",
+      );
       expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
       expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     });

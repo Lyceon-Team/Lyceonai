@@ -1,6 +1,6 @@
 # Runner with LISA docked as the right column: LISA alone, the calculator between the question and LISA (360px and 300px tiers), the below-W3 turn-taking, LISA minimized to the launcher; light and dark, 1440x900, 1366x650, 1280x650, 1277x650 and 390
 
-Generated 2026-10-26T11:03:16.847Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts RUNNER-LISA-DOCKED` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
+Generated 2026-10-26T20:56:35.031Z by `pnpm exec tsx tests/e2e/student-harness/capture.ts RUNNER-LISA-DOCKED` (see `tests/e2e/student-harness/README.md`). Built = a production build of the real client (`vite preview`, or the dev server with STUDENT_HARNESS_CLIENT=dev) against the student harness (real routers over a local Postgres built from this repo's migrations; personas seeded through the real practice routes). Prototype = the signed-off `docs/plans/student-ui/design/prototype/*.dc.html`, rendered locally.
 
 Conditions, read before comparing:
 - Viewport screenshots (not full page) unless the shot says full page: desktop 1440x900, phone 390x844, and any extra size a shot names.
@@ -20,14 +20,14 @@ Prototype: none. The runner prototype (Runner.dc.html) has no LISA column; this 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![docked-alone desktop light](docked-alone--desktop--light--built.png)<br>`/review/session/299aefbe-43f1-42e4-afbc-56611dd843c5`, 118 KB, horizontal overflow 0px | none |
-| desktop | dark | ![docked-alone desktop dark](docked-alone--desktop--dark--built.png)<br>`/review/session/b907b7e7-20ab-49bc-ab92-543101d551eb`, 121 KB, horizontal overflow 0px | none |
-| mobile | light | ![docked-alone mobile light](docked-alone--mobile--light--built.png)<br>`/review/session/1600d12d-2129-48c0-9fda-aa97bf43d3e3`, 74 KB, horizontal overflow 0px | none |
-| mobile | dark | ![docked-alone mobile dark](docked-alone--mobile--dark--built.png)<br>`/review/session/bf80121a-e72c-4ded-b88a-6df99142ad63`, 75 KB, horizontal overflow 0px | none |
-| w1366 | light | ![docked-alone w1366 light](docked-alone--w1366--light--built.png)<br>`/review/session/dc0ae50b-55a1-43bc-9ee7-ebcb3b546bbd`, 104 KB, horizontal overflow 0px | none |
-| w1366 | dark | ![docked-alone w1366 dark](docked-alone--w1366--dark--built.png)<br>`/review/session/f8b154c8-1fb0-43e8-94b6-7e8607c124d2`, 106 KB, horizontal overflow 0px | none |
-| w1280 | light | ![docked-alone w1280 light](docked-alone--w1280--light--built.png)<br>`/review/session/af255dd8-8480-4555-9efc-5c61877fc040`, 104 KB, horizontal overflow 0px | none |
-| w1280 | dark | ![docked-alone w1280 dark](docked-alone--w1280--dark--built.png)<br>`/review/session/33a5f9a6-3b53-42eb-b113-6c81f8303f4a`, 107 KB, horizontal overflow 0px | none |
+| desktop | light | ![docked-alone desktop light](docked-alone--desktop--light--built.png)<br>`/review/session/620b1eed-be43-4369-acb6-7688e71c2a50`, 116 KB, horizontal overflow 0px | none |
+| desktop | dark | ![docked-alone desktop dark](docked-alone--desktop--dark--built.png)<br>`/review/session/da71bdd3-5f19-4cb3-b396-1b85eedfee7a`, 119 KB, horizontal overflow 0px | none |
+| mobile | light | ![docked-alone mobile light](docked-alone--mobile--light--built.png)<br>`/review/session/6f91c3f6-1937-4e95-bd2e-830f1b946311`, 72 KB, horizontal overflow 0px | none |
+| mobile | dark | ![docked-alone mobile dark](docked-alone--mobile--dark--built.png)<br>`/review/session/612f5705-5785-482f-b2b3-c8497b8019ee`, 75 KB, horizontal overflow 0px | none |
+| w1366 | light | ![docked-alone w1366 light](docked-alone--w1366--light--built.png)<br>`/review/session/1b78e44a-2680-4517-a9fb-87e3744207c6`, 103 KB, horizontal overflow 0px | none |
+| w1366 | dark | ![docked-alone w1366 dark](docked-alone--w1366--dark--built.png)<br>`/review/session/2c130e73-568d-46c7-ac07-34e51b01858a`, 106 KB, horizontal overflow 0px | none |
+| w1280 | light | ![docked-alone w1280 light](docked-alone--w1280--light--built.png)<br>`/review/session/9d8f2b65-8139-49d6-9a40-daef778b0ade`, 102 KB, horizontal overflow 0px | none |
+| w1280 | dark | ![docked-alone w1280 dark](docked-alone--w1280--dark--built.png)<br>`/review/session/c40530c5-6f31-4230-8974-f18e361a6fb0`, 105 KB, horizontal overflow 0px | none |
 
 ## Math review runner (paid), the calculator opened: between the question and LISA, its right edge LISA's left edge; LISA 360px from 1338px, 300px from W3 (1278px) to 1337px, so 1280x650 keeps all three side by side (owner ruling on #1322, Karl, 2026-10-26)
 
@@ -41,14 +41,14 @@ Prototype: none. The runner prototype (Runner.dc.html) has no LISA column; this 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![calculator-and-lisa desktop light](calculator-and-lisa--desktop--light--built.png)<br>`/review/session/7473901d-7c85-4451-afd5-dd366df191a5`, 71 KB, horizontal overflow 0px | none |
-| desktop | dark | ![calculator-and-lisa desktop dark](calculator-and-lisa--desktop--dark--built.png)<br>`/review/session/644f98c2-6128-4753-8d56-6b6da3aff905`, 71 KB, horizontal overflow 0px | none |
-| mobile | light | ![calculator-and-lisa mobile light](calculator-and-lisa--mobile--light--built.png)<br>`/review/session/f470946d-9f61-4f89-9cd0-0cad63a6ba42`, 38 KB, horizontal overflow 0px | none |
-| mobile | dark | ![calculator-and-lisa mobile dark](calculator-and-lisa--mobile--dark--built.png)<br>`/review/session/e68a38ab-49e7-4d2e-b098-24f05149ae28`, 38 KB, horizontal overflow 0px | none |
-| w1366 | light | ![calculator-and-lisa w1366 light](calculator-and-lisa--w1366--light--built.png)<br>`/review/session/01cd656c-6d96-4f5e-a40c-00c028af28a3`, 69 KB, horizontal overflow 0px | none |
-| w1366 | dark | ![calculator-and-lisa w1366 dark](calculator-and-lisa--w1366--dark--built.png)<br>`/review/session/ff7d6765-51b3-47e5-adca-6fa1c9141846`, 69 KB, horizontal overflow 0px | none |
-| w1280 | light | ![calculator-and-lisa w1280 light](calculator-and-lisa--w1280--light--built.png)<br>`/review/session/fa14d84e-1774-45ad-939c-3b72920ce0ce`, 69 KB, horizontal overflow 0px | none |
-| w1280 | dark | ![calculator-and-lisa w1280 dark](calculator-and-lisa--w1280--dark--built.png)<br>`/review/session/79d6bb61-f2b0-4f0d-a4cf-993ad209ab10`, 69 KB, horizontal overflow 0px | none |
+| desktop | light | ![calculator-and-lisa desktop light](calculator-and-lisa--desktop--light--built.png)<br>`/review/session/78e6177c-b612-4ae2-83b0-c8355355abcb`, 71 KB, horizontal overflow 0px | none |
+| desktop | dark | ![calculator-and-lisa desktop dark](calculator-and-lisa--desktop--dark--built.png)<br>`/review/session/cb556f4d-e1a1-4822-8473-7322e4e3a212`, 71 KB, horizontal overflow 0px | none |
+| mobile | light | ![calculator-and-lisa mobile light](calculator-and-lisa--mobile--light--built.png)<br>`/review/session/8a0ebf75-dffe-48cf-9d06-8b07ae31d70d`, 38 KB, horizontal overflow 0px | none |
+| mobile | dark | ![calculator-and-lisa mobile dark](calculator-and-lisa--mobile--dark--built.png)<br>`/review/session/8324e7c9-3d12-4205-9e6c-a471a3b8f075`, 38 KB, horizontal overflow 0px | none |
+| w1366 | light | ![calculator-and-lisa w1366 light](calculator-and-lisa--w1366--light--built.png)<br>`/review/session/53b85ddc-049c-47e6-a6ac-3ec7a235c4af`, 69 KB, horizontal overflow 0px | none |
+| w1366 | dark | ![calculator-and-lisa w1366 dark](calculator-and-lisa--w1366--dark--built.png)<br>`/review/session/a833edfe-8822-4cf6-a64b-45dd29643d66`, 69 KB, horizontal overflow 0px | none |
+| w1280 | light | ![calculator-and-lisa w1280 light](calculator-and-lisa--w1280--light--built.png)<br>`/review/session/df33f571-179f-4576-a545-d462e124ae07`, 69 KB, horizontal overflow 0px | none |
+| w1280 | dark | ![calculator-and-lisa w1280 dark](calculator-and-lisa--w1280--dark--built.png)<br>`/review/session/c591a244-45c3-45d6-ac5b-c2dfe04e3d5f`, 68 KB, horizontal overflow 0px | none |
 
 ## Below W3 (1277x650): the calculator opened takes LISA's place; LISA shows as its launcher (the last tool opened wins). At 1440 and on the phone the same steps show the wide and phone layouts
 
@@ -61,12 +61,12 @@ Prototype: none. The runner prototype (Runner.dc.html) has no LISA column; this 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![below-w3-calculator desktop light](below-w3-calculator--desktop--light--built.png)<br>`/review/session/f35a0d6c-1916-4bd5-99a8-99190421c1b9`, 71 KB, horizontal overflow 0px | none |
-| desktop | dark | ![below-w3-calculator desktop dark](below-w3-calculator--desktop--dark--built.png)<br>`/review/session/25d34dfb-9697-4074-905b-2e050e9e9de1`, 71 KB, horizontal overflow 0px | none |
-| mobile | light | ![below-w3-calculator mobile light](below-w3-calculator--mobile--light--built.png)<br>`/review/session/d2c23b0f-b10f-43c8-83fd-cc69e5808a7f`, 38 KB, horizontal overflow 0px | none |
-| mobile | dark | ![below-w3-calculator mobile dark](below-w3-calculator--mobile--dark--built.png)<br>`/review/session/25beb68b-2de1-4d3f-bcba-6830f9005abd`, 38 KB, horizontal overflow 0px | none |
-| w1277 | light | ![below-w3-calculator w1277 light](below-w3-calculator--w1277--light--built.png)<br>`/review/session/5146a28c-89f7-45d6-bb92-790f3d343732`, 45 KB, horizontal overflow 0px | none |
-| w1277 | dark | ![below-w3-calculator w1277 dark](below-w3-calculator--w1277--dark--built.png)<br>`/review/session/a1c9754d-c7d4-4110-a767-f8088230f3c7`, 45 KB, horizontal overflow 0px | none |
+| desktop | light | ![below-w3-calculator desktop light](below-w3-calculator--desktop--light--built.png)<br>`/review/session/d63c302a-4701-4aeb-97c5-45df421c01fe`, 71 KB, horizontal overflow 0px | none |
+| desktop | dark | ![below-w3-calculator desktop dark](below-w3-calculator--desktop--dark--built.png)<br>`/review/session/dcb17075-57fd-4d64-a8d4-926a4ee4d384`, 71 KB, horizontal overflow 0px | none |
+| mobile | light | ![below-w3-calculator mobile light](below-w3-calculator--mobile--light--built.png)<br>`/review/session/fca28608-e938-40d5-83d4-b72a26c9a8f4`, 38 KB, horizontal overflow 0px | none |
+| mobile | dark | ![below-w3-calculator mobile dark](below-w3-calculator--mobile--dark--built.png)<br>`/review/session/abe4f6d6-b606-4db7-ac84-52a12f7e5c10`, 38 KB, horizontal overflow 0px | none |
+| w1277 | light | ![below-w3-calculator w1277 light](below-w3-calculator--w1277--light--built.png)<br>`/review/session/db8438dd-77de-431b-9b83-129399665a30`, 45 KB, horizontal overflow 0px | none |
+| w1277 | dark | ![below-w3-calculator w1277 dark](below-w3-calculator--w1277--dark--built.png)<br>`/review/session/58ca5798-f8fc-4bd5-9c27-05ed20457e2b`, 45 KB, horizontal overflow 0px | none |
 
 ## Below W3 (1277x650): LISA reopened from its launcher; the calculator closes (its state kept) and LISA's column is back
 
@@ -80,12 +80,12 @@ Prototype: none. The runner prototype (Runner.dc.html) has no LISA column; this 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![below-w3-lisa desktop light](below-w3-lisa--desktop--light--built.png)<br>`/review/session/398b7f21-19cf-4318-b3cc-22d8f4c96e86`, 71 KB, horizontal overflow 0px | none |
-| desktop | dark | ![below-w3-lisa desktop dark](below-w3-lisa--desktop--dark--built.png)<br>`/review/session/4a9437e9-ec9e-4b6e-999f-6bbc97aa431a`, 71 KB, horizontal overflow 0px | none |
-| mobile | light | ![below-w3-lisa mobile light](below-w3-lisa--mobile--light--built.png)<br>`/review/session/e8122771-0f98-4e03-8a0c-13c2f502f8c3`, 38 KB, horizontal overflow 0px | none |
-| mobile | dark | ![below-w3-lisa mobile dark](below-w3-lisa--mobile--dark--built.png)<br>`/review/session/f5b05b80-0e65-471f-84a5-5d10915d7fe5`, 38 KB, horizontal overflow 0px | none |
-| w1277 | light | ![below-w3-lisa w1277 light](below-w3-lisa--w1277--light--built.png)<br>`/review/session/32d1d2a7-f2c3-46c1-bd90-4dd3d5fe071f`, 60 KB, horizontal overflow 0px | none |
-| w1277 | dark | ![below-w3-lisa w1277 dark](below-w3-lisa--w1277--dark--built.png)<br>`/review/session/6deb085e-a27b-4843-a990-e13ce63c54e7`, 60 KB, horizontal overflow 0px | none |
+| desktop | light | ![below-w3-lisa desktop light](below-w3-lisa--desktop--light--built.png)<br>`/review/session/a06d1eed-d484-4f3e-93c7-8561cdc61c08`, 71 KB, horizontal overflow 0px | none |
+| desktop | dark | ![below-w3-lisa desktop dark](below-w3-lisa--desktop--dark--built.png)<br>`/review/session/b8737e4c-065e-4957-b61a-1da2a3566fe7`, 71 KB, horizontal overflow 0px | none |
+| mobile | light | ![below-w3-lisa mobile light](below-w3-lisa--mobile--light--built.png)<br>`/review/session/b30b6b2a-8c82-498b-b114-332c022c5f00`, 38 KB, horizontal overflow 0px | none |
+| mobile | dark | ![below-w3-lisa mobile dark](below-w3-lisa--mobile--dark--built.png)<br>`/review/session/b23e84c8-7528-4c68-8105-4ac95c8854f9`, 38 KB, horizontal overflow 0px | none |
+| w1277 | light | ![below-w3-lisa w1277 light](below-w3-lisa--w1277--light--built.png)<br>`/review/session/3b1943b4-40f6-4532-aae3-90304bbfea32`, 59 KB, horizontal overflow 0px | none |
+| w1277 | dark | ![below-w3-lisa w1277 dark](below-w3-lisa--w1277--dark--built.png)<br>`/review/session/e16b7837-48ca-450f-8de3-0ab32f1e45ab`, 59 KB, horizontal overflow 0px | none |
 
 ## Review runner (paid), LISA minimized: the column goes, the question takes the width back, and LISA is the 'Ask LISA' launcher above the footer
 
@@ -99,18 +99,18 @@ Prototype: none. The runner prototype (Runner.dc.html) has no LISA column; this 
 
 | Viewport | Theme (as rendered) | Built | Prototype |
 |---|---|---|---|
-| desktop | light | ![minimized desktop light](minimized--desktop--light--built.png)<br>`/review/session/e025cb1e-738a-4e56-8fa2-67efef64f51c`, 94 KB, horizontal overflow 0px | none |
-| desktop | dark | ![minimized desktop dark](minimized--desktop--dark--built.png)<br>`/review/session/f583d87e-1f95-42b5-9fac-5856aa12c79e`, 97 KB, horizontal overflow 0px | none |
-| mobile | light | ![minimized mobile light](minimized--mobile--light--built.png)<br>`/review/session/94a63192-b305-4874-93d5-23aedb4a75d9`, 71 KB, horizontal overflow 0px | none |
-| mobile | dark | ![minimized mobile dark](minimized--mobile--dark--built.png)<br>`/review/session/bf1f357c-95e3-4dd9-88d9-9c1a89870070`, 76 KB, horizontal overflow 0px | none |
-| w1366 | light | ![minimized w1366 light](minimized--w1366--light--built.png)<br>`/review/session/d44dfc8c-d9e8-43ce-b942-bd6c2ea3156f`, 79 KB, horizontal overflow 0px | none |
-| w1366 | dark | ![minimized w1366 dark](minimized--w1366--dark--built.png)<br>`/review/session/bcb30499-888f-43fc-a941-680fec47fe0c`, 84 KB, horizontal overflow 0px | none |
-| w1280 | light | ![minimized w1280 light](minimized--w1280--light--built.png)<br>`/review/session/4c7f3fd1-0c6e-40a8-b786-5cc3b22dd1d1`, 80 KB, horizontal overflow 0px | none |
-| w1280 | dark | ![minimized w1280 dark](minimized--w1280--dark--built.png)<br>`/review/session/808e523f-8938-4058-92c4-1cd6accc2e66`, 82 KB, horizontal overflow 0px | none |
+| desktop | light | ![minimized desktop light](minimized--desktop--light--built.png)<br>`/review/session/c16e53aa-20d7-4e48-98b4-d26b6e489bda`, 92 KB, horizontal overflow 0px | none |
+| desktop | dark | ![minimized desktop dark](minimized--desktop--dark--built.png)<br>`/review/session/3dd2d765-6322-4dce-91c5-cfb931bdf439`, 95 KB, horizontal overflow 0px | none |
+| mobile | light | ![minimized mobile light](minimized--mobile--light--built.png)<br>`/review/session/92d65d16-2cef-48e8-98fe-006d3d60bbbe`, 72 KB, horizontal overflow 0px | none |
+| mobile | dark | ![minimized mobile dark](minimized--mobile--dark--built.png)<br>`/review/session/6d07ed8b-18a9-4cc6-9277-824726329fe7`, 77 KB, horizontal overflow 0px | none |
+| w1366 | light | ![minimized w1366 light](minimized--w1366--light--built.png)<br>`/review/session/f5435218-f7bb-4c1d-90b7-c4b4c7e5d079`, 78 KB, horizontal overflow 0px | none |
+| w1366 | dark | ![minimized w1366 dark](minimized--w1366--dark--built.png)<br>`/review/session/8aa0e22a-cdfe-4dfa-9a80-7a249b1e80a6`, 82 KB, horizontal overflow 0px | none |
+| w1280 | light | ![minimized w1280 light](minimized--w1280--light--built.png)<br>`/review/session/0aafe12e-a82e-4cc0-b003-971ca388a200`, 78 KB, horizontal overflow 0px | none |
+| w1280 | dark | ![minimized w1280 dark](minimized--w1280--dark--built.png)<br>`/review/session/bd6b1182-e5fc-4b3d-b1c9-4bc7f2c00c8f`, 81 KB, horizontal overflow 0px | none |
 
 ## Run facts
 
-- Seeded ids: `{"free":{"completedPracticeSessionId":"fc488c37-f823-4d55-9de2-f904caa15a34","openPracticeSessionId":"40cf72d1-90a6-40f7-8662-66de8de99561","openReviewSessionId":"e4f5aa85-465f-4073-b4c3-d0daa2dbf3b3","diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":39},"paid":{"completedPracticeSessionId":"f9117eb2-f126-4ac1-941d-e27f2e102fc0","openPracticeSessionId":"998ff656-f6ff-4ced-acc3-7bac44e19079","openReviewSessionId":"b786a9bc-586d-48f1-8134-8360d9992225","diagnosticSessionId":"0e2255bf-b334-457d-83d5-5a1bb6ed166d","scoredExamSessionId":"063a55bd-5147-4eb4-a257-7c48d852dac0","inProgressExamSessionId":"f3fa3423-be9f-4e99-85d1-7403e9c37e9e","lisaConversationId":"0a739dc2-d6c2-4d25-99fa-dab6a4c48cac","answered":204}}`
+- Seeded ids: `{"free":{"completedPracticeSessionId":"e044fafa-21ed-45c8-bf19-3d0241bfadc5","openPracticeSessionId":"b11ce42e-9362-422f-89c4-1648328e5f30","openReviewSessionId":"b0084bf2-6b0d-41a9-a537-80e6dd6e95ac","diagnosticSessionId":null,"scoredExamSessionId":null,"inProgressExamSessionId":null,"lisaConversationId":null,"answered":39},"paid":{"completedPracticeSessionId":"fb09762a-0503-45ec-bee7-140939b0c985","openPracticeSessionId":"4f5c0132-4e09-4e64-bb04-a1615492d410","openReviewSessionId":"fa5baa87-8f12-439f-99fb-8c9b4311b648","diagnosticSessionId":"9a330c1b-4b3f-44b0-9633-8ef65b24b1c0","scoredExamSessionId":"41a44bb1-5f49-4976-91fe-131896509cde","inProgressExamSessionId":"dfec050f-93df-4909-9de8-d725a30e7a1d","lisaConversationId":"f260bb7e-0460-4175-98f3-6037afef9cee","answered":204}}`
 - Endpoints the pages asked for that the harness does not serve (answered 404): none
 - Desmos (QA2-B, opt-in `STUDENT_HARNESS_DESMOS=1`): not loaded (a local-only run; the calculator shows its unavailable line)
 - External hosts blocked: none

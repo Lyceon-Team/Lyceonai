@@ -4341,6 +4341,14 @@ plant "LT-8" "a suppressed dock still draws its panel" \
 assert s.count(a) == 1
 s = s.replace(a, "    const shownView = view;", 1)'
 
+# Owner ruling on #1322 (Karl, 2026-10-26): the 300px column's chip reads "N of M".
+plant "LC-1" "the 300px column's chip keeps the long Question N of M" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const dockQuestionLabel = lisaColumnWide\n    ? questionLabel\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const dockQuestionLabel = true\n    ? questionLabel\n", 1)'
+
 # ── LISA history follow-ups (owner rulings, Karl, 2026-10-24, on #1305/#1310) ─────────────────
 # The approved read-only note, and the history label "Practice question · Oct 21" (type and the
 # conversation's created_at, through the one formatter's short month-day).

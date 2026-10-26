@@ -869,9 +869,10 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     await click(submitButton());
     await click(await screen.findByRole("button", { name: "Next question" }));
     await loaded(2);
+    // At 1024 LISA's column is the 300px tier: the compact "2 of 3" (Karl, 2026-10-26, #1322).
     expect(dockProps.last?.scope).toMatchObject({
       sessionItemId: "item-2",
-      questionLabel: "Question 2 of 3",
+      questionLabel: "2 of 3",
     });
     expect(dockProps.mounts).toBe(mountsBefore);
   });

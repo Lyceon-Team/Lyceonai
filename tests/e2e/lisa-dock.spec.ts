@@ -1170,3 +1170,40 @@ for (const [width, height] of [
     }
   });
 }
+
+// Owner ruling on #1322 (Karl, 2026-10-26): LISA's header chip never truncates. The 300px column
+// reads the compact "N of M"; the 360px column and the phone panel keep "Question N of M".
+for (const [width, height, expected] of [
+  [1280, 650, /^1 of \d+$/],
+  [1338, 800, /^Question 1 of \d+$/],
+  [1440, 900, /^Question 1 of \d+$/],
+  [390, 844, /^Question 1 of \d+$/],
+] as const) {
+  test(`${width}x${height}: LISA's question chip reads ${String(expected)} and is not truncated`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await asPersona(page, "paid");
+    const sessionId = await freshReviewSession(request);
+    try {
+      await openRunner(page, sessionId);
+      // The phone keeps its stacked panel, opened from the bar's LISA toggle.
+      if (width < 768)
+        await page.locator('[data-testid="practice-tutor-toggle"]').click();
+      const chip = page.locator('[data-testid="tutor-question-chip"]:visible');
+      await expect(chip).toBeVisible();
+      await expect(chip).toHaveText(expected);
+      const fit = await chip.evaluate((el) => ({
+        scroll: el.scrollWidth,
+        client: el.clientWidth,
+      }));
+      expect(
+        fit.scroll,
+        `the chip's text overflows its box (${fit.scroll} > ${fit.client})`,
+      ).toBeLessThanOrEqual(fit.client);
+    } finally {
+      await endReviewSession(request, sessionId);
+    }
+  });
+}

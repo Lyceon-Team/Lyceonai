@@ -635,6 +635,20 @@ export default function CanonicalPracticePage(props: {
       ? questionPosition(currentIndex, totalQuestions)
       : null;
   const questionLabel = position ?? `Question ${currentIndex + 1}`;
+  /**
+   * @spec [owner ruling on #1322 (Karl, 2026-10-26): "In the 300px LISA tier, the dock header
+   *       chip reads the compact form '5 of 10' (the runner header already shows 'Question 5 of
+   *       10'). Keep the full form in the 360px tier ... no truncation at ANY tier"]
+   *       | @implemented [2026-10-26]
+   * plain English: the docked LISA header's question chip. In the 360px column the full "Question
+   * 5 of 10" fits (checked to "Question 54 of 54"); in the 300px column it truncated, so there it
+   * is "5 of 10". The phone panel keeps the full form (it fits there too).
+   */
+  const dockQuestionLabel = lisaColumnWide
+    ? questionLabel
+    : typeof totalQuestions === "number"
+      ? `${currentIndex + 1} of ${totalQuestions}`
+      : `${currentIndex + 1}`;
   const tutorPanel =
     tutorVisible && sessionItemId ? (
       <ScopedTutorPanel
@@ -1155,7 +1169,7 @@ export default function CanonicalPracticePage(props: {
             kind: "question",
             sourceSurface: tutorSurface,
             sessionItemId: question ? sessionItemId : null,
-            questionLabel,
+            questionLabel: dockQuestionLabel,
             submitted: showResult,
           }}
         />
