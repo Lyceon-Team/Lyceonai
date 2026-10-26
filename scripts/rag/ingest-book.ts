@@ -61,6 +61,8 @@ import {
   locateUnits,
   nextCursor,
   onSubsectionBoundary,
+  SHORT_RULE_WORDS,
+  shortRulesSplit,
   resolveChapters,
   sha256,
   splitPages,
@@ -77,6 +79,7 @@ import {
   SEGMENT_SYSTEM,
   auditFailure,
   auditResponseSchema,
+  auditUserMessage,
   auditSchema,
   rewriteResponseSchema,
   rewriteSchemaFor,
@@ -107,6 +110,7 @@ const CONTEXT_WORDS = 250;
 // again; what it must never do is keep the advice without its scope.
 const REPAIRABLE: ReadonlySet<string> = new Set([
   "audit_act_generalised",
+  "audit_unjustified_omission",
   "audit_unfaithful",
   "audit_incorrect",
   "audit_not_self_contained",
@@ -140,8 +144,8 @@ async function cachedCall<T>(
   schema: z.ZodType<T>,
   stage: string,
   tally: Tally,
-  call: (onUsage: (u: Usage) => void) => Promise<T>,
-): Promise<{ value: T; cached: boolean }> {
+  call: (onUsage: (u: Usage) => void, note: (n: string) => void) => Promise<T>,
+): Promise<{ value: T; cached: boolean; notes: string[] }> {
   const path = resolve(
     dir,
     "calls",
@@ -149,26 +153,36 @@ async function cachedCall<T>(
   );
   if (existsSync(path)) {
     const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
-    const hit = z.object({ value: schema, usage: usageSchema }).safeParse(raw);
+    const hit = z
+      .object({
+        value: schema,
+        usage: usageSchema,
+        notes: z.array(z.string()).default([]),
+      })
+      .safeParse(raw);
     if (hit.success) {
       tally.fresh(stage, hit.data.usage);
-      return { value: hit.data.value, cached: true };
+      return { value: hit.data.value, cached: true, notes: hit.data.notes };
     }
     const old = schema.safeParse(raw);
     if (old.success) {
       tally.unrecorded();
-      return { value: old.data, cached: true };
+      return { value: old.data, cached: true, notes: [] };
     }
   }
   let spent: Usage = ZERO_USAGE;
-  const value = await call((u) => {
-    spent = addUsage(spent, u);
-    tally.billed(stage, u);
-  });
+  const notes: string[] = [];
+  const value = await call(
+    (u) => {
+      spent = addUsage(spent, u);
+      tally.billed(stage, u);
+    },
+    (n) => notes.push(n),
+  );
   tally.fresh(stage, spent);
   mkdirSync(resolve(dir, "calls"), { recursive: true });
-  writeFileSync(path, JSON.stringify({ value, usage: spent }));
-  return { value, cached: false };
+  writeFileSync(path, JSON.stringify({ value, usage: spent, notes }));
+  return { value, cached: false, notes };
 }
 
 function extractPages(pdf: string): string[] {
@@ -252,7 +266,13 @@ function loadInput(
   };
 }
 
-type Segmented = { units: LocatedUnit[]; windows: number; regrown: number };
+type Segmented = {
+  units: LocatedUnit[];
+  windows: number;
+  regrown: number;
+  /** Each rejected segment answer, with why (quote not found, gap, a short rule split). */
+  rejections: string[];
+};
 
 async function segmentBook(
   book: BookText,
@@ -265,6 +285,7 @@ async function segmentBook(
   let cursor = 0;
   let windows = 0;
   let regrown = 0;
+  const rejections: string[] = [];
   const end = book.text.length;
   while (cursor < end && book.text.slice(cursor).trim() !== "") {
     let growth = 1;
@@ -282,13 +303,13 @@ async function segmentBook(
       const from = cursor;
       // An answer is cached only once its quotes are found in the window, so a bad answer is
       // retried (once, told what was wrong) rather than replayed from the cache forever.
-      const { value } = await cachedCall(
+      const { value, notes } = await cachedCall(
         dir,
         `segment\u0000${model}\u0000${user}`,
         segmentSchema,
         "segment",
         tally,
-        async (onUsage) => {
+        async (onUsage, note) => {
           let feedback = "";
           for (let attempt = 0; ; attempt += 1) {
             const answer = await generateJson({
@@ -301,16 +322,26 @@ async function segmentBook(
               onUsage,
             });
             try {
-              locateUnits(book, from, winEnd, answer.units);
+              const located = locateUnits(book, from, winEnd, answer.units);
+              const split = shortRulesSplit(book.text, located, from, winEnd);
+              if (split.length > 0)
+                throw new Error(
+                  `a numbered rule under ${SHORT_RULE_WORDS} words was split at a lettered subsection (${split.join("; ")}); keep each such rule, with its opening explanation and all of its lettered subsections, in ONE unit`,
+                );
               return answer;
             } catch (err: unknown) {
-              if (attempt >= 1) throw err;
-              feedback = `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${err instanceof Error ? err.message : String(err)}. Copy start_quote and end_quote character for character from the window, in order.`;
+              // Every rejection is recorded with the cached answer, so the report counts the
+              // retries a window needed even when the run is replayed from the cache.
+              const why = err instanceof Error ? err.message : String(err);
+              note(`segment@${from} attempt ${attempt + 1} rejected: ${why}`);
+              if (attempt >= 2) throw err;
+              feedback = `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${why}. Fix exactly that; copy start_quote and end_quote character for character from the window, in order.`;
             }
           }
         },
       );
       windows += 1;
+      rejections.push(...notes);
       // The [page n] markers are in the window the model read, not in book.text; quotes never
       // contain them (the prompt says so) and locateUnits searches book.text directly.
       const located = locateUnits(book, cursor, winEnd, value.units);
@@ -334,7 +365,7 @@ async function segmentBook(
       `segmented to ${Math.round((100 * cursor) / end)}% (${units.length} units)\n`,
     );
   }
-  return { units, windows, regrown };
+  return { units, windows, regrown, rejections };
 }
 
 export type DropRow = {
@@ -359,6 +390,8 @@ type Kept = {
   taxonomy_gap: string | null;
   audit: Audit;
   repaired: boolean;
+  /** Statements the book contradicts within itself, left out of the entry (audit-verified). */
+  omitted_contradictions: string[];
 };
 
 async function main(): Promise<void> {
@@ -508,7 +541,13 @@ async function main(): Promise<void> {
         drop(u, "no_taxonomy_skill", rw.taxonomy_gap ?? "");
         return null;
       }
-      const auditUser = `SOURCE:\n${source}\n\nCONTEXT BEFORE:\n${before}\n\nCONTEXT AFTER:\n${after}\n\nENTRY:\n${content}`;
+      const auditUser = auditUserMessage({
+        source,
+        before,
+        after,
+        entry: content,
+        omitted: rw.omitted_contradictions,
+      });
       const audit = (
         await cachedCall(
           dir,
@@ -548,6 +587,7 @@ async function main(): Promise<void> {
         taxonomy_gap: rw.taxonomy_gap,
         audit,
         repaired: attempt > 0,
+        omitted_contradictions: rw.omitted_contradictions,
       };
     }
   });
@@ -644,6 +684,9 @@ async function main(): Promise<void> {
     "",
     `model ${model}, prompt ${BOOK_PROMPT_VERSION}; ${pages.length} pages; ${seg.windows} segment windows (${seg.regrown} widened for a long idea)`,
     "",
+    `segment answers rejected and asked again: ${seg.rejections.length}${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length > 0 ? ` (${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length} for a short numbered rule split at a subsection)` : ""}`,
+    ...seg.rejections.map((r) => `- ${r}`),
+    "",
     `**${chunks.length} chunks** from ${seg.units.length} units; ${drops.length} dropped; ${kept.filter((k) => k.repaired).length} kept after one repair round.`,
     `words per chunk: min ${words[0] ?? 0}, median ${words[Math.floor(words.length / 2)] ?? 0}, max ${words[words.length - 1] ?? 0}`,
     `content_type: ${count(chunks, (c) => c.content_type)
@@ -669,6 +712,28 @@ async function main(): Promise<void> {
           (d) =>
             `- ${d.reason}: "${d.heading}" (page ${d.page}, ${d.words} words)`,
         )),
+    "",
+    "## Book errors",
+    "",
+    "Where the book contradicts itself, the entry leaves both sides out (never resolving it) and the audit verified the contradiction is inside the source. Drops the audit called incorrect are listed too: the book may be wrong there.",
+    "",
+    ...(() => {
+      const rows = [
+        ...kept
+          .filter((k) => k.omitted_contradictions.length > 0)
+          .map(
+            (k) =>
+              `- page ${book.pageAt(k.unit.start)}, ${k.unit.section_title}: left out as self-contradicted: ${k.omitted_contradictions.map((o) => `"${o}"`).join(" / ")}`,
+          ),
+        ...drops
+          .filter((d) => d.reason === "audit_incorrect")
+          .map(
+            (d) =>
+              `- page ${d.page}, ${d.section_title}: dropped, the audit found it incorrect: ${d.detail}`,
+          ),
+      ];
+      return rows.length === 0 ? ["- none"] : rows;
+    })(),
     "",
     "## Dropped",
     "",

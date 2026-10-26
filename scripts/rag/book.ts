@@ -371,6 +371,55 @@ export function onSubsectionBoundary(
   return (startsAtSub && ruleBefore(s0)) || (endsAtSub && ruleBefore(e0));
 }
 
+/** A numbered rule shorter than this is one idea and stays in one unit (Karl, 2026-10-23). */
+export const SHORT_RULE_WORDS = 400;
+
+/**
+ * Pure. The numbered rules ("## " headings of OCR markdown) lying wholly in [winStart, winEnd)
+ * that are under `maxWords` words yet were split by a unit starting at one of their lettered-
+ * subsection headings ("### "). The segment prompt says to keep such a rule in one unit; the
+ * model split rule 15 (251 words) anyway on 2026-10-23, so the rule is enforced here and the
+ * window is asked again. A rule running past the window cannot be judged and is skipped. Words
+ * are counted without the markdown symbols. Returns each offending rule's heading line.
+ */
+export function shortRulesSplit(
+  text: string,
+  units: readonly { start: number }[],
+  winStart: number,
+  winEnd: number,
+  maxWords = SHORT_RULE_WORDS,
+): string[] {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => ({
+    at: m.index ?? 0,
+    line: m[0],
+  }));
+  const out: string[] = [];
+  for (const [i, h] of heads.entries()) {
+    const ruleEnd = heads[i + 1]?.at ?? text.length;
+    if (h.at < winStart || ruleEnd > winEnd) continue;
+    const words = wordCount(
+      text.slice(h.at, ruleEnd).replace(/<\/?[a-z]+>|\[ACT NOTE\]|[#*]/gi, " "),
+    );
+    if (words >= maxWords) continue;
+    const split = units.some(
+      (u) =>
+        u.start > h.at &&
+        u.start < ruleEnd &&
+        startsAtSubsection(text, u.start),
+    );
+    if (split) out.push(h.line);
+  }
+  return out;
+}
+
+/** Pure. A unit edge at `at` is on a "### " heading line, past only "#" and blanks. */
+function startsAtSubsection(text: string, at: number): boolean {
+  let s0 = at;
+  while (s0 < text.length && /\s/.test(text[s0] ?? "")) s0 += 1;
+  const line = text.lastIndexOf("\n", s0 - 1) + 1;
+  return text.startsWith("### ", line) && /^[#\s]*$/.test(text.slice(line, s0));
+}
+
 export const UNIT_KINDS = [
   "rule",
   "worked_example",

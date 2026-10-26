@@ -30,6 +30,7 @@ import {
   locateEdge,
   locateQuote,
   onSubsectionBoundary,
+  shortRulesSplit,
   locateUnits,
   nextCursor,
   parseBookReviewCsv,
@@ -279,6 +280,7 @@ describe("the audit decides what is kept", () => {
     self_contained: true,
     correct: true,
     act_scope_respected: true,
+    contradictions_verified: true,
     issues: "",
   };
   it("passes only when every check passes", () => {
@@ -292,6 +294,18 @@ describe("the audit decides what is kept", () => {
     expect(auditFailure({ ...pass, self_contained: false })).toBe(
       "audit_not_self_contained",
     );
+    // A statement claimed as self-contradicted that the source does not contradict is an
+    // unjustified omission, reported before "incomplete" (which it usually also is).
+    expect(auditFailure({ ...pass, contradictions_verified: false })).toBe(
+      "audit_unjustified_omission",
+    );
+    expect(
+      auditFailure({
+        ...pass,
+        contradictions_verified: false,
+        complete: false,
+      }),
+    ).toBe("audit_unjustified_omission");
     // ACT advice stated as general fails on its own, whatever else passed.
     expect(auditFailure({ ...pass, act_scope_respected: false })).toBe(
       "audit_act_generalised",
@@ -625,5 +639,52 @@ describe("locateEdge", () => {
       "start",
     );
     expect(m?.start).toBe(text.indexOf("Comparisons must"));
+  });
+});
+
+describe("shortRulesSplit", () => {
+  // Rule 15 of the Meltzer guide, in shape: under 400 words, split by the model at "### B."
+  // with the edge where locateEdge puts it (after the "### " the quote leaves out).
+  const short = [
+    "## 15. FAULTY COMPARISONS",
+    "Comparisons must be made between equivalent items.",
+    "",
+    "### A. Singular Comparison",
+    "**Incorrect:** Though the work of Marshall is as well-known as Wright, he is forgotten.",
+    "",
+    "### B. Plural Comparison",
+    "**Incorrect:** The harvestman has limbs twice as long as other spiders.",
+    "",
+  ].join("\n");
+  const long = `## 16. LONG RULE\n${"word ".repeat(450)}\n\n### A. Part\nMore.\n\n### B. Part\nMore.\n`;
+  const text = `${short}${long}`;
+  const atB = text.indexOf("B. Plural");
+
+  it("names a short rule a unit splits at a lettered subsection", () => {
+    expect(
+      shortRulesSplit(text, [{ start: 0 }, { start: atB }], 0, text.length),
+    ).toEqual(["## 15. FAULTY COMPARISONS"]);
+  });
+  it("accepts the short rule whole, and a long rule split at its subsections", () => {
+    const longB = text.indexOf("### B. Part");
+    expect(
+      shortRulesSplit(
+        text,
+        [{ start: 0 }, { start: text.indexOf("## 16.") }, { start: longB }],
+        0,
+        text.length,
+      ),
+    ).toEqual([]);
+  });
+  it("does not judge a rule that runs past the window", () => {
+    expect(
+      shortRulesSplit(text, [{ start: 0 }, { start: atB }], 0, atB + 20),
+    ).toEqual([]);
+  });
+  it("ignores a split inside a subsection's prose", () => {
+    const mid = text.indexOf("he is forgotten");
+    expect(
+      shortRulesSplit(text, [{ start: 0 }, { start: mid }], 0, text.length),
+    ).toEqual([]);
   });
 });
