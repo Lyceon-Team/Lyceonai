@@ -70,11 +70,30 @@ export const OPENER_TITLE = "Need help with this question?";
 export const OPENER_BODY =
   "I can walk you through it. I won't give you the answer before you submit.";
 
-/** The question-scoped body's copy: the panel's and the dock's in question scope. */
+/**
+ * Owner ruling (Karl, 2026-10-23, LISA launcher brief): the opener is split by the item's state.
+ * BEFORE submit it is the W4-4 copy above, UNCHANGED. AFTER submit (the runners' docks, practice
+ * and review) it is this line: the "won't give you the answer before you submit" promise is spent
+ * by then, so it no longer opens the conversation.
+ */
+const OPENER_AFTER_SUBMIT =
+  "Want to walk through this one? Ask me about any step.";
+
+const QUESTION_SCOPE_PLACEHOLDER = "Ask about this question...";
+const QUESTION_SCOPE_LOG = "Conversation with LISA about this question";
+
+/** The question-scoped body's copy before submit: the phone panel's, and the dock's. */
 const QUESTION_SCOPE_COPY: TutorBodyCopy = {
   opener: { title: OPENER_TITLE, body: OPENER_BODY },
-  placeholder: "Ask about this question...",
-  logLabel: "Conversation with LISA about this question",
+  placeholder: QUESTION_SCOPE_PLACEHOLDER,
+  logLabel: QUESTION_SCOPE_LOG,
+};
+
+/** After submit (owner ruling above): one line, no title. */
+const QUESTION_SCOPE_AFTER_SUBMIT_COPY: TutorBodyCopy = {
+  opener: { title: null, body: OPENER_AFTER_SUBMIT },
+  placeholder: QUESTION_SCOPE_PLACEHOLDER,
+  logLabel: QUESTION_SCOPE_LOG,
 };
 
 /**
@@ -85,10 +104,17 @@ const QUESTION_SCOPE_COPY: TutorBodyCopy = {
 export function ScopedTutorBody({
   sourceSurface,
   sessionItemId,
+  submitted = false,
   onEnded,
 }: {
   sourceSurface: Extract<TutorSourceSurface, "review" | "practice">;
   sessionItemId: string;
+  /**
+   * The runner's own `showResult` for this item (set from the server's submit response). Only
+   * the opener's wording follows it; what LISA may see is still decided on the server. The phone
+   * panel leaves it false (phones unchanged, owner brief 2026-10-23).
+   */
+  submitted?: boolean;
   onEnded: () => void;
 }): JSX.Element {
   // Looking is a GET. Nothing here creates a conversation on load.
@@ -102,7 +128,7 @@ export function ScopedTutorBody({
         source_surface: sourceSurface,
         source_session_item_id: sessionItemId,
       }}
-      copy={QUESTION_SCOPE_COPY}
+      copy={submitted ? QUESTION_SCOPE_AFTER_SUBMIT_COPY : QUESTION_SCOPE_COPY}
       onEnded={onEnded}
     />
   );

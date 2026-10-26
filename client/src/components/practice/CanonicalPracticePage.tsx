@@ -49,8 +49,13 @@
  * bubble's width clear on its right, so it never covers Submit, Next or a choice. The W4-4
  * side-by-side layout (LISA open on every question from 1024px, the three-panel breakpoint, the
  * calculator covering LISA's column) is gone with the panel it laid out. Below 768px (phones)
- * nothing changed: LISA stacks under the question, closed until Show LISA (QA2-D). Which engine
- * has LISA is unchanged: review only (`features.tutor`).
+ * nothing changed: LISA stacks under the question, closed until Show LISA (QA2-D). Review has
+ * LISA throughout (`features.tutor`).
+ *
+ * @updated 2026-10-23 — owner rulings on #1300 (Karl): (2) practice gets the dock POST-SUBMIT
+ * only (`features.tutorAfterSubmit`), never in the diagnostic and never on a phone; (5) the bubble
+ * never covers the calculator: beside the question, Desmos keeps the bubble's measured footprint
+ * (the `dock-bubble` bottom-chrome layer) clear at its bottom.
  */
 import React from "react";
 import { useLocation } from "wouter";
@@ -59,7 +64,12 @@ import QuestionRenderer from "@/components/question-renderer";
 import { QuestionMetaHeader } from "@/components/practice/QuestionMetaHeader";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import { Notice } from "@/components/student-ui";
-import { ChatDock, DOCK_CLEARANCE_PX } from "@/components/tutor/ChatDock";
+import {
+  ChatDock,
+  DOCK_CLEARANCE_PX,
+  dockBubbleClearance,
+  type ChatDockHandle,
+} from "@/components/tutor/ChatDock";
 import {
   CHECKING_LABEL,
   LOADING_LABEL,
@@ -84,7 +94,11 @@ import {
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { ScopedTutorPanel } from "@/components/tutor/ScopedTutorPanel";
 import { PHONE_WIDTH_QUERY, useMediaQuery } from "@/hooks/use-mobile";
-import { useReportBottomChrome } from "@/lib/bottom-chrome";
+import {
+  useBottomChromeHeight,
+  useReportBottomChrome,
+  type BottomChromeLayer,
+} from "@/lib/bottom-chrome";
 import {
   type EngineConfig,
   type ReviewSessionSpec,
@@ -115,11 +129,23 @@ const QUESTION_COLUMN_PX = 760;
 
 /**
  * 2026-10-22 (owner brief "LISA chat dock": the bubble never covers the answer choices): from this
- * width the centred 760px column ends left of the bubble on its own. Below it (768px to 887px)
- * the runner keeps DOCK_CLEARANCE_PX clear on the right of the scroll area instead. The column's
- * content sits 16px inside its edge (`px-4`), hence the 16 back.
+ * width the centred 760px column ends left of the launcher on its own. Below it the runner keeps
+ * DOCK_CLEARANCE_PX clear on the right of the scroll area instead. The column's content sits 16px
+ * inside its edge (`px-4`), hence the 16 back.
+ * @updated 2026-10-23 (owner brief "LISA launcher", option D): the launcher is 132px wide where
+ * the bubble was 56px, so the clearance is 156px and this width 1040px (was 888px): from 768px to
+ * 1039px the scroll area keeps the launcher's strip clear.
  */
-const DOCK_COLUMN_CLEAR_PX = QUESTION_COLUMN_PX + 2 * (DOCK_CLEARANCE_PX - 16); // 888
+const DOCK_COLUMN_CLEAR_PX = QUESTION_COLUMN_PX + 2 * (DOCK_CLEARANCE_PX - 16); // 1040
+
+/**
+ * Owner copy (Karl, 2026-10-23, LISA launcher brief): the contextual entry point under the
+ * explanation after a wrong answer.
+ */
+const ASK_LISA_AFTER_MISS = "Still confused? Ask LISA";
+
+/** The LISA bubble's bottom-chrome layer (lib/bottom-chrome.ts), read by the side calculator. */
+const DOCK_BUBBLE_LAYER: readonly BottomChromeLayer[] = ["dock-bubble"];
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the sentence, verbatim, with no number. */
 const SHORTER_SESSION_NOTE =
@@ -333,6 +359,8 @@ export default function CanonicalPracticePage(props: {
   >(null);
   const [tutorRevealKey, setTutorRevealKey] = React.useState(0);
   const runnerScrollRef = React.useRef<HTMLDivElement | null>(null);
+  // The chat dock, opened by "Still confused? Ask LISA" (owner brief 2026-10-23).
+  const dockRef = React.useRef<ChatDockHandle | null>(null);
   const tutorAsideRef = React.useRef<HTMLDivElement | null>(null);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
     unknown | null
@@ -518,12 +546,19 @@ export default function CanonicalPracticePage(props: {
   const useSidePanel = showCalculator && isCalculatorExpanded && splitEnabled;
 
   // W4-1: LISA scoped to the served item, in an engine that has it (review). Practice has no
-  // LISA and no entry point: `features.tutor` is off there, and that is unchanged.
+  // phone panel and no bar entry point (`features.tutor` is off there); since 2026-10-23 it has
+  // the dock once the current question is submitted (`dockTutor` below).
   // 2026-10-22: on a phone, the stacked panel (closed until Show LISA, QA2-D); from 768px up,
   // the chat dock, mounted for the whole runner so its open state lasts the visit.
   const tutorSurface = engine.domain === "review" ? "review" : "practice";
   const canAskTutor = engine.features.tutor && !!sessionItemId && !!question;
-  const dockTutor = engine.features.tutor && !isPhoneWidth;
+  // Owner ruling 2 on #1300 (Karl, 2026-10-23): practice gets the dock post-submit only (the
+  // bubble appears once the current question is answered or skipped and goes with Next); never
+  // in the diagnostic, never on a phone.
+  const dockTutor =
+    !isPhoneWidth &&
+    (engine.features.tutor ||
+      (engine.features.tutorAfterSubmit && showResult && !isDiagnostic));
   const tutorVisible =
     canAskTutor &&
     isPhoneWidth &&
@@ -739,6 +774,24 @@ export default function CanonicalPracticePage(props: {
         disabled={isSubmitting || isLoading}
         onMissingMcChoices={handleMissingMcChoices}
       />
+      {/* Owner brief "LISA launcher" (Karl, 2026-10-23): after a WRONG answer, under the
+          explanation, one muted text link that opens the dock already scoped to this question.
+          Only where the dock is: `dockTutor` already excludes the diagnostic and phones (a
+          separate `!isDiagnostic` here could never be observed failing, so it is not repeated);
+          never after a correct answer or before submit. `isCorrect` is the server's submit
+          response (useCanonicalPractice), never inferred here. */}
+      {dockTutor && showResult && isCorrect === false ? (
+        <p className="m-0 mt-3">
+          <button
+            type="button"
+            onClick={() => dockRef.current?.open()}
+            className={`${LYC_FOCUS} cursor-pointer rounded-sm border-0 bg-transparent p-0 text-lyc-body text-lyc-muted underline underline-offset-2 hover:text-lyc-ink-strong`}
+            data-testid="runner-ask-lisa"
+          >
+            {ASK_LISA_AFTER_MISS}
+          </button>
+        </p>
+      ) : null}
     </div>
   ) : (
     stateBody
@@ -815,8 +868,21 @@ export default function CanonicalPracticePage(props: {
     </RunnerFooter>
   ) : null;
 
+  // Owner ruling 5 on #1300 (Karl, 2026-10-23): the bubble never covers the calculator. Beside the
+  // question (from SPLIT_BREAKPOINT) Desmos runs down to the footer, under the bubble, so it keeps
+  // the bubble's measured footprint clear at its bottom. Stacked (below it), the calculator is in
+  // the question column, which already clears the bubble (DOCK_COLUMN_CLEAR_PX and the gutter).
+  const calcBubbleClear = dockBubbleClearance(
+    useBottomChromeHeight(DOCK_BUBBLE_LAYER),
+  );
   const sidePanelCalculator = (
-    <div className="flex h-full flex-col py-4 pr-4">
+    <div
+      className="flex h-full flex-col py-4 pr-4"
+      style={
+        calcBubbleClear > 0 ? { paddingBottom: calcBubbleClear } : undefined
+      }
+      data-testid="side-panel-calculator"
+    >
       <DesmosCalculator
         expanded={isCalculatorExpanded}
         initialState={localCalculatorState}
@@ -940,8 +1006,8 @@ export default function CanonicalPracticePage(props: {
       <div
         ref={runnerScrollRef}
         className="min-h-0 flex-1 overflow-y-auto"
-        // 2026-10-22: where the question column would reach under the LISA bubble (768px to
-        // 887px), the scroll area keeps the bubble's width clear on its right.
+        // 2026-10-22: where the question column would reach under the LISA launcher (768px to
+        // 1039px since 2026-10-23), the scroll area keeps the launcher's width clear on its right.
         style={
           dockTutor && !dockClearsColumn
             ? { paddingRight: DOCK_CLEARANCE_PX }
@@ -952,13 +1018,18 @@ export default function CanonicalPracticePage(props: {
         {tutorVisible ? reviewTutorLayout : standardLayout}
       </div>
       {footer}
+      {/* Owner brief 2026-10-23: the launcher belongs to the question area (the scroll area
+          above Submit/Next), and its opener follows the item's submit state. */}
       {dockTutor ? (
         <ChatDock
+          ref={dockRef}
+          anchor={runnerScrollRef}
           scope={{
             kind: "question",
             sourceSurface: tutorSurface,
             sessionItemId: question ? sessionItemId : null,
             questionLabel,
+            submitted: showResult,
           }}
         />
       ) : null}

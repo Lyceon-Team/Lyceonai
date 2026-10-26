@@ -24,7 +24,13 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
-type Step = { name?: string; if?: string; run?: string; uses?: string };
+type Step = {
+  name?: string;
+  if?: string;
+  run?: string;
+  uses?: string;
+  env?: Record<string, string>;
+};
 type Job = {
   needs?: string | string[];
   if?: string;
@@ -175,9 +181,26 @@ describe("the verdict and the trigger", () => {
       "gate-selftests",
       "pg-mutations",
       "browser",
+      // Owner ruling on #1300 (2026-10-23): the LISA chat dock's browser spec.
+      "lisa-dock-browser",
     ]) {
       expect(needs).toContain(n);
     }
+  });
+
+  it("the LISA dock browser job runs with the full tier, against Postgres, through its runner script, and its result is in the verdict", () => {
+    const dock = job("lisa-dock-browser");
+    expect(dock.needs).toBe("scope");
+    expect(dock.if).toBe("${{ needs.scope.outputs.run == 'true' }}");
+    const steps = (dock.steps ?? []).map((st) => st.run ?? "");
+    expect(steps).toContain("bash tests/e2e/run-lisa-dock-e2e.sh");
+    expect(JSON.stringify(dock)).toContain("pgvector/pgvector");
+    const verdict = (job("ci-full").steps ?? []).find(
+      (st) => st.name === "Verdict",
+    );
+    expect(verdict?.env?.RESULTS ?? "").toContain(
+      "${{ needs.lisa-dock-browser.result }}",
+    );
   });
 
   it("a label event never cancels a run in progress; a new head still does", () => {
