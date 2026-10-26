@@ -77,6 +77,7 @@ import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import productFeedbackRoutes from "./routes/product-feedback-routes";
 import homeQotdRoutes from "./routes/home-qotd-routes";
+import { landingRoutes } from "./routes/landing-routes";
 import gettingStartedRoutes from "./routes/getting-started-routes";
 import {
   referenceSearchRouter,
@@ -418,6 +419,17 @@ app.use(
   doubleCsrfProtection,
   requireStudentAccount,
   homeQotdRoutes,
+);
+
+// Owner brief "Smart landing" (Karl, 2026-10-26): where a student lands on app open, the escape
+// report and "5 more". Students only (`requireStudentAccount`, ending in the live under-13 link
+// gate); the service re-checks role and age and does nothing while the kill switch is off.
+app.use(
+  "/api/landing",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  landingRoutes,
 );
 
 // Owner brief "Student dashboard — Getting started checklist" (final brief v2, Karl,

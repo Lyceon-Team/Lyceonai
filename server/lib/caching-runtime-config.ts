@@ -53,6 +53,16 @@ export const CACHE_TTL_CONFIG = {
     key: "review_config_cache_ttl_seconds",
     fallbackSeconds: 60,
   },
+  /**
+   * @spec [owner brief "Smart landing" (Karl, 2026-10-26), ruling E: the runtime-config kill
+   *        switch] | @implemented [2026-10-26] — the `landing_*` keys of `practice_runtime_config`
+   * (`server/services/landing/landing-config.ts`). Turning the rotation off reaches every
+   * instance within this TTL.
+   */
+  landingConfig: {
+    key: "landing_config_cache_ttl_seconds",
+    fallbackSeconds: 60,
+  },
 } as const;
 
 export type CacheTtlName = keyof typeof CACHE_TTL_CONFIG;

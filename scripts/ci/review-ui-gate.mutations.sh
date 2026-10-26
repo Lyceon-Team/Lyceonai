@@ -3195,9 +3195,9 @@ QA7_FOCUS="client/src/components/layout/FocusShell.test.tsx"
 plant "QA7-B1" "the back arrow is labelled with the section again, whatever page it returns to" \
   "$QA7_FOCUS" \
   "client/src/components/layout/FocusShell.tsx" \
-  'a = "    previous === null ? section : (pageNameAt(previous) ?? \"Back\");"
+  'a = "      : (pageNameAt(previous) ?? \"Back\");"
 assert s.count(a) == 1
-s = s.replace(a, "    section;", 1)'
+s = s.replace(a, "      : section;", 1)'
 
 plant "QA7-H1" "the history tracker no longer records in-app navigations" \
   "$QA7_FOCUS" \
