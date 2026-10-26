@@ -45,6 +45,7 @@ FILES=(
   "scripts/qotd-social/post-to-slack.ts"
   "shared/qotd/tiktok.ts"
   "client/src/components/qotd/QotdTiktokSlide.tsx"
+  "shared/slack/client.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -473,18 +474,21 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M40 slides not checked" "the generator hands every slide to the leak check" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-10-26: the "no carousel" lines moved from slackTiktokMessage into
+# slackPostPlan (fixed order and labels), so the plant targets the branch that now decides.
 echo "=== (41) a skipped carousel posts no note ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  '  if (t.status === "skipped") {' \
-  "  if (false) {" || { bad "M41 STALE"; exit 1; }
+  '  if (m.tiktok.status === "built") {' \
+  "  if (true) {" || { bad "M41 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M41 no note" "no carousel: no slide is uploaded, and the one-line note is posted" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-10-26: the slides are now a step of slackPostPlan.
 echo "=== (42) a built carousel's slides are never uploaded ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  '    manifest.tiktok.status === "built"' \
-  '    manifest.tiktok.status === "never"' || { bad "M42 STALE"; exit 1; }
+  "        files: post.tiktokSlides.map((slide, i) => ({" \
+  "        files: post.tiktokSlides.slice(0, 0).map((slide, i) => ({" || { bad "M42 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M42 slides not posted" "three slides shared together with their comment" "$OUT" "$RC"
 restore
@@ -543,6 +547,47 @@ plant client/src/components/qotd/QotdTiktokSlide.tsx \
   "        {true ? (" || { bad "M49 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M49 grid-in variant lost" "grid-in: slide 2 shows one 'Your answer' box" "$OUT" "$RC"
+restore
+
+# #social order and labels (Karl's brief 2026-10-26): one plant per rule.
+echo "=== (53) the five items go out in the wrong order ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  "  return steps;" \
+  "  return [...steps.slice(3), ...steps.slice(0, 3)];" || { bad "M53 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M53 order" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+restore
+
+echo "=== (54) an item loses its numbered label ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  "  \"4/5 · Reddit: today's post\"," \
+  "  \"Reddit: today's post\"," || { bad "M54 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M54 label" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+restore
+
+echo "=== (55) an upload is not confirmed shared before the next step ==="
+plant shared/slack/client.ts \
+  "      if (inChannel) break;" \
+  "      break;" || { bad "M55 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M55 upload not awaited" "each upload is confirmed shared before the next step starts" "$OUT" "$RC"
+restore
+
+echo "=== (56) a skipped carousel drops item 3, shifting the numbering ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  $'      },\n      {\n        item: 3,\n        label: l3,\n        kind: "message",\n        text: `*3/5 \xc2\xb7 TikTok: no carousel today* (${why})`,\n      },\n' \
+  $'      },\n' || { bad "M56 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M56 skipped item 3 dropped" "a skipped carousel still yields a 2/5 and a 3/5 message" "$OUT" "$RC"
+restore
+
+echo "=== (57) the dry run stops printing the sequence ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  "    for (const step of slackPostPlan(post.value)) {" \
+  "    for (const step of [] as ReturnType<typeof slackPostPlan>) {" || { bad "M57 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M57 dry run silent" "the dry run prints the sequence" "$OUT" "$RC"
 restore
 
 echo "=== RESTORED: re-check green ==="

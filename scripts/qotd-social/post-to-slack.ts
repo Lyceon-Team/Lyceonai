@@ -9,7 +9,7 @@
  *
  * Usage:
  *   pnpm exec tsx scripts/qotd-social/post-to-slack.ts [--dir qotd-social-out] [--dry-run]
- *   env: SLACK_BOT_TOKEN (xoxb-…, scopes files:write and chat:write), SLACK_CHANNEL_ID (C…);
+ *   env: SLACK_BOT_TOKEN (xoxb-…, scopes files:write, chat:write and files:read), SLACK_CHANNEL_ID (C…);
  *   both read by the shared client, scripts/slack/client.ts (docs/runbooks/slack.md).
  *
  * plain English:
@@ -35,6 +35,18 @@
  *     together with its title as the comment, then the title and caption in code blocks. When
  *     post.json says it was skipped (yesterday withheld or missing on the archive, or it does not
  *     fit), one line says so instead. The slides must exist, be PNGs and carry yesterday's date.
+ *   * ORDER AND LABELS (owner brief "QOTD #social posts: fixed order, numbered labels", Karl
+ *     2026-10-26): every day the same five items, each opening with its numbered label, posted
+ *     strictly one after another (slackPostPlan):
+ *       1/5 Reddit: comment on yesterday's post (the reveal)
+ *       2/5 TikTok: title and caption
+ *       3/5 TikTok: carousel (the three slides, in slide order)
+ *       4/5 Reddit: today's post
+ *       5/5 Today's question images (both images, then the caption and alt text)
+ *     A file upload counts as posted only once Slack reports the files shared in the channel
+ *     (shareFilesConfirmed polls files.info; bot scope files:read), so nothing overtakes it. An
+ *     item with nothing to post keeps its number with a one-line "no … today (reason)". The
+ *     content of each message is unchanged; only the order and the label line are new.
  *   * Not idempotent: nothing records that a day was posted, so re-running a run posts it again.
  *     Ruled acceptable by Karl, 2026-10-10 (re-runs are only for failed posts;
  *     docs/runbooks/qotd-slack.md §3).
@@ -49,12 +61,15 @@ import {
 import { formatSocialDate } from "../../shared/qotd/social";
 import {
   escapeMrkdwn,
+  DEFAULT_SHARE_WAIT,
   postMessage,
-  shareFiles,
+  shareFilesConfirmed,
   slackConfig,
   type FetchLike,
   type Result,
+  type ShareWait,
   type SlackConfig,
+  type SlackUpload,
 } from "../slack/client";
 
 const PNG_SIGNATURE = Buffer.from([
@@ -223,18 +238,13 @@ export function slackTiktokSlidesComment(m: QotdSocialPostManifest): string {
   return `*TikTok carousel* · yesterday's question, ${formatSocialDate(m.tiktok.qotd_date)} · 3 slides, post in order`;
 }
 
-/**
- * The TikTok title and caption, ready to copy; or, when there is no carousel, the one line that
- * says why (Karl, 2026-10-23).
- */
+/** The TikTok title and caption, ready to copy (Karl, 2026-10-23). Only for a built carousel. */
 export function slackTiktokMessage(m: QotdSocialPostManifest): string {
   const t = m.tiktok;
-  if (t.status === "skipped") {
-    return `*TikTok carousel* · no carousel today: yesterday's question (${formatSocialDate(t.qotd_date)}) ${
-      t.reason === "withheld"
-        ? "is withheld or missing on the archive"
-        : "does not fit three slides"
-    }.`;
+  // A day with no carousel never reaches here: slackPostPlan posts its numbered "no … today"
+  // lines for items 2 and 3 instead (Karl, 2026-10-26).
+  if (t.status !== "built") {
+    throw new Error("slackTiktokMessage: there is no carousel on this day");
   }
   return [
     `*TikTok carousel* · title and caption (${formatSocialDate(t.qotd_date)})`,
@@ -249,72 +259,153 @@ export function slackTiktokMessage(m: QotdSocialPostManifest): string {
   ].join("\n");
 }
 
-/** Post the day: images (with the date and section) first, then the caption and alt text. */
+/** The five numbered labels, in posting order (Karl, 2026-10-26). */
+export const SLACK_POST_LABELS = [
+  "1/5 · Reddit: comment on yesterday's post",
+  "2/5 · TikTok: title and caption",
+  "3/5 · TikTok: carousel",
+  "4/5 · Reddit: today's post",
+  "5/5 · Today's question images",
+] as const;
+
+/** One step of the day's post: a message, or files shared with a comment. */
+export type SlackPostStep =
+  | { item: number; label: string; kind: "message"; text: string }
+  | {
+      item: number;
+      label: string;
+      kind: "files";
+      comment: string;
+      files: SlackUpload[];
+    };
+
+function labelled(label: string, text: string): string {
+  return `*${label}*\n${text}`;
+}
+
+/** Why there is no carousel, for the "no … today" lines that keep items 2 and 3 numbered. */
+function tiktokSkipReason(m: QotdSocialPostManifest): string {
+  return m.tiktok.status === "skipped" && m.tiktok.reason === "does_not_fit"
+    ? `yesterday's question (${formatSocialDate(m.tiktok.qotd_date)}) does not fit three slides`
+    : `yesterday's question (${formatSocialDate(m.tiktok.qotd_date)}) is withheld or missing on the archive`;
+}
+
+/**
+ * The day's post as an ordered list of steps: always items 1 to 5, in that order, each opening
+ * with its label (Karl, 2026-10-26). Item 5 is two steps (the images, then their caption and alt
+ * text), both under its label. Pure: the caller posts the steps one at a time.
+ */
+export function slackPostPlan(post: LoadedPost): SlackPostStep[] {
+  const m = post.manifest;
+  const [l1, l2, l3, l4, l5] = SLACK_POST_LABELS;
+  const steps: SlackPostStep[] = [
+    {
+      item: 1,
+      label: l1,
+      kind: "message",
+      text: labelled(l1, slackRevealMessage(m)),
+    },
+  ];
+  if (m.tiktok.status === "built") {
+    steps.push(
+      {
+        item: 2,
+        label: l2,
+        kind: "message",
+        text: labelled(l2, slackTiktokMessage(m)),
+      },
+      {
+        item: 3,
+        label: l3,
+        kind: "files",
+        comment: labelled(l3, slackTiktokSlidesComment(m)),
+        files: post.tiktokSlides.map((slide, i) => ({
+          filename: slide.file,
+          bytes: slide.bytes,
+          altText: `SAT Question of the Day TikTok slide ${i + 1} of 3`,
+        })),
+      },
+    );
+  } else {
+    const why = tiktokSkipReason(m);
+    steps.push(
+      {
+        item: 2,
+        label: l2,
+        kind: "message",
+        text: `*2/5 · TikTok: no title or caption today* (${why})`,
+      },
+      {
+        item: 3,
+        label: l3,
+        kind: "message",
+        text: `*3/5 · TikTok: no carousel today* (${why})`,
+      },
+    );
+  }
+  steps.push(
+    {
+      item: 4,
+      label: l4,
+      kind: "message",
+      text: labelled(l4, slackRedditMessage(m)),
+    },
+    {
+      item: 5,
+      label: l5,
+      kind: "files",
+      comment: labelled(l5, slackImagesComment(m)),
+      files: post.images.map((image) => ({
+        filename: image.file,
+        bytes: image.bytes,
+        altText: m.alt_text,
+      })),
+    },
+    {
+      item: 5,
+      label: l5,
+      kind: "message",
+      text: labelled(l5, slackCopyMessage(m)),
+    },
+  );
+  return steps;
+}
+
+/** What one step left in Slack: a message timestamp, or the shared file IDs. */
+export type SlackPostSent = {
+  item: number;
+  label: string;
+  ts?: string;
+  files?: string[];
+};
+
+/**
+ * Post the day's steps strictly in order: each message, and each upload once Slack confirms the
+ * files are shared in the channel, completes before the next step starts (Karl, 2026-10-26).
+ */
 export async function postToSlack(
   config: SlackConfig,
   post: LoadedPost,
   fetchImpl: FetchLike,
-): Promise<{
-  imagesShared: number;
-  messageTs: string;
-  redditTs: string;
-  revealTs: string;
-  tiktokSlidesShared: number;
-  tiktokTs: string;
-}> {
-  const { manifest } = post;
-  // The shared upload in scripts/slack/client.ts (moved there 2026-10-16, unchanged behaviour).
-  const imagesShared = await shareFiles(
-    config,
-    post.images.map((image) => ({
-      filename: image.file,
-      bytes: image.bytes,
-      altText: manifest.alt_text,
-    })),
-    slackImagesComment(manifest),
-    fetchImpl,
-  );
-  const messageTs = await postMessage(
-    config,
-    slackCopyMessage(manifest),
-    fetchImpl,
-  );
-  const redditTs = await postMessage(
-    config,
-    slackRedditMessage(manifest),
-    fetchImpl,
-  );
-  const revealTs = await postMessage(
-    config,
-    slackRevealMessage(manifest),
-    fetchImpl,
-  );
-  const tiktokSlidesShared =
-    manifest.tiktok.status === "built"
-      ? await shareFiles(
-          config,
-          post.tiktokSlides.map((slide, i) => ({
-            filename: slide.file,
-            bytes: slide.bytes,
-            altText: `SAT Question of the Day TikTok slide ${i + 1} of 3`,
-          })),
-          slackTiktokSlidesComment(manifest),
-          fetchImpl,
-        )
-      : 0;
-  const tiktokTs = await postMessage(
-    config,
-    slackTiktokMessage(manifest),
-    fetchImpl,
-  );
-  return {
-    imagesShared,
-    messageTs,
-    redditTs,
-    revealTs,
-    tiktokSlidesShared,
-    tiktokTs,
-  };
+  wait: ShareWait = DEFAULT_SHARE_WAIT,
+): Promise<SlackPostSent[]> {
+  const sent: SlackPostSent[] = [];
+  for (const step of slackPostPlan(post)) {
+    if (step.kind === "message") {
+      const ts = await postMessage(config, step.text, fetchImpl);
+      sent.push({ item: step.item, label: step.label, ts });
+    } else {
+      const files = await shareFilesConfirmed(
+        config,
+        step.files,
+        step.comment,
+        fetchImpl,
+        wait,
+      );
+      sent.push({ item: step.item, label: step.label, files });
+    }
+  }
+  return sent;
 }
 
 /** The whole command, injectable for tests. Returns the exit code. */
@@ -323,6 +414,7 @@ export async function run(
   env: NodeJS.ProcessEnv,
   fetchImpl: FetchLike,
   log: { out(line: string): void; err(line: string): void },
+  wait: ShareWait = DEFAULT_SHARE_WAIT,
 ): Promise<number> {
   const dirAt = argv.indexOf("--dir");
   const dir = dirAt >= 0 ? (argv[dirAt + 1] ?? "") : "qotd-social-out";
@@ -335,11 +427,16 @@ export async function run(
   }
   const { manifest } = post.value;
   if (dryRun) {
-    // Every check, the messages built, nothing sent.
-    slackCopyMessage(manifest);
-    slackRedditMessage(manifest);
-    slackRevealMessage(manifest);
-    slackTiktokMessage(manifest);
+    // Every check, the messages built, nothing sent; the sequence is printed in posting order.
+    for (const step of slackPostPlan(post.value)) {
+      log.out(
+        `qotd-slack: dry run: ${step.label}: ${
+          step.kind === "files"
+            ? `${step.files.length} file(s), then wait until shared`
+            : step.text.split("\n")[0]
+        }`,
+      );
+    }
     log.out(
       `qotd-slack: dry run: ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}) would post ${post.value.images.length} image(s), the caption, the Reddit post, yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}) and the TikTok carousel (${manifest.tiktok.qotd_date}: ${manifest.tiktok.status}, ${post.value.tiktokSlides.length} slide(s)); nothing sent`,
     );
@@ -351,9 +448,15 @@ export async function run(
     return 1;
   }
   try {
-    const sent = await postToSlack(config.value, post.value, fetchImpl);
+    const sent = await postToSlack(config.value, post.value, fetchImpl, wait);
     log.out(
-      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}): ${sent.imagesShared} image(s) and the caption, message ${sent.messageTs}; Reddit post ${sent.redditTs}; yesterday's reveal (${manifest.reveal.qotd_date}: ${manifest.reveal.status}) ${sent.revealTs}; TikTok (${manifest.tiktok.qotd_date}: ${manifest.tiktok.status}) ${sent.tiktokSlidesShared} slide(s), message ${sent.tiktokTs}`,
+      `qotd-slack: posted ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}; reveal ${manifest.reveal.qotd_date}: ${manifest.reveal.status}; TikTok ${manifest.tiktok.qotd_date}: ${manifest.tiktok.status}), in order: ${sent
+        .map((s) =>
+          s.files
+            ? `${s.label} (${s.files.length} file(s) shared)`
+            : `${s.label} (${s.ts ?? ""})`,
+        )
+        .join("; ")}`,
     );
     return 0;
   } catch (e: unknown) {
