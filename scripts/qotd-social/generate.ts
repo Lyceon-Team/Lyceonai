@@ -39,9 +39,10 @@
  *     SAME yesterday archive payload as the reveal (buildTiktokCarousel refuses any other day),
  *     with the fixed CTA-first caption and the short title. tiktokCarouselLeaks checks the slides,
  *     caption and title against today: today's question text never, and today's answer when it
- *     is known. Yesterday withheld or missing (404), a "Why" whose first sentence is over 300
- *     characters, or a slide that does not fit at 24px: no carousel, and post.json records why
- *     (the Slack poster posts a one-line note). A 4th slide is never added.
+ *     is known. Yesterday withheld or missing (404), or a slide that does not fit at 24px: no
+ *     carousel, and post.json records why (the Slack poster posts a one-line note). A 4th slide
+ *     is never added. A long explanation no longer skips the day: its "Why" is cut with a
+ *     pointer to the full explanation (shared/qotd/tiktok.ts tiktokWhy; Karl, 2026-10-26).
  *
  * Writes to DIR (default qotd-social-out/): qotd-<date>-portrait.png, qotd-<date>-story.png,
  * qotd-<yesterday>-tiktok-1..3.png (when built),
@@ -811,14 +812,7 @@ async function main(): Promise<number> {
     } else {
       const built = buildTiktokCarousel(yesterday.day, input.qotd_date);
       if (!built.ok) {
-        tiktok =
-          built.reason === "does_not_fit"
-            ? {
-                status: "skipped",
-                qotd_date: yesterdayDate,
-                reason: "does_not_fit",
-              }
-            : { status: "refused", problem: built.problem };
+        tiktok = { status: "refused", problem: built.problem };
       } else {
         const shot = await renderTiktok(slides, built.carousel, workDir);
         if (shot.unfit.length > 0) {
