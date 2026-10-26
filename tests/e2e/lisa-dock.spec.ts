@@ -35,9 +35,10 @@
  * over the rail or the right panel; in a runner above Submit/Next and clear of the calculator.
  * After a wrong answer, "Still confused? Ask LISA" under the explanation opens it scoped to that
  * question; each surface has its opening line.
- * The harness keeps production's global limiter (1000 requests per 15 minutes): many runs in a row
- * against one server start answering 429, which the app reads as signed out (the login page). Wait
- * out the window or restart the server.
+ * The harness mounts production's global limiter with a higher ceiling for the test server only
+ * (tests/e2e/student-harness/rate-limit.ts, owner ruling 2026-10-24; production stays at 1000 per
+ * 15 minutes). Past it the server answers 429, which the app reads as signed out (the login page):
+ * restart the server, or raise the harness's override for the run (rate-limit.ts names it).
  */
 import {
   expect,

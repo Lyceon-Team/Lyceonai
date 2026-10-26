@@ -84,6 +84,7 @@ import {
   isLisaEntitlementDenial,
 } from "@/components/tutor/LisaUpgradeCard";
 import { dayMonth } from "@/features/exam/lib/tests-home-model";
+import { formatDate } from "@/lib/format-date";
 
 /** Shipped title of a conversation with none yet (the server titles it on the first turn). */
 const UNTITLED = "New session";
@@ -138,12 +139,33 @@ function questionScopeLabel(conv: {
 }
 
 /**
+ * The history row's label for a question's conversation: its type and the day it happened,
+ * "Practice question · Oct 21" (owner ruling, Karl, 2026-10-24: "keep type-only and add the
+ * date"; U+00B7 with a space each side). The day is the conversation's `created_at`, the moment
+ * the student first asked about that question (a question's chat happens at its attempt): the
+ * row's own date line is `updated_at`, the last activity, which also moves on a server-side write
+ * (End, a crisis flag). Formatted by the one formatter, in the viewer's zone as every student
+ * instant is. Null for the LISA page's own conversations.
+ */
+function historyScopeLabel(conv: {
+  entry_mode: string;
+  source_surface: string;
+  created_at: string;
+}): string | null {
+  const type = questionScopeLabel(conv);
+  if (type === null) return null;
+  const day = formatDate(conv.created_at, "short-month-day");
+  return day === null ? type : `${type} \u00b7 ${day}`;
+}
+
+/**
  * A question-scoped conversation opened here is read-only: it belongs to its question (the server
  * builds LISA's view of it from that question's state), so it is continued from the question.
- * PROPOSED WORDING: new in-app copy, awaiting Karl's approval (#1300 follow-up, 2026-10-23).
+ * Approved wording (Karl, ruling of 2026-10-24; replaces the proposed line of #1305, "This
+ * conversation is about one question. To keep going, open LISA on that question.").
  */
 const SCOPED_READ_ONLY_NOTE =
-  "This conversation is about one question. To keep going, open LISA on that question.";
+  "This chat was about one question. To keep going, open that question and ask LISA there.";
 
 function chatHref(conversationId: string): string {
   return `/chat?conversationId=${encodeURIComponent(conversationId)}`;
@@ -707,12 +729,12 @@ function HistoryPanel({
                   <span className="break-words text-lyc-body font-semibold">
                     {displayTitle(conv.title, conv.crisis_flagged)}
                   </span>
-                  {questionScopeLabel(conv) !== null ? (
+                  {historyScopeLabel(conv) !== null ? (
                     <span
                       className="text-lyc-meta font-semibold text-lyc-ink"
                       data-testid="lisa-history-scope"
                     >
-                      {questionScopeLabel(conv)}
+                      {historyScopeLabel(conv)}
                     </span>
                   ) : null}
                   <span className="text-lyc-meta text-lyc-muted">
