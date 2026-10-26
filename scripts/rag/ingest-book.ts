@@ -64,6 +64,7 @@ import {
   SHORT_RULE_WORDS,
   longRulesWhole,
   shortRulesSplit,
+  splitLongRules,
   resolveChapters,
   sha256,
   splitPages,
@@ -272,6 +273,8 @@ type Segmented = {
   regrown: number;
   /** Each rejected segment answer, with why (quote not found, gap, a short rule split). */
   rejections: string[];
+  /** Cuts made in code at the subsection headings of long rules (splitLongRules). */
+  codeCuts: number;
 };
 
 async function segmentBook(
@@ -286,6 +289,7 @@ async function segmentBook(
   let windows = 0;
   let regrown = 0;
   const rejections: string[] = [];
+  let codeCuts = 0;
   const end = book.text.length;
   while (cursor < end && book.text.slice(cursor).trim() !== "") {
     let growth = 1;
@@ -328,11 +332,6 @@ async function segmentBook(
                 throw new Error(
                   `a numbered rule under ${SHORT_RULE_WORDS} words was split at a lettered subsection (${split.join("; ")}); keep each such rule, with its opening explanation and all of its lettered subsections, in ONE unit`,
                 );
-              const whole = longRulesWhole(book.text, located, from, winEnd);
-              if (whole.length > 0)
-                throw new Error(
-                  `a numbered rule of ${SHORT_RULE_WORDS} words or more was not split at every lettered subsection (${whole.join("; ")}); start a unit at EVERY lettered-subsection heading of such a rule, with the rule's opening explanation in the first`,
-                );
               return answer;
             } catch (err: unknown) {
               // Every rejection is recorded with the cached answer, so the report counts the
@@ -354,7 +353,21 @@ async function segmentBook(
       rejections.push(...notes);
       // The [page n] markers are in the window the model read, not in book.text; quotes never
       // contain them (the prompt says so) and locateUnits searches book.text directly.
-      const located = locateUnits(book, cursor, winEnd, value.units);
+      // A long rule is cut at its subsection headings here, in code (splitLongRules); the
+      // check after it is an assertion, not a request to the model.
+      const cut = splitLongRules(
+        book.text,
+        locateUnits(book, cursor, winEnd, value.units),
+        cursor,
+        winEnd,
+      );
+      const located = cut.units;
+      codeCuts += cut.cuts;
+      const unsplit = longRulesWhole(book.text, located, cursor, winEnd);
+      if (unsplit.length > 0)
+        throw new Error(
+          `segment@${cursor}: splitLongRules left a long rule unsplit (${unsplit.join("; ")}); this is a defect in the code`,
+        );
       const step = nextCursor(located, winEnd, end);
       if (step.grow) {
         if (growth >= MAX_WINDOW_GROWTH)
@@ -375,7 +388,7 @@ async function segmentBook(
       `segmented to ${Math.round((100 * cursor) / end)}% (${units.length} units)\n`,
     );
   }
-  return { units, windows, regrown, rejections };
+  return { units, windows, regrown, rejections, codeCuts };
 }
 
 export type DropRow = {
@@ -690,7 +703,8 @@ async function main(): Promise<void> {
     "",
     `model ${model}, prompt ${BOOK_PROMPT_VERSION}; ${pages.length} pages; ${seg.windows} segment windows (${seg.regrown} widened for a long idea)`,
     "",
-    `segment answers rejected and asked again: ${seg.rejections.length} (${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length} for a short rule split, ${seg.rejections.filter((r) => r.includes("was not split at every lettered subsection")).length} for a long rule kept whole)`,
+    `segment answers rejected and asked again: ${seg.rejections.length} (${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length} for a short rule split)`,
+    `long rules cut in code at their subsection headings: ${seg.codeCuts} cuts`,
     ...seg.rejections.map((r) => `- ${r}`),
     "",
     `**${chunks.length} chunks** from ${seg.units.length} units; ${drops.length} dropped; ${kept.filter((k) => k.repaired).length} kept after one repair round.`,

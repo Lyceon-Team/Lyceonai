@@ -32,6 +32,7 @@ import {
   longRulesWhole,
   onSubsectionBoundary,
   shortRulesSplit,
+  splitLongRules,
   locateUnits,
   nextCursor,
   parseBookReviewCsv,
@@ -756,5 +757,99 @@ describe("longRulesWhole", () => {
     const short =
       "## 14. MODIFICATION\nA modifier sits next to what it modifies.\n\n### A. Dangling\nOne.\n\n### B. Misplaced\nTwo.\n";
     expect(longRulesWhole(short, [{ start: 0 }], 0, short.length)).toEqual([]);
+  });
+});
+
+describe("splitLongRules", () => {
+  // Rule 8 of the Meltzer guide in shape: 400+ words, two groups under minor headings, the
+  // subsection letters restarting in the second group.
+  const rule8 = [
+    "## 8. ADDITIONAL COMMA USES & MISUSES",
+    "",
+    "#### Commas SHOULD be used:",
+    "",
+    "### A. To separate items in a list",
+    `**Correct:** London has museums, castles, and shops. ${"word ".repeat(200)}`,
+    "",
+    "### B. To separate adjectives",
+    "**Correct:** a long, cold winter.",
+    "",
+    "#### Commas should NOT be used:",
+    "",
+    "### A. Before or after a preposition",
+    `**Incorrect:** among the most famous artists, of the century. ${"word ".repeat(200)}`,
+    "",
+    "### B. Between subjects and verbs",
+    "**Incorrect:** The oldest bridge in London, is Richmond Bridge.",
+    "",
+  ].join("\n");
+  const text = `${rule8}## 9. APOSTROPHES\nShort.\n`;
+  const unit = (start: number, end: number, title: string) => ({
+    start,
+    end,
+    section_title: title,
+    ends_in_window: true,
+  });
+  const whole = [
+    unit(0, text.indexOf("## 9."), "8. ADDITIONAL COMMA USES & MISUSES"),
+    unit(text.indexOf("## 9."), text.length, "9"),
+  ];
+
+  it("cuts a long rule at every subsection heading after the first, in code", () => {
+    const { units, cuts } = splitLongRules(text, whole, 0, text.length);
+    expect(cuts).toBe(3);
+    expect(units.map((u) => u.section_title)).toEqual([
+      "8. ADDITIONAL COMMA USES & MISUSES",
+      "B. To separate adjectives",
+      "A. Before or after a preposition",
+      "B. Between subjects and verbs",
+      "9",
+    ]);
+    expect(longRulesWhole(text, units, 0, text.length)).toEqual([]);
+  });
+  it("puts a minor heading with the subsections it introduces", () => {
+    const { units } = splitLongRules(text, whole, 0, text.length);
+    const notGroup = units[2];
+    expect(
+      text
+        .slice(notGroup?.start, notGroup?.end)
+        .startsWith("#### Commas should NOT be used:"),
+    ).toBe(true);
+    const before = units[1];
+    expect(text.slice(before?.start, before?.end)).not.toContain("should NOT");
+  });
+  it("covers the text exactly: pieces abut and nothing is lost", () => {
+    const { units } = splitLongRules(text, whole, 0, text.length);
+    for (let k = 1; k < units.length; k += 1)
+      expect(units[k]?.start).toBe(units[k - 1]?.end);
+    expect(units[0]?.start).toBe(0);
+    expect(units[units.length - 1]?.end).toBe(text.length);
+  });
+  it("leaves short rules and rules running past the window alone", () => {
+    expect(
+      splitLongRules(text, whole, 0, text.length - 5).units.slice(-1)[0]
+        ?.section_title,
+    ).toBe("9");
+    expect(
+      splitLongRules(text, whole, 0, text.indexOf("### B. Between subjects"))
+        .cuts,
+    ).toBe(0);
+  });
+  it("keeps ends_in_window only on the last piece of a unit", () => {
+    const open = [
+      unit(0, text.indexOf("## 9."), "8"),
+      {
+        ...unit(text.indexOf("## 9."), text.length, "9"),
+        ends_in_window: false,
+      },
+    ];
+    const first = [{ ...open[0]!, ends_in_window: false }, open[1]!];
+    const { units } = splitLongRules(text, first, 0, text.length);
+    expect(units.slice(0, 4).map((u) => u.ends_in_window)).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
   });
 });

@@ -430,7 +430,7 @@ export function longRulesWhole(
     at: m.index ?? 0,
     line: m[0],
   }));
-  const unitLines = new Set(units.map((u) => lineStartOfEdge(text, u.start)));
+  const unitLines = units.map((u) => lineStartOfEdge(text, u.start));
   const out: string[] = [];
   for (const [i, h] of heads.entries()) {
     const ruleEnd = heads[i + 1]?.at ?? text.length;
@@ -441,9 +441,100 @@ export function longRulesWhole(
     );
     // The first subsection shares its unit with the rule's opening explanation, so only the
     // headings after it must start a unit.
-    if (subs.slice(1).some((at) => !unitLines.has(at))) out.push(h.line);
+    // A unit may start at the subsection heading or anywhere in the block of minor headings
+    // directly above it (where splitLongRules cuts).
+    const started = (at: number): boolean => {
+      const from = headingBlockStart(text, at, h.at);
+      return unitLines.some((l) => l >= from && l <= at);
+    };
+    if (subs.slice(1).some((at) => !started(at))) out.push(h.line);
   }
   return out;
+}
+
+/**
+ * Pure. The units of one window with every numbered rule of `maxWords` words or more (lying
+ * wholly in [winStart, winEnd), with lettered subsections) cut at each lettered-subsection
+ * heading after its first. The cut is made here, in code, not asked of the model: on 2026-10-26
+ * the model kept rule 8 whole on three answers in a row despite being told each time, and the
+ * code, not the model, cuts the text in any case. A cut lands at the start of the block of
+ * heading lines directly above the subsection heading, so a minor heading introducing a group
+ * ("#### Commas should NOT be used:") goes with the subsections it introduces. Each new piece
+ * takes its subsection heading as section_title; only the last piece of a unit keeps that
+ * unit's ends_in_window. Afterwards longRulesWhole finds nothing in the window.
+ */
+export function splitLongRules<
+  U extends {
+    start: number;
+    end: number;
+    section_title: string;
+    ends_in_window: boolean;
+  },
+>(
+  text: string,
+  units: readonly U[],
+  winStart: number,
+  winEnd: number,
+  maxWords = SHORT_RULE_WORDS,
+): { units: U[]; cuts: number } {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => m.index ?? 0);
+  const cuts: { at: number; title: string }[] = [];
+  for (const [i, h] of heads.entries()) {
+    const ruleEnd = heads[i + 1] ?? text.length;
+    if (h < winStart || ruleEnd > winEnd) continue;
+    if (ruleWords(text, h, ruleEnd) < maxWords) continue;
+    const subs = [...text.slice(h, ruleEnd).matchAll(/^### (.*)$/gm)].slice(1);
+    for (const m of subs) {
+      const at = h + (m.index ?? 0);
+      cuts.push({
+        at: headingBlockStart(text, at, h),
+        title: plainHeading(m[1] ?? ""),
+      });
+    }
+  }
+  const out: U[] = [];
+  let n = 0;
+  for (const u of units) {
+    const inside = cuts.filter((c) => c.at > u.start && c.at < u.end);
+    if (inside.length === 0) {
+      out.push(u);
+      continue;
+    }
+    const edges = [u.start, ...inside.map((c) => c.at), u.end];
+    for (let k = 0; k + 1 < edges.length; k += 1) {
+      out.push({
+        ...u,
+        start: edges[k] ?? u.start,
+        end: edges[k + 1] ?? u.end,
+        section_title:
+          k === 0 ? u.section_title : (inside[k - 1]?.title ?? u.section_title),
+        ends_in_window: k + 2 === edges.length ? u.ends_in_window : true,
+      });
+    }
+    n += inside.length;
+  }
+  return { units: out, cuts: n };
+}
+
+/** Pure. Where the run of heading and blank lines ending at the heading `at` begins (not before `floor`). */
+function headingBlockStart(text: string, at: number, floor: number): number {
+  let start = at;
+  for (;;) {
+    const prevEnd = start - 1;
+    if (prevEnd <= floor) return start;
+    const prevStart = text.lastIndexOf("\n", prevEnd - 1) + 1;
+    const line = text.slice(prevStart, prevEnd);
+    if (prevStart <= floor || !/^(#### .*|\s*)$/.test(line)) break;
+    start = prevStart;
+  }
+  // Blank lines at the top of the block stay with the piece before.
+  while (start < at && /\s/.test(text[start] ?? "")) start += 1;
+  return start;
+}
+
+/** Pure. A heading's words without markdown symbols. */
+function plainHeading(h: string): string {
+  return h.replace(/<\/?[a-z]+>|[*_]/gi, "").trim();
 }
 
 /** Pure. Words of a rule, without the markdown symbols. */
