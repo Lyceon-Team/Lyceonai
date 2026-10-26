@@ -72,3 +72,14 @@ output "crisis_sla_sweep_oidc_audience" {
   EOT
   value       = google_cloud_scheduler_job.crisis_sla_sweep.http_target[0].oidc_token[0].audience
 }
+
+# ── Cloud Scheduler — video library link check ───────────────────────
+
+output "video_link_check_oidc_audience" {
+  description = <<-EOT
+    Audience claim the video link-check job signs with → set this verbatim as
+    VIDEO_LINK_CHECK_OIDC_AUDIENCE on Vercel. Unset, the route refuses every run with
+    500 and an ERROR log (no fallback by design).
+  EOT
+  value       = google_cloud_scheduler_job.video_link_check.http_target[0].oidc_token[0].audience
+}

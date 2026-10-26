@@ -91,6 +91,10 @@ function headersFor(
  *   - script-src and frame-src https://challenges.cloudflare.com: the Question of the Day widget
  *     on the homepage and /sat-question-of-the-day (Cloudflare Turnstile loads api.js from that
  *     host and renders its challenge in an iframe from it; SCL-202 item 2, added 2026-10-05).
+ *   - frame-src https://www.youtube-nocookie.com: LISA's video offer plays in TutorVideoModal,
+ *     an iframe from YouTube's privacy-enhanced host only (CC Brief "Video Library", Karl
+ *     2026-10-15, §8). Not www.youtube.com: the embed is built only on the nocookie host, so the
+ *     cookie-setting host stays unframeable.
  *   - style-src 'unsafe-inline': every page (React style attributes, Radix positioning).
  *   - (no font host: Poppins and Inter are self-hosted under client/public/fonts/ since
  *     2026-10-03, so style-src and font-src name no Google domain.)
@@ -116,7 +120,7 @@ const PAGE_CSP = [
   "font-src 'self' data:",
   "img-src 'self' data:",
   "connect-src 'self' https://us.i.posthog.com https://us-assets.i.posthog.com",
-  "frame-src https://challenges.cloudflare.com",
+  "frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com",
   "worker-src 'self' blob:",
   "frame-ancestors 'none'",
 ].join("; ");

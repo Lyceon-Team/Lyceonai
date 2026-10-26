@@ -34,7 +34,17 @@
  *     Today's suggested Reddit title and plain-text body are built from the social input and go
  *     through the same leak check as the caption and alt text.
  *
+ *   * TikTok carousel (Karl, 2026-10-23): yesterday's question as three 1080x1920 slides
+ *     (question, pause, answer; client/src/components/qotd/QotdTiktokSlide.tsx), built from the
+ *     SAME yesterday archive payload as the reveal (buildTiktokCarousel refuses any other day),
+ *     with the fixed CTA-first caption and the short title. tiktokCarouselLeaks checks the slides,
+ *     caption and title against today: today's question text never, and today's answer when it
+ *     is known. Yesterday withheld or missing (404), a "Why" whose first sentence is over 300
+ *     characters, or a slide that does not fit at 24px: no carousel, and post.json records why
+ *     (the Slack poster posts a one-line note). A 4th slide is never added.
+ *
  * Writes to DIR (default qotd-social-out/): qotd-<date>-portrait.png, qotd-<date>-story.png,
+ * qotd-<yesterday>-tiktok-1..3.png (when built),
  * caption.txt, alt-text.txt and summary.md (the run-page summary, caption and alt text in code
  * blocks so GitHub shows a copy button), and post.json, the publish manifest the Slack poster
  * requires (written only when every check passed and every format was produced; see
@@ -61,6 +71,8 @@ import {
   type QotdSocialCopy,
   type QotdSocialInput,
   type QotdSocialPostManifest,
+  type QotdTiktokCarousel,
+  type QotdTiktokPost,
 } from "../../packages/shared/src/qotd-schema";
 import {
   buildReveal,
@@ -77,8 +89,20 @@ import {
   socialInputProblems,
   socialInputFromArchive,
   socialInputFromToday,
+  tiktokCarouselLeaks,
   type QotdSocialFormat,
 } from "../../shared/qotd/social";
+import {
+  QOTD_TIKTOK_CAPTION,
+  QOTD_TIKTOK_SIZE,
+  buildTiktokCarousel,
+  buildTiktokTitle,
+  tiktokSafePx,
+} from "../../shared/qotd/tiktok";
+import {
+  firstBannedPhrase,
+  firstUnapprovedOutcome,
+} from "../../shared/seo/banned-phrases";
 import { localTodayIn } from "../../server/services/calendar/adapters/local-day";
 
 /** Status lines only (the logger is the server's; this is a CLI). */
@@ -97,6 +121,9 @@ const MAX_FONT_PX: Record<QotdSocialFormat, number> = {
   portrait: 52,
   story: 58,
 };
+/** The TikTok slides' largest text size (slides 1 and 3; slide 2 is fixed). */
+const TIKTOK_MAX_FONT_PX = 52;
+const TIKTOK_SLIDES = [1, 2, 3] as const;
 /** Short choices sit two by two on the portrait card. */
 const SHORT_OPTION_CHARS = 24;
 
@@ -151,6 +178,96 @@ export type Source =
   | { kind: "past"; input: QotdSocialInput; revealed: QotdArchiveResponse };
 
 /**
+ * The TikTok carousel as built for a day: three rendered slides of yesterday's question, or
+ * skipped with the reason the Slack note gives, or refused (a defect: the run fails).
+ */
+export type TiktokBuild =
+  | {
+      status: "built";
+      carouselDay: QotdArchiveResponse;
+      carousel: QotdTiktokCarousel;
+      slides: readonly { slide: 1 | 2 | 3; cardText: string }[];
+    }
+  | {
+      status: "skipped";
+      qotd_date: string;
+      reason: "withheld" | "does_not_fit";
+    }
+  | { status: "refused"; problem: string };
+
+/**
+ * The checks on the carousel: yesterday's day only, three slides, nothing of today's question
+ * or (when known) today's answer, and a caption and title that pass the public-copy guards.
+ * Pure. Returns the manifest entry, or the problems.
+ */
+export function tiktokDecision(
+  source: Source,
+  tiktok: TiktokBuild,
+): { ok: true; post: QotdTiktokPost } | { ok: false; problems: string[] } {
+  const yesterday = previousQotdDate(source.input.qotd_date);
+  if (tiktok.status === "refused")
+    return { ok: false, problems: [tiktok.problem] };
+  if (tiktok.status === "skipped") {
+    return tiktok.qotd_date === yesterday
+      ? {
+          ok: true,
+          post: {
+            status: "skipped",
+            qotd_date: tiktok.qotd_date,
+            reason: tiktok.reason,
+          },
+        }
+      : {
+          ok: false,
+          problems: [
+            `tiktok: is for ${tiktok.qotd_date}, not yesterday (${yesterday})`,
+          ],
+        };
+  }
+  const problems: string[] = [];
+  const day = tiktok.carousel.question.qotd_date;
+  if (day !== yesterday || tiktok.carouselDay.qotd_date !== yesterday) {
+    problems.push(`tiktok: is for ${day}, not yesterday (${yesterday})`);
+  }
+  if (tiktok.slides.length !== 3) {
+    problems.push(`tiktok: ${tiktok.slides.length} slides, not 3`);
+  }
+  const title = buildTiktokTitle(day, tiktok.carousel.question.section_code);
+  const caption = QOTD_TIKTOK_CAPTION;
+  for (const [field, text] of [
+    ["tiktok caption", caption],
+    ["tiktok title", title],
+  ] as const) {
+    const banned = firstBannedPhrase(text);
+    if (banned) problems.push(`${field}: banned phrase (${banned.why})`);
+    const outcome = firstUnapprovedOutcome(text);
+    if (outcome)
+      problems.push(`${field}: unapproved outcome claim (${outcome.why})`);
+  }
+  problems.push(
+    ...tiktokCarouselLeaks(
+      { slides: tiktok.slides.map((s) => s.cardText), caption, title },
+      tiktok.carouselDay,
+      {
+        input: source.input,
+        revealed: source.kind === "past" ? source.revealed : null,
+      },
+    ),
+  );
+  if (problems.length > 0) return { ok: false, problems };
+  return {
+    ok: true,
+    post: {
+      status: "built",
+      qotd_date: day,
+      title,
+      caption,
+      slides: TIKTOK_SLIDES.map((n) => `qotd-${day}-tiktok-${n}.png`),
+    },
+  };
+}
+
+/**
  * Whether a built day may be published, and if so its manifest (post.json).
  *
  * @spec [Doc 10A §7; owner brief 2026-10-10 (QOTD social assets to Slack: "never post a day
@@ -171,6 +288,7 @@ export function publishDecision(
   today: string,
   reddit: QotdRedditPost,
   reveal: QotdReveal,
+  tiktok: TiktokBuild,
 ):
   | { ok: true; manifest: QotdSocialPostManifest }
   | { ok: false; problems: string[] } {
@@ -179,6 +297,10 @@ export function publishDecision(
     ...socialInputProblems(input),
     ...socialCopyProblems(copy, input),
   ];
+  // The TikTok carousel (Karl, 2026-10-23): any problem with it stops the whole post, as a leak
+  // anywhere else does.
+  const tiktokChecked = tiktokDecision(source, tiktok);
+  if (!tiktokChecked.ok) problems.push(...tiktokChecked.problems);
   for (const r of rendered) {
     const wording = revealWording(r.cardText, input);
     if (wording) problems.push(`${r.format} card: ${wording}`);
@@ -222,7 +344,7 @@ export function publishDecision(
     );
   }
   if (rendered.length === 0) problems.push("no image was produced");
-  if (problems.length > 0) return { ok: false, problems };
+  if (problems.length > 0 || !tiktokChecked.ok) return { ok: false, problems };
   return {
     ok: true,
     manifest: qotdSocialPostManifestSchema.parse({
@@ -243,6 +365,7 @@ export function publishDecision(
       },
       reddit,
       reveal,
+      tiktok: tiktokChecked.post,
     }),
   };
 }
@@ -299,9 +422,24 @@ export async function loadReveal(
   postedDate: string,
   fetchImpl: ArchiveFetch,
 ): Promise<QotdReveal> {
+  return (await loadYesterday(baseUrl, postedDate, fetchImpl)).reveal;
+}
+
+/**
+ * Yesterday's public archive day and its reveal, read once: the reveal and the TikTok carousel
+ * are both built from this one payload (Karl, 2026-10-23). `day` is null when yesterday is
+ * withheld or missing (404).
+ */
+export async function loadYesterday(
+  baseUrl: string,
+  postedDate: string,
+  fetchImpl: ArchiveFetch,
+): Promise<{ reveal: QotdReveal; day: QotdArchiveResponse | null }> {
   const yesterday = previousQotdDate(postedDate);
   const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);
-  if (res.status === 404) return withheldReveal(postedDate);
+  if (res.status === 404) {
+    return { reveal: withheldReveal(postedDate), day: null };
+  }
   if (!res.ok) {
     throw new Error(
       `GET /api/public/qotd/${yesterday} -> ${res.status} (yesterday's reveal)`,
@@ -312,7 +450,7 @@ export async function loadReveal(
     .parse(await res.json());
   const built = buildReveal(body.data, postedDate);
   if (!built.ok) throw new Error(built.problem);
-  return built.reveal;
+  return { reveal: built.reveal, day: body.data };
 }
 
 function archiveFetch(url: string): ReturnType<ArchiveFetch> {
@@ -324,9 +462,12 @@ function archiveFetch(url: string): ReturnType<ArchiveFetch> {
 
 type CardModule =
   typeof import("../../client/src/components/qotd/QotdSocialCard");
+export type SlideModule =
+  typeof import("../../client/src/components/qotd/QotdTiktokSlide");
 
-async function loadCardModule(): Promise<{
+export async function loadCardModule(): Promise<{
   card: CardModule;
+  slides: SlideModule;
   close: () => Promise<void>;
 }> {
   const vite = await createServer({
@@ -339,20 +480,18 @@ async function loadCardModule(): Promise<{
   const card = (await vite.ssrLoadModule(
     "/src/components/qotd/QotdSocialCard.tsx",
   )) as CardModule;
-  return { card, close: () => vite.close() };
+  const slides = (await vite.ssrLoadModule(
+    "/src/components/qotd/QotdTiktokSlide.tsx",
+  )) as SlideModule;
+  return { card, slides, close: () => vite.close() };
 }
 
 function fileUrl(path: string): string {
   return pathToFileURL(join(ROOT, path)).href;
 }
 
-function pageHtml(
-  card: CardModule,
-  input: QotdSocialInput,
-  format: QotdSocialFormat,
-): string {
-  const { width, height } = QOTD_SOCIAL_FORMATS[format];
-  const fonts = [
+function fontFaces(): string {
+  return [
     ["Poppins", 500, "client/public/fonts/poppins-latin-500-normal.woff2"],
     ["Poppins", 600, "client/public/fonts/poppins-latin-600-normal.woff2"],
     ["Poppins", 700, "client/public/fonts/poppins-latin-700-normal.woff2"],
@@ -367,6 +506,15 @@ function pageHtml(
         `@font-face{font-family:${family};font-weight:${weight};src:url(${fileUrl(String(path))}) format("woff2")}`,
     )
     .join("\n");
+}
+
+function pageHtml(
+  card: CardModule,
+  input: QotdSocialInput,
+  format: QotdSocialFormat,
+): string {
+  const { width, height } = QOTD_SOCIAL_FORMATS[format];
+  const fonts = fontFaces();
   const body = renderToStaticMarkup(
     createElement(card.QotdSocialCard, {
       input,
@@ -452,6 +600,138 @@ async function renderFormats(
   return { rendered, unfit };
 }
 
+function tiktokPageHtml(
+  slides: SlideModule,
+  carousel: QotdTiktokCarousel,
+  slide: 1 | 2 | 3,
+): string {
+  const { width, height } = QOTD_TIKTOK_SIZE;
+  const body = renderToStaticMarkup(
+    createElement(slides.QotdTiktokSlide, {
+      slide,
+      carousel,
+      logoSrc: fileUrl("client/public/lyceon-logo.png"),
+    }),
+  );
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="${fileUrl("node_modules/katex/dist/katex.min.css")}">
+<style>${fontFaces()}
+html,body{width:${width}px;height:${height}px}
+${slides.QOTD_TIKTOK_CSS}</style></head><body>${body}</body></html>`;
+}
+
+export type RenderedSlide = {
+  slide: 1 | 2 | 3;
+  file: string;
+  fontPx: number;
+  cardText: string;
+};
+
+/** The rectangle every slide's content must stay inside, in page pixels. */
+export function tiktokSafeRect(): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+} {
+  const px = tiktokSafePx();
+  return {
+    left: px.left,
+    top: px.top,
+    right: QOTD_TIKTOK_SIZE.width - px.right,
+    bottom: QOTD_TIKTOK_SIZE.height - px.bottom,
+  };
+}
+
+/**
+ * The three slides, each at the largest text size at which nothing overflows and every drawn
+ * box stays inside TikTok's safe area. A slide that cannot manage that at 24px is listed in
+ * `unfit` and nothing is screenshotted for it. Exported for the layout check
+ * (scripts/qotd-social/tiktok-layout.ts).
+ */
+export async function renderTiktok(
+  slides: SlideModule,
+  carousel: QotdTiktokCarousel,
+  workDir: string,
+): Promise<{ rendered: RenderedSlide[]; unfit: number[] }> {
+  const executablePath = process.env.QOTD_SOCIAL_CHROMIUM;
+  const browser = await chromium.launch(
+    executablePath ? { executablePath } : {},
+  );
+  const rendered: RenderedSlide[] = [];
+  const unfit: number[] = [];
+  try {
+    for (const slide of TIKTOK_SLIDES) {
+      const htmlPath = join(workDir, `tiktok-${slide}.html`);
+      writeFileSync(htmlPath, tiktokPageHtml(slides, carousel, slide));
+      const page = await browser.newPage({
+        viewport: { ...QOTD_TIKTOK_SIZE },
+        deviceScaleFactor: 1,
+      });
+      await page.goto(pathToFileURL(htmlPath).href);
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      const fontPx = await page.evaluate(
+        ({ max, min, safe }) => {
+          const body = document.getElementById("qs-body");
+          const col = body?.closest(".tt-col");
+          if (!body || !col) return -1;
+          // Every drawn box inside TikTok's clear band and column (the hidden MathML copy
+          // KaTeX keeps for screen readers is not drawn, so it is left out). No named inner
+          // functions: the script runner would wrap them in a helper the page does not have.
+          const boxes = [col, ...Array.from(col.querySelectorAll("*"))];
+          for (let size = max; size >= min; size -= 1) {
+            body.style.setProperty("--fs", `${size}px`);
+            if (
+              body.scrollHeight > body.clientHeight ||
+              body.scrollWidth > body.clientWidth ||
+              col.scrollHeight > col.clientHeight ||
+              col.scrollWidth > col.clientWidth
+            ) {
+              continue;
+            }
+            let inside = true;
+            for (const el of boxes) {
+              if (el.closest(".katex-mathml")) continue;
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 && r.height === 0) continue;
+              if (
+                r.left < safe.left - 0.5 ||
+                r.top < safe.top - 0.5 ||
+                r.right > safe.right + 0.5 ||
+                r.bottom > safe.bottom + 0.5
+              ) {
+                inside = false;
+                break;
+              }
+            }
+            if (inside) return size;
+          }
+          return -1;
+        },
+        {
+          max: TIKTOK_MAX_FONT_PX,
+          min: MIN_FONT_PX,
+          safe: tiktokSafeRect(),
+        },
+      );
+      if (fontPx < 0) {
+        unfit.push(slide);
+      } else {
+        const file = join(workDir, `tiktok-${slide}.png`);
+        await page.screenshot({ path: file, type: "png" });
+        const cardText = await page
+          .locator("[data-qotd-tiktok-slide]")
+          .innerText();
+        rendered.push({ slide, file, fontPx, cardText });
+      }
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+  return { rendered, unfit };
+}
+
 function fenced(text: string): string {
   return ["~~~text", text, "~~~"].join("\n");
 }
@@ -504,16 +784,66 @@ async function main(): Promise<number> {
   }
   const copy = buildSocialCopy(input);
   const reddit = buildRedditPost(input);
-  const reveal = await loadReveal(args.baseUrl, input.qotd_date, archiveFetch);
+  const yesterday = await loadYesterday(
+    args.baseUrl,
+    input.qotd_date,
+    archiveFetch,
+  );
+  const { reveal } = yesterday;
 
   rmSync(args.out, { recursive: true, force: true });
   const workDir = join(args.out, ".render");
   mkdirSync(workDir, { recursive: true });
 
-  const { card, close } = await loadCardModule();
+  const { card, slides, close } = await loadCardModule();
   let result: Awaited<ReturnType<typeof renderFormats>>;
+  let tiktok: TiktokBuild;
+  let tiktokRendered: RenderedSlide[] = [];
   try {
     result = await renderFormats(card, input, workDir);
+    const yesterdayDate = previousQotdDate(input.qotd_date);
+    if (yesterday.day === null) {
+      tiktok = {
+        status: "skipped",
+        qotd_date: yesterdayDate,
+        reason: "withheld",
+      };
+    } else {
+      const built = buildTiktokCarousel(yesterday.day, input.qotd_date);
+      if (!built.ok) {
+        tiktok =
+          built.reason === "does_not_fit"
+            ? {
+                status: "skipped",
+                qotd_date: yesterdayDate,
+                reason: "does_not_fit",
+              }
+            : { status: "refused", problem: built.problem };
+      } else {
+        const shot = await renderTiktok(slides, built.carousel, workDir);
+        if (shot.unfit.length > 0) {
+          err(
+            `qotd-social: tiktok: slide(s) ${shot.unfit.join(", ")} do not fit at ${MIN_FONT_PX}px: no carousel`,
+          );
+          tiktok = {
+            status: "skipped",
+            qotd_date: yesterdayDate,
+            reason: "does_not_fit",
+          };
+        } else {
+          tiktokRendered = shot.rendered;
+          tiktok = {
+            status: "built",
+            carouselDay: yesterday.day,
+            carousel: built.carousel,
+            slides: shot.rendered.map((r) => ({
+              slide: r.slide,
+              cardText: r.cardText,
+            })),
+          };
+        }
+      }
+    }
   } finally {
     await close();
   }
@@ -525,6 +855,7 @@ async function main(): Promise<number> {
     today,
     reddit,
     reveal,
+    tiktok,
   );
   if (!decision.ok) {
     const { problems } = decision;
@@ -549,6 +880,13 @@ async function main(): Promise<number> {
   const date = input.qotd_date;
   for (const r of result.rendered) {
     renameSync(r.file, join(args.out, `qotd-${date}-${r.format}.png`));
+  }
+  const tiktokPost = decision.manifest.tiktok;
+  if (tiktokPost.status === "built") {
+    for (const r of tiktokRendered) {
+      const name = tiktokPost.slides[r.slide - 1];
+      if (name) renameSync(r.file, join(args.out, name));
+    }
   }
   rmSync(workDir, { recursive: true, force: true });
   writeFileSync(join(args.out, "caption.txt"), `${copy.caption}\n`);
@@ -578,6 +916,21 @@ async function main(): Promise<number> {
     reveal.status === "withheld"
       ? `${reveal.qotd_date}: withheld (not published on the archive), so there is no reveal.`
       : `${reveal.qotd_date}: posted to Slack with the answer and explanation; ${reveal.archive_url}`,
+    "",
+    "### TikTok carousel (yesterday's question)",
+    ...(tiktokPost.status === "built"
+      ? [
+          `${tiktokPost.qotd_date}: three slides (${tiktokRendered.map((r) => `${r.slide}: text ${r.fontPx}px`).join(", ")}).`,
+          "",
+          "Title:",
+          fenced(tiktokPost.title),
+          "",
+          "Caption:",
+          fenced(tiktokPost.caption),
+        ]
+      : [
+          `${tiktokPost.qotd_date}: no carousel (${tiktokPost.reason === "withheld" ? "yesterday is withheld or missing on the archive" : "yesterday's question does not fit three slides"}).`,
+        ]),
     "",
   ].join("\n");
   writeFileSync(join(args.out, "summary.md"), summary);

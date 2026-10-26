@@ -536,7 +536,8 @@ function LisaConversation(): JSX.Element {
           ) : null}
 
           {turnState.kind === "idle" &&
-          suggestedAction?.type === "start_practice" ? (
+          (suggestedAction?.type === "start_practice" ||
+            suggestedAction?.type === "recommend_video") ? (
             <li>
               <SuggestedActionLink action={suggestedAction} />
             </li>

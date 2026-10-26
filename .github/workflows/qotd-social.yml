@@ -18,6 +18,9 @@
 # else; the channel is the variable SOCIAL_SLACK_CHANNEL_ID (or the run's slack_channel input, for
 # a test post). A missing token or a Slack error fails the run, after the download is uploaded.
 # Pull requests run the same step as a dry run: every check, no token, nothing sent.
+# TikTok (Karl, 2026-10-23): the same run builds yesterday's question as a three-slide TikTok
+# carousel (qotd-<yesterday>-tiktok-1..3.png, in the same download) and posts it to #social after
+# the reveal, or a one-line note when yesterday is withheld or missing.
 # Setup: docs/runbooks/qotd-slack.md.
 #
 # Run it by hand with no date for today, or with a PAST date to rebuild that day (today and
@@ -34,8 +37,15 @@ on:
       - .github/workflows/qotd-social.yml
       - scripts/qotd-social/**
       - shared/qotd/social.ts
+      - shared/qotd/tiktok.ts
+      - shared/qotd/reveal.ts
+      - shared/qotd/plain-math.ts
       - shared/math/tokenize.ts
       - client/src/components/qotd/QotdSocialCard.tsx
+      - client/src/components/qotd/QotdTiktokSlide.tsx
+      - shared/qotd/readability.ts
+      - tests/lib/qotd-fixture.ts
+      - tests/fixtures/qotd/rows.json
       - client/src/components/qotd/StaticMath.tsx
       - packages/shared/src/qotd-schema.ts
       - docs/runbooks/qotd-slack.md
@@ -79,6 +89,23 @@ jobs:
 
       - name: Install Chromium (the build @playwright/test pins)
         run: pnpm exec playwright install --with-deps chromium
+
+      # Karl's brief 2026-10-23: the TikTok slides must fit TikTok's safe area at the caps with the
+      # longest choices. Worst-case questions and two real fixture days, through the generator's
+      # own renderer; the PNGs are uploaded for review. Pull requests only (the daily build
+      # enforces the same safe area on the real day).
+      - name: TikTok layout check
+        if: github.event_name == 'pull_request'
+        run: pnpm exec tsx scripts/qotd-social/tiktok-layout.ts --out qotd-tiktok-layout
+
+      - name: Upload the TikTok layout slides
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qotd-tiktok-layout
+          path: qotd-tiktok-layout/*.png
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Build the assets
         env:
