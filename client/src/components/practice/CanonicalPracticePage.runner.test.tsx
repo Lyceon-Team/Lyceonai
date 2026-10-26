@@ -802,7 +802,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     const props = dockProps.last!;
     // The scope, and (owner brief 2026-10-23) the column it anchors to: the runner's question
     // area, a DOM ref the dock measures for geometry only.
-    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
+    expect(Object.keys(props)).toEqual(["anchor", "docked", "scope"]);
     expect((props.anchor as { current: unknown }).current).toBe(
       screen.getByTestId("runner-scroll"),
     );
@@ -840,7 +840,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(screen.getByText(EXPLANATION)).toBeTruthy();
     expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
     const props = dockProps.last!;
-    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
+    expect(Object.keys(props)).toEqual(["anchor", "docked", "scope"]);
     expect(props.scope).toEqual({
       kind: "question",
       sourceSurface: "practice",

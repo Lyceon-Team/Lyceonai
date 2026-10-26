@@ -57,3 +57,44 @@ export const QUESTION_DEFAULT_PCT = 100 - CALC_DEFAULT_PCT; // 51
  * size). Changing it for the exam's own reasons means giving the exam its own constant.
  */
 export const CALC_COLUMN_HEIGHT_PX = 640;
+
+/**
+ * @spec [owner brief "restore the pre-#1300 runner layout" (Karl, 2026-10-26): "LISA is a docked
+ *       right column ... Opening the calculator places it BETWEEN the question and LISA.
+ *       Calculator's right edge is exactly LISA's left edge"; the test widths 1366x650,
+ *       1440x900, 1920x1080] | @implemented [2026-10-26]
+ *
+ * plain English: the practice and review runners with LISA docked as their right column (from
+ * 768px). The column is the pre-#1300 360px panel plus a 12px inset from the top-right corner.
+ * With it open, the calculator opens beside the question (between the question and LISA) from
+ * DOCKED_SPLIT_BREAKPOINT; below it, it stacks under the question as it does below
+ * SPLIT_BREAKPOINT without LISA, so it never sits behind or over LISA's column.
+ *
+ * trade-offs: the question's floor beside both is 420px, not QUESTION_MIN_PX (500): with 500 the
+ * three columns need 1434px, so the owner's 1366px case would stack. Pre-#1300 the calculator
+ * covered LISA's column below 1446px (owner ruling 2026-09-25), which the 2026-10-26 brief rules
+ * out ("neither ever renders behind or over the other"). The Desmos floor (CALC_MIN_PX) is kept.
+ */
+const DOCKED_LISA_PANEL_PX = 360;
+const DOCKED_LISA_INSET_PX = 12;
+export const DOCKED_LISA_COLUMN_PX =
+  DOCKED_LISA_PANEL_PX + DOCKED_LISA_INSET_PX; // 372
+export const QUESTION_MIN_DOCKED_PX = 420;
+/** The question-and-calculator group's left padding beside LISA (`pl-4`; no right padding). */
+const DOCKED_GROUP_PAD_PX = 16;
+export const DOCKED_SPLIT_BREAKPOINT =
+  DOCKED_GROUP_PAD_PX +
+  QUESTION_MIN_DOCKED_PX +
+  DIVIDER_PX +
+  CALC_MIN_PX +
+  DOCKED_LISA_COLUMN_PX +
+  BREAKPOINT_EXTRA; // 1338
+/** The group's width at that breakpoint, and the percentages computed from it (as above). */
+const DOCKED_CONTAINER_AT_BREAKPOINT =
+  DOCKED_SPLIT_BREAKPOINT - DOCKED_GROUP_PAD_PX - DOCKED_LISA_COLUMN_PX; // 950
+export const DOCKED_CALC_MIN_PCT = Math.ceil(
+  (CALC_MIN_PX / DOCKED_CONTAINER_AT_BREAKPOINT) * 100,
+); // 53
+export const DOCKED_QUESTION_MIN_PCT = Math.ceil(
+  (QUESTION_MIN_DOCKED_PX / DOCKED_CONTAINER_AT_BREAKPOINT) * 100,
+); // 45

@@ -318,17 +318,28 @@ function DockPage({
   scope,
   onChoice,
   handle,
+  docked,
 }: {
   scope: ChatDockScope;
   onChoice: () => void;
   handle?: React.Ref<ChatDockHandle>;
+  docked?: { defaultOpen: boolean; onOpenChange: (open: boolean) => void };
 }): JSX.Element {
+  // 2026-10-26: a runner's docked column, as CanonicalPracticePage gives it (a slot element).
+  const [slot, setSlot] = React.useState<HTMLDivElement | null>(null);
   return (
     <>
       <button type="button" data-testid="page-choice" onClick={onChoice}>
         Choice A
       </button>
-      <ChatDock ref={handle} scope={scope} />
+      {docked !== undefined ? (
+        <div ref={setSlot} data-testid="docked-slot" />
+      ) : null}
+      <ChatDock
+        ref={handle}
+        scope={scope}
+        docked={docked === undefined ? undefined : { ...docked, slot }}
+      />
     </>
   );
 }
@@ -340,6 +351,7 @@ async function mount(
     onChoice?: () => void;
     path?: string;
     handle?: React.Ref<ChatDockHandle>;
+    docked?: { defaultOpen: boolean; onOpenChange: (open: boolean) => void };
   } = {},
 ): Promise<{ client: QueryClient; history: string[] }> {
   const map = await accessMap(plan);
@@ -374,6 +386,7 @@ async function mount(
                   scope={opts.scope ?? GENERAL}
                   onChoice={opts.onChoice ?? (() => undefined)}
                   handle={opts.handle}
+                  docked={opts.docked}
                 />
               </AppShell>
             </Route>
@@ -1320,5 +1333,88 @@ describe("placement in the column (owner brief, Karl, 2026-10-23): bottom-right 
       if (originalWidth)
         Object.defineProperty(Element.prototype, "clientWidth", originalWidth);
     }
+  });
+});
+
+// ── Docked in a runner (owner brief "restore the pre-#1300 runner layout", Karl, 2026-10-26) ──
+
+describe("docked: in a runner the open panel is the runner's right column, not a floating panel", () => {
+  it("open on mount (review): the panel is drawn INTO the runner's column, filling it, and there is no launcher", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", { docked: { defaultOpen: true, onOpenChange } });
+    const slot = screen.getByTestId("docked-slot");
+    const panel = await screen.findByTestId("chat-dock-panel");
+    expect(slot.contains(panel)).toBe(true);
+    expect(panel.getAttribute("data-placement")).toBe("docked");
+    expect(panel.style.width).toBe("100%");
+    expect(panel.style.height).toBe("100%");
+    expect(screen.getByTestId("chat-dock").getAttribute("data-view")).toBe(
+      "open",
+    );
+    expect(screen.queryByTestId("chat-dock-bubble")).toBeNull();
+    // Opening on entry is not the student's click: focus stays where it was.
+    expect(document.activeElement).not.toBe(panel);
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("Minimize collapses it to the launcher and tells the runner; the launcher reopens it, the draft kept", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", { docked: { defaultOpen: true, onOpenChange } });
+    const box = await within(dialog()).findByRole("textbox", {
+      name: "Message",
+    });
+    fireEvent.change(box, { target: { value: "half a thought" } });
+    fireEvent.click(
+      within(dialog()).getByRole("button", { name: "Minimize LISA" }),
+    );
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Kept, hidden, in the column (the runner hides the column itself).
+    const kept = screen.getByTestId("chat-dock-panel");
+    expect(screen.getByTestId("docked-slot").contains(kept)).toBe(true);
+    expect(kept.hidden).toBe(true);
+    expect(document.activeElement).toBe(bubble());
+    fireEvent.click(bubble());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    expect(
+      (
+        within(dialog()).getByRole("textbox", {
+          name: "Message",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("half a thought");
+  });
+
+  it("closed on mount (practice): the launcher, no panel, until the student opens it (or the runner's link does)", async () => {
+    const onOpenChange = vi.fn();
+    const handle = React.createRef<ChatDockHandle>();
+    await mount("paid", {
+      handle,
+      docked: { defaultOpen: false, onOpenChange },
+    });
+    expect(bubble()).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
+    act(() => handle.current?.open());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByTestId("docked-slot").contains(dialog())).toBe(true);
+  });
+
+  it("Close drops the panel and tells the runner", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", { docked: { defaultOpen: true, onOpenChange } });
+    await screen.findByTestId("chat-dock-panel");
+    fireEvent.click(
+      within(dialog()).getByRole("button", { name: "Close LISA" }),
+    );
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
+    expect(bubble()).toBeTruthy();
+  });
+
+  it("free: docked open is still never a panel; the launcher's lock opens the upgrade modal", async () => {
+    const onOpenChange = vi.fn();
+    await mount("free", { docked: { defaultOpen: true, onOpenChange } });
+    expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
+    expect(tutorCalls()).toHaveLength(0);
   });
 });

@@ -9,7 +9,13 @@ import {
   it,
   vi,
 } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { renderRunner as render } from "@/test-support/runner.harness";
 import {
   PRACTICE_ENGINE_CONFIG,
@@ -127,7 +133,16 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
 
 // 2026-10-22: the dock's own behaviour (lock, open, Esc, scope on the wire, the shared thread)
 // is proven in ChatDock.contract.test.tsx; here only what the runner hands it.
-const dockMounts = vi.hoisted(() => ({ count: 0, opens: 0 }));
+const dockMounts = vi.hoisted(() => ({
+  count: 0,
+  opens: 0,
+  /** The runner's docked column contract (2026-10-26), as last handed to the dock. */
+  docked: null as null | {
+    slot: HTMLElement | null;
+    defaultOpen: boolean;
+    onOpenChange: (open: boolean) => void;
+  },
+}));
 vi.mock("@/components/tutor/ChatDock", async () => {
   const React = await import("react");
   return {
@@ -146,9 +161,15 @@ vi.mock("@/components/tutor/ChatDock", async () => {
           questionLabel?: string;
           submitted?: boolean;
         };
+        docked?: {
+          slot: HTMLElement | null;
+          defaultOpen: boolean;
+          onOpenChange: (open: boolean) => void;
+        };
       },
       ref: React.ForwardedRef<{ open: () => void }>,
     ) {
+      dockMounts.docked = p.docked ?? null;
       React.useImperativeHandle(ref, () => ({
         open: () => {
           dockMounts.opens += 1;
@@ -1227,22 +1248,72 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
   });
 
-  it(`below ${DOCK_COLUMN_CLEAR_PX}px the scroll area keeps the bubble's ${DOCK_CLEARANCE_PX}px clear on its right; from ${DOCK_COLUMN_CLEAR_PX}px the column clears it on its own`, () => {
+  /** 2026-10-26: review starts with LISA docked; the launcher shows once it is minimized. */
+  function minimizeDockedLisa(): void {
+    act(() => dockMounts.docked?.onOpenChange(false));
+  }
+
+  it(`with LISA minimized to the launcher: below ${DOCK_COLUMN_CLEAR_PX}px the scroll area keeps the launcher's ${DOCK_CLEARANCE_PX}px clear on its right; from ${DOCK_COLUMN_CLEAR_PX}px the column clears it on its own`, () => {
     mockViewport(DOCK_FROM_PX);
     const narrow = renderReview();
+    // Docked open (2026-10-26) there is no launcher, so nothing is kept clear for one.
+    expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
+    minimizeDockedLisa();
     expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe(
       `${DOCK_CLEARANCE_PX}px`,
     );
     narrow.unmount();
     mockViewport(DOCK_COLUMN_CLEAR_PX - 1);
     const below = renderReview();
+    minimizeDockedLisa();
     expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe(
       `${DOCK_CLEARANCE_PX}px`,
     );
     below.unmount();
     mockViewport(DOCK_COLUMN_CLEAR_PX);
     renderReview();
+    minimizeDockedLisa();
     expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
+  });
+
+  // Owner brief "restore the pre-#1300 runner layout" (Karl, 2026-10-26).
+  it("review: LISA starts docked open as the right column (372px), with no launcher clearance; minimized, the column is hidden", () => {
+    mockViewport(1440);
+    renderReview();
+    const column = screen.getByTestId("runner-lisa-column");
+    expect(dockMounts.docked?.defaultOpen).toBe(true);
+    expect(dockMounts.docked?.slot).toBe(column);
+    expect(column.getAttribute("data-open")).toBe("true");
+    expect(column.style.width).toBe("372px");
+    expect(column.className).not.toContain("hidden");
+    expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
+    minimizeDockedLisa();
+    expect(column.getAttribute("data-open")).toBe("false");
+    expect(column.className).toBe("hidden");
+  });
+
+  it("practice after submit: the column starts closed (the launcher), and opens as the column for the answered item", () => {
+    mockViewport(1440);
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        sessionItemId: "prac-item-1",
+        currentIndex: 0,
+        totalQuestions: 5,
+        showResult: true,
+      }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        section="M"
+        engine={PRACTICE_ENGINE_CONFIG}
+      />,
+    );
+    const column = screen.getByTestId("runner-lisa-column");
+    expect(dockMounts.docked?.defaultOpen).toBe(false);
+    expect(column.getAttribute("data-open")).toBe("false");
+    act(() => dockMounts.docked?.onOpenChange(true));
+    expect(column.getAttribute("data-open")).toBe("true");
   });
 
   // Owner ruling 5 on #1300 (Karl, 2026-10-23): the bubble never covers the calculator. The bubble

@@ -35,6 +35,11 @@
  * over the rail or the right panel; in a runner above Submit/Next and clear of the calculator.
  * After a wrong answer, "Still confused? Ask LISA" under the explanation opens it scoped to that
  * question; each surface has its opening line.
+ * @updated 2026-10-26 (owner brief "restore the pre-#1300 runner layout", Karl): in the practice
+ * and review runners the OPEN dock is the runner's docked right column (review: open on entry),
+ * the calculator opens between the question and LISA with one shared edge, and Minimize returns
+ * it to the launcher; the runner tests above that drove the floating panel are re-pointed to the
+ * column and to the launcher (each names the guarantee it keeps). Home and Review are unchanged.
  * The harness mounts production's global limiter with a higher ceiling for the test server only
  * (tests/e2e/student-harness/rate-limit.ts, owner ruling 2026-10-24; production stays at 1000 per
  * 15 minutes). Past it the server answers 429, which the app reads as signed out (the login page):
@@ -245,6 +250,15 @@ async function expectRunnerClear(page: Page, cover: Locator): Promise<void> {
   }
 }
 
+/** 2026-10-26: the review runner opens with LISA docked; this minimizes it to the launcher. */
+async function minimizeDockedLisa(page: Page): Promise<void> {
+  const panel = page.locator(PANEL);
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Minimize LISA" }).click();
+  await expect(panel).toBeHidden();
+  await expect(page.locator(BUBBLE)).toBeVisible();
+}
+
 // ── Where it appears ───────────────────────────────────────────────────────────────────────
 
 for (const width of WIDTHS) {
@@ -338,7 +352,11 @@ test("never: the live timed module, the LISA page, the practice runner, the sign
 // ── The review runner ──────────────────────────────────────────────────────────────────────
 
 for (const width of WIDTHS) {
-  test(`${width}px review runner: the dock replaces the panel, clears Submit and every choice, collapsed and open`, async ({
+  // 2026-10-26 (owner brief "restore the pre-#1300 runner layout"): LISA is the runner's docked
+  // right column, open on entry in review; minimized, it is the launcher. Re-pointed from the
+  // floating panel's "collapsed and open": the same guarantees (clear of Submit, the footer and
+  // every choice; non-modal; Esc minimizes) on the docked column and on the launcher.
+  test(`${width}px review runner: LISA docked open on entry as the right column, clear of Submit and every choice; Esc minimizes it to the launcher, which clears them too`, async ({
     page,
     request,
   }) => {
@@ -347,7 +365,7 @@ for (const width of WIDTHS) {
     const sessionId = await freshReviewSession(request);
     try {
       await openRunner(page, sessionId);
-      // The panel and its bar toggle are gone from 768px up.
+      // The old side panel and its bar toggle are gone from 768px up.
       await expect(
         page.locator('[data-testid="scoped-tutor-panel"]'),
       ).toHaveCount(0);
@@ -355,17 +373,24 @@ for (const width of WIDTHS) {
         page.locator('[data-testid="practice-tutor-toggle"]'),
       ).toHaveCount(0);
       const bubble = page.locator(BUBBLE);
-      await expect(bubble).toBeVisible();
-      await expectRunnerClear(page, bubble);
-
-      await bubble.click();
       const panel = page.locator(PANEL);
+      const column = page.locator('[data-testid="runner-lisa-column"]');
+      // Open on entry, docked: drawn inside the runner's right column, no launcher.
       await expect(panel).toBeVisible();
+      await expect(panel).toHaveAttribute("data-placement", "docked");
+      expect(
+        await column.evaluate(
+          (el, p) => el.contains(document.querySelector(p)),
+          PANEL,
+        ),
+      ).toBe(true);
+      await expect(bubble).toHaveCount(0);
       await expect(panel).toHaveAttribute("role", "dialog");
       await expect(panel).toHaveAttribute("aria-modal", "false");
-      // The panel grows up from the bubble and stays above Submit / Next.
-      const footer = page.locator('[data-testid="runner-footer"]');
-      expect(overlaps(await box(panel), await box(footer))).toBe(false);
+      // The right column: its right edge 12px in from the screen's, its top 12px below the bar.
+      const p = await box(panel);
+      expect(Math.round(width - (p.x + p.width))).toBe(12);
+      await expectRunnerClear(page, panel);
       // Non-modal: a choice still takes a real click (actionability checks on) with it open.
       // (5s: a choice under the panel fails here, by name, not at the test's own timeout.)
       await page
@@ -374,12 +399,14 @@ for (const width of WIDTHS) {
         .click({ timeout: 5_000 });
       await expect(page.locator('[data-testid="runner-submit"]')).toBeEnabled();
       await expect(panel).toBeVisible();
-      // Esc minimizes.
+      // Esc minimizes: the column goes, the launcher comes, and it clears Submit and the choices.
       await panel.focus();
       await page.keyboard.press("Escape");
       await expect(panel).toBeHidden();
+      await expect(column).toBeHidden();
       await expect(bubble).toBeVisible();
       await expect(bubble).toBeFocused();
+      await expectRunnerClear(page, bubble);
     } finally {
       await endReviewSession(request, sessionId);
     }
@@ -395,7 +422,7 @@ test("the dock opens scoped to the current question: the chip names it, and the 
   const sessionId = await freshReviewSession(request);
   try {
     const itemId = await openRunner(page, sessionId);
-    await page.locator(BUBBLE).click();
+    // 2026-10-26: docked open on entry; no click needed.
     const panel = page.locator(PANEL);
     await expect(
       panel.locator('[data-testid="tutor-question-chip"]'),
@@ -462,6 +489,8 @@ for (const width of WIDTHS) {
     const sessionId = await freshReviewSession(request);
     try {
       await openRunner(page, sessionId);
+      // 2026-10-26: LISA is docked open on entry; minimized, it is the launcher checked here.
+      await minimizeDockedLisa(page);
       await expect(banner).toBeVisible();
       expect(overlaps(await box(bubble), await box(banner))).toBe(false);
       expect(
@@ -511,6 +540,11 @@ test("practice runner (1440): no bubble before submit; after submit the bubble, 
 
     await bubble.click();
     const panel = page.locator(PANEL);
+    // 2026-10-26: opened in a runner, it docks as the right column.
+    await expect(panel).toHaveAttribute("data-placement", "docked");
+    await expect(
+      page.locator('[data-testid="runner-lisa-column"]'),
+    ).toHaveAttribute("data-open", "true");
     await expect(
       panel.locator('[data-testid="tutor-question-chip"]'),
     ).toHaveText(/^Question 1 of \d+$/);
@@ -536,7 +570,7 @@ test("practice runner (1440): no bubble before submit; after submit the bubble, 
 // Ruling 5: the bubble never covers the calculator, at the stacked width (1024), the split
 // breakpoint (1062) and desktop (1440).
 for (const width of [1024, 1062, 1440] as const) {
-  test(`${width}px Math review runner with the calculator open: the bubble clears the calculator, Submit and the footer`, async ({
+  test(`${width}px Math review runner with the calculator open and LISA minimized: the launcher clears the calculator, Submit and the footer`, async ({
     page,
     request,
   }) => {
@@ -545,6 +579,9 @@ for (const width of [1024, 1062, 1440] as const) {
     const sessionId = await freshSession(request, "review", ["M"]);
     try {
       await openAnyRunner(page, "review", sessionId);
+      // 2026-10-26: LISA starts docked; ruling 5 is about the launcher, so minimize it first
+      // (the docked column beside the calculator is the test below this one).
+      await minimizeDockedLisa(page);
       await page.locator('[data-testid="practice-calculator-toggle"]').click();
       // The calculator itself (the Desmos shell, modes bar included), inside whichever layout
       // holds it: beside the question from the split breakpoint, stacked under it below.
@@ -799,7 +836,7 @@ test("opening lines: Home 'What do you want to work on?', Review 'Want help with
   const sessionId = await freshReviewSession(request);
   try {
     await openRunner(page, sessionId);
-    await page.locator(BUBBLE).click();
+    // 2026-10-26: docked open on entry.
     const opener = page.locator(`${PANEL} [data-testid="tutor-opener"]`);
     await expect(opener).toContainText("Need help with this question?");
     await expect(opener).toContainText(
@@ -845,6 +882,8 @@ for (const engine of ["practice", "review"] as const) {
     const link = page.locator('[data-testid="runner-ask-lisa"]');
     try {
       let itemId = await openAnyRunner(page, engine, sessionId);
+      // 2026-10-26: review starts with LISA docked; minimized, the link must RESTORE the column.
+      if (engine === "review") await minimizeDockedLisa(page);
       // Before submit: the question is served, and there is no link.
       await expect(page.locator('[data-testid="runner-submit"]')).toBeVisible();
       await expect(link).toHaveCount(0);
@@ -883,6 +922,8 @@ for (const engine of ["practice", "review"] as const) {
       await link.click();
       const panel = page.locator(PANEL);
       await expect(panel).toBeVisible();
+      // 2026-10-26: the link opens (review: restores) LISA's docked column.
+      await expect(panel).toHaveAttribute("data-placement", "docked");
       await expect(panel.locator('[data-testid="tutor-opener"]')).toContainText(
         "Want to walk through this one? Ask me about any step.",
       );
@@ -906,3 +947,158 @@ for (const engine of ["practice", "review"] as const) {
     }
   });
 }
+
+// ── The docked runner (owner brief "restore the pre-#1300 runner layout", Karl, 2026-10-26) ───
+
+for (const [width, height] of [
+  [1366, 650],
+  [1440, 900],
+  [1920, 1080],
+] as const) {
+  test(`${width}x${height} Math review runner, calculator and LISA both open: the calculator sits between the question and LISA, its right edge LISA's left edge, nothing overlapping`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await asPersona(page, "paid");
+    const sessionId = await freshSession(request, "review", ["M"]);
+    try {
+      await openAnyRunner(page, "review", sessionId);
+      const panel = page.locator(PANEL);
+      await expect(panel).toBeVisible();
+      await page.locator('[data-testid="practice-calculator-toggle"]').click();
+      const calculator = page.locator(
+        '[data-testid="side-panel-calculator"] [data-testid="desmos-calculator-shell"]',
+      );
+      // Presence first: the calculator is open beside the question, LISA docked.
+      await expect(calculator).toBeVisible();
+      await expect(panel).toBeVisible();
+      await page.waitForTimeout(200);
+      const calc = await box(calculator);
+      const lisa = await box(panel);
+      const question = await box(page.locator('[data-testid="runner-body"]'));
+      // One shared boundary: the calculator's right edge is LISA's left edge (±1px).
+      expect(
+        Math.abs(calc.x + calc.width - lisa.x),
+        `calculator ${JSON.stringify(calc)} | LISA ${JSON.stringify(lisa)}`,
+      ).toBeLessThanOrEqual(1);
+      // Nothing behind or over anything else (1px of the shared edge allowed).
+      const shrink = (b: Box): Box => ({
+        x: b.x + 1,
+        y: b.y + 1,
+        width: b.width - 2,
+        height: b.height - 2,
+      });
+      expect(overlaps(shrink(calc), shrink(lisa)), "calculator over LISA").toBe(
+        false,
+      );
+      expect(
+        overlaps(shrink(question), shrink(calc)),
+        `question ${JSON.stringify(question)} over the calculator`,
+      ).toBe(false);
+      expect(
+        overlaps(shrink(question), shrink(lisa)),
+        "question over LISA",
+      ).toBe(false);
+      // Submit is on screen, clear of LISA. (The choices sit inside the question's box, so the
+      // two checks above already cover them; the Chromebook sizes are a report, not a gate.)
+      const submit = page.locator('[data-testid="runner-submit"]');
+      await expect(submit).toBeVisible();
+      expect(overlaps(await box(submit), lisa), "Submit under LISA").toBe(
+        false,
+      );
+    } finally {
+      await endSession(request, "review", sessionId);
+    }
+  });
+}
+
+test("review runner (1440): LISA docked open on entry; minimized, it stays minimized across questions; reopened, it stays open", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await asPersona(page, "paid");
+  const sessionId = await freshReviewSession(request);
+  const column = page.locator('[data-testid="runner-lisa-column"]');
+  const panel = page.locator(PANEL);
+  const nextItem = async (): Promise<void> => {
+    await page.locator('[data-testid="runner-choice"]').first().click();
+    await page.locator('[data-testid="runner-submit"]').click();
+    await page.locator('[data-testid="runner-next"]').click();
+    await expect(page.locator('[data-testid="runner-submit"]')).toBeVisible();
+  };
+  try {
+    await openRunner(page, sessionId);
+    await expect(column).toHaveAttribute("data-open", "true");
+    await expect(panel).toBeVisible();
+    await minimizeDockedLisa(page);
+    await expect(column).toHaveAttribute("data-open", "false");
+    await nextItem();
+    // Question 2: still minimized.
+    await expect(panel).toBeHidden();
+    await expect(column).toHaveAttribute("data-open", "false");
+    await expect(page.locator(BUBBLE)).toBeVisible();
+    await page.locator(BUBBLE).click();
+    await expect(column).toHaveAttribute("data-open", "true");
+    await nextItem();
+    // Question 3: still open, on the new question.
+    await expect(column).toHaveAttribute("data-open", "true");
+    await expect(
+      panel.locator('[data-testid="tutor-question-chip"]'),
+    ).toHaveText(/^Question 3 of \d+$/);
+  } finally {
+    await endReviewSession(request, sessionId);
+  }
+});
+
+test("review runner (1440): Enter in LISA's input sends exactly once and never submits the answer; Shift+Enter adds a new line", async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await asPersona(page, "paid");
+  const sessionId = await freshReviewSession(request);
+  const sends: string[] = [];
+  const answers: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() !== "POST") return;
+    const path = new URL(r.url()).pathname;
+    if (path === "/api/tutor/messages") sends.push(path);
+    if (path === "/api/review/answer") answers.push(path);
+  });
+  try {
+    await openRunner(page, sessionId);
+    // An answer picked, so Submit is live: an Enter that leaked would submit it.
+    await page.locator('[data-testid="runner-choice"]').first().click();
+    const submit = page.locator('[data-testid="runner-submit"]');
+    await expect(submit).toBeEnabled();
+    const input = page.locator(`${PANEL} textarea[aria-label="Message"]`);
+    // Shift+Enter: a new line, nothing sent.
+    await input.click();
+    await input.pressSequentially("first");
+    await page.keyboard.press("Shift+Enter");
+    await input.pressSequentially("second");
+    await expect(input).toHaveValue("first\nsecond");
+    expect(sends).toEqual([]);
+    // Enter: sent once.
+    const sent = page.waitForRequest(
+      (r) =>
+        r.method() === "POST" &&
+        new URL(r.url()).pathname === "/api/tutor/messages",
+    );
+    await page.keyboard.press("Enter");
+    await sent;
+    await page.waitForTimeout(500);
+    expect(sends).toEqual(["/api/tutor/messages"]);
+    // ...and the answer was never submitted: no answer request, the item still unanswered.
+    expect(answers).toEqual([]);
+    await expect(submit).toBeVisible();
+    await expect(page.locator('[data-testid="runner-feedback"]')).toHaveCount(
+      0,
+    );
+    await expect(page.locator('[data-testid="runner-next"]')).toHaveCount(0);
+  } finally {
+    await endReviewSession(request, sessionId);
+  }
+});

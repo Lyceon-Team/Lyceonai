@@ -4218,6 +4218,69 @@ plant "LL-21" "the launcher drops the student focus ring classes" \
 assert s.count(a) == 1
 s = s.replace(a, "className={`pointer-events-auto", 1)'
 
+# ── The runner's docked LISA column (owner brief "restore the pre-#1300 runner layout", Karl,
+# 2026-10-26): LISA open is the runner's right column (portalled into its slot), review starts
+# open, minimize holds across questions, practice docks on open, the launcher's clearance only
+# while minimized. Each plant mutates product source once and must redden the named test.
+LDK_RUNNER_SRC="client/src/components/practice/CanonicalPracticePage.tsx"
+LDK_DOCK_SRC="client/src/components/tutor/ChatDock.tsx"
+
+plant "LDK-1" "review starts with LISA minimized" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "const [reviewLisaDocked, setReviewLisaDocked] = React.useState(true);"
+assert s.count(a) == 1
+s = s.replace(a, "const [reviewLisaDocked, setReviewLisaDocked] = React.useState(false);", 1)'
+
+plant "LDK-2" "practice never docks the column it opened" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "sessionItemId !== null && practiceLisaDockedItem === sessionItemId);"
+assert s.count(a) == 1
+s = s.replace(a, "sessionItemId !== null && false);", 1)'
+
+plant "LDK-3" "the launcher's clearance stays while LISA is docked open" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "            dockTutor && !lisaColumnOpen && !dockClearsColumn\n"
+assert s.count(a) == 1
+s = s.replace(a, "            dockTutor && !dockClearsColumn\n", 1)'
+
+plant "LDK-4" "the minimized column is not hidden" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                : \"hidden\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "                : \"flex\"\n", 1)'
+
+plant "LDK-5" "the docked panel floats instead of going into the runner's column" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "            ? createPortal(panel, docked.slot)\n"
+assert s.count(a) == 1
+s = s.replace(a, "            ? panel\n", 1)'
+
+plant "LDK-6" "the dock does not tell the runner it opened or closed" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "      docked?.onOpenChange(next === \"open\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LDK-7" "the docked dock ignores open-on-mount" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "      docked?.defaultOpen === true ? \"open\" : \"collapsed\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "      \"collapsed\",\n", 1)'
+
+plant "LDK-8" "the docked panel sizes itself instead of filling the column" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "          ? { width: \"100%\", height: \"100%\" }\n"
+assert s.count(a) == 1
+s = s.replace(a, "          ? { width, height: \"70vh\" }\n", 1)'
+
 # ── LISA history follow-ups (owner rulings, Karl, 2026-10-24, on #1305/#1310) ─────────────────
 # The approved read-only note, and the history label "Practice question · Oct 21" (type and the
 # conversation's created_at, through the one formatter's short month-day).
