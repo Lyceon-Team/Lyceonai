@@ -31,6 +31,7 @@ import {
   locateQuote,
   longRulesWhole,
   onSubsectionBoundary,
+  ruleOpening,
   shortRulesSplit,
   splitLongRules,
   locateUnits,
@@ -282,6 +283,7 @@ describe("the audit decides what is kept", () => {
     self_contained: true,
     correct: true,
     act_scope_respected: true,
+    self_consistent: true,
     issues: "",
   };
   it("passes only when every check passes", () => {
@@ -295,6 +297,14 @@ describe("the audit decides what is kept", () => {
     expect(auditFailure({ ...pass, self_contained: false })).toBe(
       "audit_not_self_contained",
     );
+    // A self-contradicting entry fails first, before any repairable reason, so it is never
+    // rewritten into a "corrected" entry: drop-only.
+    expect(auditFailure({ ...pass, self_consistent: false })).toBe(
+      "audit_self_contradictory",
+    );
+    expect(
+      auditFailure({ ...pass, self_consistent: false, faithful: false }),
+    ).toBe("audit_self_contradictory");
     // ACT advice stated as general fails on its own, whatever else passed.
     expect(auditFailure({ ...pass, act_scope_respected: false })).toBe(
       "audit_act_generalised",
@@ -851,5 +861,58 @@ describe("splitLongRules", () => {
       true,
       false,
     ]);
+  });
+});
+
+describe("ruleOpening", () => {
+  const text = [
+    "## 6. NON-ESSENTIAL INFORMATION",
+    "Non-essential information can be removed from a sentence.",
+    "",
+    "### A. Two Commas",
+    "Use two commas.",
+    "",
+    "### B. Two Dashes",
+    "Use two dashes.",
+    "",
+    "## 7. NAMES",
+    "Commas around names, with no subsections.",
+  ].join("\n");
+  const at = (q: string): number => text.indexOf(q);
+  const opening =
+    "## 6. NON-ESSENTIAL INFORMATION\nNon-essential information can be removed from a sentence.";
+
+  it("gives a later piece of a cut rule the rule's opening", () => {
+    expect(ruleOpening(text, at("B. Two Dashes"), at("## 7."))).toBe(opening);
+  });
+  it("gives the first piece the opening too (its source holds it; the audit is told it is one subsection)", () => {
+    expect(ruleOpening(text, 0, at("### B."))).toBe(opening);
+  });
+  it("gives nothing to a unit holding the whole rule, or a rule without subsections", () => {
+    expect(ruleOpening(text, 0, at("## 7."))).toBeNull();
+    expect(ruleOpening(text, at("## 7."), text.length)).toBeNull();
+  });
+  // Real unit edges (2026-10-26: 9:1, 13:1, 14:1 and 15:1 hold whole rules and were given an
+  // opening): a start after the "## " the quote leaves out, an end before the final period.
+  it("gives nothing to a whole rule located by its real edges", () => {
+    const realStart = at("6. NON-ESSENTIAL");
+    const realEnd = at("Use two dashes.") + "Use two dashes".length;
+    expect(ruleOpening(text, realStart, realEnd)).toBeNull();
+  });
+  it("gives nothing to a whole rule whose unit stops before a closing remark", () => {
+    const withRemark = text.replace(
+      "Use two dashes.",
+      "Use two dashes.\n\n(A closing remark.)",
+    );
+    const realEnd =
+      withRemark.indexOf("Use two dashes.") + "Use two dashes".length;
+    expect(
+      ruleOpening(withRemark, withRemark.indexOf("6. NON"), realEnd),
+    ).toBeNull();
+  });
+  it("still gives the opening to a real-edged piece that stops before the rule's end", () => {
+    const realStart = at("6. NON-ESSENTIAL");
+    const realEnd = at("Use two commas.") + "Use two commas".length;
+    expect(ruleOpening(text, realStart, realEnd)).toBe(opening);
   });
 });

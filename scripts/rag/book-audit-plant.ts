@@ -2,11 +2,14 @@
  * @spec [Karl's ruling 2026-10-23: ACT-scoped advice is dropped from an entry, never un-scoped;
  *       the audit must fail a chunk that states an [ACT NOTE] point as general; prove it by
  *       planting a generalised chunk and watching the audit reject it] | @implemented [2026-10-23]
+ *       and [Karl's ruling 2026-10-26: a drop-only self-consistency check, proven on the real
+ *       chunk 6:1 failing and the other kept chunks passing, false-positive rate reported]
  *
  * plain English: runs the book pipeline's AUDIT prompt (book-prompts.ts) on planted
  * (source, entry) pairs and checks one verdict per pair. A plant is a JSON line {name, source,
- * entry, expect_act_scope_respected? | expect_result?}: `expect_act_scope_respected` checks
- * that one field; `expect_result` checks the whole audit ("pass", the drop reason auditFailure
+ * entry, rule_opening?, expect_act_scope_respected? | expect_self_consistent? | expect_result?}:
+ * `rule_opening` is sent as the audit's RULE OPENING; an `expect_<field>` checks that one
+ * field; `expect_result` checks the whole audit ("pass", the drop reason auditFailure
  * gives, or "fail" for any failure). The file lives in the book's gitignored cache because
  * sources and entries are book text. Each plant is audited `--runs` times (temperature 0 is not
  * a guarantee of one answer), and every run must agree. Exit 1 on any disagreement. It prints
@@ -36,14 +39,19 @@ const plantSchema = z
     name: z.string().min(1),
     source: z.string().min(1),
     entry: z.string().min(1),
+    rule_opening: z.string().nullable().default(null),
     expect_act_scope_respected: z.boolean().optional(),
+    expect_self_consistent: z.boolean().optional(),
     expect_result: z.string().min(1).optional(),
   })
   .refine(
     (p) =>
-      (p.expect_act_scope_respected === undefined) !==
-      (p.expect_result === undefined),
-    "a plant expects exactly one of expect_act_scope_respected or expect_result",
+      [
+        p.expect_act_scope_respected,
+        p.expect_self_consistent,
+        p.expect_result,
+      ].filter((x) => x !== undefined).length === 1,
+    "a plant expects exactly one of expect_act_scope_respected, expect_self_consistent or expect_result",
   );
 
 async function main(): Promise<void> {
@@ -74,6 +82,7 @@ async function main(): Promise<void> {
           before: "",
           after: "",
           entry: p.entry,
+          ruleOpening: p.rule_opening,
         }),
         responseSchema: auditResponseSchema,
         schema: auditSchema,
@@ -84,14 +93,18 @@ async function main(): Promise<void> {
           ? result !== "pass"
           : p.expect_result !== undefined
             ? result === p.expect_result
-            : audit.act_scope_respected === p.expect_act_scope_respected;
+            : p.expect_self_consistent !== undefined
+              ? audit.self_consistent === p.expect_self_consistent
+              : audit.act_scope_respected === p.expect_act_scope_respected;
       if (!ok) wrong += 1;
       const expected =
         p.expect_result !== undefined
           ? `result ${p.expect_result}`
-          : `act_scope_respected=${String(p.expect_act_scope_respected)}`;
+          : p.expect_self_consistent !== undefined
+            ? `self_consistent=${String(p.expect_self_consistent)}`
+            : `act_scope_respected=${String(p.expect_act_scope_respected)}`;
       process.stdout.write(
-        `${ok ? "AS EXPECTED" : "WRONG"}  ${p.name} run ${r + 1}: result ${result}, act_scope_respected=${audit.act_scope_respected} (expected ${expected}); issues: ${audit.issues}\n`,
+        `${ok ? "AS EXPECTED" : "WRONG"}  ${p.name} run ${r + 1}: result ${result}, act_scope_respected=${audit.act_scope_respected}, self_consistent=${audit.self_consistent} (expected ${expected}); issues: ${audit.issues}\n`,
       );
     }
   }

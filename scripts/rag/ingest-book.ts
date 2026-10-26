@@ -63,6 +63,7 @@ import {
   onSubsectionBoundary,
   SHORT_RULE_WORDS,
   longRulesWhole,
+  ruleOpening,
   shortRulesSplit,
   splitLongRules,
   resolveChapters,
@@ -82,6 +83,7 @@ import {
   auditFailure,
   auditResponseSchema,
   auditUserMessage,
+  rewriteRuleOpening,
   auditSchema,
   rewriteResponseSchema,
   rewriteSchemaFor,
@@ -413,6 +415,13 @@ type Kept = {
   taxonomy_gap: string | null;
   audit: Audit;
   repaired: boolean;
+  /** What the audit read for the kept entry, written to audit-inputs.jsonl for audit replays. */
+  audited: {
+    source: string;
+    before: string;
+    after: string;
+    ruleOpening: string | null;
+  };
 };
 
 async function main(): Promise<void> {
@@ -518,7 +527,9 @@ async function main(): Promise<void> {
       offsetByWords(book.text, u.end, CONTEXT_WORDS),
     );
     const headings = `CHAPTER: ${u.chapter_title}\nSECTION: ${u.section_title}`;
-    const rewriteUser = `${headings}\n\nCONTEXT BEFORE (reference only):\n${before}\n\nUNIT:\n${source}\n\nCONTEXT AFTER (reference only):\n${after}`;
+    // One piece of a cut rule gets the rule's opening as part of its source (ruleOpening).
+    const opening = ruleOpening(book.text, u.start, u.end);
+    const rewriteUser = `${headings}\n\nCONTEXT BEFORE (reference only):\n${before}\n\n${rewriteRuleOpening(opening)}UNIT:\n${source}\n\nCONTEXT AFTER (reference only):\n${after}`;
     // One repair: an entry the audit finds unfaithful, incorrect or dependent is rewritten
     // once with the audit's finding, then audited again. A boundary failure (incomplete, or
     // started mid-idea) is never repaired: the unit itself is the wrong shape, so it drops.
@@ -567,6 +578,7 @@ async function main(): Promise<void> {
         before,
         after,
         entry: content,
+        ruleOpening: opening,
       });
       const audit = (
         await cachedCall(
@@ -607,6 +619,7 @@ async function main(): Promise<void> {
         taxonomy_gap: rw.taxonomy_gap,
         audit,
         repaired: attempt > 0,
+        audited: { source, before, after, ruleOpening: opening },
       };
     }
   });
@@ -672,6 +685,20 @@ async function main(): Promise<void> {
     drops.map((d) => JSON.stringify(d)).join("\n") + "\n",
   );
   writeFileSync(resolve(dir, "review.csv"), toReviewCsv(chunks));
+  // The exact audit inputs of every kept entry (book text: the cache is gitignored), so an audit
+  // change can be proven against the real chunks with scripts/rag/book-audit-plant.ts.
+  writeFileSync(
+    resolve(dir, "audit-inputs.jsonl"),
+    kept
+      .map((k, i) =>
+        JSON.stringify({
+          provenance: chunks[i]?.provenance ?? "",
+          ...k.audited,
+          entry: k.content,
+        }),
+      )
+      .join("\n") + "\n",
+  );
 
   // Report: per skill (a multi-tagged chunk counts under each), the empty skills, drops.
   const bySkill = new Map<string, typeof chunks>(skills.map((s) => [s, []]));

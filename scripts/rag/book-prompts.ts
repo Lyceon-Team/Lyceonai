@@ -27,6 +27,11 @@
  * and passed rule 6 repeating the real one. A rule the book gets wrong is dropped (the audit's
  * "incorrect"), never corrected and never kept with the error; a missing rule is recoverable,
  * a wrong one taught confidently is not.
+ * An entry that contradicts itself (describes its example one way while the example shows
+ * another; Meltzer rule 6, chunk 6:1, passed the audit five times out of five) fails
+ * self_consistent and drops. It is drop-only, unlike the reverted mechanism: it never permits
+ * an omission or a correction, so its failure mode is a lost correct rule, which is countable,
+ * never a wrong rule taught (Karl, 2026-10-26).
  * The model never sees provenance (brief §5). `BOOK_PROMPT_VERSION` is stamped on every cached
  * result; changing any prompt changes it and invalidates the cache.
  */
@@ -171,13 +176,14 @@ export function rewriteSchemaFor(skills: readonly [string, ...string[]]) {
 
 export const AUDIT_SYSTEM = `You check one entry of Lyceon's SAT tutoring knowledge base against the book passage it was written from. A tutor will show the entry to a student with nothing around it. An entry can read well on its own and still be wrong in use; find out whether this one is.
 
-You are given the SOURCE (the passage the entry was written from), the CONTEXT BEFORE and CONTEXT AFTER (the book text around the source), and the ENTRY. Answer:
-- complete: true only if the entry teaches the whole rule, method or example. False if the source or the context shows that a condition, exception, step or the conclusion of the idea is missing from the entry, for example because the idea started before the source or continues after it. ACT-scoped advice (defined under act_scope_respected) that the entry leaves out is not missing: leaving it out is required.
-- starts_mid_idea: true if the source begins partway through an idea that started in the context before it.
-- faithful: true only if every rule, claim, example and number in the entry is supported by the SOURCE itself. False if the entry adds a rule, an exception, an example or a number the source does not contain, or states a rule differently from the source. Material that appears only in the CONTEXT BEFORE or CONTEXT AFTER, and not in the SOURCE, makes the entry unfaithful even when it is correct.
+You are given the SOURCE (the passage the entry was written from), the CONTEXT BEFORE and CONTEXT AFTER (the book text around the source), and the ENTRY. When the source is one lettered subsection of a longer numbered rule you are also given the RULE OPENING: the rule's opening explanation, which is part of the source (it is not context). Answer:
+- complete: true only if the entry teaches the whole rule, method or example. False if the source or the context shows that a condition, exception, step or the conclusion of the idea is missing from the entry, for example because the idea started before the source or continues after it. When a RULE OPENING is given, the source is one subsection of the rule: judge completeness on that subsection; the entry need not teach the rule's other subsections, even where the opening names them. ACT-scoped advice (defined under act_scope_respected) that the entry leaves out is not missing: leaving it out is required.
+- starts_mid_idea: true if the source begins partway through an idea that started in the context before it. A source that begins at a lettered subsection, with its RULE OPENING given, does not start mid-idea.
+- faithful: true only if every rule, claim, example and number in the entry is supported by the SOURCE itself (the RULE OPENING, when given, is part of it). False if the entry adds a rule, an exception, an example or a number the source does not contain, or states a rule differently from the source. Material that appears only in the CONTEXT BEFORE or CONTEXT AFTER, and not in the SOURCE, makes the entry unfaithful even when it is correct.
 - self_contained: true only if a student could understand the entry with nothing else: no reference to an example, rule, page, chapter or exercise that the entry does not itself include.
 - correct: true only if the entry is correct about the SAT and standard English or mathematics. False if it states something wrong, even if the source says it.
 - act_scope_respected: the student is taking the SAT. ACT-scoped advice is a test-taking tip, shortcut or answer pattern that the SOURCE ties to the ACT ("if there is an OMIT/DELETE option on the ACT", "when the ACT tests it's vs. its, the answer is almost always its", "more applicable to the ACT than the SAT"). False if the entry states any ACT-scoped advice as general, as true of the SAT or of "the test", or as "usually" or "always" true; or if the entry gives a method the source says works less well on the SAT without that limitation. True if the entry leaves the ACT-scoped advice out, or if the source has none. A paragraph marked "[ACT NOTE]" mentions the ACT; it is not ACT-only, so judge each sentence by what it says: a rule of standard English (where a comma goes, which form is correct) is never ACT-scoped, even under the marker and even when the source adds that the ACT tests it often, and stating that rule is correct.
+- self_consistent: judge the ENTRY against itself only, not against the book or your own knowledge. False if the entry contradicts itself: it describes an example as showing one thing while the example it gives shows another (it says a comma comes "before" a word and its example puts the comma after it), or two of its statements say incompatible things about the same case. Wording you find awkward, a rule you think is wrong, or an example you would label differently is NOT a contradiction; only two parts of the entry that cannot both be true. True otherwise.
 - issues: one or two short sentences naming any problem, or an empty string.`;
 
 /** The audit's user message; one function so the pipeline and the plant runner send the same. */
@@ -186,8 +192,21 @@ export function auditUserMessage(m: {
   before: string;
   after: string;
   entry: string;
+  /** The numbered rule's opening when the source is one piece of it (book.ts ruleOpening). */
+  ruleOpening?: string | null;
 }): string {
-  return `SOURCE:\n${m.source}\n\nCONTEXT BEFORE:\n${m.before}\n\nCONTEXT AFTER:\n${m.after}\n\nENTRY:\n${m.entry}`;
+  const opening =
+    m.ruleOpening === undefined || m.ruleOpening === null
+      ? ""
+      : `RULE OPENING (part of the source):\n${m.ruleOpening}\n\n`;
+  return `${opening}SOURCE:\n${m.source}\n\nCONTEXT BEFORE:\n${m.before}\n\nCONTEXT AFTER:\n${m.after}\n\nENTRY:\n${m.entry}`;
+}
+
+/** The rewrite's note on a rule opening, placed before the unit (same rule as the audit's). */
+export function rewriteRuleOpening(opening: string | null): string {
+  return opening === null
+    ? ""
+    : `RULE OPENING (the numbered rule's opening explanation; it is part of the unit's source, so you may use and restate it; the unit teaches one subsection of the rule and need not cover the others):\n${opening}\n\n`;
 }
 
 export const auditResponseSchema = {
@@ -199,6 +218,7 @@ export const auditResponseSchema = {
     self_contained: { type: "BOOLEAN" },
     correct: { type: "BOOLEAN" },
     act_scope_respected: { type: "BOOLEAN" },
+    self_consistent: { type: "BOOLEAN" },
     issues: { type: "STRING" },
   },
   required: [
@@ -208,6 +228,7 @@ export const auditResponseSchema = {
     "self_contained",
     "correct",
     "act_scope_respected",
+    "self_consistent",
     "issues",
   ],
 } as const;
@@ -218,12 +239,16 @@ export const auditSchema = z.object({
   self_contained: z.boolean(),
   correct: z.boolean(),
   act_scope_respected: z.boolean(),
+  self_consistent: z.boolean(),
   issues: z.string(),
 });
 export type Audit = z.infer<typeof auditSchema>;
 
 /** The audit drop reason for a failed audit, or null when every check passed. */
 export function auditFailure(a: Audit): string | null {
+  // First, and never repaired (ingest-book REPAIRABLE): drop-only, so a self-contradicting entry
+  // is never rewritten into a "corrected" one (Karl, 2026-10-26).
+  if (!a.self_consistent) return "audit_self_contradictory";
   if (a.starts_mid_idea) return "audit_starts_mid_idea";
   if (!a.complete) return "audit_incomplete";
   if (!a.act_scope_respected) return "audit_act_generalised";

@@ -537,6 +537,38 @@ function plainHeading(h: string): string {
   return h.replace(/<\/?[a-z]+>|[*_]/gi, "").trim();
 }
 
+/**
+ * Pure. The opening explanation of the numbered rule a unit belongs to (from its "## " heading
+ * to its first "### " subsection heading), when the unit is one piece of a rule that has
+ * subsections; null when the unit holds the whole rule, or the rule has no subsections, or the
+ * unit is under no rule. Karl, 2026-10-26: the 400-word cut gave rule 6's subsections B and C
+ * no definition, so the two correct pieces dropped and the flawed one survived; every piece of
+ * a cut rule now gets the rule's opening, as part of its source. Mechanical: headings only.
+ */
+export function ruleOpening(
+  text: string,
+  start: number,
+  end: number,
+): string | null {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => m.index ?? 0);
+  const s0 = lineStartOfEdge(text, start);
+  let rule = -1;
+  for (const h of heads) if (h <= s0) rule = h;
+  if (rule === -1) return null;
+  const ruleEnd = heads.find((h) => h > rule) ?? text.length;
+  const firstSub = /^### /m.exec(text.slice(rule, ruleEnd));
+  if (firstSub === null) return null;
+  // A whole-rule unit, by its real edges: it starts on the rule's heading line (after the "## "
+  // its quote left out) and every subsection heading of the rule lies inside it. Its end is not
+  // compared with the rule's end: a unit may stop before a closing "</u>." or a short closing
+  // remark (Meltzer 15:1 and 14:1, 2026-10-26).
+  const startsAtRule = lineStartOfEdge(text, start) === rule;
+  const lastSub = [...text.slice(rule, ruleEnd).matchAll(/^### /gm)].pop();
+  const holdsAllSubs = rule + (lastSub?.index ?? 0) < end;
+  if (startsAtRule && holdsAllSubs) return null;
+  return text.slice(rule, rule + firstSub.index).trim();
+}
+
 /** Pure. Words of a rule, without the markdown symbols. */
 function ruleWords(text: string, from: number, to: number): number {
   return wordCount(
