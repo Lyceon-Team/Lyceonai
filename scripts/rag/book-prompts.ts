@@ -46,7 +46,9 @@ Units must cover the window in order without overlapping. Classify every stretch
 - ends_in_window: false only for the LAST unit, and only if the idea it holds continues past the end of the window (the window may stop mid-idea). Every other unit ends inside the window.
 - chapter_number: the number of the chapter the unit is in, as printed in the book (null if the book does not number its chapters); chapter_title and section_title: the headings the unit sits under, as printed (use the nearest heading for section_title; repeat the chapter title if there is no section heading).
 
-The text marks where each page of the book begins with "[page n]"; never quote those markers.`;
+The text marks where each page of the book begins with "[page n]"; never quote those markers.
+
+The text may be a markdown transcription of the book. Then "## " starts a numbered rule, "### " a lettered subsection of it, and "#### " a minor heading; a paragraph that opens with a bold label such as "**Correct:**" or "**Incorrect:**" is a labelled example, and "**...**" inside it marks the grammar point. Use that structure: a lettered subsection with its explanation and its labelled examples is usually one unit, and labelled examples always stay in the same unit as the rule they illustrate, never in a unit of their own. In quotes you may leave out the markdown symbols (#, *, <u>); copy the words exactly.`;
 
 export function segmentResponseSchema(): Record<string, unknown> {
   return {
