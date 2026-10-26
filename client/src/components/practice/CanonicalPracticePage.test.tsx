@@ -9,7 +9,13 @@ import {
   it,
   vi,
 } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { renderRunner as render } from "@/test-support/runner.harness";
 import {
   PRACTICE_ENGINE_CONFIG,
@@ -127,7 +133,17 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
 
 // 2026-10-22: the dock's own behaviour (lock, open, Esc, scope on the wire, the shared thread)
 // is proven in ChatDock.contract.test.tsx; here only what the runner hands it.
-const dockMounts = vi.hoisted(() => ({ count: 0, opens: 0 }));
+const dockMounts = vi.hoisted(() => ({
+  count: 0,
+  opens: 0,
+  /** The runner's docked column contract (2026-10-26), as last handed to the dock. */
+  docked: null as null | {
+    slot: HTMLElement | null;
+    defaultOpen: boolean;
+    onOpenChange: (open: boolean) => void;
+    suppressed?: boolean;
+  },
+}));
 vi.mock("@/components/tutor/ChatDock", async () => {
   const React = await import("react");
   return {
@@ -146,9 +162,16 @@ vi.mock("@/components/tutor/ChatDock", async () => {
           questionLabel?: string;
           submitted?: boolean;
         };
+        docked?: {
+          slot: HTMLElement | null;
+          defaultOpen: boolean;
+          onOpenChange: (open: boolean) => void;
+          suppressed?: boolean;
+        };
       },
       ref: React.ForwardedRef<{ open: () => void }>,
     ) {
+      dockMounts.docked = p.docked ?? null;
       React.useImperativeHandle(ref, () => ({
         open: () => {
           dockMounts.opens += 1;
@@ -175,11 +198,17 @@ vi.mock("@/components/math/DesmosCalculator", () => ({
   default: ({
     expanded,
     onStateChange,
+    initialState,
   }: {
     expanded: boolean;
     onStateChange?: (state: unknown) => void;
+    initialState?: unknown;
   }) => (
-    <div data-testid="desmos-mock">
+    <div
+      data-testid="desmos-mock"
+      // 2026-10-26: the state a (re)mounted calculator starts from, for the take-turns tier.
+      data-initial={JSON.stringify(initialState ?? null)}
+    >
       {expanded ? "expanded" : "collapsed"}
       <button
         type="button"
@@ -1178,14 +1207,17 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
   });
 
   for (const width of [DOCK_FROM_PX, 1024, 1440]) {
-    it(`${width}px: no side panel and no Show/Hide LISA; the dock, scoped to the served item and named by "Question N of M"`, () => {
+    it(`${width}px: no side panel and no Show/Hide LISA; the dock, scoped to the served item and named by "Question N of M" (from 1338px) or "N of M" (the 300px column)`, () => {
       mockViewport(width);
       renderReview();
       const dock = screen.getByTestId("chat-dock-mock");
       expect(dock.getAttribute("data-kind")).toBe("question");
       expect(dock.getAttribute("data-surface")).toBe("review");
       expect(dock.getAttribute("data-item")).toBe("rev-item-7");
-      expect(dock.getAttribute("data-label")).toBe("Question 3 of 10");
+      // Owner ruling on #1322 (Karl, 2026-10-26): the compact form in the 300px column.
+      expect(dock.getAttribute("data-label")).toBe(
+        width >= 1338 ? "Question 3 of 10" : "3 of 10",
+      );
       expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
       expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
       expect(screen.queryByTestId("review-tutor-layout")).toBeNull();
@@ -1227,22 +1259,72 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
     expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
   });
 
-  it(`below ${DOCK_COLUMN_CLEAR_PX}px the scroll area keeps the bubble's ${DOCK_CLEARANCE_PX}px clear on its right; from ${DOCK_COLUMN_CLEAR_PX}px the column clears it on its own`, () => {
+  /** 2026-10-26: review starts with LISA docked; the launcher shows once it is minimized. */
+  function minimizeDockedLisa(): void {
+    act(() => dockMounts.docked?.onOpenChange(false));
+  }
+
+  it(`with LISA minimized to the launcher: below ${DOCK_COLUMN_CLEAR_PX}px the scroll area keeps the launcher's ${DOCK_CLEARANCE_PX}px clear on its right; from ${DOCK_COLUMN_CLEAR_PX}px the column clears it on its own`, () => {
     mockViewport(DOCK_FROM_PX);
     const narrow = renderReview();
+    // Docked open (2026-10-26) there is no launcher, so nothing is kept clear for one.
+    expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
+    minimizeDockedLisa();
     expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe(
       `${DOCK_CLEARANCE_PX}px`,
     );
     narrow.unmount();
     mockViewport(DOCK_COLUMN_CLEAR_PX - 1);
     const below = renderReview();
+    minimizeDockedLisa();
     expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe(
       `${DOCK_CLEARANCE_PX}px`,
     );
     below.unmount();
     mockViewport(DOCK_COLUMN_CLEAR_PX);
     renderReview();
+    minimizeDockedLisa();
     expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
+  });
+
+  // Owner brief "restore the pre-#1300 runner layout" (Karl, 2026-10-26).
+  it("review: LISA starts docked open as the right column (372px), with no launcher clearance; minimized, the column is hidden", () => {
+    mockViewport(1440);
+    renderReview();
+    const column = screen.getByTestId("runner-lisa-column");
+    expect(dockMounts.docked?.defaultOpen).toBe(true);
+    expect(dockMounts.docked?.slot).toBe(column);
+    expect(column.getAttribute("data-open")).toBe("true");
+    expect(column.style.width).toBe("372px");
+    expect(column.className).not.toContain("hidden");
+    expect(screen.getByTestId("runner-scroll").style.paddingRight).toBe("");
+    minimizeDockedLisa();
+    expect(column.getAttribute("data-open")).toBe("false");
+    expect(column.className).toBe("hidden");
+  });
+
+  it("practice after submit: the column starts closed (the launcher), and opens as the column for the answered item", () => {
+    mockViewport(1440);
+    hookMock.useCanonicalPractice.mockReturnValue(
+      buildHookState("M", {
+        sessionItemId: "prac-item-1",
+        currentIndex: 0,
+        totalQuestions: 5,
+        showResult: true,
+      }),
+    );
+    render(
+      <CanonicalPracticePage
+        title="Math Practice"
+        section="M"
+        engine={PRACTICE_ENGINE_CONFIG}
+      />,
+    );
+    const column = screen.getByTestId("runner-lisa-column");
+    expect(dockMounts.docked?.defaultOpen).toBe(false);
+    expect(column.getAttribute("data-open")).toBe("false");
+    act(() => dockMounts.docked?.onOpenChange(true));
+    expect(column.getAttribute("data-open")).toBe("true");
   });
 
   // Owner ruling 5 on #1300 (Karl, 2026-10-23): the bubble never covers the calculator. The bubble
@@ -1386,7 +1468,9 @@ describe("LISA chat dock (owner brief, Karl, 2026-10-22): the dock replaces the 
       expect(dock.getAttribute("data-kind")).toBe("question");
       expect(dock.getAttribute("data-surface")).toBe("practice");
       expect(dock.getAttribute("data-item")).toBe("prac-item-1");
-      expect(dock.getAttribute("data-label")).toBe("Question 1 of 5");
+      expect(dock.getAttribute("data-label")).toBe(
+        width >= 1338 ? "Question 1 of 5" : "1 of 5",
+      );
       expect(screen.queryByTestId("practice-tutor-toggle")).toBeNull();
       expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
     });
@@ -1537,5 +1621,102 @@ describe("Still confused? Ask LISA (owner brief, Karl, 2026-10-23)", () => {
     renderReview({ showResult: true, isCorrect: true });
     expect(screen.getByTestId("runner-feedback")).toBeTruthy();
     expect(screen.queryByTestId("runner-ask-lisa")).toBeNull();
+  });
+});
+
+/**
+ * Owner ruling on #1322 (Karl, 2026-10-26): the width tiers of the docked runner. From 1338px
+ * LISA's column is 360px (+12 inset); from W3 = 1278px to 1337px it is 300px and the calculator
+ * still opens between the question and LISA; below W3 the two take turns, the last one opened
+ * winning, and the automatic yield is not the student's own minimize.
+ */
+describe("docked LISA: the width tiers (owner ruling on #1322, Karl, 2026-10-26)", () => {
+  const W3 = 1278;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dockMounts.count = 0;
+    dockMounts.docked = null;
+  });
+
+  function column(): HTMLElement {
+    return screen.getByTestId("runner-lisa-column");
+  }
+  function calcToggle(): HTMLElement {
+    return screen.getByTestId("practice-calculator-toggle");
+  }
+
+  it("from 1338px LISA's column is 360px (372 with its inset); from W3 to 1337px it is 300px (312)", () => {
+    mockViewport(1338);
+    const wide = renderReview();
+    expect(column().style.width).toBe("372px");
+    wide.unmount();
+    mockViewport(1337);
+    const narrow = renderReview();
+    expect(column().style.width).toBe("312px");
+    narrow.unmount();
+    mockViewport(W3);
+    renderReview();
+    expect(column().style.width).toBe("312px");
+  });
+
+  it("at W3 (1278) and 1280 the calculator opens BETWEEN the question and LISA: both shown, nothing yields", () => {
+    for (const width of [W3, 1280]) {
+      mockViewport(width);
+      const view = renderReview();
+      fireEvent.click(calcToggle());
+      expect(screen.getByTestId("side-panel-calculator")).toBeTruthy();
+      expect(column().getAttribute("data-open")).toBe("true");
+      expect(dockMounts.docked?.suppressed).toBe(false);
+      view.unmount();
+    }
+  });
+
+  for (const width of [W3 - 1, 1024]) {
+    it(`below W3 (${width}px) they take turns, the last opened winning, twice over`, () => {
+      mockViewport(width);
+      renderReview();
+      // Presence first: LISA docked open, the calculator closed.
+      expect(column().getAttribute("data-open")).toBe("true");
+      expect(calcToggle().getAttribute("aria-expanded")).toBe("false");
+      for (let round = 0; round < 2; round += 1) {
+        // The calculator opened: LISA yields to its launcher.
+        fireEvent.click(calcToggle());
+        expect(calcToggle().getAttribute("aria-expanded")).toBe("true");
+        expect(column().getAttribute("data-open")).toBe("false");
+        expect(dockMounts.docked?.suppressed).toBe(true);
+        // LISA reopened (its launcher): the calculator closes.
+        act(() => dockMounts.docked?.onOpenChange(true));
+        expect(column().getAttribute("data-open")).toBe("true");
+        expect(dockMounts.docked?.suppressed).toBe(false);
+        expect(calcToggle().getAttribute("aria-expanded")).toBe("false");
+      }
+    });
+  }
+
+  it("below W3 the yield is not the student's minimize: closing the calculator gives LISA back on its own", () => {
+    mockViewport(W3 - 1);
+    renderReview();
+    fireEvent.click(calcToggle());
+    expect(column().getAttribute("data-open")).toBe("false");
+    // The student's own choice is untouched: still "open".
+    expect(dockMounts.docked?.defaultOpen).toBe(true);
+    fireEvent.click(calcToggle());
+    expect(column().getAttribute("data-open")).toBe("true");
+    expect(dockMounts.docked?.suppressed).toBe(false);
+  });
+
+  it("below W3 the calculator's state survives the turn-taking: a reopened calculator starts from it", () => {
+    mockViewport(W3 - 1);
+    renderReview();
+    fireEvent.click(calcToggle());
+    // The student works in the calculator (its state reported up).
+    fireEvent.click(screen.getAllByTestId("desmos-emit-state")[0]!);
+    act(() => dockMounts.docked?.onOpenChange(true));
+    expect(calcToggle().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(calcToggle());
+    const desmos = screen.getAllByTestId("desmos-mock");
+    expect(desmos.length).toBeGreaterThan(0);
+    for (const d of desmos)
+      expect(d.getAttribute("data-initial")).toBe('{"expressions":[]}');
   });
 });

@@ -204,14 +204,15 @@ export type SlackUpload = {
  * plain English: Slack's standard external upload. For each file, files.getUploadURLExternal,
  * then the bytes to the returned URL (only ever an https *.slack.com host; the token never goes
  * there); then one files.completeUploadExternal shares them all in the channel with one comment.
- * Returns how many files Slack shared. Any failure throws SlackCallError with no token or payload.
+ * Returns the IDs of the files Slack accepted. Any failure throws SlackCallError with no token or
+ * payload.
  */
-export async function shareFiles(
+async function uploadAndComplete(
   config: SlackConfig,
   files: readonly SlackUpload[],
   initialComment: string,
   fetchImpl: FetchLike,
-): Promise<number> {
+): Promise<string[]> {
   const fileIds: { id: string; title: string }[] = [];
   for (const file of files) {
     const form: Record<string, string> = {
@@ -262,5 +263,91 @@ export async function shareFiles(
     },
     completeOk,
   );
-  return shared.files.length;
+  return shared.files.map((f) => f.id);
+}
+
+/** Upload and share files in the channel; returns how many Slack shared (see uploadAndComplete). */
+export async function shareFiles(
+  config: SlackConfig,
+  files: readonly SlackUpload[],
+  initialComment: string,
+  fetchImpl: FetchLike,
+): Promise<number> {
+  return (await uploadAndComplete(config, files, initialComment, fetchImpl))
+    .length;
+}
+
+const shareList = z.record(z.string(), z.array(z.object({ ts: z.string() })));
+const fileInfoOk = z.object({
+  ok: z.literal(true),
+  file: z.object({
+    id: z.string(),
+    shares: z
+      .object({ public: shareList.optional(), private: shareList.optional() })
+      .optional(),
+  }),
+});
+
+/** How long to wait for Slack to finish sharing an upload, and how often to look. */
+export type ShareWait = {
+  timeoutMs: number;
+  intervalMs: number;
+  sleep: (ms: number) => Promise<void>;
+};
+
+export const DEFAULT_SHARE_WAIT: ShareWait = {
+  timeoutMs: 60_000,
+  intervalMs: 1_000,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/**
+ * Upload and share files, then wait until Slack reports every one of them shared in the channel
+ * before returning.
+ *
+ * @spec [owner brief "QOTD #social posts: fixed order, numbered labels" (Karl, 2026-10-26):
+ *       "each message (including file uploads) must be fully posted and confirmed before the
+ *       next starts"] | @implemented [2026-10-26]
+ *
+ * plain English: files.completeUploadExternal returns before Slack has posted the files in the
+ * channel (the share is finished in the background), which is why the images used to land after
+ * messages sent later. So each file is looked up with files.info until its `shares` list the
+ * channel. Needs the bot scope `files:read` (docs/runbooks/slack.md); without it Slack answers
+ * `missing_scope` and the call throws, loudly, rather than posting out of order. Not confirmed
+ * within the wait: throws `share_not_confirmed`. Returns the shared file IDs, in upload order.
+ */
+export async function shareFilesConfirmed(
+  config: SlackConfig,
+  files: readonly SlackUpload[],
+  initialComment: string,
+  fetchImpl: FetchLike,
+  wait: ShareWait = DEFAULT_SHARE_WAIT,
+): Promise<string[]> {
+  const ids = await uploadAndComplete(config, files, initialComment, fetchImpl);
+  for (const id of ids) {
+    let waited = 0;
+    for (;;) {
+      const info = await slackCall(
+        fetchImpl,
+        config.token,
+        "files.info",
+        { form: { file: id } },
+        fileInfoOk,
+      );
+      const shares = info.file.shares;
+      const inChannel =
+        (shares?.public?.[config.channel]?.length ?? 0) > 0 ||
+        (shares?.private?.[config.channel]?.length ?? 0) > 0;
+      if (inChannel) break;
+      if (waited >= wait.timeoutMs) {
+        throw new SlackCallError(
+          `files.info: ${id} not shared in the channel after ${wait.timeoutMs}ms`,
+          "share_not_confirmed",
+        );
+      }
+      await wait.sleep(wait.intervalMs);
+      waited += wait.intervalMs;
+    }
+  }
+  return ids;
 }
