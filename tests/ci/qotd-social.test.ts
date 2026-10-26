@@ -272,6 +272,36 @@ describe("the social input never carries an answer", () => {
     }
     expect(checked).toBeGreaterThan(1);
   });
+
+  it("the reveal's letter is the letter the question showed, for every day (today's image and the archive alike)", () => {
+    const nextDay = (date: string): string =>
+      new Date(Date.parse(`${date}T12:00:00Z`) + 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+    const cases: [QotdSocialInput, QotdArchiveResponse][] = [
+      [socialInputFromToday(toTodayResponse(qotdTodayRow())), TODAY_REVEALED],
+      ...DAYS.map((d): [QotdSocialInput, QotdArchiveResponse] => [
+        socialInputFromArchive(d),
+        d,
+      ]),
+    ];
+    let checked = 0;
+    for (const [input, day] of cases) {
+      if (day.question.item_type !== "mcq") continue;
+      const built = buildReveal(day, nextDay(day.qotd_date));
+      expect(built.ok).toBe(true);
+      if (!built.ok || built.reveal.status !== "revealed") continue;
+      if (built.reveal.answer.kind !== "choice") continue;
+      const correct = day.question.options.find(
+        (o) => o.id === day.question.correct_option_id,
+      );
+      const shown = input.options.findIndex((o) => o.text === correct?.text);
+      expect(shown).toBeGreaterThanOrEqual(0);
+      expect("ABCD"[shown]).toBe(built.reveal.answer.letter);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(1);
+  });
 });
 
 describe("no answer in the caption, alt text or image (real fixture days)", () => {
