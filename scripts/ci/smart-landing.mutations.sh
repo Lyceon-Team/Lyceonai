@@ -3,8 +3,8 @@
 # Mutation harness for the smart landing (the within-student rotating landing test)
 # ============================================================================
 # @spec [owner brief "Smart landing: within-student rotating landing test" (Karl, 2026-10-26)
-#   Acceptance: "Planted defects: one per rule"; Karl's rulings A–E on Step 0 the same day]
-#   | @implemented [2026-10-26]
+#   Acceptance: "Planted defects: one per rule"; Karl's rulings A–E on Step 0 the same day;
+#   Karl's change the same day: `set_math_5` replaces the multi-section sets] | @implemented [2026-10-26]
 #
 # Each mutation plants a defect, runs the check that guards it, and requires that check to go
 # RED on a NAMED assertion. Same three rules as the other *.mutations.sh harnesses:
@@ -25,6 +25,8 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261113000000_smart_landing.sql"
+# The arm checks and weights for `set_math_5` (no function is redefined there).
+MIG2="supabase/migrations/20261114000000_smart_landing_math5.sql"
 SCHEMA="packages/shared/src/smart-landing-schema.ts"
 ASSIGN="server/services/landing/assignment.ts"
 SVC="server/services/landing/landing-service.ts"
@@ -40,7 +42,7 @@ CRONS=tests/ci/vercel-cron-schedules.contract.test.ts
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/sl-mut.XXXX)"
 
-FILES=("$MIG" "$SCHEMA" "$ASSIGN" "$SVC" "$DEPS" "$PRACTICE" "$SHELL_TSX" "$ENTRY" "vercel.json")
+FILES=("$MIG" "$MIG2" "$SCHEMA" "$ASSIGN" "$SVC" "$DEPS" "$PRACTICE" "$SHELL_TSX" "$ENTRY" "vercel.json")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -160,22 +162,35 @@ run "SL13 seeded OFF" "P7 kill switch off" "$PG"
 # ── Sets ────────────────────────────────────────────────────────────────────────────────────────
 
 echo "=== (14) the lead draw is not held to easy/medium (the practice start) ==="
-plant "$PRACTICE" "            difficulties: draw.easyMediumOnly
-              ? easyMediumLead" "            difficulties: draw.easyMediumOnly && false
-              ? easyMediumLead" || stale SL14
-run "SL14 first two easy or medium (practice start)" "P9 every landing set opens with two easy/medium" "$PG"
+plant "$PRACTICE" "          difficulties: draw.easyMediumOnly
+            ? easyMediumLead" "          difficulties: draw.easyMediumOnly && false
+            ? easyMediumLead" || stale SL14
+run "SL14 first two easy or medium (practice start)" "P9 set_math_5: 5 Math items" "$PG"
 
 echo "=== (15) the plan has no easy/medium lead ==="
-plant "$ASSIGN" "      { sections, easyMediumOnly: true, limit: lead }," "      { sections, easyMediumOnly: false, limit: lead }," || stale SL15
-run "SL15 first two easy or medium (plan)" "U4 the first 2 draws are easy/medium" "$UNIT"
+plant "$ASSIGN" "    { sections: [...sections], easyMediumOnly: true, limit: lead }," "    { sections: [...sections], easyMediumOnly: false, limit: lead }," || stale SL15
+run "SL15 first two easy or medium (plan)" "U4 the first 2 draws are easy/medium, in the session's own sections" "$UNIT"
 
 echo "=== (15b) a hard-only session's lead widens to every difficulty ==="
 plant "$ASSIGN" "  return narrowed.length > 0 ? narrowed : sessionDifficulties;" "  return narrowed;" || stale SL15b
 run "SL15b the lead never widens the session's difficulties" "U4b the lead narrows the session's own difficulties" "$UNIT"
 
-echo "=== (16) math first is 4 Math, not 5 ==="
-plant "$ASSIGN" "  const math = Math.min(LANDING_MATH_FIRST_COUNT, size);" "  const math = Math.min(LANDING_MATH_FIRST_COUNT - 1, size);" || stale SL16
-run "SL16 math first 5 + 5" "P9 every landing set opens with two easy/medium" "$PG"
+echo "=== (16) the landing set spans Math and Reading and Writing again (today's bug) ==="
+plant "$DEPS" "    const sections: (\"M\" | \"RW\")[] = [...LANDING_SET_SECTIONS];" "    const sections: (\"M\" | \"RW\")[] = [\"M\", \"RW\"];" || stale SL16a
+run "SL16a set_math_5 is Math only (the set the page runs)" "P9 set_math_5: 5 Math items" "$PG"
+plant "$SCHEMA" "export const LANDING_SET_SECTIONS = [\"M\"] as const;" "export const LANDING_SET_SECTIONS = [\"M\", \"RW\"] as const;" || stale SL16b
+run "SL16b one section by definition" "U4c a landing set is 5 Math questions" "$UNIT"
+
+echo "=== (16c) a window stored with a retired arm is served ==="
+plant "$SVC" "  if (isRetiredLandingArm(arm)) return { ok: false, reason: \"arm_retired\" };" "" || stale SL16c
+run "SL16c a retired arm shows Home" "P18 a window stored with a retired arm" "$PG"
+
+echo "=== (16d) the migration leaves qotd_then_more at 0 ==="
+plant "$MIG2" "SET value = '{\"qotd_then_more\": 1, \"set_math_5\": 1," "SET value = '{\"qotd_then_more\": 0, \"set_math_5\": 1," || stale SL16d
+# The migration's own check is planted with it, or the migration would refuse the planted value
+# and fail every case at once (a red that names nothing).
+plant "$MIG2" "       AND value = '{\"qotd_then_more\": 1," "       AND value = '{\"qotd_then_more\": 0," || stale SL16d2
+run "SL16d weights: set_math_5 1, qotd_then_more back to 1" "P7 kill switch off" "$PG"
 
 echo "=== (17) a fallback is not recorded ==="
 plant "$SVC" "  if (fallbackReason !== null)" "  if (fallbackReason === null && fallbackReason !== null)" || stale SL17

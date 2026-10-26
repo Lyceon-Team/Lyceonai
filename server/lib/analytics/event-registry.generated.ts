@@ -1430,8 +1430,8 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
       "canonical_event_class": "experiment",
       "owner": "07A V1.0",
       "V1_active": true,
-      "schema_version": "1.0.0",
-      "description": "Smart landing (Karl, 2026-10-26): the student's landing for a 48-hour window was assigned, at the window's first app open. Once per window. The window index, the arm and the coarse device class only.",
+      "schema_version": "1.1.0",
+      "description": "Smart landing (Karl, 2026-10-26): the student's landing for a 48-hour window was assigned, at the window's first app open. Once per window. The window index, the arm and the coarse device class only. 1.1.0 (Karl, 2026-10-26): set_math_5 added; set_mixed and set_math_first retired (never assigned again, still valid on events already sent).",
       "json_schema": {
         "type": "object",
         "additionalProperties": false,
@@ -1470,11 +1470,12 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
             "enum": [
               "dashboard",
               "qotd_then_more",
-              "set_mixed",
-              "set_math_first",
+              "set_math_5",
               "calendar_today",
               "session_today",
-              "plan_builder"
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
             ]
           },
           "device_class": {
@@ -1504,7 +1505,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
       "canonical_event_class": "experiment",
       "owner": "07A V1.0",
       "V1_active": true,
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "description": "Smart landing (Karl, 2026-10-26): a landing was shown, at the first app open of a Chicago day within the window. fallback_reason is set when the arm could not be served and Home was shown instead (ruling B), else null.",
       "json_schema": {
         "type": "object",
@@ -1545,11 +1546,12 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
             "enum": [
               "dashboard",
               "qotd_then_more",
-              "set_mixed",
-              "set_math_first",
+              "set_math_5",
               "calendar_today",
               "session_today",
-              "plan_builder"
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
             ]
           },
           "device_class": {
@@ -1572,6 +1574,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
               "qotd_unavailable",
               "no_block_today",
               "not_entitled",
+              "arm_retired",
               "error",
               null
             ]
@@ -1596,7 +1599,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
       "canonical_event_class": "experiment",
       "owner": "07A V1.0",
       "V1_active": true,
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "description": "Smart landing (Karl, 2026-10-26): the student went Home within 30 seconds of a non-dashboard landing being shown, measured by the server's clock.",
       "json_schema": {
         "type": "object",
@@ -1636,11 +1639,12 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
             "enum": [
               "dashboard",
               "qotd_then_more",
-              "set_mixed",
-              "set_math_first",
+              "set_math_5",
               "calendar_today",
               "session_today",
-              "plan_builder"
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
             ]
           },
           "device_class": {
@@ -1670,7 +1674,7 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
       "canonical_event_class": "experiment",
       "owner": "07A V1.0",
       "V1_active": true,
-      "schema_version": "1.0.0",
+      "schema_version": "1.1.0",
       "description": "Smart landing (Karl, 2026-10-26; ruling D, nightly): the questions the student answered from a landing until their next landing or the end of that Chicago day. A count only; never which questions or how they were answered.",
       "json_schema": {
         "type": "object",
@@ -1711,11 +1715,12 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
             "enum": [
               "dashboard",
               "qotd_then_more",
-              "set_mixed",
-              "set_math_first",
+              "set_math_5",
               "calendar_today",
               "session_today",
-              "plan_builder"
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
             ]
           },
           "device_class": {
