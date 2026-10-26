@@ -86,6 +86,7 @@ import {
   capTiktokTitle,
   tiktokSafePx,
   tiktokWhy,
+  QOTD_TIKTOK_WHY_MORE,
 } from "../../shared/qotd/tiktok";
 import { QOTD_TIKTOK_CSS } from "@/components/qotd/QotdTiktokSlide";
 import { plainMathText } from "../../shared/qotd/plain-math";
@@ -157,9 +158,7 @@ function tiktokFor(source: Source): TiktokBuild {
   if (!day) return { status: "skipped", qotd_date: y, reason: "withheld" };
   const built = buildTiktokCarousel(day, source.input.qotd_date);
   if (!built.ok) {
-    return built.reason === "does_not_fit"
-      ? { status: "skipped", qotd_date: y, reason: "does_not_fit" }
-      : { status: "refused", problem: built.problem };
+    return { status: "refused", problem: built.problem };
   }
   return {
     status: "built",
@@ -2037,15 +2036,26 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
   it("the Why line is at most 300 characters, whole sentences only (at most three), for every bank explanation", () => {
     const all = bankExplanations();
     expect(all.length).toBeGreaterThan(1000);
-    let built = 0;
+    let whole = 0;
+    let cut = 0;
     for (const explanation of all) {
       const why = tiktokWhy(explanation);
+      // Every explanation gets a Why (Karl, 2026-10-26): no day is skipped for its length.
+      expect(why).not.toBeNull();
       if (why === null) continue;
-      built += 1;
       const plain = plainMathText(explanation).replace(/\s+/g, " ").trim();
       expect(why.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
-      // Ends at a sentence boundary: terminal punctuation, and the plain text continues (if at
-      // all) with a space after exactly this prefix.
+      if (why.endsWith(QOTD_TIKTOK_WHY_MORE)) {
+        // A first sentence over 300 characters, cut at a word boundary.
+        cut += 1;
+        const head = why.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
+        expect(plain.startsWith(head)).toBe(true);
+        expect(plain[head.length]).toMatch(/[\s,;:—–-]/);
+        continue;
+      }
+      // Whole sentences: terminal punctuation, and the plain text continues (if at all) with a
+      // space after exactly this prefix.
+      whole += 1;
       expect(why).toMatch(/[.!?]["”’)]*$/);
       expect(plain.startsWith(why.replace(/\.$/, "")) || plain === why).toBe(
         true,
@@ -2055,16 +2065,54 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
         true,
       );
     }
-    expect(built).toBeGreaterThan(all.length * 0.9);
+    // Presence before absence: both kinds occur in the real bank.
+    expect(whole).toBeGreaterThan(all.length * 0.9);
+    expect(cut).toBeGreaterThan(0);
   });
 
-  it("the Why line never splits a decimal, stops at three sentences, and is null when the first sentence is too long", () => {
+  it("the Why line never splits a decimal and stops at three sentences", () => {
     expect(
       tiktokWhy("The mean is 3.5 here. So $x = 2$. Done! A fourth one."),
     ).toBe("The mean is 3.5 here. So x = 2. Done!");
-    expect(tiktokWhy(`${"word ".repeat(70)}end. Short.`)).toBeNull();
     const two = tiktokWhy(`First one. ${"long ".repeat(70)}tail. Third.`);
     expect(two).toBe("First one.");
+  });
+
+  it("a first sentence over 300 characters is cut at the last word boundary that fits, then '…' and 'Full explanation on lyceon.ai'", () => {
+    const long = `${"abcdefghijk ".repeat(40)}end. Short.`;
+    const why = tiktokWhy(long);
+    expect(QOTD_TIKTOK_WHY_MORE).toBe("… Full explanation on lyceon.ai");
+    expect(why).not.toBeNull();
+    if (why === null) return;
+    expect(why.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
+    expect(why.endsWith("… Full explanation on lyceon.ai")).toBe(true);
+    const head = why.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
+    // Whole words only, and the most that fit: one more word would overflow.
+    expect(head).toMatch(/^(abcdefghijk )*abcdefghijk$/);
+    expect(
+      head.length + " abcdefghijk".length + QOTD_TIKTOK_WHY_MORE.length,
+    ).toBeGreaterThan(QOTD_TIKTOK_WHY_MAX);
+    // A trailing comma is not left before the ellipsis.
+    const commas = tiktokWhy(`${"abcdefgh, ".repeat(40)}end.`);
+    expect(commas).not.toContain(",…");
+  });
+
+  it("a day whose explanation's first sentence is over 300 characters still gets a carousel, with the cut Why on slide 3", () => {
+    const day = archiveDay("2026-10-03");
+    const long: QotdArchiveResponse = {
+      ...day,
+      question: {
+        ...day.question,
+        explanation: `${"The verb must agree with its singular subject and describe a completed event ".repeat(5)}so attracted is right. Second sentence.`,
+      },
+    };
+    const built = buildTiktokCarousel(long, "2026-10-04");
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.carousel.why.endsWith(QOTD_TIKTOK_WHY_MORE)).toBe(true);
+    expect(slideText(built.carousel, 3)).toContain(
+      "Full explanation on lyceon.ai",
+    );
   });
 
   it("the caption starts with the follow line, then the swipe line, then the hashtags", () => {
