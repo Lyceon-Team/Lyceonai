@@ -533,6 +533,25 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/lifecycle-email.mutations.sh
 
+      # Smart landing (Karl, 2026-10-26): plants the arm ignoring the window, a free student or a
+      # Pro student without a plan offered the wrong arms, dashboard off 1/3, eligibility re-read
+      # mid-window, every open of the day landing, resume skipped, a deep link (hash or next)
+      # treated as a default entry, guardians, admins, unknown age or a switched-off rotation
+      # assigned, the switch shipped ON, a set without its easy/medium lead or 5+5 order, a
+      # fallback unrecorded, "5 more" after any landing, a launch without the entitlement, an
+      # event without its listed properties, a free-form device class or body, escape beyond 30 s
+      # or on dashboard, the summary unbounded or repeated, the cron moved, no deletion cascade,
+      # authenticated grants, and a landing runner's back link not reaching Home. Each must turn
+      # its guarding test red on a name.
+      - name: Smart landing mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/smart-landing.mutations.sh
+
       # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
       # new-account test ignoring the account's age, email signup recording only on a client
       # consent claim, and a disabled Continue with Google. Each must turn its test red by name.

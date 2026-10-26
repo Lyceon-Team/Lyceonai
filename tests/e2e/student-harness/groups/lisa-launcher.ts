@@ -1,5 +1,5 @@
 /**
- * LISA-LAUNCHER and LISA-LAUNCHER-2: the "Ask LISA" speech-bubble launcher and where it sits.
+ * LISA-LAUNCHER: the "Ask LISA" speech-bubble launcher and where it sits.
  *
  * @spec [owner brief "LISA launcher redesign + placement" (Karl, 2026-10-23, option D): "Proof:
  *        screenshots light/dark at 1440 and 1024: Home and Review (collapsed and expanded), a
@@ -7,8 +7,8 @@
  *        folder."; "Mind the harness rate limit (batch captures)"; DESIGN.md §5 (light and dark,
  *        1440 and 390)] | @implemented [2026-10-23]
  *
- * plain English: two groups, each its own harness run, so neither passes the harness's
- * 1000-requests-per-15-minutes limiter. Every shot is taken at 1440 (desktop), 1024 (`w1024`)
+ * plain English: one group (LISA-LAUNCHER-2 was split off for the harness's old request limit and
+ * merged back on 2026-10-24, rate-limit.ts). Every shot is taken at 1440 (desktop), 1024 (`w1024`)
  * and 390 (phone), light and dark. On the phone the launcher is not drawn (phones unchanged), so
  * the phone steps click nothing and the phone PNGs are the proof of absence. The `lisa-dock` seed
  * gives the paid student review history, LISA history (the conversation general mode opens on)
@@ -56,7 +56,7 @@ const NO_PROTOTYPE =
 export const LISA_LAUNCHER: PageGroup = {
   id: "LISA-LAUNCHER",
   title:
-    "LISA launcher: Home and Review, collapsed and expanded, in the middle column (never over the rail or the right panel); the free lock; light and dark, 1440, 1024 and 390",
+    "LISA launcher: Home and Review, collapsed and expanded, in the middle column (never over the rail or the right panel); the free lock; the practice runner after a wrong answer ('Still confused? Ask LISA' and the panel it opens); light and dark, 1440, 1024 and 390",
   seed: "lisa-dock",
   shots: [
     {
@@ -132,15 +132,9 @@ export const LISA_LAUNCHER: PageGroup = {
       extraViewports: [W1024],
       prototype: { kind: "none", reason: NO_PROTOTYPE },
     },
-  ],
-};
-
-export const LISA_LAUNCHER_2: PageGroup = {
-  id: "LISA-LAUNCHER-2",
-  title:
-    "LISA launcher in the practice runner after a wrong answer: 'Still confused? Ask LISA' under the explanation, and the panel it opens scoped to that question; light and dark, 1440, 1024 and 390",
-  seed: "lisa-dock",
-  shots: [
+    // The practice runner after a wrong answer: shot as its own group (LISA-LAUNCHER-2) only to
+    // stay under the harness's old request limit; merged back here on 2026-10-24 (owner ruling,
+    // Karl, 2026-10-24; rate-limit.ts).
     {
       id: "runner-wrong-link",
       title:

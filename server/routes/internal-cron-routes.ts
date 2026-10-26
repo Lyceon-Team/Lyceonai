@@ -31,6 +31,7 @@ import {
   runLifecycleRule,
   type LifecycleRuleSummary,
 } from "../lib/lifecycle-email.js";
+import { runLandingSummaries } from "../services/landing/landing-service";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
 import {
   sweepOperationalLogRetention,
@@ -922,6 +923,53 @@ router.get(
         err,
       );
       res.status(500).json({ error: "lifecycle_email_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/landing-summaries
+ * @spec [owner brief "Smart landing" (Karl, 2026-10-26) "Data" (`landing_session_summary` at
+ *        session end/timeout, with `questions_answered`); Karl's ruling D on Step 0 the same day ("a
+ *        nightly `landing_session_summary` job"); Managed-service first: a Vercel cron, the
+ *        project's existing scheduler] | @implemented [2026-10-26]
+ *
+ * plain English: once a night, every landing shown on a Chicago day that has ended gets one
+ * `landing_session_summary` carrying the questions the student answered from that landing until
+ * their next landing or the end of that day. 06:30 UTC is after Chicago midnight in both CST and
+ * CDT. Safe to rerun: each show is claimed once (`landing_claim_summaries`); a transient send
+ * failure releases its claim so the next night retries it. 500 when the run throws.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/landing-summaries",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      // Loaded on use: the live deps reach the practice router (set creation), which this cron
+      // module has no other reason to load.
+      const { liveLandingDeps } =
+        await import("../services/landing/landing-deps");
+      const summary = await runLandingSummaries(liveLandingDeps);
+      logger.info(
+        "LANDING",
+        "landing_summaries_job",
+        "Landing summaries sent",
+        summary,
+      );
+      res.json({ ok: true, job: "landing_summaries", summary });
+    } catch (err) {
+      logger.error(
+        "LANDING",
+        "landing_summaries_job_error",
+        "Scheduled landing summary run failed",
+        err,
+      );
+      res.status(500).json({ error: "landing_summaries_failed" });
     }
   },
 );

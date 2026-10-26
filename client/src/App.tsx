@@ -180,6 +180,7 @@ const Calendar = lazy(() => import("@/pages/calendar"));
 // GUARDIAN_ROUTES (`features/guardian/routes.tsx`), which lazy-loads them itself.
 const ScoreReport = lazy(() => import("@/pages/score-report"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
+const QotdLanding = lazy(() => import("@/pages/qotd-landing"));
 const DiagnosticStart = lazy(() => import("@/pages/diagnostic-start"));
 const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
@@ -361,6 +362,18 @@ export function Router() {
             <RequireRole allow={["student", "admin"]}>
               <StudentRouteFrame route="/practice/diagnostic">
                 <DiagnosticStart />
+              </StudentRouteFrame>
+            </RequireRole>
+          )}
+        />
+        {/* Owner brief "Smart landing" (Karl, 2026-10-26): today's question on its own, then
+            "5 more?" — the `qotd_then_more` landing (ruling D). */}
+        <Route
+          path="/qotd"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <StudentRouteFrame route="/qotd">
+                <QotdLanding />
               </StudentRouteFrame>
             </RequireRole>
           )}

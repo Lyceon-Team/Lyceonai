@@ -17,8 +17,9 @@
  *     footprint clear: DOCK_CLEARANCE_PX in ChatDock). 14px corners, the bottom-right one 4px: the
  *     corner a speech bubble's tail sits in, pointing at the screen's corner it grows from.
  *   - Filled with the Lyceon accent (`--primary-bg`) and its on-accent ink (`--primary-ink`), in
- *     both themes. It is the one filled launcher on the page by the owner's choice (option D),
- *     recorded in DESIGN.md §3 against §5's one-filled-action rule.
+ *     both themes. The fill is the APPROVED exception to DESIGN.md §5's one-filled-button rule:
+ *     persistent floating chrome, not a page action (Karl, ruling of 2026-10-24, on the option D
+ *     he chose on 2026-10-23); recorded in DESIGN.md §3 and §5.
  *   - Locked: the same shape and fill, the lock in the sparkle's place; the accessible name adds
  *     the rail's lock suffix ("Ask LISA, included with a paid plan").
  */

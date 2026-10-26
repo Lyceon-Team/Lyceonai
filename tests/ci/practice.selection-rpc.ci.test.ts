@@ -305,8 +305,13 @@ describe("Practice RPC filter correctness", () => {
       "utf8",
     );
 
-    // The RPC call must use conditional null for empty arrays
-    expect(source).toContain("sectionCodes.length > 0 ? sectionCodes : null");
+    // The RPC call must use conditional null for empty arrays.
+    // @implemented [2026-10-26] (Smart landing, Karl 2026-10-26): the single RPC call became a
+    // loop over draws; an ordinary session has exactly one draw carrying the session's own
+    // sections and difficulties, so the null-for-empty rule now reads on the draw.
+    expect(source).toContain(
+      "p_sections: draw.sections.length > 0 ? draw.sections : null",
+    );
     expect(source).toContain(
       "args.sessionSpec.domains.length > 0 ? args.sessionSpec.domains : null",
     );
@@ -314,7 +319,10 @@ describe("Practice RPC filter correctness", () => {
       "args.sessionSpec.skills.length > 0 ? args.sessionSpec.skills : null",
     );
     expect(source).toContain(
-      "difficultyInts.length > 0 ? difficultyInts : null",
+      "p_difficulties: draw.difficulties.length > 0 ? draw.difficulties : null",
+    );
+    expect(source).toMatch(
+      /args\.composition === undefined\s*\?\s*\[\s*\{\s*sections: sectionCodes,\s*difficulties: difficultyInts,/,
     );
   });
 
@@ -338,7 +346,12 @@ describe("Practice RPC filter correctness", () => {
       "utf8",
     );
 
-    expect(source).toContain("p_limit: requestedCount");
+    // @implemented [2026-10-26] (Smart landing): the limit is the draw's; an ordinary session's
+    // one draw carries `limit: requestedCount`.
+    expect(source).toContain("p_limit: draw.limit");
+    expect(source).toMatch(
+      /args\.composition === undefined\s*\?\s*\[\s*\{[^}]*limit: requestedCount,\s*\}/,
+    );
   });
 });
 

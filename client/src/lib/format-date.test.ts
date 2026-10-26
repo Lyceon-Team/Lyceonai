@@ -25,6 +25,7 @@ describe("formatDate: the house style (US, OQ-66 (g))", () => {
     ["month-day-year", "September 26, 2026"],
     ["weekday-month-day", "Saturday, September 26"],
     ["short-weekday-month-day", "Sat, Sep 26"],
+    ["short-month-day", "Sep 26"],
   ] as const)("a local day, %s: %s", (style, expected) => {
     expect(formatDate("2026-09-26", style)).toBe(expected);
   });
@@ -49,6 +50,7 @@ describe("formatDate: the house style (US, OQ-66 (g))", () => {
       "month-day-year",
       "weekday-month-day",
       "short-weekday-month-day",
+      "short-month-day",
       "date-time",
     ] as const;
     for (const style of styles) {

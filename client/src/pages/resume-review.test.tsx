@@ -67,6 +67,7 @@ const routeMock = vi.hoisted(() => ({ sessionId: "rev-sess-001" }));
 vi.mock("wouter", () => ({
   useRoute: () => [true, { sessionId: routeMock.sessionId }],
   useLocation: () => ["/review/session/rev-sess-001", vi.fn()],
+  useSearch: () => "",
   Link: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 

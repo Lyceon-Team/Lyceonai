@@ -110,6 +110,7 @@ FILES=(
   "client/src/components/tutor/TutorConversationBody.tsx"
   "client/src/components/tutor/ChatDock.tsx"
   "client/src/components/tutor/LisaLauncher.tsx"
+  "client/src/components/math/calculator-layout.ts"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
@@ -3195,9 +3196,9 @@ QA7_FOCUS="client/src/components/layout/FocusShell.test.tsx"
 plant "QA7-B1" "the back arrow is labelled with the section again, whatever page it returns to" \
   "$QA7_FOCUS" \
   "client/src/components/layout/FocusShell.tsx" \
-  'a = "    previous === null ? section : (pageNameAt(previous) ?? \"Back\");"
+  'a = "      : (pageNameAt(previous) ?? \"Back\");"
 assert s.count(a) == 1
-s = s.replace(a, "    section;", 1)'
+s = s.replace(a, "      : section;", 1)'
 
 plant "QA7-H1" "the history tracker no longer records in-app navigations" \
   "$QA7_FOCUS" \
@@ -4217,6 +4218,179 @@ plant "LL-21" "the launcher drops the student focus ring classes" \
   'a = "className={`${LYC_FOCUS} pointer-events-auto"
 assert s.count(a) == 1
 s = s.replace(a, "className={`pointer-events-auto", 1)'
+
+# ── The runner's docked LISA column (owner brief "restore the pre-#1300 runner layout", Karl,
+# 2026-10-26): LISA open is the runner's right column (portalled into its slot), review starts
+# open, minimize holds across questions, practice docks on open, the launcher's clearance only
+# while minimized. Each plant mutates product source once and must redden the named test.
+LDK_RUNNER_SRC="client/src/components/practice/CanonicalPracticePage.tsx"
+LDK_DOCK_SRC="client/src/components/tutor/ChatDock.tsx"
+
+plant "LDK-1" "review starts with LISA minimized" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "const [reviewLisaDocked, setReviewLisaDocked] = React.useState(true);"
+assert s.count(a) == 1
+s = s.replace(a, "const [reviewLisaDocked, setReviewLisaDocked] = React.useState(false);", 1)'
+
+plant "LDK-2" "practice never docks the column it opened" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "sessionItemId !== null && practiceLisaDockedItem === sessionItemId);"
+assert s.count(a) == 1
+s = s.replace(a, "sessionItemId !== null && false);", 1)'
+
+plant "LDK-3" "the launcher's clearance stays while LISA is docked open" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "            dockTutor && !lisaColumnOpen && !dockClearsColumn\n"
+assert s.count(a) == 1
+s = s.replace(a, "            dockTutor && !dockClearsColumn\n", 1)'
+
+plant "LDK-4" "the minimized column is not hidden" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                : \"hidden\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "                : \"flex\"\n", 1)'
+
+plant "LDK-5" "the docked panel floats instead of going into the runner's column" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "            ? createPortal(panel, docked.slot)\n"
+assert s.count(a) == 1
+s = s.replace(a, "            ? panel\n", 1)'
+
+plant "LDK-6" "the dock does not tell the runner it opened or closed" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "      docked?.onOpenChange(next === \"open\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LDK-7" "the docked dock ignores open-on-mount" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "      docked?.defaultOpen === true ? \"open\" : \"collapsed\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "      \"collapsed\",\n", 1)'
+
+plant "LDK-8" "the docked panel sizes itself instead of filling the column" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "          ? { width: \"100%\", height: \"100%\" }\n"
+assert s.count(a) == 1
+s = s.replace(a, "          ? { width, height: \"70vh\" }\n", 1)'
+
+# ── The docked runner's width tiers (owner ruling on #1322, Karl, 2026-10-26): 360px from 1338,
+# 300px from W3 (1278) with the three columns side by side, and below W3 the calculator and LISA
+# take turns (the last opened wins; the automatic yield is not the student's minimize).
+plant "LT-1" "the narrow tier's LISA column is not 300px" \
+  "$LD_RUNNER_UNIT" \
+  "client/src/components/math/calculator-layout.ts" \
+  'a = "export const DOCKED_LISA_NARROW_COLUMN_PX = 300 + DOCKED_LISA_INSET_PX; // 312"
+assert s.count(a) == 1
+s = s.replace(a, "export const DOCKED_LISA_NARROW_COLUMN_PX = 340 + DOCKED_LISA_INSET_PX; // 312", 1)'
+
+plant "LT-2" "LISA's column stays narrow at 1338px and up" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const lisaColumnPx = lisaColumnWide\n    ? DOCKED_LISA_COLUMN_PX\n    : DOCKED_LISA_NARROW_COLUMN_PX;"
+assert s.count(a) == 1
+s = s.replace(a, "  const lisaColumnPx = DOCKED_LISA_NARROW_COLUMN_PX;", 1)'
+
+plant "LT-3" "the three columns need 1338px again (W3 ignored)" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const threeColumnsFit = useMinWidth(DOCKED_NARROW_SPLIT_BREAKPOINT);"
+assert s.count(a) == 1
+s = s.replace(a, "  const threeColumnsFit = useMinWidth(DOCKED_SPLIT_BREAKPOINT);", 1)'
+
+plant "LT-4" "below W3 LISA never yields to the calculator" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "    lastToolOpened === \"calc\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "    false;\n", 1)'
+
+plant "LT-5" "below W3 reopening LISA leaves the calculator open" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "              if (!threeColumnsFit && isCalculatorExpanded)\n                setIsCalculatorExpanded(false);\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LT-6" "opening the calculator is not recorded as the last tool opened" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LT-7" "the automatic yield counts as the student's minimize" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n                if (!isCalculatorExpanded && !threeColumnsFit) setReviewLisaDocked(false);\n", 1)'
+
+plant "LT-8" "a suppressed dock still draws its panel" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "    const shownView = suppressed && view === \"open\" ? \"minimized\" : view;"
+assert s.count(a) == 1
+s = s.replace(a, "    const shownView = view;", 1)'
+
+# Owner ruling on #1322 (Karl, 2026-10-26): the 300px column's chip reads "N of M".
+plant "LC-1" "the 300px column's chip keeps the long Question N of M" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const dockQuestionLabel = lisaColumnWide\n    ? questionLabel\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const dockQuestionLabel = true\n    ? questionLabel\n", 1)'
+
+# ── LISA history follow-ups (owner rulings, Karl, 2026-10-24, on #1305/#1310) ─────────────────
+# The approved read-only note, and the history label "Practice question · Oct 21" (type and the
+# conversation's created_at, through the one formatter's short month-day).
+LH_CHAT="client/src/pages/chat.tsx"
+
+plant "LH-1" "the read-only note goes back to the unapproved wording" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  \"This chat was about one question. To keep going, open that question and ask LISA there.\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"This conversation is about one question. To keep going, open LISA on that question.\";", 1)'
+
+plant "LH-2" "the history label dates the chat by its last activity" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  const day = formatDate(conv.created_at, \"short-month-day\");"
+assert s.count(a) == 1
+s = s.replace(a, "  const day = formatDate(conv.updated_at, \"short-month-day\");", 1)
+a = "  created_at: string;\n}): string | null {"
+assert s.count(a) == 1
+s = s.replace(a, "  created_at: string;\n  updated_at: string;\n}): string | null {", 1)'
+
+plant "LH-3" "the history label drops the date" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  return day === null ? type : `${type} \\u00b7 ${day}`;"
+assert s.count(a) == 1
+s = s.replace(a, "  return type;", 1)'
+
+plant "LH-4" "the history label's separator is a hyphen" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  return day === null ? type : `${type} \\u00b7 ${day}`;"
+assert s.count(a) == 1
+s = s.replace(a, "  return day === null ? type : `${type} - ${day}`;", 1)'
+
+plant "LH-5" "the short month-day spells the month in full" \
+  "$LD_DOCK client/src/lib/format-date.test.ts" \
+  "client/src/lib/format-date.ts" \
+  'a = "      const d = dayParts(p, { month: \"short\", day: \"numeric\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "      const d = dayParts(p, { month: \"long\", day: \"numeric\" });\n", 1)'
 
 plant "LL-20" "the launcher loses its accent fill" \
   "$LD_DOCK client/src/pages/lyceon-dashboard.test.tsx" \

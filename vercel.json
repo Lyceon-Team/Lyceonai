@@ -83,6 +83,10 @@
     {
       "path": "/api/internal/lifecycle-email",
       "schedule": "0 15 * * 0,6"
+    },
+    {
+      "path": "/api/internal/landing-summaries",
+      "schedule": "30 6 * * *"
     }
   ],
   "routes": [
@@ -202,6 +206,10 @@
     },
     {
       "src": "^/practice/diagnostic/?$",
+      "dest": "/app.html"
+    },
+    {
+      "src": "^/qotd/?$",
       "dest": "/app.html"
     },
     {
