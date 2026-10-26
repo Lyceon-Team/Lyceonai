@@ -280,7 +280,7 @@ describe("GET /today — pre-submit payload (§5.2)", () => {
       .get("/api/public/qotd/today")
       .set("x-vercel-forwarded-for", nextIp());
     expect(res.status).toBe(200);
-    // Owner ruling 2026-10-05: each response carries its own shuffle, so nothing may cache it.
+    // Not cached: "today" turns over at the day boundary.
     expect(res.headers["cache-control"]).toBe("private, no-store");
     const q = res.body.data.question;
     // Presence before absence.
@@ -672,23 +672,36 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
   });
 });
 
-describe("owner ruling 2026-10-05: server-side shuffle with opaque tokens", () => {
-  it("two requests (and more) return different option orders over the same four tokens", async () => {
-    const orders = new Set<string>();
-    let tokenSet: string | null = null;
-    for (let i = 0; i < 30; i += 1) {
+describe("opaque tokens (owner ruling 2026-10-05) in canonical order (Karl's ruling 2026-10-23)", () => {
+  it("every request serves the four options in canonical (authored) order, each as a token, never its letter", async () => {
+    const canonical = (today.options as { key: string; text: string }[]).map(
+      (o) => o.text,
+    );
+    expect(canonical).toHaveLength(4);
+    for (let i = 0; i < 10; i += 1) {
       const options = await served();
-      orders.add(options.map((o) => o.text).join("|"));
-      const tokens = options
-        .map((o) => o.id)
-        .sort()
-        .join("|");
-      // Stateless: every request carries the same four tokens, only the order changes.
-      if (tokenSet === null) tokenSet = tokens;
-      expect(tokens).toBe(tokenSet);
+      expect(options.map((o) => o.text)).toEqual(canonical);
+      for (const [index, o] of options.entries()) {
+        // Each position carries the token of the canonical key at that position.
+        const key = (today.options as { key: string }[])[index]?.key ?? "";
+        expect(o.id).toBe(qotdOptionToken(QOTD_FIXTURE_TODAY, key));
+      }
     }
-    // Four options shuffled 30 times: the chance of a single order is 24^-29.
-    expect(orders.size).toBeGreaterThan(1);
+  });
+
+  it("a page loaded before the deploy (options in some other order) still grades by token", async () => {
+    // Tokens never depended on order: a shuffled client submits a token from the same set.
+    const options = [...(await served())].reverse();
+    const correctText = optionText(String(today.correct_answer));
+    for (const o of options) {
+      const res = await submit(nextIp(), {
+        qotd_date: QOTD_FIXTURE_TODAY,
+        answer: o.id,
+        turnstile_token: PASS,
+      });
+      expect(res.status, o.text).toBe(200);
+      expect(res.body.data.is_correct, o.text).toBe(o.text === correctText);
+    }
   });
 
   it("each token resolves to its own option: only the correct one grades correct, and the reveal names it by token", async () => {
@@ -731,21 +744,6 @@ describe("owner ruling 2026-10-05: server-side shuffle with opaque tokens", () =
     expect(fake.state.calls.map((c) => c.fn)).not.toContain(
       "qotd_record_attempt",
     );
-  });
-
-  it("a day scheduled before the letter screen, whose explanation names a choice letter, is served in canonical order (letters match the explanation)", async () => {
-    fake.state.rows.today = {
-      ...today,
-      explanation: "Choice C is correct: 8 times 3 is 24.",
-    };
-    const canonical = (today.options as { key: string; text: string }[]).map(
-      (o) => o.text,
-    );
-    for (let i = 0; i < 10; i += 1) {
-      const options = await served();
-      expect(options.map((o) => o.text)).toEqual(canonical);
-      for (const o of options) expect(o.id).toMatch(/^[A-Za-z0-9_-]{22}$/);
-    }
   });
 
   it("no canonical question id in the archive payloads either (keyed by qotd_date)", async () => {
