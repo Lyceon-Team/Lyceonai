@@ -76,6 +76,7 @@ describe("vercel.json cron schedules (owner ruling 2026-10-09)", () => {
       // lifecycle email at 22:00 UTC Monday–Friday and 15:00 UTC Saturday–Sunday.
       { path: "/api/internal/lifecycle-email", schedule: "0 22 * * 1-5" },
       { path: "/api/internal/lifecycle-email", schedule: "0 15 * * 0,6" },
+      { path: "/api/internal/landing-summaries", schedule: "30 6 * * *" },
     ]);
   });
 });

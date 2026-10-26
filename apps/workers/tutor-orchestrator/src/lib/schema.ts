@@ -27,6 +27,7 @@ export {
   orchestrateRequestSchema,
   questionLinkSchema,
   instructionExposureSchema,
+  orchestrationTimingSchema,
   orchestrateResponseSchema,
   compactRequestSchema,
   compactResponseSchema,
@@ -43,4 +44,5 @@ export {
   type ExplanationForm,
   type QuestionContent,
   type OfferedVideo,
+  type OrchestrationTiming,
 } from "./_tutor-orchestrator-wire.generated.js";

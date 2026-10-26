@@ -83,6 +83,26 @@ export type VertexResponse = {
   finishReason: string | null;
 };
 
+/**
+ * @spec [owner brief "P2 Revised" (Karl, 2026-10-23) §2 H1] | @implemented [2026-10-23]
+ * plain English: collects each Vertex attempt's start offset (from `origin`, the worker handler's
+ * start) and duration, retries and the pro→flash fallback included, so the turn's timing can be
+ * returned to the BFF. Numbers only; optional, so callers that do not time (compaction) are
+ * unchanged.
+ */
+export class VertexAttemptTimings {
+  readonly attempts: { at_ms: number; ms: number }[] = [];
+  constructor(private readonly origin: number) {}
+  record(attemptStartedAt: number): void {
+    if (this.attempts.length >= 16) return;
+    const round = (n: number): number => Math.round(n * 10) / 10;
+    this.attempts.push({
+      at_ms: round(Math.max(0, attemptStartedAt - this.origin)),
+      ms: round(performance.now() - attemptStartedAt),
+    });
+  }
+}
+
 export type VertexRequest = {
   modelAlias: ModelAlias;
   messages: VertexMessage[];
@@ -376,6 +396,7 @@ async function invokeWithRetry(
   messages: VertexMessage[],
   systemInstruction: string,
   limits: VertexGenerationLimits,
+  timing?: VertexAttemptTimings,
 ): Promise<
   Result<{ text: string; finishReason: string | null }, VertexErrorCode>
 > {
@@ -401,12 +422,14 @@ async function invokeWithRetry(
       await sleep(delayMs);
     }
 
+    const attemptStartedAt = performance.now();
     const result = await invokeVertexOnce(
       providerModel,
       messages,
       systemInstruction,
       limits,
     );
+    timing?.record(attemptStartedAt);
     if (result.ok) {
       return result;
     }
@@ -434,12 +457,14 @@ export async function generateTutorResponse(
   messages: VertexMessage[],
   systemInstruction: string,
   config: VertexGenerationLimits,
+  timing?: VertexAttemptTimings,
 ): Promise<Result<VertexResponse, VertexErrorCode>> {
   const primary = await invokeWithRetry(
     modelAlias,
     messages,
     systemInstruction,
     config,
+    timing,
   );
 
   let generation: { text: string; finishReason: string | null };
@@ -464,6 +489,7 @@ export async function generateTutorResponse(
       messages,
       systemInstruction,
       config,
+      timing,
     );
     if (!fallback.ok) {
       return fallback;

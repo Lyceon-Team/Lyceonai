@@ -13,6 +13,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../../../../server/logger';
+import { timedFetch } from '../../../../server/lib/step-timer';
 
 let _supabaseServer: SupabaseClient | null = null;
 
@@ -35,6 +36,7 @@ function getSupabaseServer(): SupabaseClient {
           persistSession: false,
           autoRefreshToken: false,
         },
+        global: { fetch: timedFetch((input, init) => fetch(input, init)) },
       });
       return _supabaseServer;
     }
@@ -53,6 +55,9 @@ function getSupabaseServer(): SupabaseClient {
       persistSession: false,
       autoRefreshToken: false,
     },
+    // P2 H1 (Karl, 2026-10-23): a route that opted in records each round trip as a step of its
+    // route_timing line; for every other caller this is the plain fetch.
+    global: { fetch: timedFetch((input, init) => fetch(input, init)) },
   });
 
   logger.info('SUPABASE_HTTP', 'init', 'Client initialized');

@@ -122,6 +122,8 @@ export type LaunchRequest = {
   block_id: string;
   client_instance_id: string;
   platform: "web" | "mobile";
+  /** SERVER-ONLY (smart landing `session_today`); never set from a request body. */
+  landing_lead?: true;
 };
 
 export type LaunchSuccess = {
@@ -279,6 +281,7 @@ export async function launchBlock(
     client_instance_id: request.client_instance_id,
     platform: request.platform,
     idempotency_key: launchIdempotencyKey(block.block_id, sequence),
+    ...(request.landing_lead === true ? { landing_lead: true } : {}),
   });
 
   if (!created.ok) {

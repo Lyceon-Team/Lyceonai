@@ -57,8 +57,9 @@ describe("ci/event-schema-registry-parity", () => {
     expect(report.failures).toEqual([]);
     // SCL-213's seven, plus consent_captured (registered 2026-10-05 for the marketing opt-in, Q5),
     // plus the five Home QOTD events (owner brief 2026-10-08/09), plus the four review-ask counts
-    // (Karl, 2026-10-20), plus the six server-side funnel events (Karl, 2026-10-21).
-    expect(report.tier_distribution).toEqual({ strict: 24, loose: 0 });
+    // (Karl, 2026-10-20), plus the six server-side funnel events (Karl, 2026-10-21), plus the four
+    // smart landing events (Karl, 2026-10-26).
+    expect(report.tier_distribution).toEqual({ strict: 28, loose: 0 });
   });
 
   it("(a) fails an unregistered event name", () => {
