@@ -1,0 +1,13 @@
+{
+  "batch": "083",
+  "total": 90,
+  "audited": 90,
+  "errors": [
+    "SATRW24X7IPA: passage/option text duplication — 'for breeding' appears in passage before blank and in options (MEDIUM)",
+    "6 RW passages use literal \\n for Notes/Text 1/Text 2 formatting (LOW, gate-permitted)",
+    "SATM2OIOQHM: rounding edge — exact 11792.5 rounds to 11793 but 11792 stored (LOW)",
+    "SATRW2OZEBDO: error_taxonomy mislabel on option A (LOW)"
+  ],
+  "pass": false,
+  "notes": "Blind re-audit 2026-10-18. All 90 answer keys independently verified correct. LITERAL_NEWLINE items pass gate (\\n before letters excluded by design). Text duplication and rounding edge are content quality issues for future fix cycle."
+}
