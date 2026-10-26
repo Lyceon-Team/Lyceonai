@@ -334,6 +334,11 @@ async function segmentBook(
               // retries a window needed even when the run is replayed from the cache.
               const why = err instanceof Error ? err.message : String(err);
               note(`segment@${from} attempt ${attempt + 1} rejected: ${why}`);
+              // Also to the log as it happens: a window that fails every attempt is not cached,
+              // and its rejections would otherwise be lost (the message holds book quotes only).
+              process.stdout.write(
+                `segment@${from} attempt ${attempt + 1} rejected: ${why}\n`,
+              );
               if (attempt >= 2) throw err;
               feedback = `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${why}. Fix exactly that; copy start_quote and end_quote character for character from the window, in order.`;
             }
