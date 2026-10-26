@@ -99,6 +99,8 @@ vi.mock("@/hooks/tutor-client", () => ({
   }),
   useCreateConversation: () => idleMutation(),
   useSendMessage: () => idleMutation(),
+  // H1 turn-timing report: not under test here.
+  useTurnTimingReport: () => ({ mutate: vi.fn() }),
   useEndConversation: () => idleMutation(),
   useResumeConversation: () => idleMutation(),
 }));

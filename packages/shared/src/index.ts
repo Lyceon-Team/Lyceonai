@@ -28,6 +28,7 @@ export * from "./practice-reference-schema.js";
 export * from "./review-schema.js";
 export * from "./session-criteria.js";
 export * from "./tutor-lifecycle-schema.js";
+export * from "./tutor-turn-timing-schema.js";
 
 // Doc 05F Study Calendar — shared layer (schemas, allocator, read model).
 export * from "./calendar/index.js";
