@@ -15,6 +15,8 @@
  *  - Provenance: deterministic, unique, and in the brief's book:<slug>:<chapter>:<section> form.
  *  - The review CSV: round-trips; only yes rows come back; anything off-taxonomy fails the file.
  */
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BOOK_PROVENANCE_RE,
@@ -22,6 +24,8 @@ import {
   BookText,
   type LocatedUnit,
   type ProposedUnit,
+  dropActSections,
+  parseOcrPage,
   assignProvenance,
   locateQuote,
   locateUnits,
@@ -337,5 +341,132 @@ describe("the review CSV", () => {
     expect(() =>
       parseBookReviewCsv(`${yes(1)}${lines[1] ?? ""}\n`, SKILLS),
     ).toThrow(/duplicate/);
+  });
+});
+
+describe("OCR markdown input and the ACT-only ruling", () => {
+  const page = (n: number, body: string): string =>
+    `<!-- PDF page ${n + 1}; printed page ${n} -->\n\n${body}\n`;
+
+  it("reads the printed page and strips the header comments", () => {
+    expect(parseOcrPage(15, page(14, "## 10. PRONOUNS"))).toEqual({
+      pdfPage: 15,
+      printed: 14,
+      body: "## 10. PRONOUNS",
+    });
+    expect(parseOcrPage(1, "# Cover")).toMatchObject({ printed: null });
+  });
+
+  const pages = [
+    parseOcrPage(
+      3,
+      page(
+        2,
+        [
+          "## 1. PERIODS & SEMICOLONS",
+          "",
+          "[ACT NOTE] **Note:** ACT grammar questions testing *however* use a semicolon.",
+          "",
+          "#### Who's vs. Whose (Primarily ACT)",
+          "[ACT ONLY]",
+          "",
+          "**Correct:** a scientist **who's** best known",
+        ].join("\n"),
+      ),
+    ),
+    parseOcrPage(
+      4,
+      page(
+        3,
+        [
+          "whose continues here",
+          "",
+          "## 2. COLONS",
+          "",
+          "### C. Then vs. Than (ACT)",
+          "[ACT ONLY]",
+          "",
+          "Use *than*.",
+          "",
+          "### D. Quantity Words",
+          "",
+          "*Number* modifies plural nouns.",
+        ].join("\n"),
+      ),
+    ),
+    parseOcrPage(
+      5,
+      page(
+        4,
+        "## ACT ONLY\n[ACT ONLY]\n\n## 17. SHORTER IS BETTER\n\nAvoid wordiness.",
+      ),
+    ),
+    parseOcrPage(6, page(5, "## Preposition-Based Idioms\n\nBe curious about")),
+  ];
+
+  it("drops by section: flagged subsections to the next heading at their level, the banner to the end", () => {
+    const { pages: kept, dropped } = dropActSections(pages);
+    const text = kept.map((p) => p.body).join("\n");
+    expect(dropped.map((d) => [d.reason, d.heading, d.page])).toEqual([
+      ["act_only_subsection", "Who's vs. Whose (Primarily ACT)", 2],
+      ["act_only_subsection", "C. Then vs. Than (ACT)", 3],
+      ["act_only_section", "ACT ONLY", 4],
+    ]);
+    // presence before absence: what must survive does
+    expect(text).toContain("## 2. COLONS");
+    expect(text).toContain("### D. Quantity Words");
+    for (const gone of [
+      "who's",
+      "whose continues",
+      "Use *than*",
+      "SHORTER",
+      "Be curious about",
+    ])
+      expect(text).not.toContain(gone);
+    expect(kept.map((p) => p.printed)).toEqual([2, 3]);
+  });
+
+  it("keeps [ACT NOTE] paragraphs (a general rule may mention the ACT), without the marker", () => {
+    const text = dropActSections(pages)
+      .pages.map((p) => p.body)
+      .join("\n");
+    expect(text).toContain(
+      "**Note:** ACT grammar questions testing *however* use a semicolon.",
+    );
+    expect(text).not.toContain("[ACT NOTE]");
+    expect(text).not.toContain("[ACT ONLY]");
+  });
+
+  it("on the accepted Meltzer extraction: exactly the ruled sections go", () => {
+    const dir = resolve(
+      import.meta.dirname,
+      "../../scripts/rag/.cache/book-meltzer-grammar/ocr",
+    );
+    if (!existsSync(resolve(dir, "page-03.md"))) return; // the book is not in the repo
+    const files = readdirSync(dir)
+      .map((f) => /^page-(\d+)\.md$/.exec(f))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .sort((a, b) => Number(a[1]) - Number(b[1]));
+    const { pages: kept, dropped } = dropActSections(
+      files.map((m) =>
+        parseOcrPage(Number(m[1]), readFileSync(resolve(dir, m[0]), "utf8")),
+      ),
+    );
+    expect(dropped.map((d) => [d.heading, d.page])).toEqual([
+      ["Who’s vs. Whose (Primarily ACT)", 13],
+      ["C. Then vs. Than (ACT)", 23],
+      ["ACT ONLY", 25],
+    ]);
+    const text = kept.map((p) => p.body).join("\n");
+    expect(text).toContain("## 16. QUESTION MARKS");
+    expect(text).toContain("No *that* = no comma");
+    expect(text).not.toContain("## 17. SHORTER IS BETTER");
+    expect(text).not.toContain("Preposition-Based Idioms");
+  });
+
+  it("BookText reports printed pages when it has them", () => {
+    const b = new BookText(["one", "two"], [13, 14]);
+    expect(b.pageAt(b.text.indexOf("two"))).toBe(14);
+    expect(b.marked(0, b.text.length)).toContain("[page 14]");
   });
 });
