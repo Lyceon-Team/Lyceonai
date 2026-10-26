@@ -9,23 +9,27 @@
 
 Every morning the **QOTD social assets** workflow (`.github/workflows/qotd-social.yml`, 06:20 UTC)
 builds the day's portrait and story images, the caption and the alt text. It uploads them as the
-run's download, then posts them to `#social`:
+run's download, then posts them to `#social` as **five numbered items, always in this order**
+(Karl, 2026-10-26). Each item opens with its label, and each finishes (a file upload only once
+Slack confirms the files are shared in the channel) before the next starts:
 
-1. both images, with the date and section (`SAT Question of the Day · Friday, October 10, 2026 · Math`);
-2. a second message with the caption and the alt text, each in a code block, ready to copy;
-3. **Reddit (r/satquestions)**: a suggested title for today's post
-   (`SAT Question of the Day: <date> (<section> · <domain>)`) and today's question as plain text
-   for the post body, each in a code block;
-4. **Yesterday's reveal**, for the comment on yesterday's post: yesterday's date, section and
-   domain, the correct answer (letter and text, or the grid-in value), the worked explanation as
-   plain text, and the link to yesterday's archive page on lyceon.ai.
+1. **1/5 · Reddit: comment on yesterday's post**: yesterday's reveal (date, section and domain,
+   the correct answer, the worked explanation as plain text, and the archive link). A withheld
+   yesterday says so instead.
+2. **2/5 · TikTok: title and caption**: the title (`SAT Question of the Day · Oct 22 · Math`, at
+   most 90 characters) and the caption (follow line first), each in a code block.
+3. **3/5 · TikTok: carousel**: **yesterday's** question as three 1080x1920 slides, in slide
+   order (the question; "Lock in your answer"; the answer with a short "Why" and the link to
+   today's question). Post them in order as a TikTok photo post. A long first sentence in the
+   explanation is cut and ends "… Full explanation on lyceon.ai" (Karl, 2026-10-26).
+4. **4/5 · Reddit: today's post**: a suggested title and today's question as plain text, each in
+   a code block.
+5. **5/5 · Today's question images**: both images (story and feed), then the caption and alt
+   text, each in a code block.
 
-5. **TikTok carousel** (Karl, 2026-10-23): **yesterday's** question as three 1080x1920 slides
-   (the question; "Lock in your answer"; the answer with a short "Why" and the link to today's
-   question), shared together, then the title (`SAT Question of the Day · Oct 22 · Math`, at most
-   90 characters) and the caption (follow line first) in code blocks. Post the slides in order
-   as a TikTok photo post. When yesterday is withheld or missing on the archive, or its slides
-   cannot fit, a one-line note says there is no carousel today.
+When there is no carousel (yesterday withheld or missing on the archive, or its slides cannot
+fit), items 2 and 3 still post, as "2/5 · TikTok: no title or caption today (reason)" and
+"3/5 · TikTok: no carousel today (reason)", so the numbering never shifts.
 
 Reddit posting stays manual (Doc 10B): Karl copies the title and body into a new post, and the
 reveal into a comment on yesterday's post.
@@ -34,7 +38,7 @@ Choices are in the same canonical order everywhere (Karl, 2026-10-23): the site,
 the Reddit post, the archive and the reveal, so the reveal's letter is the letter the question
 showed.
 
-It uses a standard Slack app with two scopes. It works on Slack's free plan.
+It uses a standard Slack app with three scopes. It works on Slack's free plan.
 
 The app, token, channel variable and client are shared with every repo job that posts to Slack:
 see `docs/runbooks/slack.md`.
@@ -43,9 +47,12 @@ see `docs/runbooks/slack.md`.
 
 1. **Create the app.** Go to <https://api.slack.com/apps> → **Create New App** → **From
    scratch**. Name it `Lyceon bot` and pick the Lyceon workspace. Then open **OAuth &
-   Permissions** → **Scopes** → **Bot Token Scopes** and add exactly these two:
+   Permissions** → **Scopes** → **Bot Token Scopes** and add exactly these three:
    - `files:write` (upload the images);
-   - `chat:write` (post the caption message).
+   - `chat:write` (post the caption message);
+   - `files:read` (confirm each upload is shared in the channel before the next item posts;
+     Karl, 2026-10-26). **Already set up?** Add `files:read`, then **Reinstall to Workspace**.
+     Without it, the post stops at the first upload with `missing_scope`.
 2. **Install it and copy the token.** On the same page, click **Install to Workspace** →
    **Allow**. Copy the **Bot User OAuth Token**, which starts with `xoxb-`. Treat it like a
    password: don't paste it into Slack, email or a document.
