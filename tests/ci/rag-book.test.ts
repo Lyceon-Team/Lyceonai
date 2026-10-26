@@ -29,6 +29,7 @@ import {
   assignProvenance,
   locateEdge,
   locateQuote,
+  longRulesWhole,
   onSubsectionBoundary,
   shortRulesSplit,
   locateUnits,
@@ -280,7 +281,6 @@ describe("the audit decides what is kept", () => {
     self_contained: true,
     correct: true,
     act_scope_respected: true,
-    contradictions_verified: true,
     issues: "",
   };
   it("passes only when every check passes", () => {
@@ -294,18 +294,6 @@ describe("the audit decides what is kept", () => {
     expect(auditFailure({ ...pass, self_contained: false })).toBe(
       "audit_not_self_contained",
     );
-    // A statement claimed as self-contradicted that the source does not contradict is an
-    // unjustified omission, reported before "incomplete" (which it usually also is).
-    expect(auditFailure({ ...pass, contradictions_verified: false })).toBe(
-      "audit_unjustified_omission",
-    );
-    expect(
-      auditFailure({
-        ...pass,
-        contradictions_verified: false,
-        complete: false,
-      }),
-    ).toBe("audit_unjustified_omission");
     // ACT advice stated as general fails on its own, whatever else passed.
     expect(auditFailure({ ...pass, act_scope_respected: false })).toBe(
       "audit_act_generalised",
@@ -686,5 +674,87 @@ describe("shortRulesSplit", () => {
     expect(
       shortRulesSplit(text, [{ start: 0 }, { start: mid }], 0, text.length),
     ).toEqual([]);
+  });
+});
+
+describe("longRulesWhole", () => {
+  // A numbered rule of 400+ words with three lettered subsections, and a short one after it.
+  const long = [
+    "## 8. COMMA USES",
+    `Commas have several uses. ${"word ".repeat(440)}`,
+    "",
+    "### A. Before a list",
+    "**Correct:** London has museums, castles, and shops.",
+    "",
+    "### B. Between adjectives",
+    "**Correct:** a long, cold winter.",
+    "",
+    "### C. Not before that",
+    "**Incorrect:** London is a city, that has many buildings.",
+    "",
+  ].join("\n");
+  const text = `${long}## 9. SHORT RULE\nOne idea.\n\n### A. Only part\nMore.\n`;
+  // Edges as locateEdge places them: after the "### " a quote leaves out.
+  const at = (q: string): number => text.indexOf(q);
+
+  it("names a long rule kept in one unit", () => {
+    expect(
+      longRulesWhole(
+        text,
+        [{ start: 0 }, { start: at("## 9.") }],
+        0,
+        text.length,
+      ),
+    ).toEqual(["## 8. COMMA USES"]);
+  });
+  it("names a long rule split at only some of its subsections", () => {
+    expect(
+      longRulesWhole(
+        text,
+        [{ start: 0 }, { start: at("B. Between") }, { start: at("## 9.") }],
+        0,
+        text.length,
+      ),
+    ).toEqual(["## 8. COMMA USES"]);
+  });
+  it("accepts a long rule with a unit at every subsection, the opening in the first", () => {
+    expect(
+      longRulesWhole(
+        text,
+        [
+          { start: 0 },
+          { start: at("B. Between") },
+          { start: at("C. Not before") },
+          { start: at("## 9.") },
+        ],
+        0,
+        text.length,
+      ),
+    ).toEqual([]);
+  });
+  it("accepts a unit at A too, and extra splits inside a subsection", () => {
+    expect(
+      longRulesWhole(
+        text,
+        [
+          { start: 0 },
+          { start: at("A. Before a list") },
+          { start: at("B. Between") },
+          { start: at("**Correct:** a long") },
+          { start: at("C. Not before") },
+          { start: at("## 9.") },
+        ],
+        0,
+        text.length,
+      ),
+    ).toEqual([]);
+  });
+  it("does not judge a rule that runs past the window", () => {
+    expect(longRulesWhole(text, [{ start: 0 }], 0, at("### C."))).toEqual([]);
+  });
+  it("leaves a short rule with several subsections whole (the 400-word threshold)", () => {
+    const short =
+      "## 14. MODIFICATION\nA modifier sits next to what it modifies.\n\n### A. Dangling\nOne.\n\n### B. Misplaced\nTwo.\n";
+    expect(longRulesWhole(short, [{ start: 0 }], 0, short.length)).toEqual([]);
   });
 });

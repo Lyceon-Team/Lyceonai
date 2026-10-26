@@ -20,15 +20,13 @@
  *     (part of the rule lives outside it), unfaithful (it says something the book does not),
  *     dependent (it leans on context it does not carry), or ACT advice un-scoped (it tells an
  *     SAT student something the book says only of the ACT; Karl, 2026-10-23: worse than a
- *     missing chunk, because the student cannot tell), or an unjustified omission (a statement
- *     claimed as one side of a contradiction in the book that the book does not contradict).
- *     Any failure drops it.
- *  The book contradicting itself (Karl's ruling, 2026-10-26): the rewrite leaves both sides of
- *  the contradiction out and lists them, never resolving it, because dropping needs no
- *  judgement about which side is right and a rewrite inventing a correction is worse than a
- *  missing rule; the audit verifies each listed statement is contradicted inside the source,
- *  so "omitted a contradiction" cannot stand in for "omitted something inconvenient". Every
- *  verified omission is reported as a book error.
+ *     missing chunk, because the student cannot tell). Any failure drops it.
+ * The book contradicting itself: a rewrite that left both sides out, with the audit verifying
+ * the contradiction, was built and reverted on Karl's ruling of 2026-10-26. On the Meltzer book
+ * it failed both ways: it let a false "contradiction" (printed page 3) drop a teaching example,
+ * and passed rule 6 repeating the real one. A rule the book gets wrong is dropped (the audit's
+ * "incorrect"), never corrected and never kept with the error; a missing rule is recoverable,
+ * a wrong one taught confidently is not.
  * The model never sees provenance (brief §5). `BOOK_PROMPT_VERSION` is stamped on every cached
  * result; changing any prompt changes it and invalidates the cache.
  */
@@ -58,7 +56,7 @@ Units must cover the window in order without overlapping. Classify every stretch
 
 The text marks where each page of the book begins with "[page n]"; never quote those markers.
 
-The text may be a markdown transcription of the book. Then "## " starts a numbered rule, "### " a lettered subsection of it, and "#### " a minor heading; a paragraph that opens with a bold label such as "**Correct:**" or "**Incorrect:**" is a labelled example, and "**...**" inside it marks the grammar point. Use that structure. The lettered subsections of one numbered rule ("### A. ...", "### B. ...") usually share the rule's opening explanation and continue one idea (two commas, two dashes and two parentheses are all non-essential punctuation), so keep a numbered rule together with all of its lettered subsections in ONE unit when the whole rule is under about 400 words. Split a numbered rule only when it is genuinely long, and then only at a lettered-subsection heading, never inside a subsection; the rule's opening explanation goes in the unit of its first subsection. Labelled examples always stay in the same unit as the rule they illustrate, never in a unit of their own. A unit far over 400 words almost always holds more than one idea and must be split at the idea boundary; keep it whole only when it is a single rule that genuinely needs the length. In quotes you may leave out the markdown symbols (#, *, <u>); copy the words exactly.`;
+The text may be a markdown transcription of the book. Then "## " starts a numbered rule, "### " a lettered subsection of it, and "#### " a minor heading; a paragraph that opens with a bold label such as "**Correct:**" or "**Incorrect:**" is a labelled example, and "**...**" inside it marks the grammar point. Use that structure. The lettered subsections of one numbered rule ("### A. ...", "### B. ...") usually share the rule's opening explanation and continue one idea (two commas, two dashes and two parentheses are all non-essential punctuation), so a numbered rule under 400 words is ONE unit, with its opening explanation and all of its lettered subsections. A numbered rule of 400 words or more is split at EVERY one of its lettered-subsection headings, never inside a subsection: one unit per lettered subsection, and the rule's opening explanation goes in the unit of its first subsection. Both limits are checked, and an answer that breaks either is returned to you. Labelled examples always stay in the same unit as the rule they illustrate, never in a unit of their own. A unit far over 400 words almost always holds more than one idea and must be split at the idea boundary; keep it whole only when it is a single rule that genuinely needs the length. In quotes you may leave out the markdown symbols (#, *, <u>); copy the words exactly.`;
 
 export function segmentResponseSchema(): Record<string, unknown> {
   return {
@@ -116,8 +114,6 @@ Never write:
 - Exercises, answer choices for practice questions, or answer keys.
 - Advice the unit limits to the ACT, stated as general or as true of the SAT. The student is taking the SAT. ACT-scoped advice is a test-taking tip, shortcut or answer pattern that the unit ties to the ACT ("if there is an OMIT/DELETE option on the ACT", "when the ACT tests it's vs. its, the answer is almost always its", "more applicable to the ACT than the SAT"): leave it out of the entry entirely, and never restate it without the ACT, as "the test", or as "usually" or "always" true. A paragraph marked "[ACT NOTE]" mentions the ACT; it is not ACT-only. Judge each sentence by what it says: a rule of standard English (where a comma goes, which form is correct) is never ACT-scoped, even under the marker and even when the unit adds that the ACT tests it often; keep the rule and leave out the mention of the ACT. When the unit says a method works less well on the SAT, either keep that limitation in the entry or leave the method out. Never write the marker "[ACT NOTE]" into the entry.
 
-When the unit contradicts itself, leave the contradiction out; never resolve it. A contradiction is two statements OF THE UNIT ITSELF that say incompatible things about the same case: a sentence describes its example as showing one thing and the example shows another, or two sentences give opposite rules. Then leave BOTH statements out of the entry (the sentence and the example, or both sentences), keep everything else in the unit, and copy each left-out statement exactly, word for word, into omitted_contradictions. Never decide which side is right, never write a corrected version, and never mention the omission in the entry. A statement you believe is wrong but that nothing else in the unit contradicts is NOT a contradiction: write it as the unit gives it. Anything left out for any other reason (it is long, unclear, or you disagree with it) must not be listed. omitted_contradictions is empty when the unit does not contradict itself.
-
 Drop the unit instead of rewriting it (keep = false) when:
 - not_sat_specific: it teaches nothing a student would use on the SAT (book introductions, study motivation, admissions, general advice);
 - cannot_stand_alone: making it self-contained would mean inventing content the unit does not have, or it is a fragment of an idea whose other part is not in the unit;
@@ -147,7 +143,6 @@ export function rewriteResponseSchema(
       surface_gate: { type: "STRING", enum: [...SURFACE_GATES] },
       surface_gate_reason: { type: "STRING" },
       taxonomy_gap: { type: "STRING", nullable: true },
-      omitted_contradictions: { type: "ARRAY", items: { type: "STRING" } },
     },
     required: [
       "keep",
@@ -158,7 +153,6 @@ export function rewriteResponseSchema(
       "surface_gate",
       "surface_gate_reason",
       "taxonomy_gap",
-      "omitted_contradictions",
     ],
   };
 }
@@ -172,20 +166,18 @@ export function rewriteSchemaFor(skills: readonly [string, ...string[]]) {
     surface_gate: z.enum(SURFACE_GATES),
     surface_gate_reason: z.string(),
     taxonomy_gap: z.string().nullable(),
-    omitted_contradictions: z.array(z.string()),
   });
 }
 
 export const AUDIT_SYSTEM = `You check one entry of Lyceon's SAT tutoring knowledge base against the book passage it was written from. A tutor will show the entry to a student with nothing around it. An entry can read well on its own and still be wrong in use; find out whether this one is.
 
-You are given the SOURCE (the passage the entry was written from), the CONTEXT BEFORE and CONTEXT AFTER (the book text around the source), the ENTRY, and OMITTED AS SELF-CONTRADICTED: statements of the source that the entry's writer says the source contradicts within itself and left out. Answer:
-- complete: true only if the entry teaches the whole rule, method or example. False if the source or the context shows that a condition, exception, step or the conclusion of the idea is missing from the entry, for example because the idea started before the source or continues after it. ACT-scoped advice (defined under act_scope_respected) that the entry leaves out is not missing: leaving it out is required. Neither are the statements listed under OMITTED AS SELF-CONTRADICTED when contradictions_verified is true. Anything else the entry leaves out is missing.
+You are given the SOURCE (the passage the entry was written from), the CONTEXT BEFORE and CONTEXT AFTER (the book text around the source), and the ENTRY. Answer:
+- complete: true only if the entry teaches the whole rule, method or example. False if the source or the context shows that a condition, exception, step or the conclusion of the idea is missing from the entry, for example because the idea started before the source or continues after it. ACT-scoped advice (defined under act_scope_respected) that the entry leaves out is not missing: leaving it out is required.
 - starts_mid_idea: true if the source begins partway through an idea that started in the context before it.
-- faithful: true only if every rule, claim, example and number in the entry is supported by the SOURCE itself. False if the entry adds a rule, an exception, an example or a number the source does not contain, or states a rule differently from the source. An entry that resolves a contradiction in the source, by stating a corrected version of either side, is unfaithful. Material that appears only in the CONTEXT BEFORE or CONTEXT AFTER, and not in the SOURCE, makes the entry unfaithful even when it is correct.
+- faithful: true only if every rule, claim, example and number in the entry is supported by the SOURCE itself. False if the entry adds a rule, an exception, an example or a number the source does not contain, or states a rule differently from the source. Material that appears only in the CONTEXT BEFORE or CONTEXT AFTER, and not in the SOURCE, makes the entry unfaithful even when it is correct.
 - self_contained: true only if a student could understand the entry with nothing else: no reference to an example, rule, page, chapter or exercise that the entry does not itself include.
 - correct: true only if the entry is correct about the SAT and standard English or mathematics. False if it states something wrong, even if the source says it.
 - act_scope_respected: the student is taking the SAT. ACT-scoped advice is a test-taking tip, shortcut or answer pattern that the SOURCE ties to the ACT ("if there is an OMIT/DELETE option on the ACT", "when the ACT tests it's vs. its, the answer is almost always its", "more applicable to the ACT than the SAT"). False if the entry states any ACT-scoped advice as general, as true of the SAT or of "the test", or as "usually" or "always" true; or if the entry gives a method the source says works less well on the SAT without that limitation. True if the entry leaves the ACT-scoped advice out, or if the source has none. A paragraph marked "[ACT NOTE]" mentions the ACT; it is not ACT-only, so judge each sentence by what it says: a rule of standard English (where a comma goes, which form is correct) is never ACT-scoped, even under the marker and even when the source adds that the ACT tests it often, and stating that rule is correct.
-- contradictions_verified: true if OMITTED AS SELF-CONTRADICTED is empty. Otherwise true only if every listed statement is in the SOURCE and the SOURCE ITSELF, read alone, contains another statement saying something incompatible with it about the same case (a sentence that describes an example as showing one thing while the example shows another, or two opposite rules), and both statements of each such pair are listed. False if any listed statement is not contradicted inside the source: it was left out for another reason, or it is only wrong by your own knowledge of English or the SAT.
 - issues: one or two short sentences naming any problem, or an empty string.`;
 
 /** The audit's user message; one function so the pipeline and the plant runner send the same. */
@@ -194,13 +186,8 @@ export function auditUserMessage(m: {
   before: string;
   after: string;
   entry: string;
-  omitted: readonly string[];
 }): string {
-  const omitted =
-    m.omitted.length === 0
-      ? "(none)"
-      : m.omitted.map((o) => `- ${o}`).join("\n");
-  return `SOURCE:\n${m.source}\n\nCONTEXT BEFORE:\n${m.before}\n\nCONTEXT AFTER:\n${m.after}\n\nENTRY:\n${m.entry}\n\nOMITTED AS SELF-CONTRADICTED:\n${omitted}`;
+  return `SOURCE:\n${m.source}\n\nCONTEXT BEFORE:\n${m.before}\n\nCONTEXT AFTER:\n${m.after}\n\nENTRY:\n${m.entry}`;
 }
 
 export const auditResponseSchema = {
@@ -212,7 +199,6 @@ export const auditResponseSchema = {
     self_contained: { type: "BOOLEAN" },
     correct: { type: "BOOLEAN" },
     act_scope_respected: { type: "BOOLEAN" },
-    contradictions_verified: { type: "BOOLEAN" },
     issues: { type: "STRING" },
   },
   required: [
@@ -222,7 +208,6 @@ export const auditResponseSchema = {
     "self_contained",
     "correct",
     "act_scope_respected",
-    "contradictions_verified",
     "issues",
   ],
 } as const;
@@ -233,7 +218,6 @@ export const auditSchema = z.object({
   self_contained: z.boolean(),
   correct: z.boolean(),
   act_scope_respected: z.boolean(),
-  contradictions_verified: z.boolean(),
   issues: z.string(),
 });
 export type Audit = z.infer<typeof auditSchema>;
@@ -241,7 +225,6 @@ export type Audit = z.infer<typeof auditSchema>;
 /** The audit drop reason for a failed audit, or null when every check passed. */
 export function auditFailure(a: Audit): string | null {
   if (a.starts_mid_idea) return "audit_starts_mid_idea";
-  if (!a.contradictions_verified) return "audit_unjustified_omission";
   if (!a.complete) return "audit_incomplete";
   if (!a.act_scope_respected) return "audit_act_generalised";
   if (!a.faithful) return "audit_unfaithful";

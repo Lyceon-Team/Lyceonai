@@ -62,6 +62,7 @@ import {
   nextCursor,
   onSubsectionBoundary,
   SHORT_RULE_WORDS,
+  longRulesWhole,
   shortRulesSplit,
   resolveChapters,
   sha256,
@@ -110,7 +111,6 @@ const CONTEXT_WORDS = 250;
 // again; what it must never do is keep the advice without its scope.
 const REPAIRABLE: ReadonlySet<string> = new Set([
   "audit_act_generalised",
-  "audit_unjustified_omission",
   "audit_unfaithful",
   "audit_incorrect",
   "audit_not_self_contained",
@@ -328,6 +328,11 @@ async function segmentBook(
                 throw new Error(
                   `a numbered rule under ${SHORT_RULE_WORDS} words was split at a lettered subsection (${split.join("; ")}); keep each such rule, with its opening explanation and all of its lettered subsections, in ONE unit`,
                 );
+              const whole = longRulesWhole(book.text, located, from, winEnd);
+              if (whole.length > 0)
+                throw new Error(
+                  `a numbered rule of ${SHORT_RULE_WORDS} words or more was not split at every lettered subsection (${whole.join("; ")}); start a unit at EVERY lettered-subsection heading of such a rule, with the rule's opening explanation in the first`,
+                );
               return answer;
             } catch (err: unknown) {
               // Every rejection is recorded with the cached answer, so the report counts the
@@ -395,8 +400,6 @@ type Kept = {
   taxonomy_gap: string | null;
   audit: Audit;
   repaired: boolean;
-  /** Statements the book contradicts within itself, left out of the entry (audit-verified). */
-  omitted_contradictions: string[];
 };
 
 async function main(): Promise<void> {
@@ -551,7 +554,6 @@ async function main(): Promise<void> {
         before,
         after,
         entry: content,
-        omitted: rw.omitted_contradictions,
       });
       const audit = (
         await cachedCall(
@@ -592,7 +594,6 @@ async function main(): Promise<void> {
         taxonomy_gap: rw.taxonomy_gap,
         audit,
         repaired: attempt > 0,
-        omitted_contradictions: rw.omitted_contradictions,
       };
     }
   });
@@ -689,7 +690,7 @@ async function main(): Promise<void> {
     "",
     `model ${model}, prompt ${BOOK_PROMPT_VERSION}; ${pages.length} pages; ${seg.windows} segment windows (${seg.regrown} widened for a long idea)`,
     "",
-    `segment answers rejected and asked again: ${seg.rejections.length}${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length > 0 ? ` (${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length} for a short numbered rule split at a subsection)` : ""}`,
+    `segment answers rejected and asked again: ${seg.rejections.length} (${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length} for a short rule split, ${seg.rejections.filter((r) => r.includes("was not split at every lettered subsection")).length} for a long rule kept whole)`,
     ...seg.rejections.map((r) => `- ${r}`),
     "",
     `**${chunks.length} chunks** from ${seg.units.length} units; ${drops.length} dropped; ${kept.filter((k) => k.repaired).length} kept after one repair round.`,
@@ -720,23 +721,15 @@ async function main(): Promise<void> {
     "",
     "## Book errors",
     "",
-    "Where the book contradicts itself, the entry leaves both sides out (never resolving it) and the audit verified the contradiction is inside the source. Drops the audit called incorrect are listed too: the book may be wrong there.",
+    "Units the audit dropped as incorrect: the book may be wrong there (Karl, 2026-10-26: a rule the book gets wrong is dropped, never corrected and never kept with the error).",
     "",
     ...(() => {
-      const rows = [
-        ...kept
-          .filter((k) => k.omitted_contradictions.length > 0)
-          .map(
-            (k) =>
-              `- page ${book.pageAt(k.unit.start)}, ${k.unit.section_title}: left out as self-contradicted: ${k.omitted_contradictions.map((o) => `"${o}"`).join(" / ")}`,
-          ),
-        ...drops
-          .filter((d) => d.reason === "audit_incorrect")
-          .map(
-            (d) =>
-              `- page ${d.page}, ${d.section_title}: dropped, the audit found it incorrect: ${d.detail}`,
-          ),
-      ];
+      const rows = drops
+        .filter((d) => d.reason === "audit_incorrect")
+        .map(
+          (d) =>
+            `- page ${d.page}, ${d.section_title}: dropped, the audit found it incorrect: ${d.detail}`,
+        );
       return rows.length === 0 ? ["- none"] : rows;
     })(),
     "",

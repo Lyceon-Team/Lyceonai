@@ -397,10 +397,7 @@ export function shortRulesSplit(
   for (const [i, h] of heads.entries()) {
     const ruleEnd = heads[i + 1]?.at ?? text.length;
     if (h.at < winStart || ruleEnd > winEnd) continue;
-    const words = wordCount(
-      text.slice(h.at, ruleEnd).replace(/<\/?[a-z]+>|\[ACT NOTE\]|[#*]/gi, " "),
-    );
-    if (words >= maxWords) continue;
+    if (ruleWords(text, h.at, ruleEnd) >= maxWords) continue;
     const split = units.some(
       (u) =>
         u.start > h.at &&
@@ -410,6 +407,57 @@ export function shortRulesSplit(
     if (split) out.push(h.line);
   }
   return out;
+}
+
+/**
+ * Pure. The other half of the rule shortRulesSplit enforces (Karl, 2026-10-26: "short rules
+ * stay whole, long rules split; neither trusted to the prompt"): the numbered rules lying
+ * wholly in [winStart, winEnd) of `maxWords` words or more that have lettered subsections
+ * ("### ") and at least one subsection heading after the first that no unit starts at (the
+ * first shares its unit with the rule's opening explanation). The 2026-10-26
+ * run kept rules of 401-489 words whole (chunks up to 453 words; median 185 -> 337), against
+ * the brief's one teachable idea per chunk. Units may also split inside a subsection. Returns
+ * each offending rule's heading line.
+ */
+export function longRulesWhole(
+  text: string,
+  units: readonly { start: number }[],
+  winStart: number,
+  winEnd: number,
+  maxWords = SHORT_RULE_WORDS,
+): string[] {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => ({
+    at: m.index ?? 0,
+    line: m[0],
+  }));
+  const unitLines = new Set(units.map((u) => lineStartOfEdge(text, u.start)));
+  const out: string[] = [];
+  for (const [i, h] of heads.entries()) {
+    const ruleEnd = heads[i + 1]?.at ?? text.length;
+    if (h.at < winStart || ruleEnd > winEnd) continue;
+    if (ruleWords(text, h.at, ruleEnd) < maxWords) continue;
+    const subs = [...text.slice(h.at, ruleEnd).matchAll(/^### /gm)].map(
+      (m) => h.at + (m.index ?? 0),
+    );
+    // The first subsection shares its unit with the rule's opening explanation, so only the
+    // headings after it must start a unit.
+    if (subs.slice(1).some((at) => !unitLines.has(at))) out.push(h.line);
+  }
+  return out;
+}
+
+/** Pure. Words of a rule, without the markdown symbols. */
+function ruleWords(text: string, from: number, to: number): number {
+  return wordCount(
+    text.slice(from, to).replace(/<\/?[a-z]+>|\[ACT NOTE\]|[#*]/gi, " "),
+  );
+}
+
+/** Pure. The start of the line a unit edge sits on, past leading blanks. */
+function lineStartOfEdge(text: string, at: number): number {
+  let s0 = at;
+  while (s0 < text.length && /\s/.test(text[s0] ?? "")) s0 += 1;
+  return text.lastIndexOf("\n", s0 - 1) + 1;
 }
 
 /** Pure. A unit edge at `at` is on a "### " heading line, past only "#" and blanks. */
