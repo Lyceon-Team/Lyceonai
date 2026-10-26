@@ -39,6 +39,7 @@ import {
   type CreateConversationInput,
   type TutorMessage,
 } from "@/hooks/tutor-client";
+import { useSendLock } from "@/hooks/useSendLock";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
 import {
   LisaUpgradeCard,
@@ -145,6 +146,9 @@ export function TutorConversationBody({
   onEnded: () => void;
 }): JSX.Element {
   const createConversation = useCreateConversation();
+  // P2 §3.1 (2026-10-26): one first-message create at a time, refused synchronously, so a burst of
+  // send events cannot create more than one conversation (useSendLock.ts).
+  const createLock = useSendLock();
   const [started, setStarted] = useState<Started | null>(null);
   // The first message while its conversation is being created.
   const [pending, setPending] = useState<{
@@ -158,6 +162,8 @@ export function TutorConversationBody({
   const pendingHere = pending?.scopeKey === scopeKey ? pending : null;
 
   const startConversation = (text: string): void => {
+    const releaseCreate = createLock.acquire();
+    if (releaseCreate === null) return;
     const key = scopeKey;
     setPending({ scopeKey: key, text });
     setDraft("");
@@ -165,6 +171,7 @@ export function TutorConversationBody({
       { ...createInput, idempotency_key: crypto.randomUUID() },
       {
         onSuccess: (conv) => {
+          releaseCreate();
           setStarted({
             scopeKey: key,
             conversationId: conv.conversation_id,
@@ -174,6 +181,7 @@ export function TutorConversationBody({
           onStarted?.(conv.conversation_id);
         },
         onError: () => {
+          releaseCreate();
           // The student's text goes back in the composer, never lost.
           setPending(null);
           setDraft(text);

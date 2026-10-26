@@ -66,6 +66,7 @@ import {
 import { PHONE_LAYOUT_QUERY, useMediaQuery } from "@/hooks/use-mobile";
 import { useFeatureAccess } from "@/hooks/useFeatureAccess";
 import { useProfileQuery } from "@/hooks/useProfileQuery";
+import { useSendLock } from "@/hooks/useSendLock";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
 import {
   Composer,
@@ -303,6 +304,9 @@ function LisaConversation(): JSX.Element {
    * (the server's `idempotency_key`) instead of making a second conversation.
    */
   const firstCreateKeyRef = useRef<string | null>(null);
+  // P2 §3.1 (2026-10-26): one first-message create at a time, refused synchronously, so a burst of
+  // send events cannot create (and then send into) more than once (useSendLock.ts).
+  const createLock = useSendLock();
   const isPhone = useMediaQuery(PHONE_LAYOUT_QUERY, false);
 
   const conversations = conversationsList?.conversations ?? [];
@@ -394,6 +398,8 @@ function LisaConversation(): JSX.Element {
     }
     // No conversation open: create one for this message, then send it there. The key is kept
     // until a create succeeds (QA-9), so a retry after a failed create replays it.
+    const releaseCreate = createLock.acquire();
+    if (releaseCreate === null) return;
     setFirstMessage(text);
     const idempotencyKey = firstCreateKeyRef.current ?? crypto.randomUUID();
     firstCreateKeyRef.current = idempotencyKey;
@@ -407,18 +413,27 @@ function LisaConversation(): JSX.Element {
       },
       {
         onSuccess: (conv) => {
+          releaseCreate();
           firstCreateKeyRef.current = null;
           setQueued({ conversationId: conv.conversation_id, text });
           navigateToConversation(conv.conversation_id);
         },
         onError: () => {
+          releaseCreate();
           // The student's words go back in the composer, never lost.
           setFirstMessage(null);
           setDraft(text);
         },
       },
     );
-  }, [draft, conversationId, send, createConversation, navigateToConversation]);
+  }, [
+    draft,
+    conversationId,
+    send,
+    createConversation,
+    navigateToConversation,
+    createLock,
+  ]);
 
   // Once the page has opened the conversation created for a first message, that message is
   // sent through the turn machine, once: a server call, so an effect.
