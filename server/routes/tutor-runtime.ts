@@ -914,6 +914,16 @@ router.post(
  * conversation id or student id can reach it, because nothing but the literals and numbers is
  * read into it (step-timer.ts "WHAT IT CAN CARRY"). The crisis and retry branches return before
  * the later steps, so their lines simply list fewer steps.
+ *
+ * H1 of "P2 Revised: Cut the Wait Without Streaming" (Karl, 2026-10-23, §2: "every model call,
+ * every safety check, every database round trip ... total") | @implemented [2026-10-23]: the route
+ * is registered with `{ databaseTrips: true }`, so every Supabase round trip is its own
+ * `db.<op>.<target>` step (table/function name only — step-timer.ts "Database round trips").
+ * Within the coarse steps: `crisis_model` per classifier attempt, `worker_token`,
+ * `worker_request` per attempt, `worker_response_read`, `worker_handler` and
+ * `worker_vertex_attempt` (the worker's own timings, returned as numbers and stripped before the
+ * handler sees the response), `antileak_scan`, and `video_retrieval`. Responses and persisted rows
+ * are unchanged.
  */
 async function postTutorMessage(req: Request, res: Response): Promise<void> {
   // Step 1: Validate JWT and role — already enforced at mount.
@@ -1812,10 +1822,12 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     const offeredVideos =
       armorInput.kind === "blocked"
         ? []
-        : await retrieveOfferedVideos(
-            effectiveScope.source_question_row_id,
-            envelope.source_surface,
-            conversation.id,
+        : await timedStep("video_retrieval", () =>
+            retrieveOfferedVideos(
+              effectiveScope.source_question_row_id,
+              envelope.source_surface,
+              conversation.id,
+            ),
           );
     if (offeredVideos.length > 0) {
       envelope.offered_videos = toWireVideos(offeredVideos);
@@ -2196,7 +2208,10 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
   }
 }
 
-router.post("/messages", timedRoute("tutor.message", postTutorMessage));
+router.post(
+  "/messages",
+  timedRoute("tutor.message", postTutorMessage, { databaseTrips: true }),
+);
 
 // ============================================================================
 // GET /conversations/:conversationId — §7 Replay

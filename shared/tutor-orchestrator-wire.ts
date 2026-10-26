@@ -343,6 +343,34 @@ export const learnerObservationSchema = z.object({
 
 // ── Response schema ──────────────────────────────────────────────────
 
+/**
+ * @spec [owner brief "P2 Revised: Cut the Wait Without Streaming" (Karl, 2026-10-23) §2 H1
+ *        ("every model call ... No message content in logs")] | @implemented [2026-10-23]
+ *
+ * plain English: the worker's own timings for one turn, so the BFF's single `route_timing` line
+ * can show where the model hop's time went: `worker_ms` is the worker handler from parse to reply,
+ * and each Vertex attempt (retries and the pro→flash fallback included) carries its start offset
+ * within the worker and its duration. Numbers only, by construction (`.strict()`), so no prompt,
+ * reply or identifier can travel in it. Optional so the BFF and the worker can deploy in either
+ * order.
+ */
+export const orchestrationTimingSchema = z
+  .object({
+    worker_ms: z.number().nonnegative(),
+    vertex_attempts: z
+      .array(
+        z
+          .object({
+            at_ms: z.number().nonnegative(),
+            ms: z.number().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(16),
+  })
+  .strict();
+export type OrchestrationTiming = z.infer<typeof orchestrationTimingSchema>;
+
 export const orchestrateResponseSchema = z.object({
   response: z.object({
     content: z.string(),
@@ -382,6 +410,7 @@ export const orchestrateResponseSchema = z.object({
     prompt_version: z.string(),
     cache_used: z.boolean(),
     compaction_recommended: z.boolean(),
+    timing: orchestrationTimingSchema.optional(),
   }),
   learner_observation: learnerObservationSchema.nullable(),
 });
