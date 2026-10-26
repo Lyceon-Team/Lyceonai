@@ -352,7 +352,7 @@ describe("W4-11 — standalone chat: an unpaid student never reaches a composer"
         calls.some(
           (c) =>
             c.method === "GET" &&
-            c.path.startsWith("/api/tutor/conversations?") &&
+            /^\/api\/tutor\/conversations(\?|$)/.test(c.path) &&
             c.status === 200,
         ),
       ).toBe(true),

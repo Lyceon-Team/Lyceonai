@@ -79,7 +79,7 @@ These are not Karl's to waive; see SKILL.md rules 1–11 for the reasons. No und
 
 - **Reddit** — Karl stays personally present; posting stays manual; Lyceon/LISA accounts on Reddit are post-launch work (2026-10-02, 2026-10-10, 2026-10-11).
 - **Organic social first** — faceless AI-made videos on TikTok, Instagram, X; paid Meta/Google later, once organic shows what lands (2026-10-08). Short videos 2/week; on-camera content later.
-- **Automated social posting tool** — Blotato preferred for future automation (Doc 10B Phase 4), adopted later; Reddit stays manual (2026-10-11).
+- **Automated social posting tool** — planned, not deferred: today the QOTD goes to Reddit and TikTok by hand each night; when the content schedule expands across platforms, Buffer's free plan (3 channels, 10 queued posts per channel, API), fed from the `#social` asset pipeline with Karl's approval as the gate; Blotato only if Buffer's queue or channel limits bind. Reddit always stays manual (2026-10-11, amended 2026-10-21; SCL-243, replaces "Blotato preferred, adopted later").
 - **Content volume** — mostly volume, with a few flagship pieces (2026-10-15, #18).
 - **Referrals** — simple share link, no reward, for now; an ambassador program with rewards is wanted later (to build Reddit presence through users) (2026-10-15, #19; 2026-10-07).
 - **Creators/influencers** — allowed including student creators, when the need arises (2026-10-15, #20). Gate G10.

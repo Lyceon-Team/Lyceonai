@@ -12,9 +12,9 @@
  * choice and the explanation, and the success-rate stat only when the server shows it.
  *
  * Owner ruling 2026-10-05 (QOTD follow-up, items 1-3) | updated [2026-10-05]:
- *   * the options arrive shuffled, each identified by an opaque token; they are lettered A-D by
- *     on-screen position (QuestionRenderer), and the reveal names the correct option by token, so
- *     it is marked in this visitor's own order;
+ *   * the options arrive in canonical order (Karl's ruling 2026-10-23; shuffled per request
+ *     before that), each identified by an opaque token; they are lettered A-D by on-screen
+ *     position (QuestionRenderer), and the reveal names the correct option by token;
  *   * ONE ANSWER PER VISIT: once a submit succeeds the widget locks — the choice can no longer
  *     change and nothing can be submitted again on this page. Nothing is stored, so a reload can
  *     answer again; the server counts only the first attempt per hashed IP per day anyway;

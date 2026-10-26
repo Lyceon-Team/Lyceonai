@@ -109,6 +109,7 @@ FILES=(
   "client/src/components/tutor/ScopedTutorPanel.tsx"
   "client/src/components/tutor/TutorConversationBody.tsx"
   "client/src/components/tutor/ChatDock.tsx"
+  "client/src/components/tutor/LisaLauncher.tsx"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
@@ -677,12 +678,13 @@ s = s.replace(a, "        sessionItemId={sessionItemId}\n        {...{ choices: 
 
 # 2026-10-22 (#1300): from 768px up LISA is the chat dock, handed a scope object instead of panel
 # props. The same rule (LISA is handed the item id and the label, never the choices) on its scope.
+# Re-pointed 2026-10-23 (owner brief "LISA launcher"): the scope's last field is now `submitted`.
 plant "UI53-T2" "the dock's scope handed the choices" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "            questionLabel,\n          }}\n"
+  'a = "            submitted: showResult,\n          }}\n"
 assert s.count(a) == 1
-s = s.replace(a, "            questionLabel,\n            ...{ choices: question?.options },\n          }}\n", 1)'
+s = s.replace(a, "            submitted: showResult,\n            ...{ choices: question?.options },\n          }}\n", 1)'
 
 plant "UI53-O1" "no shorter-session note" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
@@ -1198,12 +1200,15 @@ assert s.count(a) == 1
 s = s.replace(a, "        {isStudent ? \"\" : \"LISA\"}", 1)'
 
 # Re-pointed 2026-10-07 (QA-5): Send's `disabled` is now `blocked` (disabled or pending).
+# Re-pointed 2026-10-23 (ruling 4 on #1300): the composer's one Send button now takes its
+# variant, size and label from `iconSend` (the outline icon in the panel, the labelled button on
+# /chat), so the anchor follows the new spelling of the same line.
 plant "UI56-T1" "Send stays enabled while LISA is thinking" \
   "$T56" \
   "client/src/components/tutor/TutorThreadParts.tsx" \
-  'a = "            disabled={blocked}\n            className={`h-[50px]"
+  'a = "            disabled={blocked}\n            className={`h-[50px] shrink-0 ${"
 assert s.count(a) == 1
-s = s.replace(a, "            disabled={false}\n            className={`h-[50px]", 1)'
+s = s.replace(a, "            disabled={false}\n            className={`h-[50px] shrink-0 ${", 1)'
 
 plant "UI56-T2" "the typing bubble loses its LISA label" \
   "$T56" \
@@ -1257,12 +1262,14 @@ plant "UI56-H1" "Show older does not send the server's cursor" \
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
+# Re-pointed 2026-10-23 (F-91, ruling 1 on #1300): the history lists every surface now, so its
+# query has no `surface` filter to add `status` to; the plant adds the status filter alone.
 plant "UI56-H2" "history filtered to active sessions again (OQ-39 (f))" \
   "$T56" \
   "client/src/hooks/tutor-client.ts" \
-  'a = "new URLSearchParams({ surface: \"standalone\" })"
+  'a = "      const params = new URLSearchParams();\n"
 assert s.count(a) == 1
-s = s.replace(a, "new URLSearchParams({ surface: \"standalone\", status: \"active\" })", 1)'
+s = s.replace(a, "      const params = new URLSearchParams({ status: \"active\" });\n", 1)'
 
 plant "UI56-H3" "Show older never drawn" \
   "$T56" \
@@ -1347,12 +1354,15 @@ s = s.replace(a, "", 1)'
 TQA_PANEL="client/src/components/tutor/ScopedTutorPanel.contract.test.tsx"
 TQA_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
 
+# Re-pointed 2026-10-23 (ruling 4 on #1300): the composer's one Send button now takes its
+# variant, size and label from `iconSend` (the outline icon in the panel, the labelled button on
+# /chat), so the anchor follows the new spelling of the same line.
 plant "QA5-L1" "Send reads Send, not Sending…, while a message is on its way" \
   "$T56 $TQA_PANEL" \
   "client/src/components/tutor/TutorThreadParts.tsx" \
-  'a = "{pending ? LISA_SEND_PENDING_LABEL : \"Send\"}"
+  'a = "  const sendLabel = pending ? LISA_SEND_PENDING_LABEL : \"Send\";"
 assert s.count(a) == 1
-s = s.replace(a, "{\"Send\"}", 1)'
+s = s.replace(a, "  const sendLabel = \"Send\";", 1)'
 
 plant "QA5-O1" "a pending Send is faded like an unavailable one (the Button's disabled fade)" \
   "$T56" \
@@ -1457,12 +1467,14 @@ plant "QA1-C1" "the Support card needs crisis_paused again (a failed pause write
 assert s.count(a) == 1
 s = s.replace(a, "        if (response.crisis_paused && response.response.crisis_category) {", 1)'
 
+# Re-pointed 2026-10-23 (F-91, ruling 1 on #1300): the read-only note for a question's
+# conversation now comes first, so the paused bar's condition is the second branch.
 plant "QA1-C2" "the paused bar (Continue with LISA) shows for an un-paused crisis card" \
   "$T56" \
   "client/src/pages/chat.tsx" \
-  'a = "      {showPausedBar || isPaused ? ("
+  'a = "      ) : showPausedBar || isPaused ? ("
 assert s.count(a) == 1
-s = s.replace(a, "      {showCrisisCard || isPaused ? (", 1)'
+s = s.replace(a, "      ) : showCrisisCard || isPaused ? (", 1)'
 
 plant "QA9-K1" "a retried first message makes a fresh idempotency key (a second conversation)" \
   "$T56" \
@@ -3986,6 +3998,232 @@ plant "QMH-20" "the skill tab stop announces itself as a button" \
   'a = "            tabIndex={0}\n"
 assert s.count(a) == 1
 s = s.replace(a, "            tabIndex={0}\n            role=\"button\"\n", 1)'
+
+# ── LISA chat dock follow-ups (owner rulings, Karl, 2026-10-23, on #1300) ─────────────────────
+# (1) F-91: the runner's conversations in the LISA history, labelled, read-only; (2) practice gets
+# the dock after submit only; (4) Send is an outline icon button in the panel; (5) the bubble never
+# covers the calculator. Each plant mutates product source once and must redden the named test.
+LD_DOCK="client/src/components/tutor/ChatDock.contract.test.tsx"
+LD_RUNNER_UNIT="client/src/components/practice/CanonicalPracticePage.test.tsx"
+LD_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+
+plant "LD-1" "the LISA history asks for standalone conversations only again (F-91)" \
+  "$LD_DOCK" \
+  "client/src/hooks/tutor-client.ts" \
+  'a = "      const params = new URLSearchParams();\n"
+assert s.count(a) == 1
+s = s.replace(a, "      const params = new URLSearchParams({ surface: \"standalone\" });\n", 1)'
+
+plant "LD-2" "a review question's conversation loses its label in the history (F-91)" \
+  "$LD_DOCK" \
+  "client/src/pages/chat.tsx" \
+  'a = "  if (conv.source_surface === \"review\") return \"Review question\";"
+assert s.count(a) == 1
+s = s.replace(a, "  if (conv.source_surface === \"review\") return null;", 1)'
+
+plant "LD-3" "a question's conversation opens with a composer on the LISA page (F-91)" \
+  "$LD_DOCK" \
+  "client/src/pages/chat.tsx" \
+  'a = "      {scopedLabel !== null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {false ? (", 1)'
+
+plant "LD-4" "practice draws the dock before submit" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "(engine.features.tutorAfterSubmit && showResult && !isDiagnostic)"
+assert s.count(a) == 1
+s = s.replace(a, "(engine.features.tutorAfterSubmit && !isDiagnostic)", 1)'
+
+plant "LD-5" "the diagnostic draws the dock after submit" \
+  "$LD_RUNNER_UNIT" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "(engine.features.tutorAfterSubmit && showResult && !isDiagnostic)"
+assert s.count(a) == 1
+s = s.replace(a, "(engine.features.tutorAfterSubmit && showResult)", 1)'
+
+plant "LD-6" "practice never gets the dock (the flag off)" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "client/src/lib/engine-config.ts" \
+  'a = "    missNote: true,\n    tutorAfterSubmit: true,"
+assert s.count(a) == 1
+s = s.replace(a, "    missNote: true,\n    tutorAfterSubmit: false,", 1)'
+
+plant "LD-7" "Send in the dock is a filled button again" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "variant={iconSend ? \"lyc-outline\" : \"lyc-primary\"}"
+assert s.count(a) == 1
+s = s.replace(a, "variant=\"lyc-primary\"", 1)'
+
+plant "LD-8" "the bubble stops reporting its footprint (the dock-bubble layer)" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/ChatDock.tsx" \
+  'a = "  useReportBottomChrome(bubbleRef, \"dock-bubble\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "  void bubbleRef;\n", 1)'
+
+plant "LD-9" "the side-panel calculator runs down under the bubble" \
+  "$LD_RUNNER_UNIT" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "calcBubbleClear > 0 ? { paddingBottom: calcBubbleClear } : undefined"
+assert s.count(a) == 1
+s = s.replace(a, "undefined", 1)'
+
+# ── LISA launcher (owner brief "LISA launcher redesign + placement", Karl, 2026-10-23, option D) ──
+# The speech-bubble launcher (shape, sparkle, name, the free lock), its place in the column, the
+# opening lines per surface, the before/after-submit opener split (owner ruling 2026-10-23) and
+# "Still confused? Ask LISA" after a wrong answer. Each plant mutates product source once.
+LL_LAUNCHER="client/src/components/tutor/LisaLauncher.tsx"
+LL_DOCK_SRC="client/src/components/tutor/ChatDock.tsx"
+LL_RUNNER_SRC="client/src/components/practice/CanonicalPracticePage.tsx"
+
+plant "LL-1" "the launcher loses its tight bottom-right corner (no speech bubble)" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = " rounded-[14px] rounded-br-[4px] "
+assert s.count(a) == 1
+s = s.replace(a, " rounded-[14px] ", 1)'
+
+plant "LL-2" "the launcher draws no sparkle" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "        ) : (\n          <LisaSparkle />\n        )}"
+assert s.count(a) == 1
+s = s.replace(a, "        ) : null}", 1)'
+
+plant "LL-3" "the free launcher loses its lock" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "        {locked ? (\n          <Lock"
+assert s.count(a) == 1
+s = s.replace(a, "        {false ? (\n          <Lock", 1)'
+
+plant "LL-4" "the launcher is not named Ask LISA" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "export const LISA_LAUNCHER_LABEL = \"Ask LISA\";"
+assert s.count(a) == 1
+s = s.replace(a, "export const LISA_LAUNCHER_LABEL = \"LISA\";", 1)'
+
+plant "LL-5" "the panel header loses the sparkle" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "<span className=\"flex shrink-0 text-lyc-ink-strong\">\n          <LisaSparkle />\n        </span>"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"flex shrink-0 text-lyc-ink-strong\" />", 1)'
+
+plant "LL-6" "Home opens with another line" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "  home: \"What do you want to work on?\","
+assert s.count(a) == 1
+s = s.replace(a, "  home: \"Ask LISA about a question you missed.\",", 1)'
+
+plant "LL-7" "Review opens with Home's line" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "  review: \"Want help with your past mistakes?\","
+assert s.count(a) == 1
+s = s.replace(a, "  review: \"What do you want to work on?\",", 1)'
+
+plant "LL-8" "after submit the runner dock keeps the before-submit opener" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "copy={submitted ? QUESTION_SCOPE_AFTER_SUBMIT_COPY : QUESTION_SCOPE_COPY}"
+assert s.count(a) == 1
+s = s.replace(a, "copy={QUESTION_SCOPE_COPY}", 1)'
+
+plant "LL-9" "before submit the review dock already shows the after-submit line" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "copy={submitted ? QUESTION_SCOPE_AFTER_SUBMIT_COPY : QUESTION_SCOPE_COPY}"
+assert s.count(a) == 1
+s = s.replace(a, "copy={QUESTION_SCOPE_AFTER_SUBMIT_COPY}", 1)'
+
+plant "LL-10" "the runner tells the dock the item is never submitted" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "$LL_RUNNER_SRC" \
+  'a = "            submitted: showResult,\n"
+assert s.count(a) == 1
+s = s.replace(a, "            submitted: false,\n", 1)'
+
+plant "LL-11" "Still confused? shows after a correct answer too" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_RUNNER_SRC" \
+  'a = "{dockTutor && showResult && isCorrect === false ? ("
+assert s.count(a) == 1
+s = s.replace(a, "{dockTutor && showResult ? (", 1)'
+
+plant "LL-12" "Still confused? shows before submit" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_RUNNER_SRC" \
+  'a = "{dockTutor && showResult && isCorrect === false ? ("
+assert s.count(a) == 1
+s = s.replace(a, "{dockTutor && isCorrect !== true ? (", 1)'
+
+plant "LL-13" "Still confused? does not open the dock" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_RUNNER_SRC" \
+  'a = "onClick={() => dockRef.current?.open()}"
+assert s.count(a) == 1
+s = s.replace(a, "onClick={() => undefined}", 1)'
+
+plant "LL-14" "the dock's open() handle does nothing" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "useImperativeHandle(handle, () => ({ open: openFromLauncher }));"
+assert s.count(a) == 1
+s = s.replace(a, "useImperativeHandle(handle, () => ({ open: () => undefined }));", 1)'
+
+plant "LL-15" "the dock sits at the screen's right edge, not its column's" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = ": `${column.right + DOCK_EDGE_PX}px`;"
+assert s.count(a) == 1
+s = s.replace(a, ": `${DOCK_EDGE_PX}px`;", 1)'
+
+plant "LL-16" "the open panel ignores its column's width" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "Math.min(DOCK_PANEL_MAX_PX, column.width - DOCK_PANEL_COLUMN_INSET_PX)"
+assert s.count(a) == 1
+s = s.replace(a, "DOCK_PANEL_MAX_PX", 1)'
+
+plant "LL-17" "the dock drops below its column's bottom edge" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "Math.max(chrome, column?.bottom ?? 0) + DOCK_EDGE_PX"
+assert s.count(a) == 1
+s = s.replace(a, "chrome + DOCK_EDGE_PX", 1)'
+
+plant "LL-18" "the runner's dock is not anchored to the question area" \
+  "$LD_RUNNER" \
+  "$LL_RUNNER_SRC" \
+  'a = "          anchor={runnerScrollRef}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LL-19" "the runner keeps only the round bubble's width clear" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_DOCK_SRC" \
+  'a = "DOCK_EDGE_PX + LISA_LAUNCHER_WIDTH_PX + 8;"
+assert s.count(a) == 1
+s = s.replace(a, "DOCK_EDGE_PX + 56 + 8;", 1)'
+
+plant "LL-21" "the launcher drops the student focus ring classes" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "className={`${LYC_FOCUS} pointer-events-auto"
+assert s.count(a) == 1
+s = s.replace(a, "className={`pointer-events-auto", 1)'
+
+plant "LL-20" "the launcher loses its accent fill" \
+  "$LD_DOCK client/src/pages/lyceon-dashboard.test.tsx" \
+  "$LL_LAUNCHER" \
+  'a = " border-0 bg-lyc-primary-bg px-3 "
+assert s.count(a) == 1
+s = s.replace(a, " border-0 bg-transparent px-3 ", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"
