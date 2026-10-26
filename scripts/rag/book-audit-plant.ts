@@ -11,16 +11,16 @@
  * `rule_opening` is sent as the audit's RULE OPENING; `expect_act_scope_respected` checks that
  * audit field; `expect_example_check` ("pass" or "drop") runs the EXAMPLE CHECK instead of the
  * audit, on the entry alone, and checks the code's decision; `expect_result` checks the whole
- * audit ("pass", the drop reason auditFailure
- * gives, or "fail" for any failure). The file lives in the book's gitignored cache because
+ * audit ("pass", the drop reason auditFailure gives, or "fail" for any failure). The file lives in the book's gitignored cache because
  * sources and entries are book text. Each plant is audited `--runs` times (temperature 0 is not
  * a guarantee of one answer), and every run must agree. Exit 1 on any disagreement. It prints
- * verdicts, the audit's issues and the measured cost; nothing is cached or written.
+ * verdicts, the audit's issues and the measured cost; nothing is cached. `--responses <file>`
+ * appends each example-check response (with its entry) to a JSONL file, for test fixtures.
  *
  * Usage: NODE_USE_ENV_PROXY=1 pnpm exec tsx scripts/rag/book-audit-plant.ts \
  *          --plants scripts/rag/.cache/book-meltzer-grammar/plants.jsonl [--runs 2]
  */
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import {
@@ -67,6 +67,7 @@ async function main(): Promise<void> {
     options: {
       plants: { type: "string" },
       runs: { type: "string", default: "2" },
+      responses: { type: "string" },
       model: { type: "string", default: GENERATION_MODEL_DEFAULT },
     },
   });
@@ -95,6 +96,11 @@ async function main(): Promise<void> {
           schema: exampleCheckSchema,
           onUsage,
         });
+        if (values.responses !== undefined)
+          appendFileSync(
+            values.responses,
+            `${JSON.stringify({ name: p.name, run: r + 1, entry: p.entry, response: check })}\n`,
+          );
         const why = exampleCheckFailure(check);
         const got = why === null ? "pass" : "drop";
         const ok = got === p.expect_example_check;

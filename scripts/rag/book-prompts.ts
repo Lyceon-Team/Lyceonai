@@ -39,6 +39,14 @@
  * 0 of 96 correct-chunk audits did it flag anything): it catches nothing. Asked one question
  * among six, the model does not compare the description with the example; made to quote each
  * pair, it does (6:1 caught 3 of 3 in the prototype).
+ * ONLY WHAT THE CHARACTERS SHOW: the check lists statements about where a mark sits and which
+ * word or form appears, never about grammatical category (part of speech, voice, tense, clause
+ * type). Its first version took every description, and on the one-run proof of 2026-10-26 it
+ * dropped 2 of 32 correct chunks, both by judging the grammar itself instead of comparing the
+ * statement with the example: 12:5 ("they are concerned" as the active-voice fix, "still
+ * passive") and 13:1 ("profitability"/"influence", which the book labels nouns, "prepositional
+ * phrases, not nouns"). 6:1 is a claim about position, which the characters settle (Karl,
+ * 2026-10-26).
  * The model never sees provenance (brief §5). `BOOK_PROMPT_VERSION` is stamped on every cached
  * result; changing any prompt changes it and invalidates the cache.
  */
@@ -258,7 +266,11 @@ export function auditFailure(a: Audit): string | null {
   return null;
 }
 
-export const EXAMPLE_CHECK_SYSTEM = `You check one entry of an SAT grammar knowledge base for one thing only: whether it describes its own examples correctly. Go through the entry and find every statement that describes a specific example sentence the entry gives: where a punctuation mark sits relative to a word, a parenthesis or a clause ("a comma before X", "after Y", "between A and B"), which word form is used, or what is wrong with it. For each such statement, quote the statement and the example exactly as the entry gives them, then look at the example character by character and say whether it actually shows what the statement says. Judge only the entry against itself, never the book and never your own view of the grammar.`;
+export const EXAMPLE_CHECK_SYSTEM = `You check one entry of an SAT grammar knowledge base for one thing only: whether it describes its own examples correctly, in what can be seen by reading the example's characters. Go through the entry and find every statement that describes a specific example sentence the entry gives in one of these two ways only:
+- where a mark sits in the example: a punctuation mark before, after or between particular words, or before or after a parenthesis or a dash ("a comma before the close parenthesis", "no comma after that", "a semicolon between the two clauses");
+- which word or form appears in the example ("uses its", "the verb is have", "has no apostrophe").
+Do NOT list statements about grammatical category: part of speech (noun, adjective, prepositional phrase), voice (active, passive), tense, or clause type. Those are not checked here, whatever you think of them.
+For each statement you do list, quote the statement and the example exactly as the entry gives them, then look at the example character by character and say whether it actually shows what the statement says. Judge only the entry against itself, never the book and never your own view of the grammar.`;
 
 export const exampleCheckResponseSchema = {
   type: "OBJECT",

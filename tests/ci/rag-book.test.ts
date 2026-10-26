@@ -939,24 +939,33 @@ describe("the example check decides in code", () => {
     expect(exampleCheckFailure({ pairs: [] })).toBeNull();
   });
 
-  // Real model responses (2026-10-26) on the real chunks: Meltzer 6:1, which teaches "a comma
-  // before a close parenthesis" over an example with the comma after it, and 8:6, a correct
-  // chunk with several described examples. Book text, so they live in the gitignored cache.
-  it("on the real responses: 6:1 is dropped, the control passes", () => {
+  // Real responses of the narrowed check (2026-10-26) on the real chunks, kept as permanent
+  // fixtures: Meltzer 6:1 ("a comma before a close parenthesis" over an example with the comma
+  // after it) must drop; 12:5 and 13:1, the two correct chunks the first version dropped by
+  // judging grammatical category, and 8:6 must pass. Book text, so the file lives in the
+  // gitignored cache and the test runs where the book is.
+  it("on the real fixtures: 6:1 drops; 12:5, 13:1 and 8:6 pass", () => {
     const file = resolve(
       import.meta.dirname,
-      "../../scripts/rag/.cache/book-meltzer-grammar/example-check-real.json",
+      "../../scripts/rag/.cache/book-meltzer-grammar/example-check-fixtures.jsonl",
     );
     if (!existsSync(file)) return; // the book is not in the repo
-    const real = JSON.parse(readFileSync(file, "utf8")) as Record<
-      string,
-      { response: unknown }
-    >;
-    const six = exampleCheckSchema.parse(real.six_one?.response);
-    const control = exampleCheckSchema.parse(real.control_8_6?.response);
-    expect(six.pairs.length).toBeGreaterThan(0);
-    expect(control.pairs.length).toBeGreaterThan(0);
-    expect(exampleCheckFailure(six)).toContain("before a close parenthesis");
-    expect(exampleCheckFailure(control)).toBeNull();
+    const rows = readFileSync(file, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { name: string; response: unknown });
+    const decide = (id: string): (string | null)[] => {
+      const got = rows.filter((r) =>
+        r.name.startsWith(`book:meltzer-grammar:${id}`),
+      );
+      expect(got.length).toBeGreaterThan(0);
+      return got.map((r) =>
+        exampleCheckFailure(exampleCheckSchema.parse(r.response)),
+      );
+    };
+    for (const why of decide("6:1"))
+      expect(why).toContain("before a close parenthesis");
+    for (const id of ["12:5", "13:1", "8:6"])
+      for (const why of decide(`${id}`)) expect(why).toBeNull();
   });
 });
