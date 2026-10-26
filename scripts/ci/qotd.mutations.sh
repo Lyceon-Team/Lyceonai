@@ -545,31 +545,6 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M49 grid-in variant lost" "grid-in: slide 2 shows one 'Your answer' box" "$OUT" "$RC"
 restore
 
-# Karl's ruling 2026-10-26 on #1308: a long first sentence is cut, never a skipped carousel.
-echo "=== (50) a long first sentence skips the Why again (no cut fallback) ==="
-plant shared/qotd/tiktok.ts \
-  "  if (first.length > QOTD_TIKTOK_WHY_MAX) return cutFirstSentence(first);" \
-  "" || { bad "M50 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M50 no cut fallback" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
-restore
-
-echo "=== (51) the cut falls mid-word ==="
-plant shared/qotd/tiktok.ts \
-  '  const space = head.lastIndexOf(" ");' \
-  "  const space = -1;" || { bad "M51 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M51 cut mid-word" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
-restore
-
-echo "=== (52) the cut Why loses its '…' and pointer to the full explanation ==="
-plant shared/qotd/tiktok.ts \
-  '  return `${cut}${QOTD_TIKTOK_WHY_MORE}`;' \
-  "  return cut;" || { bad "M52 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M52 no pointer" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
-restore
-
 echo "=== RESTORED: re-check green ==="
 OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"

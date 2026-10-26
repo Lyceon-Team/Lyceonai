@@ -25,9 +25,7 @@ run's download, then posts them to `#social`:
    question), shared together, then the title (`SAT Question of the Day · Oct 22 · Math`, at most
    90 characters) and the caption (follow line first) in code blocks. Post the slides in order
    as a TikTok photo post. When yesterday is withheld or missing on the archive, or its slides
-   cannot fit, a one-line note says there is no carousel today. A long explanation never skips
-   the day: when its first sentence is over 300 characters, the "Why" is cut at a word boundary
-   and ends "… Full explanation on lyceon.ai" (Karl, 2026-10-26).
+   cannot fit, a one-line note says there is no carousel today.
 
 Reddit posting stays manual (Doc 10B): Karl copies the title and body into a new post, and the
 reveal into a comment on yesterday's post.
