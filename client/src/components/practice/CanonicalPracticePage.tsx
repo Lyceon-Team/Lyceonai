@@ -86,7 +86,14 @@ import {
   CALC_DEFAULT_PCT,
   CALC_MIN_PCT,
   CALC_MIN_PX,
+  DOCKED_CALC_MIN_PCT,
+  DOCKED_LISA_COLUMN_PX,
+  DOCKED_LISA_NARROW_COLUMN_PX,
+  DOCKED_NARROW_SPLIT_BREAKPOINT,
+  DOCKED_QUESTION_MIN_PCT,
+  DOCKED_SPLIT_BREAKPOINT,
   QUESTION_DEFAULT_PCT,
+  QUESTION_MIN_DOCKED_PX,
   QUESTION_MIN_PCT,
   QUESTION_MIN_PX,
   SPLIT_BREAKPOINT,
@@ -361,12 +368,50 @@ export default function CanonicalPracticePage(props: {
   const runnerScrollRef = React.useRef<HTMLDivElement | null>(null);
   // The chat dock, opened by "Still confused? Ask LISA" (owner brief 2026-10-23).
   const dockRef = React.useRef<ChatDockHandle | null>(null);
+  /**
+   * @spec [owner brief "restore the pre-#1300 runner layout" (Karl, 2026-10-26): "Review runner:
+   *       LISA starts OPEN (docked) on entry; minimize persists for the rest of the session
+   *       (across questions; per page visit/session state — no new server storage)"; "Practice
+   *       unchanged (launcher after submit) ... when opened in a runner it docks as the column"]
+   *       | @implemented [2026-10-26]
+   * plain English: whether LISA's docked column is open. Review: open on entry, and the
+   * student's minimize (or reopen) holds for the rest of the PAGE VISIT, across questions: it is
+   * this runner's own state, which already lasts the visit and is reset by nothing but leaving
+   * the page (a reload starts open again, as LISA always did in review, W4-4). No storage, no
+   * server state. Practice: the column opens only when the student opens it, for the answered
+   * item (the dock goes with Next, so the next item starts at the launcher again).
+   */
+  const [reviewLisaDocked, setReviewLisaDocked] = React.useState(true);
+  const [practiceLisaDockedItem, setPracticeLisaDockedItem] = React.useState<
+    string | null
+  >(null);
+  // The column the open panel is portalled into (ChatDock `docked.slot`).
+  const [lisaSlot, setLisaSlot] = React.useState<HTMLDivElement | null>(null);
   const tutorAsideRef = React.useRef<HTMLDivElement | null>(null);
   const [localCalculatorState, setLocalCalculatorState] = React.useState<
     unknown | null
   >(null);
 
   const splitEnabled = useSplitEnabled();
+  // 2026-10-26 (owner ruling on #1322): LISA's docked column is 360px from
+  // DOCKED_SPLIT_BREAKPOINT (1338) and 300px below it; the calculator opens between the question
+  // and LISA from W3 (DOCKED_NARROW_SPLIT_BREAKPOINT, 1278); below W3 the two take turns.
+  const lisaColumnWide = useMinWidth(DOCKED_SPLIT_BREAKPOINT);
+  const threeColumnsFit = useMinWidth(DOCKED_NARROW_SPLIT_BREAKPOINT);
+  /**
+   * @spec [owner ruling on #1322 (Karl, 2026-10-26): below W3 "opening the calculator minimizes
+   *       LISA to the launcher; reopening LISA closes/minimizes the calculator; the most recently
+   *       opened tool wins. Neither state loses data"; "an automatic fallback-minimize should not
+   *       count as the student's own minimize"] | @implemented [2026-10-26]
+   * plain English: which of the two the student opened last. Below W3, with both wanted, the
+   * last one opened is shown: the calculator (LISA then shows as its launcher, the dock told
+   * `suppressed`, the student's own open/minimized choice untouched) or LISA (opening it closes
+   * the calculator, which keeps its Desmos state as any close does). Closing the calculator, or
+   * a wider window, gives LISA back on its own, because the student never minimized it.
+   */
+  const [lastToolOpened, setLastToolOpened] = React.useState<"calc" | "lisa">(
+    "lisa",
+  );
   const wideLayout = useMinWidth(STACKED_LAYOUT_BELOW_PX);
   // 2026-10-22: phones keep the stacked panel; tablet and desktop get the chat dock.
   const isPhoneWidth = useMediaQuery(PHONE_WIDTH_QUERY, false);
@@ -543,7 +588,6 @@ export default function CanonicalPracticePage(props: {
   }, [fetchNextQuestion, setForceTakeover]);
 
   const showCalculator = isMathSection(question?.section);
-  const useSidePanel = showCalculator && isCalculatorExpanded && splitEnabled;
 
   // W4-1: LISA scoped to the served item, in an engine that has it (review). Practice has no
   // phone panel and no bar entry point (`features.tutor` is off there); since 2026-10-23 it has
@@ -559,6 +603,28 @@ export default function CanonicalPracticePage(props: {
     !isPhoneWidth &&
     (engine.features.tutor ||
       (engine.features.tutorAfterSubmit && showResult && !isDiagnostic));
+  // 2026-10-26: LISA's docked right column is open (see reviewLisaDocked above).
+  const isReviewEngine = engine.domain === "review";
+  // The student's own choice (open or minimized), then what is drawn.
+  const lisaWanted =
+    dockTutor &&
+    (isReviewEngine
+      ? reviewLisaDocked
+      : sessionItemId !== null && practiceLisaDockedItem === sessionItemId);
+  const lisaYieldsToCalculator =
+    lisaWanted &&
+    !threeColumnsFit &&
+    showCalculator &&
+    isCalculatorExpanded &&
+    lastToolOpened === "calc";
+  const lisaColumnOpen = lisaWanted && !lisaYieldsToCalculator;
+  const lisaColumnPx = lisaColumnWide
+    ? DOCKED_LISA_COLUMN_PX
+    : DOCKED_LISA_NARROW_COLUMN_PX;
+  const useSidePanel =
+    showCalculator &&
+    isCalculatorExpanded &&
+    (lisaColumnOpen ? threeColumnsFit : splitEnabled);
   const tutorVisible =
     canAskTutor &&
     isPhoneWidth &&
@@ -569,6 +635,20 @@ export default function CanonicalPracticePage(props: {
       ? questionPosition(currentIndex, totalQuestions)
       : null;
   const questionLabel = position ?? `Question ${currentIndex + 1}`;
+  /**
+   * @spec [owner ruling on #1322 (Karl, 2026-10-26): "In the 300px LISA tier, the dock header
+   *       chip reads the compact form '5 of 10' (the runner header already shows 'Question 5 of
+   *       10'). Keep the full form in the 360px tier ... no truncation at ANY tier"]
+   *       | @implemented [2026-10-26]
+   * plain English: the docked LISA header's question chip. In the 360px column the full "Question
+   * 5 of 10" fits (checked to "Question 54 of 54"); in the 300px column it truncated, so there it
+   * is "5 of 10". The phone panel keeps the full form (it fits there too).
+   */
+  const dockQuestionLabel = lisaColumnWide
+    ? questionLabel
+    : typeof totalQuestions === "number"
+      ? `${currentIndex + 1} of ${totalQuestions}`
+      : `${currentIndex + 1}`;
   const tutorPanel =
     tutorVisible && sessionItemId ? (
       <ScopedTutorPanel
@@ -633,7 +713,11 @@ export default function CanonicalPracticePage(props: {
             <button
               type="button"
               className={BAR_BUTTON}
-              onClick={() => setIsCalculatorExpanded((prev) => !prev)}
+              onClick={() => {
+                // 2026-10-26: opening it makes the calculator the last tool opened.
+                if (!isCalculatorExpanded) setLastToolOpened("calc");
+                setIsCalculatorExpanded(!isCalculatorExpanded);
+              }}
               aria-expanded={isCalculatorExpanded}
               aria-label="Calculator"
               data-testid="practice-calculator-toggle"
@@ -875,9 +959,15 @@ export default function CanonicalPracticePage(props: {
   const calcBubbleClear = dockBubbleClearance(
     useBottomChromeHeight(DOCK_BUBBLE_LAYER),
   );
+  // Beside LISA's column (2026-10-26) the calculator keeps no right padding: its right edge is
+  // LISA's left edge, one shared boundary.
   const sidePanelCalculator = (
     <div
-      className="flex h-full flex-col py-4 pr-4"
+      className={
+        lisaColumnOpen
+          ? "flex h-full flex-col py-4"
+          : "flex h-full flex-col py-4 pr-4"
+      }
       style={
         calcBubbleClear > 0 ? { paddingBottom: calcBubbleClear } : undefined
       }
@@ -915,22 +1005,38 @@ export default function CanonicalPracticePage(props: {
     </div>
   ) : null;
 
+  // 2026-10-26: beside LISA's docked column the group fills the runner body exactly (no 600px
+  // floor, so the body never scrolls and no scrollbar comes between the calculator and LISA),
+  // keeps no right padding, sizes from the docked percentages and keeps its own saved layout.
+  // The same no-floor body wherever the runner has the dock (2026-10-26, owner ruling on #1322):
+  // on a short screen (650px tall) a 600px calculator ran down under the floating launcher,
+  // below the fold, where the launcher's clearance at its bottom could not help.
   const standardLayout = useSidePanel ? (
     <div
       ref={panelGroupRef}
-      className="h-full px-4"
+      className={lisaColumnOpen ? "h-full pl-4" : "h-full px-4"}
       data-testid="practice-panel-group-container"
     >
       <ResizablePanelGroup
+        key={lisaColumnOpen ? "docked" : "alone"}
         direction="horizontal"
-        autoSaveId="lyceon-practice-calc-panel-px"
+        autoSaveId={
+          lisaColumnOpen
+            ? "lyceon-practice-calc-docked-panel-px"
+            : "lyceon-practice-calc-panel-px"
+        }
         onLayout={handleGroupLayout}
-        className="h-full min-h-[600px]"
+        className={dockTutor ? "h-full" : "h-full min-h-[600px]"}
       >
         <ResizablePanel
-          defaultSize={QUESTION_DEFAULT_PCT}
-          minSize={questionMinPct}
-          style={{ minWidth: QUESTION_MIN_PX }}
+          defaultSize={
+            lisaColumnOpen ? 100 - DOCKED_CALC_MIN_PCT : QUESTION_DEFAULT_PCT
+          }
+          minSize={lisaColumnOpen ? DOCKED_QUESTION_MIN_PCT : questionMinPct}
+          style={{
+            minWidth: lisaColumnOpen ? QUESTION_MIN_DOCKED_PX : QUESTION_MIN_PX,
+          }}
+          data-testid="practice-question-panel"
         >
           <div className="h-full overflow-y-auto">{questionColumn}</div>
         </ResizablePanel>
@@ -942,8 +1048,8 @@ export default function CanonicalPracticePage(props: {
         />
         <ResizablePanel
           ref={calcPanelRef}
-          defaultSize={CALC_DEFAULT_PCT}
-          minSize={calcMinPct}
+          defaultSize={lisaColumnOpen ? DOCKED_CALC_MIN_PCT : CALC_DEFAULT_PCT}
+          minSize={lisaColumnOpen ? DOCKED_CALC_MIN_PCT : calcMinPct}
           style={{ minWidth: CALC_MIN_PX }}
           onResize={handleCalcPanelResize}
           data-testid="practice-calc-panel"
@@ -1003,19 +1109,39 @@ export default function CanonicalPracticePage(props: {
       data-testid="canonical-practice-runner"
     >
       {bar}
-      <div
-        ref={runnerScrollRef}
-        className="min-h-0 flex-1 overflow-y-auto"
-        // 2026-10-22: where the question column would reach under the LISA launcher (768px to
-        // 1039px since 2026-10-23), the scroll area keeps the launcher's width clear on its right.
-        style={
-          dockTutor && !dockClearsColumn
-            ? { paddingRight: DOCK_CLEARANCE_PX }
-            : undefined
-        }
-        data-testid="runner-scroll"
-      >
-        {tutorVisible ? reviewTutorLayout : standardLayout}
+      {/* 2026-10-26 (owner brief "restore the pre-#1300 runner layout"): the runner body is a
+          row: the question area (and the calculator beside it) on the left, LISA's docked
+          column on the right, full height, inset 12px from the top-right corner. Minimized,
+          the column is hidden and the question area takes the width back. */}
+      <div className="flex min-h-0 flex-1" data-testid="runner-row">
+        <div
+          ref={runnerScrollRef}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto"
+          // 2026-10-22: where the question column would reach under the LISA launcher (768px
+          // to 1039px since 2026-10-23), the scroll area keeps the launcher's width clear on its
+          // right. Not while LISA is docked open: then there is no launcher.
+          style={
+            dockTutor && !lisaColumnOpen && !dockClearsColumn
+              ? { paddingRight: DOCK_CLEARANCE_PX }
+              : undefined
+          }
+          data-testid="runner-scroll"
+        >
+          {tutorVisible ? reviewTutorLayout : standardLayout}
+        </div>
+        {dockTutor ? (
+          <div
+            ref={setLisaSlot}
+            className={
+              lisaColumnOpen
+                ? "flex min-h-0 shrink-0 flex-col pb-3 pr-3 pt-3"
+                : "hidden"
+            }
+            style={{ width: lisaColumnPx }}
+            data-testid="runner-lisa-column"
+            data-open={lisaColumnOpen ? "true" : "false"}
+          />
+        ) : null}
       </div>
       {footer}
       {/* Owner brief 2026-10-23: the launcher belongs to the question area (the scroll area
@@ -1024,11 +1150,26 @@ export default function CanonicalPracticePage(props: {
         <ChatDock
           ref={dockRef}
           anchor={runnerScrollRef}
+          docked={{
+            slot: lisaSlot,
+            defaultOpen: isReviewEngine ? reviewLisaDocked : false,
+            onOpenChange: (open) => {
+              if (isReviewEngine) setReviewLisaDocked(open);
+              else setPracticeLisaDockedItem(open ? sessionItemId : null);
+              if (!open) return;
+              // 2026-10-26: below W3, opening LISA makes it the last tool opened and closes the
+              // calculator (its Desmos state kept, as on any close).
+              setLastToolOpened("lisa");
+              if (!threeColumnsFit && isCalculatorExpanded)
+                setIsCalculatorExpanded(false);
+            },
+            suppressed: lisaYieldsToCalculator,
+          }}
           scope={{
             kind: "question",
             sourceSurface: tutorSurface,
             sessionItemId: question ? sessionItemId : null,
-            questionLabel,
+            questionLabel: dockQuestionLabel,
             submitted: showResult,
           }}
         />

@@ -802,7 +802,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     const props = dockProps.last!;
     // The scope, and (owner brief 2026-10-23) the column it anchors to: the runner's question
     // area, a DOM ref the dock measures for geometry only.
-    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
+    expect(Object.keys(props)).toEqual(["anchor", "docked", "scope"]);
     expect((props.anchor as { current: unknown }).current).toBe(
       screen.getByTestId("runner-scroll"),
     );
@@ -840,7 +840,7 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(screen.getByText(EXPLANATION)).toBeTruthy();
     expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
     const props = dockProps.last!;
-    expect(Object.keys(props)).toEqual(["anchor", "scope"]);
+    expect(Object.keys(props)).toEqual(["anchor", "docked", "scope"]);
     expect(props.scope).toEqual({
       kind: "question",
       sourceSurface: "practice",
@@ -869,9 +869,10 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     await click(submitButton());
     await click(await screen.findByRole("button", { name: "Next question" }));
     await loaded(2);
+    // At 1024 LISA's column is the 300px tier: the compact "2 of 3" (Karl, 2026-10-26, #1322).
     expect(dockProps.last?.scope).toMatchObject({
       sessionItemId: "item-2",
-      questionLabel: "Question 2 of 3",
+      questionLabel: "2 of 3",
     });
     expect(dockProps.mounts).toBe(mountsBefore);
   });

@@ -740,7 +740,8 @@ function gets(): string[] {
 
 /**
  * The buttons and links drawn as the screen's primary action (filled --primary-bg). The LISA
- * launcher is not one of them: owner brief "LISA launcher" (Karl, 2026-10-23, option D) gives it
+ * launcher is not one of them: the approved exception to DESIGN.md §5 (Karl, 2026-10-24:
+ * "persistent floating chrome, not a page action"; option D, 2026-10-23) gives it
  * the accent fill as LISA's own floating entry, outside the page's actions (DESIGN.md §3 Chat
  * dock); `the LISA launcher is the only filled control outside the page` below pins that it is
  * the one exception.

@@ -318,17 +318,32 @@ function DockPage({
   scope,
   onChoice,
   handle,
+  docked,
 }: {
   scope: ChatDockScope;
   onChoice: () => void;
   handle?: React.Ref<ChatDockHandle>;
+  docked?: {
+    defaultOpen: boolean;
+    onOpenChange: (open: boolean) => void;
+    suppressed?: boolean;
+  };
 }): JSX.Element {
+  // 2026-10-26: a runner's docked column, as CanonicalPracticePage gives it (a slot element).
+  const [slot, setSlot] = React.useState<HTMLDivElement | null>(null);
   return (
     <>
       <button type="button" data-testid="page-choice" onClick={onChoice}>
         Choice A
       </button>
-      <ChatDock ref={handle} scope={scope} />
+      {docked !== undefined ? (
+        <div ref={setSlot} data-testid="docked-slot" />
+      ) : null}
+      <ChatDock
+        ref={handle}
+        scope={scope}
+        docked={docked === undefined ? undefined : { ...docked, slot }}
+      />
     </>
   );
 }
@@ -340,6 +355,11 @@ async function mount(
     onChoice?: () => void;
     path?: string;
     handle?: React.Ref<ChatDockHandle>;
+    docked?: {
+      defaultOpen: boolean;
+      onOpenChange: (open: boolean) => void;
+      suppressed?: boolean;
+    };
   } = {},
 ): Promise<{ client: QueryClient; history: string[] }> {
   const map = await accessMap(plan);
@@ -374,6 +394,7 @@ async function mount(
                   scope={opts.scope ?? GENERAL}
                   onChoice={opts.onChoice ?? (() => undefined)}
                   handle={opts.handle}
+                  docked={opts.docked}
                 />
               </AppShell>
             </Route>
@@ -943,13 +964,21 @@ describe("practice scope (the practice runner, after submit): the answered item'
 // ── F-91 (owner ruling 1 on #1300): the runner's conversations on the LISA page ─────────────
 
 describe("F-91: the LISA page lists the runner's per-question conversations, labelled with their question, read-only", () => {
-  /** A review question's conversation as the runner's dock writes it, with one turn each way. */
-  function seedScopedConversation(itemId: string): string {
+  /**
+   * A question's conversation as the runner's dock writes it, with one turn each way. Started on
+   * September 21 and last active on September 23 (owner ruling 2026-10-24: the label's date is
+   * when the chat happened, `created_at`), so the two dates can tell the fields apart.
+   */
+  function seedScopedConversation(
+    itemId: string,
+    surface: "review" | "practice" = "review",
+  ): string {
     const convId = db.current.seed("tutor_conversations", {
       student_id: STUDENT_ID,
       entry_mode: "scoped_question",
-      source_surface: "review",
-      surface: "review",
+      source_surface: surface,
+      surface,
+      created_at: "2026-09-21T15:00:00.000Z",
       source_session_id: null,
       source_session_item_id: itemId,
       source_question_row_id: QUESTION_ID,
@@ -993,8 +1022,9 @@ describe("F-91: the LISA page lists the runner's per-question conversations, lab
     );
     // Presence first: the row is there, with its title and its question label.
     expect(row).toBeTruthy();
+    // Owner ruling 2026-10-24: type and the day it happened (created_at), U+00B7 between.
     expect(within(row!).getByTestId("lisa-history-scope").textContent).toBe(
-      "Review question",
+      "Review question \u00b7 Sep 21",
     );
     expect(row!.textContent).toContain("where do I start?");
     // The label names the question by its surface only: no stem, no answer, no explanation.
@@ -1013,13 +1043,32 @@ describe("F-91: the LISA page lists the runner's per-question conversations, lab
     expect(within(page).getByTestId("student-bubble").textContent).toContain(
       "where do I start?",
     );
-    expect(within(page).getByTestId("lisa-scoped-note")).toBeTruthy();
+    // Approved wording (Karl, 2026-10-24).
+    expect(within(page).getByTestId("lisa-scoped-note").textContent).toBe(
+      "This chat was about one question. To keep going, open that question and ask LISA there.",
+    );
     expect(within(page).queryByRole("textbox", { name: "Message" })).toBeNull();
     expect(
       within(page).queryByRole("button", { name: "End session" }),
     ).toBeNull();
     expect(page.textContent).not.toContain("zqx-dock-explanation");
     expectNoAnswerOnTheWire(tutorCalls());
+  });
+
+  it("a practice question's conversation is labelled 'Practice question · Sep 21'", async () => {
+    const convId = seedScopedConversation(
+      seedPracticeItem("answered"),
+      "practice",
+    );
+    await mount("paid", { path: "/chat" });
+    const items = await screen.findAllByTestId("lisa-history-item");
+    const row = items.find(
+      (a) => a.getAttribute("href") === `/chat?conversationId=${convId}`,
+    );
+    expect(row).toBeTruthy();
+    expect(within(row!).getByTestId("lisa-history-scope").textContent).toBe(
+      "Practice question \u00b7 Sep 21",
+    );
   });
 
   it("the LISA page's own conversations are unchanged: no question label, and the composer", async () => {
@@ -1292,5 +1341,106 @@ describe("placement in the column (owner brief, Karl, 2026-10-23): bottom-right 
       if (originalWidth)
         Object.defineProperty(Element.prototype, "clientWidth", originalWidth);
     }
+  });
+});
+
+// ── Docked in a runner (owner brief "restore the pre-#1300 runner layout", Karl, 2026-10-26) ──
+
+describe("docked: in a runner the open panel is the runner's right column, not a floating panel", () => {
+  it("open on mount (review): the panel is drawn INTO the runner's column, filling it, and there is no launcher", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", { docked: { defaultOpen: true, onOpenChange } });
+    const slot = screen.getByTestId("docked-slot");
+    const panel = await screen.findByTestId("chat-dock-panel");
+    expect(slot.contains(panel)).toBe(true);
+    expect(panel.getAttribute("data-placement")).toBe("docked");
+    expect(panel.style.width).toBe("100%");
+    expect(panel.style.height).toBe("100%");
+    expect(screen.getByTestId("chat-dock").getAttribute("data-view")).toBe(
+      "open",
+    );
+    expect(screen.queryByTestId("chat-dock-bubble")).toBeNull();
+    // Opening on entry is not the student's click: focus stays where it was.
+    expect(document.activeElement).not.toBe(panel);
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("Minimize collapses it to the launcher and tells the runner; the launcher reopens it, the draft kept", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", { docked: { defaultOpen: true, onOpenChange } });
+    const box = await within(dialog()).findByRole("textbox", {
+      name: "Message",
+    });
+    fireEvent.change(box, { target: { value: "half a thought" } });
+    fireEvent.click(
+      within(dialog()).getByRole("button", { name: "Minimize LISA" }),
+    );
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Kept, hidden, in the column (the runner hides the column itself).
+    const kept = screen.getByTestId("chat-dock-panel");
+    expect(screen.getByTestId("docked-slot").contains(kept)).toBe(true);
+    expect(kept.hidden).toBe(true);
+    expect(document.activeElement).toBe(bubble());
+    fireEvent.click(bubble());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    expect(
+      (
+        within(dialog()).getByRole("textbox", {
+          name: "Message",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("half a thought");
+  });
+
+  it("closed on mount (practice): the launcher, no panel, until the student opens it (or the runner's link does)", async () => {
+    const onOpenChange = vi.fn();
+    const handle = React.createRef<ChatDockHandle>();
+    await mount("paid", {
+      handle,
+      docked: { defaultOpen: false, onOpenChange },
+    });
+    expect(bubble()).toBeTruthy();
+    expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
+    act(() => handle.current?.open());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByTestId("docked-slot").contains(dialog())).toBe(true);
+  });
+
+  it("Close drops the panel and tells the runner", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", { docked: { defaultOpen: true, onOpenChange } });
+    await screen.findByTestId("chat-dock-panel");
+    fireEvent.click(
+      within(dialog()).getByRole("button", { name: "Close LISA" }),
+    );
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
+    expect(bubble()).toBeTruthy();
+  });
+
+  it("free: docked open is still never a panel; the launcher's lock opens the upgrade modal", async () => {
+    const onOpenChange = vi.fn();
+    await mount("free", { docked: { defaultOpen: true, onOpenChange } });
+    expect(screen.queryByTestId("chat-dock-panel")).toBeNull();
+    expect(tutorCalls()).toHaveLength(0);
+  });
+});
+
+describe("docked and suppressed (owner ruling on #1322, Karl, 2026-10-26): below W3 the calculator has LISA's place", () => {
+  it("open but suppressed: drawn as the launcher (panel kept, hidden), without touching its own open state; the launcher asks for LISA back", async () => {
+    const onOpenChange = vi.fn();
+    await mount("paid", {
+      docked: { defaultOpen: true, onOpenChange, suppressed: true },
+    });
+    // Presence first: the panel exists (it was open), hidden; the launcher is drawn.
+    const kept = await screen.findByTestId("chat-dock-panel");
+    expect(kept.hidden).toBe(true);
+    expect(screen.getByTestId("chat-dock").getAttribute("data-view")).toBe(
+      "minimized",
+    );
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(bubble());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
   });
 });

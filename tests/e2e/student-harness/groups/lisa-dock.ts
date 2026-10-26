@@ -83,7 +83,7 @@ const NO_PROTOTYPE =
 export const LISA_DOCK: PageGroup = {
   id: "LISA-DOCK",
   title:
-    "LISA chat dock: Home, Review and the review runner, bubble and open dock; the free lock modal; absent on phones and the timed module; light and dark, 1440, 1024 and 390",
+    "LISA chat dock: Home, Review and the review runner, bubble and open dock; the free lock modal; absent on phones and the timed module; the practice runner before and after submit, Send as the outline icon, the calculator clear of the bubble; light and dark, 1440, 1062, 1024 and 390",
   seed: "lisa-dock",
   shots: [
     {
@@ -200,21 +200,11 @@ export const LISA_DOCK: PageGroup = {
       extraViewports: [W1024],
       prototype: { kind: "none", reason: NO_PROTOTYPE },
     },
-  ],
-};
-
-/**
- * LISA-DOCK-2 (owner rulings on #1300, Karl, 2026-10-23): the practice runner's dock after submit
- * (ruling 2), Send as the outline icon button (ruling 4) and the calculator kept clear of the bubble
- * at 1024, 1062 and 1440 (ruling 5). Its own group (its own fresh harness run): one run of both
- * groups' shots passes the harness's 1000-requests-per-15-minutes limiter.
- */
-export const LISA_DOCK_2: PageGroup = {
-  id: "LISA-DOCK-2",
-  title:
-    "LISA chat dock, follow-ups: the practice runner before and after submit (the dock only after), Send as the outline icon, the calculator clear of the bubble; light and dark, 1440, 1062, 1024 and 390",
-  seed: "lisa-dock",
-  shots: [
+    // #1300 follow-ups (rulings 2, 4 and 5; Karl, 2026-10-23): the practice runner's dock after
+    // submit, Send as the outline icon, the calculator kept clear of the bubble at 1024, 1062 and
+    // 1440. Shot as their own group (LISA-DOCK-2) only to stay under the harness's old request
+    // limit; merged back here on 2026-10-24, when the harness's ceiling was raised (owner ruling,
+    // Karl, 2026-10-24; rate-limit.ts).
     {
       id: "practice-before-submit",
       title:
