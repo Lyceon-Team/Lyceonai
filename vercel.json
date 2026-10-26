@@ -209,6 +209,10 @@
       "dest": "/app.html"
     },
     {
+      "src": "^/qotd/?$",
+      "dest": "/app.html"
+    },
+    {
       "src": "^/practice/session/[^/]+/?$",
       "dest": "/app.html"
     },

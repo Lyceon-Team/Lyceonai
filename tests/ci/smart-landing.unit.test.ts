@@ -32,6 +32,7 @@ import {
   type LandingConfig,
 } from "../../packages/shared/src/smart-landing-schema";
 import {
+  easyMediumLead,
   landingArmFor,
   planLandingDraws,
 } from "../../server/services/landing/assignment";
@@ -159,6 +160,15 @@ describe("smart landing: set composition", () => {
       { sections: ["M", "RW"], easyMediumOnly: true, limit: 1 },
     ]);
     expect(planLandingDraws("mixed", 0)).toEqual([]);
+  });
+
+  it("U4b the lead narrows the session's own difficulties to easy/medium, never widens them", () => {
+    expect(easyMediumLead([])).toEqual([1, 2]);
+    expect(easyMediumLead([1, 2, 3])).toEqual([1, 2]);
+    expect(easyMediumLead([2, 3])).toEqual([2]);
+    // Hard only: no easy or medium to give, so the session's filter stands. An empty list would
+    // reach the RPC as null ("every difficulty") and widen the session.
+    expect(easyMediumLead([3])).toEqual([3]);
   });
 });
 

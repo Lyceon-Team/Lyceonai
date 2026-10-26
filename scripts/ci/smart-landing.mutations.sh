@@ -161,13 +161,17 @@ run "SL13 seeded OFF" "P7 kill switch off" "$PG"
 
 echo "=== (14) the lead draw is not held to easy/medium (the practice start) ==="
 plant "$PRACTICE" "            difficulties: draw.easyMediumOnly
-              ? (" "            difficulties: draw.easyMediumOnly && false
-              ? (" || stale SL14
+              ? easyMediumLead" "            difficulties: draw.easyMediumOnly && false
+              ? easyMediumLead" || stale SL14
 run "SL14 first two easy or medium (practice start)" "P9 every landing set opens with two easy/medium" "$PG"
 
 echo "=== (15) the plan has no easy/medium lead ==="
 plant "$ASSIGN" "      { sections, easyMediumOnly: true, limit: lead }," "      { sections, easyMediumOnly: false, limit: lead }," || stale SL15
 run "SL15 first two easy or medium (plan)" "U4 the first 2 draws are easy/medium" "$UNIT"
+
+echo "=== (15b) a hard-only session's lead widens to every difficulty ==="
+plant "$ASSIGN" "  return narrowed.length > 0 ? narrowed : sessionDifficulties;" "  return narrowed;" || stale SL15b
+run "SL15b the lead never widens the session's difficulties" "U4b the lead narrows the session's own difficulties" "$UNIT"
 
 echo "=== (16) math first is 4 Math, not 5 ==="
 plant "$ASSIGN" "  const math = Math.min(LANDING_MATH_FIRST_COUNT, size);" "  const math = Math.min(LANDING_MATH_FIRST_COUNT - 1, size);" || stale SL16

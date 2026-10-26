@@ -32,7 +32,6 @@ import {
   type LifecycleRuleSummary,
 } from "../lib/lifecycle-email.js";
 import { runLandingSummaries } from "../services/landing/landing-service";
-import { liveLandingDeps } from "../services/landing/landing-deps";
 import { sweepNotificationRetention } from "../lib/notifications/retention.js";
 import {
   sweepOperationalLogRetention,
@@ -951,6 +950,10 @@ router.get(
       return;
     }
     try {
+      // Loaded on use: the live deps reach the practice router (set creation), which this cron
+      // module has no other reason to load.
+      const { liveLandingDeps } =
+        await import("../services/landing/landing-deps");
       const summary = await runLandingSummaries(liveLandingDeps);
       logger.info(
         "LANDING",

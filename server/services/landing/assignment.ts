@@ -76,6 +76,18 @@ export type LandingDraw = {
 };
 
 /**
+ * The difficulties an easy/medium lead draw may use: the session's own difficulties narrowed to
+ * easy (1) and medium (2); no filter means both. A session filtered to hard only has no easy or
+ * medium to give, so the lead keeps the session's own filter rather than widening to every
+ * difficulty (an empty list reaches the RPC as null, which would be "all").
+ */
+export function easyMediumLead(sessionDifficulties: number[]): number[] {
+  if (sessionDifficulties.length === 0) return [1, 2];
+  const narrowed = sessionDifficulties.filter((d) => d <= 2);
+  return narrowed.length > 0 ? narrowed : sessionDifficulties;
+}
+
+/**
  * The ordered draws for a landing set of `size` (already clamped by the quota). Items are stored
  * in draw order, so the first `LANDING_LEAD_EASY_MEDIUM` ordinals are the lead. `scopedSections`
  * is used by `scoped` only (the session spec's sections).

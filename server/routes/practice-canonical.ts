@@ -82,6 +82,7 @@ import {
 } from "../lib/step-timer";
 import { diagnosticCompletionResultSchema } from "../../packages/shared/src/diagnostic-projection";
 import {
+  easyMediumLead,
   planLandingDraws,
   type LandingSetKind,
 } from "../services/landing/assignment";
@@ -1905,9 +1906,7 @@ export async function startOrReplaySession(args: {
           (draw) => ({
             sections: draw.sections,
             difficulties: draw.easyMediumOnly
-              ? (difficultyInts.length > 0 ? difficultyInts : [1, 2]).filter(
-                  (d) => d <= 2,
-                )
+              ? easyMediumLead(difficultyInts)
               : difficultyInts,
             limit: draw.limit,
           }),
