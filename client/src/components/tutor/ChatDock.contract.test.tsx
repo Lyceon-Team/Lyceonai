@@ -1294,3 +1294,158 @@ describe("placement in the column (owner brief, Karl, 2026-10-23): bottom-right 
     }
   });
 });
+
+// ── P2 §3.1: a burst of send events is ONE turn ─────────────────────────────────
+
+/**
+ * @spec [owner brief "P2 Revised Again" (Karl, 2026-10-26) §3.1 and rulings ("The three-keydown
+ *        burst gives one POST"); Doc 03B §20.5 (one client_turn_id per LISA message)]
+ *        | @implemented [2026-10-26]
+ *
+ * plain English: three Enter keydowns delivered in ONE task, before React can re-render, as the
+ * production burst arrived (three POSTs within 3-4 ms, three client_turn_ids; reproduced in
+ * Chromium on a production build). Every surface that sends: the LISA page into an open
+ * conversation and from a new session, the dock in general mode (first message creates the
+ * conversation, then a second message into it), and the dock scoped to a review question (the
+ * body the runner's phone panel shares). Each burst is one create at most, one message POST, one
+ * student row and one reply.
+ */
+describe("P2 §3.1: a burst of send events is one turn", () => {
+  function burst(box: HTMLElement, text: string): void {
+    fireEvent.change(box, { target: { value: text } });
+    for (let i = 0; i < 3; i += 1) {
+      box.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+  }
+
+  function messagePosts(): Call[] {
+    return tutorCalls().filter(
+      (c) => c.method === "POST" && c.path === "/api/tutor/messages",
+    );
+  }
+
+  function createPosts(): Call[] {
+    return tutorCalls().filter(
+      (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
+    );
+  }
+
+  function studentRows(): Array<Record<string, unknown>> {
+    return db.current
+      .rows("tutor_messages")
+      .filter((r) => r.role === "student");
+  }
+
+  /** Lets every request the burst could have started reach the router and come back. */
+  async function settle(): Promise<void> {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+  }
+
+  function seedStandalone(): string {
+    return db.current.seed("tutor_conversations", {
+      student_id: STUDENT_ID,
+      entry_mode: "general",
+      source_surface: "dashboard",
+      surface: "standalone",
+      source_session_id: null,
+      source_session_item_id: null,
+      source_question_row_id: null,
+      source_question_canonical_id: null,
+      status: "active",
+      crisis_flagged: false,
+      deleted_at: null,
+      updated_at: "2026-09-23T00:00:00.000Z",
+      closed_at: null,
+      title: "New session",
+      crisis_paused_at: null,
+      ended_at: null,
+    }).id as string;
+  }
+
+  it("the LISA page, open conversation: one POST, one row, one reply", async () => {
+    const convId = seedStandalone();
+    await mount("paid", { path: `/chat?conversationId=${convId}` });
+    const page = await screen.findByTestId("lisa-page");
+    burst(
+      await within(page).findByRole("textbox", { name: "Message" }),
+      STUDENT_TEXT,
+    );
+    await within(page).findByText(TUTOR_TEXT);
+    await settle();
+    expect(messagePosts()).toHaveLength(1);
+    expect(studentRows()).toHaveLength(1);
+    expect(within(page).getAllByText(TUTOR_TEXT)).toHaveLength(1);
+  });
+
+  it("the LISA page, new session: one create, one POST, one row, one reply", async () => {
+    await mount("paid", { path: "/chat" });
+    const page = await screen.findByTestId("lisa-page");
+    burst(
+      await within(page).findByRole("textbox", { name: "Message" }),
+      STUDENT_TEXT,
+    );
+    await within(page).findByText(TUTOR_TEXT);
+    await settle();
+    expect(createPosts()).toHaveLength(1);
+    expect(db.current.rows("tutor_conversations")).toHaveLength(1);
+    expect(messagePosts()).toHaveLength(1);
+    expect(studentRows()).toHaveLength(1);
+    expect(within(page).getAllByText(TUTOR_TEXT)).toHaveLength(1);
+  });
+
+  it("the dock, general mode: the first message creates once and sends once; a second burst sends once", async () => {
+    await mount("paid");
+    fireEvent.click(bubble());
+    burst(
+      await within(dialog()).findByRole("textbox", { name: "Message" }),
+      STUDENT_TEXT,
+    );
+    await within(dialog()).findByText(TUTOR_TEXT);
+    await settle();
+    expect(createPosts()).toHaveLength(1);
+    expect(db.current.rows("tutor_conversations")).toHaveLength(1);
+    expect(messagePosts()).toHaveLength(1);
+
+    // The thread is open now: a burst there is the turn machine's own send.
+    const box = within(dialog()).getByRole("textbox", { name: "Message" });
+    await waitFor(() =>
+      expect((box as HTMLTextAreaElement).disabled).toBe(false),
+    );
+    burst(box, "and the y-intercept?");
+    await waitFor(() => expect(messagePosts()).toHaveLength(2));
+    await settle();
+    expect(messagePosts()).toHaveLength(2);
+    expect(studentRows()).toHaveLength(2);
+  });
+
+  it("the dock scoped to a review question (the runner panel's body): one create, one POST", async () => {
+    const itemId = seedReviewItem();
+    await mount("paid", {
+      scope: {
+        kind: "question",
+        sourceSurface: "review",
+        sessionItemId: itemId,
+        questionLabel: "Question 1 of 5",
+        submitted: false,
+      },
+    });
+    fireEvent.click(bubble());
+    burst(
+      await within(dialog()).findByRole("textbox", { name: "Message" }),
+      "where do I start?",
+    );
+    await within(dialog()).findByText(TUTOR_TEXT);
+    await settle();
+    expect(createPosts()).toHaveLength(1);
+    expect(messagePosts()).toHaveLength(1);
+    expect(studentRows()).toHaveLength(1);
+  });
+});
