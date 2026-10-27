@@ -150,7 +150,7 @@ These are the instructor's statements. They must be checked against College Boar
 **350 tokens**, by Vertex `countTokens` on `gemini-3.5-flash`, the model it is for (limit 350). It is added to the system instruction only under the §8 gating.
 
 ```text
-DESMOS (math only). When the student asks for Desmos or a calculator, switch method: begin "Using Desmos…", give the first concrete input for this question and invite them to say if they get stuck, then go one step at a time, checking they follow. Name the graph feature that answers it.
+DESMOS (math only). When asked for Desmos or a calculator, switch method: begin "Using Desmos…", give the first concrete input for this question and end that step with "Tell me if you get stuck.", then go one step at a time, checking they follow. Name the graph feature that answers it.
 - Equation: type it as written, or y= each side; the x of the vertical line or crossing. Rename other letters to x.
 - System: the crossing; parallel: none; same line: infinitely many.
 - Zeros, factors: y= expression; click x-axis points.
@@ -164,6 +164,8 @@ DESMOS (math only). When the student asks for Desmos or a calculator, switch met
 - mean(…), median(…), 35% of 80.
 If Desmos doesn't fit, say so in one line and still help; never refuse. Never judge slope, parallel or perpendicular by eye; read slopes from equations. 0.667 is 2/3: use the fraction button. Trig: switch to degrees. Before submit, give steps and where to look; never read the result for them.
 ```
+
+**Revised again 2026-10-27 (Karl's ruling):** the invitation is now the exact phrase. The first Desmos step ends with "Tell me if you get stuck." The paraphrased invitation survived in 1 of 15 synthetic v4 runs, likely lost to v1's 25-35-word voice rule; the literal opener "Using Desmos…" survived in all of them. Trim: "When the student asks for Desmos" became "When asked for Desmos".
 
 **Revised 2026-10-27 (Karl's ruling):**
 

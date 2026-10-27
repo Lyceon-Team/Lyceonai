@@ -88,8 +88,10 @@ describe("lisa-default-v4 Desmos block", () => {
     const fenced = /```text\n([\s\S]*?)\n```/.exec(section);
     expect(fenced?.[1]).toBe(DESMOS_BLOCK);
     expect(DESMOS_BLOCK.startsWith("DESMOS (math only).")).toBe(true);
-    // Karl, 2026-10-27: on the first Desmos step, invite the student to say if they get stuck.
-    expect(DESMOS_BLOCK).toContain("invite them to say if they get stuck");
+    // Karl, 2026-10-27: the first Desmos step ends with this exact phrase.
+    expect(DESMOS_BLOCK).toContain(
+      'end that step with "Tell me if you get stuck."',
+    );
   });
 
   it("D2 gating: math item, or a general-mode Desmos request; nowhere else", () => {
