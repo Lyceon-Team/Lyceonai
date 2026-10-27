@@ -74,7 +74,7 @@ describe("smart landing routes", () => {
       { device_class: "iPhone 15", client_instance_id: "c" },
       { device_class: "phone" },
       { device_class: "phone", client_instance_id: "c", role: "student" },
-      { device_class: "phone", client_instance_id: "c", arm: "set_mixed" },
+      { device_class: "phone", client_instance_id: "c", arm: "set_math_5" },
       {
         device_class: "phone",
         client_instance_id: "c",
