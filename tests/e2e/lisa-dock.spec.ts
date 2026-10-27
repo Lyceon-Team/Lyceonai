@@ -44,6 +44,9 @@
  * (tests/e2e/student-harness/rate-limit.ts, owner ruling 2026-10-24; production stays at 1000 per
  * 15 minutes). Past it the server answers 429, which the app reads as signed out (the login page):
  * restart the server, or raise the harness's override for the run (rate-limit.ts names it).
+ * @updated 2026-10-27 (owner brief "Video player: near-fullscreen", Karl): the video player's
+ * tests are the last block (sizes at desktop, tablet and phone, the one-line header, shrink and
+ * expand, focus returning on close), on the LISA page and in the review runner.
  */
 import {
   expect,
@@ -52,6 +55,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { execFileSync } from "child_process";
 import fs from "fs";
 import { answerCookieBanner } from "./exam-harness/consent";
 import {
@@ -1202,6 +1206,385 @@ for (const [width, height, expected] of [
         fit.scroll,
         `the chip's text overflows its box (${fit.scroll} > ${fit.client})`,
       ).toBeLessThanOrEqual(fit.client);
+    } finally {
+      await endReviewSession(request, sessionId);
+    }
+  });
+}
+
+// ── The video player (owner brief "Video player: near-fullscreen", Karl 2026-10-27) ──────────
+//
+// @spec [owner brief "Video player: near-fullscreen" (Karl, 2026-10-27): "the modal takes most of
+//        the viewport, about 90–95% of the width and height on desktop, holding the 16:9 frame.
+//        On phones it goes full screen"; "Header: one line"; shrink and expand; "Escape closes,
+//        focus moves into the dialog and returns to the button that opened it"; tests: "the size
+//        and one-line header at desktop, tablet and phone widths in the existing Playwright
+//        student harness; shrink and expand; focus returning on close"] | @implemented [2026-10-27]
+//
+// plain English: the real card and player, on the LISA page and in the review runner's docked
+// LISA. The harness never runs a tutor turn, so the one hop the spec stands in for is the send's
+// answer: its `suggested_action` is the BFF's own, built by `resolveVideoAction` from the
+// reviewed library row of Desmos Lesson #10 (student-harness/video-offer.ts). The embed is
+// answered by a blank page (no network to YouTube in CI) and every request for it is counted,
+// so "shrink and expand never reload the lesson" is a count, not a guess.
+
+type VideoAction = {
+  type: "recommend_video";
+  label: string | null;
+  video: {
+    video_id: string;
+    title: string;
+    channel_name: string;
+    duration_seconds: number;
+    start_seconds: number | null;
+  };
+};
+const VIDEO_ACTION = JSON.parse(
+  execFileSync(
+    "pnpm",
+    [
+      "exec",
+      "tsx",
+      "--import",
+      "./tests/e2e/student-harness/register.mjs",
+      "tests/e2e/student-harness/video-offer.ts",
+    ],
+    { encoding: "utf8" },
+  )
+    .trim()
+    .split("\n")
+    .pop() ?? "{}",
+) as VideoAction;
+
+const PLAYER = '[data-testid="tutor-video-modal"]';
+const PLAYER_SIZES = [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "tablet landscape", width: 1024, height: 768 },
+  { name: "tablet portrait", width: 768, height: 1024 },
+  { name: "phone", width: 390, height: 844 },
+] as const;
+const VIDEO_SHOTS = process.env.E2E_SHOT_DIR ?? "test-results/tutor-video";
+
+/** Answers the embed with a blank page and the send with the video offer; counts embed loads. */
+async function serveVideoOffer(page: Page): Promise<{ embedLoads: string[] }> {
+  const embedLoads: string[] = [];
+  await page.route("https://www.youtube-nocookie.com/**", async (route) => {
+    embedLoads.push(route.request().url());
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>embed</title><body style='margin:0;background:#000'>",
+    });
+  });
+  await page.route(`${BASE}/api/tutor/messages`, async (route) => {
+    const sent = route.request().postDataJSON() as {
+      conversation_id: string;
+      client_turn_id: string;
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      // The route's Step 19 body (server/routes/tutor-runtime.ts), envelope included: every
+      // tutor route answers `{ data }`, and the client reads `payload.data`.
+      body: JSON.stringify({
+        data: {
+          conversation_id: sent.conversation_id,
+          message_id: "harness-video-turn",
+          client_turn_id: sent.client_turn_id,
+          response: {
+            content:
+              "This Desmos lesson works an Equivalent Expressions question.",
+            content_kind: "message",
+            suggested_action: VIDEO_ACTION,
+            ui_hints: {
+              show_accept_decline: false,
+              allow_freeform_reply: true,
+              suggested_chip: null,
+            },
+          },
+          conversation_updated_at: new Date().toISOString(),
+        },
+      }),
+    });
+  });
+  return { embedLoads };
+}
+
+/** Sends one message in `scope` and opens the offered video; returns the Watch button. */
+async function watchOfferedVideo(scope: Locator): Promise<Locator> {
+  await scope
+    .locator('textarea[aria-label="Message"]')
+    .fill("is there a Desmos video for this?");
+  await scope.getByRole("button", { name: "Send" }).click();
+  const card = scope.locator('[data-testid="tutor-video-card"]');
+  await expect(card).toBeVisible();
+  const watch = card.locator('[data-testid="tutor-video-watch"]');
+  await watch.click();
+  return watch;
+}
+
+async function focusIsInPlayer(page: Page): Promise<boolean> {
+  return page.evaluate(
+    (sel) =>
+      document.querySelector(sel)?.contains(document.activeElement) ?? false,
+    PLAYER,
+  );
+}
+
+/** The expanded player's box against the viewport, for its size assertions. */
+async function expectExpanded(
+  page: Page,
+  width: number,
+  height: number,
+): Promise<void> {
+  const player = page.locator(PLAYER);
+  await expect(player).toHaveAttribute("data-size", "expanded");
+  await expect(player).toHaveAttribute("aria-modal", "true");
+  const b = await box(player);
+  const frame = await box(page.locator('[data-testid="tutor-video-frame"]'));
+  // 16:9 frame, always.
+  expect(Math.abs(frame.height - (frame.width * 9) / 16)).toBeLessThanOrEqual(
+    1.5,
+  );
+  if (width < 768) {
+    // Phones: the whole screen, the frame across it.
+    expect(b).toEqual({ x: 0, y: 0, width, height });
+    expect(Math.abs(frame.width - width)).toBeLessThanOrEqual(1);
+    return;
+  }
+  // 768px and up: centred; the binding side at 90–95% of the viewport, neither side above 95%.
+  const shareW = b.width / width;
+  const shareH = b.height / height;
+  expect(Math.max(shareW, shareH)).toBeGreaterThanOrEqual(0.9);
+  expect(shareW).toBeLessThanOrEqual(0.951);
+  expect(shareH).toBeLessThanOrEqual(0.951);
+  expect(Math.abs(b.x + b.width / 2 - width / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(b.y + b.height / 2 - height / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs(frame.width - b.width)).toBeLessThanOrEqual(2.5);
+}
+
+/** One header line: 48px; the title on one line with an ellipsis; channel and controls in it. */
+async function expectOneLineHeader(page: Page, width: number): Promise<void> {
+  const header = page.locator('[data-testid="tutor-video-header"]');
+  const h = await box(header);
+  expect(Math.round(h.height)).toBe(48);
+  const title = page.locator('[data-testid="tutor-video-modal-title"]');
+  await expect(title).toHaveText(VIDEO_ACTION.video.title);
+  const fit = await title.evaluate((el) => {
+    const css = getComputedStyle(el);
+    return {
+      whiteSpace: css.whiteSpace,
+      textOverflow: css.textOverflow,
+      lineHeight: parseFloat(css.lineHeight),
+      height: el.getBoundingClientRect().height,
+      scroll: el.scrollWidth,
+      client: el.clientWidth,
+    };
+  });
+  expect(fit.whiteSpace).toBe("nowrap");
+  expect(fit.textOverflow).toBe("ellipsis");
+  expect(fit.height).toBeLessThanOrEqual(fit.lineHeight + 1);
+  // The proof title is long: below desktop it does not fit, and the ellipsis is what shows.
+  if (width < 1024) expect(fit.scroll).toBeGreaterThan(fit.client);
+  for (const id of [
+    "tutor-video-modal-channel",
+    "tutor-video-size",
+    "tutor-video-close",
+  ]) {
+    const b = await box(page.locator(`[data-testid="${id}"]`));
+    expect(b.y, `${id} in the header`).toBeGreaterThanOrEqual(h.y - 0.5);
+    expect(b.y + b.height, `${id} in the header`).toBeLessThanOrEqual(
+      h.y + h.height + 0.5,
+    );
+  }
+  await expect(
+    page.locator('[data-testid="tutor-video-modal-channel"]'),
+  ).toHaveText(VIDEO_ACTION.video.channel_name);
+  await expect(
+    page.locator('[data-testid="tutor-video-size"]'),
+  ).toHaveAccessibleName("Shrink video");
+}
+
+for (const size of PLAYER_SIZES) {
+  test(`video player, ${size.name} ${size.width}x${size.height}: near-fullscreen 16:9, one-line header, focus in and back`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await asPersona(page, "paid");
+    const { embedLoads } = await serveVideoOffer(page);
+    await page.goto(`${BASE}/chat`);
+    const lisaPage = page.locator('[data-testid="lisa-page"]');
+    await expect(lisaPage).toBeVisible();
+    const watch = await watchOfferedVideo(lisaPage);
+
+    await expect(page.locator(PLAYER)).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: VIDEO_ACTION.video.title }),
+    ).toBeVisible();
+    await expect.poll(() => focusIsInPlayer(page)).toBe(true);
+    await expectExpanded(page, size.width, size.height);
+    await expectOneLineHeader(page, size.width);
+    // The embed is unchanged: this video, nocookie, rel=0, no start.
+    await expect(
+      page.locator('[data-testid="tutor-video-embed"]'),
+    ).toHaveAttribute(
+      "src",
+      `https://www.youtube-nocookie.com/embed/${VIDEO_ACTION.video.video_id}?rel=0`,
+    );
+    expect(embedLoads).toHaveLength(1);
+    await page.screenshot({
+      path: `${VIDEO_SHOTS}/expanded-${size.width}x${size.height}.png`,
+    });
+
+    if (size.width >= 768) {
+      // Hover shows the whole title.
+      await page.locator('[data-testid="tutor-video-modal-title"]').hover();
+      await expect(
+        page.locator('[data-testid="tutor-video-full-title"]'),
+      ).toBeVisible();
+      await expect(
+        page.locator('[data-testid="tutor-video-full-title"]'),
+      ).toHaveText(VIDEO_ACTION.video.title);
+    }
+
+    // Escape closes; focus is back on Watch.
+    await page.keyboard.press("Escape");
+    await expect(page.locator(PLAYER)).toHaveCount(0);
+    await expect(watch).toBeFocused();
+  });
+}
+
+test("video player, phone: a long-press on the title shows it whole", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await asPersona(page, "paid");
+  await serveVideoOffer(page);
+  await page.goto(`${BASE}/chat`);
+  await watchOfferedVideo(page.locator('[data-testid="lisa-page"]'));
+  const title = page.locator('[data-testid="tutor-video-modal-title"]');
+  const full = page.locator('[data-testid="tutor-video-full-title"]');
+  await expect(full).toBeHidden();
+  await title.dispatchEvent("pointerdown", {
+    pointerType: "touch",
+    isPrimary: true,
+  });
+  await expect(full).toBeVisible();
+  await expect(full).toHaveText(VIDEO_ACTION.video.title);
+  await title.dispatchEvent("pointerup", {
+    pointerType: "touch",
+    isPrimary: true,
+  });
+  await expect(full).toBeVisible();
+  await page
+    .locator('[data-testid="tutor-video-header"]')
+    .dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true });
+  await expect(full).toBeHidden();
+});
+
+test("video player, 1440: shrink and expand restyle the same frame; the page is usable while shrunk; Close returns focus", async ({
+  page,
+}) => {
+  const width = 1440;
+  const height = 900;
+  await page.setViewportSize({ width, height });
+  await asPersona(page, "paid");
+  const { embedLoads } = await serveVideoOffer(page);
+  await page.goto(`${BASE}/chat`);
+  const lisaPage = page.locator('[data-testid="lisa-page"]');
+  const watch = await watchOfferedVideo(lisaPage);
+  const player = page.locator(PLAYER);
+  await expectExpanded(page, width, height);
+  // A mark on the frame element: a remount would draw a new element without it.
+  await page
+    .locator('[data-testid="tutor-video-embed"]')
+    .evaluate((el) => el.setAttribute("data-harness-mark", "kept"));
+
+  const toggle = page.locator('[data-testid="tutor-video-size"]');
+  await toggle.click();
+  await expect(player).toHaveAttribute("data-size", "shrunk");
+  await expect(player).toHaveAttribute("aria-modal", "false");
+  await expect(toggle).toHaveAccessibleName("Expand video");
+  await expect(toggle).toBeFocused();
+  const mini = await box(player);
+  expect(Math.round(mini.width)).toBe(360);
+  // Bottom-right, an edge in.
+  expect(Math.round(width - (mini.x + mini.width))).toBe(16);
+  expect(height - (mini.y + mini.height)).toBeGreaterThanOrEqual(16);
+  const frame = await box(page.locator('[data-testid="tutor-video-frame"]'));
+  expect(Math.abs(frame.height - (frame.width * 9) / 16)).toBeLessThanOrEqual(
+    1.5,
+  );
+  await page.screenshot({
+    path: `${VIDEO_SHOTS}/shrunk-${width}x${height}.png`,
+  });
+
+  // The page is the student's: typing to LISA works, and the player keeps playing.
+  const composer = lisaPage.locator('textarea[aria-label="Message"]');
+  await composer.click();
+  await composer.fill("thanks");
+  await expect(composer).toHaveValue("thanks");
+  await page.keyboard.press("Escape");
+  await expect(player).toHaveAttribute("data-size", "shrunk");
+
+  await toggle.click();
+  await expectExpanded(page, width, height);
+  await expect(toggle).toHaveAccessibleName("Shrink video");
+  await expect(
+    page.locator('[data-testid="tutor-video-embed"]'),
+  ).toHaveAttribute("data-harness-mark", "kept");
+  // One load for the whole open: shrinking and expanding never reloaded the lesson.
+  expect(embedLoads).toHaveLength(1);
+
+  // Shrunk, Close is one press, and focus is back on Watch.
+  await toggle.click();
+  await page.locator('[data-testid="tutor-video-close"]').click();
+  await expect(player).toHaveCount(0);
+  await expect(watch).toBeFocused();
+  // Every open starts expanded.
+  await watch.click();
+  await expectExpanded(page, width, height);
+  await page.locator('[data-testid="tutor-video-close"]').click();
+  await expect(watch).toBeFocused();
+});
+
+for (const [width, height] of [
+  [1440, 900],
+  [1024, 768],
+] as const) {
+  test(`video player, review runner ${width}x${height}: shrunk over LISA's column, clear of the question, its choices and Submit/Next`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await asPersona(page, "paid");
+    await serveVideoOffer(page);
+    const sessionId = await freshReviewSession(request);
+    try {
+      await openRunner(page, sessionId);
+      const panel = page.locator(PANEL);
+      await expect(panel).toBeVisible();
+      await watchOfferedVideo(panel);
+      await expectExpanded(page, width, height);
+      await page.locator('[data-testid="tutor-video-size"]').click();
+      const player = page.locator(PLAYER);
+      await expect(player).toHaveAttribute("data-size", "shrunk");
+      // Inside LISA's docked column, at its width (372px from 1338px up, 312px below).
+      const column = await box(panel);
+      const mini = await box(player);
+      expect(Math.abs(mini.x - column.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(mini.width - column.width)).toBeLessThanOrEqual(1);
+      expect(mini.y).toBeGreaterThanOrEqual(column.y);
+      expect(mini.y + mini.height).toBeLessThanOrEqual(
+        column.y + column.height + 1,
+      );
+      await expectRunnerClear(page, player);
+      // Working the question while it plays: a choice takes the click (Playwright's hit test
+      // fails if anything lies over it), and the player is still there.
+      await page.locator('[data-testid="runner-choice"]').first().click();
+      await expect(player).toHaveAttribute("data-size", "shrunk");
+      await page.screenshot({
+        path: `${VIDEO_SHOTS}/runner-shrunk-${width}x${height}.png`,
+      });
     } finally {
       await endReviewSession(request, sessionId);
     }
