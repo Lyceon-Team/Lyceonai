@@ -18,7 +18,7 @@ set -uo pipefail
 export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-postgres}" PGPASSWORD="${PGPASSWORD:-postgres}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-MIG="supabase/migrations/20261115000000_worked_examples.sql"
+MIG="supabase/migrations/20261118000000_worked_examples.sql"
 DB=worked_example_mutations
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/we-mut.XXXX)"

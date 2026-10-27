@@ -12,7 +12,7 @@ by ende.app, CC BY 4.0, credited in every caption.
 | Asset kit | `video-kit/worked-examples/` | blank paper, Caveat + OFL, brand colours and fonts, the six templates, voice settings, music + licence |
 | PR check | `.github/workflows/worked-example-checks.yml` | every content rule on a pull request into `social` |
 | Daily job | `.github/workflows/worked-example-daily.yml`, 17:00 UTC | renders today's approved example and posts the labelled set to #social |
-| Database | `supabase/migrations/20261115000000_worked_examples.sql` | `worked_examples`, `worked_example_metrics`, `questions_with_usage`, the leak rule both ways |
+| Database | `supabase/migrations/20261118000000_worked_examples.sql` | `worked_examples`, `worked_example_metrics`, `questions_with_usage`, the leak rule both ways |
 
 ## The monthly plan (a pull request into `social`)
 
