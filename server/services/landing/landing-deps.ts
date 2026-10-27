@@ -24,9 +24,10 @@ import { liveLaunchDeps } from "../calendar/launch-deps";
 import { startOrReplaySession } from "../../routes/practice-canonical";
 import {
   deviceClassSchema,
-  landingArmSchema,
   landingFallbackReasonSchema,
+  storedLandingArmSchema,
   LANDING_RUNNER_QUERY,
+  LANDING_SET_SECTIONS,
   type LandingFallbackReason,
 } from "../../../packages/shared/src/smart-landing-schema";
 import { loadLandingConfig } from "./landing-config";
@@ -36,24 +37,24 @@ const ACTIVE = ["created", "active"] as const;
 
 const claimRowSchema = z.object({
   show_id: z.string().uuid(),
-  arm: landingArmSchema,
-  eligible_arms: z.array(landingArmSchema),
+  arm: storedLandingArmSchema,
+  eligible_arms: z.array(storedLandingArmSchema),
   first_in_window: z.boolean(),
 });
 
 const windowRowSchema = z.object({
-  arm: landingArmSchema,
-  eligible_arms: z.array(landingArmSchema),
+  arm: storedLandingArmSchema,
+  eligible_arms: z.array(storedLandingArmSchema),
 });
 
 const todayShowRowSchema = z.object({
   id: z.string().uuid(),
-  arm: landingArmSchema,
+  arm: storedLandingArmSchema,
 });
 
 const escapeRowSchema = z.object({
   window_index: z.number().int(),
-  arm: landingArmSchema,
+  arm: storedLandingArmSchema,
   device_class: deviceClassSchema,
 });
 
@@ -61,7 +62,7 @@ const summaryRowSchema = z.object({
   show_id: z.string().uuid(),
   profile_id: z.string().uuid(),
   window_index: z.number().int(),
-  arm: landingArmSchema,
+  arm: storedLandingArmSchema,
   device_class: deviceClassSchema,
   questions_answered: z.number().int().min(0),
 });
@@ -191,12 +192,14 @@ export const liveLandingDeps: LandingDeps = {
   },
 
   async startSet(args): Promise<SetOutcome> {
-    const sections: ("M" | "RW")[] = ["M", "RW"];
+    // One section, named on the session itself (`section`) and in its spec, so the session page,
+    // which runs a practice session in one section, can open it (Karl, 2026-10-26).
+    const sections: ("M" | "RW")[] = [...LANDING_SET_SECTIONS];
     const result = await startOrReplaySession({
       userId: args.caller.id,
       actorId: args.caller.actorId,
       role: args.caller.role,
-      section: null,
+      section: LANDING_SET_SECTIONS[0],
       mode: "balanced",
       clientInstanceId: args.clientInstanceId,
       idempotencyKey: args.idempotencyKey,
@@ -210,7 +213,7 @@ export const liveLandingDeps: LandingDeps = {
         target_question_count: args.size,
         mode: "balanced",
       },
-      composition: args.kind,
+      composition: "easy_medium_lead",
     });
     return result.ok
       ? { ok: true, sessionId: result.session.id }

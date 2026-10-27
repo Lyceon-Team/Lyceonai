@@ -6,11 +6,15 @@
  *        "Landings", "Assignment", "Data"; Karl's rulings on Step 0 the same day: A (app open, the
  *        first open of the America/Chicago day within the window, at the default entry), B (an
  *        option that cannot be served shows Home and records `fallback_reason`), C (round 1 arms:
- *        `dashboard` at 1/3, `qotd_then_more`, `set_mixed`, `set_math_first`; Pro with a plan adds
+ *        `dashboard` at 1/3, `qotd_then_more`, `set_mixed`, `set_math_first` [the two sets
+ *        superseded by `set_math_5` the same day, below]; Pro with a plan adds
  *        `session_today`, Pro without a plan `plan_builder`; `calendar_today` held for round 2),
- *        D (math first = 5 Math then 5 Reading and Writing; device_class from the client
+ *        D (math first = 5 Math then 5 Reading and Writing [superseded, below]; device_class from the client
  *        breakpoints, validated against this fixed list; under-13 and unknown age never assigned);
  *        SCL recorded with this change amending DESIGN.md §2] | @implemented [2026-10-26]
+ * @spec [owner change "Smart landing: replacing the multi-section sets" (Karl, 2026-10-26, later the
+ *        same day): `set_math_5` (5 Math, first 2 easy or medium, already on Q1) replaces
+ *        `set_mixed` and `set_math_first`; "5 more?" is 5 Math too] | @implemented [2026-10-26]
  *
  * plain English: every 48 hours (UTC, counted from `LANDING_WINDOW_EPOCH_MS`) a student is given
  * one landing from the arms they are eligible for at that window's first open. This file holds
@@ -25,12 +29,11 @@
  */
 import { z } from "zod";
 
-/** Every landing the brief names. `calendar_today` exists but is weighted 0 in round 1. */
+/** Every landing that can be assigned. `calendar_today` exists but is weighted 0 in round 1. */
 export const LANDING_ARMS = [
   "dashboard",
   "qotd_then_more",
-  "set_mixed",
-  "set_math_first",
+  "set_math_5",
   "calendar_today",
   "session_today",
   "plan_builder",
@@ -38,12 +41,32 @@ export const LANDING_ARMS = [
 export const landingArmSchema = z.enum(LANDING_ARMS);
 export type LandingArm = z.infer<typeof landingArmSchema>;
 
+/**
+ * Arms retired 2026-10-26 (Karl: `set_math_5` replaces both). They were 10-question sets across
+ * Math and Reading and Writing, and the session page cannot run a two-section practice session.
+ * Never assigned, weighted or served again; they exist only so the windows and shows already
+ * stored with them still read. A window still holding one shows Home (`arm_retired`) until its
+ * 48 hours end; the next window draws from `LANDING_ARMS`.
+ */
+export const LANDING_ARMS_RETIRED = ["set_mixed", "set_math_first"] as const;
+/** An arm as stored on a window or show row: assignable or retired. */
+export const storedLandingArmSchema = z.enum([
+  ...LANDING_ARMS,
+  ...LANDING_ARMS_RETIRED,
+]);
+export type StoredLandingArm = z.infer<typeof storedLandingArmSchema>;
+
+export function isRetiredLandingArm(
+  arm: StoredLandingArm,
+): arm is (typeof LANDING_ARMS_RETIRED)[number] {
+  return (LANDING_ARMS_RETIRED as readonly string[]).includes(arm);
+}
+
 /** The arms every student may get, in the fixed order the pick walks. */
 export const LANDING_ARMS_EVERYONE = [
   "dashboard",
   "qotd_then_more",
-  "set_mixed",
-  "set_math_first",
+  "set_math_5",
 ] as const satisfies readonly LandingArm[];
 /** Pro (calendar access) with a current plan. */
 export const LANDING_ARMS_PRO_WITH_PLAN = [
@@ -66,6 +89,8 @@ export const LANDING_FALLBACK_REASONS = [
   "qotd_unavailable",
   "no_block_today",
   "not_entitled",
+  /** The window was assigned an arm since retired (`LANDING_ARMS_RETIRED`). */
+  "arm_retired",
   "error",
 ] as const;
 export const landingFallbackReasonSchema = z.enum(LANDING_FALLBACK_REASONS);
@@ -196,7 +221,7 @@ export const landingOpenResponseSchema = z
   .object({
     path: z.string().startsWith("/").nullable(),
     show_id: z.string().uuid().nullable(),
-    arm: landingArmSchema.nullable(),
+    arm: storedLandingArmSchema.nullable(),
   })
   .strict();
 export type LandingOpenResponse = z.infer<typeof landingOpenResponseSchema>;
@@ -223,12 +248,14 @@ export type LandingMoreResponse = z.infer<typeof landingMoreResponseSchema>;
 /** The query a landing-opened runner carries so its back link reads "Home" and goes there. */
 export const LANDING_RUNNER_QUERY = "from=landing" as const;
 
-/** Set sizes and composition (brief "Landings"; ruling D). */
-export const LANDING_SET_SIZE = 10;
+/**
+ * Set sizes and sections (Karl, 2026-10-26): `set_math_5` and "5 more?" are both 5 questions of
+ * Math only. One section, because the session page runs a practice session in one section.
+ */
+export const LANDING_SET_SIZE = 5;
 export const LANDING_MORE_SIZE = 5;
+export const LANDING_SET_SECTIONS = ["M"] as const;
 /** The first N items of every landing set are easy or medium (difficulty 1 or 2). */
 export const LANDING_LEAD_EASY_MEDIUM = 2;
-/** `set_math_first`: this many Math items, then the rest Reading and Writing. */
-export const LANDING_MATH_FIRST_COUNT = 5;
 /** `landing_escaped`: going Home within this many seconds of the landing being shown. */
 export const LANDING_ESCAPE_SECONDS = 30;
