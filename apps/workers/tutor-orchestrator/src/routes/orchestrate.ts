@@ -75,8 +75,12 @@ import {
   orchestrateRequestSchema,
   type OrchestrateRequest,
   type OrchestrateResponse,
+  type OrchestrationTiming,
+  type TurnUsage,
 } from "../lib/schema.js";
 import {
+  VertexAttemptTimings,
+  VertexUsageTotals,
   generateTutorResponse,
   logEvent,
   type ModelAlias,
@@ -303,6 +307,8 @@ export function buildOrchestrateResponse(
   vertexResponse: VertexResponse,
   request: OrchestrateRequest,
   promptVersion: string,
+  timing?: OrchestrationTiming,
+  usage?: TurnUsage,
 ): OrchestrateResponse {
   // Worker-side anti-leak scan: fires PRE-SUBMIT ONLY (defense-in-depth).
   // Post-submit the model is EXPECTED to discuss the answer — suppressing it
@@ -381,6 +387,9 @@ export function buildOrchestrateResponse(
       prompt_version: promptVersion,
       cache_used: false,
       compaction_recommended: isCompactionRecommended(request),
+      ...(timing !== undefined ? { timing } : {}),
+      // Per-turn attribution (owner brief 2026-10-27; SCL-246): numbers only.
+      ...(usage ?? {}),
     },
     learner_observation: null,
   };
@@ -424,6 +433,11 @@ function mapVertexErrorToStatus(code: VertexErrorCode): number {
 // this worker trusts the boundary, never re-derives role/entitlement state.
 
 orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
+  // P2 H1 (Karl, 2026-10-23): numbers-only timings returned in orchestration_meta.timing.
+  const workerStartedAt = performance.now();
+  const vertexTimings = new VertexAttemptTimings(workerStartedAt);
+  // Per-turn attribution (owner brief 2026-10-27): every billed Vertex response's usage, summed.
+  const vertexUsage = new VertexUsageTotals();
   const parsed = orchestrateRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -475,6 +489,27 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
       maxOutputTokens: request.runtime_limits.max_output_tokens,
       timeoutMs: request.runtime_limits.timeout_ms,
     },
+    vertexTimings,
+    vertexUsage,
+  );
+  const usage = vertexUsage.toWire();
+  // Numbers, the resolved prompt version and the outcome code only: no prompt, reply or student
+  // text can reach this line (tutor-usage-log.redaction test).
+  logEvent(
+    "info",
+    "orchestrate_route",
+    "turn_usage",
+    "Vertex usage for a tutor turn",
+    {
+      conversationId: request.conversation_id,
+      promptVersion,
+      outcome: result.ok ? "ok" : result.errorCode,
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      thinkingTokens: usage.thinking_tokens,
+      cachedTokens: usage.cached_tokens,
+      thinkingBudget: usage.thinking_budget,
+    },
   );
 
   if (!result.ok) {
@@ -489,8 +524,12 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
         modelAlias,
       },
     );
+    // A safety block or a truncation was billed: its usage travels with the error so the BFF can
+    // record it (owner ruling 2026-10-27). Other failures carry null counts.
     res.status(mapVertexErrorToStatus(result.errorCode)).json({
       error: { message: "Orchestration failed", code: result.errorCode },
+      prompt_version: promptVersion,
+      ...usage,
     });
     return;
   }
@@ -499,6 +538,11 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
     result.value,
     request,
     promptVersion,
+    {
+      worker_ms: Math.round((performance.now() - workerStartedAt) * 10) / 10,
+      vertex_attempts: vertexTimings.attempts,
+    },
+    usage,
   );
   res.status(200).json(response);
 });

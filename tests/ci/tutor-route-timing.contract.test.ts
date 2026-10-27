@@ -20,12 +20,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeTutorDb } from "../helpers/fake-tutor-db";
 
 const db = { current: new FakeTutorDb() };
-
-vi.mock("../../apps/api/src/lib/supabase-server", () => ({
-  get supabaseServer() {
-    return db.current.client();
-  },
+// Method tags (2026-10-27): what `video_resources_for_skills` answers, and every call to it.
+const videoRpc = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  calls: [] as unknown[],
 }));
+
+// H1 (P2 Revised §2, 2026-10-23): the real server client times each round trip through its fetch
+// (`timedFetch`, apps/api/src/lib/supabase-server.ts). The in-memory DB has no fetch, so each
+// query it serves makes one call through `timedFetch` to a no-op, as the real client would make
+// one request: the route's `{ databaseTrips: true }` is what turns those into `db.*` steps.
+vi.mock("../../apps/api/src/lib/supabase-server", async () => {
+  const { timedFetch } = await import("../../server/lib/step-timer");
+  const trip = timedFetch(async () => new Response("[]"));
+  return {
+    get supabaseServer() {
+      const client = db.current.client();
+      return {
+        from: (table: string) => {
+          void trip(`https://fake.supabase.co/rest/v1/${table}`, {
+            method: "GET",
+          });
+          return client.from(table);
+        },
+        rpc: async (fn: string, args: unknown) => {
+          await trip(`https://fake.supabase.co/rest/v1/rpc/${fn}`, {
+            method: "POST",
+          });
+          if (fn !== "video_resources_for_skills")
+            return { data: null, error: new Error(`rpc ${fn} not faked`) };
+          videoRpc.calls.push(args);
+          return { data: videoRpc.rows, error: null };
+        },
+      };
+    },
+  };
+});
 const logged = vi.hoisted(() => ({
   info: [] as unknown[][],
 }));
@@ -73,6 +103,7 @@ vi.mock("../../server/services/cloud-tasks-enqueue", () => ({
 }));
 
 import tutorRuntimeRouter from "../../server/routes/tutor-runtime";
+import { TutorConfig } from "../../server/services/tutor-config";
 
 const STUDENT_ID = "55555555-5555-4555-8555-555555555555";
 const QUESTION_ID = "SATM1TIM001";
@@ -92,6 +123,7 @@ const REPLY_PATH_STEPS = [
   "recent_messages",
   "context_envelope",
   "armor_input",
+  "video_retrieval",
   "model",
   "armor_output",
   "serialize",
@@ -235,7 +267,13 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
     expect(data.route).toBe("tutor.message");
     expect(data.status).toBe(200);
     const steps = data.steps as Array<{ step: string; ms: number | null }>;
-    expect(steps.map((s) => s.step)).toEqual(REPLY_PATH_STEPS);
+    expect(
+      steps.map((s) => s.step).filter((name) => !name.startsWith("db.")),
+    ).toEqual(REPLY_PATH_STEPS);
+    // H1: the route opted in, so its database round trips are steps too.
+    expect(steps.some((s) => s.step === "db.read.tutor_conversations")).toBe(
+      true,
+    );
     for (const s of steps) expect(typeof s.ms).toBe("number");
   });
 
@@ -259,13 +297,24 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
         "steps",
         "steps_dropped",
         "total_ms",
+        "video_retrieval",
       ].sort(),
     );
+    // Codes and counts only (method tags, 2026-10-27): no map is configured here, so no method.
+    expect(line!.data.video_retrieval).toEqual({
+      method: null,
+      map_version: null,
+      results: 0,
+      video_ids: [],
+      recommended_index: null,
+    });
     const steps = line!.data.steps as Array<Record<string, unknown>>;
-    expect(steps.length).toBe(REPLY_PATH_STEPS.length);
+    expect(steps.length).toBeGreaterThan(REPLY_PATH_STEPS.length);
     for (const step of steps) {
       expect(Object.keys(step).sort()).toEqual(["at_ms", "ms", "step"]);
-      expect(step.step).toMatch(/^[a-z_]+$/);
+      expect(step.step).toMatch(
+        /^(?:[a-z_]+|db\.(?:read|insert|update|delete|rpc|auth|other)\.[a-z][a-z0-9_]*)$/,
+      );
     }
     const serialised = JSON.stringify(line!.data);
     expect(serialised).not.toMatch(UUID_ANYWHERE);
@@ -278,6 +327,153 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
       conversationId,
     ]) {
       expect(serialised).not.toContain(value);
+    }
+  });
+});
+
+/**
+ * @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27; SCL-249] | @implemented [2026-10-27]
+ * plain English: the closing scenario on the REAL route. A student on an Equivalent Expressions
+ * review item asks "is there a Desmos video for this?". With the seeded keyword map in config,
+ * Step 13d asks retrieval for desmos; the worker is sent the three videos with their methods and
+ * format (and no ids); LISA's offer of video 1 reaches the student as the Desmos lesson; and the
+ * route_timing line records method, version, count, the offered ids and the recommendation,
+ * with nothing of the message.
+ */
+describe("method tags on the real route: a Desmos request", () => {
+  const MAP = {
+    version: 1,
+    methods: {
+      desmos: ["desmos", "calculator"],
+      algebraic: ["by hand", "without desmos"],
+      backsolve: ["plug in"],
+    },
+  };
+  const ROWS = [
+    {
+      video_id: "a1QNaRnn6cE",
+      title: "Digital SAT Math - Desmos Lesson #10 Equivalent Expressions",
+      channel_name: "Tutorllini Test Prep",
+      duration_seconds: 398,
+      start_seconds: null,
+      methods: ["desmos"],
+      format: "lesson",
+    },
+    {
+      video_id: "jCT0jTVzKy0",
+      title: "The only SAT Math Desmos Guide you'll ever need",
+      channel_name: "c",
+      duration_seconds: 2018,
+      start_seconds: 751,
+      methods: ["desmos"],
+      format: "lesson",
+    },
+    {
+      video_id: "UDJ2RHMFax8",
+      title: "All of SAT Desmos in 35 Minutes",
+      channel_name: "c",
+      duration_seconds: 2120,
+      start_seconds: 1789,
+      methods: ["desmos"],
+      format: "lesson",
+    },
+  ];
+
+  it("retrieval is asked for desmos; LISA's offer reaches the student; the line records it", async () => {
+    const real = TutorConfig.get.bind(TutorConfig);
+    const spy = vi
+      .spyOn(TutorConfig, "get")
+      .mockImplementation(((key: Parameters<typeof TutorConfig.get>[0]) =>
+        key === "video_method_keywords"
+          ? MAP
+          : real(key)) as typeof TutorConfig.get);
+    videoRpc.rows = ROWS;
+    videoRpc.calls.length = 0;
+    // The beforeEach item has no skills; this one is on Equivalent Expressions (SATM291NZ8Z's).
+    db.current = new FakeTutorDb();
+    db.current.seed("questions", {
+      id: QUESTION_ID,
+      correct_answer: "B",
+      section: "M",
+      domain: "Advanced Math",
+      skill_codes: ["Equivalent Expressions"],
+    });
+    const offer = workerReply("Desmos Lesson #10 shows exactly this.") as {
+      value: { response: { suggested_action: unknown } };
+    };
+    offer.value.response.suggested_action = {
+      type: "recommend_video",
+      label: "Watch",
+      video_index: 1,
+    };
+    orchestrateTurn.mockResolvedValue(offer);
+
+    const opened = await request(makeApp())
+      .post("/api/tutor/conversations")
+      .send({
+        entry_mode: "scoped_question",
+        source_surface: "review",
+        source_session_item_id: seedItem(),
+        idempotency_key: crypto.randomUUID(),
+      });
+    expect(opened.status).toBeLessThan(300);
+    logged.info.length = 0;
+    const message =
+      "is there a Desmos video for this? my teacher Mr Okafor said so";
+    const res = await request(makeApp())
+      .post("/api/tutor/messages")
+      .send({
+        conversation_id: opened.body.data.conversation_id as string,
+        message,
+        client_turn_id: crypto.randomUUID(),
+      });
+    await new Promise((resolve) => setImmediate(resolve));
+    spy.mockRestore();
+
+    expect(res.status).toBe(200);
+    expect(videoRpc.calls).toEqual([
+      {
+        p_skill_codes: ["Equivalent Expressions"],
+        p_limit: 3,
+        p_method: "desmos",
+      },
+    ]);
+    // The worker is told how each video solves, and never its id.
+    const sent = orchestrateTurn.mock.calls[0]?.[0] as {
+      offered_videos?: Array<Record<string, unknown>>;
+    };
+    expect(sent.offered_videos?.[0]).toEqual({
+      index: 1,
+      title: ROWS[0]!.title,
+      channel_name: "Tutorllini Test Prep",
+      duration_seconds: 398,
+      methods: ["desmos"],
+      format: "lesson",
+    });
+    expect(JSON.stringify(sent)).not.toContain("a1QNaRnn6cE");
+    // The student gets the Desmos lesson as the offer.
+    expect(res.body.data.response.suggested_action).toEqual({
+      type: "recommend_video",
+      label: "Watch",
+      video: {
+        video_id: "a1QNaRnn6cE",
+        title: ROWS[0]!.title,
+        channel_name: "Tutorllini Test Prep",
+        duration_seconds: 398,
+        start_seconds: null,
+      },
+    });
+    const [line] = timingLines();
+    expect(line?.data.video_retrieval).toEqual({
+      method: "desmos",
+      map_version: 1,
+      results: 3,
+      video_ids: ["a1QNaRnn6cE", "jCT0jTVzKy0", "UDJ2RHMFax8"],
+      recommended_index: 1,
+    });
+    const serialised = JSON.stringify(line?.data);
+    for (const word of ["Okafor", "teacher", "is there", message]) {
+      expect(serialised).not.toContain(word);
     }
   });
 });

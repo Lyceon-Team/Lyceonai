@@ -1423,6 +1423,331 @@ export const GENERATED_EVENT_REGISTRY: unknown = {
         "days_since_signup": "not_pii"
       },
       "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "landing_assigned",
+      "schema_tier": "strict",
+      "canonical_event_class": "experiment",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.1.0",
+      "description": "Smart landing (Karl, 2026-10-26): the student's landing for a 48-hour window was assigned, at the window's first app open. Once per window. The window index, the arm and the coarse device class only. 1.1.0 (Karl, 2026-10-26): set_math_5 added; set_mixed and set_math_first retired (never assigned again, still valid on events already sent).",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "window_index",
+          "arm",
+          "device_class"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "landing_assigned"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "window_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "arm": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "qotd_then_more",
+              "set_math_5",
+              "calendar_today",
+              "session_today",
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
+            ]
+          },
+          "device_class": {
+            "type": "string",
+            "enum": [
+              "phone",
+              "tablet",
+              "desktop"
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "window_index": "not_pii",
+        "arm": "not_pii",
+        "device_class": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "landing_shown",
+      "schema_tier": "strict",
+      "canonical_event_class": "experiment",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.1.0",
+      "description": "Smart landing (Karl, 2026-10-26): a landing was shown, at the first app open of a Chicago day within the window. fallback_reason is set when the arm could not be served and Home was shown instead (ruling B), else null.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "window_index",
+          "arm",
+          "device_class",
+          "fallback_reason"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "landing_shown"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "window_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "arm": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "qotd_then_more",
+              "set_math_5",
+              "calendar_today",
+              "session_today",
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
+            ]
+          },
+          "device_class": {
+            "type": "string",
+            "enum": [
+              "phone",
+              "tablet",
+              "desktop"
+            ]
+          },
+          "fallback_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "quota_exhausted",
+              "session_limit",
+              "no_questions",
+              "qotd_unavailable",
+              "no_block_today",
+              "not_entitled",
+              "arm_retired",
+              "error",
+              null
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "window_index": "not_pii",
+        "arm": "not_pii",
+        "device_class": "not_pii",
+        "fallback_reason": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "landing_escaped",
+      "schema_tier": "strict",
+      "canonical_event_class": "experiment",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.1.0",
+      "description": "Smart landing (Karl, 2026-10-26): the student went Home within 30 seconds of a non-dashboard landing being shown, measured by the server's clock.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "window_index",
+          "arm",
+          "device_class"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "landing_escaped"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "window_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "arm": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "qotd_then_more",
+              "set_math_5",
+              "calendar_today",
+              "session_today",
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
+            ]
+          },
+          "device_class": {
+            "type": "string",
+            "enum": [
+              "phone",
+              "tablet",
+              "desktop"
+            ]
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "window_index": "not_pii",
+        "arm": "not_pii",
+        "device_class": "not_pii"
+      },
+      "retention_class": "standard_analytics"
+    },
+    {
+      "event_name": "landing_session_summary",
+      "schema_tier": "strict",
+      "canonical_event_class": "experiment",
+      "owner": "07A V1.0",
+      "V1_active": true,
+      "schema_version": "1.1.0",
+      "description": "Smart landing (Karl, 2026-10-26; ruling D, nightly): the questions the student answered from a landing until their next landing or the end of that Chicago day. A count only; never which questions or how they were answered.",
+      "json_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_name",
+          "timestamp",
+          "analytics_user_id",
+          "schema_version",
+          "window_index",
+          "arm",
+          "device_class",
+          "questions_answered"
+        ],
+        "properties": {
+          "event_name": {
+            "type": "string",
+            "const": "landing_session_summary"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "analytics_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "schema_version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$"
+          },
+          "window_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "arm": {
+            "type": "string",
+            "enum": [
+              "dashboard",
+              "qotd_then_more",
+              "set_math_5",
+              "calendar_today",
+              "session_today",
+              "plan_builder",
+              "set_mixed",
+              "set_math_first"
+            ]
+          },
+          "device_class": {
+            "type": "string",
+            "enum": [
+              "phone",
+              "tablet",
+              "desktop"
+            ]
+          },
+          "questions_answered": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "pii_redaction": {
+        "event_name": "not_pii",
+        "timestamp": "not_pii",
+        "analytics_user_id": "opaque_id_only",
+        "schema_version": "not_pii",
+        "window_index": "not_pii",
+        "arm": "not_pii",
+        "device_class": "not_pii",
+        "questions_answered": "not_pii"
+      },
+      "retention_class": "standard_analytics"
     }
   ],
   "person_properties": [

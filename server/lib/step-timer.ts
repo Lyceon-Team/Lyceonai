@@ -42,6 +42,7 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Request, Response } from "express";
+import type { VideoMethod } from "../../packages/shared/src/video-methods";
 import { logger } from "../logger";
 
 /**
@@ -66,9 +67,63 @@ type RouteTimer = {
   steps: StepRecord[];
   dropped: number;
   emitted: boolean;
+  /** Record each Supabase round trip as its own step (see `timedFetch`). */
+  databaseTrips: boolean;
+  /** Step 13d's outcome on `tutor.message` (see `recordVideoRetrieval`). */
+  videoRetrieval?: VideoRetrievalTiming;
 };
 
-const MAX_STEPS = 64;
+/**
+ * @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27 (build 3: "a
+ *        `video_retrieval` timing sub-field recording the detected method and the result count;
+ *        counts and codes only, never message text"; Step 0 ruling: also the offered video ids
+ *        and the index LISA recommended, so the closing proof is checkable)] | @implemented [2026-10-27]
+ * plain English: what Step 13d decided, on the turn's one `route_timing` line. A closed shape:
+ * the method is a vocabulary code (or null: none detected), the map version a number, the
+ * offered ids YouTube ids (11 characters, already validated by the retrieval's schema; the
+ * public catalogue id, never a student value), the recommendation a 1-based index or null.
+ * Nothing from the student's message is recorded: not the matched phrase, not its position.
+ */
+export type VideoRetrievalTiming = {
+  method: VideoMethod | null;
+  map_version: number | null;
+  results: number;
+  video_ids: string[];
+  recommended_index: number | null;
+};
+
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/** Step 13d's outcome, recorded once per turn. Outside a timed request this does nothing. */
+export function recordVideoRetrieval(
+  detail: Omit<VideoRetrievalTiming, "recommended_index">,
+): void {
+  const timer = store.getStore();
+  if (timer === undefined || timer.emitted) return;
+  timer.videoRetrieval = {
+    method: detail.method,
+    map_version: detail.map_version,
+    results: detail.results,
+    video_ids: detail.video_ids.filter((id) => YOUTUBE_ID.test(id)).slice(0, 3),
+    recommended_index: null,
+  };
+}
+
+/** The index of the offered video LISA recommended (1-based), once the reply is resolved. */
+export function recordVideoRecommendation(index: number | null): void {
+  const timer = store.getStore();
+  if (timer?.videoRetrieval === undefined || timer.emitted) return;
+  timer.videoRetrieval.recommended_index =
+    index !== null && Number.isInteger(index) && index >= 1 && index <= 3
+      ? index
+      : null;
+}
+
+/**
+ * LISA's reply path makes ~37 database round trips plus its coarse steps and their sub-steps
+ * (Step 0 report, 2026-10-23), so 64 was too small to carry one turn; 128 still bounds the line.
+ */
+const MAX_STEPS = 128;
 
 const store = new AsyncLocalStorage<RouteTimer>();
 
@@ -120,6 +175,113 @@ export function beginStep(step: string): () => void {
       record.ms = round(performance.now() - start);
     }
   };
+}
+
+// ── Database round trips ──────────────────────────────────────────────────────
+
+/**
+ * @spec [owner brief "P2 Revised: Cut the Wait Without Streaming" (Karl, 2026-10-23) §2 H1:
+ *        "Extend route_timing across the whole reply path: every model call, every safety check,
+ *        every database round trip, time-to-first-visible-text, total ... No message content in
+ *        logs"; Coding Standards §12.1] | @implemented [2026-10-23]
+ *
+ * plain English: wraps the `fetch` the server's Supabase client uses. Inside a timed request whose
+ * route opted in (`timedRoute(..., { databaseTrips: true })`), every PostgREST call becomes one
+ * step named `db.<op>.<target>`:
+ *   op      read (GET/HEAD) | insert (POST) | update (PATCH) | delete (DELETE) | rpc (POST /rpc/x)
+ *           | auth (the Auth server) | other
+ *   target  the table or function name from the URL path — a schema identifier from the code,
+ *           never a value. Anything that is not a plain lowercase identifier is recorded as
+ *           `other`, so a query string, a filter value or an id can never become a step name.
+ * Only the URL's PATH is read, and only its table/function segment; the query string (where
+ * filter values live), headers and bodies are never looked at. Outside an opted-in timed request
+ * this is the plain `fetch`, so every other caller of the shared client is unchanged.
+ */
+const DB_TARGET = /^[a-z][a-z0-9_]{0,62}$/;
+
+export function databaseTripStepName(url: string, method: string): string {
+  if (!URL.canParse(url)) return "db.other.other";
+  const path = new URL(url).pathname;
+  const verb = method.toUpperCase();
+  const rest = /^\/rest\/v1\/(rpc\/)?([^/]+)\/?$/.exec(path);
+  if (rest) {
+    const target = DB_TARGET.test(rest[2] ?? "") ? rest[2] : "other";
+    if (rest[1]) return `db.rpc.${target}`;
+    const op =
+      verb === "GET" || verb === "HEAD"
+        ? "read"
+        : verb === "POST"
+          ? "insert"
+          : verb === "PATCH"
+            ? "update"
+            : verb === "DELETE"
+              ? "delete"
+              : "other";
+    return `db.${op}.${target}`;
+  }
+  if (path.startsWith("/auth/v1/")) return "db.auth.other";
+  return "db.other.other";
+}
+
+// `globalThis.Response`: this module's `Response` is Express's (imported for `timedRoute`).
+type FetchLike = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<globalThis.Response>;
+
+export function timedFetch(base: FetchLike): FetchLike {
+  return (input, init) => {
+    const timer = store.getStore();
+    if (timer === undefined || !timer.databaseTrips) return base(input, init);
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    const method =
+      init?.method ?? (input instanceof Request ? input.method : "GET");
+    return timedStep(databaseTripStepName(url, method), () =>
+      base(input, init),
+    );
+  };
+}
+
+// ── Steps measured elsewhere ──────────────────────────────────────────────────
+
+/**
+ * @spec [owner brief "P2 Revised: Cut the Wait Without Streaming" (Karl, 2026-10-23) §2 H1 ("every
+ *        model call ... total")] | @implemented [2026-10-23]
+ *
+ * plain English: LISA's model calls run in the orchestrator worker (Cloud Run), whose logs are
+ * not the BFF's. The worker returns its own timings as numbers (`orchestration_meta.timing`), and
+ * this records them into the current request's one line so a turn reads end to end in one place.
+ * `anchor` is the `performance.now()` at which the BFF sent the request the timings belong to;
+ * each step's `at_ms` is an offset from the worker's own start. The two clocks are different
+ * machines, so the steps are placed as if the worker started the moment the request was sent:
+ * the gap between the enclosing `worker_request` step and `worker_handler` is the network,
+ * Cloud Run's ingress and the response read, not time inside the worker.
+ *
+ * Step names are literals from the caller; the values are numbers parsed by the wire schema.
+ * Outside a timed request this does nothing. The step cap applies as for every other step.
+ */
+export function recordMeasuredSteps(
+  anchor: number,
+  steps: readonly { step: string; at_ms: number; ms: number }[],
+): void {
+  const timer = store.getStore();
+  if (timer === undefined || timer.emitted) return;
+  for (const { step, at_ms, ms } of steps) {
+    if (timer.steps.length >= MAX_STEPS) {
+      timer.dropped += 1;
+      continue;
+    }
+    timer.steps.push({
+      step,
+      ms: round(ms),
+      at_ms: round(anchor - timer.startedAt + at_ms),
+    });
+  }
 }
 
 // ── Pre-handler steps ─────────────────────────────────────────────────────────
@@ -215,6 +377,8 @@ export type RouteTimingLine = {
   step_count: number;
   steps_dropped: number;
   steps: StepRecord[];
+  /** Present on `tutor.message` turns that reached Step 13d. */
+  video_retrieval?: VideoRetrievalTiming;
 };
 
 function emit(timer: RouteTimer, req: Request, res: Response): void {
@@ -232,7 +396,17 @@ function emit(timer: RouteTimer, req: Request, res: Response): void {
     pre_steps: (req.preHandlerSteps ?? []).map((s) => ({ ...s })),
     step_count: timer.steps.length,
     steps_dropped: timer.dropped,
-    steps: timer.steps.map((s) => ({ ...s })),
+    // Sorted by start (stable, so a no-op for steps recorded live, which are pushed in start
+    // order); places steps recorded afterwards by `recordMeasuredSteps` where they ran.
+    steps: timer.steps.map((s) => ({ ...s })).sort((a, b) => a.at_ms - b.at_ms),
+    ...(timer.videoRetrieval === undefined
+      ? {}
+      : {
+          video_retrieval: {
+            ...timer.videoRetrieval,
+            video_ids: [...timer.videoRetrieval.video_ids],
+          },
+        }),
   };
   logger.info("PERF", "route_timing", "route step timings", line, {
     requestId: req.requestId,
@@ -245,7 +419,11 @@ type Handler = (req: Request, res: Response) => unknown;
  * Wrap a route handler so its request is timed. The handler's own return value and errors pass
  * through untouched; only the line is added.
  */
-export function timedRoute(route: RouteTimingName, handler: Handler): Handler {
+export function timedRoute(
+  route: RouteTimingName,
+  handler: Handler,
+  options: { databaseTrips?: boolean } = {},
+): Handler {
   return (req: Request, res: Response): unknown => {
     const timer: RouteTimer = {
       route,
@@ -253,6 +431,7 @@ export function timedRoute(route: RouteTimingName, handler: Handler): Handler {
       steps: [],
       dropped: 0,
       emitted: false,
+      databaseTrips: options.databaseTrips === true,
     };
     const done = (): void => emit(timer, req, res);
     res.once("finish", done);

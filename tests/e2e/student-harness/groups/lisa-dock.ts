@@ -46,13 +46,44 @@ const REVIEW: FreshSession = {
   mcqFirst: true,
 };
 
+/** #1300 follow-ups: a practice session (ruling 2: the dock after submit). */
+const PRACTICE: FreshSession = {
+  engine: "practice",
+  body: { sections: ["RW"], target_question_count: 5 },
+  mcqFirst: true,
+};
+/** #1300 follow-ups: Math review (the calculator; ruling 5). */
+const REVIEW_MATH: FreshSession = {
+  engine: "review",
+  body: { mode: "filter", filters: { sections: ["M"] }, target_count: 10 },
+};
+/** The split breakpoint (calculator-layout.ts SPLIT_BREAKPOINT): Desmos beside the question. */
+const W1062 = {
+  name: "w1062",
+  width: 1062,
+  height: 800,
+  selectors: "desktop",
+} as const;
+const SUBMIT: Step = {
+  click: {
+    desktop: '[data-testid="runner-submit"]',
+    mobile: '[data-testid="runner-submit"]',
+  },
+};
+const CALC: Step = {
+  click: {
+    desktop: '[data-testid="practice-calculator-toggle"]',
+    mobile: '[data-testid="practice-calculator-toggle"]',
+  },
+};
+
 const NO_PROTOTYPE =
   'No prototype draws the chat dock: it is the owner brief of 2026-10-22 ("LISA chat dock", floating bubble, no bar); DESIGN.md §3 and §4 describe it.';
 
 export const LISA_DOCK: PageGroup = {
   id: "LISA-DOCK",
   title:
-    "LISA chat dock: Home, Review and the review runner, bubble and open dock; the free lock modal; absent on phones and the timed module; light and dark, 1440, 1024 and 390",
+    "LISA chat dock: Home, Review and the review runner, bubble and open dock; the free lock modal; absent on phones and the timed module; the practice runner before and after submit, Send as the outline icon, the calculator clear of the bubble; light and dark, 1440, 1062, 1024 and 390",
   seed: "lisa-dock",
   shots: [
     {
@@ -167,6 +198,54 @@ export const LISA_DOCK: PageGroup = {
       themes: ["light"],
       expectGone: BUBBLE,
       extraViewports: [W1024],
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    // #1300 follow-ups (rulings 2, 4 and 5; Karl, 2026-10-23): the practice runner's dock after
+    // submit, Send as the outline icon, the calculator kept clear of the bubble at 1024, 1062 and
+    // 1440. Shot as their own group (LISA-DOCK-2) only to stay under the harness's old request
+    // limit; merged back here on 2026-10-24, when the harness's ceiling was raised (owner ruling,
+    // Karl, 2026-10-24; rate-limit.ts).
+    {
+      id: "practice-before-submit",
+      title:
+        "Practice runner (paid), before submitting: no bubble (owner ruling 2 on #1300: the dock comes only after submit)",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "first" }],
+      expectGone: BUBBLE,
+      extraViewports: [W1024],
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    {
+      id: "practice-after-submit-open",
+      title:
+        "Practice runner (paid), after submitting: the bubble appears above the footer; opened, the dock is scoped to the answered question, with Send as the outline paper-plane icon button (rulings 2 and 4 on #1300). Phone: unchanged, no LISA in practice",
+      persona: "paid",
+      route: "/practice/session/{session}",
+      freshSession: PRACTICE,
+      localStorage: CLIENT,
+      waitFor: RUNNER,
+      steps: [{ pick: "first" }, SUBMIT, OPEN_DOCK],
+      extraViewports: [W1024],
+      prototype: { kind: "none", reason: NO_PROTOTYPE },
+    },
+    {
+      id: "runner-calculator",
+      title:
+        "Math review runner with the calculator open (ruling 5 on #1300): beside the question (1062, 1440) Desmos keeps the bubble's footprint clear at its bottom; stacked (1024) the column already clears it",
+      persona: "paid",
+      route: "/review/session/{session}",
+      freshSession: REVIEW_MATH,
+      localStorage: CLIENT,
+      waitFor: {
+        desktop: '[data-testid="runner-submit"]',
+        mobile: '[data-testid="runner-submit"]',
+      },
+      steps: [CALC],
+      extraViewports: [W1024, W1062],
       prototype: { kind: "none", reason: NO_PROTOTYPE },
     },
   ],

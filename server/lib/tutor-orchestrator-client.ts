@@ -30,17 +30,21 @@ import { z } from "zod";
 import { GoogleAuth } from "google-auth-library";
 import type { IdTokenClient } from "google-auth-library";
 import { logger } from "../logger";
+import { beginStep, recordMeasuredSteps, timedStep } from "./step-timer";
 import { getGcpCredentials } from "./gcp-credentials";
 import { scanAndSubstitute } from "../services/tutor-antileak";
 import { TutorConfig } from "../services/tutor-config";
 import type { TutorResult } from "../services/tutor-error-codes";
 import {
+  addTokenCounts,
+  orchestrateErrorResponseSchema,
   orchestrateResponseSchema,
   compactResponseSchema,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import type {
   OrchestrateRequest,
   OrchestrateResponse,
+  TurnAttribution,
   CompactRequest,
   CompactResponse,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
@@ -155,6 +159,15 @@ async function buildRequestHeaders(
 // ── Result types ─────────────────────────────────────────────────────
 
 export type OrchestrateResult = TutorResult<OrchestrateResponse>;
+/**
+ * A turn's result plus its attribution (owner brief 2026-10-27): tokens summed over every billed
+ * attempt, the thinking budget and the resolved prompt version, on success AND failure, because a
+ * safety block or a truncation is billed. Optional so a stand-in that returns a bare result (the
+ * Model Armor block, test doubles) reads as "no model call": null attribution.
+ */
+export type OrchestrateTurnResult = OrchestrateResult & {
+  attribution?: TurnAttribution | null;
+};
 export type CompactResult = TutorResult<CompactResponse>;
 
 // ── Worker POST helper (shared by both endpoints) ───────────────────
@@ -175,13 +188,17 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
   path: string,
   responseSchema: TSchema,
   payload: unknown,
+  onAttemptSent?: (sentAt: number) => void,
+  onErrorBody?: (body: unknown) => void,
 ): Promise<TutorResult<z.infer<TSchema>>> {
   const baseUrl = getWorkerBaseUrl();
   const url = `${baseUrl}${path}`;
   const timeoutMs = TutorConfig.get("tutor_request_timeout_seconds") * 1000;
 
   // ── Auth (pre-loop — token mint failure is not retried) ─────────
-  const headersResult = await buildRequestHeaders(baseUrl);
+  const headersResult = await timedStep("worker_token", () =>
+    buildRequestHeaders(baseUrl),
+  );
   if (!headersResult.ok) {
     return headersResult;
   }
@@ -190,6 +207,10 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
+    // H1: one step per attempt, from send to the response headers (or the attempt failing);
+    // reading the body is `worker_response_read`.
+    const endAttempt = beginStep("worker_request");
+    onAttemptSent?.(performance.now());
 
     try {
       response = await fetch(url, {
@@ -214,7 +235,14 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
         details: { path },
       };
     } finally {
+      endAttempt();
       clearTimeout(timer);
+    }
+
+    // A worker error body may carry billed usage (a safety block, a truncation): hand it to the
+    // caller before deciding what the status means. Content-free by schema; never logged here.
+    if (!response.ok && onErrorBody !== undefined) {
+      onErrorBody(await readErrorBody(response, path));
     }
 
     if (response.status >= 500) {
@@ -283,7 +311,7 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
 
     let rawBody: unknown;
     try {
-      rawBody = await response.json();
+      rawBody = await timedStep("worker_response_read", () => response.json());
     } catch (err: unknown) {
       logger.error(
         "TUTOR_ORCHESTRATOR_CLIENT",
@@ -328,6 +356,70 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
   };
 }
 
+/** A non-2xx worker body as JSON, or null when it is not JSON (logged, never thrown). */
+async function readErrorBody(
+  response: Response,
+  path: string,
+): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (err: unknown) {
+    logger.warn(
+      "TUTOR_ORCHESTRATOR_CLIENT",
+      "worker_error_body_unreadable",
+      "Orchestrator worker error response was not JSON; its usage (if any) is unknown",
+      {
+        path,
+        status: response.status,
+        err: err instanceof Error ? err.name : "unknown",
+      },
+    );
+    return null;
+  }
+}
+
+/**
+ * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) and ruling (sum over every billed
+ *        attempt); SCL-246] | @implemented [2026-10-27]
+ * plain English: one worker response's attribution, from a 200's `orchestration_meta` or a
+ * non-2xx body. Counts the worker did not send are null (an older worker, or a failure that
+ * received no Vertex response). A body that is not a worker error body never reaches here: the
+ * caller's safeParse drops it.
+ */
+function attributionFrom(fields: {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  thinking_tokens?: number | null;
+  cached_tokens?: number | null;
+  thinking_budget?: number;
+  prompt_version?: string;
+}): TurnAttribution {
+  return {
+    input_tokens: fields.input_tokens ?? null,
+    output_tokens: fields.output_tokens ?? null,
+    thinking_tokens: fields.thinking_tokens ?? null,
+    cached_tokens: fields.cached_tokens ?? null,
+    thinking_budget: fields.thinking_budget ?? null,
+    prompt_version: fields.prompt_version ?? null,
+  };
+}
+
+/** The turn's total over the BFF's worker calls (one, or two after a 5xx retry). */
+function addAttribution(
+  a: TurnAttribution | null,
+  b: TurnAttribution,
+): TurnAttribution {
+  if (a === null) return b;
+  return {
+    input_tokens: addTokenCounts(a.input_tokens, b.input_tokens),
+    output_tokens: addTokenCounts(a.output_tokens, b.output_tokens),
+    thinking_tokens: addTokenCounts(a.thinking_tokens, b.thinking_tokens),
+    cached_tokens: addTokenCounts(a.cached_tokens, b.cached_tokens),
+    thinking_budget: b.thinking_budget ?? a.thinking_budget,
+    prompt_version: b.prompt_version ?? a.prompt_version,
+  };
+}
+
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
@@ -342,15 +434,44 @@ export async function orchestrateTurn(
   request: OrchestrateRequest,
   isPreSubmit: boolean,
   correctAnswer: string | null,
-): Promise<OrchestrateResult> {
+): Promise<OrchestrateTurnResult> {
+  let sentAt = 0;
+  let attribution: TurnAttribution | null = null;
   const result = await postToWorker(
     "/orchestrate/turn",
     orchestrateResponseSchema,
     request,
+    (at) => {
+      sentAt = at;
+    },
+    (body) => {
+      const parsed = orchestrateErrorResponseSchema.safeParse(body);
+      if (parsed.success) {
+        attribution = addAttribution(attribution, attributionFrom(parsed.data));
+      }
+    },
   );
 
   if (!result.ok) {
-    return result;
+    return { ...result, attribution };
+  }
+  attribution = addAttribution(
+    attribution,
+    attributionFrom(result.value.orchestration_meta),
+  );
+
+  // H1 (P2 Revised §2): the worker's own timings go into this request's route_timing line and
+  // no further — they are stripped here, so the response the route handles is unchanged.
+  const { timing, ...orchestrationMeta } = result.value.orchestration_meta;
+  if (timing !== undefined) {
+    recordMeasuredSteps(sentAt, [
+      { step: "worker_handler", at_ms: 0, ms: timing.worker_ms },
+      ...timing.vertex_attempts.map((a) => ({
+        step: "worker_vertex_attempt",
+        at_ms: a.at_ms,
+        ms: a.ms,
+      })),
+    ]);
   }
 
   // Extract student-role messages for the echo exemption — LISA repeating
@@ -359,12 +480,14 @@ export async function orchestrateTurn(
     .filter((m) => m.role === "student")
     .map((m) => m.message);
 
+  const endScan = beginStep("antileak_scan");
   const { content } = scanAndSubstitute(
     result.value.response.content,
     correctAnswer,
     isPreSubmit,
     studentMessages,
   );
+  endScan();
 
   // Video library (CC brief 2026-10-15 §7): a video offer belongs to the text that made it.
   // When that text was substituted, the offer goes too — the student never sees a card the
@@ -372,6 +495,7 @@ export async function orchestrateTurn(
   const substituted = content !== result.value.response.content;
   const scannedResponse: OrchestrateResponse = {
     ...result.value,
+    orchestration_meta: orchestrationMeta,
     response: {
       ...result.value.response,
       content,
@@ -382,7 +506,7 @@ export async function orchestrateTurn(
     },
   };
 
-  return { ok: true, value: scannedResponse };
+  return { ok: true, value: scannedResponse, attribution };
 }
 
 /**

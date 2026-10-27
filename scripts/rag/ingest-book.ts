@@ -35,7 +35,13 @@
  *   ... --execute     (with DATABASE_URL)
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 // pg ships no types and @types/pg is not a dependency; scripts/ci/types/pg.d.ts declares the
@@ -46,6 +52,9 @@ import {
   BOOK_SLUG_RE,
   BookText,
   type BookChunk,
+  type DroppedSection,
+  dropActSections,
+  parseOcrPage,
   type LocatedUnit,
   TEACHING_KINDS,
   assignProvenance,
@@ -85,6 +94,8 @@ import {
   embedTexts,
   generateJson,
   usageCostUsd,
+  EMBEDDING_DIMENSIONS,
+  EMBEDDING_MODEL,
 } from "./vertex";
 
 export const WINDOW_WORDS = 3_000;
@@ -163,6 +174,46 @@ function offsetByWords(text: string, at: number, words: number): number {
   const before = text.slice(0, at);
   const starts = [...before.matchAll(/\S+/g)].map((m) => m.index ?? 0);
   return starts[Math.max(0, starts.length + words)] ?? 0;
+}
+
+type Input = {
+  source: string;
+  pages: string[];
+  labels: (number | null)[];
+  dropped: DroppedSection[];
+};
+
+/**
+ * The book's text: from a PDF's text layer (pdftotext), or from the accepted OCR markdown
+ * (scripts/rag/ocr-book.ts, one page-NN.md per PDF page) with the ACT-only sections dropped
+ * (dropActSections). Markdown pages keep their printed page numbers for provenance.
+ */
+function loadInput(
+  pdf: string | undefined,
+  markdown: string | undefined,
+): Input {
+  if (pdf !== undefined) {
+    if (!existsSync(pdf)) throw new Error(`no such PDF: ${pdf}`);
+    return { source: pdf, pages: extractPages(pdf), labels: [], dropped: [] };
+  }
+  const dir = z.string().min(1).parse(markdown);
+  const files = readdirSync(dir)
+    .map((f) => /^page-(\d+)\.md$/.exec(f))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ file: m[0], pdfPage: Number(m[1]) }))
+    .sort((a, b) => a.pdfPage - b.pdfPage);
+  if (files.length === 0) throw new Error(`${dir}: no page-NN.md files`);
+  const { pages, dropped } = dropActSections(
+    files.map((f) =>
+      parseOcrPage(f.pdfPage, readFileSync(resolve(dir, f.file), "utf8")),
+    ),
+  );
+  return {
+    source: dir,
+    pages: pages.map((p) => p.body),
+    labels: pages.map((p) => p.printed),
+    dropped,
+  };
 }
 
 type Segmented = { units: LocatedUnit[]; windows: number; regrown: number };
@@ -274,6 +325,7 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       pdf: { type: "string" },
+      markdown: { type: "string" },
       slug: { type: "string" },
       model: { type: "string", default: GENERATION_MODEL_DEFAULT },
       samples: { type: "string", default: "5" },
@@ -282,7 +334,8 @@ async function main(): Promise<void> {
     },
   });
   assertProxied();
-  const pdf = z.string().min(1).parse(values.pdf);
+  if ((values.pdf === undefined) === (values.markdown === undefined))
+    throw new Error("pass exactly one of --pdf <file> or --markdown <ocr dir>");
   const slug = z.string().regex(BOOK_SLUG_RE).parse(values.slug);
   const model = z.string().min(1).parse(values.model);
   const perSkill = z.coerce.number().int().min(1).max(50).parse(values.samples);
@@ -292,23 +345,34 @@ async function main(): Promise<void> {
     .min(300)
     .max(20_000)
     .parse(values["window-words"]);
-  if (!existsSync(pdf)) throw new Error(`no such PDF: ${pdf}`);
   const dir = bookDir(slug);
   mkdirSync(dir, { recursive: true });
   const { skills } = loadTaxonomy();
   const rewriteSchema = rewriteSchemaFor(skills);
 
   let usage: Usage = ZERO_USAGE;
-  const onUsage = (u: Usage): void => {
-    usage = addUsage(usage, u);
-  };
+  // Per stage as well as in total, so the report shows where the money goes.
+  const byStage = new Map<string, Usage>();
+  const onStage =
+    (stage: string) =>
+    (u: Usage): void => {
+      usage = addUsage(usage, u);
+      byStage.set(stage, addUsage(byStage.get(stage) ?? ZERO_USAGE, u));
+    };
 
-  const pages = extractPages(pdf);
-  const book = new BookText(pages);
+  const input = loadInput(values.pdf, values.markdown);
+  const pages = input.pages;
+  const book = new BookText(pages, input.labels);
   process.stdout.write(
-    `${pdf}: ${pages.length} pages, ${wordCount(book.text)} words after furniture\n`,
+    `${input.source}: ${pages.length} pages, ${wordCount(book.text)} words${input.dropped.length > 0 ? `; dropped ${input.dropped.map((d) => `"${d.heading}" (p${d.page}, ${d.words} words)`).join(", ")}` : ""}\n`,
   );
-  const seg = await segmentBook(book, dir, model, windowWords, onUsage);
+  const seg = await segmentBook(
+    book,
+    dir,
+    model,
+    windowWords,
+    onStage("segment"),
+  );
 
   const chapterNos = resolveChapters(seg.units);
   const chapters = new Map<LocatedUnit, number>(
@@ -376,7 +440,7 @@ async function main(): Promise<void> {
               user,
               responseSchema: rewriteResponseSchema(skills),
               schema: rewriteSchema,
-              onUsage,
+              onUsage: onStage(attempt === 0 ? "rewrite" : "rewrite (repair)"),
             }),
         )
       ).value;
@@ -412,7 +476,7 @@ async function main(): Promise<void> {
               user: auditUser,
               responseSchema: auditResponseSchema,
               schema: auditSchema,
-              onUsage,
+              onUsage: onStage(attempt === 0 ? "audit" : "audit (repair)"),
             }),
         )
       ).value;
@@ -467,14 +531,29 @@ async function main(): Promise<void> {
   if (new Set(provenance).size !== provenance.length)
     throw new Error("provenance collision; nothing written");
 
-  const vectors =
-    chunks.length === 0
+  // Embeddings are cached by model and content hash like every model answer, so a re-run
+  // embeds only chunks whose text changed (text-embedding-005 returns identical vectors for
+  // identical text; measured 2026-10-22).
+  const vecDir = resolve(dir, "embeddings");
+  mkdirSync(vecDir, { recursive: true });
+  const vecPath = (c: BookChunk): string =>
+    resolve(vecDir, `${sha256(`${EMBEDDING_MODEL}\u0000${c.content}`)}.json`);
+  const vectorSchema = z.array(z.number()).length(EMBEDDING_DIMENSIONS);
+  const missing = chunks.filter((c) => !existsSync(vecPath(c)));
+  const fresh =
+    missing.length === 0
       ? []
       : await embedTexts(
-          chunks.map((c) => c.content),
+          missing.map((c) => c.content),
           "RETRIEVAL_DOCUMENT",
         );
-  const embedChars = chunks.reduce((n, c) => n + c.content.length, 0);
+  missing.forEach((c, i) =>
+    writeFileSync(vecPath(c), JSON.stringify(fresh[i] ?? [])),
+  );
+  const vectors = chunks.map((c) =>
+    vectorSchema.parse(JSON.parse(readFileSync(vecPath(c), "utf8"))),
+  );
+  const embedChars = missing.reduce((n, c) => n + c.content.length, 0);
 
   writeFileSync(
     resolve(dir, "chunks.jsonl"),
@@ -532,6 +611,15 @@ async function main(): Promise<void> {
     "",
     `**No chunks (${skills.filter((s) => (bySkill.get(s)?.length ?? 0) === 0).length} of ${skills.length}):** ${skills.filter((s) => (bySkill.get(s)?.length ?? 0) === 0).join("; ")}`,
     "",
+    "## ACT-only sections removed before chunking",
+    "",
+    ...(input.dropped.length === 0
+      ? ["- none"]
+      : input.dropped.map(
+          (d) =>
+            `- ${d.reason}: "${d.heading}" (page ${d.page}, ${d.words} words)`,
+        )),
+    "",
     "## Dropped",
     "",
     ...count(drops, (d) => d.reason).map(([k, n]) => `- ${k}: ${n}`),
@@ -544,8 +632,15 @@ async function main(): Promise<void> {
     "",
     "## Cost",
     "",
+    "| stage | calls | input | output | of which thinking | USD |",
+    "|---|---|---|---|---|---|",
+    ...[...byStage].map(
+      ([k, u]) =>
+        `| ${k} | ${u.calls} | ${u.prompt} | ${u.output} | ${u.thoughts} | $${u.usd.toFixed(4)} |`,
+    ),
+    "",
     `- generation: ${usage.calls} calls, ${usage.prompt} prompt tokens (${usage.cached} cached), ${usage.output} output tokens: $${genCost.toFixed(3)} (cached answers cost nothing and are not counted)`,
-    `- embedding: ${chunks.length} chunks, ${embedChars} characters: $${embedCost.toFixed(4)} at $${EMBED_PRICE_PER_MCHAR}/1M characters (unverified list price)`,
+    `- embedding: ${missing.length} of ${chunks.length} chunks embedded (the rest cached), ${embedChars} characters: $${embedCost.toFixed(4)} at $${EMBED_PRICE_PER_MCHAR}/1M characters (unverified list price)`,
     "",
   ].join("\n");
   writeFileSync(resolve(dir, "report.md"), report);

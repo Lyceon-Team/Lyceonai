@@ -597,11 +597,15 @@ describe("queue card (DESIGN.md §4: 'N questions to review', Start reviewing)",
     const startBtn = screen.getByTestId("button-start-queue");
     expect(startBtn.textContent).toBe("Start reviewing");
     // The one filled primary action in the main column (DESIGN.md §1); a pressed toggle
-    // (the section switch) is a selected state, not an action.
+    // (the section switch) is a selected state, not an action. The LISA launcher is LISA's own
+    // floating entry, accent-filled by owner brief (Karl, 2026-10-23, option D), not a page action:
+    // the approved exception to DESIGN.md §5 (Karl, 2026-10-24).
     const main = screen.getByTestId("review");
     expect(
-      [...main.querySelectorAll("button:not([aria-pressed])")].filter((b) =>
-        b.className.includes("bg-lyc-primary-bg"),
+      [...main.querySelectorAll("button:not([aria-pressed])")].filter(
+        (b) =>
+          b.className.includes("bg-lyc-primary-bg") &&
+          b.closest('[data-testid="chat-dock"]') === null,
       ),
     ).toEqual([startBtn]);
 

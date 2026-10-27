@@ -10,6 +10,8 @@
  *   compile in isolation without cross-package tsconfig includes.
  */
 export {
+  OFFERED_VIDEO_FORMATS,
+  OFFERED_VIDEO_METHODS,
   resolvedScopeSchema,
   recentMessageSchema,
   memorySummarySchema,
@@ -27,6 +29,10 @@ export {
   orchestrateRequestSchema,
   questionLinkSchema,
   instructionExposureSchema,
+  orchestrationTimingSchema,
+  turnUsageSchema,
+  orchestrateErrorResponseSchema,
+  addTokenCounts,
   orchestrateResponseSchema,
   compactRequestSchema,
   compactResponseSchema,
@@ -43,4 +49,7 @@ export {
   type ExplanationForm,
   type QuestionContent,
   type OfferedVideo,
+  type OrchestrationTiming,
+  type TurnUsage,
+  type OrchestrateErrorResponse,
 } from "./_tutor-orchestrator-wire.generated.js";

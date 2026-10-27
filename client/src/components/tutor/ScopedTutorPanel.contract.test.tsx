@@ -785,7 +785,7 @@ function watchSendReenabled(): { violations: () => number; stop: () => void } {
         r.type === "attributes" &&
         r.attributeName === "disabled" &&
         r.oldValue === null &&
-        el.getAttribute("aria-label") === "Send message"
+        el.getAttribute("aria-label") === "Send"
       ) {
         count += 1;
       }
@@ -807,8 +807,10 @@ function watchSendReenabled(): { violations: () => number; stop: () => void } {
   };
 }
 
+// Owner ruling (Karl, 2026-10-23, ruling 4 on #1300): in the panel Send is an outline icon button
+// named "Send" (its visually hidden text still reads "Send" / "Sending…").
 function sendButton(): HTMLButtonElement {
-  return screen.getByRole("button", { name: "Send message" });
+  return screen.getByRole("button", { name: "Send" });
 }
 
 describe("QA 2026-10-07 — Send is pending from the click (item 5), Show LISA reveals the panel (item 8)", () => {

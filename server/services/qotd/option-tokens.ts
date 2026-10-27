@@ -4,16 +4,19 @@
  * @spec [owner ruling 2026-10-05 (QOTD follow-up, item 1): "shuffles the options on every
  *       request ... each option is returned as an opaque, stateless token: an HMAC of
  *       (qotd_date, canonical option id) under a key derived from the server secret ... on
- *       submit, recompute the four tokens to resolve the answer"; Coding Standards §5.2]
- *       | @implemented [2026-10-05]
+ *       submit, recompute the four tokens to resolve the answer"; Coding Standards §5.2;
+ *       Karl's ruling 2026-10-23: the shuffle is dropped, the tokens stay] | @implemented
+ *       [2026-10-05] | updated [2026-10-23]
  *
  * plain English: token(date, key) = base64url(HMAC-SHA256(K, "<date>:<key>")), 22 characters,
  * where K = HMAC-SHA256(PUBLIC_RATE_LIMIT_HMAC_SECRET, "lyceon:qotd:option-token:v1"), a
  * sub-key with its own label so these tokens can never collide with the rate-limit subject
  * HMAC made from the same secret. Nothing is stored: the server recomputes the four tokens on
  * submit and maps the submitted one back to its canonical key. A token reveals nothing about
- * the canonical letter without the secret, so the order the browser shows (A-D by position)
- * is the only lettering a visitor sees.
+ * the canonical letter without the secret. Since 2026-10-23 the options are served in canonical
+ * order (Karl's ruling: no shuffle for the QOTD), so the browser's A-D by position IS the
+ * canonical lettering; tokens never depended on order, which is why grading is unchanged and a
+ * page loaded before that deploy (shuffled) still grades correctly.
  *
  * trade-offs: tokens are the same for every visitor on a given day (stateless by design); the
  * answer is public once anyone submits, so a per-visitor token would protect nothing more.

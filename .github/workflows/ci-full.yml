@@ -533,6 +533,25 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/lifecycle-email.mutations.sh
 
+      # Smart landing (Karl, 2026-10-26): plants the arm ignoring the window, a free student or a
+      # Pro student without a plan offered the wrong arms, dashboard off 1/3, eligibility re-read
+      # mid-window, every open of the day landing, resume skipped, a deep link (hash or next)
+      # treated as a default entry, guardians, admins, unknown age or a switched-off rotation
+      # assigned, the switch shipped ON, a set without its easy/medium lead or 5+5 order, a
+      # fallback unrecorded, "5 more" after any landing, a launch without the entitlement, an
+      # event without its listed properties, a free-form device class or body, escape beyond 30 s
+      # or on dashboard, the summary unbounded or repeated, the cron moved, no deletion cascade,
+      # authenticated grants, and a landing runner's back link not reaching Home. Each must turn
+      # its guarding test red on a name.
+      - name: Smart landing mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/smart-landing.mutations.sh
+
       # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
       # new-account test ignoring the account's age, email signup recording only on a client
       # consent claim, and a disabled Continue with Google. Each must turn its test red by name.
@@ -776,10 +795,115 @@ jobs:
             tests/e2e/student-calendar.spec.ts \
             --forbid-only --reporter=list
 
+  # The LISA chat dock's browser spec (owner ruling on #1300, Karl, 2026-10-23: "Add the dock's
+  # browser tests to CI"). It drives a production build against the student harness (the real
+  # routers over a database built from supabase/migrations), so it needs Postgres, provisioned as
+  # the nightly exam e2e job does (pgvector image: genesis declares the `vector` extension). The
+  # harness start lives in tests/e2e/run-lisa-dock-e2e.sh (harness paths stay inside tests/).
+  # Runs wherever the full tier runs: every pull request into main, a pull request into cleanup
+  # with the ci:full label, pushes to main and manual dispatch (see `scope`).
+  lisa-dock-browser:
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # the harness's own local major; genesis declares `vector`
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # No version pin here: pnpm version is derived from package.json
+        # "packageManager" — single source of truth (Q2).
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: LISA chat dock browser spec (student harness, lisa-dock seed)
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          LOG_DIR: ${{ runner.temp }}
+        run: bash tests/e2e/run-lisa-dock-e2e.sh
+
+  # Smart landing in a real browser (Karl, 2026-10-26, item 4), with its planted defect: the same
+  # job ci.yml runs when the `smart_landing` path group changes, here on every full-tier run.
+  smart-landing-browser:
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # the harness's own local major; genesis declares `vector`
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Smart landing browser spec, then the planted defect (today's bug) must turn it red
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          LOG_DIR: ${{ runner.temp }}
+        run: bash scripts/ci/smart-landing-e2e.mutations.sh
+
   # The required check. Green only when the full tier passed on this exact tree.
   ci-full:
     runs-on: ubuntu-latest
-    needs: [scope, review-ui-gate, gate-selftests, pg-mutations, browser]
+    needs: [scope, review-ui-gate, gate-selftests, pg-mutations, browser, lisa-dock-browser, smart-landing-browser]
     if: ${{ always() }}
     timeout-minutes: 5
     permissions:
@@ -794,7 +918,7 @@ jobs:
           RUN: ${{ needs.scope.outputs.run }}
           SATISFIED: ${{ needs.scope.outputs.satisfied }}
           REQUIRED: ${{ needs.scope.outputs.required }}
-          RESULTS: ${{ needs.review-ui-gate.result }} ${{ needs.gate-selftests.result }} ${{ needs.pg-mutations.result }} ${{ needs.browser.result }}
+          RESULTS: ${{ needs.review-ui-gate.result }} ${{ needs.gate-selftests.result }} ${{ needs.pg-mutations.result }} ${{ needs.browser.result }} ${{ needs.lisa-dock-browser.result }} ${{ needs.smart-landing-browser.result }}
           SCOPE_RESULT: ${{ needs.scope.result }}
         run: bash scripts/ci/ci-full-verdict.sh
 

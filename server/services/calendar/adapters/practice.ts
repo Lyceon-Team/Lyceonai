@@ -84,6 +84,10 @@ async function create(
       target_question_count: size,
       mode: "structured",
     },
+    // Smart landing `session_today` only: the block's own scope with an easy/medium lead.
+    ...(ctx.landing_lead === true
+      ? { composition: "easy_medium_lead" as const }
+      : {}),
   });
 
   if (!result.ok) {

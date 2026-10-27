@@ -9469,6 +9469,111 @@ $$;
 
 
 --
+-- Name: landing_claim_open(uuid, integer, text, text[], text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone) RETURNS TABLE(show_id uuid, arm text, eligible_arms text[], first_in_window boolean)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+#variable_conflict use_column
+DECLARE
+  v_first   boolean;
+  v_arm     text;
+  v_elig    text[];
+  v_show_id uuid;
+BEGIN
+  INSERT INTO public.landing_windows
+    (profile_id, window_index, arm, eligible_arms, assigned_at, device_class)
+  VALUES (p_profile_id, p_window_index, p_arm, p_eligible_arms, p_now, p_device_class)
+  ON CONFLICT (profile_id, window_index) DO NOTHING;
+  v_first := FOUND;
+
+  -- The window's stored arm wins: a second open (or a racing one) never re-draws.
+  SELECT w.arm, w.eligible_arms INTO v_arm, v_elig
+    FROM public.landing_windows w
+   WHERE w.profile_id = p_profile_id AND w.window_index = p_window_index;
+
+  INSERT INTO public.landing_shows
+    (profile_id, window_index, chicago_day, shown_at, arm, device_class)
+  VALUES (p_profile_id, p_window_index, public.chicago_day(p_now), p_now, v_arm, p_device_class)
+  ON CONFLICT (profile_id, window_index, chicago_day) DO NOTHING
+  RETURNING id INTO v_show_id;
+
+  IF v_show_id IS NULL THEN
+    RETURN;  -- already shown this Chicago day in this window: no landing
+  END IF;
+  RETURN QUERY SELECT v_show_id, v_arm, v_elig, v_first;
+END;
+$$;
+
+
+--
+-- Name: landing_claim_summaries(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_claim_summaries(p_now timestamp with time zone, p_limit integer) RETURNS TABLE(show_id uuid, profile_id uuid, window_index integer, arm text, device_class text, questions_answered integer)
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH due AS (
+    SELECT s.id
+      FROM public.landing_shows s
+     WHERE s.summarized_at IS NULL
+       AND s.chicago_day < public.chicago_day(p_now)
+     ORDER BY s.chicago_day, s.id
+     LIMIT p_limit
+     FOR UPDATE SKIP LOCKED
+  ), claimed AS (
+    UPDATE public.landing_shows s
+       SET summarized_at = p_now
+      FROM due
+     WHERE s.id = due.id
+    RETURNING s.id, s.profile_id, s.window_index, s.arm, s.device_class, s.shown_at,
+              s.chicago_day
+  ), bounded AS (
+    SELECT c.*,
+           LEAST(
+             COALESCE((SELECT min(n.shown_at) FROM public.landing_shows n
+                        WHERE n.profile_id = c.profile_id AND n.shown_at > c.shown_at),
+                      'infinity'::timestamptz),
+             ((c.chicago_day + 1)::timestamp AT TIME ZONE 'America/Chicago')
+           ) AS ends_at
+      FROM claimed c
+  )
+  SELECT b.id, b.profile_id, b.window_index, b.arm, b.device_class,
+         ((SELECT count(*) FROM public.practice_session_items i
+            WHERE i.user_id = b.profile_id AND i.status = 'answered'
+              AND i.answered_at >= b.shown_at AND i.answered_at < b.ends_at)
+          + (SELECT count(*) FROM public.review_session_items r
+              WHERE r.student_id = b.profile_id AND r.status = 'answered'
+                AND r.answered_at >= b.shown_at AND r.answered_at < b.ends_at))::integer
+    FROM bounded b;
+$$;
+
+
+--
+-- Name: landing_record_escape(uuid, uuid, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) RETURNS TABLE(window_index integer, arm text, device_class text)
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.landing_shows s
+     SET escaped_at = p_now
+   WHERE s.id = p_show_id
+     AND s.profile_id = p_profile_id
+     AND s.escaped_at IS NULL
+     AND s.arm <> 'dashboard'
+     AND s.fallback_reason IS NULL
+     AND p_now >= s.shown_at
+     AND p_now <= s.shown_at + make_interval(secs => p_max_seconds)
+  RETURNING s.window_index, s.arm, s.device_class;
+$$;
+
+
+--
 -- Name: lifecycle_claim(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -15626,18 +15731,19 @@ COMMENT ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) IS 'Doc 06D
 
 
 --
--- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text, text[], text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) RETURNS void
+CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) RETURNS void
     LANGUAGE sql
     SET search_path TO 'public', 'pg_temp'
     AS $$
   INSERT INTO public.video_resources AS v
     (video_id, title, channel_name, duration_seconds, status, last_checked_at,
-     skill_codes, domain, start_seconds, tagged_by, tagged_at)
+     skill_codes, domain, start_seconds, tagged_by, tagged_at, methods, format)
   VALUES (p_video_id, p_title, p_channel_name, p_duration_seconds, 'available', now(),
-          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now())
+          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now(),
+          coalesce(p_methods, '{}'), p_format)
   ON CONFLICT (video_id) DO UPDATE SET
     title            = EXCLUDED.title,
     channel_name     = EXCLUDED.channel_name,
@@ -15647,14 +15753,19 @@ CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_chann
     start_seconds    = EXCLUDED.start_seconds,
     tagged_by        = EXCLUDED.tagged_by,
     tagged_at        = EXCLUDED.tagged_at,
-    -- A changed tag set loses its approval; an unchanged one keeps it.
+    methods          = EXCLUDED.methods,
+    format           = EXCLUDED.format,
+    -- A changed tag set loses its approval; an unchanged one keeps it. Methods and format are
+    -- part of the tag set: what Karl approved is what the student is offered.
     approved_by = CASE
-      WHEN (v.skill_codes, v.domain, v.start_seconds)
-           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+      WHEN (v.skill_codes, v.domain, v.start_seconds, v.methods, v.format)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds, EXCLUDED.methods, EXCLUDED.format)
         THEN v.approved_by ELSE NULL END,
     approved_at = CASE
-      WHEN (v.skill_codes, v.domain, v.start_seconds)
-           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+      WHEN (v.skill_codes, v.domain, v.start_seconds, v.methods, v.format)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds, EXCLUDED.methods, EXCLUDED.format)
         THEN v.approved_at ELSE NULL END;
 $$;
 
@@ -15693,6 +15804,30 @@ CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit 
     AND v.approved_by IS NOT NULL
     AND v.skill_codes && p_skill_codes        -- GIN index: the skill filter, in the statement
   ORDER BY v.duration_seconds, v.video_id     -- shortest first for a stuck student; stable
+  LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
+$$;
+
+
+--
+-- Name: video_resources_for_skills(text[], integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) RETURNS TABLE(video_id text, title text, channel_name text, duration_seconds integer, start_seconds integer, methods text[], format text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT v.video_id, v.title, v.channel_name, v.duration_seconds, v.start_seconds,
+         v.methods, v.format
+  FROM public.video_resources v
+  WHERE v.status = 'available'
+    AND v.approved_by IS NOT NULL
+    AND v.skill_codes && p_skill_codes                            -- GIN index: skill match, required
+  ORDER BY
+    (p_method IS NOT NULL AND p_method = ANY (v.methods)) DESC,   -- the method asked for, first
+    array_position(ARRAY['formula', 'worked_example', 'lesson', 'strategy']::text[], v.format)
+      NULLS LAST,                                                 -- format priority
+    v.duration_seconds,                                           -- then shortest
+    v.video_id                                                    -- stable
   LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
 $$;
 
@@ -16528,9 +16663,11 @@ CREATE TABLE public.curriculum_chunks (
     reviewed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    methods text[] DEFAULT '{}'::text[] NOT NULL,
     CONSTRAINT curriculum_chunks_active_reviewed CHECK (((status <> 'active'::text) OR ((reviewed_by IS NOT NULL) AND (reviewed_at IS NOT NULL)))),
     CONSTRAINT curriculum_chunks_content_nonblank CHECK ((btrim(content) <> ''::text)),
     CONSTRAINT curriculum_chunks_content_type_check CHECK ((content_type = ANY (ARRAY['textbook'::text, 'video_transcript'::text, 'strategy'::text, 'worked_example'::text]))),
+    CONSTRAINT curriculum_chunks_methods_check CHECK (((methods <@ ARRAY['desmos'::text, 'algebraic'::text, 'backsolve'::text]) AND (array_position(methods, NULL::text) IS NULL))),
     CONSTRAINT curriculum_chunks_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
     CONSTRAINT curriculum_chunks_skills_nonempty CHECK ((cardinality(skill_codes) >= 1)),
     CONSTRAINT curriculum_chunks_status_check CHECK ((status = ANY (ARRAY['pending_review'::text, 'active'::text, 'retired'::text]))),
@@ -17221,6 +17358,46 @@ CREATE TABLE public.internal_service_auth_config_history (
     changed_by_profile_id uuid,
     change_reason text,
     changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: landing_shows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_shows (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_id uuid NOT NULL,
+    window_index integer NOT NULL,
+    chicago_day date NOT NULL,
+    shown_at timestamp with time zone NOT NULL,
+    arm text NOT NULL,
+    device_class text NOT NULL,
+    fallback_reason text,
+    escaped_at timestamp with time zone,
+    summarized_at timestamp with time zone,
+    CONSTRAINT landing_shows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]))),
+    CONSTRAINT landing_shows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
+    CONSTRAINT landing_shows_fallback_reason_check CHECK ((fallback_reason = ANY (ARRAY['quota_exhausted'::text, 'session_limit'::text, 'no_questions'::text, 'qotd_unavailable'::text, 'no_block_today'::text, 'not_entitled'::text, 'arm_retired'::text, 'error'::text])))
+);
+
+
+--
+-- Name: landing_windows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.landing_windows (
+    profile_id uuid NOT NULL,
+    window_index integer NOT NULL,
+    arm text NOT NULL,
+    eligible_arms text[] NOT NULL,
+    assigned_at timestamp with time zone DEFAULT now() NOT NULL,
+    device_class text NOT NULL,
+    CONSTRAINT landing_windows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]))),
+    CONSTRAINT landing_windows_arm_is_eligible CHECK ((arm = ANY (eligible_arms))),
+    CONSTRAINT landing_windows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
+    CONSTRAINT landing_windows_eligible_known CHECK (((eligible_arms <@ ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]) AND ('dashboard'::text = ANY (eligible_arms)))),
+    CONSTRAINT landing_windows_window_index_check CHECK ((window_index >= 0))
 );
 
 
@@ -19438,8 +19615,8 @@ CREATE TABLE public.tutor_turn_metrics (
     turn_ordinal integer NOT NULL,
     orchestration_duration_ms integer NOT NULL,
     model_name text NOT NULL,
-    tokens_in integer DEFAULT 0 NOT NULL,
-    tokens_out integer DEFAULT 0 NOT NULL,
+    tokens_in integer,
+    tokens_out integer,
     cache_hit boolean DEFAULT false NOT NULL,
     compaction_recommended boolean DEFAULT false NOT NULL,
     anti_leak_triggered boolean DEFAULT false NOT NULL,
@@ -19448,7 +19625,9 @@ CREATE TABLE public.tutor_turn_metrics (
     crisis_classifier_outcome text,
     prompt_version text,
     context_hash text,
-    recorded_at timestamp with time zone DEFAULT now() NOT NULL
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    thinking_tokens integer,
+    thinking_budget integer
 );
 
 
@@ -19457,6 +19636,34 @@ CREATE TABLE public.tutor_turn_metrics (
 --
 
 COMMENT ON TABLE public.tutor_turn_metrics IS 'Doc 03A §11.5: per-turn operational telemetry. Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.tokens_in; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.tokens_in IS 'Sum of Vertex promptTokenCount over every billed attempt in the turn. NULL = no model response (or not reported), never 0 for unknown.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.tokens_out; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.tokens_out IS 'Sum of Vertex candidatesTokenCount over every billed attempt in the turn. NULL = no model response (or not reported).';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.thinking_tokens; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.thinking_tokens IS 'Sum of Vertex thoughtsTokenCount over every billed attempt in the turn. NULL = no model response (or not reported).';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.thinking_budget; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex thinking budget the turn''s calls were made with. NULL = no model call.';
 
 
 --
@@ -19517,10 +19724,14 @@ CREATE TABLE public.video_resources (
     tagged_at timestamp with time zone,
     approved_by uuid,
     approved_at timestamp with time zone,
+    methods text[] DEFAULT '{}'::text[] NOT NULL,
+    format text,
     CONSTRAINT video_resources_approved_has_tags CHECK (((approved_by IS NULL) OR (cardinality(skill_codes) >= 1))),
     CONSTRAINT video_resources_approved_pair CHECK (((approved_by IS NULL) = (approved_at IS NULL))),
     CONSTRAINT video_resources_domain_check CHECK (((domain IS NULL) OR (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text, 'Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text])))),
     CONSTRAINT video_resources_duration_check CHECK ((duration_seconds > 0)),
+    CONSTRAINT video_resources_format_check CHECK (((format IS NULL) OR (format = ANY (ARRAY['worked_example'::text, 'formula'::text, 'lesson'::text, 'strategy'::text])))),
+    CONSTRAINT video_resources_methods_check CHECK (((methods <@ ARRAY['desmos'::text, 'algebraic'::text, 'backsolve'::text]) AND (array_position(methods, NULL::text) IS NULL))),
     CONSTRAINT video_resources_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
     CONSTRAINT video_resources_start_check CHECK (((start_seconds IS NULL) OR ((start_seconds >= 0) AND (start_seconds < duration_seconds)))),
     CONSTRAINT video_resources_status_check CHECK ((status = ANY (ARRAY['available'::text, 'unavailable'::text]))),
@@ -20030,6 +20241,30 @@ ALTER TABLE ONLY public.internal_service_auth_config_history
 
 ALTER TABLE ONLY public.internal_service_auth_config
     ADD CONSTRAINT internal_service_auth_config_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: landing_shows landing_shows_one_per_day; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_one_per_day UNIQUE (profile_id, window_index, chicago_day);
+
+
+--
+-- Name: landing_shows landing_shows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: landing_windows landing_windows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_windows
+    ADD CONSTRAINT landing_windows_pkey PRIMARY KEY (profile_id, window_index);
 
 
 --
@@ -21869,6 +22104,13 @@ CREATE INDEX idx_usage_rate_limit_ledger_student_user ON public.usage_rate_limit
 
 
 --
+-- Name: landing_shows_unsummarized_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX landing_shows_unsummarized_idx ON public.landing_shows USING btree (chicago_day) WHERE (summarized_at IS NULL);
+
+
+--
 -- Name: marketing_consent_log_profile; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -22973,6 +23215,30 @@ ALTER TABLE ONLY public.internal_service_auth_config_history
 
 ALTER TABLE ONLY public.internal_service_auth_config
     ADD CONSTRAINT internal_service_auth_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: landing_shows landing_shows_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_shows landing_shows_window_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_shows
+    ADD CONSTRAINT landing_shows_window_fk FOREIGN KEY (profile_id, window_index) REFERENCES public.landing_windows(profile_id, window_index) ON DELETE CASCADE;
+
+
+--
+-- Name: landing_windows landing_windows_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.landing_windows
+    ADD CONSTRAINT landing_windows_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -24210,6 +24476,18 @@ ALTER TABLE public.internal_service_auth_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.internal_service_auth_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: landing_shows; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.landing_shows ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: landing_windows; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.landing_windows ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: legal_acceptance_outbox; Type: ROW SECURITY; Schema: public; Owner: -
@@ -26505,6 +26783,30 @@ GRANT ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id t
 
 
 --
+-- Name: FUNCTION landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_claim_open(p_profile_id uuid, p_window_index integer, p_arm text, p_eligible_arms text[], p_device_class text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION landing_claim_summaries(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_claim_summaries(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_claim_summaries(p_now timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) TO service_role;
+
+
+--
 -- Name: FUNCTION lifecycle_claim(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
 --
 
@@ -27664,11 +27966,11 @@ GRANT ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) TO servic
 
 
 --
--- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) TO service_role;
+REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) TO service_role;
 
 
 --
@@ -27685,6 +27987,14 @@ GRANT ALL ON FUNCTION public.video_resources_approve(p_video_ids text[], p_appro
 
 REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) TO service_role;
 
 
 --
@@ -28536,6 +28846,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.internal_service_auth_config T
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.internal_service_auth_config_history TO service_role;
+
+
+--
+-- Name: TABLE landing_shows; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.landing_shows TO service_role;
+
+
+--
+-- Name: TABLE landing_windows; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT ON TABLE public.landing_windows TO service_role;
 
 
 --

@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useResumeConversation,
   useSendMessage,
+  useTurnTimingReport,
   type CrisisCategory,
   type SendMessageResponse,
   type TutorConversationDetail,
@@ -27,6 +28,7 @@ import {
   type TutorSuggestedAction,
 } from "@/hooks/tutor-client";
 import { HttpApiError, mapTutorErrorToPremiumReason } from "@/lib/api-error";
+import { useSendLock } from "@/hooks/useSendLock";
 import type { PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
 
 export type TurnState =
@@ -72,6 +74,23 @@ export function useTutorTurn(
 ): TutorTurn {
   const sendMessageMutation = useSendMessage();
   const resumeConversation = useResumeConversation();
+  const turnTimingReport = useTurnTimingReport();
+
+  // @spec [owner brief "P2 Revised" (Karl, 2026-10-23) §2 H1 ("time-to-first-visible-text")]
+  // | @implemented [2026-10-23]
+  // plain English: the reply turn in flight, timed from the press of send. `postMs` is set when
+  // the send resolves with an ordinary reply; the effect below reports once the thread carries
+  // the tutor row with this turn's client_turn_id and a frame has painted it. A crisis turn drops
+  // the measurement; a failed turn never sets `postMs` and writes no tutor row, and a retry or a
+  // newer send replaces it, so neither reports. A ref, not
+  // state: timing must not re-render the thread. The report carries the send's request id and
+  // two numbers — never the message or the reply.
+  const turnTimingRef = useRef<{
+    clientTurnId: string;
+    requestId: string;
+    startedAt: number;
+    postMs: number | null;
+  } | null>(null);
 
   const [turnState, setTurnState] = useState<TurnState>({ kind: "idle" });
   // W2-10: the student's message as sent, shown at once — the thread itself
@@ -90,6 +109,8 @@ export function useTutorTurn(
     useState<TutorSuggestedAction | null>(null);
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // P2 §3.1 (2026-10-26): one send in flight at a time, refused synchronously (useSendLock.ts).
+  const sendLock = useSendLock();
 
   // Shown until the persisted student row with the same client_turn_id is in
   // the thread — derived, not synced, so there is no frame where neither is.
@@ -152,6 +173,27 @@ export function useTutorTurn(
     ) as PremiumPromptReason | null;
   }, [sendMessageMutation.error]);
 
+  // H1: the reply's row is in the thread → report after the frame that paints it.
+  const reportTurnTiming = turnTimingReport.mutate;
+  useEffect(() => {
+    const pending = turnTimingRef.current;
+    if (pending === null || pending.postMs === null) return;
+    const replied = messages.some(
+      (m) => m.role === "tutor" && m.client_turn_id === pending.clientTurnId,
+    );
+    if (!replied) return;
+    turnTimingRef.current = null;
+    const postMs = pending.postMs;
+    requestAnimationFrame(() => {
+      reportTurnTiming({
+        request_id: pending.requestId,
+        post_ms: Math.round(postMs * 10) / 10,
+        visible_ms:
+          Math.round((performance.now() - pending.startedAt) * 10) / 10,
+      });
+    });
+  }, [messages, reportTurnTiming]);
+
   // Clear timeout on unmount
   useEffect(() => {
     return () => {
@@ -169,13 +211,14 @@ export function useTutorTurn(
   }, [conversation?.crisis_paused_at, turnState.kind, crisisLane]);
 
   const reset = useCallback(() => {
+    sendLock.releaseAll();
     setTurnState({ kind: "idle" });
     setOptimisticTurn(null);
     setSuggestedAction(null);
     setCrisisLane(null);
     setCrisisContent("");
     setUnpausedCrisis(false);
-  }, []);
+  }, [sendLock]);
 
   // ── Send message ──────────────────────────────────────────────────────
 
@@ -184,6 +227,10 @@ export function useTutorTurn(
       if (!conversationId) return;
       const trimmed = messageText.trim();
       if (!trimmed) return;
+      // A second send before React re-renders (a burst of send events in one task) is refused
+      // here, before any state change or request.
+      const release = sendLock.acquire();
+      if (release === null) return;
 
       const clientTurnId =
         turnState.kind === "failed"
@@ -200,8 +247,18 @@ export function useTutorTurn(
         sentAt: new Date().toISOString(),
       });
       sendMessageMutation.reset();
+      const requestId = crypto.randomUUID();
+      turnTimingRef.current = {
+        clientTurnId,
+        requestId,
+        startedAt: performance.now(),
+        postMs: null,
+      };
 
       timeoutRef.current = setTimeout(() => {
+        // The student may Try again (same client_turn_id, as before the lock): the late answer
+        // of this attempt, when it comes, releases only its own hold.
+        release();
         setTurnState({
           kind: "failed",
           clientTurnId,
@@ -215,9 +272,18 @@ export function useTutorTurn(
             conversation_id: conversationId,
             message: trimmed,
             client_turn_id: clientTurnId,
+            request_id: requestId,
           });
 
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        release();
+
+        const timing = turnTimingRef.current;
+        if (timing !== null && timing.requestId === requestId) {
+          const crisisTurn = Boolean(response.response.crisis_category);
+          if (crisisTurn) turnTimingRef.current = null;
+          else timing.postMs = performance.now() - timing.startedAt;
+        }
 
         if (response.response.crisis_category) {
           setCrisisLane(response.response.crisis_category);
@@ -241,6 +307,7 @@ export function useTutorTurn(
         }
       } catch (err: unknown) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        release();
         if (
           err instanceof HttpApiError &&
           err.code === "conversation_crisis_paused"
@@ -256,7 +323,7 @@ export function useTutorTurn(
         }
       }
     },
-    [conversationId, turnState, sendMessageMutation, crisisLane],
+    [conversationId, turnState, sendMessageMutation, crisisLane, sendLock],
   );
 
   // ── Retry ─────────────────────────────────────────────────────────────

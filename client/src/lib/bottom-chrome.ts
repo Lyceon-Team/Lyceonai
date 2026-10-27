@@ -21,16 +21,26 @@
  * (default `["tab-bar"]`, so the banner still reads exactly what it read before: it sits above the
  * tab bar, never above itself). Trade-off: the banner's own height is now published too, which
  * changes nothing for any reader that does not ask for `consent`.
+ *
+ * @updated 2026-10-23 — owner ruling 5 on #1300 (Karl: "the bubble must never cover the
+ * calculator"): a fourth layer, `dock-bubble`, the collapsed LISA bubble itself, reported while it
+ * is drawn. The runner's side-panel calculator reads it and keeps that much clear at its bottom,
+ * so the bubble never sits over Desmos. Nothing else reads it.
  */
 import { useEffect, useSyncExternalStore, type RefObject } from "react";
 
 /** One piece of fixed bottom chrome that reports its height. */
-export type BottomChromeLayer = "tab-bar" | "consent" | "runner-footer";
+export type BottomChromeLayer =
+  | "tab-bar"
+  | "consent"
+  | "runner-footer"
+  | "dock-bubble";
 
 const heights: Record<BottomChromeLayer, number> = {
   "tab-bar": 0,
   consent: 0,
   "runner-footer": 0,
+  "dock-bubble": 0,
 };
 const listeners = new Set<() => void>();
 

@@ -30,6 +30,8 @@ import { DIAGNOSTIC_PROJECTION } from "./diagnostic-projection";
 import { COOKIE_BANNER } from "./cookie-banner";
 import { HOMEPAGE_HERO } from "./homepage-hero";
 import { LISA_DOCK } from "./lisa-dock";
+import { LISA_LAUNCHER } from "./lisa-launcher";
+import { RUNNER_LISA_DOCKED } from "./runner-lisa-docked";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -64,4 +66,6 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [COOKIE_BANNER.id]: COOKIE_BANNER,
   [HOMEPAGE_HERO.id]: HOMEPAGE_HERO,
   [LISA_DOCK.id]: LISA_DOCK,
+  [LISA_LAUNCHER.id]: LISA_LAUNCHER,
+  [RUNNER_LISA_DOCKED.id]: RUNNER_LISA_DOCKED,
 };

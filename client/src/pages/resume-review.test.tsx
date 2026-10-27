@@ -41,8 +41,11 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
 }));
 // 2026-10-22 (owner brief "LISA chat dock"): from 768px up LISA is the dock; its own behaviour is
 // ChatDock.contract.test.tsx's. Stubbed for the same reason as the panel.
-vi.mock("@/components/tutor/ChatDock", () => ({
-  DOCK_CLEARANCE_PX: 80,
+vi.mock("@/components/tutor/ChatDock", async () => ({
+  // The real constants and helpers; only the component is stubbed.
+  ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
+    "@/components/tutor/ChatDock",
+  )),
   ChatDock: () => <div data-testid="chat-dock-stub" />,
 }));
 vi.mock("@/components/math/DesmosCalculator", () => ({
@@ -64,6 +67,7 @@ const routeMock = vi.hoisted(() => ({ sessionId: "rev-sess-001" }));
 vi.mock("wouter", () => ({
   useRoute: () => [true, { sessionId: routeMock.sessionId }],
   useLocation: () => ["/review/session/rev-sess-001", vi.fn()],
+  useSearch: () => "",
   Link: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 

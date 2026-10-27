@@ -44,6 +44,7 @@ import {
   TargetScorePicker,
   type TargetScoreChoice,
 } from "@/components/sat-dates/TargetScorePicker";
+import { notePostAuthDestination } from "@/lib/landing-entry";
 import {
   invalidateGettingStarted,
   recordGettingStartedNotSure,
@@ -266,12 +267,17 @@ export default function ProfileComplete() {
       // guardian dashboard gates on the auth context's `isGuardian`; without this refresh it
       // still read the pre-completion 'student' and bounced a new guardian to /dashboard.
       await refreshUser();
-      navigate(
-        resolvePostCompletionPath(
-          result.profile.role,
-          result.guardianConsentRequired,
-        ),
+      const destination = resolvePostCompletionPath(
+        result.profile.role,
+        result.guardianConsentRequired,
       );
+      // Smart landing (Karl, 2026-10-26, ruling A): finishing onboarding into the default Home
+      // is a default entry (a student's first window starts here); a `next` is a deep link.
+      notePostAuthDestination(
+        destination,
+        returnPathFromSearch(window.location.search),
+      );
+      navigate(destination);
     },
     onError: (error: unknown) => {
       // @spec [contracts/auth-standard-flow.contract.md AS-2, AS-3 / §0] | @implemented 2026-06-20

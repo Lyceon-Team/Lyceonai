@@ -738,11 +738,22 @@ function gets(): string[] {
     .map((l) => l.slice(4).split("?")[0] ?? "");
 }
 
-/** The buttons and links drawn as the screen's primary action (filled --primary-bg). */
+/**
+ * The buttons and links drawn as the screen's primary action (filled --primary-bg). The LISA
+ * launcher is not one of them: the approved exception to DESIGN.md §5 (Karl, 2026-10-24:
+ * "persistent floating chrome, not a page action"; option D, 2026-10-23) gives it
+ * the accent fill as LISA's own floating entry, outside the page's actions (DESIGN.md §3 Chat
+ * dock); `the LISA launcher is the only filled control outside the page` below pins that it is
+ * the one exception.
+ */
 function primaries(container: HTMLElement): HTMLElement[] {
   return Array.from(
     container.ownerDocument.querySelectorAll<HTMLElement>("a, button"),
-  ).filter((el) => el.className.includes("bg-lyc-primary-bg"));
+  ).filter(
+    (el) =>
+      el.className.includes("bg-lyc-primary-bg") &&
+      el.closest('[data-testid="chat-dock"]') === null,
+  );
 }
 
 beforeEach(() => {
@@ -917,6 +928,19 @@ describe("Home, paid (featureAccess grants calendar and mastery)", () => {
     expect(net.log).toContain(
       `POST /api/calendar/blocks/${TODAY_REVIEW_BLOCK}/launch`,
     );
+  });
+
+  it("the LISA launcher is the only filled control outside the page (owner brief, Karl, 2026-10-23, option D)", async () => {
+    const { container } = await mount("paid", { calendar: "ready" });
+    const start = await screen.findByTestId("home-start-plan");
+    await waitFor(() =>
+      expect(screen.getByTestId("home-mastery")).toBeTruthy(),
+    );
+    const launcher = screen.getByTestId("chat-dock-bubble");
+    const filled = Array.from(
+      container.ownerDocument.querySelectorAll<HTMLElement>("a, button"),
+    ).filter((el) => el.className.includes("bg-lyc-primary-bg"));
+    expect(filled).toEqual([start, launcher]);
   });
 
   it("before calendar setup, the primary is 'Set up your study calendar' and there is no plan", async () => {
