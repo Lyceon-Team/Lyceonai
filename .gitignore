@@ -97,3 +97,11 @@ qotd-social-out/
 !/.vale/styles/config/
 /build/content-prose/
 /.vale/styles/config/templates/
+
+# Worked examples: the voice clone's reference recording is never committed (OpenVoice addendum,
+# Karl, 2026-10-27). The tooling reads it from WE_VOICE_REFERENCE, a path outside every checkout.
+voice-reference/
+*.reference.wav
+*.reference.mp3
+*.reference.m4a
+*.reference.flac
