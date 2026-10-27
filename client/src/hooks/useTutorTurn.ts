@@ -28,6 +28,7 @@ import {
   type TutorSuggestedAction,
 } from "@/hooks/tutor-client";
 import { HttpApiError, mapTutorErrorToPremiumReason } from "@/lib/api-error";
+import { useSendLock } from "@/hooks/useSendLock";
 import type { PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
 
 export type TurnState =
@@ -108,6 +109,8 @@ export function useTutorTurn(
     useState<TutorSuggestedAction | null>(null);
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // P2 §3.1 (2026-10-26): one send in flight at a time, refused synchronously (useSendLock.ts).
+  const sendLock = useSendLock();
 
   // Shown until the persisted student row with the same client_turn_id is in
   // the thread — derived, not synced, so there is no frame where neither is.
@@ -208,13 +211,14 @@ export function useTutorTurn(
   }, [conversation?.crisis_paused_at, turnState.kind, crisisLane]);
 
   const reset = useCallback(() => {
+    sendLock.releaseAll();
     setTurnState({ kind: "idle" });
     setOptimisticTurn(null);
     setSuggestedAction(null);
     setCrisisLane(null);
     setCrisisContent("");
     setUnpausedCrisis(false);
-  }, []);
+  }, [sendLock]);
 
   // ── Send message ──────────────────────────────────────────────────────
 
@@ -223,6 +227,10 @@ export function useTutorTurn(
       if (!conversationId) return;
       const trimmed = messageText.trim();
       if (!trimmed) return;
+      // A second send before React re-renders (a burst of send events in one task) is refused
+      // here, before any state change or request.
+      const release = sendLock.acquire();
+      if (release === null) return;
 
       const clientTurnId =
         turnState.kind === "failed"
@@ -248,6 +256,9 @@ export function useTutorTurn(
       };
 
       timeoutRef.current = setTimeout(() => {
+        // The student may Try again (same client_turn_id, as before the lock): the late answer
+        // of this attempt, when it comes, releases only its own hold.
+        release();
         setTurnState({
           kind: "failed",
           clientTurnId,
@@ -265,6 +276,7 @@ export function useTutorTurn(
           });
 
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        release();
 
         const timing = turnTimingRef.current;
         if (timing !== null && timing.requestId === requestId) {
@@ -295,6 +307,7 @@ export function useTutorTurn(
         }
       } catch (err: unknown) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        release();
         if (
           err instanceof HttpApiError &&
           err.code === "conversation_crisis_paused"
@@ -310,7 +323,7 @@ export function useTutorTurn(
         }
       }
     },
-    [conversationId, turnState, sendMessageMutation, crisisLane],
+    [conversationId, turnState, sendMessageMutation, crisisLane, sendLock],
   );
 
   // ── Retry ─────────────────────────────────────────────────────────────
