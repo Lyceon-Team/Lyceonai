@@ -151,6 +151,8 @@ type Price = { input: number; cached: number; output: number };
  *    Third-party aggregator figures read 2026-10-15 (llmreference.com, getmaxim.ai).
  *  - gemini-3.1-flash-lite: $0.25 input, $0.025 cached, $1.50 output. Third-party figures read
  *    2026-10-23 (getmaxim.ai, futureagi.com).
+ *  - gemini-3.1-pro-preview (the G0-2 judge): $2.00 input, $0.20 cached, $12.00 output, at
+ *    the under-200k-token tier. Third-party figures read 2026-10-27 (getmaxim.ai, requesty.ai).
  * The official Vertex pricing page did not load from this session; the raw token counts are
  * reported alongside, so the cost can be recomputed against the real rate card. A model not
  * listed is costed at the gemini-3.5-flash rate (the higher of the two).
@@ -158,6 +160,7 @@ type Price = { input: number; cached: number; output: number };
 export const MODEL_PRICES: Readonly<Record<string, Price>> = {
   "gemini-3.5-flash": { input: 1.5, cached: 0.15, output: 9.0 },
   "gemini-3.1-flash-lite": { input: 0.25, cached: 0.025, output: 1.5 },
+  "gemini-3.1-pro-preview": { input: 2.0, cached: 0.2, output: 12.0 },
 };
 export const PRICE_PER_MTOK: Price = { input: 1.5, cached: 0.15, output: 9.0 };
 export function priceOf(model: string): Price {

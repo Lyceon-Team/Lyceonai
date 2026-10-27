@@ -458,12 +458,14 @@ async function resolveTrustedScopeForCreate(
  * (value=null, failed=true). The serializer uses this distinction for the
  * correct-answer blocking gate: pre-submit + failed = block.
  */
-type CorrectAnswerResult = {
+export type CorrectAnswerResult = {
   value: string | null;
   failed: boolean;
 };
 
-async function getCorrectAnswerForScope(
+// Exported for the G0-2 case import (tests/eval/teaching-quality/import-case.ts), which keeps
+// the same BFF-local scan key the turn path keeps; never put on the wire pre-submit.
+export async function getCorrectAnswerForScope(
   questionRowId: string | null,
   surface: string | null | undefined,
   sessionItemId: string | null | undefined,

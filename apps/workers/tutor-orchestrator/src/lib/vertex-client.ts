@@ -290,6 +290,37 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ── Generation config (the one production shape) ─────────────────────────
+
+/** Thinking budget for every tutor turn (Doc 03C V3 §5.7). */
+export const TUTOR_THINKING_BUDGET = 1024;
+
+/**
+ * The generation config every tutor turn is sent with, minus the abort signal.
+ *
+ * @spec [Doc-03C_V3 §5.7; docs/eval/lisa/G0-2_Teaching_Quality_Set_Design.md §5]
+ * @implemented 2026-10-27
+ *
+ * plain English: exported so the G0-2 baseline harness replays turns with exactly
+ * the production parameters (temperature, topP, topK, thinking budget, safety
+ * settings) instead of a hand-copied set that would drift. invokeVertexOnce builds
+ * its config from this, so the two cannot differ. No behaviour change.
+ */
+export function buildTutorGenerationConfig(
+  systemInstruction: string,
+  maxOutputTokens: number,
+): GenerateContentConfig {
+  return {
+    systemInstruction,
+    temperature: TEMPERATURE,
+    topP: TOP_P,
+    topK: TOP_K,
+    maxOutputTokens,
+    thinkingConfig: { thinkingBudget: TUTOR_THINKING_BUDGET },
+    safetySettings: SAFETY_SETTINGS,
+  };
+}
+
 // ── Single Vertex invocation (no retry, no fallback) ──────────────────────
 
 type SingleInvocationResult = Result<
@@ -317,13 +348,7 @@ async function invokeVertexOnce(
   }, limits.timeoutMs);
 
   const config: GenerateContentConfig = {
-    systemInstruction,
-    temperature: TEMPERATURE,
-    topP: TOP_P,
-    topK: TOP_K,
-    maxOutputTokens: limits.maxOutputTokens,
-    thinkingConfig: { thinkingBudget: 1024 },
-    safetySettings: SAFETY_SETTINGS,
+    ...buildTutorGenerationConfig(systemInstruction, limits.maxOutputTokens),
     abortSignal: controller.signal,
   };
 

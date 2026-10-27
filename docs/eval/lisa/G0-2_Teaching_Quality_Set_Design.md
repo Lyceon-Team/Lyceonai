@@ -23,10 +23,10 @@ LISA is tutoring next to a tool it has no knowledge of.
 
 All three are real production conversations. Students are not named anywhere in the repository. Which conversation a student case came from is held only in the server-only table (§3), never in git.
 
-| Case | Source | When (UTC) | Item |
-|---|---|---|---|
-| **G0-2-01** | Production, student A | 18 Oct 2026 | from export |
-| **G0-2-02** | Production, student B | 19 Oct 2026 | from export |
+| Case        | Source                      | When (UTC)               | Item          |
+| ----------- | --------------------------- | ------------------------ | ------------- |
+| **G0-2-01** | Production, student A       | 18 Oct 2026              | from export   |
+| **G0-2-02** | Production, student B       | 19 Oct 2026              | from export   |
 | **G0-2-03** | Production, Karl's own test | 27 Oct 2026, 04:07–04:10 | `SATM2UYVX9I` |
 
 Each case is one decision point: the conversation up to and including the student's Desmos request, and the reply LISA gave there. Later turns go into the case's notes only; they are not replayed. This follows the Phase A design: "every golden-set case is a single-generation test."
@@ -37,12 +37,12 @@ Each case is one decision point: the conversation up to and including the studen
 
 **No student transcript text goes in the repo, de-identified or not.** The repository is public and the students are minors, and free text can identify someone even with every name removed. So:
 
-| What | Where | Why |
-|---|---|---|
-| **Student cases** (G0-2-01, G0-2-02): the conversation prefix, the item, the student's current message, LISA's production reply, and which conversation it came from | **A server-only table** in Supabase, described in §3.2 | It is student text |
-| **Every baseline run record for a student case**: the replayed reply, the judge's quotes, raw model output | **The same server-only storage** (§3.2, `tutor_eval_runs`) | A replay or a judge quote can echo the student's words |
-| **Karl's own case** (G0-2-03, item `SATM2UYVX9I`, 27 Oct 04:07–04:10 UTC) | **May be committed.** It is from Karl's account, not a student's | Owner ruling |
-| **The repo** | `docs/eval/lisa/LISA_Teaching_Quality_Set_v1.md` and, from Step 1, `tests/eval/teaching-quality/` | Case ids, rubrics, gold responses, judge notes and harness code only. For student cases, nothing that quotes or paraphrases the student |
+| What                                                                                                                                                                 | Where                                                                                             | Why                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Student cases** (G0-2-01, G0-2-02): the conversation prefix, the item, the student's current message, LISA's production reply, and which conversation it came from | **A server-only table** in Supabase, described in §3.2                                            | It is student text                                                                                                                      |
+| **Every baseline run record for a student case**: the replayed reply, the judge's quotes, raw model output                                                           | **The same server-only storage** (§3.2, `tutor_eval_runs`)                                        | A replay or a judge quote can echo the student's words                                                                                  |
+| **Karl's own case** (G0-2-03, item `SATM2UYVX9I`, 27 Oct 04:07–04:10 UTC)                                                                                            | **May be committed.** It is from Karl's account, not a student's                                  | Owner ruling                                                                                                                            |
+| **The repo**                                                                                                                                                         | `docs/eval/lisa/LISA_Teaching_Quality_Set_v1.md` and, from Step 1, `tests/eval/teaching-quality/` | Case ids, rubrics, gold responses, judge notes and harness code only. For student cases, nothing that quotes or paraphrases the student |
 
 The repo copy of a student case therefore reads, for example: `G0-2-01 — source: server-only (tutor_eval_cases); rubric: [held]; gold: [Karl]`. The harness joins it to its text at run time, server-side.
 
@@ -111,7 +111,7 @@ This reuses the golden-set Phase B design as it stands. The Phase A design defer
 
 1. **Class 1, in code, no model.**
    - `hasAnswerLeak` (the same scanner as the BFF) on the reply.
-   - A case heuristic, `toolRequestUnanswered`: the reply mentions none of *Desmos / calculator / graph*, and it ends in a question. That outcome is REVIEW_NEEDED, not FAIL, because a good reply could defer the tool for a reason.
+   - A case heuristic, `toolRequestUnanswered`: the reply mentions none of _Desmos / calculator / graph_, and it ends in a question. That outcome is REVIEW_NEEDED, not FAIL, because a good reply could defer the tool for a reason.
 2. **Class 2, the judge.** It reads:
    - the case setup;
    - the conversation;
@@ -126,16 +126,32 @@ This is the same split as the book pipeline's example check: the model never ret
 
 ```ts
 {
-  must:     { item: string; met: boolean;      quote: string }[];  // quote from LISA's reply
-  must_not: { item: string; violated: boolean; quote: string }[];
-  gold_move: "same_move" | "partial" | "different_move";           // vs Karl's gold, by pedagogical move, not wording
-  tutor_act: "diagnostic_question" | "hint" | "worked_step" | "explanation"
-           | "full_solution" | "affirmation" | "redirect";         // Doc 03D §3.1
-  tool_request_addressed: boolean;                                 // this set's one question
+  must: {
+    item: string;
+    met: boolean;
+    quote: string;
+  }
+  []; // quote from LISA's reply
+  must_not: {
+    item: string;
+    violated: boolean;
+    quote: string;
+  }
+  [];
+  gold_move: "same_move" | "partial" | "different_move"; // vs Karl's gold, by pedagogical move, not wording
+  tutor_act: "diagnostic_question" |
+    "hint" |
+    "worked_step" |
+    "explanation" |
+    "full_solution" |
+    "affirmation" |
+    "redirect"; // Doc 03D §3.1
+  tool_request_addressed: boolean; // this set's one question
 }
 ```
 
 The code turns that into a verdict:
+
 - **FAIL:** any `must_not` violated, any `must` unmet, or `tool_request_addressed` false.
 - **PASS:** all of these clear and `gold_move` is not `different_move`.
 - **REVIEW_NEEDED:** everything else.
@@ -144,7 +160,15 @@ A leak from Class 1 overrides everything.
 
 ### 4.3 Calibration (Doc 03D §5.3)
 
-- **Judge family.** LISA runs on Gemini (`gemini-3.5-flash`). §5.3: judges "drawn from the same family share failure modes with the model under test". So the judge should not be Gemini. *(Decision D3: which model, and the key for it.)*
+- **Judge model (Karl, 2026-10-27, D3).** Gemini Pro on Vertex (`gemini-3.1-pro-preview`) judges `gemini-3.5-flash`. There is no other provider key.
+  - §5.3 says judges "drawn from the same family share failure modes with the model under test". That sentence describes a risk. The binding parts of §5.3 are calibration against human raters and reported agreement, and both are met below. So this is a ruling with mitigations, not a deviation, and no SCL entry is owed.
+  - Mitigations, all in code:
+    - a different and stronger model (Pro, not Flash);
+    - deterministic checks run first, and a leak fails without the judge;
+    - the judge reports and the code decides (`decideTutorEvalVerdict`);
+    - a judge quote that is not in LISA's reply is not trusted (REVIEW_NEEDED);
+    - agreement with Karl's grades is printed on every calibration run;
+    - any change to `JUDGE_MODEL_DEFAULT` means recalibrating.
 - **Ground truth.** Karl grades each baseline reply himself, PASS / FAIL / REVIEW, before seeing the judge's verdict. Agreement with the judge is reported per run.
 - **Honest limit.** Three cases cannot calibrate a judge statistically; any agreement figure on 3 is anecdote. The judge is calibrated across this set **and** Golden Set v2's ten owner-authored cases, and the report says how many judgements the agreement rests on.
 - **Recalibration** on any judge model version change, as §5.3 requires.
@@ -165,24 +189,24 @@ A leak from Class 1 overrides everything.
 
 ### 5.2 Runs, variance and record
 
-- **Runs.** Each case is replayed *n* times on the unchanged configuration, so that §3.2.1's variance band can be set from observed variance. *(Decision D4: n; 5 is proposed.)*
+- **Runs.** Each case is replayed 5 times on the unchanged configuration (Karl, 2026-10-27, D4), so that §3.2.1's variance band can be set from observed variance.
 - **Per-run record**, a row in `tutor_eval_runs` (§3.2), not a file. A replay or a judge quote can echo the student. Karl's own case may also be written to the eval cache for reading locally:
 
-| Field | Value |
-|---|---|
-| set | `teaching-quality v1` |
-| case id | e.g. `G0-2-01` |
-| run | 1–*n* |
-| `prompt_version` | `lisa-default-v3` |
-| context hash | see §6 |
-| model | the resolved alias |
-| thinking budget | 1024 |
-| temperature, top-p, top-k | as sent |
-| worker git sha | the commit the harness imported |
-| raw reply, visible reply | full text |
-| Class 1 result | scanner and heuristic verdicts |
-| judge response, code verdict | §4.2 |
-| usage and cost | measured |
+| Field                        | Value                           |
+| ---------------------------- | ------------------------------- |
+| set                          | `teaching-quality v1`           |
+| case id                      | e.g. `G0-2-01`                  |
+| run                          | 1–_n_                           |
+| `prompt_version`             | `lisa-default-v3`               |
+| context hash                 | see §6                          |
+| model                        | the resolved alias              |
+| thinking budget              | 1024                            |
+| temperature, top-p, top-k    | as sent                         |
+| worker git sha               | the commit the harness imported |
+| raw reply, visible reply     | full text                       |
+| Class 1 result               | scanner and heuristic verdicts  |
+| judge response, code verdict | §4.2                            |
+| usage and cost               | measured                        |
 
 - **Production reply alongside.** The baseline report shows each case's actual production reply next to the replays. If the replays don't reproduce the failure, the replay is wrong or the failure depended on state the export didn't capture, and that has to be known before any prompt change is measured against the baseline.
 
@@ -196,13 +220,14 @@ Doc 03D §8.1 requires `prompt_version` and `context_hash` on every turn: "witho
 
 **Today, on `origin/lisa` (`988351ca`):**
 
-| Item | Status |
-|---|---|
-| `prompt_version` | Exists. On the worker wire, and written per turn (`server/services/tutor-runtime-writer.ts:70`) |
-| `context_hash` | Exists nowhere in the code |
-| Model and thinking budget per turn | Not recorded |
+| Item                               | Status                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `prompt_version`                   | Exists. On the worker wire, and written per turn (`server/services/tutor-runtime-writer.ts:70`) |
+| `context_hash`                     | Exists nowhere in the code                                                                      |
+| Model and thinking budget per turn | Not recorded                                                                                    |
 
 **How a run is attributed.** Each result is keyed by:
+
 - set version;
 - case id;
 - `prompt_version`;
@@ -214,6 +239,7 @@ Doc 03D §8.1 requires `prompt_version` and `context_hash` on every turn: "witho
 Two runs are comparable only when everything except the variable under test matches.
 
 **Dependency: the attribution PR in another lane.**
+
 - It defines the canonical `context_hash`, as Doc 03B §22's emission of the field.
 - No such PR is open on `Lyceon-Team/Lyceonai` as of 2026-10-27 (searched: `attribution`, `prompt_version`, `context_hash`).
 - Until it merges, the harness computes a **provisional** hash: sha256 of the assembled system instruction plus the message list, labelled `provisional` in every record.
@@ -225,13 +251,13 @@ Two runs are comparable only when everything except the variable under test matc
 
 The three slots below go into the set file as they stand. Per the v2 convention, Karl writes them blind (setup, conversation and current message only) and in his own voice. He reads the student cases server-side; they are not in the repo. Nothing has been drafted for them.
 
-> **G0-2-01 — Gold response** *(owner-authored)*
+> **G0-2-01 — Gold response** _(owner-authored)_
 > `[KARL — GOLD RESPONSE. NOT DRAFTED. Write blind: setup, conversation, current message only.]`
 
-> **G0-2-02 — Gold response** *(owner-authored)*
+> **G0-2-02 — Gold response** _(owner-authored)_
 > `[KARL — GOLD RESPONSE. NOT DRAFTED. Write blind: setup, conversation, current message only.]`
 
-> **G0-2-03 — Gold response** *(owner-authored)*
+> **G0-2-03 — Gold response** _(owner-authored)_
 > `[KARL — GOLD RESPONSE. NOT DRAFTED. Write blind: setup, conversation, current message only.]`
 
 - **A gold goes in the repo, so for a student case it must not quote or paraphrase the student's own words.** It can name the item, the math and the move. If a gold needs the student's words to make sense, that gold lives in `tutor_eval_cases` instead, and the repo holds its id.
@@ -239,22 +265,65 @@ The three slots below go into the set file as they stand. Per the v2 convention,
 
 ## 8. Decisions for Karl
 
-| # | Decision | Proposed |
-|---|---|---|
-| D1 | A separate versioned set, or CASE-37+ in Golden Set v2 | Separate: v2 comparisons stay valid |
-| D2 | *Settled 2026-10-27:* no student text in the repo, de-identified or not; student cases live in a server-only table (§3); deletion cascades from the student | — |
-| D3 | Judge model | A non-Gemini model, per §5.3; needs a key |
-| D4 | Runs per case for the variance band | 5 |
+| #   | Decision                                                                                                                                                    | Proposed                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| D1  | _Settled 2026-10-27:_ a separate versioned set (`teaching-quality v1`)                                                                                      | —                                                                        |
+| D2  | _Settled 2026-10-27:_ no student text in the repo, de-identified or not; student cases live in a server-only table (§3); deletion cascades from the student | —                                                                        |
+| D3  | _Settled 2026-10-27:_ Gemini Pro on Vertex judges `gemini-3.5-flash`, with the §4.3 mitigations                                                             | —                                                                        |
+| D4  | _Settled 2026-10-27:_ 5 runs per case                                                                                                                       | —                                                                        |
+| D5  | **Open:** the Doc 03 §14.2 retention period for `tutor_eval_cases` / `tutor_eval_runs` (§10)                                                                | Karl to rule; the migration must not be applied to production until then |
 
-## 9. Step 1 (not started)
+## 9. Step 1 (built 2026-10-27)
 
-1. Build and apply (owner-run) the `tutor_eval_cases` / `tutor_eval_runs` migration, with the zero-policy CI assertion (§3.2).
-2. Karl runs the §3.3 queries; the server-side import fills the table.
-3. Karl writes the three golds; the rubrics follow and Karl confirms them.
-4. Build:
-   - export the worker's generation config;
-   - build the fixtures from the real export;
-   - add the `toolRequestUnanswered` heuristic;
-   - write the judge schema and code verdict;
-   - plant a known-bad reply (one that ignores the Desmos request and asks an algebra question) and confirm the judge and code fail it, then plant the gold and confirm it passes.
-5. Run the baseline (*n* × 3) with the measured cost, then report. The report is written to the repo for Karl's case only; student-case results report verdicts and counts, never text.
+| Piece                                                        | Where                                                                                      | State                                                                                                                  |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Tables, RLS on, zero policies, service role only             | `supabase/migrations/20261114000000_tutor_eval_cases.sql`                                  | Built; CI-checked by `tests/ci/tutor-eval-tables.pg.ci.test.ts`. **Not to be applied to production until D5 is ruled** |
+| Worker generation config, exported                           | `buildTutorGenerationConfig` in `apps/workers/tutor-orchestrator/src/lib/vertex-client.ts` | `invokeVertexOnce` builds from it; no behaviour change                                                                 |
+| The BFF scan, without IO                                     | `scanTutorOutput` in `server/services/tutor-output-serializer.ts`                          | `serializeTutorOutput` calls it, then logs and dual-writes; no behaviour change                                        |
+| Schemas and the verdict                                      | `packages/shared/src/tutor-eval-schema.ts`                                                 | Built                                                                                                                  |
+| Server-side import                                           | `tests/eval/teaching-quality/import-case.ts`                                               | Built; owner-run (service-role env). Needs Karl's §3.3 ids                                                             |
+| Harness                                                      | `tests/eval/teaching-quality/run-baseline.ts`, `replay.ts`, `judge.ts`                     | Built; proven end to end on a synthetic case (below)                                                                   |
+| Rubric slots                                                 | `tests/eval/teaching-quality/rubrics.ts`                                                   | All empty; the judge is not called and runs are `unscored` until Karl's golds and rubrics exist                        |
+| Unit tests (planted good / bad / leak replies, mocked judge) | `tests/ci/tutor-eval-teaching-quality.contract.test.ts`                                    | 11 pass                                                                                                                |
+
+**Owner steps, in order:**
+
+1. Rule D5. Then apply the migration.
+2. Run the §3.3 queries and run the import, once per case:
+   `pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-0N --conversation <id> --cutoff <student message id> [--owner-case]`.
+3. Run the baseline:
+   `NODE_USE_ENV_PROXY=1 DATABASE_URL=… pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5`.
+   It prints ids, verdicts, flags and cost only.
+4. Write the three golds. The rubrics follow, and Karl confirms them. Then re-run step 3 and grade the runs (`owner_grade`, `owner_graded_at`).
+
+**Proof run, 2026-10-27, local Postgres, live Vertex.** The case was synthetic (`G0-2-SYNTH`, written for the test; no student text).
+
+- 5 runs on `gemini-3.5-flash` / `lisa-default-v3` / thinking 1024: all `unscored`, no leak, no tool-request flag. Cost **$0.0237**.
+- One unstored live call to the judge (`gemini-3.1-pro-preview`) with a throwaway rubric. It returned a schema-valid report, and the code made the verdict (REVIEW_NEEDED: `different_move` against the throwaway gold). Cost **$0.0072**.
+- All five synthetic replies offered to use Desmos. So the real failure is not reproduced by a clean, minimal context. Whether it reproduces on the imported production contexts is the first thing the real baseline answers (§5.2).
+
+**What a replay cannot reproduce** (stated in `import-case.ts`):
+
+- Learning context, friction, KPI and memory are read at import time, not as they were at the turn.
+- Offered videos are not replayed.
+- Submission state is frozen as of the cut-off, failing closed to pre-submit.
+
+## 10. Spec registration: both stops
+
+Karl asked for the SCL entries that register both tables in Doc 03 §14.2 and in the Doc 05D account-deletion cascade, or a stop if either can't take them additively. **Both stop.** No SCL number was allocated.
+
+- **Doc 05D cascade: not additive.**
+  - §10.1 limits 05D to "the derived-row hard-delete across 05A/05B/05C" and the event/audit anonymisation.
+  - §10.2 Layer 1 is a closed, numbered list of ten mastery-family tables, and "the migration encodes it exactly".
+  - The eval tables are LISA data, not 05A/05B/05C state. Adding them would widen 05D's scope, not extend its list.
+  - Deletion is still covered without it. `tutor_eval_cases.student_id → profiles ON DELETE CASCADE`, and `execute_account_deletion_cascade` deletes the profiles row in both modes (pinned by `deletion-fk-actions.pg.ci.test.ts` FK5, now 8 edges, and E4 in the new test).
+  - If Karl wants it named in a spec, the natural home is Doc 03 §14.2's "All LISA tables cascade on hard delete", not 05D.
+- **Doc 03 §14.2: additive only with a bounded retention period, which is Karl's call.**
+  - A row can be added to the matrix additively.
+  - But INV-03-19 says "No indefinite retention of student conversation data", so "until account deletion" cannot be the period.
+  - Candidates, for Karl to choose from:
+    - (a) the conversation's own "Active + 7 days post-entitlement-loss";
+    - (b) a fixed term such as 90 days from capture, like `tutor_instruction_assignments`;
+    - (c) for the life of `teaching-quality v1`, then deleted.
+  - Either (a) or (b) needs a scheduled delete that does not exist yet.
+  - Until this is ruled, the migration header says DO NOT APPLY TO PRODUCTION.
