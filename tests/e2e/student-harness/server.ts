@@ -40,6 +40,7 @@ import {
   applyQuotaConfig,
   buildStudentHarnessDb,
   seedPaidNotifications,
+  seedSmartLanding,
 } from "./db";
 import {
   BARE_PAGE_PERSONAS,
@@ -78,6 +79,15 @@ const BARE_PAGES = process.env.STUDENT_HARNESS_SEED === "bare-pages";
  * opens on in general mode). Each is the existing seed, unchanged.
  */
 const LISA_DOCK = process.env.STUDENT_HARNESS_SEED === "lisa-dock";
+/**
+ * Smart landing (Karl, 2026-10-26, "an end-to-end test that opens the `set_math_5` session and
+ * the '5 more' session in the real session page and reaches question 1"): the kill switch on,
+ * today's question scheduled, and this window's arm pinned per persona (`managed` → `set_math_5`,
+ * `paid` → `qotd_then_more`), so the browser spec's app open lands where the spec expects. The
+ * paid student's seeded open sessions are closed first: an in-progress session resumes ahead of
+ * any landing (the brief's precedence), which is not what this run exercises.
+ */
+const SMART_LANDING = process.env.STUDENT_HARNESS_SEED === "smart-landing";
 if (BARE_PAGES) process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";
 // The Home QOTD's option tokens are an HMAC under the public secret (option-tokens.ts); a
 // throwaway value here, never a real one.
@@ -142,6 +152,10 @@ async function main(): Promise<void> {
   const { legalRouter } = await import("../../../server/routes/legal-routes");
   const { default: homeQotdRoutes } =
     await import("../../../server/routes/home-qotd-routes");
+  // Smart landing (Karl, 2026-10-26): mounted in every run as server/index.ts mounts it. The kill
+  // switch is seeded OFF, so outside the `smart-landing` seed every open answers "stay on Home".
+  const { landingRoutes } =
+    await import("../../../server/routes/landing-routes");
   const { default: gettingStartedRoutes } =
     await import("../../../server/routes/getting-started-routes");
   const { default: tutorRuntimeRouter } =
@@ -214,6 +228,12 @@ async function main(): Promise<void> {
     auth.requireSupabaseAuth,
     auth.requireStudentAccount,
     homeQotdRoutes,
+  );
+  app.use(
+    "/api/landing",
+    auth.requireSupabaseAuth,
+    auth.requireStudentAccount,
+    landingRoutes,
   );
   // Final brief v2 (Karl, 2026-10-13): the Getting started checklist, as server/index.ts mounts
   // it (CSRF is outside this harness).
@@ -356,6 +376,8 @@ async function main(): Promise<void> {
         // QA 2026-10-07 (UI-41): unread in-app notifications for the paid student (db.ts).
         if (process.env.STUDENT_HARNESS_SEED === "notifications")
           await seedPaidNotifications(pg);
+        // Smart landing: after the base seed, so its open sessions exist to be closed (db.ts).
+        if (SMART_LANDING) await seedSmartLanding(pg);
         // W6 UI-64: non-default practice config (db.ts `applyQuotaConfig`), after the base
         // seed; then the practice config cache (30 s, practice-canonical.ts) is waited out.
         if (process.env.STUDENT_HARNESS_SEED === "quota-config") {

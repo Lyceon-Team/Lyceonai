@@ -17344,9 +17344,9 @@ CREATE TABLE public.landing_shows (
     fallback_reason text,
     escaped_at timestamp with time zone,
     summarized_at timestamp with time zone,
-    CONSTRAINT landing_shows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]))),
+    CONSTRAINT landing_shows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]))),
     CONSTRAINT landing_shows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
-    CONSTRAINT landing_shows_fallback_reason_check CHECK ((fallback_reason = ANY (ARRAY['quota_exhausted'::text, 'session_limit'::text, 'no_questions'::text, 'qotd_unavailable'::text, 'no_block_today'::text, 'not_entitled'::text, 'error'::text])))
+    CONSTRAINT landing_shows_fallback_reason_check CHECK ((fallback_reason = ANY (ARRAY['quota_exhausted'::text, 'session_limit'::text, 'no_questions'::text, 'qotd_unavailable'::text, 'no_block_today'::text, 'not_entitled'::text, 'arm_retired'::text, 'error'::text])))
 );
 
 
@@ -17361,10 +17361,10 @@ CREATE TABLE public.landing_windows (
     eligible_arms text[] NOT NULL,
     assigned_at timestamp with time zone DEFAULT now() NOT NULL,
     device_class text NOT NULL,
-    CONSTRAINT landing_windows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]))),
+    CONSTRAINT landing_windows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]))),
     CONSTRAINT landing_windows_arm_is_eligible CHECK ((arm = ANY (eligible_arms))),
     CONSTRAINT landing_windows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
-    CONSTRAINT landing_windows_eligible_known CHECK (((eligible_arms <@ ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]) AND ('dashboard'::text = ANY (eligible_arms)))),
+    CONSTRAINT landing_windows_eligible_known CHECK (((eligible_arms <@ ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]) AND ('dashboard'::text = ANY (eligible_arms)))),
     CONSTRAINT landing_windows_window_index_check CHECK ((window_index >= 0))
 );
 

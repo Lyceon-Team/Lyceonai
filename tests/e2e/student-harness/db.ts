@@ -363,3 +363,59 @@ export async function seedPaidNotifications(pg: Client): Promise<void> {
     );
   }
 }
+
+/**
+ * Smart landing (Karl, 2026-10-26; server.ts `SMART_LANDING`): the database a landing needs, set
+ * the way production reaches it.
+ *   - The kill switch on (`landing_rotation_enabled`), as Karl turns it on in production.
+ *   - Today's question scheduled (the SEO job's row in production), so `qotd_then_more` can serve.
+ *   - The paid student's seeded open practice and review sessions closed: an in-progress session
+ *     resumes ahead of any landing (the brief's precedence), and this run tests the landing.
+ *   - This window's arm pinned per persona through the window row the real claim keeps (`managed`
+ *     → `set_math_5`, `paid` → `qotd_then_more`): the draw itself is the unit and PG suites'
+ *     job; this run proves what a drawn arm does in the browser.
+ * The eligible arms are written as `[dashboard, <arm>]`, which the table's checks accept.
+ */
+export async function seedSmartLanding(pg: Client): Promise<void> {
+  const { landingWindowIndex } =
+    await import("../../../packages/shared/src/smart-landing-schema");
+  const windowIndex = landingWindowIndex(new Date());
+  if (windowIndex < 0)
+    throw new Error("seedSmartLanding: the clock is before the landing epoch");
+  await pg.query(
+    `UPDATE public.practice_runtime_config SET value = 'true'::jsonb, updated_at = now()
+      WHERE key = 'landing_rotation_enabled'`,
+  );
+  await pg.query(
+    `INSERT INTO public.qotd_schedule (qotd_date, question_id)
+     SELECT public.chicago_day(now()), q.id
+       FROM public.questions q
+      WHERE q.status = 'published' AND q.item_type = 'mcq'
+        AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)
+      ORDER BY q.id
+      LIMIT 1
+     ON CONFLICT (qotd_date) DO NOTHING`,
+  );
+  await pg.query(
+    `UPDATE public.practice_sessions SET status = 'abandoned', abandoned_at = now()
+      WHERE user_id = $1 AND status IN ('created', 'active')`,
+    [PERSONAS.paid.id],
+  );
+  await pg.query(
+    `UPDATE public.review_sessions SET status = 'abandoned', abandoned_at = now()
+      WHERE student_id = $1 AND status IN ('created', 'active')`,
+    [PERSONAS.paid.id],
+  );
+  const pins = [
+    [PERSONAS.managed.id, "set_math_5"],
+    [PERSONAS.paid.id, "qotd_then_more"],
+  ] as const;
+  for (const [profileId, arm] of pins) {
+    await pg.query(
+      `INSERT INTO public.landing_windows
+         (profile_id, window_index, arm, eligible_arms, assigned_at, device_class)
+       VALUES ($1, $2, $3, ARRAY['dashboard', $3], now(), 'desktop')`,
+      [profileId, windowIndex, arm],
+    );
+  }
+}

@@ -26,7 +26,13 @@ export const GROUPS = {
   section_vocabulary: ["scripts/ci/section-vocabulary-gate."],
   fixture_canonicality: ["scripts/ci/test-fixture-canonicality-gate."],
   guardian_dead_code: ["scripts/ci/guardian-dead-code-gate."],
-  deps: ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "packages/shared/package.json", "apps/workers/tutor-orchestrator/package.json"],
+  deps: [
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "packages/shared/package.json",
+    "apps/workers/tutor-orchestrator/package.json",
+  ],
   // The Layer 2 crisis classifier: its prompt, its caller, its golden set, and the Layer 1 seed
   // the golden set's must-trigger list is read from (CC Brief "P1: Stop False Crisis Positives").
   crisis_classifier: [
@@ -34,6 +40,29 @@ export const GROUPS = {
     "server/services/tutor-crisis.ts",
     "scripts/ci/crisis-classifier-golden-set.ts",
     "supabase/migrations/20260917000001_layer1_crisis_pattern_seed_v1.sql",
+  ],
+  // Smart landing (Karl, 2026-10-26, item 4): the browser spec that opens a landing's session in
+  // the real session page. Everything between the landing and question 1: the landing itself,
+  // the practice start that builds its set, the session page and runner, and the harness.
+  smart_landing: [
+    "server/services/landing/",
+    "server/routes/landing-routes.ts",
+    "server/routes/practice-canonical.ts",
+    "packages/shared/src/smart-landing-schema.ts",
+    "packages/shared/src/practice-response-schema.ts",
+    "shared/section-display.ts",
+    "client/src/pages/resume-practice.tsx",
+    "client/src/pages/qotd-landing.tsx",
+    "client/src/pages/lyceon-dashboard.tsx",
+    "client/src/hooks/useSmartLanding.ts",
+    "client/src/lib/landing-entry.ts",
+    "client/src/components/practice/",
+    "client/src/components/home/qotd/",
+    "supabase/migrations/",
+    "tests/e2e/smart-landing.spec.ts",
+    "tests/e2e/run-student-harness-e2e.sh",
+    "tests/e2e/student-harness/",
+    "scripts/ci/smart-landing-e2e.mutations.sh",
   ],
   question_tooling: [
     "scripts/assemble-batch.ts",
@@ -50,7 +79,9 @@ export const GROUPS = {
 export function groupsFor(changed) {
   const out = {};
   for (const [group, prefixes] of Object.entries(GROUPS)) {
-    out[group] = changed === null || changed.some((f) => prefixes.some((p) => f === p || f.startsWith(p)));
+    out[group] =
+      changed === null ||
+      changed.some((f) => prefixes.some((p) => f === p || f.startsWith(p)));
   }
   return out;
 }
@@ -58,8 +89,17 @@ export function groupsFor(changed) {
 function main() {
   const path = process.argv[2];
   const all = process.env.ALL === "true" || !path || !existsSync(path);
-  const changed = all ? null : readFileSync(path, "utf8").split("\n").filter((l) => l !== "");
-  for (const [group, on] of Object.entries(groupsFor(changed))) process.stdout.write(`${group}=${on}\n`);
+  const changed = all
+    ? null
+    : readFileSync(path, "utf8")
+        .split("\n")
+        .filter((l) => l !== "");
+  for (const [group, on] of Object.entries(groupsFor(changed)))
+    process.stdout.write(`${group}=${on}\n`);
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) main();
+if (
+  process.argv[1] &&
+  import.meta.url === new URL(`file://${process.argv[1]}`).href
+)
+  main();

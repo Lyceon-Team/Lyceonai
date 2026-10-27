@@ -58,6 +58,7 @@ jobs:
       deps: ${{ steps.groups.outputs.deps }}
       question_tooling: ${{ steps.groups.outputs.question_tooling }}
       crisis_classifier: ${{ steps.groups.outputs.crisis_classifier }}
+      smart_landing: ${{ steps.groups.outputs.smart_landing }}
     steps:
       - name: Checkout (with parents, for the PR diff)
         uses: actions/checkout@v4
@@ -1541,6 +1542,62 @@ jobs:
           VERTEX_CLASSIFIER_LOCATION: global
           VERTEX_PROJECT_ID: replit-cop
         run: pnpm exec tsx scripts/ci/crisis-classifier-golden-set.ts
+
+  # ---------------------------------------------------------------------------
+  # Smart landing in a real browser (Karl, 2026-10-26, item 4: "an end-to-end test that opens the
+  # set_math_5 session and the 5 more session in the real session page and reaches question 1,
+  # plus a planted defect that breaks it"). The planted-defect script runs the spec green first
+  # (the baseline), then with the landing set built the way it shipped on 2026-10-26 (two
+  # sections, no section of its own) and requires both cases red. Production build against the
+  # student harness (real routers over a database built from supabase/migrations), so it needs
+  # Postgres. Runs when a change touches anything between a landing and question 1 (the
+  # `smart_landing` path group); the full tier always runs it.
+  smart-landing-browser:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.duplicate != 'true' && needs.changes.outputs.smart_landing == 'true' }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16   # the harness's own local major; genesis declares `vector`
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Smart landing browser spec, then the planted defect (today's bug) must turn it red
+        env:
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          LOG_DIR: ${{ runner.temp }}
+        run: bash scripts/ci/smart-landing-e2e.mutations.sh
 
   # ---------------------------------------------------------------------------
   # Browser, every pull request: consent and minor exclusion (no PostHog traffic without

@@ -85,7 +85,9 @@ async function create(
       mode: "structured",
     },
     // Smart landing `session_today` only: the block's own scope with an easy/medium lead.
-    ...(ctx.landing_lead === true ? { composition: "scoped" as const } : {}),
+    ...(ctx.landing_lead === true
+      ? { composition: "easy_medium_lead" as const }
+      : {}),
   });
 
   if (!result.ok) {

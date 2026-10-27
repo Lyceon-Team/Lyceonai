@@ -5,16 +5,21 @@
  *        that student's eligible arms at window start, seeded by hash(student, window index,
  *        experiment salt)") and "Landings" ("in every already-on-Q1 set, the first 2 items are
  *        easy or medium, then normal selection"); Karl's ruling D on Step 0, 2026-10-26 (math
- *        first = 5 Math then 5 Reading and Writing)] | @implemented [2026-10-26]
+ *        first = 5 Math then 5 Reading and Writing [superseded, below])] | @implemented [2026-10-26]
+ * @spec [owner change "Smart landing: replacing the multi-section sets" (Karl, 2026-10-26, later the
+ *        same day): `set_math_5` and "5 more?" are 5 Math, first 2 easy or medium] |
+ *        @implemented [2026-10-26]
  *
  * plain English:
  *  - `landingHashUnit` turns (salt, student, window) into a number in [0, 1): the first 52 bits of
  *    sha256, so the same inputs always give the same number and a new window gives a new one.
  *  - `landingArmFor` is the whole assignment: eligibility, then the pick.
- *  - `planLandingDraws` turns a set's size and kind into the ordered draws the practice start
- *    makes: an easy/medium lead of 2 first, then the rest (math first: the Math lead and Math
- *    rest, then Reading and Writing). Each draw is the SAME pool function the practice page uses,
- *    so selection inside a draw is unchanged ("then normal selection").
+ *  - `planLandingDraws` turns a set's size and the SESSION'S OWN sections into the ordered draws
+ *    the practice start makes: an easy/medium lead of 2 first, then the rest. Each draw is the
+ *    SAME pool function the practice page uses, so selection inside a draw is unchanged ("then
+ *    normal selection"). The draws take their sections from the session and nowhere else: the
+ *    retired sets drew across Math and Reading and Writing for a session the page then could not
+ *    run, and a composition that cannot name its own sections cannot do that again.
  * trade-offs: the lead is a separate draw rather than a reorder of one draw, so a set whose random
  *   draw happened to hold no easy or medium item still opens with two.
  * edge cases: a set clamped by the free quota to fewer items shrinks the later draws first; the
@@ -23,7 +28,6 @@
 import { createHash } from "node:crypto";
 import {
   LANDING_LEAD_EASY_MEDIUM,
-  LANDING_MATH_FIRST_COUNT,
   eligibleLandingArms,
   pickLandingArm,
   type LandingArm,
@@ -63,10 +67,10 @@ export function landingArmFor(
 }
 
 /**
- * The kinds of landing set the practice start can compose. `scoped` keeps the session's own
- * sections (a calendar block's, for `session_today`) and only adds the easy/medium lead.
+ * How the practice start composes a landing set: the session's own sections (`set_math_5`'s and
+ * "5 more?"'s Math, or a calendar block's for `session_today`), with the easy/medium lead.
  */
-export type LandingSetKind = "mixed" | "math_first" | "scoped";
+export type LandingComposition = "easy_medium_lead";
 
 /** One pool draw: the sections it draws from, whether it is easy/medium only, how many. */
 export type LandingDraw = {
@@ -88,37 +92,25 @@ export function easyMediumLead(sessionDifficulties: number[]): number[] {
 }
 
 /**
- * The ordered draws for a landing set of `size` (already clamped by the quota). Items are stored
- * in draw order, so the first `LANDING_LEAD_EASY_MEDIUM` ordinals are the lead. `scopedSections`
- * is used by `scoped` only (the session spec's sections).
+ * The ordered draws for a landing set of `size` (already clamped by the quota) in the session's
+ * own `sections`. Items are stored in draw order, so the first `LANDING_LEAD_EASY_MEDIUM`
+ * ordinals are the lead.
  */
 export function planLandingDraws(
-  kind: LandingSetKind,
   size: number,
-  scopedSections: ("M" | "RW")[] = [],
+  sections: readonly ("M" | "RW")[],
 ): LandingDraw[] {
   if (size <= 0) return [];
   const lead = Math.min(LANDING_LEAD_EASY_MEDIUM, size);
-  if (kind !== "math_first") {
-    const sections: ("M" | "RW")[] =
-      kind === "mixed" ? ["M", "RW"] : [...scopedSections];
-    const draws: LandingDraw[] = [
-      { sections, easyMediumOnly: true, limit: lead },
-    ];
-    if (size > lead) {
-      draws.push({ sections, easyMediumOnly: false, limit: size - lead });
-    }
-    return draws;
-  }
-  const math = Math.min(LANDING_MATH_FIRST_COUNT, size);
   const draws: LandingDraw[] = [
-    { sections: ["M"], easyMediumOnly: true, limit: Math.min(lead, math) },
+    { sections: [...sections], easyMediumOnly: true, limit: lead },
   ];
-  if (math > lead) {
-    draws.push({ sections: ["M"], easyMediumOnly: false, limit: math - lead });
-  }
-  if (size > math) {
-    draws.push({ sections: ["RW"], easyMediumOnly: false, limit: size - math });
+  if (size > lead) {
+    draws.push({
+      sections: [...sections],
+      easyMediumOnly: false,
+      limit: size - lead,
+    });
   }
   return draws;
 }
