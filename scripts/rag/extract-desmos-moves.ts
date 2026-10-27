@@ -33,6 +33,8 @@ import {
   priceOf,
   usageSchema,
   type Usage,
+  ZERO_USAGE,
+  addUsage,
 } from "./vertex";
 
 export const EXTRACT_VERSION = "desmos-moves-v1";
@@ -122,6 +124,7 @@ const cachedSchema = z.object({
   title: z.string(),
   source: z.string(),
   duration_seconds: z.number(),
+  clips: z.number().int().positive().optional(),
   extract: extractSchema,
   usage: usageSchema,
 });
@@ -191,11 +194,28 @@ export function approvedDesmosVideos(csvText: string): VideoRow[] {
     }));
 }
 
+/** A video over 15 minutes is read in 10-minute clips: whole-video calls on the 22-minute lesson
+ * failed six times running with a proxy 502 (2026-10-27). */
+const WHOLE_VIDEO_MAX_SECONDS = 900;
+const CLIP_SECONDS = 600;
+export function clipsOf(duration: number): Array<[number, number]> {
+  if (duration <= WHOLE_VIDEO_MAX_SECONDS) return [[0, duration]];
+  const clips: Array<[number, number]> = [];
+  for (let start = 0; start < duration; start += CLIP_SECONDS) {
+    clips.push([start, Math.min(duration, start + CLIP_SECONDS)]);
+  }
+  return clips;
+}
+
+function clockOf(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+}
+
 function estimateUsd(model: string, seconds: number): number {
   const p = priceOf(model);
   return (
     (seconds * PROMPT_TOKENS_PER_SECOND_ESTIMATE * p.input +
-      OUTPUT_TOKENS_ESTIMATE * p.output) /
+      OUTPUT_TOKENS_ESTIMATE * clipsOf(seconds).length * p.output) /
     1_000_000
   );
 }
@@ -231,6 +251,7 @@ async function main(): Promise<void> {
     `${videos.length} videos; ${videos.length - todo.length} cached ($${spent.toFixed(4)}); ${todo.length} to extract; cap $${cap}\n`,
   );
 
+  const failed: string[] = [];
   for (const v of todo) {
     const estimate = estimateUsd(model, v.duration_seconds);
     if (spent + estimate > cap) {
@@ -239,31 +260,56 @@ async function main(): Promise<void> {
       );
       break;
     }
-    let usage: Usage | undefined;
-    const extract = await generateJson({
-      step: `desmos-moves ${v.video_id}`,
-      model,
-      system: EXTRACT_SYSTEM,
-      video: { videoId: v.video_id, start: 0, end: v.duration_seconds },
-      user: `Video title: ${v.title}\nThe video is ${Math.floor(v.duration_seconds / 60)}:${String(v.duration_seconds % 60).padStart(2, "0")} long.`,
-      responseSchema: extractResponseSchema,
-      schema: extractSchema,
-      onUsage: (u) => {
-        usage = u;
-      },
-    });
-    if (usage === undefined)
-      throw new Error(`${v.video_id}: no usage reported`);
+    let usage: Usage = ZERO_USAGE;
+    try {
+      const parts: DesmosExtract[] = [];
+      for (const [start, end] of clipsOf(v.duration_seconds)) {
+        parts.push(
+          await generateJson({
+            step: `desmos-moves ${v.video_id} ${clockOf(start)}-${clockOf(end)}`,
+            model,
+            system: EXTRACT_SYSTEM,
+            video: { videoId: v.video_id, start, end },
+            user:
+              `Video title: ${v.title}\nThe video is ${clockOf(v.duration_seconds)} long.` +
+              (start === 0 && end === v.duration_seconds
+                ? ""
+                : ` You are watching the part from ${clockOf(start)} to ${clockOf(end)}; report only the moves taught in this part.`),
+            responseSchema: extractResponseSchema,
+            schema: extractSchema,
+            onUsage: (u) => {
+              usage = addUsage(usage, u);
+            },
+          }),
+        );
+      }
+      const extract: DesmosExtract = {
+        moves: parts.flatMap((p) => p.moves),
+        explanation_style: parts.map((p) => p.explanation_style).join(" "),
+        covers_interpretation: parts.some((p) => p.covers_interpretation),
+      };
+      writeFileSync(
+        resolve(OUT_DIR, `${v.video_id}.json`),
+        `${JSON.stringify({ extract_version: EXTRACT_VERSION, model, ...v, clips: parts.length, extract, usage }, null, 2)}\n`,
+      );
+      process.stdout.write(
+        `${v.video_id}: ${parts.length} clip(s), ${extract.moves.length} move(s); ${usage.prompt} in / ${usage.output} out; $${usage.usd.toFixed(4)}; total $${(spent + usage.usd).toFixed(4)}\n`,
+      );
+    } catch (err: unknown) {
+      // Logged and counted, never silent: the run exits non-zero when any video failed. The
+      // usage of clips that did succeed is still counted toward the spend.
+      failed.push(v.video_id);
+      process.stdout.write(
+        `${v.video_id}: FAILED (${err instanceof Error ? err.message : String(err)}); $${usage.usd.toFixed(4)} spent on it\n`,
+      );
+    }
     spent += usage.usd;
-    writeFileSync(
-      resolve(OUT_DIR, `${v.video_id}.json`),
-      `${JSON.stringify({ extract_version: EXTRACT_VERSION, model, ...v, extract, usage }, null, 2)}\n`,
-    );
-    process.stdout.write(
-      `${v.video_id}: ${extract.moves.length} move(s); ${usage.prompt} in / ${usage.output} out; $${usage.usd.toFixed(4)}; total $${spent.toFixed(4)}\n`,
-    );
   }
   process.stdout.write(`measured spend: $${spent.toFixed(4)}\n`);
+  if (failed.length > 0) {
+    process.stdout.write(`failed: ${failed.join(", ")}\n`);
+    process.exitCode = 1;
+  }
 }
 
 if (process.argv[1]?.endsWith("extract-desmos-moves.ts")) {
