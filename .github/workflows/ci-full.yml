@@ -491,6 +491,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/qotd.mutations.sh
 
+      # Worked examples (Karl, 2026-10-27): one plant per rule (the leak rule both ways, steps,
+      # one a day, RLS and grants, metric bounds; hook rules H1-H5, 30-60 s, safe area, blank
+      # paper, audio mix, licence file, approval, post_on today, once, title, caption, plan
+      # rotation, stale voice, Slack order). Each must turn its named check red.
+      - name: Worked-example mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/worked-examples.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest
