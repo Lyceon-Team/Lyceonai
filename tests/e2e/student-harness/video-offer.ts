@@ -2,18 +2,21 @@
  * @spec [owner brief "Video player: near-fullscreen" (Karl, 2026-10-27): the player's browser
  *       tests in the student harness] | @implemented [2026-10-27]
  *
- * plain English: prints the `recommend_video` action the BFF sends a student when LISA offers
- * Desmos Lesson #10, built by the REAL producers: the reviewed library file through the apply
- * script's own parser (`parseReviewedCsv`), the row through the retrieval's `libraryVideoSchema`,
- * and the worker's offer (index 1) through `resolveVideoAction`, which projects the client's five
- * fields. tests/e2e/tutor-video-player.spec.ts serves it as the turn's `suggested_action`; the
+ * plain English: writes, to the JSON file named by its one argument, the `recommend_video` action
+ * the BFF sends a student when LISA offers Desmos Lesson #10, built by the REAL producers: the
+ * reviewed library file through the apply script's own parser (`parseReviewedCsv`), the row
+ * through the retrieval's `libraryVideoSchema`, and the worker's offer (index 1) through
+ * `resolveVideoAction`, which projects the client's five fields. tests/e2e/lisa-dock.spec.ts
+ * (the video player block) serves it as the turn's `suggested_action`; the
  * harness never runs a tutor turn (server.ts), so this is the one hop the spec stands in for.
  *
  * run: pnpm exec tsx --import ./tests/e2e/student-harness/register.mjs \
- *        tests/e2e/student-harness/video-offer.ts
+ *        tests/e2e/student-harness/video-offer.ts <out.json>
  * (the module hooks stub the Supabase client the retrieval module imports; nothing is queried).
+ * A file, not stdout: a test-side file that imports tutor code never prints
+ * (tests/ci/test-logs-no-tutor-content.guard.test.ts).
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { parseReviewedCsv } from "../../../scripts/rag/apply-video-library";
 import { REVIEW_CSV, loadTaxonomy } from "../../../scripts/rag/tag-videos";
 import {
@@ -51,4 +54,6 @@ const action = resolveVideoAction(
 if (action.type !== "recommend_video") {
   throw new Error("resolveVideoAction attached no video");
 }
-process.stdout.write(`${JSON.stringify(action)}\n`);
+const out = process.argv[2];
+if (out === undefined) throw new Error("usage: video-offer.ts <out.json>");
+writeFileSync(out, JSON.stringify(action));

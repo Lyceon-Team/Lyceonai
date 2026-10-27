@@ -57,6 +57,8 @@ import {
 } from "@playwright/test";
 import { execFileSync } from "child_process";
 import fs from "fs";
+import os from "os";
+import path from "path";
 import { answerCookieBanner } from "./exam-harness/consent";
 import {
   PERSONA_HEADER,
@@ -1239,7 +1241,12 @@ type VideoAction = {
     start_seconds: number | null;
   };
 };
-const VIDEO_ACTION = JSON.parse(
+/** Desmos Lesson #10's action, as the BFF builds it (student-harness/video-offer.ts). */
+function builtVideoAction(): VideoAction {
+  const out = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), "video-offer-")),
+    "action.json",
+  );
   execFileSync(
     "pnpm",
     [
@@ -1248,13 +1255,13 @@ const VIDEO_ACTION = JSON.parse(
       "--import",
       "./tests/e2e/student-harness/register.mjs",
       "tests/e2e/student-harness/video-offer.ts",
+      out,
     ],
-    { encoding: "utf8" },
-  )
-    .trim()
-    .split("\n")
-    .pop() ?? "{}",
-) as VideoAction;
+    { stdio: "ignore" },
+  );
+  return JSON.parse(fs.readFileSync(out, "utf8")) as VideoAction;
+}
+const VIDEO_ACTION = builtVideoAction();
 
 const PLAYER = '[data-testid="tutor-video-modal"]';
 const PLAYER_SIZES = [
