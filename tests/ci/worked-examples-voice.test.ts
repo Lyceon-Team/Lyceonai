@@ -21,7 +21,12 @@ import {
   type VoiceManifest,
 } from "../../packages/shared/src/worked-example-schema";
 import { readWavSamples } from "../../scripts/worked-examples/audio";
-import { comparisonReport } from "../../scripts/worked-examples/compare-voices";
+import {
+  comparisonReport,
+  kitAtRate,
+  parseVoiceSpec,
+  wordsPerMinute,
+} from "../../scripts/worked-examples/compare-voices";
 import { scriptLines } from "../../scripts/worked-examples/composition";
 import {
   loadExamples,
@@ -38,6 +43,8 @@ import {
 } from "../../scripts/worked-examples/quality";
 import {
   decideLine,
+  keepsEarlierVoicing,
+  kokoroTtsArgs,
   referenceProblem,
 } from "../../scripts/worked-examples/voice";
 
@@ -345,11 +352,76 @@ describe("the clone is not the default until Karl picks it", () => {
 
   it("the comparison report names each voice and its fallback lines", () => {
     const md = comparisonReport("we-satm2czs1be", [
-      { voice: "af_heart", video: "a.mp4", seconds: 44.1, fellBack: [] },
-      { voice: "clone", video: "b.mp4", seconds: 45.3, fellBack: ["step-3"] },
+      {
+        voice: "af_heart",
+        video: "a.mp4",
+        seconds: 44.1,
+        wpm: 171.4,
+        fellBack: [],
+      },
+      {
+        voice: "clone",
+        video: "b.mp4",
+        seconds: 45.3,
+        wpm: 158.6,
+        fellBack: ["step-3"],
+      },
     ]);
-    expect(md).toContain("| af_heart | a.mp4 | 44.1 s | none |");
-    expect(md).toContain("| clone | b.mp4 | 45.3 s | step-3 |");
+    expect(md).toContain("| af_heart | a.mp4 | 44.1 s | 171 wpm | none |");
+    expect(md).toContain("| clone | b.mp4 | 45.3 s | 159 wpm | step-3 |");
+  });
+});
+
+describe("speaking rate", () => {
+  it("every profile has one, and both voices are at their natural 1.0 until Karl picks", () => {
+    for (const p of Object.values(kit.voice.profiles))
+      expect(p.speaking_rate).toBeTypeOf("number");
+    expect(kit.voice.profiles["af_heart"]?.speaking_rate).toBe(1);
+    expect(kit.voice.profiles["clone"]?.speaking_rate).toBe(1);
+  });
+
+  it("reaches the kokoro voice as hyperframes tts -s", () => {
+    const p = kit.voice.profiles["af_heart"];
+    if (p?.engine !== "kokoro") throw new Error("af_heart is not kokoro");
+    const args = kokoroTtsArgs({ ...p, speaking_rate: 1.1 }, "Hi.", "/x/a.wav");
+    expect(args[args.indexOf("-s") + 1]).toBe("1.1");
+  });
+
+  it("a rate change re-voices the batch; an older manifest counts as 1.0", () => {
+    const m = manifest;
+    expect(keepsEarlierVoicing(m, m.voice, 1)).toBe(true);
+    expect(keepsEarlierVoicing(m, m.voice, 1.1)).toBe(false);
+    expect(
+      keepsEarlierVoicing({ ...m, speaking_rate: 1.1 }, m.voice, 1.1),
+    ).toBe(true);
+    expect(keepsEarlierVoicing(m, "clone", 1)).toBe(false);
+    expect(keepsEarlierVoicing(null, m.voice, 1)).toBe(false);
+  });
+
+  it("the comparison renders a profile at another rate without touching voice.json", () => {
+    expect(parseVoiceSpec("clone")).toEqual({
+      profile: "clone",
+      rate: null,
+      label: "clone",
+    });
+    expect(parseVoiceSpec("clone@1.1")).toEqual({
+      profile: "clone",
+      rate: 1.1,
+      label: "clone-1.10x",
+    });
+    expect(() => parseVoiceSpec("clone@3")).toThrow(/outside/);
+    expect(() => parseVoiceSpec("clone@")).toThrow();
+    const faster = kitAtRate(kit, parseVoiceSpec("clone@1.1"));
+    expect(faster.voice.profiles["clone"]?.speaking_rate).toBe(1.1);
+    expect(kit.voice.profiles["clone"]?.speaking_rate).toBe(1);
+  });
+
+  it("pace is words per minute of speech", () => {
+    const m = manifest;
+    const words = m.lines.reduce((n, l) => n + l.words.length, 0);
+    const seconds = m.lines.reduce((n, l) => n + l.duration, 0);
+    expect(wordsPerMinute(m)).toBeCloseTo((words / seconds) * 60, 6);
+    expect(wordsPerMinute(m)).toBeGreaterThan(100);
   });
 });
 

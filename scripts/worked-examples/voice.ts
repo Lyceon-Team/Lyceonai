@@ -22,8 +22,8 @@
  * clipping, no silence). A clone line that fails, or that the clone could not produce, is spoken
  * again in the fallback voice and recorded as such in the manifest (`voice`, `fallback_reasons`).
  * A line in the fallback voice that fails the checks stops the run: nothing is written for it.
- * A line whose text hash and voice already match is left alone, so editing one step re-voices only
- * that step. --out writes the voice folder somewhere else (the comparison render uses it).
+ * A line whose text hash, voice and speaking rate already match is left alone, so editing one step
+ * re-voices only that step; changing a profile's speaking_rate re-voices the batch. --out writes the voice folder somewhere else (the comparison render uses it).
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -179,6 +179,40 @@ function transcribeAndCheck(
   };
 }
 
+/** The `hyperframes tts` arguments for one kokoro line, at the profile's speaking rate. */
+export function kokoroTtsArgs(
+  profile: VoiceProfile & { engine: "kokoro" },
+  text: string,
+  wav: string,
+): string[] {
+  return [
+    "tts",
+    text,
+    "-v",
+    profile.kokoro_voice,
+    "-s",
+    String(profile.speaking_rate),
+    "-o",
+    wav,
+  ];
+}
+
+/**
+ * Whether an earlier manifest's lines can be kept: same profile and same speaking rate (a manifest
+ * from before the setting existed was spoken at 1.0). A rate change re-voices every line.
+ */
+export function keepsEarlierVoicing(
+  previous: VoiceManifest | null,
+  profileId: string,
+  speakingRate: number,
+): boolean {
+  return (
+    previous !== null &&
+    previous.voice === profileId &&
+    (previous.speaking_rate ?? 1) === speakingRate
+  );
+}
+
 function speakKokoro(
   v: VoiceSettings,
   profile: VoiceProfile & { engine: "kokoro" },
@@ -186,11 +220,7 @@ function speakKokoro(
 ): Spoken {
   const work = mkdtempSync(join(tmpdir(), "we-voice-"));
   const wav = join(work, `${line.key}.wav`);
-  hyperframes(
-    v,
-    ["tts", line.text, "-v", profile.kokoro_voice, "-o", wav],
-    work,
-  );
+  hyperframes(v, kokoroTtsArgs(profile, line.text, wav), work);
   return transcribeAndCheck(v, line, wav, work);
 }
 
@@ -230,7 +260,7 @@ function speakClone(
       "--tau",
       String(profile.tau),
       "--speed",
-      String(profile.speed),
+      String(profile.speaking_rate),
     ],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
@@ -345,11 +375,14 @@ export function voiceExample(
   const previous: VoiceManifest | null = existsSync(manifestFile)
     ? voiceManifestSchema.parse(JSON.parse(readFileSync(manifestFile, "utf8")))
     : null;
+  const profile = kit.voice.profiles[profileId];
+  if (!profile) throw new Error(`no voice profile ${profileId} in voice.json`);
+  const keep = keepsEarlierVoicing(previous, profileId, profile.speaking_rate);
   const lines = scriptLines(example, kit.voice.outro_text)
     .filter((s) => s.key !== "outro")
     .map((s) => {
       const kept =
-        previous?.voice === profileId
+        keep && previous
           ? previous.lines.find(
               (l) =>
                 l.key === s.key &&
@@ -361,7 +394,11 @@ export function voiceExample(
       process.stdout.write(`voicing ${s.key} (${profileId})\n`);
       return voiceLine(kit.voice, profileId, s, outDir, reference);
     });
-  const manifest = voiceManifestSchema.parse({ voice: profileId, lines });
+  const manifest = voiceManifestSchema.parse({
+    voice: profileId,
+    speaking_rate: profile.speaking_rate,
+    lines,
+  });
   writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }

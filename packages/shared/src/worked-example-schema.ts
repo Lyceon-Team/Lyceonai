@@ -149,6 +149,11 @@ export const voiceManifestSchema = z
   .object({
     /** The voice profile the batch was spoken in (video-kit/worked-examples/voice.json profiles). */
     voice: z.string().min(1),
+    /**
+     * The profile's speaking_rate when the batch was voiced (Karl, 2026-10-27). Absent in batches
+     * voiced before the setting existed, which were all spoken at 1.0.
+     */
+    speaking_rate: z.number().min(0.5).max(2).optional(),
     lines: z.array(voiceLineSchema).min(1),
   })
   .strict();

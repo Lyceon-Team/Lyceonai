@@ -85,9 +85,21 @@ comparison below; then `default_profile` in `video-kit/worked-examples/voice.jso
 V2 and MeloTTS, both MIT, pinned commits).
 
 **Reference recording.** A few minutes of Karl (or a person who has given written consent; Karl
-keeps the consent record outside the repository), recorded in a quiet room, as WAV. It is never
-committed: keep it outside every checkout (for example `~/lyceon-private/voice-reference.wav`) and
-point `WE_VOICE_REFERENCE` at it. The tooling refuses a path inside the repository or the content
+keeps the consent record outside the repository), recorded in a quiet room, as `.m4a` (a phone
+voice memo is fine) or `.wav`. It never goes into the repository, a pull request, Slack or GitHub.
+To hand it to a Claude Code session, attach the file to a message in that session; it lands in the
+session's own upload folder, outside every checkout. The session converts and trims a private copy
+outside the repository, uses it for the run, and then deletes the upload, the copy and the cached
+embedding; the next clone run needs the file again. Converting by hand (mono 48 kHz WAV, rumble
+cut below 70 Hz, silence trimmed at both ends):
+
+```bash
+ffmpeg -i in.m4a -ac 1 -ar 48000 -af "highpass=f=70,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15,areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.25,areverse" \
+  -c:a pcm_s16le ~/lyceon-private/karl.reference.wav
+```
+
+Keep it outside every checkout (for example `~/lyceon-private/karl.reference.wav`) and point
+`WE_VOICE_REFERENCE` at it. The tooling refuses a path inside the repository or the content
 checkout, and `.gitignore` ignores `*.reference.*` and `voice-reference/`. Its tone-colour embedding
 is cached in `WE_OPENVOICE_CACHE` (default `~/.cache/lyceon-openvoice`), also outside the repo.
 
@@ -118,8 +130,16 @@ pnpm exec tsx scripts/worked-examples/compare-voices.ts --content <checkout of s
   --dir content/worked-examples/2026-W45/SATM2CZS1BE --out ~/lyceon-private/compare
 ```
 
-It writes `we-satm2czs1be-af_heart.mp4`, `we-satm2czs1be-clone.mp4` and `comparison.md` (lengths and
-any lines that fell back). Post both videos to Karl; nothing is committed.
+By default it renders `af_heart,clone,clone@1.1`: the /brag voice, the clone at its natural pace and
+the clone about 10% faster. It writes `we-satm2czs1be-af_heart.mp4`, `we-satm2czs1be-clone.mp4`,
+`we-satm2czs1be-clone-1.10x.mp4` and `comparison.md` (length, pace in words per minute and any lines
+that fell back). Post the videos to Karl; nothing is committed.
+
+**Speaking rate.** Every profile in `voice.json` has `speaking_rate` (Karl, 2026-10-27): 1.0 is the
+engine's natural pace, 1.1 about 10% faster (`hyperframes tts -s` for the /brag voice, MeloTTS
+`speed` for the clone). The rate Karl picks goes into the profile in the same PR that makes the
+clone the default. A batch records the rate it was voiced at in `voice/manifest.json`; changing the
+rate re-voices the whole batch on the next run.
 
 **Voicing a batch in the clone (after Karl picks it):** `voice.ts <example folder> --voice clone`.
 Each clone line is transcribed and checked (`scripts/worked-examples/quality.ts`): it must say its

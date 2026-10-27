@@ -69,13 +69,19 @@ export type Brand = z.infer<typeof brandSchema>;
  * A voice the batch tooling can speak with. kokoro is the /brag voice (hyperframes tts); openvoice-v2
  * is a clone of a reference speaker (OpenVoice addendum, Karl, 2026-10-27): a MeloTTS base speaker
  * whose tone colour is converted to the reference's, run on the batch writer's machine only.
+ * speaking_rate (Karl, 2026-10-27, after finding the stand-in clone slow) multiplies the engine's
+ * natural pace: 1.0 is natural, 1.1 about 10% faster. kokoro takes it as `hyperframes tts -s`,
+ * the clone as MeloTTS's `speed`; the tone-colour conversion keeps the timing it is given.
  */
+const speakingRate = z.number().min(0.5).max(2);
+
 export const voiceProfileSchema = z.discriminatedUnion("engine", [
   z
     .object({
       engine: z.literal("kokoro"),
       kokoro_voice: z.string().min(1),
       label: z.string().min(1),
+      speaking_rate: speakingRate,
     })
     .strict(),
   z
@@ -85,7 +91,7 @@ export const voiceProfileSchema = z.discriminatedUnion("engine", [
       base_language: z.string().min(1),
       base_speaker: z.string().min(1),
       tau: z.number().gt(0).lte(1),
-      speed: z.number().gt(0).lte(2),
+      speaking_rate: speakingRate,
     })
     .strict(),
 ]);

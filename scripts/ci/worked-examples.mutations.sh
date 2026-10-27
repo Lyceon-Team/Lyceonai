@@ -2,7 +2,8 @@
 # ============================================================================
 # Mutation harness for worked examples (owner brief "Worked examples: production system",
 # Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27;
-# V1-V10 per the OpenVoice addendum, Karl, 2026-10-27)
+# V1-V10 per the OpenVoice addendum, Karl, 2026-10-27; V11-V12 per Karl's speaking-rate ask,
+# 2026-10-27)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -274,6 +275,12 @@ ts_plant "V10 CI installs the clone's Python stack" .github/workflows/worked-exa
 
       - name: Install dependencies" \
   "the worked-example workflows set up no Python at all"
+ts_plant "V11 the speaking rate never reaches the /brag voice" scripts/worked-examples/voice.ts \
+  '    "-s",' '    "--silent",' \
+  "reaches the kokoro voice as hyperframes tts -s"
+ts_plant "V12 a rate change keeps the old voicing" scripts/worked-examples/voice.ts \
+  "    (previous.speaking_rate ?? 1) === speakingRate" "    true" \
+  "a rate change re-voices the batch"
 
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"

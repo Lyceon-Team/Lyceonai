@@ -6,7 +6,8 @@
     "af_heart": {
       "engine": "kokoro",
       "kokoro_voice": "af_heart",
-      "label": "the /brag voice (Kokoro af_heart via hyperframes tts)"
+      "label": "the /brag voice (Kokoro af_heart via hyperframes tts)",
+      "speaking_rate": 1.0
     },
     "clone": {
       "engine": "openvoice-v2",
@@ -14,7 +15,7 @@
       "base_language": "EN",
       "base_speaker": "EN-US",
       "tau": 0.3,
-      "speed": 1.0
+      "speaking_rate": 1.0
     }
   },
   "quality": {
