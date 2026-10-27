@@ -14,7 +14,7 @@
  * the seed SQL that created the question (scripts/worked-examples/seed-question.ts), never copied.
  * Every spoken line is written out here and voiced once at batch time; the voice manifest records
  * a hash of each line's text, so audio that no longer matches its script fails the checks.
- * The database row (supabase/migrations/20261115000000_worked_examples.sql) mirrors this file and
+ * The database row (supabase/migrations/20261118000000_worked_examples.sql) mirrors this file and
  * is written only by the generated seed SQL. Approval is not a field: it is Karl's merge of the
  * batch pull request, read from GitHub's record (shared/worked-examples/approval.ts).
  */

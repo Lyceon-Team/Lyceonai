@@ -90,6 +90,8 @@ const LIBRARY: LibraryVideo[] = [
     channel_name: "Scalar Learning",
     duration_seconds: 23,
     start_seconds: null,
+    methods: ["algebraic"],
+    format: "formula",
   },
   {
     video_id: "f9DxgfyvRKg",
@@ -97,6 +99,8 @@ const LIBRARY: LibraryVideo[] = [
     channel_name: "Scalar Learning",
     duration_seconds: 26,
     start_seconds: 5,
+    methods: ["desmos"],
+    format: "lesson",
   },
 ];
 
@@ -245,6 +249,36 @@ describe("the worker's video marker", () => {
   it("no offered videos → no [VIDEOS] block", () => {
     expect(renderVideoBlock(CASE_35.request)).toBeNull();
   });
+
+  // @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27] | @implemented [2026-10-27]
+  it("each offered video says how it solves and what shape it is", () => {
+    const block = renderVideoBlock(withVideos(CASE_35.request, LIBRARY)) ?? "";
+    expect(block).toContain(
+      `2. "Point Slope Form (SAT Math Formula 3/23)" (Scalar Learning, 0:26; solves with Desmos; lesson)`,
+    );
+    expect(block).toContain("solves by hand; formula short");
+  });
+
+  it("an offered video without methods or format (an older BFF) renders as before", () => {
+    const old = orchestrateRequestSchema.parse({
+      ...CASE_35.request,
+      offered_videos: [
+        { index: 1, title: "T", channel_name: "C", duration_seconds: 61 },
+      ],
+    });
+    expect(renderVideoBlock(old)).toContain(`1. "T" (C, 1:01)`);
+  });
+
+  it("the wire refuses a method or format outside the vocabulary", () => {
+    for (const bad of [{ methods: ["calculator"] }, { format: "tips" }]) {
+      expect(
+        orchestrateRequestSchema.safeParse({
+          ...CASE_35.request,
+          offered_videos: [{ ...toWireVideos(LIBRARY)[0], ...bad }],
+        }).success,
+      ).toBe(false);
+    }
+  });
 });
 
 describe("the BFF resolves the index", () => {
@@ -255,7 +289,33 @@ describe("the BFF resolves the index", () => {
         LIBRARY,
         false,
       ),
-    ).toEqual({ type: "recommend_video", label: "Watch", video: LIBRARY[1] });
+    ).toEqual({
+      type: "recommend_video",
+      label: "Watch",
+      video: {
+        video_id: "f9DxgfyvRKg",
+        title: "Point Slope Form (SAT Math Formula 3/23)",
+        channel_name: "Scalar Learning",
+        duration_seconds: 26,
+        start_seconds: 5,
+      },
+    });
+  });
+
+  // Anti-leak chokepoint (spec audit, 2026-10-27): the client gets a projection, never the row.
+  it("the client's video carries exactly the five client fields, not methods or format", () => {
+    const action = resolveVideoAction(
+      { type: "recommend_video", label: "Watch", video_index: 1 },
+      LIBRARY,
+      false,
+    );
+    expect("video" in action && Object.keys(action.video).sort()).toEqual([
+      "channel_name",
+      "duration_seconds",
+      "start_seconds",
+      "title",
+      "video_id",
+    ]);
   });
 
   it("an index naming no offered video, or none at all → no action", () => {
@@ -300,46 +360,56 @@ describe("Step 13d retrieval — proof 5 and fail open", () => {
   it("returns the library's rows for the item's skills, asking for at most 3", async () => {
     db.question = { data: { skill_codes: ["Linear Functions"] }, error: null };
     db.rpc = { data: LIBRARY, error: null };
-    expect(await retrieveOfferedVideos("q-1", "review", "c-1")).toEqual(
-      LIBRARY,
-    );
+    expect(
+      await retrieveOfferedVideos("q-1", "review", "c-1", "desmos"),
+    ).toEqual(LIBRARY);
     expect(db.calls).toContain(
-      `rpc:video_resources_for_skills:${JSON.stringify({ p_skill_codes: ["Linear Functions"], p_limit: 3 })}`,
+      `rpc:video_resources_for_skills:${JSON.stringify({ p_skill_codes: ["Linear Functions"], p_limit: 3, p_method: "desmos" })}`,
     );
   });
 
   it("a skill with no video → no videos, no error (proof 5)", async () => {
     db.question = { data: { skill_codes: ["Boundaries"] }, error: null };
     db.rpc = { data: [], error: null };
-    expect(await retrieveOfferedVideos("q-1", "review", "c-1")).toEqual([]);
+    expect(await retrieveOfferedVideos("q-1", "review", "c-1", null)).toEqual(
+      [],
+    );
     expect(logger.error).not.toHaveBeenCalled();
   });
 
   it("no item (general mode) → no lookup at all", async () => {
-    expect(await retrieveOfferedVideos(null, "dashboard", "c-1")).toEqual([]);
+    expect(await retrieveOfferedVideos(null, "dashboard", "c-1", null)).toEqual(
+      [],
+    );
     expect(db.calls).toEqual([]);
   });
 
   it("practice (not a named surface) → no lookup at all", async () => {
     db.question = { data: { skill_codes: ["Circles"] }, error: null };
     db.rpc = { data: LIBRARY, error: null };
-    expect(await retrieveOfferedVideos("q-1", "practice", "c-1")).toEqual([]);
-    expect(db.calls).toEqual([]);
-    expect(await retrieveOfferedVideos("q-1", "test_review", "c-1")).toEqual(
-      LIBRARY,
+    expect(await retrieveOfferedVideos("q-1", "practice", "c-1", null)).toEqual(
+      [],
     );
+    expect(db.calls).toEqual([]);
+    expect(
+      await retrieveOfferedVideos("q-1", "test_review", "c-1", null),
+    ).toEqual(LIBRARY);
   });
 
   it("an item with no skills → no retrieval call", async () => {
     db.question = { data: { skill_codes: [] }, error: null };
-    expect(await retrieveOfferedVideos("q-1", "review", "c-1")).toEqual([]);
+    expect(await retrieveOfferedVideos("q-1", "review", "c-1", null)).toEqual(
+      [],
+    );
     expect(db.calls.some((c) => c.startsWith("rpc:"))).toBe(false);
   });
 
   it("a failing query → no videos, logged at ERROR, never thrown", async () => {
     db.question = { data: { skill_codes: ["Circles"] }, error: null };
     db.rpc = { data: null, error: new Error("function does not exist") };
-    expect(await retrieveOfferedVideos("q-1", "review", "c-1")).toEqual([]);
+    expect(await retrieveOfferedVideos("q-1", "review", "c-1", null)).toEqual(
+      [],
+    );
     expect(logger.error).toHaveBeenCalledWith(
       "TUTOR_RUNTIME",
       "video_library_retrieval_failed",
@@ -355,7 +425,9 @@ describe("Step 13d retrieval — proof 5 and fail open", () => {
       data: [{ ...LIBRARY[0], video_id: "javascript:alert(1)" }],
       error: null,
     };
-    expect(await retrieveOfferedVideos("q-1", "review", "c-1")).toEqual([]);
+    expect(await retrieveOfferedVideos("q-1", "review", "c-1", null)).toEqual(
+      [],
+    );
   });
 });
 

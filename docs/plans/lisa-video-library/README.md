@@ -67,6 +67,54 @@ math.
   Shortest-first ordering ranks them last, but reject them at review if they shouldn't be
   offered at all.
 
+## Method tags (2026-10-27)
+
+Brief "Video retrieval: method tags" (Karl, 2026-10-27), Step 0 ruled; SCL-248 (the §6.7
+field) and SCL-249 (the ranking and the contract). Why: a student asked "can you show me how to
+do this on desmos" on an Equivalent Expressions item and was offered three formula shorts,
+because nothing recorded how a video solves.
+
+**Vocabulary** (`packages/shared/src/video-methods.ts`, the one definition; the SQL CHECKs, the
+wire and the keyword map are checked against it in CI):
+
+| `methods`   | Means                                                             | Approved videos       |
+| ----------- | ----------------------------------------------------------------- | --------------------- |
+| `desmos`    | the answer comes from something typed into Desmos and read back   | 29                    |
+| `algebraic` | by hand: rewriting, a formula applied by hand, symbolic reasoning | 44                    |
+| `backsolve` | the answer choices, or chosen numbers, are tried in the question  | 4 (in: three or more) |
+
+| `format`         | Means                                                            | Approved videos |
+| ---------------- | ---------------------------------------------------------------- | --------------- |
+| `formula`        | one formula or rule, about two minutes or less, no full question | 36              |
+| `worked_example` | organised around particular questions, each solved               | 14              |
+| `lesson`         | a topic or technique taught in general                           | 32              |
+| `strategy`       | a list of tips or hacks                                          | 3               |
+
+Reading and Writing videos carry no method. Retrieval order: skill match (required), the
+requested method, then format in the order above, then shortest, then id.
+
+**How the 85 were tagged** (`tag-videos.ts --methods`, columns `methods`, `format`,
+`method_evidence`, `method_source` at the end of each review row; no other cell changed):
+70 from title, description and chapters; **15 needed the video** (Gemini watched the clip the
+student would see, twice; a method is kept only when both runs saw it):
+`Me3IEHAtESo`, `5VdaJ6HYbD8`, `86LYq7ue-IA`, `52vWohHiyAQ`, `OKGrV3e9aZk`, `I9e7zd1TiDo`, `H3okEuiCaXE`, `uLYm9UC4Wis`, `nLLwupYkfCo`, `YbIToNjrWBE`, `gdaX-8LP1rw`, `qLEVgoVO65U`, `6GLUNxyNuhI`, `JwiaqsMWyfc`, `CnPWdS42whA`.
+A video with a start is tagged for the chapter the student lands on. Cost: $4.36 across two
+passes (the first pass's prompt let a formula short carry no method and tagged one problem from
+its description alone; both fixed, then re-run).
+
+**Owner-run, in order:**
+
+1. Apply `supabase/migrations/20261116000000_lisa_video_methods.sql` (the live BFF keeps
+   calling the 2-argument retrieval function).
+2. Deploy the worker (its `offered_videos` accepts the optional `methods` and `format`).
+3. Deploy the BFF. Never before the worker: the older worker's strict schema refuses the new
+   fields.
+4. `DATABASE_URL=... pnpm exec tsx scripts/rag/apply-video-library.ts --approver <your id> --execute`.
+   Writing methods and format clears every approval; the same transaction approves the 85
+   `yes` rows again. Dry run first: `163 rows to tag (121 with skills, 73 with methods, 85 with
+a format), 85 to approve`.
+5. The closing proof: closure plan R-18.
+
 ## Scope calls for Karl
 
 - **Standalone chat** is general mode: there is no item, so there is no skill to match, and

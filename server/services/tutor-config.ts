@@ -23,6 +23,7 @@
  *    here enforces the narrower per-key type contract.
  */
 import { z } from "zod";
+import { videoMethodKeywordMapSchema } from "../../packages/shared/src/video-methods";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 
@@ -116,6 +117,14 @@ const tutorConfigKeySchemas = {
   "validation.pagination_max": {
     schema: z.number().int().positive(),
     default: 100,
+  },
+  // @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27] | @implemented
+  // [2026-10-27] | plain English: the versioned keyword map that detects the way of solving a
+  // student asks for (seeded by 20261116000000_lisa_video_methods.sql). No default: unset or
+  // invalid means no method preference, and retrieval ranks as it did before.
+  video_method_keywords: {
+    schema: videoMethodKeywordMapSchema.nullable(),
+    default: null,
   },
 } as const;
 
