@@ -1,0 +1,26 @@
+{
+  "question_id": "SATM22FTOBG",
+  "skill_code": "Right Triangles and Trigonometry",
+  "post_on": "2026-11-04",
+  "hook": {
+    "type": "puzzle",
+    "line": "sin J = 5/13 and JK = 12. How long is KL?",
+    "voice": "Sine of J is five thirteenths, and J K is twelve. How long is K L?"
+  },
+  "question_voice": "In right triangle J K L, the right angle is at K. J K is twelve, and sine of J is five thirteenths. What is the length of K L?",
+  "signature_move": "Label the sides from the angle: opposite, adjacent, hypotenuse. Then pick the ratio (SOH CAH TOA).",
+  "steps": [
+    { "notepad": "sin J = opp/hyp = 5/13", "voice": "Label the sides from angle J. Sine is opposite over hypotenuse, so those two sides are in the ratio five to thirteen." },
+    { "notepad": "opp = KL,  adj = JK = 12", "voice": "The side opposite J is K L. The side next to J is J K, and that's twelve." },
+    { "notepad": "5 : 12 : 13", "voice": "Five, twelve, thirteen is a right triangle, and its adjacent side is already twelve." },
+    { "notepad": "KL = 5", "voice": "So nothing is scaled, and K L is five." }
+  ],
+  "answer": { "letter": "A", "notepad": "Answer: A) 5", "voice": "So the answer is A. Five." },
+  "trap": {
+    "summary": "Treating JK as the hypotenuse and multiplying 12 by 5/13.",
+    "notepad": ["12 × 5/13 = 60/13  ✗", "JK is adjacent, not hyp", "KL = 5  ✓"],
+    "voice": "The trap: multiplying twelve by five thirteenths. That treats J K as the hypotenuse, but J K is the side next to the angle."
+  },
+  "check": "Pythagorean theorem: 5² + 12² = 25 + 144 = 169 = 13², so 5, 12 and 13 are the sides of a right triangle.",
+  "takeaway": "Label opposite, adjacent and hypotenuse from the angle before you use a ratio."
+}
