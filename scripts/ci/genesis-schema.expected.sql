@@ -15731,18 +15731,19 @@ COMMENT ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) IS 'Doc 06D
 
 
 --
--- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text, text[], text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) RETURNS void
+CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) RETURNS void
     LANGUAGE sql
     SET search_path TO 'public', 'pg_temp'
     AS $$
   INSERT INTO public.video_resources AS v
     (video_id, title, channel_name, duration_seconds, status, last_checked_at,
-     skill_codes, domain, start_seconds, tagged_by, tagged_at)
+     skill_codes, domain, start_seconds, tagged_by, tagged_at, methods, format)
   VALUES (p_video_id, p_title, p_channel_name, p_duration_seconds, 'available', now(),
-          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now())
+          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now(),
+          coalesce(p_methods, '{}'), p_format)
   ON CONFLICT (video_id) DO UPDATE SET
     title            = EXCLUDED.title,
     channel_name     = EXCLUDED.channel_name,
@@ -15752,14 +15753,19 @@ CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_chann
     start_seconds    = EXCLUDED.start_seconds,
     tagged_by        = EXCLUDED.tagged_by,
     tagged_at        = EXCLUDED.tagged_at,
-    -- A changed tag set loses its approval; an unchanged one keeps it.
+    methods          = EXCLUDED.methods,
+    format           = EXCLUDED.format,
+    -- A changed tag set loses its approval; an unchanged one keeps it. Methods and format are
+    -- part of the tag set: what Karl approved is what the student is offered.
     approved_by = CASE
-      WHEN (v.skill_codes, v.domain, v.start_seconds)
-           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+      WHEN (v.skill_codes, v.domain, v.start_seconds, v.methods, v.format)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds, EXCLUDED.methods, EXCLUDED.format)
         THEN v.approved_by ELSE NULL END,
     approved_at = CASE
-      WHEN (v.skill_codes, v.domain, v.start_seconds)
-           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+      WHEN (v.skill_codes, v.domain, v.start_seconds, v.methods, v.format)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds, EXCLUDED.methods, EXCLUDED.format)
         THEN v.approved_at ELSE NULL END;
 $$;
 
@@ -15798,6 +15804,30 @@ CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit 
     AND v.approved_by IS NOT NULL
     AND v.skill_codes && p_skill_codes        -- GIN index: the skill filter, in the statement
   ORDER BY v.duration_seconds, v.video_id     -- shortest first for a stuck student; stable
+  LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
+$$;
+
+
+--
+-- Name: video_resources_for_skills(text[], integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) RETURNS TABLE(video_id text, title text, channel_name text, duration_seconds integer, start_seconds integer, methods text[], format text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT v.video_id, v.title, v.channel_name, v.duration_seconds, v.start_seconds,
+         v.methods, v.format
+  FROM public.video_resources v
+  WHERE v.status = 'available'
+    AND v.approved_by IS NOT NULL
+    AND v.skill_codes && p_skill_codes                            -- GIN index: skill match, required
+  ORDER BY
+    (p_method IS NOT NULL AND p_method = ANY (v.methods)) DESC,   -- the method asked for, first
+    array_position(ARRAY['formula', 'worked_example', 'lesson', 'strategy']::text[], v.format)
+      NULLS LAST,                                                 -- format priority
+    v.duration_seconds,                                           -- then shortest
+    v.video_id                                                    -- stable
   LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
 $$;
 
@@ -16633,9 +16663,11 @@ CREATE TABLE public.curriculum_chunks (
     reviewed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    methods text[] DEFAULT '{}'::text[] NOT NULL,
     CONSTRAINT curriculum_chunks_active_reviewed CHECK (((status <> 'active'::text) OR ((reviewed_by IS NOT NULL) AND (reviewed_at IS NOT NULL)))),
     CONSTRAINT curriculum_chunks_content_nonblank CHECK ((btrim(content) <> ''::text)),
     CONSTRAINT curriculum_chunks_content_type_check CHECK ((content_type = ANY (ARRAY['textbook'::text, 'video_transcript'::text, 'strategy'::text, 'worked_example'::text]))),
+    CONSTRAINT curriculum_chunks_methods_check CHECK (((methods <@ ARRAY['desmos'::text, 'algebraic'::text, 'backsolve'::text]) AND (array_position(methods, NULL::text) IS NULL))),
     CONSTRAINT curriculum_chunks_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
     CONSTRAINT curriculum_chunks_skills_nonempty CHECK ((cardinality(skill_codes) >= 1)),
     CONSTRAINT curriculum_chunks_status_check CHECK ((status = ANY (ARRAY['pending_review'::text, 'active'::text, 'retired'::text]))),
@@ -19692,10 +19724,14 @@ CREATE TABLE public.video_resources (
     tagged_at timestamp with time zone,
     approved_by uuid,
     approved_at timestamp with time zone,
+    methods text[] DEFAULT '{}'::text[] NOT NULL,
+    format text,
     CONSTRAINT video_resources_approved_has_tags CHECK (((approved_by IS NULL) OR (cardinality(skill_codes) >= 1))),
     CONSTRAINT video_resources_approved_pair CHECK (((approved_by IS NULL) = (approved_at IS NULL))),
     CONSTRAINT video_resources_domain_check CHECK (((domain IS NULL) OR (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text, 'Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text])))),
     CONSTRAINT video_resources_duration_check CHECK ((duration_seconds > 0)),
+    CONSTRAINT video_resources_format_check CHECK (((format IS NULL) OR (format = ANY (ARRAY['worked_example'::text, 'formula'::text, 'lesson'::text, 'strategy'::text])))),
+    CONSTRAINT video_resources_methods_check CHECK (((methods <@ ARRAY['desmos'::text, 'algebraic'::text, 'backsolve'::text]) AND (array_position(methods, NULL::text) IS NULL))),
     CONSTRAINT video_resources_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
     CONSTRAINT video_resources_start_check CHECK (((start_seconds IS NULL) OR ((start_seconds >= 0) AND (start_seconds < duration_seconds)))),
     CONSTRAINT video_resources_status_check CHECK ((status = ANY (ARRAY['available'::text, 'unavailable'::text]))),
@@ -27930,11 +27966,11 @@ GRANT ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) TO servic
 
 
 --
--- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) TO service_role;
+REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) TO service_role;
 
 
 --
@@ -27951,6 +27987,14 @@ GRANT ALL ON FUNCTION public.video_resources_approve(p_video_ids text[], p_appro
 
 REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) TO service_role;
 
 
 --

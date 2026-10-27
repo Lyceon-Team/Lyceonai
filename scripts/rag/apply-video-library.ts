@@ -18,20 +18,40 @@
  * an error, fails the run too: an approval that cannot take effect is a review mistake to see,
  * not to skip. Dry run by default; production is owner-run.
  *
+ * @spec [Doc-03D_V1.2 §6.7 as amended (methods); owner brief "Video retrieval: method tags",
+ *       Karl 2026-10-27] | @implemented [2026-10-27]
+ * The file now also carries `methods` and `format` (filled by tag-videos.ts --methods), and
+ * they are written with the tags: each method must be in VIDEO_METHODS and the format in
+ * VIDEO_FORMATS (packages/shared/src/video-methods.ts), or the whole run fails; a row marked
+ * yes must have a format. A changed methods or format value clears the approval in
+ * `video_resource_tag`, and the same transaction approves the yes rows again.
+ *
+ * Windows (2026-10-27): the entry check compared `import.meta.url` with `file://` +
+ * `process.argv[1]`, which never matches a Windows path (`C:\...` vs `file:///C:/...`), so on
+ * Karl's machine the script exited silently having done nothing. It now compares with
+ * `pathToFileURL(process.argv[1]).href`.
+ *
  * Usage: pnpm exec tsx scripts/rag/apply-video-library.ts --approver <uuid>
  *        DATABASE_URL=... pnpm exec tsx scripts/rag/apply-video-library.ts --approver <uuid> --execute
  */
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 // pg ships no types and @types/pg is not a dependency; scripts/ci/types/pg.d.ts declares the
 // narrow surface used here.
 import { Client } from "pg";
 import { z } from "zod";
+import {
+  VIDEO_FORMATS,
+  VIDEO_METHODS,
+  type VideoFormat,
+  type VideoMethod,
+} from "../../packages/shared/src/video-methods";
 import { parseCsv } from "../reference-data/import-reference-data";
 import { REVIEW_CSV, loadTaxonomy } from "./tag-videos";
 
 const HEADER =
-  "approve,video_id,tier,source,title,channel,duration,skills,domain,start,chapters,reason,error,url,duration_s,start_s";
+  "approve,video_id,tier,source,title,channel,duration,skills,domain,start,chapters,reason,error,url,duration_s,start_s,methods,format,method_evidence,method_source";
 
 export type ReviewedVideo = {
   video_id: string;
@@ -41,6 +61,8 @@ export type ReviewedVideo = {
   skill_codes: string[];
   domain: string | null;
   start_seconds: number | null;
+  methods: VideoMethod[];
+  format: VideoFormat | null;
   approve: boolean;
 };
 
@@ -53,6 +75,8 @@ const cellsSchema = z.object({
   error: z.string(),
   duration_s: z.coerce.number().int().positive(),
   start_s: z.string(),
+  methods: z.string(),
+  format: z.string(),
 });
 
 /**
@@ -105,6 +129,26 @@ export function parseReviewedCsv(
     }
     if (approve && skills.length === 0)
       throw new Error(`${at}: approve=yes on a row with no skills`);
+    const methods = [
+      ...new Set(
+        c.methods
+          .split(";")
+          .map((m) => m.trim())
+          .filter((m) => m !== ""),
+      ),
+    ];
+    const method = z.enum(VIDEO_METHODS);
+    for (const m of methods) {
+      if (!method.safeParse(m).success)
+        throw new Error(`${at}: "${m}" is not a video method`);
+    }
+    const formatCell = c.format.trim();
+    const format =
+      formatCell === "" ? null : z.enum(VIDEO_FORMATS).safeParse(formatCell);
+    if (format !== null && !format.success)
+      throw new Error(`${at}: "${formatCell}" is not a video format`);
+    if (approve && format === null)
+      throw new Error(`${at}: approve=yes on a row with no format`);
     const start = c.start_s.trim() === "" ? null : Number(c.start_s);
     if (
       start !== null &&
@@ -120,6 +164,8 @@ export function parseReviewedCsv(
       skill_codes: skills,
       domain: first === undefined ? null : (domainOf.get(first) ?? null),
       start_seconds: start,
+      methods: methods.map((m) => method.parse(m)),
+      format: format === null ? null : format.data,
       approve,
     });
   });
@@ -147,7 +193,7 @@ async function main(): Promise<void> {
       `${approved.length} rows marked yes but no --approver: nothing is approved without approved_by`,
     );
   process.stdout.write(
-    `${rows.length} rows to tag (${rows.filter((r) => r.skill_codes.length > 0).length} with skills), ${approved.length} to approve\n`,
+    `${rows.length} rows to tag (${rows.filter((r) => r.skill_codes.length > 0).length} with skills, ${rows.filter((r) => r.methods.length > 0).length} with methods, ${rows.filter((r) => r.format !== null).length} with a format), ${approved.length} to approve\n`,
   );
   if (values.execute !== true) {
     process.stdout.write(
@@ -164,7 +210,7 @@ async function main(): Promise<void> {
     await db.query("BEGIN");
     for (const r of rows) {
       await db.query(
-        "SELECT public.video_resource_tag($1, $2, $3, $4, $5::text[], $6, $7, $8)",
+        "SELECT public.video_resource_tag($1, $2, $3, $4, $5::text[], $6, $7, $8, $9::text[], $10)",
         [
           r.video_id,
           r.title,
@@ -174,6 +220,8 @@ async function main(): Promise<void> {
           r.domain,
           r.start_seconds,
           "video-tags-review.csv",
+          r.methods,
+          r.format,
         ],
       );
     }
@@ -202,7 +250,10 @@ async function main(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main().catch((err: unknown) => {
     process.stderr.write(
       `${err instanceof Error ? err.message : String(err)}\n`,

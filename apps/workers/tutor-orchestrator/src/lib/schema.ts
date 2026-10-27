@@ -10,6 +10,8 @@
  *   compile in isolation without cross-package tsconfig includes.
  */
 export {
+  OFFERED_VIDEO_FORMATS,
+  OFFERED_VIDEO_METHODS,
   resolvedScopeSchema,
   recentMessageSchema,
   memorySummarySchema,
