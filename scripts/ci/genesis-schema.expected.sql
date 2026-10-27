@@ -11505,6 +11505,8 @@ CREATE FUNCTION public.qotd_question_is_eligible(p_question_id text) RETURNS boo
        AND (q.assets IS NULL OR q.assets IN ('[]'::jsonb, '{}'::jsonb, 'null'::jsonb))
        AND NOT EXISTS (SELECT 1 FROM public.test_form_items t WHERE t.question_id = q.id)
        AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)
+       AND NOT EXISTS (SELECT 1 FROM public.worked_examples w
+                        WHERE w.question_id = q.id AND w.status = 'approved')
   )
 $$;
 
@@ -15803,6 +15805,33 @@ $$;
 
 
 --
+-- Name: worked_examples_leak_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.worked_examples_leak_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.status = 'approved' THEN
+    IF EXISTS (SELECT 1 FROM public.test_form_items t WHERE t.question_id = NEW.question_id) THEN
+      RAISE EXCEPTION 'worked_example_leak: % is in a full-length test form', NEW.question_id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.qotd_schedule s
+                WHERE s.question_id = NEW.question_id
+                  AND s.qotd_date >= public.qotd_today()) THEN
+      RAISE EXCEPTION 'worked_example_leak: % is a QOTD today or later', NEW.question_id
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: abuse_score_incidents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18363,6 +18392,102 @@ COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18): one question per Amer
 
 
 --
+-- Name: worked_examples; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.worked_examples (
+    id text NOT NULL,
+    question_id text NOT NULL,
+    skill_code text NOT NULL,
+    signature_move text NOT NULL,
+    steps jsonb NOT NULL,
+    trap text NOT NULL,
+    check_step text NOT NULL,
+    takeaway text NOT NULL,
+    video_script text NOT NULL,
+    hook_type text NOT NULL,
+    hook_line text NOT NULL,
+    post_on date,
+    status text DEFAULT 'draft'::text NOT NULL,
+    approved_by text,
+    approved_at timestamp with time zone,
+    video_asset_path text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT worked_examples_approval_complete CHECK (((status <> 'approved'::text) OR ((approved_by IS NOT NULL) AND (approved_at IS NOT NULL) AND (post_on IS NOT NULL)))),
+    CONSTRAINT worked_examples_check_step_check CHECK ((length(btrim(check_step)) > 0)),
+    CONSTRAINT worked_examples_hook_line_check CHECK ((length(btrim(hook_line)) > 0)),
+    CONSTRAINT worked_examples_hook_type_check CHECK ((hook_type = ANY (ARRAY['puzzle'::text, 'obvious_answer_trap'::text, 'speed'::text, 'challenge'::text, 'contrarian'::text]))),
+    CONSTRAINT worked_examples_id_from_question CHECK ((id = ('we-'::text || lower(question_id)))),
+    CONSTRAINT worked_examples_signature_move_check CHECK ((length(btrim(signature_move)) > 0)),
+    CONSTRAINT worked_examples_skill_code_check CHECK ((length(btrim(skill_code)) > 0)),
+    CONSTRAINT worked_examples_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'retired'::text]))),
+    CONSTRAINT worked_examples_steps_shape CHECK (((jsonb_typeof(steps) = 'array'::text) AND ((jsonb_array_length(steps) >= 3) AND (jsonb_array_length(steps) <= 6)) AND (NOT jsonb_path_exists(steps, '$[*]?(!((@.type() == "object" && exists (@."notepad"?(@.type() == "string" && @ != ""))) && exists (@."voice"?(@.type() == "string" && @ != ""))))'::jsonpath)))),
+    CONSTRAINT worked_examples_takeaway_check CHECK ((length(btrim(takeaway)) > 0)),
+    CONSTRAINT worked_examples_trap_check CHECK ((length(btrim(trap)) > 0)),
+    CONSTRAINT worked_examples_video_script_check CHECK ((length(btrim(video_script)) > 0))
+);
+
+
+--
+-- Name: TABLE worked_examples; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.worked_examples IS 'Worked examples (Karl, 2026-10-27): one approved breakdown per bank question, posted on post_on. Leak rule enforced by trigger; QOTD eligibility skips approved rows. Server-only.';
+
+
+--
+-- Name: COLUMN worked_examples.check_step; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.worked_examples.check_step IS 'The brief''s `check` (how to confirm the answer). Renamed: CHECK is a reserved word.';
+
+
+--
+-- Name: questions_with_usage; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.questions_with_usage WITH (security_invoker='true') AS
+ SELECT id,
+    section,
+    source_type,
+    domain,
+    skill_codes,
+    difficulty,
+    stem,
+    passage,
+    options,
+    correct_answer,
+    explanation,
+    option_metadata,
+    assets,
+    status,
+    version,
+    created_at,
+    published_at,
+    retired_at,
+    source_lineage,
+    generation_attribution,
+    estimated_time_seconds,
+    premium_flag,
+    quality_score,
+    issue_flags,
+    item_type,
+    correct_variants,
+    ARRAY( SELECT t.tag
+           FROM ( VALUES (1,'qotd'::text,(EXISTS ( SELECT 1
+                           FROM public.qotd_schedule s
+                          WHERE (s.question_id = q.id)))), (2,'full_length'::text,(EXISTS ( SELECT 1
+                           FROM public.test_form_items f
+                          WHERE (f.question_id = q.id)))), (3,'worked_example'::text,(EXISTS ( SELECT 1
+                           FROM public.worked_examples w
+                          WHERE ((w.question_id = q.id) AND (w.status = 'approved'::text)))))) t(ord, tag, present)
+          WHERE t.present
+          ORDER BY t.ord) AS usage_tags
+   FROM public.questions q;
+
+
+--
 -- Name: rate_limit_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19679,6 +19804,75 @@ CREATE TABLE public.video_resources (
 --
 
 COMMENT ON TABLE public.video_resources IS 'Per-video facts and skill tags: the LISA video library (offered whole, by skill) and the render-time join for curriculum_chunks.provenance. Service role only.';
+
+
+--
+-- Name: worked_example_metrics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.worked_example_metrics (
+    id bigint NOT NULL,
+    worked_example_id text NOT NULL,
+    platform text NOT NULL,
+    captured_at timestamp with time zone NOT NULL,
+    views integer NOT NULL,
+    retention_3s_pct numeric(5,2) NOT NULL,
+    avg_watch_seconds numeric(6,2) NOT NULL,
+    completion_pct numeric(5,2) NOT NULL,
+    non_follower_view_pct numeric(5,2) NOT NULL,
+    follows integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT worked_example_metrics_avg_watch_seconds_check CHECK ((avg_watch_seconds >= (0)::numeric)),
+    CONSTRAINT worked_example_metrics_completion_pct_check CHECK (((completion_pct >= (0)::numeric) AND (completion_pct <= (100)::numeric))),
+    CONSTRAINT worked_example_metrics_follows_check CHECK ((follows >= 0)),
+    CONSTRAINT worked_example_metrics_non_follower_view_pct_check CHECK (((non_follower_view_pct >= (0)::numeric) AND (non_follower_view_pct <= (100)::numeric))),
+    CONSTRAINT worked_example_metrics_platform_check CHECK ((platform = ANY (ARRAY['tiktok'::text, 'instagram'::text, 'youtube'::text]))),
+    CONSTRAINT worked_example_metrics_retention_3s_pct_check CHECK (((retention_3s_pct >= (0)::numeric) AND (retention_3s_pct <= (100)::numeric))),
+    CONSTRAINT worked_example_metrics_views_check CHECK ((views >= 0))
+);
+
+
+--
+-- Name: TABLE worked_example_metrics; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.worked_example_metrics IS 'Worked-example social metrics, entered by hand from each platform''s analytics (Karl, 2026-10-27). retention_3s_pct is the brief''s 3s_retention_pct. Server-only.';
+
+
+--
+-- Name: worked_example_metrics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.worked_example_metrics ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.worked_example_metrics_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: worked_example_metrics_monthly; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.worked_example_metrics_monthly WITH (security_invoker='true') AS
+ SELECT DISTINCT ON ((date_trunc('month'::text, m.captured_at)), m.worked_example_id, m.platform) (date_trunc('month'::text, m.captured_at))::date AS month,
+    m.worked_example_id,
+    w.skill_code,
+    w.hook_type,
+    m.platform,
+    m.captured_at,
+    m.views,
+    m.retention_3s_pct,
+    m.avg_watch_seconds,
+    m.completion_pct,
+    m.non_follower_view_pct,
+    m.follows
+   FROM (public.worked_example_metrics m
+     JOIN public.worked_examples w ON ((w.id = m.worked_example_id)))
+  ORDER BY (date_trunc('month'::text, m.captured_at)), m.worked_example_id, m.platform, m.captured_at DESC;
 
 
 --
@@ -21114,6 +21308,38 @@ ALTER TABLE ONLY public.video_resources
 
 
 --
+-- Name: worked_example_metrics worked_example_metrics_one_reading; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_example_metrics
+    ADD CONSTRAINT worked_example_metrics_one_reading UNIQUE (worked_example_id, platform, captured_at);
+
+
+--
+-- Name: worked_example_metrics worked_example_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_example_metrics
+    ADD CONSTRAINT worked_example_metrics_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: worked_examples worked_examples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_examples
+    ADD CONSTRAINT worked_examples_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: worked_examples worked_examples_question_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_examples
+    ADD CONSTRAINT worked_examples_question_id_key UNIQUE (question_id);
+
+
+--
 -- Name: calendar_blocks_student_date; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -22220,6 +22446,13 @@ CREATE INDEX video_resources_skills_idx ON public.video_resources USING gin (ski
 
 
 --
+-- Name: worked_examples_one_per_post_day; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX worked_examples_one_per_post_day ON public.worked_examples USING btree (post_on) WHERE (status = 'approved'::text);
+
+
+--
 -- Name: abuse_score_incidents abuse_score_incidents_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -22653,6 +22886,13 @@ CREATE TRIGGER tutor_memory_summaries_validate_schema BEFORE INSERT OR UPDATE ON
 --
 
 CREATE CONSTRAINT TRIGGER tutor_messages_null_student_only_flagged AFTER INSERT OR UPDATE OF student_id ON public.tutor_messages NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION public.tutor_messages_null_student_only_flagged();
+
+
+--
+-- Name: worked_examples worked_examples_leak_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER worked_examples_leak_guard BEFORE INSERT OR UPDATE ON public.worked_examples FOR EACH ROW EXECUTE FUNCTION public.worked_examples_leak_guard();
 
 
 --
@@ -23957,6 +24197,22 @@ ALTER TABLE ONLY public.tutor_turn_metrics
 
 ALTER TABLE ONLY public.usage_rate_limit_ledger
     ADD CONSTRAINT usage_rate_limit_ledger_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: worked_example_metrics worked_example_metrics_worked_example_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_example_metrics
+    ADD CONSTRAINT worked_example_metrics_worked_example_id_fkey FOREIGN KEY (worked_example_id) REFERENCES public.worked_examples(id);
+
+
+--
+-- Name: worked_examples worked_examples_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_examples
+    ADD CONSTRAINT worked_examples_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
 
 
 --
@@ -25555,6 +25811,18 @@ CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledg
 --
 
 ALTER TABLE public.video_resources ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: worked_example_metrics; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.worked_example_metrics ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: worked_examples; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.worked_examples ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
@@ -27924,6 +28192,13 @@ GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_
 
 
 --
+-- Name: FUNCTION worked_examples_leak_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.worked_examples_leak_guard() FROM PUBLIC;
+
+
+--
 -- Name: TABLE abuse_score_incidents; Type: ACL; Schema: public; Owner: -
 --
 
@@ -29295,6 +29570,20 @@ GRANT SELECT,INSERT ON TABLE public.qotd_schedule TO service_role;
 
 
 --
+-- Name: TABLE worked_examples; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_examples TO service_role;
+
+
+--
+-- Name: TABLE questions_with_usage; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.questions_with_usage TO service_role;
+
+
+--
 -- Name: TABLE rate_limit_ledger; Type: ACL; Schema: public; Owner: -
 --
 
@@ -29992,6 +30281,20 @@ GRANT ALL ON TABLE public.usage_rate_limit_ledger TO service_role;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_resources TO service_role;
+
+
+--
+-- Name: TABLE worked_example_metrics; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_example_metrics TO service_role;
+
+
+--
+-- Name: TABLE worked_example_metrics_monthly; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.worked_example_metrics_monthly TO service_role;
 
 
 --
