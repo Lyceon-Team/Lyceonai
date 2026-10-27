@@ -1,0 +1,19 @@
+{
+  "colours": {
+    "paper": "#FFFDF6",
+    "ink": "#0F2E48",
+    "inkSoft": "rgba(15,46,72,.72)",
+    "border": "rgba(15,46,72,.22)",
+    "red": "#C8352F",
+    "highlight": "#F4C542",
+    "captionText": "#FFFAEF"
+  },
+  "fonts": {
+    "Caveat": { "file": "video-kit/worked-examples/fonts/caveat-latin.woff2", "weight": "400 700", "licence": "video-kit/worked-examples/fonts/OFL-Caveat.md" },
+    "Poppins-600": { "file": "client/public/fonts/poppins-latin-600-normal.woff2", "weight": "600", "licence": "client/public/fonts/OFL-Poppins.md" },
+    "Poppins-700": { "file": "client/public/fonts/poppins-latin-700-normal.woff2", "weight": "700", "licence": "client/public/fonts/OFL-Poppins.md" },
+    "Inter": { "file": "client/public/fonts/inter-latin-400-700-normal.woff2", "weight": "400 700", "licence": "client/public/fonts/OFL-Inter.md" }
+  },
+  "logo": "video-kit/worked-examples/lyceon-logo.png",
+  "gsap": "video-kit/worked-examples/vendor/gsap.min.js"
+}

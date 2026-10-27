@@ -1,0 +1,179 @@
+# Worked examples: at 17:00 UTC, render today's approved example and post it to #social.
+#
+# @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): "a daily job at
+#   17:00 UTC renders any approved example with post_on = today and posts it to #social as the
+#   labelled set 'Worked example · {skill} · {hook_type}': the video, a TikTok title … and a caption
+#   … This is separate from the QOTD set. Karl posts manually."; acceptance "the daily job posts
+#   only approved, post_on-today examples, once"; Karl's pick (2026-10-27): Hyperframes]
+#   | @implemented [2026-10-27]
+#
+# plain English: the code comes from the default branch (a schedule only runs there); the content
+# comes from `social`, checked out beside it with full history (approval is read from the commit
+# that last changed each example). scripts/worked-examples/daily.ts picks the one example due today
+# (America/Chicago) that is not in content/worked-examples/posted.json, refuses it unless GitHub's
+# record shows Karl merged it, runs every content rule, and generates the composition. Then:
+# `hyperframes check`, render, the browser layout check (safe area, blank paper), the MP4 check
+# (1080×1920, 30-60 s, audio, the music peak on record). Only then is the example claimed in
+# posted.json, committed and pushed to `social` with this run's token (as the approval stamp is,
+# Karl's ruling 2026-10-15), and only after that push succeeds is it posted: a re-run finds the
+# claim and posts nothing, so it is posted once. A post that fails after the claim is re-posted by
+# hand (docs/runbooks/worked-examples.md). Nothing due: the run ends green with a note.
+#
+# Pull requests that touch the pipeline run the same path on the fixture tree
+# (tests/fixtures/worked-examples/social) with --dry-run: placeholder approval, no claim, no post,
+# the MP4 uploaded for review.
+# Setup: docs/runbooks/worked-examples.md.
+name: Worked example daily
+
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  pull_request:
+    paths:
+      - .github/workflows/worked-example-daily.yml
+      - scripts/worked-examples/**
+      - shared/worked-examples/**
+      - packages/shared/src/worked-example-schema.ts
+      - video-kit/worked-examples/**
+      - tests/fixtures/worked-examples/**
+  workflow_dispatch:
+    inputs:
+      slack_channel:
+        description: "Slack channel ID for this run only, e.g. a test channel (empty: SOCIAL_SLACK_CHANNEL_ID)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: worked-example-daily-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  HYPERFRAMES_VERSION: "0.8.143"
+  HYPERFRAMES_NO_TELEMETRY: "1"
+  DO_NOT_TRACK: "1"
+  OUT: we-out
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (code)
+        uses: actions/checkout@v4
+
+      - name: Checkout social (content, full history)
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: social
+          path: social
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Select today's example
+        id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            pnpm exec tsx scripts/worked-examples/daily.ts select \
+              --content tests/fixtures/worked-examples/social --out "$OUT" --dry-run --date 2026-11-02
+          else
+            pnpm exec tsx scripts/worked-examples/daily.ts select --content social --out "$OUT"
+          fi
+          if [ -f "$OUT/post.json" ]; then echo "due=true" >> "$GITHUB_OUTPUT"; else echo "due=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Install Chromium (the build @playwright/test pins) and FFmpeg
+        if: steps.select.outputs.due == 'true'
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-noto-color-emoji
+          shell=$(find "$HOME/.cache/ms-playwright" -type f \( -name headless_shell -o -name chrome-headless-shell \) -path '*chromium_headless_shell-*' | head -1)
+          test -x "$shell"
+          echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
+
+      - name: Check and render
+        if: steps.select.outputs.due == 'true'
+        run: |
+          set -euo pipefail
+          id=$(jq -r .id "$OUT/post.json")
+          ( cd "$OUT/composition" && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" check \
+            && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/$OUT/$id.mp4" )
+
+      - name: Layout check (safe area, blank paper) and MP4 check
+        if: steps.select.outputs.due == 'true'
+        run: |
+          pnpm exec tsx scripts/worked-examples/layout-check.ts "$OUT/composition"
+          pnpm exec tsx scripts/worked-examples/daily.ts verify --out "$OUT"
+
+      - name: Upload the video
+        if: steps.select.outputs.due == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: worked-example
+          path: |
+            ${{ env.OUT }}/*.mp4
+            ${{ env.OUT }}/post.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Slack post (dry run)
+        if: steps.select.outputs.due == 'true' && github.event_name == 'pull_request'
+        run: pnpm exec tsx scripts/worked-examples/post-to-slack.ts --dir "$OUT" --dry-run
+
+      # The claim is pushed BEFORE the post: a push that fails stops the run with nothing posted,
+      # and a re-run finds the claim and posts nothing. Posted once.
+      - name: Claim in posted.json and push to social
+        if: steps.select.outputs.due == 'true' && github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/worked-examples/daily.ts claim --content social --out "$OUT" --run "$GITHUB_RUN_ID"
+          cd social
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content/worked-examples/posted.json
+          git commit -m "Worked example posted: $(jq -r .id "../$OUT/post.json") (run $GITHUB_RUN_ID)"
+          git push origin HEAD:social
+
+      - name: Post to Slack
+        if: steps.select.outputs.due == 'true' && github.event_name != 'pull_request'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/worked-examples/post-to-slack.ts --dir "$OUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Worked example"
+            if [ -f "$OUT/post.json" ]; then
+              echo
+              echo "**$(jq -r .label "$OUT/post.json")** · posts on $(jq -r .post_on "$OUT/post.json")"
+              echo
+              echo '```text'
+              jq -r .title "$OUT/post.json"
+              echo
+              jq -r .caption "$OUT/post.json"
+              echo '```'
+            else
+              echo "Nothing due today (or the selection failed: see 'Select today's example')."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

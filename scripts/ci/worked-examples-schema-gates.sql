@@ -331,4 +331,6 @@ BEGIN
   RAISE NOTICE '    OK W-08 metric bounds, platform list, one reading per time, FK; monthly readout = latest';
 END $$;
 
+DO $$ BEGIN RAISE NOTICE 'WORKED EXAMPLES SCHEMA GATES: PASS'; END $$;
+
 ROLLBACK;

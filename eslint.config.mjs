@@ -38,6 +38,9 @@ export default tseslint.config(
       // 2026-09-17. Nothing imports it, nothing builds it, nothing ships it.
       // It is tracked; whether it should be is the owner's call.
       "brag-output-*/**",
+      // Vendored third-party build (GSAP 3.14.2, minified), copied from the /brag composition into
+      // the worked-example asset kit. Not our source; the kit's own code is in scripts/worked-examples.
+      "video-kit/**/vendor/**",
     ],
   },
   js.configs.recommended,
