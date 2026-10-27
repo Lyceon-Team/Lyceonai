@@ -22,7 +22,7 @@
  * Usage:
  *   NODE_USE_ENV_PROXY=1 DATABASE_URL=... pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts \
  *     [--runs 5] [--batch <uuid>] [--case G0-2-03] [--judge-model gemini-3.1-pro-preview]
- *     [--prompt-version lisa-default-v3 | lisa-default-v4]
+ *     [--prompt-version lisa-default-v3 | lisa-default-v4] [--report]
  *
  * Vertex credentials are attached by the egress proxy or ADC; nothing is read from the
  * environment for them.
@@ -57,6 +57,7 @@ type Options = {
   promptVersion: string;
   onlyCase: string | null;
   databaseUrl: string;
+  reportOnly: boolean;
 };
 
 function readOptions(): Options {
@@ -69,6 +70,8 @@ function readOptions(): Options {
       // The prompt artifact every case is replayed on, by exact version (v4 is not the latest
       // for any variant, so it is only reachable this way).
       "prompt-version": { type: "string", default: "lisa-default-v3" },
+      // Print pass rates and judge-vs-Karl agreement from the table; no replay, no model call.
+      report: { type: "boolean", default: false },
     },
   });
   const runs = Number(values.runs);
@@ -85,6 +88,7 @@ function readOptions(): Options {
     promptVersion: values["prompt-version"],
     onlyCase: values.case ?? null,
     databaseUrl,
+    reportOnly: values.report,
   };
 }
 
@@ -155,12 +159,70 @@ type CaseRow = {
   scan_correct_answer: string | null;
 };
 
+/** Pass rates per prompt version and case, from every run in the set. Counts only, never text. */
+async function printPassRates(client: pg.Client): Promise<void> {
+  const rows = await client.query<{
+    prompt_version: string;
+    case_id: string;
+    verdict: string;
+    n: number;
+  }>(
+    `SELECT r.record->>'prompt_version' AS prompt_version, r.case_id, r.verdict, count(*)::int AS n
+       FROM public.tutor_eval_runs r JOIN public.tutor_eval_cases c USING (case_id)
+      WHERE c.set_version = $1
+      GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
+    [TEACHING_QUALITY_SET_VERSION],
+  );
+  for (const r of rows.rows) {
+    process.stdout.write(
+      `${r.prompt_version} ${r.case_id} ${r.verdict}: ${r.n}\n`,
+    );
+  }
+}
+
+/** Judge-vs-Karl agreement over every graded run in the set (Doc 03D §5.3). */
+async function printAgreement(client: pg.Client): Promise<void> {
+  const graded = await client.query<{
+    verdict: string;
+    owner_grade: string | null;
+  }>(
+    `SELECT r.verdict, r.owner_grade
+         FROM public.tutor_eval_runs r JOIN public.tutor_eval_cases c USING (case_id)
+        WHERE c.set_version = $1`,
+    [TEACHING_QUALITY_SET_VERSION],
+  );
+  const agreement = tutorEvalAgreement(
+    graded.rows.map((r: { verdict: string; owner_grade: string | null }) => ({
+      verdict: tutorEvalVerdictSchema.parse(r.verdict),
+      owner_grade:
+        r.owner_grade === null
+          ? null
+          : tutorEvalOwnerGradeSchema.parse(r.owner_grade),
+    })),
+  );
+  process.stdout.write(
+    `agreement (judge vs Karl): ${agreement.agreed}/${agreement.graded} graded runs ${JSON.stringify(agreement.pairs)}\n`,
+  );
+}
+
 async function main(): Promise<void> {
-  const { runs, batchId, judgeModel, promptVersion, onlyCase, databaseUrl } =
-    readOptions();
+  const {
+    runs,
+    batchId,
+    judgeModel,
+    promptVersion,
+    onlyCase,
+    databaseUrl,
+    reportOnly,
+  } = readOptions();
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
+    if (reportOnly) {
+      await printPassRates(client);
+      await printAgreement(client);
+      return;
+    }
     const cases = await client.query<CaseRow>(
       `SELECT case_id, set_version, request, scan_correct_answer
          FROM public.tutor_eval_cases
@@ -241,27 +303,9 @@ async function main(): Promise<void> {
       );
     }
 
-    const graded = await client.query<{
-      verdict: string;
-      owner_grade: string | null;
-    }>(
-      `SELECT r.verdict, r.owner_grade
-         FROM public.tutor_eval_runs r JOIN public.tutor_eval_cases c USING (case_id)
-        WHERE c.set_version = $1`,
-      [TEACHING_QUALITY_SET_VERSION],
-    );
-    const agreement = tutorEvalAgreement(
-      graded.rows.map((r: { verdict: string; owner_grade: string | null }) => ({
-        verdict: tutorEvalVerdictSchema.parse(r.verdict),
-        owner_grade:
-          r.owner_grade === null
-            ? null
-            : tutorEvalOwnerGradeSchema.parse(r.owner_grade),
-      })),
-    );
+    await printAgreement(client);
     process.stdout.write(
-      `agreement (judge vs Karl): ${agreement.agreed}/${agreement.graded} graded runs ${JSON.stringify(agreement.pairs)}\n` +
-        `measured cost this batch: $${totalUsd.toFixed(4)} (third-party list prices, scripts/rag/vertex.ts)\n`,
+      `measured cost this batch: $${totalUsd.toFixed(4)} (third-party list prices, scripts/rag/vertex.ts)\n`,
     );
   } finally {
     await client.end();
