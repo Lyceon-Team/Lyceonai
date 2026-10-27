@@ -13,6 +13,10 @@
  *        straight to "5 more?" if answered; a nightly `landing_session_summary`; under-13 and
  *        unknown age always get dashboard with no row), E (behind the runtime-config kill switch)]
  *       | @implemented [2026-10-26]
+ * @spec [owner change "Smart landing: replacing the multi-section sets" (Karl, 2026-10-26, later the
+ *        same day): `set_math_5` (5 Math, first 2 easy or medium, already on Q1) replaces
+ *        `set_mixed` and `set_math_first`; "5 more?" is 5 Math, same rules] | @implemented
+ *        [2026-10-26]. Ruling D's "math first 5+5" above is superseded by it.
  *
  * plain English, `openLanding` in order (each step that ends the landing returns `NO_LANDING`, so
  * the student simply stays on Home):
@@ -23,8 +27,8 @@
  *   3. The window's arm: the stored one if the window already has a row, else drawn now from the
  *      eligibility read now (and frozen with it). `landing_claim_open` stores the window once and
  *      claims a show only for the first open of this Chicago day in the window.
- *   4. The arm is served. One that cannot be (no quota, no question today, no block today, ...)
- *      shows Home and records why. `landing_assigned` (first open of the window) and
+ *   4. The arm is served. One that cannot be (no quota, no question today, no block today, an
+ *      arm retired since the window was assigned, ...) shows Home and records why. `landing_assigned` (first open of the window) and
  *      `landing_shown` (every show) are sent.
  * The client tells the server only its device class and instance id; the decision, the clock and
  * the role are the server's.
@@ -44,15 +48,16 @@ import {
   LANDING_WINDOW_MS,
   landingWindowIndex,
   type DeviceClass,
-  type LandingArm,
+  isRetiredLandingArm,
   type LandingConfig,
   type LandingEligibilityFacts,
   type LandingFallbackReason,
   type LandingOpenResponse,
+  type StoredLandingArm,
 } from "../../../packages/shared/src/smart-landing-schema";
 import { emitEventWith, type EmitDeps } from "../../lib/analytics/emit-event";
 import { logger } from "../../logger";
-import { landingArmFor, type LandingSetKind } from "./assignment";
+import { landingArmFor } from "./assignment";
 
 const COMPONENT = "LANDING";
 
@@ -66,8 +71,8 @@ export type LandingCaller = {
 
 export type ClaimedShow = {
   show_id: string;
-  arm: LandingArm;
-  eligible_arms: LandingArm[];
+  arm: StoredLandingArm;
+  eligible_arms: StoredLandingArm[];
   first_in_window: boolean;
 };
 
@@ -86,15 +91,18 @@ export type LandingDeps = {
   readWindowArm: (
     profileId: string,
     windowIndex: number,
-  ) => Promise<{ arm: LandingArm; eligible_arms: LandingArm[] } | null>;
+  ) => Promise<{
+    arm: StoredLandingArm;
+    eligible_arms: StoredLandingArm[];
+  } | null>;
   readFacts: (profileId: string) => Promise<LandingEligibilityFacts>;
   /** The runner of the student's most recent practice/review session active since `since`. */
   resumePath: (profileId: string, since: Date) => Promise<string | null>;
   claimOpen: (args: {
     profileId: string;
     windowIndex: number;
-    arm: LandingArm;
-    eligibleArms: LandingArm[];
+    arm: StoredLandingArm;
+    eligibleArms: StoredLandingArm[];
     deviceClass: DeviceClass;
     now: Date;
   }) => Promise<ClaimedShow | null>;
@@ -103,9 +111,9 @@ export type LandingDeps = {
   qotdAvailable: (caller: LandingCaller, now: Date) => Promise<boolean>;
   /** A free student still has practice quota today (always true for an entitled one). */
   quotaAllows: (caller: LandingCaller) => Promise<boolean>;
+  /** A Math-only landing set (`LANDING_SET_SECTIONS`) with the easy/medium lead. */
   startSet: (args: {
     caller: LandingCaller;
-    kind: Exclude<LandingSetKind, "scoped">;
     size: number;
     idempotencyKey: string;
     clientInstanceId: string;
@@ -121,7 +129,7 @@ export type LandingDeps = {
     profileId: string,
     windowIndex: number,
     chicagoDay: string,
-  ) => Promise<{ show_id: string; arm: LandingArm } | null>;
+  ) => Promise<{ show_id: string; arm: StoredLandingArm } | null>;
   recordEscape: (args: {
     showId: string;
     profileId: string;
@@ -129,7 +137,7 @@ export type LandingDeps = {
     maxSeconds: number;
   }) => Promise<{
     window_index: number;
-    arm: LandingArm;
+    arm: StoredLandingArm;
     device_class: DeviceClass;
   } | null>;
   claimSummaries: (
@@ -140,7 +148,7 @@ export type LandingDeps = {
       show_id: string;
       profile_id: string;
       window_index: number;
-      arm: LandingArm;
+      arm: StoredLandingArm;
       device_class: DeviceClass;
       questions_answered: number;
     }[]
@@ -176,11 +184,12 @@ export function chicagoDate(now: Date): string {
 async function serveArm(
   deps: LandingDeps,
   caller: LandingCaller,
-  arm: LandingArm,
+  arm: StoredLandingArm,
   windowIndex: number,
   clientInstanceId: string,
   now: Date,
 ): Promise<ServeOutcome> {
+  if (isRetiredLandingArm(arm)) return { ok: false, reason: "arm_retired" };
   switch (arm) {
     case "dashboard":
       return { ok: true, path: null };
@@ -193,12 +202,9 @@ async function serveArm(
       }
       return { ok: true, path: `/qotd?${LANDING_RUNNER_QUERY}` };
     }
-    case "set_mixed":
-    case "set_math_first": {
-      const kind = arm === "set_mixed" ? "mixed" : "math_first";
+    case "set_math_5": {
       const set = await deps.startSet({
         caller,
-        kind,
         size: LANDING_SET_SIZE,
         idempotencyKey: `landing:${windowIndex}:${chicagoDate(now)}:${arm}`,
         clientInstanceId,
@@ -330,7 +336,8 @@ export async function recordLandingEscape(
 
 /**
  * POST /api/landing/more: "5 more?" after today's question, only when today's show is a
- * `qotd_then_more` one. A 5-question mixed set with the easy/medium lead; replayed, not doubled.
+ * `qotd_then_more` one. A 5-question Math set with the easy/medium lead (Karl, 2026-10-26);
+ * replayed, not doubled.
  */
 export async function startLandingMore(
   deps: LandingDeps,
@@ -348,7 +355,6 @@ export async function startLandingMore(
   if (show === null || show.arm !== "qotd_then_more") return { path: null };
   const set = await deps.startSet({
     caller,
-    kind: "mixed",
     size: LANDING_MORE_SIZE,
     idempotencyKey: `landing-more:${show.show_id}`,
     clientInstanceId,

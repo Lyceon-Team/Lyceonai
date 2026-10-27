@@ -15,6 +15,10 @@
  *        submit "Want to walk through this one? Ask me about any step." (ScopedTutorPanel)]
  * @implemented [2026-10-23]
  *
+ * @spec [owner brief "restore the pre-#1300 runner layout" (Karl, 2026-10-26): in the practice and
+ *        review runners the OPEN panel is a docked right column, not floating (`docked`, below);
+ *        Home and Review keep the floating launcher and panel] | @implemented [2026-10-26]
+ *
  * @spec [owner brief "LISA chat dock" (Karl, 2026-10-22; revised: "floating bubble, no bar"):
  *        collapsed, a round LISA bubble named "Ask LISA"; expanded, a ~380px panel up to ~70vh with
  *        Minimize and Close; never over Submit/Next or the answer choices; clear of the safe area,
@@ -75,6 +79,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "wouter";
 import { Minus, X } from "lucide-react";
 import { useUpgradeModal } from "@/components/billing/UpgradeModal";
@@ -255,6 +260,36 @@ function useDockColumn(
   return column;
 }
 
+/**
+ * @spec [owner brief "restore the pre-#1300 runner layout" (Karl, 2026-10-26): "LISA is a docked
+ *       right column, full height of the runner body, not a floating panel ... Minimizing LISA
+ *       collapses its column to the Ask LISA launcher ... Reopening restores the column"; "Home
+ *       and Review keep the floating launcher"] | @implemented [2026-10-26]
+ * plain English: a runner's dock. The OPEN panel is drawn into the runner's own right column
+ * (`slot`, portalled) instead of floating; minimized or closed, the dock is the same floating
+ * launcher as everywhere else, and the runner hides the column so the question and the
+ * calculator take the space back. One panel implementation for both placements (DockPanel).
+ */
+export type ChatDockDocked = {
+  /** The runner's LISA column; the open (and the minimized, hidden) panel is portalled into it. */
+  slot: HTMLElement | null;
+  /** Open on mount: the review runner starts with LISA docked open (Karl, 2026-10-26). */
+  defaultOpen: boolean;
+  /** Told on every open, minimize and close, so the runner lays its column out. */
+  onOpenChange: (open: boolean) => void;
+  /**
+   * @spec [owner ruling on #1322 (Karl, 2026-10-26): below W3 "the calculator and the docked
+   *       LISA column are mutually exclusive ... the most recently opened tool wins"; "an
+   *       automatic fallback-minimize should not count as the student's own minimize"]
+   *       | @implemented [2026-10-26]
+   * plain English: the runner has given LISA's place to the calculator. The dock SHOWS as
+   * minimized (the launcher, the panel hidden with its draft and thread) without changing its
+   * own open state, so the student's own choice is untouched; the launcher (or the runner's
+   * link) then opens it as usual, which tells the runner LISA is wanted again.
+   */
+  suppressed?: boolean;
+};
+
 type ChatDockProps = {
   scope: ChatDockScope;
   /**
@@ -262,10 +297,12 @@ type ChatDockProps = {
    * scroll element. Omitted on Home and Review: the App shell's middle column (`main#main`).
    */
   anchor?: RefObject<HTMLElement | null>;
+  /** A runner's docked column (2026-10-26); omitted on Home and Review (the floating panel). */
+  docked?: ChatDockDocked;
 };
 
 export const ChatDock = forwardRef<ChatDockHandle, ChatDockProps>(
-  function ChatDock({ scope, anchor }, handle): JSX.Element | null {
+  function ChatDock({ scope, anchor, docked }, handle): JSX.Element | null {
     const isPhone = useMediaQuery(PHONE_WIDTH_QUERY, false);
     const access = useFeatureAccess();
     // The rail's own reading of the OQ-29 map: the same lock, never re-derived.
@@ -277,23 +314,31 @@ export const ChatDock = forwardRef<ChatDockHandle, ChatDockProps>(
     const lift = Math.max(chrome, column?.bottom ?? 0) + DOCK_EDGE_PX;
 
     /** "collapsed": the bubble. "open": the panel. "minimized": the bubble, panel kept. */
-    const [view, setView] = useState<"collapsed" | "open" | "minimized">(
-      "collapsed",
+    const [view, setViewState] = useState<"collapsed" | "open" | "minimized">(
+      docked?.defaultOpen === true ? "open" : "collapsed",
     );
+    // Docked (a runner): the runner lays its column out from this, so every change is told.
+    const setView = (next: "collapsed" | "open" | "minimized"): void => {
+      setViewState(next);
+      docked?.onOpenChange(next === "open");
+    };
     const bubbleRef = useRef<HTMLButtonElement | null>(null);
     const panelRef = useRef<HTMLElement | null>(null);
     const titleId = useId();
     // Where focus goes after the view changes: into the panel on open, back to the bubble after.
     const focusTarget = useRef<"panel" | "bubble" | null>(null);
 
-    const isOpen = view === "open";
+    // What is drawn: a docked dock the runner has suppressed shows as minimized (2026-10-26).
+    const suppressed = docked?.suppressed === true;
+    const shownView = suppressed && view === "open" ? "minimized" : view;
+    const isOpen = shownView === "open";
     // Opening and closing are the student's clicks (and Esc); focus follows them, once each.
     useEffect(() => {
       const target = focusTarget.current;
       focusTarget.current = null;
       if (target === "panel") panelRef.current?.focus();
       if (target === "bubble") bubbleRef.current?.focus();
-    }, [view]);
+    }, [shownView]);
 
     const openFromLauncher = (): void => {
       if (lockReason !== null) {
@@ -330,28 +375,37 @@ export const ChatDock = forwardRef<ChatDockHandle, ChatDockProps>(
         ? `min(${DOCK_PANEL_MAX_PX}px, calc(100vw - ${DOCK_EDGE_PX * 2}px))`
         : `${Math.max(0, Math.min(DOCK_PANEL_MAX_PX, column.width - DOCK_PANEL_COLUMN_INSET_PX))}px`;
 
+    // The panel stays mounted once opened (minimized keeps the draft and the thread) and
+    // unmounts on Close. Locked: it never mounts, so no tutor route is called.
+    const panel =
+      !locked && view !== "collapsed" ? (
+        <DockPanel
+          panelRef={panelRef}
+          titleId={titleId}
+          scope={scope}
+          hidden={!isOpen}
+          lift={lift}
+          width={panelWidth}
+          docked={docked !== undefined}
+          onMinimize={minimize}
+          onClose={close}
+        />
+      ) : null;
+
     return (
       <div
         className="pointer-events-none fixed z-40 flex flex-col items-end"
         style={{ bottom, right }}
         data-testid="chat-dock"
         data-scope={scope.kind}
-        data-view={view}
+        data-view={shownView}
+        data-placement={docked === undefined ? "floating" : "docked"}
       >
-        {/* The panel stays mounted once opened (minimized keeps the draft and the thread) and
-          unmounts on Close. Locked: it never mounts, so no tutor route is called. */}
-        {!locked && view !== "collapsed" ? (
-          <DockPanel
-            panelRef={panelRef}
-            titleId={titleId}
-            scope={scope}
-            hidden={!isOpen}
-            lift={lift}
-            width={panelWidth}
-            onMinimize={minimize}
-            onClose={close}
-          />
-        ) : null}
+        {docked === undefined
+          ? panel
+          : panel !== null && docked.slot !== null
+            ? createPortal(panel, docked.slot)
+            : null}
         {isOpen ? null : (
           <DockBubbleReport bubbleRef={bubbleRef}>
             <LisaLauncher
@@ -398,6 +452,7 @@ function DockPanel({
   hidden,
   lift,
   width,
+  docked,
   onMinimize,
   onClose,
 }: {
@@ -408,6 +463,8 @@ function DockPanel({
   lift: number;
   /** min(380px, the column's width - 24px) (owner brief 2026-10-23). */
   width: string;
+  /** In a runner's column (2026-10-26): it fills the column instead of sizing itself. */
+  docked: boolean;
   onMinimize: () => void;
   onClose: () => void;
 }): JSX.Element {
@@ -427,11 +484,16 @@ function DockPanel({
       // `hidden` as a class too: the `flex` display would otherwise override the attribute and
       // leave a minimized panel on screen (found by tests/e2e/lisa-dock.spec.ts).
       className={`ph-no-capture pointer-events-auto ${hidden ? "hidden" : "flex"} flex-col overflow-hidden rounded-lg border border-lyc-rule-strong bg-lyc-sheet text-lyc-ink ${LYC_FOCUS}`}
-      style={{
-        width,
-        height: `min(70vh, calc(100dvh - ${lift}px - ${DOCK_EDGE_PX * 2}px))`,
-      }}
+      style={
+        docked
+          ? { width: "100%", height: "100%" }
+          : {
+              width,
+              height: `min(70vh, calc(100dvh - ${lift}px - ${DOCK_EDGE_PX * 2}px))`,
+            }
+      }
       data-testid="chat-dock-panel"
+      data-placement={docked ? "docked" : "floating"}
     >
       <DockHeader
         titleId={titleId}

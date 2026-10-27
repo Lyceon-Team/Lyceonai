@@ -39,6 +39,11 @@ export type DateStyle =
   | "weekday-month-day"
   /** "Fri, Sep 25" */
   | "short-weekday-month-day"
+  /**
+   * "Oct 21": the LISA history's question label (owner ruling, Karl, 2026-10-24: "Practice
+   * question · Oct 21"), the short month as "Fri, Sep 25" spells it, without the weekday.
+   */
+  | "short-month-day"
   /** "2:05 PM" */
   | "time"
   /** "Fri, Sep 25, 12:49 PM" */
@@ -121,6 +126,10 @@ export function formatDate(
     }
     case "short-weekday-month-day":
       return shortWeekdayMonthDay(p);
+    case "short-month-day": {
+      const d = dayParts(p, { month: "short", day: "numeric" });
+      return `${d.month ?? ""} ${d.day ?? ""}`;
+    }
     case "time":
       return clock(p);
     case "date-time":

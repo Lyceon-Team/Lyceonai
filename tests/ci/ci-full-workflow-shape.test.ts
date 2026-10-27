@@ -183,6 +183,8 @@ describe("the verdict and the trigger", () => {
       "browser",
       // Owner ruling on #1300 (2026-10-23): the LISA chat dock's browser spec.
       "lisa-dock-browser",
+      // Smart landing (Karl, 2026-10-26, item 4): the landing browser spec and its planted defect.
+      "smart-landing-browser",
     ]) {
       expect(needs).toContain(n);
     }
@@ -200,6 +202,21 @@ describe("the verdict and the trigger", () => {
     );
     expect(verdict?.env?.RESULTS ?? "").toContain(
       "${{ needs.lisa-dock-browser.result }}",
+    );
+  });
+
+  it("the smart landing browser job runs with the full tier, against Postgres, through its planted-defect script, and its result is in the verdict", () => {
+    const landing = job("smart-landing-browser");
+    expect(landing.needs).toBe("scope");
+    expect(landing.if).toBe("${{ needs.scope.outputs.run == 'true' }}");
+    const steps = (landing.steps ?? []).map((st) => st.run ?? "");
+    expect(steps).toContain("bash scripts/ci/smart-landing-e2e.mutations.sh");
+    expect(JSON.stringify(landing)).toContain("pgvector/pgvector");
+    const verdict = (job("ci-full").steps ?? []).find(
+      (st) => st.name === "Verdict",
+    );
+    expect(verdict?.env?.RESULTS ?? "").toContain(
+      "${{ needs.smart-landing-browser.result }}",
     );
   });
 
