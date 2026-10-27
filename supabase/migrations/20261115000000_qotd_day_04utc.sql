@@ -35,6 +35,9 @@
 --     the switch, so that habit skips exactly one label, the first 04:00 UTC day. Once that day is
 --     past, it counts for the streak's run of any student who answered the day before it (a
 --     one-time grace). It is never "today done" and never a ticked day in "This week".
+--     It cannot tell that habit from a student who answered the day before the cutover and then
+--     skipped the first new day, so some students gain that one day. RULED 2026-10-27 (Karl, on
+--     #1337): keep the bridge as built; no one loses a streak, a one-time gain is accepted.
 --  Not changed: `qotd_daily_notify` (the 17:00 Chicago reminder: at 17:00 Chicago both rules give
 --  the same date, so its one-event-per-student-per-day id is unchanged) and its expiry (the end of
 --  the Chicago day, after the 21:00 quiet-hours start either way).
