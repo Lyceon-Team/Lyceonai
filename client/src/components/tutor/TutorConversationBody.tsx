@@ -140,6 +140,8 @@ export function TutorConversationBody({
   onStarted,
   onEnded,
   guidedChoices = null,
+  autoSend = null,
+  onAutoSent,
 }: {
   /**
    * What the conversation is about (the session item's id; "general"). State created for one
@@ -164,6 +166,15 @@ export function TutorConversationBody({
    * general mode).
    */
   guidedChoices?: GuidedChoicesState | null;
+  /**
+   * A guided choice tapped OUTSIDE the panel (the phone runner's LISA strip, owner ruling on
+   * #1349, 2026-10-27): the panel opened for it and sends it once, exactly as a tap inside would:
+   * it creates the conversation when there is none, else it is the thread's next turn. `nonce`
+   * tells two taps of the same choice apart.
+   */
+  autoSend?: { nonce: number; intent: ReviewIntent } | null;
+  /** The tap was handed to the send path; the caller clears `autoSend`. */
+  onAutoSent?: () => void;
 }): JSX.Element {
   const createConversation = useCreateConversation();
   // P2 §3.1 (2026-10-26): one first-message create at a time, refused synchronously, so a burst of
@@ -225,6 +236,19 @@ export function TutorConversationBody({
     isLisaEntitlementDenial(lookup.error) ||
     isLisaEntitlementDenial(createError);
 
+  // A tap from outside the panel, with no conversation yet: the same create-then-send as a tap
+  // on the opener's choices (a server call, so an effect; the ref keeps each tap to one send).
+  // With a conversation, the thread sends it (TutorThread below).
+  const autoSentHere = useRef<number | null>(null);
+  useEffect(() => {
+    if (autoSend === null || autoSentHere.current === autoSend.nonce) return;
+    if (lookup.isLoading || denied || conversationId !== null) return;
+    autoSentHere.current = autoSend.nonce;
+    startConversation(REVIEW_INTENT_LABELS[autoSend.intent], autoSend.intent);
+    onAutoSent?.();
+    // Runs when the tap arrives or the lookup settles; `startConversation` is this render's.
+  }, [autoSend, lookup.isLoading, denied, conversationId]);
+
   const pendingMessage: TutorMessage | null = pendingHere
     ? {
         message_id: "pending-first-message",
@@ -244,6 +268,14 @@ export function TutorConversationBody({
         firstMessage={startedHere?.firstMessage ?? null}
         firstIntent={startedHere?.firstIntent ?? null}
         guidedChoices={guidedChoices}
+        // A tap this body already handed over (it created this conversation) is not the
+        // thread's to send again.
+        autoSend={
+          autoSend !== null && autoSentHere.current !== autoSend.nonce
+            ? autoSend
+            : null
+        }
+        onAutoSent={onAutoSent}
         copy={copy}
         onEnded={() => {
           // An ended conversation is never shown again here: the next message starts a new one.
@@ -326,6 +358,8 @@ function TutorThread({
   firstMessage,
   firstIntent,
   guidedChoices,
+  autoSend,
+  onAutoSent,
   copy,
   onEnded,
 }: {
@@ -335,6 +369,8 @@ function TutorThread({
   /** The guided choice that first message was, or null when it was typed. */
   firstIntent: ReviewIntent | null;
   guidedChoices: GuidedChoicesState | null;
+  autoSend: { nonce: number; intent: ReviewIntent } | null;
+  onAutoSent: (() => void) | undefined;
   copy: TutorBodyCopy;
   onEnded: () => void;
 }): JSX.Element {
@@ -399,6 +435,20 @@ function TutorThread({
     setOtherWaysToggled(null);
     void send(text);
   };
+
+  // A tap from outside the panel on a conversation that exists: the thread's next turn, once the
+  // thread has loaded, its first message (if it was just created for one) has gone, and no turn
+  // is in flight (the send lock would refuse it, and the tap would be lost).
+  const autoSentHere = useRef<number | null>(null);
+  const turnBusy = turnState.kind === "thinking";
+  useEffect(() => {
+    if (autoSend === null || autoSentHere.current === autoSend.nonce) return;
+    if (isLoading || turnBusy || firstAwaiting) return;
+    autoSentHere.current = autoSend.nonce;
+    void send(REVIEW_INTENT_LABELS[autoSend.intent], autoSend.intent);
+    onAutoSent?.();
+    // Runs when the tap arrives, the thread finishes loading, or a turn in flight settles.
+  }, [autoSend, isLoading, turnBusy, firstAwaiting]);
 
   // "Other ways" (owner brief 2026-10-27): the choices stay reachable after the first message,
   // folded behind one quiet control. A video choice that found no video opens them again (the
