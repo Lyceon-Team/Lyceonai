@@ -15239,6 +15239,61 @@ COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean)
 
 
 --
+-- Name: sweep_tutor_eval_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '90 days';
+  v_cases  integer;
+  v_runs   integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_eval_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_cases
+      FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_runs
+      FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+    GET DIAGNOSTICS v_runs = ROW_COUNT;
+
+    DELETE FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+    GET DIAGNOSTICS v_cases = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_eval_cases'; deleted_count := v_cases; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_eval_runs';  deleted_count := v_runs;  cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) IS 'SCL-251: G0-2 evaluation cases and runs, 90 days fixed from import (captured_at) / creation. Called by the 90d retention tier.';
+
+
+--
 -- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -19423,7 +19478,7 @@ CREATE TABLE public.tutor_eval_cases (
 -- Name: TABLE tutor_eval_cases; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.tutor_eval_cases IS 'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27).';
+COMMENT ON TABLE public.tutor_eval_cases IS 'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27). Kept 90 days from import (SCL-251).';
 
 
 --
@@ -28019,6 +28074,14 @@ GRANT ALL ON FUNCTION public.sweep_rate_limit_ledger_anon() TO service_role;
 
 REVOKE ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) TO service_role;
 
 
 --

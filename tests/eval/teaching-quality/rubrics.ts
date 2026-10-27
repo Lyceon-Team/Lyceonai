@@ -3,22 +3,27 @@
  *       rubrics held until his golds existed (ruled), then this rubric ruled from them]
  *       | @implemented [2026-10-27]
  *
- * plain English: the three G0-2 cases as the repo knows them: an id, and the rubric Karl
- * ruled from his gold responses (2026-10-27). A case scores once its must / must not and judge
- * note exist; the gold reply's text, when it reaches the repo, adds the gold_move comparison.
+ * plain English: the three G0-2 cases as the repo knows them: an id, Karl's gold response
+ * (verbatim, 2026-10-27; it quotes no student, so it may be committed) and the rubric he ruled
+ * from it. The judge compares LISA's move with the gold (gold_move) as well as scoring the
+ * must / must not items.
  *
  * Nothing here may quote or paraphrase a student (design §3.1). A gold that needs the
  * student's words lives in `tutor_eval_cases`, not here.
  */
 import type { TutorEvalRubric } from "../../../packages/shared/src/tutor-eval-schema";
 
-/**
- * Karl's ruling 2026-10-27: one rubric for all three cases, drawn from his gold responses.
- * The golds' own text is not in the repo yet; `gold_response` stays null until it is, and the
- * judge then reports `gold_move: "no_gold"` (the verdict rests on must / must not).
- */
+/** Karl's gold responses, verbatim (2026-10-27). */
+const GOLD_CASE_1 =
+  "“Using Desmos, input the equation into the graphing calculator, tell me if you are having " +
+  "any trouble.” Then a full step-by-step Desmos walkthrough, checking along the way that the " +
+  "student understands.";
+const GOLD_CASES_2_AND_3 =
+  "“Using Desmos, [first concrete Desmos step for this question]…”, with the same " +
+  "step-by-step flow.";
+
+/** Karl's ruling 2026-10-27: one rubric for all three cases, drawn from his gold responses. */
 const DESMOS_REQUEST_RUBRIC = {
-  gold_response: null,
   judge_note:
     "The student asked to use Desmos. Score the move, not the wording: LISA should switch to " +
     "Desmos and start the student on it. Rubric from Karl's gold responses (2026-10-27).",
@@ -34,17 +39,21 @@ const DESMOS_REQUEST_RUBRIC = {
   ],
 } as const;
 
-export const TEACHING_QUALITY_RUBRICS: readonly TutorEvalRubric[] = [
-  "G0-2-01",
-  "G0-2-02",
+const CASE_GOLDS: ReadonlyArray<readonly [string, string]> = [
+  ["G0-2-01", GOLD_CASE_1],
+  ["G0-2-02", GOLD_CASES_2_AND_3],
   // Karl's own test conversation on SATM2UYVX9I (may be committed; design §2).
-  "G0-2-03",
-].map((case_id) => ({
-  case_id,
-  ...DESMOS_REQUEST_RUBRIC,
-  must: [...DESMOS_REQUEST_RUBRIC.must],
-  must_not: [...DESMOS_REQUEST_RUBRIC.must_not],
-}));
+  ["G0-2-03", GOLD_CASES_2_AND_3],
+];
+
+export const TEACHING_QUALITY_RUBRICS: readonly TutorEvalRubric[] =
+  CASE_GOLDS.map(([case_id, gold_response]) => ({
+    case_id,
+    gold_response,
+    ...DESMOS_REQUEST_RUBRIC,
+    must: [...DESMOS_REQUEST_RUBRIC.must],
+    must_not: [...DESMOS_REQUEST_RUBRIC.must_not],
+  }));
 
 export function rubricFor(caseId: string): TutorEvalRubric | null {
   return TEACHING_QUALITY_RUBRICS.find((r) => r.case_id === caseId) ?? null;

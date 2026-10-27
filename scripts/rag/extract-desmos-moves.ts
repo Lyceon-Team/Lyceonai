@@ -24,6 +24,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import {
@@ -341,7 +342,11 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1]?.endsWith("extract-desmos-moves.ts")) {
+// R-16 (LISA_Video_RAG_Closure_Plan.md): the entry check that also matches a Windows path.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main().catch((err: unknown) => {
     process.stderr.write(
       `${err instanceof Error ? err.message : String(err)}\n`,

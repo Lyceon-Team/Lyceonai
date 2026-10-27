@@ -24,14 +24,19 @@
 -- Deletion: a case cascades from the student's profile (the account-deletion cascade deletes the
 --   profiles row in both of its modes); runs cascade from their case. `source_conversation_id` has
 --   no foreign key on purpose: the eval copy is not swept with the live conversation.
--- Retention: NOT YET RULED. Doc 03 §14.2 has no row for these tables, and INV-03-19 says "no
---   indefinite retention of student conversation data". Until the §14.2 row is ruled (SCL
---   pending), DO NOT APPLY THIS MIGRATION TO PRODUCTION.
+--   Doc 05D's cascade needs no entry: its §10.2 list is closed to 05A/05B/05C state, and deletion
+--   rides the profiles FK (Karl, 2026-10-27).
+-- Retention (SCL-251, Karl 2026-10-27): 90 days fixed from import, then the case is re-imported
+--   or deleted. `captured_at` is the import time; a re-import resets it. The 90d retention tier
+--   (Cloud Scheduler -> POST /api/internal/retention/sweep) calls
+--   `sweep_tutor_eval_retention`, which deletes cases captured more than 90 days ago (their runs
+--   cascade) and runs created more than 90 days ago (so a re-import does not keep old replies).
 -- Grants: service_role only; RLS on with no policies, so no client can read or write a row.
 --
 -- OWNER-RUN. Karl applies to prod. DO NOT auto-apply. LYCEON-MIGRATION-REVIEWED
 --
 -- rollback (in this order):
+--   DROP FUNCTION IF EXISTS public.sweep_tutor_eval_retention(boolean);
 --   DROP TABLE IF EXISTS public.tutor_eval_runs;
 --   DROP TABLE IF EXISTS public.tutor_eval_cases;
 -- ===========================================================================
@@ -82,8 +87,66 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.tutor_eval_cases TO service_role;
 GRANT SELECT, INSERT, UPDATE ON public.tutor_eval_runs TO service_role;
 
 COMMENT ON TABLE public.tutor_eval_cases IS
-  'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27).';
+  'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27). Kept 90 days from import (SCL-251).';
 COMMENT ON TABLE public.tutor_eval_runs IS
   'G0-2 evaluation runs. Replies and judge quotes can echo the student: service role only, RLS on, no policies.';
+
+-- The 90-day sweep (SCL-251). Same shape and contract as sweep_tutor_instruction_retention
+-- (20261025000001): one predicate counts in a dry run and deletes in a live one; the cutoff is the
+-- database clock; a second run matches nothing.
+CREATE FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean)
+RETURNS TABLE (
+  swept_table   text,
+  deleted_count integer,
+  cutoff        timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '90 days';
+  v_cases  integer;
+  v_runs   integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_eval_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_cases
+      FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_runs
+      FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+    GET DIAGNOSTICS v_runs = ROW_COUNT;
+
+    DELETE FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+    GET DIAGNOSTICS v_cases = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_eval_cases'; deleted_count := v_cases; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_eval_runs';  deleted_count := v_runs;  cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+COMMENT ON FUNCTION public.sweep_tutor_eval_retention(boolean) IS
+  'SCL-251: G0-2 evaluation cases and runs, 90 days fixed from import (captured_at) / creation. Called by the 90d retention tier.';
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_eval_retention(boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sweep_tutor_eval_retention(boolean) TO service_role;
 
 COMMIT;

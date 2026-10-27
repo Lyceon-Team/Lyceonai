@@ -348,14 +348,14 @@ describe("G0-2 teaching-quality harness", () => {
     ).toBe(false);
   });
 
-  it("T7d the shipped rubric is Karl's, gold text pending, and the judge never sees the answer pre-submit", () => {
+  it("T7d the shipped rubric and golds are Karl's, and the judge never sees the answer pre-submit", () => {
     expect(TEACHING_QUALITY_RUBRICS.map((r) => r.case_id)).toEqual([
       "G0-2-01",
       "G0-2-02",
       "G0-2-03",
     ]);
     for (const r of TEACHING_QUALITY_RUBRICS) {
-      expect(r.gold_response).toBeNull();
+      expect(r.gold_response).toMatch(/^“Using Desmos, /);
       expect(r.must).toHaveLength(3);
       expect(r.must_not).toHaveLength(3);
       expect(completeRubric(r)).not.toBeNull();

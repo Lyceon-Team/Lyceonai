@@ -38,6 +38,7 @@
  *   pnpm exec tsx tests/eval/teaching-quality/import-case.ts \
  *     --case G0-2-03 --conversation <uuid> --cutoff <student message uuid> [--owner-case]
  */
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
@@ -225,6 +226,9 @@ async function main(): Promise<void> {
       request: envelope,
       scan_correct_answer: scanKey.value,
       production_reply: productionReply.message,
+      // SCL-251: 90 days fixed from import. A re-import restarts the clock (the upsert would
+      // otherwise keep the first import's captured_at).
+      captured_at: new Date().toISOString(),
     },
     { onConflict: "case_id" },
   );
@@ -237,7 +241,11 @@ async function main(): Promise<void> {
   );
 }
 
-if (process.argv[1]?.endsWith("import-case.ts")) {
+// R-16 (LISA_Video_RAG_Closure_Plan.md): the entry check that also matches a Windows path.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main().catch((err: unknown) => {
     process.stderr.write(
       `${err instanceof Error ? err.message : String(err)}\n`,

@@ -29,6 +29,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import pg from "pg";
 import { GoogleGenAI, type Content } from "@google/genai";
@@ -40,32 +41,52 @@ import {
   tutorEvalOwnerGradeSchema,
   tutorEvalVerdictSchema,
 } from "../../../packages/shared/src/tutor-eval-schema";
-import { PROJECT, assertProxied } from "../../../scripts/rag/vertex";
+import {
+  PROJECT,
+  assertProxied,
+  vertexAuthMode,
+} from "../../../scripts/rag/vertex";
 import { JUDGE_MODEL_DEFAULT, vertexJudge } from "./judge";
 import { replayOnce, type GenerateFn, type ReplayCase } from "./replay";
 import { rubricFor } from "./rubrics";
 
-const { values } = parseArgs({
-  options: {
-    runs: { type: "string", default: "5" },
-    batch: { type: "string" },
-    case: { type: "string" },
-    "judge-model": { type: "string", default: JUDGE_MODEL_DEFAULT },
-    // The prompt artifact every case is replayed on, by exact version (v4 is not the latest
-    // for any variant, so it is only reachable this way).
-    "prompt-version": { type: "string", default: "lisa-default-v3" },
-  },
-});
-const runs = Number(values.runs);
-if (!Number.isInteger(runs) || runs < 1) {
-  throw new Error("--runs must be a positive integer");
+type Options = {
+  runs: number;
+  batchId: string;
+  judgeModel: string;
+  promptVersion: string;
+  onlyCase: string | null;
+  databaseUrl: string;
+};
+
+function readOptions(): Options {
+  const { values } = parseArgs({
+    options: {
+      runs: { type: "string", default: "5" },
+      batch: { type: "string" },
+      case: { type: "string" },
+      "judge-model": { type: "string", default: JUDGE_MODEL_DEFAULT },
+      // The prompt artifact every case is replayed on, by exact version (v4 is not the latest
+      // for any variant, so it is only reachable this way).
+      "prompt-version": { type: "string", default: "lisa-default-v3" },
+    },
+  });
+  const runs = Number(values.runs);
+  if (!Number.isInteger(runs) || runs < 1) {
+    throw new Error("--runs must be a positive integer");
+  }
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error("DATABASE_URL is required");
+  assertProxied();
+  return {
+    runs,
+    batchId: values.batch ?? randomUUID(),
+    judgeModel: values["judge-model"],
+    promptVersion: values["prompt-version"],
+    onlyCase: values.case ?? null,
+    databaseUrl,
+  };
 }
-const batchId = values.batch ?? randomUUID();
-const judgeModel = values["judge-model"];
-const promptVersion = values["prompt-version"];
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
-assertProxied();
 
 /** The commit the harness imported the worker from; "-dirty" if the worker has local edits. */
 function workerGitSha(): string {
@@ -88,8 +109,10 @@ function workerGitSha(): string {
 
 /** Vertex via @google/genai; the proxy (or ADC) supplies the credential. */
 function vertexGenerate(): GenerateFn {
-  const auth = new OAuth2Client();
-  auth.setCredentials({
+  // Behind the cloud session's proxy, a placeholder token the proxy replaces; on a workstation,
+  // the SDK's own Application Default Credentials.
+  const proxyAuth = new OAuth2Client();
+  proxyAuth.setCredentials({
     access_token: "proxy-injected",
     expiry_date: Date.now() + 3_600_000,
   });
@@ -97,7 +120,9 @@ function vertexGenerate(): GenerateFn {
     vertexai: true,
     project: PROJECT,
     location: "global",
-    googleAuthOptions: { authClient: auth },
+    ...(vertexAuthMode() === "proxy"
+      ? { googleAuthOptions: { authClient: proxyAuth } }
+      : {}),
   });
   return async ({ model, messages, config }) => {
     const contents: Content[] = messages.map((m) => ({
@@ -131,6 +156,8 @@ type CaseRow = {
 };
 
 async function main(): Promise<void> {
+  const { runs, batchId, judgeModel, promptVersion, onlyCase, databaseUrl } =
+    readOptions();
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
@@ -139,7 +166,7 @@ async function main(): Promise<void> {
          FROM public.tutor_eval_cases
         WHERE set_version = $1 AND ($2::text IS NULL OR case_id = $2)
         ORDER BY case_id`,
-      [TEACHING_QUALITY_SET_VERSION, values.case ?? null],
+      [TEACHING_QUALITY_SET_VERSION, onlyCase],
     );
     if (cases.rowCount === 0) {
       throw new Error("no cases to replay (has the import run?)");
@@ -241,8 +268,16 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  // The message names the step and status only; no model output or conversation text.
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
-  process.exit(1);
-});
+// R-16 (LISA_Video_RAG_Closure_Plan.md): the entry check that also matches a Windows path.
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((err: unknown) => {
+    // The message names the step and status only; no model output or conversation text.
+    process.stderr.write(
+      `${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    process.exit(1);
+  });
+}

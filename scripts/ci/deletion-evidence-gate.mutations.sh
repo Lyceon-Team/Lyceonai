@@ -573,10 +573,12 @@ expect_red M64 "F1.16 — an inline comment does not change a scalar's type"
 # `const cutoff = retentionCutoff(opts.now, 90);` is gone, and the test it reddens
 # moved to the real-Postgres suite with the rest of the 90d cases. The anchor
 # below occurs once in retention-sweep.ts, inside sweep90d.
+# RE-POINTED again 2026-10-27 (SCL-251, #1332): sweep90d now calls two functions, and the
+# instruction sweep's line became `const instructionResult = await sweepByRpc(` (once, in sweep90d).
 SUITE="tests/ci/retention-sweep.pg.ci.test.ts"
 
 echo "==> (M65) the 90d tier declines again instead of deleting"
-plant M65 "$SWEEP" "s.replace('  const result = await sweepByRpc(', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const result = await sweepByRpc(', 1)"
+plant M65 "$SWEEP" "s.replace('  const instructionResult = await sweepByRpc(', '  if (!process.env.BIGQUERY_ARCHIVE_DATASET) return { ok: false, tier: \"90d\", reason: \"archive_client_not_configured\" };\n  const instructionResult = await sweepByRpc(', 1)"
 expect_red M65 "deletes with no archive configuration of any kind (Doc 07B §5.4 reversal)"
 
 SUITE="tests/ci/retention-sweep.negative-control.contract.test.ts"

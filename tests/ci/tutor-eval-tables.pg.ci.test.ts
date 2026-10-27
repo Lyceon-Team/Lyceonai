@@ -14,6 +14,9 @@
  *      refused outright (no policy, no grant).
  *   E4 deleting the student's profile removes their case and every run of it.
  *   E5 a re-run of the same batch cannot double a run; an owner grade needs its timestamp.
+ *   E6 SCL-251, 90 days fixed from import: the sweep deletes a case captured 91 days ago and its
+ *      runs, and a 91-day-old run of a fresh case; keeps an 89-day case; a dry run counts the
+ *      same rows and deletes nothing; anon cannot call it.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type pg from "pg";
@@ -227,5 +230,66 @@ describe.skipIf(!PG_AVAILABLE)("tutor eval tables (real Postgres)", () => {
       `UPDATE public.tutor_eval_runs SET owner_grade = 'pass', owner_graded_at = now()
         WHERE case_id = 'E5-CASE'`,
     );
+  });
+  it("E6 the 90-day sweep (SCL-251): import time decides; dry run counts what live deletes", async () => {
+    const s = await student();
+    await addCase("E6-OLD", s);
+    await addCase("E6-NEW", s);
+    await admin.query(
+      `UPDATE public.tutor_eval_cases SET captured_at = now() - interval '91 days' WHERE case_id = 'E6-OLD'`,
+    );
+    await admin.query(
+      `UPDATE public.tutor_eval_cases SET captured_at = now() - interval '89 days' WHERE case_id = 'E6-NEW'`,
+    );
+    const batch = "66666666-6666-4666-8666-666666666666";
+    await addRun("E6-OLD", batch, 1);
+    await addRun("E6-NEW", batch, 1);
+    await addRun("E6-NEW", batch, 2);
+    await admin.query(
+      `UPDATE public.tutor_eval_runs SET created_at = now() - interval '91 days'
+        WHERE case_id = 'E6-NEW' AND run_index = 2`,
+    );
+    const left = async (): Promise<{ cases: number; runs: number }> => {
+      const r = await admin.query<{ cases: number; runs: number }>(
+        `SELECT (SELECT count(*)::int FROM public.tutor_eval_cases WHERE case_id LIKE 'E6-%') AS cases,
+                (SELECT count(*)::int FROM public.tutor_eval_runs WHERE case_id LIKE 'E6-%') AS runs`,
+      );
+      return r.rows[0] ?? { cases: -1, runs: -1 };
+    };
+    expect(await left()).toEqual({ cases: 2, runs: 3 });
+
+    const dry = await admin.query<{
+      swept_table: string;
+      deleted_count: number;
+    }>(
+      `SELECT swept_table, deleted_count FROM public.sweep_tutor_eval_retention(true)`,
+    );
+    expect(dry.rows).toEqual([
+      { swept_table: "tutor_eval_cases", deleted_count: 1 },
+      { swept_table: "tutor_eval_runs", deleted_count: 2 },
+    ]);
+    expect(await left()).toEqual({ cases: 2, runs: 3 });
+
+    const live = await admin.query<{
+      swept_table: string;
+      deleted_count: number;
+    }>(
+      `SELECT swept_table, deleted_count FROM public.sweep_tutor_eval_retention(false)`,
+    );
+    expect(live.rows).toEqual(dry.rows);
+    expect(await left()).toEqual({ cases: 1, runs: 1 });
+    const kept = await admin.query(
+      `SELECT case_id, run_index FROM public.tutor_eval_runs WHERE case_id LIKE 'E6-%'`,
+    );
+    expect(kept.rows).toEqual([{ case_id: "E6-NEW", run_index: 1 }]);
+
+    await admin.query("SET ROLE anon");
+    try {
+      await expect(
+        admin.query(`SELECT * FROM public.sweep_tutor_eval_retention(true)`),
+      ).rejects.toThrow(/permission denied/);
+    } finally {
+      await admin.query("RESET ROLE");
+    }
   });
 });

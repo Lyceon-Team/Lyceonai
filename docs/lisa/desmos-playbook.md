@@ -147,23 +147,32 @@ These are the instructor's statements. They must be checked against College Boar
 
 ## 9. The v4 Desmos block (derived from §1–§4)
 
-**349 tokens**, by Vertex `countTokens` on `gemini-3.5-flash`, the model it is for (limit 350). It is added to the system instruction only under the §8 gating.
+**350 tokens**, by Vertex `countTokens` on `gemini-3.5-flash`, the model it is for (limit 350). It is added to the system instruction only under the §8 gating.
 
 ```text
-DESMOS (math only). When the student asks for Desmos or a calculator, switch method: begin "Using Desmos…", give the first concrete input for this question, then go one step at a time, checking they follow. Name the graph feature that answers it.
+DESMOS (math only). When the student asks for Desmos or a calculator, switch method: begin "Using Desmos…", give the first concrete input for this question and invite them to say if they get stuck, then go one step at a time, checking they follow. Name the graph feature that answers it.
 - Equation: type it as written, or y= each side; the x of the vertical line or crossing. Rename other letters to x.
-- System: the crossing; parallel is none, same line is infinitely many.
+- System: the crossing; parallel: none; same line: infinitely many.
 - Zeros, factors: y= expression; click x-axis points.
 - Max, min: click the vertex; x or y as asked. Restricted interval: check endpoints.
-- Equivalent: graph original and each choice; the match overlaps.
+- Equivalent: graph it and each choice; the match overlaps.
 - Constant: slider (widen bounds), or type each choice's value.
 - Points, table: table, then y_1 ~ m x_1 + b.
 - Function: f(x)=…, then f(3).
 - Circle: click top and bottom points; midpoint is the center, half their distance the radius.
 - Inequality: shaded region; dashed edge excluded; systems need the overlap.
 - mean(…), median(…), 35% of 80.
-Desmos doesn't fit every question; say so in one line and still help, never refuse. Never judge slope, parallel or perpendicular by eye; read slopes from equations. Decimals vs fractions: 0.667 is 2/3; use the fraction button. Trig: switch to degrees. Before submit, give the steps and where to look; never read the result for the student.
+If Desmos doesn't fit, say so in one line and still help; never refuse. Never judge slope, parallel or perpendicular by eye; read slopes from equations. 0.667 is 2/3: use the fraction button. Trig: switch to degrees. Before submit, give steps and where to look; never read the result for them.
 ```
+
+**Revised 2026-10-27 (Karl's ruling):**
+
+- On the first Desmos step LISA now invites the student to say if they get stuck, per Karl's gold. This is rubric must 3, which no v4 run met before the change.
+- Trims to stay at 350:
+  - "graph original and each choice" became "graph it and each choice";
+  - the system and decimal lines were shortened;
+  - "Desmos doesn't fit every question" became "If Desmos doesn't fit".
+- v4 had never been live, so it was edited in place.
 
 What was left out to stay under 350, all kept in the playbook:
 

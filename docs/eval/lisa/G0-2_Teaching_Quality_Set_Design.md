@@ -265,30 +265,30 @@ The three slots below go into the set file as they stand. Per the v2 convention,
 
 ## 8. Decisions for Karl
 
-| #   | Decision                                                                                                                                                    | Proposed                                                                 |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| D1  | _Settled 2026-10-27:_ a separate versioned set (`teaching-quality v1`)                                                                                      | —                                                                        |
-| D2  | _Settled 2026-10-27:_ no student text in the repo, de-identified or not; student cases live in a server-only table (§3); deletion cascades from the student | —                                                                        |
-| D3  | _Settled 2026-10-27:_ Gemini Pro on Vertex judges `gemini-3.5-flash`, with the §4.3 mitigations                                                             | —                                                                        |
-| D4  | _Settled 2026-10-27:_ 5 runs per case                                                                                                                       | —                                                                        |
-| D5  | **Open:** the Doc 03 §14.2 retention period for `tutor_eval_cases` / `tutor_eval_runs` (§10)                                                                | Karl to rule; the migration must not be applied to production until then |
+| #   | Decision                                                                                                                                                    | Proposed |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| D1  | _Settled 2026-10-27:_ a separate versioned set (`teaching-quality v1`)                                                                                      | —        |
+| D2  | _Settled 2026-10-27:_ no student text in the repo, de-identified or not; student cases live in a server-only table (§3); deletion cascades from the student | —        |
+| D3  | _Settled 2026-10-27:_ Gemini Pro on Vertex judges `gemini-3.5-flash`, with the §4.3 mitigations                                                             | —        |
+| D4  | _Settled 2026-10-27:_ 5 runs per case                                                                                                                       | —        |
+| D5  | _Settled 2026-10-27:_ 90 days fixed from import, then re-import or delete (SCL-251). Doc 05D needs no entry                                                 | —        |
 
 ## 9. Step 1 (built 2026-10-27)
 
-| Piece                                                        | Where                                                                                      | State                                                                                                                  |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| Tables, RLS on, zero policies, service role only             | `supabase/migrations/20261117000000_tutor_eval_cases.sql`                                  | Built; CI-checked by `tests/ci/tutor-eval-tables.pg.ci.test.ts`. **Not to be applied to production until D5 is ruled** |
-| Worker generation config, exported                           | `buildTutorGenerationConfig` in `apps/workers/tutor-orchestrator/src/lib/vertex-client.ts` | `invokeVertexOnce` builds from it; no behaviour change                                                                 |
-| The BFF scan, without IO                                     | `scanTutorOutput` in `server/services/tutor-output-serializer.ts`                          | `serializeTutorOutput` calls it, then logs and dual-writes; no behaviour change                                        |
-| Schemas and the verdict                                      | `packages/shared/src/tutor-eval-schema.ts`                                                 | Built                                                                                                                  |
-| Server-side import                                           | `tests/eval/teaching-quality/import-case.ts`                                               | Built; owner-run (service-role env). Needs Karl's §3.3 ids                                                             |
-| Harness                                                      | `tests/eval/teaching-quality/run-baseline.ts`, `replay.ts`, `judge.ts`                     | Built; proven end to end on a synthetic case (below)                                                                   |
-| Rubric slots                                                 | `tests/eval/teaching-quality/rubrics.ts`                                                   | All empty; the judge is not called and runs are `unscored` until Karl's golds and rubrics exist                        |
-| Unit tests (planted good / bad / leak replies, mocked judge) | `tests/ci/tutor-eval-teaching-quality.contract.test.ts`                                    | 11 pass                                                                                                                |
+| Piece                                                        | Where                                                                                      | State                                                                                                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Tables, RLS on, zero policies, service role only             | `supabase/migrations/20261118000000_tutor_eval_cases.sql`                                  | Built; CI-checked by `tests/ci/tutor-eval-tables.pg.ci.test.ts`. Retention ruled (D5, SCL-251): 90 days from import; swept by the 90d tier |
+| Worker generation config, exported                           | `buildTutorGenerationConfig` in `apps/workers/tutor-orchestrator/src/lib/vertex-client.ts` | `invokeVertexOnce` builds from it; no behaviour change                                                                                     |
+| The BFF scan, without IO                                     | `scanTutorOutput` in `server/services/tutor-output-serializer.ts`                          | `serializeTutorOutput` calls it, then logs and dual-writes; no behaviour change                                                            |
+| Schemas and the verdict                                      | `packages/shared/src/tutor-eval-schema.ts`                                                 | Built                                                                                                                                      |
+| Server-side import                                           | `tests/eval/teaching-quality/import-case.ts`                                               | Built; owner-run (service-role env). Needs Karl's §3.3 ids                                                                                 |
+| Harness                                                      | `tests/eval/teaching-quality/run-baseline.ts`, `replay.ts`, `judge.ts`                     | Built; proven end to end on a synthetic case (below)                                                                                       |
+| Rubric slots                                                 | `tests/eval/teaching-quality/rubrics.ts`                                                   | All empty; the judge is not called and runs are `unscored` until Karl's golds and rubrics exist                                            |
+| Unit tests (planted good / bad / leak replies, mocked judge) | `tests/ci/tutor-eval-teaching-quality.contract.test.ts`                                    | 11 pass                                                                                                                                    |
 
 **Owner steps, in order:**
 
-1. Rule D5. Then apply the migration.
+1. Apply the migration (D5 is settled: SCL-251).
 2. Run the §3.3 queries and run the import, once per case:
    `pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-0N --conversation <id> --cutoff <student message id> [--owner-case]`.
 3. Run the baseline:
