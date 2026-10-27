@@ -38,7 +38,7 @@ Choices are in the same canonical order everywhere (Karl, 2026-10-23): the site,
 the Reddit post, the archive and the reveal, so the reveal's letter is the letter the question
 showed.
 
-**The switch to the 04:00 UTC day (one time, SCL-248).** The code ships first, then the
+**The switch to the 04:00 UTC day (one time, SCL-250).** The code ships first, then the
 migration, and the database switches at the Chicago midnight after the migration is applied.
 Until then every 04:05 UTC run is refused and red (the site still serves the Chicago day; see the
 table in section 3), and nothing is posted twice. The first new day starts at that Chicago

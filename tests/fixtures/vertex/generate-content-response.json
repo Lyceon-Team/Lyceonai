@@ -1,0 +1,22 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          { "text": "Which side of the equation would you undo first?" }
+        ]
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 1843,
+    "candidatesTokenCount": 27,
+    "thoughtsTokenCount": 612,
+    "cachedContentTokenCount": 1024,
+    "totalTokenCount": 2482
+  },
+  "modelVersion": "gemini-3.5-flash"
+}

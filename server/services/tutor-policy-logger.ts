@@ -60,8 +60,21 @@ export type TurnMetricsLog = {
   turnOrdinal: number;
   orchestrationDurationMs: number;
   modelName: string;
-  tokensIn: number;
-  tokensOut: number;
+  /**
+   * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) and rulings; SCL-246; Doc 03 §24]
+   * | @implemented [2026-10-27]
+   * Token counts summed over every billed Vertex attempt in the turn (retries, fallback, safety
+   * blocks and truncations included). `null` when the turn made no model call (crisis bypass,
+   * Model Armor block, an error before any Vertex response) or the worker did not report it:
+   * unknown, never 0. Required, so every call site decides explicitly.
+   */
+  tokensIn: number | null;
+  tokensOut: number | null;
+  thinkingTokens: number | null;
+  /** The thinking budget the turn's calls were made with; null when no model call was made. */
+  thinkingBudget: number | null;
+  /** The prompt version the worker resolved (Doc 03D §8.1); null when no worker answered. */
+  promptVersion: string | null;
   cacheHit: boolean;
   compactionRecommended: boolean;
   antiLeakTriggered: boolean;
@@ -166,6 +179,9 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
       model_name: params.modelName,
       tokens_in: params.tokensIn,
       tokens_out: params.tokensOut,
+      thinking_tokens: params.thinkingTokens,
+      thinking_budget: params.thinkingBudget,
+      prompt_version: params.promptVersion,
       cache_hit: params.cacheHit,
       compaction_recommended: params.compactionRecommended,
       anti_leak_triggered: params.antiLeakTriggered,
