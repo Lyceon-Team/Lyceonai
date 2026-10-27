@@ -84,7 +84,7 @@ import { diagnosticCompletionResultSchema } from "../../packages/shared/src/diag
 import {
   easyMediumLead,
   planLandingDraws,
-  type LandingSetKind,
+  type LandingComposition,
 } from "../services/landing/assignment";
 
 /**
@@ -153,7 +153,7 @@ type SessionMetadata = {
   session_start_idempotency_key?: string | null;
   last_served_ordinal?: number;
   /** Set on a smart-landing set: how its draws were composed (audit only). */
-  landing_composition?: LandingSetKind;
+  landing_composition?: LandingComposition;
 };
 
 type CanonicalSessionSpec = {
@@ -1626,8 +1626,9 @@ export async function startOrReplaySession(args: {
    * SERVER-ONLY. A smart-landing set (owner brief "Smart landing", Karl, 2026-10-26): the items
    * are drawn as `planLandingDraws` orders them, so the first two are easy or medium. Never read
    * from a request body; only the landing service and the calendar launch it drives set it.
+   * The draws use the session spec's own sections, so the set is always one the page can run.
    */
-  composition?: LandingSetKind;
+  composition?: LandingComposition;
 }): Promise<
   | {
       ok: true;
@@ -1889,10 +1890,10 @@ export async function startOrReplaySession(args: {
 
   // 3. Call DB-side random selection. One draw for an ordinary start; for a smart-landing set,
   //    the ordered draws of `planLandingDraws` (owner brief "Smart landing", Karl, 2026-10-26:
-  //    "the first 2 items are easy or medium, then normal selection"; ruling D: math first = 5
-  //    Math then 5 Reading and Writing). Every draw is this same RPC with the session's own
-  //    filters, so selection inside a draw is unchanged; each draw excludes what the earlier
-  //    ones took. An easy/medium draw keeps only 1 and 2 of the session's own difficulties.
+  //    "the first 2 items are easy or medium, then normal selection"). Every draw is this same
+  //    RPC with the session's own filters, sections included, so selection inside a draw is
+  //    unchanged; each draw excludes what the earlier ones took. An easy/medium draw keeps only
+  //    1 and 2 of the session's own difficulties.
   const draws =
     args.composition === undefined
       ? [
@@ -1902,15 +1903,13 @@ export async function startOrReplaySession(args: {
             limit: requestedCount,
           },
         ]
-      : planLandingDraws(args.composition, requestedCount, sectionCodes).map(
-          (draw) => ({
-            sections: draw.sections,
-            difficulties: draw.easyMediumOnly
-              ? easyMediumLead(difficultyInts)
-              : difficultyInts,
-            limit: draw.limit,
-          }),
-        );
+      : planLandingDraws(requestedCount, sectionCodes).map((draw) => ({
+          sections: draw.sections,
+          difficulties: draw.easyMediumOnly
+            ? easyMediumLead(difficultyInts)
+            : difficultyInts,
+          limit: draw.limit,
+        }));
   const poolRows: unknown[] = [];
   let poolError: { message: string } | null = null;
   const drawnIds: string[] = [];
