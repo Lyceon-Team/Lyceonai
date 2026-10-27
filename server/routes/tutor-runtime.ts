@@ -98,7 +98,10 @@ import {
   logTurnMetrics,
 } from "../services/tutor-policy-logger";
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
-import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
+import {
+  orchestrateRequestSchema,
+  type TurnAttribution,
+} from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import {
   requestedVideoMethod,
   resolveVideoAction,
@@ -907,6 +910,38 @@ router.post(
 // ============================================================================
 
 /**
+ * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) items 3–4 and rulings 1–5; SCL-246;
+ *        Doc 03 §24; Doc 03D §8.1] | @implemented [2026-10-27]
+ *
+ * plain English: the attribution columns of a model-call turn's `tutor_turn_metrics` row. Token
+ * counts are the turn's sum over every billed Vertex attempt; `cache_hit` is "Vertex reported
+ * cached tokens" (cached > 0), never a guess; prompt version is the one the worker resolved. With
+ * no attribution (no model call, or a worker that sent none) every count is null and cache_hit
+ * false: unknown, not zero. Numbers and a version string only.
+ */
+function turnMetricsAttribution(attribution: TurnAttribution | null): {
+  tokensIn: number | null;
+  tokensOut: number | null;
+  thinkingTokens: number | null;
+  thinkingBudget: number | null;
+  promptVersion: string | null;
+  cacheHit: boolean;
+} {
+  return {
+    tokensIn: attribution?.input_tokens ?? null,
+    tokensOut: attribution?.output_tokens ?? null,
+    thinkingTokens: attribution?.thinking_tokens ?? null,
+    thinkingBudget: attribution?.thinking_budget ?? null,
+    promptVersion: attribution?.prompt_version ?? null,
+    cacheHit: (attribution?.cached_tokens ?? 0) > 0,
+  };
+}
+
+// ============================================================================
+// POST /messages (continued)
+// ============================================================================
+
+/**
  * @spec [Doc-03B_V4.1 §6 (Append Turn, the 19-step pipeline); owner rulings on #1277 (Karl,
  *        2026-10-21), ruling 6: "H1 approved. Add the existing step timer to the tutor reply path:
  *        observability only, fixed literal step names, NEVER log prompts, responses or student
@@ -1025,8 +1060,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "idempotency_lookup_error",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1062,8 +1100,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           turnOrdinal: 0,
           orchestrationDurationMs: 0,
           modelName: "idempotency_conflict",
-          tokensIn: 0,
-          tokensOut: 0,
+          tokensIn: null,
+          tokensOut: null,
+          thinkingTokens: null,
+          thinkingBudget: null,
+          promptVersion: null,
           cacheHit: false,
           compactionRecommended: false,
           antiLeakTriggered: false,
@@ -1118,8 +1159,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           turnOrdinal: 0,
           orchestrationDurationMs: 0,
           modelName: "idempotency_replay",
-          tokensIn: 0,
-          tokensOut: 0,
+          tokensIn: null,
+          tokensOut: null,
+          thinkingTokens: null,
+          thinkingBudget: null,
+          promptVersion: null,
           cacheHit: true,
           compactionRecommended: false,
           antiLeakTriggered: replaySerialized.blocked,
@@ -1305,8 +1349,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "error:student_message_write_failed",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1531,8 +1578,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           turnOrdinal: 0,
           orchestrationDurationMs: 0,
           modelName: "error:crisis_message_write_failed",
-          tokensIn: 0,
-          tokensOut: 0,
+          tokensIn: null,
+          tokensOut: null,
+          thinkingTokens: null,
+          thinkingBudget: null,
+          promptVersion: null,
           cacheHit: false,
           compactionRecommended: false,
           antiLeakTriggered: false,
@@ -1572,8 +1622,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "crisis_bypass",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1657,8 +1710,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "error:instruction_assignment_failed",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1867,6 +1923,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       armorInput.kind === "blocked"
         ? ({
             ok: true,
+            // No model call: nothing billed, nothing to attribute.
+            attribution: null,
             value: {
               response: {
                 content: MODEL_ARMOR_SUBSTITUTION,
@@ -1909,9 +1967,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: Date.now() - turnStartedAt,
         modelName: "error:orchestration_failed",
-        tokensIn: 0,
-        tokensOut: 0,
-        cacheHit: false,
+        // Billed attempts that ended in a failure (a safety block, a truncation) still count
+        // (owner ruling 2026-10-27); a failure with no Vertex response records null.
+        ...turnMetricsAttribution(orchestrationResult.attribution ?? null),
         compactionRecommended: false,
         antiLeakTriggered: false,
         injectionDetected,
@@ -2032,8 +2090,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: Date.now() - turnStartedAt,
         modelName: "error:tutor_message_write_failed",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered,
@@ -2129,9 +2190,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       turnOrdinal: 0,
       orchestrationDurationMs: Date.now() - turnStartedAt,
       modelName: orchestration.orchestration_meta.model_name,
-      tokensIn: 0,
-      tokensOut: 0,
-      cacheHit: orchestration.orchestration_meta.cache_used,
+      // The Model Armor block's stand-in carries no attribution: no model call, null counts.
+      ...turnMetricsAttribution(orchestrationResult.attribution ?? null),
       compactionRecommended:
         orchestration.orchestration_meta.compaction_recommended,
       antiLeakTriggered,
@@ -2200,8 +2260,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "error:unexpected",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,

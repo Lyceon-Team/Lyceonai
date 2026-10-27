@@ -30,6 +30,9 @@ export {
   questionLinkSchema,
   instructionExposureSchema,
   orchestrationTimingSchema,
+  turnUsageSchema,
+  orchestrateErrorResponseSchema,
+  addTokenCounts,
   orchestrateResponseSchema,
   compactRequestSchema,
   compactResponseSchema,
@@ -47,4 +50,6 @@ export {
   type QuestionContent,
   type OfferedVideo,
   type OrchestrationTiming,
+  type TurnUsage,
+  type OrchestrateErrorResponse,
 } from "./_tutor-orchestrator-wire.generated.js";

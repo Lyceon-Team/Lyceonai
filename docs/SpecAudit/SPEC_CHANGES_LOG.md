@@ -5117,6 +5117,38 @@ Owner action: fold the IS text into Doc 07A §5.3 and add `experiment` to Doc 07
 Build artifact: `packages/shared/src/event-registry-schema.ts` (`canonicalEventClassSchema`); `infra/event-schema-registry.yaml` (the four `experiment` events); `server/lib/analytics/event-registry.generated.ts` (regenerated).
 Id: see SCL-244 (allocated in sequence after it).
 
+SCL-246 | 2026-10-27 | Amends Doc 03C V3 §7 (`orchestration_meta`, the worker → BFF response metadata) with per-turn attribution fields the corpus does not name: `thinking_tokens`, `cached_tokens` and `thinking_budget` beside the named `input_tokens` / `output_tokens`, the same fields on a worker error body, and the rule that every token count is the SUM over every billed Vertex attempt in the turn, null when not reported | OPEN
+Status: OPEN. Ruled by Karl, rulings on per-turn attribution (2026-10-27): ruling 1 ("Wire: Doc 03C's `input_tokens` and `output_tokens`, plus `thinking_tokens`, `cached_tokens`, `thinking_budget` and `prompt_version` … write SCL entries … one for the wire fields the specs don't name"), and the billing ruling of the same day ("`tokens_in`, `tokens_out` and `thinking_tokens` are the sum across every billed attempt in the turn, including retries, fallbacks, safety blocks and truncations. Attempts that returned no usage (429, 502) add nothing"). Owed into the spec; becomes APPLIED when folded into Doc 03C V3.
+WAS, verbatim (Doc 03C V3, `Doc 03C — GCP Orchestration V3.md`):
+  :1900 "* `input_tokens`, `output_tokens`, `latency_ms`: observability only; also returned in response headers for log correlation"
+  :1990 "| `orchestration_meta` | Once, at stream end before `done` | `{ model_name: string, cache_used: bool, compaction_recommended: bool, fallback_applied?: bool, input_tokens: integer, output_tokens: integer, latency_ms: integer }` |"
+IS:
+  :1900 "* `input_tokens`, `output_tokens`, `thinking_tokens`, `cached_tokens`, `latency_ms`: observability and cost attribution only. Each token count is the sum over every billed Vertex attempt in the turn (the reply, retries, the pro→flash fallback, and responses rejected as safety-blocked or truncated); an attempt that returned no usage adds nothing; a count no attempt reported is null, never 0. `thinking_budget` is the thinking budget the turn's calls were made with. A worker error response (non-2xx) carries the same fields and `prompt_version` when Vertex returned a billed response."
+  :1990 "| `orchestration_meta` | Once, at stream end before `done` | `{ model_name: string, prompt_version: string, cache_used: bool, compaction_recommended: bool, fallback_applied?: bool, input_tokens: integer \| null, output_tokens: integer \| null, thinking_tokens: integer \| null, cached_tokens: integer \| null, thinking_budget: integer, latency_ms: integer }` |"
+Rationale: Doc 03 §24's per-student cost alerts need the billed total, and Doc 03D §8.1 / the thinking-budget tuning (G4-1) need each turn attributable to its configuration. Thinking tokens are billed at the output rate and are invisible in `output_tokens`; cached tokens show whether Vertex context caching (Doc 03B §12B.5) is working.
+Preserves: Doc 03C's "observability only" status for these fields (they never change a reply or a decision); the response's content and anti-leak handling; the BFF's ownership of persistence (Doc 03B §13). Numbers and a version string only: no prompt or response content on the wire fields or in any log line.
+Disclosure: none.
+Owner action: fold the IS text into Doc 03C V3 §7.1 and the stream-event table.
+Build artifact: `shared/tutor-orchestrator-wire.ts` (`turnUsageSchema`, `orchestrateErrorResponseSchema`, `orchestration_meta`); `apps/workers/tutor-orchestrator/src/lib/vertex-client.ts` (`readUsageMetadata`, `VertexUsageTotals`, `THINKING_BUDGET`); `server/lib/tutor-orchestrator-client.ts` (summing across worker calls); migration `20261115000000_tutor_turn_metrics_attribution.sql`.
+Id: `SCL-246` derived at the moment of use, 2026-10-27, after `git fetch --all --prune`, by the register scan (`SCL-[0-9]{3}` in `docs/SpecAudit/SPEC_CHANGES_LOG.md`) across every remote ref: the highest allocated anywhere is `SCL-245`. Open PRs searched for additions to the register: none. Two entries allocated in sequence: SCL-246, SCL-247.
+
+SCL-247 | 2026-10-27 | Amends Doc 03B V4.1 §22 (the LISA observability catalog) with the per-turn attribution fields Doc 03D §8.3 says are owed there: `prompt_version` and `context_hash` on every turn, plus the per-turn token, thinking-token and thinking-budget record behind §22.9's cost metrics, emitted on `tutor_turn_metrics` | OPEN
+Status: OPEN. Ruled by Karl, rulings on per-turn attribution (2026-10-27), ruling 1: "one for the Doc 03B §22 catalog addition that Doc 03D §8.3 says is owed". Doc 03D §8.3 (verified 2026-08-15): "§22 does not currently require either field … Closing that gap is a Doc 03B amendment". Owed into the spec; becomes APPLIED when folded into Doc 03B V4.1 §22.
+WAS, verbatim (Doc 03B V4.1, `Doc 03B — LISA API and Runtime Flow.md`, §22.9):
+  :2850 "* `input_tokens_per_turn` — attributed per student and globally"
+  :2851 "* `output_tokens_per_turn` — attributed per student and globally"
+IS:
+  :2850 "* `input_tokens_per_turn` — attributed per student and globally; the per-turn source is `tutor_turn_metrics.tokens_in` (the sum over every billed Vertex attempt in the turn; null when the turn made no model call)"
+  :2851 "* `output_tokens_per_turn` — attributed per student and globally; per-turn source `tutor_turn_metrics.tokens_out`"
+  new, after :2851 "* `thinking_tokens_per_turn` — attributed per student and globally; per-turn source `tutor_turn_metrics.thinking_tokens` (billed at the output rate, not included in `output_tokens_per_turn`)"
+  new, after it "* Per-turn attribution, on every turn's `tutor_turn_metrics` row (Doc 03D §8.1): `prompt_version` (the version the worker resolved), `context_hash` (hash of the assembled context payload), `thinking_budget` (the budget the calls were made with). Null only when the turn made no model call."
+Rationale: Doc 03D §8.1 makes `prompt_version` and `context_hash` required on every turn and §8.3 assigns their emission surface to Doc 03B §22, which never listed them. The cost metrics in §22.9 had no named per-turn source, and production recorded 0 for every turn's tokens (179 rows, 2026-10-27).
+Preserves: §22's ownership of emission mechanics; §22.9's metric names and the §26.A cost anomaly alert; Doc 03D §8.1's requirement as written. `context_hash` stays owed: nothing computes it yet (LISA closure plan W4-14), so the column is null until that row closes.
+Disclosure: none.
+Owner action: fold the IS text into Doc 03B V4.1 §22.9 (and §22.2's `mean_tokens_per_turn` may then cite the same source).
+Build artifact: `server/services/tutor-policy-logger.ts` (`TurnMetricsLog`), `server/routes/tutor-runtime.ts` (`turnMetricsAttribution`), migration `20261115000000_tutor_turn_metrics_attribution.sql`.
+Id: see SCL-246 (allocated in sequence after it).
+
 SCL-248 | 2026-10-27 | Amends Doc 03D V1.2 §6.7 (the scaffold's metadata schema, as amended by SCL-231): a fifth metadata field, `methods` (how the content solves), on every item, and a video-only `format` (what shape the video takes) | OPEN
 Status: OPEN. Ruled by Karl, 2026-10-27 (owner brief "Video retrieval: method tags", Step 0 ruled: "Build as proposed"; methods `desmos`, `algebraic`, with `backsolve` only if three approved videos carry it; format `worked_example`, `formula`, `lesson`, `strategy`). Owed into the spec; becomes APPLIED when folded into Doc 03D §6.7.
 WAS, verbatim (Doc 03D V1.2 §6.7, `Doc 03D — LISA Evaluation & Quality V1.2.md`):

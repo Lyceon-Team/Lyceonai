@@ -17376,9 +17376,9 @@ CREATE TABLE public.landing_shows (
     fallback_reason text,
     escaped_at timestamp with time zone,
     summarized_at timestamp with time zone,
-    CONSTRAINT landing_shows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]))),
+    CONSTRAINT landing_shows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]))),
     CONSTRAINT landing_shows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
-    CONSTRAINT landing_shows_fallback_reason_check CHECK ((fallback_reason = ANY (ARRAY['quota_exhausted'::text, 'session_limit'::text, 'no_questions'::text, 'qotd_unavailable'::text, 'no_block_today'::text, 'not_entitled'::text, 'error'::text])))
+    CONSTRAINT landing_shows_fallback_reason_check CHECK ((fallback_reason = ANY (ARRAY['quota_exhausted'::text, 'session_limit'::text, 'no_questions'::text, 'qotd_unavailable'::text, 'no_block_today'::text, 'not_entitled'::text, 'arm_retired'::text, 'error'::text])))
 );
 
 
@@ -17393,10 +17393,10 @@ CREATE TABLE public.landing_windows (
     eligible_arms text[] NOT NULL,
     assigned_at timestamp with time zone DEFAULT now() NOT NULL,
     device_class text NOT NULL,
-    CONSTRAINT landing_windows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]))),
+    CONSTRAINT landing_windows_arm_check CHECK ((arm = ANY (ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]))),
     CONSTRAINT landing_windows_arm_is_eligible CHECK ((arm = ANY (eligible_arms))),
     CONSTRAINT landing_windows_device_class_check CHECK ((device_class = ANY (ARRAY['phone'::text, 'tablet'::text, 'desktop'::text]))),
-    CONSTRAINT landing_windows_eligible_known CHECK (((eligible_arms <@ ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_mixed'::text, 'set_math_first'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text]) AND ('dashboard'::text = ANY (eligible_arms)))),
+    CONSTRAINT landing_windows_eligible_known CHECK (((eligible_arms <@ ARRAY['dashboard'::text, 'qotd_then_more'::text, 'set_math_5'::text, 'calendar_today'::text, 'session_today'::text, 'plan_builder'::text, 'set_mixed'::text, 'set_math_first'::text]) AND ('dashboard'::text = ANY (eligible_arms)))),
     CONSTRAINT landing_windows_window_index_check CHECK ((window_index >= 0))
 );
 
@@ -19615,8 +19615,8 @@ CREATE TABLE public.tutor_turn_metrics (
     turn_ordinal integer NOT NULL,
     orchestration_duration_ms integer NOT NULL,
     model_name text NOT NULL,
-    tokens_in integer DEFAULT 0 NOT NULL,
-    tokens_out integer DEFAULT 0 NOT NULL,
+    tokens_in integer,
+    tokens_out integer,
     cache_hit boolean DEFAULT false NOT NULL,
     compaction_recommended boolean DEFAULT false NOT NULL,
     anti_leak_triggered boolean DEFAULT false NOT NULL,
@@ -19625,7 +19625,9 @@ CREATE TABLE public.tutor_turn_metrics (
     crisis_classifier_outcome text,
     prompt_version text,
     context_hash text,
-    recorded_at timestamp with time zone DEFAULT now() NOT NULL
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    thinking_tokens integer,
+    thinking_budget integer
 );
 
 
@@ -19634,6 +19636,34 @@ CREATE TABLE public.tutor_turn_metrics (
 --
 
 COMMENT ON TABLE public.tutor_turn_metrics IS 'Doc 03A §11.5: per-turn operational telemetry. Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.tokens_in; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.tokens_in IS 'Sum of Vertex promptTokenCount over every billed attempt in the turn. NULL = no model response (or not reported), never 0 for unknown.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.tokens_out; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.tokens_out IS 'Sum of Vertex candidatesTokenCount over every billed attempt in the turn. NULL = no model response (or not reported).';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.thinking_tokens; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.thinking_tokens IS 'Sum of Vertex thoughtsTokenCount over every billed attempt in the turn. NULL = no model response (or not reported).';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.thinking_budget; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex thinking budget the turn''s calls were made with. NULL = no model call.';
 
 
 --
