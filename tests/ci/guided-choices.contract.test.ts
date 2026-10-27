@@ -28,7 +28,7 @@ import { TutorConfig } from "../../server/services/tutor-config";
 const MIGRATION = fs.readFileSync(
   path.resolve(
     __dirname,
-    "../../supabase/migrations/20261118000000_lisa_guided_choice_intent.sql",
+    "../../supabase/migrations/20261119000000_lisa_guided_choice_intent.sql",
   ),
   "utf8",
 );
