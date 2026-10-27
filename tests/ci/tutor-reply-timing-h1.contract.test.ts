@@ -178,20 +178,34 @@ describe("the worker's timings, through the real worker builder and the real BFF
   const REPLY = "Think about what undoes multiplying both sides by three.";
   const req = orchestrateRequestSchema.parse(CASE_36.request);
 
+  // The line is sorted by `at_ms` (step-timer.ts), and the worker's attempts are placed at
+  // "sent + their own offset" beside steps the BFF timed itself. On the real clock their order
+  // came down to microseconds: the mocked fetch answers at once, so an attempt offset read while
+  // building the fixture could land after `worker_response_read` (CI on #1350). The test owns the
+  // clock instead: every `performance.now()` reads exactly TICK_MS after the last, so each BFF
+  // step starts at least one tick after the one before it, and the worker's attempts start at
+  // fixed fractions of a tick inside its first one, before the response could have been read.
+  const TICK_MS = 1;
+  const ATTEMPT_GAP_MS = 0.25;
+
   beforeEach(() => {
     process.env = {
       ...savedEnv,
       TUTOR_ORCHESTRATOR_WORKER_URL: "http://localhost:9",
     };
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (now += TICK_MS));
   });
   afterEach(() => {
     process.env = { ...savedEnv };
+    vi.mocked(performance.now).mockRestore();
   });
 
   function workerReplies(attempts: number): void {
     const origin = performance.now();
     const timings = new VertexAttemptTimings(origin);
-    for (let i = 0; i < attempts; i += 1) timings.record(performance.now());
+    for (let i = 0; i < attempts; i += 1)
+      timings.record(origin + (i + 1) * ATTEMPT_GAP_MS);
     const body = buildOrchestrateResponse(
       { text: REPLY, providerModel: "test-model" } as Parameters<
         typeof buildOrchestrateResponse
