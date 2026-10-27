@@ -129,6 +129,13 @@ const cachedSchema = z.object({
   usage: usageSchema,
 });
 
+const cachedClipSchema = z.object({
+  extract_version: z.literal(EXTRACT_VERSION),
+  model: z.string(),
+  extract: extractSchema,
+  usage: usageSchema,
+});
+
 type VideoRow = {
   video_id: string;
   title: string;
@@ -261,27 +268,49 @@ async function main(): Promise<void> {
       break;
     }
     let usage: Usage = ZERO_USAGE;
+    // Spend of clips cached by an earlier run: already counted in that run's report, so it
+    // is added to this video's usage for the record but not to this run's new spend.
+    let spentBefore = 0;
     try {
       const parts: DesmosExtract[] = [];
       for (const [start, end] of clipsOf(v.duration_seconds)) {
-        parts.push(
-          await generateJson({
-            step: `desmos-moves ${v.video_id} ${clockOf(start)}-${clockOf(end)}`,
-            model,
-            system: EXTRACT_SYSTEM,
-            video: { videoId: v.video_id, start, end },
-            user:
-              `Video title: ${v.title}\nThe video is ${clockOf(v.duration_seconds)} long.` +
-              (start === 0 && end === v.duration_seconds
-                ? ""
-                : ` You are watching the part from ${clockOf(start)} to ${clockOf(end)}; report only the moves taught in this part.`),
-            responseSchema: extractResponseSchema,
-            schema: extractSchema,
-            onUsage: (u) => {
-              usage = addUsage(usage, u);
-            },
-          }),
+        // Each clip is cached on its own, so a retry after a failed clip never re-pays for
+        // the clips that already succeeded (counted once, when they ran).
+        const clipPath = resolve(OUT_DIR, `${v.video_id}.clip-${start}.json`);
+        const cachedClip = existsSync(clipPath)
+          ? cachedClipSchema.safeParse(
+              JSON.parse(readFileSync(clipPath, "utf8")),
+            )
+          : null;
+        if (cachedClip?.success && cachedClip.data.model === model) {
+          parts.push(cachedClip.data.extract);
+          usage = addUsage(usage, cachedClip.data.usage);
+          spentBefore += cachedClip.data.usage.usd;
+          continue;
+        }
+        let clipUsage: Usage = ZERO_USAGE;
+        const part = await generateJson({
+          step: `desmos-moves ${v.video_id} ${clockOf(start)}-${clockOf(end)}`,
+          model,
+          system: EXTRACT_SYSTEM,
+          video: { videoId: v.video_id, start, end },
+          user:
+            `Video title: ${v.title}\nThe video is ${clockOf(v.duration_seconds)} long.` +
+            (start === 0 && end === v.duration_seconds
+              ? ""
+              : ` You are watching the part from ${clockOf(start)} to ${clockOf(end)}; report only the moves taught in this part.`),
+          responseSchema: extractResponseSchema,
+          schema: extractSchema,
+          onUsage: (u) => {
+            clipUsage = u;
+          },
+        });
+        writeFileSync(
+          clipPath,
+          `${JSON.stringify({ extract_version: EXTRACT_VERSION, model, extract: part, usage: clipUsage }, null, 2)}\n`,
         );
+        parts.push(part);
+        usage = addUsage(usage, clipUsage);
       }
       const extract: DesmosExtract = {
         moves: parts.flatMap((p) => p.moves),
@@ -303,7 +332,7 @@ async function main(): Promise<void> {
         `${v.video_id}: FAILED (${err instanceof Error ? err.message : String(err)}); $${usage.usd.toFixed(4)} spent on it\n`,
       );
     }
-    spent += usage.usd;
+    spent += usage.usd - spentBefore;
   }
   process.stdout.write(`measured spend: $${spent.toFixed(4)}\n`);
   if (failed.length > 0) {
