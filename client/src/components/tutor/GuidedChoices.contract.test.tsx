@@ -101,12 +101,6 @@ function makeApp(): express.Express {
 type Call = { method: string; path: string; status: number; body: unknown };
 const calls: Call[] = [];
 
-function conversationCreates(): Call[] {
-  return calls.filter(
-    (c) => c.method === "POST" && c.path === "/api/tutor/conversations",
-  );
-}
-
 vi.mock("@/lib/queryClient", async () => {
   const { parseApiErrorFromResponse } = await import("@/lib/api-error");
   return {

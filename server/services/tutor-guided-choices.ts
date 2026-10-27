@@ -32,12 +32,11 @@ import {
   guidedChoicesFor,
   isExactIntentLabel,
   VIDEO_INTENT_METHOD,
-  type QuestionSection,
   type ReviewIntent,
   type VideoIntent,
 } from "../../packages/shared/src/tutor-guided-choices";
 import { TutorConfig } from "./tutor-config";
-import { sessionTablesFor } from "./tutor-context";
+import { resolveQuestionSection, sessionTablesFor } from "./tutor-context";
 import {
   retrieveOfferedVideos,
   type LibraryVideo,
@@ -57,24 +56,6 @@ export const VIDEO_INTENT_REPLY: Readonly<Record<VideoIntent, string>> = {
 /** The fixed reply to a video intent with no matching video. The panel shows the choices again. */
 export const VIDEO_INTENT_NO_MATCH =
   "I don't have a video for this skill yet. Pick another way below, or ask me anything about the question.";
-
-const sectionRowSchema = z
-  .object({ section: z.string().nullable() })
-  .nullable();
-
-/** `questions.section` for a question row: "M", "RW", or null (unknown). Throws on a DB error. */
-export async function resolveQuestionSection(
-  questionRowId: string,
-): Promise<QuestionSection | null> {
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("section")
-    .eq("id", questionRowId)
-    .maybeSingle();
-  if (error) throw error;
-  const section = sectionRowSchema.parse(data)?.section ?? null;
-  return section === "M" || section === "RW" ? section : null;
-}
 
 /** The choices this question offers now (section and the Phase B flag). Throws on a DB error. */
 export async function guidedChoicesForQuestion(

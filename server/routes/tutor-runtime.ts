@@ -3063,14 +3063,9 @@ router.post(
           .eq("conversation_id", conversation.id)
           .eq("role", "student");
         if (countError || turnCount === null) {
-          logger.warn(
-            "TUTOR_RUNTIME",
-            "turn_count_failed",
-            "tutor_session_ended not emitted",
-            {
-              code: countError?.code ?? "no_count",
-            },
-          );
+          logger.warn("TUTOR_RUNTIME", "turn_count_failed", "tutor_session_ended not emitted", {
+            code: countError?.code ?? "no_count",
+          });
         } else {
           await emitEvent(studentId, "tutor_session_ended", {
             tutor_session_id: conversation.id,
