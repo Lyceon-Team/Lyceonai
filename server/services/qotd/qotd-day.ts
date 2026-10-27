@@ -6,7 +6,7 @@
  *        the QOTD day is computed; "no student loses a streak because of the switch"; SCL recorded
  *        with this change] | @implemented [2026-10-27]
  *
- * plain English: the database's `public.qotd_day(at)` (migration 20261115000000) in TypeScript.
+ * plain English: the database's `public.qotd_day(at)` (migration 20261117000000) in TypeScript.
  * Before the cutover the QOTD day is the America/Chicago date; from the cutover on it is
  * `(at - 4 hours)` read in UTC, so day D runs from 04:00 UTC on D to 04:00 UTC on D+1. The
  * cutover is the Chicago midnight that followed the migration's apply, stored in

@@ -38,7 +38,12 @@ import { z } from "zod";
 import { emitEvent } from "../lib/analytics/emit-event";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
-import { timedRoute, timedStep } from "../lib/step-timer";
+import {
+  recordVideoRecommendation,
+  recordVideoRetrieval,
+  timedRoute,
+  timedStep,
+} from "../lib/step-timer";
 import { EntitlementService } from "../services/entitlement-service";
 // resolveFullEnvelope: context resolver lives in tutor-context.ts.
 // hasAnswerLeak was previously imported here but is now internal to the
@@ -93,8 +98,12 @@ import {
   logTurnMetrics,
 } from "../services/tutor-policy-logger";
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
-import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import {
+  orchestrateRequestSchema,
+  type TurnAttribution,
+} from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
+import {
+  requestedVideoMethod,
   resolveVideoAction,
   retrieveOfferedVideos,
   toWireVideos,
@@ -901,6 +910,38 @@ router.post(
 // ============================================================================
 
 /**
+ * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) items 3–4 and rulings 1–5; SCL-246;
+ *        Doc 03 §24; Doc 03D §8.1] | @implemented [2026-10-27]
+ *
+ * plain English: the attribution columns of a model-call turn's `tutor_turn_metrics` row. Token
+ * counts are the turn's sum over every billed Vertex attempt; `cache_hit` is "Vertex reported
+ * cached tokens" (cached > 0), never a guess; prompt version is the one the worker resolved. With
+ * no attribution (no model call, or a worker that sent none) every count is null and cache_hit
+ * false: unknown, not zero. Numbers and a version string only.
+ */
+function turnMetricsAttribution(attribution: TurnAttribution | null): {
+  tokensIn: number | null;
+  tokensOut: number | null;
+  thinkingTokens: number | null;
+  thinkingBudget: number | null;
+  promptVersion: string | null;
+  cacheHit: boolean;
+} {
+  return {
+    tokensIn: attribution?.input_tokens ?? null,
+    tokensOut: attribution?.output_tokens ?? null,
+    thinkingTokens: attribution?.thinking_tokens ?? null,
+    thinkingBudget: attribution?.thinking_budget ?? null,
+    promptVersion: attribution?.prompt_version ?? null,
+    cacheHit: (attribution?.cached_tokens ?? 0) > 0,
+  };
+}
+
+// ============================================================================
+// POST /messages (continued)
+// ============================================================================
+
+/**
  * @spec [Doc-03B_V4.1 §6 (Append Turn, the 19-step pipeline); owner rulings on #1277 (Karl,
  *        2026-10-21), ruling 6: "H1 approved. Add the existing step timer to the tutor reply path:
  *        observability only, fixed literal step names, NEVER log prompts, responses or student
@@ -1019,8 +1060,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "idempotency_lookup_error",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1056,8 +1100,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           turnOrdinal: 0,
           orchestrationDurationMs: 0,
           modelName: "idempotency_conflict",
-          tokensIn: 0,
-          tokensOut: 0,
+          tokensIn: null,
+          tokensOut: null,
+          thinkingTokens: null,
+          thinkingBudget: null,
+          promptVersion: null,
           cacheHit: false,
           compactionRecommended: false,
           antiLeakTriggered: false,
@@ -1112,8 +1159,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           turnOrdinal: 0,
           orchestrationDurationMs: 0,
           modelName: "idempotency_replay",
-          tokensIn: 0,
-          tokensOut: 0,
+          tokensIn: null,
+          tokensOut: null,
+          thinkingTokens: null,
+          thinkingBudget: null,
+          promptVersion: null,
           cacheHit: true,
           compactionRecommended: false,
           antiLeakTriggered: replaySerialized.blocked,
@@ -1299,8 +1349,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "error:student_message_write_failed",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1525,8 +1578,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           turnOrdinal: 0,
           orchestrationDurationMs: 0,
           modelName: "error:crisis_message_write_failed",
-          tokensIn: 0,
-          tokensOut: 0,
+          tokensIn: null,
+          tokensOut: null,
+          thinkingTokens: null,
+          thinkingBudget: null,
+          promptVersion: null,
           cacheHit: false,
           compactionRecommended: false,
           antiLeakTriggered: false,
@@ -1566,8 +1622,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "crisis_bypass",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1651,8 +1710,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "error:instruction_assignment_failed",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
@@ -1819,16 +1881,35 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // branch (13c). A crisis turn never reaches here; an input-blocked turn never calls the
     // worker. Fails open: an error logs and the turn proceeds with no videos. The worker gets
     // index, title, channel and length only — the ids stay here (§7).
-    const offeredVideos =
+    //
+    // Method tags (owner brief 2026-10-27): the way of solving the student's CURRENT message
+    // asks for ("is there a Desmos video for this?") is detected from the keyword map in
+    // runtime config — deterministic, no model call — and ranks those videos first. The
+    // route_timing line records the method, the map version, the result count and the offered
+    // ids (codes and counts only, never message text).
+    const requested =
       armorInput.kind === "blocked"
+        ? null
+        : requestedVideoMethod(input.message);
+    const offeredVideos =
+      requested === null
         ? []
         : await timedStep("video_retrieval", () =>
             retrieveOfferedVideos(
               effectiveScope.source_question_row_id,
               envelope.source_surface,
               conversation.id,
+              requested.method,
             ),
           );
+    if (requested !== null) {
+      recordVideoRetrieval({
+        method: requested.method,
+        map_version: requested.mapVersion,
+        results: offeredVideos.length,
+        video_ids: offeredVideos.map((v) => v.video_id),
+      });
+    }
     if (offeredVideos.length > 0) {
       envelope.offered_videos = toWireVideos(offeredVideos);
     }
@@ -1842,6 +1923,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       armorInput.kind === "blocked"
         ? ({
             ok: true,
+            // No model call: nothing billed, nothing to attribute.
+            attribution: null,
             value: {
               response: {
                 content: MODEL_ARMOR_SUBSTITUTION,
@@ -1884,9 +1967,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: Date.now() - turnStartedAt,
         modelName: "error:orchestration_failed",
-        tokensIn: 0,
-        tokensOut: 0,
-        cacheHit: false,
+        // Billed attempts that ended in a failure (a safety block, a truncation) still count
+        // (owner ruling 2026-10-27); a failure with no Vertex response records null.
+        ...turnMetricsAttribution(orchestrationResult.attribution ?? null),
         compactionRecommended: false,
         antiLeakTriggered: false,
         injectionDetected,
@@ -2007,8 +2090,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: Date.now() - turnStartedAt,
         modelName: "error:tutor_message_write_failed",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered,
@@ -2104,9 +2190,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       turnOrdinal: 0,
       orchestrationDurationMs: Date.now() - turnStartedAt,
       modelName: orchestration.orchestration_meta.model_name,
-      tokensIn: 0,
-      tokensOut: 0,
-      cacheHit: orchestration.orchestration_meta.cache_used,
+      // The Model Armor block's stand-in carries no attribution: no model call, null counts.
+      ...turnMetricsAttribution(orchestrationResult.attribution ?? null),
       compactionRecommended:
         orchestration.orchestration_meta.compaction_recommended,
       antiLeakTriggered,
@@ -2119,6 +2204,21 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       .from("tutor_conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", conversation.id);
+
+    // recommend_video carries an index; the video is attached here, from this turn's offered
+    // set (brief §7). Which offered video LISA recommended goes on the route_timing line.
+    const clientAction = resolveVideoAction(
+      orchestration.response.suggested_action,
+      offeredVideos,
+      serialized.blocked,
+    );
+    recordVideoRecommendation(
+      "video" in clientAction
+        ? offeredVideos.findIndex(
+            (v) => v.video_id === clientAction.video.video_id,
+          ) + 1
+        : null,
+    );
 
     // Step 19: Return success response (§6.7).
     res.status(200).json({
@@ -2133,11 +2233,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           // turn's offered set (brief §7). An unknown index becomes no action, and so does
           // an offer on a reply the serializer substituted (orchestrateTurn already drops one
           // whose content its anti-leak scan replaced).
-          suggested_action: resolveVideoAction(
-            orchestration.response.suggested_action,
-            offeredVideos,
-            serialized.blocked,
-          ),
+          suggested_action: clientAction,
           ui_hints: orchestration.response.ui_hints,
         },
         conversation_updated_at: new Date().toISOString(),
@@ -2164,8 +2260,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         turnOrdinal: 0,
         orchestrationDurationMs: 0,
         modelName: "error:unexpected",
-        tokensIn: 0,
-        tokensOut: 0,
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
         cacheHit: false,
         compactionRecommended: false,
         antiLeakTriggered: false,
