@@ -159,7 +159,7 @@ export function TutorConversationBody({
   /** The student ended the conversation (the paused bar's End). */
   onEnded: () => void;
   /**
-   * The review panel's guided choices (owner brief 2026-10-27, SCL-252): shown in the empty
+   * The review panel's guided choices (owner brief 2026-10-27, SCL-253): shown in the empty
    * state and behind "Other ways" after the first message. Null where there are none (practice,
    * general mode).
    */
@@ -402,7 +402,7 @@ function TutorThread({
 
   // "Other ways" (owner brief 2026-10-27): the choices stay reachable after the first message,
   // folded behind one quiet control. A video choice that found no video opens them again (the
-  // server's reply says so; SCL-253). A tap sends the choice's exact label with its intent
+  // server's reply says so; SCL-254). A tap sends the choice's exact label with its intent
   // through the same send path, under the same send lock.
   // null: the student has not toggled since the last send, so the reply decides.
   const [otherWaysToggled, setOtherWaysToggled] = useState<boolean | null>(

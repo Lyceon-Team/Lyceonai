@@ -1,6 +1,6 @@
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), "Tests" and
- *        rulings 1–5 of 2026-10-27; SCL-252, SCL-253, SCL-254] | @implemented [2026-10-27]
+ *        rulings 1–5 of 2026-10-27; SCL-253, SCL-254, SCL-255] | @implemented [2026-10-27]
  *
  * plain English: guided-choice turns end to end through the REAL tutor route, the REAL crisis
  * service (Layer 1 and the model classifier), the REAL orchestrator client and the REAL worker

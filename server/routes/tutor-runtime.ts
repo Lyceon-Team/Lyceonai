@@ -190,7 +190,7 @@ const appendTurnSchema = z.object({
   content_kind: contentKindSchema.optional(),
   client_turn_id: z.string().uuid(),
   client_scope: clientScopeSchema.optional(),
-  // @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-252]
+  // @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-253]
   // The guided choice tapped, from the closed list. Absent on a typed message. The label, section,
   // surface and Phase B checks run once the conversation is loaded (checkTurnIntent).
   intent: reviewIntentSchema.optional(),
@@ -1056,7 +1056,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Step 6b (SCL-252; owner rulings 1–2, 2026-10-27): a turn carrying an intent is accepted
+    // Step 6b (SCL-253; owner rulings 1–2, 2026-10-27): a turn carrying an intent is accepted
     // only on a review conversation scoped to a question, only for one of that question's
     // choices (its section, and the Phase B flag), and only when the message is EXACTLY the
     // choice's label. Anything else is 400 invalid_input — never processed as free text, so no
@@ -1330,7 +1330,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // The catch block below handles unexpected infrastructure failure the same
     // way — fail closed with crisis-safe response.
     //
-    // Owner ruling 4 (2026-10-27, option a; SCL-253): a guided-choice tap whose message is
+    // Owner ruling 4 (2026-10-27, option a; SCL-254): a guided-choice tap whose message is
     // EXACTLY its label (step 6b refused anything else; re-checked here against the closed list)
     // skips the model classifier (Layer 2). Layer 1 and the injection scan above still run. Any
     // typed message gets both layers.
@@ -1762,13 +1762,14 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         : "no_crisis";
 
     // Step 11b — a video intent (owner brief "LISA guided choices in review, Phase A", Karl
-    // 2026-10-27, build 2; SCL-253): served with NO model call. Retrieval runs with the intent's
+    // 2026-10-27, build 2; SCL-254): served with NO model call. Retrieval runs with the intent's
     // method; the reply is the existing `recommend_video` action under a fixed, server-written
     // sentence; no match is a fixed sentence saying so (the panel shows the choices again).
     // Steps 12–14b do not run: no instructional assignment (no instruction is given), no context
     // envelope, no Model Armor scan (the student's text is a fixed label the server wrote; the
-    // reply is server copy), no worker call, no tokens. The serializer still runs (as for the
-    // crisis copy). Before and after submit alike (ruling 3): a library video teaches a skill,
+    // reply is server copy), no worker call, no tokens. The reply is one of three constant
+    // sentences and goes through the serializer as server-authored copy, exactly as the crisis copy
+    // does: the serializer returns it unscanned (the step 15 scans look for model-produced leaks). Before and after submit alike (ruling 3): a library video teaches a skill,
     // not this item's solution. Step 6b guarantees a question scope here.
     if (
       turnIntent !== null &&
@@ -1800,7 +1801,6 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           correctAnswerResolutionFailed: false,
           questionCanonicalId: effectiveScope.source_question_canonical_id,
           isServerAuthored: true,
-          allowedVideoIds: picked.video === null ? [] : [picked.video.video_id],
         }),
       );
       const { data: videoMessageRow, error: videoMessageError } =
@@ -2155,7 +2155,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       envelope.offered_videos = toWireVideos(offeredVideos);
     }
     // A guided choice that reaches the model (`walkthrough`; Phase B's two when enabled) is told
-    // to the worker, which records nothing from it into the prompt (SCL-254: no prompt change).
+    // to the worker, which records nothing from it into the prompt (SCL-255: no prompt change).
     if (turnIntent !== null) {
       envelope.intent = turnIntent;
     }
@@ -2557,7 +2557,7 @@ router.post(
 );
 
 // ============================================================================
-// GET /guided-choices — the review panel's choices for one item (SCL-252)
+// GET /guided-choices — the review panel's choices for one item (SCL-253)
 // ============================================================================
 
 const guidedChoicesQuerySchema = z.object({
@@ -2566,7 +2566,7 @@ const guidedChoicesQuerySchema = z.object({
 
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), build 5 and
- *        ruling 2; SCL-252] | @implemented [2026-10-27]
+ *        ruling 2; SCL-253] | @implemented [2026-10-27]
  *
  * plain English: which guided choices the review panel draws for one of the student's own review
  * items: the question's section (math or Reading and Writing, read from the question, never the

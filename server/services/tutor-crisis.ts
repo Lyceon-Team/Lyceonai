@@ -459,7 +459,7 @@ export type CrisisScreening = "both" | "signatures_only_exact_label";
  * @spec [Doc-03_V3 §21, SCL-023, INV-03-16]
  *
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), ruling 4 of
- *        2026-10-27 (option a); SCL-253] | @implemented [2026-10-27]
+ *        2026-10-27 (option a); SCL-254] | @implemented [2026-10-27]
  * plain English: `screening: "signatures_only_exact_label"` skips the model classifier (Layer 2)
  * for a tap on a guided choice: the message is then one of five fixed labels the server wrote,
  * checked server-side to be exactly the label, so there is nothing a student wrote for the model

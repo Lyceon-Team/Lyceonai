@@ -98,7 +98,7 @@ export type SendMessageInput = {
   conversation_id: string;
   message: string;
   client_turn_id: string;
-  /** A guided-choice tap: the choice's code, with `message` its exact label (SCL-252). */
+  /** A guided-choice tap: the choice's code, with `message` its exact label (SCL-253). */
   intent?: ReviewIntent;
 };
 
@@ -343,7 +343,7 @@ export function useItemConversation(
 
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) build 5;
- *        SCL-252] | @implemented [2026-10-27]
+ *        SCL-253] | @implemented [2026-10-27]
  *
  * plain English: the guided choices the server offers for one review item (its section and the
  * Phase B flag decide; GET /api/tutor/guided-choices). The panel draws exactly these. While it

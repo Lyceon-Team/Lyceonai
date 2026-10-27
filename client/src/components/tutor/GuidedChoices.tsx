@@ -1,6 +1,6 @@
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) build 5 and
- *        rulings 1–2 of 2026-10-27; SCL-252/SCL-253; docs/plans/student-ui/design/DESIGN.md §5]
+ *        rulings 1–2 of 2026-10-27; SCL-253/SCL-254; docs/plans/student-ui/design/DESIGN.md §5]
  *       | @implemented [2026-10-27]
  *
  * plain English: the review panel's guided choices: one outline button per choice the server

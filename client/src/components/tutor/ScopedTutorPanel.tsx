@@ -121,7 +121,7 @@ export function ScopedTutorBody({
 }): JSX.Element {
   // Looking is a GET. Nothing here creates a conversation on load.
   const existing = useItemConversation(sourceSurface, sessionItemId);
-  // Guided choices (owner brief 2026-10-27, SCL-252): the review panel only. Which ones is the
+  // Guided choices (owner brief 2026-10-27, SCL-253): the review panel only. Which ones is the
   // server's answer for this item (its section, the Phase B flag), never decided here.
   const isReview = sourceSurface === "review";
   const choicesQuery = useGuidedChoices(isReview ? sessionItemId : null);

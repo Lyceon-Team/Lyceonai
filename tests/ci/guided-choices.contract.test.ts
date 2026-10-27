@@ -1,6 +1,6 @@
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) and rulings 1–2
- *        of 2026-10-27; SCL-252, SCL-254] | @implemented [2026-10-27]
+ *        of 2026-10-27; SCL-253, SCL-255] | @implemented [2026-10-27]
  *
  * plain English: the one vocabulary of guided choices, held equal everywhere it is written down.
  *  - Each section's choices, with Phase B off and on (the flag hides "Show me on Desmos" and

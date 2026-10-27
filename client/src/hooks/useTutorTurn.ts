@@ -69,12 +69,12 @@ export type TutorTurn = {
   /**
    * The guided choice the last answered turn came from (null: typed, or none answered yet),
    * until the next send. The review panel reads it to show the choices again after a video
-   * choice that found no video (SCL-253).
+   * choice that found no video (SCL-254).
    */
   answeredIntent: ReviewIntent | null;
   /**
    * Send a turn. `intent` only for a guided-choice tap, with `messageText` that choice's exact
-   * label (the server refuses anything else, SCL-252).
+   * label (the server refuses anything else, SCL-253).
    */
   send: (messageText: string, intent?: ReviewIntent) => Promise<void>;
   retry: () => void;

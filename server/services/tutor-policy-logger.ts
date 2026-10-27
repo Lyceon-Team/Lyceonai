@@ -100,7 +100,7 @@ export type TurnMetricsLog = {
   crisisClassifierOutcome: string | null;
   /**
    * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) build 4 and
-   *        ruling 5; SCL-254] | @implemented [2026-10-27]
+   *        ruling 5; SCL-255] | @implemented [2026-10-27]
    * The guided choice the turn came from, or null for a typed message (and for every exit
    * before the request was parsed). The code only: no message text. Required, so every call
    * site decides explicitly.

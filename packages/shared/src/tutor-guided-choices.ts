@@ -1,7 +1,7 @@
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) and its rulings
- *       1–6 of 2026-10-27; Doc-03B_V4.1 §6.3/§6.4 as amended by SCL-252; Doc-03B_V4.1 §6.5/§20.2
- *       as amended by SCL-253] | @implemented [2026-10-27]
+ *       1–6 of 2026-10-27; Doc-03B_V4.1 §6.3/§6.4 as amended by SCL-253; Doc-03B_V4.1 §6.5/§20.2
+ *       as amended by SCL-254] | @implemented [2026-10-27]
  *
  * plain English: THE one definition of the review panel's guided choices, read by the client
  * (which buttons to draw, and the message a tap sends) and by the server (which `intent` a turn

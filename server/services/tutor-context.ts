@@ -397,7 +397,7 @@ export async function resolveQuestionSkillCodes(
 }
 
 /**
- * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-252]
+ * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-253]
  *       | @implemented [2026-10-27]
  * plain English: `questions.section` for a question row, by id: "M", "RW", or null when the row
  * is missing or carries anything else. Read here beside `resolveQuestionSkillCodes`, the other

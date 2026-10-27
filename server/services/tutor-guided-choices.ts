@@ -1,7 +1,7 @@
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), build items
- *        1–2 and rulings 1–3 of 2026-10-27; Doc-03B_V4.1 §6.3/§6.4/§6.9 as amended by SCL-252;
- *        Doc-03B_V4.1 §6.5/§20.2 as amended by SCL-253; Doc-03D_V1.2 §6.7 as amended by the
+ *        1–2 and rulings 1–3 of 2026-10-27; Doc-03B_V4.1 §6.3/§6.4/§6.9 as amended by SCL-253;
+ *        Doc-03B_V4.1 §6.5/§20.2 as amended by SCL-254; Doc-03D_V1.2 §6.7 as amended by the
  *        video-method SCLs (SCL-248/249)] | @implemented [2026-10-27]
  *
  * plain English: the server half of the review panel's guided choices.

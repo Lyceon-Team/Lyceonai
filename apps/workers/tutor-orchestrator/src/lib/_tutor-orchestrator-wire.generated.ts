@@ -332,7 +332,7 @@ export const orchestrateRequestSchema = z.object({
   // older BFF never sends it.
   offered_videos: z.array(offeredVideoSchema).max(3).optional(),
   // ── Guided choice (owner brief "LISA guided choices in review, Phase A", Karl 2026-10-27;
-  // SCL-254) ──
+  // SCL-255) ──
   // The review choice the student tapped, when the turn came from one. Only `walkthrough` is
   // ever sent: the video intents are answered by the BFF with no worker call. Recorded, never
   // read into the prompt: Phase A changes nothing in what LISA is told. Optional, so either side

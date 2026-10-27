@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) build 5 and
- *        rulings 1–3 of 2026-10-27; SCL-252, SCL-253; DESIGN.md §5] | @implemented [2026-10-27]
+ *        rulings 1–3 of 2026-10-27; SCL-253, SCL-254; DESIGN.md §5] | @implemented [2026-10-27]
  *
  * plain English: the review panel's guided choices, against the REAL tutor router (the REAL
  * tutor-client hooks call `apiRequest`, routed through supertest into the router over the

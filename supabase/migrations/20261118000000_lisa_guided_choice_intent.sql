@@ -4,7 +4,7 @@
 -- ===========================================================================
 -- @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) build 4 and
 --        ruling 5 of 2026-10-27; Doc-03A_V3.0 §18.2 (tutor_messages) and §11.5
---        (tutor_turn_metrics) as amended by SCL-254] | @implemented [2026-10-27]
+--        (tutor_turn_metrics) as amended by SCL-255] | @implemented [2026-10-27]
 --
 -- plain English: when a student taps a guided choice in the review LISA panel, the turn carries
 -- an intent from a closed list (packages/shared/src/tutor-guided-choices.ts REVIEW_INTENTS). It
