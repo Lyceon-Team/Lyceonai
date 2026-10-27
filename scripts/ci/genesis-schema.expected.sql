@@ -11347,6 +11347,35 @@ $$;
 
 
 --
+-- Name: qotd_day(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_day(p_at timestamp with time zone) RETURNS date
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+           WHEN c.cutover_at IS NULL OR p_at < c.cutover_at
+             THEN (p_at AT TIME ZONE 'America/Chicago')::date
+           ELSE ((p_at AT TIME ZONE 'UTC') - interval '4 hours')::date
+         END
+    FROM (SELECT public.qotd_day_cutover() AS cutover_at) c;
+$$;
+
+
+--
+-- Name: qotd_day_cutover(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_day_cutover() RETURNS timestamp with time zone
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT cutover_at FROM public.qotd_day_boundary WHERE id;
+$$;
+
+
+--
 -- Name: qotd_email_prompt_state(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11449,7 +11478,7 @@ CREATE FUNCTION public.qotd_horizon(p_now timestamp with time zone DEFAULT now()
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH t AS (SELECT public.chicago_day(p_now) AS today),
+  WITH t AS (SELECT public.qotd_day(p_now) AS today),
   gap AS (
     SELECT COALESCE(
              (SELECT min((SELECT today FROM t) + k)
@@ -11694,7 +11723,7 @@ DECLARE
   v_session  uuid;
   v_item     uuid;
 BEGIN
-  IF p_qotd_date IS DISTINCT FROM public.chicago_day(p_now) THEN
+  IF p_qotd_date IS DISTINCT FROM public.qotd_day(p_now) THEN
     RETURN jsonb_build_object('status', 'not_today');
   END IF;
   IF NOT EXISTS (
@@ -11801,7 +11830,7 @@ CREATE FUNCTION public.qotd_today() RETURNS date
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  SELECT (now() AT TIME ZONE 'America/Chicago')::date
+  SELECT public.qotd_day(now())
 $$;
 
 
@@ -14639,21 +14668,26 @@ CREATE FUNCTION public.student_answer_days(p_student_id uuid, p_since date) RETU
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  SELECT DISTINCT public.chicago_day(i.occurred_at)
-    FROM public.practice_session_items i
-   WHERE i.user_id = p_student_id AND i.status = 'answered' AND i.occurred_at IS NOT NULL
-     AND i.occurred_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
-  UNION
-  SELECT DISTINCT public.chicago_day(COALESCE(r.occurred_at, r.answered_at))
-    FROM public.review_session_items r
-   WHERE r.student_id = p_student_id AND r.status = 'answered'
-     AND COALESCE(r.occurred_at, r.answered_at) >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
-  UNION
-  SELECT DISTINCT public.chicago_day(a.created_at)
-    FROM public.test_answer_submissions a
-    JOIN public.test_sessions t ON t.id = a.test_session_id
-   WHERE t.student_id = p_student_id AND a.answer IS NOT NULL
-     AND a.created_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago');
+  -- From the earliest instant day p_since can start under either rule (04:00 UTC); a row before
+  -- that day's real start carries the day before, which the outer filter drops.
+  SELECT u.day FROM (
+    SELECT DISTINCT public.qotd_day(i.occurred_at)
+      FROM public.practice_session_items i
+     WHERE i.user_id = p_student_id AND i.status = 'answered' AND i.occurred_at IS NOT NULL
+       AND i.occurred_at >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+    UNION
+    SELECT DISTINCT public.qotd_day(COALESCE(r.occurred_at, r.answered_at))
+      FROM public.review_session_items r
+     WHERE r.student_id = p_student_id AND r.status = 'answered'
+       AND COALESCE(r.occurred_at, r.answered_at) >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+    UNION
+    SELECT DISTINCT public.qotd_day(a.created_at)
+      FROM public.test_answer_submissions a
+      JOIN public.test_sessions t ON t.id = a.test_session_id
+     WHERE t.student_id = p_student_id AND a.answer IS NOT NULL
+       AND a.created_at >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+  ) AS u(day)
+   WHERE u.day >= p_since;
 $$;
 
 
@@ -14702,16 +14736,31 @@ CREATE FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with ti
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH today AS (SELECT public.chicago_day(p_now) AS d),
+  WITH today AS (SELECT public.qotd_day(p_now) AS d),
   days AS (
     SELECT day FROM public.student_answer_days(p_student_id, (SELECT d FROM today) - 400)
      WHERE day <= (SELECT d FROM today)
   ),
+  -- The switch's bridge (Karl, 2026-10-27: "no student loses a streak because of the switch").
+  -- An answer at the same UTC time every night between 04:00 and the Chicago midnight carried the
+  -- day before under the Chicago day and carries its own date under the 04:00 UTC day, so the
+  -- first 04:00 UTC day is the one label that habit skips. Once that day is past, it counts for
+  -- the RUN of a student who answered the day before it. It is never "today done" and never a
+  -- ticked day in "This week" (student_answer_days is unchanged).
+  run_days AS (
+    SELECT day FROM days
+    UNION
+    SELECT b.day
+      FROM (SELECT public.qotd_day(public.qotd_day_cutover()) AS day) AS b
+     WHERE b.day IS NOT NULL
+       AND b.day < (SELECT d FROM today)
+       AND EXISTS (SELECT 1 FROM days WHERE day = b.day - 1)
+  ),
   anchor AS (
     -- The run ends today if today has an answer, else yesterday if yesterday has one.
     SELECT CASE
-             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today)) THEN (SELECT d FROM today)
-             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today) - 1) THEN (SELECT d FROM today) - 1
+             WHEN EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM today)) THEN (SELECT d FROM today)
+             WHEN EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM today) - 1) THEN (SELECT d FROM today) - 1
            END AS d
   ),
   run AS (
@@ -14721,7 +14770,7 @@ CREATE FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with ti
      WHERE (SELECT d FROM anchor) IS NOT NULL
        AND k < COALESCE((
              SELECT min(g) FROM generate_series(0, 401) AS g
-              WHERE NOT EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM anchor) - g)
+              WHERE NOT EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM anchor) - g)
            ), 401)
   )
   SELECT (SELECT n FROM run),
@@ -18345,6 +18394,25 @@ COMMENT ON TABLE public.qotd_daily_stats IS 'QOTD (plan R17): aggregate counters
 
 
 --
+-- Name: qotd_day_boundary; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qotd_day_boundary (
+    id boolean DEFAULT true NOT NULL,
+    cutover_at timestamp with time zone NOT NULL,
+    set_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT qotd_day_boundary_id_check CHECK (id)
+);
+
+
+--
+-- Name: TABLE qotd_day_boundary; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.qotd_day_boundary IS 'The QOTD day switch (Karl, 2026-10-27): one row. Before cutover_at the QOTD day is the America/Chicago date; from cutover_at on it is the 04:00 UTC to 04:00 UTC day. Set once, at apply time, to the next Chicago midnight. Server-only.';
+
+
+--
 -- Name: qotd_schedule; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18359,7 +18427,7 @@ CREATE TABLE public.qotd_schedule (
 -- Name: TABLE qotd_schedule; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18): one question per America/Chicago day. qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18; Karl 2026-10-27): one question per QOTD day (04:00 UTC to 04:00 UTC from the cutover in qotd_day_boundary, America/Chicago before it). qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
 
 
 --
@@ -18985,7 +19053,7 @@ CREATE TABLE public.student_qotd_attempts (
 -- Name: TABLE student_qotd_attempts; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in student answer per America/Chicago day. selected_answer is the canonical option key. The answer itself is the linked practice_session_items row (mode qotd). ON DELETE CASCADE from profiles.';
+COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in student answer per QOTD day (public.qotd_day). selected_answer is the canonical option key. The answer itself is the linked practice_session_items row (mode qotd). ON DELETE CASCADE from profiles.';
 
 
 --
@@ -20535,6 +20603,14 @@ ALTER TABLE ONLY public.psi_occurred_at_backfill_log
 
 ALTER TABLE ONLY public.qotd_daily_stats
     ADD CONSTRAINT qotd_daily_stats_pkey PRIMARY KEY (qotd_date);
+
+
+--
+-- Name: qotd_day_boundary qotd_day_boundary_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_day_boundary
+    ADD CONSTRAINT qotd_day_boundary_pkey PRIMARY KEY (id);
 
 
 --
@@ -24657,6 +24733,12 @@ ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.qotd_daily_stats ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: qotd_day_boundary; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.qotd_day_boundary ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: qotd_schedule; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -27180,6 +27262,22 @@ GRANT ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p
 
 
 --
+-- Name: FUNCTION qotd_day(p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_day(p_at timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_day(p_at timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_day_cutover(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_day_cutover() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_day_cutover() TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29285,6 +29383,13 @@ GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.qotd_daily_stats TO service_role;
+
+
+--
+-- Name: TABLE qotd_day_boundary; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.qotd_day_boundary TO service_role;
 
 
 --

@@ -248,7 +248,7 @@ export async function getHomeQotdToday(
     // First-run activation brief (2026-10-13) P1: Home's "This week" ticks these days.
     readActiveDays(student.id, now),
   ]);
-  if (row === null || row.qotd_date !== qotdToday(now)) {
+  if (row === null || row.qotd_date !== (await qotdToday(db(), now))) {
     return homeQotdTodayResponseSchema.parse({
       state: "none",
       streak,
@@ -295,7 +295,7 @@ export async function recordQotdEmailPromptShown(
   now: Date = new Date(),
 ): Promise<{ recorded: boolean; askNumber: number | null }> {
   const row = await readQotd(db(), null);
-  if (row === null || row.qotd_date !== qotdToday(now))
+  if (row === null || row.qotd_date !== (await qotdToday(db(), now)))
     return { recorded: false, askNumber: null };
   const attempt = await readAttempt(studentId, row.qotd_date);
   if (attempt === null) return { recorded: false, askNumber: null };
@@ -380,7 +380,7 @@ export async function answerHomeQotd(
     HomeQotdFailure
   >
 > {
-  const today = qotdToday(now);
+  const today = await qotdToday(db(), now);
   if (body.qotd_date !== today) {
     return err({
       status: 409,

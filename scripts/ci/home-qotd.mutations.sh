@@ -17,6 +17,13 @@
 # QOTD-only "its day has passed" check was replaced by the general expiry in the dispatcher, so
 # the plant disables that check.
 #
+# Re-pointed 2026-10-27 (owner ruling, Karl: "QOTD: day boundary at 04:00 UTC"): MIG_E
+# (20261115000000_qotd_day_04utc.sql) now LAST defines `qotd_student_answer` and
+# `student_answer_days` (the QOTD day replaced the Chicago day in both), so H2 and H4 aim there;
+# H4's anchor gained two spaces (the union is wrapped in the `day >= p_since` filter). H3 stays on
+# `chicago_day` in MIG_B (still the quota's and the reminders' day) and on the A1 case, which now
+# reads "before the 04:00 UTC cutover". D1-D10 are the new day's plants.
+#
 # Each plant breaks ONE rule the brief locks and must turn a NAMED test red. Same three rules as
 # the other *.mutations.sh harnesses:
 #   RULE 1 — APPLIED. An anchor not found exactly once is STALE: a hard failure, never a pass.
@@ -32,6 +39,9 @@ MIG_A="supabase/migrations/20261029000000_test_dates_and_consent_guard.sql"
 MIG_B="supabase/migrations/20261029010000_home_qotd_streak_email.sql"
 MIG_C="supabase/migrations/20261029020000_qotd_daily_notification.sql"
 MIG_D="supabase/migrations/20261031000000_notification_quiet_hours_expiry.sql"
+MIG_E="supabase/migrations/20261115000000_qotd_day_04utc.sql"
+QOTD_DAY="server/services/qotd/qotd-day.ts"
+QOTD_SVC="server/services/qotd/qotd-service.ts"
 DISPATCH="server/lib/notifications/dispatch.ts"
 NOTIF_SECTION="client/src/components/settings/NotificationsSection.tsx"
 SEND_CTX="server/lib/notifications/qotd-daily-send-context.ts"
@@ -44,7 +54,7 @@ DATES="shared/sat-test-dates.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/hq-mut.XXXX)"
 
-FILES=("$MIG_A" "$MIG_B" "$MIG_C" "$MIG_D" "$DISPATCH" "$NOTIF_SECTION" "$SEND_CTX" "$JOB" "$LINKS" "$PROFILE_SVC" "$SECTION" "$PROMPT" "$DATES")
+FILES=("$MIG_A" "$MIG_B" "$MIG_C" "$MIG_D" "$MIG_E" "$QOTD_DAY" "$QOTD_SVC" "$DISPATCH" "$NOTIF_SECTION" "$SEND_CTX" "$JOB" "$LINKS" "$PROFILE_SVC" "$SECTION" "$PROMPT" "$DATES")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -70,6 +80,7 @@ check() { pnpm exec vitest run "$@" 2>&1; }
 PG_SUITE=tests/ci/home-qotd.pg.ci.test.ts
 UI=client/src/components/home/qotd/HomeQotdSection.test.tsx
 CONTRACT=tests/ci/sat-test-dates.contract.test.ts
+DAY_UNIT=tests/ci/qotd-day.unit.test.ts
 SETTINGS=client/src/pages/settings.test.tsx
 
 if ! pg_isready -q -h "$PGHOST" -p "$PGPORT" 2>/dev/null; then
@@ -99,7 +110,7 @@ run() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(check "$PG_SUITE" "$UI" "$CONTRACT" "$SETTINGS")"; RC=$?
+OUT="$(check "$PG_SUITE" "$UI" "$CONTRACT" "$SETTINGS" "$DAY_UNIT")"; RC=$?
 [ "$RC" = 0 ] && ok "suites green" || { bad "suites not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "HOME QOTD MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
@@ -109,18 +120,18 @@ plant "$MIG_B" "  AND ps.mode NOT IN ('diagnostic', 'qotd');" "  AND ps.mode NOT
 run "H1 quota exclusion" "A3: the QOTD answer does not use the free daily 40" "$PG_SUITE"
 
 echo "=== (2) a replay is treated as a second answer ==="
-need_last qotd_student_answer H2 "$MIG_B"
-plant "$MIG_B" "    IF v_existing.idempotency_key = p_idempotency_key THEN" "    IF false THEN" || { bad "H2 STALE"; exit 1; }
+need_last qotd_student_answer H2 "$MIG_E"
+plant "$MIG_E" "    IF v_existing.idempotency_key = p_idempotency_key THEN" "    IF false THEN" || { bad "H2 STALE"; exit 1; }
 run "H2 replay" "A1: a replay returns the original" "$PG_SUITE"
 
 echo "=== (3) the day is UTC's, not Chicago's ==="
 need_last chicago_day H3 "$MIG_B"
 plant "$MIG_B" "  SELECT (p_at AT TIME ZONE 'America/Chicago')::date;" "  SELECT (p_at AT TIME ZONE 'UTC')::date;" || { bad "H3 STALE"; exit 1; }
-run "H3 Chicago day" "A1: the day is America/Chicago's" "$PG_SUITE"
+run "H3 Chicago day" "the day is America/Chicago's" "$PG_SUITE"
 
 echo "=== (4) a review answer does not extend the streak ==="
-need_last student_answer_days H4 "$MIG_B"
-plant "$MIG_B" "   WHERE r.student_id = p_student_id AND r.status = 'answered'" "   WHERE false" || { bad "H4 STALE"; exit 1; }
+need_last student_answer_days H4 "$MIG_E"
+plant "$MIG_E" "     WHERE r.student_id = p_student_id AND r.status = 'answered'" "     WHERE false" || { bad "H4 STALE"; exit 1; }
 run "H4 streak sources" "A4: every source extends the streak" "$PG_SUITE"
 
 echo "=== (5) mastery cannot read a qotd answer ==="
@@ -221,6 +232,56 @@ run "N7 never sent late" "never sent late" "$PG_SUITE"
 echo "=== (26) an email queued before an unsubscribe is still sent ==="
 plant "$SEND_CTX" "    if (!preference.enabled || !preference.eligible) {" "    if (false) {" || { bad "N8 STALE"; exit 1; }
 run "N8 withdrawal at once" "queued before the student unsubscribed is not sent" "$PG_SUITE"
+
+# ── The QOTD day at 04:00 UTC (Karl, 2026-10-27) ────────────────────────────────────────────
+echo "=== (27) the database's day flips at 05:00 UTC, not 04:00 ==="
+need_last qotd_day D1 "$MIG_E"
+plant "$MIG_E" "           ELSE ((p_at AT TIME ZONE 'UTC') - interval '4 hours')::date" "           ELSE ((p_at AT TIME ZONE 'UTC') - interval '5 hours')::date" || { bad "D1 STALE"; exit 1; }
+run "D1 flip at 04:00 UTC (database)" "D1: the question flips at 04:00 UTC" "$PG_SUITE"
+
+echo "=== (28) an answer is checked against the Chicago day ==="
+need_last qotd_student_answer D2 "$MIG_E"
+plant "$MIG_E" "  IF p_qotd_date IS DISTINCT FROM public.qotd_day(p_now) THEN" "  IF p_qotd_date IS DISTINCT FROM public.chicago_day(p_now) THEN" || { bad "D2 STALE"; exit 1; }
+run "D2 answers land on their day" "D2: answers at 03:59 and 04:01 UTC land on the correct QOTD days" "$PG_SUITE"
+
+echo "=== (29) the switch breaks the late-night streak (no bridge) ==="
+need_last student_streak D3 "$MIG_E"
+plant "$MIG_E" "       AND b.day < (SELECT d FROM today)" "       AND false" || { bad "D3 STALE"; exit 1; }
+run "D3 bridge" "D3: streak continuity across the cutover" "$PG_SUITE"
+
+echo "=== (30) the bridge pardons a real gap ==="
+need_last student_streak D4 "$MIG_E"
+plant "$MIG_E" $'       AND EXISTS (SELECT 1 FROM days WHERE day = b.day - 1)\n' "" || { bad "D4 STALE"; exit 1; }
+run "D4 bridge needs the day before" "D3: streak continuity across the cutover" "$PG_SUITE"
+
+echo "=== (31) the bridge counts as today ==="
+need_last student_streak D5 "$MIG_E"
+plant "$MIG_E" $'       AND b.day < (SELECT d FROM today)\n' "" || { bad "D5 STALE"; exit 1; }
+run "D5 bridge is never today" "D3: streak continuity across the cutover" "$PG_SUITE"
+
+echo "=== (32) the cutover is seeded a day late ==="
+plant "$MIG_E" "AT TIME ZONE 'America/Chicago')::date + 1)::timestamp" "AT TIME ZONE 'America/Chicago')::date + 2)::timestamp" || { bad "D6 STALE"; exit 1; }
+run "D6 seeded cutover" "D0: the cutover is the Chicago midnight after the migration ran" "$PG_SUITE"
+
+echo "=== (33) the server ignores the switch ==="
+plant "$QOTD_SVC" "  return qotdDayOf(now, await loadQotdCutover(client));" "  return qotdDayOf(now, null);" || { bad "D7 STALE"; exit 1; }
+run "D7 server reads the switch" "D1: the question flips at 04:00 UTC" "$PG_SUITE"
+
+echo "=== (34) the server's day starts at 05:00 UTC ==="
+plant "$QOTD_DAY" "export const QOTD_DAY_START_UTC_HOUR = 4;" "export const QOTD_DAY_START_UTC_HOUR = 5;" || { bad "D8 STALE"; exit 1; }
+run "D8 flip at 04:00 UTC (server)" "from the cutover on, flips at 04:00 UTC in summer and winter" "$DAY_UNIT"
+
+echo "=== (35) the first new day's window starts at 04:00 UTC, before the cutover ==="
+plant "$QOTD_DAY" "  return fixed.getTime() > cutoverAt.getTime() ? fixed : cutoverAt;" "  return fixed;" || { bad "D9 STALE"; exit 1; }
+run "D9 windows meet at the cutover" "the windows meet at the cutover" "$DAY_UNIT"
+
+echo "=== (36) an unreadable switch is thrown, not survived ==="
+plant "$QOTD_SVC" "    const value = cutoverCache?.value ?? null;" "    throw new Error(\"cutover unreadable\");" || { bad "D10 STALE"; exit 1; }
+run "D10 unreadable switch" "unreadable before any read (no migration yet)" "$DAY_UNIT"
+
+echo "=== (37) a cutover that is not a timestamp reads as switched ==="
+plant "$QOTD_SVC" $'    .refine((v) => !Number.isNaN(Date.parse(v)))\n' "" || { bad "D11 STALE"; exit 1; }
+run "D11 malformed switch is unreadable" "a value that is not a timestamp is unreadable" "$DAY_UNIT"
 
 echo
 echo "HOME QOTD MUTATIONS: $PASS passed, $FAIL failed"

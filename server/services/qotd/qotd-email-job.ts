@@ -146,7 +146,7 @@ export async function runQotdEmailJob(
   // notification-dispatch-sweep cron (internal-cron-routes.ts).
   const { data: servable, error: servableError } = await db.rpc(
     "qotd_servable",
-    { p_date: qotdToday(now) },
+    { p_date: await qotdToday(db, now) },
   );
   if (servableError) {
     throw new Error(`qotd_servable failed: ${servableError.message}`);

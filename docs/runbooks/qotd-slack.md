@@ -7,8 +7,8 @@
 > >
 > > > > Karl's brief 2026-10-23]
 
-Every morning the **QOTD social assets** workflow (`.github/workflows/qotd-social.yml`, 06:20 UTC)
-builds the day's portrait and story images, the caption and the alt text. It uploads them as the
+Every night the **QOTD social assets** workflow (`.github/workflows/qotd-social.yml`, 04:05 UTC,
+five minutes after the QOTD day turns over at 04:00 UTC: Karl, 2026-10-27) builds the new day's portrait and story images, the caption and the alt text. It uploads them as the
 run's download, then posts them to `#social` as **five numbered items, always in this order**
 (Karl, 2026-10-26). Each item opens with its label, and each finishes (a file upload only once
 Slack confirms the files are shared in the channel) before the next starts:
@@ -37,6 +37,14 @@ reveal into a comment on yesterday's post.
 Choices are in the same canonical order everywhere (Karl, 2026-10-23): the site, the images,
 the Reddit post, the archive and the reveal, so the reveal's letter is the letter the question
 showed.
+
+**The switch to the 04:00 UTC day (one time, SCL-248).** The code ships first, then the
+migration, and the database switches at the Chicago midnight after the migration is applied.
+Until then every 04:05 UTC run is refused and red (the site still serves the Chicago day; see the
+table in section 3), and nothing is posted twice. The first new day starts at that Chicago
+midnight, after that night's 04:05 run, so no scheduled run posts it. Once it has started (any
+time that day), run the workflow by hand with no date: it posts the first new day, with the
+reveal of the day before. From the next night the 04:05 run posts as normal.
 
 It uses a standard Slack app with three scopes. It works on Slack's free plan.
 
@@ -83,17 +91,17 @@ Do this before the first scheduled run:
 
 The rule is that it never posts a day that failed a check, and it never fails quietly.
 
-| Situation                                                                                    | What happens                                                                                                                                                           |
-| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The build fails a check (an answer in the caption or image, wrong reveal wording, bad input) | The build step fails. Nothing is uploaded and nothing is posted. The run page lists the problems.                                                                      |
-| An image does not fit                                                                        | The build step fails. No `post.json` is written, so nothing is posted.                                                                                                 |
-| At 06:20 UTC the site still serves yesterday's question as today's                           | The build refuses it: that day's answer is already public, so it would have to pass the past-day leak check. Nothing is posted. Rebuild it by hand with that **date**. |
-| Yesterday was **withheld** (a repaired question; its archive page is not published)          | The reveal message says so and carries nothing else. Today's post goes out as normal.                                                                                  |
-| Yesterday is withheld or missing, or its TikTok slides cannot fit                            | No carousel. A one-line note in `#social` says why. Everything else is posted as normal.                                                                               |
-| Yesterday's archive data cannot be read (anything but a 404)                                 | The build step fails loudly, as for any other read. Nothing is posted.                                                                                                 |
-| `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                       | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                             |
-| `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                   | Same: the download is uploaded and the run is red.                                                                                                                     |
-| Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)      | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                          |
+| Situation                                                                                                                                        | What happens                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The build fails a check (an answer in the caption or image, wrong reveal wording, bad input)                                                     | The build step fails. Nothing is uploaded and nothing is posted. The run page lists the problems.                                                                                                    |
+| An image does not fit                                                                                                                            | The build step fails. No `post.json` is written, so nothing is posted.                                                                                                                               |
+| At 04:05 UTC the site still serves the day that just ended as today's (the database has not switched to the 04:00 UTC day yet, or a stale cache) | The build refuses it: it is not today under the 04:00 UTC day, and that day was posted the night before. Nothing is posted. Once the site serves the new day, run the workflow by hand with no date. |
+| Yesterday was **withheld** (a repaired question; its archive page is not published)                                                              | The reveal message says so and carries nothing else. Today's post goes out as normal.                                                                                                                |
+| Yesterday is withheld or missing, or its TikTok slides cannot fit                                                                                | No carousel. A one-line note in `#social` says why. Everything else is posted as normal.                                                                                                             |
+| Yesterday's archive data cannot be read (anything but a 404)                                                                                     | The build step fails loudly, as for any other read. Nothing is posted.                                                                                                                               |
+| `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                                                                           | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                                                           |
+| `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                                                                       | Same: the download is uploaded and the run is red.                                                                                                                                                   |
+| Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)                                                          | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                                                        |
 
 A red run e-mails whoever GitHub notifies for failed scheduled workflows. When the post fails,
 the download is still on the run page, so the day can be shared by hand.
