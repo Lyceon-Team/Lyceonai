@@ -4,7 +4,11 @@
 **Sources:**
 
 - Claude's draft (Karl's rule, interpretation-first, the core-moves table, four warnings), 2026-10-27.
-- Gemini watched 29 approved Desmos videos (`scripts/rag/extract-desmos-moves.ts`; extracts in the gitignored `scripts/rag/.cache/desmos-playbook/`): the 22 Tutorllini lessons, plus 7 others among the 85 approved rows.
+- Gemini watched the 29 approved Desmos videos (`scripts/rag/extract-desmos-moves.ts`; extracts in the gitignored `scripts/rag/.cache/desmos-playbook/`): the 22 Tutorllini lessons, plus 7 others among the 85 approved rows.
+  - 27 were read in full.
+  - Two were read only in part: the Scalar "Desmos Bible" (`3l2hgANLQV8`, first 10 of 32 minutes) and "The only SAT Math Desmos Guide" (`jCT0jTVzKy0`, first 20 of 34 minutes). Their remaining clips failed with a proxy 502 on every one of four attempts.
+  - Both are broad overviews whose read parts repeat moves the lessons teach.
+  - Measured spend: **$3.91** (cap $10), §10.
 
 Everything below is in our own words. Desmos input is quoted exactly, because typed syntax is not instructor text.
 
@@ -31,7 +35,7 @@ The input is the easy part. The skill is translating the question into "which fe
 | "the value of x where…" vs "the value of…" | the x-coordinate vs the y-coordinate of the same point. The other coordinate is a common trap answer |
 | a constant that makes something true       | the slider value at which the picture meets the condition (touching once, parallel, overlapping)     |
 
-The videos teach it in this order every time: read what is asked, name the feature, then type. In 27 of the 29 videos the instructor explains why the feature is the answer, not only which button to press.
+The videos teach it in this order every time: read what is asked, name the feature, then type. In 26 of the 27 fully read videos the instructor explains why the feature is the answer, not only which button to press.
 
 ## 3. Core moves
 
@@ -110,6 +114,11 @@ Mapped against the 19 SAT math skills in `content/canonical/taxonomy.json`:
 
 Also not covered: reading data straight from a chart, scatterplot or table without typing it in; scatterplot "line of best fit" chosen by eye; and `stdev` (C8).
 
+## 6a. Conflicts between sources, unresolved
+
+- **The table's "add regression" button.** T21 and `ZYDcmWtfLkk` click a regression button in the table header. `jCT0jTVzKy0` says the button it shows is part of the instructor's own web app, not the Desmos built into the digital SAT. Whether Bluebook's Desmos has it is not settled by these videos. Typing `y_1 ~ m x_1 + b` works either way, so the block and §3 use typing.
+- **The letter `r` as a slider.** T14 says `r` is reserved (polar) and broke its slider, and renames it. T7 and T19 use `r` without trouble. The safe advice is: if a slider on `r` misbehaves, rename it.
+
 ## 7. Student-produced responses (from T18; check before use)
 
 T18 teaches entry rules for the answer box, and they shape how a Desmos result is typed in:
@@ -157,3 +166,13 @@ What was left out to stay under 350, all kept in the playbook:
 - translations, parameterization and polygons;
 - the off-screen, near-tangent and rounding cautions;
 - the student-produced response rules (§7, unchecked).
+
+## 10. Extraction record
+
+|                |                                                                                                                                                                                                                                                    |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model          | `gemini-3.5-flash` on Vertex, watching the public YouTube video. No transcript                                                                                                                                                                     |
+| Videos         | 29 approved Desmos rows. 27 read in full; 2 in part (see Sources)                                                                                                                                                                                    |
+| Calls          | One whole-video call for videos up to 15 minutes; 10-minute clips above that. Each clip is cached on its own                                                                                                                                       |
+| Measured spend | **$3.91**, token counts exact: $3.48 kept (27 videos plus the cached clips of the two partial ones) and $0.43 lost on clips of an attempt that failed before per-clip caching existed. Rates are third-party list prices (`scripts/rag/vertex.ts`) |
+| Not measured   | Proxy 502s return no usage. If Vertex completed any of those calls before the proxy dropped the reply, they were billed and are not in the figure                                                                                                  |
