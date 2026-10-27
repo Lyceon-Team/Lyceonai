@@ -162,6 +162,14 @@ describe("loadQotdCutover", () => {
     expect(await qotdToday(c, at("2026-08-05T04:30:00Z"))).toBe("2026-08-04");
   });
 
+  it("a value that is not a timestamp is unreadable: the Chicago day, not the switch", async () => {
+    const { loadQotdCutover } =
+      await import("../../server/services/qotd/qotd-service");
+    const c = client([{ data: "not-a-time", error: null }]);
+    expect(await loadQotdCutover(c, 0)).toBeNull();
+    expect(warnings).toEqual(["day_cutover_unreadable"]);
+  });
+
   it("unreadable after a good read: keeps the last known switch", async () => {
     const { loadQotdCutover } =
       await import("../../server/services/qotd/qotd-service");

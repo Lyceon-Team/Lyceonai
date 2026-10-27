@@ -106,7 +106,13 @@ export async function loadQotdCutover(
   )
     return cutoverCache.value;
   const { data, error } = await client.rpc("qotd_day_cutover", {});
-  const parsed = z.string().min(1).nullable().safeParse(data);
+  // A value that is not a timestamp is unreadable too: an Invalid Date would compare as "switched".
+  const parsed = z
+    .string()
+    .min(1)
+    .refine((v) => !Number.isNaN(Date.parse(v)))
+    .nullable()
+    .safeParse(data);
   if (error || !parsed.success) {
     const value = cutoverCache?.value ?? null;
     logger.warn(

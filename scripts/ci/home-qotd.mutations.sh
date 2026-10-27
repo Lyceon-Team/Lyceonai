@@ -279,6 +279,10 @@ echo "=== (36) an unreadable switch is thrown, not survived ==="
 plant "$QOTD_SVC" "    const value = cutoverCache?.value ?? null;" "    throw new Error(\"cutover unreadable\");" || { bad "D10 STALE"; exit 1; }
 run "D10 unreadable switch" "unreadable before any read (no migration yet)" "$DAY_UNIT"
 
+echo "=== (37) a cutover that is not a timestamp reads as switched ==="
+plant "$QOTD_SVC" $'    .refine((v) => !Number.isNaN(Date.parse(v)))\n' "" || { bad "D11 STALE"; exit 1; }
+run "D11 malformed switch is unreadable" "a value that is not a timestamp is unreadable" "$DAY_UNIT"
+
 echo
 echo "HOME QOTD MUTATIONS: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ]
