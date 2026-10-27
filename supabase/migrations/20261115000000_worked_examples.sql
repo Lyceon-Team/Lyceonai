@@ -8,7 +8,8 @@
 --       monthly readout); Step 0 rulings (Karl, 2026-10-27): 1 no future-QOTD or full-length
 --       questions, and the QOTD scheduler skips approved worked-example questions; 3 post_on +
 --       a daily job; 4 render from the merged content file, rows from generated seed SQL;
---       7 questions stay in practice] | @implemented [2026-10-27]
+--       7 questions stay in practice; Karl's decision 1 on #1336 (2026-10-27): block a
+--       full-length form item for a question with an approved worked example] | @implemented [2026-10-27]
 --
 -- plain English:
 --   * worked_examples: one row per question (question_id UNIQUE; id is 'we-' || lower(question_id)
@@ -22,8 +23,13 @@
 --   * The leak rule, enforced here so no caller can skip it: a row cannot BECOME or STAY approved
 --     while its question is in any full-length form (test_form_items) or has a QOTD day today or
 --     later (qotd_schedule; past QOTD days are already public in the archive). The other
---     direction: qotd_question_is_eligible now also refuses a question with an approved worked
---     example, so the scheduler's candidate list and its insert both skip it.
+--     direction, both surfaces that reserve questions:
+--       - QOTD: qotd_question_is_eligible now also refuses a question with an approved worked
+--         example, so the scheduler's candidate list and its insert both skip it;
+--       - full-length forms: a trigger on test_form_items refuses an INSERT (or an UPDATE of
+--         question_id) that would put a question with an approved worked example into a form
+--         (Karl's decision 1 on #1336, 2026-10-27). Its solution is public, so it can never become
+--         an exam item. A draft or retired worked example does not block it.
 --   * worked_example_metrics: one manual reading per (example, platform, captured_at). The
 --     brief's 3s_retention_pct is retention_3s_pct here (an identifier cannot start with a digit
 --     unquoted). Percentages are 0..100; counts are >= 0.
@@ -34,8 +40,10 @@
 --     answers included, so it is security_invoker and service_role only, exactly like the table.
 --
 -- Access: RLS on both tables with NO policies; all privileges revoked from PUBLIC / anon /
--- authenticated; service_role reads and writes. The trigger function is SECURITY INVOKER (it runs
--- as the writer, who must already be service_role). Nothing here is reachable from a browser.
+-- authenticated; service_role reads and writes. worked_examples_leak_guard is SECURITY INVOKER (it
+-- runs as the writer, who must already be service_role). test_form_items_worked_example_guard is
+-- SECURITY DEFINER with a pinned search_path, so it sees worked_examples whoever writes the form
+-- item; EXECUTE is revoked from PUBLIC / anon / authenticated. Nothing here is reachable from a browser.
 --
 -- OWNER-RUN. Karl applies to prod. DO NOT auto-apply. LYCEON-MIGRATION-REVIEWED
 -- ===========================================================================
@@ -143,6 +151,31 @@ GRANT SELECT, INSERT, UPDATE ON TABLE public.worked_examples        TO service_r
 GRANT SELECT, INSERT, UPDATE ON TABLE public.worked_example_metrics TO service_role;
 
 REVOKE ALL ON FUNCTION public.worked_examples_leak_guard() FROM PUBLIC, anon, authenticated;
+
+-- The leak rule, full-length side (Karl's decision 1 on #1336, 2026-10-27): a question whose worked
+-- solution is approved never becomes a form item. Fires on INSERT and on a change of question_id.
+CREATE OR REPLACE FUNCTION public.test_form_items_worked_example_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $fn$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.worked_examples w
+              WHERE w.question_id = NEW.question_id AND w.status = 'approved') THEN
+    RAISE EXCEPTION 'worked_example_leak: % has an approved worked example and cannot be a full-length item', NEW.question_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$fn$;
+
+DROP TRIGGER IF EXISTS test_form_items_worked_example_guard ON public.test_form_items;
+CREATE TRIGGER test_form_items_worked_example_guard
+  BEFORE INSERT OR UPDATE OF question_id ON public.test_form_items
+  FOR EACH ROW EXECUTE FUNCTION public.test_form_items_worked_example_guard();
+
+REVOKE ALL ON FUNCTION public.test_form_items_worked_example_guard() FROM PUBLIC, anon, authenticated;
 
 -- The monthly readout: per month, the latest reading of each example on each platform.
 CREATE OR REPLACE VIEW public.worked_example_metrics_monthly

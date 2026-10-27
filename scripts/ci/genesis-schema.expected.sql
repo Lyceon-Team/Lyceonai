@@ -15338,6 +15338,25 @@ COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS '
 
 
 --
+-- Name: test_form_items_worked_example_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.test_form_items_worked_example_guard() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.worked_examples w
+              WHERE w.question_id = NEW.question_id AND w.status = 'approved') THEN
+    RAISE EXCEPTION 'worked_example_leak: % has an approved worked example and cannot be a full-length item', NEW.question_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: tutor_conversation_retention_days(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -22754,6 +22773,13 @@ CREATE TRIGGER study_profile_exam_dates_sync BEFORE INSERT OR UPDATE ON public.s
 
 
 --
+-- Name: test_form_items test_form_items_worked_example_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER test_form_items_worked_example_guard BEFORE INSERT OR UPDATE OF question_id ON public.test_form_items FOR EACH ROW EXECUTE FUNCTION public.test_form_items_worked_example_guard();
+
+
+--
 -- Name: mastery_constants trg_capture_mastery_constant_change; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -28119,6 +28145,13 @@ GRANT ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean
 --
 
 REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION test_form_items_worked_example_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.test_form_items_worked_example_guard() FROM PUBLIC;
 
 
 --

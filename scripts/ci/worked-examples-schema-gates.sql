@@ -275,12 +275,17 @@ BEGIN
   IF v IS DISTINCT FROM ARRAY['qotd','worked_example'] THEN
     RAISE EXCEPTION 'WORKED_EXAMPLES_GATE_FAILED: W-07 WEGT05 usage_tags = %', v;
   END IF;
-  -- Put WEGT05 in the form too (after approval; the guard is on worked_examples writes).
+  -- full_length and worked_example never meet on one question (W-04, W-09); the order of the
+  -- other pair is checked on WEGT03: today's QOTD, put into the form here.
   INSERT INTO public.test_form_items (test_form_id, section, module, ordinal, question_id)
-  VALUES ('99999999-0000-0000-0000-0000000000e1', 'M', '1', 2, 'SATM1WEGT05');
-  SELECT usage_tags INTO v FROM public.questions_with_usage WHERE id = 'SATM1WEGT05';
-  IF v IS DISTINCT FROM ARRAY['qotd','full_length','worked_example'] THEN
+  VALUES ('99999999-0000-0000-0000-0000000000e1', 'M', '1', 2, 'SATM1WEGT03');
+  SELECT usage_tags INTO v FROM public.questions_with_usage WHERE id = 'SATM1WEGT03';
+  IF v IS DISTINCT FROM ARRAY['qotd','full_length'] THEN
     RAISE EXCEPTION 'WORKED_EXAMPLES_GATE_FAILED: W-07 tag order = %', v;
+  END IF;
+  SELECT usage_tags INTO v FROM public.questions_with_usage WHERE id = 'SATM1WEGT02';
+  IF v IS DISTINCT FROM ARRAY['full_length'] THEN
+    RAISE EXCEPTION 'WORKED_EXAMPLES_GATE_FAILED: W-07 WEGT02 usage_tags = %', v;
   END IF;
   SELECT usage_tags INTO v FROM public.questions_with_usage WHERE id = 'SATM1WEGT01';
   IF v IS NULL OR cardinality(v) <> 0 THEN
@@ -292,6 +297,30 @@ BEGIN
     RAISE EXCEPTION 'WORKED_EXAMPLES_GATE_FAILED: W-07 a draft worked example tagged its question: %', v;
   END IF;
   RAISE NOTICE '    OK W-07 questions.* + usage_tags, fixed order, {} when unused, drafts not counted';
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- W-09 leak rule, full-length side (Karl's decision 1 on #1336, 2026-10-27): a question with an
+-- approved worked example never becomes a form item, by INSERT or by UPDATE of question_id; a
+-- draft or retired worked example does not block it.
+-- ---------------------------------------------------------------------------
+SELECT pg_temp.we_refused($$INSERT INTO public.test_form_items (test_form_id, section, module, ordinal, question_id)
+  VALUES ('99999999-0000-0000-0000-0000000000e1', 'M', '1', 3, 'SATM1WEGT07')$$,
+  '23514', 'W-09 an approved worked-example question inserted into a full-length form');
+SELECT pg_temp.we_refused($$UPDATE public.test_form_items SET question_id = 'SATM1WEGT07'
+  WHERE test_form_id = '99999999-0000-0000-0000-0000000000e1' AND question_id = 'SATM1WEGT02'$$,
+  '23514', 'W-09 a form item re-pointed at an approved worked-example question');
+-- Presence before absence: the draft (WEGT06) and the retired (WEGT08) example's questions go in.
+INSERT INTO public.test_form_items (test_form_id, section, module, ordinal, question_id)
+VALUES ('99999999-0000-0000-0000-0000000000e1', 'M', '1', 4, 'SATM1WEGT06'),
+       ('99999999-0000-0000-0000-0000000000e1', 'M', '1', 5, 'SATM1WEGT08');
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM public.test_form_items
+       WHERE question_id IN ('SATM1WEGT06', 'SATM1WEGT08')) <> 2 THEN
+    RAISE EXCEPTION 'WORKED_EXAMPLES_GATE_FAILED: W-09 a draft or retired worked example blocked a form item';
+  END IF;
+  RAISE NOTICE '    OK W-09 approved worked-example questions refused as form items (insert and update); draft and retired allowed';
 END $$;
 
 -- ---------------------------------------------------------------------------

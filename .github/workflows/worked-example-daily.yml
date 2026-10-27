@@ -14,8 +14,9 @@
 # record shows Karl merged it, runs every content rule, and generates the composition. Then:
 # `hyperframes check`, render, the browser layout check (safe area, blank paper), the MP4 check
 # (1080×1920, 30-60 s, audio, the music peak on record). Only then is the example claimed in
-# posted.json, committed and pushed to `social` with this run's token (as the approval stamp is,
-# Karl's ruling 2026-10-15), and only after that push succeeds is it posted: a re-run finds the
+# posted.json, committed and pushed to `social` with this run's token (covered by Karl's ruling of
+# 2026-10-15 on the approval stamp; confirmed for this ledger, decision 2 on #1336, 2026-10-27),
+# and only after that push succeeds is it posted: a re-run finds the
 # claim and posts nothing, so it is posted once. A post that fails after the claim is re-posted by
 # hand (docs/runbooks/worked-examples.md). Nothing due: the run ends green with a note.
 #

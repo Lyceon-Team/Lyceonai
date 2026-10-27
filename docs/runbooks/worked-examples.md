@@ -23,7 +23,8 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
 ## The weekly batch (a pull request into `social`, 3 examples)
 
 1. Pick questions. Not allowed: a question in any full-length form, or one that is a QOTD today or
-   later (the database refuses the approved row). The generator reads the question from its seed
+   later (the database refuses the approved row). Once an example is approved, its question can
+   no longer be added to a full-length form (Karl's decision 1 on #1336, 2026-10-27). The generator reads the question from its seed
    SQL under `infra/supabase/seed/`; a question a seed patch changes is refused.
 2. Write `content/worked-examples/<YYYY-Www>/<QUESTION_ID>/example.json`
    (`packages/shared/src/worked-example-schema.ts`). `post_on` is in that week and matches the

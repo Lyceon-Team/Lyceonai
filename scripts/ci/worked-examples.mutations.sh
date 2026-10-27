@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
 # Mutation harness for worked examples (owner brief "Worked examples: production system",
-# Karl, 2026-10-27: "Plants: one per rule.")
+# Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -134,6 +134,10 @@ if [ "$HAVE_PG" = 1 ]; then
     "w.question_id = q.id AND w.status = 'approved')" \
     "w.question_id = q.id AND FALSE)" \
     "W-05 an approved worked-example question is QOTD-eligible" qotd_question_is_eligible
+  sql_plant "S9 an approved worked-example question can become a full-length form item" \
+    "w.question_id = NEW.question_id AND w.status = 'approved') THEN" \
+    "w.question_id = NEW.question_id AND FALSE) THEN" \
+    "W-09 an approved worked-example question inserted into a full-length form was accepted" test_form_items_worked_example_guard
   echo "=== SQL: table shape, one a day, RLS and grants, metric bounds ==="
   sql_plant "S4 two steps accepted" \
     "AND jsonb_array_length(steps) BETWEEN 3 AND 6" \
