@@ -126,6 +126,16 @@ const tutorConfigKeySchemas = {
     schema: videoMethodKeywordMapSchema.nullable(),
     default: null,
   },
+  // @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), ruling 2 of
+  // 2026-10-27; SCL-253] | @implemented [2026-10-27] | plain English: Phase B of the review
+  // panel's guided choices ("Show me on Desmos", "Explain the rule"). Off: both are hidden and
+  // their intents are refused with 400 invalid_input. OWNER RULING 2026-10-27: THIS STAYS OFF
+  // UNTIL PHASE B'S PROMPT WORK LANDS. Turning it on before then would send those intents to a
+  // prompt that does nothing with them. No row is seeded; the default serves.
+  review_guided_choices_phase_b_enabled: {
+    schema: z.boolean(),
+    default: false,
+  },
 } as const;
 
 type TutorConfigKey = keyof typeof tutorConfigKeySchemas;

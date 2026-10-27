@@ -54,9 +54,11 @@ import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  useGuidedChoices,
   useItemConversation,
   type TutorSourceSurface,
 } from "@/hooks/tutor-client";
+import type { GuidedChoicesState } from "@/components/tutor/GuidedChoices";
 import { Pill } from "@/components/student-ui";
 import { LisaAvatar } from "@/components/tutor/TutorThreadParts";
 import {
@@ -119,6 +121,17 @@ export function ScopedTutorBody({
 }): JSX.Element {
   // Looking is a GET. Nothing here creates a conversation on load.
   const existing = useItemConversation(sourceSurface, sessionItemId);
+  // Guided choices (owner brief 2026-10-27, SCL-252): the review panel only. Which ones is the
+  // server's answer for this item (its section, the Phase B flag), never decided here.
+  const isReview = sourceSurface === "review";
+  const choicesQuery = useGuidedChoices(isReview ? sessionItemId : null);
+  const guidedChoices: GuidedChoicesState | null = !isReview
+    ? null
+    : choicesQuery.isError
+      ? { status: "error" }
+      : choicesQuery.data === undefined
+        ? { status: "loading" }
+        : { status: "ready", intents: choicesQuery.data };
   return (
     <TutorConversationBody
       scopeKey={sessionItemId}
@@ -130,6 +143,7 @@ export function ScopedTutorBody({
       }}
       copy={submitted ? QUESTION_SCOPE_AFTER_SUBMIT_COPY : QUESTION_SCOPE_COPY}
       onEnded={onEnded}
+      guidedChoices={guidedChoices}
     />
   );
 }

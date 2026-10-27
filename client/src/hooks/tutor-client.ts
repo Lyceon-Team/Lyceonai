@@ -37,6 +37,10 @@ import {
   tutorTurnTimingSchema,
   type TutorTurnTiming,
 } from "@lyceon/shared/tutor-turn-timing-schema";
+import {
+  guidedChoicesResponseSchema,
+  type ReviewIntent,
+} from "@lyceon/shared/tutor-guided-choices";
 import { apiRequest } from "@/lib/queryClient";
 import { type HttpApiError } from "@/lib/api-error";
 
@@ -94,6 +98,8 @@ export type SendMessageInput = {
   conversation_id: string;
   message: string;
   client_turn_id: string;
+  /** A guided-choice tap: the choice's code, with `message` its exact label (SCL-252). */
+  intent?: ReviewIntent;
 };
 
 export type TutorSuggestedActionType =
@@ -331,6 +337,34 @@ export function useItemConversation(
         `/conversations?${params.toString()}`,
       );
       return list.conversations[0]?.conversation_id ?? null;
+    },
+  });
+}
+
+/**
+ * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) build 5;
+ *        SCL-252] | @implemented [2026-10-27]
+ *
+ * plain English: the guided choices the server offers for one review item (its section and the
+ * Phase B flag decide; GET /api/tutor/guided-choices). The panel draws exactly these. While it
+ * loads, or if it fails, there are none: the composer is always there, and the server refuses an
+ * intent it did not offer anyway. Parsed with the shared schema, so an unknown code never renders.
+ */
+export function useGuidedChoices(
+  sessionItemId: string | null,
+): UseQueryResult<ReviewIntent[], HttpApiError> {
+  return useQuery({
+    queryKey: ["tutor", "guided-choices", sessionItemId],
+    enabled: sessionItemId !== null,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        source_session_item_id: sessionItemId ?? "",
+      });
+      const payload = await tutorRequest<unknown>(
+        `/guided-choices?${params.toString()}`,
+      );
+      return guidedChoicesResponseSchema.parse(payload).intents;
     },
   });
 }
