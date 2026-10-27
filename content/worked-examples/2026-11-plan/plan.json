@@ -1,0 +1,70 @@
+{
+  "month": "2026-11",
+  "slots": [
+    {
+      "post_on": "2026-11-02",
+      "skill_code": "Percentages",
+      "hook_type": "obvious_answer_trap"
+    },
+    {
+      "post_on": "2026-11-04",
+      "skill_code": "Right Triangles and Trigonometry",
+      "hook_type": "puzzle"
+    },
+    {
+      "post_on": "2026-11-06",
+      "skill_code": "Probability and Conditional Probability",
+      "hook_type": "speed"
+    },
+    {
+      "post_on": "2026-11-09",
+      "skill_code": "Area and Volume",
+      "hook_type": "challenge"
+    },
+    {
+      "post_on": "2026-11-11",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "hook_type": "contrarian"
+    },
+    {
+      "post_on": "2026-11-13",
+      "skill_code": "Percentages",
+      "hook_type": "puzzle"
+    },
+    {
+      "post_on": "2026-11-16",
+      "skill_code": "Right Triangles and Trigonometry",
+      "hook_type": "speed"
+    },
+    {
+      "post_on": "2026-11-18",
+      "skill_code": "Probability and Conditional Probability",
+      "hook_type": "challenge"
+    },
+    {
+      "post_on": "2026-11-20",
+      "skill_code": "Area and Volume",
+      "hook_type": "contrarian"
+    },
+    {
+      "post_on": "2026-11-23",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "hook_type": "obvious_answer_trap"
+    },
+    {
+      "post_on": "2026-11-25",
+      "skill_code": "Percentages",
+      "hook_type": "speed"
+    },
+    {
+      "post_on": "2026-11-27",
+      "skill_code": "Right Triangles and Trigonometry",
+      "hook_type": "challenge"
+    },
+    {
+      "post_on": "2026-11-30",
+      "skill_code": "Probability and Conditional Probability",
+      "hook_type": "contrarian"
+    }
+  ]
+}
