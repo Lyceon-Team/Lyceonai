@@ -240,12 +240,34 @@ export const questionContentSchema = z.object({
 // Strict: an offered video carries no identifier, and a request that tries to send one (a
 // video_id, a URL) is refused at the worker's parse rather than stripped silently (CC Brief
 // "Video Library" §7: the model never sees a video identifier).
+//
+// @spec [Doc-03D_V1.2 §6.8 as amended by the video retrieval-contract SCL; owner brief "Video
+// retrieval: method tags", Karl 2026-10-27 (Step 0 ruling: tell the worker each video's methods
+// and format)] | @implemented [2026-10-27]: `methods` (how the video solves) and `format` (its
+// shape) so LISA can tell which offered video is the Desmos one without relying on a title.
+// Optional, so the worker is deployed FIRST (it accepts both with or without them) and the BFF
+// second; the object stays strict, so an older worker would refuse them — never deploy the BFF
+// first. The value lists are THE vocabulary (packages/shared/src/video-methods.ts), inlined
+// because the worker builds from this file alone; a contract test keeps them equal.
+export const OFFERED_VIDEO_METHODS = [
+  "desmos",
+  "algebraic",
+  "backsolve",
+] as const;
+export const OFFERED_VIDEO_FORMATS = [
+  "worked_example",
+  "formula",
+  "lesson",
+  "strategy",
+] as const;
 export const offeredVideoSchema = z
   .object({
     index: z.number().int().min(1).max(3),
     title: z.string(),
     channel_name: z.string(),
     duration_seconds: z.number().int().positive(),
+    methods: z.array(z.enum(OFFERED_VIDEO_METHODS)).max(3).optional(),
+    format: z.enum(OFFERED_VIDEO_FORMATS).nullable().optional(),
   })
   .strict();
 export type OfferedVideo = z.infer<typeof offeredVideoSchema>;

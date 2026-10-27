@@ -37,7 +37,11 @@
  *    W3-4b: student-wide domain bands rendered (general mode had none).
  */
 
-import type { OrchestrateRequest } from "../lib/schema.js";
+import type {
+  OFFERED_VIDEO_FORMATS,
+  OFFERED_VIDEO_METHODS,
+  OrchestrateRequest,
+} from "../lib/schema.js";
 import { masteryLevelToBand } from "./mastery-bands.js";
 
 /**
@@ -456,16 +460,45 @@ function explanationStyleDescription(
  * is on the wire, so none can reach the model. Placed last, with its directive (§7.2, §7.4).
  *
  * @spec [CC Brief "Video Library (ships now)" §7; Doc-03D_V1.2 §7.2, §7.4]
+ *
+ * @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27] | @implemented [2026-10-27]
+ * Each video also says how it solves and what shape it is, when the BFF sends them ("solves
+ * with Desmos; lesson"), so LISA can tell which offered video answers a student who asked for
+ * Desmos without relying on the title. Facts only: no rule about when to offer is added here
+ * (prompt behaviour is another lane). A video with neither renders exactly as before.
  */
+const METHOD_WORDS: Readonly<
+  Record<(typeof OFFERED_VIDEO_METHODS)[number], string>
+> = {
+  desmos: "with Desmos",
+  algebraic: "by hand",
+  backsolve: "by plugging in answer choices or numbers",
+};
+const FORMAT_WORDS: Readonly<
+  Record<(typeof OFFERED_VIDEO_FORMATS)[number], string>
+> = {
+  worked_example: "worked example",
+  formula: "formula short",
+  lesson: "lesson",
+  strategy: "tips",
+};
+
 export function renderVideoBlock(request: OrchestrateRequest): string | null {
   const videos = request.offered_videos ?? [];
   if (videos.length === 0) return null;
   const minutes = (s: number): string =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const facts = (v: (typeof videos)[number]): string => {
+    const parts: string[] = [];
+    const methods = (v.methods ?? []).map((m) => METHOD_WORDS[m]);
+    if (methods.length > 0) parts.push(`solves ${methods.join(" and ")}`);
+    if (v.format != null) parts.push(FORMAT_WORDS[v.format]);
+    return parts.length === 0 ? "" : `; ${parts.join("; ")}`;
+  };
   const list = videos
     .map(
       (v) =>
-        `${v.index}. "${v.title}" (${v.channel_name}, ${minutes(v.duration_seconds)})`,
+        `${v.index}. "${v.title}" (${v.channel_name}, ${minutes(v.duration_seconds)}${facts(v)})`,
     )
     .join(" ");
   return (

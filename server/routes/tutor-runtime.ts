@@ -38,7 +38,12 @@ import { z } from "zod";
 import { emitEvent } from "../lib/analytics/emit-event";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
-import { timedRoute, timedStep } from "../lib/step-timer";
+import {
+  recordVideoRecommendation,
+  recordVideoRetrieval,
+  timedRoute,
+  timedStep,
+} from "../lib/step-timer";
 import { EntitlementService } from "../services/entitlement-service";
 // resolveFullEnvelope: context resolver lives in tutor-context.ts.
 // hasAnswerLeak was previously imported here but is now internal to the
@@ -95,6 +100,7 @@ import {
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import { orchestrateRequestSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import {
+  requestedVideoMethod,
   resolveVideoAction,
   retrieveOfferedVideos,
   toWireVideos,
@@ -1819,16 +1825,35 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // branch (13c). A crisis turn never reaches here; an input-blocked turn never calls the
     // worker. Fails open: an error logs and the turn proceeds with no videos. The worker gets
     // index, title, channel and length only — the ids stay here (§7).
-    const offeredVideos =
+    //
+    // Method tags (owner brief 2026-10-27): the way of solving the student's CURRENT message
+    // asks for ("is there a Desmos video for this?") is detected from the keyword map in
+    // runtime config — deterministic, no model call — and ranks those videos first. The
+    // route_timing line records the method, the map version, the result count and the offered
+    // ids (codes and counts only, never message text).
+    const requested =
       armorInput.kind === "blocked"
+        ? null
+        : requestedVideoMethod(input.message);
+    const offeredVideos =
+      requested === null
         ? []
         : await timedStep("video_retrieval", () =>
             retrieveOfferedVideos(
               effectiveScope.source_question_row_id,
               envelope.source_surface,
               conversation.id,
+              requested.method,
             ),
           );
+    if (requested !== null) {
+      recordVideoRetrieval({
+        method: requested.method,
+        map_version: requested.mapVersion,
+        results: offeredVideos.length,
+        video_ids: offeredVideos.map((v) => v.video_id),
+      });
+    }
     if (offeredVideos.length > 0) {
       envelope.offered_videos = toWireVideos(offeredVideos);
     }
@@ -2120,6 +2145,21 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       .update({ updated_at: new Date().toISOString() })
       .eq("id", conversation.id);
 
+    // recommend_video carries an index; the video is attached here, from this turn's offered
+    // set (brief §7). Which offered video LISA recommended goes on the route_timing line.
+    const clientAction = resolveVideoAction(
+      orchestration.response.suggested_action,
+      offeredVideos,
+      serialized.blocked,
+    );
+    recordVideoRecommendation(
+      "video" in clientAction
+        ? offeredVideos.findIndex(
+            (v) => v.video_id === clientAction.video.video_id,
+          ) + 1
+        : null,
+    );
+
     // Step 19: Return success response (§6.7).
     res.status(200).json({
       data: {
@@ -2133,11 +2173,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           // turn's offered set (brief §7). An unknown index becomes no action, and so does
           // an offer on a reply the serializer substituted (orchestrateTurn already drops one
           // whose content its anti-leak scan replaced).
-          suggested_action: resolveVideoAction(
-            orchestration.response.suggested_action,
-            offeredVideos,
-            serialized.blocked,
-          ),
+          suggested_action: clientAction,
           ui_hints: orchestration.response.ui_hints,
         },
         conversation_updated_at: new Date().toISOString(),
