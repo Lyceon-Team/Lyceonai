@@ -70,7 +70,10 @@ import {
   type CalendarSetupDefaults,
   type StudyProfile,
 } from "@lyceon/shared/calendar";
-import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
+import {
+  UpgradeModalProvider,
+  useUpgradeModal,
+} from "@/components/billing/UpgradeModal";
 import { UPGRADE_PLANS_DESTINATION } from "@/components/billing/upgrade-modal";
 import { AppShell } from "@/components/layout/app-shell";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
@@ -356,6 +359,25 @@ async function accessMap(
     : map;
 }
 
+/**
+ * What the upgrade modal provider has decided to show: `data-feature` is the open request's
+ * feature, or "" while closed. The modal's DOM (`UpgradeModalView`) is a lazy chunk, so on a
+ * slow runner "no `upgrade-modal` in the DOM" can be read before the chunk lands, and passes
+ * whether or not the modal was opened. The provider sets this state in the same cache event
+ * that carries the denial, before the page can render the error, so reading it is the
+ * deterministic check.
+ */
+function UpgradeModalProbe(): JSX.Element {
+  const { current } = useUpgradeModal();
+  return (
+    <output
+      data-testid="upgrade-modal-request"
+      data-feature={current?.feature ?? ""}
+      hidden
+    />
+  );
+}
+
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario = {},
@@ -384,6 +406,7 @@ async function mount(
     <QueryClientProvider client={client}>
       <Router hook={hook}>
         <UpgradeModalProvider autoOpenOnDenial>
+          <UpgradeModalProbe />
           <AppShell panel={340} content="full">
             <CalendarPage />
           </AppShell>
@@ -1058,7 +1081,11 @@ describe("paid: a calendar 402 is the page's own upsell (UI-44, ruling 3)", () =
     // The denial reached the page (the plan read was made and refused) ...
     expect(planReads().length).toBeGreaterThan(0);
     expect(gets()).toContain("/api/calendar/profile");
-    // ... and the modal stayed closed.
+    // ... and the modal was never asked to open (the provider's decision, not the lazy DOM) ...
+    expect(
+      screen.getByTestId("upgrade-modal-request").getAttribute("data-feature"),
+    ).toBe("");
+    // ... nor is it on screen.
     expect(screen.queryByTestId("upgrade-modal")).toBeNull();
   });
 });
