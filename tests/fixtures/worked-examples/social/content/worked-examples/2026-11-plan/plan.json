@@ -1,0 +1,10 @@
+{
+  "month": "2026-11",
+  "slots": [
+    { "post_on": "2026-11-02", "skill_code": "Percentages", "hook_type": "obvious_answer_trap" },
+    { "post_on": "2026-11-04", "skill_code": "Linear equations in one variable", "hook_type": "puzzle" },
+    { "post_on": "2026-11-06", "skill_code": "Ratios, rates, proportional relationships, and units", "hook_type": "speed" },
+    { "post_on": "2026-11-09", "skill_code": "Systems of two linear equations in two variables", "hook_type": "challenge" },
+    { "post_on": "2026-11-11", "skill_code": "Circles", "hook_type": "contrarian" }
+  ]
+}
