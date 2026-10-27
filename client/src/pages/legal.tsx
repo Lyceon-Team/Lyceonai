@@ -1,13 +1,5 @@
 import { Link } from "wouter";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Shield,
   Users,
@@ -25,6 +17,11 @@ import {
 } from "@/lib/legal-content";
 import Footer from "@/components/layout/Footer";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
+
+/** Part G (2026-10-21): the hub's cards and badges in the student tokens. */
+const CARD = "rounded-lg border border-lyc-rule bg-lyc-sheet text-lyc-ink";
+const BADGE =
+  "inline-flex items-center rounded-full border border-lyc-rule bg-lyc-chip px-3 py-0.5 text-lyc-meta font-semibold text-lyc-ink-strong";
 
 const docIcons: Record<string, React.ReactNode> = {
   "trust-and-safety": <Shield className="h-6 w-6" />,
@@ -59,87 +56,86 @@ export default function LegalHub() {
 
   const trustDoc = published.find((d) => d.slug === "trust-and-safety");
 
+  // 2026-10-21 (owner brief "student cleanups", Karl, Part G: "Render in dark mode with the
+  // student tokens; no text below 14px"): a `.lyc` root in the student tokens, so the hub follows
+  // the device / saved theme like the student pages; the smallest text is 14px (`text-lyc-meta`),
+  // where badges and descriptions were 12px. Content, order and links are unchanged.
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div
+      className="lyc min-h-screen bg-lyc-paper text-lyc-ink flex flex-col"
+      data-testid="legal-hub"
+    >
       <main className="flex-1">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="text-center mb-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
-              <Shield className="h-8 w-8 text-primary" />
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-lyc-chip mb-4">
+              <Shield className="h-8 w-8 text-lyc-ink-strong" />
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
+            <h1 className="font-lyc-serif text-lyc-section sm:text-lyc-title font-semibold text-lyc-ink-strong mb-4">
               Legal & Trust
             </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-lyc-body-lg text-lyc-muted max-w-2xl mx-auto">
               Our policies and terms.
             </p>
           </div>
 
           {trustDoc && (
-            <Card className="mb-10 border-primary/20 bg-primary/5">
-              <CardHeader>
-                <div className="flex items-start gap-4">
-                  <div className="p-3 rounded-lg bg-primary/10">
-                    <Shield className="h-6 w-6 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <CardTitle className="text-xl mb-2">
-                      {/* From the manifest. Hardcoded here it read "Trust &
-                          Safety at Lyceon" — old branding, against the
-                          corpus's LYCEON, and drifted precisely because it
-                          was a second copy of a document's name. */}
-                      {trustDoc.title}
-                    </CardTitle>
+            <section className={`${CARD} mb-10 p-6`}>
+              <div className="flex items-start gap-4 mb-4">
+                <div className="p-3 rounded-lg bg-lyc-chip">
+                  <Shield className="h-6 w-6 text-lyc-ink-strong" />
+                </div>
+                <h2 className="flex-1 font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong">
+                  {/* From the manifest. Hardcoded here it read "Trust &
+                      Safety at Lyceon" — old branding, against the
+                      corpus's LYCEON, and drifted precisely because it
+                      was a second copy of a document's name. */}
+                  {trustDoc.title}
+                </h2>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <span className={`${BADGE} mt-1 shrink-0`}>1</span>
+                  <div>
+                    <p className="font-semibold text-lyc-meta-lg text-lyc-ink-strong">
+                      Academic integrity
+                    </p>
+                    <p className="text-lyc-meta text-lyc-muted">
+                      See our Honor Code.
+                    </p>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="grid sm:grid-cols-2 gap-4 mb-6">
-                  <div className="flex items-start gap-3">
-                    <Badge variant="outline" className="mt-1 shrink-0">
-                      1
-                    </Badge>
-                    <div>
-                      <p className="font-medium text-sm">Academic integrity</p>
-                      <p className="text-xs text-muted-foreground">
-                        See our Honor Code.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <Badge variant="outline" className="mt-1 shrink-0">
-                      2
-                    </Badge>
-                    <div>
-                      <p className="font-medium text-sm">
-                        Privacy & Data Security
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        No data selling, no targeted advertising
-                      </p>
-                    </div>
+                <div className="flex items-start gap-3">
+                  <span className={`${BADGE} mt-1 shrink-0`}>2</span>
+                  <div>
+                    <p className="font-semibold text-lyc-meta-lg text-lyc-ink-strong">
+                      Privacy & Data Security
+                    </p>
+                    <p className="text-lyc-meta text-lyc-muted">
+                      No data selling, no targeted advertising
+                    </p>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href="/legal/trust-and-safety"
-                      className="inline-flex items-center gap-1"
-                    >
-                      Read Full Policy
-                      <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button asChild variant="lyc-outline" size="lyc">
+                  <Link
+                    href="/legal/trust-and-safety"
+                    className="inline-flex items-center gap-1"
+                  >
+                    Read Full Policy
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </section>
           )}
 
           <div className="mb-8">
-            <h2 className="text-xl font-semibold text-foreground mb-4">
+            <h2 className="font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong mb-4">
               Our Policies
             </h2>
-            <p className="text-muted-foreground mb-6">
+            <p className="text-lyc-muted mb-6">
               Review our complete legal documentation below.
             </p>
           </div>
@@ -148,77 +144,72 @@ export default function LegalHub() {
             {published
               .filter((d) => d.slug !== "trust-and-safety")
               .map((doc) => (
-                <Card
-                  key={doc.slug}
-                  className="flex flex-col hover:shadow-md transition-shadow"
-                >
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="p-2 rounded-lg bg-muted">
-                        {docIcons[doc.slug] || <FileText className="h-5 w-5" />}
-                      </div>
-                      <Badge
-                        variant="secondary"
-                        className="text-xs"
-                        data-testid={`badge-version-${doc.slug}`}
-                      >
-                        Version {doc.version}
-                      </Badge>
+                <section key={doc.slug} className={`${CARD} flex flex-col p-6`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 rounded-lg bg-lyc-chip text-lyc-ink-strong">
+                      {docIcons[doc.slug] || <FileText className="h-5 w-5" />}
                     </div>
-                    <CardTitle className="text-base">{doc.title}</CardTitle>
-                    <CardDescription className="text-sm">
-                      {doc.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-0 mt-auto">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
+                    <span
+                      className={BADGE}
+                      data-testid={`badge-version-${doc.slug}`}
+                    >
+                      Version {doc.version}
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-lyc-body text-lyc-ink-strong mb-1">
+                    {doc.title}
+                  </h3>
+                  <p className="text-lyc-meta text-lyc-muted mb-4">
+                    {doc.description}
+                  </p>
+                  <div className="mt-auto flex flex-wrap gap-2">
+                    <Button
+                      asChild
+                      variant="lyc-outline"
+                      size="lyc"
+                      className="flex-1"
+                    >
+                      <Link
+                        href={`/legal/${doc.slug}`}
+                        className="inline-flex items-center gap-1"
                       >
-                        <Link
-                          href={`/legal/${doc.slug}`}
-                          className="inline-flex items-center gap-1"
-                        >
-                          Read
-                          <ChevronRight className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+                        Read
+                        <ChevronRight className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                </section>
               ))}
           </div>
 
-          <Card className="bg-muted/30">
-            <CardContent className="py-6">
-              <div className="flex flex-col sm:flex-row items-center gap-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Mail className="h-6 w-6 text-primary" />
-                </div>
-                <div className="text-center sm:text-left flex-1">
-                  <h3 className="font-semibold text-foreground mb-1">
-                    Contact Trust & Safety
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Questions about trust or safety? We're here to help.
-                  </p>
-                </div>
-                <a href={`mailto:${SUPPORT_EMAIL}`}>
-                  <Button>
-                    <Mail className="h-4 w-4 mr-2" />
-                    {SUPPORT_EMAIL}
-                  </Button>
-                </a>
+          <section className={`${CARD} p-6`}>
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="p-3 rounded-full bg-lyc-chip">
+                <Mail className="h-6 w-6 text-lyc-ink-strong" />
               </div>
-            </CardContent>
-          </Card>
+              <div className="text-center sm:text-left flex-1">
+                <h3 className="font-semibold text-lyc-ink-strong mb-1">
+                  Contact Trust & Safety
+                </h3>
+                <p className="text-lyc-meta text-lyc-muted">
+                  Questions about trust or safety? We're here to help.
+                </p>
+              </div>
+              <Button asChild variant="lyc-primary" size="lyc">
+                <a
+                  href={`mailto:${SUPPORT_EMAIL}`}
+                  className="inline-flex items-center gap-2"
+                >
+                  <Mail className="h-4 w-4" />
+                  {SUPPORT_EMAIL}
+                </a>
+              </Button>
+            </div>
+          </section>
         </div>
       </main>
 
-      <Footer />
+      <Footer tone="navy" />
     </div>
   );
 }

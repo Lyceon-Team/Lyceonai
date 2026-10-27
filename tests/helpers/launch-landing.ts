@@ -59,8 +59,9 @@ export async function launchResumingExistingSession(options: {
 
   const resumeOnly: CalendarEngineAdapter = {
     ...adapter,
-    async progress() {
-      return "active";
+    // SCL-233: every session asked about is live.
+    async progress(sessionIds) {
+      return new Map(sessionIds.map((id) => [id, "active" as const]));
     },
   };
 

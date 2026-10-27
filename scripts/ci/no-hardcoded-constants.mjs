@@ -35,6 +35,8 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..",
 // New formula/scoring functions (05B KPI/domain refreshers, 05C projections) MUST be added here.
 const FORMULA_FUNCTIONS = new Set([
   "compute_mastery_for_entity",
+  // SCL-236: the Doc 05A §6 body moved here; the wrapper above keeps its name and signature.
+  "compute_mastery_core",
   "lookup_mastery_level",
   "canonicalize_mastery_constants",
   "canonicalize_mastery_constants_serialized",
@@ -83,6 +85,13 @@ const SCORING_FUNCTIONS = new Set([
   "projection_refresh_outbox_process",
   "projection_refresh_outbox_drain",
   "projection_refresh_after_exam",
+  // SCL-236: the §5.5-§5.8 maths moved into projection_core; the diagnostic projection calls it
+  // through compute_diagnostic_projection, and complete_diagnostic_session / the repair sweep
+  // call that, so no projection constant may be smuggled in at any of the three.
+  "projection_core",
+  "compute_diagnostic_projection",
+  "complete_diagnostic_session",
+  "diagnostic_projection_repair",
 ]);
 const PROJECTION_DENY = [
   ["200","SECTION_MIN_SCORE"],["800","SECTION_MAX_SCORE"],["600","section-score span (MAX-MIN)"],

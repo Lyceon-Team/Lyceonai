@@ -148,6 +148,8 @@ const HOMEPAGE_CTAS: ReadonlyArray<readonly [string, Expectation]> = [
   ["Get started", { tab: "signup", guardian: false }],
   ["Get started free", { tab: "signup", guardian: false }],
   ["Start the free diagnostic", { tab: "signup", guardian: false }],
+  // F-98 (owner brief 2026-10-21, Part F): the hero's one primary button.
+  ["Start free diagnostic", { tab: "signup", guardian: false }],
   ["I'm a parent or guardian", { tab: "signup", guardian: true }],
   ["Start practicing free →", { tab: "signup", guardian: false }],
 ];
@@ -379,3 +381,125 @@ describe("a new entry URL on the open auth page", () => {
     expect(screen.getByTestId("signup-role-guardian")).toBeInTheDocument();
   });
 });
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Sign-up/sign-in page:
+ *       Lyceon logo linking to /; password placeholder 'Password'"] | @implemented [2026-10-13]
+ */
+describe("first-run P1: the sign-in / sign-up card", () => {
+  it("has the Lyceon logo, a link to the homepage, on both tabs", () => {
+    for (const url of ["/login", "/login?mode=signup"]) {
+      renderLoginAt(url);
+      const logo = screen.getByRole("link", { name: "Lyceon home" });
+      expect(logo.getAttribute("href")).toBe("/");
+      expect(logo.textContent).toBe("Lyceon");
+      expect(logo.querySelector("svg")).not.toBeNull();
+      cleanup();
+    }
+  });
+
+  it('the password field says "Password", on Sign In and on Sign Up', () => {
+    renderLoginAt("/login");
+    expect(
+      screen.getByTestId("input-signin-password").getAttribute("placeholder"),
+    ).toBe("Password");
+    cleanup();
+    renderLoginAt("/login?mode=signup");
+    expect(
+      screen.getByTestId("input-signup-password").getAttribute("placeholder"),
+    ).toBe("Password");
+  });
+});
+
+// F-98 (owner brief "student cleanups", Karl, 2026-10-21, Part F): ONE primary button in the hero,
+// "Start free diagnostic"; "Sign in" and "I'm a parent or guardian" are secondary text links whose
+// targets keep their mode / role / next parameters; no parent-facing label above the hero.
+// Owner rulings on #1277 (Karl, 2026-10-21), ruling 4: Variant B of the hero experiment keeps
+// running and conforms to the same rule, so every case runs for BOTH variants: A (no consent,
+// what every visitor without analytics consent sees) and B (consent accepted and B stored, as
+// posthog-client.ts stores it).
+const { HERO_COPY, HERO_VARIANT_STORAGE_KEY } =
+  await import("@/lib/analytics/hero-experiment");
+const { COOKIE_BANNER_VERSION } =
+  await import("@lyceon/shared/analytics-consent-schema");
+
+type HeroCase = "control" | "test";
+
+function showVariant(variant: HeroCase): void {
+  document.cookie = "lyceon_consent=; Max-Age=0; Path=/";
+  window.localStorage.removeItem(HERO_VARIANT_STORAGE_KEY);
+  if (variant === "test") {
+    const now = Math.floor(Date.now() / 1000);
+    document.cookie = `lyceon_consent=${COOKIE_BANNER_VERSION}.00000000-0000-4000-8000-000000000098.a.${now}; Path=/`;
+    window.localStorage.setItem(HERO_VARIANT_STORAGE_KEY, "test");
+  }
+}
+
+describe.each(["control", "test"] as const)(
+  "F-98: the homepage hero, variant %s",
+  (variant) => {
+    function hero(): HTMLElement {
+      const section = document.getElementById("top");
+      if (section === null) throw new Error("no hero section");
+      return section;
+    }
+
+    beforeEach(() => showVariant(variant));
+    afterEach(() => showVariant("control"));
+
+    it("shows this variant's copy (presence: the variant under test is the one drawn)", () => {
+      withClient(<HomePage />);
+      expect(hero().querySelector("h1")?.textContent).toBe(
+        HERO_COPY[variant].title,
+      );
+      expect(hero().textContent).toContain(HERO_COPY[variant].sub);
+    });
+
+    it("has exactly one button-styled link, 'Start free diagnostic', to sign up then the diagnostic", () => {
+      withClient(<HomePage />);
+      const links = Array.from(hero().querySelectorAll("a"));
+      // Presence first: the hero draws its three paths.
+      expect(links.map((a) => a.textContent)).toEqual([
+        "Start free diagnostic",
+        "Sign in",
+        "I'm a parent or guardian",
+      ]);
+      const buttons = links.filter((a) =>
+        a.className.split(" ").includes("rounded-xl"),
+      );
+      expect(buttons.map((a) => a.textContent)).toEqual([
+        "Start free diagnostic",
+      ]);
+      const primary = new URL(
+        buttons[0]?.getAttribute("href") ?? "",
+        "https://x.test",
+      );
+      expect(primary.searchParams.get("mode")).toBe("signup");
+      expect(primary.searchParams.get("next")).toBe("/practice/diagnostic");
+    });
+
+    it("the secondary links are text links that keep their parameters", () => {
+      withClient(<HomePage />);
+      const signIn = hero().querySelector('[data-testid="hero-link-sign-in"]');
+      const guardian = hero().querySelector(
+        '[data-testid="button-guardian-signup"]',
+      );
+      expect(signIn?.className).toContain("underline");
+      expect(guardian?.className).toContain("underline");
+      const s = new URL(signIn?.getAttribute("href") ?? "", "https://x.test");
+      expect(s.searchParams.get("mode")).toBe("signin");
+      const g = new URL(guardian?.getAttribute("href") ?? "", "https://x.test");
+      expect(g.searchParams.get("mode")).toBe("signup");
+      expect(g.searchParams.get("role")).toBe("guardian");
+      expect(g.searchParams.get("next")).toBe("/guardian");
+    });
+
+    it("draws no label above the hero's title: the h1 is the hero's first element", () => {
+      withClient(<HomePage />);
+      const h1 = hero().querySelector("h1");
+      expect(h1).not.toBeNull();
+      expect(h1?.parentElement?.firstElementChild).toBe(h1);
+      expect(hero().textContent).not.toContain("SAT prep for families");
+    });
+  },
+);

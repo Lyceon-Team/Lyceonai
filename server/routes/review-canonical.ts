@@ -35,6 +35,7 @@
 
 import { Router, type Request, type Response } from "express";
 import * as crypto from "node:crypto";
+import { z } from "zod";
 import { logger } from "../logger";
 import type { SupabaseUser } from "../middleware/supabase-auth";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -45,6 +46,11 @@ import {
 } from "../middleware/supabase-auth.js";
 import { applyMasteryEvent } from "../../apps/api/src/services/mastery-write";
 import {
+  sessionSummarySchema,
+  type SessionSummaryReviewAgain,
+} from "../../packages/shared/src/session-summary-schema";
+import { buildSessionSummaryCore } from "../services/session-summary";
+import {
   MASTERY_EMISSION_COMPONENT,
   MASTERY_EMISSION_EVENT,
   MASTERY_EMISSION_FAILURE_CODE,
@@ -53,7 +59,7 @@ import {
   buildSafeOptionsForItem,
   buildSessionItemInsertRows,
   gradeAnswer,
-  hydrateSessionItemOptionTokens,
+  withServedOptionTokens,
   loadPracticeConfig,
   normalizeSessionState,
   practiceAnswerRateLimiter,
@@ -77,6 +83,7 @@ import {
   reviewNextQuerySchema,
   reviewPoolQuerySchema,
   reviewResumeBodySchema,
+  reviewSessionSourceSchema,
   reviewSkipBodySchema,
   toSessionCriteria,
   type ReviewPoolSessionsCursor,
@@ -85,6 +92,11 @@ import {
 } from "@lyceon/shared";
 import type { ReviewSessionItemRow } from "../../packages/shared/src/review-table-schema";
 import { calculatorStateHash } from "../../packages/shared/src/calculator-state-hash";
+import { timedRoute, timedStep } from "../lib/step-timer";
+import {
+  ReviewConfigError,
+  reviewSessionSize,
+} from "../services/review-config";
 
 const router = Router();
 
@@ -211,6 +223,49 @@ function poolSpecToFilters(spec: ReviewPoolSpec): Record<string, unknown> {
     skills: spec.filter.skills ?? null,
     difficulties: spec.filter.difficulties ?? null,
   };
+}
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 3 ("Another 5")]
+ *       | @implemented [2026-10-13]
+ * plain English: the inverse of `poolSpecToFilters`: the pool a stored review session was created
+ * with (its `mode` column plus the pool half of `filters`), in the create body's shape, so the
+ * summary's "Another 5" starts the same kind of review. A `session` row without its source, or an
+ * unknown mode, is a corrupt row: it throws, and the summary route answers 500 rather than starting
+ * a different review than the one the student had.
+ */
+function reviewAgainFromSession(
+  mode: string,
+  filters: unknown,
+): SessionSummaryReviewAgain {
+  const stored =
+    filters && typeof filters === "object" && !Array.isArray(filters)
+      ? (filters as Record<string, unknown>)
+      : {};
+  if (mode === "queue") return { mode: "queue" };
+  if (mode === "session") {
+    const source = reviewSessionSourceSchema.parse({
+      source_engine: stored.source_engine,
+      source_session_id: stored.source_session_id,
+    });
+    return { mode: "session", filters: source };
+  }
+  if (mode === "filter") {
+    const list = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === "string")
+        : [];
+    return {
+      mode: "filter",
+      filters: {
+        sections: list(stored.sections),
+        domains: list(stored.domains),
+        skills: list(stored.skills),
+        difficulties: list(stored.difficulties),
+      },
+    };
+  }
+  throw new Error(`review_session_unknown_mode: ${mode}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -467,8 +522,9 @@ type CreateResult =
  * @spec [ruled plan §2 rows 4/7, rulings 10/15; brief R3 §2.2/§2.3] | @implemented [2026-09-21]
  *
  * plain English: start a review session, or return the one an identical
- * `idempotency_key` already started. expected outcome: a session prefilled with the
- * whole pool, oldest mistake first, its first item already served.
+ * `idempotency_key` already started. expected outcome: a NEW session prefilled with the
+ * oldest mistakes first, at most `review_runtime_config.session_size` of them (10), its first
+ * item already served.
  *
  * trade-offs: the idempotency mechanism is practice's, verbatim — an opaque key inside
  * `filters`, scanned across OPEN sessions (owner ruling, R2 check 8). It is neither
@@ -481,7 +537,28 @@ type CreateResult =
  *   - the concurrent-session cap is review's own count, using practice's configured
  *     value (owner ruling 2026-09-21), so five open practice sessions do not block a
  *     review session and vice versa;
- *   - a question already open in another review session is NOT excluded (ruling 15).
+ *   - SESSION SIZE (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1 of 2026-10-21): the key
+ *     `review_runtime_config.session_size` (10, bounds 5..20) caps ONLY student-initiated starts
+ *     (`origin: "student"`, `POST /api/review/sessions` from the Review page and Home):
+ *     `reviewSessionSize(targetCount)` = min(targetCount > 0 ? targetCount : key, key), so a
+ *     student start never takes the whole queue. A calendar launch (`origin: "calendar"`, only
+ *     the calendar's review adapter passes it, with the size the launch service computed from
+ *     the server's own block record) takes exactly the block's requested size, uncapped: the
+ *     planner's time-based sizing stands (SCL-242 withdrawn the same day). The origin is never
+ *     read from a request: the HTTP route always passes "student". An unusable key is a 500 for a
+ *     student start, never a default.
+ *   - EVERY START IS A NEW SESSION (ruling 2, 2026-10-21; it replaced the 2026-10-21 Part B
+ *     "resume the newest holder" path, which is removed): the start takes the first `size`
+ *     questions of its pool, then `review_admit_session_start` closes, in one transaction under
+ *     the per-student advisory lock, every open review session holding any of them and then the
+ *     oldest of the rest (created_at, then id) until the new one fits under the cap. Closed is
+ *     `abandoned` as terminate leaves it: answered items stay recorded; unanswered items' queue
+ *     entries were never changed by serving, so they are back in the queue. The cap therefore
+ *     NEVER refuses a start (F-81; it replaced a 403 `SESSION_LIMIT_EXCEEDED`).
+ *   - No question is in two open review sessions (ruling 15 of the review plan reversed by the
+ *     2026-10-21 brief): the admit step clears the holders, and the
+ *     `review_session_items_one_open_question` trigger refuses one a concurrent start slipped in
+ *     between (23505); the start then admits and inserts once more.
  */
 /**
  * EXPORTED for the calendar's review adapter (Doc 05F §9.3), and for nothing else.
@@ -493,21 +570,40 @@ type CreateResult =
  * from a calendar block and a launch from the review page behave identically by
  * construction rather than by two implementations agreeing.
  */
-export async function startOrReplayReviewSession(args: {
-  studentId: string;
-  actorId: string;
-  poolSpec: ReviewPoolSpec;
-  clientInstanceId: string;
-  idempotencyKey: string | null;
-  targetCount: number | null;
-  requestId?: string;
-}): Promise<CreateResult> {
-  const { data: openSessions, error: openErr } = await supabaseServer
-    .from("review_sessions")
-    .select(REVIEW_SESSION_SELECT)
-    .eq("student_id", args.studentId)
-    .in("status", [...OPEN_STATUSES])
-    .order("created_at", { ascending: false });
+export async function startOrReplayReviewSession(
+  args: {
+    studentId: string;
+    actorId: string;
+    poolSpec: ReviewPoolSpec;
+    clientInstanceId: string;
+    idempotencyKey: string | null;
+    requestId?: string;
+  } & (
+    | {
+        /** POST /api/review/sessions (Review page, Home): capped by `session_size`. */
+        origin: "student";
+        targetCount: number | null;
+      }
+    | {
+        /**
+         * The calendar's review adapter only: `targetCount` is the launch size the launch
+         * service derived from the block it loaded server-side for this student. Uncapped.
+         */
+        origin: "calendar";
+        targetCount: number;
+      }
+  ),
+): Promise<CreateResult> {
+  const { data: openSessions, error: openErr } = await timedStep(
+    "open_sessions",
+    () =>
+      supabaseServer
+        .from("review_sessions")
+        .select(REVIEW_SESSION_SELECT)
+        .eq("student_id", args.studentId)
+        .in("status", [...OPEN_STATUSES])
+        .order("created_at", { ascending: false }),
+  );
 
   if (openErr) {
     return {
@@ -532,20 +628,6 @@ export async function startOrReplayReviewSession(args: {
       ) ?? null;
   }
 
-  const config = await loadPracticeConfig();
-  if (!replay && sessions.length >= config.maxConcurrentSessions) {
-    return {
-      ok: false,
-      status: 403,
-      body: {
-        error: "session_limit_exceeded",
-        code: "SESSION_LIMIT_EXCEEDED",
-        message: `You already have ${sessions.length} open review sessions. Finish or end one first.`,
-        maxConcurrentSessions: config.maxConcurrentSessions,
-      },
-    };
-  }
-
   if (replay) {
     return {
       ok: true,
@@ -555,41 +637,138 @@ export async function startOrReplayReviewSession(args: {
     };
   }
 
-  const poolResult = await buildReviewPool({
-    studentId: args.studentId,
-    poolSpec: args.poolSpec,
-    requestId: args.requestId,
-  });
-  if (!poolResult.ok) {
+  // The size this start takes (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1 of 2026-10-21): a student start is capped by
+  // the runtime key; a calendar launch takes its block's size.
+  if (args.origin === "calendar" && !(args.targetCount >= 1)) {
     return {
       ok: false,
       status: 500,
       body: {
         error: "session_create_failed",
-        message: poolResult.error,
+        message: "calendar launch size must be at least 1",
       },
     };
   }
+  let size: number;
+  let maxOpen: number;
+  try {
+    const [practice, sized] = await timedStep("config", () =>
+      Promise.all([
+        loadPracticeConfig(),
+        args.origin === "calendar"
+          ? args.targetCount
+          : reviewSessionSize(args.targetCount),
+      ]),
+    );
+    size = sized;
+    maxOpen = practice.maxConcurrentSessions;
+  } catch (err) {
+    if (!(err instanceof ReviewConfigError)) throw err;
+    return {
+      ok: false,
+      status: 500,
+      body: { error: "session_create_failed", message: err.message },
+    };
+  }
 
+  // One retry: a concurrent start can take a question between our admit and our insert, which
+  // the trigger refuses (23505 `review_question_already_open`); the retry admits again.
+  for (let attempt = 1; ; attempt += 1) {
+    const built = await buildReviewStartPool(args, size);
+    if (!built.ok) return built.result;
+    // Ruling 2 (Karl, 2026-10-21): make room for THIS new session. With no open session there
+    // is nothing to close, so the round trip is skipped; a retry always admits, because the
+    // session it collided with is not in `sessions`.
+    if (sessions.length > 0 || attempt > 1) {
+      const { data: closedIds, error: admitErr } = await timedStep(
+        "admit",
+        () =>
+          supabaseServer.rpc("review_admit_session_start", {
+            p_student_id: args.studentId,
+            p_max_open: maxOpen,
+            p_question_ids: built.selected.map((row) => row.question.id),
+          }),
+      );
+      if (admitErr) {
+        return {
+          ok: false,
+          status: 500,
+          body: { error: "session_create_failed", message: admitErr.message },
+        };
+      }
+      const closedCount = Array.isArray(closedIds) ? closedIds.length : 0;
+      if (closedCount > 0) {
+        logger.info(
+          "REVIEW",
+          "session_start_closed_open",
+          "Closed open review session(s) to start a new one",
+          { requestId: args.requestId, closedCount },
+        );
+      }
+    }
+    const created = await createReviewSession(args, built.selected);
+    if (created.ok) return created;
+    if (!created.questionTaken || attempt >= 2) return created.result;
+  }
+}
+
+type StartPool =
+  | { ok: true; selected: ReviewPoolRow[] }
+  | { ok: false; result: CreateResult };
+
+/**
+ * The questions a new session takes: the first `size` rows of the pool, in pool order (oldest
+ * mistake first, ruling 7). Questions another open session holds are NOT filtered out here: the
+ * admit step closes their holder instead (ruling 2), so a filtered start is never left with
+ * nothing and never resumes a different session.
+ */
+async function buildReviewStartPool(
+  args: Parameters<typeof startOrReplayReviewSession>[0],
+  size: number,
+): Promise<StartPool> {
+  const poolResult = await timedStep("review_pool", () =>
+    buildReviewPool({
+      studentId: args.studentId,
+      poolSpec: args.poolSpec,
+      requestId: args.requestId,
+    }),
+  );
+  if (!poolResult.ok) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        status: 500,
+        body: { error: "session_create_failed", message: poolResult.error },
+      },
+    };
+  }
   const pool = poolResult.value;
   if (pool.length === 0) {
     return {
       ok: false,
-      status: 422,
-      body: {
-        error: "empty_pool",
-        code: "REVIEW_POOL_EMPTY",
-        message: "You have nothing to review in this selection.",
+      result: {
+        ok: false,
+        status: 422,
+        body: {
+          error: "empty_pool",
+          code: "REVIEW_POOL_EMPTY",
+          message: "You have nothing to review in this selection.",
+        },
       },
     };
   }
+  return { ok: true, selected: pool.slice(0, size) };
+}
 
-  // Ruling 15 / plan §2 row 4: the WHOLE pool, or the calendar's size when it asks.
-  const selected =
-    args.targetCount && args.targetCount > 0
-      ? pool.slice(0, args.targetCount)
-      : pool;
+type CreatedSession =
+  | Extract<CreateResult, { ok: true }>
+  | { ok: false; questionTaken: boolean; result: CreateResult };
 
+async function createReviewSession(
+  args: Parameters<typeof startOrReplayReviewSession>[0],
+  selected: ReviewPoolRow[],
+): Promise<CreatedSession> {
   const now = new Date().toISOString();
   const metadata: ReviewSessionMetadata = {
     ...poolSpecToFilters(args.poolSpec),
@@ -601,31 +780,40 @@ export async function startOrReplayReviewSession(args: {
     calculator_state: null,
   };
 
-  const { data: inserted, error: insertErr } = await supabaseServer
-    .from("review_sessions")
-    .insert({
-      student_id: args.studentId,
-      actor_id: args.actorId,
-      mode: args.poolSpec.mode,
-      filters: metadata,
-      target_count: selected.length,
-      platform: "web",
-      client_instance_id: args.clientInstanceId,
-      status: "created",
-      created_at: now,
-      updated_at: now,
-      last_activity_at: now,
-    })
-    .select(REVIEW_SESSION_SELECT)
-    .single();
+  const { data: inserted, error: insertErr } = await timedStep(
+    "session_insert",
+    () =>
+      supabaseServer
+        .from("review_sessions")
+        .insert({
+          student_id: args.studentId,
+          actor_id: args.actorId,
+          mode: args.poolSpec.mode,
+          filters: metadata,
+          target_count: selected.length,
+          platform: "web",
+          client_instance_id: args.clientInstanceId,
+          status: "created",
+          created_at: now,
+          updated_at: now,
+          last_activity_at: now,
+        })
+        .select(REVIEW_SESSION_SELECT)
+        .single(),
+  );
 
   if (insertErr || !inserted) {
     return {
       ok: false,
-      status: 500,
-      body: {
-        error: "session_create_failed",
-        message: insertErr?.message ?? "review session insert returned no row",
+      questionTaken: false,
+      result: {
+        ok: false,
+        status: 500,
+        body: {
+          error: "session_create_failed",
+          message:
+            insertErr?.message ?? "review session insert returned no row",
+        },
       },
     };
   }
@@ -645,19 +833,33 @@ export async function startOrReplayReviewSession(args: {
     await cleanupFailedReviewMaterialization(session.id);
     return {
       ok: false,
-      status: 500,
-      body: { error: "session_create_failed", message: materialized.error },
+      questionTaken: materialized.error.includes(
+        "review_question_already_open",
+      ),
+      result: {
+        ok: false,
+        status: 500,
+        body: { error: "session_create_failed", message: materialized.error },
+      },
     };
   }
 
   metadata.prebuilt = true;
-  await updateSessionLifecycle(session.id, metadata);
+  await timedStep("session_update", () =>
+    updateSessionLifecycle(session.id, metadata),
+  );
 
   return { ok: true, session, metadata, replayed: false };
 }
 
 /**
- * Snapshot the pool into `review_session_items`, then hydrate the option tokens.
+ * Snapshot the pool into `review_session_items`, option tokens included.
+ *
+ * 2026-10-13 (owner brief, first-run activation item 2): the tokens are computed before the
+ * insert by `withServedOptionTokens` — practice's one derivation, shared — instead of by a
+ * post-insert `hydrateSessionItemOptionTokens` (one read plus one UPDATE per item, sequential).
+ * Same columns, same values' distribution; a throw from the derivation is the build failure
+ * below, which already cleans up.
  *
  * `buildSessionItemInsertRows` is practice's, with `ownerColumn: "student_id"` — one
  * definition of the 30-column snapshot shape for both engines. The only review
@@ -689,6 +891,7 @@ async function materializeReviewItems(args: {
       ...row,
       queue_entry_id: args.selected[index]?.entry.id ?? null,
     }));
+    rows = withServedOptionTokens(rows);
   } catch (err) {
     // assertCanonicalDomain throws on a non-canonical (section, domain) pair. Practice
     // treats that as a materialization failure rather than a silent drop, and so does
@@ -701,27 +904,13 @@ async function materializeReviewItems(args: {
     };
   }
 
-  const { error: insertErr } = await supabaseServer
-    .from("review_session_items")
-    .insert(rows);
+  const { error: insertErr } = await timedStep("items_insert", () =>
+    supabaseServer.from("review_session_items").insert(rows),
+  );
   if (insertErr) {
     return {
       ok: false,
       error: `review_item_insert_failed: ${insertErr.message}`,
-    };
-  }
-
-  try {
-    await hydrateSessionItemOptionTokens(
-      args.sessionId,
-      "review_session_items",
-    );
-  } catch (err) {
-    return {
-      ok: false,
-      error: `review_item_hydrate_failed: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
     };
   }
 
@@ -1548,7 +1737,7 @@ router.post(
   requireSupabaseAuth,
   requireProfileComplete,
   requireGuardianLinkForUnder13,
-  async (req, res) => {
+  timedRoute("review.session_start", async (req, res) => {
     const requestId = (req as unknown as { requestId?: string }).requestId;
     // As in diagnostic-routes: the canonical `SupabaseUser`, not an inline shape that makes
     // `actor_id` optional and so invites a fallback to the identity key.
@@ -1607,6 +1796,8 @@ router.post(
       poolSpec: spec.value.poolSpec,
       clientInstanceId,
       idempotencyKey: spec.value.idempotencyKey,
+      // Every HTTP start is the student's own: capped by `session_size` (owner ruling, Karl, 2026-10-22, correcting #1277's ruling 1 of 2026-10-21).
+      origin: "student",
       targetCount: spec.value.targetCount,
       requestId,
     });
@@ -1627,7 +1818,7 @@ router.post(
         result.metadata.target_question_count ?? result.session.target_count,
       calculatorState: result.metadata.calculator_state ?? null,
     });
-  },
+  }),
 );
 
 /** GET /api/review/sessions/:sessionId/state */
@@ -1684,6 +1875,84 @@ router.get(
       readOnly: state === "completed" || state === "abandoned",
       criteria: reviewSessionCriteria(session.filters),
     });
+  },
+);
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 3 ("Same pattern for
+ *       review sessions"); Coding Standards §8.2, §8.3, §10, §5] | @implemented [2026-10-13]
+ * plain English: GET /api/review/sessions/:sessionId/summary — practice's summary route
+ * (practice-canonical.ts) on review's tables: 404 for a session the student does not own, 409
+ * `SESSION_NOT_COMPLETED` for one not finished, else `{ data }` built from recorded data and
+ * parsed with the strict shared schema. `again` is the session's own pool
+ * (`reviewAgainFromSession`).
+ */
+router.get(
+  "/sessions/:sessionId/summary",
+  requireSupabaseAuth,
+  requireProfileComplete,
+  requireGuardianLinkForUnder13,
+  async (req, res) => {
+    const requestId = (req as unknown as { requestId?: string }).requestId;
+    const studentId = requireStudentId(req, res);
+    if (!studentId) return;
+    const parsedId = z.string().uuid().safeParse(req.params.sessionId);
+    if (!parsedId.success) {
+      return res.status(400).json({
+        error: { code: "INVALID_SESSION_ID", message: "sessionId is required" },
+        requestId,
+      });
+    }
+    const session = await loadOwnedReviewSession(parsedId.data, studentId);
+    if (!session) {
+      return res.status(404).json({
+        error: {
+          code: "SESSION_NOT_FOUND",
+          message: "Review session not found",
+        },
+        requestId,
+      });
+    }
+    if (normalizeSessionState(session.status) !== "completed") {
+      return res.status(409).json({
+        error: {
+          code: "SESSION_NOT_COMPLETED",
+          message: "This session is not finished yet",
+        },
+        requestId,
+      });
+    }
+    try {
+      const core = await buildSessionSummaryCore({
+        engine: "review",
+        sessionId: session.id,
+        studentId,
+        ...(requestId ? { requestId } : {}),
+      });
+      const data = sessionSummarySchema.parse({
+        engine: "review",
+        sessionId: session.id,
+        ...core,
+        again: reviewAgainFromSession(session.mode, session.filters),
+      });
+      return res.json({ data });
+    } catch (summaryError) {
+      logger.error(
+        "REVIEW_SUMMARY",
+        "summary_failed",
+        "the review session summary could not be built",
+        summaryError,
+        undefined,
+        { userId: studentId, ...(requestId ? { requestId } : {}) },
+      );
+      return res.status(500).json({
+        error: {
+          code: "SUMMARY_FAILED",
+          message: "We couldn't load this summary",
+        },
+        requestId,
+      });
+    }
   },
 );
 

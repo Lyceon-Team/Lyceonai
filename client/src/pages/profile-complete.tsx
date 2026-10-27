@@ -40,6 +40,16 @@ import {
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
 import {
+  targetScoreOf,
+  TargetScorePicker,
+  type TargetScoreChoice,
+} from "@/components/sat-dates/TargetScorePicker";
+import { notePostAuthDestination } from "@/lib/landing-entry";
+import {
+  invalidateGettingStarted,
+  recordGettingStartedNotSure,
+} from "@/hooks/useGettingStarted";
+import {
   calendarKeys,
   newIntent,
   putStudyProfile,
@@ -125,6 +135,12 @@ export default function ProfileComplete() {
   const [satDates, setSatDates] = useState<SatDateChoice>({
     dates: [],
   });
+  // Karl, 2026-10-13 on #1230: "Not sure yet" is recorded only when explicitly chosen.
+  const [dateNotSureChosen, setDateNotSureChosen] = useState(false);
+  const [scoreChoice, setScoreChoice] = useState<TargetScoreChoice>({
+    kind: "unset",
+  });
+  const targetScore = targetScoreOf(scoreChoice);
   const [errorMessage, setErrorMessage] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -153,12 +169,14 @@ export default function ProfileComplete() {
       profile.role === "guardian" || prefersGuardian ? "guardian" : "student",
     );
 
-    // @spec [Doc-01_V8 §9 Login and signup flows / §37.1 Under-13 gating] | @implemented [2026-06-17] | plain English: DOB picker
-    // defaults to current_date − 13y (dynamically computed at render time, never hardcoded —
-    // the threshold drifts with calendar time per the owner ruling).
-    const defaultDob = new Date();
-    defaultDob.setFullYear(defaultDob.getFullYear() - 13);
-    setDateOfBirth(defaultDob.toISOString().split("T")[0]);
+    // @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Date of birth
+    // starts empty"; Doc-01_V8 §9 / §37.1 (under-13 gating, unchanged)] | @implemented
+    // [2026-10-13] | plain English: the date of birth starts EMPTY. It used to default to
+    // today − 13 years, which put every student exactly at the threshold and let a student
+    // continue without ever entering their own date (the under-13 gate then rested on a
+    // default). Now nothing is assumed: submit asks for a date (the existing "Please enter your
+    // date of birth" check), the age line, the under-13 notice, the SAT-date question and the
+    // marketing box all appear only once a date is entered, as they key on it.
 
     setIsInitialized(true);
   }, [profile, isInitialized]);
@@ -195,20 +213,39 @@ export default function ProfileComplete() {
       });
 
       const completed = (await response.json()) as ProfileCompletionResponse;
-      if (satDatesAsked && satDates.dates.length > 0) {
+      // @spec [owner brief "Getting started checklist + onboarding update" (final brief v2,
+      // Karl, 2026-10-13) §1] | @implemented [2026-10-13] | plain English: the SAT question
+      // also asks for the target score. Both go through the one study-profile write as a
+      // goal-only save (never calendar setup). A "Not sure yet" the student CHOSE for either is
+      // recorded for the Getting started checklist; a field left untouched records nothing
+      // (Karl, 2026-10-13 on #1230), so step 1 stays open until the student answers it.
+      if (satDatesAsked) {
+        const goal: { target_exam_dates?: string[]; target_score?: number } =
+          {};
+        if (satDates.dates.length > 0) goal.target_exam_dates = satDates.dates;
+        if (targetScore !== null) goal.target_score = targetScore;
         try {
-          await putStudyProfile(
-            newIntent({ target_exam_dates: satDates.dates }),
-          );
-          await queryClient.invalidateQueries({
-            queryKey: calendarKeys.profile(),
-          });
+          if (Object.keys(goal).length > 0) {
+            await putStudyProfile(newIntent(goal));
+            await queryClient.invalidateQueries({
+              queryKey: calendarKeys.profile(),
+            });
+          }
+          const notSureDate = dateNotSureChosen && satDates.dates.length === 0;
+          const notSureScore = scoreChoice.kind === "not_sure";
+          if (notSureDate || notSureScore) {
+            await recordGettingStartedNotSure({
+              ...(notSureDate ? { test_date: true } : {}),
+              ...(notSureScore ? { target_score: true } : {}),
+            });
+          }
+          await invalidateGettingStarted(queryClient);
         } catch {
-          // The profile is complete; the dates are a second, separate save. Tell the student
-          // it failed and let them carry on — Settings has the same picker.
+          // The profile is complete; the date and score are a second, separate save. Tell the
+          // student it failed and let them carry on — Settings has the same pickers.
           toast({
-            title: "We couldn't save your SAT date",
-            description: "You can add it any time in Settings.",
+            title: "We couldn't save your SAT date and score",
+            description: "You can add them any time in Settings.",
           });
         }
       }
@@ -230,12 +267,17 @@ export default function ProfileComplete() {
       // guardian dashboard gates on the auth context's `isGuardian`; without this refresh it
       // still read the pre-completion 'student' and bounced a new guardian to /dashboard.
       await refreshUser();
-      navigate(
-        resolvePostCompletionPath(
-          result.profile.role,
-          result.guardianConsentRequired,
-        ),
+      const destination = resolvePostCompletionPath(
+        result.profile.role,
+        result.guardianConsentRequired,
       );
+      // Smart landing (Karl, 2026-10-26, ruling A): finishing onboarding into the default Home
+      // is a default entry (a student's first window starts here); a `next` is a deep link.
+      notePostAuthDestination(
+        destination,
+        returnPathFromSearch(window.location.search),
+      );
+      navigate(destination);
     },
     onError: (error: unknown) => {
       // @spec [contracts/auth-standard-flow.contract.md AS-2, AS-3 / §0] | @implemented 2026-06-20
@@ -441,8 +483,21 @@ export default function ProfileComplete() {
           {satDatesAsked && (
             <SatDatePicker
               value={satDates}
-              onChange={setSatDates}
+              onChange={(next) => {
+                setSatDates(next);
+                if (next.dates.length > 0) setDateNotSureChosen(false);
+              }}
+              onNotSureChosen={() => setDateNotSureChosen(true)}
               data-testid="onboarding-sat-dates"
+            />
+          )}
+
+          {satDatesAsked && (
+            <TargetScorePicker
+              value={scoreChoice}
+              onChange={setScoreChoice}
+              help="You can change this any time in Settings."
+              data-testid="onboarding-target-score"
             />
           )}
 

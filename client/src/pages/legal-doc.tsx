@@ -8,9 +8,15 @@
  * table of contents, search and scroll-spy keep working.
  *
  * expected outcome: what the page shows is what the repository says, and the
- * date beside the title comes from `meta.yml` rather than from anything typed
+ * the date beside the title comes from `meta.yml` rather than from anything typed
  * into the body. Changing `current` in a manifest changes what renders, with no
  * code change.
+ *
+ * 2026-10-21 (owner brief "student cleanups", Karl, Part G: "Render in dark mode with the student
+ * tokens; no text below 14px"): the page is a `.lyc` root drawn with the student tokens
+ * (DESIGN.md §1), so it follows the device / saved theme like the student pages; body copy is
+ * 16px (`prose`, not `prose-sm`, whose 14px body put tables and code at 12px) and nothing on the
+ * page is set below 14px. Structure, test ids and the print stylesheet's hooks are unchanged.
  *
  * trade-offs:
  *  - Body text is rendered by react-markdown with remark-gfm, because these
@@ -39,10 +45,7 @@ import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ChevronLeft,
@@ -57,6 +60,11 @@ import { legalDocumentQueryOptions } from "@/lib/legal-content";
 import { SUPPORT_EMAIL } from "@/lib/support-contact";
 import Footer from "@/components/layout/Footer";
 import NotFound from "./not-found";
+
+/** Part G: one card style in the student tokens, for every card on the page. */
+const CARD = "rounded-lg border border-lyc-rule bg-lyc-sheet text-lyc-ink";
+const BADGE =
+  "inline-flex items-center rounded-full border border-lyc-rule bg-lyc-chip px-3 py-0.5 text-lyc-meta font-semibold text-lyc-ink-strong";
 
 function formatEffectiveDate(iso: string): string {
   const parsed = new Date(`${iso}T00:00:00Z`);
@@ -124,11 +132,14 @@ export default function LegalDocPage() {
   };
 
   const shell = (children: React.ReactNode) => (
-    <div className="legal-document min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b">
+    <div
+      className="legal-document lyc min-h-screen bg-lyc-paper text-lyc-ink flex flex-col"
+      data-testid="legal-document"
+    >
+      <header className="sticky top-0 z-40 bg-lyc-paper border-b border-lyc-rule">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <Button asChild variant="ghost" size="sm" className="gap-2">
+            <Button asChild variant="lyc-quiet" size="lyc" className="gap-2">
               <Link href="/legal" className="inline-flex items-center gap-2">
                 <ChevronLeft className="h-4 w-4" />
                 <span className="hidden sm:inline">Back to Legal Hub</span>
@@ -139,9 +150,10 @@ export default function LegalDocPage() {
             <div className="flex items-center gap-2">
               {content?.state === "published" && (
                 <Button
-                  variant="outline"
-                  size="sm"
+                  variant="lyc-outline"
+                  size="lyc"
                   className="lg:hidden"
+                  aria-label={tocOpen ? "Close contents" : "Contents"}
                   onClick={() => setTocOpen(!tocOpen)}
                   data-testid="button-toc-toggle"
                 >
@@ -161,13 +173,13 @@ export default function LegalDocPage() {
           {children}
         </div>
       </main>
-      <Footer />
+      <Footer tone="navy" />
     </div>
   );
 
   if (isLoading || !content) {
     return shell(
-      <p className="text-muted-foreground" data-testid="text-legal-loading">
+      <p className="text-lyc-muted" data-testid="text-legal-loading">
         Loading document…
       </p>,
     );
@@ -175,18 +187,19 @@ export default function LegalDocPage() {
 
   if (content.state === "unpublished") {
     return shell(
-      <Card className="border-dashed" data-testid="card-legal-unpublished">
-        <CardContent className="py-12 text-center">
-          <FileClock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h1 className="text-lg font-medium text-foreground mb-2">
-            {content.title}
-          </h1>
-          <p className="text-muted-foreground">
-            This document has not been published yet. When it is, it will appear
-            here with its version and effective date.
-          </p>
-        </CardContent>
-      </Card>,
+      <div
+        className={`${CARD} border-dashed py-12 px-6 text-center`}
+        data-testid="card-legal-unpublished"
+      >
+        <FileClock className="h-12 w-12 mx-auto text-lyc-muted mb-4" />
+        <h1 className="text-lyc-panel font-semibold text-lyc-ink-strong mb-2">
+          {content.title}
+        </h1>
+        <p className="text-lyc-muted">
+          This document has not been published yet. When it is, it will appear
+          here with its version and effective date.
+        </p>
+      </div>,
     );
   }
 
@@ -199,17 +212,18 @@ export default function LegalDocPage() {
     // No fallback text, deliberately. Stale or placeholder contract text is
     // worse than an error page.
     return shell(
-      <Card className="border-destructive/40" data-testid="card-legal-error">
-        <CardContent className="py-12 text-center">
-          <AlertTriangle className="h-12 w-12 mx-auto text-destructive mb-4" />
-          <h1 className="text-lg font-medium text-foreground mb-2">
-            This document could not be loaded
-          </h1>
-          <p className="text-muted-foreground">
-            Please try again, or contact {SUPPORT_EMAIL} if it keeps happening.
-          </p>
-        </CardContent>
-      </Card>,
+      <div
+        className={`${CARD} border-lyc-danger py-12 px-6 text-center`}
+        data-testid="card-legal-error"
+      >
+        <AlertTriangle className="h-12 w-12 mx-auto text-lyc-danger mb-4" />
+        <h1 className="text-lyc-panel font-semibold text-lyc-ink-strong mb-2">
+          This document could not be loaded
+        </h1>
+        <p className="text-lyc-muted">
+          Please try again, or contact {SUPPORT_EMAIL} if it keeps happening.
+        </p>
+      </div>,
     );
   }
 
@@ -217,15 +231,16 @@ export default function LegalDocPage() {
     <div className="lg:grid lg:grid-cols-[280px_1fr] lg:gap-8">
       <aside
         className={`
-          ${tocOpen ? "fixed inset-0 z-50 bg-background p-6 pt-20 overflow-auto" : "hidden"}
+          ${tocOpen ? "fixed inset-0 z-50 bg-lyc-paper p-6 pt-20 overflow-auto" : "hidden"}
           lg:block lg:relative lg:z-auto lg:p-0 lg:bg-transparent
         `}
       >
         {tocOpen && (
           <Button
-            variant="ghost"
-            size="sm"
+            variant="lyc-quiet"
+            size="lyc"
             className="absolute top-4 right-4 lg:hidden"
+            aria-label="Close contents"
             onClick={() => setTocOpen(false)}
           >
             <X className="h-4 w-4" />
@@ -235,18 +250,20 @@ export default function LegalDocPage() {
         <div className="lg:sticky lg:top-24">
           <div className="mb-4">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-lyc-muted" />
+              <input
+                type="search"
+                aria-label="Search in document"
                 placeholder="Search in document..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className="h-11 w-full rounded-md border border-lyc-input-bd bg-lyc-paper pl-9 pr-3 text-lyc-body text-lyc-ink placeholder:text-lyc-muted"
                 data-testid="input-legal-search"
               />
             </div>
           </div>
 
-          <h3 className="text-sm font-semibold text-foreground mb-3">
+          <h3 className="text-lyc-meta font-semibold text-lyc-ink-strong mb-3">
             Table of Contents
           </h3>
           <ScrollArea className="h-[calc(100vh-280px)]">
@@ -263,11 +280,11 @@ export default function LegalDocPage() {
                       key={section.id}
                       onClick={() => scrollToSection(section.id)}
                       className={`
-                        w-full text-left px-3 py-2 text-sm rounded-md transition-colors
+                        w-full text-left px-3 py-2 text-lyc-meta rounded-md transition-colors
                         ${
                           activeSection === section.id
-                            ? "bg-primary/10 text-primary font-medium"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                            ? "bg-lyc-chip text-lyc-ink-strong font-semibold"
+                            : "text-lyc-muted hover:text-lyc-ink-strong hover:bg-lyc-hover"
                         }
                         ${isFiltered ? "opacity-40" : ""}
                       `}
@@ -284,15 +301,15 @@ export default function LegalDocPage() {
       <article className="min-w-0">
         <div className="mb-8">
           <h1
-            className="text-2xl sm:text-3xl font-bold text-foreground mb-3"
+            className="font-lyc-serif text-lyc-section sm:text-lyc-title font-semibold text-lyc-ink-strong mb-3"
             data-testid="text-legal-title"
           >
             {content.title}
           </h1>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <Badge variant="secondary" data-testid="badge-legal-version">
+          <div className="flex flex-wrap items-center gap-3 text-lyc-meta text-lyc-muted">
+            <span className={BADGE} data-testid="badge-legal-version">
               Version {content.version}
-            </Badge>
+            </span>
             <span className="inline-flex items-center gap-2">
               <Calendar className="h-4 w-4" />
               <span data-testid="text-legal-effective-date">
@@ -301,52 +318,52 @@ export default function LegalDocPage() {
             </span>
           </div>
           {searchQuery.trim() && (
-            <Badge variant="secondary" className="mt-3">
+            <span className={`${BADGE} mt-3`}>
               {filteredSections.length} section
               {filteredSections.length !== 1 ? "s" : ""} matching "{searchQuery}
               "
-            </Badge>
+            </span>
           )}
         </div>
 
         <div className="space-y-8">
           {(searchQuery.trim() ? filteredSections : sections).map((section) => (
-            <Card
+            <section
               key={section.id}
               data-section-id={section.id}
-              className="scroll-mt-24"
+              className={`${CARD} scroll-mt-24 p-6`}
             >
-              <CardContent className="pt-6">
-                {section.title.length > 0 && (
-                  <h2 className="text-lg font-semibold text-foreground mb-4">
-                    {section.title}
-                  </h2>
-                )}
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {section.markdown}
-                  </ReactMarkdown>
-                </div>
-              </CardContent>
-            </Card>
+              {section.title.length > 0 && (
+                <h2 className="font-lyc-serif text-lyc-panel font-semibold text-lyc-ink-strong mb-4">
+                  {section.title}
+                </h2>
+              )}
+              <div className="legal-prose prose max-w-none">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {section.markdown}
+                </ReactMarkdown>
+              </div>
+            </section>
           ))}
         </div>
 
         {filteredSections.length === 0 && searchQuery.trim() && (
-          <Card className="border-dashed">
-            <CardContent className="py-12 text-center">
-              <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                No results found
-              </h3>
-              <p className="text-muted-foreground mb-4">
-                No sections match your search for "{searchQuery}"
-              </p>
-              <Button variant="outline" onClick={() => setSearchQuery("")}>
-                Clear search
-              </Button>
-            </CardContent>
-          </Card>
+          <div className={`${CARD} border-dashed py-12 px-6 text-center`}>
+            <Search className="h-12 w-12 mx-auto text-lyc-muted mb-4" />
+            <h3 className="text-lyc-panel font-semibold text-lyc-ink-strong mb-2">
+              No results found
+            </h3>
+            <p className="text-lyc-muted mb-4">
+              No sections match your search for "{searchQuery}"
+            </p>
+            <Button
+              variant="lyc-outline"
+              size="lyc"
+              onClick={() => setSearchQuery("")}
+            >
+              Clear search
+            </Button>
+          </div>
         )}
       </article>
     </div>,

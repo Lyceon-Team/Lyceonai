@@ -9,10 +9,15 @@
  *
  * plain English: the main column is the greeting and date line, today's plan from the calendar
  * with "Start today's plan" as the ONE primary action (it launches the first block of the day
- * that is not done; each row has its own outline Start), the "Start a full-length test" card
- * (owner ruling, Karl, 2026-10-05; FullLengthCard.tsx), Mastery as wide rows, and "Pick up
+ * that is not done; each row has its own outline Start), Mastery as wide rows, and "Pick up
  * where you left off" (open practice, review and full-length sessions; the diagnostic is
- * dropped, wiring table §3). The right panel is the projected score with the target, this week's
+ * dropped, wiring table §3). Final brief v2 (Karl, 2026-10-13): while the Getting started
+ * checklist is active it sits above today's question and its current step is the one primary
+ * (today's plan is outlined until it is dismissed). Owner ruling (Karl, 2026-10-15, on #1233):
+ * Practice, Review and Full-Length are three equal text-link rows at the bottom of the column
+ * (HomeEntryPoints.tsx, Review's count from the review pool this page already reads); they
+ * replace the brief's Practice and Review outline buttons and its removal of the full-length
+ * card. The right panel is the projected score with the target, this week's
  * seven days, and recent sessions.
  *
  * READS. One calendar read covers Monday to Sunday of the current week: today's row and the
@@ -20,13 +25,10 @@
  * plan is entitled to; this component is only rendered when the feature-access map says so
  * (`lyceon-dashboard.tsx`), so a free student never calls a gated route from Home.
  *
- * REVIEW CAP (owner re-test, Karl, 2026-10-08, item A) | @implemented [2026-10-08]: a "Recent
- * sessions" row whose review start the server refuses for the concurrent-session cap draws the
- * shared `ReviewCapNotice` directly under that row (scrolled into view), with "Continue your open
- * session" and "End a session", the same as Review. It used to be a red line under the whole
- * list, below the fold at 1440 and 1024. Today's plan rows launch through the calendar, whose
- * route answers every engine refusal as `CALENDAR_ENGINE_ERROR` without the engine's code, so the
- * client cannot tell the cap there (handed to the calendar vertical).
+ * REVIEW CAP: RETIRED (owner rulings, Karl, 2026-10-21, on #1277, ruling 3). The QA2-A notice a
+ * "Recent sessions" row drew when the server refused a review start for the open-session cap
+ * (2026-10-08) is gone: since F-81 the server closes the oldest open session and always starts a
+ * new one, so there is no cap refusal to answer. Any other refusal shows as the row list's line.
  *
  * edge cases: a calendar with no setup shows "Set up your study plan" (owner brief "Question of the Day on Home", 2026-10-08/09; was DESIGN.md §4
  * Settings wording) as the primary, linking to /calendar; a day with no blocks says the one
@@ -53,7 +55,6 @@ import {
   canonicalDomainNodes,
   masteryDomainHref,
 } from "@/components/mastery/domain-nodes";
-import { ReviewCapNotice } from "@/components/review/ReviewCapNotice";
 import { Notice, PageHeader } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { EMPTY_DAY_MESSAGE } from "@/lib/empty-day";
@@ -80,15 +81,18 @@ import {
 import { fetchMasteryDomains } from "@/lib/masteryApi";
 import { sectionDisplayLabel } from "@shared/section-display";
 import { DiagnosticCard } from "./DiagnosticCard";
-import { FullLengthCard } from "./FullLengthCard";
+import { GettingStartedCard } from "./GettingStartedCard";
+import { HomeReviewAsk } from "./HomeReviewAsk";
+import { HomeEntryPoints } from "./HomeEntryPoints";
+import { useGettingStarted } from "@/hooks/useGettingStarted";
 import { HomeQotdSection } from "./qotd/HomeQotdSection";
 import { HomeStreakChip } from "./qotd/StreakChip";
+import { homeQotdFirstLoad, useHomeQotd } from "@/hooks/useHomeQotd";
 import { HomeLoading } from "./HomeLoading";
 import {
   ProjectionSection,
   RecentSessionsSection,
   WeekSection,
-  recentRowKey,
 } from "./HomePanel";
 import {
   answeredLine,
@@ -133,6 +137,7 @@ export function PaidHome({
     enabled: studentId.length > 0,
   });
   const practice = useActiveSessions();
+  const gettingStarted = useGettingStarted();
   const review = useActiveReviewSessions();
   const exams = useQuery({
     queryKey: examKeys.forms(),
@@ -141,6 +146,7 @@ export function PaidHome({
   });
   const pool = useReviewPool();
   const projection = useHomeProjection(studentId);
+  const qotd = useHomeQotd();
   const { launch, pendingBlockId } = useLaunchBlock(navigate);
   const [launchFailed, setLaunchFailed] = useState(false);
   const precheck = useFullLengthPhonePrecheck();
@@ -148,11 +154,9 @@ export function PaidHome({
   // the same start as Review's "Redo a past session".
   const createReview = useCreateReviewSession();
   const [reviewing, setReviewing] = useState<string | null>(null);
-  // QA2-A: the failure and the row it belongs to, so the review cap is drawn under that row.
-  const [reviewFailure, setReviewFailure] = useState<{
-    row: string;
-    failure: ReviewStartFailure;
-  } | null>(null);
+  const [reviewFailure, setReviewFailure] = useState<ReviewStartFailure | null>(
+    null,
+  );
   const reviewRecent = async (row: ReviewPoolSourceSession): Promise<void> => {
     setReviewing(row.source_session_id);
     setReviewFailure(null);
@@ -168,10 +172,8 @@ export function PaidHome({
       return;
     }
     setReviewing(null);
-    setReviewFailure({ row: recentRowKey(row), failure: result.failure });
+    setReviewFailure(result.failure);
   };
-  const reviewCap =
-    reviewFailure?.failure.kind === "session_limit" ? reviewFailure : null;
 
   const ready: CalendarReadyResponse | null =
     calendar.data?.status === "ready" ? calendar.data : null;
@@ -218,7 +220,11 @@ export function PaidHome({
     !review.isLoading &&
     !exams.isLoading &&
     !pool.isLoading &&
-    !projection.isLoading;
+    !projection.isLoading &&
+    !gettingStarted.isLoading &&
+    // First-run activation brief (Karl, 2026-10-13) P1: the Question of the Day card lands
+    // with the page, in its final place, instead of pushing the page down after it.
+    !homeQotdFirstLoad(qotd);
 
   const retry = (): void => {
     void calendar.refetch();
@@ -269,6 +275,12 @@ export function PaidHome({
   if (!settled) return <HomeLoading />;
   const needsDiagnostic =
     freeHomeStage(projection.estimateStatus) === "diagnostic";
+  // Final brief v2 §4: the Getting started checklist sits above today's question while active
+  // and owns the page's one filled button; a failed read draws the page as after dismissal.
+  const checklist =
+    gettingStarted.data !== undefined && !gettingStarted.data.dismissed
+      ? gettingStarted.data
+      : null;
 
   return (
     <div className="flex flex-col gap-12" data-testid="home" data-plan="paid">
@@ -278,9 +290,21 @@ export function PaidHome({
         actions={<HomeStreakChip celebrate={celebrate} />}
       />
 
+      {checklist !== null ? (
+        <GettingStartedCard
+          data={checklist}
+          diagnosticTotal={practice.diagnosticTotalQuestions}
+        />
+      ) : null}
+
       {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09): the QOTD card and the
-          SAT-date card come right after the greeting and the streak chip, before the next step. */}
+          SAT-date card come right after the greeting and the streak chip, before the next step
+          (below the Getting started checklist while it is active, final brief v2 §4). */}
       <HomeQotdSection onStreakExtended={() => setCelebrate(true)} />
+
+      {/* Review ask (Karl's decision 7, 2026-10-20): below the checklist and today's question;
+          never while the checklist has an open step. A bottom sheet on a phone. */}
+      <HomeReviewAsk checklist={checklist} />
 
       {failed ? (
         <Notice
@@ -295,20 +319,19 @@ export function PaidHome({
       {/* Owner brief "Question of the Day on Home" (Karl, 2026-10-08/09) "Home" 5: a paid student
           with no diagnostic takes it first ("Start diagnostic" is the primary), then sets up
           their study plan; with a plan, today's plan is the primary. */}
-      {needsDiagnostic ? <DiagnosticCard practice={practice} /> : null}
+      {needsDiagnostic ? (
+        <DiagnosticCard practice={practice} primary={checklist === null} />
+      ) : null}
 
       {plan !== null ? (
         <TodayPlan
           plan={plan}
-          primary={!needsDiagnostic}
+          primary={!needsDiagnostic && checklist === null}
           pendingBlockId={pendingBlockId}
           launchFailed={launchFailed}
           onStart={startChecked}
         />
       ) : null}
-
-      {/* Owner ruling (Karl, 2026-10-05) item 4: the full-length card, after today's plan. */}
-      <FullLengthCard />
 
       {mastery.data !== undefined ? (
         <section
@@ -351,6 +374,12 @@ export function PaidHome({
       {resumeRows.length > 0 ? (
         <PickUp rows={resumeRows} onFullLengthClick={precheck.onLinkClick} />
       ) : null}
+
+      {/* Owner ruling (Karl, 2026-10-15, on #1233): three equal entry points, Practice, Review
+          and Full-Length, at the bottom of the main column at every width (Home's only way to
+          Full-Length on a phone). Supersedes final brief v2 §4's removal of the full-length
+          card and its Practice and Review outline buttons. */}
+      <HomeEntryPoints reviewWaiting={pool.pool?.total ?? null} />
       {precheck.dialog}
 
       <AppShellPanel>
@@ -361,27 +390,18 @@ export function PaidHome({
             targetScore={ready?.profile.target_score ?? null}
           />
           {ready !== null ? (
-            <WeekSection days={ready.days} today={today} />
+            <WeekSection
+              days={ready.days}
+              today={today}
+              activeDays={qotd.data?.active_days ?? []}
+            />
           ) : null}
           <RecentSessionsSection
             sessions={pool.pool?.sessions ?? []}
             todayKey={today}
             onReview={(row) => void reviewRecent(row)}
             startingId={reviewing}
-            failure={
-              reviewFailure !== null && reviewCap === null
-                ? reviewFailure.failure.message
-                : null
-            }
-            capFor={reviewCap?.row ?? null}
-            cap={
-              reviewCap !== null ? (
-                <ReviewCapNotice
-                  message={reviewCap.failure.message}
-                  sessions={review.sessions}
-                />
-              ) : null
-            }
+            failure={reviewFailure?.message ?? null}
           />
         </div>
       </AppShellPanel>
@@ -504,10 +524,14 @@ function ReadyPlan({
                 ) : null}
               </div>
               <span className="text-[17px] text-lyc-ink">{row.time ?? ""}</span>
-              {/* QA item 5 (2026-10-07): the pressed row says it is starting, from the click. */}
+              {/* QA item 5 (2026-10-07): the pressed row says it is starting, from the click.
+                  First-run activation brief (Karl, 2026-10-13) P1: each row's action is a text
+                  link, so "Start today's plan" is Home's only filled button and the rows no longer
+                  read as a column of competing buttons. */}
               <Button
                 type="button"
-                variant="lyc-outline"
+                variant="lyc-link"
+                className="self-start sm:self-center sm:justify-self-end"
                 disabled={row.completed || pendingBlockId !== null}
                 pending={pendingBlockId === row.blockId && !startedFromPrimary}
                 onClick={() => {

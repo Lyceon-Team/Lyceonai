@@ -15,16 +15,23 @@ import { UI_57 } from "./ui-57";
 import { UI_58 } from "./ui-58";
 import { UI_59 } from "./ui-59";
 import { SEO_Q6 } from "./seo-q6";
-import { QA2_A } from "./qa2-a";
 import { W6_UI_65, W6_UI_66 } from "./w6-code";
 import { W6_OQ_68A } from "./oq68";
 import { W6_UI_64 } from "./w6-ui-64";
 import { BRAND_MARK } from "./brand-mark";
 import { HOME_QOTD, HOME_QOTD_ONBOARDING } from "./home-qotd";
+import { GETTING_STARTED, GETTING_STARTED_ONBOARDING } from "./getting-started";
 import { SAT_DATES } from "./sat-dates";
 import { AUTH_ENTRY } from "./auth-entry";
 import { GUARDIAN_NOTICE } from "./guardian-notice";
 import { QMH, QMH_EXAM } from "./qmh";
+import { FIRST_RUN, FIRST_RUN_ONBOARDING } from "./first-run";
+import { DIAGNOSTIC_PROJECTION } from "./diagnostic-projection";
+import { COOKIE_BANNER } from "./cookie-banner";
+import { HOMEPAGE_HERO } from "./homepage-hero";
+import { LISA_DOCK } from "./lisa-dock";
+import { LISA_LAUNCHER } from "./lisa-launcher";
+import { RUNNER_LISA_DOCKED } from "./runner-lisa-docked";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -39,7 +46,6 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_58.id]: UI_58,
   [UI_59.id]: UI_59,
   [SEO_Q6.id]: SEO_Q6,
-  [QA2_A.id]: QA2_A,
   [W6_UI_65.id]: W6_UI_65,
   [W6_UI_66.id]: W6_UI_66,
   [W6_OQ_68A.id]: W6_OQ_68A,
@@ -47,9 +53,19 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [BRAND_MARK.id]: BRAND_MARK,
   [HOME_QOTD.id]: HOME_QOTD,
   [HOME_QOTD_ONBOARDING.id]: HOME_QOTD_ONBOARDING,
+  [GETTING_STARTED.id]: GETTING_STARTED,
+  [GETTING_STARTED_ONBOARDING.id]: GETTING_STARTED_ONBOARDING,
   [SAT_DATES.id]: SAT_DATES,
   [AUTH_ENTRY.id]: AUTH_ENTRY,
   [GUARDIAN_NOTICE.id]: GUARDIAN_NOTICE,
   [QMH.id]: QMH,
   [QMH_EXAM.id]: QMH_EXAM,
+  [FIRST_RUN.id]: FIRST_RUN,
+  [FIRST_RUN_ONBOARDING.id]: FIRST_RUN_ONBOARDING,
+  [DIAGNOSTIC_PROJECTION.id]: DIAGNOSTIC_PROJECTION,
+  [COOKIE_BANNER.id]: COOKIE_BANNER,
+  [HOMEPAGE_HERO.id]: HOMEPAGE_HERO,
+  [LISA_DOCK.id]: LISA_DOCK,
+  [LISA_LAUNCHER.id]: LISA_LAUNCHER,
+  [RUNNER_LISA_DOCKED.id]: RUNNER_LISA_DOCKED,
 };

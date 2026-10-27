@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { isProfileGateSatisfied } from "@lyceon/shared/profile-completion";
 import { useLocation } from "wouter";
+import { LyceonMark } from "@/components/common/LyceonMark";
+import { LYC_FOCUS } from "@/components/ui/button";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import { SupabaseAuthForm } from "@/components/auth/SupabaseAuthForm";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +13,7 @@ import {
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
 import { authEntryFromSearch } from "@lyceon/shared/auth-entry";
+import { notePostAuthDestination } from "@/lib/landing-entry";
 
 /**
  * @spec [student-UI register UI-3A, UI-59; DESIGN.md §1, §2 "Bare card" (login, signup);
@@ -20,6 +23,32 @@ import { authEntryFromSearch } from "@lyceon/shared/auth-entry";
  * code) is a danger Notice (role="alert", as the amber shadcn Alert it replaces was), and the
  * loading state is the still student skeleton. The landing decision below is unchanged.
  */
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Sign-up/sign-in page:
+ *       Lyceon logo linking to /"; DESIGN.md §2 (Bare card), §5 (tokens only, ≥14px)]
+ *       | @implemented [2026-10-13]
+ * plain English: the mark and the "Lyceon" wordmark at the top of the sign-in / sign-up card, a
+ * link to the public homepage, so a visitor who lands here can always get back. Drawn on the
+ * student tokens (it follows the device theme, like the card); the mark is decorative because the
+ * word sits beside it, and the link is named "Lyceon home". A plain link, not the router's: the
+ * homepage is the public, prerendered page, so a full load is what any link to it gets.
+ */
+function AuthHomeLogo(): JSX.Element {
+  return (
+    <a
+      href="/"
+      aria-label="Lyceon home"
+      className={`${LYC_FOCUS} mb-5 inline-flex items-center gap-2 self-start rounded-md text-lyc-ink-strong no-underline`}
+      data-testid="auth-home-logo"
+    >
+      <LyceonMark decorative className="h-8 w-8" />
+      <span className="font-lyc-serif text-[20px] font-semibold tracking-[0.01em]">
+        Lyceon
+      </span>
+    </a>
+  );
+}
+
 export default function Login() {
   const [, navigate] = useLocation();
   const { user, isAuthenticated, authLoading } = useSupabaseAuth();
@@ -78,15 +107,18 @@ export default function Login() {
       // request until a guardian connects, so a `next` there would only bounce. Onboarding
       // still comes first, exactly as on `main`.
       const onboardingFirst = user.role !== "admin" && needsOnboarding;
-      navigate(
+      const destination =
         !onboardingFirst && needsGuardianLink
           ? "/guardian-required"
           : postAuthDestination({
               role: user.role,
               needsOnboarding: onboardingFirst,
               next,
-            }),
-      );
+            });
+      // Smart landing (Karl, 2026-10-26, ruling A): "no return path, so the default Home" is a
+      // default entry; a `next` is a deep link and wins.
+      notePostAuthDestination(destination, next);
+      navigate(destination);
     }
   }, [isAuthenticated, authLoading, user, navigate]);
 
@@ -106,17 +138,20 @@ export default function Login() {
   // inside a polite status region named for what is loading.
   if (authLoading && !firstCheckSettled.current) {
     return (
-      <div
-        role="status"
-        aria-label="Loading..."
-        className="flex flex-col gap-4"
-        data-testid="login-loading"
-      >
-        <Skeleton variant="lyc" className="h-8 w-3/4" />
-        <Skeleton variant="lyc" className="h-4 w-full" />
-        <Skeleton variant="lyc" className="h-11 w-full" />
-        <Skeleton variant="lyc" className="h-11 w-full" />
-        <Skeleton variant="lyc" className="h-11 w-full" />
+      <div className="flex flex-col">
+        <AuthHomeLogo />
+        <div
+          role="status"
+          aria-label="Loading..."
+          className="flex flex-col gap-4"
+          data-testid="login-loading"
+        >
+          <Skeleton variant="lyc" className="h-8 w-3/4" />
+          <Skeleton variant="lyc" className="h-4 w-full" />
+          <Skeleton variant="lyc" className="h-11 w-full" />
+          <Skeleton variant="lyc" className="h-11 w-full" />
+          <Skeleton variant="lyc" className="h-11 w-full" />
+        </div>
       </div>
     );
   }
@@ -132,6 +167,7 @@ export default function Login() {
   // Show auth form when ready
   return (
     <div className="flex flex-col gap-4">
+      <AuthHomeLogo />
       {errorMessage && (
         <Notice
           tone="danger"

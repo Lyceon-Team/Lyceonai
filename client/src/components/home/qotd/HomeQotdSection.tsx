@@ -24,7 +24,8 @@
  *    one profile write.
  *  - `#qotd` (the daily email's "Answer now" link) scrolls the card into view on arrival.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { HomeQotdTodayResponse } from "@lyceon/shared/home-qotd-schema";
 import QuestionRenderer from "@/components/question-renderer";
 import {
@@ -33,6 +34,7 @@ import {
 } from "@/components/sat-dates/SatDatePicker";
 import { Notice } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   newIntent,
   useStudyProfile,
@@ -40,10 +42,15 @@ import {
 } from "@/features/calendar/api";
 import {
   useAnswerHomeQotd,
+  useMarkQotdPromptShown,
   useHomeQotd,
   useQotdEmailDecision,
   type QotdEmailDecision,
 } from "@/hooks/useHomeQotd";
+import {
+  invalidateGettingStarted,
+  recordGettingStartedNotSure,
+} from "@/hooks/useGettingStarted";
 import { HttpApiError } from "@/lib/api-error";
 import { chicagoToday } from "@shared/sat-test-dates";
 import { QotdEmailPrompt } from "./QotdEmailPrompt";
@@ -59,10 +66,20 @@ export function HomeQotdSection({
 }: {
   onStreakExtended: () => void;
 }): JSX.Element | null {
-  const today = useHomeQotd();
+  const today = useHomeQotd({ joinHome: true });
   const data = today.data;
 
-  if (today.isLoading) return null;
+  // First-run activation brief (Karl, 2026-10-13) P1: the card's place is held while it loads.
+  // Home waits for this read before it draws (PaidHome/FreeHome `settled`), so this shows only
+  // where the section renders on its own.
+  if (today.isLoading)
+    return (
+      <Skeleton
+        variant="lyc"
+        className="h-[88px] w-full"
+        data-testid="home-qotd-loading"
+      />
+    );
   if (today.isError) {
     return (
       <Notice
@@ -126,7 +143,45 @@ function QotdCard({
   const [gridValue, setGridValue] = useState("");
   const [justAnswered, setJustAnswered] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [promptOpen, setPromptOpen] = useState(false);
+  /**
+   * @spec [owner ruling (Karl, 2026-10-15, on #1233, item 2)] | @implemented [2026-10-15]
+   * plain English: a Home visit that finds today's question ALREADY answered (an earlier visit
+   * today, left before Done) opens the prompt at once, if the server says it may: the card is
+   * collapsed, so nothing is under it. The server says so only until the prompt has been shown
+   * once today (`last_asked_on`), and only for today's own answer, so this cannot repeat the
+   * same day or carry a missed day over. Answering in this visit starts closed (Done opens it).
+   */
+  const [promptOpen, setPromptOpen] = useState(
+    () => data.state === "answered" && data.show_email_prompt,
+  );
+  const markShown = useMarkQotdPromptShown();
+  const shownRecorded = useRef(false);
+  // The prompt is on screen: tell the server once (it records today's one ask). A side effect
+  // of the prompt opening, not derived state.
+  useEffect(() => {
+    if (!promptOpen || shownRecorded.current) return;
+    shownRecorded.current = true;
+    markShown.mutate();
+  }, [promptOpen, markShown]);
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "The email pop-up
+   *       opens only after the explanation is visible/dismissed, never over it"]
+   *       | @implemented [2026-10-13]
+   * plain English: the server's "show the prompt" answer no longer opens it on top of the
+   * explanation the student is reading. It is held here, and the prompt opens when the student
+   * closes the explanation ("Done" under it), once. A student who leaves without pressing Done is
+   * asked once on their next Home visit the same Chicago day (owner ruling, Karl, 2026-10-15, on
+   * #1233, item 2: the initial `promptOpen` above); the explanation always comes first.
+   */
+  const [promptDue, setPromptDue] = useState(false);
+  const closeExplanation = (): void => {
+    setJustAnswered(false);
+    setExpanded(false);
+    if (promptDue) {
+      setPromptDue(false);
+      setPromptOpen(true);
+    }
+  };
 
   // The daily email links to /dashboard#qotd: bring the card into view on arrival. A side
   // effect on mount (scrolling), not derived state.
@@ -159,7 +214,7 @@ function QotdCard({
       onSuccess: (response) => {
         setJustAnswered(true);
         if (response.streak_extended) onStreakExtended();
-        if (response.show_email_prompt) setPromptOpen(true);
+        if (response.show_email_prompt) setPromptDue(true);
       },
     });
   };
@@ -207,7 +262,7 @@ function QotdCard({
     <QotdEmailPrompt
       open={promptOpen}
       showDontAskAgain={data.show_dont_ask_again}
-      pending={decide.isPending}
+      pendingDecision={decide.isPending ? (decide.variables ?? null) : null}
       error={
         decide.error !== null
           ? "We couldn't save that. Please try again."
@@ -241,6 +296,7 @@ function QotdCard({
         >
           See explanation
         </button>
+        {prompt}
       </section>
     );
   }
@@ -287,12 +343,23 @@ function QotdCard({
           </div>
         </div>
       ) : (
-        <p
-          className="m-0 text-base text-lyc-muted"
-          data-testid="home-qotd-next"
-        >
-          New question tomorrow.
-        </p>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          {/* P1 (2026-10-13): closing the explanation is when the email prompt may open. */}
+          <Button
+            type="button"
+            variant="lyc-outline"
+            onClick={closeExplanation}
+            data-testid="home-qotd-done"
+          >
+            Done
+          </Button>
+          <p
+            className="m-0 text-base text-lyc-muted"
+            data-testid="home-qotd-next"
+          >
+            New question tomorrow.
+          </p>
+        </div>
       )}
       {prompt}
     </section>
@@ -302,14 +369,26 @@ function QotdCard({
 /**
  * "Pick your SAT date to see your countdown" — only while no date is saved. Saves through the
  * calendar's one profile write (a dates-only save; it never completes calendar setup).
+ *
+ * Ruling 3 (Karl, 2026-10-13): "Not sure yet" is one of its choices. It is recorded for the
+ * Getting started checklist and the card stays, since it is how the student sets a date later.
  */
 function SatDateCard(): JSX.Element | null {
   const profile = useStudyProfile();
   const save = useStudyProfileMutation();
+  const queryClient = useQueryClient();
+  const notSure = useMutation({
+    mutationFn: () => recordGettingStartedNotSure({ test_date: true }),
+    onSuccess: () => invalidateGettingStarted(queryClient),
+  });
   const [open, setOpen] = useState(false);
   const [choice, setChoice] = useState<SatDateChoice>({
     dates: [],
   });
+  // Karl, 2026-10-13 on #1230: "Not sure yet" counts only when chosen. Save with nothing chosen
+  // is not an answer, so it is disabled until a date or "Not sure yet" is picked.
+  const [notSureChosen, setNotSureChosen] = useState(false);
+  const answered = choice.dates.length > 0 || notSureChosen;
   const todayChicago = chicagoToday();
 
   if (profile.isLoading || profile.isError) return null;
@@ -332,14 +411,26 @@ function SatDateCard(): JSX.Element | null {
           Pick your SAT date to see your countdown
         </h2>
         {open ? null : (
-          <Button
-            type="button"
-            variant="lyc-outline"
-            onClick={() => setOpen(true)}
-            data-testid="home-sat-date-open"
-          >
-            Pick a date
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="lyc-outline"
+              onClick={() => setOpen(true)}
+              data-testid="home-sat-date-open"
+            >
+              Pick a date
+            </Button>
+            <Button
+              type="button"
+              variant="lyc-quiet"
+              pending={notSure.isPending}
+              disabled={notSure.isPending}
+              onClick={() => notSure.mutate()}
+              data-testid="home-sat-date-not-sure"
+            >
+              Not sure yet
+            </Button>
+          </div>
         )}
       </div>
       {open ? (
@@ -347,11 +438,15 @@ function SatDateCard(): JSX.Element | null {
           <SatDatePicker
             legend="When's your SAT?"
             value={choice}
-            onChange={setChoice}
+            onChange={(next) => {
+              setChoice(next);
+              if (next.dates.length > 0) setNotSureChosen(false);
+            }}
+            onNotSureChosen={() => setNotSureChosen(true)}
             today={todayChicago}
             data-testid="home-sat-dates"
           />
-          {save.isError ? (
+          {save.isError || notSure.isError ? (
             <p role="alert" className="m-0 text-base text-lyc-danger">
               We couldn&apos;t save your date. Please try again.
             </p>
@@ -360,12 +455,22 @@ function SatDateCard(): JSX.Element | null {
             <Button
               type="button"
               variant="lyc-outline"
-              pending={save.isPending}
-              disabled={save.isPending || choice.dates.length === 0}
+              pending={save.isPending || notSure.isPending}
+              disabled={!answered || save.isPending || notSure.isPending}
               onClick={() =>
-                save.mutate(newIntent({ target_exam_dates: choice.dates }), {
-                  onSuccess: () => setOpen(false),
-                })
+                choice.dates.length === 0
+                  ? notSure.mutate(undefined, {
+                      onSuccess: () => setOpen(false),
+                    })
+                  : save.mutate(
+                      newIntent({ target_exam_dates: choice.dates }),
+                      {
+                        onSuccess: () => {
+                          setOpen(false);
+                          void invalidateGettingStarted(queryClient);
+                        },
+                      },
+                    )
               }
               data-testid="home-sat-date-save"
             >

@@ -1,0 +1,125 @@
+# TikTok, October SAT score release: render the committed 9:16 composition and, on a manual run,
+# post the MP4 and its caption to #social for Karl's review.
+#
+# @spec [docs/plans/seo/seo-marketing-vertical.md §0 rule 5 (Karl's approval gate), §8.4
+#   (faceless video); owner brief 2026-10-16 (TikTok, October SAT score release: 1080×1920,
+#   burned-in captions, the walkthrough pipeline; MP4 plus caption to #social by the existing bot
+#   and as a workflow artifact; Karl reviews in Slack before posting)] | @implemented [2026-10-16]
+#
+# plain English: the same render as walkthrough-video.yml (pinned Hyperframes via pnpm dlx,
+# `hyperframes check` first, delivery quality, a poster baked in as frame 0), checked to be
+# 1080×1920 and 22.5 s. The artifact holds the MP4, poster, captions and caption text. Pull
+# request runs render only; a workflow_dispatch run, or adding the `post-to-social` label to the
+# pull request (dispatch needs the file on the default branch, which this one is not yet), also
+# posts to #social, after the upload, so a Slack failure never costs the download. The token is
+# read only by the post step.
+name: Oct scores TikTok
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - .github/workflows/oct-scores-tiktok.yml
+      - brag-output-2026-10-16-oct-scores/**
+      - scripts/social/post-video-to-slack.ts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oct-scores-tiktok-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HYPERFRAMES_VERSION: "0.8.143"
+  HYPERFRAMES_NO_TELEMETRY: "1"
+  DO_NOT_TRACK: "1"
+  OUT: tiktok-out
+  NAME: oct-sat-scores-tiktok-9x16
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins), FFmpeg and the emoji font
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-noto-color-emoji
+          shell=$(find "$HOME/.cache/ms-playwright" -type f \( -name headless_shell -o -name chrome-headless-shell \) -path '*chromium_headless_shell-*' | head -1)
+          echo "headless shell: ${shell:-not found}"
+          test -x "$shell"
+          echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
+
+      - name: Render
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          dir=brag-output-2026-10-16-oct-scores
+          ( cd "$dir/composition" && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" check \
+            && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/$OUT/$NAME.raw.mp4" )
+          out="$OUT/$NAME"
+          ffmpeg -v error -y -ss 1.2 -i "$out.raw.mp4" -frames:v 1 -q:v 2 "$out.jpg"
+          ffmpeg -v error -y -i "$out.raw.mp4" -i "$out.jpg" \
+            -filter_complex "[0:v][1:v]overlay=0:0:enable='eq(n,0)'[v]" \
+            -map "[v]" -map 0:a -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p \
+            -c:a copy -movflags +faststart "$out.mp4"
+          rm "$out.raw.mp4"
+          cp "$dir/oct-scores.en.vtt" "$out.en.vtt"
+          cp "$dir/share-copy.txt" "$OUT/share-copy.txt"
+          dims=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$out.mp4")
+          dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$out.mp4")
+          echo "$NAME: ${dims} ${dur}s"
+          test "$dims" = "1080,1920"
+          awk -v d="$dur" 'BEGIN { exit !(d > 22.4 && d < 22.6) }'
+          ls -la "$OUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## October SAT scores TikTok"
+            echo
+            echo "Download **oct-scores-tiktok** from this run's Artifacts: the 9:16 MP4 (captions burned in),"
+            echo "its poster, WebVTT captions and the caption text."
+            echo
+            echo '```text'
+            cat "$OUT/share-copy.txt" 2>/dev/null || echo "(not rendered)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the video
+        uses: actions/upload-artifact@v4
+        with:
+          name: oct-scores-tiktok
+          path: tiktok-out/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Check the Slack post (dry run)
+        if: github.event_name != 'workflow_dispatch' && github.event.label.name != 'post-to-social'
+        run: pnpm exec tsx scripts/social/post-video-to-slack.ts --video "$OUT/$NAME.mp4" --caption "$OUT/share-copy.txt" --title "October SAT score release (TikTok, 9:16, 22.5 s)" --dry-run
+
+      - name: "Post to #social for review"
+        if: github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'post-to-social')
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/social/post-video-to-slack.ts --video "$OUT/$NAME.mp4" --caption "$OUT/share-copy.txt" --title "October SAT score release (TikTok, 9:16, 22.5 s)"

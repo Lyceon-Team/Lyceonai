@@ -17,6 +17,7 @@ import rateLimit from "express-rate-limit";
 // Any duplicate tutor route under apps/api/** must remain unmounted.
 // Auth token resolution and enforcement stay in server/middleware/supabase-auth.ts.
 import tutorRuntimeRouter from "./routes/tutor-runtime";
+import tutorTurnTimingRouter from "./routes/tutor-turn-timing";
 import { TutorConfig } from "./services/tutor-config";
 import { legalRouter } from "./routes/legal-routes.js";
 import { getQuestionStats } from "./routes/questions-runtime";
@@ -61,11 +62,14 @@ import publicPricingRoutes from "./routes/public-pricing-routes";
 import publicQotdRoutes from "./routes/public-qotd-routes";
 import publicQotdEmailRoutes from "./routes/public-qotd-email-routes";
 import publicGuardianDigestEmailRoutes from "./routes/public-guardian-digest-email-routes";
+import publicReviewAskEmailRoutes from "./routes/public-review-ask-email-routes";
 import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
 import { apiCacheControlDefault } from "./middleware/api-cache-control";
-import practiceCanonicalRouter from "./routes/practice-canonical";
+import practiceCanonicalRouter, {
+  prefetchAnswerRateLimitConfig,
+} from "./routes/practice-canonical";
 import reviewCanonicalRouter from "./routes/review-canonical";
 import examRuntimeRouter from "./routes/exam-runtime-routes";
 import examReportRouter from "./routes/exam-report-routes";
@@ -73,6 +77,8 @@ import diagnosticRouter from "./routes/diagnostic-routes";
 import profileRoutes from "./routes/profile-routes";
 import productFeedbackRoutes from "./routes/product-feedback-routes";
 import homeQotdRoutes from "./routes/home-qotd-routes";
+import { landingRoutes } from "./routes/landing-routes";
+import gettingStartedRoutes from "./routes/getting-started-routes";
 import {
   referenceSearchRouter,
   studentBackgroundRouter,
@@ -230,6 +236,13 @@ app.get("/api/csrf-token", (req: Request, res: Response) => {
 // Supabase auth middleware - extract JWT from cookies and set req.user
 app.use(supabaseAuthMiddleware);
 
+// @spec [owner ruling (Karl) 2026-10-20 on #1257, ruling B] | @implemented [2026-10-20]
+// Starts the answer limiter's config read for an authenticated POST to a route that mounts it
+// (practice and review answer and skip; ruling Q1 on #1271, 2026-10-20), so it runs alongside the
+// deletion lock's reads below. It decides nothing: the limiter still answers (503/429) at its own
+// place on the route, after the lock and every gate before it.
+app.use(prefetchAnswerRateLimitConfig);
+
 // @spec [Doc-01_V8 §40.3] Account-deletion lock — the ONE structural enforcement point. Mounted here
 // (after req.user is set, before every API router) so deleted/pending-deletion users are default-denied
 // across requireSupabaseAuth AND requireRequestUser routes alike. Flag-gated => dormant pass-through
@@ -247,6 +260,14 @@ const tutorLimiter = rateLimit({
   windowMs: 60_000,
   max: 30,
   message: { error: "Too many tutor requests" },
+});
+
+// P2 H1 (Karl, 2026-10-23): the turn-timing beacon's own limiter — one beacon per reply turn, so
+// it sits apart from tutorLimiter rather than spending the student's tutor slots.
+const perfBeaconLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  message: { error: "Too many timing reports" },
 });
 
 const googleOAuthCallbackLimiter = rateLimit({
@@ -303,6 +324,17 @@ app.use(
   doubleCsrfProtection,
   awaitTutorConfig,
   tutorRuntimeRouter,
+);
+
+// POST /api/perf/tutor-turn — LISA's time to first visible text, reported by the client (P2 H1,
+// server/routes/tutor-turn-timing.ts). The tutor mount's gates, its own limiter.
+app.use(
+  "/api/perf",
+  perfBeaconLimiter,
+  requireSupabaseAuth,
+  requireStudentOnly,
+  doubleCsrfProtection,
+  tutorTurnTimingRouter,
 );
 
 // Native Supabase OAuth landing route (PKCE).
@@ -387,6 +419,28 @@ app.use(
   doubleCsrfProtection,
   requireStudentAccount,
   homeQotdRoutes,
+);
+
+// Owner brief "Smart landing" (Karl, 2026-10-26): where a student lands on app open, the escape
+// report and "5 more". Students only (`requireStudentAccount`, ending in the live under-13 link
+// gate); the service re-checks role and age and does nothing while the kill switch is off.
+app.use(
+  "/api/landing",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  landingRoutes,
+);
+
+// Owner brief "Student dashboard — Getting started checklist" (final brief v2, Karl,
+// 2026-10-13) §8. Students only (`requireStudentAccount`: guardians and admins get 403); no
+// entitlement gate — the checklist is for free and Pro alike, the plan only decides its steps.
+app.use(
+  "/api/home/getting-started",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  requireStudentAccount,
+  gettingStartedRoutes,
 );
 
 // Notifications feed (contracts/notifications.contract.md §3, §9.4). Recipient = session
@@ -548,6 +602,12 @@ app.use("/api/public/qotd-email", publicQotdEmailRoutes);
 // only on a valid HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
 // CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
 app.use("/api/public/guardian-digest-email", publicGuardianDigestEmailRoutes);
+// Review ask "Stop review requests" (UNAUTHENTICATED BY DESIGN — Karl's decision 5, 2026-10-20:
+// "Keep the signed one-click 'Stop review requests' link"). The digest's shape above: the GET
+// renders a button, the POST (the RFC 8058 target) ends the review asks, only on a valid
+// HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
+app.use("/api/public/review-ask-email", publicReviewAskEmailRoutes);
 
 // Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
 // Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no

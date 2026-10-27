@@ -161,7 +161,7 @@ plant "$LINKS" "  return timingSafeEqual(given, expected) ? studentId : null;" "
 run "H12 signed link" "a tampered link is refused" "$PG_SUITE"
 
 echo "=== (13) saving SAT dates completes calendar setup ==="
-plant "$PROFILE_SVC" "  const completesSetup = !datesOnly && existing?.setup_completed_at == null;" "  const completesSetup = existing?.setup_completed_at == null;" || { bad "H13 STALE"; exit 1; }
+plant "$PROFILE_SVC" "    (!goalOnly || (scheduleStored && update.target_score !== undefined));" "    true;" || { bad "H13 STALE"; exit 1; }
 run "H13 dates-only save" "A8: several dates stored" "$PG_SUITE"
 
 echo "=== (14) the effective date is the earliest date, past or not ==="
@@ -174,7 +174,9 @@ plant "$DATES" "  return SAT_TEST_DATES.filter((d) => d.date > today)" "  return
 run "H15 future dates only" "only dates after today are offered" "$CONTRACT"
 
 echo "=== (16) the prompt opens even when the server says not to ==="
-plant "$SECTION" "        if (response.show_email_prompt) setPromptOpen(true);" "        setPromptOpen(true);" || { bad "H16 STALE"; exit 1; }
+# Re-pointed 2026-10-13 (first-run activation P1): the server's answer now makes the prompt DUE;
+# it opens when the explanation is closed.
+plant "$SECTION" "        if (response.show_email_prompt) setPromptDue(true);" "        setPromptDue(true);" || { bad "H16 STALE"; exit 1; }
 run "H16 server decides the prompt" "no prompt when the server says not to" "$UI"
 
 echo "=== (17) the answered card never collapses ==="

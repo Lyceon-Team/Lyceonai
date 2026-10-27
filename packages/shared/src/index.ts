@@ -4,6 +4,7 @@ export * from "./mastery-emission.js";
 export * from "./session-mode.js";
 export * from "./diagnostic-eligibility.js";
 export * from "./diagnostic-state.js";
+export * from "./diagnostic-projection.js";
 export * from "./id.js";
 export * from "./rng.js";
 export * from "./env.js";
@@ -27,6 +28,7 @@ export * from "./practice-reference-schema.js";
 export * from "./review-schema.js";
 export * from "./session-criteria.js";
 export * from "./tutor-lifecycle-schema.js";
+export * from "./tutor-turn-timing-schema.js";
 
 // Doc 05F Study Calendar — shared layer (schemas, allocator, read model).
 export * from "./calendar/index.js";

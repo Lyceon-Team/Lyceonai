@@ -65,6 +65,7 @@ vi.mock("@/pages/admin/CrisisReviewList", pageStub);
 vi.mock("@/pages/blog", pageStub);
 vi.mock("@/pages/blog-post", pageStub);
 vi.mock("@/pages/calendar", pageStub);
+vi.mock("@/pages/contact", pageStub);
 vi.mock("@/pages/chat", pageStub);
 vi.mock("@/pages/digital-sat", pageStub);
 vi.mock("@/pages/sat-question-of-the-day", pageStub);
@@ -80,6 +81,7 @@ vi.mock("@/pages/notifications", pageStub);
 vi.mock("@/pages/practice", pageStub);
 vi.mock("@/pages/profile-complete", pageStub);
 vi.mock("@/pages/resume-practice", pageStub);
+vi.mock("@/pages/qotd-landing", pageStub);
 vi.mock("@/pages/diagnostic-start", pageStub);
 vi.mock("@/pages/resume-review", pageStub);
 vi.mock("@/pages/review", pageStub);
@@ -390,6 +392,8 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/help",
       "/notifications",
       "/practice/session/:sessionId",
+      // Smart landing (Karl, 2026-10-26) ruling D: the full-screen QOTD, on student tokens.
+      "/qotd",
       // Owner brief 2026-10-10 rule 3: the diagnostic start page, in the session's own frame.
       "/practice/diagnostic",
       // UI-53 / OQ-54 (a), ruling 2026-10-05: the review runner, its LISA panel on student tokens.

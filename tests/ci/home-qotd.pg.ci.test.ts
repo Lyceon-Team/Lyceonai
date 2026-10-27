@@ -112,6 +112,17 @@ vi.mock("../../server/lib/analytics/emit-event", () => ({
     return { ok: true };
   },
 }));
+// Server-side funnel (Karl, 2026-10-21): the route's hook is recorded, not sent. The once-ever
+// rule is proved in tests/ci/funnel-events.pg.ci.test.ts.
+const funnelAnswers = vi.hoisted(() => [] as Array<[string, string]>);
+vi.mock("../../server/lib/analytics/funnel-events", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../server/lib/analytics/funnel-events")
+  >()),
+  fireAnswerMilestones: (profileId: string, mode: string) => {
+    funnelAnswers.push([profileId, mode]);
+  },
+}));
 vi.mock("../../server/logger", () => {
   const record = (...args: unknown[]): void => {
     logs.push(
@@ -194,6 +205,31 @@ async function postAnswer(
   return request(await app())
     .post("/api/qotd/answer")
     .send(body);
+}
+
+/** POST /api/qotd/email-prompt/shown, as the client sends it when the prompt opens. */
+async function shown(id: string, at?: () => Date) {
+  as(id);
+  const target = at === undefined ? await app() : await appAt(at);
+  return request(target).post("/api/qotd/email-prompt/shown").send({});
+}
+
+/** The same mount as `app()`, with the router's clock fixed (a Chicago-day boundary case). */
+async function appAt(now: () => Date): Promise<express.Express> {
+  const { createHomeQotdRouter } =
+    await import("../../server/routes/home-qotd-routes");
+  const { requireSupabaseAuth, requireStudentAccount } =
+    await import("../../server/middleware/supabase-auth");
+  const a = express();
+  a.use(express.json());
+  a.use(injectSession);
+  a.use(
+    "/api/qotd",
+    requireSupabaseAuth,
+    requireStudentAccount,
+    createHomeQotdRouter({ now }),
+  );
+  return a;
 }
 
 async function consent(id: string, decision: string) {
@@ -496,6 +532,11 @@ describe.skipIf(!PG_AVAILABLE)(
       });
       expect(second.status).toBe(409);
       expect(second.body.error.code).toBe("qotd_already_answered");
+      // Funnel: the first answer calls the hook once with source qotd; the replay and the
+      // refused second answer call it never.
+      expect(funnelAnswers.filter(([id]) => id === REPLAYER)).toEqual([
+        [REPLAYER, "qotd"],
+      ]);
       expect(
         await count(
           `SELECT count(*)::int AS n FROM public.practice_session_items WHERE user_id = $1`,
@@ -620,6 +661,36 @@ describe.skipIf(!PG_AVAILABLE)(
       });
     });
 
+    // ── First-run activation (2026-10-13) P1: "This week" ticks the streak's own days ──────
+    it("P1: active_days are the streak's day set, from every source, Chicago days, last seven only", async () => {
+      const S = "a7000000-0000-4000-8000-0000000000fe";
+      await seedPerson(S, "student", "2008-01-01");
+      const { readActiveDays } =
+        await import("../../server/services/activity-streak");
+      // Presence of the empty case first.
+      expect(await readActiveDays(S, new Date("2026-02-11T20:00:00Z"))).toEqual(
+        [],
+      );
+      await seedAnswer("practice", S, "2026-02-05T18:00:00Z");
+      await seedAnswer("review", S, "2026-02-06T18:00:00Z");
+      await seedAnswer("full_length", S, "2026-02-07T18:00:00Z");
+      // 23:30 Chicago on the 8th (05:30Z on the 9th) is the 8th, as the streak counts it.
+      await seedAnswer("practice", S, "2026-02-09T05:30:00Z");
+      expect(await readActiveDays(S, new Date("2026-02-11T20:00:00Z"))).toEqual(
+        ["2026-02-05", "2026-02-06", "2026-02-07", "2026-02-08"],
+      );
+      // A day later the window (today and the six days before) no longer holds the 5th.
+      expect(await readActiveDays(S, new Date("2026-02-12T20:00:00Z"))).toEqual(
+        ["2026-02-06", "2026-02-07", "2026-02-08"],
+      );
+      // The same days the streak counts: a 4-day run ending the 8th.
+      expect(await streakAt(S, "2026-02-08T20:00:00Z")).toEqual({
+        current_streak: 4,
+        today_done: true,
+        broken: false,
+      });
+    });
+
     // ── A5 ─────────────────────────────────────────────────────────────────
     it("A5: the prompt shows after the answer; 'Don't ask again' only from the 3rd ask; a grant writes consent with a version", async () => {
       // Two earlier asks on earlier days.
@@ -637,13 +708,22 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(res.status).toBe(201);
       expect(res.body.data.show_email_prompt).toBe(true);
       expect(res.body.data.show_dont_ask_again).toBe(true);
+      // Owner ruling 2026-10-15 (#1233 item 2): the answer counts no ask; showing it does.
+      expect(emitted).not.toContainEqual({
+        name: "qotd_email_prompt_shown",
+        payload: { ask_number: 3 },
+      });
+      expect((await getToday(PROMPTED)).body.show_email_prompt).toBe(true);
+      expect((await shown(PROMPTED)).body.data).toEqual({ recorded: true });
       expect(emitted).toContainEqual({
         name: "qotd_email_prompt_shown",
         payload: { ask_number: 3 },
       });
-      // Reading the page again the same day counts no extra ask.
+      // Shown once today: the page reads "no prompt" for the rest of the day, and a second
+      // report counts no extra ask.
       const again = await getToday(PROMPTED);
-      expect(again.body.show_email_prompt).toBe(true);
+      expect(again.body.show_email_prompt).toBe(false);
+      expect((await shown(PROMPTED)).body.data).toEqual({ recorded: false });
       expect(
         (
           await pg.query(
@@ -758,6 +838,11 @@ describe.skipIf(!PG_AVAILABLE)(
       expect((await request(await app()).get("/api/qotd/today")).status).toBe(
         403,
       );
+      // Ruling 2026-10-15 (#1233 item 2): the "prompt shown" report is behind the same gate.
+      expect(
+        (await request(await app()).post("/api/qotd/email-prompt/shown"))
+          .status,
+      ).toBe(403);
       as(null);
       expect((await request(await app()).get("/api/qotd/today")).status).toBe(
         401,
@@ -773,6 +858,7 @@ describe.skipIf(!PG_AVAILABLE)(
         subject: string;
         text: string;
         html: string;
+        fromCategory: string;
         headers?: Record<string, string>;
       }[] = [];
       const fakeTransport = async (input: {
@@ -781,6 +867,7 @@ describe.skipIf(!PG_AVAILABLE)(
         subject: string;
         text: string;
         html: string;
+        fromCategory: string;
         headers?: Record<string, string>;
       }) => {
         sent.push(input);
@@ -898,7 +985,24 @@ describe.skipIf(!PG_AVAILABLE)(
           ].sort(),
         );
         const daily = sent.find((s) => s.to === `${MAILED}@example.test`);
-        expect(daily?.subject).toBe("Your question is ready");
+        // Karl, 2026-10-14: "SAT Question of the Day" first; no streak yet, so the domain. The
+        // preview is the real row's metadata plus the start of the stem, and it is the first text
+        // in the HTML. Sent under "Lyceon Question of the Day".
+        expect(daily?.subject).toBe(
+          "SAT Question of the Day: one Algebra question",
+        );
+        expect(daily?.fromCategory).toBe("qotd");
+        const preview = `Math · Algebra · Medium: ${STEM} Answer it today.`;
+        expect(
+          daily?.html.replace(/^[\s\S]*?<body[^>]*><div[^>]*>/, ""),
+        ).toMatch(
+          new RegExp(`^${preview.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+        );
+        // Neither the subject nor the preview carries the explanation or an answer line.
+        for (const part of [daily?.subject ?? "", preview]) {
+          expect(part).not.toContain(EXPLANATION);
+          expect(part).not.toMatch(/x = 3\b|\bB\)/);
+        }
         expect(daily?.text).toContain(STEM);
         expect(daily?.text).toContain("https://lyceon.test/dashboard#qotd");
         // No choices and no answer in the email.
@@ -923,7 +1027,8 @@ describe.skipIf(!PG_AVAILABLE)(
         const pause = sent.find(
           (s) => s.to === `${MAILED_SUNSET}@example.test`,
         );
-        expect(pause?.subject).toBe("We've paused your daily question");
+        expect(pause?.subject).toBe("SAT Question of the Day is paused");
+        expect(pause?.fromCategory).toBe("qotd");
         expect(pause?.text).toContain("/api/public/qotd-email/resume?t=");
         expect(summary.paused_notices).toBe(1);
         // Privacy: no address and no question text in any log line.
@@ -1049,7 +1154,10 @@ describe.skipIf(!PG_AVAILABLE)(
         const mine = sent
           .slice(before)
           .find((s) => s.to === `${MAILED}@example.test`);
-        expect(mine?.subject).toBe("Day 1 🔥 Your question is ready");
+        // A 1-day streak is under the 2-day threshold: the domain version (Karl, 2026-10-14).
+        expect(mine?.subject).toBe(
+          "SAT Question of the Day: one Algebra question",
+        );
         // 22:00Z in January is 16:00 CST: not the hour.
         expect((await run("2026-01-15T22:00:00Z")).skipped).toBe(
           "not_send_hour",
@@ -1168,6 +1276,148 @@ describe.skipIf(!PG_AVAILABLE)(
           siteUrl: "",
         });
         expect(rendered.ok && rendered.value.href).toBe("/dashboard#qotd");
+      });
+    });
+
+    // ── Owner ruling (Karl, 2026-10-15, on #1233, item 2) ─────────────────────────────
+    // Left before Done: the prompt shows ONCE on the next Home visit the same Chicago day.
+    describe("ruling 2026-10-15: a student not asked after today's answer is asked once on the next visit that Chicago day", () => {
+      /** The next America/Chicago midnight, as the database computes the day. */
+      async function nextChicagoMidnight(): Promise<number> {
+        const r = await pg.query<{ t: Date }>(
+          `SELECT ((public.chicago_day(now()) + 1)::timestamp AT TIME ZONE 'America/Chicago') AS t`,
+        );
+        return new Date(r.rows[0]!.t).getTime();
+      }
+      async function answerToday(id: string): Promise<void> {
+        const { token, qotdDate } = await tokenFor(id, "B");
+        const res = await postAnswer(id, {
+          qotd_date: qotdDate,
+          option_token: token,
+          idempotency_key: randomUUID(),
+        });
+        expect(res.status).toBe(201);
+        // Presence first: the answer itself says the prompt may show (it is not shown yet).
+        expect(res.body.data.show_email_prompt).toBe(true);
+      }
+      async function todayAt(id: string, at: () => Date) {
+        as(id);
+        const res = await request(await appAt(at)).get("/api/qotd/today");
+        expect(res.status).toBe(200);
+        return homeQotdTodayResponseSchema.parse(res.body.data);
+      }
+      async function asks(id: string): Promise<number> {
+        return count(
+          `SELECT COALESCE(max(ask_count), 0)::int AS n FROM public.student_qotd_email_prefs WHERE student_id = $1`,
+          [id],
+        );
+      }
+
+      it("23:59 Chicago, the same day: shown once, then never again that day", async () => {
+        const S = "a7000000-0000-4000-8000-0000000000e1";
+        await seedPerson(S, "student", "2008-01-01");
+        await answerToday(S); // and left before Done: nothing reported
+        expect(await asks(S)).toBe(0);
+        const late = new Date((await nextChicagoMidnight()) - 60_000);
+        const at = () => late;
+        // The next Home visit, 23:59 the same Chicago day: the server says show.
+        const visit = await todayAt(S, at);
+        expect(visit.state).toBe("answered");
+        expect(visit.show_email_prompt).toBe(true);
+        expect((await shown(S, at)).body.data).toEqual({ recorded: true });
+        expect(await asks(S)).toBe(1);
+        // Not twice that day: the next visit and a repeated report both say no.
+        expect((await todayAt(S, at)).show_email_prompt).toBe(false);
+        expect((await shown(S, at)).body.data).toEqual({ recorded: false });
+        expect(await asks(S)).toBe(1);
+      });
+
+      it("00:01 Chicago, the next day: a missed day is never asked about", async () => {
+        const S = "a7000000-0000-4000-8000-0000000000e2";
+        await seedPerson(S, "student", "2008-01-01");
+        await answerToday(S);
+        const early = new Date((await nextChicagoMidnight()) + 60_000);
+        const at = () => early;
+        expect((await todayAt(S, at)).show_email_prompt).toBe(false);
+        expect((await shown(S, at)).body.data).toEqual({ recorded: false });
+        expect(await asks(S)).toBe(0);
+      });
+
+      it("already asked after Done: the next visit that day does not ask again", async () => {
+        const S = "a7000000-0000-4000-8000-0000000000e3";
+        await seedPerson(S, "student", "2008-01-01");
+        await answerToday(S);
+        // Done pressed: the prompt opened and was reported.
+        expect((await shown(S)).body.data).toEqual({ recorded: true });
+        const late = new Date((await nextChicagoMidnight()) - 60_000);
+        expect((await todayAt(S, () => late)).show_email_prompt).toBe(false);
+        expect(await asks(S)).toBe(1);
+      });
+
+      it("never for a consented student, nor after 'Don't ask again'", async () => {
+        const C = "a7000000-0000-4000-8000-0000000000e4";
+        await seedPerson(C, "student", "2008-01-01");
+        await answerToday(C);
+        expect((await shown(C)).body.data).toEqual({ recorded: true });
+        expect((await consent(C, "grant")).status).toBe(200);
+        const late = new Date((await nextChicagoMidnight()) - 60_000);
+        expect((await todayAt(C, () => late)).show_email_prompt).toBe(false);
+
+        const N = "a7000000-0000-4000-8000-0000000000e5";
+        await seedPerson(N, "student", "2008-01-01");
+        await pg.query(
+          `INSERT INTO public.student_qotd_email_prefs (student_id, ask_count, last_asked_on, never_ask, updated_at)
+           VALUES ($1, 3, ($2::date - 1), true, now())`,
+          [N, today],
+        );
+        const { token, qotdDate } = await tokenFor(N, "B");
+        expect(
+          (
+            await postAnswer(N, {
+              qotd_date: qotdDate,
+              option_token: token,
+              idempotency_key: randomUUID(),
+            })
+          ).body.data.show_email_prompt,
+        ).toBe(false);
+        expect((await todayAt(N, () => late)).show_email_prompt).toBe(false);
+        expect((await shown(N, () => late)).body.data).toEqual({
+          recorded: false,
+        });
+        expect(await asks(N)).toBe(3);
+      });
+
+      it("never for an under-13, even with today's question answered", async () => {
+        const U = "a7000000-0000-4000-8000-0000000000e6";
+        const twelve = new Date();
+        twelve.setUTCFullYear(twelve.getUTCFullYear() - 12);
+        await seedPerson(U, "student", twelve.toISOString().slice(0, 10));
+        const { answerHomeQotd, getHomeQotdToday, recordQotdEmailPromptShown } =
+          await import("../../server/services/qotd/home-qotd-service");
+        // The student gate refuses an unlinked under-13 at the route, so the rule is proven on
+        // the service the route calls, with today's question answered through it.
+        const before = await getHomeQotdToday({ id: U, actorId: U });
+        if (before.state !== "unanswered") throw new Error(before.state);
+        const answered = await answerHomeQotd(
+          { id: U, actorId: U },
+          {
+            qotd_date: before.qotd_date,
+            option_token: before.question.options[1]!.id,
+            idempotency_key: randomUUID(),
+          },
+          undefined,
+        );
+        expect(answered.ok).toBe(true);
+        const late = new Date((await nextChicagoMidnight()) - 60_000);
+        expect(
+          (await getHomeQotdToday({ id: U, actorId: U }, late))
+            .show_email_prompt,
+        ).toBe(false);
+        expect(await recordQotdEmailPromptShown(U, late)).toEqual({
+          recorded: false,
+          askNumber: null,
+        });
+        expect(await asks(U)).toBe(0);
       });
     });
 
@@ -1394,12 +1644,17 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(done?.setup_completed_at).not.toBeNull();
       expect(done?.target_exam_dates).toEqual(["2026-10-03", later]);
 
-      // A write without the schedule cannot complete setup.
-      const incomplete = await upsertStudyProfile(UNDER13, {
+      // A write without the schedule cannot complete setup. A target score alone is a goal
+      // write since ruling 1 (Karl, 2026-10-13: the score is saved from onboarding and Settings
+      // before the calendar): it is accepted, and setup stays outstanding.
+      const scoreOnly = await upsertStudyProfile(UNDER13, {
         target_score: 1400,
         idempotency_key: randomUUID(),
       });
-      expect(incomplete.ok).toBe(false);
+      expect(scoreOnly.ok).toBe(true);
+      const afterScore = await readStudyProfile(UNDER13);
+      expect(afterScore?.target_score).toBe(1400);
+      expect(afterScore?.setup_completed_at ?? null).toBeNull();
     });
 
     // ── A8b ────────────────────────────────────────────────────────────────

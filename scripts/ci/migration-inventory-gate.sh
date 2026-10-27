@@ -77,6 +77,27 @@ classify() {
     | awk -F'|' 'NF>=8 {print $1 "|" $2 "|" $7}'
 }
 
+# ── I0 — one file per migration version ─────────────────────────────────────
+# Karl, 2026-10-21: seo carried 20261109000000 twice through CI without a gate
+# failing. Two files sharing a version are two migrations the ledger cannot tell
+# apart, so the inventory below would classify one row for two files. A file-only
+# check, run first and fatal: nothing after it means anything until it passes.
+# The pre-existing duplicates are frozen in the library; see its header.
+# MIGRATION_VERSIONS_DIR exists for the test only; every later case uses the
+# real migration set regardless.
+# shellcheck source=scripts/ci/lib/migration-versions.sh
+source "$SCRIPT_DIR/lib/migration-versions.sh"
+echo "==> (I0) every migration version names exactly one file (pre-existing duplicates frozen)"
+I0_OUT="$(migration_version_findings "${MIGRATION_VERSIONS_DIR:-$ROOT/supabase/migrations}")"
+if [ -n "$I0_OUT" ]; then
+  fail I0 "duplicate migration versions — give the newer file the next free version:
+$(sed 's/^/         /' <<<"$I0_OUT")"
+  echo
+  echo "MIGRATION INVENTORY GATE: FAIL ($FAILURES case(s))"
+  exit 1
+fi
+pass I0 "no new duplicate versions; $(grep -c . <<<"$KNOWN_DUPLICATE_MIGRATION_VERSIONS") pre-existing duplicates unchanged"
+
 # ── I1 — the recorded baseline: nothing may look applied ────────────────────
 echo "==> (I1) recorded baseline — no row may classify APPLIED-UNRECORDED"
 if ! setup_genesis_db mi_base "$FIRST_UNRECORDED"; then

@@ -17,10 +17,16 @@ import {
 } from "../diagnostic-state.js";
 
 const base = {
-  hasBaseline: false,
+  diagnosticProjectionStatus: null,
   canSeeLiveProgression: false,
   hasLiveEstimate: false,
 };
+
+const PROJECTION_STATUSES = [
+  null,
+  "computed",
+  "insufficient_evidence",
+] as const;
 
 describe("resolveEstimateStatus", () => {
   it("gives a completed-but-uncomputed student baseline_pending, not no_baseline", () => {
@@ -40,13 +46,13 @@ describe("resolveEstimateStatus", () => {
       "baseline_ready",
     ];
     for (const diagnosticState of completedStates) {
-      for (const hasBaseline of [true, false]) {
+      for (const diagnosticProjectionStatus of PROJECTION_STATUSES) {
         for (const canSeeLiveProgression of [true, false]) {
           for (const hasLiveEstimate of [true, false]) {
             expect(
               resolveEstimateStatus({
                 diagnosticState,
-                hasBaseline,
+                diagnosticProjectionStatus,
                 canSeeLiveProgression,
                 hasLiveEstimate,
               }),
@@ -58,66 +64,95 @@ describe("resolveEstimateStatus", () => {
   });
 
   it("keeps no_baseline for not_taken and in_progress", () => {
-    expect(
-      resolveEstimateStatus({ ...base, diagnosticState: "not_taken" }),
-    ).toBe("no_baseline");
-    expect(
-      resolveEstimateStatus({ ...base, diagnosticState: "in_progress" }),
-    ).toBe("no_baseline");
+    for (const canSeeLiveProgression of [true, false]) {
+      for (const hasLiveEstimate of [true, false]) {
+        for (const diagnosticState of ["not_taken", "in_progress"] as const) {
+          expect(
+            resolveEstimateStatus({
+              ...base,
+              diagnosticState,
+              canSeeLiveProgression,
+              hasLiveEstimate,
+            }),
+          ).toBe("no_baseline");
+        }
+      }
+    }
   });
 
   /**
-   * The tie-break. The two inputs are read from different places and can disagree
-   * for one request; real numbers win over "being calculated".
+   * The tie-break. The state read and the stored rows are read separately and can disagree for
+   * one request; a stored row only exists for a completed diagnostic, so it wins.
    */
-  it("prefers a present baseline over a pending state", () => {
+  it("treats a stored diagnostic row as proof the diagnostic is done (free)", () => {
     expect(
       resolveEstimateStatus({
-        diagnosticState: "baseline_pending",
-        hasBaseline: true,
-        canSeeLiveProgression: true,
-        hasLiveEstimate: true,
+        ...base,
+        diagnosticState: "not_taken",
+        diagnosticProjectionStatus: "computed",
       }),
-    ).toBe("computed");
+    ).toBe("baseline_only");
+    expect(
+      resolveEstimateStatus({
+        ...base,
+        diagnosticState: "in_progress",
+        diagnosticProjectionStatus: "insufficient_evidence",
+      }),
+    ).toBe("insufficient_evidence");
   });
 
-  it("keeps the shipped entitlement gating unchanged", () => {
-    const ready = {
-      diagnosticState: "baseline_ready" as const,
-      hasBaseline: true,
-    };
-    expect(
-      resolveEstimateStatus({
-        ...ready,
+  /** SCL-235: free sees only the stored diagnostic projection. */
+  it("free: the stored diagnostic projection decides, the live one never does", () => {
+    for (const hasLiveEstimate of [true, false]) {
+      const free = {
+        diagnosticState: "baseline_ready" as const,
         canSeeLiveProgression: false,
-        hasLiveEstimate: true,
-      }),
-    ).toBe("baseline_only");
-    expect(
-      resolveEstimateStatus({
-        ...ready,
+        hasLiveEstimate,
+      };
+      expect(
+        resolveEstimateStatus({
+          ...free,
+          diagnosticProjectionStatus: "computed",
+        }),
+      ).toBe("baseline_only");
+      expect(
+        resolveEstimateStatus({
+          ...free,
+          diagnosticProjectionStatus: "insufficient_evidence",
+        }),
+      ).toBe("insufficient_evidence");
+      expect(
+        resolveEstimateStatus({ ...free, diagnosticProjectionStatus: null }),
+      ).toBe("baseline_pending");
+    }
+  });
+
+  /** SCL-235 / ruling 4: paid sees only the live projection; the stored one is ignored. */
+  it("paid: the live projection decides, the stored diagnostic one never does", () => {
+    for (const diagnosticProjectionStatus of PROJECTION_STATUSES) {
+      const paid = {
+        diagnosticState: "baseline_ready" as const,
+        diagnosticProjectionStatus,
         canSeeLiveProgression: true,
-        hasLiveEstimate: false,
-      }),
-    ).toBe("baseline_only");
-    expect(
-      resolveEstimateStatus({
-        ...ready,
-        canSeeLiveProgression: true,
-        hasLiveEstimate: true,
-      }),
-    ).toBe("computed");
+      };
+      expect(resolveEstimateStatus({ ...paid, hasLiveEstimate: true })).toBe(
+        "computed",
+      );
+      expect(resolveEstimateStatus({ ...paid, hasLiveEstimate: false })).toBe(
+        "insufficient_evidence",
+      );
+    }
   });
 
   it("emits only declared statuses across the whole input space", () => {
     for (const diagnosticState of DIAGNOSTIC_STATES) {
-      for (const hasBaseline of [true, false]) {
+      for (const diagnosticProjectionStatus of PROJECTION_STATUSES) {
         for (const canSeeLiveProgression of [true, false]) {
           for (const hasLiveEstimate of [true, false]) {
             expect(ESTIMATE_STATUSES).toContain(
               resolveEstimateStatus({
                 diagnosticState,
-                hasBaseline,
+                diagnosticProjectionStatus,
                 canSeeLiveProgression,
                 hasLiveEstimate,
               }),

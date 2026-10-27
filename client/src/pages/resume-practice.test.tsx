@@ -31,6 +31,24 @@ vi.mock("@/components/practice/CanonicalPracticePage", () => ({
 }));
 
 /* ── Mock useQuery to return controlled session state ── */
+// P0 item 3 (2026-10-13): the summary reads through react-query, which this file mocks whole; the
+// page's choice to show it is what is tested here (SessionSummary.test.tsx tests the screen).
+vi.mock("@/components/practice/SessionSummary", () => ({
+  SessionSummary: (props: {
+    engine: string;
+    sessionId: string;
+    title: string;
+  }) => (
+    <div
+      data-testid="session-summary-stub"
+      data-engine={props.engine}
+      data-session={props.sessionId}
+    >
+      Session complete
+    </div>
+  ),
+}));
+
 const queryMock = vi.hoisted(() => ({
   useQuery: vi.fn(),
 }));
@@ -121,7 +139,7 @@ describe("ResumePracticePage — diagnostic session resume", () => {
     // Verify diagnostic-specific props
     expect(canonicalProps.captured).not.toBeNull();
     expect(canonicalProps.captured!.isDiagnostic).toBe(true);
-    expect(canonicalProps.captured!.title).toBe("Diagnostic Assessment");
+    expect(canonicalProps.captured!.title).toBe("Find your blind spots");
     expect(canonicalProps.captured!.completionHref).toBe("/dashboard");
     expect(canonicalProps.captured!.sessionId).toBe("diag-session-001");
   });

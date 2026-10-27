@@ -1,0 +1,60 @@
+{
+  "sections": [
+    {
+      "domains": [
+        {
+          "domain": "Algebra",
+          "skills": [
+            "ALG.S0",
+            "ALG.S1"
+          ]
+        },
+        {
+          "domain": "Advanced Math",
+          "skills": [
+            "ADV.S0",
+            "ADV.S1"
+          ]
+        },
+        {
+          "domain": "Problem Solving and Data Analysis",
+          "skills": []
+        },
+        {
+          "domain": "Geometry and Trigonometry",
+          "skills": []
+        }
+      ],
+      "label": "Math",
+      "section": "M"
+    },
+    {
+      "domains": [
+        {
+          "domain": "Craft and Structure",
+          "skills": [
+            "CRS.S0",
+            "CRS.S1"
+          ]
+        },
+        {
+          "domain": "Information and Ideas",
+          "skills": [
+            "INF.S0",
+            "INF.S1"
+          ]
+        },
+        {
+          "domain": "Standard English Conventions",
+          "skills": []
+        },
+        {
+          "domain": "Expression of Ideas",
+          "skills": []
+        }
+      ],
+      "label": "Reading & Writing",
+      "section": "RW"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ These are hard stops. Generating any of them is a defect, not a tradeoff:
 - **Determinism:** no randomness in question selection once mastery data exists. Mutations are idempotent (`idempotency_key`; Stripe webhooks deduped via event ledger).
 - **Guardian model:** guardian visibility is derived ONLY if (link active AND student entitlement active). Guardians are view-only — zero write access to learning state, zero LISA access.
 - **Mastery is earned from observed events only.** Never infer, estimate, or invent "predicted score" / "AI confidence" / vanity metrics. (skill: `mastery-kpi`)
-- **Privacy:** never log secrets, cookies, tokens, student answers, or tutor prompts/responses. Tutor exchanges are ephemeral — never stored verbatim. No PII in AI prompts.
+- **Privacy:** never log secrets, cookies, tokens, student answers, or tutor prompts/responses. No PII in AI prompts.
 - **No escape hatches:** no `any`, no `@ts-ignore`/`@ts-expect-error`, no silent/empty `catch`. `unknown` at boundaries, narrow with Zod.
 
 Full hard-stop list: see `docs/Spec` Coding Standards §17. Domain detail loads on demand via skills — do not inline it here.
@@ -325,3 +325,4 @@ When compacting, always preserve: the spec sections referenced this session, the
    previously broke this `@import` parse is gone, so the standards now auto-load)
 - Domain skills load on demand once promoted into `.claude/skills/` (see SKILL-BUILD-PLAN.md): anti-leak, auth-entitlements, determinism-idempotency, stripe-billing, practice-engine, mastery-kpi, tutor-runtime, frontend, testing-audit
 - Marketing and content requests from Slack (#marketing) route to the `ai-cmo` skill (`.claude/skills/ai-cmo/SKILL.md`); it proposes and drafts, never publishes. Post-launch (Karl, 2026-10-07).
+- Executive marketing and growth requests (/cmo, KPIs, reports, attribution, pricing or free-tier proposals, gates, "what's working") route to the cmo skill (.claude/skills/cmo/SKILL.md). Content drafting and the Doc 10B pipeline stay with ai-cmo and content-ops, unchanged (Karl, 2026-10-15).

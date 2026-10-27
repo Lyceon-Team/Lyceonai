@@ -497,7 +497,8 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
     expect(req.url).toBe("https://api.resend.com/emails");
     expect(req.headers["Idempotency-Key"]).toBe(row.rows[0].message_id);
     expect(req.headers.Authorization).toBe("Bearer re_test_key");
-    expect(req.body.from).toBe(FROM_EMAIL);
+    // Sender name per email type (Karl, 2026-10-14).
+    expect(req.body.from).toBe(`Lyceon for Parents <${FROM_EMAIL}>`);
     expect(req.body.to).toEqual([GUARDIAN_EMAIL]);
     expect(Object.keys(req.body).sort()).toEqual([
       "from",

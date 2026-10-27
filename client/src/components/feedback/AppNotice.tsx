@@ -73,6 +73,19 @@ function isStudentVariant(variant: AppNoticeVariant): boolean {
   return variant.startsWith("lyc-");
 }
 
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 4 ('Fix the
+ *       "Continue your open session" button overflow'); DESIGN.md §5 ("A label never pushes the
+ *       layout")] | @implemented [2026-10-13]
+ * plain English: a student notice's actions may wrap. The shared Button never wraps
+ * (`whitespace-nowrap`, fixed 44px height), so a long action ("Continue your open session") in
+ * a narrow place (Home's 360px panel, a phone) ran past the notice's edge. Here an action is at
+ * most the notice's width, keeps the 44px minimum height, and breaks onto a second line when it
+ * must, left-aligned like the text above it.
+ */
+export const STUDENT_NOTICE_ACTION =
+  "h-auto min-h-11 max-w-full whitespace-normal py-2 text-left";
+
 const variantIcon: Record<AppNoticeVariant, ReactNode> = {
   neutral: <AlertCircle className="h-4 w-4" aria-hidden="true" />,
   info: <Info className="h-4 w-4" aria-hidden="true" />,
@@ -143,12 +156,13 @@ export function AppNotice({
           ) : null}
           {(actionLabel && onAction) ||
           (secondaryActionLabel && onSecondaryAction) ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
               {actionLabel && onAction ? (
                 <Button
                   type="button"
                   size={student ? "lyc" : "sm"}
                   variant={student ? "lyc-outline" : "outline"}
+                  className={student ? STUDENT_NOTICE_ACTION : undefined}
                   onClick={onAction}
                 >
                   {actionLabel}
@@ -159,6 +173,7 @@ export function AppNotice({
                   type="button"
                   size={student ? "lyc" : "sm"}
                   variant={student ? "lyc-quiet" : "ghost"}
+                  className={student ? STUDENT_NOTICE_ACTION : undefined}
                   onClick={onSecondaryAction}
                 >
                   {secondaryActionLabel}

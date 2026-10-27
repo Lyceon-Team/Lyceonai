@@ -136,6 +136,8 @@ let mockClientAttemptIdLookupItem: Record<string, unknown> | null = null;
 // @spec [Codex re-audit Fix D] Records every update patch applied to practice_sessions.
 // Tests assert that the handler issued a persisted lifecycle update, not just a response field.
 const sessionUpdatePatches: Record<string, unknown>[] = [];
+// SCL-236: a diagnostic is completed by the complete_diagnostic_session RPC, never a table update.
+const completionRpcCalls: Record<string, unknown>[] = [];
 // @spec [Codex REVISE Fix 3] Records every update patch applied to practice_session_items.
 // Tests assert that the handler persisted the answer row, not just returned a 200.
 const itemUpdatePatches: Record<string, unknown>[] = [];
@@ -324,7 +326,25 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => {
         }
         return makeChain({ single: null, array: [] });
       },
-      rpc: () => Promise.resolve({ data: null, error: null }),
+      // SCL-236: a diagnostic completes through complete_diagnostic_session, which returns its
+      // jsonb verdict (PostgREST hands a scalar function's value back as `data`).
+      rpc: (fn: string, params: Record<string, unknown>) => {
+        if (fn === "complete_diagnostic_session")
+          completionRpcCalls.push(params);
+        return Promise.resolve(
+          fn === "complete_diagnostic_session"
+            ? {
+                data: {
+                  state: "completed",
+                  completed_now: true,
+                  projection: "computed",
+                  rows_stored: 2,
+                },
+                error: null,
+              }
+            : { data: null, error: null },
+        );
+      },
     },
   };
 });
@@ -398,6 +418,7 @@ describe("Diagnostic mastery-tolerance gate", () => {
     mockQuestionDifficulty = 1;
     mockClientAttemptIdLookupItem = null;
     sessionUpdatePatches.length = 0;
+    completionRpcCalls.length = 0;
     itemUpdatePatches.length = 0;
     mockApplyMasteryEvent.mockReset();
   });
@@ -561,11 +582,16 @@ describe("Diagnostic mastery-tolerance gate", () => {
         outcome: "correct",
       }),
     );
-    expect(sessionUpdatePatches).toContainEqual(
+    // SCL-236: the completion is the complete_diagnostic_session RPC, and no table update may
+    // write "completed" for a diagnostic.
+    expect(completionRpcCalls).toContainEqual(
       expect.objectContaining({
-        status: "completed",
-        completed_at: expect.any(String),
+        p_session_id: TEST_SESSION_ID,
+        p_now: expect.any(String),
       }),
+    );
+    expect(sessionUpdatePatches).not.toContainEqual(
+      expect.objectContaining({ status: "completed" }),
     );
   });
 
@@ -835,11 +861,16 @@ describe("Diagnostic mastery-tolerance gate", () => {
     // And run completion reconciliation — return state:"completed"
     expect(res.body.state).toBe("completed");
     // @spec [Codex re-audit Fix D] Assert persisted lifecycle update (not just response)
-    expect(sessionUpdatePatches).toContainEqual(
+    // SCL-236: the completion is the complete_diagnostic_session RPC, and no table update may
+    // write "completed" for a diagnostic.
+    expect(completionRpcCalls).toContainEqual(
       expect.objectContaining({
-        status: "completed",
-        completed_at: expect.any(String),
+        p_session_id: TEST_SESSION_ID,
+        p_now: expect.any(String),
       }),
+    );
+    expect(sessionUpdatePatches).not.toContainEqual(
+      expect.objectContaining({ status: "completed" }),
     );
   });
 

@@ -124,7 +124,11 @@ describe("the back arrow", () => {
 // runner → '< Review' went to Home." The arrow still returns to the previous in-app page
 // (register §2); its label now names that page.
 describe("QA item 7: the back arrow's label names its destination", () => {
-  function arriveFrom(from: string, section = "Review", home = "/review"): void {
+  function arriveFrom(
+    from: string,
+    section = "Review",
+    home = "/review",
+  ): void {
     window.history.replaceState(null, "", from);
     // The tracker mounts on the page the student starts from…
     render(<Tracker />);
@@ -260,5 +264,37 @@ describe("F-69: the scroll area contains its positioned descendants", () => {
     expect(
       document.querySelector('[data-shell="focus"]')?.className.split(/\s+/),
     ).toContain("h-[100dvh]");
+  });
+});
+
+/**
+ * Owner brief "Smart landing" (Karl, 2026-10-26): "Home is reachable from every landing". A
+ * runner the landing opened carries `?from=landing` and replaced Home in history, so its back
+ * link reads "Home" and goes to Home, even with in-app history behind it.
+ */
+describe("a runner the smart landing opened", () => {
+  it("reads 'Home' and goes Home, never back through history", () => {
+    window.history.replaceState(null, "", "/dashboard");
+    navigate("/practice");
+    navigate("/practice/session/s-1?from=landing");
+    renderFocus();
+    const link = screen.getByTestId("focus-back");
+    expect(link.getAttribute("href")).toBe("/dashboard");
+    expect(link.getAttribute("aria-label")).toBe("Back to Home");
+    expect(link.textContent).toContain("Home");
+    fireEvent.click(link);
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it("a runner opened any other way keeps its usual back target", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/practice/session/s-1?from=elsewhere",
+    );
+    renderFocus();
+    expect(screen.getByTestId("focus-back").getAttribute("href")).toBe(
+      "/practice",
+    );
   });
 });

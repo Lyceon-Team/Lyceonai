@@ -33,6 +33,10 @@ import type {
   ConversationSummary,
   ListConversationsResponse,
 } from "@lyceon/shared/tutor-lifecycle-schema";
+import {
+  tutorTurnTimingSchema,
+  type TutorTurnTiming,
+} from "@lyceon/shared/tutor-turn-timing-schema";
 import { apiRequest } from "@/lib/queryClient";
 import { type HttpApiError } from "@/lib/api-error";
 
@@ -98,12 +102,25 @@ export type TutorSuggestedActionType =
   | "offer_broader_coaching"
   | "offer_stay_focused"
   // W3-2: LISA's handoff to practice (general mode) — rendered as a link.
-  | "start_practice";
+  | "start_practice"
+  // Video library (CC brief 2026-10-15): LISA offered a video; the server attached it.
+  | "recommend_video";
 
-export type TutorSuggestedAction = {
-  type: TutorSuggestedActionType;
-  label: string | null;
+/** A video the server attached to a recommend_video action (never chosen by the model). */
+export type TutorVideo = {
+  video_id: string;
+  title: string;
+  channel_name: string;
+  duration_seconds: number;
+  start_seconds: number | null;
 };
+
+export type TutorSuggestedAction =
+  | {
+      type: Exclude<TutorSuggestedActionType, "recommend_video">;
+      label: string | null;
+    }
+  | { type: "recommend_video"; label: string | null; video: TutorVideo };
 
 export type TutorUiHints = {
   show_accept_decline: boolean;
@@ -167,11 +184,12 @@ const TUTOR_API_BASE = "/api/tutor";
 
 async function tutorRequest<T>(
   path: string,
-  init?: { method?: string; body?: unknown },
+  init?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<T> {
   const res = await apiRequest(`${TUTOR_API_BASE}${path}`, {
     method: init?.method ?? "GET",
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    ...(init?.headers !== undefined ? { headers: init.headers } : {}),
   });
   const payload = (await res.json()) as { data: T };
   return payload.data;
@@ -214,18 +232,29 @@ export function useCreateConversation(): UseMutationResult<
   });
 }
 
+/**
+ * The send's variables: the body, plus (P2 H1) the id the client gives the request. It goes as
+ * `X-Request-Id`, which the server adopts as the request's id (server/middleware/request-id.ts),
+ * so the turn's `route_timing` line and the client's turn-timing beacon share it. Never in the
+ * body.
+ */
+export type SendMessageVariables = SendMessageInput & { request_id?: string };
+
 export function useSendMessage(): UseMutationResult<
   SendMessageResponse,
   HttpApiError,
-  SendMessageInput
+  SendMessageVariables
 > {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: SendMessageInput) =>
+    mutationFn: ({ request_id, ...input }: SendMessageVariables) =>
       tutorRequest<SendMessageResponse>("/messages", {
         method: "POST",
         body: input,
+        ...(request_id !== undefined
+          ? { headers: { "X-Request-Id": request_id } }
+          : {}),
       }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
@@ -233,6 +262,28 @@ export function useSendMessage(): UseMutationResult<
       });
       queryClient.invalidateQueries({
         queryKey: tutorConversationsQueryKey,
+      });
+    },
+  });
+}
+
+/**
+ * @spec [owner brief "P2 Revised" (Karl, 2026-10-23) §2 H1 (time-to-first-visible-text)]
+ * | @implemented [2026-10-23]
+ * plain English: posts one reply turn's timing (packages/shared tutor-turn-timing-schema) to
+ * /api/perf/tutor-turn. Fire and forget: a failed report leaves the turn exactly as it was, and
+ * the mutation's error state is the record of it. Numbers and the send's request id only.
+ */
+export function useTurnTimingReport(): UseMutationResult<
+  void,
+  HttpApiError,
+  TutorTurnTiming
+> {
+  return useMutation({
+    mutationFn: async (timing: TutorTurnTiming) => {
+      await apiRequest("/api/perf/tutor-turn", {
+        method: "POST",
+        body: JSON.stringify(tutorTurnTimingSchema.parse(timing)),
       });
     },
   });
@@ -285,6 +336,42 @@ export function useItemConversation(
 }
 
 /**
+ * @spec [Doc-03B_V4.1 §8.3, §8.5; owner brief "LISA chat dock" (Karl, 2026-10-22): "One
+ *       conversation thread shared with the LISA page"] | @implemented [2026-10-22]
+ *
+ * plain English: the conversation the chat dock shows in general mode (Home, Review): the
+ * student's most recently updated ACTIVE standalone conversation, which is the one at the top of
+ * the LISA page's "Your sessions". Found with a GET of the existing list route (the server
+ * orders by `updated_at` desc), never a POST, so opening the dock creates nothing. Resolves to
+ * null when there is none; the dock's first message then creates a general conversation exactly
+ * as /chat does, and that one is what the LISA page lists. Keyed under
+ * `tutorConversationsQueryKey`, so a create, a send or an end refreshes it.
+ *
+ * edge cases: an ended conversation is never picked (it has no composer); the next active one,
+ * or none, is. No new route and no new storage: the list route already filters by surface and
+ * status.
+ */
+export function useLatestStandaloneConversation(
+  enabled: boolean,
+): UseQueryResult<string | null, HttpApiError> {
+  return useQuery({
+    queryKey: [...tutorConversationsQueryKey, "latest-standalone"],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        surface: "standalone",
+        status: "active",
+        limit: "1",
+      });
+      const list = await tutorRequest<TutorConversationsList>(
+        `/conversations?${params.toString()}`,
+      );
+      return list.conversations[0]?.conversation_id ?? null;
+    },
+    enabled,
+  });
+}
+
+/**
  * @spec [Doc-03B_V4.1 §8.3, §8.5] | @implemented [2026-09-29]
  *
  * plain English: the standalone sessions list, one server page at a time.
@@ -301,18 +388,26 @@ export function useItemConversation(
  * history includes ended sessions"): no `status` filter, so the server returns
  * active and ended conversations alike (its default is both). An ended one
  * opens read-only: the page draws no composer for it.
+ *
+ * @updated 2026-10-23 — register F-91, owner ruling 1 on #1300 (Karl): the runner's
+ * per-question conversations are listed too, so no `surface` filter either: the server's list
+ * route returns every surface by default (server/routes/tutor-runtime.ts, the list handler
+ * filters by surface only when asked). They are the same rows, under the same retention, as the
+ * LISA page's own; nothing new is stored or served. The page labels each with its question and
+ * opens it read-only.
  */
 export function useConversations(): UseInfiniteQueryResult<
   TutorConversationsList,
   HttpApiError
 > {
   return useInfiniteQuery({
-    queryKey: [...tutorConversationsQueryKey, "standalone"],
+    queryKey: [...tutorConversationsQueryKey, "history"],
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ surface: "standalone" });
+      const params = new URLSearchParams();
       if (pageParam) params.set("cursor", pageParam);
+      const query = params.toString();
       return tutorRequest<TutorConversationsList>(
-        `/conversations?${params.toString()}`,
+        query ? `/conversations?${query}` : "/conversations",
       );
     },
     initialPageParam: null as string | null,

@@ -50,7 +50,6 @@ FILES=(
   "client/src/hooks/useKeyboardShortcuts.ts"
   "client/src/components/layout/app-shell.tsx"
   "client/src/components/layout/HeaderUserMenu.tsx"
-  "client/src/components/home/FullLengthCard.tsx"
   "client/src/components/home/PaidHome.tsx"
   "client/src/components/home/FreeHome.tsx"
   "client/src/components/home/DiagnosticCard.tsx"
@@ -108,6 +107,10 @@ FILES=(
   "client/src/components/auth/RequireRole.tsx"
   "client/src/components/layout/BareCardShell.tsx"
   "client/src/components/tutor/ScopedTutorPanel.tsx"
+  "client/src/components/tutor/TutorConversationBody.tsx"
+  "client/src/components/tutor/ChatDock.tsx"
+  "client/src/components/tutor/LisaLauncher.tsx"
+  "client/src/components/math/calculator-layout.ts"
   "client/src/components/tutor/LisaUpgradeCard.tsx"
   "client/src/components/layout/FocusShell.tsx"
   "client/src/features/exam/lib/phone-notice.ts"
@@ -132,7 +135,6 @@ FILES=(
   "client/src/pages/practice.tsx"
   "client/src/lib/session-reads.ts"
   "client/src/components/home/HomePanel.tsx"
-  "client/src/components/review/ReviewCapNotice.tsx"
   "client/src/components/student-ui/filter-bar/FilterBar.tsx"
   "client/src/components/MathRenderer.tsx"
   "client/src/features/calendar/lib/dates.ts"
@@ -675,6 +677,16 @@ plant "UI53-T1" "LISA handed the choices" \
 assert s.count(a) == 1
 s = s.replace(a, "        sessionItemId={sessionItemId}\n        {...{ choices: question?.options }}\n", 1)'
 
+# 2026-10-22 (#1300): from 768px up LISA is the chat dock, handed a scope object instead of panel
+# props. The same rule (LISA is handed the item id and the label, never the choices) on its scope.
+# Re-pointed 2026-10-23 (owner brief "LISA launcher"): the scope's last field is now `submitted`.
+plant "UI53-T2" "the dock's scope handed the choices" \
+  "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "            submitted: showResult,\n          }}\n"
+assert s.count(a) == 1
+s = s.replace(a, "            submitted: showResult,\n            ...{ choices: question?.options },\n          }}\n", 1)'
+
 plant "UI53-O1" "no shorter-session note" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
@@ -813,12 +825,15 @@ plant "OQ54-K2" "question chip back to 12px legacy text" \
 assert s.count(a) == 1
 s = s.replace(a, "px-2.5 py-0.5 text-xs font-medium text-lyc-ink\";", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "OQ54-K3" "opener body back on the legacy muted colour" \
   "$T54L" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
-  'a = "<p className=\"m-0 mt-1 text-lyc-body text-lyc-muted\">{OPENER_BODY}</p>"
+  "client/src/components/tutor/TutorConversationBody.tsx" \
+  'a = "className={`m-0 text-lyc-body text-lyc-muted ${copy.title !== null ? \"mt-1\" : \"\"}`}"
 assert s.count(a) == 1
-s = s.replace(a, "<p className=\"m-0 mt-1 text-lyc-body text-muted-foreground\">{OPENER_BODY}</p>", 1)'
+s = s.replace(a, "className={`m-0 text-lyc-body text-muted-foreground ${copy.title !== null ? \"mt-1\" : \"\"}`}", 1)'
 
 plant "OQ54-K4" "Hide LISA falls back to the base 14px shadcn size" \
   "$T54L" \
@@ -827,19 +842,25 @@ plant "OQ54-K4" "Hide LISA falls back to the base 14px shadcn size" \
 assert s.count(a) == 1
 s = s.replace(a, "className=\"shrink-0\"", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "OQ54-K5" "opener title drawn with a raw hex colour" \
   "$T54L" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
   'a = "<p className=\"m-0 text-lyc-body font-semibold text-lyc-ink-strong\">"
 assert s.count(a) == 1
 s = s.replace(a, "<p className=\"m-0 text-lyc-body font-semibold text-[#1a1a1a]\">", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "OQ54-K6" "the first-message composer loses the panel inset" \
   "$T54L" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
-  'a = "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n            inset=\"panel\"\n"
+  "client/src/components/tutor/TutorConversationBody.tsx" \
+  'a = "pendingMessage ? \"LISA is responding...\" : copy.placeholder\n        }\n        inset=\"panel\"\n"
 assert s.count(a) == 1
-s = s.replace(a, "pendingMessage ? \"LISA is responding...\" : COMPOSER_PLACEHOLDER\n            }\n", 1)'
+s = s.replace(a, "pendingMessage ? \"LISA is responding...\" : copy.placeholder\n        }\n", 1)'
 
 plant "OQ54-K7" "a thread turn label back to 12px legacy text" \
   "$T54L" \
@@ -1180,12 +1201,15 @@ assert s.count(a) == 1
 s = s.replace(a, "        {isStudent ? \"\" : \"LISA\"}", 1)'
 
 # Re-pointed 2026-10-07 (QA-5): Send's `disabled` is now `blocked` (disabled or pending).
+# Re-pointed 2026-10-23 (ruling 4 on #1300): the composer's one Send button now takes its
+# variant, size and label from `iconSend` (the outline icon in the panel, the labelled button on
+# /chat), so the anchor follows the new spelling of the same line.
 plant "UI56-T1" "Send stays enabled while LISA is thinking" \
   "$T56" \
   "client/src/components/tutor/TutorThreadParts.tsx" \
-  'a = "            disabled={blocked}\n            className={`h-[50px]"
+  'a = "            disabled={blocked}\n            className={`h-[50px] shrink-0 ${"
 assert s.count(a) == 1
-s = s.replace(a, "            disabled={false}\n            className={`h-[50px]", 1)'
+s = s.replace(a, "            disabled={false}\n            className={`h-[50px] shrink-0 ${", 1)'
 
 plant "UI56-T2" "the typing bubble loses its LISA label" \
   "$T56" \
@@ -1223,9 +1247,11 @@ plant "UI56-D1" "the disclaimer is the old two-sentence copy" \
 assert s.count(a) == 1
 s = s.replace(a, "  \"LISA can make mistakes. Your practice results are the source of truth.\";", 1)'
 
+# Re-pointed 2026-10-22 (#1300): LISA_COMPOSER_PLACEHOLDER moved from pages/chat.tsx into
+# TutorThreadParts, so /chat and the chat dock share one string; the plant follows it.
 plant "UI56-D2" "the composer placeholder is the old one" \
   "$T56" \
-  "client/src/pages/chat.tsx" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
   'a = "export const LISA_COMPOSER_PLACEHOLDER = \"Ask LISA about a question or a skill\";"
 assert s.count(a) == 1
 s = s.replace(a, "export const LISA_COMPOSER_PLACEHOLDER = \"Message LISA...\";", 1)'
@@ -1237,12 +1263,14 @@ plant "UI56-H1" "Show older does not send the server's cursor" \
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
+# Re-pointed 2026-10-23 (F-91, ruling 1 on #1300): the history lists every surface now, so its
+# query has no `surface` filter to add `status` to; the plant adds the status filter alone.
 plant "UI56-H2" "history filtered to active sessions again (OQ-39 (f))" \
   "$T56" \
   "client/src/hooks/tutor-client.ts" \
-  'a = "new URLSearchParams({ surface: \"standalone\" })"
+  'a = "      const params = new URLSearchParams();\n"
 assert s.count(a) == 1
-s = s.replace(a, "new URLSearchParams({ surface: \"standalone\", status: \"active\" })", 1)'
+s = s.replace(a, "      const params = new URLSearchParams({ status: \"active\" });\n", 1)'
 
 plant "UI56-H3" "Show older never drawn" \
   "$T56" \
@@ -1327,12 +1355,15 @@ s = s.replace(a, "", 1)'
 TQA_PANEL="client/src/components/tutor/ScopedTutorPanel.contract.test.tsx"
 TQA_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
 
+# Re-pointed 2026-10-23 (ruling 4 on #1300): the composer's one Send button now takes its
+# variant, size and label from `iconSend` (the outline icon in the panel, the labelled button on
+# /chat), so the anchor follows the new spelling of the same line.
 plant "QA5-L1" "Send reads Send, not Sending…, while a message is on its way" \
   "$T56 $TQA_PANEL" \
   "client/src/components/tutor/TutorThreadParts.tsx" \
-  'a = "{pending ? LISA_SEND_PENDING_LABEL : \"Send\"}"
+  'a = "  const sendLabel = pending ? LISA_SEND_PENDING_LABEL : \"Send\";"
 assert s.count(a) == 1
-s = s.replace(a, "{\"Send\"}", 1)'
+s = s.replace(a, "  const sendLabel = \"Send\";", 1)'
 
 plant "QA5-O1" "a pending Send is faded like an unavailable one (the Button's disabled fade)" \
   "$T56" \
@@ -1348,16 +1379,22 @@ plant "QA5-F1" "a first message (no conversation open) is not pending while its 
 assert s.count(a) == 1
 s = s.replace(a, "  const composerPending = isThinking;", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "QA5-P1" "the panel thread draws Send enabled before it sends the first message" \
   "$TQA_PANEL" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
   'a = "pending={isThinking || firstAwaiting}"
 assert s.count(a) == 1
 s = s.replace(a, "pending={isThinking}", 1)'
 
+# Re-pointed 2026-10-22 (owner brief "LISA chat dock", #1300): the panel's body moved verbatim from
+# ScopedTutorPanel into TutorConversationBody (drawn by the phone panel and the chat dock), so
+# this plant now mutates the body's copy of the same line.
 plant "QA5-P2" "the panel opener is not pending while the conversation is created" \
   "$TQA_PANEL" \
-  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
   'a = "pending={!!pendingMessage}"
 assert s.count(a) == 1
 s = s.replace(a, "pending={false}", 1)'
@@ -1390,22 +1427,30 @@ plant "QA8-R3" "the reveal keeps chasing after the student scrolls" \
 assert s.count(a) == 1
 s = s.replace(a, "", 1)'
 
+# Re-pointed 2026-10-22 (#1300): the panel is the phone's alone now (from 768px up LISA is the
+# chat dock), so the reveal no longer needs the side-by-side check.
 plant "QA8-W1" "the runner never tells the panel it was opened" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+  'a = "revealOnOpen={tutorOpenedForItem === sessionItemId}"
 assert s.count(a) == 1
 s = s.replace(a, "revealOnOpen={false}", 1)'
 
 # Re-pointed 2026-10-08 (QA2-D): side by side the toggle no longer records an opening (only the
 # phone layout's tap does), so dropping the layout check alone changed nothing; the plant now
 # tells a side-by-side panel to reveal itself outright.
-plant "QA8-W2" "side by side, Show LISA scrolls the runner too" \
+# Replaced 2026-10-22 (owner brief "LISA chat dock", #1300): the side-by-side panel this guarded
+# ("side by side, Show LISA scrolls nothing") is removed by the brief; from 768px up LISA is the
+# chat dock. The equivalent rule on the new code: from 768px up the scrolling panel is never
+# reachable (and so can never scroll the runner): its only way in, the bar's Show LISA toggle, is
+# not drawn there. (Dropping the panel's own phone check is unreachable without that toggle, so it
+# changed nothing: observed green, 2026-10-22.) On a phone it still opens only on a tap.
+plant "QA8-W2" "from 768px up the bar's Show LISA (the stacked panel's way in) is drawn again" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "revealOnOpen={!tutorSideBySide && tutorOpenedForItem === sessionItemId}"
+  'a = "{canAskTutor && isPhoneWidth && sessionItemId ? ("
 assert s.count(a) == 1
-s = s.replace(a, "revealOnOpen={tutorSideBySide || tutorOpenedForItem === sessionItemId}", 1)'
+s = s.replace(a, "{canAskTutor && sessionItemId ? (", 1)'
 
 plant "QA9-N2" "New session creates a conversation again (blank sessions)" \
   "$T56" \
@@ -1423,12 +1468,14 @@ plant "QA1-C1" "the Support card needs crisis_paused again (a failed pause write
 assert s.count(a) == 1
 s = s.replace(a, "        if (response.crisis_paused && response.response.crisis_category) {", 1)'
 
+# Re-pointed 2026-10-23 (F-91, ruling 1 on #1300): the read-only note for a question's
+# conversation now comes first, so the paused bar's condition is the second branch.
 plant "QA1-C2" "the paused bar (Continue with LISA) shows for an un-paused crisis card" \
   "$T56" \
   "client/src/pages/chat.tsx" \
-  'a = "      {showPausedBar || isPaused ? ("
+  'a = "      ) : showPausedBar || isPaused ? ("
 assert s.count(a) == 1
-s = s.replace(a, "      {showCrisisCard || isPaused ? (", 1)'
+s = s.replace(a, "      ) : showCrisisCard || isPaused ? (", 1)'
 
 plant "QA9-K1" "a retried first message makes a fresh idempotency key (a second conversation)" \
   "$T56" \
@@ -1664,12 +1711,17 @@ s = s.replace(a, "  const active = sectionFromSearch(window.location.search, vie
 
 # SCL-223 (2026-10-09): the SAT dates always show; OQ-20 now governs the TARGET only, shown once
 # calendar setup is complete. Re-pointed from `goal === null` (that branch no longer exists).
-plant "UI58-P1" "OQ-20 inverted: the target field shows before calendar setup" \
+# Re-pointed 2026-10-13: ruling 1 (Karl, final brief v2) replaced OQ-20's "target only after
+# calendar setup" with "the target score field, with 'Not sure yet', to every student", so the
+# plant now hides the field and the test proves it shows without a calendar profile.
+plant "UI58-P1" "ruling 1 inverted: the target field is hidden without a calendar profile" \
   "$T58" \
   "client/src/components/settings/ProfileSection.tsx" \
-  'a = "      {setupDone ? ("
-assert s.count(a) == 1
-s = s.replace(a, "      {true ? (", 1)'
+  'a = "        <TargetScorePicker\n          legend=\"Target score\""
+b = "          data-testid=\"settings-target\"\n        />"
+assert s.count(a) == 1 and s.count(b) == 1
+s = s.replace(a, "        {false && <TargetScorePicker\n          legend=\"Target score\"", 1)
+s = s.replace(b, "          data-testid=\"settings-target\"\n        />}", 1)'
 
 # SCL-223 (2026-10-09): the dates are now `target_exam_dates`, compared as a set of future dates.
 plant "UI58-P2" "the goal save sends unchanged test dates too" \
@@ -1923,12 +1975,14 @@ s = s.replace(a, "                {plan.intervalLabel} · Full KPI + mastery + p
 
 # Re-pointed 2026-10-08 (W6 UI-64, OQ-68 (d)): the free sentence is built from the served limit
 # (`planFreeIncludes(freeDailyLimit)`); same drift, planted at the new call site.
+# Re-pointed 2026-10-13: the free sentence names the diagnostic as "Find your blind spots"
+# (final brief v2 §7) through BLIND_SPOTS_NAME.
 plant "UI58-U6" "the shared free sentence drops the projection" \
   "client/src/pages/upgrade.page.test.tsx client/src/pages/help.test.tsx" \
   "client/src/lib/plan-copy.ts" \
-  'a = "the diagnostic, your projected score, ${practice}"
+  'a = "${BLIND_SPOTS_NAME}, your projected score, ${practice}"
 assert s.count(a) == 1
-s = s.replace(a, "the diagnostic, ${practice}", 1)'
+s = s.replace(a, "${BLIND_SPOTS_NAME}, ${practice}", 1)'
 
 plant "UI58-U7" "the Help FAQ drifts from the shared plan copy" \
   "client/src/pages/upgrade.page.test.tsx" \
@@ -2231,11 +2285,9 @@ s = s.replace(a, "  \"practice\",\n  \"review\",\n", 1)'
 plant "FU-M3" "Full-Length back in the avatar menu (#1108's menu)" \
   "$T41_RAIL" \
   "client/src/components/layout/app-shell.tsx" \
-  'a = "      items={\n        <MenuLink\n"
-b = "          icon={CircleHelp}\n        />\n      }\n"
-assert s.count(a) == 1 and s.count(b) == 1
-s = s.replace(a, "      items={\n        <>\n        <MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" icon={CircleHelp} />\n        <MenuLink\n", 1)
-s = s.replace(b, "          icon={CircleHelp}\n        />\n        </>\n      }\n", 1)'
+  'a = "      items={\n        <>\n          <MenuLink\n            href={HELP_PATH}\n"
+assert s.count(a) == 1
+s = s.replace(a, "      items={\n        <>\n          <MenuLink href=\"/tests\" label=\"Full-Length\" testId=\"menu-full-length\" icon={CircleHelp} />\n          <MenuLink\n            href={HELP_PATH}\n", 1)'
 
 plant "FU-M4" "Calendar off the phone tab bar" \
   "$T41_RAIL" \
@@ -2289,62 +2341,9 @@ plant "F70-4" "student menu items take the app-wide accent on focus" \
 assert s.count(a) == 1
 s = s.replace(a, "  \"text-lyc-ink focus:bg-accent focus:text-lyc-ink-strong\";", 1)'
 
-# Home's "Start a full-length test" card (the ruling's item 4).
-plant "HC-1" "no full-length card on the paid Home" \
-  "$T50_HOME" \
-  "client/src/components/home/PaidHome.tsx" \
-  'a = "      <FullLengthCard />\n"
-assert s.count(a) == 1
-s = s.replace(a, "", 1)'
-
-plant "HC-2" "no full-length card on the free Home" \
-  "$T50_HOME" \
-  "client/src/components/home/FreeHome.tsx" \
-  'a = "      <FullLengthCard />\n"
-assert s.count(a) == 1
-s = s.replace(a, "", 1)'
-
-plant "HC-3" "a locked card navigates instead of opening the modal" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "        {reason === null ? ("
-assert s.count(a) == 1
-s = s.replace(a, "        {true ? (", 1)'
-
-plant "HC-4" "the locked card opens the modal for the wrong feature" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "open(\"exam_full_length\", reason)"
-assert s.count(a) == 1
-s = s.replace(a, "open(\"tutor_access\", reason)", 1)'
-
-plant "HC-5" "the card links somewhere other than the Full-Length page" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "const FULL_LENGTH_HREF = \"/tests\";"
-assert s.count(a) == 1
-s = s.replace(a, "const FULL_LENGTH_HREF = \"/practice\";", 1)'
-
-plant "HC-6" "the card's link becomes a second filled primary" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "<Button asChild variant=\"lyc-outline\" size=\"lyc\">"
-assert s.count(a) == 1
-s = s.replace(a, "<Button asChild variant=\"lyc-primary\" size=\"lyc\">", 1)'
-
-plant "HC-7" "the card is hidden on a phone" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "className=\"flex flex-col gap-4 rounded-lg border"
-assert s.count(a) == 1
-s = s.replace(a, "className=\"hidden lg:flex flex-col gap-4 rounded-lg border", 1)'
-
-plant "HC-8" "the card's line drifts from the approved Full-Length subtitle" \
-  "$T50_HOME" \
-  "client/src/components/home/FullLengthCard.tsx" \
-  'a = "and a scored report at the end.\";"
-assert s.count(a) == 1
-s = s.replace(a, "and a score at the end.\";", 1)'
+# Home's "Start a full-length test" card (the ruling's item 4) was removed by final brief v2 §4
+# (Karl, 2026-10-13), and HC-1..HC-8 with it. The card staying gone is planted in
+# scripts/ci/getting-started.mutations.sh (G17).
 
 # OQ-63 (owner ruling, Karl, 2026-10-05): "show it for every full-length start on a phone,
 # including calendar-launched starts. One shared pre-start check, same \"Continue anyway\"."
@@ -2481,19 +2480,20 @@ plant "FU-N8" "the exam session page asks the check itself" \
   'i = s.index("\nimport ") + 1
 s = s[:i] + "import { useFullLengthPhonePrecheck } from \"../lib/useFullLengthPhonePrecheck\";\nvoid useFullLengthPhonePrecheck;\n" + s[i:]'
 
+# Re-pointed 2026-10-21 (#1277 Part A): the call now sits inside notify.confirm(...), two spaces deeper.
 plant "FU-C1" "a calendar full-length block launches without the check" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
-  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+  'a = "              blockType === \"full_length\"\n                ? precheck.run("
 assert s.count(a) == 1
-s = s.replace(a, "            false\n              ? precheck.run(", 1)'
+s = s.replace(a, "              false\n                ? precheck.run(", 1)'
 
 plant "FU-C2" "every calendar block asks the check (practice too)" \
   "$T55" \
   "client/src/pages/calendar.tsx" \
-  'a = "            blockType === \"full_length\"\n              ? precheck.run("
+  'a = "              blockType === \"full_length\"\n                ? precheck.run("
 assert s.count(a) == 1
-s = s.replace(a, "            true\n              ? precheck.run(", 1)'
+s = s.replace(a, "              true\n                ? precheck.run(", 1)'
 
 plant "FU-C3" "the block sheet falls back under the phone tab bar (Start untappable at 390)" \
   "$T55" \
@@ -2850,10 +2850,12 @@ plant "QA5-S1" "a page's chunk wait falls through the App shell to the full-page
 assert s.count(a) == 1
 s = s.replace(a, "          fallback={null}\n", 1)'
 
+# Re-pointed 2026-10-13 (first-run activation P0 item 1): the Focus shell's Suspense now wraps the
+# page's RouteErrorBoundary, so the anchor is the three-line block.
 plant "QA5-S2" "a page's chunk wait falls through the Focus shell" \
   "$QA5_FRAME" \
   "client/src/components/layout/StudentRouteFrame.tsx" \
-  'a = "          <Suspense fallback={<PageSkeleton padded />}>{children}</Suspense>\n"
+  'a = "          <Suspense fallback={<PageSkeleton padded />}>\n            <RouteErrorBoundary layout=\"padded\">{children}</RouteErrorBoundary>\n          </Suspense>\n"
 assert s.count(a) == 1
 s = s.replace(a, "          {children}\n", 1)'
 
@@ -3157,88 +3159,13 @@ s = s.replace(a, "", 1)'
 # ── END QA-FLOWS
 
 # ── QA2-A — owner re-test (Karl, 2026-10-08) item A: the review cap at the pressed start ──────
-# "Review cap (5 open sessions): show the error at the clicked button (inline or toast), never
-# below the fold, with 'Continue your open session' and 'End a session' actions. Same on Home and
-# Review." Each plant mutates the line the named page test runs (checked by line number).
+# RETIRED with the cap notice (owner rulings, Karl, 2026-10-21, on #1277, ruling 3): since F-81
+# the server never refuses a review start for the open-session cap, so ReviewCapNotice, its copy
+# and its plants (QA2A-C1/C2/I1/N1-N4/R1-R4/R6/R7/H1/H2) are gone with the code they mutated.
+# What stays: `?focus=open-sessions` (R5), and the replacements below, which prove a refusal is
+# still shown as the plain failure at Review and at Home's recent rows (the new F-81 tests).
 QA2A_REVIEW="client/src/pages/review.test.tsx"
 QA2A_HOME="client/src/pages/lyceon-dashboard.test.tsx"
-
-plant "QA2A-C1" "the cap is recognised by its 403 status again (a 409 cap goes dark)" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
-assert s.count(a) == 1
-s = s.replace(a, "      if (res.status === 403 && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {", 1)'
-
-plant "QA2A-C2" "any refusal is taken for the cap (the code is not read)" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      if (!res.ok && parsed.code === \"SESSION_LIMIT_EXCEEDED\") {"
-assert s.count(a) == 1
-s = s.replace(a, "      if (!res.ok) {", 1)'
-
-plant "QA2A-I1" "a cap refusal no longer re-reads the open sessions it offers" \
-  "$QA2A_REVIEW" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      if (result.failure.kind === \"session_limit\")\n        void queryClient.invalidateQueries({"
-assert s.count(a) == 1
-s = s.replace(a, "      if (result.failure.kind === \"pool_empty\")\n        void queryClient.invalidateQueries({", 1)'
-
-plant "QA2A-N3" "Continue opens the oldest open session instead of the latest" \
-  "$QA2A_REVIEW" \
-  "client/src/hooks/useReview.ts" \
-  'a = "      Date.parse(s.created_at) > Date.parse(latest.created_at)"
-assert s.count(a) == 1
-s = s.replace(a, "      Date.parse(s.created_at) < Date.parse(latest.created_at)", 1)'
-
-plant "QA2A-N1" "the cap message is not scrolled into view (it can sit below the fold)" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/components/review/ReviewCapNotice.tsx" \
-  'a = "      el.scrollIntoView({ block: \"nearest\" });"
-assert s.count(a) == 1
-s = s.replace(a, "      void el;", 1)'
-
-plant "QA2A-N2" "Continue goes to the Review list instead of the open session" \
-  "$QA2A_REVIEW $QA2A_HOME" \
-  "client/src/components/review/ReviewCapNotice.tsx" \
-  'a = "              onAction: () => navigate(reviewSessionHref(latest.id)),"
-assert s.count(a) == 1
-s = s.replace(a, "              onAction: () => navigate(REVIEW_OPEN_SESSIONS_HREF),", 1)'
-
-plant "QA2A-N4" "Home's End a session lands on Review without its open sessions in view" \
-  "$QA2A_HOME" \
-  "client/src/components/review/ReviewCapNotice.tsx" \
-  'a = "          onEndSession ?? (() => navigate(REVIEW_OPEN_SESSIONS_HREF))"
-assert s.count(a) == 1
-s = s.replace(a, "          onEndSession ?? (() => navigate(\"/review\"))", 1)'
-
-plant "QA2A-R1" "Start reviewing's refusal is not drawn under it" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
-assert s.count(a) == 1
-s = s.replace(a, "            {null}", 1)'
-
-plant "QA2A-R2" "every refusal is drawn under Start reviewing too (a Redo's lands at the top)" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "            {capKey === \"queue\" ? <div className=\"mt-3\">{cap}</div> : null}"
-assert s.count(a) == 1
-s = s.replace(a, "            {capKey !== null ? <div className=\"mt-3\">{cap}</div> : null}", 1)'
-
-plant "QA2A-R3" "starts are disabled at the open-session limit again (nothing to press)" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "  const canStart = !create.isStarting && starting === null;"
-assert s.count(a) == 1
-s = s.replace(a, "  const canStart =\n    !create.isStarting &&\n    starting === null &&\n    open.sessions.length < (open.maxConcurrentSessions ?? Infinity);", 1)'
-
-plant "QA2A-R4" "Review's End a session does not bring the open sessions into view" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "        onEndSession={showOpenSessions}"
-assert s.count(a) == 1
-s = s.replace(a, "        onEndSession={() => undefined}", 1)'
 
 plant "QA2A-R5" "the page reads ?focus=open-sessions the wrong way round" \
   "$QA2A_REVIEW" \
@@ -3247,33 +3174,19 @@ plant "QA2A-R5" "the page reads ?focus=open-sessions the wrong way round" \
 assert s.count(a) == 1
 s = s.replace(a, "    if (focusOpen || !openRowsDrawn || focusedOpen.current) return;", 1)'
 
-plant "QA2A-R6" "a Redo's refusal is not drawn in its row" \
+plant "F81-U1" "Review hides a refused start (the old cap's carve-out, aimed at every refusal)" \
   "$QA2A_REVIEW" \
   "client/src/pages/review.tsx" \
-  'a = "                      {capKey === redoStartKey(row) ? ("
+  'a = "          {startFailure !== null ? ("
 assert s.count(a) == 1
-s = s.replace(a, "                      {false ? (", 1)'
+s = s.replace(a, "          {startFailure !== null && startFailure.kind !== \"other\" ? (", 1)'
 
-plant "QA2A-R7" "the topic picker's refusal is not drawn in the picker" \
-  "$QA2A_REVIEW" \
-  "client/src/pages/review.tsx" \
-  'a = "              cap={capKey === \"filter\" ? cap : null}"
-assert s.count(a) == 1
-s = s.replace(a, "              cap={null}", 1)'
-
-plant "QA2A-H1" "Home draws the cap under every recent row, not the pressed one" \
-  "$QA2A_HOME" \
-  "client/src/components/home/HomePanel.tsx" \
-  'a = "                {capFor === recentRowKey(s) ? ("
-assert s.count(a) == 1
-s = s.replace(a, "                {capFor !== null ? (", 1)'
-
-plant "QA2A-H2" "Home's cap goes back to the red line under the list" \
+plant "F81-U2" "Home's recent rows hide a refused review start" \
   "$QA2A_HOME" \
   "client/src/components/home/PaidHome.tsx" \
-  'a = "            capFor={reviewCap?.row ?? null}"
+  'a = "            failure={reviewFailure?.message ?? null}"
 assert s.count(a) == 1
-s = s.replace(a, "            capFor={null}", 1)'
+s = s.replace(a, "            failure={null}", 1)'
 
 # ── END QA2-A
 
@@ -3283,9 +3196,9 @@ QA7_FOCUS="client/src/components/layout/FocusShell.test.tsx"
 plant "QA7-B1" "the back arrow is labelled with the section again, whatever page it returns to" \
   "$QA7_FOCUS" \
   "client/src/components/layout/FocusShell.tsx" \
-  'a = "    previous === null ? section : (pageNameAt(previous) ?? \"Back\");"
+  'a = "      : (pageNameAt(previous) ?? \"Back\");"
 assert s.count(a) == 1
-s = s.replace(a, "    section;", 1)'
+s = s.replace(a, "      : section;", 1)'
 
 plant "QA7-H1" "the history tracker no longer records in-app navigations" \
   "$QA7_FOCUS" \
@@ -3569,12 +3482,14 @@ plant "QA2-B3" "a root pinned light (the timed module) no longer keeps Desmos li
 assert s.count(a) == 1
 s = s.replace(a, "  return false ||\n", 1)'
 
+# Re-pointed 2026-10-22 (#1300): the side-by-side branch (and `tutorHiddenForItem`) went with the
+# desktop panel; the phone condition is now the whole expression's tail.
 plant "QA2-D1" "on the phone layout LISA is open on load again" \
   "$TQA_RUNNER" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "      : tutorShownForItem === sessionItemId);"
+  'a = "    tutorShownForItem === sessionItemId;\n"
 assert s.count(a) == 1
-s = s.replace(a, "      : tutorHiddenForItem !== sessionItemId);", 1)'
+s = s.replace(a, "    true;\n", 1)'
 
 plant "QA2-D2" "a tap on an open LISA scrolled out of view closes it instead of bringing it into view" \
   "$TQA_RUNNER" \
@@ -4084,6 +3999,405 @@ plant "QMH-20" "the skill tab stop announces itself as a button" \
   'a = "            tabIndex={0}\n"
 assert s.count(a) == 1
 s = s.replace(a, "            tabIndex={0}\n            role=\"button\"\n", 1)'
+
+# ── LISA chat dock follow-ups (owner rulings, Karl, 2026-10-23, on #1300) ─────────────────────
+# (1) F-91: the runner's conversations in the LISA history, labelled, read-only; (2) practice gets
+# the dock after submit only; (4) Send is an outline icon button in the panel; (5) the bubble never
+# covers the calculator. Each plant mutates product source once and must redden the named test.
+LD_DOCK="client/src/components/tutor/ChatDock.contract.test.tsx"
+LD_RUNNER_UNIT="client/src/components/practice/CanonicalPracticePage.test.tsx"
+LD_RUNNER="client/src/components/practice/CanonicalPracticePage.runner.test.tsx"
+
+plant "LD-1" "the LISA history asks for standalone conversations only again (F-91)" \
+  "$LD_DOCK" \
+  "client/src/hooks/tutor-client.ts" \
+  'a = "      const params = new URLSearchParams();\n"
+assert s.count(a) == 1
+s = s.replace(a, "      const params = new URLSearchParams({ surface: \"standalone\" });\n", 1)'
+
+plant "LD-2" "a review question's conversation loses its label in the history (F-91)" \
+  "$LD_DOCK" \
+  "client/src/pages/chat.tsx" \
+  'a = "  if (conv.source_surface === \"review\") return \"Review question\";"
+assert s.count(a) == 1
+s = s.replace(a, "  if (conv.source_surface === \"review\") return null;", 1)'
+
+plant "LD-3" "a question's conversation opens with a composer on the LISA page (F-91)" \
+  "$LD_DOCK" \
+  "client/src/pages/chat.tsx" \
+  'a = "      {scopedLabel !== null ? ("
+assert s.count(a) == 1
+s = s.replace(a, "      {false ? (", 1)'
+
+plant "LD-4" "practice draws the dock before submit" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "(engine.features.tutorAfterSubmit && showResult && !isDiagnostic)"
+assert s.count(a) == 1
+s = s.replace(a, "(engine.features.tutorAfterSubmit && !isDiagnostic)", 1)'
+
+plant "LD-5" "the diagnostic draws the dock after submit" \
+  "$LD_RUNNER_UNIT" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "(engine.features.tutorAfterSubmit && showResult && !isDiagnostic)"
+assert s.count(a) == 1
+s = s.replace(a, "(engine.features.tutorAfterSubmit && showResult)", 1)'
+
+plant "LD-6" "practice never gets the dock (the flag off)" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "client/src/lib/engine-config.ts" \
+  'a = "    missNote: true,\n    tutorAfterSubmit: true,"
+assert s.count(a) == 1
+s = s.replace(a, "    missNote: true,\n    tutorAfterSubmit: false,", 1)'
+
+plant "LD-7" "Send in the dock is a filled button again" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/TutorThreadParts.tsx" \
+  'a = "variant={iconSend ? \"lyc-outline\" : \"lyc-primary\"}"
+assert s.count(a) == 1
+s = s.replace(a, "variant=\"lyc-primary\"", 1)'
+
+plant "LD-8" "the bubble stops reporting its footprint (the dock-bubble layer)" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/ChatDock.tsx" \
+  'a = "  useReportBottomChrome(bubbleRef, \"dock-bubble\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "  void bubbleRef;\n", 1)'
+
+plant "LD-9" "the side-panel calculator runs down under the bubble" \
+  "$LD_RUNNER_UNIT" \
+  "client/src/components/practice/CanonicalPracticePage.tsx" \
+  'a = "calcBubbleClear > 0 ? { paddingBottom: calcBubbleClear } : undefined"
+assert s.count(a) == 1
+s = s.replace(a, "undefined", 1)'
+
+# ── LISA launcher (owner brief "LISA launcher redesign + placement", Karl, 2026-10-23, option D) ──
+# The speech-bubble launcher (shape, sparkle, name, the free lock), its place in the column, the
+# opening lines per surface, the before/after-submit opener split (owner ruling 2026-10-23) and
+# "Still confused? Ask LISA" after a wrong answer. Each plant mutates product source once.
+LL_LAUNCHER="client/src/components/tutor/LisaLauncher.tsx"
+LL_DOCK_SRC="client/src/components/tutor/ChatDock.tsx"
+LL_RUNNER_SRC="client/src/components/practice/CanonicalPracticePage.tsx"
+
+plant "LL-1" "the launcher loses its tight bottom-right corner (no speech bubble)" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = " rounded-[14px] rounded-br-[4px] "
+assert s.count(a) == 1
+s = s.replace(a, " rounded-[14px] ", 1)'
+
+plant "LL-2" "the launcher draws no sparkle" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "        ) : (\n          <LisaSparkle />\n        )}"
+assert s.count(a) == 1
+s = s.replace(a, "        ) : null}", 1)'
+
+plant "LL-3" "the free launcher loses its lock" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "        {locked ? (\n          <Lock"
+assert s.count(a) == 1
+s = s.replace(a, "        {false ? (\n          <Lock", 1)'
+
+plant "LL-4" "the launcher is not named Ask LISA" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "export const LISA_LAUNCHER_LABEL = \"Ask LISA\";"
+assert s.count(a) == 1
+s = s.replace(a, "export const LISA_LAUNCHER_LABEL = \"LISA\";", 1)'
+
+plant "LL-5" "the panel header loses the sparkle" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "<span className=\"flex shrink-0 text-lyc-ink-strong\">\n          <LisaSparkle />\n        </span>"
+assert s.count(a) == 1
+s = s.replace(a, "<span className=\"flex shrink-0 text-lyc-ink-strong\" />", 1)'
+
+plant "LL-6" "Home opens with another line" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "  home: \"What do you want to work on?\","
+assert s.count(a) == 1
+s = s.replace(a, "  home: \"Ask LISA about a question you missed.\",", 1)'
+
+plant "LL-7" "Review opens with Home's line" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "  review: \"Want help with your past mistakes?\","
+assert s.count(a) == 1
+s = s.replace(a, "  review: \"What do you want to work on?\",", 1)'
+
+plant "LL-8" "after submit the runner dock keeps the before-submit opener" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "copy={submitted ? QUESTION_SCOPE_AFTER_SUBMIT_COPY : QUESTION_SCOPE_COPY}"
+assert s.count(a) == 1
+s = s.replace(a, "copy={QUESTION_SCOPE_COPY}", 1)'
+
+plant "LL-9" "before submit the review dock already shows the after-submit line" \
+  "$LD_DOCK" \
+  "client/src/components/tutor/ScopedTutorPanel.tsx" \
+  'a = "copy={submitted ? QUESTION_SCOPE_AFTER_SUBMIT_COPY : QUESTION_SCOPE_COPY}"
+assert s.count(a) == 1
+s = s.replace(a, "copy={QUESTION_SCOPE_AFTER_SUBMIT_COPY}", 1)'
+
+plant "LL-10" "the runner tells the dock the item is never submitted" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "$LL_RUNNER_SRC" \
+  'a = "            submitted: showResult,\n"
+assert s.count(a) == 1
+s = s.replace(a, "            submitted: false,\n", 1)'
+
+plant "LL-11" "Still confused? shows after a correct answer too" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_RUNNER_SRC" \
+  'a = "{dockTutor && showResult && isCorrect === false ? ("
+assert s.count(a) == 1
+s = s.replace(a, "{dockTutor && showResult ? (", 1)'
+
+plant "LL-12" "Still confused? shows before submit" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_RUNNER_SRC" \
+  'a = "{dockTutor && showResult && isCorrect === false ? ("
+assert s.count(a) == 1
+s = s.replace(a, "{dockTutor && isCorrect !== true ? (", 1)'
+
+plant "LL-13" "Still confused? does not open the dock" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_RUNNER_SRC" \
+  'a = "onClick={() => dockRef.current?.open()}"
+assert s.count(a) == 1
+s = s.replace(a, "onClick={() => undefined}", 1)'
+
+plant "LL-14" "the dock's open() handle does nothing" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "useImperativeHandle(handle, () => ({ open: openFromLauncher }));"
+assert s.count(a) == 1
+s = s.replace(a, "useImperativeHandle(handle, () => ({ open: () => undefined }));", 1)'
+
+plant "LL-15" "the dock sits at the screen's right edge, not its column's" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = ": `${column.right + DOCK_EDGE_PX}px`;"
+assert s.count(a) == 1
+s = s.replace(a, ": `${DOCK_EDGE_PX}px`;", 1)'
+
+plant "LL-16" "the open panel ignores its column's width" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "Math.min(DOCK_PANEL_MAX_PX, column.width - DOCK_PANEL_COLUMN_INSET_PX)"
+assert s.count(a) == 1
+s = s.replace(a, "DOCK_PANEL_MAX_PX", 1)'
+
+plant "LL-17" "the dock drops below its column's bottom edge" \
+  "$LD_DOCK" \
+  "$LL_DOCK_SRC" \
+  'a = "Math.max(chrome, column?.bottom ?? 0) + DOCK_EDGE_PX"
+assert s.count(a) == 1
+s = s.replace(a, "chrome + DOCK_EDGE_PX", 1)'
+
+plant "LL-18" "the runner's dock is not anchored to the question area" \
+  "$LD_RUNNER" \
+  "$LL_RUNNER_SRC" \
+  'a = "          anchor={runnerScrollRef}\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LL-19" "the runner keeps only the round bubble's width clear" \
+  "$LD_RUNNER_UNIT" \
+  "$LL_DOCK_SRC" \
+  'a = "DOCK_EDGE_PX + LISA_LAUNCHER_WIDTH_PX + 8;"
+assert s.count(a) == 1
+s = s.replace(a, "DOCK_EDGE_PX + 56 + 8;", 1)'
+
+plant "LL-21" "the launcher drops the student focus ring classes" \
+  "$LD_DOCK" \
+  "$LL_LAUNCHER" \
+  'a = "className={`${LYC_FOCUS} pointer-events-auto"
+assert s.count(a) == 1
+s = s.replace(a, "className={`pointer-events-auto", 1)'
+
+# ── The runner's docked LISA column (owner brief "restore the pre-#1300 runner layout", Karl,
+# 2026-10-26): LISA open is the runner's right column (portalled into its slot), review starts
+# open, minimize holds across questions, practice docks on open, the launcher's clearance only
+# while minimized. Each plant mutates product source once and must redden the named test.
+LDK_RUNNER_SRC="client/src/components/practice/CanonicalPracticePage.tsx"
+LDK_DOCK_SRC="client/src/components/tutor/ChatDock.tsx"
+
+plant "LDK-1" "review starts with LISA minimized" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "const [reviewLisaDocked, setReviewLisaDocked] = React.useState(true);"
+assert s.count(a) == 1
+s = s.replace(a, "const [reviewLisaDocked, setReviewLisaDocked] = React.useState(false);", 1)'
+
+plant "LDK-2" "practice never docks the column it opened" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "sessionItemId !== null && practiceLisaDockedItem === sessionItemId);"
+assert s.count(a) == 1
+s = s.replace(a, "sessionItemId !== null && false);", 1)'
+
+plant "LDK-3" "the launcher's clearance stays while LISA is docked open" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "            dockTutor && !lisaColumnOpen && !dockClearsColumn\n"
+assert s.count(a) == 1
+s = s.replace(a, "            dockTutor && !dockClearsColumn\n", 1)'
+
+plant "LDK-4" "the minimized column is not hidden" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                : \"hidden\"\n"
+assert s.count(a) == 1
+s = s.replace(a, "                : \"flex\"\n", 1)'
+
+plant "LDK-5" "the docked panel floats instead of going into the runner's column" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "            ? createPortal(panel, docked.slot)\n"
+assert s.count(a) == 1
+s = s.replace(a, "            ? panel\n", 1)'
+
+plant "LDK-6" "the dock does not tell the runner it opened or closed" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "      docked?.onOpenChange(next === \"open\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LDK-7" "the docked dock ignores open-on-mount" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "      docked?.defaultOpen === true ? \"open\" : \"collapsed\",\n"
+assert s.count(a) == 1
+s = s.replace(a, "      \"collapsed\",\n", 1)'
+
+plant "LDK-8" "the docked panel sizes itself instead of filling the column" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "          ? { width: \"100%\", height: \"100%\" }\n"
+assert s.count(a) == 1
+s = s.replace(a, "          ? { width, height: \"70vh\" }\n", 1)'
+
+# ── The docked runner's width tiers (owner ruling on #1322, Karl, 2026-10-26): 360px from 1338,
+# 300px from W3 (1278) with the three columns side by side, and below W3 the calculator and LISA
+# take turns (the last opened wins; the automatic yield is not the student's minimize).
+plant "LT-1" "the narrow tier's LISA column is not 300px" \
+  "$LD_RUNNER_UNIT" \
+  "client/src/components/math/calculator-layout.ts" \
+  'a = "export const DOCKED_LISA_NARROW_COLUMN_PX = 300 + DOCKED_LISA_INSET_PX; // 312"
+assert s.count(a) == 1
+s = s.replace(a, "export const DOCKED_LISA_NARROW_COLUMN_PX = 340 + DOCKED_LISA_INSET_PX; // 312", 1)'
+
+plant "LT-2" "LISA's column stays narrow at 1338px and up" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const lisaColumnPx = lisaColumnWide\n    ? DOCKED_LISA_COLUMN_PX\n    : DOCKED_LISA_NARROW_COLUMN_PX;"
+assert s.count(a) == 1
+s = s.replace(a, "  const lisaColumnPx = DOCKED_LISA_NARROW_COLUMN_PX;", 1)'
+
+plant "LT-3" "the three columns need 1338px again (W3 ignored)" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const threeColumnsFit = useMinWidth(DOCKED_NARROW_SPLIT_BREAKPOINT);"
+assert s.count(a) == 1
+s = s.replace(a, "  const threeColumnsFit = useMinWidth(DOCKED_SPLIT_BREAKPOINT);", 1)'
+
+plant "LT-4" "below W3 LISA never yields to the calculator" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "    lastToolOpened === \"calc\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "    false;\n", 1)'
+
+plant "LT-5" "below W3 reopening LISA leaves the calculator open" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "              if (!threeColumnsFit && isCalculatorExpanded)\n                setIsCalculatorExpanded(false);\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LT-6" "opening the calculator is not recorded as the last tool opened" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "", 1)'
+
+plant "LT-7" "the automatic yield counts as the student's minimize" \
+  "$LD_RUNNER_UNIT" \
+  "$LDK_RUNNER_SRC" \
+  'a = "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n"
+assert s.count(a) == 1
+s = s.replace(a, "                if (!isCalculatorExpanded) setLastToolOpened(\"calc\");\n                if (!isCalculatorExpanded && !threeColumnsFit) setReviewLisaDocked(false);\n", 1)'
+
+plant "LT-8" "a suppressed dock still draws its panel" \
+  "$LD_DOCK" \
+  "$LDK_DOCK_SRC" \
+  'a = "    const shownView = suppressed && view === \"open\" ? \"minimized\" : view;"
+assert s.count(a) == 1
+s = s.replace(a, "    const shownView = view;", 1)'
+
+# Owner ruling on #1322 (Karl, 2026-10-26): the 300px column's chip reads "N of M".
+plant "LC-1" "the 300px column's chip keeps the long Question N of M" \
+  "$LD_RUNNER_UNIT $LD_RUNNER" \
+  "$LDK_RUNNER_SRC" \
+  'a = "  const dockQuestionLabel = lisaColumnWide\n    ? questionLabel\n"
+assert s.count(a) == 1
+s = s.replace(a, "  const dockQuestionLabel = true\n    ? questionLabel\n", 1)'
+
+# ── LISA history follow-ups (owner rulings, Karl, 2026-10-24, on #1305/#1310) ─────────────────
+# The approved read-only note, and the history label "Practice question · Oct 21" (type and the
+# conversation's created_at, through the one formatter's short month-day).
+LH_CHAT="client/src/pages/chat.tsx"
+
+plant "LH-1" "the read-only note goes back to the unapproved wording" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  \"This chat was about one question. To keep going, open that question and ask LISA there.\";"
+assert s.count(a) == 1
+s = s.replace(a, "  \"This conversation is about one question. To keep going, open LISA on that question.\";", 1)'
+
+plant "LH-2" "the history label dates the chat by its last activity" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  const day = formatDate(conv.created_at, \"short-month-day\");"
+assert s.count(a) == 1
+s = s.replace(a, "  const day = formatDate(conv.updated_at, \"short-month-day\");", 1)
+a = "  created_at: string;\n}): string | null {"
+assert s.count(a) == 1
+s = s.replace(a, "  created_at: string;\n  updated_at: string;\n}): string | null {", 1)'
+
+plant "LH-3" "the history label drops the date" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  return day === null ? type : `${type} \\u00b7 ${day}`;"
+assert s.count(a) == 1
+s = s.replace(a, "  return type;", 1)'
+
+plant "LH-4" "the history label's separator is a hyphen" \
+  "$LD_DOCK" \
+  "$LH_CHAT" \
+  'a = "  return day === null ? type : `${type} \\u00b7 ${day}`;"
+assert s.count(a) == 1
+s = s.replace(a, "  return day === null ? type : `${type} - ${day}`;", 1)'
+
+plant "LH-5" "the short month-day spells the month in full" \
+  "$LD_DOCK client/src/lib/format-date.test.ts" \
+  "client/src/lib/format-date.ts" \
+  'a = "      const d = dayParts(p, { month: \"short\", day: \"numeric\" });\n"
+assert s.count(a) == 1
+s = s.replace(a, "      const d = dayParts(p, { month: \"long\", day: \"numeric\" });\n", 1)'
+
+plant "LL-20" "the launcher loses its accent fill" \
+  "$LD_DOCK client/src/pages/lyceon-dashboard.test.tsx" \
+  "$LL_LAUNCHER" \
+  'a = " border-0 bg-lyc-primary-bg px-3 "
+assert s.count(a) == 1
+s = s.replace(a, " border-0 bg-transparent px-3 ", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

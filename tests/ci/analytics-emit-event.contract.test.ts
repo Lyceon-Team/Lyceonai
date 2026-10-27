@@ -394,19 +394,37 @@ describe("user_signed_up fires once (requireFirstIdentity)", () => {
 describe("registry module", () => {
   // The SCL-213 launch set, plus consent_captured, registered 2026-10-05 for the marketing opt-in
   // (plan Q5; SCL-213 item 3: a deferred event is registered by a registry PR, no new SCL).
-  it("carries exactly the SCL-213 launch set plus consent_captured and the Home QOTD five", () => {
+  it("carries exactly the SCL-213 launch set plus consent_captured, the Home QOTD five, the review ask four, the funnel six and the smart landing four", () => {
     // The five Home QOTD events: owner brief "Question of the Day on Home" (Karl, 2026-10-08/09).
+    // The four review-ask counts: Karl's Step 0 decision 8 on the review ask (2026-10-20).
+    // The six server-side funnel events: owner brief "Server-side funnel events" (Karl, 2026-10-21).
+    // The four smart landing events (class `experiment`): owner brief "Smart landing" (Karl, 2026-10-26).
     expect(EVENT_REGISTRY.events.map((e) => e.event_name).sort()).toEqual([
       "consent_captured",
+      "diagnostic_completed",
       "exam_section_submitted",
       "exam_started",
+      "feedback_submitted",
+      "first_answer",
+      "first_practice",
+      "landing_assigned",
+      "landing_escaped",
+      "landing_session_summary",
+      "landing_shown",
+      "onboarding_completed",
+      "plan_created",
       "qotd_answered",
       "qotd_email_consent",
       "qotd_email_prompt_shown",
       "qotd_viewed",
+      "review_ask_clicked",
+      "review_ask_email_sent",
+      "review_ask_shown",
+      "review_ask_snoozed",
       "streak_extended",
       "tutor_session_ended",
       "tutor_session_started",
+      "upgraded",
       "user_signed_in",
       "user_signed_out",
       "user_signed_up",

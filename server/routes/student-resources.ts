@@ -67,9 +67,11 @@ import {
   readSectionKpi,
 } from "../../apps/api/src/services/kpi-rollup-read";
 import {
+  readDiagnosticProjection,
   readProjectionSnapshots,
   readSectionProjections,
 } from "../../apps/api/src/services/projection-read";
+import { LIVE_PROJECTION_FEATURE_KEY } from "../../packages/shared/src/diagnostic-projection";
 import {
   buildStudentKpiViewFromCanonical,
   readGuardianKpiOverall,
@@ -136,7 +138,16 @@ const router = Router({ mergeParams: true });
  *   - mastery/*      402 unless the subject can access `mastery_detail`
  *   - kpi/*          served to everyone; `/kpi/overall` carries its own `gating.historicalTrends`
  *                    block, which is how a reader tells WITHHELD from zero
- *   - projections/*  served to everyone; the paid/unpaid split is inside the payload
+ *   - projections/sections  served to everyone, but WHICH projection depends on the subject
+ *                    (SCL-235): one who can access `LIVE_PROJECTION_FEATURE_KEY`
+ *                    (`mastery_detail`) gets `kind: "live"`, one who cannot gets
+ *                    `kind: "diagnostic"` — the stored diagnostic projection and nothing else.
+ *                    The choice is made by `subjectCanAccess`, the same call as the gate.
+ *   - projections/snapshots 402 unless the subject can access `mastery_detail`: the history of
+ *                    the live projection is part of the live projection (SCL-235).
+ *   (Until 2026-10-17 this line read "projections/* served to everyone; the paid/unpaid split
+ *   is inside the payload". There was no split in either payload: both served the live rows to
+ *   everyone. Corrected with the split that makes it true.)
  *
  * THERE IS A KNOWN ASYMMETRY HERE AND IT IS NOT MINE TO SETTLE — see owner question 2.
  * `guardian_view_decision` requires an active student entitlement for EVERY resource, so a
@@ -153,8 +164,10 @@ export const requiresEntitlement: Record<string, EntitlementFeatureKey | null> =
   [STUDENT_RESOURCE_PATHS.kpiSections]: null,
   [STUDENT_RESOURCE_PATHS.kpiDomains]: null,
   [STUDENT_RESOURCE_PATHS.kpiOverall]: null,
+  // SCL-235: sections is open, with the live/diagnostic choice made inside the handler by
+  // `subjectCanAccess(LIVE_PROJECTION_FEATURE_KEY, ...)`; snapshots are Premium-only.
   [STUDENT_RESOURCE_PATHS.projectionsSections]: null,
-  [STUDENT_RESOURCE_PATHS.projectionsSnapshots]: null,
+  [STUDENT_RESOURCE_PATHS.projectionsSnapshots]: LIVE_PROJECTION_FEATURE_KEY,
   // Doc 05F §16: the calendar is premium for the SUBJECT. A guardian reading it is gated on
   // that student's entitlement, which is the same term `guardian_view_decision` uses — so a
   // lapsed student and their guardian lose the view together, and nothing is deleted.
@@ -186,8 +199,9 @@ function requireSubject(
 }
 
 /**
- * THE ONE ENTITLEMENT CALL SITE ON THIS SURFACE. Returns true when the request may proceed;
- * when it may not, the 402 is already written and the caller must return immediately.
+ * THE ONE ENTITLEMENT CALL SITE ON THIS SURFACE: does the SUBJECT have this feature?
+ * `entitlementGate` (below) asks it for the table's 402s; `/projections/sections` asks it to
+ * choose between the live and the diagnostic projection (SCL-235). One question, one place.
  *
  * It asks `canAccessFeature`, never the canonical entitlement_active predicate directly. That
  * predicate is reachable from exactly one file (`entitlement-service.ts`, SP25-001) and
@@ -210,6 +224,14 @@ function requireSubject(
  * The predicate this replaces, `isEntitlementActiveForProfile`, is still the right one for
  * `guardian_view_decision`'s own term; it is simply not the right one for a per-FEATURE table.
  */
+async function subjectCanAccess(
+  featureKey: EntitlementFeatureKey,
+  studentId: string,
+): Promise<boolean> {
+  return EntitlementService.canAccessFeature(studentId, featureKey);
+}
+
+/** The table-driven gate: the 402 is written here when `subjectCanAccess` says no. */
 async function entitlementGate(
   path: string,
   studentId: string,
@@ -219,7 +241,7 @@ async function entitlementGate(
   const featureKey = requiresEntitlement[path];
   if (!featureKey) return true;
 
-  if (await EntitlementService.canAccessFeature(studentId, featureKey)) {
+  if (await subjectCanAccess(featureKey, studentId)) {
     return true;
   }
   // SCL-185 (UI-01): the 402 names the refused key as `details.feature`.
@@ -453,9 +475,33 @@ resource(STUDENT_RESOURCE_PATHS.kpiOverall, async (subject) => {
 
 // --- projections -----------------------------------------------------------
 
-resource(STUDENT_RESOURCE_PATHS.projectionsSections, async (subject) => ({
-  sections: await readSectionProjections({ studentId: subject.studentId }),
-}));
+/**
+ * @spec [SCL-235 (Doc 02B §12 as amended), SCL-236 (Doc 05C §12A); owner rulings 2026-10-16
+ *        (1: free sees only the diagnostic projection; 4: paid sees only the live one) and
+ *        2026-10-17 (constraint 5: one diagnostic read; D3: `mastery_detail`)]
+ *        | @implemented [2026-10-17]
+ *
+ * plain English: one route, two exclusive payloads, chosen by the SUBJECT's entitlement. The
+ * other projection is never read, so it cannot be spread into the response by mistake.
+ * FAIL-CLOSED: `canAccessFeature` returns false on any failure, which serves the diagnostic
+ * payload — never the live one.
+ */
+resource(STUDENT_RESOURCE_PATHS.projectionsSections, async (subject) => {
+  if (await subjectCanAccess(LIVE_PROJECTION_FEATURE_KEY, subject.studentId)) {
+    return {
+      kind: "live" as const,
+      sections: await readSectionProjections({ studentId: subject.studentId }),
+    };
+  }
+  const diagnostic = await readDiagnosticProjection({
+    studentId: subject.studentId,
+  });
+  return {
+    kind: "diagnostic" as const,
+    status: diagnostic.status,
+    sections: diagnostic.sections,
+  };
+});
 
 resource(STUDENT_RESOURCE_PATHS.projectionsSnapshots, async (subject) => ({
   snapshots: await readProjectionSnapshots({ studentId: subject.studentId }),
@@ -841,6 +887,8 @@ router.post(
  * display name and when the link went active — identity only, nothing about the guardian's
  * account beyond a name. Edge case: `via === 'guardian'` is a 404, not a 403 — a guardian
  * reading a student's OTHER guardians is on the wrong route and learns nothing.
+ * 2026-10-21 (SCL-238): also `guardian_notified`, the accountability loop's recipient rule
+ * asked of the database, which the calendar's confirmation dialog reads.
  */
 router.get(
   `/:studentId${STUDENT_LINK_PATHS.links}`,
@@ -890,6 +938,31 @@ router.get(
       }
     }
 
+    // SCL-238 (owner brief 2026-10-21, Part A): whether a recorded plan change reaches a
+    // guardian NOW is the accountability loop's own recipient rule, asked of the database —
+    // active link AND student entitlement (`guardian_view_decision`) — so the calendar's
+    // confirmation can never disagree with who is actually told. Fails closed to a 500: a
+    // guessed `false` would let a change reach a guardian unannounced.
+    let guardianNotified = false;
+    if (links.length > 0) {
+      const { data: recipients, error: recipientsError } =
+        await supabaseServer.rpc("accountability_guardian_recipients", {
+          p_student_id: subject.studentId,
+        });
+      if (recipientsError) {
+        logger.error(
+          "STUDENT_RESOURCES",
+          "links_read",
+          "Failed to read guardian recipients",
+          { requestId, reason: recipientsError.message },
+        );
+        return res
+          .status(500)
+          .json({ error: "Internal server error", requestId });
+      }
+      guardianNotified = Array.isArray(recipients) && recipients.length > 0;
+    }
+
     return res.json({
       data: {
         links: links.map((l) => ({
@@ -897,6 +970,7 @@ router.get(
           guardian_display_name: names.get(l.guardian_profile_id) ?? "",
           linked_at: l.accepted_at ?? l.created_at,
         })),
+        guardian_notified: guardianNotified,
       },
       requestId,
     });

@@ -29,11 +29,13 @@ import {
   RefreshCw,
   AlertCircle,
   Heart,
+  Send,
   Shield,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MathRenderer } from "@/components/MathRenderer";
+import { VideoRecommendationCard } from "./VideoRecommendationCard";
 import { Button, LYC_FOCUS } from "@/components/ui/button";
 import {
   buildLisaComposerKeymap,
@@ -116,8 +118,17 @@ export function TutorMessageContent({ text }: { text: string }) {
 // LISA Avatar
 // ---------------------------------------------------------------------------
 
+/**
+ * The LISA mark. (The chat dock's 56px "bubble" size went with the round bubble: owner brief "LISA
+ * launcher", Karl, 2026-10-23, option D; the dock's launcher draws `LisaSparkle` instead.)
+ */
+const LISA_AVATAR_SIZE: Readonly<Record<"sm" | "lg", string>> = {
+  sm: "h-8 w-8 text-lyc-meta",
+  lg: "h-12 w-12 text-lg",
+};
+
 export function LisaAvatar({ size = "sm" }: { size?: "sm" | "lg" }) {
-  const dim = size === "lg" ? "h-12 w-12 text-lg" : "h-8 w-8 text-lyc-meta";
+  const dim = LISA_AVATAR_SIZE[size];
   return (
     <div
       aria-hidden="true"
@@ -376,6 +387,22 @@ export const LISA_DISCLAIMER =
   "LISA can make mistakes; your practice results are the source of truth.";
 
 /**
+ * Prototype Lisa.dc.html composer placeholder, for a conversation that is not about one question
+ * (/chat, and the chat dock in general mode). Moved here from `pages/chat.tsx` on 2026-10-22 so
+ * the dock and the page share one string (owner brief "LISA chat dock").
+ */
+export const LISA_COMPOSER_PLACEHOLDER = "Ask LISA about a question or a skill";
+
+/**
+ * QA 2026-10-07 item 15: the short prompt an empty general LISA column shows (/chat, and the chat
+ * dock in general mode). A presentation line, not a message: never sent, never stored, gone once
+ * a message is on screen. Moved here from `pages/chat.tsx` on 2026-10-22 (one string for both).
+ * PROPOSED WORDING: new in-app copy, awaiting Karl's approval (QA 2026-10-07 report).
+ */
+export const LISA_EMPTY_PROMPT =
+  "Ask LISA about a question you missed or a skill you're working on.";
+
+/**
  * Where a thread's bottom bar (composer, paused bar) sits. "page": the /chat column, 16px sides
  * and 40px from `lg` (Lisa.dc.html). "panel": the review runner's 360px LISA panel (UI-53,
  * OQ-54 (a), ruling 2026-10-05), 16px sides at every width, so the textarea keeps its room.
@@ -426,6 +453,8 @@ export function Composer({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const blocked = disabled || pending;
+  const iconSend = inset === "panel";
+  const sendLabel = pending ? LISA_SEND_PENDING_LABEL : "Send";
 
   // @spec [student-UI register §2 Keyboard, UI-45; DESIGN.md §3] | @implemented [2026-10-03]
   // plain English: Enter sends and Shift+Enter adds a new line, through the one shared hook
@@ -463,21 +492,39 @@ export function Composer({
             aria-label="Message"
             aria-busy={pending || undefined}
           />
+          {/* Owner ruling (Karl, 2026-10-23, ruling 4 on #1300): in the panel (the chat dock and
+              the runner's phone panel) Send is an OUTLINE icon button, a paper plane named
+              "Send", so the page under it keeps its one filled button (Submit / Next in the
+              runner, Home's own primary); /chat keeps its filled, labelled Send. Pending reads
+              the same in both: disabled, aria-busy, full strength, and the label says
+              "Sending…" (visually hidden in the icon button, whose name stays "Send"). */}
           <Button
             type="submit"
-            variant="lyc-primary"
-            size="lyc"
+            variant={iconSend ? "lyc-outline" : "lyc-primary"}
+            size={iconSend ? "lyc-icon" : "lyc"}
             disabled={blocked}
-            className={`h-[50px] min-w-[118px] shrink-0 px-[22px] text-[17px] ${
+            className={`h-[50px] shrink-0 ${
+              iconSend
+                ? "w-[50px] text-lyc-body"
+                : "min-w-[118px] px-[22px] text-[17px]"
+            } ${
               pending
                 ? "disabled:cursor-progress disabled:opacity-100"
                 : "disabled:cursor-not-allowed disabled:opacity-45"
             }`}
-            aria-label="Send message"
+            aria-label={iconSend ? "Send" : "Send message"}
             aria-busy={pending || undefined}
             data-pending={pending ? "true" : undefined}
+            data-testid={iconSend ? "composer-send-icon" : undefined}
           >
-            {pending ? LISA_SEND_PENDING_LABEL : "Send"}
+            {iconSend ? (
+              <>
+                <Send aria-hidden="true" className="h-5 w-5" />
+                <span className="sr-only">{sendLabel}</span>
+              </>
+            ) : (
+              sendLabel
+            )}
           </Button>
         </div>
         <p className="m-0 text-lyc-meta text-lyc-muted">{LISA_DISCLAIMER}</p>
@@ -515,15 +562,24 @@ export function useScrollToBottomOnChange(
 export const PRACTICE_HANDOFF_HREF = "/practice";
 
 /**
- * Renders the action LISA offered on its last turn. Only `start_practice` has
- * a surface today: LISA never writes a question — it hands off to practice,
- * which owns selection, serving, anti-leak, grading and mastery.
+ * Renders the action LISA offered on its last turn. `start_practice`: LISA never writes a
+ * question — it hands off to practice, which owns selection, serving, anti-leak, grading and
+ * mastery. `recommend_video` (2026-10-15): a video from Lyceon's reviewed library, attached by
+ * the server, shown as a card.
  */
 export function SuggestedActionLink({
   action,
 }: {
   action: TutorSuggestedAction | null;
 }) {
+  // Video library (CC brief 2026-10-15 §8): the server-attached video, as a card.
+  if (action?.type === "recommend_video") {
+    return (
+      <div className="flex justify-start">
+        <VideoRecommendationCard video={action.video} label={action.label} />
+      </div>
+    );
+  }
   if (action?.type !== "start_practice") return null;
   return (
     <div className="flex justify-start">

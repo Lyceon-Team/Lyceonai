@@ -22,6 +22,12 @@ A shot may name `expectPath` (a pathname pattern): its `steps` are then a click 
 capture fails unless the page lands on a matching path (UI-50's "Start today's plan" and
 "Start diagnostic").
 
+First-run activation (2026-10-13) adds `freshSession.playThrough`: a list of `"correct"`,
+`"incorrect"` or `"skip"`, played through the real `/next`, `/answer` and `/skip` routes before the
+page loads, then one closing `/next` (409, the server closes the session), so the runner page opens
+on the completed session's summary. "correct" and "incorrect" are resolved from the served item's
+option token map and keyed answer in the harness database; a played session is not terminated.
+
 Runner shots (UI-53) add three fields. `freshSession` starts a new practice or review session
 through the real create route before every capture (`{session}` in the route is its id) and ends
 it through the real terminate route afterwards, so every viewport and theme shows the same step.
@@ -46,12 +52,10 @@ the site-wide cookie banner: capture.ts sets the strictly necessary consent cook
 refused, the app's own `lyceon_consent` format) on each browser context, so the banner is not
 drawn over the pages under review.
 
-QA2-A (the review cap, 2026-10-08) adds two. `reviewCap: true` puts the persona at the server's
-own concurrent review-session cap before each capture: queue review sessions are opened through
-the real `POST /api/review/sessions` until the route itself refuses one with
-`SESSION_LIMIT_EXCEEDED`, and the ones opened are ended through the real terminate route after the
-shot. `expectInViewport` fails the capture unless the named element lies wholly inside the window
-after the steps (the cap's message, never below the fold).
+QA2-A (2026-10-08) added `expectInViewport`: it fails the capture unless the named element lies
+wholly inside the window after the steps. (QA2-A's `reviewCap`, which put the persona at the
+review-session cap, is retired with the cap notice: owner rulings, Karl, 2026-10-21, on #1277,
+ruling 3.)
 
 QA2 (2026-10-08) adds three more. `expectInView` fails the capture unless an element's top edge
 is inside the viewport after the steps (the phone LISA panel brought into view by a tap).

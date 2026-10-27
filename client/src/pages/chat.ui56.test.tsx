@@ -217,7 +217,8 @@ import {
   runCrisisClassifier,
 } from "../../../server/services/tutor-crisis";
 import { PROFILE_QUERY_KEY } from "@/hooks/useProfileQuery";
-import ChatPage, { LISA_COMPOSER_PLACEHOLDER } from "./chat";
+import ChatPage from "./chat";
+import { LISA_COMPOSER_PLACEHOLDER } from "@/components/tutor/TutorThreadParts";
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────────────────
 
@@ -493,9 +494,10 @@ describe("UI-56 paid: the conversation, the composer and the right panel", () =>
     await waitFor(() => expect(historyItems()).toHaveLength(20));
     const first = calls.find(
       (c) =>
-        c.method === "GET" && c.path.startsWith("/api/tutor/conversations?"),
+        c.method === "GET" && /^\/api\/tutor\/conversations(\?|$)/.test(c.path),
     );
-    expect(first?.path).toBe("/api/tutor/conversations?surface=standalone");
+    // F-91 (owner ruling 1 on #1300, 2026-10-23): every surface, so no surface filter either.
+    expect(first?.path).toBe("/api/tutor/conversations");
     expect(first?.path).not.toContain("status=");
     expect(historyItems()[0]?.textContent).toContain("Session 20");
 
@@ -503,7 +505,7 @@ describe("UI-56 paid: the conversation, the composer and the right panel", () =>
     await waitFor(() => expect(historyItems()).toHaveLength(21));
     const second = calls.filter(
       (c) =>
-        c.method === "GET" && c.path.startsWith("/api/tutor/conversations?"),
+        c.method === "GET" && /^\/api\/tutor\/conversations(\?|$)/.test(c.path),
     )[1];
     expect(second?.path).toMatch(/[?&]cursor=/);
     const titles = historyItems().map(
@@ -1151,10 +1153,14 @@ describe("QA 2026-10-07 item 1: a crisis turn always shows the Support card", ()
     expect(card.getAttribute("data-lane")).toBe("crisis");
     expect(card.textContent).toContain(CRISIS_RESOURCES);
     expect(
-      within(card).getByRole("link", { name: /Call 988/ }).getAttribute("href"),
+      within(card)
+        .getByRole("link", { name: /Call 988/ })
+        .getAttribute("href"),
     ).toBe("tel:988");
     expect(
-      within(card).getByRole("link", { name: /Text 988/ }).getAttribute("href"),
+      within(card)
+        .getByRole("link", { name: /Text 988/ })
+        .getAttribute("href"),
     ).toBe("sms:988");
     // Not paused: no "Continue with LISA" (its /resume would 409), the composer stays.
     expect(screen.queryByText("Tutoring is paused")).toBeNull();

@@ -416,6 +416,23 @@ describe("/profile/complete", () => {
     expectStudentTokensOnly(bareShell());
   });
 
+  // The date of birth starts empty (74525a05, 2026-10-13), and the marketing box appears only once
+  // a 13+ date is entered, so the cases above never draw the page's one checkbox. This case
+  // enters a fixed date (always 13+ from here on) and scans the box with the rest of the card;
+  // without it UI59-P2 (the lyc checkbox off the student tokens) has nothing to turn red.
+  it("a 13+ date of birth draws the marketing box on the student checkbox", async () => {
+    renderRoute("/profile/complete", <ProfileComplete />);
+    await screen.findByTestId("button-complete-profile");
+    expect(screen.queryByTestId("checkbox-marketing-opt-in")).toBeNull();
+    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
+      target: { value: "2000-01-01" },
+    });
+    const box = await screen.findByTestId("checkbox-marketing-opt-in");
+    expect(box.getAttribute("data-variant")).toBe("lyc");
+    expect(box.getAttribute("class") ?? "").toContain("border-lyc-ink-strong");
+    expectStudentTokensOnly(bareShell());
+  });
+
   it("the role list portals with its own student root (it reads the tokens off-card)", async () => {
     renderRoute("/profile/complete", <ProfileComplete />);
     const trigger = await screen.findByTestId("select-role");

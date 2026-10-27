@@ -45,6 +45,10 @@ import { notificationEnvSchema } from "../../../packages/shared/src/env";
 import { err, ok, type Result } from "../../../packages/shared/src/result";
 import { SUPPORT_EMAIL } from "../../../packages/shared/src/support-contact";
 import type { EmailAudience } from "../../../packages/shared/src/notifications-schema";
+import {
+  formatFromHeader,
+  type EmailSenderCategory,
+} from "../../../packages/shared/src/email-sender";
 import { logger } from "../../logger";
 import { quietHoursApply, quietHoursDeferral } from "./quiet-hours";
 
@@ -64,6 +68,14 @@ export type EmailSendInput = {
   subject: string;
   html: string;
   text: string;
+  /**
+   * @spec [owner brief "Notification emails — sender name per email type" (Karl, 2026-10-14)]
+   * | @implemented [2026-10-14]
+   * plain English: which display name the email goes out under (packages/shared/src/
+   * email-sender.ts). The address is always NOTIFICATION_FROM_EMAIL; an unrecognised value
+   * still sends, as "Lyceon".
+   */
+  fromCategory: EmailSenderCategory;
   /**
    * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email":
    *       "a List-Unsubscribe header"; RFC 2369, RFC 8058] | @implemented [2026-10-09]
@@ -239,7 +251,9 @@ export function createResendTransport(
       "POST",
       "/emails",
       {
-        from,
+        // Sender name per email type (Karl, 2026-10-14): `<name> <NOTIFICATION_FROM_EMAIL>`,
+        // one address for every category so sending reputation stays in one place.
+        from: formatFromHeader(input.fromCategory, from),
         to: [input.to],
         // @spec [owner brief 2026-09-16 Part A; contracts/notifications.contract.md §12]
         // | @implemented [2026-09-16] — NOTIFICATION_FROM_EMAIL is a send-only address with

@@ -17,8 +17,10 @@
  *   * a question whose stem repeats its passage (no prompt; shared/qotd/projection.ts
  *     stemRepeatsPassage, owner 2026-10-08) is skipped;
  *   * MCQs whose explanation names a choice letter (shared/practice/letter-reference.ts) are
- *     skipped: options are shuffled per request (owner ruling 2026-10-05), so "choice B" would
- *     name the wrong option;
+ *     skipped. Added when options were shuffled per request (owner ruling 2026-10-05), so
+ *     "choice B" named the wrong option; since Karl's ruling 2026-10-23 options are served in
+ *     canonical order and the letters would match, but the skip is kept as it was (lifting it
+ *     changes which questions get scheduled, which that ruling did not ask for);
  *   * the first candidate whose text matches no banned phrase (shared/seo/banned-phrases.ts) is
  *     inserted through qotd_schedule_insert, which re-checks eligibility and does nothing if the
  *     day is already filled. If a domain has nothing left, the next domain in rotation is tried,
@@ -83,7 +85,7 @@ export type QotdScheduleSummary = {
   today: string;
   days: QotdDayOutcome[];
   skippedBanned: number;
-  /** MCQs skipped because the explanation names a choice letter (options are shuffled). */
+  /** MCQs skipped because the explanation names a choice letter (kept after 2026-10-23). */
   skippedLetterReference: number;
   /** Questions skipped because the stem repeats the passage (no question prompt). */
   skippedStemRepeatsPassage: number;
@@ -184,8 +186,9 @@ function skipReason(
     counters.skippedStemRepeatsPassage += 1;
     return true;
   }
-  // Today's options are shuffled per request (owner ruling 2026-10-05), so an explanation
-  // that says "choice B" would name the wrong option for most visitors: skip the MCQ.
+  // Added when today's options were shuffled per request (owner ruling 2026-10-05), so "choice
+  // B" named the wrong option for most visitors. Options are canonical since Karl's ruling
+  // 2026-10-23; the skip is kept unchanged (the ruling did not change scheduling).
   if (
     parseCanonicalMcOptions(c.options).length > 0 &&
     explanationNamesChoiceLetter(c.explanation)

@@ -379,6 +379,24 @@ router.post("/sessions", async (req: Request, res: Response) => {
     });
 
   if (sessionInsertErr) {
+    // practice_sessions_one_inflight_diagnostic_uq (SCL-236, 2026-10-17): a concurrent start won
+    // the race between the read above and this insert. Answer exactly as the read would have.
+    if ((sessionInsertErr as { code?: string }).code === "23505") {
+      const { data: winner } = await supabaseServer
+        .from("practice_sessions")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("mode", "diagnostic")
+        .in("status", ["created", "active"])
+        .maybeSingle();
+      return res.status(409).json({
+        error: "diagnostic_session_active",
+        message:
+          "An active diagnostic session already exists. Resume or complete it before starting a new one.",
+        existingSessionId: (winner as { id?: string } | null)?.id ?? null,
+        requestId,
+      });
+    }
     return res.status(500).json({
       error: "session_creation_failed",
       message: sessionInsertErr.message,
@@ -436,18 +454,13 @@ router.post("/sessions", async (req: Request, res: Response) => {
     .limit(1)
     .maybeSingle();
 
-  logger.info(
-    "DIAGNOSTIC",
-    "session_created",
-    "[diagnostic] session created",
-    {
-      requestId,
-      sessionId,
-      totalQuestions,
-      perDomain,
-      domainCount: domainCounts.size,
-    },
-  );
+  logger.info("DIAGNOSTIC", "session_created", "[diagnostic] session created", {
+    requestId,
+    sessionId,
+    totalQuestions,
+    perDomain,
+    domainCount: domainCounts.size,
+  });
 
   return res.status(201).json({
     sessionId,

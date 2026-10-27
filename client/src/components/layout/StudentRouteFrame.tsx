@@ -20,6 +20,12 @@
  * (Calendar, LISA) and a Focus page get the reading column's padding around the skeleton.
  * QA2-F (2026-10-08): in the App shell the boundary is the shell's own (`AppShell` `fallback`),
  * so the legal footer arrives with the page instead of being pushed down by it.
+ *
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 1]
+ *       | @implemented [2026-10-13]
+ * The page's error boundary (RouteErrorBoundary.tsx) sits inside the Suspense boundary, around
+ * the page: a page chunk that fails to load reloads once (loop-guarded), and otherwise the error
+ * screen is drawn in the shell's content area, with the rail, tab bar, top bar or card around it.
  */
 import { Suspense, type ReactNode } from "react";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
@@ -32,6 +38,7 @@ import { AppShell } from "./app-shell";
 import { BareCard } from "./BareCardShell";
 import { FocusShell } from "./FocusShell";
 import { PageSkeleton } from "./RouteSkeleton";
+import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 export function StudentRouteFrame({
   route,
@@ -53,7 +60,11 @@ export function StudentRouteFrame({
           themeLock={spec.themeLock}
           fallback={<PageSkeleton padded={spec.content === "full"} />}
         >
-          {children}
+          <RouteErrorBoundary
+            layout={spec.content === "full" ? "padded" : "column"}
+          >
+            {children}
+          </RouteErrorBoundary>
         </AppShell>
       );
     case "focus":
@@ -64,13 +75,17 @@ export function StudentRouteFrame({
           back={spec.back}
           themeLock={spec.themeLock}
         >
-          <Suspense fallback={<PageSkeleton padded />}>{children}</Suspense>
+          <Suspense fallback={<PageSkeleton padded />}>
+            <RouteErrorBoundary layout="padded">{children}</RouteErrorBoundary>
+          </Suspense>
         </FocusShell>
       );
     case "bare":
       return (
         <BareCard themeLock={spec.themeLock}>
-          <Suspense fallback={<PageSkeleton card />}>{children}</Suspense>
+          <Suspense fallback={<PageSkeleton card />}>
+            <RouteErrorBoundary layout="card">{children}</RouteErrorBoundary>
+          </Suspense>
         </BareCard>
       );
   }

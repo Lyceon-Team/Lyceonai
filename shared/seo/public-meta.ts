@@ -48,19 +48,22 @@ export interface LegalMeta {
 export const LEGAL_META: Record<string, LegalMeta> = {
   "privacy-policy": {
     title: "Privacy Policy",
-    description: "How Lyceon collects, uses, stores, shares, and protects your information.",
+    description:
+      "How Lyceon collects, uses, stores, shares, and protects your information.",
     canonical: `${BASE_URL}/legal/privacy-policy`,
     ogImage: DEFAULT_OG_IMAGE,
   },
   "student-terms": {
     title: "Student Terms of Use",
-    description: "The terms that govern your access to and use of the Lyceon platform.",
+    description:
+      "The terms that govern your access to and use of the Lyceon platform.",
     canonical: `${BASE_URL}/legal/student-terms`,
     ogImage: DEFAULT_OG_IMAGE,
   },
   "honor-code": {
     title: "Honor Code",
-    description: "Our commitment to honest learning and academic integrity at Lyceon.",
+    description:
+      "Our commitment to honest learning and academic integrity at Lyceon.",
     canonical: `${BASE_URL}/legal/honor-code`,
     ogImage: DEFAULT_OG_IMAGE,
   },
@@ -78,7 +81,8 @@ export const LEGAL_META: Record<string, LegalMeta> = {
   },
   "trust-and-safety": {
     title: "Trust & Safety",
-    description: "How Lyceon approaches trust, safety, and responsible technology in learning.",
+    description:
+      "How Lyceon approaches trust, safety, and responsible technology in learning.",
     canonical: `${BASE_URL}/legal/trust-and-safety`,
     ogImage: DEFAULT_OG_IMAGE,
   },
@@ -137,16 +141,11 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     // The root URL with its slash: the exact URL the sitemap lists and the browser requests.
     canonical: `${BASE_URL}/`,
     ogImage: DEFAULT_OG_IMAGE,
-    jsonLd: [
-      organizationJsonLd,
-      websiteJsonLd,
-      createFaqJsonLd(HOME_FAQS),
-    ],
+    jsonLd: [organizationJsonLd, websiteJsonLd, createFaqJsonLd(HOME_FAQS)],
   },
   "/blog": {
     title: "SAT Prep Blog - Tips, Strategies & Study Guides",
-    description:
-      "SAT study tips and guides for the Digital SAT.",
+    description: "SAT study tips and guides for the Digital SAT.",
     canonical: `${BASE_URL}/blog`,
     ogImage: DEFAULT_OG_IMAGE,
     jsonLd: [
@@ -179,6 +178,13 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
     description:
       "Lyceon's Trust & Safety Hub: privacy protections, data security practices, and academic integrity policies.",
     canonical: `${BASE_URL}/trust`,
+    ogImage: DEFAULT_OG_IMAGE,
+  },
+  "/contact": {
+    title: "Contact | Lyceon",
+    description:
+      "How to contact Lyceon: our support email, our postal address, and where signed-in students and parents send feedback.",
+    canonical: `${BASE_URL}/contact`,
     ogImage: DEFAULT_OG_IMAGE,
   },
   "/legal": {
@@ -239,7 +245,9 @@ function contentBreadcrumb(page: ContentPage): { name: string; url: string }[] {
     if (parentPath === undefined) break;
     current = CONTENT_PAGES.find((p) => p.path === parentPath);
     if (!current)
-      throw new Error(`content page ${page.path}: parent ${parentPath} is not a content page`);
+      throw new Error(
+        `content page ${page.path}: parent ${parentPath} is not a content page`,
+      );
   }
   return [{ name: "Home", url: BASE_URL }, ...trail];
 }
@@ -278,7 +286,9 @@ export function contentPageMeta(page: ContentPage): PublicMeta {
 
 for (const page of CONTENT_PAGES) {
   if (PUBLIC_META[page.path])
-    throw new Error(`content page ${page.path} collides with a static meta entry`);
+    throw new Error(
+      `content page ${page.path} collides with a static meta entry`,
+    );
   PUBLIC_META[page.path] = contentPageMeta(page);
 }
 
@@ -381,5 +391,7 @@ export function resolvePublicMeta(
 
 export function getPublicMeta(path: string): PublicMeta | null {
   // Own keys only: a bare index would resolve `constructor` & co. from Object.prototype.
-  return Object.prototype.hasOwnProperty.call(PUBLIC_META, path) ? (PUBLIC_META[path] ?? null) : null;
+  return Object.prototype.hasOwnProperty.call(PUBLIC_META, path)
+    ? (PUBLIC_META[path] ?? null)
+    : null;
 }

@@ -29,11 +29,15 @@ import {
 } from "../../../packages/shared/src/marketing-consent-schema";
 import {
   feedbackAudienceFor,
+  feedbackReplyAllowed,
   reviewPromptResponseSchema,
   submitAckSchema,
+  trustpilotReviewUrlFrom,
   type FeedbackSource,
+  type FeedbackType,
   type ReviewAudience,
   type ReviewPromptQuery,
+  type ReviewPromptRespond,
   type ReviewPromptResponse,
   type ReviewSubmit,
   type SubmitAck,
@@ -44,11 +48,7 @@ export const MARKETING_CONSENT_PATH = "/api/profile/marketing-consent" as const;
 
 /** The Trustpilot review link (Wave 4). Absent → the Trustpilot option is not rendered at all. */
 export function trustpilotReviewUrl(): string | null {
-  const configured: unknown = import.meta.env.VITE_TRUSTPILOT_REVIEW_URL;
-  if (typeof configured !== "string" || !configured.startsWith("https://")) {
-    return null;
-  }
-  return configured;
+  return trustpilotReviewUrlFrom(import.meta.env.VITE_TRUSTPILOT_REVIEW_URL);
 }
 
 // ── Who may see what (display only; the server re-checks) ──────────────────
@@ -103,12 +103,16 @@ export function useSetMarketingConsent() {
 
 // ── The review prompt ──────────────────────────────────────────────────────
 
+/** The query the review email's app link carries (server templates/review-ask.ts). */
+export const REVIEW_EMAIL_RETURN_SEARCH = "?review=email";
+
+/** True when the page was opened from the review email's app link. */
+export function cameFromReviewEmail(search: string): boolean {
+  return new URLSearchParams(search).get("review") === "email";
+}
+
 function promptUrl(query: ReviewPromptQuery): string {
   const params = new URLSearchParams({ moment: query.moment });
-  if (query.moment === "exam_report")
-    params.set("session_id", query.session_id);
-  if (query.moment === "guardian_week")
-    params.set("student_id", query.student_id);
   return `${FEEDBACK_API}/prompt?${params.toString()}`;
 }
 
@@ -133,8 +137,14 @@ export function useReviewPrompt(
   });
 }
 
-export async function dismissReviewPrompt(): Promise<void> {
-  await apiRequest(`${FEEDBACK_API}/prompt/dismiss`, { method: "POST" });
+/** "Not now" (snoozed) or the close button (dismissed): both put the ask off for 30 days. */
+export async function respondToReviewPrompt(
+  response: ReviewPromptRespond["response"],
+): Promise<void> {
+  await apiRequest(`${FEEDBACK_API}/prompt/respond`, {
+    method: "POST",
+    body: JSON.stringify({ response }),
+  });
 }
 
 export async function recordTrustpilotClick(): Promise<void> {
@@ -154,6 +164,10 @@ export async function submitFeedback(input: {
   body: string;
   source: FeedbackSource;
   idempotencyKey: string;
+  type: FeedbackType;
+  replyOk: boolean;
+  routePattern: string | null;
+  appVersion: string | null;
 }): Promise<SubmitAck> {
   const res = await apiRequest(`${FEEDBACK_API}/feedback`, {
     method: "POST",
@@ -161,8 +175,23 @@ export async function submitFeedback(input: {
       body: input.body,
       source: input.source,
       idempotency_key: input.idempotencyKey,
+      type: input.type,
+      reply_ok: input.replyOk,
+      route_pattern: input.routePattern,
+      app_version: input.appVersion,
     }),
   });
   const body = (await res.json()) as { data?: unknown };
   return submitAckSchema.parse(body.data);
+}
+
+/**
+ * "May we reply by email?" is shown only when the account may ask for it (display only; the
+ * server refuses it for a student under 13 or of unknown age, final brief 2026-10-20 §3).
+ */
+export function useFeedbackReplyAllowed(): boolean {
+  const { data } = useProfileQuery();
+  const user = data?.authenticated ? data.user : null;
+  if (!user) return false;
+  return feedbackReplyAllowed(user.role, user.dateOfBirth, new Date());
 }

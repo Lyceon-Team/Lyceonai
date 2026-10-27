@@ -32,6 +32,37 @@ vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
     <textarea aria-label="Message" data-testid="lisa-composer" />
   ),
 }));
+// 2026-10-22: the chat dock as it draws itself from 768px up: a non-modal dialog holding a real
+// textarea (ChatDock.tsx). The runner's keys must not act on what is typed there.
+vi.mock("@/components/tutor/ChatDock", async () => ({
+  // The real constants and helpers; only the component is stubbed.
+  ...(await vi.importActual<typeof import("@/components/tutor/ChatDock")>(
+    "@/components/tutor/ChatDock",
+  )),
+  ChatDock: () => (
+    <section role="dialog" aria-modal="false" aria-label="LISA">
+      <textarea aria-label="Message" data-testid="dock-composer" />
+    </section>
+  ),
+}));
+
+/** A viewport `width` wide, for the phone queries (`not all and (min-width: Npx)`) too. */
+function mockWidth(width: number): void {
+  vi.spyOn(window, "matchMedia").mockImplementation((query: string) => {
+    const m = /min-width:\s*(\d+)px/.exec(query);
+    const atLeast = m ? width >= Number(m[1]) : false;
+    return {
+      matches: query.startsWith("not all and") ? !atLeast : atLeast,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    } as MediaQueryList;
+  });
+}
 
 vi.mock("@/components/math/DesmosCalculator", () => ({
   default: () => <div data-testid="desmos-mock" />,
@@ -241,10 +272,27 @@ describe("practice/review runner keys (§2 row 1)", () => {
     expect(feedback.nextQuestion).toHaveBeenCalledTimes(1);
   });
 
-  it("review runner: same keys; typing in the LISA composer triggers none of them", () => {
+  it("review runner from 768px: same keys; typing in the dock's composer triggers none of them", () => {
+    mockWidth(1024);
     const state = hookState({ selectedAnswer: "opt-1", canSubmit: true });
     mountRunner(state, REVIEW_ENGINE_CONFIG);
-    // QA2-D: below 1024 LISA starts closed; the student opens it from the bar.
+    const composer = screen.getByTestId("dock-composer");
+    press("Enter", composer);
+    press("ArrowDown", composer);
+    press("ArrowRight", composer);
+    expect(state.submitAnswer).not.toHaveBeenCalled();
+    expect(state.setSelectedAnswer).not.toHaveBeenCalled();
+
+    press("ArrowDown");
+    expect(state.setSelectedAnswer).toHaveBeenCalledWith("opt-2");
+    vi.restoreAllMocks();
+  });
+
+  it("review runner on a phone: same keys; typing in the LISA composer triggers none of them", () => {
+    mockWidth(390);
+    const state = hookState({ selectedAnswer: "opt-1", canSubmit: true });
+    mountRunner(state, REVIEW_ENGINE_CONFIG);
+    // QA2-D: on a phone LISA starts closed; the student opens it from the bar.
     fireEvent.click(screen.getByTestId("practice-tutor-toggle"));
     const composer = screen.getByTestId("lisa-composer");
     press("Enter", composer);

@@ -36,25 +36,13 @@
  * the "Review a past session" card with its "Show more sessions" button, the open-sessions card
  * with the Trash icon and mode badge, and the aside's "Total" row and "How review works" card.
  *
- * THE REVIEW CAP (owner re-test, Karl, 2026-10-08, item A) | @implemented [2026-10-08]: a start
- * the server refuses for the concurrent-session cap (`SESSION_LIMIT_EXCEEDED`, recognised by code
- * in `useCreateReviewSession`) is answered by `ReviewCapNotice` directly under the control that
- * was pressed (Start reviewing, the topic picker's start, or that past session's Redo), scrolled
- * into view, with "Continue your open session" and "End a session" (this page's own open
- * sessions, scrolled to and focused). It replaces the page-level limit notice and the starts
- * disabled at the limit: Karl asked for the refusal at the button the student pressed, which a
- * disabled button cannot be, and the server, not the client's copy of the open list, decides the
- * cap. `/review?focus=open-sessions` (`REVIEW_OPEN_SESSIONS_HREF`, Home's "End a session") opens
+ * THE REVIEW CAP: RETIRED (owner rulings, Karl, 2026-10-21, on #1277, ruling 3). The server no
+ * longer refuses a start at the open-session cap (F-81: it closes the oldest open session and
+ * always creates a new one), so the cap notice the QA2-A re-test (2026-10-08) put at each start is
+ * gone with its copy. No start is disabled for the cap. `/review?focus=open-sessions` still opens
  * the page with the open sessions in view and focused.
  */
-import {
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { Link, useLocation, useSearch } from "wouter";
@@ -70,6 +58,7 @@ import {
 } from "@/components/home/home-model";
 import { AppShellPanel } from "@/components/layout/app-shell";
 import { LockedMasteryCard } from "@/components/mastery/LockedMasteryCard";
+import { ChatDock, type ChatDockScope } from "@/components/tutor/ChatDock";
 import { MasteryRow } from "@/components/mastery/MasteryRow";
 import {
   canonicalDomainNodes,
@@ -86,7 +75,6 @@ import {
   topicSummary,
   visiblePastGroups,
 } from "@/components/review/review-landing-model";
-import { ReviewCapNotice } from "@/components/review/ReviewCapNotice";
 import { Modal, Notice, PageHeader } from "@/components/student-ui";
 import {
   domainOptions,
@@ -135,6 +123,9 @@ function facetMap(
   return new Map((facets ?? []).map((f) => [f.key, f.count]));
 }
 
+/** The LISA launcher on Review opens LISA in general mode (2026-10-22), with Review's opening line (2026-10-23). */
+const GENERAL_DOCK: ChatDockScope = { kind: "general", surface: "review" };
+
 export default function ReviewPage(): JSX.Element {
   const { user } = useSupabaseAuth();
   const studentId = user?.id ?? "";
@@ -177,12 +168,8 @@ export default function ReviewPage(): JSX.Element {
     [pool.pool?.byDomain],
   );
 
-  // QA2-A: which start the last failure belongs to, so the cap is drawn at THAT control.
-  const [failedKey, setFailedKey] = useState<string | null>(null);
-
-  // QA2-A: "End a session" brings this page's open sessions (each with End) into view, focused.
+  // QA2-A: the open sessions (each with End) are brought into view, focused, on `?focus=`.
   const openHeadingRef = useRef<HTMLHeadingElement>(null);
-  const showOpenSessions = (): void => revealHeading(openHeadingRef.current);
   // `/review?focus=open-sessions` (Home's "End a session"): once, when the rows are drawn.
   const search = useSearch();
   const focusOpen =
@@ -205,22 +192,11 @@ export default function ReviewPage(): JSX.Element {
       return;
     }
     setStarting(null);
-    setFailedKey(reviewStartKey(spec));
     setStartFailure(result.failure);
   }
 
-  // The server decides the cap (QA2-A): no start is disabled for it here.
+  // F-81: the server never refuses a start for the cap, so no start is disabled for it.
   const canStart = !create.isStarting && starting === null;
-  // QA2-A: the cap's refusal, and the start it is drawn under.
-  const capKey = startFailure?.kind === "session_limit" ? failedKey : null;
-  const cap =
-    startFailure?.kind === "session_limit" ? (
-      <ReviewCapNotice
-        message={startFailure.message}
-        sessions={open.sessions}
-        onEndSession={showOpenSessions}
-      />
-    ) : null;
   const emptyQueue = (
     <EmptyState
       variant="lyc"
@@ -292,10 +268,9 @@ export default function ReviewPage(): JSX.Element {
                 </Button>
               </div>
             )}
-            {capKey === "queue" ? <div className="mt-3">{cap}</div> : null}
           </section>
 
-          {startFailure !== null && startFailure.kind !== "session_limit" ? (
+          {startFailure !== null ? (
             <div data-testid="review-start-failure">
               {startFailure.kind === "pool_empty" ? (
                 emptyQueue
@@ -314,12 +289,7 @@ export default function ReviewPage(): JSX.Element {
               rows={open.sessions}
               ending={open.isTerminating}
               headingRef={openHeadingRef}
-              onEnd={(id) => {
-                // QA2-A: ending one lifts the cap, so its message goes with it.
-                if (startFailure?.kind === "session_limit")
-                  setStartFailure(null);
-                open.terminateSession(id);
-              }}
+              onEnd={(id) => open.terminateSession(id)}
             />
           ) : null}
 
@@ -331,7 +301,6 @@ export default function ReviewPage(): JSX.Element {
               canStart={canStart}
               starting={starting === "filter"}
               onStart={(spec) => void start(spec)}
-              cap={capKey === "filter" ? cap : null}
             />
           ) : null}
 
@@ -344,8 +313,6 @@ export default function ReviewPage(): JSX.Element {
               onNextPage={pool.loadMoreSessions}
               canStart={canStart}
               startingKey={starting}
-              capKey={capKey}
-              cap={cap}
               onRedo={(row) =>
                 void start({
                   mode: "session",
@@ -429,6 +396,9 @@ export default function ReviewPage(): JSX.Element {
           </section>
         </div>
       </AppShellPanel>
+      {/* Owner brief "LISA chat dock" (Karl, 2026-10-22): the LISA bubble, general mode, at
+          tablet and desktop widths (ChatDock draws nothing on a phone). */}
+      <ChatDock scope={GENERAL_DOCK} />
     </div>
   );
 }
@@ -558,7 +528,6 @@ function ReviewByTopic({
   canStart,
   starting,
   onStart,
-  cap,
 }: {
   taxonomy: PracticeTopicsResponse;
   bySection: ReadonlyMap<string, number>;
@@ -567,8 +536,6 @@ function ReviewByTopic({
   /** This picker's start is in flight (QA item 5). */
   starting: boolean;
   onStart: (spec: ReviewStartSpec) => void;
-  /** QA2-A: the review cap's refusal of this picker's start, drawn under it; else null. */
-  cap: ReactNode;
 }): JSX.Element {
   const sections = sectionOptions(taxonomy);
   // The prototype opens on Math (`section: 'M'`).
@@ -696,7 +663,6 @@ function ReviewByTopic({
             {starting ? STARTING_LABEL : topicCta(count)}
           </Button>
         </div>
-        {cap}
       </div>
     </section>
   );
@@ -710,8 +676,6 @@ function PastSessions({
   onNextPage,
   canStart,
   startingKey,
-  capKey,
-  cap,
   onRedo,
 }: {
   rows: readonly ReviewPoolSourceSession[];
@@ -722,9 +686,6 @@ function PastSessions({
   canStart: boolean;
   /** The start in flight (`reviewStartKey`), so the pressed Redo says "Starting…". */
   startingKey: string | null;
-  /** QA2-A: the start the review cap refused (`reviewStartKey`); its row draws `cap`. */
-  capKey: string | null;
-  cap: ReactNode;
   onRedo: (row: ReviewPoolSourceSession) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
@@ -809,9 +770,6 @@ function PastSessions({
                             : "Redo"}
                         </Button>
                       </span>
-                      {capKey === redoStartKey(row) ? (
-                        <div className="basis-full">{cap}</div>
-                      ) : null}
                     </li>
                   ))}
                 </ul>

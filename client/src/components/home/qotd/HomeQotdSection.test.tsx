@@ -18,6 +18,7 @@ import {
   within,
 } from "@testing-library/react";
 import {
+  chooseNotSure,
   closeSatDates,
   offeredSatDates,
   openSatDates,
@@ -41,6 +42,8 @@ const net = vi.hoisted(() => ({
   today: null as unknown,
   answer: null as unknown,
   profile: { profile: null } as unknown,
+  /** First-run P1: hold the consent write, to see which button spins. */
+  holdConsent: false,
 }));
 
 function json(body: unknown, status = 200): Response {
@@ -60,13 +63,40 @@ vi.mock("@/lib/csrf", () => ({
     net.log.push({ method, url, body });
     if (url === "/api/qotd/today") return json({ data: net.today });
     if (url === "/api/qotd/answer") return json({ data: net.answer }, 201);
-    if (url === "/api/qotd/email-consent")
+    if (url === "/api/qotd/email-prompt/shown")
+      return json({ data: { recorded: true } });
+    if (url === "/api/qotd/email-consent") {
+      if (net.holdConsent) return new Promise<Response>(() => undefined);
       return json({ data: { consented: true, show_email_prompt: false } });
+    }
     // The served bound (owner rulings 2026-10-11 on #1204, 2026-10-12 on #1211).
     if (url === "/api/sat-dates/bound")
       return json({ latest_test_date: "2027-06-05", requestId: "r" });
     if (url.startsWith("/api/calendar/profile"))
       return json({ ...(net.profile as object), requestId: "r" });
+    // Ruling 3 (2026-10-13): "Not sure yet" on the SAT-date card, answered with the real shape.
+    if (url === "/api/home/getting-started/not-sure") {
+      const { deriveGettingStarted } =
+        await import("@lyceon/shared/getting-started-schema");
+      return json({
+        data: deriveGettingStarted(
+          {
+            email_eligible: true,
+            test_date_done: false,
+            qotd_done: true,
+            email_done: false,
+            email_skipped: false,
+            blind_spots_done: true,
+            review_done: false,
+            calendar_done: false,
+            lisa_done: false,
+            guardian_done: false,
+            dismissed: false,
+          },
+          { plan: "free", lisaAvailable: true },
+        ),
+      });
+    }
     return json({ error: "Not found" }, 404);
   },
 }));
@@ -117,19 +147,25 @@ function unanswered(): HomeQotdTodayResponse {
     qotd_date: "2026-10-09",
     question: QUESTION,
     streak: { current: 0, today_done: false, broken: false },
+    active_days: [],
     show_email_prompt: false,
     show_dont_ask_again: false,
   });
 }
 
-function answeredEarlier(): HomeQotdTodayResponse {
+/**
+ * Answered on an earlier visit today. `prompt` is the server's answer: true only while the prompt
+ * has not been shown (or decided) today (owner ruling 2026-10-15 on #1233, item 2).
+ */
+function answeredEarlier(prompt = false): HomeQotdTodayResponse {
   return homeQotdTodayResponseSchema.parse({
     state: "answered",
     qotd_date: "2026-10-09",
     question: QUESTION,
     result: RESULT,
     streak: { current: 4, today_done: true, broken: false },
-    show_email_prompt: true,
+    active_days: [],
+    show_email_prompt: prompt,
     show_dont_ask_again: false,
   });
 }
@@ -164,6 +200,7 @@ function mount(): void {
 
 beforeEach(() => {
   net.log = [];
+  net.holdConsent = false;
   net.profile = { profile: null };
 });
 afterEach(() => {
@@ -225,7 +262,13 @@ describe("Home QOTD card", () => {
         "🔥 1 · Today ✓",
       ),
     );
+    // First-run P1: never over the explanation. While it is on screen there is no prompt; it
+    // opens once the student closes the explanation (Done), and the explanation is gone then.
+    expect(screen.getByText(EXPLANATION)).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByTestId("home-qotd-done"));
     const dialog = await screen.findByRole("dialog");
+    expect(screen.queryByText(EXPLANATION)).toBeNull();
     expect(dialog.textContent).toContain(QOTD_EMAIL_PROMPT_COPY.title);
     expect(dialog.textContent).toContain(QOTD_EMAIL_PROMPT_COPY.body);
     expect(screen.getByTestId("qotd-email-yes").textContent).toBe("Yes");
@@ -245,6 +288,7 @@ describe("Home QOTD card", () => {
     mount();
     fireEvent.click(await screen.findByText("3"));
     fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    fireEvent.click(await screen.findByTestId("home-qotd-done"));
     const dialog = await screen.findByRole("dialog");
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -262,6 +306,7 @@ describe("Home QOTD card", () => {
     mount();
     fireEvent.click(await screen.findByText("4"));
     fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    fireEvent.click(await screen.findByTestId("home-qotd-done"));
     expect((await screen.findByTestId("qotd-email-never")).textContent).toBe(
       "Don't ask again",
     );
@@ -282,6 +327,71 @@ describe("Home QOTD card", () => {
     fireEvent.click(screen.getByTestId("home-qotd-submit"));
     expect(await screen.findByText(EXPLANATION)).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
+    // Closing the explanation does not open it either.
+    fireEvent.click(screen.getByTestId("home-qotd-done"));
+    expect(await screen.findByTestId("home-qotd-collapsed")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("first-run P1: the spinner shows only on the button pressed (Not now), never on Yes", async () => {
+    net.today = unanswered();
+    net.answer = answer();
+    net.holdConsent = true;
+    mount();
+    fireEvent.click(await screen.findByText("2"));
+    fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    fireEvent.click(await screen.findByTestId("home-qotd-done"));
+    const notNow = await screen.findByTestId("qotd-email-not-now");
+    fireEvent.click(notNow);
+    await waitFor(() => expect(notNow.getAttribute("aria-busy")).toBe("true"));
+    const yes = screen.getByTestId("qotd-email-yes") as HTMLButtonElement;
+    expect(yes.getAttribute("aria-busy")).toBeNull();
+    expect(within(yes).queryByTestId("button-pending-spinner")).toBeNull();
+    expect(within(notNow).getByTestId("button-pending-spinner")).toBeTruthy();
+    // Both wait: a second decision cannot be sent meanwhile.
+    expect(yes.disabled).toBe(true);
+    net.holdConsent = false;
+  });
+
+  it("ruling 2026-10-15: answered on an earlier visit and not yet asked, the next Home visit opens the prompt at once, over the collapsed card, and tells the server once", async () => {
+    net.today = answeredEarlier(true);
+    mount();
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain(QOTD_EMAIL_PROMPT_COPY.title);
+    // Never over the explanation: the card is collapsed under it.
+    expect(screen.getByTestId("home-qotd-collapsed")).toBeTruthy();
+    expect(screen.queryByText(EXPLANATION)).toBeNull();
+    await waitFor(() =>
+      expect(
+        net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+      ).toHaveLength(1),
+    );
+    // Closing it ("Not now") is the day's decision; the showing was recorded once only.
+    fireEvent.click(screen.getByTestId("qotd-email-not-now"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+    ).toHaveLength(1);
+  });
+
+  it("ruling 2026-10-15: the prompt opened after Done is reported as shown, once", async () => {
+    net.today = unanswered();
+    net.answer = answer();
+    mount();
+    fireEvent.click(await screen.findByText("2"));
+    fireEvent.click(screen.getByTestId("home-qotd-submit"));
+    expect(await screen.findByText(EXPLANATION)).toBeTruthy();
+    // Not shown yet, so not reported yet.
+    expect(
+      net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+    ).toHaveLength(0);
+    fireEvent.click(screen.getByTestId("home-qotd-done"));
+    await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        net.log.filter((c) => c.url === "/api/qotd/email-prompt/shown"),
+      ).toHaveLength(1),
+    );
   });
 
   it("answered on an earlier visit: collapsed, with See explanation, and no prompt", async () => {
@@ -302,6 +412,7 @@ describe("Home QOTD card", () => {
     net.today = homeQotdTodayResponseSchema.parse({
       state: "none",
       streak: { current: 2, today_done: false, broken: false },
+      active_days: [],
       show_email_prompt: false,
       show_dont_ask_again: false,
     });
@@ -353,6 +464,53 @@ describe("the SAT-date card", () => {
       "target_exam_dates",
     ]);
     expect((body.target_exam_dates as string[]).length).toBe(1);
+  });
+
+  it("ruling 3: 'Not sure yet' records it for the checklist, writes no date, and the card stays", async () => {
+    net.today = answeredEarlier();
+    mount();
+    fireEvent.click(await screen.findByTestId("home-sat-date-not-sure"));
+    await waitFor(() =>
+      expect(
+        net.log.filter(
+          (c) =>
+            c.method === "POST" &&
+            c.url === "/api/home/getting-started/not-sure",
+        ),
+      ).toHaveLength(1),
+    );
+    const sent = net.log.find(
+      (c) => c.url === "/api/home/getting-started/not-sure",
+    );
+    expect(sent?.body).toEqual({ test_date: true });
+    expect(net.log.some((c) => c.method === "PUT")).toBe(false);
+    // The card stays: it is how the student sets a date later.
+    expect(screen.getByTestId("home-sat-date-card")).toBeTruthy();
+  });
+
+  it("#1230 item 4: Save with nothing chosen is not an answer; 'Not sure yet' chosen in the picker is recorded", async () => {
+    net.today = answeredEarlier();
+    mount();
+    fireEvent.click(await screen.findByTestId("home-sat-date-open"));
+    await waitForSatDates("home-sat-dates");
+    closeSatDates("home-sat-dates");
+    const save = screen.getByTestId("home-sat-date-save") as HTMLButtonElement;
+    // Untouched: nothing to save, so nothing can be recorded.
+    expect(save.disabled).toBe(true);
+    chooseNotSure("home-sat-dates");
+    closeSatDates("home-sat-dates");
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(
+        net.log.filter(
+          (c) =>
+            c.method === "POST" &&
+            c.url === "/api/home/getting-started/not-sure",
+        ),
+      ).toHaveLength(1),
+    );
+    expect(net.log.some((c) => c.method === "PUT")).toBe(false);
   });
 
   it("is absent once a future date is saved", async () => {

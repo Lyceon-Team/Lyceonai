@@ -21,6 +21,7 @@ import {
   type ScenarioOptions,
   type FakeClient,
 } from "./calendar.service-harness";
+import type { ActivityDay } from "../../server/services/calendar/adapters/types";
 
 const STUDENT = SCENARIO_STUDENT;
 const TODAY = SCENARIO_TODAY;
@@ -49,9 +50,10 @@ vi.mock("../../server/services/calendar/adapters", () => ({
     engine: "practice" as const,
     create: vi.fn(),
     nextLaunchSize: vi.fn(),
-    progress: vi.fn(async () => null),
-    activityUnits: vi.fn(async (_s: string, localDate: string) =>
-      localDate !== TODAY
+    // SCL-233: both answer for a SET (sessions, days) in one call.
+    progress: vi.fn(async () => new Map()),
+    activityUnits: vi.fn(async (_s: string, days: readonly ActivityDay[]) =>
+      !days.some((day) => day.local_date === TODAY)
         ? []
         : Array.from({ length: answeredUnits }, (_value, index) => ({
             engine: "practice" as const,
@@ -68,12 +70,16 @@ vi.mock("../../server/services/calendar/adapters", () => ({
 
 const { readCalendar, readGuardianCalendar } =
   await import("../../server/services/calendar/read-service");
+const { invalidateKnownTimezoneCache } =
+  await import("../../server/services/calendar/profile-service");
 
 type LocalScenarioOptions = ScenarioOptions & { units?: number };
 
 function scenario(options: LocalScenarioOptions = {}): void {
   answeredUnits = options.units ?? 0;
   client = makeScenarioClient(options);
+  // A new client is a new zone list; the in-process zone cache (2026-10-13) starts empty.
+  invalidateKnownTimezoneCache();
 }
 
 const read = () => readCalendar({ student_id: STUDENT, query: {}, now: NOW });

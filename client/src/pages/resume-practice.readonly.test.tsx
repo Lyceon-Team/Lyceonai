@@ -36,6 +36,24 @@ vi.mock("@/components/practice/CanonicalPracticePage", () => ({
   },
 }));
 
+// P0 item 3 (2026-10-13): the summary reads through react-query, which this file mocks whole; the
+// page's choice to show it is what is tested here (SessionSummary.test.tsx tests the screen).
+vi.mock("@/components/practice/SessionSummary", () => ({
+  SessionSummary: (props: {
+    engine: string;
+    sessionId: string;
+    title: string;
+  }) => (
+    <div
+      data-testid="session-summary-stub"
+      data-engine={props.engine}
+      data-session={props.sessionId}
+    >
+      Session complete
+    </div>
+  ),
+}));
+
 const queryMock = vi.hoisted(() => ({ useQuery: vi.fn() }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: queryMock.useQuery }));
 vi.mock("wouter", () => ({
@@ -123,6 +141,10 @@ describe("resume-practice — closed sessions are not playable (ruling 17)", () 
     expect(screen.getByText("Session complete")).not.toBeNull();
     expect(screen.queryByText("This session has ended")).toBeNull();
     expect(screen.queryByTestId("canonical-practice-page")).toBeNull();
+    // P0 item 3 (2026-10-13): finished is the session's summary, for this session.
+    const summary = screen.getByTestId("session-summary-stub");
+    expect(summary.getAttribute("data-engine")).toBe("practice");
+    expect(summary.getAttribute("data-session")).toBe("swept-session-001");
   });
 
   it("an ACTIVE session still renders the loop — the guard is not over-broad", () => {
@@ -136,5 +158,23 @@ describe("resume-practice — closed sessions are not playable (ruling 17)", () 
 
     expect(screen.getByTestId("canonical-practice-page")).not.toBeNull();
     expect(screen.queryByTestId("practice-session-closed")).toBeNull();
+    // P0 item 3: the runner hands closure back to the page (which re-reads and shows the summary).
+    expect(typeof canonicalProps.captured?.onSessionClosed).toBe("function");
+  });
+
+  it("a completed DIAGNOSTIC keeps its card (its result is the baseline on Home), no summary", () => {
+    queryMock.useQuery.mockReturnValue({
+      data: stateBody({
+        state: "completed",
+        readOnly: true,
+        mode: "diagnostic",
+        section: null,
+      }),
+      isLoading: false,
+      error: null,
+    });
+    render(<ResumePracticePage />);
+    expect(screen.getByTestId("practice-session-closed")).not.toBeNull();
+    expect(screen.queryByTestId("session-summary-stub")).toBeNull();
   });
 });

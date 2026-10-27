@@ -4,7 +4,9 @@
  * @spec [student-UI register §6 Wave 5 UI-50 ("side-by-side screenshot with the signed-off
  *        prototype ... and the page's main click path exercised"); design/DESIGN.md §4 Home;
  *        OQ-4 (390px, light and dark); owner ruling (Karl, 2026-10-05) item 4, the "Start a
- *        full-length test" card] | @implemented [2026-10-03; card shots 2026-10-05]
+ *        full-length test" card; final brief v2 §4–§5 (Karl, 2026-10-13: the card is removed; the
+ *        Getting started checklist and the Practice/Review buttons)] | @implemented [2026-10-03;
+ *        card shots 2026-10-05; replaced 2026-10-13]
  *
  * plain English: Home as each persona sees it, paired with Main.dc.html in the same plan; the
  * free locked mastery card's upgrade modal, paired with the canvas's own; and the two primary
@@ -26,7 +28,7 @@ export const UI_50: PageGroup = {
     {
       id: "home-free",
       title:
-        "Home, free (diagnostic not taken): diagnostic card, How Lyceon works; panel: projection empty state, locked mastery, today's quota",
+        "Home, free (diagnostic not taken): the Getting started checklist, today's question, the 'Find your blind spots' card, Practice and Review (How Lyceon works returns after the checklist is dismissed, final brief v2 §4); panel: projection empty state, locked mastery, today's quota",
       persona: "free",
       route: "/dashboard",
       waitFor: {
@@ -254,54 +256,45 @@ export const UI_50: PageGroup = {
       },
     },
     {
-      id: "click-paid-full-length-card",
+      id: "click-paid-go-practice",
       title:
-        "Click path (paid): Home's 'Start a full-length test' card lands on the Full-Length page (owner ruling, Karl, 2026-10-05)",
+        "Click path (paid): Home's 'Work on new questions' row's Start lands on Practice (owner ruling, Karl, 2026-10-15, on #1233: three equal entry points, replacing final brief v2 §4's outline buttons)",
       persona: "paid",
       route: "/dashboard",
       waitFor: {
-        desktop: '[data-testid="home-full-length"]',
-        mobile: '[data-testid="home-full-length"]',
+        desktop: '[data-testid="home-entry-points"]',
+        mobile: '[data-testid="home-entry-points"]',
       },
       steps: [
         {
           click: {
-            desktop: '[data-testid="home-full-length-start"]',
-            mobile: '[data-testid="home-full-length-start"]',
+            desktop: '[data-testid="home-entry-practice-action"]',
+            mobile: '[data-testid="home-entry-practice-action"]',
           },
         },
       ],
-      expectPath: "^/tests$",
+      expectPath: "^/practice$",
       prototype: {
         kind: "none",
         reason:
-          "A click path: the screenshot is where the click landed (the Full-Length page; on a phone, its notice), proven by its pathname. The card is the owner ruling of 2026-10-05, not in the prototype.",
+          "A click path: the screenshot is where the click landed (Practice), proven by its pathname. The entry rows are the 2026-10-15 ruling on #1233, not in the prototype.",
       },
     },
     {
-      id: "home-free-full-length-modal",
+      id: "home-free-getting-started",
       title:
-        "Home, free: the locked 'Start a full-length test' card opens the upgrade modal in place (exam_full_length)",
+        "Home, free: the Getting started checklist above today's question (dots, 'N of M', the current step expanded), in place of 'How Lyceon works' (final brief v2 §4–§5)",
       persona: "free",
       route: "/dashboard",
       waitFor: {
-        desktop: '[data-testid="home-full-length"]',
-        mobile: '[data-testid="home-full-length"]',
+        desktop: '[data-testid="getting-started"]',
+        mobile: '[data-testid="getting-started"]',
       },
-      steps: [
-        {
-          click: {
-            desktop: '[data-testid="home-full-length-start"]',
-            mobile: '[data-testid="home-full-length-start"]',
-          },
-        },
-      ],
-      expectVisible: '[data-testid="upgrade-modal"]',
-      expectPath: "^/dashboard$",
+      fullPage: true,
       prototype: {
         kind: "none",
         reason:
-          "The card is the owner ruling of 2026-10-05 and is not in the prototype; the modal's copy is the prototype's LYC_COPY.full (UI-41 pairs it with the rail click).",
+          "The checklist is final brief v2 (Karl, 2026-10-13), drawn from the approved v2 mocks, not the prototype.",
       },
     },
     {

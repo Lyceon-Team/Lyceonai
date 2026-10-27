@@ -123,6 +123,7 @@ import {
   useHeaderSignOut,
 } from "./HeaderUserMenu";
 import { HELP_PATH, LegalFooter } from "./LegalFooter";
+import { useFeedbackMenuEntry } from "@/components/product-feedback/FeedbackDialog";
 import { usePublishThemeLock } from "./theme-lock";
 
 /** What a locked rail item does: open the upgrade modal in place, or navigate (ruling 3). */
@@ -244,7 +245,7 @@ const NOTIFICATIONS_PATH = "/notifications";
 
 /**
  * Why `feature` is locked for this student, or null (granted, or no map). The ONE reading of the
- * OQ-29 map for a lock: the rail, the tab bar and Home's full-length card all use it.
+ * OQ-29 map for a lock: the rail, the tab bar and Practice's full-length row all use it.
  */
 export function featureLockReason(
   feature: LockableFeatureKey,
@@ -421,6 +422,9 @@ export function AppShell({
   useReportBottomChrome(tabBarRef);
   // QA 3: the menu opens beside the desktop rail, and under the phone top bar.
   const phoneLayout = useMediaQuery(PHONE_LAYOUT_QUERY, false);
+  // The account menu's Send feedback (final brief 2026-10-20 §3). The dialog renders beside the
+  // menu: the dropdown unmounts its content when it closes.
+  const feedback = useFeedbackMenuEntry();
 
   const helpActive = isActive(location, HELP_PATH);
   const settingsActive = isActive(location, SETTINGS_PATH);
@@ -448,16 +452,23 @@ export function AppShell({
         </span>
       }
       triggerClassName={`${LYC_FOCUS} h-10 w-10 rounded-full p-0 hover:bg-transparent lg:h-12 lg:w-12`}
-      // Owner ruling (Karl, 2026-10-05; supersedes OQ-48): Settings, Help, Sign out. Settings
+      // Owner ruling (Karl, 2026-10-05; supersedes OQ-48): Settings, Help, Sign out; Send feedback
+      // joined after Help on 2026-10-20 (final brief "Trustpilot card + Feedback" §3). Settings
       // and Sign out are the shared menu's own; an admin's Crisis review sits between Help and
       // Sign out. No rail item is in the menu.
       items={
-        <MenuLink
-          href={HELP_PATH}
-          label="Help"
-          testId="menu-help"
-          icon={CircleHelp}
-        />
+        <>
+          <MenuLink
+            href={HELP_PATH}
+            label="Help"
+            testId="menu-help"
+            icon={CircleHelp}
+          />
+          {/* Final brief "Trustpilot card + Feedback" (Karl, 2026-10-20) §3: Send feedback on
+              every app-shell page. The practice, review and test screens use the focus layout,
+              which has no account menu, so it never appears mid-question. */}
+          {feedback.item}
+        </>
       }
     />
   ) : null;
@@ -541,6 +552,7 @@ export function AppShell({
             className="flex justify-center lg:pb-1 lg:pt-1.5"
           >
             {accountMenu}
+            {feedback.dialog}
           </div>
         ) : null}
       </header>

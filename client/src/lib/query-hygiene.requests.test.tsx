@@ -100,19 +100,18 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
     case "/api/billing/status":
       return json(billingBody(role));
     case "/api/progress/projection":
-      // Shape per `EstimateResponse` (client/src/lib/projectionApi.ts), baseline_only arm. Home
-      // (UI-50) reads only `estimateStatus` from it.
+      // Shape per `EstimateResponse` (client/src/lib/projectionApi.ts), baseline_only arm (the
+      // stored diagnostic projection, SCL-236). Home (UI-50) reads only `estimateStatus` from it.
       return json({
         estimateStatus: "baseline_only",
         cta: true,
         estimate: null,
-        baseline: {
+        diagnostic: {
           composite: 1100,
           math: 550,
           rw: 550,
           range: { low: 1050, high: 1150 },
-          confidenceBand: "low",
-          capturedAt: "2026-09-01T00:00:00.000Z",
+          computedAt: "2026-09-01T00:00:00.000Z",
         },
         totalQuestionsAttempted: 20,
         lastUpdated: "2026-09-01T00:00:00.000Z",
@@ -128,7 +127,13 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
       return json({ students: [] });
     // Home's other reads (UI-50), in the shapes their routes write (the shared schemas).
     case "/api/students/00000000-0000-4000-8000-000000000001/projections/sections":
-      return json({ ok: true, sections: [], requestId: "req-test" });
+      return json({
+        ok: true,
+        kind: "diagnostic",
+        status: null,
+        sections: [],
+        requestId: "req-test",
+      });
     case "/api/practice/sessions/open":
       return json({
         sessions: [],

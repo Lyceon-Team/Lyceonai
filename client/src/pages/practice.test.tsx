@@ -59,6 +59,7 @@ import {
   toSessionCriteria,
 } from "@lyceon/shared/session-criteria";
 import { UpgradeModalProvider } from "@/components/billing/UpgradeModal";
+import { UPGRADE_MODAL_COPY } from "@/components/billing/upgrade-modal";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   canonicalCatalogRows,
@@ -70,6 +71,7 @@ import { getQueryFn } from "@/lib/queryClient";
 import { resolveFeatureAccess } from "../../../server/lib/feature-access";
 import { toPracticeQuota } from "../../../server/lib/practice-quota";
 import { getPracticeTopics } from "../../../server/routes/practice-topics-routes";
+import type { EstimateResponse } from "@/lib/projectionApi";
 import Practice from "./practice";
 
 // ── The network ────────────────────────────────────────────────────────────────────────────
@@ -177,12 +179,15 @@ beforeAll(async () => {
   TOPICS = await topicsFromRoute(getPracticeTopics);
 });
 
-async function accessMap(paid: boolean): Promise<FeatureAccessMap> {
+async function accessMap(
+  paid: boolean,
+  under13 = false,
+): Promise<FeatureAccessMap> {
   entitlement.paid = paid;
   const map = await resolveFeatureAccess({
     id: STUDENT,
     role: "student",
-    is_under_13: false,
+    is_under_13: under13,
   });
   if (map === null) throw new Error("a student always gets a map");
   return map;
@@ -369,7 +374,46 @@ type Scenario = {
   open?: boolean;
   max?: number;
   start?: "ok" | "402" | "422";
+  /** GET /api/progress/projection's status; unanswered (as before) when absent. */
+  estimateStatus?: "no_baseline" | "baseline_only";
 };
+
+/** GET /api/progress/projection, the two arms the blind-spots row turns on. */
+function projectionBody(
+  status: "no_baseline" | "baseline_only",
+): EstimateResponse {
+  const base = {
+    totalQuestionsAttempted: 0,
+    lastUpdated: "2026-10-01T12:00:00.000Z",
+    entitlement: {
+      hasPaidAccess: false,
+      plan: "free" as const,
+      status: "none" as const,
+      reason: "none" as const,
+      currentPeriodEnd: null,
+    },
+  };
+  return status === "no_baseline"
+    ? {
+        ...base,
+        estimateStatus: "no_baseline",
+        estimate: null,
+        diagnostic: null,
+      }
+    : {
+        ...base,
+        estimateStatus: "baseline_only",
+        estimate: null,
+        diagnostic: {
+          composite: 1050,
+          math: 530,
+          rw: 520,
+          range: { low: 990, high: 1110 },
+          computedAt: "2026-09-20T12:00:00.000Z",
+        },
+        cta: true,
+      };
+}
 
 function install(s: Scenario): void {
   net.handlers = [
@@ -383,6 +427,10 @@ function install(s: Scenario): void {
         return json(openSessions(s.open ?? false, s.max ?? 5));
       if (path === "/api/review/pool") return json(POOL);
       if (path === "/api/practice/quota") return json(quota(s.quota ?? 12));
+      if (path === "/api/progress/projection" && s.estimateStatus !== undefined)
+        return json(projectionBody(s.estimateStatus));
+      if (method === "POST" && path === "/api/practice/diagnostic/sessions")
+        return json({ sessionId: NEW_SESSION }, 201);
       if (method === "POST" && path === "/api/practice/sessions") {
         if (s.start === "402") return json(QUOTA_402, 402);
         if (s.start === "422") return json(POOL_EMPTY_422, 422);
@@ -403,9 +451,10 @@ function install(s: Scenario): void {
 async function mount(
   plan: "paid" | "free",
   scenario: Scenario,
+  under13 = false,
 ): Promise<{ container: HTMLElement; history: string[] }> {
   install(scenario);
-  const map = await accessMap(plan === "paid");
+  const map = await accessMap(plan === "paid", under13);
   const { hook, history } = memoryLocation({
     path: "/practice",
     record: true,
@@ -893,5 +942,83 @@ describe("QA item 5: Practice's Start shows a pending state from the first click
       expect(history.at(-1)).toBe(`/practice/session/${NEW_SESSION}`),
     );
     expect(startBodies()).toHaveLength(1);
+  });
+});
+
+describe("Find your blind spots row (final brief v2 §6, Karl, 2026-10-13)", () => {
+  it("before the diagnostic: a compact row below the filters card, with the subtitle, that starts it", async () => {
+    const { history } = await mount("free", { estimateStatus: "no_baseline" });
+    const row = await screen.findByTestId("practice-blind-spots");
+    expect(within(row).getByText("Find your blind spots")).toBeTruthy();
+    expect(
+      within(row).getByText(/^\d+ questions · about 40 minutes$/),
+    ).toBeTruthy();
+    // Below the filters card, above "Your session".
+    const filters = screen.getByTestId("filter-bar");
+    const session = screen.getByTestId("practice-session");
+    expect(
+      filters.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      row.compareDocumentPosition(session) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(within(row).getByTestId("practice-blind-spots-start"));
+    await waitFor(() =>
+      expect(history[history.length - 1]).toBe(
+        `/practice/session/${NEW_SESSION}`,
+      ),
+    );
+  });
+
+  it("after the diagnostic: no row", async () => {
+    await mount("free", { estimateStatus: "baseline_only" });
+    await waitFor(() => expect(gets()).toContain("/api/progress/projection"));
+    // Presence first: the page itself is drawn.
+    expect(screen.getByTestId("practice-session")).toBeTruthy();
+    expect(screen.queryByTestId("practice-blind-spots")).toBeNull();
+  });
+});
+
+describe("Full-length test row (Karl, 2026-10-13 on #1230, item 1)", () => {
+  it("paid: a compact row whose Start is a link to the Full-Length page", async () => {
+    const { history } = await mount("paid", {});
+    const row = await screen.findByTestId("practice-full-length");
+    expect(within(row).getByText("Full-length test")).toBeTruthy();
+    const start = within(row).getByTestId("practice-full-length-start");
+    expect(start.tagName).toBe("A");
+    expect(start.getAttribute("href")).toBe("/tests");
+    expect(within(row).queryByTestId("practice-full-length-lock")).toBeNull();
+    // Not a second filled primary: Practice's one primary stays "Start practice".
+    expect(start.className).not.toContain("bg-lyc-primary-bg");
+    fireEvent.click(start);
+    expect(history[history.length - 1]).toBe("/tests");
+  });
+
+  it("free: the lock opens the full-length upgrade modal in place — no navigation, no exam request", async () => {
+    const { history } = await mount("free", {});
+    const row = await screen.findByTestId("practice-full-length");
+    const start = within(row).getByTestId("practice-full-length-start");
+    // A button: there is no href to follow.
+    expect(start.tagName).toBe("BUTTON");
+    expect(start.getAttribute("href")).toBeNull();
+    expect(within(row).getByTestId("practice-full-length-lock")).toBeTruthy();
+    expect(start.getAttribute("aria-label")).toBe(
+      "Start a full-length test, included with a paid plan",
+    );
+    fireEvent.click(start);
+    const modal = await screen.findByTestId("upgrade-modal");
+    expect(modal.textContent).toContain(
+      UPGRADE_MODAL_COPY.exam_full_length.plan.title,
+    );
+    expect(history).toEqual(["/practice"]);
+    expect(gets().filter((u) => u.startsWith("/api/tests"))).toEqual([]);
+  });
+
+  it("under 13, paid: the real access map grants full-length tests (only LISA is age-locked), so it is the link", async () => {
+    await mount("paid", {}, true);
+    const row = await screen.findByTestId("practice-full-length");
+    const start = within(row).getByTestId("practice-full-length-start");
+    expect(start.tagName).toBe("A");
+    expect(start.getAttribute("href")).toBe("/tests");
   });
 });

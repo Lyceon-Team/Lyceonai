@@ -140,6 +140,16 @@ export type EngineConfig = {
      * sentence would describe something that did not happen.
      */
     missNote: boolean;
+    /**
+     * @spec [owner ruling 2 on #1300 (Karl, 2026-10-23): "Enable the dock on the PRACTICE runner,
+     *       POST-SUBMIT ONLY (no dock/bubble before the current question is submitted)"]
+     *       | @implemented [2026-10-23]
+     * plain English: LISA's chat dock (tablet and desktop only) once the current question is
+     * submitted, and never before it. True for practice; review has LISA throughout (`tutor`).
+     * The diagnostic (practice's assessment mode) never gets it. Phones are unchanged: no LISA in
+     * practice there. The server still decides what LISA may see (the practice item's status).
+     */
+    tutorAfterSubmit: boolean;
   };
 };
 
@@ -187,6 +197,7 @@ export const PRACTICE_ENGINE_CONFIG: EngineConfig = {
     calculator: true,
     tutor: false,
     missNote: true,
+    tutorAfterSubmit: true,
   },
 };
 
@@ -233,5 +244,6 @@ export const REVIEW_ENGINE_CONFIG: EngineConfig = {
     calculator: true,
     tutor: true,
     missNote: false,
+    tutorAfterSubmit: false,
   },
 };

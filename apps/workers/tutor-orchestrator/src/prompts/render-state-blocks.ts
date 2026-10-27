@@ -67,6 +67,9 @@ export function renderStateBlocks(request: OrchestrateRequest): string | null {
   const styleBlock = renderStyleBlock(request);
   if (styleBlock) blocks.push(styleBlock);
 
+  const videoBlock = renderVideoBlock(request);
+  if (videoBlock) blocks.push(videoBlock);
+
   if (blocks.length === 0) return null;
 
   return blocks.join("\n\n");
@@ -445,4 +448,29 @@ function explanationStyleDescription(
     case "visual":
       return "prefers visual representations and diagrams";
   }
+}
+
+/**
+ * Video block (video library, CC brief 2026-10-15 §7): the videos Lyceon can offer for this
+ * skill this turn, by number. Facts only: title, channel, length. No identifier or address
+ * is on the wire, so none can reach the model. Placed last, with its directive (§7.2, §7.4).
+ *
+ * @spec [CC Brief "Video Library (ships now)" §7; Doc-03D_V1.2 §7.2, §7.4]
+ */
+export function renderVideoBlock(request: OrchestrateRequest): string | null {
+  const videos = request.offered_videos ?? [];
+  if (videos.length === 0) return null;
+  const minutes = (s: number): string =>
+    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const list = videos
+    .map(
+      (v) =>
+        `${v.index}. "${v.title}" (${v.channel_name}, ${minutes(v.duration_seconds)})`,
+    )
+    .join(" ");
+  return (
+    `[VIDEOS] Videos Lyceon can offer for this skill: ${list} ` +
+    `[DIRECTIVE] Offer one only if it would help; name it by its title and end with ` +
+    `[OFFER_VIDEO n] on its own line. Never write a link or address.`
+  );
 }

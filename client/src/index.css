@@ -415,6 +415,37 @@ body:has(.home-palette) .consent-surface:not(.dark) {
   border-color: rgba(15, 46, 72, 0.12);
 }
 
+/* Legal document body in the student tokens (owner brief "student cleanups", Karl, 2026-10-21,
+   Part G: "Render in dark mode with the student tokens; no text below 14px"). The typography
+   plugin's colour variables point at the `.lyc` root's tokens, which flip with the theme, so one
+   rule serves light and dark (no `dark:prose-invert`). Size is `prose` (16px body), whose smallest
+   elements (tables, code, captions: 0.875em) land on 14px. */
+.legal-prose {
+  --tw-prose-body: var(--ink);
+  --tw-prose-headings: var(--ink-strong);
+  --tw-prose-lead: var(--ink);
+  --tw-prose-links: var(--ink-strong);
+  --tw-prose-bold: var(--ink-strong);
+  --tw-prose-counters: var(--muted);
+  --tw-prose-bullets: var(--muted);
+  --tw-prose-hr: var(--rule);
+  --tw-prose-quotes: var(--ink-strong);
+  --tw-prose-quote-borders: var(--rule);
+  --tw-prose-captions: var(--muted);
+  --tw-prose-code: var(--ink-strong);
+  --tw-prose-pre-code: var(--ink-strong);
+  --tw-prose-pre-bg: var(--chip);
+  --tw-prose-th-borders: var(--rule-strong);
+  --tw-prose-td-borders: var(--rule);
+}
+/* At 16px a wide legal table (the privacy policy's) is wider than a 390px phone; it scrolls
+   inside itself rather than scrolling the page sideways (it overflowed the page by 21px). */
+.legal-prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 /*
  * @spec [LYCEON legal versioning Phase 3 §4; Coding Standards §11]
  * @implemented 2026-09-15

@@ -29,6 +29,17 @@ export function useIsMobile() {
 export const PHONE_LAYOUT_QUERY = "not all and (min-width: 1024px)"
 
 /**
+ * @spec [owner brief "LISA chat dock" (Karl, 2026-10-22): "Phones (<768px): unchanged — LISA tab
+ *       stays, no bubble, no dock"] | @implemented [2026-10-22]
+ *
+ * plain English: below 768px (`MOBILE_BREAKPOINT`, Tailwind's `md`): a phone, where LISA keeps
+ * its tab and the runner keeps its stacked panel. From 768px up (tablet and desktop) the LISA
+ * bubble and chat dock are drawn. Written as the phone query for the same reason as
+ * PHONE_LAYOUT_QUERY: "no match" means the wider layout.
+ */
+export const PHONE_WIDTH_QUERY = `not all and (min-width: ${MOBILE_BREAKPOINT}px)`
+
+/**
  * @spec [owner ruling (Karl, 2026-10-05): the Full-Length phone notice shows "on phone widths";
  *       DESIGN.md §2 Mobile] | @implemented [2026-10-05]
  *

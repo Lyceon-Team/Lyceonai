@@ -37,12 +37,13 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { ChevronLeft } from "lucide-react";
 import { SkipLink } from "@/components/common/skip-link";
 import { LYC_FOCUS } from "@/components/ui/button";
 import { hasInAppHistory, previousInAppPath } from "@/lib/in-app-history";
 import { pageNameAt, type ThemeLock } from "@/lib/route-shells";
+import { isLandingRunnerSearch } from "@/lib/landing-entry";
 import { usePublishThemeLock } from "./theme-lock";
 
 const ContextSlot = createContext<HTMLElement | null>(null);
@@ -82,13 +83,23 @@ export function FocusShell({
   // QA 2026-10-07 item 7: the arrow's label names where it goes. Back to the previous in-app
   // page (register §2) is labelled with THAT page's name ("< Home" after a launch from Home);
   // with nothing in-app behind, it goes to the section home and says the section.
-  const previous = hasInAppHistory() ? previousInAppPath() : null;
-  const backLabel =
-    previous === null ? section : (pageNameAt(previous) ?? "Back");
+  //
+  // Smart landing (owner brief, Karl, 2026-10-26: "Home is reachable from every landing"): a
+  // runner the landing opened carries `?from=landing` and replaced Home in history, so its back
+  // link always reads "Home" and goes to Home, never to the section or a stale history entry.
+  const fromLanding = isLandingRunnerSearch(useSearch());
+  const previous =
+    !fromLanding && hasInAppHistory() ? previousInAppPath() : null;
+  const backLabel = fromLanding
+    ? "Home"
+    : previous === null
+      ? section
+      : (pageNameAt(previous) ?? "Back");
+  const backHref = fromLanding ? "/dashboard" : sectionHome;
 
   const onBack = (event: MouseEvent<HTMLAnchorElement>): void => {
     // wouter calls this only for a plain left click; modified clicks open the href as usual.
-    if (hasInAppHistory()) {
+    if (!fromLanding && hasInAppHistory()) {
       event.preventDefault();
       window.history.back();
     }
@@ -107,7 +118,7 @@ export function FocusShell({
       >
         {back ? (
           <Link
-            href={sectionHome}
+            href={backHref}
             onClick={onBack}
             aria-label={backLabel === "Back" ? "Back" : `Back to ${backLabel}`}
             data-testid="focus-back"

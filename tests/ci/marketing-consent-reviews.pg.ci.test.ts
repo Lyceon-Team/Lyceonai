@@ -358,21 +358,21 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(await claim(null)).toBe(false);
       });
 
-      it("a dismissal counts once per showing", async () => {
-        const dismiss = async () =>
+      it("one response per ask: a double click or a second tab counts once (20261107000000)", async () => {
+        const respond = async () =>
           (
             await q<{ ok: boolean }>(
-              `SELECT public.product_review_prompt_dismiss($1) AS ok`,
+              `SELECT public.product_review_prompt_respond($1, 'snoozed') AS ok`,
               [NO_DOB],
             )
           )[0]?.ok;
-        expect(await dismiss()).toBe(true);
-        expect(await dismiss()).toBe(false);
-        const [state] = await q<{ dismiss_count: number }>(
-          `SELECT dismiss_count FROM public.product_review_prompt_state WHERE profile_id = $1`,
+        expect(await respond()).toBe(true);
+        expect(await respond()).toBe(false);
+        const [state] = await q<{ last_response: string; ask_count: number }>(
+          `SELECT last_response, ask_count FROM public.product_review_prompt_state WHERE profile_id = $1`,
           [NO_DOB],
         );
-        expect(state?.dismiss_count).toBe(1);
+        expect(state).toEqual({ last_response: "snoozed", ask_count: 1 });
       });
 
       it("the Trustpilot button counts as reviewed and stops further claims", async () => {

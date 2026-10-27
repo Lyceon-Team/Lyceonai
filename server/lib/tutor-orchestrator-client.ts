@@ -30,6 +30,7 @@ import { z } from "zod";
 import { GoogleAuth } from "google-auth-library";
 import type { IdTokenClient } from "google-auth-library";
 import { logger } from "../logger";
+import { beginStep, recordMeasuredSteps, timedStep } from "./step-timer";
 import { getGcpCredentials } from "./gcp-credentials";
 import { scanAndSubstitute } from "../services/tutor-antileak";
 import { TutorConfig } from "../services/tutor-config";
@@ -175,13 +176,16 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
   path: string,
   responseSchema: TSchema,
   payload: unknown,
+  onAttemptSent?: (sentAt: number) => void,
 ): Promise<TutorResult<z.infer<TSchema>>> {
   const baseUrl = getWorkerBaseUrl();
   const url = `${baseUrl}${path}`;
   const timeoutMs = TutorConfig.get("tutor_request_timeout_seconds") * 1000;
 
   // ── Auth (pre-loop — token mint failure is not retried) ─────────
-  const headersResult = await buildRequestHeaders(baseUrl);
+  const headersResult = await timedStep("worker_token", () =>
+    buildRequestHeaders(baseUrl),
+  );
   if (!headersResult.ok) {
     return headersResult;
   }
@@ -190,6 +194,10 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
+    // H1: one step per attempt, from send to the response headers (or the attempt failing);
+    // reading the body is `worker_response_read`.
+    const endAttempt = beginStep("worker_request");
+    onAttemptSent?.(performance.now());
 
     try {
       response = await fetch(url, {
@@ -214,6 +222,7 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
         details: { path },
       };
     } finally {
+      endAttempt();
       clearTimeout(timer);
     }
 
@@ -283,7 +292,7 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
 
     let rawBody: unknown;
     try {
-      rawBody = await response.json();
+      rawBody = await timedStep("worker_response_read", () => response.json());
     } catch (err: unknown) {
       logger.error(
         "TUTOR_ORCHESTRATOR_CLIENT",
@@ -343,14 +352,32 @@ export async function orchestrateTurn(
   isPreSubmit: boolean,
   correctAnswer: string | null,
 ): Promise<OrchestrateResult> {
+  let sentAt = 0;
   const result = await postToWorker(
     "/orchestrate/turn",
     orchestrateResponseSchema,
     request,
+    (at) => {
+      sentAt = at;
+    },
   );
 
   if (!result.ok) {
     return result;
+  }
+
+  // H1 (P2 Revised §2): the worker's own timings go into this request's route_timing line and
+  // no further — they are stripped here, so the response the route handles is unchanged.
+  const { timing, ...orchestrationMeta } = result.value.orchestration_meta;
+  if (timing !== undefined) {
+    recordMeasuredSteps(sentAt, [
+      { step: "worker_handler", at_ms: 0, ms: timing.worker_ms },
+      ...timing.vertex_attempts.map((a) => ({
+        step: "worker_vertex_attempt",
+        at_ms: a.at_ms,
+        ms: a.ms,
+      })),
+    ]);
   }
 
   // Extract student-role messages for the echo exemption — LISA repeating
@@ -359,18 +386,29 @@ export async function orchestrateTurn(
     .filter((m) => m.role === "student")
     .map((m) => m.message);
 
+  const endScan = beginStep("antileak_scan");
   const { content } = scanAndSubstitute(
     result.value.response.content,
     correctAnswer,
     isPreSubmit,
     studentMessages,
   );
+  endScan();
 
+  // Video library (CC brief 2026-10-15 §7): a video offer belongs to the text that made it.
+  // When that text was substituted, the offer goes too — the student never sees a card the
+  // fallback did not offer. Other actions are unchanged.
+  const substituted = content !== result.value.response.content;
   const scannedResponse: OrchestrateResponse = {
     ...result.value,
+    orchestration_meta: orchestrationMeta,
     response: {
       ...result.value.response,
       content,
+      ...(substituted &&
+      result.value.response.suggested_action.type === "recommend_video"
+        ? { suggested_action: { type: "none" as const, label: null } }
+        : {}),
     },
   };
 

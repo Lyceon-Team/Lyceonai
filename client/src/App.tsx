@@ -30,6 +30,12 @@ import { CONTENT_PAGE_PATHS } from "@shared/content/pages/paths";
 import { useInAppHistoryTracking } from "@/lib/in-app-history";
 import { useRouteScrollReset } from "@/lib/route-scroll-reset";
 import { SIGN_UP_HREF } from "@/lib/marketing-links";
+import {
+  chunkKeyOf,
+  claimChunkReload,
+  isChunkLoadError,
+} from "@/lib/chunk-reload";
+import { reloadPage } from "@/lib/reload-page";
 
 // @spec [Coding Standards §11; student-ui register UI-11] | @implemented [2026-09-29] |
 // plain English: only `/` (HomePage), `/login` (Login) and the catch-all (NotFound) stay
@@ -174,6 +180,7 @@ const Calendar = lazy(() => import("@/pages/calendar"));
 // GUARDIAN_ROUTES (`features/guardian/routes.tsx`), which lazy-loads them itself.
 const ScoreReport = lazy(() => import("@/pages/score-report"));
 const ResumePractice = lazy(() => import("@/pages/resume-practice"));
+const QotdLanding = lazy(() => import("@/pages/qotd-landing"));
 const DiagnosticStart = lazy(() => import("@/pages/diagnostic-start"));
 const Review = lazy(() => import("@/pages/review"));
 const ResumeReview = lazy(() => import("@/pages/resume-review"));
@@ -209,6 +216,8 @@ const SatQuestionOfTheDayArchive = lazy(
 const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
+// Final brief "Trustpilot card + Feedback" (Karl, 2026-10-20) §2: the static contact page.
+const ContactPage = lazy(() => import("@/pages/contact"));
 const MasteryPage = lazy(() => import("@/pages/mastery"));
 const UpgradePage = lazy(() => import("@/pages/upgrade"));
 const CrisisReviewList = lazy(() => import("@/pages/admin/CrisisReviewList"));
@@ -282,6 +291,7 @@ export function Router() {
 
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />
+        <Route path="/contact" component={ContactPage} />
         {/* @spec [owner ruling 2026-09-29, UI-04] | @implemented [2026-09-29] |
             plain English: the old tutor page is retired; /tutor now sends
             everyone to /chat, whose guard handles sign-in (next=/chat). */}
@@ -352,6 +362,18 @@ export function Router() {
             <RequireRole allow={["student", "admin"]}>
               <StudentRouteFrame route="/practice/diagnostic">
                 <DiagnosticStart />
+              </StudentRouteFrame>
+            </RequireRole>
+          )}
+        />
+        {/* Owner brief "Smart landing" (Karl, 2026-10-26): today's question on its own, then
+            "5 more?" — the `qotd_then_more` landing (ruling D). */}
+        <Route
+          path="/qotd"
+          component={() => (
+            <RequireRole allow={["student", "admin"]}>
+              <StudentRouteFrame route="/qotd">
+                <QotdLanding />
               </StudentRouteFrame>
             </RequireRole>
           )}
@@ -563,18 +585,37 @@ export function Router() {
  */
 export class ErrorBoundary extends Component<
   { children: ReactNode },
-  { hasError: boolean }
+  { hasError: boolean; reloading: boolean }
 > {
   constructor(props: { children: ReactNode }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, reloading: false };
   }
 
-  static getDerivedStateFromError(): { hasError: boolean } {
-    return { hasError: true };
+  static getDerivedStateFromError(error: unknown): {
+    hasError: boolean;
+    reloading: boolean;
+  } {
+    return { hasError: true, reloading: isChunkLoadError(error) };
+  }
+
+  /**
+   * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P0 item 1]
+   *       | @implemented [2026-10-13]
+   * plain English: a chunk that fails above every shell (the route guard's, the shell frame's,
+   * a public page's) reloads once, loop-guarded by the same `claimChunkReload` the in-shell
+   * boundary uses (RouteErrorBoundary.tsx); refused, this card shows. A page's own chunk is
+   * caught inside its shell and never reaches here.
+   */
+  componentDidCatch(error: unknown): void {
+    if (!isChunkLoadError(error)) return;
+    if (claimChunkReload(chunkKeyOf(error), Date.now()).kind === "reload")
+      reloadPage();
+    else this.setState({ reloading: false });
   }
 
   render() {
+    if (this.state.hasError && this.state.reloading) return null;
     if (this.state.hasError) {
       // UI-41: the error screen is a Bare card (DESIGN.md §2). BareCard reads no context, so it
       // renders here, above every provider. UI-59: on the student tokens only, so it follows the

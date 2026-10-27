@@ -59,6 +59,9 @@ import {
 import { logger } from "../../logger";
 import { qotdDailySendContext } from "./qotd-daily-send-context";
 import { guardianDigestSendContext } from "./guardian-digest-send-context";
+import { reviewAskSendContext } from "./review-ask-send-context";
+import { emitEvent } from "../analytics/emit-event";
+import { reviewAskPayloadSchema } from "../../../packages/shared/src/notifications-schema";
 import { quietHoursDeferral } from "./quiet-hours";
 import { renderEmail, siteUrlFromEnv, type RenderContext } from "./templates";
 import { defaultEmailTransport, type EmailTransport } from "./transport";
@@ -328,6 +331,33 @@ async function dispatchOne(
     }
     ctx.guardianDigestEmail = extras.value;
   }
+  // Review ask (Karl, 2026-10-20): the signed "Stop review requests" link and the Trustpilot URL,
+  // and the ask re-read at send time — answered or stopped since it was queued means not sent.
+  if (eventRow.event_type === "review_ask") {
+    const extras = await reviewAskSendContext(
+      row.recipient_profile_id,
+      siteUrl,
+    );
+    if (!extras.ok) {
+      logger.error(
+        "NOTIFICATIONS",
+        "dispatch_review_ask_context_failed",
+        "Could not prepare a review ask email",
+        { messageId: row.message_id, reason: extras.error.reason },
+      );
+      await recordAttempt({
+        p_message_id: row.message_id,
+        p_ok: false,
+        p_provider_message_id: null,
+        p_error: extras.error.reason,
+        p_max_attempts: extras.error.final
+          ? 1
+          : NOTIFICATION_EMAIL_MAX_ATTEMPTS,
+      });
+      return "failed";
+    }
+    ctx.reviewAskEmail = extras.value;
+  }
   const rendered = renderEmail(eventRow.event_type, eventRow.payload, ctx);
   if (!rendered.ok) {
     await recordAttempt({
@@ -347,6 +377,8 @@ async function dispatchOne(
     subject: rendered.value.subject,
     html: rendered.value.html,
     text: rendered.value.text,
+    // The sender name the template chose for this recipient (Karl, 2026-10-14).
+    fromCategory: rendered.value.fromCategory,
     ...(rendered.value.headers ? { headers: rendered.value.headers } : {}),
     // Every notification email goes to a student, a guardian or a payer.
     audience: "student_or_guardian",
@@ -361,6 +393,27 @@ async function dispatchOne(
       p_error: null,
       p_max_attempts: NOTIFICATION_EMAIL_MAX_ATTEMPTS,
     });
+    // Karl's decision 8 (2026-10-20): counts only — the audience, never the address or name.
+    if (recorded && eventRow.event_type === "review_ask") {
+      const payload = reviewAskPayloadSchema.safeParse(eventRow.payload);
+      if (payload.success) {
+        try {
+          await emitEvent(row.recipient_profile_id, "review_ask_email_sent", {
+            audience: payload.data.audience,
+          });
+        } catch (error) {
+          logger.warn(
+            "NOTIFICATIONS",
+            "review_ask_analytics_failed",
+            "Review ask email analytics failed",
+            {
+              messageId: row.message_id,
+              reason: error instanceof Error ? error.message : "unknown",
+            },
+          );
+        }
+      }
+    }
     return recorded ? "sent" : "deferred";
   }
 

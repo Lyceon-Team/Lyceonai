@@ -75,8 +75,10 @@ import {
   orchestrateRequestSchema,
   type OrchestrateRequest,
   type OrchestrateResponse,
+  type OrchestrationTiming,
 } from "../lib/schema.js";
 import {
+  VertexAttemptTimings,
   generateTutorResponse,
   logEvent,
   type ModelAlias,
@@ -86,6 +88,10 @@ import {
 } from "../lib/vertex-client.js";
 import { resolvePromptArtifact } from "../prompts/prompt-registry.js";
 import { renderStateBlocks } from "../prompts/render-state-blocks.js";
+import {
+  VIDEO_OFFER_LABEL,
+  extractVideoOffer,
+} from "../prompts/lisa-default-v3.js";
 import {
   PRACTICE_HANDOFF_LABEL,
   extractPracticeHandoff,
@@ -299,6 +305,7 @@ export function buildOrchestrateResponse(
   vertexResponse: VertexResponse,
   request: OrchestrateRequest,
   promptVersion: string,
+  timing?: OrchestrationTiming,
 ): OrchestrateResponse {
   // Worker-side anti-leak scan: fires PRE-SUBMIT ONLY (defense-in-depth).
   // Post-submit the model is EXPECTED to discuss the answer — suppressing it
@@ -316,13 +323,28 @@ export function buildOrchestrateResponse(
   // W3-2: the handoff marker never reaches the student. It becomes the
   // start_practice action only when no bank item is attached (general mode);
   // inside practice or review LISA stays on the item.
+  //
+  // Video library (CC brief 2026-10-15 §7): every [OFFER_VIDEO n] marker is stripped too. A
+  // marker naming a video in this turn's offered_videos becomes recommend_video carrying the
+  // index — never an identifier; the BFF resolves it. A video offer takes precedence over a
+  // practice offer in the same message (one action per turn).
   const handoff = extractPracticeHandoff(vertexResponse.text);
+  const video = extractVideoOffer(
+    handoff.content,
+    request.offered_videos?.length ?? 0,
+  );
   const suggestedAction: OrchestrateResponse["response"]["suggested_action"] =
-    handoff.offered && request.question_content === null
-      ? { type: "start_practice", label: PRACTICE_HANDOFF_LABEL }
-      : { type: "none", label: null };
+    video.index !== null
+      ? {
+          type: "recommend_video",
+          label: VIDEO_OFFER_LABEL,
+          video_index: video.index,
+        }
+      : handoff.offered && request.question_content === null
+        ? { type: "start_practice", label: PRACTICE_HANDOFF_LABEL }
+        : { type: "none", label: null };
 
-  let content = handoff.content;
+  let content = video.content;
   if (!request.is_post_submit && request.correct_answer !== null) {
     const leaked = hasAnswerLeak(
       content,
@@ -362,6 +384,7 @@ export function buildOrchestrateResponse(
       prompt_version: promptVersion,
       cache_used: false,
       compaction_recommended: isCompactionRecommended(request),
+      ...(timing !== undefined ? { timing } : {}),
     },
     learner_observation: null,
   };
@@ -405,6 +428,9 @@ function mapVertexErrorToStatus(code: VertexErrorCode): number {
 // this worker trusts the boundary, never re-derives role/entitlement state.
 
 orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
+  // P2 H1 (Karl, 2026-10-23): numbers-only timings returned in orchestration_meta.timing.
+  const workerStartedAt = performance.now();
+  const vertexTimings = new VertexAttemptTimings(workerStartedAt);
   const parsed = orchestrateRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
@@ -456,6 +482,7 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
       maxOutputTokens: request.runtime_limits.max_output_tokens,
       timeoutMs: request.runtime_limits.timeout_ms,
     },
+    vertexTimings,
   );
 
   if (!result.ok) {
@@ -480,6 +507,10 @@ orchestrateRouter.post("/turn", async (req: Request, res: Response) => {
     result.value,
     request,
     promptVersion,
+    {
+      worker_ms: Math.round((performance.now() - workerStartedAt) * 10) / 10,
+      vertex_attempts: vertexTimings.attempts,
+    },
   );
   res.status(200).json(response);
 });

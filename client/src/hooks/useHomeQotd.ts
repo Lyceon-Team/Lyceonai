@@ -25,12 +25,15 @@ import {
   homeQotdTodayResponseSchema,
   QOTD_EMAIL_CONSENT_VERSION,
   qotdEmailPreferenceSchema,
+  qotdEmailPromptShownResponseSchema,
+  type QotdEmailPromptShownResponse,
   type HomeQotdAnswerRequest,
   type HomeQotdAnswerResponse,
   type HomeQotdTodayResponse,
   type QotdEmailPreference,
 } from "@lyceon/shared/home-qotd-schema";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import { invalidateGettingStarted } from "@/hooks/useGettingStarted";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -49,14 +52,43 @@ async function fetchHomeQotd(): Promise<HomeQotdTodayResponse> {
   return homeQotdTodayResponseSchema.parse(data);
 }
 
-export function useHomeQotd(): UseQueryResult<HomeQotdTodayResponse, Error> {
+/**
+ * `joinHome` (first-run activation brief, 2026-10-13): Home itself reads today's question before
+ * it draws (`homeQotdFirstLoad`), so the card and the streak chip, which mount once Home has
+ * drawn, JOIN that read instead of starting another: no refetch on mount (the read is fresh,
+ * Home just made it) and no retry of a failed read on mount (the card shows the failure with Try
+ * again). Without a cached read (the card rendered on its own) they still fetch.
+ */
+export function useHomeQotd(
+  options: { joinHome?: boolean } = {},
+): UseQueryResult<HomeQotdTodayResponse, Error> {
   const { user, authLoading } = useSupabaseAuth();
   return useQuery<HomeQotdTodayResponse, Error>({
     queryKey: [HOME_QOTD_TODAY_PATH],
     queryFn: fetchHomeQotd,
     enabled: !!user && !authLoading,
     ...QUERY_FRESHNESS.homeQotd,
+    ...(options.joinHome === true
+      ? { refetchOnMount: false, retryOnMount: false }
+      : {}),
   });
+}
+
+/**
+ * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: "Reserve the QOTD card's
+ *       space while loading (no layout shift)"] | @implemented [2026-10-13]
+ * plain English: true only while today's question is being read for the FIRST time (no answer
+ * and no failure yet). Home waits on this, so the card lands with the page. It is deliberately not
+ * `isLoading`: after a failed read, the card's own observer refetches on mount (staleTime 0) and a
+ * refetch with no data is "loading" again, so a Home that waited on `isLoading` would unmount the
+ * card, settle on the failure, remount it, refetch, and loop. A failed first read ends the wait
+ * like an answer does; the card then shows its own error.
+ */
+export function homeQotdFirstLoad(query: {
+  isLoading: boolean;
+  isFetched: boolean;
+}): boolean {
+  return query.isLoading && !query.isFetched;
 }
 
 function dataOf(body: unknown): unknown {
@@ -80,6 +112,8 @@ export function useAnswerHomeQotd(): UseMutationResult<
       return homeQotdAnswerResponseSchema.parse(dataOf(await response.json()));
     },
     onSuccess: (answer) => {
+      // A step of the Getting started checklist may now be done (final brief v2 §3).
+      void invalidateGettingStarted(queryClient);
       queryClient.setQueryData<HomeQotdTodayResponse>(
         [HOME_QOTD_TODAY_PATH],
         (current) =>
@@ -91,6 +125,10 @@ export function useAnswerHomeQotd(): UseMutationResult<
                 question: current.question,
                 result: answer.result,
                 streak: answer.streak,
+                // First-run P1: today now has an answer, so "This week" ticks it at once.
+                active_days: current.active_days.includes(current.qotd_date)
+                  ? current.active_days
+                  : [...current.active_days, current.qotd_date].sort(),
                 show_email_prompt: answer.show_email_prompt,
                 show_dont_ask_again: answer.show_dont_ask_again,
               },
@@ -106,6 +144,39 @@ export function useAnswerHomeQotd(): UseMutationResult<
 }
 
 export type QotdEmailDecision = "grant" | "not_now" | "never";
+
+const PROMPT_SHOWN_PATH = "/api/qotd/email-prompt/shown";
+
+/**
+ * @spec [owner ruling (Karl, 2026-10-15, on #1233, item 2)] | @implemented [2026-10-15]
+ * plain English: tells the server the email prompt is on screen, so it records today's one ask
+ * (only if its own rule allows). Today's cached read then says "no prompt" for the rest of the
+ * Chicago day, as the server will on the next read.
+ */
+export function useMarkQotdPromptShown(): UseMutationResult<
+  QotdEmailPromptShownResponse,
+  Error,
+  void
+> {
+  const queryClient = useQueryClient();
+  return useMutation<QotdEmailPromptShownResponse, Error, void>({
+    mutationFn: async () => {
+      const response = await apiRequest(PROMPT_SHOWN_PATH, { method: "POST" });
+      return qotdEmailPromptShownResponseSchema.parse(
+        dataOf(await response.json()),
+      );
+    },
+    onSuccess: () => {
+      queryClient.setQueryData<HomeQotdTodayResponse>(
+        [HOME_QOTD_TODAY_PATH],
+        (current) =>
+          current === undefined
+            ? current
+            : { ...current, show_email_prompt: false },
+      );
+    },
+  });
+}
 
 export function useQotdEmailDecision(): UseMutationResult<
   { consented: boolean },
@@ -127,6 +198,8 @@ export function useQotdEmailDecision(): UseMutationResult<
       );
     },
     onSuccess: () => {
+      // A step of the Getting started checklist may now be done (final brief v2 §3).
+      void invalidateGettingStarted(queryClient);
       queryClient.setQueryData<HomeQotdTodayResponse>(
         [HOME_QOTD_TODAY_PATH],
         (current) =>
@@ -186,6 +259,8 @@ export function useSetQotdEmailPreference(): UseMutationResult<
       return qotdEmailPreferenceSchema.parse(dataOf(await response.json()));
     },
     onSuccess: (preference) => {
+      // A step of the Getting started checklist may now be done (final brief v2 §3).
+      void invalidateGettingStarted(queryClient);
       queryClient.setQueryData([QOTD_EMAIL_PREFERENCE_PATH], preference);
       // Turning it on or off also settles the Home prompt.
       void queryClient.invalidateQueries({ queryKey: [HOME_QOTD_TODAY_PATH] });

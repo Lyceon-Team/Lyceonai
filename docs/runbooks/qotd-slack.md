@@ -1,16 +1,44 @@
 # Runbook — Question of the Day to Slack
 
-> @spec [Doc 10A §7, §11; owner brief 2026-10-10 (QOTD social assets to Slack)] |
-> @implemented [2026-10-10]
+> @spec [Doc 10A §7, §11, Doc 10B (Reddit posting stays manual); owner briefs 2026-10-10 (QOTD
+>
+> > social assets to Slack) and 2026-10-15 (add yesterday's reveal, for r/satquestions)] |
+> > @implemented [2026-10-10; reveal 2026-10-15; TikTok carousel and canonical choice order,
+> >
+> > > > Karl's brief 2026-10-23]
 
 Every morning the **QOTD social assets** workflow (`.github/workflows/qotd-social.yml`, 06:20 UTC)
 builds the day's portrait and story images, the caption and the alt text. It uploads them as the
-run's download, then posts them to `#social`:
+run's download, then posts them to `#social` as **five numbered items, always in this order**
+(Karl, 2026-10-26). Each item opens with its label, and each finishes (a file upload only once
+Slack confirms the files are shared in the channel) before the next starts:
 
-1. both images, with the date and section (`SAT Question of the Day · Friday, October 10, 2026 · Math`);
-2. a second message with the caption and the alt text, each in a code block, ready to copy.
+1. **1/5 · Reddit: comment on yesterday's post**: yesterday's reveal (date, section and domain,
+   the correct answer, the worked explanation as plain text, and the archive link). A withheld
+   yesterday says so instead.
+2. **2/5 · TikTok: title and caption**: the title (`SAT Question of the Day · Oct 22 · Math`, at
+   most 90 characters) and the caption (follow line first), each in a code block.
+3. **3/5 · TikTok: carousel**: **yesterday's** question as three 1080x1920 slides, in slide
+   order (the question; "Lock in your answer"; the answer with a short "Why" and the link to
+   today's question). Post them in order as a TikTok photo post. A long first sentence in the
+   explanation is cut and ends "… Full explanation on lyceon.ai" (Karl, 2026-10-26).
+4. **4/5 · Reddit: today's post**: a suggested title and today's question as plain text, each in
+   a code block.
+5. **5/5 · Today's question images**: both images (story and feed), then the caption and alt
+   text, each in a code block.
 
-It uses a standard Slack app with two scopes. It works on Slack's free plan.
+When there is no carousel (yesterday withheld or missing on the archive, or its slides cannot
+fit), items 2 and 3 still post, as "2/5 · TikTok: no title or caption today (reason)" and
+"3/5 · TikTok: no carousel today (reason)", so the numbering never shifts.
+
+Reddit posting stays manual (Doc 10B): Karl copies the title and body into a new post, and the
+reveal into a comment on yesterday's post.
+
+Choices are in the same canonical order everywhere (Karl, 2026-10-23): the site, the images,
+the Reddit post, the archive and the reveal, so the reveal's letter is the letter the question
+showed.
+
+It uses a standard Slack app with three scopes. It works on Slack's free plan.
 
 The app, token, channel variable and client are shared with every repo job that posts to Slack:
 see `docs/runbooks/slack.md`.
@@ -19,9 +47,12 @@ see `docs/runbooks/slack.md`.
 
 1. **Create the app.** Go to <https://api.slack.com/apps> → **Create New App** → **From
    scratch**. Name it `Lyceon bot` and pick the Lyceon workspace. Then open **OAuth &
-   Permissions** → **Scopes** → **Bot Token Scopes** and add exactly these two:
+   Permissions** → **Scopes** → **Bot Token Scopes** and add exactly these three:
    - `files:write` (upload the images);
-   - `chat:write` (post the caption message).
+   - `chat:write` (post the caption message);
+   - `files:read` (confirm each upload is shared in the channel before the next item posts;
+     Karl, 2026-10-26). **Already set up?** Add `files:read`, then **Reinstall to Workspace**.
+     Without it, the post stops at the first upload with `missing_scope`.
 2. **Install it and copy the token.** On the same page, click **Install to Workspace** →
    **Allow**. Copy the **Bot User OAuth Token**, which starts with `xoxb-`. Treat it like a
    password: don't paste it into Slack, email or a document.
@@ -57,8 +88,11 @@ The rule is that it never posts a day that failed a check, and it never fails qu
 | The build fails a check (an answer in the caption or image, wrong reveal wording, bad input) | The build step fails. Nothing is uploaded and nothing is posted. The run page lists the problems.                                                                      |
 | An image does not fit                                                                        | The build step fails. No `post.json` is written, so nothing is posted.                                                                                                 |
 | At 06:20 UTC the site still serves yesterday's question as today's                           | The build refuses it: that day's answer is already public, so it would have to pass the past-day leak check. Nothing is posted. Rebuild it by hand with that **date**. |
+| Yesterday was **withheld** (a repaired question; its archive page is not published)          | The reveal message says so and carries nothing else. Today's post goes out as normal.                                                                                  |
+| Yesterday is withheld or missing, or its TikTok slides cannot fit                            | No carousel. A one-line note in `#social` says why. Everything else is posted as normal.                                                                               |
+| Yesterday's archive data cannot be read (anything but a 404)                                 | The build step fails loudly, as for any other read. Nothing is posted.                                                                                                 |
 | `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                       | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                             |
-| `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                     | Same: the download is uploaded and the run is red.                                                                                                                     |
+| `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                   | Same: the download is uploaded and the run is red.                                                                                                                     |
 | Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)      | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                          |
 
 A red run e-mails whoever GitHub notifies for failed scheduled workflows. When the post fails,
@@ -78,8 +112,17 @@ by Karl, 2026-10-10: re-runs are only for failed posts.)
 
 - Only today's question and its options, as on the public homepage. Today's source is the public
   pre-submit payload, where the answer and explanation are always null.
-- For a past day, the build also checks the images, caption and alt text against that day's
-  revealed answer and explanation (`socialAssetLeaks`). A day that fails is never posted.
+- For a past day, the build also checks the images, caption, alt text and Reddit title and body
+  against that day's revealed answer and explanation (`socialAssetLeaks`). A day that fails is
+  never posted.
+- Yesterday's reveal is built **only** from yesterday's public archive data
+  (`GET /api/public/qotd/<yesterday>`, the same data as its archive page). The server refuses
+  today and later days there, and the build refuses any reveal that is not the day before the
+  posted day, so today's answer can never be in it.
+- The TikTok carousel is built from that same yesterday payload only. The build also checks its
+  three slides, caption and title against today (`tiktokCarouselLeaks`): today's question text
+  never appears, and for a past day rebuilt by hand, today's answer and explanation never appear
+  either. A carousel that fails stops the whole post.
 - No personal data: nothing about any student or account is read or posted.
 - The run log shows the date, the section and Slack's status codes. It never shows the token or
   the question text.
