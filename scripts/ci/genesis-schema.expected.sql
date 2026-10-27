@@ -19366,6 +19366,64 @@ COMMENT ON TABLE public.tutor_conversations IS 'LISA conversation envelopes with
 
 
 --
+-- Name: tutor_eval_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_cases (
+    case_id text NOT NULL,
+    set_version text NOT NULL,
+    student_id uuid,
+    is_owner_case boolean DEFAULT false NOT NULL,
+    source_conversation_id uuid,
+    source_message_id uuid,
+    item_canonical_id text,
+    request jsonb NOT NULL,
+    scan_correct_answer text,
+    production_reply text NOT NULL,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_cases_case_id_check CHECK ((case_id ~ '^[A-Z0-9][A-Z0-9-]*$'::text)),
+    CONSTRAINT tutor_eval_cases_request_check CHECK ((jsonb_typeof(request) = 'object'::text)),
+    CONSTRAINT tutor_eval_cases_set_version_check CHECK ((set_version <> ''::text))
+);
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_cases IS 'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27).';
+
+
+--
+-- Name: tutor_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_runs (
+    run_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    run_index integer NOT NULL,
+    record jsonb NOT NULL,
+    verdict text NOT NULL,
+    owner_grade text,
+    owner_graded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_runs_check CHECK (((owner_grade IS NULL) = (owner_graded_at IS NULL))),
+    CONSTRAINT tutor_eval_runs_owner_grade_check CHECK ((owner_grade = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text]))),
+    CONSTRAINT tutor_eval_runs_record_check CHECK ((jsonb_typeof(record) = 'object'::text)),
+    CONSTRAINT tutor_eval_runs_run_index_check CHECK ((run_index >= 1)),
+    CONSTRAINT tutor_eval_runs_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text, 'unscored'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_runs IS 'G0-2 evaluation runs. Replies and judge quotes can echo the student: service role only, RLS on, no policies.';
+
+
+--
 -- Name: tutor_injection_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -21018,6 +21076,30 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_pkey PRIMARY KEY (case_id);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_batch_id_case_id_run_index_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_batch_id_case_id_run_index_key UNIQUE (batch_id, case_id, run_index);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_pkey PRIMARY KEY (run_id);
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -22154,6 +22236,13 @@ CREATE INDEX student_background_high_school ON public.student_background USING b
 --
 
 CREATE INDEX student_dream_schools_college ON public.student_dream_schools USING btree (college_id);
+
+
+--
+-- Name: tutor_eval_runs_case_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tutor_eval_runs_case_idx ON public.tutor_eval_runs USING btree (case_id, created_at);
 
 
 --
@@ -23808,6 +23897,22 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.tutor_eval_cases(case_id) ON DELETE CASCADE;
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -25271,6 +25376,18 @@ CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR S
 
 CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE TO authenticated USING ((student_id = auth.uid()));
 
+
+--
+-- Name: tutor_eval_cases; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_eval_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_runs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: tutor_injection_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -29929,6 +30046,20 @@ GRANT ALL ON TABLE public.tutor_context_runtime_config_history TO service_role;
 --
 
 GRANT ALL ON TABLE public.tutor_conversations TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_eval_cases TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.tutor_eval_runs TO service_role;
 
 
 --
