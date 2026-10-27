@@ -149,6 +149,15 @@ export async function replayOnce(args: {
     request.policy_assignment.policy_variant,
     request.policy_assignment.prompt_version,
   ).version;
+  if (
+    request.policy_assignment.prompt_version !== null &&
+    promptVersion !== request.policy_assignment.prompt_version
+  ) {
+    // The registry falls back silently on an unknown version; a baseline must not.
+    throw new Error(
+      `prompt ${request.policy_assignment.prompt_version} is not registered (resolved ${promptVersion})`,
+    );
+  }
   const messages = buildConversationMessages(request);
   const systemInstruction = buildSystemInstruction(request);
   const config = buildTutorGenerationConfig(

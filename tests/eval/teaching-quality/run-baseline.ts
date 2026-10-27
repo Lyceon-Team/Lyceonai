@@ -22,6 +22,7 @@
  * Usage:
  *   NODE_USE_ENV_PROXY=1 DATABASE_URL=... pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts \
  *     [--runs 5] [--batch <uuid>] [--case G0-2-03] [--judge-model gemini-3.1-pro-preview]
+ *     [--prompt-version lisa-default-v3 | lisa-default-v4]
  *
  * Vertex credentials are attached by the egress proxy or ADC; nothing is read from the
  * environment for them.
@@ -50,6 +51,9 @@ const { values } = parseArgs({
     batch: { type: "string" },
     case: { type: "string" },
     "judge-model": { type: "string", default: JUDGE_MODEL_DEFAULT },
+    // The prompt artifact every case is replayed on, by exact version (v4 is not the latest
+    // for any variant, so it is only reachable this way).
+    "prompt-version": { type: "string", default: "lisa-default-v3" },
   },
 });
 const runs = Number(values.runs);
@@ -58,6 +62,7 @@ if (!Number.isInteger(runs) || runs < 1) {
 }
 const batchId = values.batch ?? randomUUID();
 const judgeModel = values["judge-model"];
+const promptVersion = values["prompt-version"];
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 assertProxied();
@@ -144,7 +149,7 @@ async function main(): Promise<void> {
     const judge = vertexJudge(judgeModel);
     let totalUsd = 0;
     process.stdout.write(
-      `batch ${batchId}: ${cases.rowCount} case(s) x ${runs} run(s); worker ${sha}; judge ${judgeModel}\n`,
+      `batch ${batchId}: ${cases.rowCount} case(s) x ${runs} run(s); worker ${sha}; prompt ${promptVersion}; judge ${judgeModel}\n`,
     );
 
     for (const row of cases.rows) {
@@ -155,7 +160,13 @@ async function main(): Promise<void> {
       const evalCase: ReplayCase = {
         caseId: row.case_id,
         setVersion: row.set_version,
-        request: parsed.data,
+        request: {
+          ...parsed.data,
+          policy_assignment: {
+            ...parsed.data.policy_assignment,
+            prompt_version: promptVersion,
+          },
+        },
         scanCorrectAnswer: row.scan_correct_answer,
       };
       const done = await client.query<{ run_index: number }>(
