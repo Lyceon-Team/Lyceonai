@@ -49,8 +49,10 @@ import {
   HarmCategory,
   type Content,
   type GenerateContentConfig,
+  type GenerateContentResponseUsageMetadata,
   type SafetySetting,
 } from "@google/genai";
+import { addTokenCounts, type TurnUsage } from "./schema.js";
 
 // ── Result type (mirrors server/services/tutor-error-codes.ts TutorResult
 //    shape — Coding Standards §3.6 "single canonical Result shape") ────────
@@ -100,6 +102,73 @@ export class VertexAttemptTimings {
       at_ms: round(Math.max(0, attemptStartedAt - this.origin)),
       ms: round(performance.now() - attemptStartedAt),
     });
+  }
+}
+
+/**
+ * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) item 4 ("The thinking budget stays
+ *        hard-coded at 1024 and is now only recorded")] | @implemented [2026-10-27]
+ * plain English: the one place the thinking budget is set. The Vertex config reads it and the turn
+ * reports it (`thinking_budget`), so the recorded value is the value used.
+ */
+export const THINKING_BUDGET = 1024;
+
+/** One response's token counts, read from Vertex `usageMetadata`. A missing count is null. */
+export type VertexUsageCounts = Omit<TurnUsage, "thinking_budget">;
+
+/**
+ * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) item 1 and ruling (sum over every
+ *        billed attempt); SCL-246] | @implemented [2026-10-27]
+ * plain English: the counts in one Vertex response's `usageMetadata`: prompt → input, candidates →
+ * output, thoughts → thinking, cached content → cached. No metadata, or a count the response does
+ * not carry, is null (unknown), never 0. Non-integers and negatives are treated as missing.
+ */
+export function readUsageMetadata(
+  usage: GenerateContentResponseUsageMetadata | undefined,
+): VertexUsageCounts {
+  const count = (n: number | undefined): number | null =>
+    typeof n === "number" && Number.isInteger(n) && n >= 0 ? n : null;
+  return {
+    input_tokens: count(usage?.promptTokenCount),
+    output_tokens: count(usage?.candidatesTokenCount),
+    thinking_tokens: count(usage?.thoughtsTokenCount),
+    cached_tokens: count(usage?.cachedContentTokenCount),
+  };
+}
+
+/**
+ * The turn's usage, summed over every Vertex response it received: the reply, retries, the
+ * pro→flash fallback, and responses rejected as safety-blocked or truncated (billed too). An
+ * attempt that threw (429, 5xx, timeout) returned no response and adds nothing.
+ */
+export class VertexUsageTotals {
+  private totals: VertexUsageCounts = {
+    input_tokens: null,
+    output_tokens: null,
+    thinking_tokens: null,
+    cached_tokens: null,
+  };
+  add(usage: GenerateContentResponseUsageMetadata | undefined): void {
+    const next = readUsageMetadata(usage);
+    this.totals = {
+      input_tokens: addTokenCounts(this.totals.input_tokens, next.input_tokens),
+      output_tokens: addTokenCounts(
+        this.totals.output_tokens,
+        next.output_tokens,
+      ),
+      thinking_tokens: addTokenCounts(
+        this.totals.thinking_tokens,
+        next.thinking_tokens,
+      ),
+      cached_tokens: addTokenCounts(
+        this.totals.cached_tokens,
+        next.cached_tokens,
+      ),
+    };
+  }
+  /** The wire form: the summed counts and the budget the calls were made with. */
+  toWire(): TurnUsage {
+    return { ...this.totals, thinking_budget: THINKING_BUDGET };
   }
 }
 
@@ -292,9 +361,6 @@ function sleep(ms: number): Promise<void> {
 
 // ── Generation config (the one production shape) ─────────────────────────
 
-/** Thinking budget for every tutor turn (Doc 03C V3 §5.7). */
-export const TUTOR_THINKING_BUDGET = 1024;
-
 /**
  * The generation config every tutor turn is sent with, minus the abort signal.
  *
@@ -316,7 +382,7 @@ export function buildTutorGenerationConfig(
     topP: TOP_P,
     topK: TOP_K,
     maxOutputTokens,
-    thinkingConfig: { thinkingBudget: TUTOR_THINKING_BUDGET },
+    thinkingConfig: { thinkingBudget: THINKING_BUDGET },
     safetySettings: SAFETY_SETTINGS,
   };
 }
@@ -333,6 +399,7 @@ async function invokeVertexOnce(
   messages: VertexMessage[],
   systemInstruction: string,
   limits: VertexGenerationLimits,
+  usage?: VertexUsageTotals,
 ): Promise<SingleInvocationResult> {
   const client = getGenAiClient();
   const contents: Content[] = messages.map((message) => ({
@@ -358,6 +425,8 @@ async function invokeVertexOnce(
       contents,
       config,
     });
+    // Billed whether or not it becomes the reply: read before the safety and truncation checks.
+    usage?.add(response.usageMetadata);
 
     const candidate = response.candidates?.[0];
     const finishReason = candidate?.finishReason ?? null;
@@ -422,6 +491,7 @@ async function invokeWithRetry(
   systemInstruction: string,
   limits: VertexGenerationLimits,
   timing?: VertexAttemptTimings,
+  usage?: VertexUsageTotals,
 ): Promise<
   Result<{ text: string; finishReason: string | null }, VertexErrorCode>
 > {
@@ -453,6 +523,7 @@ async function invokeWithRetry(
       messages,
       systemInstruction,
       limits,
+      usage,
     );
     timing?.record(attemptStartedAt);
     if (result.ok) {
@@ -483,6 +554,7 @@ export async function generateTutorResponse(
   systemInstruction: string,
   config: VertexGenerationLimits,
   timing?: VertexAttemptTimings,
+  usage?: VertexUsageTotals,
 ): Promise<Result<VertexResponse, VertexErrorCode>> {
   const primary = await invokeWithRetry(
     modelAlias,
@@ -490,6 +562,7 @@ export async function generateTutorResponse(
     systemInstruction,
     config,
     timing,
+    usage,
   );
 
   let generation: { text: string; finishReason: string | null };
@@ -515,6 +588,7 @@ export async function generateTutorResponse(
       systemInstruction,
       config,
       timing,
+      usage,
     );
     if (!fallback.ok) {
       return fallback;

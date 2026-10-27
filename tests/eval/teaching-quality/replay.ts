@@ -36,7 +36,7 @@ import {
 } from "../../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
 import { resolvePromptArtifact } from "../../../apps/workers/tutor-orchestrator/src/prompts/prompt-registry";
 import {
-  TUTOR_THINKING_BUDGET,
+  THINKING_BUDGET,
   buildTutorGenerationConfig,
   resolveProviderModel,
   type VertexMessage,
@@ -230,7 +230,7 @@ export async function replayOnce(args: {
     model_alias: modelAlias,
     provider_model: providerModel,
     thinking_budget:
-      config.thinkingConfig?.thinkingBudget ?? TUTOR_THINKING_BUDGET,
+      config.thinkingConfig?.thinkingBudget ?? THINKING_BUDGET,
     temperature: config.temperature,
     top_p: config.topP,
     top_k: config.topK,

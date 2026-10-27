@@ -4,8 +4,9 @@
  * start (`startOrReplaySession` with its composition), the real entitlement and quota reads, and
  * the real `emitEventWith` with only PostHog replaced by a recorder.
  *
- * @spec [owner brief "Smart landing" (Karl, 2026-10-26) Acceptance; Karl's rulings A–E on Step 0]
- *       | @implemented [2026-10-26]
+ * @spec [owner brief "Smart landing" (Karl, 2026-10-26) Acceptance; Karl's rulings A–E on Step 0;
+ *        Karl's change the same day: `set_math_5` replaces `set_mixed` and `set_math_first`, and
+ *        "5 more?" is 5 Math] | @implemented [2026-10-26]
  *
  * plain English (each case names the brief's acceptance line it proves):
  *   P1  deterministic per (student, window): the window's arm is stored once; later opens keep it
@@ -17,18 +18,20 @@
  *   P5  students only: a guardian and an admin get nothing and no row
  *   P6  under 13 and unknown age: nothing and no row (ruling D)
  *   P7  kill switch off: nothing and no row; the seeded switch is OFF
- *   P8  each arm routes correctly (dashboard, qotd_then_more, set_mixed, set_math_first,
- *       session_today, plan_builder), and a set from earlier in the window resumes (ruling B)
- *   P9  first-two-items difficulty: every landing set opens with two easy/medium items;
- *       math first is 5 Math then 5 Reading and Writing
+ *   P8  each arm routes correctly (dashboard, qotd_then_more, set_math_5, session_today,
+ *       plan_builder), and a set from earlier in the window resumes (ruling B)
+ *   P9  `set_math_5`: 5 Math items, the first 2 easy/medium, on a session whose own section is
+ *       Math (the session page runs a practice session in one section)
  *   P10 fallback: a free student with no quota left gets Home, with `fallback_reason`
  *   P11 the events fire with exactly the listed properties
  *   P12 escape: within 30 s of a non-dashboard landing, once, by the server's clock
  *   P13 the nightly summary counts questions answered until the next landing or the day's end
- *   P14 "5 more": only after a qotd_then_more landing; 5 items, the first 2 easy/medium
+ *   P14 "5 more": only after a qotd_then_more landing; 5 Math items, the first 2 easy/medium
  *   P15 deletion cascade
  *   P16 grants, checked as a service_role probe
  *   P17 session_today re-checks the entitlement at launch (not_entitled)
+ *   P18 a window stored with a retired arm shows Home (`arm_retired`), creates no set, and its
+ *       events still carry the stored arm
  */
 import {
   afterAll,
@@ -96,8 +99,7 @@ const ROUND1: Config = {
   dashboardShare: 1 / 3,
   weights: {
     qotd_then_more: 1,
-    set_mixed: 1,
-    set_math_first: 1,
+    set_math_5: 1,
     session_today: 1,
     plan_builder: 1,
     calendar_today: 0,
@@ -225,6 +227,21 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     return r.rows;
   }
 
+  /**
+   * The sections the session persists (`filters->session_spec->sections`), which the state route
+   * resolves into the one `section` the session page runs: one section, or none at all.
+   */
+  async function sessionSection(path: string | null) {
+    const id = /\/practice\/session\/([0-9a-f-]{36})/.exec(path ?? "")?.[1];
+    expect(id, String(path)).toBeDefined();
+    const r = await admin.query<{ sections: unknown }>(
+      `SELECT filters->'session_spec'->'sections' AS sections
+         FROM public.practice_sessions WHERE id = $1`,
+      [id],
+    );
+    return r.rows[0];
+  }
+
   /** One answered item, snapshotted from the bank as the practice start would. */
   async function answered(
     sessionId: string | undefined,
@@ -338,8 +355,7 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     expect(w?.eligible_arms).toEqual([
       "dashboard",
       "qotd_then_more",
-      "set_mixed",
-      "set_math_first",
+      "set_math_5",
     ]);
     await entitle(s.id); // Pro mid-window
     // A set the day-1 landing opened would resume on day 2 (ruling B); finish it first.
@@ -407,6 +423,14 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     expect(seeded).toMatchObject({ enabled: false, salt: "smart-landing-r1" });
     expect(seeded.dashboardShare).toBeCloseTo(1 / 3, 6);
     expect(seeded.weights.calendar_today).toBe(0);
+    // 20261114000000_smart_landing_math5.sql: set_math_5 and qotd_then_more at 1, retired gone.
+    expect(seeded.weights).toEqual({
+      qotd_then_more: 1,
+      set_math_5: 1,
+      session_today: 1,
+      plan_builder: 1,
+      calendar_today: 0,
+    });
     // And the live open with the seeded config does nothing.
     expect(await open(s, deps({ loadConfig: loadLandingConfig }))).toEqual(
       svc.NO_LANDING,
@@ -417,16 +441,7 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     const cases: [Arm, { pro?: boolean }, RegExp | null][] = [
       ["dashboard", {}, null],
       ["qotd_then_more", {}, /^\/qotd\?from=landing$/],
-      [
-        "set_mixed",
-        { pro: true },
-        /^\/practice\/session\/[0-9a-f-]{36}\?from=landing$/,
-      ],
-      [
-        "set_math_first",
-        { pro: true },
-        /^\/practice\/session\/[0-9a-f-]{36}\?from=landing$/,
-      ],
+      ["set_math_5", {}, /^\/practice\/session\/[0-9a-f-]{36}\?from=landing$/],
       [
         "session_today",
         { pro: true },
@@ -450,7 +465,7 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     }
     // Ruling B: the set from day 1 is still open on day 2, so it resumes (no second set).
     const s = await person({ pro: true });
-    config = only("set_mixed");
+    config = only("set_math_5");
     const day1 = await open(s);
     clock = W0_DAY2;
     const day2 = await open(s);
@@ -458,28 +473,20 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     expect(day2.path).toBe(day1.path?.replace("?from=landing", ""));
   });
 
-  it("P9 every landing set opens with two easy/medium items; math first is 5 Math then 5 RW", async () => {
+  it("P9 set_math_5: 5 Math items, the first 2 easy/medium, on a Math session", async () => {
     for (let k = 0; k < 6; k += 1) {
-      const mixed = await person({ pro: true });
-      config = only("set_mixed");
-      const m = await itemsOf((await open(mixed)).path);
-      expect(m.length).toBe(10);
+      const s = await person(k % 2 === 0 ? {} : { pro: true });
+      config = only("set_math_5");
+      const path = (await open(s)).path;
+      const items = await itemsOf(path);
+      expect(items.length).toBe(5);
+      expect(items.map((i) => i.section)).toEqual(Array(5).fill("M"));
       expect(
-        m.slice(0, 2).every((i) => Number(i.question_difficulty) <= 2),
-        JSON.stringify(m),
+        items.slice(0, 2).every((i) => Number(i.question_difficulty) <= 2),
+        JSON.stringify(items),
       ).toBe(true);
-
-      const math = await person({ pro: true });
-      config = only("set_math_first");
-      const f = await itemsOf((await open(math)).path);
-      expect(f.map((i) => i.section)).toEqual([
-        ...Array(5).fill("M"),
-        ...Array(5).fill("RW"),
-      ]);
-      expect(
-        f.slice(0, 2).every((i) => Number(i.question_difficulty) <= 2),
-        JSON.stringify(f),
-      ).toBe(true);
+      // The session itself names one section, which is what the session page resolves.
+      expect(await sessionSection(path)).toEqual({ sections: ["M"] });
     }
   });
 
@@ -504,10 +511,10 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
         new Date().toISOString(),
       );
     }
-    config = only("set_mixed");
+    config = only("set_math_5");
     const res = await open(s);
     expect(res.path).toBeNull();
-    expect(res.arm).toBe("set_mixed");
+    expect(res.arm).toBe("set_math_5");
     expect((await rows("landing_shows", s.id))[0]?.fallback_reason).toBe(
       "quota_exhausted",
     );
@@ -532,7 +539,7 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
       "timestamp",
     ];
     const s = await person({ pro: true });
-    config = only("set_mixed");
+    config = only("set_math_5");
     const res = await open(s, deps(), "tablet");
     expect(sent.map((e) => e.event)).toEqual([
       "landing_assigned",
@@ -543,7 +550,7 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     );
     expect(sent[0]!.properties).toMatchObject({
       window_index: 0,
-      arm: "set_mixed",
+      arm: "set_math_5",
       device_class: "tablet",
     });
     expect(Object.keys(sent[1]!.properties).sort()).toEqual(
@@ -660,9 +667,9 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     expect(again.claimed).toBe(0);
   });
 
-  it("P14 '5 more' only after a qotd_then_more landing: 5 items, first 2 easy/medium", async () => {
+  it("P14 '5 more' only after a qotd_then_more landing: 5 Math items, first 2 easy/medium", async () => {
     const s = await person({ pro: true });
-    config = only("set_math_first");
+    config = only("set_math_5");
     await open(s);
     expect(await svc.startLandingMore(deps(), s, `ci-${s.id}`)).toEqual({
       path: null,
@@ -674,9 +681,11 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     const more = await svc.startLandingMore(deps(), q, `ci-${q.id}`);
     const items = await itemsOf(more.path);
     expect(items.length).toBe(5);
+    expect(items.map((i) => i.section)).toEqual(Array(5).fill("M"));
     expect(
       items.slice(0, 2).every((i) => Number(i.question_difficulty) <= 2),
     ).toBe(true);
+    expect(await sessionSection(more.path)).toEqual({ sections: ["M"] });
     // Replayed, not doubled.
     expect((await svc.startLandingMore(deps(), q, `ci-${q.id}`)).path).toBe(
       more.path,
@@ -752,5 +761,34 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
       now: W0_DAY1,
     });
     expect(out).toEqual({ ok: false, reason: "not_entitled" });
+  });
+
+  it("P18 a window stored with a retired arm shows Home (arm_retired) and builds no set", async () => {
+    const s = await person();
+    // As production holds it: a window assigned before set_math_5 replaced the multi-section sets.
+    await admin.query(
+      `INSERT INTO public.landing_windows (profile_id, window_index, arm, eligible_arms, assigned_at, device_class)
+       VALUES ($1, 0, 'set_mixed', ARRAY['dashboard','qotd_then_more','set_mixed','set_math_first'], $2, 'desktop')`,
+      [s.id, W0_DAY1.toISOString()],
+    );
+    config = ROUND1;
+    const res = await open(s);
+    expect(res.path).toBeNull();
+    expect(res.arm).toBe("set_mixed");
+    expect(res.show_id).not.toBeNull();
+    expect((await rows("landing_shows", s.id))[0]?.fallback_reason).toBe(
+      "arm_retired",
+    );
+    const sessions = await admin.query(
+      `SELECT id FROM public.practice_sessions WHERE user_id = $1`,
+      [s.id],
+    );
+    expect(sessions.rows).toEqual([]);
+    // The event is sent (the registry still admits the stored name) and says why.
+    const shown = sent.find((e) => e.event === "landing_shown");
+    expect(shown?.properties).toMatchObject({
+      arm: "set_mixed",
+      fallback_reason: "arm_retired",
+    });
   });
 });

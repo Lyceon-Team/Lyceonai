@@ -42,6 +42,7 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Request, Response } from "express";
+import type { VideoMethod } from "../../packages/shared/src/video-methods";
 import { logger } from "../logger";
 
 /**
@@ -68,7 +69,55 @@ type RouteTimer = {
   emitted: boolean;
   /** Record each Supabase round trip as its own step (see `timedFetch`). */
   databaseTrips: boolean;
+  /** Step 13d's outcome on `tutor.message` (see `recordVideoRetrieval`). */
+  videoRetrieval?: VideoRetrievalTiming;
 };
+
+/**
+ * @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27 (build 3: "a
+ *        `video_retrieval` timing sub-field recording the detected method and the result count;
+ *        counts and codes only, never message text"; Step 0 ruling: also the offered video ids
+ *        and the index LISA recommended, so the closing proof is checkable)] | @implemented [2026-10-27]
+ * plain English: what Step 13d decided, on the turn's one `route_timing` line. A closed shape:
+ * the method is a vocabulary code (or null: none detected), the map version a number, the
+ * offered ids YouTube ids (11 characters, already validated by the retrieval's schema; the
+ * public catalogue id, never a student value), the recommendation a 1-based index or null.
+ * Nothing from the student's message is recorded: not the matched phrase, not its position.
+ */
+export type VideoRetrievalTiming = {
+  method: VideoMethod | null;
+  map_version: number | null;
+  results: number;
+  video_ids: string[];
+  recommended_index: number | null;
+};
+
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/** Step 13d's outcome, recorded once per turn. Outside a timed request this does nothing. */
+export function recordVideoRetrieval(
+  detail: Omit<VideoRetrievalTiming, "recommended_index">,
+): void {
+  const timer = store.getStore();
+  if (timer === undefined || timer.emitted) return;
+  timer.videoRetrieval = {
+    method: detail.method,
+    map_version: detail.map_version,
+    results: detail.results,
+    video_ids: detail.video_ids.filter((id) => YOUTUBE_ID.test(id)).slice(0, 3),
+    recommended_index: null,
+  };
+}
+
+/** The index of the offered video LISA recommended (1-based), once the reply is resolved. */
+export function recordVideoRecommendation(index: number | null): void {
+  const timer = store.getStore();
+  if (timer?.videoRetrieval === undefined || timer.emitted) return;
+  timer.videoRetrieval.recommended_index =
+    index !== null && Number.isInteger(index) && index >= 1 && index <= 3
+      ? index
+      : null;
+}
 
 /**
  * LISA's reply path makes ~37 database round trips plus its coarse steps and their sub-steps
@@ -328,6 +377,8 @@ export type RouteTimingLine = {
   step_count: number;
   steps_dropped: number;
   steps: StepRecord[];
+  /** Present on `tutor.message` turns that reached Step 13d. */
+  video_retrieval?: VideoRetrievalTiming;
 };
 
 function emit(timer: RouteTimer, req: Request, res: Response): void {
@@ -348,6 +399,14 @@ function emit(timer: RouteTimer, req: Request, res: Response): void {
     // Sorted by start (stable, so a no-op for steps recorded live, which are pushed in start
     // order); places steps recorded afterwards by `recordMeasuredSteps` where they ran.
     steps: timer.steps.map((s) => ({ ...s })).sort((a, b) => a.at_ms - b.at_ms),
+    ...(timer.videoRetrieval === undefined
+      ? {}
+      : {
+          video_retrieval: {
+            ...timer.videoRetrieval,
+            video_ids: [...timer.videoRetrieval.video_ids],
+          },
+        }),
   };
   logger.info("PERF", "route_timing", "route step timings", line, {
     requestId: req.requestId,
