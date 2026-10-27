@@ -229,8 +229,7 @@ export async function replayOnce(args: {
     },
     model_alias: modelAlias,
     provider_model: providerModel,
-    thinking_budget:
-      config.thinkingConfig?.thinkingBudget ?? THINKING_BUDGET,
+    thinking_budget: config.thinkingConfig?.thinkingBudget ?? THINKING_BUDGET,
     temperature: config.temperature,
     top_p: config.topP,
     top_k: config.topK,

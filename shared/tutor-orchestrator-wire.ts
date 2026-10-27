@@ -230,6 +230,12 @@ export const questionContentSchema = z.object({
   explanation: z.string().nullable(),
   student_answer: z.string().nullable(),
   attempt_number: z.number().int().nonnegative(),
+  // @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27: the Desmos block goes in
+  // when questions.section = 'M', passed from the BFF, never inferred from mastery data]
+  // | @implemented [2026-10-27] | plain English: the item's subject, read by the BFF from the
+  // question row. Null when it could not be read (the block then stays off). OPTIONAL so either
+  // side can deploy first: an older worker strips it, a newer one treats absence as null.
+  section: z.enum(["M", "RW"]).nullable().optional(),
 });
 
 // ── Offered videos (video library, CC brief 2026-10-15 §6/§7) ─────────
@@ -318,6 +324,12 @@ export const orchestrateRequestSchema = z.object({
   // Optional so either side can deploy first: an older worker ignores it, and an
   // older BFF never sends it.
   offered_videos: z.array(offeredVideoSchema).max(3).optional(),
+  // @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27: in general mode the Desmos
+  // block goes in when the current message matches the `desmos` method in video_method_keywords]
+  // | @implemented [2026-10-27] | plain English: the way of solving the student's CURRENT message
+  // asks for, from the BFF's own detector (`requestedVideoMethod`, #1335). Null: none asked for.
+  // OPTIONAL for deploy order, as above.
+  requested_method: z.enum(OFFERED_VIDEO_METHODS).nullable().optional(),
 });
 
 // ── Response sub-schemas ─────────────────────────────────────────────

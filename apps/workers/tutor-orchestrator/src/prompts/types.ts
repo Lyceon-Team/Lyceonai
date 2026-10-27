@@ -38,6 +38,10 @@ export type PromptFields = {
   policyVariant: string;
   /** Whether the question is post-submit (is_post_submit on envelope, Doc 03D §6.3). */
   isPostSubmit: boolean;
+  /** The item's subject (`question_content.section`, from questions.section); null if none or unread. */
+  questionSection: "M" | "RW" | null;
+  /** The way of solving the student's current message asks for (`requested_method`); null if none. */
+  requestedMethod: "desmos" | "algebraic" | "backsolve" | null;
 };
 
 // ── Prompt artifact (the versioned, immutable template) ─────────────

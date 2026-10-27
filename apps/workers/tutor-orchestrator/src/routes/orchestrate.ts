@@ -255,6 +255,8 @@ export function buildSystemInstruction(request: OrchestrateRequest): string {
     sourceSurface: request.source_surface,
     policyVariant: request.policy_assignment.policy_variant,
     isPostSubmit: request.is_post_submit,
+    questionSection: request.question_content?.section ?? null,
+    requestedMethod: request.requested_method ?? null,
   });
 
   // SCL-041: append state blocks to systemInstruction. Flash-class models

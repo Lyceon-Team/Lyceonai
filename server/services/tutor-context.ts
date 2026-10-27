@@ -400,6 +400,36 @@ const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
 const QUESTION_CONTENT_COLUMNS_POST_SUBMIT =
   "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map, question_explanation";
 
+const questionSectionRowSchema = z.object({ section: z.enum(["M", "RW"]) });
+
+/**
+ * @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27] | @implemented [2026-10-27]
+ * plain English: the item's subject (`questions.section`, M or RW) for the worker's math-only
+ * Desmos block. Read from the question row itself, never inferred from mastery data. Any doubt
+ * (no row id, a query error, no row, an unexpected value) is null, and null keeps the block off.
+ */
+async function resolveQuestionSection(
+  questionRowId: string | null,
+): Promise<"M" | "RW" | null> {
+  if (!questionRowId) return null;
+  const { data, error } = await supabaseServer
+    .from("questions")
+    .select("section")
+    .eq("id", questionRowId)
+    .maybeSingle();
+  if (error) {
+    logger.warn(
+      "TUTOR_CONTEXT",
+      "question_section_query_failed",
+      "Could not read the question's section; the Desmos block stays off",
+      { code: error.code },
+    );
+    return null;
+  }
+  const parsed = questionSectionRowSchema.safeParse(data);
+  return parsed.success ? parsed.data.section : null;
+}
+
 export async function resolveQuestionContent(
   studentId: string,
   scope: z.infer<typeof resolvedScopeSchema>,
@@ -484,6 +514,7 @@ export async function resolveQuestionContent(
     return {
       stem: data.question_stem as string,
       passage: (data.question_passage as string) ?? null,
+      section: await resolveQuestionSection(scope.source_question_row_id),
       options,
       item_type: itemType,
       explanation,

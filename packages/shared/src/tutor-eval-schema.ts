@@ -7,8 +7,11 @@
  *
  * plain English: the shapes the G0-2 teaching-quality harness reads and writes, and the one
  * function that turns checks into a verdict.
- *  - A rubric (repo-side, per case): Karl's gold, the judge note, LISA must / must not. Every
- *    field is null until Karl writes the golds; a case without them is `unscored`.
+ *  - A rubric (repo-side, per case): Karl's gold, the judge note, LISA must / must not. A case
+ *    is scored once its must / must not and judge note exist; without them it is `unscored`.
+ *    The gold reply's text is optional: without it the judge reports `gold_move: "no_gold"` and
+ *    the verdict rests on the must / must not items alone (Karl, 2026-10-27: the G0-2 rubric
+ *    was ruled from his golds before their text reached the repo).
  *  - The judge response: what the judge model reports, item by item, with quotes. It never
  *    carries a verdict.
  *  - The run record: one replay of one case, the `record` column of `tutor_eval_runs`.
@@ -65,7 +68,7 @@ export type TutorEvalRubric = z.infer<typeof tutorEvalRubricSchema>;
 /** A rubric the judge can score against: every slot filled. */
 export type CompleteTutorEvalRubric = {
   case_id: string;
-  gold_response: string;
+  gold_response: string | null;
   judge_note: string;
   must: string[];
   must_not: string[];
@@ -75,7 +78,6 @@ export function completeRubric(
   rubric: TutorEvalRubric,
 ): CompleteTutorEvalRubric | null {
   if (
-    rubric.gold_response === null ||
     rubric.judge_note === null ||
     rubric.must === null ||
     rubric.must_not === null
@@ -111,7 +113,7 @@ export const tutorEvalJudgeResponseSchema = z
     must_not: z.array(
       z.object({ item: z.string(), violated: z.boolean(), quote: z.string() }),
     ),
-    gold_move: z.enum(["same_move", "partial", "different_move"]),
+    gold_move: z.enum(["same_move", "partial", "different_move", "no_gold"]),
     tutor_act: tutorActSchema,
     tool_request_addressed: z.boolean(),
   })
@@ -223,6 +225,10 @@ export function decideTutorEvalVerdict(input: {
       (m) => !m.violated || quoteIsInReply(m.quote, visibleReply),
     );
   if (!claimsCheckOut) return "review_needed";
+  // The judge compares against a gold only when there is one; any other answer is unverifiable.
+  if ((rubric.gold_response === null) !== (judge.gold_move === "no_gold")) {
+    return "review_needed";
+  }
 
   if (
     judge.must_not.some((m) => m.violated) ||

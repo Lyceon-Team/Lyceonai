@@ -22,6 +22,8 @@
  *    pre-submit turn whose answer cannot be resolved is refused, as production blocks it
  *    (LISA-FULL-007).
  *  - `production_reply`: the first tutor message after the cut-off.
+ *  - `requested_method` and `question_content.section`: what the turn path sends the worker for
+ *    the Desmos gating (docs/lisa/desmos-playbook.md §8), from the same functions.
  *
  * Prints ids and counts only, never message text.
  *
@@ -42,6 +44,8 @@ import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { resolveFullEnvelope } from "../../../server/services/tutor-context";
 import { getRecentMessages } from "../../../server/services/tutor-memory";
 import { getCorrectAnswerForScope } from "../../../server/routes/tutor-runtime";
+import { TutorConfig } from "../../../server/services/tutor-config";
+import { requestedVideoMethod } from "../../../server/services/tutor-video-library";
 import {
   TEACHING_QUALITY_SET_VERSION,
   tutorEvalCaseIdSchema,
@@ -103,6 +107,8 @@ async function main(): Promise<void> {
     },
   });
   const args = argsSchema.parse(values);
+  // The runtime config the turn path reads (recent-message window, video_method_keywords).
+  await TutorConfig.loadAll();
 
   const conv = await supabaseServer
     .from("tutor_conversations")
@@ -198,6 +204,9 @@ async function main(): Promise<void> {
     correctAnswer: scanKey.value,
     isPostSubmit,
   });
+  // The method the cut-off message asks for, by the turn path's own detector (Step 13d), so
+  // the stored request carries what production sends the worker.
+  envelope.requested_method = requestedVideoMethod(cutoff.message).method;
   if (!envelope.is_post_submit && envelope.correct_answer !== null) {
     throw new Error(
       "pre-submit envelope carries correct_answer; refusing (INV-03-04)",

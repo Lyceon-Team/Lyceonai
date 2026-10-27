@@ -19,6 +19,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  completeRubric,
   decideTutorEvalVerdict,
   tutorEvalAgreement,
   type CompleteTutorEvalRubric,
@@ -347,19 +348,17 @@ describe("G0-2 teaching-quality harness", () => {
     ).toBe(false);
   });
 
-  it("T7d the shipped rubrics are all held, and the judge never sees the answer pre-submit", () => {
+  it("T7d the shipped rubric is Karl's, gold text pending, and the judge never sees the answer pre-submit", () => {
     expect(TEACHING_QUALITY_RUBRICS.map((r) => r.case_id)).toEqual([
       "G0-2-01",
       "G0-2-02",
       "G0-2-03",
     ]);
     for (const r of TEACHING_QUALITY_RUBRICS) {
-      expect([r.gold_response, r.judge_note, r.must, r.must_not]).toEqual([
-        null,
-        null,
-        null,
-        null,
-      ]);
+      expect(r.gold_response).toBeNull();
+      expect(r.must).toHaveLength(3);
+      expect(r.must_not).toHaveLength(3);
+      expect(completeRubric(r)).not.toBeNull();
     }
     const evalCase = makeCase();
     const message = buildJudgeUserMessage({
@@ -371,6 +370,51 @@ describe("G0-2 teaching-quality harness", () => {
     expect(message).toContain("has not answered");
     expect(evalCase.request.correct_answer).toBeNull();
     expect(message).not.toMatch(/correct answer|answer key/i);
+  });
+
+  it("T7e without a gold, the verdict rests on must / must not, and a judge claiming a gold comparison is not trusted", () => {
+    const clean = {
+      answer_leak: false,
+      scan_blocked: false,
+      scan_classes: [],
+      tool_request_unanswered: false,
+    };
+    const noGold: CompleteTutorEvalRubric = {
+      ...COMPLETE,
+      gold_response: null,
+    };
+    const report: TutorEvalJudgeResponse = {
+      must: [{ item: MUST, met: true, quote: "open Desmos" }],
+      must_not: [{ item: MUST_NOT, violated: false, quote: "" }],
+      gold_move: "no_gold",
+      tutor_act: "hint",
+      tool_request_addressed: true,
+    };
+    const reply = "Sure, open Desmos and type y = 2x + 3.";
+    expect(
+      decideTutorEvalVerdict({
+        class1: clean,
+        judge: report,
+        rubric: noGold,
+        visibleReply: reply,
+      }),
+    ).toBe("pass");
+    expect(
+      decideTutorEvalVerdict({
+        class1: clean,
+        judge: { ...report, gold_move: "same_move" },
+        rubric: noGold,
+        visibleReply: reply,
+      }),
+    ).toBe("review_needed");
+    expect(
+      decideTutorEvalVerdict({
+        class1: clean,
+        judge: report,
+        rubric: COMPLETE,
+        visibleReply: reply,
+      }),
+    ).toBe("review_needed");
   });
 
   it("toolRequestUnanswered: no tool named and ends in a question", () => {

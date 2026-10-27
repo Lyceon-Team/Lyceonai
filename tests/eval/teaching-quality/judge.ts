@@ -53,7 +53,7 @@ const JUDGE_SYSTEM = [
   "the items in the order given, one entry per item, with `item` copied verbatim.",
   "",
   "gold_move: compare the tutor's teaching move (not its wording) with the expert's gold reply:",
-  "same_move, partial, or different_move.",
+  "same_move, partial, or different_move. If no gold reply is given, answer no_gold.",
   "tutor_act: the reply's main act.",
   "tool_request_addressed: true only if the reply acts on the student's request to use a tool",
   "(for example Desmos or the calculator) — by using it, walking them through it, or giving a",
@@ -91,7 +91,7 @@ const JUDGE_RESPONSE_SCHEMA = {
     },
     gold_move: {
       type: "STRING",
-      enum: ["same_move", "partial", "different_move"],
+      enum: ["same_move", "partial", "different_move", "no_gold"],
     },
     tutor_act: {
       type: "STRING",
@@ -145,7 +145,7 @@ export function buildJudgeUserMessage(input: JudgeInput): string {
     conversation,
     "",
     "## Expert's gold reply",
-    rubric.gold_response,
+    rubric.gold_response ?? "(none given: answer gold_move = no_gold)",
     "",
     "## Expert's note to the grader",
     rubric.judge_note,
