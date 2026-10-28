@@ -55,6 +55,7 @@ import type {
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { getMemorySummaries, getStructuredFields } from "./tutor-memory";
 import { TutorConfig } from "./tutor-config";
+import type { QuestionSection } from "../../packages/shared/src/tutor-guided-choices";
 import {
   displayOrderFor,
   studentAnswerForDisplay,
@@ -395,39 +396,63 @@ export async function resolveQuestionSkillCodes(
   );
 }
 
-const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
-  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map";
-const QUESTION_CONTENT_COLUMNS_POST_SUBMIT =
-  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map, question_explanation";
-
-const questionSectionRowSchema = z.object({ section: z.enum(["M", "RW"]) });
-
 /**
- * @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27] | @implemented [2026-10-27]
- * plain English: the item's subject (`questions.section`, M or RW) for the worker's math-only
- * Desmos block. Read from the question row itself, never inferred from mastery data. Any doubt
- * (no row id, a query error, no row, an unexpected value) is null, and null keeps the block off.
+ * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-253]
+ *       | @implemented [2026-10-27]
+ * plain English: `questions.section` for a question row, by id: "M", "RW", or null when the row
+ * is missing or carries anything else. Read here beside `resolveQuestionSkillCodes`, the other
+ * by-id metadata lookup. The review panel's guided choices follow it (Desmos is math-only).
+ * Throws on a DB error: an intent is never accepted on a guess.
  */
-async function resolveQuestionSection(
-  questionRowId: string | null,
-): Promise<"M" | "RW" | null> {
-  if (!questionRowId) return null;
+export async function resolveQuestionSection(
+  questionRowId: string,
+): Promise<QuestionSection | null> {
   const { data, error } = await supabaseServer
     .from("questions")
     .select("section")
     .eq("id", questionRowId)
     .maybeSingle();
-  if (error) {
+  if (error) throw error;
+  const section =
+    z.object({ section: z.string().nullable() }).nullable().parse(data)
+      ?.section ?? null;
+  return section === "M" || section === "RW" ? section : null;
+}
+
+const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
+  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map";
+const QUESTION_CONTENT_COLUMNS_POST_SUBMIT =
+  "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map, question_explanation";
+
+/**
+ * @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27] | @implemented [2026-10-27]
+ * plain English: the item's subject for the worker's math-only Desmos block, read through the
+ * one canonical reader above (`resolveQuestionSection`, from the question row itself, never
+ * inferred from mastery data). Any doubt (no row id, a query error, no row, an unexpected value)
+ * is null, and null keeps the block off: unlike the guided choices, a failed read here is logged
+ * and the turn goes on without the block. (Merged 2026-10-28, #1332: this branch and `lisa`
+ * each added a reader of `questions.section`; the one reader is kept, this keeps its fail-safe.)
+ */
+async function resolveDesmosQuestionSection(
+  questionRowId: string | null,
+): Promise<QuestionSection | null> {
+  if (!questionRowId) return null;
+  try {
+    return await resolveQuestionSection(questionRowId);
+  } catch (err: unknown) {
     logger.warn(
       "TUTOR_CONTEXT",
       "question_section_query_failed",
       "Could not read the question's section; the Desmos block stays off",
-      { code: error.code },
+      {
+        code:
+          typeof err === "object" && err !== null && "code" in err
+            ? String((err as { code: unknown }).code)
+            : null,
+      },
     );
     return null;
   }
-  const parsed = questionSectionRowSchema.safeParse(data);
-  return parsed.success ? parsed.data.section : null;
 }
 
 export async function resolveQuestionContent(
@@ -514,7 +539,7 @@ export async function resolveQuestionContent(
     return {
       stem: data.question_stem as string,
       passage: (data.question_passage as string) ?? null,
-      section: await resolveQuestionSection(scope.source_question_row_id),
+      section: await resolveDesmosQuestionSection(scope.source_question_row_id),
       options,
       item_type: itemType,
       explanation,

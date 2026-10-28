@@ -278,6 +278,19 @@ export const offeredVideoSchema = z
   .strict();
 export type OfferedVideo = z.infer<typeof offeredVideoSchema>;
 
+/**
+ * The guided-choice intents (packages/shared/src/tutor-guided-choices.ts `REVIEW_INTENTS`),
+ * repeated here because the worker cannot import packages/shared; a CI test asserts the two
+ * lists are equal, as it does for the video methods above.
+ */
+export const ORCHESTRATE_INTENTS = [
+  "walkthrough",
+  "desmos_walkthrough",
+  "explain_rule",
+  "video_desmos",
+  "video_explanation",
+] as const;
+
 // ── Request schema ───────────────────────────────────────────────────
 
 export const orchestrateRequestSchema = z.object({
@@ -330,6 +343,13 @@ export const orchestrateRequestSchema = z.object({
   // asks for, from the BFF's own detector (`requestedVideoMethod`, #1335). Null: none asked for.
   // OPTIONAL for deploy order, as above.
   requested_method: z.enum(OFFERED_VIDEO_METHODS).nullable().optional(),
+  // ── Guided choice (owner brief "LISA guided choices in review, Phase A", Karl 2026-10-27;
+  // SCL-255) ──
+  // The review choice the student tapped, when the turn came from one. Only `walkthrough` is
+  // ever sent: the video intents are answered by the BFF with no worker call. Recorded, never
+  // read into the prompt: Phase A changes nothing in what LISA is told. Optional, so either side
+  // can deploy first (an older worker strips it).
+  intent: z.enum(ORCHESTRATE_INTENTS).optional(),
 });
 
 // ── Response sub-schemas ─────────────────────────────────────────────

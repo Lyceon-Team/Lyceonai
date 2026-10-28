@@ -143,3 +143,69 @@ offer_similar_question | offer_broader_coaching | offer_stay_focused`. This chan
 - [x] Empty, loading and error states: no video renders no card. Any error fails open to no
       card. The iframe mounts only when the modal is open.
 - [ ] Screenshots: to attach once the migration is applied and rows are approved (proofs 3–4).
+
+## Expansion (2026-10-27)
+
+Brief "Expand the video library" (Karl, 2026-10-27). Step 0 (coverage and sources) ruled: the
+recommended set, 67 videos, cap $8. Why: no approved video for Inference from Sample Statistics,
+Evaluating Statistical Claims, Central Ideas, Command of Evidence, Cross-Text Connections,
+Rhetorical Synthesis or Text Structure; probability, area and volume and every other RW skill
+thin.
+
+**Sources** (58 new `sources.json` entries, all published 2023–2026, all embeddable):
+
+| Group | Source                                                                                  | Videos | Tier       |
+| ----- | --------------------------------------------------------------------------------------- | ------ | ---------- |
+| A     | Scalar Learning, "Digital SAT Math on Khan Academy" (6 picks)                           | 6      | 2          |
+| B     | Penguin SAT Prep: Information & Ideas, Craft & Structure, Expression of Ideas + 4 picks | 16     | 5 (strict) |
+| C     | 3-4-5 Tutoring (20 picks; its playlists mix likely members-only and 18–52 min videos)   | 20     | 3          |
+| D     | Settele Tutoring (19 picks: Question Bank exercises, a probability lesson, grammar)     | 19     | 3          |
+| E     | Dr. TestPrep (6 math picks). **Tier 5, a small channel: judge teaching quality**        | 6      | 5 (strict) |
+
+Dr. TestPrep's 3 RW unit playlists are left out (depth, no new gaps). Its rows' `source` cell
+carries the tier-5 flag, so it shows in the review file itself.
+
+**How it ran** (no pipeline code changed): `fetch-video-metadata.ts` for all 75 sources; the tag
+pass on a metadata file holding only the 67 new videos (the pass rewrites the whole review file
+from its own rows, which would have reset the 163 reviewed ones), its rows appended under the
+committed file; then `tag-videos.ts --methods` on the proposed approvals, with the 2026-10-27
+methods cache, so the 85 already approved were answered from cache. The 163 existing rows are
+byte-identical to before.
+
+| Pass           | Calls | Cost   | Result                                                     |
+| -------------- | ----- | ------ | ---------------------------------------------------------- |
+| Skill tags     | 67    | $0.467 | 66 tagged, 1 with no SAT skill, 0 failed                   |
+| Methods/format | 102   | $1.759 | 66 rows; 48 from text, 18 needed the video (watched twice) |
+| **Total**      |       | $2.23  | cap $8                                                     |
+
+**The proposal** (`expansion-2026-10-27-proposal.csv`, one line per new row): `approve` is
+pre-filled `yes` on the 65 proposed approvals, blank on the other two.
+
+- **Drop (1):** `eCmWcSdjt7E` Penguin "MUST KNOW SAT Reading Hacks": no single SAT skill, so
+  retrieval could never offer it.
+- **Retag (1):** `ljryBGiTLkM` Dr. TestPrep Area and Volume: `desmos` came from a line every
+  Dr. TestPrep description carries ("shows how to use the Desmos calculator"), not from the video.
+  The other five Dr. TestPrep videos were watched and are mostly algebraic. Its method cells are
+  cleared; the skill tag is right.
+- **Narrow (0):** the two two-skill rows hold up ("All of SAT Grammar in 7 Minutes": Boundaries and
+  Form, Structure, and Sense; 3-4-5's "Three Main Types of Transition Words": Transitions and
+  their punctuation).
+
+**Coverage once approved as proposed** (150 approved): every one of the 29 skills has a video.
+Probability 1 → 4, Inference from Sample Statistics 0 → 2, Evaluating Statistical Claims 0 → 2,
+Area and Volume 3 → 4, Two-Variable Data 5 → 7, One-Variable Data 4 → 6; Central Ideas 0 → 5,
+Command of Evidence 0 → 9, Cross-Text 0 → 5, Rhetorical Synthesis 0 → 4, Text Structure 0 → 6,
+Inferences 1 → 5, Words in Context 3 → 6, Transitions 5 → 8, Boundaries 3 → 12, Form, Structure,
+and Sense 2 → 9.
+
+**Owner-run, after review:** change `approve` where the proposal is wrong, then
+
+```bash
+pnpm exec tsx scripts/rag/apply-video-library.ts --approver <your auth.users id>   # dry run
+DATABASE_URL='<Session pooler connection string>' pnpm exec tsx scripts/rag/apply-video-library.ts --approver <id> --execute
+```
+
+Use the Session pooler connection string (Supabase: Connect → Session pooler), not
+`db.<ref>.supabase.co`, which fails on IPv4 networks. The dry run on the proposal reads
+`230 rows to tag (187 with skills, 84 with methods, 150 with a format), 150 to approve`. A row
+approved without methods (the retag, if approved as is) needs `tag-videos.ts --methods` first.

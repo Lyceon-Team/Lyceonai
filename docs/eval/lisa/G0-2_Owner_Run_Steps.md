@@ -27,7 +27,7 @@ Remove-Item Env:HTTPS_PROXY, Env:HTTP_PROXY -ErrorAction SilentlyContinue
 
 ## 1. Apply the migration
 
-Apply `supabase/migrations/20261118000000_tutor_eval_cases.sql` the usual way (owner-run; retention ruled, SCL-251). Then confirm it from the catalog in the SQL editor:
+Apply `supabase/migrations/20261120000000_tutor_eval_cases.sql` the usual way (owner-run; retention ruled, SCL-251). Then confirm it from the catalog in the SQL editor:
 
 ```sql
 SELECT to_regclass('public.tutor_eval_cases')                          AS cases,
