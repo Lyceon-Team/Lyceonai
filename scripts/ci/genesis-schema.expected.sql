@@ -16465,10 +16465,17 @@ COMMENT ON VIEW public.canonical_skill_catalog IS 'Distinct (section, domain, sk
 
 CREATE TABLE public.clusters (
     id text NOT NULL,
-    name text NOT NULL,
+    display_name text NOT NULL,
     family text NOT NULL,
     definition text NOT NULL,
     taxonomy_version text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    evidence_count integer DEFAULT 0 NOT NULL,
+    core boolean DEFAULT false NOT NULL,
+    skills_seen_in text[] DEFAULT '{}'::text[] NOT NULL,
+    method_in jsonb DEFAULT '{}'::jsonb NOT NULL,
+    playbook_move text,
+    aliases text[] DEFAULT '{}'::text[] NOT NULL,
     CONSTRAINT clusters_family_check CHECK ((family = ANY (ARRAY['by_hand_doing'::text, 'by_hand_recognizing'::text, 'desmos'::text])))
 );
 

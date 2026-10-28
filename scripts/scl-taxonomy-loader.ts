@@ -15,8 +15,12 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const TAXONOMY_PATH = join(
   __dirname,
@@ -38,10 +42,16 @@ type SubSkill = {
 
 type Cluster = {
   id: string;
-  name: string;
+  display_name: string;
   family: "by_hand_doing" | "by_hand_recognizing" | "desmos";
   definition: string;
-  evidence_seed?: string;
+  evidence_ids: string[];
+  evidence_count: number;
+  core: boolean;
+  skills_seen_in: string[];
+  method_in: Record<string, number>;
+  playbook_move?: string;
+  aliases: string[];
 };
 
 type Taxonomy = {
@@ -87,10 +97,25 @@ function loadTaxonomy(): Taxonomy {
 
   const clusterIds = new Set<string>();
   for (const cl of parsed.clusters) {
-    if (!cl.id || !cl.name || !cl.family || !cl.definition) {
+    if (!cl.id || !cl.display_name || !cl.family || !cl.definition) {
       throw new Error(
         `cluster ${cl.id ?? "(missing id)"} has missing required fields`,
       );
+    }
+    if (!Array.isArray(cl.evidence_ids)) {
+      throw new Error(`cluster ${cl.id} has non-array evidence_ids`);
+    }
+    if (typeof cl.evidence_count !== "number") {
+      throw new Error(`cluster ${cl.id} has non-number evidence_count`);
+    }
+    if (typeof cl.core !== "boolean") {
+      throw new Error(`cluster ${cl.id} has non-boolean core`);
+    }
+    if (!Array.isArray(cl.skills_seen_in)) {
+      throw new Error(`cluster ${cl.id} has non-array skills_seen_in`);
+    }
+    if (!Array.isArray(cl.aliases)) {
+      throw new Error(`cluster ${cl.id} has non-array aliases`);
     }
     if (
       !["by_hand_doing", "by_hand_recognizing", "desmos"].includes(cl.family)
@@ -180,9 +205,16 @@ async function main(): Promise<void> {
   if (taxonomy.clusters.length > 0) {
     const rows = taxonomy.clusters.map((cl) => ({
       id: cl.id,
-      name: cl.name,
+      display_name: cl.display_name,
       family: cl.family,
       definition: cl.definition,
+      evidence_ids: cl.evidence_ids,
+      evidence_count: cl.evidence_count,
+      core: cl.core,
+      skills_seen_in: cl.skills_seen_in,
+      method_in: cl.method_in ?? {},
+      playbook_move: cl.playbook_move ?? null,
+      aliases: cl.aliases,
       taxonomy_version: version,
     }));
 
