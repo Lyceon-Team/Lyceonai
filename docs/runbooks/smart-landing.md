@@ -81,7 +81,8 @@ onboarding.
 
 - **What's stored.** `profiles.signup_channel` holds one of `reddit`, `tiktok`, `instagram`,
   `facebook`, `email`, `direct`, `other`. `profiles.signup_campaign` holds a name on the allowlist
-  in `packages/shared/src/signup-attribution.ts` (`SIGNUP_CAMPAIGNS`), or null.
+  in `packages/shared/src/signup-attribution.ts` (`SIGNUP_CAMPAIGNS`: `dec_cohort`, `qotd`,
+  `worked_example`), or null.
 - **Where it comes from.** The first touch, taken from the landing URL's UTM.
 - **When it's written.** By the server, once, before onboarding.
 - **Under 13.** An under-13 profile never holds either value; the database clears them when the age
