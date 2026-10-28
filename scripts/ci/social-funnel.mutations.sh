@@ -11,25 +11,17 @@
 #   RULE 2 — NAMED RED. The check must fail AND its output must contain the declared test name.
 #   RULE 3 — RESTORED. Every file is put back after each plant and the suite re-checked green.
 #
-# The DB plant (F7) edits the migration that DEFINES profiles_signup_tags_set_once today; the
-# harness re-checks that it is still the LAST definition (CLAUDE.md, "a migration that replaces a
-# function body orphans its mutations") and is checked by the real-Postgres suite, so it needs
-# PGHOST; without Postgres it is SKIPPED (a skip, not a pass).
+# What a sign-up records from the links' tags is the sign-up attribution's (#1359) and planted in
+# its own harness (scripts/ci/signup-attribution.mutations.sh), not here.
 #
 # Output is captured into a variable and matched with `case`, never piped to `grep -q`.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-MIG="supabase/migrations/20261121000000_signup_channel_campaign.sql"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/social-funnel-mut.XXXX)"
 
 FILES=(
-  "$MIG"
-  "packages/shared/src/analytics-consent-schema.ts"
-  "server/lib/analytics/signup-source.ts"
-  "client/src/lib/analytics/first-touch.ts"
-  "client/src/pages/start.tsx"
   "shared/social/funnel.ts"
   "shared/seo/head.ts"
 )
@@ -62,15 +54,8 @@ expect_red() {
   esac
 }
 
-last_definer() { grep -ln "FUNCTION public\.$1\b" supabase/migrations/*.sql | sort | tail -1; }
-
-HAVE_PG=0
-if [ -n "${PGHOST:-}" ] && pg_isready -q -h "$PGHOST" -p "${PGPORT:-5432}" 2>/dev/null; then HAVE_PG=1; fi
-
 ts_check() { pnpm exec vitest run "$@" 2>&1; }
 CONTRACT=tests/ci/social-funnel.contract.test.ts
-FIRST_TOUCH=client/src/lib/analytics/first-touch.test.ts
-IDENTITY_PG=tests/ci/analytics-identity.pg.ci.test.ts
 
 # ts_plant <name> <file> <old> <new> <expected test name> <test files...>
 ts_plant() {
@@ -82,29 +67,11 @@ ts_plant() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(ts_check "$CONTRACT" "$FIRST_TOUCH")"; RC=$?
-[ "$RC" = 0 ] && ok "funnel contract + first-touch tests green" || { bad "baseline not green"; echo "$OUT" | tail -30; }
-if [ "$HAVE_PG" = 1 ]; then
-  OUT="$(ts_check "$IDENTITY_PG")"; RC=$?
-  [ "$RC" = 0 ] && ok "analytics identity PG suite green" || { bad "PG baseline not green"; echo "$OUT" | tail -30; }
-else
-  echo "  SKIP  PG baseline — no Postgres (a skip, not a pass)"
-fi
+OUT="$(ts_check "$CONTRACT")"; RC=$?
+[ "$RC" = 0 ] && ok "funnel contract tests green" || { bad "baseline not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "SOCIAL FUNNEL MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
-echo "=== /start and attribution (item 1) ==="
-ts_plant "F1 a free-text tag passes the allowlist" packages/shared/src/analytics-consent-schema.ts \
-  "  return parsed.success ? parsed.data : fallback;" \
-  "  return parsed.success ? parsed.data : (value as T);" \
-  "anything else is \`other\`, and no tag is no value" "$CONTRACT"
-ts_plant "F2 the server trusts the browser's channel" server/lib/analytics/signup-source.ts \
-  "  const channel = signupChannelSchema.safeParse(raw?.channel);" \
-  "  const channel = { success: true as const, data: String(raw?.channel) };" \
-  "the server re-parses what the browser sent" "$CONTRACT"
-ts_plant "F3 tags stored before the visitor consents" client/src/lib/analytics/first-touch.ts \
-  "  if (consent.status === \"accepted\" && firstTouch !== null) {" \
-  "  if (firstTouch !== null) {" \
-  "undecided: kept in memory only, never stored" "$FIRST_TOUCH"
+echo "=== /start and its copy (item 1) ==="
 ts_plant "F4 the cohort line ends a day early" shared/social/funnel.ts \
   "  return chicagoToday <= START_COHORT_DATE ? \"cohort\" : \"evergreen\";" \
   "  return chicagoToday < START_COHORT_DATE ? \"cohort\" : \"evergreen\";" \
@@ -117,23 +84,9 @@ ts_plant "F6 the headline promises a free study plan" shared/social/funnel.ts \
   "? Find your blind spots free before test day.\`" \
   "? Get your free study plan, built for test day.\`" \
   "no line promises a free study plan" "$CONTRACT"
-ts_plant "F8 the sign-up link drops the channel tag" client/src/pages/start.tsx \
-  "  if (tags.channel !== null) url.searchParams.set(\"utm_source\", tags.channel);" \
-  "  void tags.channel;" \
-  "the sign-up link carries the visit's allowlisted tags" "$CONTRACT"
-
-if [ "$HAVE_PG" = 1 ]; then
-  [ "$(last_definer profiles_signup_tags_set_once)" = "$MIG" ] || { bad "F7 targets $MIG but profiles_signup_tags_set_once is last defined in $(last_definer profiles_signup_tags_set_once)"; exit 1; }
-  ts_plant "F7 signup_channel can be rewritten" "$MIG" \
-    "  IF OLD.signup_channel IS NOT NULL" \
-    "  IF FALSE" \
-    "only the allowlisted values, each set once" "$IDENTITY_PG"
-else
-  echo "  SKIP  F7 (DB set-once) — no Postgres (a skip, not a pass)"
-fi
 
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$CONTRACT" "$FIRST_TOUCH")"; RC=$?
+OUT="$(ts_check "$CONTRACT")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "SOCIAL FUNNEL MUTATIONS: $PASS passed, $FAIL failed"

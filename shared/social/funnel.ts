@@ -11,8 +11,8 @@
  *       before it publishes)] | @implemented [2026-10-28]
  *
  * plain English: every social surface sends people to lyceon.ai/start with a tag naming the
- * channel and the campaign (`?utm_source=reddit&utm_campaign=qotd`), which the sign-up records as
- * signup_channel / signup_campaign. Until the cohort's test day (Dec 5, 2026) the copy speaks to
+ * channel and the campaign (`?utm_source=reddit&utm_campaign=qotd`); /start passes them on as
+ * `signup_channel` / `signup_campaign`, which the sign-up attribution (#1359) records. Until the cohort's test day (Dec 5, 2026) the copy speaks to
  * people taking that test; from the next day (America/Chicago, the site's day) it switches to the
  * evergreen line, with no deploy needed. All the wording lives here so the page, the QOTD captions
  * and the worked-example captions cannot drift apart.
@@ -20,14 +20,21 @@
  * Edge cases: on test day itself the dated line still shows (people are still "taking" it that
  * morning); a date string that is not YYYY-MM-DD compares as text, so callers pass chicagoToday().
  */
-import type {
-  SignupCampaign,
-  SignupChannel,
-} from "../../packages/shared/src/analytics-consent-schema";
 import { SAT_TEST_DATES, type SatTestDate } from "../sat-test-dates";
 
 export const START_PATH = "/start";
 export const START_HOST = "lyceon.ai";
+
+/**
+ * The channels and campaigns the social links name. Each value must also be on the sign-up
+ * attribution allowlists (SIGNUP_CHANNELS / SIGNUP_CAMPAIGNS, packages/shared/src/
+ * signup-attribution.ts, landing with #1359), which own what a sign-up records; a value missing
+ * there is recorded as no value, not as this one.
+ */
+export const FUNNEL_LINK_CHANNELS = ["reddit", "tiktok", "instagram"] as const;
+export const FUNNEL_LINK_CAMPAIGNS = ["qotd", "worked_example"] as const;
+export type FunnelLinkChannel = (typeof FUNNEL_LINK_CHANNELS)[number];
+export type FunnelLinkCampaign = (typeof FUNNEL_LINK_CAMPAIGNS)[number];
 
 /** The SAT administration the cohort copy names: a confirmed College Board date. */
 export const START_COHORT_DATE = "2026-12-05";
@@ -75,8 +82,8 @@ export const START_TRY_ONE =
 
 /** A link to /start tagged with where it was posted, as people see it (no scheme). */
 export function startLink(
-  channel: SignupChannel,
-  campaign: SignupCampaign,
+  channel: FunnelLinkChannel,
+  campaign: FunnelLinkCampaign,
 ): string {
   const params = new URLSearchParams({
     utm_source: channel,
@@ -98,8 +105,8 @@ export const INSTAGRAM_COMMENT_CTA = "Comment SAT and I'll send you the link";
 /** The one-line call to action under a post that can carry a link (Reddit). */
 export function linkCtaLine(
   phase: FunnelPhase,
-  channel: SignupChannel,
-  campaign: SignupCampaign,
+  channel: FunnelLinkChannel,
+  campaign: FunnelLinkCampaign,
 ): string {
   const lead =
     phase === "cohort"

@@ -11,7 +11,7 @@ import { authError } from "@/lib/auth-error-messages";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
 import { getSessionCookieHint } from "@/lib/session-hint";
-import { firstTouchSource, firstTouchTags } from "@/lib/analytics/first-touch";
+import { firstTouchSource } from "@/lib/analytics/first-touch";
 import {
   runtimeRoleSchema,
   ROLE_UNRECOGNIZED,
@@ -403,9 +403,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           // SCL-201 IS 6: the first-touch channel (kept for the tab session only with analytics
           // consent; see lib/analytics/first-touch.ts).
           signupSource: firstTouchSource(),
-          // SEO-1: the link's channel and campaign tags (allowlisted; null when untagged).
-          signupChannel: firstTouchTags().channel,
-          signupCampaign: firstTouchTags().campaign,
           // Owner brief 2026-10-10 rule 2: the account type the sign-up asked for (the server
           // re-parses it against the same allowlist; absent or unknown is a student).
           ...(roleIntent ? { role: roleIntent } : {}),
@@ -506,12 +503,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         // SCL-201 IS 6: recorded by the callback only on a new, not-yet-onboarded account.
         signupSource: firstTouchSource(),
       });
-      // SEO-1: the link's channel and campaign tags ride the callback beside signupSource.
-      const tags = firstTouchTags();
-      if (tags.channel !== null)
-        callbackParams.set("signupChannel", tags.channel);
-      if (tags.campaign !== null)
-        callbackParams.set("signupCampaign", tags.campaign);
       // @spec [AS-5; owner brief 2026-09-15 Part B] the login page's `?next=` (written by
       // RequireRole) rides along to the server callback, which re-sanitises it with the SAME
       // shared module before honouring it after the onboarding gate. Off-origin → dropped here.

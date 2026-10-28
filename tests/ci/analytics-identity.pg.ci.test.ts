@@ -143,59 +143,6 @@ describe.skipIf(!PG_AVAILABLE)(
       );
     });
 
-    // SEO-1 (owner brief "One funnel for every social post", Karl, 2026-10-28).
-    it("signup_channel / signup_campaign: only the allowlisted values, each set once", async () => {
-      await expectRaise(
-        `UPDATE public.profiles SET signup_channel = 'myspace' WHERE id = $1`,
-        [USER],
-        /profiles_signup_channel_check/,
-      );
-      await expectRaise(
-        `UPDATE public.profiles SET signup_campaign = 'summer_sale' WHERE id = $1`,
-        [USER],
-        /profiles_signup_campaign_check/,
-      );
-      await pg!.query(
-        `UPDATE public.profiles SET signup_channel = 'reddit', signup_campaign = 'qotd' WHERE id = $1`,
-        [USER],
-      );
-      await expectRaise(
-        `UPDATE public.profiles SET signup_channel = 'tiktok' WHERE id = $1`,
-        [USER],
-        /signup_channel is immutable/,
-      );
-      await expectRaise(
-        `UPDATE public.profiles SET signup_campaign = NULL WHERE id = $1`,
-        [USER],
-        /signup_campaign is immutable/,
-      );
-      // Writing the same values again is not a change.
-      await pg!.query(
-        `UPDATE public.profiles SET signup_channel = 'reddit', signup_campaign = 'qotd' WHERE id = $1`,
-        [USER],
-      );
-      const row = await pg!.query(
-        `SELECT signup_channel, signup_campaign FROM public.profiles WHERE id = $1`,
-        [USER],
-      );
-      expect(row.rows[0]).toEqual({
-        signup_channel: "reddit",
-        signup_campaign: "qotd",
-      });
-    });
-
-    it("signup_channel / signup_campaign: no client role can write them", async () => {
-      const grants = await pg!.query<{ grantee: string }>(
-        `SELECT DISTINCT grantee FROM information_schema.column_privileges
-          WHERE table_schema = 'public' AND table_name = 'profiles'
-            AND column_name IN ('signup_channel', 'signup_campaign')
-            AND privilege_type IN ('UPDATE', 'INSERT')
-          ORDER BY grantee`,
-      );
-      expect(grants.rows.map((r) => r.grantee)).not.toContain("authenticated");
-      expect(grants.rows.map((r) => r.grantee)).not.toContain("anon");
-    });
-
     it("cookie_consent_log: RLS on, no client-role grant, service_role may only read and insert", async () => {
       const rls = await pg!.query(
         `SELECT relrowsecurity FROM pg_class WHERE oid = 'public.cookie_consent_log'::regclass`,

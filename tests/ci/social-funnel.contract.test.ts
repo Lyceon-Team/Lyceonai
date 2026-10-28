@@ -1,27 +1,18 @@
 /**
- * The social funnel's rules: /start, its tagged links, the copy that points at it, and what a
- * sign-up records.
+ * The social funnel's rules: /start, its tagged links and the copy that points at it. What a
+ * sign-up records from those tags is the sign-up attribution's (#1359) and tested there.
  *
  * @spec [owner brief "One funnel for every social post: /start + CTAs + weekly growth report"
  *       (Karl, 2026-10-28) items 1, 2, 4; Karl's answer the same day ("Reword to what's free");
  *       Public Disclosure Doctrine 3 and 8] | @implemented [2026-10-28]
  *
- * plain English: the tags a link can leave behind are two short allowlists (anything else is
- * `other`, nothing is no value) and the server re-parses them; the copy switches from the Dec 5
- * cohort line to the evergreen one the day after the test, by the Chicago day; the cohort date is
- * one College Board publishes; no line promises a free study plan (a paid-plan feature); /start is
+ * plain English: the copy switches from the Dec 5 cohort line to the evergreen one the day after
+ * the test, by the Chicago day; the cohort date is one College Board publishes; no line promises a free study plan (a paid-plan feature); /start is
  * prerendered but kept out of the sitemap and search indexes.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  deriveSignupTags,
-  signupCampaignSchema,
-  signupChannelSchema,
-} from "../../packages/shared/src/analytics-consent-schema";
-import { signupTagColumns } from "../../server/lib/analytics/signup-source";
-import { signupHrefWithTags } from "../../client/src/pages/start";
 import { SAT_TEST_DATES } from "../../shared/sat-test-dates";
 import { renderPageHead } from "../../shared/seo/head";
 import { getPublicMeta } from "../../shared/seo/public-meta";
@@ -38,70 +29,6 @@ import {
 } from "../../shared/social/funnel";
 
 const ROOT = join(import.meta.dirname, "../..");
-
-describe("the tags a link leaves on a sign-up", () => {
-  it("known values are kept, spelled the platforms' ways", () => {
-    expect(deriveSignupTags("?utm_source=reddit&utm_campaign=qotd")).toEqual({
-      channel: "reddit",
-      campaign: "qotd",
-    });
-    expect(
-      deriveSignupTags("?utm_source=IG&utm_campaign=worked-example"),
-    ).toEqual({ channel: "instagram", campaign: "worked_example" });
-    expect(deriveSignupTags("?utm_source=twitter").channel).toBe("x");
-  });
-
-  it("anything else is `other`, and no tag is no value", () => {
-    expect(
-      deriveSignupTags(
-        "?utm_source=%3Cscript%3E&utm_campaign=Summer%20Sale%2050%25",
-      ),
-    ).toEqual({ channel: "other", campaign: "other" });
-    expect(deriveSignupTags("?utm_medium=social&gclid=x")).toEqual({
-      channel: null,
-      campaign: null,
-    });
-    expect(deriveSignupTags("")).toEqual({ channel: null, campaign: null });
-  });
-
-  it("the server re-parses what the browser sent and writes only allowlisted values", () => {
-    expect(signupTagColumns({ channel: "tiktok", campaign: "qotd" })).toEqual({
-      signup_channel: "tiktok",
-      signup_campaign: "qotd",
-    });
-    expect(
-      signupTagColumns({ channel: "Reddit", campaign: "summer sale" }),
-    ).toEqual({});
-    expect(signupTagColumns({ channel: null, campaign: 7 })).toEqual({});
-    expect(signupTagColumns(undefined)).toEqual({});
-  });
-
-  it("the migration's CHECKs allow exactly the shared allowlists", () => {
-    const sql = readFileSync(
-      join(
-        ROOT,
-        "supabase/migrations/20261121000000_signup_channel_campaign.sql",
-      ),
-      "utf8",
-    );
-    const values = (constraint: string): string[] => {
-      const body = new RegExp(
-        `${constraint}\\s+CHECK \\([^;]*?IN \\(([^)]*)\\)`,
-        "s",
-      ).exec(sql)?.[1];
-      return (body ?? "")
-        .split(",")
-        .map((v) => v.trim().replace(/'/g, ""))
-        .filter(Boolean);
-    };
-    expect(values("profiles_signup_channel_check")).toEqual(
-      signupChannelSchema.options,
-    );
-    expect(values("profiles_signup_campaign_check")).toEqual(
-      signupCampaignSchema.options,
-    );
-  });
-});
 
 describe("the funnel copy", () => {
   it("the cohort date is a confirmed College Board date", () => {
@@ -177,17 +104,5 @@ describe("/start", () => {
       '<meta name="robots" content="noindex" />',
     );
     expect(renderPageHead(home!)).not.toContain("noindex");
-  });
-
-  it("the sign-up link carries the visit's allowlisted tags", () => {
-    const base = "/login?mode=signup&next=%2Fpractice%2Fdiagnostic";
-    expect(
-      signupHrefWithTags(base, { channel: "reddit", campaign: "qotd" }),
-    ).toBe(
-      "/login?mode=signup&next=%2Fpractice%2Fdiagnostic&utm_source=reddit&utm_campaign=qotd",
-    );
-    expect(signupHrefWithTags(base, { channel: null, campaign: null })).toBe(
-      base,
-    );
   });
 });

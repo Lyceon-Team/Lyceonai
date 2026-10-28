@@ -23,9 +23,7 @@ import { refreshConsent } from "./consent";
 import {
   captureFirstTouch,
   FIRST_TOUCH_STORAGE_KEY,
-  FIRST_TOUCH_TAGS_STORAGE_KEY,
   firstTouchSource,
-  firstTouchTags,
   resetFirstTouchForTests,
 } from "./first-touch";
 
@@ -121,59 +119,5 @@ describe("first-touch attribution", () => {
     window.sessionStorage.setItem(FIRST_TOUCH_STORAGE_KEY, "utm_campaign=sat");
     land("/login", `${window.location.origin}/`);
     expect(firstTouchSource()).toBe("direct");
-  });
-});
-
-// SEO-1 (owner brief "One funnel for every social post", Karl, 2026-10-28): the channel and
-// campaign tags of the landing link, under the same consent rule as the channel word.
-const SOCIAL = "/start?utm_source=reddit&utm_campaign=qotd";
-
-describe("first-touch channel and campaign tags", () => {
-  it("are read from the landing link, allowlisted", () => {
-    land(SOCIAL);
-    expect(firstTouchTags()).toEqual({ channel: "reddit", campaign: "qotd" });
-    land("/start?utm_source=MySpace&utm_campaign=Black%20Friday");
-    expect(firstTouchTags()).toEqual({ channel: "other", campaign: "other" });
-    land("/start");
-    expect(firstTouchTags()).toEqual({ channel: null, campaign: null });
-  });
-
-  it("analytics accepted: they survive a full load of /login, and the first touch wins", () => {
-    decide(true);
-    land(SOCIAL);
-    expect(window.sessionStorage.getItem(FIRST_TOUCH_TAGS_STORAGE_KEY)).toBe(
-      "reddit|qotd",
-    );
-    land("/login?utm_source=tiktok&utm_campaign=worked_example");
-    expect(firstTouchTags()).toEqual({ channel: "reddit", campaign: "qotd" });
-  });
-
-  it("undecided: kept in memory only, never stored", () => {
-    land(SOCIAL);
-    expect(firstTouchTags()).toEqual({ channel: "reddit", campaign: "qotd" });
-    expect(
-      window.sessionStorage.getItem(FIRST_TOUCH_TAGS_STORAGE_KEY),
-    ).toBeNull();
-  });
-
-  it("refused: never stored, and removed if present", () => {
-    window.sessionStorage.setItem(FIRST_TOUCH_TAGS_STORAGE_KEY, "reddit|qotd");
-    decide(false);
-    land(SOCIAL);
-    expect(
-      window.sessionStorage.getItem(FIRST_TOUCH_TAGS_STORAGE_KEY),
-    ).toBeNull();
-  });
-
-  it("a stored value outside the allowlists is ignored", () => {
-    decide(true);
-    window.sessionStorage.setItem(FIRST_TOUCH_STORAGE_KEY, "referral");
-    window.sessionStorage.setItem(
-      FIRST_TOUCH_TAGS_STORAGE_KEY,
-      "myspace|summer",
-    );
-    land("/login");
-    expect(firstTouchSource()).toBe("referral");
-    expect(firstTouchTags()).toEqual({ channel: null, campaign: null });
   });
 });
