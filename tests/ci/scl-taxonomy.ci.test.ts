@@ -38,6 +38,7 @@ type SubSkill = {
   name: string;
   definition: string;
   inclusion_test: string;
+  evidence_ids: string[];
 };
 
 type Cluster = {
@@ -296,7 +297,7 @@ describe("SCL migration — RLS denial", () => {
     "..",
     "supabase",
     "migrations",
-    "20261115000000_scl_subskill_cluster_layer.sql",
+    "20261117000000_scl_consolidated.sql",
   );
 
   let migrationSql: string;

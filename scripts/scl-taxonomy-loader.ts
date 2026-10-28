@@ -38,6 +38,7 @@ type SubSkill = {
   name: string;
   definition: string;
   inclusion_test: string;
+  evidence_ids: string[];
 };
 
 type Cluster = {
@@ -88,6 +89,9 @@ function loadTaxonomy(): Taxonomy {
       throw new Error(
         `sub_skill ${ss.id ?? "(missing id)"} has missing required fields`,
       );
+    }
+    if (!Array.isArray(ss.evidence_ids)) {
+      throw new Error(`sub_skill ${ss.id} has non-array evidence_ids`);
     }
     if (subSkillIds.has(ss.id)) {
       throw new Error(`duplicate sub_skill id: ${ss.id}`);
@@ -172,6 +176,7 @@ async function main(): Promise<void> {
       name: ss.name,
       definition: ss.definition,
       inclusion_test: ss.inclusion_test,
+      evidence_ids: ss.evidence_ids,
       taxonomy_version: version,
     }));
 

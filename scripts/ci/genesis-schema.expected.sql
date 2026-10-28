@@ -16468,7 +16468,6 @@ CREATE TABLE public.clusters (
     display_name text NOT NULL,
     family text NOT NULL,
     definition text NOT NULL,
-    taxonomy_version text NOT NULL,
     evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
     evidence_count integer DEFAULT 0 NOT NULL,
     core boolean DEFAULT false NOT NULL,
@@ -16476,6 +16475,7 @@ CREATE TABLE public.clusters (
     method_in jsonb DEFAULT '{}'::jsonb NOT NULL,
     playbook_move text,
     aliases text[] DEFAULT '{}'::text[] NOT NULL,
+    taxonomy_version text NOT NULL,
     CONSTRAINT clusters_family_check CHECK ((family = ANY (ARRAY['by_hand_doing'::text, 'by_hand_recognizing'::text, 'desmos'::text])))
 );
 
@@ -19228,6 +19228,7 @@ CREATE TABLE public.sub_skills (
     name text NOT NULL,
     definition text NOT NULL,
     inclusion_test text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
     taxonomy_version text NOT NULL
 );
 
