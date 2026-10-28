@@ -491,6 +491,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/qotd.mutations.sh
 
+      # Worked examples (Karl, 2026-10-27): one plant per rule (the leak rule both ways, steps,
+      # one a day, RLS and grants, metric bounds; hook rules H1-H5, 30-60 s, safe area, blank
+      # paper, audio mix, licence file, approval, post_on today, once, title, caption, plan
+      # rotation, stale voice, Slack order). Each must turn its named check red.
+      - name: Worked-example mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/worked-examples.mutations.sh
+
       # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
       # counted, the week cut at UTC midnight, the current week reported, skips counted as
       # answers, study time uncapped, a wider 24-hour window, returning without the week before,
