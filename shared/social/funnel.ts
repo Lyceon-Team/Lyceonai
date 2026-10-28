@@ -20,9 +20,11 @@
  * Edge cases: on test day itself the dated line still shows (people are still "taking" it that
  * morning); a date string that is not YYYY-MM-DD compares as text, so callers pass chicagoToday().
  */
-import type {
-  SignupCampaign,
-  SignupChannel,
+import {
+  signupCampaignSchema,
+  signupChannelSchema,
+  type SignupCampaign,
+  type SignupChannel,
 } from "../../packages/shared/src/analytics-consent-schema";
 import { SAT_TEST_DATES, type SatTestDate } from "../sat-test-dates";
 
@@ -95,6 +97,29 @@ export function bioCtaLine(phase: FunnelPhase): string {
 /** Instagram: captions cannot link, so people comment and get the tagged link by message. */
 export const INSTAGRAM_COMMENT_CTA = "Comment SAT and I'll send you the link";
 
+/** Instagram's call to action, led by the cohort question until test day. */
+export function instagramCtaLine(phase: FunnelPhase): string {
+  return phase === "cohort"
+    ? `Taking the SAT ${cohortDateLabel()}? ${INSTAGRAM_COMMENT_CTA}`
+    : INSTAGRAM_COMMENT_CTA;
+}
+
+/** The line that asks for an answer in the comments (QOTD and worked examples alike). */
+export const COMMENT_ANSWER_LINE = "Comment your answer 👇";
+
+/** The tagged /start links for one campaign, one per channel the post goes to. */
+export function campaignLinks(campaign: SignupCampaign): {
+  reddit: string;
+  tiktok: string;
+  instagram: string;
+} {
+  return {
+    reddit: startLink("reddit", campaign),
+    tiktok: startLink("tiktok", campaign),
+    instagram: startLink("instagram", campaign),
+  };
+}
+
 /** The one-line call to action under a post that can carry a link (Reddit). */
 export function linkCtaLine(
   phase: FunnelPhase,
@@ -106,4 +131,37 @@ export function linkCtaLine(
       ? `Taking the SAT ${cohortDateLabel()}? Free SAT practice:`
       : "Free SAT practice:";
   return `${lead} ${startLink(channel, campaign)}`;
+}
+
+/**
+ * Every fixed call-to-action line the funnel writes, in both phases, for every channel and
+ * campaign. They are the same text whatever the day's question, so they can carry no answer.
+ */
+export function funnelLines(): ReadonlySet<string> {
+  const phases: FunnelPhase[] = ["cohort", "evergreen"];
+  const channels = signupChannelSchema.options;
+  const campaigns = signupCampaignSchema.options;
+  const lines = new Set<string>([COMMENT_ANSWER_LINE, INSTAGRAM_COMMENT_CTA]);
+  for (const phase of phases) {
+    lines.add(bioCtaLine(phase));
+    lines.add(instagramCtaLine(phase));
+    for (const channel of channels)
+      for (const campaign of campaigns)
+        lines.add(linkCtaLine(phase, channel, campaign));
+  }
+  return lines;
+}
+
+/**
+ * The text with its fixed funnel lines taken out, for the leak checks: "Taking the SAT Dec 5?"
+ * would otherwise read as naming a choice "5" (found on a fixture day, 2026-10-28). Only whole
+ * lines that equal a funnel line exactly are removed; anything else on the line, or a line that
+ * merely contains one, is still checked.
+ */
+export function withoutFunnelLines(text: string): string {
+  const fixed = funnelLines();
+  return text
+    .split("\n")
+    .filter((line) => !fixed.has(line.trim()))
+    .join("\n");
 }

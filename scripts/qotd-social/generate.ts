@@ -79,6 +79,7 @@ import {
   buildRedditPost,
   withheldReveal,
 } from "../../shared/qotd/reveal";
+import { campaignLinks } from "../../shared/social/funnel";
 import {
   QOTD_SECTION_NAME,
   QOTD_SOCIAL_FORMATS,
@@ -93,7 +94,7 @@ import {
   type QotdSocialFormat,
 } from "../../shared/qotd/social";
 import {
-  QOTD_TIKTOK_CAPTION,
+  qotdTiktokCaption,
   QOTD_TIKTOK_SIZE,
   buildTiktokCarousel,
   buildTiktokTitle,
@@ -233,7 +234,8 @@ export function tiktokDecision(
     problems.push(`tiktok: ${tiktok.slides.length} slides, not 3`);
   }
   const title = buildTiktokTitle(day, tiktok.carousel.question.section_code);
-  const caption = QOTD_TIKTOK_CAPTION;
+  // Posted today, so the caption's bio line is today's (Karl, 2026-10-28).
+  const caption = qotdTiktokCaption(source.input.qotd_date);
   for (const [field, text] of [
     ["tiktok caption", caption],
     ["tiktok title", title],
@@ -313,6 +315,7 @@ export function publishDecision(
             card_text: r.cardText,
             reddit_title: reddit.title,
             reddit_body: reddit.body,
+            instagram_caption: copy.instagram_caption,
           },
           source.revealed,
         ).map((leak) => `${r.format}: ${leak}`),
@@ -353,6 +356,8 @@ export function publishDecision(
       source: source.kind,
       caption: copy.caption,
       alt_text: copy.alt_text,
+      instagram_caption: copy.instagram_caption,
+      links: campaignLinks("qotd"),
       images: rendered.map((r) => ({
         format: r.format,
         file: `qotd-${input.qotd_date}-${r.format}.png`,
@@ -891,6 +896,11 @@ async function main(): Promise<number> {
   rmSync(workDir, { recursive: true, force: true });
   writeFileSync(join(args.out, "caption.txt"), `${copy.caption}\n`);
   writeFileSync(join(args.out, "alt-text.txt"), `${copy.alt_text}\n`);
+  writeFileSync(
+    join(args.out, "instagram-caption.txt"),
+    `${copy.instagram_caption}\n`,
+  );
+  const links = decision.manifest.links;
 
   const summary = [
     `## SAT Question of the Day: ${date}`,
@@ -909,8 +919,14 @@ async function main(): Promise<number> {
     "### Alt text",
     fenced(copy.alt_text),
     "",
-    "### Reddit (today's post)",
+    "### Instagram caption",
+    fenced(copy.instagram_caption),
+    `Send to people who comment SAT: ${links.instagram}`,
+    "",
+    "### Reddit (today's post, with the portrait image)",
     fenced(`${reddit.title}\n\n${reddit.body}`),
+    "",
+    `### TikTok bio link\n${links.tiktok}`,
     "",
     "### Yesterday's reveal",
     reveal.status === "withheld"

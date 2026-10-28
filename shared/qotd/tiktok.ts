@@ -34,6 +34,7 @@ import {
 } from "../../packages/shared/src/qotd-schema";
 import { plainMathText } from "./plain-math";
 import { QOTD_SECTION_NAME, socialInputFromArchive } from "./social";
+import { bioCtaLine, COMMENT_ANSWER_LINE, funnelPhase } from "../social/funnel";
 
 export const QOTD_TIKTOK_SIZE = { width: 1080, height: 1920 } as const;
 
@@ -62,12 +63,22 @@ export function tiktokSafePx(): {
   };
 }
 
-/** The caption, follow line first (Karl, 2026-10-23). */
-export const QOTD_TIKTOK_CAPTION = [
-  "Follow for daily SAT questions 👆",
-  "Lock in your answer, then swipe. Today's question is live on lyceon.ai.",
-  "#SAT #SATprep #digitalSAT #studytok",
-].join("\n\n");
+/** The caption's follow line, always first (Karl, 2026-10-23). */
+export const QOTD_TIKTOK_FOLLOW_LINE = "Follow for daily SAT questions 👆";
+
+/**
+ * The TikTok caption: the follow line, then "Comment your answer 👇", then the link-in-bio line
+ * (owner brief "One funnel for every social post", Karl, 2026-10-28, item 2), then the tags. The
+ * bio line speaks to the Dec 5 cohort until test day, by the day the carousel is posted.
+ */
+export function qotdTiktokCaption(postedOn: string): string {
+  return [
+    QOTD_TIKTOK_FOLLOW_LINE,
+    COMMENT_ANSWER_LINE,
+    bioCtaLine(funnelPhase(postedOn)),
+    "#SAT #SATprep #digitalSAT #studytok",
+  ].join("\n\n");
+}
 
 /** "2026-10-22" -> "Oct 22" (UTC, so the build machine's zone never shifts it). */
 export function formatShortDate(date: string): string {

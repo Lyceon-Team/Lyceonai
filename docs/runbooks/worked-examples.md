@@ -48,7 +48,11 @@ At 17:00 UTC: select the one example with `post_on` = today (America/Chicago), n
 `posted.json`, approved by Karl's merge → all content rules → generate → `hyperframes check` →
 render → layout check (safe area x 71..912, y 154..1555; blank paper) → MP4 check (1080×1920,
 30-60 s, audio, music peak on record) → claim in `posted.json`, pushed to `social` → post to
-#social: the video, the TikTok title, the caption. Karl posts to TikTok by hand.
+#social: the video, the TikTok title, the TikTok caption with its bio link
+(`lyceon.ai/start?utm_source=tiktok&utm_campaign=worked_example`), then the Instagram caption with
+the link to send to people who comment SAT. Both captions end with "Comment your answer 👇" and
+the Dec 5 line (evergreen from Dec 6) (owner brief "One funnel for every social post", Karl,
+2026-10-28). Karl posts by hand.
 
 Nothing due: green, "nothing due". Two due on one day, or a due example not approved: red, nothing
 posted.

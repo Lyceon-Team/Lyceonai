@@ -17,22 +17,36 @@ Slack confirms the files are shared in the channel) before the next starts:
    the correct answer, the worked explanation as plain text, and the archive link). A withheld
    yesterday says so instead.
 2. **2/5 · TikTok: title and caption**: the title (`SAT Question of the Day · Oct 22 · Math`, at
-   most 90 characters) and the caption (follow line first), each in a code block.
+   most 90 characters), the caption (follow line, "Comment your answer 👇", "Taking the SAT Dec 5?
+   Free SAT practice: link in bio", the tags) and the **bio link**
+   (`lyceon.ai/start?utm_source=tiktok&utm_campaign=qotd`), each in a code block. After Dec 5 the
+   bio line reads "Free SAT practice: link in bio" by itself (owner brief "One funnel for every
+   social post", Karl, 2026-10-28).
 3. **3/5 · TikTok: carousel**: **yesterday's** question as three 1080x1920 slides, in slide
    order (the question; "Lock in your answer"; the answer with a short "Why" and the link to
    today's question). Post them in order as a TikTok photo post. A long first sentence in the
    explanation is cut and ends "… Full explanation on lyceon.ai" (Karl, 2026-10-26).
-4. **4/5 · Reddit: today's post**: a suggested title and today's question as plain text, each in
-   a code block.
-5. **5/5 · Today's question images**: both images (story and feed), then the caption and alt
-   text, each in a code block.
+4. **4/5 · Reddit: today's post**: the suggested title, a reminder to attach today's portrait
+   image, and the body: one call-to-action line with the tagged link
+   (`lyceon.ai/start?utm_source=reddit&utm_campaign=qotd`). The question is in the image; the body
+   no longer writes it out (Karl, 2026-10-28).
+5. **5/5 · Today's question images**: both images (story and feed), then the caption, the alt
+   text, the **Instagram caption** ("Comment your answer 👇", then "Comment SAT and I'll send you
+   the link") and the link to send to people who comment SAT
+   (`lyceon.ai/start?utm_source=instagram&utm_campaign=qotd`), each in a code block.
 
 When there is no carousel (yesterday withheld or missing on the archive, or its slides cannot
 fit), items 2 and 3 still post, as "2/5 · TikTok: no title or caption today (reason)" and
 "3/5 · TikTok: no carousel today (reason)", so the numbering never shifts.
 
-Reddit posting stays manual (Doc 10B): Karl copies the title and body into a new post, and the
-reveal into a comment on yesterday's post.
+Reddit posting stays manual (Doc 10B): Karl creates an image post with the title and the portrait
+image, adds the body line, and posts the reveal as a comment on yesterday's post.
+
+Every link points at `lyceon.ai/start` and is tagged with its channel and campaign, so each sign-up
+records where it came from (`signup_channel`, `signup_campaign`) and the Monday growth report can
+count sign-ups by channel. Until Dec 5 the lines speak to people taking that test; from Dec 6 (the
+Chicago day) they switch to the evergreen wording by themselves. The wording is in
+`shared/social/funnel.ts`.
 
 Choices are in the same canonical order everywhere (Karl, 2026-10-23): the site, the images,
 the Reddit post, the archive and the reveal, so the reveal's letter is the letter the question
