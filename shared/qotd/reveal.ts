@@ -3,14 +3,19 @@
  *
  * @spec [Doc 10A §7 ("no answer is revealed before submitting": a past day's answer is public on
  *       its archive page), Doc 10B (Reddit posting stays manual); owner brief "QOTD Slack post —
- *       add yesterday's reveal (for r/satquestions)" (Karl, 2026-10-15)] | @implemented [2026-10-15]
+ *       add yesterday's reveal (for r/satquestion)" (Karl, 2026-10-15); Karl's rulings 2026-10-28,
+ *       SCL-258 (the reveal names the letter the day SHOWED, from the stored order)]
+ *       | @implemented [2026-10-15, served letter 2026-10-28]
  *
- * plain English: Karl posts today's question on r/satquestions each morning and comments
+ * plain English: Karl posts today's question on r/satquestion each morning and comments
  * yesterday's answer on yesterday's post. The Slack post hands him both, ready to paste.
  *   - The reveal is built ONLY from yesterday's public archive payload (`QotdArchiveResponse`,
  *     GET /api/public/qotd/:date, which the server refuses for today and later). `buildReveal`
  *     refuses any day but the one before the posted day, so today's answer cannot become a
  *     reveal even if the wrong day were fetched.
+ *   - The letter is the archive's `correct_letter` (the stored order's, SCL-258), and the reveal
+ *     REFUSES the day when the correct choice does not sit at that letter in the archive's
+ *     options: the letter Karl comments must be the one yesterday's post showed.
  *   - A day the archive does not publish (a repaired question, owner 2026-10-08) is `withheld`:
  *     the notice says so and carries nothing else.
  *   - The Reddit post is today's question as plain text, built from the social input (the
@@ -64,16 +69,25 @@ export function buildReveal(
   const q = day.question;
   let answer: QotdRevealAnswer;
   if (q.item_type === "mcq") {
-    const correct = q.options.find((o) => o.id === q.correct_option_id);
-    if (!correct) {
+    const index = q.options.findIndex((o) => o.id === q.correct_option_id);
+    const correct = q.options[index];
+    if (!correct || q.correct_letter === null) {
       return {
         ok: false,
         problem: "reveal: the archive day names no correct choice",
       };
     }
+    // The letter the day showed (SCL-258). Refused when the served options disagree with it.
+    if ("ABCD"[index] !== q.correct_letter) {
+      return {
+        ok: false,
+        problem:
+          "reveal: the shown letter does not match the served letter (stored order refused)",
+      };
+    }
     answer = {
       kind: "choice",
-      letter: correct.id,
+      letter: q.correct_letter,
       text: plainMathText(correct.text),
     };
   } else {

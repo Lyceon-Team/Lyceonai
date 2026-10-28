@@ -8,7 +8,7 @@
  *       answers, no personal data)] | @implemented [2026-10-10]
  *
  * Usage:
- *   pnpm exec tsx scripts/qotd-social/post-to-slack.ts [--dir qotd-social-out] [--dry-run]
+ *   pnpm exec tsx scripts/qotd-social/post-to-slack.ts [--dir qotd-social-out] [--dry-run] [--failure]
  *   env: SLACK_BOT_TOKEN (xoxb-…, scopes files:write, chat:write and files:read), SLACK_CHANNEL_ID (C…);
  *   both read by the shared client, scripts/slack/client.ts (docs/runbooks/slack.md).
  *
@@ -26,7 +26,7 @@
  *   * --dry-run does every check and builds the message, but sends nothing and needs no token
  *     (pull request runs use it).
  *   * Logs carry status and Slack's error codes only: never the token, never question text.
- *   * After the caption, two more messages for r/satquestions (owner brief 2026-10-15; Reddit
+ *   * After the caption, two more messages for r/satquestion (owner brief 2026-10-15; Reddit
  *     posting stays manual, Doc 10B): today's suggested Reddit title and the question as plain
  *     text, then "Yesterday's reveal" (yesterday's date, section and domain, the answer, the
  *     worked explanation and the archive link), both from post.json, which the generator built
@@ -47,6 +47,11 @@
  *     (shareFilesConfirmed polls files.info; bot scope files:read), so nothing overtakes it. An
  *     item with nothing to post keeps its number with a one-line "no … today (reason)". The
  *     content of each message is unchanged; only the order and the label line are new.
+ *   * --failure (Karl's rulings 2026-10-28, SCL-258: a refused served order fails loudly, with a
+ *     Slack-visible failure in the social run): when the build fails, the workflow runs this with
+ *     --failure instead, and ONE message says the run failed, why (the generator's failure.txt:
+ *     its refusal lines, e.g. "GET /api/public/qotd/today -> 503 (qotd_order_invalid)") and links
+ *     the run. It needs no post.json. A refused order's reason never carries a letter.
  *   * Not idempotent: nothing records that a day was posted, so re-running a run posts it again.
  *     Ruled acceptable by Karl, 2026-10-10 (re-runs are only for failed posts;
  *     docs/runbooks/qotd-slack.md §3).
@@ -193,7 +198,7 @@ export function slackCopyMessage(m: QotdSocialPostManifest): string {
 /** Today's suggested Reddit post: the title and the body, each ready to copy. */
 export function slackRedditMessage(m: QotdSocialPostManifest): string {
   return [
-    `*Reddit (r/satquestions)* · today's post, ${formatSocialDate(m.qotd_date)}`,
+    `*Reddit (r/satquestion)* · today's post, ${formatSocialDate(m.qotd_date)}`,
     "*Title*",
     "```",
     escapeMrkdwn(m.reddit.title),
@@ -408,6 +413,80 @@ export async function postToSlack(
   return sent;
 }
 
+/** The generator's failure file (generate.ts writes it when the build exits non-zero). */
+export const QOTD_FAILURE_FILE = "failure.txt";
+const FAILURE_MAX_LINES = 15;
+const FAILURE_MAX_LINE = 300;
+
+/**
+ * The one Slack message for a failed build (SCL-258: loud, Slack-visible): what failed, the
+ * generator's reasons, and the run link. Today's images, caption and posts are not sent.
+ */
+export function slackFailureMessage(
+  reasons: readonly string[],
+  runUrl: string | null,
+): string {
+  const lines = reasons
+    .map((r) => r.trimEnd())
+    .filter((r) => r.trim() !== "")
+    .slice(0, FAILURE_MAX_LINES)
+    .map((r) =>
+      r.length > FAILURE_MAX_LINE ? `${r.slice(0, FAILURE_MAX_LINE)}…` : r,
+    );
+  return [
+    "*QOTD social run FAILED* (today's posts are missing or incomplete)",
+    "```",
+    escapeMrkdwn(
+      lines.length > 0
+        ? lines.join("\n")
+        : "No reason was recorded (the build did not write failure.txt, or a later step such as the Slack post failed); see the run.",
+    ),
+    "```",
+    runUrl ? `Run: ${runUrl}` : "Run: (no run URL in this environment)",
+  ].join("\n");
+}
+
+/** The Actions run URL, from the variables GitHub sets on every run. */
+export function actionsRunUrl(env: NodeJS.ProcessEnv): string | null {
+  const server = env.GITHUB_SERVER_URL;
+  const repo = env.GITHUB_REPOSITORY;
+  const id = env.GITHUB_RUN_ID;
+  return server && repo && id ? `${server}/${repo}/actions/runs/${id}` : null;
+}
+
+async function runFailure(
+  dir: string,
+  env: NodeJS.ProcessEnv,
+  fetchImpl: FetchLike,
+  log: { out(line: string): void; err(line: string): void },
+  dryRun: boolean,
+): Promise<number> {
+  const file = join(dir, QOTD_FAILURE_FILE);
+  const reasons = existsSync(file)
+    ? readFileSync(file, "utf8").split("\n")
+    : [];
+  const text = slackFailureMessage(reasons, actionsRunUrl(env));
+  if (dryRun) {
+    log.out(`qotd-slack: dry run: failure notice: ${text.split("\n")[0]}`);
+    return 0;
+  }
+  const config = slackConfig(env);
+  if (!config.ok) {
+    log.err(`qotd-slack: failure notice not posted: ${config.error}`);
+    return 1;
+  }
+  try {
+    const ts = await postMessage(config.value, text, fetchImpl);
+    log.out(`qotd-slack: failure notice posted (${ts})`);
+    return 0;
+  } catch (e: unknown) {
+    log.err(
+      `qotd-slack: failure notice NOT POSTED: ${e instanceof Error ? e.message : String(e)}`,
+    );
+    return 1;
+  }
+}
+
 /** The whole command, injectable for tests. Returns the exit code. */
 export async function run(
   argv: readonly string[],
@@ -419,6 +498,9 @@ export async function run(
   const dirAt = argv.indexOf("--dir");
   const dir = dirAt >= 0 ? (argv[dirAt + 1] ?? "") : "qotd-social-out";
   const dryRun = argv.includes("--dry-run");
+  if (argv.includes("--failure")) {
+    return runFailure(dir, env, fetchImpl, log, dryRun);
+  }
 
   const post = loadPost(dir);
   if (!post.ok) {

@@ -7,10 +7,11 @@
  *
  * plain English:
  *   * buildTiktokCarousel turns yesterday's PUBLIC archive payload into the three slides' data:
- *     slide 1 the question (the strict no-answer input, choices in canonical order), slide 3 the
- *     correct letter and choice (or the grid-in value) and a short "Why". It refuses any day but
- *     the one before the posted day, so today's answer can never reach a slide, and it refuses a
- *     day whose correct letter is not the letter slide 1 shows for that choice.
+ *     slide 1 the question (the strict no-answer input, choices in the day's stored order,
+ *     SCL-258), slide 3 the served correct letter and choice (or the grid-in value) and a short
+ *     "Why". It refuses any day but the one before the posted day, so today's answer can never
+ *     reach a slide, and it refuses a day whose served letter is not the letter slide 1 shows for
+ *     that choice.
  *   * tiktokWhy: the explanation as plain text (the reveal's plainMathText), cut to the most
  *     whole sentences (at most three) that fit in 300 characters. When even the first sentence
  *     is longer, it is cut at the last word boundary that fits, followed by "…" and "Full
@@ -184,15 +185,16 @@ export function buildTiktokCarousel(
         problem: "tiktok: the archive day names no correct choice",
       };
     }
-    // Slide 1 letters by position; slide 3 must name the same letter for the same choice.
-    if ("ABCD"[index] !== correct.id) {
+    // Slide 1 letters by position; slide 3 must name the same letter for the same choice. The
+    // served letter is the archive's correct_letter, from the day's stored order (SCL-258).
+    if (q.correct_letter === null || "ABCD"[index] !== q.correct_letter) {
       return {
         ok: false,
         reason: "invalid",
-        problem: `tiktok: choice ${correct.id} is shown in position ${"ABCD"[index] ?? "?"}`,
+        problem: `tiktok: the correct choice is shown in position ${"ABCD"[index] ?? "?"}, not at the served letter ${q.correct_letter ?? "(none)"}`,
       };
     }
-    answer = { kind: "choice", letter: correct.id, text: correct.text };
+    answer = { kind: "choice", letter: q.correct_letter, text: correct.text };
   } else {
     const value = q.correct_answer?.trim() ?? "";
     if (value === "") {

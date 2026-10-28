@@ -605,8 +605,8 @@ describe("future days are never generated early or publicly reachable", () => {
     expect(wf).toContain("scripts/qotd-social/generate.ts");
     expect(wf).toContain("actions/upload-artifact@v4");
     expect(wf).toMatch(/permissions:\s*\n\s*contents: read/);
-    // One secret reference in the whole file, the Slack token.
-    expect(wf.match(/secrets\./g)).toEqual(["secrets."]);
+    // One secret, the Slack token, referenced by the post and by the failure notice (SCL-258).
+    expect(wf.match(/secrets\./g)).toEqual(["secrets.", "secrets."]);
     expect(wf).toContain("${{ secrets.SLACK_BOT_TOKEN }}");
 
     const steps = workflowSteps();
@@ -618,12 +618,27 @@ describe("future days are never generated early or publicly reachable", () => {
     // The post comes after the upload, so a Slack failure never costs the download.
     expect(post).toBeGreaterThan(upload);
     expect(dry).toBeGreaterThan(upload);
-    // The token is in that step's env and in no other step.
+    const failure = names.indexOf("Post the failure to Slack");
+    expect(failure).toBeGreaterThan(post);
+    // The token is in those two steps' env and in no other step.
     for (const [i, step] of steps.entries()) {
       expect(JSON.stringify(step).includes("secrets."), step.name).toBe(
-        i === post,
+        i === post || i === failure,
       );
     }
+    // A failed scheduled or hand-started run posts one failure notice (Karl, 2026-10-28).
+    const failureStep = steps[failure]!;
+    expect(failureStep.if).toBe(
+      "failure() && github.event_name != 'pull_request'",
+    );
+    expect(failureStep.env).toEqual({
+      SLACK_BOT_TOKEN: "${{ secrets.SLACK_BOT_TOKEN }}",
+      SLACK_CHANNEL_ID:
+        "${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}",
+    });
+    expect(failureStep.run).toBe(
+      "pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out --failure",
+    );
     const postStep = steps[post]!;
     expect(postStep.if).toBe(
       "success() && github.event_name != 'pull_request'",
@@ -1395,7 +1410,7 @@ describe("Slack: the edges the audit named", () => {
 
 // ---------------------------------------------------------------------------------------------
 // Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
-// reveal (for r/satquestions)", Karl, 2026-10-15). Real fixture days: today is 2026-10-05 (a
+// reveal (for r/satquestion)", Karl, 2026-10-15). Real fixture days: today is 2026-10-05 (a
 // Math MCQ) and yesterday 2026-10-04 (a Math grid-in).
 // ---------------------------------------------------------------------------------------------
 
@@ -1470,9 +1485,11 @@ describe("Yesterday's reveal: always yesterday, never today (owner brief 2026-10
     const built = buildReveal(day, "2026-10-04");
     expect(built.ok).toBe(true);
     if (built.ok && built.reveal.status === "revealed") {
+      // The SERVED letter (SCL-258): the day's stored order is {C,B,D,A}, so canonical C was
+      // shown as A, and the reveal says A.
       expect(built.reveal.answer).toEqual({
         kind: "choice",
-        letter: "C",
+        letter: "A",
         text: "attracted",
       });
     }

@@ -2,7 +2,7 @@
 
 > @spec [Doc 10A §7, §11, Doc 10B (Reddit posting stays manual); owner briefs 2026-10-10 (QOTD
 >
-> > social assets to Slack) and 2026-10-15 (add yesterday's reveal, for r/satquestions)] |
+> > social assets to Slack) and 2026-10-15 (add yesterday's reveal, for r/satquestion)] |
 > > @implemented [2026-10-10; reveal 2026-10-15; TikTok carousel and canonical choice order,
 > >
 > > > > Karl's brief 2026-10-23]
@@ -94,6 +94,14 @@ The rule is that it never posts a day that failed a check, and it never fails qu
 | `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                       | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                             |
 | `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                   | Same: the download is uploaded and the run is red.                                                                                                                     |
 | Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)      | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                          |
+
+| The site refuses the day's stored answer order (`503 qotd_order_invalid`, SCL-258) | The build step fails, naming the code. Nothing is posted except the failure notice below. The day needs its schedule row checked, not a re-run. |
+
+**Failure notice (SCL-258, Karl 2026-10-28).** Whenever a scheduled or hand-started run fails, a
+last step (**Post the failure to Slack**) posts one message to the same channel: "QOTD social run
+FAILED", the generator's refusal lines (from `failure.txt`, e.g.
+`GET /api/public/qotd/today -> 503 (qotd_order_invalid)`) and the run link. It needs the same
+token and channel as the post; if they are missing, that step fails too and the run stays red.
 
 A red run e-mails whoever GitHub notifies for failed scheduled workflows. When the post fails,
 the download is still on the run page, so the day can be shared by hand.

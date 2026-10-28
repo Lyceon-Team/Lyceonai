@@ -437,7 +437,21 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(res.status).toBe(201);
       const body = homeQotdAnswerResponseSchema.parse(res.body.data);
       expect(body.result.is_correct).toBe(false);
-      expect(body.result.correct_display_letter).toBe("B");
+      // SCL-258: the letter is the day's STORED one (today's shuffle depends on the real date),
+      // and the practice item records the stored order, so review history letters it the same.
+      const stored = await pg.query(
+        `SELECT option_order, correct_display_letter FROM public.qotd_schedule WHERE qotd_date = $1`,
+        [qotdDate],
+      );
+      expect(stored.rows).toHaveLength(1);
+      const storedOrder = stored.rows[0].option_order as string[];
+      expect(storedOrder).toHaveLength(4);
+      expect(body.result.correct_display_letter).toBe(
+        stored.rows[0].correct_display_letter,
+      );
+      expect(body.result.correct_display_letter).toBe(
+        ["A", "B", "C", "D"][storedOrder.indexOf("B")],
+      );
       expect(body.result.explanation).toBe(EXPLANATION);
       expect(body.streak).toEqual({
         current: 1,
@@ -447,7 +461,8 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(body.streak_extended).toBe(true);
 
       const item = await pg.query(
-        `SELECT i.id, i.status, i.is_correct, i.selected_answer, s.mode, s.status AS session_status
+        `SELECT i.id, i.status, i.is_correct, i.selected_answer, i.option_order, s.mode,
+                s.status AS session_status
            FROM public.practice_session_items i
            JOIN public.practice_sessions s ON s.id = i.session_id
           WHERE i.user_id = $1`,
@@ -461,6 +476,7 @@ describe.skipIf(!PG_AVAILABLE)(
         mode: "qotd",
         session_status: "completed",
       });
+      expect(item.rows[0].option_order).toEqual(storedOrder);
       const itemId = String(item.rows[0].id);
       expect(
         await count(

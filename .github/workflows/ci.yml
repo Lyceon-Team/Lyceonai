@@ -1422,6 +1422,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/qotd-schema-gates.sql
 
+      # SCL-258 (Karl, 2026-10-28): the shuffle migration over rows already scheduled. Past days
+      # and today keep the identity order (letter = canonical key); future days get the shuffle.
+      # Builds and drops its own database, applying every migration before the shuffle one first.
+      - name: QOTD shuffle-once backfill gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/qotd-shuffle-backfill-gates.sh
+
       # Worked examples (Karl, 2026-10-27): table shape, RLS, the leak rule both ways (no
       # full-length or today-or-later QOTD question; the QOTD pool skips approved examples), the
       # usage view and the metrics table. Same database, one transaction, rolled back.

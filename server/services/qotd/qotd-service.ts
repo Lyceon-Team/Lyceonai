@@ -18,6 +18,10 @@
  *   * gradeQotd: the shared gradeAnswer (shared/practice/grade.ts), the same function practice and
  *     review use, over the day's recomputed token map (option-tokens.ts).
  *
+ * ORDER (Karl's rulings 2026-10-28, SCL-258, superseding the paragraph below on order only): the
+ * options are shuffled ONCE, in the database, when the day is scheduled; every request serves the
+ * stored order (servedTokenOptions -> qotdServedChoices). Tokens still do not depend on order.
+ *
  * Owner ruling 2026-10-05 (QOTD follow-up, items 1 and 4), superseded on order by Karl's ruling
  * 2026-10-23 ("QOTD social: TikTok 3-slide carousel + fixed answer order"): today's options are
  * served in CANONICAL (authored) order on every request, the same order the archive, the home
@@ -40,6 +44,7 @@ import { qotdOptionToken, qotdOptionTokenMap } from "./option-tokens";
 import {
   qotdCorrectOptionId,
   qotdRowSchema,
+  qotdServedChoices,
   stemRepeatsPassage,
   toArchiveIndex,
   toArchiveResponse,
@@ -148,14 +153,14 @@ export function toArchiveIndexResponse(
 }
 
 /**
- * Today's options in canonical (authored) order, each carrying only its token (Karl's ruling
- * 2026-10-23: no shuffle for the QOTD). The order is the archive's (qotdServedOptions) and the
- * home card's, so every surface letters the same choice the same way.
+ * Today's options in the day's STORED order (qotdServedChoices; Karl's rulings 2026-10-28,
+ * SCL-258), each carrying only its token. The order is the archive's and the home card's, so
+ * every surface letters the same choice the same way. A row whose stored order is refused throws
+ * QotdServedOrderError; the route answers 503 rather than serve a different order.
  */
-function canonicalTokenOptions(row: QotdRow): { id: string; text: string }[] {
-  if (row.item_type === "grid_in") return [];
-  return parseCanonicalMcOptions(row.options).map((o) => ({
-    id: qotdOptionToken(row.qotd_date, o.key),
+function servedTokenOptions(row: QotdRow): { id: string; text: string }[] {
+  return qotdServedChoices(row).options.map((o) => ({
+    id: qotdOptionToken(row.qotd_date, o.id),
     text: o.text,
   }));
 }
@@ -173,7 +178,7 @@ export function toTodayResponse(row: QotdRow): QotdTodayResponse {
       item_type: projected.item_type,
       stem: projected.stem,
       passage: projected.passage,
-      options: canonicalTokenOptions(row),
+      options: servedTokenOptions(row),
       correct_answer: projected.correct_answer,
       explanation: projected.explanation,
     },

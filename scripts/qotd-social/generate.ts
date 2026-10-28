@@ -27,7 +27,7 @@
  *   * Every day: socialCopyProblems over the caption and alt text, revealWording over the card's
  *     visible text. Any problem: nothing is written, exit 1.
  *
- *   * Yesterday's reveal (owner brief 2026-10-15, for r/satquestions): read from yesterday's
+ *   * Yesterday's reveal (owner brief 2026-10-15, for r/satquestion): read from yesterday's
  *     PUBLIC archive page data only (GET /api/public/qotd/<the day before>; the server refuses
  *     today and later), never from today's payload. A 404 is a withheld day (a repaired
  *     question): the reveal is the notice alone. Any other failure fails the run, loudly.
@@ -110,8 +110,22 @@ import { localTodayIn } from "../../server/services/calendar/adapters/local-day"
 function out(line: string): void {
   process.stdout.write(`${line}\n`);
 }
+/** Every error line this run printed; written to failure.txt when the run exits non-zero. */
+const errorLines: string[] = [];
 function err(line: string): void {
+  errorLines.push(line);
   process.stderr.write(`${line}\n`);
+}
+
+/**
+ * A failed run leaves its reasons in <out>/failure.txt, which the workflow's failure step posts
+ * to Slack (post-to-slack.ts --failure; Karl's rulings 2026-10-28, SCL-258: a refused served
+ * order fails loudly and visibly, never silently). Lines are this run's own refusals and the API
+ * status and error code; a refused order's reason carries no letter.
+ */
+function writeFailure(outDir: string): void {
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, "failure.txt"), `${errorLines.join("\n")}\n`);
 }
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -129,6 +143,13 @@ const TIKTOK_SLIDES = [1, 2, 3] as const;
 const SHORT_OPTION_CHARS = 24;
 
 type Args = { date: string | null; out: string; baseUrl: string };
+
+/** Where failure.txt goes: --out when it is given, else the default (even if other args are bad). */
+function failureOutDir(argv: readonly string[]): string {
+  const at = argv.indexOf("--out");
+  const value = at >= 0 ? argv[at + 1] : undefined;
+  return value ? resolve(value) : join(ROOT, "qotd-social-out");
+}
 
 function parseArgs(argv: readonly string[]): Args {
   const args: Args = {
@@ -165,12 +186,22 @@ export function pastDateProblem(
     : `${date} has not passed yet (today is ${today} in ${QOTD_TIME_ZONE})`;
 }
 
+/** The `error.code` of an API error body ({ error: { code, message } }); nothing else is read. */
+const API_ERROR_CODE = /"error"\s*:\s*\{\s*"code"\s*:\s*"([a-z_]{1,64})"/;
+
 async function getJson(url: string): Promise<unknown> {
   const res = await fetch(url, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(20_000),
   });
-  if (!res.ok) throw new Error(`GET ${new URL(url).pathname} -> ${res.status}`);
+  if (!res.ok) {
+    // The API's error code (e.g. qotd_order_invalid: a stored order the server refused), never
+    // the rest of the body.
+    const code = API_ERROR_CODE.exec(await res.text())?.[1];
+    throw new Error(
+      `GET ${new URL(url).pathname} -> ${res.status}${code ? ` (${code})` : ""}`,
+    );
+  }
   return res.json();
 }
 
@@ -946,10 +977,15 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
+  const outDir = failureOutDir(process.argv.slice(2));
   main().then(
-    (code) => process.exit(code),
+    (code) => {
+      if (code !== 0) writeFailure(outDir);
+      process.exit(code);
+    },
     (e: unknown) => {
       err(`qotd-social: failed: ${e instanceof Error ? e.message : String(e)}`);
+      writeFailure(outDir);
       process.exit(1);
     },
   );

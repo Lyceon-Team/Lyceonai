@@ -25,6 +25,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261020000000_qotd_schema.sql"
 MIG_READ="supabase/migrations/20261031000000_qotd_readability_scheduler.sql"
+# SCL-258 (shuffle once): the last definer of qotd_question_for, qotd_archive and qotd_schedule_insert.
+MIG_SHUF="supabase/migrations/20261123000000_qotd_shuffle_once.sql"
 DB=qotd_mutations
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/qotd-mut.XXXX)"
@@ -32,6 +34,7 @@ BACKUPS="$(mktemp -d /tmp/qotd-mut.XXXX)"
 FILES=(
   "$MIG"
   "$MIG_READ"
+  "$MIG_SHUF"
   "shared/qotd/readability.ts"
   "server/services/qotd/qotd-service.ts"
   "packages/shared/src/qotd-schema.ts"
@@ -46,6 +49,7 @@ FILES=(
   "shared/qotd/tiktok.ts"
   "client/src/components/qotd/QotdTiktokSlide.tsx"
   "shared/slack/client.ts"
+  "shared/qotd/projection.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -97,6 +101,10 @@ WIDGET=client/src/components/qotd/QotdWidget.test.tsx
 SOCIAL=tests/ci/qotd-social.test.ts
 SCHED=tests/ci/qotd-schedule-job.test.ts
 READ=tests/ci/qotd-readability.test.ts
+AGREE=tests/ci/qotd-served-order.test.ts
+
+# The backfill check (SCL-258): its own database, every migration before the shuffle one, then it.
+backfill_check() { QOTD_BACKFILL_DB=qotd_mutations_backfill bash scripts/ci/qotd-shuffle-backfill-gates.sh 2>&1; }
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -117,8 +125,12 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?
-[ "$RC" = 0 ] && ok "route + page + widget + social + scheduler tests green" || { bad "route + page + widget + social + scheduler tests not green"; echo "$OUT" | tail -30; }
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ" "$AGREE")"; RC=$?
+[ "$RC" = 0 ] && ok "route + page + widget + social + scheduler + served-order tests green" || { bad "route + page + widget + social + scheduler + served-order tests not green"; echo "$OUT" | tail -30; }
+if [ "$HAVE_PG" = 1 ]; then
+  OUT="$(backfill_check)"; RC=$?
+  case "$OUT" in *"QOTD SHUFFLE BACKFILL GATES: PASS"*) [ "$RC" = 0 ] && ok "backfill gates green" || bad "backfill gates printed PASS but exited $RC" ;; *) bad "backfill gates not green"; echo "$OUT" | tail -20 ;; esac
+fi
 if [ "$FAIL" -gt 0 ]; then echo "QOTD MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 if [ "$HAVE_PG" = 1 ]; then
@@ -130,8 +142,9 @@ if [ "$HAVE_PG" = 1 ]; then
   restore
 
   echo "=== (2) a future day becomes readable (qotd_question_for drops its <= today bound) ==="
-  [ "$(last_definer qotd_question_for)" = "$MIG" ] || { bad "M2 targets $MIG but qotd_question_for is last defined in $(last_definer qotd_question_for)"; exit 1; }
-  plant "$MIG" "     AND s.qotd_date <= public.qotd_today()" "     AND TRUE" || { bad "M2 STALE"; exit 1; }
+  # Re-pointed to $MIG_SHUF (SCL-258), which replaced qotd_question_for's body.
+  [ "$(last_definer qotd_question_for)" = "$MIG_SHUF" ] || { bad "M2 targets $MIG_SHUF but qotd_question_for is last defined in $(last_definer qotd_question_for)"; exit 1; }
+  plant "$MIG_SHUF" "     AND s.qotd_date <= public.qotd_today()" "     AND TRUE" || { bad "M2 STALE"; exit 1; }
   OUT="$(sql_check)"; RC=$?
   expect_red "M2 future day readable" "Q-06 tomorrow is readable" "$OUT" "$RC"
   restore
@@ -169,20 +182,20 @@ restore
 # Owner ruling 2026-10-05 (QOTD follow-up): shuffled, tokenised options; one answer per visit.
 echo "=== (6) LEAK: today's options carry the canonical letter instead of the token ==="
 plant server/services/qotd/qotd-service.ts \
-  "    id: qotdOptionToken(row.qotd_date, o.key)," \
-  "    id: o.key," || { bad "M6 STALE"; exit 1; }
+  "    id: qotdOptionToken(row.qotd_date, o.id)," \
+  "    id: o.id," || { bad "M6 STALE"; exit 1; }
 OUT="$(ts_check "$ROUTES")"; RC=$?
 expect_red "M6 canonical letter served" "returns the question with correct_answer and explanation null" "$OUT" "$RC"
 restore
 
-# Re-pointed 2026-10-23: Karl's ruling replaced the per-request shuffle with canonical order, so
-# the defect is now any reordering of today's options.
-echo "=== (7) today's options leave canonical order ==="
+# Re-pointed 2026-10-23 (canonical order), and again 2026-10-28 (SCL-258: the stored order), so
+# the defect is any reordering of today's options away from the day's stored order.
+echo "=== (7) today's options leave the stored order ==="
 plant server/services/qotd/qotd-service.ts \
-  "  return parseCanonicalMcOptions(row.options).map((o) => ({" \
-  "  return [...parseCanonicalMcOptions(row.options)].reverse().map((o) => ({" || { bad "M7 STALE"; exit 1; }
+  "  return qotdServedChoices(row).options.map((o) => ({" \
+  "  return [...qotdServedChoices(row).options].reverse().map((o) => ({" || { bad "M7 STALE"; exit 1; }
 OUT="$(ts_check "$ROUTES")"; RC=$?
-expect_red "M7 not canonical" "every request serves the four options in canonical (authored) order" "$OUT" "$RC"
+expect_red "M7 not the stored order" "every request serves the four options in the day's stored order" "$OUT" "$RC"
 restore
 
 echo "=== (8) a bare canonical letter is accepted as an answer ==="
@@ -525,10 +538,11 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M46 title uncapped" "the cap cuts anything longer at a whole word" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-10-28 (SCL-258): the guard compares the shown letter with the SERVED letter.
 echo "=== (47) slide 3 may name a letter slide 1 does not show for that choice ==="
 plant shared/qotd/tiktok.ts \
-  '    if ("ABCD"[index] !== correct.id) {' \
-  "    if (false) {" || { bad "M47 STALE"; exit 1; }
+  '    if (q.correct_letter === null || "ABCD"[index] !== q.correct_letter) {' \
+  "    if (q.correct_letter === null) {" || { bad "M47 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M47 letter mismatch" "refuses a day whose correct letter is not the letter slide 1 shows" "$OUT" "$RC"
 restore
@@ -615,8 +629,84 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M60 no pointer" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
 restore
 
+# ── SCL-258 (Karl, 2026-10-28): the options are shuffled once, in the database, and every
+#    surface serves the stored order and letter. One plant per rule.
+echo "=== (61) a renderer reads canonical order: the shared function serves authored order ==="
+plant shared/qotd/projection.ts \
+  "  for (const key of order) {" \
+  "  for (const key of byKey.keys()) {" || { bad "M61 STALE"; exit 1; }
+OUT="$(ts_check "$AGREE")"; RC=$?
+expect_red "M61 shared function canonical" "the archive response: the same order, and correct_letter is the served letter" "$OUT" "$RC"
+restore
+
+echo "=== (62) a renderer reads canonical order: today's route bypasses the stored order ==="
+plant server/services/qotd/qotd-service.ts \
+  "  return qotdServedChoices(row).options.map((o) => ({" \
+  "  return parseCanonicalMcOptions(row.options).map((o) => ({ id: o.key, text: o.text })).map((o) => ({" || { bad "M62 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M62 today canonical" "every request serves the four options in the day's stored order" "$OUT" "$RC"
+restore
+
+if [ "$HAVE_PG" = 1 ]; then
+  echo "=== (63) a stored order can be UPDATEd (the write-once trigger raises nothing) ==="
+  [ "$(grep -ln 'FUNCTION public\.qotd_schedule_no_update\b' supabase/migrations/*.sql | sort | tail -1)" = "$MIG_SHUF" ] || { bad "M63 targets $MIG_SHUF but qotd_schedule_no_update is defined later"; exit 1; }
+  plant "$MIG_SHUF" "  RAISE EXCEPTION 'qotd_schedule is write-once: % cannot be changed (SCL-258)', OLD.qotd_date
+    USING ERRCODE = '42501';" "  RETURN NEW;" || { bad "M63 STALE"; exit 1; }
+  OUT="$(sql_check)"; RC=$?
+  expect_red "M63 UPDATE allowed" "Q-10 an UPDATE of a stored order was accepted" "$OUT" "$RC"
+  restore
+
+  echo "=== (64) the backfill reshuffles a past date (and today) ==="
+  plant "$MIG_SHUF" "                            WHEN s.qotd_date <= public.qotd_today() THEN public.qotd_option_keys(q.options)" \
+                    "                            WHEN false THEN public.qotd_option_keys(q.options)" || { bad "M64 STALE"; exit 1; }
+  OUT="$(backfill_check)"; RC=$?
+  expect_red "M64 past reshuffled" "B-01 past or today" "$OUT" "$RC"
+  restore
+
+  echo "=== (65) qotd_schedule_insert stores the authored order, not the shuffle ==="
+  [ "$(last_definer qotd_schedule_insert)" = "$MIG_SHUF" ] || { bad "M65 targets $MIG_SHUF but qotd_schedule_insert is last defined in $(last_definer qotd_schedule_insert)"; exit 1; }
+  plant "$MIG_SHUF" "                THEN public.qotd_shuffled_option_order(q.options, p_date, q.id)" \
+                    "                THEN public.qotd_option_keys(q.options)" || { bad "M65 STALE"; exit 1; }
+  OUT="$(sql_check)"; RC=$?
+  expect_red "M65 insert unshuffled" "the option order and letter are the database's, not the caller's" "$OUT" "$RC"
+  restore
+
+  echo "=== (66) a caller-supplied order is accepted on a direct INSERT (letter derived from it) ==="
+  plant "$MIG_SHUF" "    v_order  := public.qotd_shuffled_option_order(v_q.options, NEW.qotd_date, NEW.question_id);" \
+                    "    v_order  := COALESCE(NEW.option_order, public.qotd_shuffled_option_order(v_q.options, NEW.qotd_date, NEW.question_id));" || { bad "M66 STALE"; exit 1; }
+  OUT="$(sql_check)"; RC=$?
+  expect_red "M66 caller order accepted" "Q-10 a caller-supplied order was accepted" "$OUT" "$RC"
+  restore
+fi
+
+echo "=== (67) the reveal names the canonical letter, not the served one ==="
+plant shared/qotd/reveal.ts \
+  "      letter: q.correct_letter," \
+  "      letter: correct.id," || { bad "M67 STALE"; exit 1; }
+OUT="$(ts_check "$AGREE")"; RC=$?
+expect_red "M67 reveal canonical letter" "yesterday's reveal names the served letter" "$OUT" "$RC"
+restore
+
+echo "=== (68) the Slack heading names the plural subreddit again ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  '    `*Reddit (r/satquestion)* · today'"'"'s post' \
+  '    `*Reddit (r/satquestions)* · today'"'"'s post' || { bad "M68 STALE"; exit 1; }
+OUT="$(ts_check "$AGREE")"; RC=$?
+expect_red "M68 plural subreddit" "the Reddit heading names r/satquestion (singular)" "$OUT" "$RC"
+restore
+
+echo "=== (69) the scheduler stops skipping an explanation that names a letter ==="
+plant server/services/qotd/schedule-job.ts \
+  "    explanationNamesChoiceLetter(c.explanation)
+  ) {" \
+  "    false
+  ) {" || { bad "M69 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M69 letter skip off" "skips an MCQ whose explanation names a choice letter" "$OUT" "$RC"
+restore
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ" "$AGREE")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "QOTD MUTATIONS: $PASS passed, $FAIL failed"
