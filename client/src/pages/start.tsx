@@ -12,10 +12,9 @@
  * plain English: a headline for people taking the SAT on the cohort date (Dec 5, 2026), what the free
  * plan includes (shared/social/funnel.ts START_SUBHEAD), one filled button to sign up (which then starts the diagnostic), and
  * today's Question of the Day to try, with the same sign-up button once it is answered. The day
- * after the cohort date the headline turns evergreen by itself (America/Chicago). The sign-up link
- * carries the visit's channel and campaign tags (`utm_source`, `utm_campaign`, allowlisted by the
- * shared derivation), so the sign-up records them as signup_channel / signup_campaign whether the
- * visitor answers the cookie banner or not; they are also captured at landing (first-touch.ts).
+ * after the cohort date the headline turns evergreen by itself (America/Chicago). The page adds no
+ * tagging of its own: the sign-up attribution (#1359, packages/shared/src/signup-attribution.ts)
+ * reads the visit's `utm_source` / `utm_campaign` and carries them on every link into sign-up.
  *
  * Prerendered: the HTML is built with the phase of the build day and says so in
  * `data-funnel-phase`; hydration reads that back, then the page shows today's phase, so a page
@@ -29,7 +28,6 @@ import { Card, Container, Section } from "@/components/layout/primitives";
 import { SourceLinks } from "@/components/common/source-links";
 import { LazyQotdWidget } from "@/components/qotd/LazyQotdWidget";
 import { Button } from "@/components/ui/button";
-import { firstTouchTags } from "@/lib/analytics/first-touch";
 import { START_DIAGNOSTIC_HREF } from "@/lib/marketing-links";
 import { chicagoToday } from "@shared/sat-test-dates";
 import { CB_SAT_DATES } from "@shared/seo/sources";
@@ -41,7 +39,6 @@ import {
   startHeadline,
   type FunnelPhase,
 } from "@shared/social/funnel";
-import type { SignupTags } from "@lyceon/shared/analytics-consent-schema";
 
 const PHASE_ATTR = "data-funnel-phase";
 
@@ -64,27 +61,10 @@ function renderedPhase(): FunnelPhase {
   return value === "cohort" || value === "evergreen" ? value : currentPhase();
 }
 
-/** The sign-up link with the visit's allowlisted channel and campaign tags. */
-export function signupHrefWithTags(href: string, tags: SignupTags): string {
-  const url = new URL(href, "https://lyceon.ai");
-  if (tags.channel !== null) url.searchParams.set("utm_source", tags.channel);
-  if (tags.campaign !== null)
-    url.searchParams.set("utm_campaign", tags.campaign);
-  return `${url.pathname}${url.search}`;
-}
-
-function taggedSignupHref(): string {
-  return signupHrefWithTags(START_DIAGNOSTIC_HREF, firstTouchTags());
-}
-
-function untaggedSignupHref(): string {
-  return START_DIAGNOSTIC_HREF;
-}
-
-function SignupButton({ href }: { href: string }): JSX.Element {
+function SignupButton(): JSX.Element {
   return (
     <Button asChild size="lg" className="w-full sm:w-auto">
-      <Link href={href} data-testid="start-signup">
+      <Link href={START_DIAGNOSTIC_HREF} data-testid="start-signup">
         Start the free diagnostic
       </Link>
     </Button>
@@ -96,11 +76,6 @@ export default function StartPage(): JSX.Element {
     noSubscription,
     currentPhase,
     renderedPhase,
-  );
-  const signupHref = useSyncExternalStore(
-    noSubscription,
-    taggedSignupHref,
-    untaggedSignupHref,
   );
 
   return (
@@ -120,7 +95,7 @@ export default function StartPage(): JSX.Element {
             {START_SUBHEAD}
           </p>
           <div>
-            <SignupButton href={signupHref} />
+            <SignupButton />
           </div>
           {phase === "cohort" ? (
             <div className="text-sm text-muted-foreground">
@@ -137,7 +112,7 @@ export default function StartPage(): JSX.Element {
           <Card>
             <LazyQotdWidget
               showArchiveLink={false}
-              afterReveal={<SignupButton href={signupHref} />}
+              afterReveal={<SignupButton />}
             />
           </Card>
         </Section>

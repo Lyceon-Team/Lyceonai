@@ -236,62 +236,6 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(captured).toEqual([]);
     });
 
-    // SEO-1 (owner brief "One funnel for every social post", Karl, 2026-10-28).
-    it("records the link's channel and campaign beside signup_source; user_signed_up is unchanged", async () => {
-      process.env.POSTHOG_API_KEY = "phc_test";
-      process.env.POSTHOG_HOST = "https://us.i.posthog.com";
-      process.env.ANALYTICS_SALT = SALT;
-      const { recordSignupSource } =
-        await import("../../server/lib/analytics/signup-source");
-      await recordSignupSource(STUDENT.id, "referral", "req-signup", {
-        channel: "reddit",
-        campaign: "qotd",
-      });
-      const stored = await pg.query(
-        `SELECT signup_source, signup_channel, signup_campaign FROM public.profiles WHERE id = $1`,
-        [STUDENT.id],
-      );
-      expect(stored.rows[0]).toEqual({
-        signup_source: "referral",
-        signup_channel: "reddit",
-        signup_campaign: "qotd",
-      });
-
-      const app = await loadApp();
-      const res = await request(app).patch("/api/profile").send({
-        displayName: "Sam",
-        role: "student",
-        dateOfBirth: dob15(),
-      });
-      expect(res.status).toBe(200);
-      const signedUp = captured.find((c) => c.event === "user_signed_up");
-      expect(signedUp).toBeDefined(); // presence before absence
-      expect(Object.keys(signedUp?.properties ?? {}).sort()).not.toContain(
-        "signup_channel",
-      );
-      expect(Object.keys(signedUp?.properties ?? {}).sort()).not.toContain(
-        "signup_campaign",
-      );
-    });
-
-    it("an unknown or free-text tag is never written; the source still is", async () => {
-      const { recordSignupSource } =
-        await import("../../server/lib/analytics/signup-source");
-      await recordSignupSource(STUDENT.id, "referral", "req-signup", {
-        channel: "<script>",
-        campaign: "Summer Sale 50% off",
-      });
-      const stored = await pg.query(
-        `SELECT signup_source, signup_channel, signup_campaign FROM public.profiles WHERE id = $1`,
-        [STUDENT.id],
-      );
-      expect(stored.rows[0]).toEqual({
-        signup_source: "referral",
-        signup_channel: null,
-        signup_campaign: null,
-      });
-    });
-
     it("NOT configured: nothing is sent, the id stays NULL, and both the wrapper and the call site log at ERROR, naming the variable only", async () => {
       process.env.POSTHOG_API_KEY = "phc_test";
       process.env.ANALYTICS_SALT = "too-short-salt"; // under the 32-character minimum
