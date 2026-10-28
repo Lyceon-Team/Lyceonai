@@ -491,6 +491,21 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/qotd.mutations.sh
 
+      # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
+      # counted, the week cut at UTC midnight, the current week reported, skips counted as
+      # answers, study time uncapped, a wider 24-hour window, returning without the week before,
+      # an upgrade outside the week, a ledger that posts twice, a client role that can run it, a
+      # failed post keeping its claim, a percentage of zero, the route open without the secret.
+      # Each must turn its named check red.
+      - name: Growth report mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/growth-report.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest

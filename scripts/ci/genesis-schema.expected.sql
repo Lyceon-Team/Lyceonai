@@ -9167,6 +9167,191 @@ $$;
 
 
 --
+-- Name: growth_report_claim(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_claim(p_week_start date) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows int;
+BEGIN
+  INSERT INTO public.growth_report_posts (week_start) VALUES (p_week_start)
+  ON CONFLICT (week_start) DO UPDATE
+     SET claimed_at = now()
+   WHERE growth_report_posts.posted_at IS NULL
+     AND growth_report_posts.claimed_at < now() - interval '15 minutes';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: growth_report_mark_posted(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_mark_posted(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.growth_report_posts SET posted_at = now() WHERE week_start = p_week_start;
+$$;
+
+
+--
+-- Name: growth_report_release(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_release(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  DELETE FROM public.growth_report_posts
+   WHERE week_start = p_week_start AND posted_at IS NULL;
+$$;
+
+
+--
+-- Name: growth_report_week_start(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_week_start(p_now timestamp with time zone) RETURNS date
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (date_trunc('week', (p_now AT TIME ZONE 'America/Chicago'))::date - 7);
+$$;
+
+
+--
+-- Name: growth_report_weekly(date, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_weeks jsonb := '[]'::jsonb;
+  v_offset int;
+  v_start date;
+  t0 timestamptz;
+  t1 timestamptz;
+  p0 timestamptz;
+  v_week jsonb;
+BEGIN
+  IF p_week_start IS NULL OR extract(isodow FROM p_week_start) <> 1 THEN
+    RAISE EXCEPTION 'growth_report_weekly: week_start must be a Monday, got %', p_week_start
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- 0 = the reported week, 1 = the week before (the comparison).
+  FOREACH v_offset IN ARRAY ARRAY[0, 1] LOOP
+    v_start := p_week_start - 7 * v_offset;
+    t0 := (v_start::timestamp) AT TIME ZONE 'America/Chicago';
+    t1 := ((v_start + 7)::timestamp) AT TIME ZONE 'America/Chicago';
+    p0 := ((v_start - 7)::timestamp) AT TIME ZONE 'America/Chicago';
+
+    WITH stu AS (
+      SELECT p.id, p.created_at, p.signup_channel
+        FROM public.profiles p
+       WHERE p.role = 'student'
+         AND p.deleted_at IS NULL
+         AND p.is_under_13 IS NOT TRUE
+         AND NOT (p.id = ANY (COALESCE(p_excluded, ARRAY[]::uuid[])))
+    ),
+    -- Activity in [lo, hi): the CMO canonical "active student".
+    act_cur AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= t0 AND created_at < t1 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= t0 AND created_at < t1
+    ),
+    act_prev AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= p0 AND created_at < t0 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= p0 AND created_at < t0
+    ),
+    active AS (
+      SELECT DISTINCT a.sid FROM act_cur a JOIN stu ON stu.id = a.sid
+    ),
+    returning_students AS (
+      SELECT a.sid FROM active a JOIN act_prev b ON b.sid = a.sid GROUP BY a.sid
+    ),
+    signups AS (
+      SELECT * FROM stu WHERE created_at >= t0 AND created_at < t1
+    ),
+    answers AS (
+      SELECT user_id AS sid, answered_at, time_spent_ms
+        FROM public.practice_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+      UNION ALL
+      SELECT student_id, answered_at, NULL::integer
+        FROM public.review_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+    )
+    SELECT jsonb_build_object(
+      'week_start', v_start,
+      'signups_by_channel', COALESCE((
+        SELECT jsonb_object_agg(channel, n)
+          FROM (SELECT COALESCE(signup_channel, 'untagged') AS channel, count(*) AS n
+                  FROM signups GROUP BY 1) c), '{}'::jsonb),
+      'signups', (SELECT count(*) FROM signups),
+      'active_students', (SELECT count(*) FROM active),
+      'returning_by_test_date', COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('test_date', d, 'students', n) ORDER BY d NULLS LAST)
+          FROM (SELECT sp.target_exam_date AS d, count(*) AS n
+                  FROM returning_students r
+                  LEFT JOIN public.student_study_profile sp ON sp.student_id = r.sid
+                 GROUP BY 1) g), '[]'::jsonb),
+      'returning_students', (SELECT count(*) FROM returning_students),
+      'questions_answered', (
+        SELECT count(*) FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1),
+      'full_length_answers', (
+        SELECT count(*) FROM public.test_session_answers ta
+          JOIN public.test_sessions ts ON ts.id = ta.test_session_id
+          JOIN stu ON stu.id = ts.student_id
+         WHERE ta.answer IS NOT NULL AND ta.updated_at >= t0 AND ta.updated_at < t1),
+      'reviews_done', (
+        SELECT count(*) FROM public.review_sessions rs JOIN stu ON stu.id = rs.student_id
+         WHERE rs.status = 'completed' AND rs.completed_at >= t0 AND rs.completed_at < t1),
+      'study_minutes_estimate', (
+        SELECT COALESCE(round(sum(LEAST(a.time_spent_ms, 300000))::numeric / 60000, 1), 0)
+          FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1 AND a.time_spent_ms > 0),
+      'signups_answered_24h', (
+        SELECT count(*) FROM signups s
+         WHERE EXISTS (SELECT 1 FROM answers a
+                        WHERE a.sid = s.id
+                          AND a.answered_at >= s.created_at
+                          AND a.answered_at < s.created_at + interval '24 hours')),
+      'upgrades', (
+        SELECT count(DISTINCT e.profile_id) FROM public.entitlements e
+          JOIN stu ON stu.id = e.profile_id
+         WHERE e.tier = 'premium' AND e.created_at >= t0 AND e.created_at < t1)
+    ) INTO v_week;
+
+    v_weeks := v_weeks || jsonb_build_array(v_week);
+  END LOOP;
+
+  RETURN jsonb_build_object('week', v_weeks -> 0, 'previous', v_weeks -> 1);
+END;
+$$;
+
+
+--
 -- Name: guardian_daily_digest_email_enabled(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -17410,6 +17595,25 @@ COMMENT ON VIEW public.full_length_section_scores IS 'E9 / SCL-157: one row per 
 
 
 --
+-- Name: growth_report_posts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.growth_report_posts (
+    week_start date NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    posted_at timestamp with time zone,
+    CONSTRAINT growth_report_posts_week_start_check CHECK ((EXTRACT(isodow FROM week_start) = (1)::numeric))
+);
+
+
+--
+-- Name: TABLE growth_report_posts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.growth_report_posts IS 'One row per reported week (owner brief 2026-10-28 item 3): claimed before the Slack post, posted_at set after it, so the Monday report posts once.';
+
+
+--
 -- Name: guardian_consent_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20342,6 +20546,14 @@ ALTER TABLE ONLY public.exam_score_report_projections
 
 ALTER TABLE ONLY public.exam_score_reports
     ADD CONSTRAINT exam_score_reports_pkey PRIMARY KEY (report_id);
+
+
+--
+-- Name: growth_report_posts growth_report_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.growth_report_posts
+    ADD CONSTRAINT growth_report_posts_pkey PRIMARY KEY (week_start);
 
 
 --
@@ -24610,6 +24822,12 @@ ALTER TABLE public.exam_score_report_projections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_score_reports ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: growth_report_posts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.growth_report_posts ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -26897,6 +27115,46 @@ GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_se
 
 
 --
+-- Name: FUNCTION growth_report_claim(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_claim(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_claim(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_mark_posted(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_release(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_release(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_release(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_week_start(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_weekly(p_week_start date, p_excluded uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) TO service_role;
+
+
+--
 -- Name: FUNCTION guardian_daily_digest_email_enabled(p_guardian_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29011,6 +29269,13 @@ GRANT SELECT,INSERT ON TABLE public.score_runs TO lyceon_scoring_owner;
 --
 
 GRANT SELECT ON TABLE public.full_length_section_scores TO service_role;
+
+
+--
+-- Name: TABLE growth_report_posts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.growth_report_posts TO service_role;
 
 
 --
