@@ -17,6 +17,8 @@
 --     `profiles.signup_campaign` (a short lowercase token; the server writes only allowlisted
 --     names): the first touch, coarse, no URL. The server writes them once, on an account that
 --     has not onboarded (server/lib/signup-attribution.ts).
+--     Only the server writes them: `authenticated` holds SELECT alone on profiles (no UPDATE), so a
+--     student cannot set or change their own channel.
 --  3. One guard trigger on profiles, `profiles_zz_signup_attribution` (named to run after
 --     `profiles_set_age`, which computes `is_under_13` in the same statement):
 --       - an under-13 profile never holds either value: they are cleared, on any write;

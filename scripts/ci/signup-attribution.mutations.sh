@@ -85,6 +85,10 @@ plant "$SHARED" '  reddit: "reddit",
 ' '' || stale SA1
 run "SA1 known sources" "A1 each known utm_source is its channel" "$UNIT"
 
+echo "=== (1b) the source table is a plain object (inherited members answer) ==="
+plant "$SHARED" '    SOURCE_CHANNEL.get(source) ??' '    (Object.fromEntries(SOURCE_CHANNEL) as Record<string, SignupChannel>)[source] ??' || stale SA1b
+run "SA1b own entries only" "A6 a source named like a built-in object member" "$UNIT"
+
 echo "=== (2) any campaign is kept, not only allowlisted ones ==="
 plant "$SHARED" '  return parsed.success ? parsed.data : null;' '  return typeof raw === "string" && raw.length > 0 ? (raw as SignupCampaign) : null;' || stale SA2
 run "SA2 allowlisted campaigns only" "A3 only allowlisted campaigns are kept" "$UNIT"

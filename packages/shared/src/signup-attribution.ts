@@ -52,23 +52,29 @@ export type SignupAttribution = z.infer<typeof signupAttributionSchema>;
 export const SIGNUP_CHANNEL_PARAM = "signup_channel";
 export const SIGNUP_CAMPAIGN_PARAM = "signup_campaign";
 
-/** `utm_source` values, lowercased, and the channel each one is. */
-const SOURCE_CHANNEL: Readonly<Record<string, SignupChannel>> = {
-  reddit: "reddit",
-  "reddit.com": "reddit",
-  tiktok: "tiktok",
-  "tiktok.com": "tiktok",
-  instagram: "instagram",
-  "instagram.com": "instagram",
-  ig: "instagram",
-  facebook: "facebook",
-  "facebook.com": "facebook",
-  fb: "facebook",
-  meta: "facebook",
-  email: "email",
-  newsletter: "email",
-  resend: "email",
-};
+/**
+ * `utm_source` values, lowercased, and the channel each one is. A Map, not an object literal: the
+ * key is visitor-controlled text, and an object would answer `constructor` or `__proto__` with an
+ * inherited member instead of "not a known source".
+ */
+const SOURCE_CHANNEL: ReadonlyMap<string, SignupChannel> = new Map(
+  Object.entries({
+    reddit: "reddit",
+    "reddit.com": "reddit",
+    tiktok: "tiktok",
+    "tiktok.com": "tiktok",
+    instagram: "instagram",
+    "instagram.com": "instagram",
+    ig: "instagram",
+    facebook: "facebook",
+    "facebook.com": "facebook",
+    fb: "facebook",
+    meta: "facebook",
+    email: "email",
+    newsletter: "email",
+    resend: "email",
+  } satisfies Record<string, SignupChannel>),
+);
 
 /** `utm_medium` values that mean email whatever the source says. */
 const EMAIL_MEDIUMS = new Set(["email", "newsletter", "e-mail"]);
@@ -107,7 +113,7 @@ export function deriveSignupAttribution(search: string): SignupAttribution {
   const medium = param(params, "utm_medium");
   const campaign = param(params, "utm_campaign");
   const channel: SignupChannel =
-    SOURCE_CHANNEL[source] ??
+    SOURCE_CHANNEL.get(source) ??
     (EMAIL_MEDIUMS.has(medium)
       ? "email"
       : source.length > 0 || medium.length > 0 || campaign.length > 0

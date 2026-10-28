@@ -1,6 +1,7 @@
 # Runbook: smart landing and the sign-up channel
 
 > @spec [owner brief "Smart landing: within-student rotating landing test" (Karl, 2026-10-26) and its
+>
 > > rulings; owner brief "Smart landing: new students land on Home; capture sign-up channel" (Karl,
 > > 2026-10-28)] | @implemented [2026-10-28]
 
@@ -109,6 +110,7 @@ SELECT coalesce(signup_channel, '(not recorded)') AS channel,
        count(*)                                   AS accounts
   FROM public.profiles
  WHERE role = 'student' AND created_at >= '2026-10-28'
+   AND is_under_13 IS NOT TRUE
  GROUP BY 1, 2
  ORDER BY 3 DESC;
 ```

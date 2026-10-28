@@ -12,6 +12,10 @@
  * "Sign in" is a plain link) would lose the memory, so a click on a same-origin link to an
  * entry into sign-up gets the two coarse parameters appended to its address; the sign-up page
  * then reads them back as the earlier touch. The values are allowlisted words, never a URL.
+ *
+ * CONSENT: RULED 2026-10-28 (Karl, SCL-257): carried and sent whatever the analytics choice,
+ * including a refusal or Global Privacy Control, because nothing is stored on the device; the
+ * cookie policy draft says so ("How you arrived, in the link address").
  */
 import {
   deriveSignupAttribution,

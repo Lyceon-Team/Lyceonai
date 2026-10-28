@@ -74,6 +74,21 @@ describe("deriveSignupAttribution", () => {
     ).toEqual({ channel: "reddit", campaign: null });
   });
 
+  it("A6 a source named like a built-in object member is just an unknown source", () => {
+    for (const source of [
+      "constructor",
+      "__proto__",
+      "toString",
+      "hasOwnProperty",
+    ]) {
+      const touch = deriveSignupAttribution(`?utm_source=${source}`);
+      expect(touch, source).toEqual({ channel: "other", campaign: null });
+      expect(signupAttributionParams(touch), source).toEqual({
+        signup_channel: "other",
+      });
+    }
+  });
+
   it("A5 the carry parameters: none for a plain direct visit", () => {
     expect(
       signupAttributionParams({ channel: "direct", campaign: null }),
