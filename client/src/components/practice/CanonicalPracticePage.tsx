@@ -100,6 +100,8 @@ import {
 } from "@/components/math/calculator-layout";
 import MathReferenceSheet from "@/components/math/MathReferenceSheet";
 import { ScopedTutorPanel } from "@/components/tutor/ScopedTutorPanel";
+import { GuidedChoicesBar } from "@/components/tutor/GuidedChoicesBar";
+import type { ReviewIntent } from "@lyceon/shared/tutor-guided-choices";
 import { PHONE_WIDTH_QUERY, useMediaQuery } from "@/hooks/use-mobile";
 import {
   useBottomChromeHeight,
@@ -365,6 +367,19 @@ export default function CanonicalPracticePage(props: {
     string | null
   >(null);
   const [tutorRevealKey, setTutorRevealKey] = React.useState(0);
+  /**
+   * @spec [owner ruling on #1349 (Karl, 2026-10-27), ruling 3; SCL-254 (§20.2's choices)]
+   *       | @implemented [2026-10-27]
+   * plain English: a guided choice tapped on the phone's LISA strip (shown under the question
+   * while LISA is closed). The tap opens LISA for that item, revealed as Show LISA does, and the
+   * panel sends the choice once it is up; it is cleared once handed over. Keyed to the item, so a
+   * tap never reaches another question's panel. `nonce` tells two taps of one choice apart.
+   */
+  const [tutorTap, setTutorTap] = React.useState<{
+    itemId: string;
+    nonce: number;
+    intent: ReviewIntent;
+  } | null>(null);
   const runnerScrollRef = React.useRef<HTMLDivElement | null>(null);
   // The chat dock, opened by "Still confused? Ask LISA" (owner brief 2026-10-23).
   const dockRef = React.useRef<ChatDockHandle | null>(null);
@@ -658,6 +673,8 @@ export default function CanonicalPracticePage(props: {
         onHide={() => setTutorShownForItem(null)}
         revealOnOpen={tutorOpenedForItem === sessionItemId}
         revealKey={tutorRevealKey}
+        autoSend={tutorTap?.itemId === sessionItemId ? tutorTap : null}
+        onAutoSent={() => setTutorTap(null)}
       />
     ) : null;
 
@@ -1011,6 +1028,28 @@ export default function CanonicalPracticePage(props: {
   // The same no-floor body wherever the runner has the dock (2026-10-26, owner ruling on #1322):
   // on a short screen (650px tall) a 600px calculator ran down under the floating launcher,
   // below the fold, where the launcher's clearance at its bottom could not help.
+  // Phones, review, LISA closed: the LISA strip carries the panel's choices (owner ruling on
+  // #1349). From 768px up LISA is the dock, open beside the question, so this is never drawn.
+  const guidedChoicesBar =
+    isPhoneWidth &&
+    isReviewEngine &&
+    canAskTutor &&
+    !tutorVisible &&
+    sessionItemId ? (
+      <GuidedChoicesBar
+        sessionItemId={sessionItemId}
+        onChoose={(intent) => {
+          setTutorTap((prev) => ({
+            itemId: sessionItemId,
+            nonce: (prev?.nonce ?? 0) + 1,
+            intent,
+          }));
+          setTutorShownForItem(sessionItemId);
+          setTutorOpenedForItem(sessionItemId);
+        }}
+      />
+    ) : null;
+
   const standardLayout = useSidePanel ? (
     <div
       ref={panelGroupRef}
@@ -1061,6 +1100,7 @@ export default function CanonicalPracticePage(props: {
   ) : (
     <>
       {questionColumn}
+      {guidedChoicesBar}
       {/* Below-breakpoint calculator: full width under the question, so the Desmos host keeps
           its DESMOS_HOST_MIN_PX floor. */}
       {showCalculator ? (

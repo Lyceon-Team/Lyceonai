@@ -15241,6 +15241,61 @@ COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean)
 
 
 --
+-- Name: sweep_tutor_eval_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '90 days';
+  v_cases  integer;
+  v_runs   integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_eval_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_cases
+      FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_runs
+      FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+    GET DIAGNOSTICS v_runs = ROW_COUNT;
+
+    DELETE FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+    GET DIAGNOSTICS v_cases = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_eval_cases'; deleted_count := v_cases; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_eval_runs';  deleted_count := v_runs;  cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) IS 'SCL-251: G0-2 evaluation cases and runs, 90 days fixed from import (captured_at) / creation. Called by the 90d retention tier.';
+
+
+--
 -- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -19542,6 +19597,64 @@ COMMENT ON TABLE public.tutor_conversations IS 'LISA conversation envelopes with
 
 
 --
+-- Name: tutor_eval_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_cases (
+    case_id text NOT NULL,
+    set_version text NOT NULL,
+    student_id uuid,
+    is_owner_case boolean DEFAULT false NOT NULL,
+    source_conversation_id uuid,
+    source_message_id uuid,
+    item_canonical_id text,
+    request jsonb NOT NULL,
+    scan_correct_answer text,
+    production_reply text NOT NULL,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_cases_case_id_check CHECK ((case_id ~ '^[A-Z0-9][A-Z0-9-]*$'::text)),
+    CONSTRAINT tutor_eval_cases_request_check CHECK ((jsonb_typeof(request) = 'object'::text)),
+    CONSTRAINT tutor_eval_cases_set_version_check CHECK ((set_version <> ''::text))
+);
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_cases IS 'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27). Kept 90 days from import (SCL-251).';
+
+
+--
+-- Name: tutor_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_runs (
+    run_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    run_index integer NOT NULL,
+    record jsonb NOT NULL,
+    verdict text NOT NULL,
+    owner_grade text,
+    owner_graded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_runs_check CHECK (((owner_grade IS NULL) = (owner_graded_at IS NULL))),
+    CONSTRAINT tutor_eval_runs_owner_grade_check CHECK ((owner_grade = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text]))),
+    CONSTRAINT tutor_eval_runs_record_check CHECK ((jsonb_typeof(record) = 'object'::text)),
+    CONSTRAINT tutor_eval_runs_run_index_check CHECK ((run_index >= 1)),
+    CONSTRAINT tutor_eval_runs_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text, 'unscored'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_runs IS 'G0-2 evaluation runs. Replies and judge quotes can echo the student: service role only, RLS on, no policies.';
+
+
+--
 -- Name: tutor_injection_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19708,7 +19821,9 @@ CREATE TABLE public.tutor_messages (
     injection_signature_matched text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'completed'::text NOT NULL,
+    intent text,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
+    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text])))),
     CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
     CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
@@ -19719,6 +19834,13 @@ CREATE TABLE public.tutor_messages (
 --
 
 COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation history. Append-only from student perspective. §18.2.';
+
+
+--
+-- Name: COLUMN tutor_messages.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
 
 
 --
@@ -19771,7 +19893,9 @@ CREATE TABLE public.tutor_turn_metrics (
     context_hash text,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
     thinking_tokens integer,
-    thinking_budget integer
+    thinking_budget integer,
+    intent text,
+    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text]))))
 );
 
 
@@ -19808,6 +19932,13 @@ COMMENT ON COLUMN public.tutor_turn_metrics.thinking_tokens IS 'Sum of Vertex th
 --
 
 COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex thinking budget the turn''s calls were made with. NULL = no model call.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
 
 
 --
@@ -21297,6 +21428,30 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_pkey PRIMARY KEY (case_id);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_batch_id_case_id_run_index_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_batch_id_case_id_run_index_key UNIQUE (batch_id, case_id, run_index);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_pkey PRIMARY KEY (run_id);
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -22465,6 +22620,13 @@ CREATE INDEX student_background_high_school ON public.student_background USING b
 --
 
 CREATE INDEX student_dream_schools_college ON public.student_dream_schools USING btree (college_id);
+
+
+--
+-- Name: tutor_eval_runs_case_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tutor_eval_runs_case_idx ON public.tutor_eval_runs USING btree (case_id, created_at);
 
 
 --
@@ -24140,6 +24302,22 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.tutor_eval_cases(case_id) ON DELETE CASCADE;
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -25619,6 +25797,18 @@ CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR S
 
 CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE TO authenticated USING ((student_id = auth.uid()));
 
+
+--
+-- Name: tutor_eval_cases; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_eval_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_runs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: tutor_injection_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -28199,6 +28389,14 @@ GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolea
 
 
 --
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
 --
 
@@ -30325,6 +30523,20 @@ GRANT ALL ON TABLE public.tutor_context_runtime_config_history TO service_role;
 --
 
 GRANT ALL ON TABLE public.tutor_conversations TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_eval_cases TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.tutor_eval_runs TO service_role;
 
 
 --
