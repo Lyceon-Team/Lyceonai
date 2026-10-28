@@ -55,6 +55,7 @@ import type {
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { getMemorySummaries, getStructuredFields } from "./tutor-memory";
 import { TutorConfig } from "./tutor-config";
+import type { QuestionSection } from "../../packages/shared/src/tutor-guided-choices";
 import {
   displayOrderFor,
   studentAnswerForDisplay,
@@ -393,6 +394,29 @@ export async function resolveQuestionSkillCodes(
       .nullable()
       .parse(data)?.skill_codes ?? []
   );
+}
+
+/**
+ * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-253]
+ *       | @implemented [2026-10-27]
+ * plain English: `questions.section` for a question row, by id: "M", "RW", or null when the row
+ * is missing or carries anything else. Read here beside `resolveQuestionSkillCodes`, the other
+ * by-id metadata lookup. The review panel's guided choices follow it (Desmos is math-only).
+ * Throws on a DB error: an intent is never accepted on a guess.
+ */
+export async function resolveQuestionSection(
+  questionRowId: string,
+): Promise<QuestionSection | null> {
+  const { data, error } = await supabaseServer
+    .from("questions")
+    .select("section")
+    .eq("id", questionRowId)
+    .maybeSingle();
+  if (error) throw error;
+  const section =
+    z.object({ section: z.string().nullable() }).nullable().parse(data)
+      ?.section ?? null;
+  return section === "M" || section === "RW" ? section : null;
 }
 
 const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
