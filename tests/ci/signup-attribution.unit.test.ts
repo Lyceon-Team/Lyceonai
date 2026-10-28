@@ -56,6 +56,9 @@ describe("deriveSignupAttribution", () => {
     expect(
       deriveSignupAttribution("?utm_source=reddit&utm_campaign=DEC_COHORT"),
     ).toEqual({ channel: "reddit", campaign: "dec_cohort" });
+    expect(
+      deriveSignupAttribution("?utm_source=tiktok&utm_campaign=worked_example"),
+    ).toEqual({ channel: "tiktok", campaign: "worked_example" });
     const unknown = deriveSignupAttribution(
       "?utm_source=reddit&utm_campaign=jane.doe@example.com",
     );

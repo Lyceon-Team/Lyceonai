@@ -35,8 +35,15 @@ export const SIGNUP_CHANNELS = [
 export const signupChannelSchema = z.enum(SIGNUP_CHANNELS);
 export type SignupChannel = z.infer<typeof signupChannelSchema>;
 
-/** The campaigns recorded by name. Anything else is recorded as no campaign. */
-export const SIGNUP_CAMPAIGNS = ["dec_cohort", "qotd"] as const;
+/**
+ * The campaigns recorded by name. Anything else is recorded as no campaign. `worked_example`
+ * added 2026-10-28 (owner approval, for the social worked-example links; SCL-257).
+ */
+export const SIGNUP_CAMPAIGNS = [
+  "dec_cohort",
+  "qotd",
+  "worked_example",
+] as const;
 export const signupCampaignSchema = z.enum(SIGNUP_CAMPAIGNS);
 export type SignupCampaign = z.infer<typeof signupCampaignSchema>;
 
