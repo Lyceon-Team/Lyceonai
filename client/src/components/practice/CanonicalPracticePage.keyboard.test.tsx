@@ -27,6 +27,11 @@ vi.mock("@/hooks/useCanonicalPractice", () => ({
 }));
 
 // A stand-in LISA panel with a real textarea: the "text field elsewhere" case.
+// The phone's LISA strip (owner ruling on #1349) reads the guided choices through the app's
+// query client; its behaviour is CanonicalPracticePage.runner.test.tsx's.
+vi.mock("@/components/tutor/GuidedChoicesBar", () => ({
+  GuidedChoicesBar: () => null,
+}));
 vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
   ScopedTutorPanel: () => (
     <textarea aria-label="Message" data-testid="lisa-composer" />

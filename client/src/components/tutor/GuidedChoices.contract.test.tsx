@@ -135,6 +135,7 @@ vi.mock("@/lib/queryClient", async () => {
   };
 });
 import { ScopedTutorPanel } from "./ScopedTutorPanel";
+import type { ReviewIntent } from "@lyceon/shared/tutor-guided-choices";
 
 // ── Fixtures ────────────────────────────────────────────────────────────
 
@@ -223,17 +224,21 @@ function workerReply(): unknown {
   };
 }
 
+type AutoSend = { nonce: number; intent: ReviewIntent } | null;
+
 function renderPanel(
   itemId: string,
   sourceSurface: "review" | "practice" = "review",
-): void {
+  autoSend: AutoSend = null,
+  onAutoSent: () => void = () => undefined,
+): { rerender: (next: AutoSend) => void } {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   });
-  render(
+  const view = (next: AutoSend): React.ReactElement => (
     <QueryClientProvider client={qc}>
       <UpgradeModalProvider autoOpenOnDenial={false}>
         <ScopedTutorPanel
@@ -241,10 +246,14 @@ function renderPanel(
           sessionItemId={itemId}
           questionLabel="Question 1 / 5"
           onHide={vi.fn()}
+          autoSend={next}
+          onAutoSent={onAutoSent}
         />
       </UpgradeModalProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const r = render(view(autoSend));
+  return { rerender: (next) => r.rerender(view(next)) };
 }
 
 function messagePosts(): Array<Record<string, unknown>> {
@@ -375,5 +384,64 @@ describe("a tap sends the exact label with its intent", () => {
     expect(messagePosts()).toHaveLength(1);
     expect(messagePosts()[0]).not.toHaveProperty("intent");
     expect(orchestrateTurn).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * @spec [owner ruling on #1349 (Karl, 2026-10-27), ruling 3] | @implemented [2026-10-27]
+ * A choice tapped on the phone runner's LISA strip reaches the panel as `autoSend`; the panel
+ * sends it once, through the same path as a tap inside it.
+ */
+describe("a choice tapped outside the panel (the phone strip)", () => {
+  it("no conversation yet: the panel creates it and sends 'Desmos video'; the video card is served", async () => {
+    const onAutoSent = vi.fn();
+    renderPanel(
+      seedReviewItem(MATH_QUESTION),
+      "review",
+      { nonce: 1, intent: "video_desmos" },
+      onAutoSent,
+    );
+    await screen.findByTestId("tutor-video-card");
+    expect(screen.getByTestId("tutor-video-title").textContent).toContain(
+      "Desmos Lesson #10",
+    );
+    expect(messagePosts()).toEqual([
+      expect.objectContaining({
+        message: "Desmos video",
+        intent: "video_desmos",
+      }),
+    ]);
+    expect(onAutoSent).toHaveBeenCalledTimes(1);
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+    // The caller here never clears the tap: the thread the panel created must not send it again.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(messagePosts()).toHaveLength(1);
+  });
+
+  it("a conversation already open: the tap is its next turn; the same tap rendered again is not resent", async () => {
+    const onAutoSent = vi.fn();
+    const view = renderPanel(
+      seedReviewItem(MATH_QUESTION),
+      "review",
+      null,
+      onAutoSent,
+    );
+    fireEvent.click(await screen.findByTestId("tutor-choice-walkthrough"));
+    await screen.findByText(TUTOR_TEXT);
+    expect(messagePosts()).toHaveLength(1);
+
+    view.rerender({ nonce: 1, intent: "video_desmos" });
+    await screen.findByTestId("tutor-video-card");
+    expect(messagePosts()).toHaveLength(2);
+    expect(messagePosts()[1]).toMatchObject({
+      message: "Desmos video",
+      intent: "video_desmos",
+    });
+    expect(onAutoSent).toHaveBeenCalledTimes(1);
+
+    // The same tap (same nonce) drawn again sends nothing more.
+    view.rerender({ nonce: 1, intent: "video_desmos" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(messagePosts()).toHaveLength(2);
   });
 });

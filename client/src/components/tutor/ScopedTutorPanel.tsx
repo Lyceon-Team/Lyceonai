@@ -59,6 +59,7 @@ import {
   type TutorSourceSurface,
 } from "@/hooks/tutor-client";
 import type { GuidedChoicesState } from "@/components/tutor/GuidedChoices";
+import type { ReviewIntent } from "@lyceon/shared/tutor-guided-choices";
 import { Pill } from "@/components/student-ui";
 import { LisaAvatar } from "@/components/tutor/TutorThreadParts";
 import {
@@ -108,6 +109,8 @@ export function ScopedTutorBody({
   sessionItemId,
   submitted = false,
   onEnded,
+  autoSend = null,
+  onAutoSent,
 }: {
   sourceSurface: Extract<TutorSourceSurface, "review" | "practice">;
   sessionItemId: string;
@@ -118,6 +121,9 @@ export function ScopedTutorBody({
    */
   submitted?: boolean;
   onEnded: () => void;
+  /** A guided choice tapped outside the panel, sent once the panel is up (TutorConversationBody). */
+  autoSend?: { nonce: number; intent: ReviewIntent } | null;
+  onAutoSent?: () => void;
 }): JSX.Element {
   // Looking is a GET. Nothing here creates a conversation on load.
   const existing = useItemConversation(sourceSurface, sessionItemId);
@@ -144,6 +150,8 @@ export function ScopedTutorBody({
       copy={submitted ? QUESTION_SCOPE_AFTER_SUBMIT_COPY : QUESTION_SCOPE_COPY}
       onEnded={onEnded}
       guidedChoices={guidedChoices}
+      autoSend={autoSend}
+      onAutoSent={onAutoSent}
     />
   );
 }
@@ -155,6 +163,8 @@ export function ScopedTutorPanel({
   onHide,
   revealOnOpen = false,
   revealKey = 0,
+  autoSend = null,
+  onAutoSent,
 }: {
   sourceSurface: Extract<TutorSourceSurface, "review" | "practice">;
   sessionItemId: string;
@@ -176,6 +186,12 @@ export function ScopedTutorPanel({
    * the scroll position inside the panel are kept). Read only with `revealOnOpen`.
    */
   revealKey?: number;
+  /**
+   * Owner ruling on #1349 (Karl, 2026-10-27): a choice tapped on the runner's LISA strip opened
+   * this panel; the panel sends it once.
+   */
+  autoSend?: { nonce: number; intent: ReviewIntent } | null;
+  onAutoSent?: () => void;
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
   // On mount (the panel mounts when it is opened, and it is the opening that is revealed) and
@@ -252,6 +268,8 @@ export function ScopedTutorPanel({
         sourceSurface={sourceSurface}
         sessionItemId={sessionItemId}
         onEnded={onHide}
+        autoSend={autoSend}
+        onAutoSent={onAutoSent}
       />
     </section>
   );
