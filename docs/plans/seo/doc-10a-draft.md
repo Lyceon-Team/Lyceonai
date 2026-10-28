@@ -465,7 +465,8 @@ Signed-in business events go only through the server `emitEvent` wrapper (Doc 07
 
 `user_signed_up.signup_source` comes from the visitor's first touch (SCL-201 IS 6).
 
-* **Derivation.** The landing address and referrer reduce to one of five words: `direct`, `referral`, `paid_ad`, `organic_search`, `unknown` (`analytics-consent-schema.ts:99-106, :144`). No campaign name, click id or URL is kept.
+* **Derivation.** The landing address and referrer reduce to one of five words: `direct`, `referral`, `paid_ad`, `organic_search`, `unknown` (`analytics-consent-schema.ts:99-106, :144`). No click id or URL is kept.
+* **Channel and campaign (SEO-1; owner brief "One funnel for every social post", Karl, 2026-10-28).** The `utm_source` and `utm_campaign` of the link reduce to two short allowlists, stored as `profiles.signup_channel` (`reddit`, `tiktok`, `instagram`, `youtube`, `facebook`, `x`, `email`, `other`) and `profiles.signup_campaign` (`qotd`, `worked_example`, `other`): a known value is kept, anything else is `other`, no tag is no value (`deriveSignupTags`, `analytics-consent-schema.ts`). They are written once by the server at account creation, are set-once in the database (`profiles_signup_tags_set_once`), are not sent to PostHog, and follow the storage rule below. Free-text campaign names are never kept.
 * **Storage under the consent rule** (owner report 2026-10-05; `client/src/lib/analytics/first-touch.ts:1-28`):
   * after Accept, the word is kept in sessionStorage for the tab;
   * after Refuse or GPC, it is never written, and is removed if present;

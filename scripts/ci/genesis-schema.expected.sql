@@ -10907,6 +10907,30 @@ $$;
 
 
 --
+-- Name: profiles_signup_tags_set_once(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_signup_tags_set_once() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.signup_channel IS NOT NULL
+     AND NEW.signup_channel IS DISTINCT FROM OLD.signup_channel THEN
+    RAISE EXCEPTION 'profiles.signup_channel is immutable once set (SEO-1)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.signup_campaign IS NOT NULL
+     AND NEW.signup_campaign IS DISTINCT FROM OLD.signup_campaign THEN
+    RAISE EXCEPTION 'profiles.signup_campaign is immutable once set (SEO-1)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: projection_core(uuid, text, text[], text[], integer[], numeric[], integer, integer, integer, integer, integer, numeric, numeric, integer, integer, integer, integer, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -18323,6 +18347,10 @@ CREATE TABLE public.profiles (
     actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
     analytics_user_id uuid,
     signup_source text,
+    signup_channel text,
+    signup_campaign text,
+    CONSTRAINT profiles_signup_campaign_check CHECK (((signup_campaign IS NULL) OR (signup_campaign = ANY (ARRAY['qotd'::text, 'worked_example'::text, 'other'::text])))),
+    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'youtube'::text, 'facebook'::text, 'x'::text, 'email'::text, 'other'::text])))),
     CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
@@ -18346,6 +18374,20 @@ COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA2
 --
 
 COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
+
+
+--
+-- Name: COLUMN profiles.signup_channel; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_channel IS 'SEO-1 (Karl, 2026-10-28): utm_source of the link the account came from, allowlisted; written once by the server at account creation; immutable (profiles_signup_tags_set_once).';
+
+
+--
+-- Name: COLUMN profiles.signup_campaign; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_campaign IS 'SEO-1 (Karl, 2026-10-28): utm_campaign of the link the account came from, allowlisted; written once by the server at account creation; immutable (profiles_signup_tags_set_once).';
 
 
 --
@@ -22780,6 +22822,13 @@ CREATE TRIGGER profiles_marketing_consent_log AFTER INSERT OR UPDATE OF marketin
 --
 
 CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_profile_age_fields();
+
+
+--
+-- Name: profiles profiles_signup_tags_set_once; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_signup_tags_set_once BEFORE UPDATE OF signup_channel, signup_campaign ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_signup_tags_set_once();
 
 
 --
@@ -27481,6 +27530,13 @@ REVOKE ALL ON FUNCTION public.profiles_marketing_consent_guard() FROM PUBLIC;
 --
 
 REVOKE ALL ON FUNCTION public.profiles_marketing_consent_log() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION profiles_signup_tags_set_once(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.profiles_signup_tags_set_once() FROM PUBLIC;
 
 
 --

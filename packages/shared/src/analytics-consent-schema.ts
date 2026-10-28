@@ -169,3 +169,78 @@ export function deriveSignupSource(
   }
   return "direct";
 }
+
+/**
+ * Which social channel and which campaign a sign-up came from (SEO-1: `signup_channel`,
+ * `signup_campaign`).
+ *
+ * @spec [owner brief "One funnel for every social post" (Karl, 2026-10-28) item 1: "/start passes
+ *       its UTM to sign-up (signup_channel / signup_campaign, SEO-1)"; item 3: "sign-ups by
+ *       signup_channel"] | @implemented [2026-10-28]
+ *
+ * plain English: `signup_source` (above, Doc 07A §6.2) says what KIND of visit a sign-up was;
+ * these two say WHICH of our own social links it came through, for the weekly growth report. They
+ * are read from the tagged links Lyceon itself publishes (`utm_source`, `utm_campaign`) and kept
+ * to two short allowlists: a known value is kept, any other tag becomes `other`, and no tag at all
+ * is no value. Nothing else from the URL is kept (no medium, content, term, click id or URL), so a
+ * stranger's free-text tag can never land in the database. Neither is sent to PostHog: the
+ * `user_signed_up` event's schema is Doc 07A's and is unchanged.
+ */
+export const signupChannelSchema = z.enum([
+  "reddit",
+  "tiktok",
+  "instagram",
+  "youtube",
+  "facebook",
+  "x",
+  "email",
+  "other",
+]);
+export type SignupChannel = z.infer<typeof signupChannelSchema>;
+
+export const signupCampaignSchema = z.enum(["qotd", "worked_example", "other"]);
+export type SignupCampaign = z.infer<typeof signupCampaignSchema>;
+
+export type SignupTags = {
+  channel: SignupChannel | null;
+  campaign: SignupCampaign | null;
+};
+
+/** Spellings our own links and the platforms' in-app browsers use for the same channel. */
+const CHANNEL_ALIASES: Readonly<Record<string, SignupChannel>> = {
+  ig: "instagram",
+  twitter: "x",
+  fb: "facebook",
+  yt: "youtube",
+};
+
+function tagValue<T extends string>(
+  raw: string | null,
+  schema: z.ZodEnum<[T, ...T[]]>,
+  aliases: Readonly<Record<string, T>>,
+  fallback: T,
+): T | null {
+  const value = (raw ?? "").trim().toLowerCase().replace(/-/g, "_");
+  if (value.length === 0) return null;
+  const parsed = schema.safeParse(aliases[value] ?? value);
+  return parsed.success ? parsed.data : fallback;
+}
+
+/** The channel and campaign tags of a landing URL's query string (`?utm_source=…`). */
+export function deriveSignupTags(landingSearch: string): SignupTags {
+  const params = new URLSearchParams(landingSearch);
+  return {
+    channel: tagValue(
+      params.get("utm_source"),
+      signupChannelSchema,
+      CHANNEL_ALIASES,
+      "other",
+    ),
+    campaign: tagValue(
+      params.get("utm_campaign"),
+      signupCampaignSchema,
+      {},
+      "other",
+    ),
+  };
+}

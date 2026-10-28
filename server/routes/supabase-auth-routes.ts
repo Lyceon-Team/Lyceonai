@@ -78,6 +78,10 @@ const signupSchema = z.object({
   // SCL-201 IS 6: the first-touch channel the browser derived in memory. Parsed by
   // recordSignupSource, never here — a bad value is dropped, it never refuses a signup.
   signupSource: z.unknown().optional(),
+  // SEO-1: the link's channel and campaign tags; re-parsed against the allowlists in
+  // recordSignupSource, never trusted as sent.
+  signupChannel: z.unknown().optional(),
+  signupCampaign: z.unknown().optional(),
   // Owner brief 2026-10-10 (follow-up to #1188): the page the visitor signed up FROM (e.g.
   // `/upgrade?promo=…`). Re-sanitised below with the one return-path allowlist; an unsafe or
   // unknown value is dropped, never a refusal.
@@ -249,6 +253,10 @@ router.post(
         authData.user.id,
         validation.data.signupSource,
         req.requestId,
+        {
+          channel: validation.data.signupChannel,
+          campaign: validation.data.signupCampaign,
+        },
       );
 
       // AS-1: durable + non-throwing. A SINGLE-store failure keeps the signup (outbox absorbs it).

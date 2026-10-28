@@ -416,6 +416,11 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
           user.id,
           req.query.signupSource,
           req.requestId,
+          // SEO-1: the link's tags ride the callback URL beside signupSource.
+          {
+            channel: req.query.signupChannel,
+            campaign: req.query.signupCampaign,
+          },
         );
       } else {
         await emitEvent(user.id, "user_signed_in", {});

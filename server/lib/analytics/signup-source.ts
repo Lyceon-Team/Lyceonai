@@ -13,21 +13,48 @@
  *
  * edge cases: an unparseable value is ignored (the event then reports `unknown`); a write failure
  * is logged and the signup carries on — attribution is never worth an account.
+ *
+ * SEO-1 (owner brief "One funnel for every social post", Karl, 2026-10-28): the same write also
+ * records `signup_channel` and `signup_campaign`, the allowlisted `utm_source` / `utm_campaign` of
+ * the link the visitor came by (packages/shared deriveSignupTags). Each is re-parsed here against
+ * the same allowlist; an absent or unknown value is left NULL. Same set-once rule, same guard (a
+ * not-yet-onboarded account), same trigger-backed immutability (profiles_signup_tags_set_once).
  */
 import { getSupabaseAdmin } from "../../middleware/supabase-auth";
-import { signupSourceSchema } from "../../../packages/shared/src/analytics-consent-schema";
+import {
+  signupCampaignSchema,
+  signupChannelSchema,
+  signupSourceSchema,
+} from "../../../packages/shared/src/analytics-consent-schema";
 import { logger } from "../../logger";
+
+/** What the browser sent for the channel and campaign; re-parsed here, never trusted. */
+export type RawSignupTags = { channel: unknown; campaign: unknown };
+
+/** The columns a sign-up's tags write: allowlisted values only, absent ones left out. */
+export function signupTagColumns(raw: RawSignupTags | undefined): {
+  signup_channel?: string;
+  signup_campaign?: string;
+} {
+  const channel = signupChannelSchema.safeParse(raw?.channel);
+  const campaign = signupCampaignSchema.safeParse(raw?.campaign);
+  return {
+    ...(channel.success ? { signup_channel: channel.data } : {}),
+    ...(campaign.success ? { signup_campaign: campaign.data } : {}),
+  };
+}
 
 export async function recordSignupSource(
   profileId: string,
   raw: unknown,
   requestId: string | undefined,
+  rawTags?: RawSignupTags,
 ): Promise<void> {
   const parsed = signupSourceSchema.safeParse(raw);
   if (!parsed.success) return;
   const { error } = await getSupabaseAdmin()
     .from("profiles")
-    .update({ signup_source: parsed.data })
+    .update({ signup_source: parsed.data, ...signupTagColumns(rawTags) })
     .eq("id", profileId)
     .is("signup_source", null)
     .is("profile_completed_at", null);
