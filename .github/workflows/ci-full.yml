@@ -552,6 +552,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/smart-landing.mutations.sh
 
+      # Sign-up channel (Karl, 2026-10-28): plants a lost source mapping, any campaign kept, the
+      # first touch losing to the sign-up page, the link into sign-up not carrying it, storage on
+      # the device, the Google path not sending or recording it, an onboarded account written,
+      # set-once and the under-13 clear removed in the database, and free text in the campaign.
+      # Each must turn its guarding test red by name.
+      - name: Sign-up attribution mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/signup-attribution.mutations.sh
+
       # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
       # new-account test ignoring the account's age, email signup recording only on a client
       # consent claim, and a disabled Continue with Google. Each must turn its test red by name.

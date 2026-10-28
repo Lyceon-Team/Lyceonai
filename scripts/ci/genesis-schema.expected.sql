@@ -9574,6 +9574,30 @@ $$;
 
 
 --
+-- Name: landing_rotation_open(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT public.qotd_day(p_now) > public.qotd_day(p.profile_completed_at)
+       FROM public.profiles p
+      WHERE p.id = p_profile_id
+        AND p.profile_completed_at IS NOT NULL),
+    false);
+$$;
+
+
+--
+-- Name: FUNCTION landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) IS 'Smart landing (Karl, 2026-10-28): true once the first QOTD day after the day the student onboarded has started. Until then the student lands on Home and the landing records nothing.';
+
+
+--
 -- Name: lifecycle_claim(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -10902,6 +10926,37 @@ BEGIN
     );
   END IF;
   RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: profiles_signup_attribution_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_signup_attribution_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.is_under_13 IS TRUE THEN
+    NEW.signup_channel := NULL;
+    NEW.signup_campaign := NULL;
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.signup_channel IS NOT NULL
+       AND NEW.signup_channel IS DISTINCT FROM OLD.signup_channel THEN
+      RAISE EXCEPTION 'profiles.signup_channel is set once'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.signup_campaign IS NOT NULL
+       AND NEW.signup_campaign IS DISTINCT FROM OLD.signup_campaign THEN
+      RAISE EXCEPTION 'profiles.signup_campaign is set once'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
@@ -18324,6 +18379,10 @@ CREATE TABLE public.profiles (
     actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
     analytics_user_id uuid,
     signup_source text,
+    signup_channel text,
+    signup_campaign text,
+    CONSTRAINT profiles_signup_campaign_check CHECK (((signup_campaign IS NULL) OR (signup_campaign ~ '^[a-z0-9_]{1,40}$'::text))),
+    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'facebook'::text, 'email'::text, 'direct'::text, 'other'::text])))),
     CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
@@ -18347,6 +18406,20 @@ COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA2
 --
 
 COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
+
+
+--
+-- Name: COLUMN profiles.signup_channel; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_channel IS 'Karl, 2026-10-28: the first-touch channel from the landing URL''s UTM (coarse, allowlisted; no URL). Written once by the server before onboarding; never held for an under-13 profile.';
+
+
+--
+-- Name: COLUMN profiles.signup_campaign; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_campaign IS 'Karl, 2026-10-28: the first-touch utm_campaign when it is an allowlisted name (packages/shared/src/signup-attribution.ts), else null. Written once with signup_channel; never held for an under-13 profile.';
 
 
 --
@@ -22604,6 +22677,13 @@ CREATE TRIGGER profiles_marketing_consent_log AFTER INSERT OR UPDATE OF marketin
 --
 
 CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_profile_age_fields();
+
+
+--
+-- Name: profiles profiles_zz_signup_attribution; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_zz_signup_attribution BEFORE INSERT OR UPDATE OF signup_channel, signup_campaign, date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_signup_attribution_guard();
 
 
 --
@@ -26886,6 +26966,14 @@ GRANT ALL ON FUNCTION public.landing_claim_summaries(p_now timestamp with time z
 
 REVOKE ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) TO service_role;
+
+
+--
+-- Name: FUNCTION landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
 
 
 --
