@@ -37,7 +37,8 @@ describe("scripts/rag/sources.json", () => {
 
   it("keeps every tier 5 source strict, and rejects a standard one", () => {
     const tier5 = sources.filter((s) => s.tier === 5);
-    expect(tier5.length).toBe(6);
+    // 6, plus Penguin SAT Prep (7 entries) and Dr. TestPrep (6) from the 2026-10-27 expansion.
+    expect(tier5.length).toBe(19);
     for (const s of tier5) expect(s.review_level).toBe("strict");
     const loosened = tier5.map((s) => ({ ...s, review_level: "standard" }));
     expect(seedSourcesSchema.safeParse(loosened).success).toBe(false);
