@@ -248,14 +248,14 @@ describe("every surface shows the stored order and names the served letter (SCL-
 
   it("the email names no choice and no letter", () => {
     const fields = qotdEmailQuestionFields(row);
+    // Presence first: the real row yields a stem and metadata (no hand-built fallback).
+    if (fields.stem === null || fields.meta === null) {
+      throw new Error("the fixture row produced no email fields");
+    }
     const email = qotdDailyEmail({
       currentStreak: 3,
-      stem: fields.stem ?? "",
-      meta: fields.meta ?? {
-        section: "Math",
-        domain: "Algebra",
-        difficulty: 1,
-      },
+      stem: fields.stem,
+      meta: fields.meta,
       siteUrl: "https://lyceon.ai",
       unsubscribeUrl: null,
     });
