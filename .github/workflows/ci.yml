@@ -1424,6 +1424,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/qotd-schema-gates.sql
 
+      # Worked examples (Karl, 2026-10-27): table shape, RLS, the leak rule both ways (no
+      # full-length or today-or-later QOTD question; the QOTD pool skips approved examples), the
+      # usage view and the metrics table. Same database, one transaction, rolled back.
+      - name: Worked-example schema gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/worked-examples-schema-gates.sql
+
       # LISA curriculum retrieval store (LISA_Video_RAG_Plan.md Step C, pgvector; SCL-231). Same
       # database as above, the full pipeline applied on pg17 with pgvector; the gate writes only
       # inside one transaction and rolls back. R3 proves the skill filter cannot come back short.
