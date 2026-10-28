@@ -187,14 +187,18 @@ export function buildTiktokCarousel(
     }
     // Slide 1 letters by position; slide 3 must name the same letter for the same choice. The
     // served letter is the archive's correct_letter, from the day's stored order (SCL-258).
-    if (q.correct_letter === null || "ABCD"[index] !== q.correct_letter) {
+    const shown = (["A", "B", "C", "D"] as const)[index];
+    if (
+      shown === undefined ||
+      (q.correct_letter !== undefined && shown !== q.correct_letter)
+    ) {
       return {
         ok: false,
         reason: "invalid",
-        problem: `tiktok: the correct choice is shown in position ${"ABCD"[index] ?? "?"}, not at the served letter ${q.correct_letter ?? "(none)"}`,
+        problem: `tiktok: the correct choice is shown in position ${shown ?? "?"}, not at the served letter ${q.correct_letter ?? "(none)"}`,
       };
     }
-    answer = { kind: "choice", letter: q.correct_letter, text: correct.text };
+    answer = { kind: "choice", letter: shown, text: correct.text };
   } else {
     const value = q.correct_answer?.trim() ?? "";
     if (value === "") {

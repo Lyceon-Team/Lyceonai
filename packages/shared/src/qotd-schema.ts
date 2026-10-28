@@ -121,8 +121,13 @@ export const qotdArchiveQuestionSchema = z
     options: z.array(qotdOptionSchema),
     /** The correct option's canonical key (its id above). */
     correct_option_id: qotdOptionKeySchema.nullable(),
-    /** The letter the correct option is shown under, from the stored order. Grid-in: null. */
-    correct_letter: qotdOptionKeySchema.nullable(),
+    /**
+     * The letter the correct option is shown under, from the stored order. Grid-in: null. The
+     * server always sends it; it is optional to READ only because a reader (the social run, a
+     * browser tab) can meet a server that predates SCL-258, whose options are in the order it
+     * showed (canonical). Readers letter by position and require this to agree when present.
+     */
+    correct_letter: qotdOptionKeySchema.nullable().optional(),
     correct_answer: z.string().nullable(),
     explanation: z.string(),
   })

@@ -353,6 +353,42 @@ describe("the reveal and the TikTok carousel refuse a served letter the options 
   });
 });
 
+describe("a server that predates SCL-258 (no correct_letter): letters by served position", () => {
+  it("the reveal and the carousel name the letter the options were shown under", () => {
+    // What the production API answered before this deploy: canonical order, no correct_letter.
+    // (The social run reads production, so it meets this during the deploy window.)
+    const archive = toArchiveResponse(row);
+    const { correct_letter: _omitted, ...question } = archive.question;
+    const canonical = (row.options as { key: string; text: string }[]).map(
+      (o) => ({ id: o.key as "A" | "B" | "C" | "D", text: o.text }),
+    );
+    const legacy = {
+      ...archive,
+      question: { ...question, options: canonical },
+    };
+    expect("correct_letter" in legacy.question).toBe(false);
+    const reveal = buildReveal(legacy, POSTED);
+    expect(reveal.ok).toBe(true);
+    if (reveal.ok && reveal.reveal.status === "revealed") {
+      // B was shown as B on that server.
+      expect(reveal.reveal.answer).toEqual({
+        kind: "choice",
+        letter: "B",
+        text: "5",
+      });
+    }
+    const tiktok = buildTiktokCarousel(legacy, POSTED);
+    expect(tiktok.ok).toBe(true);
+    if (tiktok.ok) {
+      expect(tiktok.carousel.answer).toEqual({
+        kind: "choice",
+        letter: "B",
+        text: "5",
+      });
+    }
+  });
+});
+
 describe("Slack: the subreddit and the failure notice", () => {
   it("the Reddit heading names r/satquestion (singular), the whole token", () => {
     const manifest = {

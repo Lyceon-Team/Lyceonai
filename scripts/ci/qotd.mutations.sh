@@ -541,8 +541,8 @@ restore
 # Re-pointed 2026-10-28 (SCL-258): the guard compares the shown letter with the SERVED letter.
 echo "=== (47) slide 3 may name a letter slide 1 does not show for that choice ==="
 plant shared/qotd/tiktok.ts \
-  '    if (q.correct_letter === null || "ABCD"[index] !== q.correct_letter) {' \
-  "    if (q.correct_letter === null) {" || { bad "M47 STALE"; exit 1; }
+  "      (q.correct_letter !== undefined && shown !== q.correct_letter)" \
+  "      false" || { bad "M47 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M47 letter mismatch" "refuses a day whose correct letter is not the letter slide 1 shows" "$OUT" "$RC"
 restore
@@ -681,7 +681,7 @@ fi
 
 echo "=== (67) the reveal names the canonical letter, not the served one ==="
 plant shared/qotd/reveal.ts \
-  "      letter: q.correct_letter," \
+  "      letter: shown," \
   "      letter: correct.id," || { bad "M67 STALE"; exit 1; }
 OUT="$(ts_check "$AGREE")"; RC=$?
 expect_red "M67 reveal canonical letter" "yesterday's reveal names the served letter" "$OUT" "$RC"

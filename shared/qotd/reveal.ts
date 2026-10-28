@@ -13,9 +13,9 @@
  *     GET /api/public/qotd/:date, which the server refuses for today and later). `buildReveal`
  *     refuses any day but the one before the posted day, so today's answer cannot become a
  *     reveal even if the wrong day were fetched.
- *   - The letter is the archive's `correct_letter` (the stored order's, SCL-258), and the reveal
- *     REFUSES the day when the correct choice does not sit at that letter in the archive's
- *     options: the letter Karl comments must be the one yesterday's post showed.
+ *   - The letter is the correct choice's position in the archive's options (the stored order,
+ *     SCL-258), and the reveal REFUSES the day when the archive's `correct_letter` names another:
+ *     the letter Karl comments must be the one yesterday's post showed.
  *   - A day the archive does not publish (a repaired question, owner 2026-10-08) is `withheld`:
  *     the notice says so and carries nothing else.
  *   - The Reddit post is today's question as plain text, built from the social input (the
@@ -71,14 +71,16 @@ export function buildReveal(
   if (q.item_type === "mcq") {
     const index = q.options.findIndex((o) => o.id === q.correct_option_id);
     const correct = q.options[index];
-    if (!correct || q.correct_letter === null) {
+    const shown = (["A", "B", "C", "D"] as const)[index];
+    if (!correct || shown === undefined) {
       return {
         ok: false,
         problem: "reveal: the archive day names no correct choice",
       };
     }
-    // The letter the day showed (SCL-258). Refused when the served options disagree with it.
-    if ("ABCD"[index] !== q.correct_letter) {
+    // The letter the day showed: the correct option's position in the served options (SCL-258).
+    // Refused when the archive's correct_letter disagrees (or is null for a multiple-choice day).
+    if (q.correct_letter !== undefined && q.correct_letter !== shown) {
       return {
         ok: false,
         problem:
@@ -87,7 +89,7 @@ export function buildReveal(
     }
     answer = {
       kind: "choice",
-      letter: q.correct_letter,
+      letter: shown,
       text: plainMathText(correct.text),
     };
   } else {
