@@ -487,12 +487,14 @@ async function resolveTrustedScopeForCreate(
  * (value=null, failed=true). The serializer uses this distinction for the
  * correct-answer blocking gate: pre-submit + failed = block.
  */
-type CorrectAnswerResult = {
+export type CorrectAnswerResult = {
   value: string | null;
   failed: boolean;
 };
 
-async function getCorrectAnswerForScope(
+// Exported for the G0-2 case import (tests/eval/teaching-quality/import-case.ts), which keeps
+// the same BFF-local scan key the turn path keeps; never put on the wire pre-submit.
+export async function getCorrectAnswerForScope(
   questionRowId: string | null,
   surface: string | null | undefined,
   sessionItemId: string | null | undefined,
@@ -2154,6 +2156,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     if (offeredVideos.length > 0) {
       envelope.offered_videos = toWireVideos(offeredVideos);
     }
+    // The same detection gates the worker's Desmos block in general mode (Karl, 2026-10-27;
+    // docs/lisa/desmos-playbook.md §8). The method only: never the message text.
+    envelope.requested_method = requested?.method ?? null;
     // A guided choice that reaches the model (`walkthrough`; Phase B's two when enabled) is told
     // to the worker, which records nothing from it into the prompt (SCL-255: no prompt change).
     if (turnIntent !== null) {
@@ -3063,9 +3068,14 @@ router.post(
           .eq("conversation_id", conversation.id)
           .eq("role", "student");
         if (countError || turnCount === null) {
-          logger.warn("TUTOR_RUNTIME", "turn_count_failed", "tutor_session_ended not emitted", {
-            code: countError?.code ?? "no_count",
-          });
+          logger.warn(
+            "TUTOR_RUNTIME",
+            "turn_count_failed",
+            "tutor_session_ended not emitted",
+            {
+              code: countError?.code ?? "no_count",
+            },
+          );
         } else {
           await emitEvent(studentId, "tutor_session_ended", {
             tutor_session_id: conversation.id,

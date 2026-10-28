@@ -10,13 +10,17 @@
  *    Stored rows use task type RETRIEVAL_DOCUMENT; Step F's query embedding uses
  *    RETRIEVAL_QUERY.
  *
- * credentials: attached by the session's egress proxy (or ADC on a workstation); nothing is
- *  read from the environment, and fetch must go through the proxy (NODE_USE_ENV_PROXY=1).
+ * credentials: in a cloud session, attached by the egress proxy (fetch must go through it,
+ *  NODE_USE_ENV_PROXY=1). On a workstation, where no HTTPS_PROXY is set, Application Default
+ *  Credentials (`gcloud auth application-default login`) through google-auth-library; no key
+ *  is read from the environment either way. Before 2026-10-27 the workstation path sent no
+ *  credential at all, so every call there failed with 401.
  *
  * edge cases: 429 and 5xx retry with backoff (6 tries, 5 s doubling, jitter); anything else, or a response that
  *  fails its schema, throws with the status and the step name. Response bodies are not
  *  logged: they can echo transcript text, which is never stored or printed.
  */
+import { GoogleAuth } from "google-auth-library";
 import { z } from "zod";
 
 export const PROJECT = "replit-cop";
@@ -24,7 +28,32 @@ export const GENERATION_MODEL_DEFAULT = "gemini-3.5-flash";
 export const EMBEDDING_MODEL = "text-embedding-005";
 export const EMBEDDING_DIMENSIONS = 768;
 
+/** "proxy" in a cloud session (the egress proxy attaches credentials); "adc" on a workstation. */
+export function vertexAuthMode(): "proxy" | "adc" {
+  return (process.env.HTTPS_PROXY ?? process.env.https_proxy ?? "") === ""
+    ? "adc"
+    : "proxy";
+}
+
+let adcClient: GoogleAuth | null = null;
+
+/** The Authorization header for a Vertex REST call: none behind the proxy, ADC otherwise. */
+export async function vertexAuthHeaders(): Promise<Record<string, string>> {
+  if (vertexAuthMode() === "proxy") return {};
+  adcClient ??= new GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+  });
+  const token = await adcClient.getAccessToken();
+  if (!token) {
+    throw new Error(
+      "no Application Default Credentials: run `gcloud auth application-default login`",
+    );
+  }
+  return { authorization: `Bearer ${token}` };
+}
+
 export function assertProxied(): void {
+  if (vertexAuthMode() === "adc") return;
   if (process.env.NODE_USE_ENV_PROXY !== "1") {
     process.stderr.write(
       "run with NODE_USE_ENV_PROXY=1; no request was sent.\n",
@@ -41,7 +70,10 @@ async function postJson(
   for (let attempt = 0; ; attempt += 1) {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(await vertexAuthHeaders()),
+      },
       body: JSON.stringify(body),
     });
     // A 200 whose body is not JSON ("upstream request failed" from the egress proxy, seen
@@ -151,6 +183,8 @@ type Price = { input: number; cached: number; output: number };
  *    Third-party aggregator figures read 2026-10-15 (llmreference.com, getmaxim.ai).
  *  - gemini-3.1-flash-lite: $0.25 input, $0.025 cached, $1.50 output. Third-party figures read
  *    2026-10-23 (getmaxim.ai, futureagi.com).
+ *  - gemini-3.1-pro-preview (the G0-2 judge): $2.00 input, $0.20 cached, $12.00 output, at
+ *    the under-200k-token tier. Third-party figures read 2026-10-27 (getmaxim.ai, requesty.ai).
  * The official Vertex pricing page did not load from this session; the raw token counts are
  * reported alongside, so the cost can be recomputed against the real rate card. A model not
  * listed is costed at the gemini-3.5-flash rate (the higher of the two).
@@ -158,6 +192,7 @@ type Price = { input: number; cached: number; output: number };
 export const MODEL_PRICES: Readonly<Record<string, Price>> = {
   "gemini-3.5-flash": { input: 1.5, cached: 0.15, output: 9.0 },
   "gemini-3.1-flash-lite": { input: 0.25, cached: 0.025, output: 1.5 },
+  "gemini-3.1-pro-preview": { input: 2.0, cached: 0.2, output: 12.0 },
 };
 export const PRICE_PER_MTOK: Price = { input: 1.5, cached: 0.15, output: 9.0 };
 export function priceOf(model: string): Price {

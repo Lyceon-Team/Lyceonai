@@ -424,6 +424,37 @@ const QUESTION_CONTENT_COLUMNS_PRE_SUBMIT =
 const QUESTION_CONTENT_COLUMNS_POST_SUBMIT =
   "question_stem, question_passage, question_options, question_item_type, selected_answer, ordinal, option_order, option_token_map, question_explanation";
 
+/**
+ * @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27] | @implemented [2026-10-27]
+ * plain English: the item's subject for the worker's math-only Desmos block, read through the
+ * one canonical reader above (`resolveQuestionSection`, from the question row itself, never
+ * inferred from mastery data). Any doubt (no row id, a query error, no row, an unexpected value)
+ * is null, and null keeps the block off: unlike the guided choices, a failed read here is logged
+ * and the turn goes on without the block. (Merged 2026-10-28, #1332: this branch and `lisa`
+ * each added a reader of `questions.section`; the one reader is kept, this keeps its fail-safe.)
+ */
+async function resolveDesmosQuestionSection(
+  questionRowId: string | null,
+): Promise<QuestionSection | null> {
+  if (!questionRowId) return null;
+  try {
+    return await resolveQuestionSection(questionRowId);
+  } catch (err: unknown) {
+    logger.warn(
+      "TUTOR_CONTEXT",
+      "question_section_query_failed",
+      "Could not read the question's section; the Desmos block stays off",
+      {
+        code:
+          typeof err === "object" && err !== null && "code" in err
+            ? String((err as { code: unknown }).code)
+            : null,
+      },
+    );
+    return null;
+  }
+}
+
 export async function resolveQuestionContent(
   studentId: string,
   scope: z.infer<typeof resolvedScopeSchema>,
@@ -508,6 +539,7 @@ export async function resolveQuestionContent(
     return {
       stem: data.question_stem as string,
       passage: (data.question_passage as string) ?? null,
+      section: await resolveDesmosQuestionSection(scope.source_question_row_id),
       options,
       item_type: itemType,
       explanation,
