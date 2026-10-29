@@ -749,7 +749,7 @@ export function coverageReport(
     `coverage: ${subSkills.length - noSub.length}/${subSkills.length} sub-skills and ${skills.length - noSkill.length}/${skills.length} skills have a focused segment`,
   );
   for (const k of noSkill)
-    lines.push(`no focused segment, skill: ${k.replace("|", " ")}`);
+    lines.push(`no focused segment, skill: ${k.replace(/\|/g, " ")}`);
   for (const s of noSub)
     lines.push(`no focused segment, sub-skill: ${s.id} [${s.skill_code}]`);
   return lines;
