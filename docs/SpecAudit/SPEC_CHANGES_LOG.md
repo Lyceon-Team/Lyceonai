@@ -5116,3 +5116,16 @@ Disclosure: none.
 Owner action: fold the IS text into Doc 07A §5.3 and add `experiment` to Doc 07 Parent §2.1's class list.
 Build artifact: `packages/shared/src/event-registry-schema.ts` (`canonicalEventClassSchema`); `infra/event-schema-registry.yaml` (the four `experiment` events); `server/lib/analytics/event-registry.generated.ts` (regenerated).
 Id: see SCL-244 (allocated in sequence after it).
+
+SCL-256 | 2026-10-28 | Adds the Sub-skill / Cluster Layer (SCL): a two-level taxonomy below the 29 CB skills — sub-skills (the question-level ask) and clusters (the solving steps). Creates five new tables (`sub_skills`, `clusters`, `question_sub_skills`, `question_clusters`, `distractor_clusters`), a canonical JSON file (`content/canonical/subskill-cluster-taxonomy.json`), a re-runnable loader, and a CI consistency check. Additive only — no changes to `questions` or any existing table. No student/guardian visibility. | PROPOSED
+Status: PROPOSED. Per Karl's brief (2026-10-28): "Wire in the Sub-skill / Cluster Layer (SCL) per SPEC-CHANGE_SCL.md." Sub-skills locked (135, pending population from `taxonomy_reconciled.json`); clusters blocked on cluster merge finalization (§10).
+Affected: `content/canonical/` (new taxonomy file), Supabase `public` schema (5 new tables), authoring gate (future: tagging at creation), tagging workflow (future: backfill).
+NOT affected: Doc 05 mastery family (unchanged), student/guardian surfaces (no exposure), `content/canonical/taxonomy.json` (untouched).
+Schema: 5 new tables per SPEC-CHANGE_SCL.md §4 — `public.sub_skills`, `public.clusters`, `public.question_sub_skills`, `public.question_clusters`, `public.distractor_clusters`. All additive. RLS: zero policies, service_role only (§5 ruling #7). Indexes on `sub_skill_id`, `cluster_id` for cross-skill diagnosis.
+Write contract: no `is_primary` column; uncapped sub-skills per question; M:N overlap allowed; cross-skill sub-skills allowed (no FK from `sub_skills.skill_code` to `question.skill`); clusters are solving steps; CB 29-skill boundaries respected; FK integrity prevents free-text drift; deterministic — canonical writer is the tagging job only.
+Versioning: every taxonomy row and tag carries `taxonomy_version` (§6). Stale tags surfaced for re-tagging.
+Rollback: drop the 5 tables in reverse FK order; `questions` untouched.
+Disclosure: none (internal taxonomy; no student/guardian surface).
+Owner action: apply `supabase/migrations/20261115000000_scl_subskill_cluster_layer.sql`; run `scripts/scl-taxonomy-loader.ts --apply` after populating the canonical JSON.
+Build artifact: `supabase/migrations/20261115000000_scl_subskill_cluster_layer.sql` (5 tables, indexes, RLS); `content/canonical/subskill-cluster-taxonomy.json` (canonical source of truth, empty pending data); `scripts/scl-taxonomy-loader.ts` (re-runnable, idempotent, version-stamped mirror); `scripts/scl-taxonomy-check.ts` (CI consistency gate); `tests/ci/scl-taxonomy.ci.test.ts` (27 tests: structural validation, RLS denial).
+Id: `SCL-256` derived at the moment of use, 2026-10-28, after `git fetch --all --prune`, by the register scan across every remote ref: the highest allocated anywhere is `SCL-255`. Open PRs searched for SCL-256 and SCL-257: none. One entry allocated.

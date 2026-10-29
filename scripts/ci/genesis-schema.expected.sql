@@ -16460,6 +16460,27 @@ COMMENT ON VIEW public.canonical_skill_catalog IS 'Distinct (section, domain, sk
 
 
 --
+-- Name: clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.clusters (
+    id text NOT NULL,
+    display_name text NOT NULL,
+    family text NOT NULL,
+    definition text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    evidence_count integer DEFAULT 0 NOT NULL,
+    core boolean DEFAULT false NOT NULL,
+    skills_seen_in text[] DEFAULT '{}'::text[] NOT NULL,
+    method_in jsonb DEFAULT '{}'::jsonb NOT NULL,
+    playbook_move text,
+    aliases text[] DEFAULT '{}'::text[] NOT NULL,
+    taxonomy_version text NOT NULL,
+    CONSTRAINT clusters_family_check CHECK ((family = ANY (ARRAY['by_hand_doing'::text, 'by_hand_recognizing'::text, 'desmos'::text])))
+);
+
+
+--
 -- Name: consent_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -16781,6 +16802,18 @@ CREATE TABLE public.difficulties (
     value integer NOT NULL,
     label text NOT NULL,
     description text
+);
+
+
+--
+-- Name: distractor_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.distractor_clusters (
+    question_id text NOT NULL,
+    option_key text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL
 );
 
 
@@ -18363,6 +18396,32 @@ COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18): one question per Amer
 
 
 --
+-- Name: question_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_clusters (
+    question_id text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_sub_skills (
+    question_id text NOT NULL,
+    sub_skill_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: rate_limit_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19158,6 +19217,23 @@ COMMENT ON COLUMN public.student_study_profile.target_exam_dates IS 'SCL-223: ev
 
 
 --
+-- Name: sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sub_skills (
+    id text NOT NULL,
+    skill_code text NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    name text NOT NULL,
+    definition text NOT NULL,
+    inclusion_test text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    taxonomy_version text NOT NULL
+);
+
+
+--
 -- Name: taxonomy_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19946,6 +20022,14 @@ ALTER TABLE ONLY public.calendar_runtime_config
 
 
 --
+-- Name: clusters clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clusters
+    ADD CONSTRAINT clusters_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: consent_runtime_config_history consent_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20047,6 +20131,14 @@ ALTER TABLE ONLY public.deletion_verification_records
 
 ALTER TABLE ONLY public.difficulties
     ADD CONSTRAINT difficulties_pkey PRIMARY KEY (value);
+
+
+--
+-- Name: distractor_clusters distractor_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_pkey PRIMARY KEY (question_id, option_key, cluster_id);
 
 
 --
@@ -20554,6 +20646,22 @@ ALTER TABLE ONLY public.qotd_schedule
 
 
 --
+-- Name: question_clusters question_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_pkey PRIMARY KEY (question_id, cluster_id);
+
+
+--
+-- Name: question_sub_skills question_sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_pkey PRIMARY KEY (question_id, sub_skill_id);
+
+
+--
 -- Name: questions questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20882,6 +20990,14 @@ ALTER TABLE ONLY public.student_study_profile
 
 
 --
+-- Name: sub_skills sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sub_skills
+    ADD CONSTRAINT sub_skills_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: taxonomy_versions taxonomy_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21167,6 +21283,13 @@ CREATE INDEX curriculum_chunks_embedding_idx ON public.curriculum_chunks USING h
 --
 
 CREATE INDEX curriculum_chunks_skills_idx ON public.curriculum_chunks USING gin (skill_codes);
+
+
+--
+-- Name: distractor_clusters_cluster_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX distractor_clusters_cluster_id_idx ON public.distractor_clusters USING btree (cluster_id);
 
 
 --
@@ -22136,6 +22259,20 @@ CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btre
 
 
 --
+-- Name: question_clusters_cluster_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX question_clusters_cluster_id_idx ON public.question_clusters USING btree (cluster_id);
+
+
+--
+-- Name: question_sub_skills_sub_skill_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX question_sub_skills_sub_skill_id_idx ON public.question_sub_skills USING btree (sub_skill_id);
+
+
+--
 -- Name: scoring_constants_unique_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -23008,6 +23145,22 @@ ALTER TABLE ONLY public.deletion_verification_records
 
 
 --
+-- Name: distractor_clusters distractor_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: distractor_clusters distractor_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: distractor_taxonomy_v1 distractor_taxonomy_v1_section_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -23397,6 +23550,38 @@ ALTER TABLE ONLY public.qotd_daily_stats
 
 ALTER TABLE ONLY public.qotd_schedule
     ADD CONSTRAINT qotd_schedule_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: question_clusters question_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: question_clusters question_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_sub_skills question_sub_skills_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_sub_skills question_sub_skills_sub_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_sub_skill_id_fkey FOREIGN KEY (sub_skill_id) REFERENCES public.sub_skills(id);
 
 
 --
@@ -24186,6 +24371,12 @@ ALTER TABLE public.calendar_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calendar_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.clusters ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: consent_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -24312,6 +24503,12 @@ ALTER TABLE public.difficulties ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY difficulties_read ON public.difficulties FOR SELECT TO anon, authenticated USING (true);
 
+
+--
+-- Name: distractor_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.distractor_clusters ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: distractor_taxonomy_v1; Type: ROW SECURITY; Schema: public; Owner: -
@@ -24661,6 +24858,18 @@ ALTER TABLE public.qotd_daily_stats ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.qotd_schedule ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: question_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.question_clusters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: question_sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.question_sub_skills ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -25029,6 +25238,12 @@ CREATE POLICY student_study_profile_admin_read ON public.student_study_profile F
 
 CREATE POLICY student_study_profile_student_read ON public.student_study_profile FOR SELECT TO authenticated USING ((student_id = auth.uid()));
 
+
+--
+-- Name: sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sub_skills ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: taxonomy_versions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -28245,6 +28460,13 @@ GRANT SELECT ON TABLE public.canonical_skill_catalog TO service_role;
 
 
 --
+-- Name: TABLE clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.clusters TO service_role;
+
+
+--
 -- Name: TABLE consent_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -28314,6 +28536,13 @@ GRANT SELECT ON TABLE public.deletion_request_log TO service_role;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.difficulties TO service_role;
 GRANT SELECT ON TABLE public.difficulties TO anon;
 GRANT SELECT ON TABLE public.difficulties TO authenticated;
+
+
+--
+-- Name: TABLE distractor_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.distractor_clusters TO service_role;
 
 
 --
@@ -29295,6 +29524,20 @@ GRANT SELECT,INSERT ON TABLE public.qotd_schedule TO service_role;
 
 
 --
+-- Name: TABLE question_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_clusters TO service_role;
+
+
+--
+-- Name: TABLE question_sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_sub_skills TO service_role;
+
+
+--
 -- Name: TABLE rate_limit_ledger; Type: ACL; Schema: public; Owner: -
 --
 
@@ -29760,6 +30003,13 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.student_skill_kpi TO service_r
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.student_study_profile TO service_role;
 GRANT SELECT ON TABLE public.student_study_profile TO authenticated;
+
+
+--
+-- Name: TABLE sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sub_skills TO service_role;
 
 
 --
