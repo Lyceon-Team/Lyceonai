@@ -542,7 +542,7 @@ function headingBlockStart(text: string, at: number, floor: number): number {
 
 /** Pure. A heading's words without markdown symbols. */
 function plainHeading(h: string): string {
-  return h.replace(/<\/?[a-z]+>|[*_]/gi, "").trim();
+  return h.replace(/[<>*_]/g, "").trim();
 }
 
 /**
