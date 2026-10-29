@@ -25,6 +25,15 @@
  *      and its sub-skills are set aside from agreement.
  *   S9 the corrected gate (rule 3): 70% on sub-skills, judged only for skills with at least 3
  *      tagged segments; fewer are reported, not gated; an empty judged set does not pass.
+ *   S10 the review file carries each tag's evidence, and the apply reads it back (Phase B: the
+ *       apply SQL is built from the reviewed file alone).
+ *   S11 the apply refuses a bad file whole: unknown id, wrong section, span outside the video,
+ *       overlap, a yes row with no tag, a video outside the library; drop and untagged rows are
+ *       left out.
+ *   S12 the apply SQL: one transaction, the vocabulary precondition first, one writer call per
+ *       video, only yes rows approved, the approver a placeholder that fails the cast, and no
+ *       text able to close its dollar quote.
+ *   S13 the shopping list names every skill and sub-skill with no focused segment.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -38,9 +47,19 @@ import {
   type Taxonomy,
 } from "../../scripts/rag/segment-videos";
 import {
+  APPROVER_PLACEHOLDER,
+  buildApplySql,
+  parseEvidence,
+  parseReviewedSegments,
+  type ApplyTaxonomy,
+} from "../../scripts/rag/apply-video-segments";
+import {
   CLUSTERS_ONLY,
   alignPasses,
+  coverageReport,
+  evidenceCell,
   gate,
+  reviewCsv,
   reviewRows,
   skillAgreement,
   type PassFile,
@@ -189,6 +208,7 @@ describe("segment tagging: what the code enforces", () => {
               { id: "CL.9999", evidence: "invented" },
             ],
             not_in_taxonomy: "",
+            overview: false,
           },
         ],
       },
@@ -218,6 +238,7 @@ describe("segment tagging: what the code enforces", () => {
             sub_skills: [{ id: "PCT.1", evidence: "e" }],
             clusters: [{ id: "CL.0222", evidence: "e" }],
             not_in_taxonomy: "",
+            overview: false,
           },
         ],
       },
@@ -239,6 +260,7 @@ describe("segment tagging: what the code enforces", () => {
           sub_skills: [],
           clusters: [],
           not_in_taxonomy: "",
+          overview: false,
         },
         {
           start: "4:00",
@@ -248,6 +270,7 @@ describe("segment tagging: what the code enforces", () => {
           sub_skills: [{ id: "EE.5", evidence: "e" }],
           clusters: [],
           not_in_taxonomy: "",
+          overview: false,
         },
       ],
     });
@@ -638,5 +661,312 @@ describe("segment tagging: what the code enforces", () => {
     expect(
       agree.find((x) => x.skill === "Equivalent Expressions")?.segments,
     ).toBe(3);
+  });
+
+  it("S10 evidence travels in the review file and back", () => {
+    const a = seg(0, 100, ["EE.2"], ["CL.0001"]);
+    const b = seg(0, 100, ["EE.2", "EE.5"], ["CL.0001"]);
+    a.sub_skills[0] = { id: "EE.2", evidence: "expands | combines" };
+    b.sub_skills[1] = { id: "EE.5", evidence: "only pass 2" };
+    const cell = evidenceCell(["EE.2", "EE.5", "CL.0001", "CL.9999"], a, b);
+    expect(cell).toBe(
+      "EE.2: expands / combines | EE.5: only pass 2 | CL.0001: e",
+    );
+    expect([...parseEvidence(cell)]).toEqual([
+      ["EE.2", "expands / combines"],
+      ["EE.5", "only pass 2"],
+      ["CL.0001", "e"],
+    ]);
+    const rows = reviewRows(
+      "a1QNaRnn6cE",
+      passFile([a], 100),
+      passFile([b], 100),
+    );
+    // Kept tags first (sub-skills, clusters), then the disputed ones.
+    expect(rows[0]?.evidence).toBe(
+      "EE.2: expands / combines | CL.0001: e | EE.5: only pass 2",
+    );
+    expect(reviewCsv(rows).split("\n")[0]).toMatch(/,evidence$/);
+  });
+
+  const APPLY_TAX: ApplyTaxonomy = {
+    taxonomy_version: "scl-test",
+    sub_skills: TAXONOMY.sub_skills.map((x) => ({
+      id: x.id,
+      skill_code: x.skill_code,
+      section: x.section,
+    })),
+    clusters: TAXONOMY.clusters.map((x) => ({
+      id: x.id,
+      skills_seen_in: x.skills_seen_in,
+    })),
+  };
+  const VIDEOS = new Map([
+    [
+      "a1QNaRnn6cE",
+      { video_id: "a1QNaRnn6cE", duration_seconds: 398, section: "M" as const },
+    ],
+    [
+      "qQzeFyLYt1A",
+      { video_id: "qQzeFyLYt1A", duration_seconds: 48, section: "M" as const },
+    ],
+  ]);
+  const HEADER =
+    "approve,proposal,reason,video_id,start_s,end_s,sub_skills,clusters,disputed_sub_skills,disputed_clusters,boundary_flag,summary,not_in_taxonomy,evidence";
+  const line = (cells: string[]): string => cells.join(",");
+
+  it("S11 the apply refuses a bad file whole and leaves out drop and untagged rows", () => {
+    const good = [
+      HEADER,
+      line([
+        "yes",
+        "approve",
+        "",
+        "a1QNaRnn6cE",
+        "0",
+        "158",
+        "EE.5",
+        "CL.0215",
+        "",
+        "",
+        "",
+        "rational",
+        "",
+        "EE.5: graphs both",
+      ]),
+      line([
+        "",
+        "retag",
+        "r",
+        "a1QNaRnn6cE",
+        "158",
+        "257",
+        "EE.2;EE.5",
+        "",
+        "",
+        "",
+        "",
+        "expand",
+        "",
+        "",
+      ]),
+      line([
+        "",
+        "drop",
+        "not teaching",
+        "a1QNaRnn6cE",
+        "358",
+        "398",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "outro",
+        "",
+        "",
+      ]),
+      line([
+        "",
+        "retag",
+        "r",
+        "qQzeFyLYt1A",
+        "0",
+        "48",
+        "",
+        "",
+        "EE.1",
+        "",
+        "",
+        "foil",
+        "",
+        "",
+      ]),
+    ].join("\n");
+    const ok = parseReviewedSegments(good, APPLY_TAX, VIDEOS);
+    expect(ok.ok).toBe(true);
+    if (!ok.ok) return;
+    expect(ok.segments.map((x) => [x.start_seconds, x.approve])).toEqual([
+      [0, true],
+      [158, false],
+    ]);
+    expect(ok.segments[0]?.sub_skills).toEqual([
+      { id: "EE.5", evidence: "graphs both" },
+    ]);
+    expect(ok.segments[1]?.sub_skills[0]?.evidence).toBe("added in review");
+
+    const bad = [
+      HEADER,
+      line([
+        "yes",
+        "approve",
+        "",
+        "a1QNaRnn6cE",
+        "0",
+        "158",
+        "EE.9",
+        "",
+        "",
+        "",
+        "",
+        "s",
+        "",
+        "",
+      ]),
+      line([
+        "",
+        "retag",
+        "",
+        "a1QNaRnn6cE",
+        "100",
+        "200",
+        "WIC.1",
+        "",
+        "",
+        "",
+        "",
+        "s",
+        "",
+        "",
+      ]),
+      line([
+        "",
+        "retag",
+        "",
+        "a1QNaRnn6cE",
+        "300",
+        "400",
+        "EE.2",
+        "CL.9999",
+        "",
+        "",
+        "",
+        "s",
+        "",
+        "",
+      ]),
+      line([
+        "yes",
+        "retag",
+        "",
+        "qQzeFyLYt1A",
+        "0",
+        "48",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "s",
+        "",
+        "",
+      ]),
+      line([
+        "yes",
+        "approve",
+        "",
+        "ZZZZZZZZZZZ",
+        "0",
+        "10",
+        "EE.2",
+        "",
+        "",
+        "",
+        "",
+        "s",
+        "",
+        "",
+      ]),
+    ].join("\n");
+    const refused = parseReviewedSegments(bad, APPLY_TAX, VIDEOS);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    const all = refused.errors.join("\n");
+    for (const want of [
+      "EE.9 is not a sub-skill",
+      "WIC.1 is a RW sub-skill on a M video",
+      "span 300-400 is outside a1QNaRnn6cE",
+      "CL.9999 is not a cluster",
+      "marked yes with no tag",
+      "ZZZZZZZZZZZ is not an approved library video",
+      "segments at 0 and 100 overlap",
+    ]) {
+      expect(all).toContain(want);
+    }
+  });
+
+  it("S12 the apply SQL: one transaction, precondition, one call per video, placeholder approver", () => {
+    const segs = [
+      {
+        video_id: "a1QNaRnn6cE",
+        start_seconds: 158,
+        end_seconds: 257,
+        summary: "uses $seg$ in text",
+        sub_skills: [{ id: "EE.5", evidence: "e" }],
+        clusters: [],
+        approve: false,
+      },
+      {
+        video_id: "a1QNaRnn6cE",
+        start_seconds: 0,
+        end_seconds: 158,
+        summary: "s",
+        sub_skills: [],
+        clusters: [{ id: "CL.0215", evidence: "e" }],
+        approve: true,
+      },
+    ];
+    const sql = buildApplySql(segs, "scl-test", "segment-tags-v4", 4);
+    expect(sql.indexOf("BEGIN;")).toBeLessThan(sql.indexOf("DO $pre$"));
+    expect(sql.indexOf("DO $pre$")).toBeLessThan(
+      sql.indexOf("video_segments_set"),
+    );
+    expect(sql.trimEnd().endsWith("COMMIT;")).toBe(true);
+    expect(sql).toContain("taxonomy_version = $seg$scl-test$seg$) <> 4");
+    expect(sql.match(/video_segments_set\(/g)).toHaveLength(1);
+    // Start order inside the one call; the summary's "$seg$" forces a longer tag.
+    const call =
+      sql.split("\n").find((l) => l.includes("video_segments_set(")) ?? "";
+    expect(call.indexOf('"start_seconds":0')).toBeLessThan(
+      call.indexOf('"start_seconds":158'),
+    );
+    expect(call).toContain("$segx$[");
+    expect(sql).toContain("('a1QNaRnn6cE', 0)");
+    expect(sql).not.toContain("('a1QNaRnn6cE', 158)");
+    expect(sql).toContain(`'${APPROVER_PLACEHOLDER}'::uuid`);
+    const none = buildApplySql(
+      [{ ...segs[0]!, approve: false }],
+      "scl-test",
+      "t",
+      4,
+    );
+    expect(none).toContain("nothing to approve");
+    expect(none).not.toContain("video_segments_approve");
+  });
+
+  it("S13 the shopping list names every uncovered skill and sub-skill", () => {
+    const rows = reviewRows(
+      "a1QNaRnn6cE",
+      passFile(
+        [seg(0, 100, ["EE.2"]), seg(100, 200, ["PCT.1"], [], false)],
+        200,
+      ),
+      passFile(
+        [seg(0, 100, ["EE.2"]), seg(100, 200, ["PCT.1"], [], false)],
+        200,
+      ),
+    );
+    const report = coverageReport(rows, APPLY_TAX.sub_skills);
+    expect(report[0]).toBe(
+      "coverage: 1/4 sub-skills and 1/3 skills have a focused segment",
+    );
+    expect(report).toContain("no focused segment, skill: M Percentages");
+    expect(report).toContain("no focused segment, skill: RW Words in Context");
+    expect(report).not.toContain(
+      "no focused segment, skill: M Equivalent Expressions",
+    );
+    expect(report).toContain(
+      "no focused segment, sub-skill: EE.5 [Equivalent Expressions]",
+    );
   });
 });

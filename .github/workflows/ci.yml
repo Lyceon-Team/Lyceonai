@@ -1456,6 +1456,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-library-gates.sql
 
+      # LISA video segments (owner brief "Video segments tagged by sub-skill and cluster", Phase B;
+      # SCL-259): the segment tables refuse ids outside the SCL-256 vocabulary, bad spans and
+      # stale approvals. Same database; one transaction, rolled back.
+      - name: LISA video segment schema gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-segment-gates.sql
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost

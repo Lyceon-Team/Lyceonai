@@ -32,7 +32,7 @@
  * Usage: pnpm exec tsx scripts/rag/segment-agreement.ts --only <ids> [--taxonomy <path>]
  *          [--csv <out.csv>]
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -270,7 +270,32 @@ export type ReviewRow = {
   mixes_topics_note: string;
   summary: string;
   not_in_taxonomy: string;
+  /**
+   * One evidence line per tag on the row, kept or disputed ("ID: line | ID: line"), pass 1's line
+   * where it gave the tag, else pass 2's. The reviewed file carries it, so the apply SQL is built
+   * from the file alone.
+   */
+  evidence: string;
 };
+
+/** "ID: line | ID: line", one line per id, pass 1's first. A "|" in a line becomes "/". */
+export function evidenceCell(ids: string[], ...segments: Segment[]): string {
+  const lineOf = (id: string): string | undefined => {
+    for (const seg of segments) {
+      const t = [...seg.sub_skills, ...seg.clusters].find((x) => x.id === id);
+      if (t !== undefined) return t.evidence;
+    }
+    return undefined;
+  };
+  return [...new Set(ids)]
+    .flatMap((id) => {
+      const line = lineOf(id);
+      return line === undefined
+        ? []
+        : [`${id}: ${line.replace(/\|/g, "/").replace(/\s+/g, " ").trim()}`];
+    })
+    .join(" | ");
+}
 
 /** Pure. One review row per segment, in time order. Throws when the passes' spans differ. */
 export function reviewRows(
@@ -402,7 +427,25 @@ export function reviewRows(
       );
     }
   }
-  return rows;
+  return rows.map((r) => {
+    const i = p1.segments.findIndex((x) => x.start_seconds === r.start_seconds);
+    const a = p1.segments[i];
+    const b = p2.segments[i];
+    if (a === undefined || b === undefined) return r;
+    return {
+      ...r,
+      evidence: evidenceCell(
+        [
+          ...r.sub_skills,
+          ...r.clusters,
+          ...r.disputed_sub_skills,
+          ...r.disputed_clusters,
+        ],
+        a,
+        b,
+      ),
+    };
+  });
 }
 
 function ids(tags: Array<{ id: string }>): string[] {
@@ -432,6 +475,7 @@ function row(
     mixes_topics_note: s.mixes_topics_note,
     summary: s.summary,
     not_in_taxonomy: s.not_in_taxonomy,
+    evidence: "",
   };
 }
 
@@ -454,6 +498,7 @@ export function reviewCsv(rows: ReviewRow[]): string {
     "boundary_flag",
     "summary",
     "not_in_taxonomy",
+    "evidence",
   ];
   const lines = rows.map((r) =>
     [
@@ -470,6 +515,7 @@ export function reviewCsv(rows: ReviewRow[]): string {
       r.mixes_topics_note,
       r.summary,
       r.not_in_taxonomy,
+      r.evidence,
     ]
       .map(csvCell)
       .join(","),
@@ -491,6 +537,41 @@ function printAgreement(label: string, rows: SkillAgreement[]): void {
   }
 }
 
+/**
+ * Pure. The shopping list (Karl, 2026-10-29, Phase B): for each skill and sub-skill of the
+ * vocabulary, how many focused segments carry it, a focused segment being a teaching row both
+ * passes gave that sub-skill to (approve or retag; drop rows and clusters-only rows carry none).
+ * Lines name every skill with no focused segment at all, then every sub-skill with none.
+ */
+export function coverageReport(
+  rows: ReviewRow[],
+  subSkills: Array<{ id: string; skill_code: string; section: string }>,
+): string[] {
+  const perSub = new Map<string, number>();
+  for (const r of rows) {
+    if (r.proposal === "drop") continue;
+    for (const id of r.sub_skills) perSub.set(id, (perSub.get(id) ?? 0) + 1);
+  }
+  const skills = [
+    ...new Set(subSkills.map((s) => `${s.section}|${s.skill_code}`)),
+  ].sort();
+  const lines: string[] = [];
+  const noSkill = skills.filter((k) =>
+    subSkills
+      .filter((s) => `${s.section}|${s.skill_code}` === k)
+      .every((s) => (perSub.get(s.id) ?? 0) === 0),
+  );
+  const noSub = subSkills.filter((s) => (perSub.get(s.id) ?? 0) === 0);
+  lines.push(
+    `coverage: ${subSkills.length - noSub.length}/${subSkills.length} sub-skills and ${skills.length - noSkill.length}/${skills.length} skills have a focused segment`,
+  );
+  for (const k of noSkill)
+    lines.push(`no focused segment, skill: ${k.replace("|", " ")}`);
+  for (const s of noSub)
+    lines.push(`no focused segment, sub-skill: ${s.id} [${s.skill_code}]`);
+  return lines;
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
@@ -500,12 +581,32 @@ async function main(): Promise<void> {
         default: resolve("content/canonical/subskill-cluster-taxonomy.json"),
       },
       csv: { type: "string" },
+      // Every video with both pass files in this version's cache (Phase B's whole set).
+      "all-tagged": { type: "boolean", default: false },
     },
   });
-  if (values.only === undefined) throw new Error("--only <ids> is required");
+  const ids =
+    values.only !== undefined
+      ? values.only.split(",")
+      : values["all-tagged"]
+        ? readdirSync(SEGMENTS_DIR)
+            .filter((f) => f.endsWith(".pass1.json"))
+            .map((f) => f.slice(0, -".pass1.json".length))
+            .filter((id) =>
+              existsSync(resolve(SEGMENTS_DIR, `${id}.pass2.json`)),
+            )
+            .sort()
+        : null;
+  if (ids === null) throw new Error("--only <ids> or --all-tagged is required");
   const taxonomy = z
     .object({
-      sub_skills: z.array(z.object({ id: z.string(), skill_code: z.string() })),
+      sub_skills: z.array(
+        z.object({
+          id: z.string(),
+          skill_code: z.string(),
+          section: z.string(),
+        }),
+      ),
     })
     .parse(JSON.parse(readFileSync(values.taxonomy, "utf8")));
   const skillOfId = new Map(
@@ -517,7 +618,7 @@ async function main(): Promise<void> {
   const allUnpaired: Segment[] = [];
   const setAside: Pair[] = [];
   let usd = 0;
-  for (const id of values.only.split(",")) {
+  for (const id of ids) {
     const load = (n: number): PassFile =>
       passSchema.parse(
         JSON.parse(
@@ -573,6 +674,9 @@ async function main(): Promise<void> {
   printAgreement(
     "set-aside (not gated)",
     skillAgreement(setAside, [], skillOf),
+  );
+  process.stdout.write(
+    coverageReport(allRows, taxonomy.sub_skills).join("\n") + "\n",
   );
   const counts = { approve: 0, retag: 0, drop: 0 };
   for (const r of allRows) counts[r.proposal] += 1;
