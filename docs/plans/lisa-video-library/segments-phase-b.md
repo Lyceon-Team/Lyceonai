@@ -216,11 +216,7 @@ Together with the miss log from Phase A ruling 4 (`video_segment_misses`, built 
    WHERE relname IN ('video_segments', 'video_segment_sub_skills', 'video_segment_clusters');
    SELECT proname FROM pg_proc WHERE proname IN ('video_segments_set', 'video_segments_approve');
    ```
-3. **Check the vocabulary is loaded** (`scl-v1.0.0`, 135 sub-skills):
-   ```sql
-   SELECT count(*) FROM public.sub_skills WHERE taxonomy_version = 'scl-v1.0.0';
-   ```
-   If the count isn't 135, run `scripts/scl-taxonomy-loader.ts --apply` first. The apply SQL checks this and refuses to run otherwise.
+3. **The vocabulary must hold every id the file uses.** The apply SQL checks this itself before writing anything: every sub-skill id must be in `sub_skills`, every cluster id in `clusters`, and every video in `video_resources`. If any is missing it refuses, naming the missing ids; then run `scripts/scl-taxonomy-loader.ts --apply` and paste again. There is no fixed vocabulary size to check: the sub-skill and cluster totals grow over time (Karl, 2026-10-29).
 4. **Spot-check** the 20 rows of `segments-phase-b-sample.csv` (§5.1). If you change anything, change it in `segments-phase-b-review.csv`:
    - set `approve` to `yes`, or leave it blank;
    - edit `sub_skills` or `clusters` where a tag is wrong. An id added in review is stored with the evidence "added in review".
@@ -245,3 +241,12 @@ Together with the miss log from Phase A ruling 4 (`video_segment_misses`, built 
 ## 8. SCL
 
 SCL-259 (Doc 03D §6.7: segment storage) is in the register. The retrieval entry belongs to Phase C and is written when Phase C is built. It covers Doc 03D §6.4 and §6.8: the Phase A §4 ranking, the taxonomy version match, no video for a tagged question with no matching segment, and the miss log.
+
+## 9. No fixed taxonomy counts (Karl, 2026-10-29)
+
+The sub-skill and cluster totals grow over time. Nothing in this work may pin them:
+
+- **The apply SQL** checks that the ids it uses exist; it never compares a count of `sub_skills` or `clusters` to a number. Test S12 asserts that the SQL contains no such count.
+- **Tests and gates** pin no live totals. The segment gates (`video-segment-gates.sql`) insert their own fixture vocabulary; the contract tests use a four-entry test taxonomy.
+- **Phase C retrieval** must not assume a vocabulary size either (`segments-phase-a.md` §4).
+- **Counts in this document** (135 sub-skills, 230 clusters, "77 of 135") describe the vocabulary as it stood at `scl-v1.0.0` when Phase B ran. They are records, not checks. The coverage report computes its totals from the taxonomy file it is given.
