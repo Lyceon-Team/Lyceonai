@@ -34,6 +34,8 @@
  *       video, only yes rows approved, the approver a placeholder that fails the cast, and no
  *       text able to close its dollar quote.
  *   S13 the shopping list names every skill and sub-skill with no focused segment.
+ *   S14 a skill below the gate has no row pre-marked for approval (held as retag, with the
+ *       skill named); rows of passing skills and clusters-only rows are untouched.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -59,6 +61,7 @@ import {
   coverageReport,
   evidenceCell,
   gate,
+  holdFailedSkills,
   reviewCsv,
   reviewRows,
   skillAgreement,
@@ -968,5 +971,48 @@ describe("segment tagging: what the code enforces", () => {
     expect(report).toContain(
       "no focused segment, sub-skill: EE.5 [Equivalent Expressions]",
     );
+  });
+
+  it("S14 a skill below the gate is held for review, nothing else moves", () => {
+    const p1 = passFile(
+      [
+        seg(0, 100, ["EE.2"]),
+        seg(100, 200, ["PCT.1"]),
+        seg(200, 300, [], ["CL.0215"]),
+      ],
+      300,
+    );
+    const rows = reviewRows("a1QNaRnn6cE", p1, p1);
+    expect(rows.map((r) => r.proposal)).toEqual([
+      "approve",
+      "approve",
+      "approve",
+    ]);
+    const skillOf = (id: string): string | undefined =>
+      TAXONOMY.sub_skills.find((x) => x.id === id)?.skill_code;
+    const result = gate([
+      {
+        skill: "Equivalent Expressions",
+        segments: 3,
+        subSkills: { both: 3, either: 3 },
+        clusters: { both: 0, either: 0 },
+      },
+      {
+        skill: "Percentages",
+        segments: 4,
+        subSkills: { both: 2, either: 4 },
+        clusters: { both: 0, either: 0 },
+      },
+    ]);
+    const held = holdFailedSkills(rows, result, skillOf);
+    expect(held.map((r) => r.proposal)).toEqual([
+      "approve",
+      "retag",
+      "approve",
+    ]);
+    expect(held[1]?.reason).toBe(
+      "Percentages is below the gate (50% sub-skill agreement); held for review",
+    );
+    expect(held[1]?.sub_skills).toEqual(["PCT.1"]);
   });
 });

@@ -538,6 +538,39 @@ function printAgreement(label: string, rows: SkillAgreement[]): void {
 }
 
 /**
+ * Pure. Phase B (Karl, 2026-10-29): a skill below the gate has no row pre-marked for approval.
+ * A row proposed `approve` that carries a sub-skill of a failed skill becomes `retag`, with the
+ * skill and its agreement in the reason; Karl can still approve it in the file.
+ */
+export function holdFailedSkills(
+  rows: ReviewRow[],
+  result: GateResult,
+  skillOf: (subSkillId: string) => string | undefined,
+): ReviewRow[] {
+  const failed = new Map(
+    result.judged
+      .filter((j) => !j.passes)
+      .map((j) => [
+        j.skill,
+        `${Math.round((100 * j.subSkills.both) / Math.max(1, j.subSkills.either))}%`,
+      ]),
+  );
+  return rows.map((r) => {
+    if (r.proposal !== "approve") return r;
+    const hit = [...new Set(r.sub_skills.map(skillOf))].find(
+      (k): k is string => k !== undefined && failed.has(k),
+    );
+    return hit === undefined
+      ? r
+      : {
+          ...r,
+          proposal: "retag",
+          reason: `${hit} is below the gate (${failed.get(hit) ?? ""} sub-skill agreement); held for review`,
+        };
+  });
+}
+
+/**
  * Pure. The shopping list (Karl, 2026-10-29, Phase B): for each skill and sub-skill of the
  * vocabulary, how many focused segments carry it, a focused segment being a teaching row both
  * passes gave that sub-skill to (approve or retag; drop rows and clusters-only rows carry none).
@@ -678,12 +711,17 @@ async function main(): Promise<void> {
   process.stdout.write(
     coverageReport(allRows, taxonomy.sub_skills).join("\n") + "\n",
   );
+  const held = holdFailedSkills(allRows, g, skillOf);
+  const heldCount = held.filter(
+    (r, i) => r.proposal !== allRows[i]?.proposal,
+  ).length;
+  // The counts of the file as written, after the hold.
   const counts = { approve: 0, retag: 0, drop: 0 };
-  for (const r of allRows) counts[r.proposal] += 1;
+  for (const r of held) counts[r.proposal] += 1;
   process.stdout.write(
-    `review rows: ${JSON.stringify(counts)}; both passes $${usd.toFixed(4)}\n`,
+    `review rows: ${JSON.stringify(counts)} (${heldCount} held for review: skill below the gate); both passes $${usd.toFixed(4)}\n`,
   );
-  if (values.csv !== undefined) writeFileSync(values.csv, reviewCsv(allRows));
+  if (values.csv !== undefined) writeFileSync(values.csv, reviewCsv(held));
 }
 
 // R-16 (LISA_Video_RAG_Closure_Plan.md): the entry check that also matches a Windows path.
