@@ -11440,14 +11440,15 @@ $$;
 -- Name: qotd_archive(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer, option_order text[], correct_display_letter text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   -- Counts included so an archive page built from this shows the same stat the API does.
   SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
          q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
-         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0),
+         s.option_order, s.correct_display_letter
     FROM public.qotd_schedule s
     JOIN public.questions q ON q.id = s.question_id
     LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
@@ -11616,6 +11617,21 @@ $$;
 
 
 --
+-- Name: qotd_display_letter(text[], text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+           WHEN array_position(p_order, upper(btrim(COALESCE(p_correct_answer, '')))) IS NULL THEN NULL
+           ELSE chr(64 + array_position(p_order, upper(btrim(p_correct_answer))))
+         END
+$$;
+
+
+--
 -- Name: qotd_email_prompt_state(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11737,16 +11753,41 @@ $$;
 
 
 --
+-- Name: qotd_option_keys(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_option_keys(p_options jsonb) RETURNS text[]
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH arr AS (
+    SELECT CASE
+             WHEN jsonb_typeof(p_options) = 'array' THEN p_options
+             WHEN jsonb_typeof(p_options) = 'string'
+                  AND left(btrim(p_options #>> '{}'), 1) = '[' THEN (p_options #>> '{}')::jsonb
+             ELSE '[]'::jsonb
+           END AS a
+  )
+  SELECT COALESCE(array_agg(upper(btrim(e ->> 'key')) ORDER BY ord), '{}'::text[])
+    FROM arr, jsonb_array_elements(arr.a) WITH ORDINALITY AS x(e, ord)
+   WHERE jsonb_typeof(e) = 'object'
+     AND upper(btrim(COALESCE(e ->> 'key', ''))) IN ('A', 'B', 'C', 'D')
+     AND btrim(COALESCE(e ->> 'text', '')) <> ''
+$$;
+
+
+--
 -- Name: qotd_question_for(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer, option_order text[], correct_display_letter text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
          q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
-         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0),
+         s.option_order, s.correct_display_letter
     FROM public.qotd_schedule s
     JOIN public.questions q ON q.id = s.question_id
     LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
@@ -11878,8 +11919,18 @@ BEGIN
   IF NOT public.qotd_question_is_eligible(p_question_id) THEN
     RETURN 'ineligible';
   END IF;
-  INSERT INTO public.qotd_schedule (qotd_date, question_id)
-  VALUES (p_date, p_question_id)
+  INSERT INTO public.qotd_schedule (qotd_date, question_id, option_order, correct_display_letter)
+  SELECT p_date, q.id, o.ord,
+         CASE WHEN q.item_type = 'mcq' THEN public.qotd_display_letter(o.ord, q.correct_answer) END
+    FROM public.questions q
+   CROSS JOIN LATERAL (
+     SELECT CASE
+              WHEN q.item_type = 'mcq'
+                THEN public.qotd_shuffled_option_order(q.options, p_date, q.id)
+              ELSE '{}'::text[]
+            END AS ord
+   ) o
+   WHERE q.id = p_question_id
   ON CONFLICT DO NOTHING;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows = 1 THEN
@@ -11890,6 +11941,58 @@ BEGIN
     RETURN 'exists';
   END IF;
   RETURN 'taken';
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_no_update(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_no_update() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'qotd_schedule is write-once: % cannot be changed (SCL-258)', OLD.qotd_date
+    USING ERRCODE = '42501';
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_order_on_insert(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_order_on_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_q      record;
+  v_order  text[];
+  v_letter text;
+BEGIN
+  SELECT q.item_type, q.options, q.correct_answer INTO v_q
+    FROM public.questions q WHERE q.id = NEW.question_id;
+  IF NOT FOUND THEN
+    RETURN NEW;  -- the foreign key refuses the row
+  END IF;
+  IF v_q.item_type = 'mcq' THEN
+    v_order  := public.qotd_shuffled_option_order(v_q.options, NEW.qotd_date, NEW.question_id);
+    v_letter := public.qotd_display_letter(v_order, v_q.correct_answer);
+  ELSE
+    v_order  := '{}'::text[];
+    v_letter := NULL;
+  END IF;
+  IF (NEW.option_order IS NOT NULL AND NEW.option_order IS DISTINCT FROM v_order)
+     OR (NEW.correct_display_letter IS NOT NULL AND NEW.correct_display_letter IS DISTINCT FROM v_letter) THEN
+    RAISE EXCEPTION 'qotd_schedule: the option order and letter are the database''s, not the caller''s (SCL-258)'
+      USING ERRCODE = '42501';
+  END IF;
+  NEW.option_order := v_order;
+  NEW.correct_display_letter := v_letter;
+  RETURN NEW;
 END
 $$;
 
@@ -11949,6 +12052,48 @@ CREATE FUNCTION public.qotd_servable(p_date date) RETURNS boolean
        AND q.status = 'published'
        AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
   );
+$$;
+
+
+--
+-- Name: qotd_shuffled_option_order(jsonb, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) RETURNS text[]
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_order text[] := public.qotd_option_keys(p_options);
+  v_n     integer := COALESCE(array_length(v_order, 1), 0);
+  v_bytes bytea := sha256(convert_to(p_qotd_date::text || p_question_id, 'UTF8'));
+  v_pos   integer := 0;
+  v_i     integer;
+  v_j     integer;
+  v_b     integer;
+  v_limit integer;
+  v_tmp   text;
+BEGIN
+  -- 0-based Fisher-Yates: for i from n-1 down to 1, swap position i with a uniform j in [0, i].
+  FOR v_i IN REVERSE (v_n - 1)..1 LOOP
+    v_limit := 256 - (256 % (v_i + 1));
+    LOOP
+      IF v_pos >= 32 THEN
+        v_bytes := sha256(v_bytes);
+        v_pos := 0;
+      END IF;
+      v_b := get_byte(v_bytes, v_pos);
+      v_pos := v_pos + 1;
+      EXIT WHEN v_b < v_limit;
+    END LOOP;
+    v_j := v_b % (v_i + 1);
+    -- arrays are 1-based
+    v_tmp := v_order[v_i + 1];
+    v_order[v_i + 1] := v_order[v_j + 1];
+    v_order[v_j + 1] := v_tmp;
+  END LOOP;
+  RETURN v_order;
+END
 $$;
 
 
@@ -18864,7 +19009,11 @@ COMMENT ON TABLE public.qotd_day_boundary IS 'The QOTD day switch (Karl, 2026-10
 CREATE TABLE public.qotd_schedule (
     qotd_date date NOT NULL,
     question_id text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    option_order text[] NOT NULL,
+    correct_display_letter text,
+    CONSTRAINT qotd_schedule_display_letter_check CHECK (((correct_display_letter IS NULL) OR (correct_display_letter = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text])))),
+    CONSTRAINT qotd_schedule_order_letter_check CHECK (((cardinality(option_order) <= 4) AND ((cardinality(option_order) = 0) = (correct_display_letter IS NULL))))
 );
 
 
@@ -18873,6 +19022,20 @@ CREATE TABLE public.qotd_schedule (
 --
 
 COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18; Karl 2026-10-27): one question per QOTD day (04:00 UTC to 04:00 UTC from the cutover in qotd_day_boundary, America/Chicago before it). qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+
+
+--
+-- Name: COLUMN qotd_schedule.option_order; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.qotd_schedule.option_order IS 'The canonical option keys in the order this day shows them, written once at scheduling by qotd_schedule_insert (qotd_shuffled_option_order). Identity for days scheduled before 2026-10-28 that had arrived. ''{}'' for a grid-in. SCL-258.';
+
+
+--
+-- Name: COLUMN qotd_schedule.correct_display_letter; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.qotd_schedule.correct_display_letter IS 'The correct option''s letter in option_order, written by the database in the same insert. NULL for a grid-in. SCL-258.';
 
 
 --
@@ -23447,6 +23610,20 @@ CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON publ
 --
 
 CREATE TRIGGER profiles_zz_signup_attribution BEFORE INSERT OR UPDATE OF signup_channel, signup_campaign, date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_signup_attribution_guard();
+
+
+--
+-- Name: qotd_schedule qotd_schedule_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER qotd_schedule_no_update BEFORE UPDATE ON public.qotd_schedule FOR EACH ROW EXECUTE FUNCTION public.qotd_schedule_no_update();
+
+
+--
+-- Name: qotd_schedule qotd_schedule_order_on_insert; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER qotd_schedule_order_on_insert BEFORE INSERT ON public.qotd_schedule FOR EACH ROW EXECUTE FUNCTION public.qotd_schedule_order_on_insert();
 
 
 --
@@ -28389,6 +28566,14 @@ GRANT ALL ON FUNCTION public.qotd_day_cutover() TO service_role;
 
 
 --
+-- Name: FUNCTION qotd_display_letter(p_order text[], p_correct_answer text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28426,6 +28611,14 @@ GRANT ALL ON FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now tim
 
 REVOKE ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_option_keys(p_options jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_option_keys(p_options jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_option_keys(p_options jsonb) TO service_role;
 
 
 --
@@ -28485,6 +28678,20 @@ GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id tex
 
 
 --
+-- Name: FUNCTION qotd_schedule_no_update(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_no_update() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION qotd_schedule_order_on_insert(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_order_on_insert() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION qotd_schedule_release(p_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28506,6 +28713,14 @@ GRANT ALL ON FUNCTION public.qotd_schedule_upcoming(p_after date) TO service_rol
 
 REVOKE ALL ON FUNCTION public.qotd_servable(p_date date) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_servable(p_date date) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) TO service_role;
 
 
 --

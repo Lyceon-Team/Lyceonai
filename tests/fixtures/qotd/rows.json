@@ -35,7 +35,14 @@
       "correct_variants": null,
       "explanation": "Subtract 5 from both sides to get $3x = 15$, then divide both sides by 3 to get $x = 5$.",
       "attempts": 0,
-      "correct": 0
+      "correct": 0,
+      "option_order": [
+        "B",
+        "C",
+        "A",
+        "D"
+      ],
+      "correct_display_letter": "A"
     },
     {
       "qotd_date": "2026-10-03",
@@ -71,7 +78,14 @@
       "correct_variants": null,
       "explanation": "The subject is the singular noun \"exhibit\", and the sentence describes a completed event, so it needs a finite past-tense verb. \"Attracted\" is the only choice that supplies one.",
       "attempts": 0,
-      "correct": 0
+      "correct": 0,
+      "option_order": [
+        "C",
+        "B",
+        "D",
+        "A"
+      ],
+      "correct_display_letter": "A"
     },
     {
       "qotd_date": "2026-10-04",
@@ -93,7 +107,9 @@
       ],
       "explanation": "Both 7 and -7 square to 49. Since $x > 0$, $x = 7$.",
       "attempts": 0,
-      "correct": 0
+      "correct": 0,
+      "option_order": [],
+      "correct_display_letter": null
     }
   ],
   "today": [
@@ -131,7 +147,14 @@
       "correct_variants": null,
       "explanation": "The area of a rectangle is length times width: $8 \\times 3 = 24$.",
       "attempts": 0,
-      "correct": 0
+      "correct": 0,
+      "option_order": [
+        "D",
+        "B",
+        "C",
+        "A"
+      ],
+      "correct_display_letter": "C"
     }
   ]
 }

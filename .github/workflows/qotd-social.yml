@@ -14,7 +14,10 @@
 # posts the day to Slack (#social): both images, then the caption and alt text, with the date and
 # section (scripts/qotd-social/post-to-slack.ts). It posts only from post.json, which the build
 # writes only when every check passed, the leak check included; a build that failed never reaches
-# the step. The bot token is the GitHub secret SLACK_BOT_TOKEN, read by that one step and nothing
+# the step. A failed run instead posts ONE failure notice (post-to-slack.ts --failure: the
+# generator's refusal lines from failure.txt and the run link), so a refused day is visible in
+# Slack, never silent (Karl's rulings 2026-10-28, SCL-258: a stored answer-choice order the
+# server refuses is a 503 qotd_order_invalid, and the notice names it). The bot token is the GitHub secret SLACK_BOT_TOKEN, read by that one step and nothing
 # else; the channel is the variable SOCIAL_SLACK_CHANNEL_ID (or the run's slack_channel input, for
 # a test post). A missing token or a Slack error fails the run, after the download is uploaded.
 # Pull requests run the same step as a dry run: every check, no token, nothing sent.
@@ -43,6 +46,7 @@ on:
       - shared/qotd/social.ts
       - shared/qotd/tiktok.ts
       - shared/qotd/reveal.ts
+      - shared/qotd/projection.ts
       - shared/qotd/plain-math.ts
       - shared/social/funnel.ts
       - shared/math/tokenize.ts
@@ -165,3 +169,12 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
         run: pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out
+
+      # SCL-258 (Karl, 2026-10-28): a failure is loud. Any failed step on a scheduled or
+      # hand-started run posts one notice with the reason and the run link.
+      - name: Post the failure to Slack
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out --failure

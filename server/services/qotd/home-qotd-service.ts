@@ -10,9 +10,12 @@
  * plain English:
  *  - TODAY is the server's: `qotd_question_for(NULL)` returns today's row (America/Chicago) from
  *    the SEO-owned `qotd_schedule`, which is only read here. No row → the card is hidden.
- *  - A student's options are in CANONICAL order, each an opaque token (the public QOTD's own
- *    HMAC token, so a token says nothing about correctness), lettered A-D by position on screen.
- *    The explanation's letters therefore always match.
+ *  - A student's options are in the day's STORED order (qotdServedChoices; Karl's rulings
+ *    2026-10-28, SCL-258: shuffled once, in the database, at scheduling), each an opaque token
+ *    (the public QOTD's own HMAC token, so a token says nothing about correctness), lettered A-D
+ *    by position on screen. The practice item records the same order, so review history shows
+ *    the letters the QOTD showed. (The scheduler skips any question whose explanation names a
+ *    letter, so no explanation can contradict a shuffled order.)
  *  - The answer is graded with the shared grader, the item snapshot is built by the practice
  *    path's own builder, and ONE SQL call (`qotd_student_answer`) writes the practice session,
  *    the answered item (the review trigger queues a miss) and the attempt. The mastery event is
@@ -44,10 +47,12 @@ import { err, ok, type Result } from "../../../packages/shared/src/result";
 import {
   mapGenesisQuestionRow,
   isCanonicalRuntimeQuestion,
-  parseCanonicalMcOptions,
   type CanonicalQuestionRowLike,
 } from "../../../shared/question-bank-contract";
-import type { QotdRow } from "../../../shared/qotd/projection";
+import {
+  qotdServedChoices,
+  type QotdRow,
+} from "../../../shared/qotd/projection";
 import {
   buildSessionItemInsertRows,
   toCanonicalQuestionForServing,
@@ -107,16 +112,16 @@ function db(): QotdDbClient {
   return supabaseServer;
 }
 
-/** Canonical order, tokenised. Grid-in: no options. */
+/** The stored order, tokenised. Grid-in: no options. */
 function studentOptions(row: QotdRow): { id: string; text: string }[] {
-  if (row.item_type === "grid_in") return [];
-  return parseCanonicalMcOptions(row.options).map((o) => ({
-    id: qotdOptionToken(row.qotd_date, o.key),
+  return qotdServedChoices(row).options.map((o) => ({
+    id: qotdOptionToken(row.qotd_date, o.id),
     text: o.text,
   }));
 }
 
-function studentQuestion(
+/** The card's question. Exported for the cross-surface agreement test (SCL-258). */
+export function studentQuestion(
   row: QotdRow,
 ): HomeQotdTodayResponse extends infer T
   ? T extends { question: infer Q }
@@ -135,18 +140,8 @@ function studentQuestion(
   };
 }
 
-/** The canonical key of each on-screen position: options are in canonical order. */
-function displayLetterOf(
-  row: QotdRow,
-  canonicalKey: string,
-): "A" | "B" | "C" | "D" | null {
-  const keys = parseCanonicalMcOptions(row.options).map((o) => o.key);
-  const index = keys.indexOf(canonicalKey as (typeof keys)[number]);
-  const letters = ["A", "B", "C", "D"] as const;
-  return index >= 0 && index < letters.length ? (letters[index] ?? null) : null;
-}
-
-function resultFor(
+/** The card's result. Exported for the cross-surface agreement test (SCL-258). */
+export function resultFor(
   row: QotdRow,
   selectedAnswer: string,
   isCorrect: boolean,
@@ -166,7 +161,7 @@ function resultFor(
     is_correct: isCorrect,
     selected_option_id: qotdOptionToken(row.qotd_date, selectedAnswer),
     correct_option_id: qotdOptionToken(row.qotd_date, correctKey),
-    correct_display_letter: displayLetterOf(row, correctKey),
+    correct_display_letter: qotdServedChoices(row).correctLetter,
     correct_answer: null,
     explanation: row.explanation ?? "",
   };
@@ -342,7 +337,8 @@ async function buildItemSnapshot(
   );
   if (!item) throw new Error("item snapshot was not built");
   if (row.item_type === "mcq") {
-    item.option_order = parseCanonicalMcOptions(row.options).map((o) => o.key);
+    // The stored order (SCL-258), so review history letters the item as the QOTD did.
+    item.option_order = qotdServedChoices(row).options.map((o) => o.id);
     item.option_token_map = qotdTokenMapFor(row);
   }
   return item;
