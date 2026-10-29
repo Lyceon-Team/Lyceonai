@@ -23,6 +23,7 @@ import type { PromptArtifact } from "./types.js";
 import { LISA_DEFAULT_V1 } from "./lisa-default-v1.js";
 import { LISA_DEFAULT_V2 } from "./lisa-default-v2.js";
 import { LISA_DEFAULT_V3 } from "./lisa-default-v3.js";
+import { LISA_DEFAULT_V4 } from "./lisa-default-v4.js";
 import { logEvent } from "../lib/vertex-client.js";
 
 // ── Artifact registry (loaded at bootstrap per §4.3) ────────────────
@@ -32,6 +33,9 @@ const ARTIFACTS_BY_VERSION: ReadonlyMap<string, PromptArtifact> = new Map([
   [LISA_DEFAULT_V1.version, LISA_DEFAULT_V1],
   [LISA_DEFAULT_V2.version, LISA_DEFAULT_V2],
   [LISA_DEFAULT_V3.version, LISA_DEFAULT_V3],
+  // v4 (2026-10-27, the Desmos block) resolves by exact version only and is not the latest for
+  // any variant, so production stays on v3 until Karl rules on the G0-2 replies.
+  [LISA_DEFAULT_V4.version, LISA_DEFAULT_V4],
 ]);
 
 /** Latest artifact version per policy variant (Doc 03A §11.4). */

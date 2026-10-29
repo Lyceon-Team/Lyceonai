@@ -311,7 +311,8 @@ describe.skipIf(!PG_AVAILABLE)(
          AND c.confdeltype NOT IN ('c','n','r','a')`);
       expect(unclassified.rowCount).toBe(0);
 
-      // the seven tutor edges are CASCADE, not RESTRICT — the defect this closes
+      // the eight tutor edges are CASCADE, not RESTRICT — the defect this closes. The eighth is
+      // tutor_eval_cases.student_id (G0-2 evaluation set, 2026-10-27).
       const tutor = await pg.query(`
       SELECT src.relname AS tbl, c.confdeltype AS act
         FROM pg_constraint c
@@ -321,7 +322,7 @@ describe.skipIf(!PG_AVAILABLE)(
        WHERE c.contype='f' AND sn.nspname='public' AND tgt.relname='profiles'
          AND src.relname LIKE 'tutor\\_%' AND src.relname NOT LIKE '%config%'
        ORDER BY src.relname`);
-      expect(tutor.rowCount).toBe(7);
+      expect(tutor.rowCount).toBe(8);
       for (const r of tutor.rows) expect(r.act).toBe("c");
     });
 

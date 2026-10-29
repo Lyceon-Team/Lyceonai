@@ -30,6 +30,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { LYC_FOCUS } from "@/components/ui/button";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { HttpApiError } from "@/lib/api-error";
 import {
@@ -40,6 +41,16 @@ import {
   type TutorMessage,
 } from "@/hooks/tutor-client";
 import { useSendLock } from "@/hooks/useSendLock";
+import {
+  REVIEW_INTENT_LABELS,
+  isVideoIntent,
+  type ReviewIntent,
+} from "@lyceon/shared/tutor-guided-choices";
+import {
+  GuidedChoiceButtons,
+  hasGuidedChoices,
+  type GuidedChoicesState,
+} from "@/components/tutor/GuidedChoices";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
 import {
   LisaUpgradeCard,
@@ -117,6 +128,8 @@ type Started = {
   scopeKey: string;
   conversationId: string;
   firstMessage: string;
+  /** The guided choice the first message was (its label), or null when it was typed. */
+  firstIntent: ReviewIntent | null;
 };
 
 export function TutorConversationBody({
@@ -126,6 +139,9 @@ export function TutorConversationBody({
   copy,
   onStarted,
   onEnded,
+  guidedChoices = null,
+  autoSend = null,
+  onAutoSent,
 }: {
   /**
    * What the conversation is about (the session item's id; "general"). State created for one
@@ -144,6 +160,21 @@ export function TutorConversationBody({
   onStarted?: (conversationId: string) => void;
   /** The student ended the conversation (the paused bar's End). */
   onEnded: () => void;
+  /**
+   * The review panel's guided choices (owner brief 2026-10-27, SCL-253): shown in the empty
+   * state and behind "Other ways" after the first message. Null where there are none (practice,
+   * general mode).
+   */
+  guidedChoices?: GuidedChoicesState | null;
+  /**
+   * A guided choice tapped OUTSIDE the panel (the phone runner's LISA strip, owner ruling on
+   * #1349, 2026-10-27): the panel opened for it and sends it once, exactly as a tap inside would:
+   * it creates the conversation when there is none, else it is the thread's next turn. `nonce`
+   * tells two taps of the same choice apart.
+   */
+  autoSend?: { nonce: number; intent: ReviewIntent } | null;
+  /** The tap was handed to the send path; the caller clears `autoSend`. */
+  onAutoSent?: () => void;
 }): JSX.Element {
   const createConversation = useCreateConversation();
   // P2 §3.1 (2026-10-26): one first-message create at a time, refused synchronously, so a burst of
@@ -154,19 +185,24 @@ export function TutorConversationBody({
   const [pending, setPending] = useState<{
     scopeKey: string;
     text: string;
+    intent: ReviewIntent | null;
   } | null>(null);
+  // A tapped choice whose create failed: there is no typed text to give back, so the notice
+  // says to try again rather than pointing at the composer.
+  const [tapFailed, setTapFailed] = useState(false);
   const [draft, setDraft] = useState("");
 
   const startedHere = started?.scopeKey === scopeKey ? started : null;
   const conversationId = startedHere?.conversationId ?? lookup.id;
   const pendingHere = pending?.scopeKey === scopeKey ? pending : null;
 
-  const startConversation = (text: string): void => {
+  const startConversation = (text: string, intent?: ReviewIntent): void => {
     const releaseCreate = createLock.acquire();
     if (releaseCreate === null) return;
     const key = scopeKey;
-    setPending({ scopeKey: key, text });
-    setDraft("");
+    setPending({ scopeKey: key, text, intent: intent ?? null });
+    setTapFailed(false);
+    if (intent === undefined) setDraft("");
     createConversation.mutate(
       { ...createInput, idempotency_key: crypto.randomUUID() },
       {
@@ -176,15 +212,19 @@ export function TutorConversationBody({
             scopeKey: key,
             conversationId: conv.conversation_id,
             firstMessage: text,
+            firstIntent: intent ?? null,
           });
           setPending(null);
           onStarted?.(conv.conversation_id);
         },
         onError: () => {
           releaseCreate();
-          // The student's text goes back in the composer, never lost.
           setPending(null);
-          setDraft(text);
+          // The student's text goes back in the composer, never lost. A tapped choice's label
+          // is not the student's text: it is not put in the composer (it would then be sent as
+          // free text).
+          if (intent === undefined) setDraft(text);
+          else setTapFailed(true);
         },
       },
     );
@@ -195,6 +235,19 @@ export function TutorConversationBody({
   const denied =
     isLisaEntitlementDenial(lookup.error) ||
     isLisaEntitlementDenial(createError);
+
+  // A tap from outside the panel, with no conversation yet: the same create-then-send as a tap
+  // on the opener's choices (a server call, so an effect; the ref keeps each tap to one send).
+  // With a conversation, the thread sends it (TutorThread below).
+  const autoSentHere = useRef<number | null>(null);
+  useEffect(() => {
+    if (autoSend === null || autoSentHere.current === autoSend.nonce) return;
+    if (lookup.isLoading || denied || conversationId !== null) return;
+    autoSentHere.current = autoSend.nonce;
+    startConversation(REVIEW_INTENT_LABELS[autoSend.intent], autoSend.intent);
+    onAutoSent?.();
+    // Runs when the tap arrives or the lookup settles; `startConversation` is this render's.
+  }, [autoSend, lookup.isLoading, denied, conversationId]);
 
   const pendingMessage: TutorMessage | null = pendingHere
     ? {
@@ -213,6 +266,16 @@ export function TutorConversationBody({
         key={conversationId}
         conversationId={conversationId}
         firstMessage={startedHere?.firstMessage ?? null}
+        firstIntent={startedHere?.firstIntent ?? null}
+        guidedChoices={guidedChoices}
+        // A tap this body already handed over (it created this conversation) is not the
+        // thread's to send again.
+        autoSend={
+          autoSend !== null && autoSentHere.current !== autoSend.nonce
+            ? autoSend
+            : null
+        }
+        onAutoSent={onAutoSent}
         copy={copy}
         onEnded={() => {
           // An ended conversation is never shown again here: the next message starts a new one.
@@ -252,12 +315,24 @@ export function TutorConversationBody({
             <ThinkingIndicator />
           </>
         ) : (
-          <TutorOpener copy={copy.opener} />
+          <>
+            <TutorOpener copy={copy.opener} />
+            {guidedChoices !== null ? (
+              <GuidedChoiceButtons
+                choices={guidedChoices}
+                disabled={false}
+                onChoose={(intent) =>
+                  startConversation(REVIEW_INTENT_LABELS[intent], intent)
+                }
+              />
+            ) : null}
+          </>
         )}
         {!pendingMessage && createError && (
           <p className="m-0 text-lyc-body text-lyc-muted" role="alert">
-            LISA isn&apos;t available right now. Your message is still below —
-            try sending it again.
+            {tapFailed
+              ? "LISA isn't available right now. Try again in a moment."
+              : "LISA isn't available right now. Your message is still below — try sending it again."}
           </p>
         )}
       </div>
@@ -281,12 +356,21 @@ export function TutorConversationBody({
 function TutorThread({
   conversationId,
   firstMessage,
+  firstIntent,
+  guidedChoices,
+  autoSend,
+  onAutoSent,
   copy,
   onEnded,
 }: {
   conversationId: string;
   /** The student's first message, when this body just created the conversation for it. */
   firstMessage: string | null;
+  /** The guided choice that first message was, or null when it was typed. */
+  firstIntent: ReviewIntent | null;
+  guidedChoices: GuidedChoicesState | null;
+  autoSend: { nonce: number; intent: ReviewIntent } | null;
+  onAutoSent: (() => void) | undefined;
   copy: TutorBodyCopy;
   onEnded: () => void;
 }): JSX.Element {
@@ -310,6 +394,7 @@ function TutorThread({
     showPausedBar,
     premiumReason,
     suggestedAction,
+    answeredIntent,
     send,
     retry,
     resume,
@@ -339,7 +424,7 @@ function TutorThread({
   useEffect(() => {
     if (firstMessage === null || firstSent.current) return;
     firstSent.current = true;
-    void send(firstMessage);
+    void send(firstMessage, firstIntent ?? undefined);
     // Mount-only: `send` is stable for this conversation's first turn.
   }, []);
 
@@ -347,7 +432,41 @@ function TutorThread({
     if (!draft.trim()) return;
     const text = draft;
     setDraft("");
+    setOtherWaysToggled(null);
     void send(text);
+  };
+
+  // A tap from outside the panel on a conversation that exists: the thread's next turn, once the
+  // thread has loaded, its first message (if it was just created for one) has gone, and no turn
+  // is in flight (the send lock would refuse it, and the tap would be lost).
+  const autoSentHere = useRef<number | null>(null);
+  const turnBusy = turnState.kind === "thinking";
+  useEffect(() => {
+    if (autoSend === null || autoSentHere.current === autoSend.nonce) return;
+    if (isLoading || turnBusy || firstAwaiting) return;
+    autoSentHere.current = autoSend.nonce;
+    void send(REVIEW_INTENT_LABELS[autoSend.intent], autoSend.intent);
+    onAutoSent?.();
+    // Runs when the tap arrives, the thread finishes loading, or a turn in flight settles.
+  }, [autoSend, isLoading, turnBusy, firstAwaiting]);
+
+  // "Other ways" (owner brief 2026-10-27): the choices stay reachable after the first message,
+  // folded behind one quiet control. A video choice that found no video opens them again (the
+  // server's reply says so; SCL-254). A tap sends the choice's exact label with its intent
+  // through the same send path, under the same send lock.
+  // null: the student has not toggled since the last send, so the reply decides.
+  const [otherWaysToggled, setOtherWaysToggled] = useState<boolean | null>(
+    null,
+  );
+  const noVideoFound =
+    answeredIntent !== null &&
+    isVideoIntent(answeredIntent) &&
+    suggestedAction === null &&
+    turnState.kind === "idle";
+  const otherWaysOpen = otherWaysToggled ?? noVideoFound;
+  const choose = (intent: ReviewIntent): void => {
+    setOtherWaysToggled(null);
+    void send(REVIEW_INTENT_LABELS[intent], intent);
   };
 
   const end = (): void => {
@@ -379,7 +498,16 @@ function TutorThread({
         {/* A conversation with no messages yet (e.g. one opened before
             W4-4) still shows the invitation, not an empty thread. */}
         {!isLoading && !denied && !hasMessages && firstMessage === null && (
-          <TutorOpener copy={copy.opener} />
+          <>
+            <TutorOpener copy={copy.opener} />
+            {guidedChoices !== null ? (
+              <GuidedChoiceButtons
+                choices={guidedChoices}
+                disabled={isThinking}
+                onChoose={choose}
+              />
+            ) : null}
+          </>
         )}
 
         {!isLoading &&
@@ -402,6 +530,33 @@ function TutorThread({
         {isThinking && <ThinkingIndicator />}
 
         {turnState.kind === "failed" && <FailedTurnNotice onRetry={retry} />}
+
+        {!isLoading &&
+        !denied &&
+        !isPaused &&
+        !isEnded &&
+        hasMessages &&
+        hasGuidedChoices(guidedChoices) &&
+        guidedChoices !== null ? (
+          <div className="space-y-2">
+            <button
+              type="button"
+              className={`${LYC_FOCUS} cursor-pointer rounded-sm border-0 bg-transparent p-0 text-lyc-body text-lyc-muted underline underline-offset-2 hover:text-lyc-ink-strong`}
+              aria-expanded={otherWaysOpen}
+              onClick={() => setOtherWaysToggled(!otherWaysOpen)}
+              data-testid="tutor-other-ways"
+            >
+              Other ways LISA can help
+            </button>
+            {otherWaysOpen ? (
+              <GuidedChoiceButtons
+                choices={guidedChoices}
+                disabled={isThinking}
+                onChoose={choose}
+              />
+            ) : null}
+          </div>
+        ) : null}
 
         {showCrisisCard && crisisLane && effectiveCrisisContent && (
           <CrisisSupportCard
