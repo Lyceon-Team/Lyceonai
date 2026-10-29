@@ -94,6 +94,18 @@
       ]
     },
     {
+      "id": "EE.6",
+      "skill_code": "Equivalent Expressions",
+      "section": "M",
+      "domain": "Advanced Math",
+      "name": "Divide polynomials by long division",
+      "definition": "The question requires dividing a polynomial by a divisor of degree >= 1 (long or synthetic division) to obtain a quotient/remainder, not resolvable by factoring and canceling.",
+      "inclusion_test": "TRUE if the decisive step is long/synthetic division by a degree->=1 divisor that does not cancel by factoring; FALSE if the divisor divides every term as a monomial (EE.4) or the numerator factors so the divisor cancels (EE.3).",
+      "evidence_ids": [
+        "89fc23af"
+      ]
+    },
+    {
       "id": "NLE.1",
       "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
       "section": "M",

@@ -2,20 +2,21 @@
 --
 -- @spec [SPEC-CHANGE_SCL.md §3 (canonical source), §7.2 (mirror)] | @implemented [2026-10-29]
 -- plain English: the canonical file is updated file-first (owner ruling 2026-10-29, Karl).
---   EE.6 "Divide polynomials by long division" exists in production but in no branch of the
---   repo, so its exact row has to come from production. Claude does not query production;
---   Karl runs these and pastes Q1's output back. The loader's pre-flight guard refuses to
---   run until the file holds every production ID, so it cannot run before EE.6 is in the file.
+--   EE.6 "Divide polynomials by long division" existed in production but in no branch of the
+--   repo; it is now in the file from Karl's prod pull (2026-10-29), with section "M" and CB
+--   evidence ["89fc23af"]. Claude does not query production; Karl runs these. The loader's
+--   pre-flight guard refuses to run while the file is missing any production ID.
 --
--- Run order:  Q1 + Q2 now (read-only)  ->  EE.6 added to the file from Q1  ->  loader  ->  Q3.
+-- Run order:  Q1 + Q2 (read-only)  ->  loader  ->  Q3.
 -- File ID lists below were generated from content/canonical/subskill-cluster-taxonomy.json
--- on branch claude/scl-taxonomy-no-fixed-counts (EE.6 not yet in the file; CL.0231 dropped
--- 2026-10-29 — never loaded to prod, so no cluster change).
+-- on branch claude/scl-taxonomy-no-fixed-counts: EE.6 committed 2026-10-29 (section "M", evidence
+-- ["89fc23af"], owner ruling); CL.0231 dropped (never loaded to prod, so no cluster change).
 
 -- ---------------------------------------------------------------------------------------
 -- Q1. EE.6 exactly as production holds it, as one JSON object in the file's key order.
---     Paste the single output value back; it goes into sub_skills verbatim.
---     taxonomy_version is returned separately as a check (the file keeps scl-v1.0.0).
+--     Before the loader: compare with the file's EE.6. Name, definition and inclusion_test
+--     should match exactly; section ("Math" -> "M") and evidence_ids (-> 89fc23af) are the
+--     intended changes the loader will write.
 -- ---------------------------------------------------------------------------------------
 SELECT json_build_object(
          'id', id,
@@ -32,27 +33,26 @@ FROM public.sub_skills
 WHERE id = 'EE.6';
 
 -- ---------------------------------------------------------------------------------------
--- Q2. Drift check: every production ID the CURRENT branch file does not hold.
---     Expected: exactly one row, ('sub_skills', 'EE.6'). Any other row is further drift
---     that must also be added to the file before the loader can run.
---     And the reverse: file IDs production does not hold. Expected: none.
+-- Q2. Drift check, both directions, against the CURRENT branch file.
+--     Expected: zero rows. Any 'in DB, not in file' row is drift that must be added to the
+--     file first (the loader's pre-flight guard will refuse until it is).
 -- ---------------------------------------------------------------------------------------
 WITH file_ids AS (
   SELECT 'sub_skills'::text AS tbl, unnest(ARRAY[
-    'EE.1', 'EE.2', 'EE.3', 'EE.4', 'EE.5', 'NLE.1', 'NLE.2', 'NLE.3', 'NLE.4', 'NLE.5',
-    'NLF.1', 'NLF.2', 'NLF.3', 'NLF.4', 'NLF.5', 'LE1.1', 'LE1.2', 'LE1.3', 'LE1.4', 'LE1.5',
-    'LF.1', 'LF.2', 'LF.3', 'LF.4', 'LF.5', 'LE2.1', 'LE2.2', 'LE2.3', 'LE2.4', 'LE2.5',
-    'SYS.1', 'SYS.2', 'SYS.3', 'SYS.4', 'SYS.5', 'LI.1', 'LI.2', 'LI.3', 'LI.4', 'LI.5',
-    'AV.1', 'AV.2', 'AV.3', 'AV.4', 'AV.5', 'LAT.1', 'LAT.2', 'LAT.3', 'LAT.4', 'LAT.5',
-    'RTT1', 'RTT2', 'RTT3', 'RTT4', 'CIR1', 'CIR2', 'CIR3', 'CIR4', 'CIR5', 'RAT.1',
-    'RAT.2', 'RAT.3', 'RAT.4', 'RAT.5', 'PCT.1', 'PCT.2', 'PCT.3', 'PCT.4', 'PCT.5', 'OVD.1',
-    'OVD.2', 'OVD.3', 'OVD.4', 'OVD.5', 'TVD.1', 'TVD.2', 'TVD.3', 'TVD.4', 'TVD.5', 'PRB.1',
-    'PRB.2', 'PRB.3', 'PRB.4', 'INFS.1', 'INFS.2', 'INFS.3', 'ESC1', 'ESC2', 'ESC3', 'WIC.1',
-    'WIC.2', 'WIC.3', 'WIC.4', 'TSP.1', 'TSP.2', 'TSP.3', 'TSP.4', 'CTC.1', 'CTC.2', 'CTC.3',
-    'CTC.4', 'CTC.5', 'RS.1', 'RS.2', 'RS.3', 'RS.4', 'RS.5', 'TRN.1', 'TRN.2', 'TRN.3',
-    'TRN.4', 'TRN.5', 'CID.1', 'CID.2', 'CID.3', 'CID.4', 'COE.1', 'COE.2', 'COE.3', 'COE.4',
-    'INF.1', 'INF.2', 'INF.3', 'INF.4', 'INF.5', 'BND.1', 'BND.2', 'BND.3', 'BND.4', 'BND.5',
-    'FSS.1', 'FSS.2', 'FSS.3', 'FSS.4', 'FSS.5'
+    'EE.1', 'EE.2', 'EE.3', 'EE.4', 'EE.5', 'EE.6', 'NLE.1', 'NLE.2', 'NLE.3', 'NLE.4',
+    'NLE.5', 'NLF.1', 'NLF.2', 'NLF.3', 'NLF.4', 'NLF.5', 'LE1.1', 'LE1.2', 'LE1.3', 'LE1.4',
+    'LE1.5', 'LF.1', 'LF.2', 'LF.3', 'LF.4', 'LF.5', 'LE2.1', 'LE2.2', 'LE2.3', 'LE2.4',
+    'LE2.5', 'SYS.1', 'SYS.2', 'SYS.3', 'SYS.4', 'SYS.5', 'LI.1', 'LI.2', 'LI.3', 'LI.4',
+    'LI.5', 'AV.1', 'AV.2', 'AV.3', 'AV.4', 'AV.5', 'LAT.1', 'LAT.2', 'LAT.3', 'LAT.4',
+    'LAT.5', 'RTT1', 'RTT2', 'RTT3', 'RTT4', 'CIR1', 'CIR2', 'CIR3', 'CIR4', 'CIR5',
+    'RAT.1', 'RAT.2', 'RAT.3', 'RAT.4', 'RAT.5', 'PCT.1', 'PCT.2', 'PCT.3', 'PCT.4', 'PCT.5',
+    'OVD.1', 'OVD.2', 'OVD.3', 'OVD.4', 'OVD.5', 'TVD.1', 'TVD.2', 'TVD.3', 'TVD.4', 'TVD.5',
+    'PRB.1', 'PRB.2', 'PRB.3', 'PRB.4', 'INFS.1', 'INFS.2', 'INFS.3', 'ESC1', 'ESC2', 'ESC3',
+    'WIC.1', 'WIC.2', 'WIC.3', 'WIC.4', 'TSP.1', 'TSP.2', 'TSP.3', 'TSP.4', 'CTC.1', 'CTC.2',
+    'CTC.3', 'CTC.4', 'CTC.5', 'RS.1', 'RS.2', 'RS.3', 'RS.4', 'RS.5', 'TRN.1', 'TRN.2',
+    'TRN.3', 'TRN.4', 'TRN.5', 'CID.1', 'CID.2', 'CID.3', 'CID.4', 'COE.1', 'COE.2', 'COE.3',
+    'COE.4', 'INF.1', 'INF.2', 'INF.3', 'INF.4', 'INF.5', 'BND.1', 'BND.2', 'BND.3', 'BND.4',
+    'BND.5', 'FSS.1', 'FSS.2', 'FSS.3', 'FSS.4', 'FSS.5'
   ]::text[]) AS id
   UNION ALL
   SELECT 'clusters', unnest(ARRAY[
@@ -99,8 +99,8 @@ ORDER BY 1, 2, 3;
 -- Q3. After the reload: EE.6 still present, nothing deleted, no cube cluster.
 --     Re-run Q2 against the updated file's ID lists (or run scl-taxonomy-check.ts): zero rows.
 -- ---------------------------------------------------------------------------------------
-SELECT id, name, taxonomy_version FROM public.sub_skills WHERE id = 'EE.6';
--- Expected: one row, name "Divide polynomials by long division", scl-v1.0.0.
+SELECT id, section, name, evidence_ids, taxonomy_version FROM public.sub_skills WHERE id = 'EE.6';
+-- Expected: one row — section M (was "Math"), evidence_ids {89fc23af}, scl-v1.0.0.
 
 SELECT count(*) AS cube_cluster_rows FROM public.clusters WHERE id = 'CL.0231';
 -- Expected: 0 (CL.0231 was dropped before it was ever loaded).
