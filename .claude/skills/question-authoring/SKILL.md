@@ -84,6 +84,21 @@ The Digital SAT does not test function composition. An OCR audit of 377 official
 
 The assembly gate hard-fails any stem matching `/[fgh]\s*\(\s*[fgh]\s*\(/` as `COMPOSITION_OFFSPEC`.
 
+## 8a. No sum/difference-of-cubes factoring (hard rule — off-spec)
+
+The Digital SAT does not test factoring a sum or difference of cubes. An OCR audit of all 1,618 official College Board questions found zero items that factor or divide out `a^3 ± b^3`. Never author:
+
+- **Cube factoring:** "which is equivalent to `8x^3 + 27`", `x^3 - 8`, `125p^3 - 64q^3`, `27x^6 - 8`.
+- **Cube division that cancels by the identity:** `\frac{8x^3 - 27}{2x - 3}`, `\frac{x^3 - 8}{x^2 + 2x + 4}`.
+- **The identity by another route:** "given `a + b` and `a^2 + b^2`, find `a^3 + b^3`".
+
+**Still allowed:** cubic terms in ordinary arithmetic and functions, for example combining like terms (`12x^3 - 5x^3`, `(8x^3 + 8) - (x^3 - 2)`), evaluating `f(x) = x^3 + 9`, or a cubic with more than two terms.
+
+The assembly gate hard-fails a Math record as `CUBES_OFFSPEC` when it finds any of three things (`scripts/cubes-offspec.ts`):
+- a standalone `a^3 ± b^3` binomial in the stem, with perfect-cube coefficient and constant;
+- the identity named ("sum/difference of cubes") in the stem or explanation;
+- the identity's `a^2 ∓ ab + b^2` factor in the stem, an option or the explanation.
+
 ## 9. Stem integrity (hard rule)
 
 The stem must contain the actual question prompt — it must never be empty and must never be a copy of the passage. For R&W, the stem asks the question ("Which choice completes the text…"); the passage provides the context. If `trim(stem) === trim(passage)`, the gate hard-fails (`STEM_EQUALS_PASSAGE`). An empty or whitespace-only stem also hard-fails (`EMPTY_STEM`).
