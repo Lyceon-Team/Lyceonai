@@ -1,5 +1,7 @@
 {
   "pilot": "Equivalent Expressions SCL tagging",
+  "taxonomy_version": "scl-v1.0.0",
+  "date": "2026-10-29",
   "question_count": 351,
   "mcq_count": 302,
   "grid_in_count": 49,
@@ -7,7 +9,8 @@
     "with_sub_skill_tag": 351,
     "with_cluster_tag": 351,
     "mcq_with_distractor_cluster": 302,
-    "mcq_total": 302
+    "mcq_total": 302,
+    "note": "100% coverage on all three dimensions"
   },
   "agreement": {
     "sub_skill_exact_match": "72.1%",
@@ -18,19 +21,56 @@
     "distractor_match_count": 110,
     "distractor_comparable": 302
   },
+  "disagreement_analysis": {
+    "total_disagreements": 260,
+    "by_dimension": {
+      "sub_skill_only": 35,
+      "cluster_only": 20,
+      "distractor_only": 90,
+      "sub_skill_and_cluster": 13,
+      "sub_skill_and_distractor": 32,
+      "cluster_and_distractor": 52,
+      "all_three": 18
+    },
+    "top_sub_skill_patterns": [
+      { "pattern": "Pass 2 adds EE.5 (rational expressions)", "count": 47, "note": "Judgment call: canceling common factor in fraction → EE.5 or just EE.3?" },
+      { "pattern": "Pass 2 replaces EE.3 with EE.5", "count": 17, "note": "Factor-then-cancel classified as factoring vs rational expression" },
+      { "pattern": "Pass 2 replaces EE.4 with EE.5", "count": 7 },
+      { "pattern": "Pass 2 adds EE.2 (expand)", "count": 7 },
+      { "pattern": "Pass 2 adds EE.1 (combine like terms)", "count": 5 }
+    ],
+    "dominant_pattern": "EE.5 boundary: 71 of 98 sub-skill disagreements involve Pass 2 tagging EE.5 where Pass 1 did not, or substituting it for EE.3/EE.4. This is a genuine taxonomy judgment about whether rational-expression simplification is a separate sub-skill from the factoring/exponent step that enables it.",
+    "distractor_note": "Low distractor agreement (36.4%) is expected: distractor cluster assignment requires inferring the specific error a student made from a wrong answer option, which is inherently more ambiguous than solution-path tagging."
+  },
   "first_class_count": 351,
-  "disagreement_count": 260,
+  "mis_skilled_questions": {
+    "count": 0,
+    "note": "All 351 questions are in the EE skill and received at least one EE sub-skill tag in both passes"
+  },
   "cost": {
-    "pass1": {
-      "input_tokens": null,
-      "output_tokens": null,
-      "estimated_usd": "$NaN"
+    "pass1_session": {
+      "model": "claude-opus-4-6",
+      "method": "fork-agent manual derivation (prior session)",
+      "estimated_usd": "$8-12",
+      "note": "Token-level tracking not available for fork agents"
     },
-    "pass2": {
-      "input_tokens": 0,
-      "output_tokens": 0,
-      "estimated_usd": "$0.00"
+    "pass2_session": {
+      "model": "claude-opus-4-6",
+      "session_id": "session_0155ZEXjk1KLAsQaiLMiLdK5",
+      "reported_usd": "$11.90",
+      "method": "independent CCR sibling session with fork agents"
     },
-    "total_estimated_usd": "$NaN"
+    "total_estimated_usd": "$20-24",
+    "per_question_estimated": "$0.057-0.068"
+  },
+  "db_state": {
+    "question_sub_skills": { "rows": 493, "tagged_by": "pass-1-opus" },
+    "question_clusters": { "rows": 704, "tagged_by": "pass-1-opus" },
+    "distractor_clusters": { "rows": 856, "note": "taxonomy_version only, no tagged_by column" }
+  },
+  "methodology": {
+    "pass1": "Fork-agent manual mathematical derivation: each agent reads the question text/options, solves the problem step-by-step, identifies sub-skills and clusters from the solution path, and for MCQs reverse-engineers distractor error patterns.",
+    "pass2": "Independent CCR sibling session with fork agents using identical methodology. Session had no access to Pass 1 results. Agents derived solutions independently.",
+    "comparison": "Exact set-match on sub_skill_ids, cluster_ids, and distractor_clusters (option_key+cluster_id pairs) per question."
   }
 }
