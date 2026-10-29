@@ -15909,6 +15909,134 @@ $$;
 
 
 --
+-- Name: video_segments_approve(uuid[], uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) RETURNS integer
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH done AS (
+    UPDATE public.video_segments s
+       SET approved_by = p_approver, approved_at = now()
+     WHERE s.segment_id = ANY (p_segment_ids)
+       AND p_approver IS NOT NULL
+       AND (EXISTS (SELECT 1 FROM public.video_segment_sub_skills t WHERE t.segment_id = s.segment_id)
+            OR EXISTS (SELECT 1 FROM public.video_segment_clusters t WHERE t.segment_id = s.segment_id))
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM done;
+$$;
+
+
+--
+-- Name: video_segments_set(text, text, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb) RETURNS uuid[]
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_duration integer;
+  v_seg      jsonb;
+  v_start    integer;
+  v_end      integer;
+  v_prev_end integer := 0;
+  v_id       uuid;
+  v_ids      uuid[] := '{}';
+  v_same     boolean;
+BEGIN
+  SELECT duration_seconds INTO v_duration FROM public.video_resources WHERE video_id = p_video_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'video_segments_set: unknown video %', p_video_id USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF jsonb_typeof(p_segments) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'video_segments_set: segments must be a JSON array' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Segments in start order; a span must lie in the video and not overlap the previous one.
+  FOR v_start, v_end IN
+    SELECT (e->>'start_seconds')::integer, (e->>'end_seconds')::integer
+    FROM jsonb_array_elements(p_segments) e
+    ORDER BY (e->>'start_seconds')::integer
+  LOOP
+    IF v_start IS NULL OR v_end IS NULL OR v_start < 0 OR v_end <= v_start
+       OR v_end > v_duration OR v_start < v_prev_end THEN
+      RAISE EXCEPTION 'video_segments_set: % span %-% is empty, outside the video (% s) or overlaps the previous segment',
+        p_video_id, v_start, v_end, v_duration USING ERRCODE = 'check_violation';
+    END IF;
+    v_prev_end := v_end;
+  END LOOP;
+
+  -- Segments no longer in the list go (their tags cascade).
+  DELETE FROM public.video_segments s
+  WHERE s.video_id = p_video_id
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(p_segments) e
+      WHERE (e->>'start_seconds')::integer = s.start_seconds
+    );
+
+  FOR v_seg IN
+    SELECT e FROM jsonb_array_elements(p_segments) e ORDER BY (e->>'start_seconds')::integer
+  LOOP
+    v_start := (v_seg->>'start_seconds')::integer;
+    v_end   := (v_seg->>'end_seconds')::integer;
+    v_seg   := v_seg || jsonb_build_object(
+                 'sub_skills', coalesce(v_seg->'sub_skills', '[]'::jsonb),
+                 'clusters',   coalesce(v_seg->'clusters', '[]'::jsonb));
+
+    -- Unchanged span and tag sets keep the approval; anything else clears it.
+    SELECT s.segment_id,
+           s.end_seconds = v_end
+           AND (SELECT coalesce(array_agg(t.sub_skill_id ORDER BY t.sub_skill_id), '{}')
+                FROM public.video_segment_sub_skills t WHERE t.segment_id = s.segment_id)
+             = (SELECT coalesce(array_agg(x->>'id' ORDER BY x->>'id'), '{}')
+                FROM jsonb_array_elements(v_seg->'sub_skills') x)
+           AND (SELECT coalesce(array_agg(t.cluster_id ORDER BY t.cluster_id), '{}')
+                FROM public.video_segment_clusters t WHERE t.segment_id = s.segment_id)
+             = (SELECT coalesce(array_agg(x->>'id' ORDER BY x->>'id'), '{}')
+                FROM jsonb_array_elements(v_seg->'clusters') x)
+      INTO v_id, v_same
+    FROM public.video_segments s
+    WHERE s.video_id = p_video_id AND s.start_seconds = v_start;
+
+    IF v_id IS NULL THEN
+      INSERT INTO public.video_segments
+        (video_id, start_seconds, end_seconds, summary, taxonomy_version, tagged_by)
+      VALUES (p_video_id, v_start, v_end, v_seg->>'summary', p_taxonomy_version, p_tagged_by)
+      RETURNING segment_id INTO v_id;
+    ELSE
+      UPDATE public.video_segments SET
+        end_seconds      = v_end,
+        summary          = v_seg->>'summary',
+        taxonomy_version = p_taxonomy_version,
+        tagged_by        = p_tagged_by,
+        tagged_at        = now(),
+        approved_by      = CASE WHEN v_same THEN approved_by END,
+        approved_at      = CASE WHEN v_same THEN approved_at END
+      WHERE segment_id = v_id;
+      DELETE FROM public.video_segment_sub_skills WHERE segment_id = v_id;
+      DELETE FROM public.video_segment_clusters WHERE segment_id = v_id;
+    END IF;
+
+    INSERT INTO public.video_segment_sub_skills (segment_id, sub_skill_id, evidence, taxonomy_version)
+    SELECT v_id, x->>'id', x->>'evidence', p_taxonomy_version
+    FROM jsonb_array_elements(v_seg->'sub_skills') x;
+    INSERT INTO public.video_segment_clusters (segment_id, cluster_id, evidence, taxonomy_version)
+    SELECT v_id, x->>'id', x->>'evidence', p_taxonomy_version
+    FROM jsonb_array_elements(v_seg->'clusters') x;
+
+    v_ids := v_ids || v_id;
+    v_id := NULL;
+  END LOOP;
+
+  RETURN v_ids;
+END
+$$;
+
+
+--
 -- Name: worked_examples_leak_guard(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -18544,6 +18672,19 @@ CREATE TABLE public.question_clusters (
 
 
 --
+-- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_sub_skills (
+    question_id text NOT NULL,
+    sub_skill_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: worked_examples; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18578,19 +18719,6 @@ CREATE TABLE public.worked_examples (
     CONSTRAINT worked_examples_takeaway_check CHECK ((length(btrim(takeaway)) > 0)),
     CONSTRAINT worked_examples_trap_check CHECK ((length(btrim(trap)) > 0)),
     CONSTRAINT worked_examples_video_script_check CHECK ((length(btrim(video_script)) > 0))
-);
-
-
---
--- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.question_sub_skills (
-    question_id text NOT NULL,
-    sub_skill_id text NOT NULL,
-    taxonomy_version text NOT NULL,
-    tagged_by text NOT NULL,
-    tagged_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -20096,6 +20224,54 @@ CREATE TABLE public.video_resources (
 --
 
 COMMENT ON TABLE public.video_resources IS 'Per-video facts and skill tags: the LISA video library (offered whole, by skill) and the render-time join for curriculum_chunks.provenance. Service role only.';
+
+
+--
+-- Name: video_segment_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.video_segment_clusters (
+    segment_id uuid NOT NULL,
+    cluster_id text NOT NULL,
+    evidence text NOT NULL,
+    taxonomy_version text NOT NULL,
+    CONSTRAINT video_segment_clusters_evidence_check CHECK (((length(evidence) >= 1) AND (length(evidence) <= 300)))
+);
+
+
+--
+-- Name: video_segment_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.video_segment_sub_skills (
+    segment_id uuid NOT NULL,
+    sub_skill_id text NOT NULL,
+    evidence text NOT NULL,
+    taxonomy_version text NOT NULL,
+    CONSTRAINT video_segment_sub_skills_evidence_check CHECK (((length(evidence) >= 1) AND (length(evidence) <= 300)))
+);
+
+
+--
+-- Name: video_segments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.video_segments (
+    segment_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    video_id text NOT NULL,
+    start_seconds integer NOT NULL,
+    end_seconds integer NOT NULL,
+    summary text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    CONSTRAINT video_segments_approved_pair CHECK (((approved_by IS NULL) = (approved_at IS NULL))),
+    CONSTRAINT video_segments_span CHECK ((end_seconds > start_seconds)),
+    CONSTRAINT video_segments_start_seconds_check CHECK ((start_seconds >= 0)),
+    CONSTRAINT video_segments_summary_check CHECK (((length(summary) >= 1) AND (length(summary) <= 300)))
+);
 
 
 --
@@ -21664,6 +21840,38 @@ ALTER TABLE ONLY public.video_resources
 
 
 --
+-- Name: video_segment_clusters video_segment_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_clusters
+    ADD CONSTRAINT video_segment_clusters_pkey PRIMARY KEY (segment_id, cluster_id);
+
+
+--
+-- Name: video_segment_sub_skills video_segment_sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_sub_skills
+    ADD CONSTRAINT video_segment_sub_skills_pkey PRIMARY KEY (segment_id, sub_skill_id);
+
+
+--
+-- Name: video_segments video_segments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segments
+    ADD CONSTRAINT video_segments_pkey PRIMARY KEY (segment_id);
+
+
+--
+-- Name: video_segments video_segments_video_start; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segments
+    ADD CONSTRAINT video_segments_video_start UNIQUE (video_id, start_seconds);
+
+
+--
 -- Name: worked_example_metrics worked_example_metrics_one_reading; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -22827,6 +23035,20 @@ CREATE UNIQUE INDEX uq_usage_rate_limit_ledger_dedupe ON public.usage_rate_limit
 --
 
 CREATE INDEX video_resources_skills_idx ON public.video_resources USING gin (skill_codes);
+
+
+--
+-- Name: video_segment_clusters_cluster_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX video_segment_clusters_cluster_idx ON public.video_segment_clusters USING btree (cluster_id);
+
+
+--
+-- Name: video_segment_sub_skills_sub_skill_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX video_segment_sub_skills_sub_skill_idx ON public.video_segment_sub_skills USING btree (sub_skill_id);
 
 
 --
@@ -24655,6 +24877,46 @@ ALTER TABLE ONLY public.usage_rate_limit_ledger
 
 
 --
+-- Name: video_segment_clusters video_segment_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_clusters
+    ADD CONSTRAINT video_segment_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: video_segment_clusters video_segment_clusters_segment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_clusters
+    ADD CONSTRAINT video_segment_clusters_segment_id_fkey FOREIGN KEY (segment_id) REFERENCES public.video_segments(segment_id) ON DELETE CASCADE;
+
+
+--
+-- Name: video_segment_sub_skills video_segment_sub_skills_segment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_sub_skills
+    ADD CONSTRAINT video_segment_sub_skills_segment_id_fkey FOREIGN KEY (segment_id) REFERENCES public.video_segments(segment_id) ON DELETE CASCADE;
+
+
+--
+-- Name: video_segment_sub_skills video_segment_sub_skills_sub_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_sub_skills
+    ADD CONSTRAINT video_segment_sub_skills_sub_skill_id_fkey FOREIGN KEY (sub_skill_id) REFERENCES public.sub_skills(id);
+
+
+--
+-- Name: video_segments video_segments_video_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segments
+    ADD CONSTRAINT video_segments_video_id_fkey FOREIGN KEY (video_id) REFERENCES public.video_resources(video_id) ON DELETE CASCADE;
+
+
+--
 -- Name: worked_example_metrics worked_example_metrics_worked_example_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -26308,6 +26570,24 @@ CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledg
 --
 
 ALTER TABLE public.video_resources ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: video_segment_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.video_segment_clusters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: video_segment_sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.video_segment_sub_skills ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: video_segments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.video_segments ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: worked_example_metrics; Type: ROW SECURITY; Schema: public; Owner: -
@@ -28712,6 +28992,22 @@ GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_
 
 
 --
+-- Name: FUNCTION video_segments_approve(p_segment_ids uuid[], p_approver uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION worked_examples_leak_guard(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -30118,17 +30414,17 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_sub_skills TO service
 
 
 --
--- Name: TABLE questions_with_usage; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.questions_with_usage TO service_role;
-
-
---
 -- Name: TABLE worked_examples; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_examples TO service_role;
+
+
+--
+-- Name: TABLE questions_with_usage; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.questions_with_usage TO service_role;
 
 
 --
@@ -30850,6 +31146,27 @@ GRANT ALL ON TABLE public.usage_rate_limit_ledger TO service_role;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_resources TO service_role;
+
+
+--
+-- Name: TABLE video_segment_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_segment_clusters TO service_role;
+
+
+--
+-- Name: TABLE video_segment_sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_segment_sub_skills TO service_role;
+
+
+--
+-- Name: TABLE video_segments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_segments TO service_role;
 
 
 --
