@@ -90,9 +90,23 @@ If the gate exits non-zero: **stop.** Surface the report's violations. Do **not*
 
 **Gate-pass marker:** On a clean pass the gate writes `proving_batch_<NNN>.sql.gate-pass` alongside the SQL. This marker is what downstream barriers (Codex completion check) look for. It is emitted automatically by the gate — never hand-create it.
 
+## Step 5b — Per-batch notation audit (spec-alignment)
+
+On a clean gate pass, run the per-batch notation audit against the official corpus cache:
+
+```
+pnpm exec tsx scripts/content/batch-notation-audit.ts --batch-dir infra/supabase/seed/parts/batch_<NNN> --out infra/supabase/seed/parts/batch_<NNN>/notation_audit_report.json
+```
+
+If the audit exits non-zero (NOVEL_NOTATION findings): **stop.** Surface the report's findings — each names the question ID, the novel token, the skill, and the official sample size. Do **not** run the auditor on a batch that failed notation audit.
+
+Uncached skills (listed in `uncached_skills`) are skipped, not false-positived. If critical skills are uncached, OCR their official PDFs first using the official-corpus-ocr module.
+
+The notation audit report is committed alongside the gate report in Step 8.
+
 ## Step 6 — Trigger the auditor
 
-On a clean gate pass, dispatch the `question-auditor` subagent **by registered name** (`subagent_type: "question-auditor"`) on the assembled `proving_batch_<NNN>.sql`. Pass it only the file path, `taxonomy.json`, and the governance doc — **never** the authors' reasoning.
+On a clean gate pass and clean notation audit, dispatch the `question-auditor` subagent **by registered name** (`subagent_type: "question-auditor"`) on the assembled `proving_batch_<NNN>.sql`. Pass it only the file path, `taxonomy.json`, and the governance doc — **never** the authors' reasoning.
 
 ## Step 7 — Verify auditor identity
 
@@ -119,9 +133,10 @@ Stage and commit:
 - The assembled SQL: `infra/supabase/seed/proving_batch_<NNN>.sql`
 - The gate-pass marker: `infra/supabase/seed/proving_batch_<NNN>.sql.gate-pass`
 - The gate report: `infra/supabase/seed/parts/batch_<NNN>/gate_report.json`
+- The notation audit report: `infra/supabase/seed/parts/batch_<NNN>/notation_audit_report.json`
 - The part-files: `infra/supabase/seed/parts/batch_<NNN>/*.ndjson`
 
-All four groups must be committed together — a batch without its `.gate-pass` is invisible to downstream barriers.
+All five groups must be committed together — a batch without its `.gate-pass` is invisible to downstream barriers.
 
 ## Step 9 — Report
 
