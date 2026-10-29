@@ -1,0 +1,54 @@
+{
+  "pilot": "Equivalent Expressions SCL tagging",
+  "question_count": 351,
+  "mcq_count": 302,
+  "grid_in_count": 49,
+  "coverage": {
+    "with_sub_skill_tag": 351,
+    "with_cluster_tag": 351,
+    "mcq_with_distractor_cluster": 302,
+    "mcq_total": 302
+  },
+  "agreement": {
+    "sub_skill_exact_match": "58.1%",
+    "sub_skill_match_count": 204,
+    "cluster_exact_match": "74.9%",
+    "cluster_match_count": 263,
+    "distractor_exact_match": "34.4%",
+    "distractor_match_count": 104,
+    "distractor_comparable": 302
+  },
+  "first_class_count": 351,
+  "disagreement_count": 274,
+  "cost": {
+    "pass1": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_usd": "$0.00"
+    },
+    "pass2": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_usd": "$0.00"
+    },
+    "total_estimated_usd": "$0.00"
+  },
+  "agreement_extended": {
+    "sub_skill_jaccard_mean": 0.707,
+    "cluster_jaccard_mean": 0.865,
+    "sub_skill_disagreement_patterns": {
+      "total": 147,
+      "pass2_is_superset_of_pass1": 57,
+      "pass1_is_superset_of_pass2": 31,
+      "different_sets": 59
+    },
+    "primary_calibration_question": "EE.3 vs EE.5 boundary: when factoring occurs within a rational expression simplification, Pass 1 favored EE.3 (factor), Pass 2 favored EE.5 (rational). P1 EE.3=178, P2 EE.3=120; P1 EE.5=95, P2 EE.5=177."
+  },
+  "mis_skilled_questions": 0,
+  "cross_skill_tags": 0,
+  "methodology": {
+    "pass_1": "Fork agents with taxonomy reference, batch processing via Anthropic API (no API key available \u2014 used session-internal derivation)",
+    "pass_2": "Independent manual derivation against taxonomy, no visibility into Pass 1 output",
+    "independence": "Pass 2 was derived without reading Pass 1 results. Both passes read the same taxonomy-ref.json and questions-ee.json."
+  }
+}

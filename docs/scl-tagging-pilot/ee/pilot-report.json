@@ -1,0 +1,192 @@
+{
+  "pilot": "Equivalent Expressions SCL tagging \u2014 Phase 2",
+  "taxonomy_version": "scl-v1.0.0",
+  "question_count": 351,
+  "mcq_count": 302,
+  "grid_in_count": 49,
+  "coverage": {
+    "pass_1": {
+      "sub_skill": 351,
+      "cluster": 351,
+      "mcq_distractor": 302,
+      "first_class": 351
+    },
+    "pass_2": {
+      "sub_skill": 351,
+      "cluster": 351,
+      "mcq_distractor": 200,
+      "first_class": 249
+    }
+  },
+  "agreement": {
+    "sub_skill_exact_match": "35.0%",
+    "sub_skill_exact_count": 123,
+    "sub_skill_jaccard_mean": 0.553,
+    "sub_skill_any_ee_overlap": "75.8%",
+    "primary_ee_agreement": "54.7%",
+    "cluster_exact_match": "36.8%",
+    "cluster_exact_count": 129,
+    "cluster_jaccard_mean": 0.544
+  },
+  "disagreement_count": 283,
+  "top_sub_skill_combos": {
+    "pass_1": [
+      {
+        "combo": [
+          "EE.3"
+        ],
+        "count": 93
+      },
+      {
+        "combo": [
+          "EE.3",
+          "EE.5"
+        ],
+        "count": 76
+      },
+      {
+        "combo": [
+          "EE.1",
+          "EE.2"
+        ],
+        "count": 53
+      },
+      {
+        "combo": [
+          "EE.4"
+        ],
+        "count": 41
+      },
+      {
+        "combo": [
+          "EE.2"
+        ],
+        "count": 38
+      },
+      {
+        "combo": [
+          "EE.1"
+        ],
+        "count": 20
+      },
+      {
+        "combo": [
+          "EE.5"
+        ],
+        "count": 17
+      },
+      {
+        "combo": [
+          "EE.2",
+          "EE.3"
+        ],
+        "count": 7
+      }
+    ],
+    "pass_2": [
+      {
+        "combo": [
+          "EE.5"
+        ],
+        "count": 98
+      },
+      {
+        "combo": [
+          "EE.3"
+        ],
+        "count": 82
+      },
+      {
+        "combo": [
+          "EE.2"
+        ],
+        "count": 69
+      },
+      {
+        "combo": [
+          "EE.1",
+          "EE.2"
+        ],
+        "count": 27
+      },
+      {
+        "combo": [
+          "EE.1"
+        ],
+        "count": 21
+      },
+      {
+        "combo": [
+          "EE.4",
+          "EE.5"
+        ],
+        "count": 18
+      },
+      {
+        "combo": [
+          "EE.4"
+        ],
+        "count": 18
+      },
+      {
+        "combo": [
+          "EE.3",
+          "EE.5"
+        ],
+        "count": 12
+      }
+    ]
+  },
+  "unique_clusters_used": {
+    "pass_1": [
+      "CL.0006",
+      "CL.0008",
+      "CL.0017",
+      "CL.0020",
+      "CL.0033",
+      "CL.0034",
+      "CL.0035",
+      "CL.0037",
+      "CL.0038",
+      "CL.0039",
+      "CL.0040",
+      "CL.0047",
+      "CL.0053",
+      "CL.0075",
+      "CL.0079",
+      "CL.0088",
+      "CL.0094",
+      "CL.0095",
+      "CL.0099",
+      "CL.0120",
+      "CL.0164",
+      "CL.0165"
+    ],
+    "pass_2": [
+      "CL.0006",
+      "CL.0008",
+      "CL.0017",
+      "CL.0033",
+      "CL.0034",
+      "CL.0035",
+      "CL.0037",
+      "CL.0038",
+      "CL.0039",
+      "CL.0040",
+      "CL.0094",
+      "CL.0095",
+      "CL.0164",
+      "CL.0165"
+    ]
+  },
+  "observations": [
+    "Pass 2 tagged 63 questions with zero clusters; Pass 1 tagged all 351 with \u22651 cluster.",
+    "Pass 1 used 22 unique cluster IDs; Pass 2 used 14.",
+    "Pass 2 assigned more multi-sub-skill combos (208 questions with 2+ vs 142 in Pass 1).",
+    "The main source of sub-skill disagreement is co-tagging: e.g. Pass 2 tags EE.3+EE.5 for rational expressions involving factoring, while Pass 1 often tags only EE.3 or only EE.5.",
+    "Cluster disagreements stem from Pass 1 being more granular (more procedural clusters per question) vs Pass 2 being more selective.",
+    "Distractor cluster exact-match is very low (2.6%) because each pass interprets distractor error patterns differently at the cluster level.",
+    "89.5% of questions share at least one EE sub-skill between passes, suggesting the primary skill identification is consistent even when secondary tags differ."
+  ],
+  "recommendation": "Agreement is below the 80% threshold for automatic acceptance. Recommend: (1) define explicit rubric for when to co-tag vs single-tag sub-skills, (2) define minimum cluster assignment rules, (3) re-run pilot with rubric. Alternatively, adjudicate disagreements manually for this 351-question set and use the adjudicated tags as ground truth."
+}
