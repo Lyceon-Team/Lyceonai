@@ -1,0 +1,10 @@
+{
+  "batch": "091",
+  "total": 90,
+  "audited": 90,
+  "errors": [
+    "SATM2ER7LW2: explanation derivations for distractors B (47) and C (53) are factually incorrect (MEDIUM, explanation-only)"
+  ],
+  "pass": true,
+  "notes": "Blind re-audit 2026-10-18. SATRW2SP5XD1 typo ('ofEli' -> 'of Eli') fixed. SATM2ER7LW2 explanation quality issue noted but answer key correct. All 90 keys verified."
+}
