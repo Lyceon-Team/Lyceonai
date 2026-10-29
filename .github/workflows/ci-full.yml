@@ -517,6 +517,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/curriculum-chunks.mutations.sh
 
+      # LISA video segments (SCL-259, Phase B): plants RLS off, a sub-skill tag without its
+      # foreign key, a span past the video's end, a changed segment keeping its approval, a
+      # dropped segment surviving, an untagged segment approved and a CASCADE on the vocabulary.
+      # Each must turn its named gate red.
+      - name: LISA video segment mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/video-segments.mutations.sh
+
       # SEO Wave 2, plans Q5/Q6: plants the opt-in reset bug, under-13 opt-ins at every layer, a
       # lost consent source, a withdrawal emitting consent_captured, a non-atomic prompt claim,
       # a per-click dismissal, a lost deletion cascade, each cadence rule, Trustpilot for a minor
