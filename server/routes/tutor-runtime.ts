@@ -105,6 +105,7 @@ import {
 import {
   requestedVideoMethod,
   resolveVideoAction,
+  retrievalTiming,
   retrieveOfferedVideos,
   toClientVideo,
   toWireVideos,
@@ -1787,8 +1788,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       recordVideoRetrieval({
         method: VIDEO_INTENT_METHOD[videoIntent],
         map_version: null,
-        results: picked.offered.length,
-        video_ids: picked.offered.map((v) => v.video_id),
+        ...retrievalTiming(picked.retrieval),
       });
       const videoReply =
         picked.video === null
@@ -2134,9 +2134,14 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       armorInput.kind === "blocked"
         ? null
         : requestedVideoMethod(input.message);
-    const offeredVideos =
+    //
+    // Phase C (Karl 2026-10-29; SCL-260/261): a sub-skill-tagged item gets the approved segment
+    // that teaches what it asks, opening at the segment's start; no match is no video (the miss
+    // is logged). The line also records the path, the matched sub-skill ids, the shared-cluster
+    // count, the segment id and the miss.
+    const retrieval =
       requested === null
-        ? []
+        ? null
         : await timedStep("video_retrieval", () =>
             retrieveOfferedVideos(
               effectiveScope.source_question_row_id,
@@ -2145,12 +2150,12 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
               requested.method,
             ),
           );
-    if (requested !== null) {
+    const offeredVideos = retrieval?.videos ?? [];
+    if (requested !== null && retrieval !== null) {
       recordVideoRetrieval({
         method: requested.method,
         map_version: requested.mapVersion,
-        results: offeredVideos.length,
-        video_ids: offeredVideos.map((v) => v.video_id),
+        ...retrievalTiming(retrieval),
       });
     }
     if (offeredVideos.length > 0) {

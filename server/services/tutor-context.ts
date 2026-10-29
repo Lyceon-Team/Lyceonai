@@ -397,6 +397,32 @@ export async function resolveQuestionSkillCodes(
 }
 
 /**
+ * @spec [Doc-03D_V1.2 §6.4 as amended by SCL-260; owner brief "Phase C: retrieval switch-over",
+ *       Karl 2026-10-29 (build 2: "If the question has sub-skill tags use the new function,
+ *       otherwise the old one")] | @implemented [2026-10-29]
+ *
+ * plain English: the sub-skill ids the questions team tagged on this item
+ * (`question_sub_skills`), by row id, sorted. Tag ids only: no content, no answer. Any row
+ * makes the item "tagged"; no taxonomy version is compared (ruling Q6, revised). Throws on a
+ * query error (the caller fails open); no rows is an empty list, which keeps the item on the
+ * skill-only path.
+ */
+export async function resolveQuestionSubSkillIds(
+  questionRowId: string,
+): Promise<string[]> {
+  const { data, error } = await supabaseServer
+    .from("question_sub_skills")
+    .select("sub_skill_id")
+    .eq("question_id", questionRowId);
+  if (error) throw error;
+  return z
+    .array(z.object({ sub_skill_id: z.string() }))
+    .parse(data ?? [])
+    .map((r) => r.sub_skill_id)
+    .sort();
+}
+
+/**
  * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-253]
  *       | @implemented [2026-10-27]
  * plain English: `questions.section` for a question row, by id: "M", "RW", or null when the row

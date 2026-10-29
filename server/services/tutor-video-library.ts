@@ -32,6 +32,22 @@
  *  - Retrieval passes that method to `video_resources_for_skills(skills, 3, method)`: skill
  *    match required, then the method, then format priority, then shortest. Each row carries its
  *    methods and format, which go to the worker so LISA can tell the Desmos video apart.
+ *
+ * @spec [Doc-03D_V1.2 §6.4 as amended by SCL-260; §6.8 as amended by SCL-261; owner brief
+ *       "Phase C: retrieval switch-over", Karl 2026-10-29 (build 1–3; rulings Q3, Q4, Q6
+ *       revised)] | @implemented [2026-10-29]
+ *  - The one switch point. Step 13d and both video taps call `retrieveOfferedVideos`. An item
+ *    with any `question_sub_skills` row takes `video_segments_for_question`: the approved
+ *    segment that shares its sub-skills, `start_seconds` = the segment's start (the field the
+ *    player already uses, so no wire or client change). Every other item takes
+ *    `video_resources_for_skills` with exactly today's arguments.
+ *  - `methodRequired` (the Desmos tap): on the segment path only videos tagged with the method
+ *    are candidates. The skill path is unchanged; the tap's own top-row check stays the filter.
+ *  - A tagged item with no matching approved segment gets NO video (ruling Q4): never the
+ *    skill-only ranking, which is how a FOIL short reached a rational-expressions question.
+ *    The miss is logged as ids only: the question, its sub-skills, the method.
+ *  - The format priority is passed in from `VIDEO_FORMAT_PRIORITY`, so the new statement holds
+ *    no copy of the format vocabulary.
  */
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -42,12 +58,17 @@ import type {
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import {
   detectRequestedMethod,
+  VIDEO_FORMAT_PRIORITY,
   videoFormatSchema,
   videoMethodSchema,
   type VideoMethod,
 } from "../../packages/shared/src/video-methods";
+import type { VideoRetrievalTiming } from "../lib/step-timer";
 import { logger } from "../logger";
-import { resolveQuestionSkillCodes } from "./tutor-context";
+import {
+  resolveQuestionSkillCodes,
+  resolveQuestionSubSkillIds,
+} from "./tutor-context";
 import { TutorConfig } from "./tutor-config";
 
 export const libraryVideoSchema = z.object({
@@ -60,6 +81,37 @@ export const libraryVideoSchema = z.object({
   format: videoFormatSchema.nullable(),
 });
 export type LibraryVideo = z.infer<typeof libraryVideoSchema>;
+
+/** A `video_segments_for_question` row: a library row plus the segment it opens at. */
+const segmentVideoSchema = libraryVideoSchema.extend({
+  segment_id: z.string().uuid(),
+  matched_sub_skills: z.array(z.string()).min(1),
+  shared_clusters: z.number().int().nonnegative(),
+});
+
+/**
+ * What one retrieval decided. `path` is null when no retrieval ran (no item, a surface without
+ * videos, an item with no skills, or an error). The segment fields describe the first row (the
+ * video a tap serves; the first offered on 13d); null or empty on the skill path. `miss`: a
+ * tagged item that found no approved segment.
+ */
+export type VideoRetrieval = {
+  videos: LibraryVideo[];
+  path: "segment" | "skill" | null;
+  matchedSubSkillIds: string[];
+  sharedClusters: number | null;
+  segmentId: string | null;
+  miss: boolean;
+};
+
+const NO_RETRIEVAL: VideoRetrieval = {
+  videos: [],
+  path: null,
+  matchedSubSkillIds: [],
+  sharedClusters: null,
+  segmentId: null,
+  miss: false,
+};
 
 /** At most this many videos are offered per turn (brief §6: `limit 3`). */
 export const MAX_OFFERED_VIDEOS = 3;
@@ -86,27 +138,77 @@ export function requestedVideoMethod(message: string): {
   };
 }
 
-/** Step 13d. Never throws: any failure is logged and yields no videos. */
+/** Step 13d and the video taps. Never throws: any failure is logged and yields no videos. */
 export async function retrieveOfferedVideos(
   questionRowId: string | null,
   surface: SourceSurface,
   conversationId: string,
   requestedMethod: VideoMethod | null,
-): Promise<LibraryVideo[]> {
-  if (questionRowId === null || !VIDEO_SURFACES.has(surface)) return [];
+  opts: { methodRequired?: boolean } = {},
+): Promise<VideoRetrieval> {
+  if (questionRowId === null || !VIDEO_SURFACES.has(surface)) {
+    return NO_RETRIEVAL;
+  }
   try {
-    const skills = await resolveQuestionSkillCodes(questionRowId);
-    if (skills.length === 0) return [];
-    const r = await supabaseServer.rpc("video_resources_for_skills", {
+    const [skills, subSkillIds] = await Promise.all([
+      resolveQuestionSkillCodes(questionRowId),
+      resolveQuestionSubSkillIds(questionRowId),
+    ]);
+    if (skills.length === 0) return NO_RETRIEVAL;
+    if (subSkillIds.length === 0) {
+      const r = await supabaseServer.rpc("video_resources_for_skills", {
+        p_skill_codes: skills,
+        p_limit: MAX_OFFERED_VIDEOS,
+        p_method: requestedMethod,
+      });
+      if (r.error) throw r.error;
+      return {
+        ...NO_RETRIEVAL,
+        path: "skill",
+        videos: z
+          .array(libraryVideoSchema)
+          .max(MAX_OFFERED_VIDEOS)
+          .parse(r.data ?? []),
+      };
+    }
+    const r = await supabaseServer.rpc("video_segments_for_question", {
+      p_question_id: questionRowId,
       p_skill_codes: skills,
       p_limit: MAX_OFFERED_VIDEOS,
       p_method: requestedMethod,
+      p_method_required: opts.methodRequired === true,
+      p_format_priority: [...VIDEO_FORMAT_PRIORITY],
     });
     if (r.error) throw r.error;
-    return z
-      .array(libraryVideoSchema)
+    const rows = z
+      .array(segmentVideoSchema)
       .max(MAX_OFFERED_VIDEOS)
       .parse(r.data ?? []);
+    const top = rows[0];
+    if (top === undefined) {
+      logger.info(
+        "TUTOR_RUNTIME",
+        "video_segment_miss",
+        "tagged question with no approved matching segment; no video served",
+        {
+          conversationId,
+          questionRowId,
+          subSkillIds,
+          method: requestedMethod,
+          methodRequired: opts.methodRequired === true,
+        },
+      );
+      return { ...NO_RETRIEVAL, path: "segment", miss: true };
+    }
+    return {
+      // Projected to the library row: the segment fields go to the timing line only.
+      videos: rows.map((row) => libraryVideoSchema.parse(row)),
+      path: "segment",
+      matchedSubSkillIds: top.matched_sub_skills,
+      sharedClusters: top.shared_clusters,
+      segmentId: top.segment_id,
+      miss: false,
+    };
   } catch (err: unknown) {
     logger.error(
       "TUTOR_RUNTIME",
@@ -115,8 +217,23 @@ export async function retrieveOfferedVideos(
       err instanceof Error ? err : undefined,
       { conversationId },
     );
-    return [];
+    return NO_RETRIEVAL;
   }
+}
+
+/** The retrieval's half of the `video_retrieval` timing block (ids and counts only). */
+export function retrievalTiming(
+  r: VideoRetrieval,
+): Omit<VideoRetrievalTiming, "method" | "map_version" | "recommended_index"> {
+  return {
+    results: r.videos.length,
+    video_ids: r.videos.map((v) => v.video_id),
+    path: r.path,
+    matched_sub_skill_ids: r.matchedSubSkillIds,
+    shared_clusters: r.sharedClusters,
+    segment_id: r.segmentId,
+    miss: r.miss,
+  };
 }
 
 /** The worker's view: index, title, channel, length, methods, format. No id, no start. */

@@ -530,6 +530,18 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/video-segments.mutations.sh
 
+      # LISA retrieval by segment (SCL-260/261, Phase C): plants an unapproved segment served,
+      # the Desmos requirement dropped, the method_in default dropped, a segment served without a
+      # shared sub-skill, and the ranking's sub-skill key removed. Each must turn its named gate red.
+      - name: LISA segment retrieval mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/video-segment-retrieval.mutations.sh
+
       # SEO Wave 2, plans Q5/Q6: plants the opt-in reset bug, under-13 opt-ins at every layer, a
       # lost consent source, a withdrawal emitting consent_captured, a non-atomic prompt claim,
       # a per-click dismissal, a lost deletion cascade, each cadence rule, Trustpilot for a minor

@@ -1467,6 +1467,18 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-segment-gates.sql
 
+      # LISA retrieval by segment (owner brief "Phase C: retrieval switch-over"; SCL-260/261):
+      # a tagged question gets the approved segment that shares its sub-skills, at the segment's
+      # start; the Desmos tap requires Desmos; no match is no video; the untagged path's function
+      # is unchanged (snapshot). Same database; one transaction, rolled back.
+      - name: LISA segment retrieval gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-segment-retrieval-gates.sql
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost

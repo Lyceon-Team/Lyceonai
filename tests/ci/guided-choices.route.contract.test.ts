@@ -468,6 +468,164 @@ describe("video intents are served with no model call", () => {
   });
 });
 
+/**
+ * @spec [owner brief "Phase C: retrieval switch-over", Karl 2026-10-29 (ruling Q3: the Desmos
+ *       tap asks for Desmos directly; ruling Q4: a tagged item with no matching approved
+ *       segment serves no video); SCL-260/261] | @implemented [2026-10-29]
+ * plain English: on a sub-skill-tagged item the tap goes to `video_segments_for_question`
+ * (never the skill-only function), the Desmos tap REQUIRES Desmos, and the served video opens
+ * at the segment's start. The fake answers as the SQL does for these rows (ranking itself is
+ * proven in scripts/ci/video-segment-retrieval-gates.sql).
+ */
+const SEGMENT_DESMOS = {
+  video_id: "a1QNaRnn6cE",
+  title: "Desmos Lesson #10",
+  channel_name: "Tutorllini Test Prep",
+  duration_seconds: 398,
+  start_seconds: 159,
+  methods: ["desmos"],
+  format: "lesson",
+  segment_id: "11111111-1111-4111-8111-111111111111",
+  matched_sub_skills: ["EE.5"],
+  shared_clusters: 1,
+};
+const SEGMENT_ALGEBRAIC = {
+  ...SEGMENT_DESMOS,
+  video_id: "AlgebraAAAA",
+  title: "Rational expressions by hand",
+  start_seconds: 42,
+  methods: ["algebraic"],
+  format: "worked_example",
+  segment_id: "22222222-2222-4222-8222-222222222222",
+  shared_clusters: 3,
+};
+
+function serveSegments(rows: Array<typeof SEGMENT_DESMOS>): void {
+  db.current.onRpc("video_segments_for_question", (args) => {
+    const method = args.p_method as string | null;
+    const required = args.p_method_required === true;
+    // The algebraic segment shares more clusters, so it ranks first unless Desmos is required.
+    const data = rows.filter(
+      (r) => !required || (method !== null && r.methods.includes(method)),
+    );
+    return { data, error: null };
+  });
+}
+
+function videoRetrievalLine(): Record<string, unknown> {
+  const lines = logged.info.filter(
+    (a) =>
+      a[0] === "PERF" &&
+      a[1] === "route_timing" &&
+      (a[3] as { route?: string }).route === "tutor.message",
+  );
+  expect(lines).toHaveLength(1);
+  return (lines[0]![3] as { video_retrieval: Record<string, unknown> })
+    .video_retrieval;
+}
+
+describe("Phase C: a video tap on a sub-skill-tagged item", () => {
+  beforeEach(() => {
+    db.current.seed("question_sub_skills", {
+      question_id: Q_MATH,
+      sub_skill_id: "EE.5",
+      taxonomy_version: "scl-v1.0.0",
+      tagged_by: "test",
+    });
+  });
+
+  it("'Desmos video' requires Desmos: the Desmos segment, at its start, even though an algebraic one shares more", async () => {
+    serveSegments([SEGMENT_ALGEBRAIC, SEGMENT_DESMOS]);
+    const conv = seedConversation(Q_MATH);
+    const res = await tap(conv, "video_desmos");
+    expect(res.status).toBe(200);
+    expect(res.body.data.response.content).toBe(
+      VIDEO_INTENT_REPLY.video_desmos,
+    );
+    expect(res.body.data.response.suggested_action).toEqual({
+      type: "recommend_video",
+      label: null,
+      video: {
+        video_id: "a1QNaRnn6cE",
+        title: "Desmos Lesson #10",
+        channel_name: "Tutorllini Test Prep",
+        duration_seconds: 398,
+        start_seconds: 159,
+      },
+    });
+    const call = db.current.rpcCalls.find(
+      (c) => c.name === "video_segments_for_question",
+    );
+    expect(call?.args).toMatchObject({
+      p_question_id: Q_MATH,
+      p_method: "desmos",
+      p_method_required: true,
+    });
+    expect(
+      db.current.rpcCalls.some((c) => c.name === "video_resources_for_skills"),
+    ).toBe(false);
+    expect(videoRetrievalLine()).toEqual({
+      method: "desmos",
+      map_version: null,
+      results: 1,
+      video_ids: ["a1QNaRnn6cE"],
+      recommended_index: 1,
+      path: "segment",
+      matched_sub_skill_ids: ["EE.5"],
+      shared_clusters: 1,
+      segment_id: "11111111-1111-4111-8111-111111111111",
+      miss: false,
+    });
+  });
+
+  it("'Explanation video' does not require its method: the top segment, algebraic here", async () => {
+    serveSegments([SEGMENT_ALGEBRAIC, SEGMENT_DESMOS]);
+    const conv = seedConversation(Q_MATH);
+    const res = await tap(conv, "video_explanation");
+    expect(res.body.data.response.suggested_action.video).toMatchObject({
+      video_id: "AlgebraAAAA",
+      start_seconds: 42,
+    });
+    const call = db.current.rpcCalls.find(
+      (c) => c.name === "video_segments_for_question",
+    );
+    expect(call?.args).toMatchObject({
+      p_method: "algebraic",
+      p_method_required: false,
+    });
+  });
+
+  it("no approved matching segment: the no-video sentence, no action, no skill-only fallback, the miss logged as ids", async () => {
+    serveSegments([]);
+    const conv = seedConversation(Q_MATH);
+    const res = await tap(conv, "video_desmos");
+    expect(res.status).toBe(200);
+    expect(res.body.data.response.content).toBe(VIDEO_INTENT_NO_MATCH);
+    expect(res.body.data.response.suggested_action).toEqual({
+      type: "none",
+      label: null,
+    });
+    expect(
+      db.current.rpcCalls.some((c) => c.name === "video_resources_for_skills"),
+    ).toBe(false);
+    const miss = logged.info.filter((a) => a[1] === "video_segment_miss");
+    expect(miss).toHaveLength(1);
+    expect(miss[0]![3]).toEqual({
+      conversationId: conv,
+      questionRowId: Q_MATH,
+      subSkillIds: ["EE.5"],
+      method: "desmos",
+      methodRequired: true,
+    });
+    expect(videoRetrievalLine()).toMatchObject({
+      path: "segment",
+      results: 0,
+      miss: true,
+      segment_id: null,
+    });
+  });
+});
+
 describe("walkthrough is a normal turn", () => {
   // REPLY is what the model returned; the route may serve a substitution of it.
   it("'Walk me through it' reaches the worker with intent walkthrough, and the reply is LISA's", async () => {
