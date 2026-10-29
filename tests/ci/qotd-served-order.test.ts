@@ -196,8 +196,12 @@ describe("every surface shows the stored order and names the served letter (SCL-
         );
         expect(cardPairs(html), format).toEqual(EXPECTED);
       }
+      // The Reddit post is an image post (#1357): its choices are the image's, checked
+      // above, and its text carries no choice and no letter to disagree with them.
       const reddit = buildRedditPost(input);
-      expect(linePairs(reddit.body, /^([A-D])\) (.*)$/gm)).toEqual(EXPECTED);
+      expect(reddit.body.length).toBeGreaterThan(0);
+      expect(linePairs(reddit.body, /^([A-D])\) (.*)$/gm)).toEqual([]);
+      expect(reddit.body).not.toMatch(/\b[A-D]\)/);
       const alt = buildSocialCopy(input).alt_text;
       expect(linePairs(alt, /\b([A-D]): ([^.]*)\./g)).toEqual(EXPECTED);
     }
