@@ -15,7 +15,10 @@ import type { ScheduledPostSpec } from "./types";
 import howLongIsTheSat from "./how-long-is-the-sat";
 import howToRegisterForTheSat from "./how-to-register-for-the-sat";
 import lastMinuteSatPrep from "./last-minute-sat-prep";
+import satDeviceRequirements from "./sat-device-requirements";
 import satFeeWaiver from "./sat-fee-waiver";
+import satGrammarQuestions from "./sat-grammar-questions";
+import satMathFormulas from "./sat-math-formulas";
 import twoWeekSatStudyPlan from "./two-week-sat-study-plan";
 import whatToBringToTheSat from "./what-to-bring-to-the-sat";
 
@@ -24,6 +27,10 @@ export const SCHEDULED_POST_SPECS: ReadonlyArray<ScheduledPostSpec | null> = [
   howToRegisterForTheSat,
   satFeeWaiver,
   twoWeekSatStudyPlan,
+  // 2026-W44
+  satGrammarQuestions,
+  satMathFormulas,
+  satDeviceRequirements,
   // 2026-W45
   whatToBringToTheSat,
   lastMinuteSatPrep,
