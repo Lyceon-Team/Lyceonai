@@ -169,9 +169,16 @@ export class BookText {
 function normalizeWithMap(text: string): { norm: string; map: number[] } {
   let norm = "";
   const map: number[] = [];
+  // Markup tags (<u>, </u> in OCR markdown) and the "[ACT NOTE]" marker are not text: their
+  // letters would otherwise break a quote that spans them ("<u>Although</u> London" must match
+  // "Although London").
+  const tags = new Set<number>();
+  for (const m of text.matchAll(/<\/?[a-z]+>|\[ACT NOTE\]/gi))
+    for (let k = m.index ?? 0; k < (m.index ?? 0) + m[0].length; k += 1)
+      tags.add(k);
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i] ?? "";
-    if (/[\p{L}\p{N}]/u.test(ch)) {
+    if (!tags.has(i) && /[\p{L}\p{N}]/u.test(ch)) {
       norm += ch.toLowerCase();
       map.push(i);
     }
@@ -186,22 +193,31 @@ function normalize(text: string): string {
 /**
  * Pure. Where `quote` occurs in `text` within [from, to): [start, end) offsets of the match in
  * the ORIGINAL text, or null. `last` picks the last occurrence in the range instead of the
- * first. A quote that normalizes to fewer than 12 characters is refused (too short to place one
- * boundary unambiguously).
+ * first. A quote that normalizes to fewer than 12 characters is accepted only when it occurs
+ * exactly once in the range, and never below 5: OCR markdown makes short heading quotes normal
+ * ("### B. Two Dashes" is 10, "#### Their" 5; 23 of the Meltzer headings are under 12), and one
+ * occurrence places the boundary unambiguously however short it is.
  */
+/** Normalized length from which a quote places a boundary by itself; below it, only if unique. */
+const UNAMBIGUOUS_QUOTE = 12;
+/** Normalized length below which a quote is refused even when unique. */
+const SHORT_QUOTE_FLOOR = 5;
+
 export function locateQuote(
   text: string,
   quote: string,
   from = 0,
-  opts: { to?: number; last?: boolean } = {},
+  opts: { to?: number; last?: boolean; unique?: boolean } = {},
 ): { start: number; end: number } | null {
   const q = normalize(quote);
-  if (q.length < 12) return null;
+  if (q.length < SHORT_QUOTE_FLOOR) return null;
   const to = opts.to ?? text.length;
   const { norm, map } = normalizeWithMap(text);
   const fromNorm = map.findIndex((o) => o >= from);
   if (fromNorm === -1) return null;
   let found = -1;
+  let count = 0;
+  const short = q.length < UNAMBIGUOUS_QUOTE || opts.unique === true;
   for (
     let at = norm.indexOf(q, fromNorm);
     at !== -1;
@@ -209,10 +225,11 @@ export function locateQuote(
   ) {
     const last = map[at + q.length - 1];
     if (last === undefined || last >= to) break;
-    found = at;
-    if (opts.last !== true) break;
+    count += 1;
+    if (count === 1 || opts.last === true) found = at;
+    if (opts.last !== true && !short) break;
   }
-  if (found === -1) return null;
+  if (found === -1 || (short && count !== 1)) return null;
   const start = map[found];
   const last = map[found + q.length - 1];
   if (start === undefined || last === undefined) return null;
@@ -259,9 +276,12 @@ const HEADING_RE = /^(#{1,4})\s+(.*)$/;
  *  - a heading followed by an "[ACT ONLY]" line drops that heading's section, up to the next
  *    heading of the same or a higher level (in the Meltzer guide: "Who's vs. Whose (Primarily
  *    ACT)" and "Then vs. Than (ACT)").
- * "[ACT NOTE]" paragraphs are KEPT, with the marker removed: the flag means "mentions the ACT",
- * not "ACT-only" (printed page 11 is a general comma rule the SAT can test). Every dropped
- * section is returned with its page and size, so the cut can be checked.
+ * "[ACT NOTE]" paragraphs are KEPT, and so is their marker: the flag means "mentions the ACT",
+ * not "ACT-only" (printed page 11 is a general comma rule the SAT can test), and the rewrite
+ * and the audit need to see it to drop the ACT-scoped advice from an entry rather than state
+ * it as general (Karl, 2026-10-23: chunks 9:2 and 5:1 did that with the marker stripped). Quote
+ * matching skips the marker (normalizeWithMap). Every dropped section is returned with its
+ * page and size, so the cut can be checked.
  */
 export function dropActSections(pages: OcrPage[]): {
   pages: OcrPage[];
@@ -318,7 +338,7 @@ export function dropActSections(pages: OcrPage[]): {
         continue;
       }
       if (line.trim() === "[ACT ONLY]") continue;
-      kept.push(line.replace(/^\[ACT NOTE\]\s*/, ""));
+      kept.push(line);
     }
     const body = kept
       .join("\n")
@@ -327,6 +347,256 @@ export function dropActSections(pages: OcrPage[]): {
     if (body !== "") out.push({ ...page, body });
   }
   return { pages: out, dropped };
+}
+
+/**
+ * Pure. Whether the unit [start, end) of `text` starts or ends at a lettered-subsection heading
+ * ("### ", OCR markdown) inside a numbered rule ("## "): the boundary where one rule was split
+ * into units. Measured on drops (Karl, 2026-10-23: 8 of 10 audit drops sat on one when the
+ * segmenter put each lettered subsection in its own unit). Blank space at the edges is skipped.
+ */
+export function onSubsectionBoundary(
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  // Unit edges sit on letters and digits (quotes are matched on those), so a start lands after
+  // the "### " the model left out of its quote, and an end before the sentence's last period:
+  // a start is at a heading when only "#" and blanks precede it on its line, and an end is at
+  // one when only punctuation and blanks lie between it and the next "### ".
+  const lineOf = (i: number): number => text.lastIndexOf("\n", i - 1) + 1;
+  const subLineAt = (i: number): boolean => text.startsWith("### ", i);
+  let s0 = start;
+  while (s0 < end && /\s/.test(text[s0] ?? "")) s0 += 1;
+  const startLine = lineOf(s0);
+  const startsAtSub =
+    subLineAt(startLine) && /^[#\s]*$/.test(text.slice(startLine, s0));
+  let e0 = end;
+  while (e0 < text.length && /[^\p{L}\p{N}#]/u.test(text[e0] ?? "")) e0 += 1;
+  const endsAtSub = lineOf(e0) === e0 && subLineAt(e0);
+  const ruleBefore = (i: number): boolean =>
+    [...text.slice(0, i).matchAll(/^## /gm)].length > 0;
+  return (startsAtSub && ruleBefore(s0)) || (endsAtSub && ruleBefore(e0));
+}
+
+/** A numbered rule shorter than this is one idea and stays in one unit (Karl, 2026-10-23). */
+export const SHORT_RULE_WORDS = 400;
+
+/**
+ * Pure. The numbered rules ("## " headings of OCR markdown) lying wholly in [winStart, winEnd)
+ * that are under `maxWords` words yet were split by a unit starting at one of their lettered-
+ * subsection headings ("### "). The segment prompt says to keep such a rule in one unit; the
+ * model split rule 15 (251 words) anyway on 2026-10-23, so the rule is enforced here and the
+ * window is asked again. A rule running past the window cannot be judged and is skipped. Words
+ * are counted without the markdown symbols. Returns each offending rule's heading line.
+ */
+export function shortRulesSplit(
+  text: string,
+  units: readonly { start: number }[],
+  winStart: number,
+  winEnd: number,
+  maxWords = SHORT_RULE_WORDS,
+): string[] {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => ({
+    at: m.index ?? 0,
+    line: m[0],
+  }));
+  const out: string[] = [];
+  for (const [i, h] of heads.entries()) {
+    const ruleEnd = heads[i + 1]?.at ?? text.length;
+    if (h.at < winStart || ruleEnd > winEnd) continue;
+    if (ruleWords(text, h.at, ruleEnd) >= maxWords) continue;
+    const split = units.some(
+      (u) =>
+        u.start > h.at &&
+        u.start < ruleEnd &&
+        startsAtSubsection(text, u.start),
+    );
+    if (split) out.push(h.line);
+  }
+  return out;
+}
+
+/**
+ * Pure. The other half of the rule shortRulesSplit enforces (Karl, 2026-10-26: "short rules
+ * stay whole, long rules split; neither trusted to the prompt"): the numbered rules lying
+ * wholly in [winStart, winEnd) of `maxWords` words or more that have lettered subsections
+ * ("### ") and at least one subsection heading after the first that no unit starts at (the
+ * first shares its unit with the rule's opening explanation). The 2026-10-26
+ * run kept rules of 401-489 words whole (chunks up to 453 words; median 185 -> 337), against
+ * the brief's one teachable idea per chunk. Units may also split inside a subsection. Returns
+ * each offending rule's heading line.
+ */
+export function longRulesWhole(
+  text: string,
+  units: readonly { start: number }[],
+  winStart: number,
+  winEnd: number,
+  maxWords = SHORT_RULE_WORDS,
+): string[] {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => ({
+    at: m.index ?? 0,
+    line: m[0],
+  }));
+  const unitLines = units.map((u) => lineStartOfEdge(text, u.start));
+  const out: string[] = [];
+  for (const [i, h] of heads.entries()) {
+    const ruleEnd = heads[i + 1]?.at ?? text.length;
+    if (h.at < winStart || ruleEnd > winEnd) continue;
+    if (ruleWords(text, h.at, ruleEnd) < maxWords) continue;
+    const subs = [...text.slice(h.at, ruleEnd).matchAll(/^### /gm)].map(
+      (m) => h.at + (m.index ?? 0),
+    );
+    // The first subsection shares its unit with the rule's opening explanation, so only the
+    // headings after it must start a unit.
+    // A unit may start at the subsection heading or anywhere in the block of minor headings
+    // directly above it (where splitLongRules cuts).
+    const started = (at: number): boolean => {
+      const from = headingBlockStart(text, at, h.at);
+      return unitLines.some((l) => l >= from && l <= at);
+    };
+    if (subs.slice(1).some((at) => !started(at))) out.push(h.line);
+  }
+  return out;
+}
+
+/**
+ * Pure. The units of one window with every numbered rule of `maxWords` words or more (lying
+ * wholly in [winStart, winEnd), with lettered subsections) cut at each lettered-subsection
+ * heading after its first. The cut is made here, in code, not asked of the model: on 2026-10-26
+ * the model kept rule 8 whole on three answers in a row despite being told each time, and the
+ * code, not the model, cuts the text in any case. A cut lands at the start of the block of
+ * heading lines directly above the subsection heading, so a minor heading introducing a group
+ * ("#### Commas should NOT be used:") goes with the subsections it introduces. Each new piece
+ * takes its subsection heading as section_title; only the last piece of a unit keeps that
+ * unit's ends_in_window. Afterwards longRulesWhole finds nothing in the window.
+ */
+export function splitLongRules<
+  U extends {
+    start: number;
+    end: number;
+    section_title: string;
+    ends_in_window: boolean;
+  },
+>(
+  text: string,
+  units: readonly U[],
+  winStart: number,
+  winEnd: number,
+  maxWords = SHORT_RULE_WORDS,
+): { units: U[]; cuts: number } {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => m.index ?? 0);
+  const cuts: { at: number; title: string }[] = [];
+  for (const [i, h] of heads.entries()) {
+    const ruleEnd = heads[i + 1] ?? text.length;
+    if (h < winStart || ruleEnd > winEnd) continue;
+    if (ruleWords(text, h, ruleEnd) < maxWords) continue;
+    const subs = [...text.slice(h, ruleEnd).matchAll(/^### (.*)$/gm)].slice(1);
+    for (const m of subs) {
+      const at = h + (m.index ?? 0);
+      cuts.push({
+        at: headingBlockStart(text, at, h),
+        title: plainHeading(m[1] ?? ""),
+      });
+    }
+  }
+  const out: U[] = [];
+  let n = 0;
+  for (const u of units) {
+    const inside = cuts.filter((c) => c.at > u.start && c.at < u.end);
+    if (inside.length === 0) {
+      out.push(u);
+      continue;
+    }
+    const edges = [u.start, ...inside.map((c) => c.at), u.end];
+    for (let k = 0; k + 1 < edges.length; k += 1) {
+      out.push({
+        ...u,
+        start: edges[k] ?? u.start,
+        end: edges[k + 1] ?? u.end,
+        section_title:
+          k === 0 ? u.section_title : (inside[k - 1]?.title ?? u.section_title),
+        ends_in_window: k + 2 === edges.length ? u.ends_in_window : true,
+      });
+    }
+    n += inside.length;
+  }
+  return { units: out, cuts: n };
+}
+
+/** Pure. Where the run of heading and blank lines ending at the heading `at` begins (not before `floor`). */
+function headingBlockStart(text: string, at: number, floor: number): number {
+  let start = at;
+  for (;;) {
+    const prevEnd = start - 1;
+    if (prevEnd <= floor) return start;
+    const prevStart = text.lastIndexOf("\n", prevEnd - 1) + 1;
+    const line = text.slice(prevStart, prevEnd);
+    if (prevStart <= floor || !/^(#### .*|\s*)$/.test(line)) break;
+    start = prevStart;
+  }
+  // Blank lines at the top of the block stay with the piece before.
+  while (start < at && /\s/.test(text[start] ?? "")) start += 1;
+  return start;
+}
+
+/** Pure. A heading's words without markdown symbols. */
+function plainHeading(h: string): string {
+  return h.replace(/<\/?[a-z]+>|[*_]/gi, "").trim();
+}
+
+/**
+ * Pure. The opening explanation of the numbered rule a unit belongs to (from its "## " heading
+ * to its first "### " subsection heading), when the unit is one piece of a rule that has
+ * subsections; null when the unit holds the whole rule, or the rule has no subsections, or the
+ * unit is under no rule. Karl, 2026-10-26: the 400-word cut gave rule 6's subsections B and C
+ * no definition, so the two correct pieces dropped and the flawed one survived; every piece of
+ * a cut rule now gets the rule's opening, as part of its source. Mechanical: headings only.
+ */
+export function ruleOpening(
+  text: string,
+  start: number,
+  end: number,
+): string | null {
+  const heads = [...text.matchAll(/^## .*$/gm)].map((m) => m.index ?? 0);
+  const s0 = lineStartOfEdge(text, start);
+  let rule = -1;
+  for (const h of heads) if (h <= s0) rule = h;
+  if (rule === -1) return null;
+  const ruleEnd = heads.find((h) => h > rule) ?? text.length;
+  const firstSub = /^### /m.exec(text.slice(rule, ruleEnd));
+  if (firstSub === null) return null;
+  // A whole-rule unit, by its real edges: it starts on the rule's heading line (after the "## "
+  // its quote left out) and every subsection heading of the rule lies inside it. Its end is not
+  // compared with the rule's end: a unit may stop before a closing "</u>." or a short closing
+  // remark (Meltzer 15:1 and 14:1, 2026-10-26).
+  const startsAtRule = lineStartOfEdge(text, start) === rule;
+  const lastSub = [...text.slice(rule, ruleEnd).matchAll(/^### /gm)].pop();
+  const holdsAllSubs = rule + (lastSub?.index ?? 0) < end;
+  if (startsAtRule && holdsAllSubs) return null;
+  return text.slice(rule, rule + firstSub.index).trim();
+}
+
+/** Pure. Words of a rule, without the markdown symbols. */
+function ruleWords(text: string, from: number, to: number): number {
+  return wordCount(
+    text.slice(from, to).replace(/<\/?[a-z]+>|\[ACT NOTE\]|[#*]/gi, " "),
+  );
+}
+
+/** Pure. The start of the line a unit edge sits on, past leading blanks. */
+function lineStartOfEdge(text: string, at: number): number {
+  let s0 = at;
+  while (s0 < text.length && /\s/.test(text[s0] ?? "")) s0 += 1;
+  return text.lastIndexOf("\n", s0 - 1) + 1;
+}
+
+/** Pure. A unit edge at `at` is on a "### " heading line, past only "#" and blanks. */
+function startsAtSubsection(text: string, at: number): boolean {
+  let s0 = at;
+  while (s0 < text.length && /\s/.test(text[s0] ?? "")) s0 += 1;
+  const line = text.lastIndexOf("\n", s0 - 1) + 1;
+  return text.startsWith("### ", line) && /^[#\s]*$/.test(text.slice(line, s0));
 }
 
 export const UNIT_KINDS = [
@@ -371,6 +641,40 @@ export const MAX_GAP_WORDS = 30;
  *    unit holds: rejected, so the caller asks again rather than losing part of a rule.
  * Throws on any of these.
  */
+/**
+ * Pure. A unit's start (or end) quote located in [from, to). The quote as given first, with
+ * locateQuote's rules; failing that, its longest word-prefix (for a start) or word-suffix (for
+ * an end) that normalizes to at least 12 characters and occurs exactly once in the range. The
+ * model sometimes joins headings across skipped lines ("15. FAULTY COMPARISONS A. Singular
+ * Comparison Though the work", measured 2026-10-23: two intro paragraphs lie between); the
+ * edge of a unit is fixed by the words at that edge, and a unique 12-character run places it as
+ * firmly as any quote the matcher accepts.
+ */
+export function locateEdge(
+  text: string,
+  quote: string,
+  from: number,
+  to: number,
+  side: "start" | "end",
+): { start: number; end: number } | null {
+  const whole = locateQuote(text, quote, from, { to, last: side === "end" });
+  if (whole !== null) return whole;
+  const words = quote.trim().split(/\s+/);
+  for (let k = words.length - 1; k >= 1; k -= 1) {
+    const part = (
+      side === "start" ? words.slice(0, k) : words.slice(words.length - k)
+    ).join(" ");
+    if (normalize(part).length < UNAMBIGUOUS_QUOTE) break;
+    const m = locateQuote(text, part, from, {
+      to,
+      last: side === "end",
+      unique: true,
+    });
+    if (m !== null) return m;
+  }
+  return null;
+}
+
 export function locateUnits(
   book: BookText,
   winStart: number,
@@ -381,21 +685,26 @@ export function locateUnits(
   const starts: number[] = [];
   let from = 0;
   for (const [i, u] of units.entries()) {
-    const s = locateQuote(win, u.start_quote, from);
+    const s = locateEdge(win, u.start_quote, from, win.length, "start");
     if (s === null)
-      throw new Error(`unit ${i + 1}: start_quote not found in the window`);
+      throw new Error(
+        `unit ${i + 1}: start_quote ${JSON.stringify(u.start_quote.slice(0, 120))} not found in the window after unit ${i}'s start`,
+      );
     starts.push(s.start);
     from = s.start + 1;
   }
   const located = units.map((u, i) => {
     const start = starts[i] ?? 0;
-    const e = locateQuote(win, u.end_quote, start, {
-      to: starts[i + 1] ?? win.length,
-      last: true,
-    });
+    const e = locateEdge(
+      win,
+      u.end_quote,
+      start,
+      starts[i + 1] ?? win.length,
+      "end",
+    );
     if (e === null)
       throw new Error(
-        `unit ${i + 1}: end_quote not found between its start and the next unit`,
+        `unit ${i + 1}: end_quote ${JSON.stringify(u.end_quote.slice(0, 120))} not found between its start and the next unit`,
       );
     return { ...u, start: winStart + start, end: winStart + e.end };
   });
