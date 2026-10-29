@@ -1485,7 +1485,10 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     //     is unchanged).
     //   - The Model Armor input scan keeps its place AFTER the crisis classifier: it starts the
     //     moment the classifier clears the turn (still overlapping the envelope), so a crisis
-    //     turn makes no Model Armor call at all, as closure plan W3-1 pins.
+    //     turn makes no Model Armor call at all, as closure plan W3-1 pins. A cleared turn that
+    //     then fails before the model (a duplicate client turn, a failed student-message or
+    //     instruction-assignment write) has already started the scan its turn would have made;
+    //     the verdict is discarded unread, as the envelope is.
     // A video-intent turn (step 11b) never had an envelope or an input scan, and still has none:
     // that is known here (the intent and the scope are), so they are not started for it.
     // A member's failure is carried as a value (`settled`) and raised where the sequential code
@@ -2229,7 +2232,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // The clock covers the Model Armor input scan so that
     // turn_metrics.orchestration_duration_ms includes both scans — that is
     // the before/after latency measurement for W3-1. Since H3 the input scan runs in the
-    // pre-model group, so its own duration is added back: the measure keeps its meaning.
+    // pre-model group, so its own duration is added back: the measure still includes both scans,
+    // but no longer the gap between the input scan's end and this point (before H3 the scan ran
+    // here, so there was none to include).
     const armorInputTimed = unwrapSettled(await modelPathWork.armorInput);
     if (armorInputTimed === null) {
       // Only a turn the classifier did not clear skips the scan, and that turn returned in 11a.
