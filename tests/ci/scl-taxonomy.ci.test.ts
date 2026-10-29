@@ -57,7 +57,7 @@ type Cluster = {
   core: boolean;
   skills_seen_in: string[];
   method_in: Record<string, number> | never[];
-  playbook_move?: string | null;
+  playbook_move?: string;
   aliases: string[];
 };
 
@@ -203,8 +203,7 @@ describe("SCL canonical taxonomy JSON", () => {
         expect(typeof cl.playbook_move).toBe("string");
         expect((cl.playbook_move as string).length).toBeGreaterThan(0);
       } else {
-        // Absent or explicit null — the loader writes NULL either way.
-        expect(cl.playbook_move ?? null).toBeNull();
+        expect(cl.playbook_move).toBeUndefined();
       }
     }
   });
@@ -292,7 +291,7 @@ describe("SCL file ↔ DB sync (ID set-equality, loader pre-flight)", () => {
   // Fixtures are constructed here; their sizes are the fixture's, not the taxonomy's.
   const FILE = {
     sub_skills: ["EE.1", "EE.2", "EE.6"],
-    clusters: ["CL.0001", "CL.0231"],
+    clusters: ["CL.0001", "CL.9001"],
   };
 
   it("diffIds reports both directions, sorted, and is empty for equal sets", () => {
@@ -319,7 +318,7 @@ describe("SCL file ↔ DB sync (ID set-equality, loader pre-flight)", () => {
     });
     expect(r).toEqual({
       ok: true,
-      toInsert: { sub_skills: [], clusters: ["CL.0231"] },
+      toInsert: { sub_skills: [], clusters: ["CL.9001"] },
     });
   });
 

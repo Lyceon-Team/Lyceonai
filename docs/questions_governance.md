@@ -390,6 +390,14 @@ Or for LaTeX-rendered figures (preferred when possible):
 **No function composition (`COMPOSITION_OFFSPEC` — gate HARD-FAIL).** _(Added 2026-10-18.)_
 The Digital SAT does not test function composition. An OCR audit of 377 official Linear/Nonlinear Functions questions found zero self-compositions and only one weak two-step numeric composite. Composition questions are off-spec. Specifically banned: self-composition (`f(f(x))`, `h(h(x))`, `g(g(x))`), nested-notation composition solved for a variable (`f(g(a)) = k`), and two-function composites in general (`f(g(…))`, `g(f(…))`). Translations are NOT composition and remain allowed: `g(x) = f(x+5)`, `g = f + k`, `h = f - 13`. Gate detector: `/[fgh]\s*\(\s*[fgh]\s*\(/` on stem → REJECT.
 
+**No sum/difference-of-cubes factoring (`CUBES_OFFSPEC` — gate HARD-FAIL).** _(Added 2026-10-29, owner ruling, Karl.)_
+The Digital SAT does not test factoring `a^3 ± b^3`. An OCR audit of all 1,618 official College Board questions (`content/official-corpus/`, with a cross-check of the 87 source PDFs in `docs/SAT Qeustions S.D`) found zero cube-factoring items, so the pattern is off-spec.
+- **Questions:** 15 published Lyceon-original questions with this pattern were retired with `status='retired'`. Rows are kept, never deleted. The SQL is `docs/plans/Owner_Retire_Cube_Factoring_Questions.sql`, which is owner-run.
+- **Taxonomy:** the proposed cluster CL.0231 "factor a sum or difference of cubes" was dropped from `content/canonical/subskill-cluster-taxonomy.json` before it was ever loaded to prod. The taxonomy stays at `scl-v1.0.0` with no cube cluster.
+- **Banned:** cube factoring (`8x^3 + 27`, `x^3 - 8`, `125p^3 - 64q^3`), cube division that cancels by the identity (`\frac{8x^3 - 27}{2x - 3}`), and the identity reached another way ("given `a + b` and `a^2 + b^2`, find `a^3 + b^3`").
+- **Allowed:** cubic like terms (`12x^3 - 5x^3`, `(8x^3 + 8) - (x^3 - 2)`), cubic function evaluation, and cubics with more than two terms.
+- **Gate detector** (`scripts/cubes-offspec.ts`, on Math records): a standalone perfect-cube binomial in the stem, the identity named in the stem or explanation, or the `a^2 ∓ ab + b^2` factor (B² = A·C) in the stem, an option or the explanation → REJECT. It is tested to produce zero hits on the official corpus.
+
 **No phantom figure references (`PHANTOM_FIGURE` — gate FLAG, Codex adjudicates).**
 Never reference a visual that is not attached — no "the graph shows", "in the figure", "a scatterplot shows [read a value]" when no asset exists. Make the item self-contained: give the equation, data, slope, or configuration in text. Saying "the graph of $f(x) = …$" is fine when the graph IS the equation and no value must be read from it. Gate flags any stem matching `graph|figure|chart|scatterplot|histogram|diagram|table` when `assets` is NULL. Codex adjudicates whether the item is answerable without a visual or must be reworded/rejected. _(Added 2026-09-27.)_
 

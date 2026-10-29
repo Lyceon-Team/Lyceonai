@@ -9,7 +9,8 @@
 --
 -- Run order:  Q1 + Q2 now (read-only)  ->  EE.6 added to the file from Q1  ->  loader  ->  Q3.
 -- File ID lists below were generated from content/canonical/subskill-cluster-taxonomy.json
--- on branch claude/scl-taxonomy-no-fixed-counts (CL.0231 added, EE.6 not yet).
+-- on branch claude/scl-taxonomy-no-fixed-counts (EE.6 not yet in the file; CL.0231 dropped
+-- 2026-10-29 — never loaded to prod, so no cluster change).
 
 -- ---------------------------------------------------------------------------------------
 -- Q1. EE.6 exactly as production holds it, as one JSON object in the file's key order.
@@ -34,7 +35,7 @@ WHERE id = 'EE.6';
 -- Q2. Drift check: every production ID the CURRENT branch file does not hold.
 --     Expected: exactly one row, ('sub_skills', 'EE.6'). Any other row is further drift
 --     that must also be added to the file before the loader can run.
---     And the reverse: file IDs production does not hold. Expected: ('clusters', 'CL.0231').
+--     And the reverse: file IDs production does not hold. Expected: none.
 -- ---------------------------------------------------------------------------------------
 WITH file_ids AS (
   SELECT 'sub_skills'::text AS tbl, unnest(ARRAY[
@@ -77,8 +78,7 @@ WITH file_ids AS (
     'CL.0191', 'CL.0192', 'CL.0193', 'CL.0194', 'CL.0195', 'CL.0196', 'CL.0197', 'CL.0198', 'CL.0199', 'CL.0200',
     'CL.0201', 'CL.0202', 'CL.0203', 'CL.0204', 'CL.0205', 'CL.0206', 'CL.0207', 'CL.0208', 'CL.0209', 'CL.0210',
     'CL.0211', 'CL.0212', 'CL.0213', 'CL.0214', 'CL.0215', 'CL.0216', 'CL.0217', 'CL.0218', 'CL.0219', 'CL.0220',
-    'CL.0221', 'CL.0222', 'CL.0223', 'CL.0224', 'CL.0225', 'CL.0226', 'CL.0227', 'CL.0228', 'CL.0229', 'CL.0230',
-    'CL.0231'
+    'CL.0221', 'CL.0222', 'CL.0223', 'CL.0224', 'CL.0225', 'CL.0226', 'CL.0227', 'CL.0228', 'CL.0229', 'CL.0230'
   ]::text[])
 ),
 db_ids AS (
@@ -96,17 +96,11 @@ WHERE NOT EXISTS (SELECT 1 FROM db_ids d WHERE d.tbl = f.tbl AND d.id = f.id)
 ORDER BY 1, 2, 3;
 
 -- ---------------------------------------------------------------------------------------
--- Q3. After the reload: CL.0231 landed as specified, EE.6 still present, nothing deleted.
+-- Q3. After the reload: EE.6 still present, nothing deleted, no cube cluster.
 --     Re-run Q2 against the updated file's ID lists (or run scl-taxonomy-check.ts): zero rows.
 -- ---------------------------------------------------------------------------------------
-SELECT id, display_name, family, definition, evidence_count, core,
-       skills_seen_in, method_in, playbook_move, aliases, taxonomy_version,
-       cardinality(evidence_ids) AS n_evidence_ids
-FROM public.clusters
-WHERE id = 'CL.0231';
--- Expected: family by_hand_doing; core false; skills_seen_in {Equivalent Expressions};
---   method_in {}; playbook_move NULL; aliases {}; taxonomy_version scl-v1.0.0;
---   n_evidence_ids 15; evidence_count 15.
-
 SELECT id, name, taxonomy_version FROM public.sub_skills WHERE id = 'EE.6';
 -- Expected: one row, name "Divide polynomials by long division", scl-v1.0.0.
+
+SELECT count(*) AS cube_cluster_rows FROM public.clusters WHERE id = 'CL.0231';
+-- Expected: 0 (CL.0231 was dropped before it was ever loaded).

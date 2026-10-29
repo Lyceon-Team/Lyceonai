@@ -60,7 +60,7 @@ type Cluster = {
   core: boolean;
   skills_seen_in: string[];
   method_in: Record<string, number>;
-  playbook_move?: string | null;
+  playbook_move?: string;
   aliases: string[];
 };
 
