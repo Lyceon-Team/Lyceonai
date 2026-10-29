@@ -8,7 +8,7 @@
  * server's video library, never from the model's text. "Watch" opens TutorVideoModal. A video
  * whose id is not a YouTube id renders no card at all (nothing to play, so nothing to offer).
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PlayCircle } from "lucide-react";
 import { ClampedLabel } from "@/components/student-ui/ClampedLabel";
 import { LYC_FOCUS } from "@/components/ui/button";
@@ -31,6 +31,8 @@ export function VideoRecommendationCard({
   label: string | null;
 }): JSX.Element | null {
   const [open, setOpen] = useState(false);
+  // Focus returns here when the player closes (owner brief 2026-10-27).
+  const watchRef = useRef<HTMLButtonElement>(null);
   if (videoEmbedUrl(video) === null) return null;
   return (
     <div
@@ -47,6 +49,7 @@ export function VideoRecommendationCard({
       </span>
       <div>
         <button
+          ref={watchRef}
           type="button"
           onClick={() => setOpen(true)}
           className={`${LYC_FOCUS} inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-lyc-ink-strong bg-transparent px-4 py-2 text-lyc-body font-semibold text-lyc-ink-strong hover:bg-lyc-hover`}
@@ -56,7 +59,12 @@ export function VideoRecommendationCard({
           {label ?? "Watch a short video"}
         </button>
       </div>
-      <TutorVideoModal video={video} open={open} onOpenChange={setOpen} />
+      <TutorVideoModal
+        video={video}
+        open={open}
+        onOpenChange={setOpen}
+        returnFocusTo={watchRef}
+      />
     </div>
   );
 }

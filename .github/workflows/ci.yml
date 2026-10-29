@@ -1239,6 +1239,7 @@ jobs:
             tests/ci/lifecycle-triggers.pg.ci.test.ts \
             tests/ci/smart-landing.pg.ci.test.ts \
             tests/ci/signup-attribution.pg.ci.test.ts \
+            tests/ci/tutor-eval-tables.pg.ci.test.ts \
             tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \
@@ -1322,6 +1323,7 @@ jobs:
             --file tests/ci/lifecycle-triggers.pg.ci.test.ts \
             --file tests/ci/smart-landing.pg.ci.test.ts \
             --file tests/ci/signup-attribution.pg.ci.test.ts \
+            --file tests/ci/tutor-eval-tables.pg.ci.test.ts \
             --file tests/ci/exam-deletion-cascade.handler-pg.ci.test.ts \
             --file tests/ci/exam-shell-server.handler-pg.ci.test.ts \
             --file tests/ci/exam-scored-sessions.handler-pg.ci.test.ts \

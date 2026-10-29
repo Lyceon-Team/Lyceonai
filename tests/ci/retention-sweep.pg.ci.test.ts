@@ -764,6 +764,9 @@ describe.skipIf(!PG_AVAILABLE)("tutor retention sweep → real PG", () => {
         per_table: [
           { table: "tutor_instruction_assignments", count: 2 },
           { table: "tutor_instruction_exposures", count: 2 },
+          // SCL-251: the same tier sweeps the G0-2 evaluation tables (none expired here).
+          { table: "tutor_eval_cases", count: 0 },
+          { table: "tutor_eval_runs", count: 0 },
         ],
       });
     });

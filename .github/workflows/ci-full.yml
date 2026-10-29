@@ -504,6 +504,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/worked-examples.mutations.sh
 
+      # Social funnel (Karl, 2026-10-28): a free-text tag past the allowlist, the server trusting
+      # the browser, tags stored before consent, the cohort line ending early, /start losing
+      # noindex, a "free study plan" claim, the sign-up link dropping its tag, a rewritable
+      # signup_channel. Each must turn its named check red.
+      - name: Social funnel mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/social-funnel.mutations.sh
+
       # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
       # counted, the week cut at UTC midnight, the current week reported, skips counted as
       # answers, study time uncapped, a wider 24-hour window, returning without the week before,
