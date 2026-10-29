@@ -38,7 +38,7 @@ export type WorkedExampleSlackStep =
   | { kind: "video"; comment: string }
   | { kind: "message"; text: string };
 
-/** The three items, in order. Text only: the video's bytes are passed separately. */
+/** The four items, in order. Text only: the video's bytes are passed separately. */
 export function workedExampleSlackSteps(
   post: WorkedExamplePost,
 ): WorkedExampleSlackStep[] {
@@ -53,7 +53,12 @@ export function workedExampleSlackSteps(
     },
     {
       kind: "message",
-      text: `*${escapeMrkdwn(post.label)} · TikTok caption*\n\`\`\`${escapeMrkdwn(post.caption)}\`\`\``,
+      text: `*${escapeMrkdwn(post.label)} · TikTok caption*\n\`\`\`${escapeMrkdwn(post.caption)}\`\`\`\n*Bio link*\n\`\`\`${escapeMrkdwn(post.links.tiktok)}\`\`\``,
+    },
+    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
+    {
+      kind: "message",
+      text: `*${escapeMrkdwn(post.label)} · Instagram caption*\n\`\`\`${escapeMrkdwn(post.instagram_caption)}\`\`\`\n*Link to send to people who comment SAT*\n\`\`\`${escapeMrkdwn(post.links.instagram)}\`\`\``,
     },
   ];
 }

@@ -46,14 +46,20 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { classifyError } from "../lib/redact";
 import { getQuotaResetTimezone } from "../lib/account";
-import { isKnownTimeZone, localTodayIn } from "./calendar/adapters/local-day";
+import { isKnownTimeZone } from "./calendar/adapters/local-day";
+import { qotdToday } from "./qotd/qotd-service";
+import type { RpcClient } from "../lib/rpc-client";
 import {
   addDaysToLocalDate,
   type LocalDate,
 } from "../../packages/shared/src/calendar/time";
 
-/** The streak's day boundary (SCL-226): the database's `public.chicago_day`. */
-const STREAK_TIME_ZONE = "America/Chicago";
+/**
+ * The streak's day (SCL-226, amended by Karl's ruling 2026-10-27): the QOTD day, the database's
+ * `public.qotd_day` (04:00 UTC to 04:00 UTC since the switch). Read through qotdToday so this and
+ * `student_answer_days` cannot disagree about which day is today.
+ */
+const streakDb = (): RpcClient => supabaseServer as unknown as RpcClient;
 
 /**
  * The student's own zone: their study profile's `timezone` (Doc 05F §7.1), else the platform
@@ -80,7 +86,8 @@ export async function resolveStudentTimeZone(
 
 /**
  * THE daily streak (owner brief "Question of the Day on Home", Karl 2026-10-08/09; SCL-226):
- * consecutive America/Chicago days with at least one answered question from any source —
+ * consecutive QOTD days (04:00 UTC to 04:00 UTC since Karl's ruling of 2026-10-27; America/Chicago
+ * days before it) with at least one answered question from any source —
  * practice (the Question of the Day and the diagnostic included), review, full-length —
  * ending today or yesterday. Computed at read time by `public.student_streak`; nothing stored.
  * `broken` is true when the run is 0 but the student has answered before ("Start a new
@@ -112,7 +119,7 @@ export async function readDailyStreak(
 /**
  * @spec [owner brief "first-run activation fixes" (Karl, 2026-10-13) P1: '"This week" ticks days
  *       with any study activity (same definition as the streak)'; SCL-226] | @implemented [2026-10-13]
- * plain English: the Chicago days from six days ago through today on which the student answered
+ * plain English: the QOTD days from six days ago through today on which the student answered
  * at least one question, from any source: `public.student_answer_days`, the very set
  * `student_streak` counts, so a ticked day and the streak cannot disagree. Ascending. Throws on a
  * failed read (the caller decides).
@@ -123,7 +130,7 @@ export async function readActiveDays(
   studentId: string,
   now: Date = new Date(),
 ): Promise<string[]> {
-  const today = localTodayIn(STREAK_TIME_ZONE, now) as LocalDate;
+  const today = (await qotdToday(streakDb(), now)) as LocalDate;
   const since = addDaysToLocalDate(today, -(ACTIVE_DAYS_WINDOW - 1));
   const { data, error } = await supabaseServer.rpc("student_answer_days", {
     p_student_id: studentId,

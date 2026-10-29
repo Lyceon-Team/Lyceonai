@@ -27,6 +27,8 @@ cd "$ROOT"
 MIG="supabase/migrations/20261113000000_smart_landing.sql"
 # The arm checks and weights for `set_math_5` (no function is redefined there).
 MIG2="supabase/migrations/20261114000000_smart_landing_math5.sql"
+# New students land on Home (Karl, 2026-10-28): `landing_rotation_open`.
+MIG3="supabase/migrations/20261121000000_landing_new_students_signup_channel.sql"
 SCHEMA="packages/shared/src/smart-landing-schema.ts"
 ASSIGN="server/services/landing/assignment.ts"
 SVC="server/services/landing/landing-service.ts"
@@ -42,7 +44,7 @@ CRONS=tests/ci/vercel-cron-schedules.contract.test.ts
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/sl-mut.XXXX)"
 
-FILES=("$MIG" "$MIG2" "$SCHEMA" "$ASSIGN" "$SVC" "$DEPS" "$PRACTICE" "$SHELL_TSX" "$ENTRY" "vercel.json")
+FILES=("$MIG" "$MIG2" "$MIG3" "$SCHEMA" "$ASSIGN" "$SVC" "$DEPS" "$PRACTICE" "$SHELL_TSX" "$ENTRY" "vercel.json")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -100,6 +102,7 @@ if [ "$FAIL" -gt 0 ]; then echo "SMART LANDING MUTATIONS: BASELINE NOT GREEN"; e
 need_last landing_claim_open
 need_last landing_record_escape
 need_last landing_claim_summaries
+[ "$(last_definer landing_rotation_open)" = "$MIG3" ] || { bad "landing_rotation_open is last defined in $(last_definer landing_rotation_open), not $MIG3"; exit 1; }
 
 # ── Assignment ──────────────────────────────────────────────────────────────────────────────────
 
@@ -270,6 +273,32 @@ run "SL29 grants" "P16 grants" "$PG"
 echo "=== (30) a landing runner's back link goes to the section, not Home ==="
 plant "$SHELL_TSX" '  const backHref = fromLanding ? "/dashboard" : sectionHome;' '  const backHref = sectionHome;' || stale SL30
 run "SL30 Home from every landing" "reads 'Home' and goes Home" "$FOCUS"
+
+# ── New students land on Home (Karl, 2026-10-28) ────────────────────────────────────────────────
+
+echo "=== (31) the new-student gate is gone ==="
+plant "$SVC" "  if (!(await deps.rotationOpen(caller.id, now))) return NO_LANDING;" "" || stale SL31
+run "SL31 new students land on Home" "P19 a new student lands on Home" "$PG"
+
+echo "=== (32) the onboarding day itself already rotates ==="
+plant "$MIG3" "    (SELECT public.qotd_day(p_now) > public.qotd_day(p.profile_completed_at)" "    (SELECT public.qotd_day(p_now) >= public.qotd_day(p.profile_completed_at)" || stale SL32
+run "SL32 the first QOTD day AFTER onboarding" "P19 a new student lands on Home" "$PG"
+
+echo "=== (33) the day is the Chicago date, not the QOTD day ==="
+plant "$MIG3" "    (SELECT public.qotd_day(p_now) > public.qotd_day(p.profile_completed_at)" "    (SELECT public.chicago_day(p_now) > public.chicago_day(p.profile_completed_at)" || stale SL33
+run "SL33 the QOTD day (04:00 UTC from the switch)" "P20 the first day is the QOTD day" "$PG"
+
+echo "=== (34) the gate runs after the resume, so a new student's session resumes ==="
+plant "$SVC" "  if (!(await deps.rotationOpen(caller.id, now))) return NO_LANDING;" "" || stale SL34a
+plant "$SVC" "  if (resume !== null) return { path: resume, show_id: null, arm: null };" "  if (resume !== null) return { path: resume, show_id: null, arm: null };
+  if (!(await deps.rotationOpen(caller.id, now))) return NO_LANDING;" || stale SL34b
+run "SL34 Home before anything else" "P19 a new student lands on Home" "$PG"
+
+echo "=== (35) a student who has not onboarded rotates ==="
+plant "$MIG3" "        AND p.profile_completed_at IS NOT NULL),
+    false);" "        AND p.profile_completed_at IS NOT NULL),
+    true);" || stale SL35
+run "SL35 not onboarded: Home" "P21 a student who has not onboarded" "$PG"
 
 echo
 echo "SMART LANDING MUTATIONS: $PASS passed, $FAIL failed"

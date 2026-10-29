@@ -8,7 +8,11 @@
  *
  * plain English:
  *   * readQotd: one call to qotd_question_for, which returns nothing for a future or unscheduled
- *     day (the database decides "today" in America/Chicago). The row is Zod-parsed here.
+ *     day (the database decides "today": the QOTD day, 04:00 UTC to 04:00 UTC since the switch of
+ *     Karl's ruling 2026-10-27, America/Chicago before it). The row is Zod-parsed here.
+ *   * qotdToday / qotdDayWindow: the same QOTD day in TypeScript (qotd-day.ts), with the switch's
+ *     cutover read from the database (`qotd_day_cutover()`, cached), so the server and the
+ *     database never disagree about when the day turns over.
  *   * toTodayResponse: the pre-submit payload. It goes through the canonical student-safe
  *     projection (projectStudentSafeQuestion, which types correct_answer / explanation as the
  *     literal null) and is then parsed against the STRICT response schema, so nothing outside
@@ -60,14 +64,20 @@ import {
   type QotdArchiveIndexResponse,
   type QotdTodayResponse,
 } from "../../../packages/shared/src/qotd-schema";
-import {
-  localDayWindowUtc,
-  localTodayIn,
-} from "../calendar/adapters/local-day";
 import type { RpcClient } from "../../lib/rpc-client";
+import { logger } from "../../logger";
+import {
+  QOTD_LEGACY_TIME_ZONE,
+  qotdDayOf,
+  qotdDayWindowOf,
+  type QotdCutover,
+} from "./qotd-day";
 
-/** The QOTD day boundary (plan R18). The database uses the same zone (public.qotd_today()). */
-export const QOTD_TIME_ZONE = "America/Chicago";
+/**
+ * The zone of the QOTD's Chicago-clock jobs (the 17:00 daily reminder), and of the QOTD day
+ * before the 04:00 UTC switch (Karl, 2026-10-27). The QOTD day itself is qotd-day.ts's.
+ */
+export const QOTD_TIME_ZONE = QOTD_LEGACY_TIME_ZONE;
 
 /** The subset of the Supabase client this service needs. */
 export type QotdDbClient = RpcClient;
@@ -81,14 +91,68 @@ export class QotdUnavailableError extends Error {
 
 export type { QotdRow };
 
-export function qotdToday(now: Date = new Date()): string {
-  return localTodayIn(QOTD_TIME_ZONE, now);
+/** The cutover never moves once set; this only has to notice the migration arriving. */
+const QOTD_CUTOVER_TTL_MS = 5 * 60 * 1000;
+let cutoverCache: { value: QotdCutover; readAt: number } | null = null;
+
+/**
+ * When the 04:00 UTC QOTD day took over (`public.qotd_day_cutover()`), cached. Unreadable (no
+ * migration yet, or the read failed): the last value read, else null, which is the Chicago day,
+ * the database's own day without the migration. Logged, never thrown: a QOTD request is never
+ * refused because this read failed.
+ */
+export async function loadQotdCutover(
+  client: QotdDbClient,
+  nowMs: number = Date.now(),
+): Promise<QotdCutover> {
+  if (
+    cutoverCache !== null &&
+    nowMs - cutoverCache.readAt < QOTD_CUTOVER_TTL_MS
+  )
+    return cutoverCache.value;
+  const { data, error } = await client.rpc("qotd_day_cutover", {});
+  // A value that is not a timestamp is unreadable too: an Invalid Date would compare as "switched".
+  const parsed = z
+    .string()
+    .min(1)
+    .refine((v) => !Number.isNaN(Date.parse(v)))
+    .nullable()
+    .safeParse(data);
+  if (error || !parsed.success) {
+    const value = cutoverCache?.value ?? null;
+    logger.warn(
+      "QOTD",
+      "day_cutover_unreadable",
+      "The QOTD day switch could not be read; keeping the last known day rule",
+      { known: value !== null },
+    );
+    cutoverCache = { value, readAt: nowMs };
+    return value;
+  }
+  const value = parsed.data === null ? null : new Date(parsed.data);
+  cutoverCache = { value, readAt: nowMs };
+  return value;
 }
 
-/** The America/Chicago day `[start, end)` as UTC instants: the stats bucket's window. */
-export function qotdDayWindow(date: string): { start: Date; end: Date } {
-  const w = localDayWindowUtc(date, QOTD_TIME_ZONE);
-  return { start: new Date(w.startUtc), end: new Date(w.endUtc) };
+/** Tests only. */
+export function resetQotdCutoverCacheForTests(): void {
+  cutoverCache = null;
+}
+
+/** Today's QOTD date (YYYY-MM-DD). */
+export async function qotdToday(
+  client: QotdDbClient,
+  now: Date = new Date(),
+): Promise<string> {
+  return qotdDayOf(now, await loadQotdCutover(client));
+}
+
+/** The QOTD day `date` as `[start, end)` UTC instants: the public stats bucket's window. */
+export async function qotdDayWindow(
+  client: QotdDbClient,
+  date: string,
+): Promise<{ start: Date; end: Date }> {
+  return qotdDayWindowOf(date, await loadQotdCutover(client));
 }
 
 /** A day's row, or null when that day is in the future or not scheduled. */

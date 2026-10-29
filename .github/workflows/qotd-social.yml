@@ -4,8 +4,8 @@
 #   GitHub run downloads, the caption and alt text on the run page; portrait 1080x1350 + story
 #   1080x1920; existing tooling only)] | @implemented [2026-10-07]
 #
-# plain English: at 06:20 UTC (always after midnight in America/Chicago, the QOTD day boundary,
-# with or without daylight saving) this builds today's assets from the website's own public
+# plain English: at 04:05 UTC (Karl, 2026-10-27: five minutes after the QOTD day turns over at
+# 04:00 UTC, fixed, no daylight-saving logic) this builds the new day's assets from the website's own public
 # pre-submit payload (/api/public/qotd/today: no answer, no explanation, and only today exists
 # there). Karl downloads the zip from the run's Artifacts; the run page shows the caption and
 # alt text with a copy button. No database access; the build's only network call is to lyceon.ai.
@@ -34,7 +34,11 @@ name: QOTD social assets
 
 on:
   schedule:
-    - cron: "20 6 * * *"
+    # 04:05 UTC: the QOTD day turns over at 04:00 UTC (Karl, 2026-10-27). The set is unchanged:
+    # 1/5-3/5 the day that just finished (the reveal and TikTok), 4/5-5/5 the new day. A run
+    # before the database has switched finds /today still on the old day and is refused (the
+    # generator checks it against the 04:00 UTC day), so nothing is posted twice.
+    - cron: "5 4 * * *"
   pull_request:
     paths:
       - .github/workflows/qotd-social.yml
@@ -44,6 +48,7 @@ on:
       - shared/qotd/reveal.ts
       - shared/qotd/projection.ts
       - shared/qotd/plain-math.ts
+      - shared/social/funnel.ts
       - shared/math/tokenize.ts
       - client/src/components/qotd/QotdSocialCard.tsx
       - client/src/components/qotd/QotdTiktokSlide.tsx
@@ -146,6 +151,7 @@ jobs:
           path: |
             qotd-social-out/*.png
             qotd-social-out/caption.txt
+            qotd-social-out/instagram-caption.txt
             qotd-social-out/alt-text.txt
             qotd-social-out/post.json
           if-no-files-found: error

@@ -3,11 +3,11 @@
  * A paired <u>...</u> in question content draws an underline in every renderer; nothing else
  * in content is ever treated as markup.
  *
- * @spec [shared/question-markup.ts; live bug 2026-10-11 — 18 Text Structure and Purpose
+ * @spec [shared/question-markup.ts; live bug 2026-10-11 — 21 Text Structure and Purpose
  *       passages printed "<u>" and "</u>" instead of underlining the target sentence]
  *       | @implemented [2026-10-11]
  *
- * plain English: the fixtures are the 18 real seeded items, parsed out of
+ * plain English: the fixtures are the 31 real seeded items, parsed out of
  * infra/supabase/seed by the same reader the CI gate uses, so these tests see the passages
  * students saw. Each one goes through MathRenderer (practice, diagnostic, review), StaticMath
  * (prerendered QOTD pages) and the exam passage view, and must show exactly one underline
@@ -42,11 +42,13 @@ async function renderMath(content: string): Promise<HTMLElement> {
   return inner;
 }
 
-describe("the 18 published underlined-sentence items", () => {
+describe("the 56 published underlined-sentence items", () => {
   it("are all present (presence before absence)", () => {
-    expect(UNDERLINED).toHaveLength(18);
+    expect(UNDERLINED).toHaveLength(62);
     for (const q of UNDERLINED) {
-      expect(q.stem).toMatch(/the underlined (sentence|portion)/);
+      expect(q.stem).toMatch(
+        /the underlined (sentence|portion)|most nearly means?/,
+      );
       expect(target(q.passage ?? "").trim().length).toBeGreaterThan(0);
     }
   });

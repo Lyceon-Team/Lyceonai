@@ -134,6 +134,7 @@ export function loadPost(dir: string): Result<LoadedPost> {
   for (const [file, expected] of [
     ["caption.txt", manifest.caption],
     ["alt-text.txt", manifest.alt_text],
+    ["instagram-caption.txt", manifest.instagram_caption],
   ] as const) {
     const path = join(dir, file);
     if (!existsSync(path)) return { ok: false, error: `${file} is missing` };
@@ -192,6 +193,15 @@ export function slackCopyMessage(m: QotdSocialPostManifest): string {
     "```",
     escapeMrkdwn(m.alt_text),
     "```",
+    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
+    "*Instagram caption*",
+    "```",
+    escapeMrkdwn(m.instagram_caption),
+    "```",
+    "*Link to send to people who comment SAT*",
+    "```",
+    escapeMrkdwn(m.links.instagram),
+    "```",
   ].join("\n");
 }
 
@@ -203,6 +213,8 @@ export function slackRedditMessage(m: QotdSocialPostManifest): string {
     "```",
     escapeMrkdwn(m.reddit.title),
     "```",
+    // The question is in the image now, not the body (Karl, 2026-10-28).
+    `*Image:* attach today's portrait image (qotd-${m.qotd_date}-portrait.png, in 5/5)`,
     "*Body*",
     "```",
     escapeMrkdwn(m.reddit.body),
@@ -260,6 +272,11 @@ export function slackTiktokMessage(m: QotdSocialPostManifest): string {
     "*Caption*",
     "```",
     escapeMrkdwn(t.caption),
+    "```",
+    // The caption says "link in bio" (Karl, 2026-10-28): the tagged link the bio points to.
+    "*Bio link*",
+    "```",
+    escapeMrkdwn(m.links.tiktok),
     "```",
   ].join("\n");
 }

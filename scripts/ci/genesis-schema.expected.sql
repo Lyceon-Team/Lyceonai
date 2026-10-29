@@ -9167,6 +9167,191 @@ $$;
 
 
 --
+-- Name: growth_report_claim(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_claim(p_week_start date) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows int;
+BEGIN
+  INSERT INTO public.growth_report_posts (week_start) VALUES (p_week_start)
+  ON CONFLICT (week_start) DO UPDATE
+     SET claimed_at = now()
+   WHERE growth_report_posts.posted_at IS NULL
+     AND growth_report_posts.claimed_at < now() - interval '15 minutes';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: growth_report_mark_posted(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_mark_posted(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.growth_report_posts SET posted_at = now() WHERE week_start = p_week_start;
+$$;
+
+
+--
+-- Name: growth_report_release(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_release(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  DELETE FROM public.growth_report_posts
+   WHERE week_start = p_week_start AND posted_at IS NULL;
+$$;
+
+
+--
+-- Name: growth_report_week_start(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_week_start(p_now timestamp with time zone) RETURNS date
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (date_trunc('week', (p_now AT TIME ZONE 'America/Chicago'))::date - 7);
+$$;
+
+
+--
+-- Name: growth_report_weekly(date, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_weeks jsonb := '[]'::jsonb;
+  v_offset int;
+  v_start date;
+  t0 timestamptz;
+  t1 timestamptz;
+  p0 timestamptz;
+  v_week jsonb;
+BEGIN
+  IF p_week_start IS NULL OR extract(isodow FROM p_week_start) <> 1 THEN
+    RAISE EXCEPTION 'growth_report_weekly: week_start must be a Monday, got %', p_week_start
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- 0 = the reported week, 1 = the week before (the comparison).
+  FOREACH v_offset IN ARRAY ARRAY[0, 1] LOOP
+    v_start := p_week_start - 7 * v_offset;
+    t0 := (v_start::timestamp) AT TIME ZONE 'America/Chicago';
+    t1 := ((v_start + 7)::timestamp) AT TIME ZONE 'America/Chicago';
+    p0 := ((v_start - 7)::timestamp) AT TIME ZONE 'America/Chicago';
+
+    WITH stu AS (
+      SELECT p.id, p.created_at, p.signup_channel
+        FROM public.profiles p
+       WHERE p.role = 'student'
+         AND p.deleted_at IS NULL
+         AND p.is_under_13 IS NOT TRUE
+         AND NOT (p.id = ANY (COALESCE(p_excluded, ARRAY[]::uuid[])))
+    ),
+    -- Activity in [lo, hi): the CMO canonical "active student".
+    act_cur AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= t0 AND created_at < t1 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= t0 AND created_at < t1
+    ),
+    act_prev AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= p0 AND created_at < t0 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= p0 AND created_at < t0
+    ),
+    active AS (
+      SELECT DISTINCT a.sid FROM act_cur a JOIN stu ON stu.id = a.sid
+    ),
+    returning_students AS (
+      SELECT a.sid FROM active a JOIN act_prev b ON b.sid = a.sid GROUP BY a.sid
+    ),
+    signups AS (
+      SELECT * FROM stu WHERE created_at >= t0 AND created_at < t1
+    ),
+    answers AS (
+      SELECT user_id AS sid, answered_at, time_spent_ms
+        FROM public.practice_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+      UNION ALL
+      SELECT student_id, answered_at, NULL::integer
+        FROM public.review_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+    )
+    SELECT jsonb_build_object(
+      'week_start', v_start,
+      'signups_by_channel', COALESCE((
+        SELECT jsonb_object_agg(channel, n)
+          FROM (SELECT COALESCE(signup_channel, 'untagged') AS channel, count(*) AS n
+                  FROM signups GROUP BY 1) c), '{}'::jsonb),
+      'signups', (SELECT count(*) FROM signups),
+      'active_students', (SELECT count(*) FROM active),
+      'returning_by_test_date', COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('test_date', d, 'students', n) ORDER BY d NULLS LAST)
+          FROM (SELECT sp.target_exam_date AS d, count(*) AS n
+                  FROM returning_students r
+                  LEFT JOIN public.student_study_profile sp ON sp.student_id = r.sid
+                 GROUP BY 1) g), '[]'::jsonb),
+      'returning_students', (SELECT count(*) FROM returning_students),
+      'questions_answered', (
+        SELECT count(*) FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1),
+      'full_length_answers', (
+        SELECT count(*) FROM public.test_session_answers ta
+          JOIN public.test_sessions ts ON ts.id = ta.test_session_id
+          JOIN stu ON stu.id = ts.student_id
+         WHERE ta.answer IS NOT NULL AND ta.updated_at >= t0 AND ta.updated_at < t1),
+      'reviews_done', (
+        SELECT count(*) FROM public.review_sessions rs JOIN stu ON stu.id = rs.student_id
+         WHERE rs.status = 'completed' AND rs.completed_at >= t0 AND rs.completed_at < t1),
+      'study_minutes_estimate', (
+        SELECT COALESCE(round(sum(LEAST(a.time_spent_ms, 300000))::numeric / 60000, 1), 0)
+          FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1 AND a.time_spent_ms > 0),
+      'signups_answered_24h', (
+        SELECT count(*) FROM signups s
+         WHERE EXISTS (SELECT 1 FROM answers a
+                        WHERE a.sid = s.id
+                          AND a.answered_at >= s.created_at
+                          AND a.answered_at < s.created_at + interval '24 hours')),
+      'upgrades', (
+        SELECT count(DISTINCT e.profile_id) FROM public.entitlements e
+          JOIN stu ON stu.id = e.profile_id
+         WHERE e.tier = 'premium' AND e.created_at >= t0 AND e.created_at < t1)
+    ) INTO v_week;
+
+    v_weeks := v_weeks || jsonb_build_array(v_week);
+  END LOOP;
+
+  RETURN jsonb_build_object('week', v_weeks -> 0, 'previous', v_weeks -> 1);
+END;
+$$;
+
+
+--
 -- Name: guardian_daily_digest_email_enabled(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9571,6 +9756,30 @@ CREATE FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, 
      AND p_now <= s.shown_at + make_interval(secs => p_max_seconds)
   RETURNING s.window_index, s.arm, s.device_class;
 $$;
+
+
+--
+-- Name: landing_rotation_open(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT public.qotd_day(p_now) > public.qotd_day(p.profile_completed_at)
+       FROM public.profiles p
+      WHERE p.id = p_profile_id
+        AND p.profile_completed_at IS NOT NULL),
+    false);
+$$;
+
+
+--
+-- Name: FUNCTION landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) IS 'Smart landing (Karl, 2026-10-28): true once the first QOTD day after the day the student onboarded has started. Until then the student lands on Home and the landing records nothing.';
 
 
 --
@@ -10907,6 +11116,37 @@ $$;
 
 
 --
+-- Name: profiles_signup_attribution_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_signup_attribution_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.is_under_13 IS TRUE THEN
+    NEW.signup_channel := NULL;
+    NEW.signup_campaign := NULL;
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.signup_channel IS NOT NULL
+       AND NEW.signup_channel IS DISTINCT FROM OLD.signup_channel THEN
+      RAISE EXCEPTION 'profiles.signup_channel is set once'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.signup_campaign IS NOT NULL
+       AND NEW.signup_campaign IS DISTINCT FROM OLD.signup_campaign THEN
+      RAISE EXCEPTION 'profiles.signup_campaign is set once'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: projection_core(uuid, text, text[], text[], integer[], numeric[], integer, integer, integer, integer, integer, numeric, numeric, integer, integer, integer, integer, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11348,6 +11588,35 @@ $$;
 
 
 --
+-- Name: qotd_day(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_day(p_at timestamp with time zone) RETURNS date
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+           WHEN c.cutover_at IS NULL OR p_at < c.cutover_at
+             THEN (p_at AT TIME ZONE 'America/Chicago')::date
+           ELSE ((p_at AT TIME ZONE 'UTC') - interval '4 hours')::date
+         END
+    FROM (SELECT public.qotd_day_cutover() AS cutover_at) c;
+$$;
+
+
+--
+-- Name: qotd_day_cutover(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_day_cutover() RETURNS timestamp with time zone
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT cutover_at FROM public.qotd_day_boundary WHERE id;
+$$;
+
+
+--
 -- Name: qotd_display_letter(text[], text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11465,7 +11734,7 @@ CREATE FUNCTION public.qotd_horizon(p_now timestamp with time zone DEFAULT now()
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH t AS (SELECT public.chicago_day(p_now) AS today),
+  WITH t AS (SELECT public.qotd_day(p_now) AS today),
   gap AS (
     SELECT COALESCE(
              (SELECT min((SELECT today FROM t) + k)
@@ -11841,7 +12110,7 @@ DECLARE
   v_session  uuid;
   v_item     uuid;
 BEGIN
-  IF p_qotd_date IS DISTINCT FROM public.chicago_day(p_now) THEN
+  IF p_qotd_date IS DISTINCT FROM public.qotd_day(p_now) THEN
     RETURN jsonb_build_object('status', 'not_today');
   END IF;
   IF NOT EXISTS (
@@ -11948,7 +12217,7 @@ CREATE FUNCTION public.qotd_today() RETURNS date
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  SELECT (now() AT TIME ZONE 'America/Chicago')::date
+  SELECT public.qotd_day(now())
 $$;
 
 
@@ -14786,21 +15055,26 @@ CREATE FUNCTION public.student_answer_days(p_student_id uuid, p_since date) RETU
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  SELECT DISTINCT public.chicago_day(i.occurred_at)
-    FROM public.practice_session_items i
-   WHERE i.user_id = p_student_id AND i.status = 'answered' AND i.occurred_at IS NOT NULL
-     AND i.occurred_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
-  UNION
-  SELECT DISTINCT public.chicago_day(COALESCE(r.occurred_at, r.answered_at))
-    FROM public.review_session_items r
-   WHERE r.student_id = p_student_id AND r.status = 'answered'
-     AND COALESCE(r.occurred_at, r.answered_at) >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
-  UNION
-  SELECT DISTINCT public.chicago_day(a.created_at)
-    FROM public.test_answer_submissions a
-    JOIN public.test_sessions t ON t.id = a.test_session_id
-   WHERE t.student_id = p_student_id AND a.answer IS NOT NULL
-     AND a.created_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago');
+  -- From the earliest instant day p_since can start under either rule (04:00 UTC); a row before
+  -- that day's real start carries the day before, which the outer filter drops.
+  SELECT u.day FROM (
+    SELECT DISTINCT public.qotd_day(i.occurred_at)
+      FROM public.practice_session_items i
+     WHERE i.user_id = p_student_id AND i.status = 'answered' AND i.occurred_at IS NOT NULL
+       AND i.occurred_at >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+    UNION
+    SELECT DISTINCT public.qotd_day(COALESCE(r.occurred_at, r.answered_at))
+      FROM public.review_session_items r
+     WHERE r.student_id = p_student_id AND r.status = 'answered'
+       AND COALESCE(r.occurred_at, r.answered_at) >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+    UNION
+    SELECT DISTINCT public.qotd_day(a.created_at)
+      FROM public.test_answer_submissions a
+      JOIN public.test_sessions t ON t.id = a.test_session_id
+     WHERE t.student_id = p_student_id AND a.answer IS NOT NULL
+       AND a.created_at >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+  ) AS u(day)
+   WHERE u.day >= p_since;
 $$;
 
 
@@ -14849,16 +15123,31 @@ CREATE FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with ti
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH today AS (SELECT public.chicago_day(p_now) AS d),
+  WITH today AS (SELECT public.qotd_day(p_now) AS d),
   days AS (
     SELECT day FROM public.student_answer_days(p_student_id, (SELECT d FROM today) - 400)
      WHERE day <= (SELECT d FROM today)
   ),
+  -- The switch's bridge (Karl, 2026-10-27: "no student loses a streak because of the switch").
+  -- An answer at the same UTC time every night between 04:00 and the Chicago midnight carried the
+  -- day before under the Chicago day and carries its own date under the 04:00 UTC day, so the
+  -- first 04:00 UTC day is the one label that habit skips. Once that day is past, it counts for
+  -- the RUN of a student who answered the day before it. It is never "today done" and never a
+  -- ticked day in "This week" (student_answer_days is unchanged).
+  run_days AS (
+    SELECT day FROM days
+    UNION
+    SELECT b.day
+      FROM (SELECT public.qotd_day(public.qotd_day_cutover()) AS day) AS b
+     WHERE b.day IS NOT NULL
+       AND b.day < (SELECT d FROM today)
+       AND EXISTS (SELECT 1 FROM days WHERE day = b.day - 1)
+  ),
   anchor AS (
     -- The run ends today if today has an answer, else yesterday if yesterday has one.
     SELECT CASE
-             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today)) THEN (SELECT d FROM today)
-             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today) - 1) THEN (SELECT d FROM today) - 1
+             WHEN EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM today)) THEN (SELECT d FROM today)
+             WHEN EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM today) - 1) THEN (SELECT d FROM today) - 1
            END AS d
   ),
   run AS (
@@ -14868,7 +15157,7 @@ CREATE FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with ti
      WHERE (SELECT d FROM anchor) IS NOT NULL
        AND k < COALESCE((
              SELECT min(g) FROM generate_series(0, 401) AS g
-              WHERE NOT EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM anchor) - g)
+              WHERE NOT EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM anchor) - g)
            ), 401)
   )
   SELECT (SELECT n FROM run),
@@ -15383,6 +15672,61 @@ $_$;
 --
 
 COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean) IS 'Doc 03 §14.2 / owner ruling 2026-10-05 RS-00: the 7d tier. Deletes conversations soft-deleted more than tutor_conversation_retention_days() ago EXCEPT any a crisis_review_cases or crisis_review_events row links to, with their cascade rows, and the memory summaries of students left with no live, recoverable or flagged conversation. p_dry_run counts without deleting. One row per table, zero counts included, with the cutoff.';
+
+
+--
+-- Name: sweep_tutor_eval_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '90 days';
+  v_cases  integer;
+  v_runs   integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_eval_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_cases
+      FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_runs
+      FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+    GET DIAGNOSTICS v_runs = ROW_COUNT;
+
+    DELETE FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+    GET DIAGNOSTICS v_cases = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_eval_cases'; deleted_count := v_cases; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_eval_runs';  deleted_count := v_runs;  cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) IS 'SCL-251: G0-2 evaluation cases and runs, 90 days fixed from import (captured_at) / creation. Called by the 90d retention tier.';
 
 
 --
@@ -16683,6 +17027,27 @@ COMMENT ON VIEW public.canonical_skill_catalog IS 'Distinct (section, domain, sk
 
 
 --
+-- Name: clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.clusters (
+    id text NOT NULL,
+    display_name text NOT NULL,
+    family text NOT NULL,
+    definition text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    evidence_count integer DEFAULT 0 NOT NULL,
+    core boolean DEFAULT false NOT NULL,
+    skills_seen_in text[] DEFAULT '{}'::text[] NOT NULL,
+    method_in jsonb DEFAULT '{}'::jsonb NOT NULL,
+    playbook_move text,
+    aliases text[] DEFAULT '{}'::text[] NOT NULL,
+    taxonomy_version text NOT NULL,
+    CONSTRAINT clusters_family_check CHECK ((family = ANY (ARRAY['by_hand_doing'::text, 'by_hand_recognizing'::text, 'desmos'::text])))
+);
+
+
+--
 -- Name: consent_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -17006,6 +17371,18 @@ CREATE TABLE public.difficulties (
     value integer NOT NULL,
     label text NOT NULL,
     description text
+);
+
+
+--
+-- Name: distractor_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.distractor_clusters (
+    question_id text NOT NULL,
+    option_key text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL
 );
 
 
@@ -17496,6 +17873,25 @@ CREATE VIEW public.full_length_section_scores WITH (security_invoker='true') AS
 --
 
 COMMENT ON VIEW public.full_length_section_scores IS 'E9 / SCL-157: one row per SCORED section of a score run (05D §12.2 columns, 05C §5.7 order). is_complete = the session completed (a partial session''s scored section is present with false and never read by 05C). completed_at = test_sessions.completed_at. id = md5(score_run_id || '':'' || section)::uuid — score runs are insert-once, so the id never moves. Rows of a student-less (anonymised) session are excluded.';
+
+
+--
+-- Name: growth_report_posts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.growth_report_posts (
+    week_start date NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    posted_at timestamp with time zone,
+    CONSTRAINT growth_report_posts_week_start_check CHECK ((EXTRACT(isodow FROM week_start) = (1)::numeric))
+);
+
+
+--
+-- Name: TABLE growth_report_posts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.growth_report_posts IS 'One row per reported week (owner brief 2026-10-28 item 3): claimed before the Slack post, posted_at set after it, so the Monday report posts once.';
 
 
 --
@@ -18468,6 +18864,10 @@ CREATE TABLE public.profiles (
     actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
     analytics_user_id uuid,
     signup_source text,
+    signup_channel text,
+    signup_campaign text,
+    CONSTRAINT profiles_signup_campaign_check CHECK (((signup_campaign IS NULL) OR (signup_campaign ~ '^[a-z0-9_]{1,40}$'::text))),
+    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'facebook'::text, 'email'::text, 'direct'::text, 'other'::text])))),
     CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
@@ -18491,6 +18891,20 @@ COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA2
 --
 
 COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
+
+
+--
+-- Name: COLUMN profiles.signup_channel; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_channel IS 'Karl, 2026-10-28: the first-touch channel from the landing URL''s UTM (coarse, allowlisted; no URL). Written once by the server before onboarding; never held for an under-13 profile.';
+
+
+--
+-- Name: COLUMN profiles.signup_campaign; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_campaign IS 'Karl, 2026-10-28: the first-touch utm_campaign when it is an allowlisted name (packages/shared/src/signup-attribution.ts), else null. Written once with signup_channel; never held for an under-13 profile.';
 
 
 --
@@ -18570,6 +18984,25 @@ COMMENT ON TABLE public.qotd_daily_stats IS 'QOTD (plan R17): aggregate counters
 
 
 --
+-- Name: qotd_day_boundary; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qotd_day_boundary (
+    id boolean DEFAULT true NOT NULL,
+    cutover_at timestamp with time zone NOT NULL,
+    set_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT qotd_day_boundary_id_check CHECK (id)
+);
+
+
+--
+-- Name: TABLE qotd_day_boundary; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.qotd_day_boundary IS 'The QOTD day switch (Karl, 2026-10-27): one row. Before cutover_at the QOTD day is the America/Chicago date; from cutover_at on it is the 04:00 UTC to 04:00 UTC day. Set once, at apply time, to the next Chicago midnight. Server-only.';
+
+
+--
 -- Name: qotd_schedule; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18588,7 +19021,7 @@ CREATE TABLE public.qotd_schedule (
 -- Name: TABLE qotd_schedule; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18): one question per America/Chicago day. qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18; Karl 2026-10-27): one question per QOTD day (04:00 UTC to 04:00 UTC from the cutover in qotd_day_boundary, America/Chicago before it). qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
 
 
 --
@@ -18603,6 +19036,32 @@ COMMENT ON COLUMN public.qotd_schedule.option_order IS 'The canonical option key
 --
 
 COMMENT ON COLUMN public.qotd_schedule.correct_display_letter IS 'The correct option''s letter in option_order, written by the database in the same insert. NULL for a grid-in. SCL-258.';
+
+
+--
+-- Name: question_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_clusters (
+    question_id text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_sub_skills (
+    question_id text NOT NULL,
+    sub_skill_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
 
 --
@@ -19324,7 +19783,7 @@ CREATE TABLE public.student_qotd_attempts (
 -- Name: TABLE student_qotd_attempts; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in student answer per America/Chicago day. selected_answer is the canonical option key. The answer itself is the linked practice_session_items row (mode qotd). ON DELETE CASCADE from profiles.';
+COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in student answer per QOTD day (public.qotd_day). selected_answer is the canonical option key. The answer itself is the linked practice_session_items row (mode qotd). ON DELETE CASCADE from profiles.';
 
 
 --
@@ -19494,6 +19953,23 @@ COMMENT ON COLUMN public.student_study_profile.full_length_interval_weeks IS 'Do
 --
 
 COMMENT ON COLUMN public.student_study_profile.target_exam_dates IS 'SCL-223: every SAT date the student picked, ascending, distinct. target_exam_date is derived from it (the closest date on or after today, America/Chicago).';
+
+
+--
+-- Name: sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sub_skills (
+    id text NOT NULL,
+    skill_code text NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    name text NOT NULL,
+    definition text NOT NULL,
+    inclusion_test text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    taxonomy_version text NOT NULL
+);
 
 
 --
@@ -19705,6 +20181,64 @@ COMMENT ON TABLE public.tutor_conversations IS 'LISA conversation envelopes with
 
 
 --
+-- Name: tutor_eval_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_cases (
+    case_id text NOT NULL,
+    set_version text NOT NULL,
+    student_id uuid,
+    is_owner_case boolean DEFAULT false NOT NULL,
+    source_conversation_id uuid,
+    source_message_id uuid,
+    item_canonical_id text,
+    request jsonb NOT NULL,
+    scan_correct_answer text,
+    production_reply text NOT NULL,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_cases_case_id_check CHECK ((case_id ~ '^[A-Z0-9][A-Z0-9-]*$'::text)),
+    CONSTRAINT tutor_eval_cases_request_check CHECK ((jsonb_typeof(request) = 'object'::text)),
+    CONSTRAINT tutor_eval_cases_set_version_check CHECK ((set_version <> ''::text))
+);
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_cases IS 'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27). Kept 90 days from import (SCL-251).';
+
+
+--
+-- Name: tutor_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_runs (
+    run_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    run_index integer NOT NULL,
+    record jsonb NOT NULL,
+    verdict text NOT NULL,
+    owner_grade text,
+    owner_graded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_runs_check CHECK (((owner_grade IS NULL) = (owner_graded_at IS NULL))),
+    CONSTRAINT tutor_eval_runs_owner_grade_check CHECK ((owner_grade = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text]))),
+    CONSTRAINT tutor_eval_runs_record_check CHECK ((jsonb_typeof(record) = 'object'::text)),
+    CONSTRAINT tutor_eval_runs_run_index_check CHECK ((run_index >= 1)),
+    CONSTRAINT tutor_eval_runs_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text, 'unscored'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_runs IS 'G0-2 evaluation runs. Replies and judge quotes can echo the student: service role only, RLS on, no policies.';
+
+
+--
 -- Name: tutor_injection_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19871,7 +20405,9 @@ CREATE TABLE public.tutor_messages (
     injection_signature_matched text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'completed'::text NOT NULL,
+    intent text,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
+    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text])))),
     CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
     CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
@@ -19882,6 +20418,13 @@ CREATE TABLE public.tutor_messages (
 --
 
 COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation history. Append-only from student perspective. §18.2.';
+
+
+--
+-- Name: COLUMN tutor_messages.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
 
 
 --
@@ -19934,7 +20477,9 @@ CREATE TABLE public.tutor_turn_metrics (
     context_hash text,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
     thinking_tokens integer,
-    thinking_budget integer
+    thinking_budget integer,
+    intent text,
+    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text]))))
 );
 
 
@@ -19971,6 +20516,13 @@ COMMENT ON COLUMN public.tutor_turn_metrics.thinking_tokens IS 'Sum of Vertex th
 --
 
 COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex thinking budget the turn''s calls were made with. NULL = no model call.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
 
 
 --
@@ -20388,6 +20940,14 @@ ALTER TABLE ONLY public.calendar_runtime_config
 
 
 --
+-- Name: clusters clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clusters
+    ADD CONSTRAINT clusters_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: consent_runtime_config_history consent_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20492,6 +21052,14 @@ ALTER TABLE ONLY public.difficulties
 
 
 --
+-- Name: distractor_clusters distractor_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_pkey PRIMARY KEY (question_id, option_key, cluster_id);
+
+
+--
 -- Name: distractor_taxonomy_v1 distractor_taxonomy_v1_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20577,6 +21145,14 @@ ALTER TABLE ONLY public.exam_score_report_projections
 
 ALTER TABLE ONLY public.exam_score_reports
     ADD CONSTRAINT exam_score_reports_pkey PRIMARY KEY (report_id);
+
+
+--
+-- Name: growth_report_posts growth_report_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.growth_report_posts
+    ADD CONSTRAINT growth_report_posts_pkey PRIMARY KEY (week_start);
 
 
 --
@@ -20980,6 +21556,14 @@ ALTER TABLE ONLY public.qotd_daily_stats
 
 
 --
+-- Name: qotd_day_boundary qotd_day_boundary_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_day_boundary
+    ADD CONSTRAINT qotd_day_boundary_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: qotd_schedule qotd_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20993,6 +21577,22 @@ ALTER TABLE ONLY public.qotd_schedule
 
 ALTER TABLE ONLY public.qotd_schedule
     ADD CONSTRAINT qotd_schedule_question_id_key UNIQUE (question_id);
+
+
+--
+-- Name: question_clusters question_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_pkey PRIMARY KEY (question_id, cluster_id);
+
+
+--
+-- Name: question_sub_skills question_sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_pkey PRIMARY KEY (question_id, sub_skill_id);
 
 
 --
@@ -21324,6 +21924,14 @@ ALTER TABLE ONLY public.student_study_profile
 
 
 --
+-- Name: sub_skills sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sub_skills
+    ADD CONSTRAINT sub_skills_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: taxonomy_versions taxonomy_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21457,6 +22065,30 @@ ALTER TABLE ONLY public.tutor_context_runtime_config
 
 ALTER TABLE ONLY public.tutor_conversations
     ADD CONSTRAINT tutor_conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_eval_cases tutor_eval_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_pkey PRIMARY KEY (case_id);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_batch_id_case_id_run_index_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_batch_id_case_id_run_index_key UNIQUE (batch_id, case_id, run_index);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_pkey PRIMARY KEY (run_id);
 
 
 --
@@ -21641,6 +22273,13 @@ CREATE INDEX curriculum_chunks_embedding_idx ON public.curriculum_chunks USING h
 --
 
 CREATE INDEX curriculum_chunks_skills_idx ON public.curriculum_chunks USING gin (skill_codes);
+
+
+--
+-- Name: distractor_clusters_cluster_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX distractor_clusters_cluster_id_idx ON public.distractor_clusters USING btree (cluster_id);
 
 
 --
@@ -22610,6 +23249,20 @@ CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btre
 
 
 --
+-- Name: question_clusters_cluster_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX question_clusters_cluster_id_idx ON public.question_clusters USING btree (cluster_id);
+
+
+--
+-- Name: question_sub_skills_sub_skill_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX question_sub_skills_sub_skill_id_idx ON public.question_sub_skills USING btree (sub_skill_id);
+
+
+--
 -- Name: scoring_constants_unique_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -22628,6 +23281,13 @@ CREATE INDEX student_background_high_school ON public.student_background USING b
 --
 
 CREATE INDEX student_dream_schools_college ON public.student_dream_schools USING btree (college_id);
+
+
+--
+-- Name: tutor_eval_runs_case_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tutor_eval_runs_case_idx ON public.tutor_eval_runs USING btree (case_id, created_at);
 
 
 --
@@ -22943,6 +23603,13 @@ CREATE TRIGGER profiles_marketing_consent_log AFTER INSERT OR UPDATE OF marketin
 --
 
 CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_profile_age_fields();
+
+
+--
+-- Name: profiles profiles_zz_signup_attribution; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_zz_signup_attribution BEFORE INSERT OR UPDATE OF signup_channel, signup_campaign, date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_signup_attribution_guard();
 
 
 --
@@ -23517,6 +24184,22 @@ ALTER TABLE ONLY public.deletion_verification_records
 
 
 --
+-- Name: distractor_clusters distractor_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: distractor_clusters distractor_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: distractor_taxonomy_v1 distractor_taxonomy_v1_section_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -23906,6 +24589,38 @@ ALTER TABLE ONLY public.qotd_daily_stats
 
 ALTER TABLE ONLY public.qotd_schedule
     ADD CONSTRAINT qotd_schedule_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: question_clusters question_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: question_clusters question_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_sub_skills question_sub_skills_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_sub_skills question_sub_skills_sub_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_sub_skill_id_fkey FOREIGN KEY (sub_skill_id) REFERENCES public.sub_skills(id);
 
 
 --
@@ -24317,6 +25032,22 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.tutor_eval_cases(case_id) ON DELETE CASCADE;
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24711,6 +25442,12 @@ ALTER TABLE public.calendar_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calendar_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.clusters ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: consent_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -24839,6 +25576,12 @@ CREATE POLICY difficulties_read ON public.difficulties FOR SELECT TO anon, authe
 
 
 --
+-- Name: distractor_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.distractor_clusters ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: distractor_taxonomy_v1; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -24911,6 +25654,12 @@ ALTER TABLE public.exam_score_report_projections ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.exam_score_reports ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: growth_report_posts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.growth_report_posts ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -25182,10 +25931,28 @@ ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.qotd_daily_stats ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: qotd_day_boundary; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.qotd_day_boundary ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: qotd_schedule; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.qotd_schedule ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: question_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.question_clusters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: question_sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.question_sub_skills ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -25556,6 +26323,12 @@ CREATE POLICY student_study_profile_student_read ON public.student_study_profile
 
 
 --
+-- Name: sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sub_skills ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: taxonomy_versions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -25796,6 +26569,18 @@ CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR S
 
 CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE TO authenticated USING ((student_id = auth.uid()));
 
+
+--
+-- Name: tutor_eval_cases; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_eval_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_runs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: tutor_injection_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -27206,6 +27991,46 @@ GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_se
 
 
 --
+-- Name: FUNCTION growth_report_claim(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_claim(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_claim(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_mark_posted(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_release(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_release(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_release(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_week_start(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_weekly(p_week_start date, p_excluded uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) TO service_role;
+
+
+--
 -- Name: FUNCTION guardian_daily_digest_email_enabled(p_guardian_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -27275,6 +28100,14 @@ GRANT ALL ON FUNCTION public.landing_claim_summaries(p_now timestamp with time z
 
 REVOKE ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) TO service_role;
+
+
+--
+-- Name: FUNCTION landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -27714,6 +28547,22 @@ GRANT ALL ON FUNCTION public.qotd_daily_email_preference(p_student_id uuid) TO s
 
 REVOKE ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_day(p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_day(p_at timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_day(p_at timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_day_cutover(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_day_cutover() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_day_cutover() TO service_role;
 
 
 --
@@ -28414,6 +29263,14 @@ GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolea
 
 
 --
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28842,6 +29699,13 @@ GRANT SELECT ON TABLE public.canonical_skill_catalog TO service_role;
 
 
 --
+-- Name: TABLE clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.clusters TO service_role;
+
+
+--
 -- Name: TABLE consent_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -28911,6 +29775,13 @@ GRANT SELECT ON TABLE public.deletion_request_log TO service_role;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.difficulties TO service_role;
 GRANT SELECT ON TABLE public.difficulties TO anon;
 GRANT SELECT ON TABLE public.difficulties TO authenticated;
+
+
+--
+-- Name: TABLE distractor_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.distractor_clusters TO service_role;
 
 
 --
@@ -29348,6 +30219,13 @@ GRANT SELECT,INSERT ON TABLE public.score_runs TO lyceon_scoring_owner;
 --
 
 GRANT SELECT ON TABLE public.full_length_section_scores TO service_role;
+
+
+--
+-- Name: TABLE growth_report_posts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.growth_report_posts TO service_role;
 
 
 --
@@ -29885,10 +30763,31 @@ GRANT SELECT,INSERT,UPDATE ON TABLE public.qotd_daily_stats TO service_role;
 
 
 --
+-- Name: TABLE qotd_day_boundary; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.qotd_day_boundary TO service_role;
+
+
+--
 -- Name: TABLE qotd_schedule; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT ON TABLE public.qotd_schedule TO service_role;
+
+
+--
+-- Name: TABLE question_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_clusters TO service_role;
+
+
+--
+-- Name: TABLE question_sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_sub_skills TO service_role;
 
 
 --
@@ -30374,6 +31273,13 @@ GRANT SELECT ON TABLE public.student_study_profile TO authenticated;
 
 
 --
+-- Name: TABLE sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sub_skills TO service_role;
+
+
+--
 -- Name: TABLE taxonomy_versions; Type: ACL; Schema: public; Owner: -
 --
 
@@ -30540,6 +31446,20 @@ GRANT ALL ON TABLE public.tutor_context_runtime_config_history TO service_role;
 --
 
 GRANT ALL ON TABLE public.tutor_conversations TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_eval_cases TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.tutor_eval_runs TO service_role;
 
 
 --

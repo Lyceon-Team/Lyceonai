@@ -106,7 +106,9 @@ import {
   requestedVideoMethod,
   resolveVideoAction,
   retrieveOfferedVideos,
+  toClientVideo,
   toWireVideos,
+  type ClientSuggestedAction,
 } from "../services/tutor-video-library";
 import {
   listConversationsQuerySchema,
@@ -118,6 +120,20 @@ import type {
   EntitlementFeatureKey,
 } from "../../packages/shared/src/entitlement-denial";
 import { TutorConfig } from "../services/tutor-config";
+import {
+  isExactIntentLabel,
+  isVideoIntent,
+  reviewIntentSchema,
+  VIDEO_INTENT_METHOD,
+  type ReviewIntent,
+} from "../../packages/shared/src/tutor-guided-choices";
+import {
+  checkTurnIntent,
+  guidedChoicesForReviewItem,
+  pickIntentVideo,
+  VIDEO_INTENT_NO_MATCH,
+  VIDEO_INTENT_REPLY,
+} from "../services/tutor-guided-choices";
 import {
   decodeConversationCursor,
   encodeConversationCursor,
@@ -174,6 +190,10 @@ const appendTurnSchema = z.object({
   content_kind: contentKindSchema.optional(),
   client_turn_id: z.string().uuid(),
   client_scope: clientScopeSchema.optional(),
+  // @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27); SCL-253]
+  // The guided choice tapped, from the closed list. Absent on a typed message. The label, section,
+  // surface and Phase B checks run once the conversation is loaded (checkTurnIntent).
+  intent: reviewIntentSchema.optional(),
 });
 
 const endConversationSchema = z.object({
@@ -467,12 +487,14 @@ async function resolveTrustedScopeForCreate(
  * (value=null, failed=true). The serializer uses this distinction for the
  * correct-answer blocking gate: pre-submit + failed = block.
  */
-type CorrectAnswerResult = {
+export type CorrectAnswerResult = {
   value: string | null;
   failed: boolean;
 };
 
-async function getCorrectAnswerForScope(
+// Exported for the G0-2 case import (tests/eval/teaching-quality/import-case.ts), which keeps
+// the same BFF-local scan key the turn path keeps; never put on the wire pre-submit.
+export async function getCorrectAnswerForScope(
   questionRowId: string | null,
   surface: string | null | undefined,
   sessionItemId: string | null | undefined,
@@ -1006,6 +1028,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
   }
   const input = parsed.data;
   const contentKind = input.content_kind ?? "message";
+  // The guided choice this turn came from (null: typed). Recorded on the student row and the
+  // turn-metrics row; nothing else reads it (ruling 5, 2026-10-27).
+  const turnIntent: ReviewIntent | null = input.intent ?? null;
   // Set once step 11 has persisted (or re-claimed) the student row, so the
   // catch-all can release the turn for retry instead of leaving it 'pending'.
   let persistedStudentMessageId: string | null = null;
@@ -1031,6 +1056,39 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     if (conversation.crisis_paused_at) {
       sendTutorError(res, "conversation_crisis_paused");
       return;
+    }
+
+    // Step 6b (SCL-253; owner rulings 1–2, 2026-10-27): a turn carrying an intent is accepted
+    // only on a review conversation scoped to a question, only for one of that question's
+    // choices (its section, and the Phase B flag), and only when the message is EXACTLY the
+    // choice's label. Anything else is 400 invalid_input — never processed as free text, so no
+    // text the student typed can ride on an intent. Checked against the conversation's STORED
+    // scope, never the client's supplement.
+    if (turnIntent !== null) {
+      const intentCheck = await timedStep("intent_check", () =>
+        checkTurnIntent({
+          intent: turnIntent,
+          message: input.message,
+          surface: conversation.source_surface,
+          questionRowId: conversation.source_question_row_id,
+        }),
+      );
+      if (!intentCheck.ok) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "turn_intent_refused",
+          "turn intent refused; 400 invalid_input",
+          {
+            conversationId: conversation.id,
+            intent: turnIntent,
+            reason: intentCheck.reason,
+          },
+        );
+        sendTutorError(res, "invalid_input", {
+          fieldErrors: { intent: [intentCheck.reason] },
+        });
+        return;
+      }
     }
 
     // Step 7: Rate/quota limits — `ragLimiter` (mounted at /api/tutor) covers
@@ -1071,6 +1129,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         injectionDetected: false,
         crisisTriggered: false,
         crisisClassifierOutcome: null,
+        intent: turnIntent,
       });
       sendTutorError(res, "idempotency_lookup_failed");
       return;
@@ -1111,6 +1170,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           injectionDetected: false,
           crisisTriggered: false,
           crisisClassifierOutcome: null,
+          intent: turnIntent,
         });
         sendTutorError(res, "idempotency_conflict");
         return;
@@ -1170,6 +1230,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           injectionDetected: false,
           crisisTriggered: false,
           crisisClassifierOutcome: null,
+          intent: turnIntent,
         });
 
         res.status(200).json({
@@ -1270,10 +1331,20 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // routes into the §4.6 crisis-safe response rather than normal tutoring.
     // The catch block below handles unexpected infrastructure failure the same
     // way — fail closed with crisis-safe response.
+    //
+    // Owner ruling 4 (2026-10-27, option a; SCL-254): a guided-choice tap whose message is
+    // EXACTLY its label (step 6b refused anything else; re-checked here against the closed list)
+    // skips the model classifier (Layer 2). Layer 1 and the injection scan above still run. Any
+    // typed message gets both layers.
+    const exactLabelTap =
+      turnIntent !== null && isExactIntentLabel(turnIntent, input.message);
     let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
     try {
       crisisResult = await timedStep("crisis_classifier", () =>
-        runCrisisClassifier(sanitized),
+        runCrisisClassifier(
+          sanitized,
+          exactLabelTap ? "signatures_only_exact_label" : "both",
+        ),
       );
     } catch (crisisErr: unknown) {
       // B1.5: Unexpected infrastructure failure in the entire classifier
@@ -1325,6 +1396,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
               injection_flag: injectionDetected,
               injection_signature_matched: signatureScan.signatureId,
               status: "pending",
+              // Written only on a guided-choice turn: a typed turn's insert is unchanged.
+              ...(turnIntent !== null ? { intent: turnIntent } : {}),
             })
             .select("id, created_at")
             .single();
@@ -1362,6 +1435,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: crisisResult.crisis
           ? crisisResult.source
           : null,
+        intent: turnIntent,
       });
       sendTutorError(res, "canonical_write_failed");
       return;
@@ -1589,6 +1663,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           injectionDetected,
           crisisTriggered: true,
           crisisClassifierOutcome: crisisResult.source,
+          intent: turnIntent,
         });
         sendTutorError(res, "canonical_write_failed");
         return;
@@ -1633,6 +1708,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         injectionDetected,
         crisisTriggered: true,
         crisisClassifierOutcome: crisisResult.source,
+        intent: turnIntent,
       });
 
       res.status(200).json({
@@ -1679,6 +1755,174 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       });
     }
 
+    // The classifier outcome of a turn that is not a crisis (crisisResult.crisis is false from
+    // here). An exact-label tap ran Layer 1 only (ruling 4), and says so.
+    const noCrisisOutcome: string = crisisResult.forceReview
+      ? "classifier_degraded"
+      : exactLabelTap
+        ? "no_crisis_signatures_only"
+        : "no_crisis";
+
+    // Step 11b — a video intent (owner brief "LISA guided choices in review, Phase A", Karl
+    // 2026-10-27, build 2; SCL-254): served with NO model call. Retrieval runs with the intent's
+    // method; the reply is the existing `recommend_video` action under a fixed, server-written
+    // sentence; no match is a fixed sentence saying so (the panel shows the choices again).
+    // Steps 12–14b do not run: no instructional assignment (no instruction is given), no context
+    // envelope, no Model Armor scan (the student's text is a fixed label the server wrote; the
+    // reply is server copy), no worker call, no tokens. The reply is one of three constant
+    // sentences and goes through the serializer as server-authored copy, exactly as the crisis copy
+    // does: the serializer returns it unscanned (the step 15 scans look for model-produced leaks). Before and after submit alike (ruling 3): a library video teaches a skill,
+    // not this item's solution. Step 6b guarantees a question scope here.
+    if (
+      turnIntent !== null &&
+      isVideoIntent(turnIntent) &&
+      conversation.source_question_row_id !== null
+    ) {
+      const videoTurnStartedAt = Date.now();
+      const videoIntent = turnIntent;
+      const questionRowIdForVideo = conversation.source_question_row_id;
+      const picked = await timedStep("video_retrieval", () =>
+        pickIntentVideo(videoIntent, questionRowIdForVideo, conversation.id),
+      );
+      recordVideoRetrieval({
+        method: VIDEO_INTENT_METHOD[videoIntent],
+        map_version: null,
+        results: picked.offered.length,
+        video_ids: picked.offered.map((v) => v.video_id),
+      });
+      const videoReply =
+        picked.video === null
+          ? VIDEO_INTENT_NO_MATCH
+          : VIDEO_INTENT_REPLY[videoIntent];
+      const videoSerialized = await timedStep("serialize", () =>
+        serializeTutorOutput(videoReply, {
+          conversationId: conversation.id,
+          studentId,
+          isPreSubmit: false,
+          correctAnswer: null,
+          correctAnswerResolutionFailed: false,
+          questionCanonicalId: effectiveScope.source_question_canonical_id,
+          isServerAuthored: true,
+        }),
+      );
+      const { data: videoMessageRow, error: videoMessageError } =
+        await timedStep("tutor_message_insert", () =>
+          supabaseServer
+            .from("tutor_messages")
+            .insert({
+              conversation_id: conversation.id,
+              student_id: studentId,
+              role: "tutor",
+              content_kind: "message",
+              message: videoSerialized.content,
+              source_session_id: effectiveScope.source_session_id,
+              source_session_item_id: effectiveScope.source_session_item_id,
+              source_question_row_id: effectiveScope.source_question_row_id,
+              source_question_canonical_id:
+                effectiveScope.source_question_canonical_id,
+              client_turn_id: input.client_turn_id,
+            })
+            .select("id")
+            .single(),
+        );
+      if (isClientTurnUniqueViolation(videoMessageError)) {
+        sendClientTurnUniqueViolation(res, conversation.id, "tutor");
+        return;
+      }
+      if (videoMessageError || !videoMessageRow) {
+        logger.error(
+          "TUTOR_RUNTIME",
+          "tutor_message_write_failed",
+          "Failed to persist the video intent's tutor_messages row",
+          {
+            message: videoMessageError?.message,
+            code: videoMessageError?.code,
+          },
+        );
+        await logTurnMetrics({
+          conversationId: conversation.id,
+          turnOrdinal: 0,
+          orchestrationDurationMs: Date.now() - videoTurnStartedAt,
+          modelName: "error:tutor_message_write_failed",
+          tokensIn: null,
+          tokensOut: null,
+          thinkingTokens: null,
+          thinkingBudget: null,
+          promptVersion: null,
+          cacheHit: false,
+          compactionRecommended: false,
+          antiLeakTriggered: false,
+          injectionDetected,
+          crisisTriggered: false,
+          crisisClassifierOutcome: noCrisisOutcome,
+          intent: turnIntent,
+        });
+        await supabaseServer
+          .from("tutor_messages")
+          .update({ status: "failed" })
+          .eq("id", studentMessageRow.id);
+        sendTutorError(res, "canonical_write_failed");
+        return;
+      }
+      await supabaseServer
+        .from("tutor_messages")
+        .update({ status: "completed" })
+        .eq("id", studentMessageRow.id);
+      // No model call: null counts, no prompt version (unknown, never 0).
+      await logTurnMetrics({
+        conversationId: conversation.id,
+        turnOrdinal: 0,
+        orchestrationDurationMs: Date.now() - videoTurnStartedAt,
+        modelName: "guided_choice_video",
+        tokensIn: null,
+        tokensOut: null,
+        thinkingTokens: null,
+        thinkingBudget: null,
+        promptVersion: null,
+        cacheHit: false,
+        compactionRecommended: false,
+        antiLeakTriggered: false,
+        injectionDetected,
+        crisisTriggered: false,
+        crisisClassifierOutcome: noCrisisOutcome,
+        intent: turnIntent,
+      });
+      await supabaseServer
+        .from("tutor_conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", conversation.id);
+      const videoAction: ClientSuggestedAction =
+        picked.video === null || videoSerialized.blocked
+          ? { type: "none", label: null }
+          : {
+              type: "recommend_video",
+              label: null,
+              video: toClientVideo(picked.video),
+            };
+      recordVideoRecommendation(
+        videoAction.type === "recommend_video" ? 1 : null,
+      );
+      res.status(200).json({
+        data: {
+          conversation_id: conversation.id,
+          message_id: videoMessageRow.id,
+          client_turn_id: input.client_turn_id,
+          response: {
+            content: videoSerialized.content,
+            content_kind: "message",
+            suggested_action: videoAction,
+            ui_hints: {
+              show_accept_decline: false,
+              allow_freeform_reply: true,
+              suggested_chip: null,
+            },
+          },
+          conversation_updated_at: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
     // Step 12: Persist instructional assignment — §6.5 step 12, §1.4 blocking.
     // Policy-assignment persistence is blocking per §1.4. If this write fails,
     // the turn is not treated as successful.
@@ -1720,9 +1964,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         antiLeakTriggered: false,
         injectionDetected,
         crisisTriggered: false,
-        crisisClassifierOutcome: crisisResult.forceReview
-          ? "classifier_degraded"
-          : "no_crisis",
+        crisisClassifierOutcome: noCrisisOutcome,
+        intent: turnIntent,
       });
       await supabaseServer
         .from("tutor_messages")
@@ -1913,6 +2156,14 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     if (offeredVideos.length > 0) {
       envelope.offered_videos = toWireVideos(offeredVideos);
     }
+    // The same detection gates the worker's Desmos block in general mode (Karl, 2026-10-27;
+    // docs/lisa/desmos-playbook.md §8). The method only: never the message text.
+    envelope.requested_method = requested?.method ?? null;
+    // A guided choice that reaches the model (`walkthrough`; Phase B's two when enabled) is told
+    // to the worker, which records nothing from it into the prompt (SCL-255: no prompt change).
+    if (turnIntent !== null) {
+      envelope.intent = turnIntent;
+    }
 
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
@@ -1974,9 +2225,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         antiLeakTriggered: false,
         injectionDetected,
         crisisTriggered: false,
-        crisisClassifierOutcome: crisisResult.forceReview
-          ? "classifier_degraded"
-          : "no_crisis",
+        crisisClassifierOutcome: noCrisisOutcome,
+        intent: turnIntent,
       });
       // Mark student message as failed — orchestration did not produce a reply.
       await supabaseServer
@@ -2100,9 +2350,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         antiLeakTriggered,
         injectionDetected,
         crisisTriggered: false,
-        crisisClassifierOutcome: crisisResult.forceReview
-          ? "classifier_degraded"
-          : "no_crisis",
+        crisisClassifierOutcome: noCrisisOutcome,
+        intent: turnIntent,
       });
       // Tutor reply failed to persist — mark student message as failed.
       await supabaseServer
@@ -2181,9 +2430,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // If forceReview is true, Layer 2 failed but Layer 1 had signatures —
     // the turn proceeded but was force-enqueued (classifier_degraded).
     // @spec [CR-03C-V3-01 §3.4]
-    const normalPathOutcome: string = crisisResult.forceReview
-      ? "classifier_degraded"
-      : "no_crisis";
+    const normalPathOutcome: string = noCrisisOutcome;
 
     await logTurnMetrics({
       conversationId: conversation.id,
@@ -2198,6 +2445,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       injectionDetected,
       crisisTriggered: false,
       crisisClassifierOutcome: normalPathOutcome,
+      intent: turnIntent,
     });
 
     await supabaseServer
@@ -2271,6 +2519,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         injectionDetected: false,
         crisisTriggered: false,
         crisisClassifierOutcome: null,
+        intent: turnIntent,
       });
     } catch (metricsErr: unknown) {
       // Metrics logging itself failed — swallow so the error response sends.
@@ -2310,6 +2559,57 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
 router.post(
   "/messages",
   timedRoute("tutor.message", postTutorMessage, { databaseTrips: true }),
+);
+
+// ============================================================================
+// GET /guided-choices — the review panel's choices for one item (SCL-253)
+// ============================================================================
+
+const guidedChoicesQuerySchema = z.object({
+  source_session_item_id: z.string().uuid(),
+});
+
+/**
+ * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), build 5 and
+ *        ruling 2; SCL-253] | @implemented [2026-10-27]
+ *
+ * plain English: which guided choices the review panel draws for one of the student's own review
+ * items: the question's section (math or Reading and Writing, read from the question, never the
+ * client) and the Phase B flag decide. The same function decides what POST /messages accepts, so
+ * a button the student sees is one the server takes. An item that is not the student's answers
+ * an empty list, as an unknown one does, so nothing is learned about other students' items.
+ * Thin handler: auth → entitlement → parse → domain → serialize. No conversation is created.
+ */
+router.get(
+  "/guided-choices",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+      sendTutorError(res, "unauthenticated");
+      return;
+    }
+    const studentId = req.user.id;
+    if (await denyIfNotEntitled(studentId, res)) return;
+    const parsedQuery = guidedChoicesQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      sendTutorError(res, "invalid_input", parsedQuery.error.flatten());
+      return;
+    }
+    try {
+      const intents = await guidedChoicesForReviewItem(
+        studentId,
+        parsedQuery.data.source_session_item_id,
+      );
+      res.status(200).json({ data: { intents: intents ?? [] } });
+    } catch (err: unknown) {
+      logger.error(
+        "TUTOR_RUNTIME",
+        "guided_choices_failed",
+        "could not resolve the review item's guided choices",
+        err instanceof Error ? err : undefined,
+      );
+      sendTutorError(res, "canonical_write_failed");
+    }
+  },
 );
 
 // ============================================================================
@@ -2768,9 +3068,14 @@ router.post(
           .eq("conversation_id", conversation.id)
           .eq("role", "student");
         if (countError || turnCount === null) {
-          logger.warn("TUTOR_RUNTIME", "turn_count_failed", "tutor_session_ended not emitted", {
-            code: countError?.code ?? "no_count",
-          });
+          logger.warn(
+            "TUTOR_RUNTIME",
+            "turn_count_failed",
+            "tutor_session_ended not emitted",
+            {
+              code: countError?.code ?? "no_count",
+            },
+          );
         } else {
           await emitEvent(studentId, "tutor_session_ended", {
             tutor_session_id: conversation.id,

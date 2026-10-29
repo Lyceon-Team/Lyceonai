@@ -13,8 +13,9 @@
  *       | @implemented [2026-10-09]
  *
  * plain English:
- *   - `readQotdHorizon`: today's America/Chicago date, whether today has a servable question, the
- *     first date with none (`runs_out_on`) and the horizon in whole days after today.
+ *   - `readQotdHorizon`: today's QOTD date (04:00 UTC to 04:00 UTC from the cutover; Karl,
+ *     2026-10-27), whether today has a servable question, the first date with none
+ *     (`runs_out_on`) and the horizon in whole days after today.
  *   - `checkQotdHealth`: runs the checks asked for (`noQuestionToday`, `horizon`), logs each
  *     problem at ERROR, and sends one alert per condition per day (the ledger enforces "per
  *     day"). With the horizon check on, a healthy reading (today covered, horizon >= 7) after
@@ -71,7 +72,7 @@ export type SendAlert = (alert: OpsAlert) => Promise<OpsAlertOutcome>;
 
 function detailLines(h: QotdHorizon): string[] {
   return [
-    `Horizon: ${h.horizon} day(s) of questions scheduled after today (${h.today}, America/Chicago).`,
+    `Horizon: ${h.horizon} day(s) of questions scheduled after today (${h.today}, QOTD day).`,
     `Questions run out on ${h.runs_out_on}: that day has no Question of the Day yet.`,
     "Check the qotd-schedule job and the published, eligible question pool. If a scheduled question was unpublished, delete that day's qotd_schedule row and rerun the job (it never replaces a filled day).",
   ];
@@ -159,7 +160,7 @@ export async function checkQotdHealth(params: {
         condition: "qotd_recovered",
         title: `Question of the Day schedule recovered: ${h.horizon} day(s) ahead`,
         lines: [
-          `Horizon: ${h.horizon} day(s) of questions scheduled after today (${h.today}, America/Chicago).`,
+          `Horizon: ${h.horizon} day(s) of questions scheduled after today (${h.today}, QOTD day).`,
           `Questions now run out on ${h.runs_out_on}.`,
         ],
       });

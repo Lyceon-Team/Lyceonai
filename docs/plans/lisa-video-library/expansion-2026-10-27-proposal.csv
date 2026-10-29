@@ -1,0 +1,68 @@
+video_id,proposal,approve_in_review_csv,reason,flag,group,channel,title,minutes,skills,methods,format,method_source
+WxaeGvqhs1A,approve,yes,,,A,Scalar Learning,SAT Math on Khan Academy: Probability and Relative Frequency (Foundations),3.6,Probability and Conditional Probability,algebraic,worked_example,video
+EpIglJ84NKk,approve,yes,,,A,Scalar Learning,SAT Math on Khan Academy: Data Inferences (Foundations),5.3,Inference from Sample Statistics and Margin of Error,algebraic,worked_example,video
+97sijd-hSG4,approve,yes,,,A,Scalar Learning,SAT Math on Khan Academy: Evaluating Statistical Claims (Foundations),6.0,Evaluating Statistical Claims: Observational Studies and Experiments,algebraic,worked_example,video
+KQpliPT8ZTs,approve,yes,,,A,Scalar Learning,SAT Math on Khan Academy: Area and Volume (Foundations),4.9,Area and Volume,algebraic,worked_example,video
+EBsGtgRs2YY,approve,yes,,,A,Scalar Learning,SAT Math on Khan Academy: Scatterplots (Foundations),5.1,Two-Variable Data: Models and Scatterplots,algebraic,worked_example,video
+ZPRskA0r2-w,approve,yes,,,A,Scalar Learning,SAT Math on Khan Academy: Data Representations (Foundations),4.1,One-Variable Data: Distributions and Measures of Center and Spread,algebraic,worked_example,video
+2j1EpSyucyU,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,DO THIS with Tricky Words on the SAT,3.3,Words in Context,,lesson,video
+eCmWcSdjt7E,drop,,"Penguin's general 'MUST KNOW SAT Reading Hacks' maps to no single SAT skill (zero tags), so retrieval could never offer it.","TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,MUST KNOW SAT Reading Hacks,9.7,,,,
+ZRdsmOq4D5c,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,How the FIND the Main Idea | SAT Reading Hacks,15.8,Central Ideas and Details,,lesson,video
+iJmdrd4xdzc,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Central Ideas & Details,19.3,Central Ideas and Details,,lesson,text
+CsBB1CWLvJs,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Command of Evidence Textual,11.5,Command of Evidence,,lesson,text
+EtKuBsepc_c,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Graphs,13.3,Command of Evidence,,strategy,text
+ECkeeyvgiy0,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Inferences,7.6,Inferences,,lesson,text
+RlvHAqMUzSw,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Words in Context,20.0,Words in Context,,lesson,text
+BikLpKp0TpQ,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Cross Text Connections,19.7,Cross-Text Connections,,lesson,text
+fAHc6HnySgE,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,English SAT Hacks | Structure & Purpose,11.5,Text Structure and Purpose,,strategy,text
+xvhccF_tkIE,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Transitions,8.4,Transitions,,strategy,text
+G1QkmrTR1i0,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Rhetorical Synthesis,9.5,Rhetorical Synthesis,,lesson,text
+XCfRaZHbtBs,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,All of SAT Punctuation Explained in Under 4 Minutes,3.4,Boundaries,,lesson,text
+01TEb74ggx8,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,SAT English Hacks | Commas,9.3,Boundaries,,lesson,text
+ZttWFE7mJyY,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,All of SAT Grammar Explained in 7 Minutes,7.3,"Boundaries; Form, Structure, and Sense",,lesson,text
+lgo1iHUCIUU,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",B,Penguin SAT Prep ,DO THIS with SAT Verb Questions,10.0,"Form, Structure, and Sense",,lesson,text
+UiT71RTwHr4,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",Main Purpose Questions & the 3-5 Word Summary (DSAT Reading & Writing),7.8,Text Structure and Purpose,,lesson,text
+OcRajvWvu84,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","Overall Structure, Pt. 1: ""From ____ to ____"" (SAT® Reading & Writing)",8.6,Text Structure and Purpose,,worked_example,text
+8xxiCVPrTss,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",DSAT R&W: The Function of the Underlined Sentence (Pt. 1),7.8,Text Structure and Purpose,,lesson,text
+5DQwh4B6Fmg,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","Relevance First, Accuracy Second: A Shortcut for DSAT R&W Graph & Table Questions",9.3,Command of Evidence,,lesson,text
+QJblAT61rzY,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",DSAT R&W: Approaching Graph & Table Questions (Command of Evidence - Quantitative),8.5,Command of Evidence,,lesson,text
+EZsy-CdsIR4,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",DSAT R&W: The 3 Main Ways to Strengthen an Argument (Command of Evidence - Textual),17.8,Command of Evidence,,lesson,text
+9UjGEN1akXU,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","1-2-3: The Most Frequent Pattern on SAT Inference (""Logically Completing the Text"") Questions",10.3,Inferences,,lesson,text
+NgJhXOfA3rw,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","""Focus on the Big Picture:"" Main Idea Questions & the 3-5 Word Summary (DSAT Reading & Writing)",9.0,Central Ideas and Details,,lesson,text
+kH9qaebf8Jk,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","Paired Passages, Pt. 1: Response Questions (DSAT Reading & Writing)",10.5,Cross-Text Connections,,worked_example,text
+xruJh5TOl-k,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","Paired Passages, Pt. 3: Some More Challenging Examples (DSAT Reading & Writing)",13.0,Cross-Text Connections,,worked_example,text
+jEYvlWifHN8,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",Words in Context (aka Vocab) Questions on the Digital SAT® Reading & Writing Section,11.8,Words in Context,,lesson,video
+92GaKBgEG7E,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",Transition-Word Questions on the SAT® Reading & Writing Section,8.6,Transitions,,worked_example,video
+Yo-Haulw6gM,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",DSAT R&W: The Three Main Types of Transition Words/Phrases,8.8,Transitions; Boundaries,,lesson,text
+WvUsb00iyl4,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",Accuracy Matters: Avoiding a Potential Trap on Rhetorical Synthesis Questions (DSAT R&W),7.5,Rhetorical Synthesis,,lesson,text
+059MnhdW0rw,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",SAT® R&W: A Brief Overview of Punctuation Rules,5.9,Boundaries,,lesson,text
+v5SGpq2thIg,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","""Semicolon = Period"": The #1 Punctuation Rule on the Digital SAT® Reading & Writing Section",2.1,Boundaries,,formula,text
+OM9bu-lNHl0,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","DSAT R&W: ""Hard"" vs. ""Soft"" Punctuation -- An Important Distinction on Boundaries Questions",10.6,Boundaries,,lesson,text
+RVqJR3WLK60,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More","DSAT R&W: Subject-Verb Agreement, Pt. 1",8.3,"Form, Structure, and Sense",,lesson,text
+Dex3tUGv9Io,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",DSAT R&W: The 3 Main Types of Verb Questions & How to Identify Them,10.5,"Form, Structure, and Sense",,lesson,text
+S6r-RnoUxxE,approve,yes,,,C,"3-4-5 Tutoring - SAT®, ACT® & More",DSAT R&W: Recognizing (and Correcting) Dangling Modifiers,9.1,"Form, Structure, and Sense",,lesson,text
+BiAqzRX0XmY,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Cross-Text Connections 3 Exercise, Qn. 1 (SAT Question Bank e5f76480/e4e2aeb3)",9.5,Cross-Text Connections,,worked_example,text
+a-yI4tXP2CI,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Cross-Text Connections 2, Qn. 10 (SAT Question Bank 03080769)",8.2,Cross-Text Connections,,worked_example,text
+qMN1dnuZDn0,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Main Ideas 4 Exercise, Qn. 1 (SAT Question Bank 52aa1317/a70cbc53)",8.6,Central Ideas and Details,,worked_example,text
+U0R6c--N9fg,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Main Ideas 4 Exercise, Qn. 2 (SAT Question Bank cd742fda/b4d29611)",4.5,Central Ideas and Details,,worked_example,text
+xhDGA2vO_Vs,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Support/Weaken Exercise, Qn. 10 (SAT Question Bank e7dc27dc)",3.6,Command of Evidence,,worked_example,text
+P51hKRPDHEM,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Support/Weaken 3 Exercise, Qn. 1 (SAT Question Bank 26ee16ba)",3.4,Command of Evidence,,worked_example,text
+WpAGA_XD1yk,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,Logic/Inference Passages (SAT Question Bank ab3a2ab4/7a895def),2.5,Inferences,,worked_example,text
+-rfd0tcRM8Q,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,Logic/Inference Passages (SAT Question Bank 8ee78de3/9077be25),4.3,Inferences,,worked_example,text
+tGdxy5L2ics,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Underline Function 2, Qn 1 (SAT Question Bank a05fe244/9b01bcf4)",4.4,Text Structure and Purpose,,worked_example,text
+rX08yivCCfs,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Underline Function 2, Qn. 2 (SAT Question Bank f3a51fa6/e7247766)",5.2,Text Structure and Purpose,,worked_example,video
+8jQHzma_bQA,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Graphs/Charts Exercise 3, Qn. 1 (SAT Question Bank 35ec767c)",7.7,Command of Evidence,,worked_example,text
+BlEj0YYc3Rs,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Graphs/Charts Exercise 3, Qn. 3 (SAT Question Bank 2c06139b)",8.9,Command of Evidence,,worked_example,video
+2Otfy47P0yE,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Outlines Exercise, Qn. 1 (SAT Question Bank afec1a70)",2.8,Rhetorical Synthesis,,worked_example,text
+imSzUlsVosI,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,"Outlines Exercise, Qn. 2 (SAT Question Bank b46e0c8a)",3.6,Rhetorical Synthesis,,worked_example,text
+G39Ae3bgoDM,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,Probability on the SAT — including hard conditional probability,6.5,Probability and Conditional Probability,algebraic,lesson,video
+eYWQ3mqzPQ0,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,Semicolons — 2 ways to use them,2.4,Boundaries,,lesson,text
+2Bt-Qrj3IRk,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,Colons — not just for lists,3.3,Boundaries,,lesson,text
+PywAYkKcf_c,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,Apostrophes — mostly for possession on the SAT,4.8,"Form, Structure, and Sense",,lesson,text
+m5xt8aWKKQw,approve,yes,,,D,Settele Tutoring — SAT® Lessons and Strategies,Verb Agreement — the highest priority verb tense rule,10.8,"Form, Structure, and Sense",,lesson,text
+g23W6lrUiQI,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",E,Dr. TestPrep,SAT.3.8.Basic & Harder Examples: Probability and Relative Frequency,5.1,Probability and Conditional Probability,algebraic; desmos,worked_example,video
+auBIKG1Uj7c,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",E,Dr. TestPrep,"SAT.3.9.Basic: Data Inferences, page 53",6.9,Inference from Sample Statistics and Margin of Error,,lesson,video
+yxedDWHDvzI,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",E,Dr. TestPrep,"SAT.3.10.Basic: Evaluating Statistical Claims, page 55",5.8,Evaluating Statistical Claims: Observational Studies and Experiments,algebraic,worked_example,video
+bmRgGP1SmEU,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",E,Dr. TestPrep,"SAT.3.6.Basic: Scatterplots, page 48",6.1,Two-Variable Data: Models and Scatterplots,algebraic,worked_example,video
+w9vTseYuwpU,approve,yes,,"TIER 5 (small channel): judge teaching quality, not just tags",E,Dr. TestPrep,"SAT.3.5.Basic: Data Representations, page 46",2.8,One-Variable Data: Distributions and Measures of Center and Spread,algebraic,worked_example,video
+ljryBGiTLkM,retag,,"desmos came from a line every Dr. TestPrep description carries, not from this video; confirm the method by watching before approving (skill tag is right).","TIER 5 (small channel): judge teaching quality, not just tags",E,Dr. TestPrep,"SAT.5.1.Basic: Area and Volume, page 88",4.7,Area and Volume,,,

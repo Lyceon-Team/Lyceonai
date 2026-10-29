@@ -300,7 +300,44 @@ export class FakeTutorDb {
     return null;
   }
 
-  client(): { from: (table: string) => FakeQuery } {
-    return { from: (table: string) => new FakeQuery(this, table) };
+  /** Every `rpc` call, in order: the function's name and its arguments. */
+  readonly rpcCalls: Array<{ name: string; args: Record<string, unknown> }> =
+    [];
+  private rpcHandlers = new Map<
+    string,
+    (args: Record<string, unknown>) => { data: unknown; error: unknown }
+  >();
+
+  /** Answer `rpc(name, args)` with this handler. An unregistered function answers an error. */
+  onRpc(
+    name: string,
+    handler: (args: Record<string, unknown>) => {
+      data: unknown;
+      error: unknown;
+    },
+  ): void {
+    this.rpcHandlers.set(name, handler);
+  }
+
+  client(): {
+    from: (table: string) => FakeQuery;
+    rpc: (
+      name: string,
+      args?: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: unknown }>;
+  } {
+    return {
+      from: (table: string) => new FakeQuery(this, table),
+      rpc: async (name: string, args: Record<string, unknown> = {}) => {
+        this.rpcCalls.push({ name, args });
+        const handler = this.rpcHandlers.get(name);
+        return handler
+          ? handler(args)
+          : {
+              data: null,
+              error: { message: `no fake for rpc ${name}`, code: "PGRST202" },
+            };
+      },
+    };
   }
 }

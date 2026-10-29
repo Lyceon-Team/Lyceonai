@@ -307,7 +307,7 @@ export async function runQotdSchedule(params: {
   deployHookUrl?: string | undefined;
   fetchImpl?: typeof fetch;
 }): Promise<QotdScheduleSummary> {
-  const today = qotdToday(params.now ?? new Date());
+  const today = await qotdToday(params.client, params.now ?? new Date());
   const daysAhead = params.daysAhead ?? QOTD_DAYS_AHEAD;
   const counters: Counters = {
     skippedBanned: 0,

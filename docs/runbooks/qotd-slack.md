@@ -7,8 +7,8 @@
 > >
 > > > > Karl's brief 2026-10-23]
 
-Every morning the **QOTD social assets** workflow (`.github/workflows/qotd-social.yml`, 06:20 UTC)
-builds the day's portrait and story images, the caption and the alt text. It uploads them as the
+Every night the **QOTD social assets** workflow (`.github/workflows/qotd-social.yml`, 04:05 UTC,
+five minutes after the QOTD day turns over at 04:00 UTC: Karl, 2026-10-27) builds the new day's portrait and story images, the caption and the alt text. It uploads them as the
 run's download, then posts them to `#social` as **five numbered items, always in this order**
 (Karl, 2026-10-26). Each item opens with its label, and each finishes (a file upload only once
 Slack confirms the files are shared in the channel) before the next starts:
@@ -17,26 +17,48 @@ Slack confirms the files are shared in the channel) before the next starts:
    the correct answer, the worked explanation as plain text, and the archive link). A withheld
    yesterday says so instead.
 2. **2/5 · TikTok: title and caption**: the title (`SAT Question of the Day · Oct 22 · Math`, at
-   most 90 characters) and the caption (follow line first), each in a code block.
+   most 90 characters), the caption (follow line, "Comment your answer 👇", "Taking the SAT Dec 5?
+   Free SAT practice: link in bio", the tags) and the **bio link**
+   (`lyceon.ai/start?utm_source=tiktok&utm_campaign=qotd`), each in a code block. After Dec 5 the
+   bio line reads "Free SAT practice: link in bio" by itself (owner brief "One funnel for every
+   social post", Karl, 2026-10-28).
 3. **3/5 · TikTok: carousel**: **yesterday's** question as three 1080x1920 slides, in slide
    order (the question; "Lock in your answer"; the answer with a short "Why" and the link to
    today's question). Post them in order as a TikTok photo post. A long first sentence in the
    explanation is cut and ends "… Full explanation on lyceon.ai" (Karl, 2026-10-26).
-4. **4/5 · Reddit: today's post**: a suggested title and today's question as plain text, each in
-   a code block.
-5. **5/5 · Today's question images**: both images (story and feed), then the caption and alt
-   text, each in a code block.
+4. **4/5 · Reddit: today's post**: the suggested title, a reminder to attach today's portrait
+   image, and the body: one call-to-action line with the tagged link
+   (`lyceon.ai/start?utm_source=reddit&utm_campaign=qotd`). The question is in the image; the body
+   no longer writes it out (Karl, 2026-10-28).
+5. **5/5 · Today's question images**: both images (story and feed), then the caption, the alt
+   text, the **Instagram caption** ("Comment your answer 👇", then "Comment SAT and I'll send you
+   the link") and the link to send to people who comment SAT
+   (`lyceon.ai/start?utm_source=instagram&utm_campaign=qotd`), each in a code block.
 
 When there is no carousel (yesterday withheld or missing on the archive, or its slides cannot
 fit), items 2 and 3 still post, as "2/5 · TikTok: no title or caption today (reason)" and
 "3/5 · TikTok: no carousel today (reason)", so the numbering never shifts.
 
-Reddit posting stays manual (Doc 10B): Karl copies the title and body into a new post, and the
-reveal into a comment on yesterday's post.
+Reddit posting stays manual (Doc 10B): Karl creates an image post with the title and the portrait
+image, adds the body line, and posts the reveal as a comment on yesterday's post.
+
+Every link points at `lyceon.ai/start` and is tagged with its channel and campaign, so each sign-up
+records where it came from (`signup_channel`, `signup_campaign`) and the Monday growth report can
+count sign-ups by channel. Until Dec 5 the lines speak to people taking that test; from Dec 6 (the
+Chicago day) they switch to the evergreen wording by themselves. The wording is in
+`shared/social/funnel.ts`.
 
 Choices are in the same canonical order everywhere (Karl, 2026-10-23): the site, the images,
 the Reddit post, the archive and the reveal, so the reveal's letter is the letter the question
 showed.
+
+**The switch to the 04:00 UTC day (one time, SCL-250).** The code ships first, then the
+migration, and the database switches at the Chicago midnight after the migration is applied.
+Until then every 04:05 UTC run is refused and red (the site still serves the Chicago day; see the
+table in section 3), and nothing is posted twice. The first new day starts at that Chicago
+midnight, after that night's 04:05 run, so no scheduled run posts it. Once it has started (any
+time that day), run the workflow by hand with no date: it posts the first new day, with the
+reveal of the day before. From the next night the 04:05 run posts as normal.
 
 It uses a standard Slack app with three scopes. It works on Slack's free plan.
 
@@ -83,17 +105,17 @@ Do this before the first scheduled run:
 
 The rule is that it never posts a day that failed a check, and it never fails quietly.
 
-| Situation                                                                                    | What happens                                                                                                                                                           |
-| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The build fails a check (an answer in the caption or image, wrong reveal wording, bad input) | The build step fails. Nothing is uploaded and nothing is posted. The run page lists the problems.                                                                      |
-| An image does not fit                                                                        | The build step fails. No `post.json` is written, so nothing is posted.                                                                                                 |
-| At 06:20 UTC the site still serves yesterday's question as today's                           | The build refuses it: that day's answer is already public, so it would have to pass the past-day leak check. Nothing is posted. Rebuild it by hand with that **date**. |
-| Yesterday was **withheld** (a repaired question; its archive page is not published)          | The reveal message says so and carries nothing else. Today's post goes out as normal.                                                                                  |
-| Yesterday is withheld or missing, or its TikTok slides cannot fit                            | No carousel. A one-line note in `#social` says why. Everything else is posted as normal.                                                                               |
-| Yesterday's archive data cannot be read (anything but a 404)                                 | The build step fails loudly, as for any other read. Nothing is posted.                                                                                                 |
-| `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                       | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                             |
-| `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                   | Same: the download is uploaded and the run is red.                                                                                                                     |
-| Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)      | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                          |
+| Situation                                                                                                                                        | What happens                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The build fails a check (an answer in the caption or image, wrong reveal wording, bad input)                                                     | The build step fails. Nothing is uploaded and nothing is posted. The run page lists the problems.                                                                                                    |
+| An image does not fit                                                                                                                            | The build step fails. No `post.json` is written, so nothing is posted.                                                                                                                               |
+| At 04:05 UTC the site still serves the day that just ended as today's (the database has not switched to the 04:00 UTC day yet, or a stale cache) | The build refuses it: it is not today under the 04:00 UTC day, and that day was posted the night before. Nothing is posted. Once the site serves the new day, run the workflow by hand with no date. |
+| Yesterday was **withheld** (a repaired question; its archive page is not published)                                                              | The reveal message says so and carries nothing else. Today's post goes out as normal.                                                                                                                |
+| Yesterday is withheld or missing, or its TikTok slides cannot fit                                                                                | No carousel. A one-line note in `#social` says why. Everything else is posted as normal.                                                                                                             |
+| Yesterday's archive data cannot be read (anything but a 404)                                                                                     | The build step fails loudly, as for any other read. Nothing is posted.                                                                                                                               |
+| `SLACK_BOT_TOKEN` is missing or isn't an `xoxb-` token                                                                                           | The download is uploaded first. Then **Post to Slack** fails and names the missing secret. The run is red.                                                                                           |
+| `SOCIAL_SLACK_CHANNEL_ID` is missing or isn't a channel ID                                                                                       | Same: the download is uploaded and the run is red.                                                                                                                                                   |
+| Slack is down, or returns an error (`not_in_channel`, `invalid_auth`, `missing_scope`…)                                                          | The download is uploaded first. Then the step fails with `NOT POSTED` and Slack's error code. The run is red.                                                                                        |
 
 | The site refuses the day's stored answer order (`503 qotd_order_invalid`, SCL-258) | The build step fails, naming the code. Nothing is posted except the failure notice below. The day needs its schedule row checked, not a re-run. |
 

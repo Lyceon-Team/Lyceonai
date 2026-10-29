@@ -430,6 +430,9 @@ export async function accumulateObservation(
 export async function getRecentMessages(
   conversationId: string,
   window?: number,
+  // The G0-2 case import's cut-off: the window as it stood when the message at this instant
+  // was the latest (tests/eval/teaching-quality/import-case.ts). The turn path never passes it.
+  throughCreatedAt?: string,
 ): Promise<RecentMessage[]> {
   if (!conversationId) {
     throw new Error("getRecentMessages: conversationId is required");
@@ -437,10 +440,15 @@ export async function getRecentMessages(
 
   const messageWindow = window ?? TutorConfig.get("recent_message_window");
 
-  const { data, error } = await supabaseServer
+  const base = supabaseServer
     .from("tutor_messages")
     .select("id, role, content_kind, message, created_at")
-    .eq("conversation_id", conversationId)
+    .eq("conversation_id", conversationId);
+  const { data, error } = await (
+    throughCreatedAt === undefined
+      ? base
+      : base.lte("created_at", throughCreatedAt)
+  )
     .order("created_at", { ascending: false })
     .limit(messageWindow);
 

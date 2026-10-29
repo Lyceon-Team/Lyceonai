@@ -504,6 +504,36 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/worked-examples.mutations.sh
 
+      # Social funnel (Karl, 2026-10-28): the cohort line ending early, /start losing noindex, a
+      # "free study plan" claim (F4-F6); the question back in the Reddit body, a caption losing its
+      # comment or call-to-action line, the Instagram caption outside the leak check, a loose
+      # funnel-line filter, the old worked-example line, mis-tagged links, Slack messages losing
+      # their link or posting a hand-edited caption (G1-G9). Sign-up attribution's plants are
+      # #1359's. Each must turn its named check red.
+      - name: Social funnel mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/social-funnel.mutations.sh
+
+      # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
+      # counted, the week cut at UTC midnight, the current week reported, skips counted as
+      # answers, study time uncapped, a wider 24-hour window, returning without the week before,
+      # an upgrade outside the week, a ledger that posts twice, a client role that can run it, a
+      # failed post keeping its claim, a percentage of zero, the route open without the secret.
+      # Each must turn its named check red.
+      - name: Growth report mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/growth-report.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest
@@ -564,6 +594,20 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/smart-landing.mutations.sh
+
+      # Sign-up channel (Karl, 2026-10-28): plants a lost source mapping, any campaign kept, the
+      # first touch losing to the sign-up page, the link into sign-up not carrying it, storage on
+      # the device, the Google path not sending or recording it, an onboarded account written,
+      # set-once and the under-13 clear removed in the database, and free text in the campaign.
+      # Each must turn its guarding test red by name.
+      - name: Sign-up attribution mutations (planted defects must fail)
+        if: matrix.group == 'review-marketing'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/signup-attribution.mutations.sh
 
       # SCL-222 sign-in notice: plants a returning user's Google sign-in recording acceptance, the
       # new-account test ignoring the account's age, email signup recording only on a client

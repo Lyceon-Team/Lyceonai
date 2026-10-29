@@ -50,6 +50,7 @@ FILES=(
   "client/src/components/qotd/QotdTiktokSlide.tsx"
   "shared/slack/client.ts"
   "shared/qotd/projection.ts"
+  ".github/workflows/qotd-social.yml"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -249,7 +250,7 @@ plant scripts/qotd-social/generate.ts \
   "  return date < today" \
   "  return date <= today" || { bad "M13 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M13 today buildable by date" "a date is buildable only once it has passed in America/Chicago" "$OUT" "$RC"
+expect_red "M13 today buildable by date" "a date is buildable only once its QOTD day (04:00 UTC to 04:00 UTC) has passed" "$OUT" "$RC"
 restore
 
 echo "=== (14) the scheduler stops skipping a stem that repeats its passage (owner 2026-10-08) ==="
@@ -703,6 +704,23 @@ plant server/services/qotd/schedule-job.ts \
   ) {" || { bad "M69 STALE"; exit 1; }
 OUT="$(ts_check "$SCHED")"; RC=$?
 expect_red "M69 letter skip off" "skips an MCQ whose explanation names a choice letter" "$OUT" "$RC"
+restore
+
+# The QOTD day at 04:00 UTC (Karl, 2026-10-27): the 04:05 UTC run uses the right days.
+echo "=== (70) the social run takes the Chicago day as today ==="
+plant scripts/qotd-social/generate.ts \
+  "  return qotdTodaySwitched(now);" \
+  "  return new Date(now.getTime() - 5 * 3_600_000).toISOString().slice(0, 10);" || { bad "M70 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M70 run day is the 04:00 UTC day" "the 04:05 UTC run builds the new day and reveals the day that just ended" "$OUT" "$RC"
+restore
+
+echo "=== (71) the run is scheduled before the day turns over ==="
+plant .github/workflows/qotd-social.yml \
+  '    - cron: "5 4 * * *"' \
+  '    - cron: "55 3 * * *"' || { bad "M71 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M71 04:05 UTC schedule" "the 04:05 UTC run builds the new day and reveals the day that just ended" "$OUT" "$RC"
 restore
 
 echo "=== RESTORED: re-check green ==="

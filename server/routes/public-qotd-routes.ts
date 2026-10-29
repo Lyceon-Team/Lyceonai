@@ -177,7 +177,7 @@ router.get(
     }
     // Only a day that has passed is an archive day. Today is answered via /today (no answer);
     // a future day does not exist yet.
-    if (parsed.data >= qotdToday()) {
+    if (parsed.data >= (await qotdToday(db()))) {
       return res
         .status(404)
         .json(errorBody("not_found", "Not found.", req.requestId));
@@ -255,7 +255,7 @@ router.post("/today/answer", async (req: Request, res: Response) => {
       requestId,
     });
   }
-  const today = qotdToday();
+  const today = await qotdToday(db());
   if (parsed.data.qotd_date !== today) {
     return res
       .status(409)
@@ -296,7 +296,11 @@ router.post("/today/answer", async (req: Request, res: Response) => {
     let countable = false;
     try {
       countable = (
-        await checkAnonymousBucket(req, "qotd_stat_ip", qotdDayWindow(today))
+        await checkAnonymousBucket(
+          req,
+          "qotd_stat_ip",
+          await qotdDayWindow(db(), today),
+        )
       ).allowed;
     } catch (err: unknown) {
       logger.warn(

@@ -14,7 +14,8 @@
  *   * Without --date it builds TODAY from GET /api/public/qotd/today, the website's own
  *     pre-submit payload: the answer and explanation are the literal null there, and the
  *     database decides which day "today" is, so no future day can be fetched.
- *   * --date builds a PAST day (strictly before today in America/Chicago, else exit 2) from the
+ *   * --date builds a PAST day (strictly before today's QOTD day, 04:00 UTC to 04:00 UTC, else
+ *     exit 2) from the
  *     public archive. Its answer is dropped by socialInputFromArchive before anything is built,
  *     and the output is then checked against it with socialAssetLeaks. `--date latest` picks the
  *     newest archive day whose input passes socialInputProblems (pull request runs use it to
@@ -80,6 +81,7 @@ import {
   buildRedditPost,
   withheldReveal,
 } from "../../shared/qotd/reveal";
+import { campaignLinks } from "../../shared/social/funnel";
 import {
   QOTD_SECTION_NAME,
   QOTD_SOCIAL_FORMATS,
@@ -94,7 +96,7 @@ import {
   type QotdSocialFormat,
 } from "../../shared/qotd/social";
 import {
-  QOTD_TIKTOK_CAPTION,
+  qotdTiktokCaption,
   QOTD_TIKTOK_SIZE,
   buildTiktokCarousel,
   buildTiktokTitle,
@@ -104,7 +106,7 @@ import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
 } from "../../shared/seo/banned-phrases";
-import { localTodayIn } from "../../server/services/calendar/adapters/local-day";
+import { qotdTodaySwitched } from "../../server/services/qotd/qotd-day";
 
 /** Status lines only (the logger is the server's; this is a CLI). */
 function out(line: string): void {
@@ -129,8 +131,12 @@ function writeFailure(outDir: string): void {
 }
 
 const ROOT = resolve(import.meta.dirname, "../..");
-/** The QOTD day boundary (plan R18); the same zone as public.qotd_today(). */
-const QOTD_TIME_ZONE = "America/Chicago";
+/**
+ * The QOTD day (Karl, 2026-10-27): 04:00 UTC to 04:00 UTC, the database's public.qotd_day after
+ * the switch. This script has no database, so it uses the switched rule (qotd-day.ts) and checks
+ * /today against it: a run before the database has switched is refused, never posted.
+ */
+const QOTD_DAY_RULE = "04:00 UTC to 04:00 UTC";
 const MIN_FONT_PX = 24;
 const MAX_FONT_PX: Record<QotdSocialFormat, number> = {
   portrait: 52,
@@ -171,6 +177,16 @@ function parseArgs(argv: readonly string[]): Args {
 }
 
 /**
+ * The day a run builds as "today" (Karl, 2026-10-27): the QOTD day at the run's moment, 04:00 UTC
+ * to 04:00 UTC. The 04:05 UTC run therefore posts the day that began five minutes earlier (the
+ * Reddit post and images) and reveals the day that just ended (the reveal and TikTok, read from
+ * the archive as yesterday). /today must already be this day or the run is refused.
+ */
+export function socialRunToday(now: Date = new Date()): string {
+  return qotdTodaySwitched(now);
+}
+
+/**
  * A requested date is buildable only once it has passed. Exported for the test: future days
  * and today itself are refused (today is built from /today, without a date).
  */
@@ -180,10 +196,10 @@ export function pastDateProblem(
 ): string | null {
   if (!qotdDateSchema.safeParse(date).success)
     return `${date} is not a YYYY-MM-DD date`;
-  const today = localTodayIn(QOTD_TIME_ZONE, now);
+  const today = socialRunToday(now);
   return date < today
     ? null
-    : `${date} has not passed yet (today is ${today} in ${QOTD_TIME_ZONE})`;
+    : `${date} has not passed yet (today is ${today}, QOTD day ${QOTD_DAY_RULE})`;
 }
 
 /** The `error.code` of an API error body ({ error: { code, message } }); nothing else is read. */
@@ -265,7 +281,8 @@ export function tiktokDecision(
     problems.push(`tiktok: ${tiktok.slides.length} slides, not 3`);
   }
   const title = buildTiktokTitle(day, tiktok.carousel.question.section_code);
-  const caption = QOTD_TIKTOK_CAPTION;
+  // Posted today, so the caption's bio line is today's (Karl, 2026-10-28).
+  const caption = qotdTiktokCaption(source.input.qotd_date);
   for (const [field, text] of [
     ["tiktok caption", caption],
     ["tiktok title", title],
@@ -345,6 +362,7 @@ export function publishDecision(
             card_text: r.cardText,
             reddit_title: reddit.title,
             reddit_body: reddit.body,
+            instagram_caption: copy.instagram_caption,
           },
           source.revealed,
         ).map((leak) => `${r.format}: ${leak}`),
@@ -385,6 +403,8 @@ export function publishDecision(
       source: source.kind,
       caption: copy.caption,
       alt_text: copy.alt_text,
+      instagram_caption: copy.instagram_caption,
+      links: campaignLinks("qotd"),
       images: rendered.map((r) => ({
         format: r.format,
         file: `qotd-${input.qotd_date}-${r.format}.png`,
@@ -807,7 +827,7 @@ async function main(): Promise<number> {
   const { input } = source;
   // Belt and braces: the endpoint decides "today", but a day that has not begun here is refused
   // whatever the server said.
-  const today = localTodayIn(QOTD_TIME_ZONE);
+  const today = socialRunToday();
   if (input.qotd_date > today) {
     err(
       `qotd-social: refused: ${input.qotd_date} has not begun (today is ${today})`,
@@ -916,6 +936,11 @@ async function main(): Promise<number> {
   rmSync(workDir, { recursive: true, force: true });
   writeFileSync(join(args.out, "caption.txt"), `${copy.caption}\n`);
   writeFileSync(join(args.out, "alt-text.txt"), `${copy.alt_text}\n`);
+  writeFileSync(
+    join(args.out, "instagram-caption.txt"),
+    `${copy.instagram_caption}\n`,
+  );
+  const links = decision.manifest.links;
 
   const summary = [
     `## SAT Question of the Day: ${date}`,
@@ -934,8 +959,14 @@ async function main(): Promise<number> {
     "### Alt text",
     fenced(copy.alt_text),
     "",
-    "### Reddit (today's post)",
+    "### Instagram caption",
+    fenced(copy.instagram_caption),
+    `Send to people who comment SAT: ${links.instagram}`,
+    "",
+    "### Reddit (today's post, with the portrait image)",
     fenced(`${reddit.title}\n\n${reddit.body}`),
+    "",
+    `### TikTok bio link\n${links.tiktok}`,
     "",
     "### Yesterday's reveal",
     reveal.status === "withheld"

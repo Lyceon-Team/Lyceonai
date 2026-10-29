@@ -30,6 +30,9 @@
  *   A8 test dates: several stored; the effective date is the closest future one; saving dates
  *      does not complete calendar setup; past dates refused
  *   A9 account deletion removes attempts, notifications, the preference, prompt state and dates
+ *   D0-D3 (Karl, 2026-10-27) the QOTD day runs 04:00 UTC to 04:00 UTC from the cutover (the
+ *      Chicago midnight after the migration): seeded and seamless; the flip at 04:00 UTC in the
+ *      database and the server; answers at 03:59 and 04:01 UTC; the streak across the switch
  */
 import express, {
   type NextFunction,
@@ -79,6 +82,11 @@ const EXPLANATION = "Subtract 2 then divide by 3: x = 3.";
 /** Summer (CDT, UTC-5) and winter (CST, UTC-6) days with their own scheduled question. */
 const SUMMER_DAY = "2026-07-14";
 const WINTER_DAY = "2026-01-14";
+/** Karl, 2026-10-27: two consecutive days after the 04:00 UTC switch, each with its question. */
+const FLIP_A_Q = "SATM1Q90041";
+const FLIP_B_Q = "SATM1Q90042";
+const FLIP_A_DAY = "2026-08-04";
+const FLIP_B_DAY = "2026-08-05";
 
 let pg: Client;
 const session: {
@@ -579,7 +587,7 @@ describe.skipIf(!PG_AVAILABLE)(
       ).toBe(0);
     });
 
-    it("A1: the day is America/Chicago's, at midnight in summer (CDT) and winter (CST)", async () => {
+    it("A1: before the 04:00 UTC cutover, the day is America/Chicago's, at midnight in summer (CDT) and winter (CST)", async () => {
       const day = async (iso: string) =>
         (
           await pg.query<{ d: string }>(
@@ -704,6 +712,237 @@ describe.skipIf(!PG_AVAILABLE)(
         current_streak: 4,
         today_done: true,
         broken: false,
+      });
+    });
+
+    // ── QOTD day 04:00 UTC (Karl, 2026-10-27) ──────────────────────────────
+    // The migration sets the cutover to the Chicago midnight after it is applied, so in this
+    // database it is still ahead. Each case below moves it to a past Chicago midnight
+    // (CUTOVER_SUMMER: 2026-08-01 00:00 CDT) and puts it back afterwards; the server's cached copy
+    // is reset both times.
+    const CUTOVER_SUMMER = "2026-08-01T05:00:00.000Z";
+    async function withCutover(
+      iso: string,
+      body: () => Promise<void>,
+    ): Promise<void> {
+      const { resetQotdCutoverCacheForTests } =
+        await import("../../server/services/qotd/qotd-service");
+      const before = await pg.query<{ c: Date }>(
+        `SELECT cutover_at AS c FROM public.qotd_day_boundary WHERE id`,
+      );
+      const original = before.rows[0]?.c;
+      if (!original) throw new Error("no cutover row");
+      await pg.query(
+        `UPDATE public.qotd_day_boundary SET cutover_at = $1::timestamptz WHERE id`,
+        [iso],
+      );
+      resetQotdCutoverCacheForTests();
+      try {
+        await body();
+      } finally {
+        await pg.query(
+          `UPDATE public.qotd_day_boundary SET cutover_at = $1 WHERE id`,
+          [original],
+        );
+        resetQotdCutoverCacheForTests();
+      }
+    }
+    const qotdDayAt = async (iso: string) =>
+      (
+        await pg.query<{ d: string }>(
+          `SELECT public.qotd_day($1::timestamptz)::text AS d`,
+          [iso],
+        )
+      ).rows[0]?.d;
+
+    it("D0: the cutover is the Chicago midnight after the migration ran, and the day is seamless across it", async () => {
+      const r = await pg.query<{
+        n: number;
+        next_midnight: boolean;
+        after_apply: boolean;
+        last_old: string;
+        first_new: string;
+        chicago_at_cutover: string;
+      }>(
+        `SELECT count(*) OVER ()::int AS n,
+                cutover_at = (((set_at AT TIME ZONE 'America/Chicago')::date + 1)::timestamp
+                                AT TIME ZONE 'America/Chicago') AS next_midnight,
+                cutover_at > set_at AS after_apply,
+                public.qotd_day(cutover_at - interval '1 microsecond')::text AS last_old,
+                public.qotd_day(cutover_at)::text AS first_new,
+                (cutover_at AT TIME ZONE 'America/Chicago')::date::text AS chicago_at_cutover
+           FROM public.qotd_day_boundary`,
+      );
+      const row = r.rows[0];
+      // Presence: exactly one row, seeded by the migration.
+      expect(row?.n).toBe(1);
+      expect(row?.next_midnight).toBe(true);
+      expect(row?.after_apply).toBe(true);
+      // No label skipped or repeated: the last Chicago day is the day before the first new one.
+      expect(row?.first_new).toBe(row?.chicago_at_cutover);
+      const firstNew = new Date(`${row?.first_new}T00:00:00Z`);
+      firstNew.setUTCDate(firstNew.getUTCDate() - 1);
+      expect(row?.last_old).toBe(firstNew.toISOString().slice(0, 10));
+      // Before the cutover, today is still the Chicago day (the database and the server agree).
+      const { qotdToday, resetQotdCutoverCacheForTests } =
+        await import("../../server/services/qotd/qotd-service");
+      resetQotdCutoverCacheForTests();
+      expect(await qotdToday(makePgSupabase(pg))).toBe(chicagoToday());
+    });
+
+    it("D1: the question flips at 04:00 UTC, summer and winter, in the database and the server alike", async () => {
+      await withCutover(CUTOVER_SUMMER, async () => {
+        // Before the cutover: the Chicago day, untouched.
+        expect(await qotdDayAt("2026-07-15T04:59:59Z")).toBe(SUMMER_DAY);
+        expect(await qotdDayAt("2026-08-01T04:59:59Z")).toBe("2026-07-31");
+        // The cutover itself starts the first new day.
+        expect(await qotdDayAt(CUTOVER_SUMMER)).toBe("2026-08-01");
+        // From then on: 04:00 UTC, in summer (CDT) and in winter (CST) alike.
+        expect(await qotdDayAt("2026-08-05T03:59:59Z")).toBe("2026-08-04");
+        expect(await qotdDayAt("2026-08-05T04:00:00Z")).toBe("2026-08-05");
+        expect(await qotdDayAt("2026-12-15T03:59:59Z")).toBe("2026-12-14");
+        expect(await qotdDayAt("2026-12-15T04:00:00Z")).toBe("2026-12-15");
+        // Today's question is the one for qotd_day(now()).
+        const t = await pg.query<{ same: boolean }>(
+          `SELECT public.qotd_today() = ((now() AT TIME ZONE 'UTC') - interval '4 hours')::date AS same`,
+        );
+        expect(t.rows[0]?.same).toBe(true);
+        // The server reads the same switch from the database.
+        const { loadQotdCutover, qotdToday } =
+          await import("../../server/services/qotd/qotd-service");
+        const client = makePgSupabase(pg);
+        expect((await loadQotdCutover(client))?.toISOString()).toBe(
+          CUTOVER_SUMMER,
+        );
+        expect(await qotdToday(client, new Date("2026-08-05T03:59:59Z"))).toBe(
+          "2026-08-04",
+        );
+        expect(await qotdToday(client, new Date("2026-08-05T04:00:00Z"))).toBe(
+          "2026-08-05",
+        );
+        expect(await qotdToday(client, new Date("2026-08-01T04:59:59Z"))).toBe(
+          "2026-07-31",
+        );
+      });
+    });
+
+    it("D2: answers at 03:59 and 04:01 UTC land on the correct QOTD days", async () => {
+      const S = "a7000000-0000-4000-8000-0000000000f1";
+      await seedPerson(S, "student", "2008-01-01");
+      for (const q of [FLIP_A_Q, FLIP_B_Q]) await seedQuestion(q);
+      await pg.query(
+        `INSERT INTO public.qotd_schedule (qotd_date, question_id) VALUES ($1, $2), ($3, $4)`,
+        [FLIP_A_DAY, FLIP_A_Q, FLIP_B_DAY, FLIP_B_Q],
+      );
+      const answerAt = async (date: string, q: string, iso: string) =>
+        (
+          await pg.query<{ r: { status: string } }>(
+            `SELECT public.qotd_student_answer($1, $1, $2::date, $3, $4::jsonb, 'B', true, $5, $6::timestamptz) AS r`,
+            [
+              S,
+              date,
+              q,
+              JSON.stringify({
+                question_stem: "s",
+                question_options: [],
+                question_correct_answer: "B",
+                question_explanation: "e",
+                question_domain: "Algebra",
+                question_skill: "ALG.D01",
+                question_difficulty: 2,
+                question_section: "M",
+                question_item_type: "mcq",
+              }),
+              randomUUID(),
+              iso,
+            ],
+          )
+        ).rows[0]?.r.status;
+      await withCutover(CUTOVER_SUMMER, async () => {
+        // 03:59 UTC on the 5th is still the 4th: the 5th's question is not open yet.
+        expect(
+          await answerAt(FLIP_B_DAY, FLIP_B_Q, "2026-08-05T03:59:00Z"),
+        ).toBe("not_today");
+        expect(
+          await answerAt(FLIP_A_DAY, FLIP_A_Q, "2026-08-05T03:59:00Z"),
+        ).toBe("created");
+        // 04:01 UTC is the 5th: the 4th's question is closed, the 5th's is open.
+        expect(
+          await answerAt(FLIP_A_DAY, FLIP_A_Q, "2026-08-05T04:01:00Z"),
+        ).toBe("not_today");
+        expect(
+          await answerAt(FLIP_B_DAY, FLIP_B_Q, "2026-08-05T04:01:00Z"),
+        ).toBe("created");
+        const days = await pg.query<{ d: string }>(
+          `SELECT qotd_date::text AS d FROM public.student_qotd_attempts
+            WHERE student_id = $1 ORDER BY qotd_date`,
+          [S],
+        );
+        expect(days.rows.map((r) => r.d)).toEqual([FLIP_A_DAY, FLIP_B_DAY]);
+        // Each answer counts for its own day: two days in a row.
+        expect(await streakAt(S, "2026-08-05T12:00:00Z")).toEqual({
+          current_streak: 2,
+          today_done: true,
+          broken: false,
+        });
+      });
+    });
+
+    it("D3: streak continuity across the cutover: no student loses a streak because of the switch", async () => {
+      // An afternoon habit (18:00 UTC) is the same day under both rules.
+      const AFTERNOON = "a7000000-0000-4000-8000-0000000000f2";
+      // A late-night habit (04:30 UTC = 23:30 CDT): under the Chicago day it carried the day
+      // before; under the 04:00 UTC day it carries its own date, so it skips 2026-08-01.
+      const LATE = "a7000000-0000-4000-8000-0000000000f3";
+      // The same late habit, but with a real gap before the switch: the switch is not a pardon.
+      const LAPSED = "a7000000-0000-4000-8000-0000000000f4";
+      for (const id of [AFTERNOON, LATE, LAPSED])
+        await seedPerson(id, "student", "2008-01-01");
+      for (const d of ["07-29", "07-30", "07-31", "08-01", "08-02"])
+        await seedAnswer("practice", AFTERNOON, `2026-${d}T18:00:00Z`);
+      for (const d of ["07-30", "07-31", "08-01", "08-02", "08-03"])
+        await seedAnswer("practice", LATE, `2026-${d}T04:30:00Z`);
+      for (const d of ["07-30", "08-02", "08-03"])
+        await seedAnswer("practice", LAPSED, `2026-${d}T04:30:00Z`);
+      const { readActiveDays } =
+        await import("../../server/services/activity-streak");
+
+      await withCutover(CUTOVER_SUMMER, async () => {
+        expect(await streakAt(AFTERNOON, "2026-08-02T20:00:00Z")).toEqual({
+          current_streak: 5,
+          today_done: true,
+          broken: false,
+        });
+        // LATE answered (Chicago) 07-29, 07-30, 07-31, then (04:00 UTC) 08-02, 08-03.
+        // Presence first: the skipped label really is skipped in the day set.
+        expect(
+          await readActiveDays(LATE, new Date("2026-08-03T12:00:00Z")),
+        ).toEqual([
+          "2026-07-29",
+          "2026-07-30",
+          "2026-07-31",
+          "2026-08-02",
+          "2026-08-03",
+        ]);
+        // The run carries across: 07-29..08-03, with 08-01 bridged.
+        expect(await streakAt(LATE, "2026-08-03T12:00:00Z")).toEqual({
+          current_streak: 6,
+          today_done: true,
+          broken: false,
+        });
+        // On the first new day itself (08-01, before the night's answer), the run is intact and
+        // today is not done: the bridge never answers today.
+        expect(await streakAt(LATE, "2026-08-01T12:00:00Z")).toEqual({
+          current_streak: 3,
+          today_done: false,
+          broken: false,
+        });
+        // A gap before the switch stays a gap.
+        expect(await streakAt(LAPSED, "2026-08-03T12:00:00Z")).toEqual({
+          current_streak: 2,
+          today_done: true,
+          broken: false,
+        });
       });
     });
 

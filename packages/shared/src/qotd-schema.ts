@@ -189,9 +189,31 @@ export const qotdSocialInputSchema = z
     "an MCQ has four options; a grid-in has none",
   );
 
-/** The caption and alt text posted with the images. */
+/**
+ * The caption and alt text posted with the images, and the Instagram caption (owner brief "One
+ * funnel for every social post", Karl, 2026-10-28: "Add an Instagram caption with 'Comment SAT
+ * and I'll send you the link'").
+ */
 export const qotdSocialCopySchema = z
-  .object({ caption: z.string().min(1), alt_text: z.string().min(1).max(1000) })
+  .object({
+    caption: z.string().min(1),
+    alt_text: z.string().min(1).max(1000),
+    instagram_caption: z.string().min(1),
+  })
+  .strict();
+
+/**
+ * The tagged /start links for a post's channels (owner brief "One funnel for every social post",
+ * Karl, 2026-10-28: "Tagged links for each"): Reddit's goes in its post; TikTok's goes in the
+ * bio; Instagram's is the one sent to people who comment SAT. Shared by the QOTD and the
+ * worked-example manifests (shared/social/funnel.ts campaignLinks builds them).
+ */
+export const socialStartLinksSchema = z
+  .object({
+    reddit: z.string().startsWith("lyceon.ai/start?"),
+    tiktok: z.string().startsWith("lyceon.ai/start?"),
+    instagram: z.string().startsWith("lyceon.ai/start?"),
+  })
   .strict();
 
 /**
@@ -253,7 +275,11 @@ export const qotdRevealSchema = z
     "the archive link is the revealed day's page",
   );
 
-/** Today's suggested Reddit post: the title and the question as plain text. */
+/**
+ * Today's suggested Reddit post: the title, then the portrait image, then one call-to-action line
+ * with the tagged /start link (owner brief 2026-10-28: "title + image + one-line CTA … Remove the
+ * written question/choices from the body"). Was the title and the question as plain text.
+ */
 export const qotdRedditPostSchema = z
   .object({
     title: z.string().min(1).max(300),
@@ -350,6 +376,10 @@ export const qotdSocialPostManifestSchema = z
     source: z.enum(["today", "past"]),
     caption: z.string().min(1),
     alt_text: z.string().min(1).max(1000),
+    /** The Instagram caption (owner brief 2026-10-28). */
+    instagram_caption: z.string().min(1),
+    /** The tagged /start links for the day's posts (owner brief 2026-10-28). */
+    links: socialStartLinksSchema,
     images: z
       .array(
         z
