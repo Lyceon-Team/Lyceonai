@@ -13,10 +13,11 @@
  *     reveal even if the wrong day were fetched.
  *   - A day the archive does not publish (a repaired question, owner 2026-10-08) is `withheld`:
  *     the notice says so and carries nothing else.
- *   - The Reddit post is today's question as plain text, built from the social input (the
- *     pre-submit shape, answer and explanation the literal null), so it can carry no answer; it
- *     is also put through the leak check with the caption and alt text (generate.ts).
- *   - Maths is written as plain text people read on Reddit, which does not render LaTeX:
+ *   - The Reddit post is the title and one call-to-action line (owner brief 2026-10-28; the
+ *     question is in the posted image), built from the social input (the pre-submit shape), so it
+ *     can carry no answer; it is also put through the leak check with the caption and alt text
+ *     (generate.ts).
+ *   - Maths in the reveal is written as plain text people read on Reddit, which does not render LaTeX:
  *     `$\frac{a}{b}$` becomes "(a)/(b)", `x^{2}` becomes "x^2", `\sqrt{x}` becomes "√(x)".
  */
 import {
@@ -31,7 +32,8 @@ import {
 } from "../../packages/shared/src/qotd-schema";
 import { BASE_URL } from "../seo/structured-data";
 import { plainMathText } from "./plain-math";
-import { QOTD_SECTION_NAME, QOTD_SOCIAL_URL, formatSocialDate } from "./social";
+import { QOTD_SECTION_NAME, formatSocialDate } from "./social";
+import { funnelPhase, linkCtaLine } from "../social/funnel";
 
 /** A past day's public page (the same URL the archive's meta tags use). */
 export function qotdArchiveUrl(date: string): string {
@@ -114,24 +116,20 @@ export function withheldReveal(postedDate: string): QotdReveal {
 // Today's Reddit post
 // ---------------------------------------------------------------------------------------------
 
-/** "SAT Question of the Day: <date> (<section> · <domain>)" and the question as plain text. */
+/**
+ * "SAT Question of the Day: <date> (<section> · <domain>)", posted with the portrait image, and a
+ * one-line call to action with the tagged /start link.
+ *
+ * @spec [owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2: "Reddit post
+ *       (4/5): title + image + one-line CTA with lyceon.ai/start?utm_source=reddit&utm_campaign=
+ *       qotd. Remove the written question/choices from the body."] | @implemented [2026-10-28]
+ *
+ * plain English: the question is in the image, so the body no longer writes it out. The line is
+ * the Dec 5 cohort's until test day (by the post's own date), then the evergreen one.
+ */
 export function buildRedditPost(input: QotdSocialInput): QotdRedditPost {
   const section = QOTD_SECTION_NAME[input.section_code];
   const title = `SAT Question of the Day: ${formatSocialDate(input.qotd_date)} (${section} · ${input.domain})`;
-  const parts: string[] = [];
-  if (input.passage && input.passage.trim().length > 0) {
-    parts.push(plainMathText(input.passage));
-  }
-  parts.push(plainMathText(input.stem));
-  if (input.item_type === "mcq") {
-    parts.push(
-      input.options
-        .map((o, index) => `${"ABCD"[index]}) ${plainMathText(o.text)}`)
-        .join("\n"),
-    );
-  } else {
-    parts.push("Student-produced response: enter your answer as a number.");
-  }
-  parts.push(`Answer it free at ${QOTD_SOCIAL_URL}`);
-  return qotdRedditPostSchema.parse({ title, body: parts.join("\n\n") });
+  const body = linkCtaLine(funnelPhase(input.qotd_date), "reddit", "qotd");
+  return qotdRedditPostSchema.parse({ title, body });
 }

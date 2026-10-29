@@ -19,6 +19,7 @@
  * batch pull request, read from GitHub's record (shared/worked-examples/approval.ts).
  */
 import { z } from "zod";
+import { socialStartLinksSchema } from "./qotd-schema";
 
 /** The hook library (Karl, 2026-10-27); the table's CHECK holds the same five. */
 export const WORKED_EXAMPLE_HOOK_TYPES = [
@@ -205,6 +206,12 @@ export const workedExamplePostSchema = z
     video: z.string().regex(/^[a-z0-9-]+\.mp4$/),
     title: z.string().min(1).max(WORKED_EXAMPLE_TITLE_MAX).startsWith("SAT"),
     caption: z.string().startsWith(`${WORKED_EXAMPLE_CAPTION_FIRST_LINE}\n`),
+    /** The Instagram caption (owner brief "One funnel for every social post", Karl, 2026-10-28). */
+    instagram_caption: z
+      .string()
+      .startsWith(`${WORKED_EXAMPLE_CAPTION_FIRST_LINE}\n`),
+    /** The tagged /start links: TikTok bio, and the one sent to people who comment SAT. */
+    links: socialStartLinksSchema,
     approval: z
       .object({
         pr: z.number().int().positive(),

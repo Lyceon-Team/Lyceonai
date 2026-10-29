@@ -24,6 +24,12 @@ BACKUPS="$(mktemp -d /tmp/social-funnel-mut.XXXX)"
 FILES=(
   "shared/social/funnel.ts"
   "shared/seo/head.ts"
+  "shared/qotd/reveal.ts"
+  "shared/qotd/tiktok.ts"
+  "shared/qotd/social.ts"
+  "shared/worked-examples/rules.ts"
+  "scripts/worked-examples/daily.ts"
+  "scripts/qotd-social/post-to-slack.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -54,8 +60,11 @@ expect_red() {
   esac
 }
 
-ts_check() { pnpm exec vitest run "$@" 2>&1; }
+# Only this checkout's tests: an agent worktree under .claude/ holds copies of the same files.
+ts_check() { pnpm exec vitest run --exclude '.claude/**' --exclude '**/node_modules/**' "$@" 2>&1; }
 CONTRACT=tests/ci/social-funnel.contract.test.ts
+QOTD_SOCIAL=tests/ci/qotd-social.test.ts
+WORKED=tests/ci/worked-examples.test.ts
 
 # ts_plant <name> <file> <old> <new> <expected test name> <test files...>
 ts_plant() {
@@ -67,8 +76,8 @@ ts_plant() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(ts_check "$CONTRACT")"; RC=$?
-[ "$RC" = 0 ] && ok "funnel contract tests green" || { bad "baseline not green"; echo "$OUT" | tail -30; }
+OUT="$(ts_check "$CONTRACT" "$QOTD_SOCIAL" "$WORKED")"; RC=$?
+[ "$RC" = 0 ] && ok "funnel contract + QOTD social + worked-example tests green" || { bad "baseline not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "SOCIAL FUNNEL MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 echo "=== /start and its copy (item 1) ==="
@@ -85,8 +94,46 @@ ts_plant "F6 the headline promises a free study plan" shared/social/funnel.ts \
   "? Get your free study plan, built for test day.\`" \
   "no line promises a free study plan" "$CONTRACT"
 
+echo "=== the social CTAs (item 2) ==="
+ts_plant "G1 the Reddit body writes the question out again" shared/qotd/reveal.ts \
+  '  const body = linkCtaLine(funnelPhase(input.qotd_date), "reddit", "qotd");' \
+  '  const body = `${input.stem}\n\n${linkCtaLine(funnelPhase(input.qotd_date), "reddit", "qotd")}`;' \
+  "is the suggested title, the portrait image and one call-to-action line" "$QOTD_SOCIAL"
+ts_plant "G2 the TikTok caption drops the comment line" shared/qotd/tiktok.ts \
+  "    COMMENT_ANSWER_LINE,"$'\n'"    bioCtaLine(funnelPhase(postedOn))," \
+  "    bioCtaLine(funnelPhase(postedOn))," \
+  "the caption: follow line, comment line, link-in-bio line, hashtags" "$QOTD_SOCIAL"
+ts_plant "G3 the Instagram caption loses its comment-SAT line" shared/qotd/social.ts \
+  "    instagramCtaLine(funnelPhase(parsed.qotd_date))," \
+  "    \"Link in bio\"," \
+  "asks for an answer and a comment" "$QOTD_SOCIAL"
+ts_plant "G4 the Instagram caption escapes the leak check" shared/qotd/social.ts \
+  '    fields.push(["instagram_caption", instagramCaption]);' \
+  '    void instagramCaption;' \
+  "the day's explanation in the Instagram caption is a leak" "$QOTD_SOCIAL"
+ts_plant "G5 the funnel-line filter drops any line that merely contains one" shared/social/funnel.ts \
+  "    .filter((line) => !fixed.has(line.trim()))" \
+  "    .filter((line) => ![...fixed].some((f) => line.includes(f)))" \
+  "the leak checks leave out only whole lines that ARE a funnel line" "$CONTRACT"
+ts_plant "G6 worked-example captions keep the old line" shared/worked-examples/rules.ts \
+  "    bioCtaLine(funnelPhase(example.post_on))," \
+  "    \"More SAT questions on lyceon.ai.\"," \
+  "the real title and caption pass, with the music credited" "$WORKED"
+ts_plant "G7 worked-example links tagged as the QOTD campaign" scripts/worked-examples/daily.ts \
+  '    links: campaignLinks("worked_example"),' \
+  '    links: campaignLinks("qotd"),' \
+  "the post is built from the real title and caption and checked again" "$WORKED"
+ts_plant "G8 the TikTok Slack message drops the bio link" scripts/qotd-social/post-to-slack.ts \
+  "    escapeMrkdwn(m.links.tiktok)," \
+  "    \"(no link)\"," \
+  "the Slack TikTok message carries the tagged bio link" "$QOTD_SOCIAL"
+ts_plant "G9 a hand-edited Instagram caption file is posted" scripts/qotd-social/post-to-slack.ts \
+  '    ["instagram-caption.txt", manifest.instagram_caption],' \
+  "" \
+  "a hand-edited instagram-caption.txt is refused" "$QOTD_SOCIAL"
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$CONTRACT")"; RC=$?
+OUT="$(ts_check "$CONTRACT" "$QOTD_SOCIAL" "$WORKED")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "SOCIAL FUNNEL MUTATIONS: $PASS passed, $FAIL failed"

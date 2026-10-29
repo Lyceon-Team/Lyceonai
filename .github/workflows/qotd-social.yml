@@ -40,6 +40,7 @@ on:
       - shared/qotd/tiktok.ts
       - shared/qotd/reveal.ts
       - shared/qotd/plain-math.ts
+      - shared/social/funnel.ts
       - shared/math/tokenize.ts
       - client/src/components/qotd/QotdSocialCard.tsx
       - client/src/components/qotd/QotdTiktokSlide.tsx
@@ -142,6 +143,7 @@ jobs:
           path: |
             qotd-social-out/*.png
             qotd-social-out/caption.txt
+            qotd-social-out/instagram-caption.txt
             qotd-social-out/alt-text.txt
             qotd-social-out/post.json
           if-no-files-found: error

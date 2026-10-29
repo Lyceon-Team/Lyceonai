@@ -18,7 +18,11 @@ import { renderPageHead } from "../../shared/seo/head";
 import { getPublicMeta } from "../../shared/seo/public-meta";
 import { parseRouteRegistry } from "../../shared/seo/route-registry";
 import {
+  COMMENT_ANSWER_LINE,
   INSTAGRAM_COMMENT_CTA,
+  campaignLinks,
+  instagramCtaLine,
+  withoutFunnelLines,
   START_COHORT_DATE,
   bioCtaLine,
   cohortDateLabel,
@@ -104,5 +108,33 @@ describe("/start", () => {
       '<meta name="robots" content="noindex" />',
     );
     expect(renderPageHead(home!)).not.toContain("noindex");
+  });
+});
+
+// Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
+describe("the CTA lines the captions share", () => {
+  it("Instagram's line, and the tagged links per channel", () => {
+    expect(instagramCtaLine("cohort")).toBe(
+      "Taking the SAT Dec 5? Comment SAT and I'll send you the link",
+    );
+    expect(instagramCtaLine("evergreen")).toBe(INSTAGRAM_COMMENT_CTA);
+    expect(COMMENT_ANSWER_LINE).toBe("Comment your answer 👇");
+    expect(campaignLinks("qotd")).toEqual({
+      reddit: "lyceon.ai/start?utm_source=reddit&utm_campaign=qotd",
+      tiktok: "lyceon.ai/start?utm_source=tiktok&utm_campaign=qotd",
+      instagram: "lyceon.ai/start?utm_source=instagram&utm_campaign=qotd",
+    });
+  });
+
+  it("the leak checks leave out only whole lines that ARE a funnel line", () => {
+    const cta = linkCtaLine("cohort", "reddit", "qotd");
+    expect(withoutFunnelLines(`Title\n${cta}\n${COMMENT_ANSWER_LINE}`)).toBe(
+      "Title",
+    );
+    // A funnel line with anything added to it is still checked, whole.
+    expect(withoutFunnelLines(`${cta} The answer is B) 5`)).toBe(
+      `${cta} The answer is B) 5`,
+    );
+    expect(withoutFunnelLines(`B) 5\n${bioCtaLine("cohort")}`)).toBe("B) 5");
   });
 });
