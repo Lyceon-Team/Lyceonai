@@ -3,29 +3,36 @@
  *
  * @spec [owner brief "Video segments tagged by sub-skill and cluster", Karl 2026-10-29 (tag by
  *       id only; method_in present by default, never tagged; several tags, no primary; keep only
- *       what two passes agree on); docs/plans/lisa-video-library/segments-phase-a.md §3]
- *       | @implemented [2026-10-29]
+ *       what two passes agree on), as amended by the Phase A rulings of 2026-10-29 (2: clusters
+ *       only for calculator technique; 5: fixed boundaries, agreement on tags only, mixed-topic
+ *       flags); docs/plans/lisa-video-library/segments-phase-a.md §3] | @implemented [2026-10-29]
  *
  * plain English:
  *   S1 an id outside the closed list is rejected and reported, never kept.
  *   S2 a method_in cluster in its own skill is moved to method_in_defaults, not tagged.
- *   S3 clip times are offset onto the video's clock; a gap or a short tiling is refused.
- *   S4 boundaries agree within ±15 s, one-to-one; clip edges are not counted as cuts.
- *   S5 pairing needs IoU ≥ 0.5; per-skill agreement is Jaccard, unpaired tags count against it.
- *   S6 review proposals: approve on full agreement, retag on any disagreement (shared tags only),
- *      drop for non-teaching or unpaired segments, each with a reason.
+ *   S3 cut mode: clip times are offset onto the video's clock; a gap or a short tiling is refused.
+ *   S4 fixed boundaries: chapters become clips that break only at chapter starts; a chapter over
+ *      10 minutes is split; a malformed chapter list falls back (null); pass 2 reuses pass 1's.
+ *   S5 alignment is by identical spans; per-skill agreement is Jaccard; a teaching dispute counts
+ *      against it; cluster-only segments count under CLUSTERS_ONLY.
+ *   S6 review proposals: approve on full agreement (clusters-only too), retag on any
+ *      disagreement (shared tags only), drop for non-teaching, each non-approval with a reason;
+ *      pass 2's boundary flag is carried.
+ *   S7 fixed mode: the given spans are kept exactly; every number answered once, or refused.
  */
 import { describe, expect, it } from "vitest";
 import {
+  chapterClips,
   checkClipAnswer,
+  checkFixedAnswer,
+  clipsFromPass1,
   vocabularyFor,
   vocabularyText,
   type Taxonomy,
 } from "../../scripts/rag/segment-videos";
 import {
-  boundaryAgreement,
-  cutsOf,
-  pairSegments,
+  CLUSTERS_ONLY,
+  alignPasses,
   reviewRows,
   skillAgreement,
   type PassFile,
@@ -112,6 +119,7 @@ function seg(
   subs: string[],
   clusters: string[] = [],
   teaches = true,
+  mixesNote = "",
 ): Segment {
   return {
     start_seconds: start,
@@ -123,6 +131,8 @@ function seg(
     method_in_defaults: [],
     rejected_ids: [],
     not_in_taxonomy: "",
+    mixes_topics: mixesNote !== "",
+    mixes_topics_note: mixesNote,
   };
 }
 
@@ -132,6 +142,7 @@ function passFile(segments: Segment[], duration: number): PassFile {
     video_id: "a1QNaRnn6cE",
     duration_seconds: duration,
     taxonomy_version: "scl-test",
+    boundaries: "pass1_cuts",
     segments,
     usage: { usd: 0 },
   };
@@ -238,75 +249,225 @@ describe("segment tagging: what the code enforces", () => {
     ).toMatchObject({ ok: false });
   });
 
-  it("S4 boundaries agree within 15 s, one to one; clip edges are not cuts", () => {
-    expect(boundaryAgreement([60, 200, 400], [70, 230, 401])).toEqual({
-      agreed: 2,
-      union: 4,
+  it("S4 fixed boundaries: chapter-aligned clips, long chapters split, bad lists fall back", () => {
+    const ch = (title: string, a: number, b: number) => ({
+      title,
+      start_seconds: a,
+      end_seconds: b,
     });
-    expect(boundaryAgreement([60], [55, 65])).toEqual({ agreed: 1, union: 2 });
-    const long = passFile(
+    const spans = (c: ReturnType<typeof chapterClips>) =>
+      c?.map((x) => [
+        x.start,
+        x.end,
+        x.segments?.map((g) => [g.start, g.end, g.title]),
+      ]);
+    expect(
+      spans(
+        chapterClips(
+          [ch("A", 0, 100), ch("B", 100, 500), ch("C", 500, 1000)],
+          1000,
+        ),
+      ),
+    ).toEqual([
       [
-        seg(0, 300, ["EE.2"]),
-        seg(300, 600, ["EE.2"]),
-        seg(600, 1000, ["EE.5"]),
+        0,
+        500,
+        [
+          [0, 100, "A"],
+          [100, 500, "B"],
+        ],
       ],
-      1000,
-    );
-    expect(cutsOf(long)).toEqual([300]);
+      [500, 1000, [[500, 1000, "C"]]],
+    ]);
+    expect(spans(chapterClips([ch("X", 0, 1500)], 1500))).toEqual([
+      [0, 600, [[0, 600, "X"]]],
+      [600, 1200, [[600, 1200, "X"]]],
+      [1200, 1500, [[1200, 1500, "X"]]],
+    ]);
+    expect(
+      spans(chapterClips([ch("A", 0, 100), ch("B", 100, 400)], 400)),
+    ).toEqual([
+      [
+        0,
+        400,
+        [
+          [0, 100, "A"],
+          [100, 400, "B"],
+        ],
+      ],
+    ]);
+    expect(chapterClips([ch("A", 0, 100), ch("B", 150, 400)], 400)).toBeNull();
+    expect(chapterClips([ch("A", 0, 100)], 400)).toBeNull();
+    expect(chapterClips([], 400)).toBeNull();
+    // Pass 2 on pass 1's cuts: same clips, pass 1's spans, no titles (nothing of pass 1's tags).
+    expect(
+      clipsFromPass1(
+        [
+          { start: 0, end: 600 },
+          { start: 600, end: 1000 },
+        ],
+        [
+          { start: 0, end: 250 },
+          { start: 250, end: 600 },
+          { start: 600, end: 1000 },
+        ],
+      ),
+    ).toEqual([
+      {
+        start: 0,
+        end: 600,
+        segments: [
+          { start: 0, end: 250, title: "" },
+          { start: 250, end: 600, title: "" },
+        ],
+      },
+      {
+        start: 600,
+        end: 1000,
+        segments: [{ start: 600, end: 1000, title: "" }],
+      },
+    ]);
   });
 
-  it("S5 pairing and per-skill Jaccard", () => {
+  it("S5 alignment by identical spans and per-skill Jaccard", () => {
     const a = [
       seg(0, 100, ["EE.2", "EE.5"], ["CL.0001"]),
       seg(100, 200, ["PCT.1"]),
+      seg(200, 300, [], ["CL.0215"]),
+      seg(300, 400, ["EE.2"], [], false),
     ];
-    const b = [seg(0, 110, ["EE.5"], ["CL.0001"]), seg(150, 400, ["PCT.1"])];
-    const { pairs, onlyA, onlyB } = pairSegments(a, b);
-    expect(pairs).toHaveLength(1);
-    expect(onlyA).toHaveLength(1);
-    expect(onlyB).toHaveLength(1);
+    const b = [
+      seg(0, 100, ["EE.5"], ["CL.0001"]),
+      seg(100, 200, [], [], false),
+      seg(200, 300, [], ["CL.0215"]),
+      seg(300, 400, [], [], false),
+    ];
+    const aligned = alignPasses(a, b);
+    expect(aligned.ok).toBe(true);
+    if (!aligned.ok) return;
+    expect(aligned.pairs).toHaveLength(2);
+    expect(aligned.unpaired).toEqual([a[1]]);
     const skillOf = (id: string): string | undefined =>
       TAXONOMY.sub_skills.find((s) => s.id === id)?.skill_code;
-    const agree = skillAgreement(pairs, [...onlyA, ...onlyB], skillOf);
+    const agree = skillAgreement(aligned.pairs, aligned.unpaired, skillOf);
     const ee = agree.find((x) => x.skill === "Equivalent Expressions");
     expect(ee?.subSkills).toEqual({ both: 1, either: 2 });
     expect(ee?.clusters).toEqual({ both: 1, either: 1 });
     expect(agree.find((x) => x.skill === "Percentages")?.subSkills).toEqual({
       both: 0,
-      either: 2,
+      either: 1,
     });
+    expect(agree.find((x) => x.skill === CLUSTERS_ONLY)?.clusters).toEqual({
+      both: 1,
+      either: 1,
+    });
+    // A start-only and an end-only shift are each refused.
+    expect(alignPasses(a, [...b.slice(0, 3), seg(310, 400, [])])).toMatchObject(
+      {
+        ok: false,
+      },
+    );
+    expect(alignPasses(a, [...b.slice(0, 3), seg(300, 410, [])])).toMatchObject(
+      {
+        ok: false,
+      },
+    );
+    expect(alignPasses(a, b.slice(0, 3))).toMatchObject({ ok: false });
   });
 
-  it("S6 review proposals, each non-approval with a reason; times widen to both passes", () => {
+  it("S6 review proposals, each non-approval with a reason; the boundary flag is carried", () => {
     const p1 = passFile(
       [
         seg(0, 20, [], [], false),
         seg(20, 100, ["EE.2"], ["CL.0001"]),
         seg(100, 200, ["EE.2", "EE.5"]),
+        seg(200, 260, [], ["CL.0215"]),
+        seg(260, 300, ["PCT.1"]),
       ],
-      200,
+      300,
     );
     const p2 = passFile(
       [
-        seg(0, 15, [], [], false),
-        seg(15, 100, ["EE.2"], ["CL.0001"]),
+        seg(0, 20, [], [], false),
+        seg(
+          20,
+          100,
+          ["EE.2"],
+          ["CL.0001"],
+          true,
+          "expanding, then factoring at 1:00",
+        ),
         seg(100, 200, ["EE.5"]),
+        seg(200, 260, [], ["CL.0215"]),
+        seg(260, 300, [], [], false),
       ],
-      200,
+      300,
     );
     const rows = reviewRows("a1QNaRnn6cE", p1, p2);
-    expect(rows.map((r) => r.proposal)).toEqual(["drop", "approve", "retag"]);
+    expect(rows.map((r) => r.proposal)).toEqual([
+      "drop",
+      "approve",
+      "retag",
+      "approve",
+      "retag",
+    ]);
     expect(rows[1]).toMatchObject({
-      start_seconds: 15,
+      start_seconds: 20,
       end_seconds: 100,
       sub_skills: ["EE.2"],
       clusters: ["CL.0001"],
+      mixes_topics_note: "expanding, then factoring at 1:00",
     });
     expect(rows[2]).toMatchObject({
       sub_skills: ["EE.5"],
       disputed_sub_skills: ["EE.2"],
+      mixes_topics_note: "",
     });
+    expect(rows[3]).toMatchObject({ sub_skills: [], clusters: ["CL.0215"] });
+    expect(rows[4]?.disputed_sub_skills).toEqual(["PCT.1"]);
     for (const r of rows.filter((x) => x.proposal !== "approve"))
       expect(r.reason).not.toBe("");
+  });
+
+  it("S7 fixed mode keeps the given spans; each number answered exactly once", () => {
+    const given = [
+      { start: 600, end: 700 },
+      { start: 700, end: 1000 },
+    ];
+    const ans = (numbers: number[]) => ({
+      segments: numbers.map((number) => ({
+        number,
+        teaches_sat_content: true,
+        summary: "s",
+        sub_skills: [
+          { id: "EE.5", evidence: "e" },
+          { id: "EE.9", evidence: "x" },
+        ],
+        clusters: [],
+        not_in_taxonomy: "",
+        mixes_topics: number === 2,
+        mixes_topics_note: number === 2 ? "two kinds at 2:00" : "ignored",
+      })),
+    });
+    const ok = checkFixedAnswer(ans([2, 1]), given, M);
+    expect(ok.ok).toBe(true);
+    if (!ok.ok) return;
+    expect(ok.segments.map((s) => [s.start_seconds, s.end_seconds])).toEqual([
+      [600, 700],
+      [700, 1000],
+    ]);
+    expect(ok.segments[0]?.sub_skills.map((t) => t.id)).toEqual(["EE.5"]);
+    expect(ok.segments[0]?.rejected_ids).toEqual(["EE.9"]);
+    expect(ok.segments.map((s) => s.mixes_topics_note)).toEqual([
+      "",
+      "[times from 10:00] two kinds at 2:00",
+    ]);
+    expect(checkFixedAnswer(ans([1]), given, M)).toMatchObject({ ok: false });
+    expect(checkFixedAnswer(ans([1, 1, 2]), given, M)).toMatchObject({
+      ok: false,
+    });
+    expect(checkFixedAnswer(ans([1, 3]), given, M)).toMatchObject({
+      ok: false,
+    });
   });
 });
