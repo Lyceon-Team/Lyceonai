@@ -134,5 +134,469 @@
     "label": "SAT Math Desmos Regression Guide",
     "channel": "MVP Learners",
     "review_level": "strict"
+  },
+  {
+    "tier": 2,
+    "source_kind": "video",
+    "id": "WxaeGvqhs1A",
+    "label": "Scalar Learning — SAT Math on Khan Academy: Probability and Relative Frequency (Foundations)",
+    "channel": "Scalar Learning",
+    "review_level": "standard"
+  },
+  {
+    "tier": 2,
+    "source_kind": "video",
+    "id": "EpIglJ84NKk",
+    "label": "Scalar Learning — SAT Math on Khan Academy: Data Inferences (Foundations)",
+    "channel": "Scalar Learning",
+    "review_level": "standard"
+  },
+  {
+    "tier": 2,
+    "source_kind": "video",
+    "id": "97sijd-hSG4",
+    "label": "Scalar Learning — SAT Math on Khan Academy: Evaluating Statistical Claims (Foundations)",
+    "channel": "Scalar Learning",
+    "review_level": "standard"
+  },
+  {
+    "tier": 2,
+    "source_kind": "video",
+    "id": "KQpliPT8ZTs",
+    "label": "Scalar Learning — SAT Math on Khan Academy: Area and Volume (Foundations)",
+    "channel": "Scalar Learning",
+    "review_level": "standard"
+  },
+  {
+    "tier": 2,
+    "source_kind": "video",
+    "id": "EBsGtgRs2YY",
+    "label": "Scalar Learning — SAT Math on Khan Academy: Scatterplots (Foundations)",
+    "channel": "Scalar Learning",
+    "review_level": "standard"
+  },
+  {
+    "tier": 2,
+    "source_kind": "video",
+    "id": "ZPRskA0r2-w",
+    "label": "Scalar Learning — SAT Math on Khan Academy: Data Representations (Foundations)",
+    "channel": "Scalar Learning",
+    "review_level": "standard"
+  },
+  {
+    "tier": 5,
+    "source_kind": "playlist",
+    "id": "PLFTlQPGZm2x6hH5w1gGyEnrY5gpMR52Si",
+    "label": "Penguin SAT Prep — Information & Ideas",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "playlist",
+    "id": "PLFTlQPGZm2x7yXpHJhj7wRPsCRgAnOwUe",
+    "label": "Penguin SAT Prep — Craft & Structure",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "playlist",
+    "id": "PLFTlQPGZm2x5HZqQDwrRUuf_bKrQDULkN",
+    "label": "Penguin SAT Prep — Expression of Ideas",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "XCfRaZHbtBs",
+    "label": "Penguin SAT Prep — All of SAT Punctuation Explained in Under 4 Minutes",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "01TEb74ggx8",
+    "label": "Penguin SAT Prep — SAT English Hacks | Commas",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "ZttWFE7mJyY",
+    "label": "Penguin SAT Prep — All of SAT Grammar Explained in 7 Minutes",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "lgo1iHUCIUU",
+    "label": "Penguin SAT Prep — DO THIS with SAT Verb Questions",
+    "channel": "Penguin SAT Prep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "UiT71RTwHr4",
+    "label": "3-4-5 Tutoring — Main Purpose Questions & the 3-5 Word Summary (DSAT Reading & Writing)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "OcRajvWvu84",
+    "label": "3-4-5 Tutoring — Overall Structure, Pt. 1: \"From ____ to ____\" (SAT® Reading & Writing)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "8xxiCVPrTss",
+    "label": "3-4-5 Tutoring — DSAT R&W: The Function of the Underlined Sentence (Pt. 1)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "5DQwh4B6Fmg",
+    "label": "3-4-5 Tutoring — Relevance First, Accuracy Second: A Shortcut for DSAT R&W Graph & Table Questions",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "QJblAT61rzY",
+    "label": "3-4-5 Tutoring — DSAT R&W: Approaching Graph & Table Questions (Command of Evidence - Quantitative)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "EZsy-CdsIR4",
+    "label": "3-4-5 Tutoring — DSAT R&W: The 3 Main Ways to Strengthen an Argument (Command of Evidence - Textual)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "9UjGEN1akXU",
+    "label": "3-4-5 Tutoring — 1-2-3: The Most Frequent Pattern on SAT Inference (\"Logically Completing the Text\") Questi",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "NgJhXOfA3rw",
+    "label": "3-4-5 Tutoring — \"Focus on the Big Picture:\" Main Idea Questions & the 3-5 Word Summary (DSAT Reading & Wri",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "kH9qaebf8Jk",
+    "label": "3-4-5 Tutoring — Paired Passages, Pt. 1: Response Questions (DSAT Reading & Writing)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "xruJh5TOl-k",
+    "label": "3-4-5 Tutoring — Paired Passages, Pt. 3: Some More Challenging Examples (DSAT Reading & Writing)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "jEYvlWifHN8",
+    "label": "3-4-5 Tutoring — Words in Context (aka Vocab) Questions on the Digital SAT® Reading & Writing Section",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "92GaKBgEG7E",
+    "label": "3-4-5 Tutoring — Transition-Word Questions on the SAT® Reading & Writing Section",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "Yo-Haulw6gM",
+    "label": "3-4-5 Tutoring — DSAT R&W: The Three Main Types of Transition Words/Phrases",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "WvUsb00iyl4",
+    "label": "3-4-5 Tutoring — Accuracy Matters: Avoiding a Potential Trap on Rhetorical Synthesis Questions (DSAT R&W)",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "059MnhdW0rw",
+    "label": "3-4-5 Tutoring — SAT® R&W: A Brief Overview of Punctuation Rules",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "v5SGpq2thIg",
+    "label": "3-4-5 Tutoring — \"Semicolon = Period\": The #1 Punctuation Rule on the Digital SAT® Reading & Writing Sectio",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "OM9bu-lNHl0",
+    "label": "3-4-5 Tutoring — DSAT R&W: \"Hard\" vs. \"Soft\" Punctuation -- An Important Distinction on Boundaries Question",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "RVqJR3WLK60",
+    "label": "3-4-5 Tutoring — DSAT R&W: Subject-Verb Agreement, Pt. 1",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "Dex3tUGv9Io",
+    "label": "3-4-5 Tutoring — DSAT R&W: The 3 Main Types of Verb Questions & How to Identify Them",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "S6r-RnoUxxE",
+    "label": "3-4-5 Tutoring — DSAT R&W: Recognizing (and Correcting) Dangling Modifiers",
+    "channel": "3-4-5 Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "BiAqzRX0XmY",
+    "label": "Settele Tutoring — Cross-Text Connections 3 Exercise, Qn. 1 (SAT Question Bank e5f76480/e4e2aeb3)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "a-yI4tXP2CI",
+    "label": "Settele Tutoring — Cross-Text Connections 2, Qn. 10 (SAT Question Bank 03080769)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "qMN1dnuZDn0",
+    "label": "Settele Tutoring — Main Ideas 4 Exercise, Qn. 1 (SAT Question Bank 52aa1317/a70cbc53)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "U0R6c--N9fg",
+    "label": "Settele Tutoring — Main Ideas 4 Exercise, Qn. 2 (SAT Question Bank cd742fda/b4d29611)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "xhDGA2vO_Vs",
+    "label": "Settele Tutoring — Support/Weaken Exercise, Qn. 10 (SAT Question Bank e7dc27dc)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "P51hKRPDHEM",
+    "label": "Settele Tutoring — Support/Weaken 3 Exercise, Qn. 1 (SAT Question Bank 26ee16ba)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "WpAGA_XD1yk",
+    "label": "Settele Tutoring — Logic/Inference Passages (SAT Question Bank ab3a2ab4/7a895def)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "-rfd0tcRM8Q",
+    "label": "Settele Tutoring — Logic/Inference Passages (SAT Question Bank 8ee78de3/9077be25)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "tGdxy5L2ics",
+    "label": "Settele Tutoring — Underline Function 2, Qn 1 (SAT Question Bank a05fe244/9b01bcf4)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "rX08yivCCfs",
+    "label": "Settele Tutoring — Underline Function 2, Qn. 2 (SAT Question Bank f3a51fa6/e7247766)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "8jQHzma_bQA",
+    "label": "Settele Tutoring — Graphs/Charts Exercise 3, Qn. 1 (SAT Question Bank 35ec767c)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "BlEj0YYc3Rs",
+    "label": "Settele Tutoring — Graphs/Charts Exercise 3, Qn. 3 (SAT Question Bank 2c06139b)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "2Otfy47P0yE",
+    "label": "Settele Tutoring — Outlines Exercise, Qn. 1 (SAT Question Bank afec1a70)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "imSzUlsVosI",
+    "label": "Settele Tutoring — Outlines Exercise, Qn. 2 (SAT Question Bank b46e0c8a)",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "G39Ae3bgoDM",
+    "label": "Settele Tutoring — Probability on the SAT — including hard conditional probability",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "eYWQ3mqzPQ0",
+    "label": "Settele Tutoring — Semicolons — 2 ways to use them",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "2Bt-Qrj3IRk",
+    "label": "Settele Tutoring — Colons — not just for lists",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "PywAYkKcf_c",
+    "label": "Settele Tutoring — Apostrophes — mostly for possession on the SAT",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 3,
+    "source_kind": "video",
+    "id": "m5xt8aWKKQw",
+    "label": "Settele Tutoring — Verb Agreement — the highest priority verb tense rule",
+    "channel": "Settele Tutoring",
+    "review_level": "standard"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "g23W6lrUiQI",
+    "label": "Dr. TestPrep (TIER 5, small channel: judge teaching quality, not just tags) — SAT.3.8.Basic & Harder Examples: Probability and Relative Frequency",
+    "channel": "Dr. TestPrep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "auBIKG1Uj7c",
+    "label": "Dr. TestPrep (TIER 5, small channel: judge teaching quality, not just tags) — SAT.3.9.Basic: Data Inferences, page 53",
+    "channel": "Dr. TestPrep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "yxedDWHDvzI",
+    "label": "Dr. TestPrep (TIER 5, small channel: judge teaching quality, not just tags) — SAT.3.10.Basic: Evaluating Statistical Claims, page 55",
+    "channel": "Dr. TestPrep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "bmRgGP1SmEU",
+    "label": "Dr. TestPrep (TIER 5, small channel: judge teaching quality, not just tags) — SAT.3.6.Basic: Scatterplots, page 48",
+    "channel": "Dr. TestPrep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "w9vTseYuwpU",
+    "label": "Dr. TestPrep (TIER 5, small channel: judge teaching quality, not just tags) — SAT.3.5.Basic: Data Representations, page 46",
+    "channel": "Dr. TestPrep",
+    "review_level": "strict"
+  },
+  {
+    "tier": 5,
+    "source_kind": "video",
+    "id": "ljryBGiTLkM",
+    "label": "Dr. TestPrep (TIER 5, small channel: judge teaching quality, not just tags) — SAT.5.1.Basic: Area and Volume, page 88",
+    "channel": "Dr. TestPrep",
+    "review_level": "strict"
   }
 ]

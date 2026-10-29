@@ -441,7 +441,13 @@ describe("method tags on the real route: a Desmos request", () => {
     // The worker is told how each video solves, and never its id.
     const sent = orchestrateTurn.mock.calls[0]?.[0] as {
       offered_videos?: Array<Record<string, unknown>>;
+      requested_method?: string | null;
+      question_content?: { section?: string | null } | null;
     };
+    // The v4 Desmos gating inputs (Karl, 2026-10-27): the detected method, and the item's
+    // subject read from questions.section.
+    expect(sent.requested_method).toBe("desmos");
+    expect(sent.question_content?.section).toBe("M");
     expect(sent.offered_videos?.[0]).toEqual({
       index: 1,
       title: ROWS[0]!.title,

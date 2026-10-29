@@ -1,0 +1,7 @@
+{
+  "Percentages": {
+    "signature_move": "Turn each percent change into a multiplier.",
+    "check": "Plug in 100 and follow it through every change.",
+    "trap": "Adding or subtracting percents that apply to different amounts."
+  }
+}

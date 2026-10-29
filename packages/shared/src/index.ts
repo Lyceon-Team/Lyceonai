@@ -37,3 +37,4 @@ export * from "./practice-response-schema.js";
 export * from "./review-schema.js";
 export * from "./crisis-flag-schema.js";
 export * from "./exam-runtime-schema.js";
+export * from "./tutor-eval-schema.js";

@@ -27,6 +27,7 @@ import {
   type TutorMessage,
   type TutorSuggestedAction,
 } from "@/hooks/tutor-client";
+import type { ReviewIntent } from "@lyceon/shared/tutor-guided-choices";
 import { HttpApiError, mapTutorErrorToPremiumReason } from "@/lib/api-error";
 import { useSendLock } from "@/hooks/useSendLock";
 import type { PremiumPromptReason } from "@/components/billing/PremiumUpgradePrompt";
@@ -34,7 +35,13 @@ import type { PremiumPromptReason } from "@/components/billing/PremiumUpgradePro
 export type TurnState =
   | { kind: "idle" }
   | { kind: "thinking"; clientTurnId: string }
-  | { kind: "failed"; clientTurnId: string; messageText: string }
+  | {
+      kind: "failed";
+      clientTurnId: string;
+      messageText: string;
+      /** The guided choice the failed turn came from: a retry sends it again, unchanged. */
+      intent: ReviewIntent | null;
+    }
   | { kind: "paused"; lane: CrisisCategory };
 
 /** Client times out at 35s (server's is 30s per §3). */
@@ -59,7 +66,17 @@ export type TutorTurn = {
    * the next send. Not persisted — an offer, not part of the thread.
    */
   suggestedAction: TutorSuggestedAction | null;
-  send: (messageText: string) => Promise<void>;
+  /**
+   * The guided choice the last answered turn came from (null: typed, or none answered yet),
+   * until the next send. The review panel reads it to show the choices again after a video
+   * choice that found no video (SCL-254).
+   */
+  answeredIntent: ReviewIntent | null;
+  /**
+   * Send a turn. `intent` only for a guided-choice tap, with `messageText` that choice's exact
+   * label (the server refuses anything else, SCL-253).
+   */
+  send: (messageText: string, intent?: ReviewIntent) => Promise<void>;
   retry: () => void;
   resume: () => void;
   resumePending: boolean;
@@ -107,6 +124,9 @@ export function useTutorTurn(
 
   const [suggestedAction, setSuggestedAction] =
     useState<TutorSuggestedAction | null>(null);
+  const [answeredIntent, setAnsweredIntent] = useState<ReviewIntent | null>(
+    null,
+  );
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // P2 §3.1 (2026-10-26): one send in flight at a time, refused synchronously (useSendLock.ts).
@@ -215,6 +235,7 @@ export function useTutorTurn(
     setTurnState({ kind: "idle" });
     setOptimisticTurn(null);
     setSuggestedAction(null);
+    setAnsweredIntent(null);
     setCrisisLane(null);
     setCrisisContent("");
     setUnpausedCrisis(false);
@@ -223,7 +244,7 @@ export function useTutorTurn(
   // ── Send message ──────────────────────────────────────────────────────
 
   const send = useCallback(
-    async (messageText: string) => {
+    async (messageText: string, intent?: ReviewIntent) => {
       if (!conversationId) return;
       const trimmed = messageText.trim();
       if (!trimmed) return;
@@ -239,6 +260,7 @@ export function useTutorTurn(
 
       setTurnState({ kind: "thinking", clientTurnId });
       setSuggestedAction(null);
+      setAnsweredIntent(null);
       setUnpausedCrisis(false);
       // Same id on retry → the same bubble, updated in place.
       setOptimisticTurn({
@@ -263,6 +285,7 @@ export function useTutorTurn(
           kind: "failed",
           clientTurnId,
           messageText: trimmed,
+          intent: intent ?? null,
         });
       }, CLIENT_TIMEOUT_MS);
 
@@ -273,6 +296,7 @@ export function useTutorTurn(
             message: trimmed,
             client_turn_id: clientTurnId,
             request_id: requestId,
+            ...(intent !== undefined ? { intent } : {}),
           });
 
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -303,6 +327,7 @@ export function useTutorTurn(
               ? null
               : response.response.suggested_action,
           );
+          setAnsweredIntent(intent ?? null);
           setTurnState({ kind: "idle" });
         }
       } catch (err: unknown) {
@@ -319,6 +344,7 @@ export function useTutorTurn(
             kind: "failed",
             clientTurnId,
             messageText: trimmed,
+            intent: intent ?? null,
           });
         }
       }
@@ -330,7 +356,7 @@ export function useTutorTurn(
 
   const retry = useCallback(() => {
     if (turnState.kind !== "failed") return;
-    void send(turnState.messageText);
+    void send(turnState.messageText, turnState.intent ?? undefined);
   }, [turnState, send]);
 
   // ── Resume from crisis ────────────────────────────────────────────────
@@ -363,6 +389,7 @@ export function useTutorTurn(
     showPausedBar,
     premiumReason,
     suggestedAction,
+    answeredIntent,
     send,
     retry,
     resume,
