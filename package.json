@@ -55,7 +55,8 @@
     "tutor:schema:assert": "tsx scripts/tutor-schema-proof.ts --assert-only",
     "audit:ci": "pnpm audit --json > audit-output.json || test -s audit-output.json",
     "verify:csrf": "pnpm exec tsx scripts/verify-csrf-protection.ts",
-    "assemble-batch": "tsx scripts/assemble-batch.ts"
+    "assemble-batch": "tsx scripts/assemble-batch.ts",
+    "notation-audit": "tsx scripts/content/batch-notation-audit.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
