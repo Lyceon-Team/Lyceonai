@@ -2,6 +2,8 @@
 
 **Brief:** "Video segments tagged by sub-skill and cluster", Karl, 2026-10-29. Lane: video. This PR is Phase A only: design, a three-video pilot, no production writes.
 
+**Phase B (2026-10-29): approved and run on the 131 videos up to 15 minutes. See `segments-phase-b.md`.** Long videos are deferred (closure plan R-20). Phase C waits for the questions team's Phase 2 tags.
+
 **Status: gate passed on the survey-lesson re-pilot (§8.3), with a thin sample. Phase B waits on Karl's approval of it and its cost (§6).** After the first re-pilot (§8.2), Karl held the `teaching_test` request and ruled that a segment teaches one topic, and corrected the gate (§9). The survey lesson was re-piloted alone under those rules for $1.17 of the $1.20 cap. Only Equivalent Expressions has 3 or more tagged segments, so it is the one skill judged; it agrees 100% (3/3). 14 of its 22 teaching segments are clusters-only.
 
 ## 1. Why the FOIL clip was served

@@ -55,7 +55,7 @@
  * Usage: NODE_USE_ENV_PROXY=1 pnpm exec tsx scripts/rag/segment-videos.ts --pass 1 \
  *          --only a1QNaRnn6cE,qQzeFyLYt1A,UDJ2RHMFax8 [--taxonomy <path>] [--cap-usd 0.8] \
  *          [--splits docs/plans/lisa-video-library/segment-splits.json]
- *        then the same with --pass 2 (it needs pass 1's files).
+ *        then the same with --pass 2 (it needs pass 1's files), or --pass 1,2 for both per video.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -67,6 +67,7 @@ import {
   WHOLE_VIDEO_MAX_SECONDS,
   clipsOf,
 } from "./extract-desmos-moves";
+import { parseCsv } from "../reference-data/import-reference-data";
 import { parseClock } from "./segments";
 import {
   GENERATION_MODEL_DEFAULT,
@@ -79,7 +80,7 @@ import {
   type Usage,
 } from "./vertex";
 
-export const SEGMENT_TAG_VERSION = "segment-tags-v3";
+export const SEGMENT_TAG_VERSION = "segment-tags-v4";
 const REVIEW_CSV = resolve(
   "docs/plans/lisa-video-library/video-tags-review.csv",
 );
@@ -186,7 +187,13 @@ const tagsFields = {
 /** "cut" mode (pass 1, no chapters): the model places the boundaries. */
 export const segmentAnswerSchema = z.object({
   segments: z.array(
-    z.object({ start: z.string(), end: z.string(), ...tagsFields }),
+    z.object({
+      start: z.string(),
+      end: z.string(),
+      ...tagsFields,
+      /** One-topic rule (2026-10-29 rule 2), judged in cut mode too, so either pass can flag it. */
+      overview: z.boolean(),
+    }),
   ),
 });
 type SegmentAnswer = z.infer<typeof segmentAnswerSchema>;
@@ -243,8 +250,9 @@ const segmentResponseSchema = {
           start: { type: "STRING" },
           end: { type: "STRING" },
           ...tagsProperties,
+          overview: { type: "BOOLEAN" },
         },
-        required: ["start", "end", ...tagsRequired],
+        required: ["start", "end", ...tagsRequired, "overview"],
       },
     },
   },
@@ -292,11 +300,15 @@ summary: one line, at most 20 words, in your own words.
 
 teaches_sat_content is false for intros, sign-offs, promotion and general advice.`;
 
+const OVERVIEW_RULE = `overview: true when a segment surveys or introduces a topic area (what functions are, what a calculator can do, when to use a method) rather than teaching the student to solve one kind of question. A segment that works a specific example of one kind of question is not an overview.`;
+
 /** "cut" mode: the model splits the part and tags each piece. */
 export function segmentSystem(vocabulary: string): string {
   return `You segment one SAT preparation video and tag each segment with what it teaches, from a closed list of ids. Watch the video, using what is shown and typed on screen as well as what is said.
 
-SEGMENTS. Split the part you are shown at topic changes: a new kind of problem, a new skill or a new technique. Do not cut inside one worked problem. Segments tile the part in order with no gaps or overlaps.
+SEGMENTS. Split the part you are shown at topic changes: a new kind of problem, a new skill or a new technique, so each segment teaches one topic. Do not cut inside one worked problem. Segments tile the part in order with no gaps or overlaps.
+
+${OVERVIEW_RULE}
 
 TIMES. Clock times relative to the start of the part you are watching, as "M:SS": the first segment starts at "0:00" and the last ends at the part's length.
 
@@ -313,7 +325,7 @@ SEGMENTS are given, numbered, with times relative to the start of the part you a
 
 A segment should teach one topic: one kind of question, or one technique.
 mixes_topics: true when a segment teaches two or more different kinds of question or techniques that a student would want to find separately; then mixes_topics_note says in one line what the parts are, and topic_changes lists the time each new part starts, as "M:SS" relative to the part. Otherwise false, "" and [].
-overview: true when a segment surveys or introduces a topic area (what functions are, what a calculator can do, when to use a method) rather than teaching the student to solve one kind of question. A segment that works a specific example of one kind of question is not an overview.
+${OVERVIEW_RULE}
 
 ${TAGS_RULES}
 
@@ -425,7 +437,7 @@ export function checkClipAnswer(
       mixes_topics: false,
       mixes_topics_note: "",
       topic_change_seconds: [],
-      overview: false,
+      overview: s.overview,
     });
   }
   if (Math.abs(cursor - length) > 3) {
@@ -637,37 +649,6 @@ function chaptersByVideo(): Map<string, Chapter[]> {
   return out;
 }
 
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"' && text[i + 1] === '"') {
-        field += '"';
-        i += 1;
-      } else if (c === '"') quoted = false;
-      else field += c;
-    } else if (c === '"') quoted = true;
-    else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (c !== "\r") field += c;
-  }
-  if (field !== "" || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-  return rows;
-}
-
 function approvedVideos(): VideoRow[] {
   const [header, ...rows] = parseCsv(readFileSync(REVIEW_CSV, "utf8"));
   if (!header) throw new Error("review CSV is empty");
@@ -762,10 +743,22 @@ async function main(): Promise<void> {
       model: { type: "string", default: GENERATION_MODEL_DEFAULT },
       "cap-usd": { type: "string", default: "0.8" },
       splits: { type: "string" },
+      "max-seconds": { type: "string" },
+      concurrency: { type: "string", default: "1" },
     },
   });
-  const pass = Number(values.pass);
-  if (pass !== 1 && pass !== 2) throw new Error("--pass must be 1 or 2");
+  // "--pass 1,2" runs both passes on each video back to back: pass 2 then meets the video while
+  // Vertex still holds it in its implicit cache (the first pilot's pass 2 got 81% of its input
+  // cached that way). The prompts are the same either way; only the order of calls changes.
+  const passes = (values.pass ?? "").split(",").map(Number);
+  if (
+    passes.length === 0 ||
+    passes.some((p) => p !== 1 && p !== 2) ||
+    new Set(passes).size !== passes.length ||
+    (passes[0] === 2 && passes.length > 1)
+  ) {
+    throw new Error("--pass must be 1, 2 or 1,2");
+  }
   const cap = Number(values["cap-usd"]);
   const model = values.model;
   assertProxied();
@@ -779,12 +772,24 @@ async function main(): Promise<void> {
   );
   const only =
     values.only === undefined ? null : new Set(values.only.split(","));
-  const videos = approvedVideos().filter(
-    (v) => only === null || only.has(v.video_id),
-  );
-  if (only !== null && videos.length !== only.size) {
-    throw new Error("an --only id is not an approved row of the review CSV");
+  // Phase B (Karl, 2026-10-29): videos up to 15 minutes; longer ones are deferred.
+  const maxSeconds =
+    values["max-seconds"] === undefined
+      ? Infinity
+      : Number(values["max-seconds"]);
+  const concurrency = Math.max(1, Math.floor(Number(values.concurrency)));
+  const approved = approvedVideos();
+  if (only !== null) {
+    const known = new Set(approved.map((v) => v.video_id));
+    if ([...only].some((id) => !known.has(id))) {
+      throw new Error("an --only id is not an approved row of the review CSV");
+    }
   }
+  const videos = approved.filter(
+    (v) =>
+      (only === null || only.has(v.video_id)) &&
+      v.duration_seconds <= maxSeconds,
+  );
   const chapters = chaptersByVideo();
   const splitsByVideo =
     values.splits === undefined
@@ -793,8 +798,11 @@ async function main(): Promise<void> {
           .videos;
   const price = priceOf(model);
   let spent = 0;
+  // Estimates of the calls in flight: a call starts only when spent + reserved + its estimate
+  // stays within the cap, so concurrent calls can never jointly pass it.
+  let reserved = 0;
 
-  for (const video of videos) {
+  const tagVideo = async (video: VideoRow, pass: number): Promise<void> => {
     const sections = new Set(video.skills.map((s) => sectionOf.get(s)));
     const section = sections.has("M") ? "M" : "RW";
     const vocab = vocabularyFor(taxonomy, section);
@@ -887,11 +895,12 @@ async function main(): Promise<void> {
                 price.input +
                 OUTPUT_TOKENS_ESTIMATE * price.output) /
               1_000_000;
-        if (spent + estimate > cap) {
-          throw new Error(
-            `stopping before ${video.video_id} ${clock(start)}: $${spent.toFixed(4)} + $${estimate.toFixed(4)} would pass the $${cap} cap`,
+        if (spent + reserved + estimate > cap) {
+          throw new CapStop(
+            `stopping before ${video.video_id} ${clock(start)}: $${spent.toFixed(4)} spent + $${reserved.toFixed(4)} in flight + $${estimate.toFixed(4)} would pass the $${cap} cap`,
           );
         }
+        reserved += estimate;
         const part =
           start === 0 && end === video.duration_seconds
             ? `You are watching the whole video, ${clock(end)} long.`
@@ -906,38 +915,42 @@ async function main(): Promise<void> {
           clipUsage = u;
         };
         const step = `segment-tags ${video.video_id} pass${pass} ${clock(start)}`;
-        answer =
-          given === null
-            ? await generateJson({
-                step,
-                model,
-                system,
-                video: { videoId: video.video_id, start, end },
-                user: head.join("\n"),
-                responseSchema: segmentResponseSchema,
-                schema: segmentAnswerSchema,
-                onUsage,
-              })
-            : await generateJson({
-                step,
-                model,
-                system,
-                video: { videoId: video.video_id, start, end },
-                user: [
-                  ...head,
-                  "Segments to tag (times relative to the part):",
-                  ...given.map(
-                    (g, i) =>
-                      `${i + 1}. ${clock(g.start - start)}-${clock(g.end - start)}` +
-                      (g.title === ""
-                        ? ""
-                        : ` (creator's chapter: ${g.title})`),
-                  ),
-                ].join("\n"),
-                responseSchema: fixedResponseSchema,
-                schema: fixedAnswerSchema,
-                onUsage,
-              });
+        try {
+          answer =
+            given === null
+              ? await generateJson({
+                  step,
+                  model,
+                  system,
+                  video: { videoId: video.video_id, start, end },
+                  user: head.join("\n"),
+                  responseSchema: segmentResponseSchema,
+                  schema: segmentAnswerSchema,
+                  onUsage,
+                })
+              : await generateJson({
+                  step,
+                  model,
+                  system,
+                  video: { videoId: video.video_id, start, end },
+                  user: [
+                    ...head,
+                    "Segments to tag (times relative to the part):",
+                    ...given.map(
+                      (g, i) =>
+                        `${i + 1}. ${clock(g.start - start)}-${clock(g.end - start)}` +
+                        (g.title === ""
+                          ? ""
+                          : ` (creator's chapter: ${g.title})`),
+                    ),
+                  ].join("\n"),
+                  responseSchema: fixedResponseSchema,
+                  schema: fixedAnswerSchema,
+                  onUsage,
+                });
+        } finally {
+          reserved -= estimate;
+        }
         writeFileSync(
           clipPath,
           `${JSON.stringify({ version: SEGMENT_TAG_VERSION, model, mode, given: givenSpans, answer, usage: clipUsage }, null, 2)}\n`,
@@ -990,9 +1003,40 @@ async function main(): Promise<void> {
     process.stdout.write(
       `${video.video_id} pass${pass} (${boundaries}): ${segments.length} segment(s), ${teaching} teaching, ${flagged} flagged mixed, ${overviews} overview; rejected ids ${rejected}; ${usage.prompt} in (${usage.cached} cached) / ${usage.output} out; $${usage.usd.toFixed(4)}\n`,
     );
-  }
-  process.stdout.write(`new spend this pass: $${spent.toFixed(4)}\n`);
+  };
+
+  // A small pool: a failed video is reported and the rest go on (its finished clips stay cached,
+  // so a re-run repays nothing); the cap stops new calls, and the calls in flight finish.
+  let next = 0;
+  let capStop: string | null = null;
+  const failures: string[] = [];
+  const worker = async (): Promise<void> => {
+    while (capStop === null) {
+      const video = videos[next];
+      next += 1;
+      if (video === undefined) return;
+      try {
+        for (const pass of passes) await tagVideo(video, pass);
+      } catch (err: unknown) {
+        if (err instanceof CapStop) capStop = err.message;
+        else
+          failures.push(
+            `${video.video_id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  process.stdout.write(
+    `videos ${videos.length}, passes ${passes.join(",")}; new spend this run: $${spent.toFixed(4)}\n`,
+  );
+  for (const f of failures) process.stdout.write(`FAILED ${f}\n`);
+  if (capStop !== null) process.stdout.write(`CAP ${capStop}\n`);
+  if (failures.length > 0 || capStop !== null) process.exitCode = 1;
 }
+
+/** The cap check's refusal: stops new calls without being counted as a video's failure. */
+class CapStop extends Error {}
 
 // R-16 (LISA_Video_RAG_Closure_Plan.md): the entry check that also matches a Windows path.
 if (
