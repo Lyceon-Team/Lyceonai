@@ -504,6 +504,36 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/worked-examples.mutations.sh
 
+      # Social funnel (Karl, 2026-10-28): the cohort line ending early, /start losing noindex, a
+      # "free study plan" claim (F4-F6); the question back in the Reddit body, a caption losing its
+      # comment or call-to-action line, the Instagram caption outside the leak check, a loose
+      # funnel-line filter, the old worked-example line, mis-tagged links, Slack messages losing
+      # their link or posting a hand-edited caption (G1-G9). Sign-up attribution's plants are
+      # #1359's. Each must turn its named check red.
+      - name: Social funnel mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/social-funnel.mutations.sh
+
+      # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
+      # counted, the week cut at UTC midnight, the current week reported, skips counted as
+      # answers, study time uncapped, a wider 24-hour window, returning without the week before,
+      # an upgrade outside the week, a ledger that posts twice, a client role that can run it, a
+      # failed post keeping its claim, a percentage of zero, the route open without the secret.
+      # Each must turn its named check red.
+      - name: Growth report mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/growth-report.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest
@@ -516,6 +546,19 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/curriculum-chunks.mutations.sh
+
+      # LISA video segments (SCL-259, Phase B): plants RLS off, a sub-skill tag without its
+      # foreign key, a span past the video's end, a changed segment keeping its approval, a
+      # dropped segment surviving, an untagged segment approved and a CASCADE on the vocabulary.
+      # Each must turn its named gate red.
+      - name: LISA video segment mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/video-segments.mutations.sh
 
       # SEO Wave 2, plans Q5/Q6: plants the opt-in reset bug, under-13 opt-ins at every layer, a
       # lost consent source, a withdrawal emitting consent_captured, a non-atomic prompt claim,

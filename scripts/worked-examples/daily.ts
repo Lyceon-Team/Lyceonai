@@ -35,10 +35,12 @@ import {
   type WorkedExamplePost,
 } from "../../packages/shared/src/worked-example-schema";
 import { chicagoToday } from "../../shared/sat-test-dates";
+import { campaignLinks } from "../../shared/social/funnel";
 import {
   captionProblems,
   titleProblems,
   workedExampleCaption,
+  workedExampleInstagramCaption,
   workedExampleLabel,
   workedExampleTitle,
 } from "../../shared/worked-examples/rules";
@@ -90,10 +92,12 @@ export function buildPost(
   caption: string,
   credit: string,
   approval: ExampleApproval,
+  instagramCaption: string,
 ): WorkedExamplePost {
   const problems = [
     ...titleProblems(title),
     ...captionProblems(caption, credit),
+    ...captionProblems(instagramCaption, credit).map((p) => `instagram ${p}`),
   ];
   if (problems.length > 0)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
@@ -105,6 +109,9 @@ export function buildPost(
     video: `${id}.mp4`,
     title,
     caption,
+    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
+    instagram_caption: instagramCaption,
+    links: campaignLinks("worked_example"),
     approval,
   });
 }
@@ -160,6 +167,7 @@ async function select(a: Args): Promise<void> {
     workedExampleCaption(e.content, kit.track.credit),
     kit.track.credit,
     approval,
+    workedExampleInstagramCaption(e.content, kit.track.credit),
   );
   writeFileSync(join(out, "post.json"), `${JSON.stringify(post, null, 2)}\n`);
   process.stdout.write(

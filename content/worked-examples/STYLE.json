@@ -1,0 +1,27 @@
+{
+  "Percentages": {
+    "signature_move": "Turn each percent change into a multiplier.",
+    "check": "Plug in 100 and follow it through every change.",
+    "trap": "Adding or subtracting percents that apply to different amounts."
+  },
+  "Right Triangles and Trigonometry": {
+    "signature_move": "Label the sides from the angle: opposite, adjacent, hypotenuse. Then pick the ratio (SOH CAH TOA).",
+    "check": "Check the sides with the Pythagorean theorem.",
+    "trap": "Using the hypotenuse where the ratio needs another side, or the wrong ratio for the angle."
+  },
+  "Probability and Conditional Probability": {
+    "signature_move": "Shrink the sample space to what you're given, then count.",
+    "check": "The answer is between 0 and 1, and the counts match what is left.",
+    "trap": "Counting the whole group when the question says \"given that\"."
+  },
+  "Area and Volume": {
+    "signature_move": "Write the formula first, then substitute before you compute.",
+    "check": "Check the units: area is squared, volume is cubed.",
+    "trap": "Mixing up radius and diameter, or area and volume."
+  },
+  "Linear Inequalities in One or Two Variables": {
+    "signature_move": "Solve it like an equation; flip the sign when you multiply or divide by a negative.",
+    "check": "Test one value from your answer in the original inequality.",
+    "trap": "Forgetting to flip the inequality sign after dividing by a negative."
+  }
+}

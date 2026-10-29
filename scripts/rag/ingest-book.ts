@@ -60,6 +60,12 @@ import {
   assignProvenance,
   locateUnits,
   nextCursor,
+  onSubsectionBoundary,
+  SHORT_RULE_WORDS,
+  longRulesWhole,
+  ruleOpening,
+  shortRulesSplit,
+  splitLongRules,
   resolveChapters,
   sha256,
   splitPages,
@@ -76,6 +82,13 @@ import {
   SEGMENT_SYSTEM,
   auditFailure,
   auditResponseSchema,
+  auditUserMessage,
+  EXAMPLE_CHECK_SYSTEM,
+  exampleCheckFailure,
+  exampleCheckResponseSchema,
+  exampleCheckSchema,
+  exampleCheckUserMessage,
+  rewriteRuleOpening,
   auditSchema,
   rewriteResponseSchema,
   rewriteSchemaFor,
@@ -89,6 +102,7 @@ import {
   GENERATION_MODEL_DEFAULT,
   type Usage,
   ZERO_USAGE,
+  usageSchema,
   addUsage,
   assertProxied,
   embedTexts,
@@ -101,7 +115,10 @@ import {
 export const WINDOW_WORDS = 3_000;
 const MAX_WINDOW_GROWTH = 4;
 const CONTEXT_WORDS = 250;
+// An un-scoped ACT point is repairable: the rewrite can leave it out and the entry is audited
+// again; what it must never do is keep the advice without its scope.
 const REPAIRABLE: ReadonlySet<string> = new Set([
+  "audit_act_generalised",
   "audit_unfaithful",
   "audit_incorrect",
   "audit_not_self_contained",
@@ -113,26 +130,67 @@ export function bookDir(slug: string): string {
   return resolve(CACHE_DIR, `book-${slug}`);
 }
 
-/** A model call whose answer is cached on disk, keyed by the prompt version and its input. */
+/**
+ * Token usage, per stage, two ways: `billed` is what this run's calls cost; `fresh` is what
+ * every call the run used cost when it was made, cached or not, so the report measures a
+ * fresh-cache run even when it took several attempts. `unrecorded` counts cached answers from
+ * before usage was stored with them.
+ */
+type Tally = {
+  billed: (stage: string, u: Usage) => void;
+  fresh: (stage: string, u: Usage) => void;
+  unrecorded: () => void;
+};
+
+/**
+ * A model call whose answer is cached on disk, keyed by the prompt version and its input, with
+ * the usage of the call that produced it (all of its tries, e.g. a segment window re-asked once).
+ */
 async function cachedCall<T>(
   dir: string,
   key: string,
   schema: z.ZodType<T>,
-  call: () => Promise<T>,
-): Promise<{ value: T; cached: boolean }> {
+  stage: string,
+  tally: Tally,
+  call: (onUsage: (u: Usage) => void, note: (n: string) => void) => Promise<T>,
+): Promise<{ value: T; cached: boolean; notes: string[] }> {
   const path = resolve(
     dir,
     "calls",
     `${sha256(`${BOOK_PROMPT_VERSION}\u0000${key}`)}.json`,
   );
   if (existsSync(path)) {
-    const hit = schema.safeParse(JSON.parse(readFileSync(path, "utf8")));
-    if (hit.success) return { value: hit.data, cached: true };
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    const hit = z
+      .object({
+        value: schema,
+        usage: usageSchema,
+        notes: z.array(z.string()).default([]),
+      })
+      .safeParse(raw);
+    if (hit.success) {
+      tally.fresh(stage, hit.data.usage);
+      return { value: hit.data.value, cached: true, notes: hit.data.notes };
+    }
+    const old = schema.safeParse(raw);
+    if (old.success) {
+      tally.unrecorded();
+      return { value: old.data, cached: true, notes: [] };
+    }
   }
-  const value = await call();
+  let spent: Usage = ZERO_USAGE;
+  const notes: string[] = [];
+  const value = await call(
+    (u) => {
+      spent = addUsage(spent, u);
+      tally.billed(stage, u);
+    },
+    (n) => notes.push(n),
+  );
+  tally.fresh(stage, spent);
   mkdirSync(resolve(dir, "calls"), { recursive: true });
-  writeFileSync(path, JSON.stringify(value));
-  return { value, cached: false };
+  writeFileSync(path, JSON.stringify({ value, usage: spent, notes }));
+  return { value, cached: false, notes };
 }
 
 function extractPages(pdf: string): string[] {
@@ -216,19 +274,29 @@ function loadInput(
   };
 }
 
-type Segmented = { units: LocatedUnit[]; windows: number; regrown: number };
+type Segmented = {
+  units: LocatedUnit[];
+  windows: number;
+  regrown: number;
+  /** Each rejected segment answer, with why (quote not found, gap, a short rule split). */
+  rejections: string[];
+  /** Cuts made in code at the subsection headings of long rules (splitLongRules). */
+  codeCuts: number;
+};
 
 async function segmentBook(
   book: BookText,
   dir: string,
   model: string,
   windowWords: number,
-  onUsage: (u: Usage) => void,
+  tally: Tally,
 ): Promise<Segmented> {
   const units: LocatedUnit[] = [];
   let cursor = 0;
   let windows = 0;
   let regrown = 0;
+  const rejections: string[] = [];
+  let codeCuts = 0;
   const end = book.text.length;
   while (cursor < end && book.text.slice(cursor).trim() !== "") {
     let growth = 1;
@@ -246,11 +314,13 @@ async function segmentBook(
       const from = cursor;
       // An answer is cached only once its quotes are found in the window, so a bad answer is
       // retried (once, told what was wrong) rather than replayed from the cache forever.
-      const { value } = await cachedCall(
+      const { value, notes } = await cachedCall(
         dir,
         `segment\u0000${model}\u0000${user}`,
         segmentSchema,
-        async () => {
+        "segment",
+        tally,
+        async (onUsage, note) => {
           let feedback = "";
           for (let attempt = 0; ; attempt += 1) {
             const answer = await generateJson({
@@ -263,19 +333,48 @@ async function segmentBook(
               onUsage,
             });
             try {
-              locateUnits(book, from, winEnd, answer.units);
+              const located = locateUnits(book, from, winEnd, answer.units);
+              const split = shortRulesSplit(book.text, located, from, winEnd);
+              if (split.length > 0)
+                throw new Error(
+                  `a numbered rule under ${SHORT_RULE_WORDS} words was split at a lettered subsection (${split.join("; ")}); keep each such rule, with its opening explanation and all of its lettered subsections, in ONE unit`,
+                );
               return answer;
             } catch (err: unknown) {
-              if (attempt >= 1) throw err;
-              feedback = `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${err instanceof Error ? err.message : String(err)}. Copy start_quote and end_quote character for character from the window, in order.`;
+              // Every rejection is recorded with the cached answer, so the report counts the
+              // retries a window needed even when the run is replayed from the cache.
+              const why = err instanceof Error ? err.message : String(err);
+              note(`segment@${from} attempt ${attempt + 1} rejected: ${why}`);
+              // Also to the log as it happens: a window that fails every attempt is not cached,
+              // and its rejections would otherwise be lost (the message holds book quotes only).
+              process.stdout.write(
+                `segment@${from} attempt ${attempt + 1} rejected: ${why}\n`,
+              );
+              if (attempt >= 2) throw err;
+              feedback = `\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ${why}. Fix exactly that; copy start_quote and end_quote character for character from the window, in order.`;
             }
           }
         },
       );
       windows += 1;
+      rejections.push(...notes);
       // The [page n] markers are in the window the model read, not in book.text; quotes never
       // contain them (the prompt says so) and locateUnits searches book.text directly.
-      const located = locateUnits(book, cursor, winEnd, value.units);
+      // A long rule is cut at its subsection headings here, in code (splitLongRules); the
+      // check after it is an assertion, not a request to the model.
+      const cut = splitLongRules(
+        book.text,
+        locateUnits(book, cursor, winEnd, value.units),
+        cursor,
+        winEnd,
+      );
+      const located = cut.units;
+      codeCuts += cut.cuts;
+      const unsplit = longRulesWhole(book.text, located, cursor, winEnd);
+      if (unsplit.length > 0)
+        throw new Error(
+          `segment@${cursor}: splitLongRules left a long rule unsplit (${unsplit.join("; ")}); this is a defect in the code`,
+        );
       const step = nextCursor(located, winEnd, end);
       if (step.grow) {
         if (growth >= MAX_WINDOW_GROWTH)
@@ -296,7 +395,7 @@ async function segmentBook(
       `segmented to ${Math.round((100 * cursor) / end)}% (${units.length} units)\n`,
     );
   }
-  return { units, windows, regrown };
+  return { units, windows, regrown, rejections, codeCuts };
 }
 
 export type DropRow = {
@@ -306,6 +405,8 @@ export type DropRow = {
   kind: string;
   reason: string;
   detail: string;
+  /** The unit starts or ends at a lettered-subsection heading inside one numbered rule. */
+  subsection_boundary: boolean;
 };
 
 type Kept = {
@@ -319,6 +420,13 @@ type Kept = {
   taxonomy_gap: string | null;
   audit: Audit;
   repaired: boolean;
+  /** What the audit read for the kept entry, written to audit-inputs.jsonl for audit replays. */
+  audited: {
+    source: string;
+    before: string;
+    after: string;
+    ruleOpening: string | null;
+  };
 };
 
 async function main(): Promise<void> {
@@ -351,14 +459,22 @@ async function main(): Promise<void> {
   const rewriteSchema = rewriteSchemaFor(skills);
 
   let usage: Usage = ZERO_USAGE;
+  let freshUsage: Usage = ZERO_USAGE;
+  let unrecorded = 0;
   // Per stage as well as in total, so the report shows where the money goes.
   const byStage = new Map<string, Usage>();
-  const onStage =
-    (stage: string) =>
-    (u: Usage): void => {
+  const tally: Tally = {
+    billed: (_stage, u) => {
       usage = addUsage(usage, u);
+    },
+    fresh: (stage, u) => {
+      freshUsage = addUsage(freshUsage, u);
       byStage.set(stage, addUsage(byStage.get(stage) ?? ZERO_USAGE, u));
-    };
+    },
+    unrecorded: () => {
+      unrecorded += 1;
+    },
+  };
 
   const input = loadInput(values.pdf, values.markdown);
   const pages = input.pages;
@@ -366,13 +482,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${input.source}: ${pages.length} pages, ${wordCount(book.text)} words${input.dropped.length > 0 ? `; dropped ${input.dropped.map((d) => `"${d.heading}" (p${d.page}, ${d.words} words)`).join(", ")}` : ""}\n`,
   );
-  const seg = await segmentBook(
-    book,
-    dir,
-    model,
-    windowWords,
-    onStage("segment"),
-  );
+  const seg = await segmentBook(book, dir, model, windowWords, tally);
 
   const chapterNos = resolveChapters(seg.units);
   const chapters = new Map<LocatedUnit, number>(
@@ -389,6 +499,7 @@ async function main(): Promise<void> {
       kind: u.kind,
       reason,
       detail,
+      subsection_boundary: onSubsectionBoundary(book.text, u.start, u.end),
     });
   };
 
@@ -400,6 +511,7 @@ async function main(): Promise<void> {
       kind: "none",
       reason: "unassigned_text",
       detail: `${g.words} words no unit covered`,
+      subsection_boundary: false,
     });
   }
 
@@ -420,7 +532,9 @@ async function main(): Promise<void> {
       offsetByWords(book.text, u.end, CONTEXT_WORDS),
     );
     const headings = `CHAPTER: ${u.chapter_title}\nSECTION: ${u.section_title}`;
-    const rewriteUser = `${headings}\n\nCONTEXT BEFORE (reference only):\n${before}\n\nUNIT:\n${source}\n\nCONTEXT AFTER (reference only):\n${after}`;
+    // One piece of a cut rule gets the rule's opening as part of its source (ruleOpening).
+    const opening = ruleOpening(book.text, u.start, u.end);
+    const rewriteUser = `${headings}\n\nCONTEXT BEFORE (reference only):\n${before}\n\n${rewriteRuleOpening(opening)}UNIT:\n${source}\n\nCONTEXT AFTER (reference only):\n${after}`;
     // One repair: an entry the audit finds unfaithful, incorrect or dependent is rewritten
     // once with the audit's finding, then audited again. A boundary failure (incomplete, or
     // started mid-idea) is never repaired: the unit itself is the wrong shape, so it drops.
@@ -432,7 +546,9 @@ async function main(): Promise<void> {
           dir,
           `rewrite\u0000${model}\u0000${user}`,
           rewriteSchema,
-          () =>
+          attempt === 0 ? "rewrite" : "rewrite (repair)",
+          tally,
+          (onUsage) =>
             generateJson({
               step: "rewrite",
               model,
@@ -440,7 +556,7 @@ async function main(): Promise<void> {
               user,
               responseSchema: rewriteResponseSchema(skills),
               schema: rewriteSchema,
-              onUsage: onStage(attempt === 0 ? "rewrite" : "rewrite (repair)"),
+              onUsage,
             }),
         )
       ).value;
@@ -462,13 +578,21 @@ async function main(): Promise<void> {
         drop(u, "no_taxonomy_skill", rw.taxonomy_gap ?? "");
         return null;
       }
-      const auditUser = `SOURCE:\n${source}\n\nCONTEXT BEFORE:\n${before}\n\nCONTEXT AFTER:\n${after}\n\nENTRY:\n${content}`;
+      const auditUser = auditUserMessage({
+        source,
+        before,
+        after,
+        entry: content,
+        ruleOpening: opening,
+      });
       const audit = (
         await cachedCall(
           dir,
           `audit\u0000${model}\u0000${auditUser}`,
           auditSchema,
-          () =>
+          attempt === 0 ? "audit" : "audit (repair)",
+          tally,
+          (onUsage) =>
             generateJson({
               step: "audit",
               model,
@@ -476,7 +600,7 @@ async function main(): Promise<void> {
               user: auditUser,
               responseSchema: auditResponseSchema,
               schema: auditSchema,
-              onUsage: onStage(attempt === 0 ? "audit" : "audit (repair)"),
+              onUsage,
             }),
         )
       ).value;
@@ -487,6 +611,33 @@ async function main(): Promise<void> {
           continue;
         }
         drop(u, failed, audit.issues);
+        return null;
+      }
+      // The example check (book-prompts.ts EXAMPLE_CHECK_SYSTEM), on the entry the audit passed,
+      // against itself only. Any mismatch drops it; never repaired, so it cannot become a
+      // correction (Karl, 2026-10-26).
+      const check = (
+        await cachedCall(
+          dir,
+          `example-check\u0000${model}\u0000${content}`,
+          exampleCheckSchema,
+          "example check",
+          tally,
+          (onUsage) =>
+            generateJson({
+              step: "example-check",
+              model,
+              system: EXAMPLE_CHECK_SYSTEM,
+              user: exampleCheckUserMessage(content),
+              responseSchema: exampleCheckResponseSchema,
+              schema: exampleCheckSchema,
+              onUsage,
+            }),
+        )
+      ).value;
+      const contradiction = exampleCheckFailure(check);
+      if (contradiction !== null) {
+        drop(u, "audit_self_contradictory", contradiction);
         return null;
       }
       return {
@@ -500,6 +651,7 @@ async function main(): Promise<void> {
         taxonomy_gap: rw.taxonomy_gap,
         audit,
         repaired: attempt > 0,
+        audited: { source, before, after, ruleOpening: opening },
       };
     }
   });
@@ -565,6 +717,20 @@ async function main(): Promise<void> {
     drops.map((d) => JSON.stringify(d)).join("\n") + "\n",
   );
   writeFileSync(resolve(dir, "review.csv"), toReviewCsv(chunks));
+  // The exact audit inputs of every kept entry (book text: the cache is gitignored), so an audit
+  // change can be proven against the real chunks with scripts/rag/book-audit-plant.ts.
+  writeFileSync(
+    resolve(dir, "audit-inputs.jsonl"),
+    kept
+      .map((k, i) =>
+        JSON.stringify({
+          provenance: chunks[i]?.provenance ?? "",
+          ...k.audited,
+          entry: k.content,
+        }),
+      )
+      .join("\n") + "\n",
+  );
 
   // Report: per skill (a multi-tagged chunk counts under each), the empty skills, drops.
   const bySkill = new Map<string, typeof chunks>(skills.map((s) => [s, []]));
@@ -577,6 +743,8 @@ async function main(): Promise<void> {
   };
   const words = chunks.map((c) => wordCount(c.content)).sort((a, b) => a - b);
   const genCost = usageCostUsd(usage);
+  const freshCost = usageCostUsd(freshUsage);
+  const bookWords = wordCount(book.text);
   const embedCost = (embedChars / 1_000_000) * EMBED_PRICE_PER_MCHAR;
   const gaps = chunks
     .map((c) => c.taxonomy_gap)
@@ -593,6 +761,10 @@ async function main(): Promise<void> {
     `# Book ingestion: ${slug}`,
     "",
     `model ${model}, prompt ${BOOK_PROMPT_VERSION}; ${pages.length} pages; ${seg.windows} segment windows (${seg.regrown} widened for a long idea)`,
+    "",
+    `segment answers rejected and asked again: ${seg.rejections.length} (${seg.rejections.filter((r) => r.includes("was split at a lettered subsection")).length} for a short rule split)`,
+    `long rules cut in code at their subsection headings: ${seg.codeCuts} cuts`,
+    ...seg.rejections.map((r) => `- ${r}`),
     "",
     `**${chunks.length} chunks** from ${seg.units.length} units; ${drops.length} dropped; ${kept.filter((k) => k.repaired).length} kept after one repair round.`,
     `words per chunk: min ${words[0] ?? 0}, median ${words[Math.floor(words.length / 2)] ?? 0}, max ${words[words.length - 1] ?? 0}`,
@@ -620,9 +792,29 @@ async function main(): Promise<void> {
             `- ${d.reason}: "${d.heading}" (page ${d.page}, ${d.words} words)`,
         )),
     "",
+    "## Book errors",
+    "",
+    "Units dropped as incorrect, or because the entry contradicts itself (usually a book error carried into the entry): the book may be wrong there (Karl, 2026-10-26: a rule the book gets wrong is dropped, never corrected and never kept with the error).",
+    "",
+    ...(() => {
+      const rows = drops
+        .filter(
+          (d) =>
+            d.reason === "audit_incorrect" ||
+            d.reason === "audit_self_contradictory",
+        )
+        .map(
+          (d) =>
+            `- page ${d.page}, ${d.section_title}: dropped, ${d.reason === "audit_incorrect" ? "the audit found it incorrect" : "the entry contradicts itself (example check)"}: ${d.detail}`,
+        );
+      return rows.length === 0 ? ["- none"] : rows;
+    })(),
+    "",
     "## Dropped",
     "",
     ...count(drops, (d) => d.reason).map(([k, n]) => `- ${k}: ${n}`),
+    "",
+    `on a lettered-subsection boundary (the unit starts or ends at a "### " heading inside one numbered rule): ${drops.filter((d) => d.subsection_boundary).length} of ${drops.length} drops`,
     "",
     "## Taxonomy gaps the model named",
     "",
@@ -632,6 +824,8 @@ async function main(): Promise<void> {
     "",
     "## Cost",
     "",
+    `Every call this run used, at what it cost when it was made (cached or not), i.e. a run on a fresh cache${unrecorded > 0 ? `; ${unrecorded} cached answers predate usage recording and are not counted` : ""}:`,
+    "",
     "| stage | calls | input | output | of which thinking | USD |",
     "|---|---|---|---|---|---|",
     ...[...byStage].map(
@@ -639,7 +833,8 @@ async function main(): Promise<void> {
         `| ${k} | ${u.calls} | ${u.prompt} | ${u.output} | ${u.thoughts} | $${u.usd.toFixed(4)} |`,
     ),
     "",
-    `- generation: ${usage.calls} calls, ${usage.prompt} prompt tokens (${usage.cached} cached), ${usage.output} output tokens: $${genCost.toFixed(3)} (cached answers cost nothing and are not counted)`,
+    `- fresh-cache generation: ${freshUsage.calls} calls, ${freshUsage.output} output tokens of which ${freshUsage.thoughts} thinking (${freshUsage.output === 0 ? 0 : Math.round((100 * freshUsage.thoughts) / freshUsage.output)}%): $${freshCost.toFixed(3)}; $${(chunks.length === 0 ? 0 : freshCost / chunks.length).toFixed(4)} per kept chunk; $${(bookWords === 0 ? 0 : (1000 * freshCost) / bookWords).toFixed(4)} per 1,000 words of input (${bookWords} words)`,
+    `- billed by this run: ${usage.calls} calls, $${genCost.toFixed(3)} (cached answers are not billed again)`,
     `- embedding: ${missing.length} of ${chunks.length} chunks embedded (the rest cached), ${embedChars} characters: $${embedCost.toFixed(4)} at $${EMBED_PRICE_PER_MCHAR}/1M characters (unverified list price)`,
     "",
   ].join("\n");

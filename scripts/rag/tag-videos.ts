@@ -128,7 +128,12 @@ export function loadTaxonomy(): {
     .parse(JSON.parse(readFileSync(TAXONOMY_PATH, "utf8")));
   const domainOf = new Map<string, string>();
   for (const [domain, names] of Object.entries(parsed.skills)) {
-    for (const n of names) domainOf.set(n, domain);
+    for (const n of names) {
+      const seen = domainOf.get(n);
+      if (seen !== undefined)
+        throw new Error(`skill "${n}" listed under both ${seen} and ${domain}`);
+      domainOf.set(n, domain);
+    }
   }
   const [first, ...rest] = [...domainOf.keys()].sort();
   if (first === undefined) throw new Error("taxonomy has no skills");
@@ -680,8 +685,6 @@ async function main(): Promise<void> {
     return;
   }
   const { skills, domainOf } = loadTaxonomy();
-  if (skills.length !== 29)
-    throw new Error(`taxonomy lists ${skills.length} skills, expected 29`);
   const videos: Video[] = metadataSchema
     .parse(
       JSON.parse(readFileSync(resolve(CACHE_DIR, "metadata.json"), "utf8")),

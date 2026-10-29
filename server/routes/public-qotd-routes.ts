@@ -10,8 +10,9 @@
  *       no quota charge, aggregate stats, "N% answered correctly" at >= 5 attempts), R18, R19, R20a,
  *       Q2; SCL-202 (Turnstile on submit before any other work; HMAC-IP ledger); Coding Standards
  *       §5.2, §7.1, §8.1-§8.3, §12.1; owner Step 0 decisions 2026-10-05 (no CSRF: no ambient
- *       credential is used and Turnstile gates the write; future dates 404)]
- *       | @implemented [2026-10-05]
+ *       credential is used and Turnstile gates the write; future dates 404); SCL-258 (a stored
+ *       option order the shared function refuses is a 503 `qotd_order_invalid`, never served in
+ *       another order)] | @implemented [2026-10-05, order refusal 2026-10-28]
  *
  * plain English: the handlers are thin — limiter / Turnstile, Zod parse, the service in
  * server/services/qotd/qotd-service.ts, and a response parsed against the strict schema in
@@ -52,6 +53,7 @@ import {
   toTodayResponse,
   type QotdDbClient,
 } from "../services/qotd/qotd-service";
+import { QotdServedOrderError } from "../../shared/qotd/projection";
 
 const router = Router();
 const db = (): QotdDbClient => supabaseServer as unknown as QotdDbClient;
@@ -69,6 +71,7 @@ function unavailable(
   req: Request,
   operation: string,
   reason: string,
+  code: "qotd_unavailable" | "qotd_order_invalid" = "qotd_unavailable",
 ): void {
   logger.error("QOTD", operation, "QOTD request failed", {
     requestId: req.requestId,
@@ -78,11 +81,39 @@ function unavailable(
     .status(503)
     .json(
       errorBody(
-        "qotd_unavailable",
+        code,
         "The question of the day is temporarily unavailable.",
         req.requestId,
       ),
     );
+}
+
+/**
+ * A read that threw: the database, a stored option order the shared function refused (SCL-258:
+ * never served in another order; its own code so the social run's Slack notice names it), or
+ * anything else. The served-order error's message carries no letter.
+ */
+function readFailed(
+  res: Response,
+  req: Request,
+  operation: string,
+  err: unknown,
+): void {
+  if (err instanceof QotdServedOrderError) {
+    return unavailable(
+      res,
+      req,
+      operation,
+      `served_order: ${err.reason}`,
+      "qotd_order_invalid",
+    );
+  }
+  return unavailable(
+    res,
+    req,
+    operation,
+    err instanceof QotdUnavailableError ? "db" : "error",
+  );
 }
 
 router.get(
@@ -108,12 +139,7 @@ router.get(
       res.setHeader("Cache-Control", "private, no-store");
       return res.json({ data: toTodayResponse(row) });
     } catch (err: unknown) {
-      return unavailable(
-        res,
-        req,
-        "read_today",
-        err instanceof QotdUnavailableError ? "db" : "error",
-      );
+      return readFailed(res, req, "read_today", err);
     }
   },
 );
@@ -128,12 +154,7 @@ router.get(
       res.setHeader("Cache-Control", "public, max-age=3600");
       return res.json({ data: toArchiveIndexResponse(rows) });
     } catch (err: unknown) {
-      return unavailable(
-        res,
-        req,
-        "read_archive_index",
-        err instanceof QotdUnavailableError ? "db" : "error",
-      );
+      return readFailed(res, req, "read_archive_index", err);
     }
   },
 );
@@ -172,12 +193,7 @@ router.get(
       res.setHeader("Cache-Control", "public, max-age=3600");
       return res.json({ data: toArchiveResponse(row) });
     } catch (err: unknown) {
-      return unavailable(
-        res,
-        req,
-        "read_archive",
-        err instanceof QotdUnavailableError ? "db" : "error",
-      );
+      return readFailed(res, req, "read_archive", err);
     }
   },
 );

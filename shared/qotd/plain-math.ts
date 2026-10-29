@@ -2,7 +2,7 @@
  * Question text with $...$ maths written as plain text, for places that cannot render LaTeX
  * (a Reddit post, a Slack message).
  *
- * @spec [owner brief "QOTD Slack post — add yesterday's reveal (for r/satquestions)" (Karl,
+ * @spec [owner brief "QOTD Slack post — add yesterday's reveal (for r/satquestion)" (Karl,
  *       2026-10-15): "the worked explanation (plain text, math readable)"; "today's question as
  *       plain text for the post body"] | @implemented [2026-10-15]
  *

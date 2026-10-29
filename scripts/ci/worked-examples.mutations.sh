@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # ============================================================================
 # Mutation harness for worked examples (owner brief "Worked examples: production system",
-# Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27)
+# Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27;
+# V1-V10 per the OpenVoice addendum, Karl, 2026-10-27; V11-V12 per Karl's speaking-rate ask,
+# 2026-10-27)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -34,6 +36,11 @@ FILES=(
   "scripts/worked-examples/post-to-slack.ts"
   "video-kit/worked-examples/templates/kit.css"
   "video-kit/worked-examples/music/tracks.json"
+  "scripts/worked-examples/quality.ts"
+  "scripts/worked-examples/voice.ts"
+  "video-kit/worked-examples/voice.json"
+  ".gitignore"
+  ".github/workflows/worked-example-daily.yml"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -77,7 +84,8 @@ SQL
 }
 
 TEST=tests/ci/worked-examples.test.ts
-ts_check() { pnpm exec vitest run "$TEST" 2>&1; }
+VOICE_TEST=tests/ci/worked-examples-voice.test.ts
+ts_check() { pnpm exec vitest run "$TEST" "$VOICE_TEST" 2>&1; }
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -232,6 +240,47 @@ ts_plant "T19 the plan repeats a hook type" shared/worked-examples/rules.ts \
 ts_plant "T20 the Slack set out of order" scripts/worked-examples/post-to-slack.ts \
   "for (const step of workedExampleSlackSteps(post)) {" "for (const step of workedExampleSlackSteps(post).reverse()) {" \
   "posts the video first"
+
+echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
+ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \
+  "const cer = errorRate(said, heard);" "const cer = 0 * errorRate(said, heard);" \
+  "a line that says something other than its script is refused"
+ts_plant "V2 a clipped line is kept" scripts/worked-examples/quality.ts \
+  "if (peakDbfs > limits.max_peak_dbfs)" "if (false)" \
+  "a clipped line is refused"
+ts_plant "V3 a silent line is kept" scripts/worked-examples/quality.ts \
+  "if (!(peakDbfs > limits.silence_threshold_dbfs))" "if (false)" \
+  "a silent line is refused"
+ts_plant "V4 a failing clone line is kept instead of falling back" scripts/worked-examples/voice.ts \
+  "return outcome.problems.length === 0" "return outcome.problems.length >= 0" \
+  "keeps a clone line only when it was produced and passed every check"
+ts_plant "V5 a fallback line in another voice is accepted" scripts/worked-examples/content.ts \
+  "if (line.voice !== kit.voice.fallback_profile)" "if (false)" \
+  "a fallback line in another voice, or a fallback in a batch already in the fallback voice, is refused"
+ts_plant "V6 committed lines are no longer quality-checked" scripts/worked-examples/content.ts \
+  '      out.push(`voice/${line.file}: ${p}`);' "      void p;" \
+  "a committed line that fails the checks fails the content check"
+ts_plant "V7 a reference inside the repository is accepted" scripts/worked-examples/voice.ts \
+  'if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)))' "if (false)" \
+  "is read only from an absolute path outside every checkout"
+ts_plant "V8 reference recordings no longer ignored by git" .gitignore \
+  "*.reference.wav" "# reference.wav" \
+  "git ignores reference recordings and none is tracked"
+ts_plant "V9 the clone made the default before Karl picks it" video-kit/worked-examples/voice.json \
+  '"default_profile": "af_heart",' '"default_profile": "clone",' \
+  "default and fallback are the /brag voice"
+ts_plant "V10 CI installs the clone's Python stack" .github/workflows/worked-example-daily.yml \
+  "      - name: Install dependencies" "      - name: Clone stack
+        run: pip install -r scripts/worked-examples/openvoice/requirements.txt
+
+      - name: Install dependencies" \
+  "the worked-example workflows set up no Python at all"
+ts_plant "V11 the speaking rate never reaches the /brag voice" scripts/worked-examples/voice.ts \
+  '    "-s",' '    "--silent",' \
+  "reaches the kokoro voice as hyperframes tts -s"
+ts_plant "V12 a rate change keeps the old voicing" scripts/worked-examples/voice.ts \
+  "    (previous.speaking_rate ?? 1) === speakingRate" "    true" \
+  "a rate change re-voices the batch"
 
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"

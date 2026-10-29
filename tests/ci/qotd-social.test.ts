@@ -67,8 +67,10 @@ import {
   toTodayResponse,
 } from "../../server/services/qotd/qotd-service";
 import {
+  ApiHttpError,
   loadReveal,
   loadYesterday,
+  pickLatestDay,
   pastDateProblem,
   publishDecision,
   socialRunToday,
@@ -79,7 +81,7 @@ import {
   type TiktokBuild,
 } from "../../scripts/qotd-social/generate";
 import {
-  QOTD_TIKTOK_CAPTION,
+  qotdTiktokCaption,
   QOTD_TIKTOK_SAFE,
   QOTD_TIKTOK_SIZE,
   buildTiktokCarousel,
@@ -87,6 +89,7 @@ import {
   capTiktokTitle,
   tiktokSafePx,
   tiktokWhy,
+  QOTD_TIKTOK_WHY_MORE,
 } from "../../shared/qotd/tiktok";
 import { QOTD_TIKTOK_CSS } from "@/components/qotd/QotdTiktokSlide";
 import { plainMathText } from "../../shared/qotd/plain-math";
@@ -115,6 +118,8 @@ import {
 process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??=
   "qotd-social-test-secret-not-real";
 
+/** The fixture day's TikTok caption (posted on the fixture's "today", in the Dec 5 cohort phase). */
+const TIKTOK_CAPTION = qotdTiktokCaption(QOTD_FIXTURE_TODAY);
 const ROOT = resolve(import.meta.dirname, "../..");
 const DAYS: QotdArchiveResponse[] = QOTD_ARCHIVE_ROWS.map(toArchiveResponse);
 /** Today's row as an archive day: only so the test can know its answer. */
@@ -160,9 +165,7 @@ function tiktokFor(source: Source): TiktokBuild {
   if (!day) return { status: "skipped", qotd_date: y, reason: "withheld" };
   const built = buildTiktokCarousel(day, source.input.qotd_date);
   if (!built.ok) {
-    return built.reason === "does_not_fit"
-      ? { status: "skipped", qotd_date: y, reason: "does_not_fit" }
-      : { status: "refused", problem: built.problem };
+    return { status: "refused", problem: built.problem };
   }
   return {
     status: "built",
@@ -668,8 +671,8 @@ describe("future days are never generated early or publicly reachable", () => {
     expect(wf).toContain("scripts/qotd-social/generate.ts");
     expect(wf).toContain("actions/upload-artifact@v4");
     expect(wf).toMatch(/permissions:\s*\n\s*contents: read/);
-    // One secret reference in the whole file, the Slack token.
-    expect(wf.match(/secrets\./g)).toEqual(["secrets."]);
+    // One secret, the Slack token, referenced by the post and by the failure notice (SCL-258).
+    expect(wf.match(/secrets\./g)).toEqual(["secrets.", "secrets."]);
     expect(wf).toContain("${{ secrets.SLACK_BOT_TOKEN }}");
 
     const steps = workflowSteps();
@@ -681,12 +684,27 @@ describe("future days are never generated early or publicly reachable", () => {
     // The post comes after the upload, so a Slack failure never costs the download.
     expect(post).toBeGreaterThan(upload);
     expect(dry).toBeGreaterThan(upload);
-    // The token is in that step's env and in no other step.
+    const failure = names.indexOf("Post the failure to Slack");
+    expect(failure).toBeGreaterThan(post);
+    // The token is in those two steps' env and in no other step.
     for (const [i, step] of steps.entries()) {
       expect(JSON.stringify(step).includes("secrets."), step.name).toBe(
-        i === post,
+        i === post || i === failure,
       );
     }
+    // A failed scheduled or hand-started run posts one failure notice (Karl, 2026-10-28).
+    const failureStep = steps[failure]!;
+    expect(failureStep.if).toBe(
+      "failure() && github.event_name != 'pull_request'",
+    );
+    expect(failureStep.env).toEqual({
+      SLACK_BOT_TOKEN: "${{ secrets.SLACK_BOT_TOKEN }}",
+      SLACK_CHANNEL_ID:
+        "${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}",
+    });
+    expect(failureStep.run).toBe(
+      "pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out --failure",
+    );
     const postStep = steps[post]!;
     expect(postStep.if).toBe(
       "success() && github.event_name != 'pull_request'",
@@ -839,6 +857,7 @@ function builtDir(manifest: QotdSocialPostManifest | null): string {
   }
   writeFileSync(join(dir, "caption.txt"), `${m.caption}\n`);
   writeFileSync(join(dir, "alt-text.txt"), `${m.alt_text}\n`);
+  writeFileSync(join(dir, "instagram-caption.txt"), `${m.instagram_caption}\n`);
   if (manifest) {
     writeFileSync(join(dir, "post.json"), JSON.stringify(manifest, null, 2));
   }
@@ -1243,7 +1262,13 @@ describe("Slack: the message carries the caption and no answer (real fixture day
       const blocks = [
         ...unescapeMrkdwn(text).matchAll(/```\n([\s\S]*?)\n```/g),
       ].map((b) => b[1] ?? "");
-      expect(blocks).toEqual([m.caption, m.alt_text]);
+      // The Instagram caption and its link follow (owner brief 2026-10-28).
+      expect(blocks).toEqual([
+        m.caption,
+        m.alt_text,
+        m.instagram_caption,
+        m.links.instagram,
+      ]);
       const outside = unescapeMrkdwn(text).replace(/```\n[\s\S]*?\n```/g, " ");
       expect(
         socialAssetLeaks(
@@ -1251,6 +1276,7 @@ describe("Slack: the message carries the caption and no answer (real fixture day
             caption: `${outside}\n${blocks[0]}`,
             alt_text: blocks[1] ?? "",
             card_text: comment,
+            instagram_caption: `${blocks[2] ?? ""}\n${blocks[3] ?? ""}`,
           },
           revealed,
         ),
@@ -1421,8 +1447,9 @@ describe("Slack: the edges the audit named", () => {
   it("backticks cannot close the code block", () => {
     const m = manifestFor(pastSource(publishable()[0]!));
     const text = slackCopyMessage({ ...m, caption: "a ``` b ```` c" });
-    // Exactly the four fences the message is built with, and the caption's text kept.
-    expect(text.match(/```/g)).toHaveLength(4);
+    // Exactly the eight fences the message is built with (caption, alt text, Instagram caption,
+    // its link), and the caption's text kept.
+    expect(text.match(/```/g)).toHaveLength(8);
     expect(text.replace(/\u200b/g, "")).toContain("a ``` b ```` c");
   });
 
@@ -1464,7 +1491,7 @@ describe("Slack: the edges the audit named", () => {
 
 // ---------------------------------------------------------------------------------------------
 // Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
-// reveal (for r/satquestions)", Karl, 2026-10-15). Real fixture days: today is 2026-10-05 (a
+// reveal (for r/satquestion)", Karl, 2026-10-15). Real fixture days: today is 2026-10-05 (a
 // Math MCQ) and yesterday 2026-10-04 (a Math grid-in).
 // ---------------------------------------------------------------------------------------------
 
@@ -1539,9 +1566,11 @@ describe("Yesterday's reveal: always yesterday, never today (owner brief 2026-10
     const built = buildReveal(day, "2026-10-04");
     expect(built.ok).toBe(true);
     if (built.ok && built.reveal.status === "revealed") {
+      // The SERVED letter (SCL-258): the day's stored order is {C,B,D,A}, so canonical C was
+      // shown as A, and the reveal says A.
       expect(built.reveal.answer).toEqual({
         kind: "choice",
-        letter: "C",
+        letter: "A",
         text: "attracted",
       });
     }
@@ -1634,23 +1663,112 @@ describe("Yesterday's reveal: always yesterday, never today (owner brief 2026-10
 });
 
 describe("Today's Reddit post (owner brief 2026-10-15)", () => {
-  it("is the suggested title and today's question as plain text", () => {
+  // Owner brief "One funnel for every social post" (Karl, 2026-10-28): title + image + one CTA
+  // line; the written question and choices are gone from the body.
+  it("is the suggested title, the portrait image and one call-to-action line with the tagged link", () => {
     const m = manifestFor(todaySource());
     expect(m.reddit.title).toBe(
       `SAT Question of the Day: Monday, October 5, 2026 (Math · ${TODAY_REVEALED.question.domain})`,
     );
-    expect(m.reddit.body).toContain(
-      "A rectangle has a length of 8 and a width of 3. What is its area?",
+    expect(m.reddit.body).toBe(
+      "Taking the SAT Dec 5? Free SAT practice: lyceon.ai/start?utm_source=reddit&utm_campaign=qotd",
     );
-    // All four choices, lettered, and the call to action; no $ or LaTeX.
-    expect(m.reddit.body.match(/^[A-D]\) /gm)).toHaveLength(4);
-    expect(m.reddit.body).toContain(
-      "Answer it free at lyceon.ai/sat-question-of-the-day",
-    );
-    expect(m.reddit.body).not.toMatch(/\$|\\[a-z]/);
+    expect(m.reddit.body).not.toContain("length of 8");
+    expect(m.reddit.body).not.toMatch(/^[A-D]\) /m);
     const text = unescapeMrkdwn(slackRedditMessage(m));
     expect(text).toContain(m.reddit.title);
     expect(text).toContain(m.reddit.body);
+    expect(text).toContain(`qotd-${m.qotd_date}-portrait.png`);
+  });
+
+  it("turns evergreen the day after Dec 5", () => {
+    const input = { ...todaySource().input, qotd_date: "2026-12-06" };
+    expect(buildRedditPost(input).body).toBe(
+      "Free SAT practice: lyceon.ai/start?utm_source=reddit&utm_campaign=qotd",
+    );
+  });
+});
+
+describe("The Instagram caption (owner brief 2026-10-28)", () => {
+  it("asks for an answer and a comment, with the Dec 5 line until test day", () => {
+    const copy = buildSocialCopy(todaySource().input);
+    expect(copy.instagram_caption).toBe(
+      `SAT Question of the Day: Math, ${TODAY_REVEALED.question.domain}.\n\nComment your answer 👇\n\nTaking the SAT Dec 5? Comment SAT and I'll send you the link\n\n#SAT #DigitalSAT #SATPrep #SATMath #QuestionOfTheDay`,
+    );
+    const later = buildSocialCopy({
+      ...todaySource().input,
+      qotd_date: "2026-12-06",
+    });
+    expect(later.instagram_caption).toContain(
+      "\n\nComment SAT and I'll send you the link\n\n",
+    );
+    expect(later.instagram_caption).not.toContain("Dec 5");
+  });
+
+  it("is in the manifest, its own file and the Slack copy, with the tagged link to send", () => {
+    const m = manifestFor(todaySource());
+    expect(m.links.instagram).toBe(
+      "lyceon.ai/start?utm_source=instagram&utm_campaign=qotd",
+    );
+    const text = unescapeMrkdwn(slackCopyMessage(m));
+    expect(text).toContain(m.instagram_caption);
+    expect(text).toContain(m.links.instagram);
+  });
+
+  it("the correct choice in the Instagram caption is a leak; the fixed Dec 5 line is not", () => {
+    const day = publishable().find((d) => d.question.item_type === "mcq")!;
+    const correct = day.question.options.find(
+      (o) => o.id === day.question.correct_option_id,
+    )!;
+    const copy = buildSocialCopy(pastSource(day).input);
+    const base = {
+      caption: copy.caption,
+      alt_text: copy.alt_text,
+      card_text: "",
+      instagram_caption: copy.instagram_caption,
+    };
+    expect(copy.instagram_caption).toContain("Dec 5"); // presence before absence
+    expect(socialAssetLeaks(base, day)).toEqual([]);
+    expect(
+      socialAssetLeaks(
+        {
+          ...base,
+          instagram_caption: `${copy.instagram_caption}\n\n${correct.text}`,
+        },
+        day,
+      ),
+    ).toContain(
+      `instagram_caption: names the correct choice "${correct.text}"`,
+    );
+  });
+
+  it("the day's explanation in the Instagram caption is a leak", () => {
+    const day = publishable().find((d) => d.question.item_type === "mcq")!;
+    const copy = buildSocialCopy(pastSource(day).input);
+    const leaks = socialAssetLeaks(
+      {
+        caption: copy.caption,
+        alt_text: copy.alt_text,
+        card_text: "",
+        instagram_caption: `${copy.instagram_caption}\n\n${day.question.explanation}`,
+      },
+      day,
+    );
+    expect(
+      leaks.some((l) =>
+        l.startsWith("instagram_caption: carries the explanation"),
+      ),
+    ).toBe(true);
+  });
+
+  it("a hand-edited instagram-caption.txt is refused", () => {
+    const m = manifestFor(pastSource(publishable()[0]!));
+    const dir = builtDir(m);
+    writeFileSync(join(dir, "instagram-caption.txt"), "something else\n");
+    expect(loadPost(dir)).toEqual({
+      ok: false,
+      error: "instagram-caption.txt does not match post.json",
+    });
   });
 });
 
@@ -1736,6 +1854,46 @@ describe("The leak check still blocks today's answer anywhere in today's message
         day.qotd_date,
       ).toEqual([]);
     }
+  });
+});
+
+describe("--date latest: the newest day the archive serves (pull request runs)", () => {
+  // The index can list a day the day endpoint does not serve yet (seen 2026-10-29 04:08 UTC:
+  // the index had switched at 04:00 UTC, the day route still answered 404 until 05:00 UTC).
+  const daysDesc = DAYS.map((d) => d.qotd_date)
+    .sort()
+    .reverse();
+  const load = async (date: string): Promise<Source> => {
+    const day = DAYS.find((d) => d.qotd_date === date);
+    if (date === "2026-12-31") {
+      throw new ApiHttpError(`GET /api/public/qotd/${date} -> 500`, 500);
+    }
+    if (!day) {
+      throw new ApiHttpError(
+        `GET /api/public/qotd/${date} -> 404 (not_found)`,
+        404,
+      );
+    }
+    return pastSource(day);
+  };
+
+  it("a listed day the archive answers 404 for is skipped, and the next publishable day is picked", async () => {
+    const plain = await pickLatestDay(daysDesc, load, () => undefined);
+    expect(plain).not.toBeNull();
+    const lines: string[] = [];
+    const picked = await pickLatestDay(["2026-12-30", ...daysDesc], load, (l) =>
+      lines.push(l),
+    );
+    expect(picked).toBe(plain);
+    expect(lines).toContain(
+      "qotd-social: latest: skipping 2026-12-30 (the archive does not serve it)",
+    );
+  });
+
+  it("any other failure still fails the run", async () => {
+    await expect(
+      pickLatestDay(["2026-12-31", ...daysDesc], load, () => undefined),
+    ).rejects.toThrow("-> 500");
   });
 });
 
@@ -1844,7 +2002,7 @@ describe("TikTok carousel: yesterday's question only (Karl, 2026-10-23)", () => 
       status: "built",
       qotd_date: YESTERDAY,
       title: buildTiktokTitle(YESTERDAY, "M"),
-      caption: QOTD_TIKTOK_CAPTION,
+      caption: TIKTOK_CAPTION,
       slides: [1, 2, 3].map((n) => `qotd-${YESTERDAY}-tiktok-${n}.png`),
     });
   });
@@ -1914,7 +2072,7 @@ describe("TikTok carousel: never today's answer (leak checks over all three slid
   };
   const leaksOf = (
     slides: string[],
-    caption = QOTD_TIKTOK_CAPTION,
+    caption = TIKTOK_CAPTION,
     title = buildTiktokTitle(YESTERDAY, "M"),
     revealed: QotdArchiveResponse | null = TODAY_REVEALED,
   ) =>
@@ -1967,7 +2125,7 @@ describe("TikTok carousel: never today's answer (leak checks over all three slid
     const { slides } = real();
     const extra = TODAY_REVEALED.question.explanation;
     expect(
-      leaksOf(slides, `${QOTD_TIKTOK_CAPTION}\n\n${extra}`).some((l) =>
+      leaksOf(slides, `${TIKTOK_CAPTION}\n\n${extra}`).some((l) =>
         l.startsWith("tiktok caption: carries today's explanation"),
       ),
     ).toBe(true);
@@ -2215,15 +2373,26 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
   it("the Why line is at most 300 characters, whole sentences only (at most three), for every bank explanation", () => {
     const all = bankExplanations();
     expect(all.length).toBeGreaterThan(1000);
-    let built = 0;
+    let whole = 0;
+    let cut = 0;
     for (const explanation of all) {
       const why = tiktokWhy(explanation);
+      // Every explanation gets a Why (Karl, 2026-10-26): no day is skipped for its length.
+      expect(why).not.toBeNull();
       if (why === null) continue;
-      built += 1;
       const plain = plainMathText(explanation).replace(/\s+/g, " ").trim();
       expect(why.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
-      // Ends at a sentence boundary: terminal punctuation, and the plain text continues (if at
-      // all) with a space after exactly this prefix.
+      if (why.endsWith(QOTD_TIKTOK_WHY_MORE)) {
+        // A first sentence over 300 characters, cut at a word boundary.
+        cut += 1;
+        const head = why.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
+        expect(plain.startsWith(head)).toBe(true);
+        expect(plain[head.length]).toMatch(/[\s,;:—–-]/);
+        continue;
+      }
+      // Whole sentences: terminal punctuation, and the plain text continues (if at all) with a
+      // space after exactly this prefix.
+      whole += 1;
       expect(why).toMatch(/[.!?]["”’)]*$/);
       expect(plain.startsWith(why.replace(/\.$/, "")) || plain === why).toBe(
         true,
@@ -2233,27 +2402,77 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
         true,
       );
     }
-    expect(built).toBeGreaterThan(all.length * 0.9);
+    // Presence before absence: both kinds occur in the real bank.
+    expect(whole).toBeGreaterThan(all.length * 0.9);
+    expect(cut).toBeGreaterThan(0);
   });
 
-  it("the Why line never splits a decimal, stops at three sentences, and is null when the first sentence is too long", () => {
+  it("the Why line never splits a decimal and stops at three sentences", () => {
     expect(
       tiktokWhy("The mean is 3.5 here. So $x = 2$. Done! A fourth one."),
     ).toBe("The mean is 3.5 here. So x = 2. Done!");
-    expect(tiktokWhy(`${"word ".repeat(70)}end. Short.`)).toBeNull();
     const two = tiktokWhy(`First one. ${"long ".repeat(70)}tail. Third.`);
     expect(two).toBe("First one.");
   });
 
-  it("the caption starts with the follow line, then the swipe line, then the hashtags", () => {
-    expect(QOTD_TIKTOK_CAPTION.split("\n")[0]).toBe(
-      "Follow for daily SAT questions 👆",
+  it("a first sentence over 300 characters is cut at the last word boundary that fits, then '…' and 'Full explanation on lyceon.ai'", () => {
+    const long = `${"abcdefghijk ".repeat(40)}end. Short.`;
+    const why = tiktokWhy(long);
+    expect(QOTD_TIKTOK_WHY_MORE).toBe("… Full explanation on lyceon.ai");
+    expect(why).not.toBeNull();
+    if (why === null) return;
+    expect(why.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
+    expect(why.endsWith("… Full explanation on lyceon.ai")).toBe(true);
+    const head = why.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
+    // Whole words only, and the most that fit: one more word would overflow.
+    expect(head).toMatch(/^(abcdefghijk )*abcdefghijk$/);
+    expect(
+      head.length + " abcdefghijk".length + QOTD_TIKTOK_WHY_MORE.length,
+    ).toBeGreaterThan(QOTD_TIKTOK_WHY_MAX);
+    // A trailing comma is not left before the ellipsis.
+    const commas = tiktokWhy(`${"abcdefgh, ".repeat(40)}end.`);
+    expect(commas).not.toContain(",…");
+  });
+
+  it("a day whose explanation's first sentence is over 300 characters still gets a carousel, with the cut Why on slide 3", () => {
+    const day = archiveDay("2026-10-03");
+    const long: QotdArchiveResponse = {
+      ...day,
+      question: {
+        ...day.question,
+        explanation: `${"The verb must agree with its singular subject and describe a completed event ".repeat(5)}so attracted is right. Second sentence.`,
+      },
+    };
+    const built = buildTiktokCarousel(long, "2026-10-04");
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.carousel.why.endsWith(QOTD_TIKTOK_WHY_MORE)).toBe(true);
+    expect(slideText(built.carousel, 3)).toContain(
+      "Full explanation on lyceon.ai",
     );
-    expect(QOTD_TIKTOK_CAPTION).toBe(
-      "Follow for daily SAT questions 👆\n\nLock in your answer, then swipe. Today's question is live on lyceon.ai.\n\n#SAT #SATprep #digitalSAT #studytok",
+  });
+
+  // Owner brief "One funnel for every social post" (Karl, 2026-10-28): follow line, then
+  // "Comment your answer 👇", then the link-in-bio line, then the hashtags.
+  it("the caption: follow line, comment line, link-in-bio line, hashtags", () => {
+    expect(TIKTOK_CAPTION).toBe(
+      "Follow for daily SAT questions 👆\n\nComment your answer 👇\n\nTaking the SAT Dec 5? Free SAT practice: link in bio\n\n#SAT #SATprep #digitalSAT #studytok",
     );
-    expect(firstBannedPhrase(QOTD_TIKTOK_CAPTION)).toBeNull();
-    expect(firstUnapprovedOutcome(QOTD_TIKTOK_CAPTION)).toBeNull();
+    expect(qotdTiktokCaption("2026-12-06")).toBe(
+      "Follow for daily SAT questions 👆\n\nComment your answer 👇\n\nFree SAT practice: link in bio\n\n#SAT #SATprep #digitalSAT #studytok",
+    );
+    for (const caption of [TIKTOK_CAPTION, qotdTiktokCaption("2026-12-06")]) {
+      expect(firstBannedPhrase(caption)).toBeNull();
+      expect(firstUnapprovedOutcome(caption)).toBeNull();
+    }
+  });
+
+  it("the Slack TikTok message carries the tagged bio link", () => {
+    const m = manifestFor(todaySource());
+    expect(m.links.tiktok).toBe(
+      "lyceon.ai/start?utm_source=tiktok&utm_campaign=qotd",
+    );
+    expect(unescapeMrkdwn(slackTiktokMessage(m))).toContain(m.links.tiktok);
   });
 
   it("the title is at most 90 characters for every section and every date (the longest included)", () => {

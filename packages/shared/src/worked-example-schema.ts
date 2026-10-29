@@ -19,6 +19,7 @@
  * batch pull request, read from GitHub's record (shared/worked-examples/approval.ts).
  */
 import { z } from "zod";
+import { socialStartLinksSchema } from "./qotd-schema";
 
 /** The hook library (Karl, 2026-10-27); the table's CHECK holds the same five. */
 export const WORKED_EXAMPLE_HOOK_TYPES = [
@@ -116,6 +117,9 @@ export const voiceWordSchema = z
   .strict()
   .refine((w) => w.end >= w.start, { message: "a word ends before it starts" });
 
+/** The words a line was heard to say, with times (the committed transcription). */
+export const voiceWordsSchema = z.array(voiceWordSchema).min(1);
+
 export const voiceLineSchema = z
   .object({
     /** hook, question, step-1..step-6, answer, trap. */
@@ -124,14 +128,33 @@ export const voiceLineSchema = z
     text_sha256: z.string().regex(/^[0-9a-f]{64}$/),
     file: z.string().regex(/^[a-z0-9-]+\.wav$/),
     duration: z.number().positive(),
-    words: z.array(voiceWordSchema).min(1),
+    words: voiceWordsSchema,
+    /**
+     * Set only when this line is NOT in the manifest's voice: a clone line that failed the quality
+     * checks and was re-spoken in the fallback voice (OpenVoice addendum, Karl, 2026-10-27).
+     */
+    voice: z.string().min(1).optional(),
+    /** Why the clone line was replaced; present exactly when `voice` is. */
+    fallback_reasons: z.array(z.string().min(1)).min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (l) => (l.voice === undefined) === (l.fallback_reasons === undefined),
+    {
+      message: "a fallback line records both its voice and its reasons",
+    },
+  );
 export type VoiceLine = z.infer<typeof voiceLineSchema>;
 
 export const voiceManifestSchema = z
   .object({
+    /** The voice profile the batch was spoken in (video-kit/worked-examples/voice.json profiles). */
     voice: z.string().min(1),
+    /**
+     * The profile's speaking_rate when the batch was voiced (Karl, 2026-10-27). Absent in batches
+     * voiced before the setting existed, which were all spoken at 1.0.
+     */
+    speaking_rate: z.number().min(0.5).max(2).optional(),
     lines: z.array(voiceLineSchema).min(1),
   })
   .strict();
@@ -183,6 +206,12 @@ export const workedExamplePostSchema = z
     video: z.string().regex(/^[a-z0-9-]+\.mp4$/),
     title: z.string().min(1).max(WORKED_EXAMPLE_TITLE_MAX).startsWith("SAT"),
     caption: z.string().startsWith(`${WORKED_EXAMPLE_CAPTION_FIRST_LINE}\n`),
+    /** The Instagram caption (owner brief "One funnel for every social post", Karl, 2026-10-28). */
+    instagram_caption: z
+      .string()
+      .startsWith(`${WORKED_EXAMPLE_CAPTION_FIRST_LINE}\n`),
+    /** The tagged /start links: TikTok bio, and the one sent to people who comment SAT. */
+    links: socialStartLinksSchema,
     approval: z
       .object({
         pr: z.number().int().positive(),
