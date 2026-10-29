@@ -18,9 +18,9 @@
  *     stemRepeatsPassage, owner 2026-10-08) is skipped;
  *   * MCQs whose explanation names a choice letter (shared/practice/letter-reference.ts) are
  *     skipped. Added when options were shuffled per request (owner ruling 2026-10-05), so
- *     "choice B" named the wrong option; since Karl's ruling 2026-10-23 options are served in
- *     canonical order and the letters would match, but the skip is kept as it was (lifting it
- *     changes which questions get scheduled, which that ruling did not ask for);
+ *     "choice B" named the wrong option. LOAD-BEARING again since Karl's rulings 2026-10-28
+ *     (SCL-258): every scheduled day is shuffled once, so an explanation's letter would name
+ *     the wrong option on most days. Guarded by a planted mutation in qotd.mutations.sh;
  *   * the first candidate whose text matches no banned phrase (shared/seo/banned-phrases.ts) is
  *     inserted through qotd_schedule_insert, which re-checks eligibility and does nothing if the
  *     day is already filled. If a domain has nothing left, the next domain in rotation is tried,
@@ -36,8 +36,11 @@
  *     question fails the readability rules are released (`qotd_schedule_release`, which refuses
  *     today and the past on the database's own clock) and refilled by the same selection. The
  *     summary lists every replaced date. Today and past days never change.
- * The same database state always yields the same schedule. A rerun, or two overlapping runs,
- * change nothing: the date PK and the question_id UNIQUE make a second insert a no-op.
+ * The same database state always yields the same schedule, and the same answer-choice order:
+ * qotd_schedule_insert shuffles each day once, in the database, seeded by sha256(date ||
+ * question id) (SCL-258), and stores the order and its correct letter; this job never passes an
+ * order. A rerun, or two overlapping runs, change nothing: the date PK and the question_id
+ * UNIQUE make a second insert a no-op, and a stored row cannot be updated.
  *
  * After filling, it sweeps expired anonymous rate-limit rows (SCL-202: rows expire with their
  * window) and, when VERCEL_DEPLOY_HOOK_URL is set, triggers the production deploy that
@@ -187,8 +190,8 @@ function skipReason(
     return true;
   }
   // Added when today's options were shuffled per request (owner ruling 2026-10-05), so "choice
-  // B" named the wrong option for most visitors. Options are canonical since Karl's ruling
-  // 2026-10-23; the skip is kept unchanged (the ruling did not change scheduling).
+  // B" named the wrong option for most visitors. Load-bearing since SCL-258 (2026-10-28): every
+  // day is shuffled once at scheduling, so a lettered explanation would contradict the order.
   if (
     parseCanonicalMcOptions(c.options).length > 0 &&
     explanationNamesChoiceLetter(c.explanation)

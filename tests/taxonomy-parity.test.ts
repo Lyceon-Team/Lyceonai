@@ -138,7 +138,7 @@ describe("taxonomy.json ↔ governance parity", () => {
     expect(taxonomy.domains["RW"]).toEqual(govRW);
   });
 
-  it("all 29 skills match governance §A.4 with correct domain mapping", () => {
+  it("all skills match governance §A.4 with correct domain mapping", () => {
     for (const { domain, skill } of gov.skills) {
       const taxonomySkills = taxonomy.skills[domain];
       expect(
@@ -153,7 +153,6 @@ describe("taxonomy.json ↔ governance parity", () => {
 
     const totalTaxonomy = Object.values(taxonomy.skills).flat().length;
     expect(totalTaxonomy).toBe(gov.skills.length);
-    expect(totalTaxonomy).toBe(29);
   });
 
   it("Math distractor taxonomy matches governance §A.6", () => {

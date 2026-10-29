@@ -9167,6 +9167,191 @@ $$;
 
 
 --
+-- Name: growth_report_claim(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_claim(p_week_start date) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows int;
+BEGIN
+  INSERT INTO public.growth_report_posts (week_start) VALUES (p_week_start)
+  ON CONFLICT (week_start) DO UPDATE
+     SET claimed_at = now()
+   WHERE growth_report_posts.posted_at IS NULL
+     AND growth_report_posts.claimed_at < now() - interval '15 minutes';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: growth_report_mark_posted(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_mark_posted(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.growth_report_posts SET posted_at = now() WHERE week_start = p_week_start;
+$$;
+
+
+--
+-- Name: growth_report_release(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_release(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  DELETE FROM public.growth_report_posts
+   WHERE week_start = p_week_start AND posted_at IS NULL;
+$$;
+
+
+--
+-- Name: growth_report_week_start(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_week_start(p_now timestamp with time zone) RETURNS date
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (date_trunc('week', (p_now AT TIME ZONE 'America/Chicago'))::date - 7);
+$$;
+
+
+--
+-- Name: growth_report_weekly(date, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_weeks jsonb := '[]'::jsonb;
+  v_offset int;
+  v_start date;
+  t0 timestamptz;
+  t1 timestamptz;
+  p0 timestamptz;
+  v_week jsonb;
+BEGIN
+  IF p_week_start IS NULL OR extract(isodow FROM p_week_start) <> 1 THEN
+    RAISE EXCEPTION 'growth_report_weekly: week_start must be a Monday, got %', p_week_start
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- 0 = the reported week, 1 = the week before (the comparison).
+  FOREACH v_offset IN ARRAY ARRAY[0, 1] LOOP
+    v_start := p_week_start - 7 * v_offset;
+    t0 := (v_start::timestamp) AT TIME ZONE 'America/Chicago';
+    t1 := ((v_start + 7)::timestamp) AT TIME ZONE 'America/Chicago';
+    p0 := ((v_start - 7)::timestamp) AT TIME ZONE 'America/Chicago';
+
+    WITH stu AS (
+      SELECT p.id, p.created_at, p.signup_channel
+        FROM public.profiles p
+       WHERE p.role = 'student'
+         AND p.deleted_at IS NULL
+         AND p.is_under_13 IS NOT TRUE
+         AND NOT (p.id = ANY (COALESCE(p_excluded, ARRAY[]::uuid[])))
+    ),
+    -- Activity in [lo, hi): the CMO canonical "active student".
+    act_cur AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= t0 AND created_at < t1 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= t0 AND created_at < t1
+    ),
+    act_prev AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= p0 AND created_at < t0 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= p0 AND created_at < t0
+    ),
+    active AS (
+      SELECT DISTINCT a.sid FROM act_cur a JOIN stu ON stu.id = a.sid
+    ),
+    returning_students AS (
+      SELECT a.sid FROM active a JOIN act_prev b ON b.sid = a.sid GROUP BY a.sid
+    ),
+    signups AS (
+      SELECT * FROM stu WHERE created_at >= t0 AND created_at < t1
+    ),
+    answers AS (
+      SELECT user_id AS sid, answered_at, time_spent_ms
+        FROM public.practice_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+      UNION ALL
+      SELECT student_id, answered_at, NULL::integer
+        FROM public.review_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+    )
+    SELECT jsonb_build_object(
+      'week_start', v_start,
+      'signups_by_channel', COALESCE((
+        SELECT jsonb_object_agg(channel, n)
+          FROM (SELECT COALESCE(signup_channel, 'untagged') AS channel, count(*) AS n
+                  FROM signups GROUP BY 1) c), '{}'::jsonb),
+      'signups', (SELECT count(*) FROM signups),
+      'active_students', (SELECT count(*) FROM active),
+      'returning_by_test_date', COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('test_date', d, 'students', n) ORDER BY d NULLS LAST)
+          FROM (SELECT sp.target_exam_date AS d, count(*) AS n
+                  FROM returning_students r
+                  LEFT JOIN public.student_study_profile sp ON sp.student_id = r.sid
+                 GROUP BY 1) g), '[]'::jsonb),
+      'returning_students', (SELECT count(*) FROM returning_students),
+      'questions_answered', (
+        SELECT count(*) FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1),
+      'full_length_answers', (
+        SELECT count(*) FROM public.test_session_answers ta
+          JOIN public.test_sessions ts ON ts.id = ta.test_session_id
+          JOIN stu ON stu.id = ts.student_id
+         WHERE ta.answer IS NOT NULL AND ta.updated_at >= t0 AND ta.updated_at < t1),
+      'reviews_done', (
+        SELECT count(*) FROM public.review_sessions rs JOIN stu ON stu.id = rs.student_id
+         WHERE rs.status = 'completed' AND rs.completed_at >= t0 AND rs.completed_at < t1),
+      'study_minutes_estimate', (
+        SELECT COALESCE(round(sum(LEAST(a.time_spent_ms, 300000))::numeric / 60000, 1), 0)
+          FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1 AND a.time_spent_ms > 0),
+      'signups_answered_24h', (
+        SELECT count(*) FROM signups s
+         WHERE EXISTS (SELECT 1 FROM answers a
+                        WHERE a.sid = s.id
+                          AND a.answered_at >= s.created_at
+                          AND a.answered_at < s.created_at + interval '24 hours')),
+      'upgrades', (
+        SELECT count(DISTINCT e.profile_id) FROM public.entitlements e
+          JOIN stu ON stu.id = e.profile_id
+         WHERE e.tier = 'premium' AND e.created_at >= t0 AND e.created_at < t1)
+    ) INTO v_week;
+
+    v_weeks := v_weeks || jsonb_build_array(v_week);
+  END LOOP;
+
+  RETURN jsonb_build_object('week', v_weeks -> 0, 'previous', v_weeks -> 1);
+END;
+$$;
+
+
+--
 -- Name: guardian_daily_digest_email_enabled(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11255,14 +11440,15 @@ $$;
 -- Name: qotd_archive(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer, option_order text[], correct_display_letter text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   -- Counts included so an archive page built from this shows the same stat the API does.
   SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
          q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
-         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0),
+         s.option_order, s.correct_display_letter
     FROM public.qotd_schedule s
     JOIN public.questions q ON q.id = s.question_id
     LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
@@ -11431,6 +11617,21 @@ $$;
 
 
 --
+-- Name: qotd_display_letter(text[], text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+           WHEN array_position(p_order, upper(btrim(COALESCE(p_correct_answer, '')))) IS NULL THEN NULL
+           ELSE chr(64 + array_position(p_order, upper(btrim(p_correct_answer))))
+         END
+$$;
+
+
+--
 -- Name: qotd_email_prompt_state(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11552,16 +11753,41 @@ $$;
 
 
 --
+-- Name: qotd_option_keys(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_option_keys(p_options jsonb) RETURNS text[]
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH arr AS (
+    SELECT CASE
+             WHEN jsonb_typeof(p_options) = 'array' THEN p_options
+             WHEN jsonb_typeof(p_options) = 'string'
+                  AND left(btrim(p_options #>> '{}'), 1) = '[' THEN (p_options #>> '{}')::jsonb
+             ELSE '[]'::jsonb
+           END AS a
+  )
+  SELECT COALESCE(array_agg(upper(btrim(e ->> 'key')) ORDER BY ord), '{}'::text[])
+    FROM arr, jsonb_array_elements(arr.a) WITH ORDINALITY AS x(e, ord)
+   WHERE jsonb_typeof(e) = 'object'
+     AND upper(btrim(COALESCE(e ->> 'key', ''))) IN ('A', 'B', 'C', 'D')
+     AND btrim(COALESCE(e ->> 'text', '')) <> ''
+$$;
+
+
+--
 -- Name: qotd_question_for(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer, option_order text[], correct_display_letter text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
          q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
-         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0),
+         s.option_order, s.correct_display_letter
     FROM public.qotd_schedule s
     JOIN public.questions q ON q.id = s.question_id
     LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
@@ -11693,8 +11919,18 @@ BEGIN
   IF NOT public.qotd_question_is_eligible(p_question_id) THEN
     RETURN 'ineligible';
   END IF;
-  INSERT INTO public.qotd_schedule (qotd_date, question_id)
-  VALUES (p_date, p_question_id)
+  INSERT INTO public.qotd_schedule (qotd_date, question_id, option_order, correct_display_letter)
+  SELECT p_date, q.id, o.ord,
+         CASE WHEN q.item_type = 'mcq' THEN public.qotd_display_letter(o.ord, q.correct_answer) END
+    FROM public.questions q
+   CROSS JOIN LATERAL (
+     SELECT CASE
+              WHEN q.item_type = 'mcq'
+                THEN public.qotd_shuffled_option_order(q.options, p_date, q.id)
+              ELSE '{}'::text[]
+            END AS ord
+   ) o
+   WHERE q.id = p_question_id
   ON CONFLICT DO NOTHING;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows = 1 THEN
@@ -11705,6 +11941,58 @@ BEGIN
     RETURN 'exists';
   END IF;
   RETURN 'taken';
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_no_update(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_no_update() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'qotd_schedule is write-once: % cannot be changed (SCL-258)', OLD.qotd_date
+    USING ERRCODE = '42501';
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_order_on_insert(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_order_on_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_q      record;
+  v_order  text[];
+  v_letter text;
+BEGIN
+  SELECT q.item_type, q.options, q.correct_answer INTO v_q
+    FROM public.questions q WHERE q.id = NEW.question_id;
+  IF NOT FOUND THEN
+    RETURN NEW;  -- the foreign key refuses the row
+  END IF;
+  IF v_q.item_type = 'mcq' THEN
+    v_order  := public.qotd_shuffled_option_order(v_q.options, NEW.qotd_date, NEW.question_id);
+    v_letter := public.qotd_display_letter(v_order, v_q.correct_answer);
+  ELSE
+    v_order  := '{}'::text[];
+    v_letter := NULL;
+  END IF;
+  IF (NEW.option_order IS NOT NULL AND NEW.option_order IS DISTINCT FROM v_order)
+     OR (NEW.correct_display_letter IS NOT NULL AND NEW.correct_display_letter IS DISTINCT FROM v_letter) THEN
+    RAISE EXCEPTION 'qotd_schedule: the option order and letter are the database''s, not the caller''s (SCL-258)'
+      USING ERRCODE = '42501';
+  END IF;
+  NEW.option_order := v_order;
+  NEW.correct_display_letter := v_letter;
+  RETURN NEW;
 END
 $$;
 
@@ -11764,6 +12052,48 @@ CREATE FUNCTION public.qotd_servable(p_date date) RETURNS boolean
        AND q.status = 'published'
        AND (q.issue_flags IS NULL OR array_length(q.issue_flags, 1) IS NULL)
   );
+$$;
+
+
+--
+-- Name: qotd_shuffled_option_order(jsonb, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) RETURNS text[]
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_order text[] := public.qotd_option_keys(p_options);
+  v_n     integer := COALESCE(array_length(v_order, 1), 0);
+  v_bytes bytea := sha256(convert_to(p_qotd_date::text || p_question_id, 'UTF8'));
+  v_pos   integer := 0;
+  v_i     integer;
+  v_j     integer;
+  v_b     integer;
+  v_limit integer;
+  v_tmp   text;
+BEGIN
+  -- 0-based Fisher-Yates: for i from n-1 down to 1, swap position i with a uniform j in [0, i].
+  FOR v_i IN REVERSE (v_n - 1)..1 LOOP
+    v_limit := 256 - (256 % (v_i + 1));
+    LOOP
+      IF v_pos >= 32 THEN
+        v_bytes := sha256(v_bytes);
+        v_pos := 0;
+      END IF;
+      v_b := get_byte(v_bytes, v_pos);
+      v_pos := v_pos + 1;
+      EXIT WHEN v_b < v_limit;
+    END LOOP;
+    v_j := v_b % (v_i + 1);
+    -- arrays are 1-based
+    v_tmp := v_order[v_i + 1];
+    v_order[v_i + 1] := v_order[v_j + 1];
+    v_order[v_j + 1] := v_tmp;
+  END LOOP;
+  RETURN v_order;
+END
 $$;
 
 
@@ -16013,6 +16343,134 @@ $$;
 
 
 --
+-- Name: video_segments_approve(uuid[], uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) RETURNS integer
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH done AS (
+    UPDATE public.video_segments s
+       SET approved_by = p_approver, approved_at = now()
+     WHERE s.segment_id = ANY (p_segment_ids)
+       AND p_approver IS NOT NULL
+       AND (EXISTS (SELECT 1 FROM public.video_segment_sub_skills t WHERE t.segment_id = s.segment_id)
+            OR EXISTS (SELECT 1 FROM public.video_segment_clusters t WHERE t.segment_id = s.segment_id))
+    RETURNING 1
+  )
+  SELECT count(*)::integer FROM done;
+$$;
+
+
+--
+-- Name: video_segments_set(text, text, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb) RETURNS uuid[]
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_duration integer;
+  v_seg      jsonb;
+  v_start    integer;
+  v_end      integer;
+  v_prev_end integer := 0;
+  v_id       uuid;
+  v_ids      uuid[] := '{}';
+  v_same     boolean;
+BEGIN
+  SELECT duration_seconds INTO v_duration FROM public.video_resources WHERE video_id = p_video_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'video_segments_set: unknown video %', p_video_id USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF jsonb_typeof(p_segments) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'video_segments_set: segments must be a JSON array' USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- Segments in start order; a span must lie in the video and not overlap the previous one.
+  FOR v_start, v_end IN
+    SELECT (e->>'start_seconds')::integer, (e->>'end_seconds')::integer
+    FROM jsonb_array_elements(p_segments) e
+    ORDER BY (e->>'start_seconds')::integer
+  LOOP
+    IF v_start IS NULL OR v_end IS NULL OR v_start < 0 OR v_end <= v_start
+       OR v_end > v_duration OR v_start < v_prev_end THEN
+      RAISE EXCEPTION 'video_segments_set: % span %-% is empty, outside the video (% s) or overlaps the previous segment',
+        p_video_id, v_start, v_end, v_duration USING ERRCODE = 'check_violation';
+    END IF;
+    v_prev_end := v_end;
+  END LOOP;
+
+  -- Segments no longer in the list go (their tags cascade).
+  DELETE FROM public.video_segments s
+  WHERE s.video_id = p_video_id
+    AND NOT EXISTS (
+      SELECT 1 FROM jsonb_array_elements(p_segments) e
+      WHERE (e->>'start_seconds')::integer = s.start_seconds
+    );
+
+  FOR v_seg IN
+    SELECT e FROM jsonb_array_elements(p_segments) e ORDER BY (e->>'start_seconds')::integer
+  LOOP
+    v_start := (v_seg->>'start_seconds')::integer;
+    v_end   := (v_seg->>'end_seconds')::integer;
+    v_seg   := v_seg || jsonb_build_object(
+                 'sub_skills', coalesce(v_seg->'sub_skills', '[]'::jsonb),
+                 'clusters',   coalesce(v_seg->'clusters', '[]'::jsonb));
+
+    -- Unchanged span and tag sets keep the approval; anything else clears it.
+    SELECT s.segment_id,
+           s.end_seconds = v_end
+           AND (SELECT coalesce(array_agg(t.sub_skill_id ORDER BY t.sub_skill_id), '{}')
+                FROM public.video_segment_sub_skills t WHERE t.segment_id = s.segment_id)
+             = (SELECT coalesce(array_agg(x->>'id' ORDER BY x->>'id'), '{}')
+                FROM jsonb_array_elements(v_seg->'sub_skills') x)
+           AND (SELECT coalesce(array_agg(t.cluster_id ORDER BY t.cluster_id), '{}')
+                FROM public.video_segment_clusters t WHERE t.segment_id = s.segment_id)
+             = (SELECT coalesce(array_agg(x->>'id' ORDER BY x->>'id'), '{}')
+                FROM jsonb_array_elements(v_seg->'clusters') x)
+      INTO v_id, v_same
+    FROM public.video_segments s
+    WHERE s.video_id = p_video_id AND s.start_seconds = v_start;
+
+    IF v_id IS NULL THEN
+      INSERT INTO public.video_segments
+        (video_id, start_seconds, end_seconds, summary, taxonomy_version, tagged_by)
+      VALUES (p_video_id, v_start, v_end, v_seg->>'summary', p_taxonomy_version, p_tagged_by)
+      RETURNING segment_id INTO v_id;
+    ELSE
+      UPDATE public.video_segments SET
+        end_seconds      = v_end,
+        summary          = v_seg->>'summary',
+        taxonomy_version = p_taxonomy_version,
+        tagged_by        = p_tagged_by,
+        tagged_at        = now(),
+        approved_by      = CASE WHEN v_same THEN approved_by END,
+        approved_at      = CASE WHEN v_same THEN approved_at END
+      WHERE segment_id = v_id;
+      DELETE FROM public.video_segment_sub_skills WHERE segment_id = v_id;
+      DELETE FROM public.video_segment_clusters WHERE segment_id = v_id;
+    END IF;
+
+    INSERT INTO public.video_segment_sub_skills (segment_id, sub_skill_id, evidence, taxonomy_version)
+    SELECT v_id, x->>'id', x->>'evidence', p_taxonomy_version
+    FROM jsonb_array_elements(v_seg->'sub_skills') x;
+    INSERT INTO public.video_segment_clusters (segment_id, cluster_id, evidence, taxonomy_version)
+    SELECT v_id, x->>'id', x->>'evidence', p_taxonomy_version
+    FROM jsonb_array_elements(v_seg->'clusters') x;
+
+    v_ids := v_ids || v_id;
+    v_id := NULL;
+  END LOOP;
+
+  RETURN v_ids;
+END
+$$;
+
+
+--
 -- Name: worked_examples_leak_guard(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -17546,6 +18004,25 @@ COMMENT ON VIEW public.full_length_section_scores IS 'E9 / SCL-157: one row per 
 
 
 --
+-- Name: growth_report_posts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.growth_report_posts (
+    week_start date NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    posted_at timestamp with time zone,
+    CONSTRAINT growth_report_posts_week_start_check CHECK ((EXTRACT(isodow FROM week_start) = (1)::numeric))
+);
+
+
+--
+-- Name: TABLE growth_report_posts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.growth_report_posts IS 'One row per reported week (owner brief 2026-10-28 item 3): claimed before the Slack post, posted_at set after it, so the Monday report posts once.';
+
+
+--
 -- Name: guardian_consent_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18660,7 +19137,11 @@ COMMENT ON TABLE public.qotd_day_boundary IS 'The QOTD day switch (Karl, 2026-10
 CREATE TABLE public.qotd_schedule (
     qotd_date date NOT NULL,
     question_id text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    option_order text[] NOT NULL,
+    correct_display_letter text,
+    CONSTRAINT qotd_schedule_display_letter_check CHECK (((correct_display_letter IS NULL) OR (correct_display_letter = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text])))),
+    CONSTRAINT qotd_schedule_order_letter_check CHECK (((cardinality(option_order) <= 4) AND ((cardinality(option_order) = 0) = (correct_display_letter IS NULL))))
 );
 
 
@@ -18669,6 +19150,20 @@ CREATE TABLE public.qotd_schedule (
 --
 
 COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18; Karl 2026-10-27): one question per QOTD day (04:00 UTC to 04:00 UTC from the cutover in qotd_day_boundary, America/Chicago before it). qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+
+
+--
+-- Name: COLUMN qotd_schedule.option_order; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.qotd_schedule.option_order IS 'The canonical option keys in the order this day shows them, written once at scheduling by qotd_schedule_insert (qotd_shuffled_option_order). Identity for days scheduled before 2026-10-28 that had arrived. ''{}'' for a grid-in. SCL-258.';
+
+
+--
+-- Name: COLUMN qotd_schedule.correct_display_letter; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.qotd_schedule.correct_display_letter IS 'The correct option''s letter in option_order, written by the database in the same insert. NULL for a grid-in. SCL-258.';
 
 
 --
@@ -20240,6 +20735,54 @@ COMMENT ON TABLE public.video_resources IS 'Per-video facts and skill tags: the 
 
 
 --
+-- Name: video_segment_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.video_segment_clusters (
+    segment_id uuid NOT NULL,
+    cluster_id text NOT NULL,
+    evidence text NOT NULL,
+    taxonomy_version text NOT NULL,
+    CONSTRAINT video_segment_clusters_evidence_check CHECK (((length(evidence) >= 1) AND (length(evidence) <= 300)))
+);
+
+
+--
+-- Name: video_segment_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.video_segment_sub_skills (
+    segment_id uuid NOT NULL,
+    sub_skill_id text NOT NULL,
+    evidence text NOT NULL,
+    taxonomy_version text NOT NULL,
+    CONSTRAINT video_segment_sub_skills_evidence_check CHECK (((length(evidence) >= 1) AND (length(evidence) <= 300)))
+);
+
+
+--
+-- Name: video_segments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.video_segments (
+    segment_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    video_id text NOT NULL,
+    start_seconds integer NOT NULL,
+    end_seconds integer NOT NULL,
+    summary text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL,
+    approved_by uuid,
+    approved_at timestamp with time zone,
+    CONSTRAINT video_segments_approved_pair CHECK (((approved_by IS NULL) = (approved_at IS NULL))),
+    CONSTRAINT video_segments_span CHECK ((end_seconds > start_seconds)),
+    CONSTRAINT video_segments_start_seconds_check CHECK ((start_seconds >= 0)),
+    CONSTRAINT video_segments_summary_check CHECK (((length(summary) >= 1) AND (length(summary) <= 300)))
+);
+
+
+--
 -- Name: worked_example_metrics; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20778,6 +21321,14 @@ ALTER TABLE ONLY public.exam_score_report_projections
 
 ALTER TABLE ONLY public.exam_score_reports
     ADD CONSTRAINT exam_score_reports_pkey PRIMARY KEY (report_id);
+
+
+--
+-- Name: growth_report_posts growth_report_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.growth_report_posts
+    ADD CONSTRAINT growth_report_posts_pkey PRIMARY KEY (week_start);
 
 
 --
@@ -21810,6 +22361,38 @@ ALTER TABLE ONLY public.usage_rate_limit_ledger
 
 ALTER TABLE ONLY public.video_resources
     ADD CONSTRAINT video_resources_pkey PRIMARY KEY (video_id);
+
+
+--
+-- Name: video_segment_clusters video_segment_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_clusters
+    ADD CONSTRAINT video_segment_clusters_pkey PRIMARY KEY (segment_id, cluster_id);
+
+
+--
+-- Name: video_segment_sub_skills video_segment_sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_sub_skills
+    ADD CONSTRAINT video_segment_sub_skills_pkey PRIMARY KEY (segment_id, sub_skill_id);
+
+
+--
+-- Name: video_segments video_segments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segments
+    ADD CONSTRAINT video_segments_pkey PRIMARY KEY (segment_id);
+
+
+--
+-- Name: video_segments video_segments_video_start; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segments
+    ADD CONSTRAINT video_segments_video_start UNIQUE (video_id, start_seconds);
 
 
 --
@@ -22979,6 +23562,20 @@ CREATE INDEX video_resources_skills_idx ON public.video_resources USING gin (ski
 
 
 --
+-- Name: video_segment_clusters_cluster_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX video_segment_clusters_cluster_idx ON public.video_segment_clusters USING btree (cluster_id);
+
+
+--
+-- Name: video_segment_sub_skills_sub_skill_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX video_segment_sub_skills_sub_skill_idx ON public.video_segment_sub_skills USING btree (sub_skill_id);
+
+
+--
 -- Name: worked_examples_one_per_post_day; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -23235,6 +23832,20 @@ CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON publ
 --
 
 CREATE TRIGGER profiles_zz_signup_attribution BEFORE INSERT OR UPDATE OF signup_channel, signup_campaign, date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_signup_attribution_guard();
+
+
+--
+-- Name: qotd_schedule qotd_schedule_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER qotd_schedule_no_update BEFORE UPDATE ON public.qotd_schedule FOR EACH ROW EXECUTE FUNCTION public.qotd_schedule_no_update();
+
+
+--
+-- Name: qotd_schedule qotd_schedule_order_on_insert; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER qotd_schedule_order_on_insert BEFORE INSERT ON public.qotd_schedule FOR EACH ROW EXECUTE FUNCTION public.qotd_schedule_order_on_insert();
 
 
 --
@@ -24811,6 +25422,46 @@ ALTER TABLE ONLY public.usage_rate_limit_ledger
 
 
 --
+-- Name: video_segment_clusters video_segment_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_clusters
+    ADD CONSTRAINT video_segment_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: video_segment_clusters video_segment_clusters_segment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_clusters
+    ADD CONSTRAINT video_segment_clusters_segment_id_fkey FOREIGN KEY (segment_id) REFERENCES public.video_segments(segment_id) ON DELETE CASCADE;
+
+
+--
+-- Name: video_segment_sub_skills video_segment_sub_skills_segment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_sub_skills
+    ADD CONSTRAINT video_segment_sub_skills_segment_id_fkey FOREIGN KEY (segment_id) REFERENCES public.video_segments(segment_id) ON DELETE CASCADE;
+
+
+--
+-- Name: video_segment_sub_skills video_segment_sub_skills_sub_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segment_sub_skills
+    ADD CONSTRAINT video_segment_sub_skills_sub_skill_id_fkey FOREIGN KEY (sub_skill_id) REFERENCES public.sub_skills(id);
+
+
+--
+-- Name: video_segments video_segments_video_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.video_segments
+    ADD CONSTRAINT video_segments_video_id_fkey FOREIGN KEY (video_id) REFERENCES public.video_resources(video_id) ON DELETE CASCADE;
+
+
+--
 -- Name: worked_example_metrics worked_example_metrics_worked_example_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -25265,6 +25916,12 @@ ALTER TABLE public.exam_score_report_projections ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.exam_score_reports ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: growth_report_posts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.growth_report_posts ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -26472,6 +27129,24 @@ CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledg
 ALTER TABLE public.video_resources ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: video_segment_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.video_segment_clusters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: video_segment_sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.video_segment_sub_skills ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: video_segments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.video_segments ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: worked_example_metrics; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -27596,6 +28271,46 @@ GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_se
 
 
 --
+-- Name: FUNCTION growth_report_claim(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_claim(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_claim(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_mark_posted(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_release(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_release(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_release(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_week_start(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_weekly(p_week_start date, p_excluded uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) TO service_role;
+
+
+--
 -- Name: FUNCTION guardian_daily_digest_email_enabled(p_guardian_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28131,6 +28846,14 @@ GRANT ALL ON FUNCTION public.qotd_day_cutover() TO service_role;
 
 
 --
+-- Name: FUNCTION qotd_display_letter(p_order text[], p_correct_answer text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28168,6 +28891,14 @@ GRANT ALL ON FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now tim
 
 REVOKE ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_option_keys(p_options jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_option_keys(p_options jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_option_keys(p_options jsonb) TO service_role;
 
 
 --
@@ -28227,6 +28958,20 @@ GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id tex
 
 
 --
+-- Name: FUNCTION qotd_schedule_no_update(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_no_update() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION qotd_schedule_order_on_insert(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_order_on_insert() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION qotd_schedule_release(p_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28248,6 +28993,14 @@ GRANT ALL ON FUNCTION public.qotd_schedule_upcoming(p_after date) TO service_rol
 
 REVOKE ALL ON FUNCTION public.qotd_servable(p_date date) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_servable(p_date date) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) TO service_role;
 
 
 --
@@ -28895,6 +29648,22 @@ GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_
 
 REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) TO service_role;
+
+
+--
+-- Name: FUNCTION video_segments_approve(p_segment_ids uuid[], p_approver uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_segments_set(p_video_id text, p_taxonomy_version text, p_tagged_by text, p_segments jsonb) TO service_role;
 
 
 --
@@ -29746,6 +30515,13 @@ GRANT SELECT,INSERT ON TABLE public.score_runs TO lyceon_scoring_owner;
 --
 
 GRANT SELECT ON TABLE public.full_length_section_scores TO service_role;
+
+
+--
+-- Name: TABLE growth_report_posts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.growth_report_posts TO service_role;
 
 
 --
@@ -31043,6 +31819,27 @@ GRANT ALL ON TABLE public.usage_rate_limit_ledger TO service_role;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_resources TO service_role;
+
+
+--
+-- Name: TABLE video_segment_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_segment_clusters TO service_role;
+
+
+--
+-- Name: TABLE video_segment_sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_segment_sub_skills TO service_role;
+
+
+--
+-- Name: TABLE video_segments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_segments TO service_role;
 
 
 --

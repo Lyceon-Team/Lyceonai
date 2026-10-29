@@ -16,6 +16,10 @@
  *  is read from the environment either way. Before 2026-10-27 the workstation path sent no
  *  credential at all, so every call there failed with 401.
  *
+ * transport: Gemini is called on streamGenerateContent (SSE) with thought summaries streamed,
+ *  and the answer's events folded into one response, because the egress proxy cuts a request
+ *  that is silent for 30 s and a long think is otherwise silent.
+ *
  * edge cases: 429 and 5xx retry with backoff (6 tries, 5 s doubling, jitter); anything else, or a response that
  *  fails its schema, throws with the status and the step name. Response bodies are not
  *  logged: they can echo transcript text, which is never stored or printed.
@@ -62,10 +66,66 @@ export function assertProxied(): void {
   }
 }
 
+/**
+ * Pure. A streamGenerateContent (alt=sse) body folded into one generateContent response: the
+ * answer's text parts of every event joined in order (thought-summary parts left out), the last finishReason and the last usageMetadata
+ * (Vertex sends the totals on the final event). Throws when the body holds no event, so a
+ * truncated or non-SSE 200 is retried like a non-JSON one.
+ */
+export function foldSse(text: string): unknown {
+  const events = text
+    .split("\n")
+    .filter((l) => l.startsWith("data:"))
+    .map((l): unknown => JSON.parse(l.slice("data:".length)));
+  if (events.length === 0) throw new Error("no SSE events in the body");
+  const eventSchema = z.object({
+    candidates: z
+      .array(
+        z.object({
+          content: z
+            .object({
+              parts: z
+                .array(
+                  z.object({
+                    text: z.string().optional(),
+                    thought: z.boolean().optional(),
+                  }),
+                )
+                .optional(),
+            })
+            .optional(),
+          finishReason: z.string().optional(),
+        }),
+      )
+      .optional(),
+    usageMetadata: z.record(z.string(), z.unknown()).optional(),
+  });
+  let out = "";
+  let finishReason: string | undefined;
+  let usageMetadata: Record<string, unknown> | undefined;
+  for (const raw of events) {
+    const e = eventSchema.parse(raw);
+    const c = e.candidates?.[0];
+    for (const part of c?.content?.parts ?? [])
+      if (part.thought !== true) out += part.text ?? "";
+    finishReason = c?.finishReason ?? finishReason;
+    usageMetadata = e.usageMetadata ?? usageMetadata;
+  }
+  // No text at all is passed through as no candidate, which generateJson retries and reports.
+  return {
+    candidates:
+      out === "" && finishReason === undefined
+        ? []
+        : [{ content: { parts: [{ text: out }] }, finishReason }],
+    ...(usageMetadata === undefined ? {} : { usageMetadata }),
+  };
+}
+
 async function postJson(
   url: string,
   body: unknown,
   step: string,
+  decode: (text: string) => unknown = JSON.parse,
 ): Promise<unknown> {
   for (let attempt = 0; ; attempt += 1) {
     const response = await fetch(url, {
@@ -81,14 +141,14 @@ async function postJson(
     let parsed: unknown = undefined;
     let jsonOk = false;
     if (response.ok) {
-      const text = await response.text();
       try {
-        parsed = JSON.parse(text);
+        // A stream cut off mid-body rejects here; it is retried like a non-JSON body.
+        parsed = decode(await response.text());
         jsonOk = true;
       } catch (err: unknown) {
         if (attempt >= 5)
           throw new Error(
-            `${step}: Vertex returned 200 with a non-JSON body after ${attempt + 1} tries`,
+            `${step}: Vertex returned 200 with an unreadable body after ${attempt + 1} tries`,
             { cause: err },
           );
       }
@@ -243,7 +303,14 @@ export async function generateJson<T>(opts: {
             },
           },
         ];
-  const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/global/publishers/google/models/${opts.model}:generateContent`;
+  // Streamed, with thought summaries: the egress proxy ends a request that sends nothing for
+  // 30 s with a 502 "upstream request failed". Streaming alone is not enough, because the
+  // first event waits for the thinking to finish (measured 2026-10-23 on a 3,300-word segment
+  // window at full reasoning: 502 at 30.5 s streamed without thoughts; with includeThoughts
+  // the first byte came at 2.1 s, the longest silence was 1.5 s and the answer at 40 s).
+  // The summaries are dropped and the events folded back into one response (foldSse); the
+  // thinking itself, and its billing, is the same either way.
+  const url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/global/publishers/google/models/${opts.model}:streamGenerateContent?alt=sse`;
   // A response with no usable candidate (no content parts) is retried twice before it fails;
   // the failure names the finishReason, so a blocked answer is told apart from a blip.
   let parsed:
@@ -277,12 +344,16 @@ export async function generateJson<T>(opts: {
           temperature: 0,
           responseMimeType: "application/json",
           responseSchema: opts.responseSchema,
-          ...(opts.thinking === undefined
-            ? {}
-            : { thinkingConfig: { thinkingLevel: opts.thinking } }),
+          thinkingConfig: {
+            includeThoughts: true,
+            ...(opts.thinking === undefined
+              ? {}
+              : { thinkingLevel: opts.thinking }),
+          },
         },
       },
       opts.step,
+      foldSse,
     );
     parsed = generateResponseSchema.safeParse(raw);
     if (parsed.success) break;

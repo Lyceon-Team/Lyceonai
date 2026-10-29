@@ -40,6 +40,12 @@ import { isoWeekCycle } from "../content/schedule";
 import { plainMathText } from "../qotd/plain-math";
 import { QOTD_SECTION_NAME } from "../qotd/social";
 import { capTiktokTitle } from "../qotd/tiktok";
+import {
+  bioCtaLine,
+  COMMENT_ANSWER_LINE,
+  funnelPhase,
+  instagramCtaLine,
+} from "../social/funnel";
 import { firstBannedPhrase, firstPipelinePhrase } from "../seo/banned-phrases";
 import type { SeedQuestion } from "./seed-question";
 
@@ -284,7 +290,20 @@ export function workedExampleTitle(
   );
 }
 
-/** The caption: the follow line first, the hook, where to practise, tags, the music credit. */
+const WORKED_EXAMPLE_TAGS = "#SAT #SATprep #digitalSAT #SATmath #studytok";
+
+/**
+ * The TikTok caption: the follow line first, the hook, "Comment your answer 👇", the link-in-bio
+ * line, tags, the music credit.
+ *
+ * @spec [owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2: "The
+ *       worked-example captions get the same CTA lines"] | @implemented [2026-10-28]
+ *
+ * plain English: the same two lines as the QOTD's (shared/social/funnel.ts): the hook asks a
+ * question, so the comment line asks for the answer, and the bio line sends people to /start
+ * (the Dec 5 cohort's line until test day, by the example's own post_on). Was "More SAT
+ * questions on lyceon.ai."
+ */
 export function workedExampleCaption(
   example: WorkedExampleContent,
   musicCredit: string,
@@ -292,8 +311,24 @@ export function workedExampleCaption(
   return [
     WORKED_EXAMPLE_CAPTION_FIRST_LINE,
     example.hook.line,
-    "More SAT questions on lyceon.ai.",
-    "#SAT #SATprep #digitalSAT #SATmath #studytok",
+    COMMENT_ANSWER_LINE,
+    bioCtaLine(funnelPhase(example.post_on)),
+    WORKED_EXAMPLE_TAGS,
+    musicCredit,
+  ].join("\n\n");
+}
+
+/** The Instagram caption: as the TikTok one, with "Comment SAT and I'll send you the link". */
+export function workedExampleInstagramCaption(
+  example: WorkedExampleContent,
+  musicCredit: string,
+): string {
+  return [
+    WORKED_EXAMPLE_CAPTION_FIRST_LINE,
+    example.hook.line,
+    COMMENT_ANSWER_LINE,
+    instagramCtaLine(funnelPhase(example.post_on)),
+    WORKED_EXAMPLE_TAGS,
     musicCredit,
   ].join("\n\n");
 }
