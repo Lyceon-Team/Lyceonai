@@ -233,14 +233,19 @@ describe("beginParallelGroup", () => {
     ]);
     const ms = (name: string): number => byName.get(name)!.ms as number;
     const at = (name: string): number => byName.get(name)!.at_ms as number;
+    // Offsets and durations are each rounded to 0.1 ms, so a comparison of two of them, or of a
+    // sum, may be off by up to that much.
+    const ROUNDING = 0.1;
     // Wall time: from the group's start to the last member's end — at least the slowest member,
     // and less than the members' sum (they overlapped).
-    expect(ms("pre_model")).toBeGreaterThanOrEqual(ms("slow"));
+    expect(ms("pre_model")).toBeGreaterThanOrEqual(ms("slow") - ROUNDING);
     expect(ms("pre_model")).toBeLessThan(
       ms("fast") + ms("slow") + ms("after_fast") + ms("failing"),
     );
     // The dependent member started after the one it waited for, and its ms is its own (~10).
-    expect(at("after_fast")).toBeGreaterThanOrEqual(at("fast") + ms("fast"));
+    expect(at("after_fast")).toBeGreaterThanOrEqual(
+      at("fast") + ms("fast") - ROUNDING,
+    );
     expect(ms("after_fast")).toBeLessThan(ms("slow"));
     // A member that failed is recorded with its real duration.
     expect(typeof ms("failing")).toBe("number");
