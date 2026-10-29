@@ -205,6 +205,17 @@ export function pastDateProblem(
 /** The `error.code` of an API error body ({ error: { code, message } }); nothing else is read. */
 const API_ERROR_CODE = /"error"\s*:\s*\{\s*"code"\s*:\s*"([a-z_]{1,64})"/;
 
+/** A non-2xx answer from the public API: its status, and the API's error code at most. */
+export class ApiHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiHttpError";
+  }
+}
+
 async function getJson(url: string): Promise<unknown> {
   const res = await fetch(url, {
     headers: { accept: "application/json" },
@@ -214,8 +225,9 @@ async function getJson(url: string): Promise<unknown> {
     // The API's error code (e.g. qotd_order_invalid: a stored order the server refused), never
     // the rest of the body.
     const code = API_ERROR_CODE.exec(await res.text())?.[1];
-    throw new Error(
+    throw new ApiHttpError(
       `GET ${new URL(url).pathname} -> ${res.status}${code ? ` (${code})` : ""}`,
+      res.status,
     );
   }
   return res.json();
@@ -440,6 +452,36 @@ export function writePublishManifest(
 
 /** How far back `--date latest` looks for a day whose input passes. */
 const LATEST_LOOKBACK_DAYS = 14;
+
+/**
+ * `--date latest`: the newest of `dates` (newest first) whose day the archive serves and whose
+ * input passes, or null. A day the archive answers 404 is not published there, as loadYesterday
+ * already treats it (a withheld day, or one the index lists before the day endpoint will serve
+ * it), so it is skipped like a refused input. Any other failure is rethrown.
+ */
+export async function pickLatestDay(
+  dates: readonly string[],
+  load: (date: string) => Promise<Source>,
+  log: (line: string) => void,
+): Promise<string | null> {
+  for (const date of dates) {
+    let candidate: Source;
+    try {
+      candidate = await load(date);
+    } catch (e: unknown) {
+      if (e instanceof ApiHttpError && e.status === 404) {
+        log(
+          `qotd-social: latest: skipping ${date} (the archive does not serve it)`,
+        );
+        continue;
+      }
+      throw e;
+    }
+    if (socialInputProblems(candidate.input).length === 0) return date;
+    log(`qotd-social: latest: skipping ${date} (input refused)`);
+  }
+  return null;
+}
 
 async function loadSource(args: Args): Promise<Source> {
   if (args.date === null) {
@@ -798,15 +840,11 @@ async function main(): Promise<number> {
     // The newest one whose input passes, so the run proves the full path (images, manifest,
     // Slack dry run) rather than an older input refusal, which the unit tests already cover.
     // Checked through loadSource, the same past-day read the build makes.
-    let picked: string | null = null;
-    for (const day of index.data.days.slice(0, LATEST_LOOKBACK_DAYS)) {
-      const candidate = await loadSource({ ...args, date: day.qotd_date });
-      if (socialInputProblems(candidate.input).length === 0) {
-        picked = day.qotd_date;
-        break;
-      }
-      out(`qotd-social: latest: skipping ${day.qotd_date} (input refused)`);
-    }
+    const picked = await pickLatestDay(
+      index.data.days.slice(0, LATEST_LOOKBACK_DAYS).map((d) => d.qotd_date),
+      (date) => loadSource({ ...args, date }),
+      out,
+    );
     if (!picked) {
       err(
         `qotd-social: refused: no publishable day among the newest ${LATEST_LOOKBACK_DAYS} archive days`,

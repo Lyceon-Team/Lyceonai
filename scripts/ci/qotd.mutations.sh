@@ -724,6 +724,15 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M71 04:05 UTC schedule" "the 04:05 UTC run builds the new day and reveals the day that just ended" "$OUT" "$RC"
 restore
 
+# A listed day the archive does not serve is skipped by `--date latest` (seen 2026-10-29).
+echo "=== (72) --date latest stops skipping a day the archive answers 404 for ==="
+plant scripts/qotd-social/generate.ts \
+  "      if (e instanceof ApiHttpError && e.status === 404) {" \
+  "      if (false) {" || { bad "M72 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M72 404 day not skipped" "a listed day the archive answers 404 for is skipped" "$OUT" "$RC"
+restore
+
 echo "=== RESTORED: re-check green ==="
 OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ" "$AGREE")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"

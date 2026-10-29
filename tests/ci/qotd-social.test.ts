@@ -67,8 +67,10 @@ import {
   toTodayResponse,
 } from "../../server/services/qotd/qotd-service";
 import {
+  ApiHttpError,
   loadReveal,
   loadYesterday,
+  pickLatestDay,
   pastDateProblem,
   publishDecision,
   socialRunToday,
@@ -1852,6 +1854,46 @@ describe("The leak check still blocks today's answer anywhere in today's message
         day.qotd_date,
       ).toEqual([]);
     }
+  });
+});
+
+describe("--date latest: the newest day the archive serves (pull request runs)", () => {
+  // The index can list a day the day endpoint does not serve yet (seen 2026-10-29 04:08 UTC:
+  // the index had switched at 04:00 UTC, the day route still answered 404 until 05:00 UTC).
+  const daysDesc = DAYS.map((d) => d.qotd_date)
+    .sort()
+    .reverse();
+  const load = async (date: string): Promise<Source> => {
+    const day = DAYS.find((d) => d.qotd_date === date);
+    if (date === "2026-12-31") {
+      throw new ApiHttpError(`GET /api/public/qotd/${date} -> 500`, 500);
+    }
+    if (!day) {
+      throw new ApiHttpError(
+        `GET /api/public/qotd/${date} -> 404 (not_found)`,
+        404,
+      );
+    }
+    return pastSource(day);
+  };
+
+  it("a listed day the archive answers 404 for is skipped, and the next publishable day is picked", async () => {
+    const plain = await pickLatestDay(daysDesc, load, () => undefined);
+    expect(plain).not.toBeNull();
+    const lines: string[] = [];
+    const picked = await pickLatestDay(["2026-12-30", ...daysDesc], load, (l) =>
+      lines.push(l),
+    );
+    expect(picked).toBe(plain);
+    expect(lines).toContain(
+      "qotd-social: latest: skipping 2026-12-30 (the archive does not serve it)",
+    );
+  });
+
+  it("any other failure still fails the run", async () => {
+    await expect(
+      pickLatestDay(["2026-12-31", ...daysDesc], load, () => undefined),
+    ).rejects.toThrow("-> 500");
   });
 });
 
