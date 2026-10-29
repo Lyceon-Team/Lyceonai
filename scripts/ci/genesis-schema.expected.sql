@@ -18889,6 +18889,19 @@ CREATE TABLE public.question_clusters (
 
 
 --
+-- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_sub_skills (
+    question_id text NOT NULL,
+    sub_skill_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: worked_examples; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18923,19 +18936,6 @@ CREATE TABLE public.worked_examples (
     CONSTRAINT worked_examples_takeaway_check CHECK ((length(btrim(takeaway)) > 0)),
     CONSTRAINT worked_examples_trap_check CHECK ((length(btrim(trap)) > 0)),
     CONSTRAINT worked_examples_video_script_check CHECK ((length(btrim(video_script)) > 0))
-);
-
-
---
--- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.question_sub_skills (
-    question_id text NOT NULL,
-    sub_skill_id text NOT NULL,
-    taxonomy_version text NOT NULL,
-    tagged_by text NOT NULL,
-    tagged_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -30576,17 +30576,17 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_sub_skills TO service
 
 
 --
--- Name: TABLE questions_with_usage; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT ON TABLE public.questions_with_usage TO service_role;
-
-
---
 -- Name: TABLE worked_examples; Type: ACL; Schema: public; Owner: -
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_examples TO service_role;
+
+
+--
+-- Name: TABLE questions_with_usage; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.questions_with_usage TO service_role;
 
 
 --
