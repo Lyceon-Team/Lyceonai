@@ -138,10 +138,10 @@ for (const r of pass1) {
   }
 }
 
-// Token costs
+// Token costs (null/undefined tokens treated as 0)
 let p1InputTotal = 0, p1OutputTotal = 0, p2InputTotal = 0, p2OutputTotal = 0;
-for (const r of pass1) { p1InputTotal += r.model_input_tokens; p1OutputTotal += r.model_output_tokens; }
-for (const r of pass2) { p2InputTotal += r.model_input_tokens; p2OutputTotal += r.model_output_tokens; }
+for (const r of pass1) { p1InputTotal += (r.model_input_tokens ?? 0); p1OutputTotal += (r.model_output_tokens ?? 0); }
+for (const r of pass2) { p2InputTotal += (r.model_input_tokens ?? 0); p2OutputTotal += (r.model_output_tokens ?? 0); }
 
 // Sonnet pricing: $3/M input, $15/M output
 const p1Cost = (p1InputTotal / 1e6) * 3 + (p1OutputTotal / 1e6) * 15;
