@@ -388,7 +388,7 @@ export async function seedSmartLanding(pg: Client): Promise<void> {
   );
   await pg.query(
     `INSERT INTO public.qotd_schedule (qotd_date, question_id)
-     SELECT public.chicago_day(now()), q.id
+     SELECT public.qotd_today(), q.id
        FROM public.questions q
       WHERE q.status = 'published' AND q.item_type = 'mcq'
         AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)

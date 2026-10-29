@@ -12,6 +12,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { clearCsrfToken, csrfFetch, getCsrfToken } from "@/lib/csrf";
 import { getSessionCookieHint } from "@/lib/session-hint";
 import { firstTouchSource } from "@/lib/analytics/first-touch";
+import { signupAttribution } from "@/lib/signup-attribution";
+import {
+  SIGNUP_CAMPAIGN_PARAM,
+  SIGNUP_CHANNEL_PARAM,
+} from "@lyceon/shared/signup-attribution";
 import {
   runtimeRoleSchema,
   ROLE_UNRECOGNIZED,
@@ -403,6 +408,8 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
           // SCL-201 IS 6: the first-touch channel (kept for the tab session only with analytics
           // consent; see lib/analytics/first-touch.ts).
           signupSource: firstTouchSource(),
+          // Karl, 2026-10-28: the sign-up channel and campaign (allowlisted words, no URL).
+          signupAttribution: signupAttribution(),
           // Owner brief 2026-10-10 rule 2: the account type the sign-up asked for (the server
           // re-parses it against the same allowlist; absent or unknown is a student).
           ...(roleIntent ? { role: roleIntent } : {}),
@@ -503,6 +510,12 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         // SCL-201 IS 6: recorded by the callback only on a new, not-yet-onboarded account.
         signupSource: firstTouchSource(),
       });
+      // Karl, 2026-10-28: the sign-up channel rides the callback URL like `signupSource`.
+      const attribution = signupAttribution();
+      callbackParams.set(SIGNUP_CHANNEL_PARAM, attribution.channel);
+      if (attribution.campaign !== null) {
+        callbackParams.set(SIGNUP_CAMPAIGN_PARAM, attribution.campaign);
+      }
       // @spec [AS-5; owner brief 2026-09-15 Part B] the login page's `?next=` (written by
       // RequireRole) rides along to the server callback, which re-sanitises it with the SAME
       // shared module before honouring it after the onboarding gate. Off-origin → dropped here.

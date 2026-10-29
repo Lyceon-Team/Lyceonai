@@ -70,6 +70,7 @@ vi.mock("@/pages/chat", pageStub);
 vi.mock("@/pages/digital-sat", pageStub);
 vi.mock("@/pages/sat-question-of-the-day", pageStub);
 vi.mock("@/pages/sat-question-of-the-day-day", pageStub);
+vi.mock("@/pages/start", pageStub);
 vi.mock("@/pages/digital-sat-math", pageStub);
 vi.mock("@/pages/digital-sat-reading-writing", pageStub);
 vi.mock("@/pages/guardian-required", pageStub);

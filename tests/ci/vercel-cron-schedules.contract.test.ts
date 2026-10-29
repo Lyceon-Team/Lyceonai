@@ -77,6 +77,9 @@ describe("vercel.json cron schedules (owner ruling 2026-10-09)", () => {
       { path: "/api/internal/lifecycle-email", schedule: "0 22 * * 1-5" },
       { path: "/api/internal/lifecycle-email", schedule: "0 15 * * 0,6" },
       { path: "/api/internal/landing-summaries", schedule: "30 6 * * *" },
+      // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 3: the growth
+      // report, Mondays at 14:00 UTC.
+      { path: "/api/internal/growth-report", schedule: "0 14 * * 1" },
     ]);
   });
 });

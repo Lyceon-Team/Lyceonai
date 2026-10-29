@@ -213,6 +213,8 @@ const SatQuestionOfTheDay = lazy(
 const SatQuestionOfTheDayArchive = lazy(
   () => import("@/pages/sat-question-of-the-day-day"),
 );
+// Owner brief "One funnel for every social post" (Karl, 2026-10-28): the social landing page.
+const StartPage = lazy(() => import("@/pages/start"));
 const LegalHub = lazy(() => import("@/pages/legal"));
 const LegalDoc = lazy(() => import("@/pages/legal-doc"));
 const TrustHub = lazy(() => import("@/pages/trust"));
@@ -288,6 +290,7 @@ export function Router() {
           path="/sat-question-of-the-day/:date"
           component={SatQuestionOfTheDayArchive}
         />
+        <Route path="/start" component={StartPage} />
 
         {/* Trust & Legal pages - public */}
         <Route path="/trust" component={TrustHub} />

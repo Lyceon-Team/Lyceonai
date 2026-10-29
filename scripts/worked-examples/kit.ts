@@ -65,11 +65,58 @@ export const brandSchema = z
   .strict();
 export type Brand = z.infer<typeof brandSchema>;
 
+/**
+ * A voice the batch tooling can speak with. kokoro is the /brag voice (hyperframes tts); openvoice-v2
+ * is a clone of a reference speaker (OpenVoice addendum, Karl, 2026-10-27): a MeloTTS base speaker
+ * whose tone colour is converted to the reference's, run on the batch writer's machine only.
+ * speaking_rate (Karl, 2026-10-27, after finding the stand-in clone slow) multiplies the engine's
+ * natural pace: 1.0 is natural, 1.1 about 10% faster. kokoro takes it as `hyperframes tts -s`,
+ * the clone as MeloTTS's `speed`; the tone-colour conversion keeps the timing it is given.
+ */
+const speakingRate = z.number().min(0.5).max(2);
+
+export const voiceProfileSchema = z.discriminatedUnion("engine", [
+  z
+    .object({
+      engine: z.literal("kokoro"),
+      kokoro_voice: z.string().min(1),
+      label: z.string().min(1),
+      speaking_rate: speakingRate,
+    })
+    .strict(),
+  z
+    .object({
+      engine: z.literal("openvoice-v2"),
+      label: z.string().min(1),
+      base_language: z.string().min(1),
+      base_speaker: z.string().min(1),
+      tau: z.number().gt(0).lte(1),
+      speaking_rate: speakingRate,
+    })
+    .strict(),
+]);
+export type VoiceProfile = z.infer<typeof voiceProfileSchema>;
+
 export const voiceSettingsSchema = z
   .object({
-    engine: z.string().min(1),
     hyperframes: z.string().regex(/^\d+\.\d+\.\d+$/),
-    voice: z.string().min(1),
+    /** The voice a batch is spoken in unless --voice says otherwise. */
+    default_profile: z.string().min(1),
+    /** The voice a line falls back to when a clone line fails the quality checks. */
+    fallback_profile: z.string().min(1),
+    profiles: z.record(z.string().regex(/^[a-z0-9_-]+$/), voiceProfileSchema),
+    quality: z
+      .object({
+        max_character_error_rate: z.number().gt(0).lt(1),
+        max_peak_dbfs: z.number().max(0),
+        silence_threshold_dbfs: z.number().lt(0),
+        max_lead_silence_seconds: z.number().positive(),
+        max_tail_silence_seconds: z.number().positive(),
+        max_gap_seconds: z.number().positive(),
+      })
+      .strict(),
+    /** Known mishearings of names by the transcriber, mapped to what was said. */
+    transcript_aliases: z.record(z.string().min(1), z.string().min(1)),
     transcribe_model: z.string().min(1),
     gap_seconds: z.number().min(0).max(2),
     end_hold_seconds: z.number().min(0).max(5),
@@ -83,7 +130,16 @@ export const voiceSettingsSchema = z
     min_seconds: z.number().positive(),
     max_seconds: z.number().positive(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) =>
+      v.profiles[v.default_profile] !== undefined &&
+      v.profiles[v.fallback_profile]?.engine === "kokoro",
+    {
+      message:
+        "default_profile must be a profile, and fallback_profile a kokoro profile",
+    },
+  );
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
 
 export const trackSchema = z

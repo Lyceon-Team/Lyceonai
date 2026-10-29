@@ -152,6 +152,8 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
       role?: "student" | "guardian" | "admin";
       dob?: string | null;
       pro?: boolean;
+      /** When onboarding completed; null = not onboarded. Default: well before every window. */
+      onboardedAt?: string | null;
     } = {},
   ): Promise<Caller> {
     n += 1;
@@ -162,12 +164,15 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
     ]);
     await admin.query(
       `INSERT INTO public.profiles (id, email, role, display_name, date_of_birth, profile_completed_at)
-       VALUES ($1, $2, $3, 'Sam Lee', $4::date, now())`,
+       VALUES ($1, $2, $3, 'Sam Lee', $4::date, $5::timestamptz)`,
       [
         id,
         `sl${n}@school.example`,
         opts.role ?? "student",
         opts.dob === undefined ? "2010-01-01" : opts.dob,
+        opts.onboardedAt === undefined
+          ? "2026-09-01T00:00:00Z"
+          : opts.onboardedAt,
       ],
     );
     if (opts.pro === true) await entitle(id);
@@ -790,5 +795,80 @@ describe.skipIf(!PG_AVAILABLE)("smart landing → real PG", () => {
       arm: "set_mixed",
       fallback_reason: "arm_retired",
     });
+  });
+
+  // ── New students land on Home (Karl, 2026-10-28) ─────────────────────────────────────────────
+  // Before the QOTD day switch (the cutover is seeded at the Chicago midnight after the migration
+  // runs, so it is after every clock here), a QOTD day is the America/Chicago date.
+
+  it("P19 a new student lands on Home until the first QOTD day after onboarding: no resume, no row, no event", async () => {
+    // Onboarded 10:00 Chicago on Oct 26 (QOTD day Oct 26).
+    const s = await person({ onboardedAt: "2026-10-26T15:00:00Z" });
+    // An in-progress session, which would otherwise resume (P4).
+    await admin.query(
+      `INSERT INTO public.practice_sessions (user_id, actor_id, mode, filters, target_count, platform, status)
+       VALUES ($1, $1, 'balanced', '{}'::jsonb, 10, 'web', 'active')`,
+      [s.id],
+    );
+    for (const at of [
+      "2026-10-26T16:00:00Z", // the onboarding day itself
+      "2026-10-27T04:59:59Z", // 23:59:59 Chicago, still the onboarding day
+    ]) {
+      clock = new Date(at);
+      expect(await open(s), at).toEqual({
+        path: null,
+        show_id: null,
+        arm: null,
+      });
+    }
+    expect(await rows("landing_windows", s.id)).toEqual([]);
+    expect(await rows("landing_shows", s.id)).toEqual([]);
+    expect(sent).toEqual([]);
+
+    // The next QOTD day has started: the rotation applies (the open session resumes first).
+    clock = new Date("2026-10-27T05:00:01Z");
+    const next = await open(s);
+    expect(next.path).toMatch(/^\/practice\/session\//);
+    await admin.query(
+      `UPDATE public.practice_sessions SET status = 'completed' WHERE user_id = $1`,
+      [s.id],
+    );
+    const landed = await open(s);
+    expect(landed.show_id).not.toBeNull();
+    expect(await rows("landing_windows", s.id)).toHaveLength(1);
+  });
+
+  it("P20 the first day is the QOTD day: from the switch it turns at 04:00 UTC", async () => {
+    const before = await admin.query<{ c: Date }>(
+      `SELECT cutover_at AS c FROM public.qotd_day_boundary WHERE id`,
+    );
+    await admin.query(
+      `UPDATE public.qotd_day_boundary SET cutover_at = '2026-08-01T05:00:00Z' WHERE id`,
+    );
+    try {
+      const s = await person({ onboardedAt: "2026-10-26T15:00:00Z" });
+      clock = new Date("2026-10-27T03:59:59Z");
+      expect((await open(s)).show_id).toBeNull();
+      expect(await rows("landing_windows", s.id)).toEqual([]);
+      clock = new Date("2026-10-27T04:00:01Z");
+      expect((await open(s)).show_id).not.toBeNull();
+    } finally {
+      await admin.query(
+        `UPDATE public.qotd_day_boundary SET cutover_at = $1 WHERE id`,
+        [before.rows[0]?.c],
+      );
+    }
+  });
+
+  it("P21 a student who has not onboarded lands on Home, with no row", async () => {
+    const s = await person({ onboardedAt: null });
+    clock = W1_DAY1;
+    expect(await open(s)).toEqual({ path: null, show_id: null, arm: null });
+    expect(await rows("landing_windows", s.id)).toEqual([]);
+    const fn = await admin.query<{ open: boolean }>(
+      `SELECT public.landing_rotation_open($1, $2::timestamptz) AS open`,
+      [s.id, W1_DAY1.toISOString()],
+    );
+    expect(fn.rows[0]?.open).toBe(false);
   });
 });

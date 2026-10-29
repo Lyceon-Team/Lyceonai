@@ -5,7 +5,8 @@
  * against infra/route-surface-classification.yaml, in both directions:
  *   registry → output: every indexable static row is in sitemap.xml and has a prerendered file;
  *   output → registry: every sitemap URL has a file, carries its own canonical, and matches an
- *     indexable registry row; every prerendered page file is in the sitemap.
+ *     indexable registry row; every prerendered page file is in the sitemap, except a page whose
+ *     registry row is prerendered but not indexable, which must be noindex and NOT in it.
  * Plus: 404.html and app.html exist and are noindex, and no client/public/sitemap.xml exists.
  *
  * Exit 1 with every failure listed. `pnpm run route:validate` covers App.tsx ↔ registry; this
@@ -130,8 +131,27 @@ for (const loc of locs) {
   );
   if (!row) fail(`sitemap URL ${loc} matches no indexable registry row`);
 }
+// A prerendered page whose registry row is NOT indexable (owner brief "One funnel for every social
+// post", Karl, 2026-10-28: /start, a page for our own links) must say noindex and stay out of the
+// sitemap; every other prerendered page must be in it.
+const nonIndexablePrerendered = registry.filter(
+  (r) => r.prerender && !r.indexable && !r.content_source,
+);
 for (const file of files) {
-  const loc = locOf(urlPathOf(file));
+  const urlPath = urlPathOf(file);
+  const loc = locOf(urlPath);
+  const quiet = nonIndexablePrerendered.find((r) => r.path_pattern === urlPath);
+  if (quiet) {
+    if (locSet.has(loc))
+      fail(`${file} is not indexable in the registry but is in sitemap.xml`);
+    if (
+      !readFileSync(join(OUT, file), "utf8").includes(
+        '<meta name="robots" content="noindex" />',
+      )
+    )
+      fail(`${file} is not indexable in the registry but is not noindex`);
+    continue;
+  }
   if (!locSet.has(loc)) fail(`prerendered ${file} is not in sitemap.xml`);
 }
 

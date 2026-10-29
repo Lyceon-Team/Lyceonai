@@ -9167,6 +9167,191 @@ $$;
 
 
 --
+-- Name: growth_report_claim(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_claim(p_week_start date) RETURNS boolean
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_rows int;
+BEGIN
+  INSERT INTO public.growth_report_posts (week_start) VALUES (p_week_start)
+  ON CONFLICT (week_start) DO UPDATE
+     SET claimed_at = now()
+   WHERE growth_report_posts.posted_at IS NULL
+     AND growth_report_posts.claimed_at < now() - interval '15 minutes';
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
+END;
+$$;
+
+
+--
+-- Name: growth_report_mark_posted(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_mark_posted(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.growth_report_posts SET posted_at = now() WHERE week_start = p_week_start;
+$$;
+
+
+--
+-- Name: growth_report_release(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_release(p_week_start date) RETURNS void
+    LANGUAGE sql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  DELETE FROM public.growth_report_posts
+   WHERE week_start = p_week_start AND posted_at IS NULL;
+$$;
+
+
+--
+-- Name: growth_report_week_start(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_week_start(p_now timestamp with time zone) RETURNS date
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT (date_trunc('week', (p_now AT TIME ZONE 'America/Chicago'))::date - 7);
+$$;
+
+
+--
+-- Name: growth_report_weekly(date, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_weeks jsonb := '[]'::jsonb;
+  v_offset int;
+  v_start date;
+  t0 timestamptz;
+  t1 timestamptz;
+  p0 timestamptz;
+  v_week jsonb;
+BEGIN
+  IF p_week_start IS NULL OR extract(isodow FROM p_week_start) <> 1 THEN
+    RAISE EXCEPTION 'growth_report_weekly: week_start must be a Monday, got %', p_week_start
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  -- 0 = the reported week, 1 = the week before (the comparison).
+  FOREACH v_offset IN ARRAY ARRAY[0, 1] LOOP
+    v_start := p_week_start - 7 * v_offset;
+    t0 := (v_start::timestamp) AT TIME ZONE 'America/Chicago';
+    t1 := ((v_start + 7)::timestamp) AT TIME ZONE 'America/Chicago';
+    p0 := ((v_start - 7)::timestamp) AT TIME ZONE 'America/Chicago';
+
+    WITH stu AS (
+      SELECT p.id, p.created_at, p.signup_channel
+        FROM public.profiles p
+       WHERE p.role = 'student'
+         AND p.deleted_at IS NULL
+         AND p.is_under_13 IS NOT TRUE
+         AND NOT (p.id = ANY (COALESCE(p_excluded, ARRAY[]::uuid[])))
+    ),
+    -- Activity in [lo, hi): the CMO canonical "active student".
+    act_cur AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= t0 AND answered_at < t1
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= t0 AND created_at < t1 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= t0 AND created_at < t1
+    ),
+    act_prev AS (
+      SELECT user_id AS sid FROM public.practice_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.review_session_items
+       WHERE answered_at >= p0 AND answered_at < t0
+      UNION SELECT student_id FROM public.tutor_messages
+       WHERE created_at >= p0 AND created_at < t0 AND role = 'student'
+      UNION SELECT student_id FROM public.test_sessions
+       WHERE created_at >= p0 AND created_at < t0
+    ),
+    active AS (
+      SELECT DISTINCT a.sid FROM act_cur a JOIN stu ON stu.id = a.sid
+    ),
+    returning_students AS (
+      SELECT a.sid FROM active a JOIN act_prev b ON b.sid = a.sid GROUP BY a.sid
+    ),
+    signups AS (
+      SELECT * FROM stu WHERE created_at >= t0 AND created_at < t1
+    ),
+    answers AS (
+      SELECT user_id AS sid, answered_at, time_spent_ms
+        FROM public.practice_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+      UNION ALL
+      SELECT student_id, answered_at, NULL::integer
+        FROM public.review_session_items
+       WHERE status = 'answered' AND answered_at >= p0
+    )
+    SELECT jsonb_build_object(
+      'week_start', v_start,
+      'signups_by_channel', COALESCE((
+        SELECT jsonb_object_agg(channel, n)
+          FROM (SELECT COALESCE(signup_channel, 'untagged') AS channel, count(*) AS n
+                  FROM signups GROUP BY 1) c), '{}'::jsonb),
+      'signups', (SELECT count(*) FROM signups),
+      'active_students', (SELECT count(*) FROM active),
+      'returning_by_test_date', COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('test_date', d, 'students', n) ORDER BY d NULLS LAST)
+          FROM (SELECT sp.target_exam_date AS d, count(*) AS n
+                  FROM returning_students r
+                  LEFT JOIN public.student_study_profile sp ON sp.student_id = r.sid
+                 GROUP BY 1) g), '[]'::jsonb),
+      'returning_students', (SELECT count(*) FROM returning_students),
+      'questions_answered', (
+        SELECT count(*) FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1),
+      'full_length_answers', (
+        SELECT count(*) FROM public.test_session_answers ta
+          JOIN public.test_sessions ts ON ts.id = ta.test_session_id
+          JOIN stu ON stu.id = ts.student_id
+         WHERE ta.answer IS NOT NULL AND ta.updated_at >= t0 AND ta.updated_at < t1),
+      'reviews_done', (
+        SELECT count(*) FROM public.review_sessions rs JOIN stu ON stu.id = rs.student_id
+         WHERE rs.status = 'completed' AND rs.completed_at >= t0 AND rs.completed_at < t1),
+      'study_minutes_estimate', (
+        SELECT COALESCE(round(sum(LEAST(a.time_spent_ms, 300000))::numeric / 60000, 1), 0)
+          FROM answers a JOIN stu ON stu.id = a.sid
+         WHERE a.answered_at >= t0 AND a.answered_at < t1 AND a.time_spent_ms > 0),
+      'signups_answered_24h', (
+        SELECT count(*) FROM signups s
+         WHERE EXISTS (SELECT 1 FROM answers a
+                        WHERE a.sid = s.id
+                          AND a.answered_at >= s.created_at
+                          AND a.answered_at < s.created_at + interval '24 hours')),
+      'upgrades', (
+        SELECT count(DISTINCT e.profile_id) FROM public.entitlements e
+          JOIN stu ON stu.id = e.profile_id
+         WHERE e.tier = 'premium' AND e.created_at >= t0 AND e.created_at < t1)
+    ) INTO v_week;
+
+    v_weeks := v_weeks || jsonb_build_array(v_week);
+  END LOOP;
+
+  RETURN jsonb_build_object('week', v_weeks -> 0, 'previous', v_weeks -> 1);
+END;
+$$;
+
+
+--
 -- Name: guardian_daily_digest_email_enabled(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9571,6 +9756,30 @@ CREATE FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, 
      AND p_now <= s.shown_at + make_interval(secs => p_max_seconds)
   RETURNING s.window_index, s.arm, s.device_class;
 $$;
+
+
+--
+-- Name: landing_rotation_open(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT COALESCE(
+    (SELECT public.qotd_day(p_now) > public.qotd_day(p.profile_completed_at)
+       FROM public.profiles p
+      WHERE p.id = p_profile_id
+        AND p.profile_completed_at IS NOT NULL),
+    false);
+$$;
+
+
+--
+-- Name: FUNCTION landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) IS 'Smart landing (Karl, 2026-10-28): true once the first QOTD day after the day the student onboarded has started. Until then the student lands on Home and the landing records nothing.';
 
 
 --
@@ -10907,6 +11116,37 @@ $$;
 
 
 --
+-- Name: profiles_signup_attribution_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.profiles_signup_attribution_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.is_under_13 IS TRUE THEN
+    NEW.signup_channel := NULL;
+    NEW.signup_campaign := NULL;
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.signup_channel IS NOT NULL
+       AND NEW.signup_channel IS DISTINCT FROM OLD.signup_channel THEN
+      RAISE EXCEPTION 'profiles.signup_channel is set once'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.signup_campaign IS NOT NULL
+       AND NEW.signup_campaign IS DISTINCT FROM OLD.signup_campaign THEN
+      RAISE EXCEPTION 'profiles.signup_campaign is set once'
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: projection_core(uuid, text, text[], text[], integer[], numeric[], integer, integer, integer, integer, integer, numeric, numeric, integer, integer, integer, integer, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11200,14 +11440,15 @@ $$;
 -- Name: qotd_archive(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+CREATE FUNCTION public.qotd_archive() RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer, option_order text[], correct_display_letter text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   -- Counts included so an archive page built from this shows the same stat the API does.
   SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
          q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
-         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0),
+         s.option_order, s.correct_display_letter
     FROM public.qotd_schedule s
     JOIN public.questions q ON q.id = s.question_id
     LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
@@ -11347,6 +11588,50 @@ $$;
 
 
 --
+-- Name: qotd_day(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_day(p_at timestamp with time zone) RETURNS date
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+           WHEN c.cutover_at IS NULL OR p_at < c.cutover_at
+             THEN (p_at AT TIME ZONE 'America/Chicago')::date
+           ELSE ((p_at AT TIME ZONE 'UTC') - interval '4 hours')::date
+         END
+    FROM (SELECT public.qotd_day_cutover() AS cutover_at) c;
+$$;
+
+
+--
+-- Name: qotd_day_cutover(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_day_cutover() RETURNS timestamp with time zone
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT cutover_at FROM public.qotd_day_boundary WHERE id;
+$$;
+
+
+--
+-- Name: qotd_display_letter(text[], text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT CASE
+           WHEN array_position(p_order, upper(btrim(COALESCE(p_correct_answer, '')))) IS NULL THEN NULL
+           ELSE chr(64 + array_position(p_order, upper(btrim(p_correct_answer))))
+         END
+$$;
+
+
+--
 -- Name: qotd_email_prompt_state(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11449,7 +11734,7 @@ CREATE FUNCTION public.qotd_horizon(p_now timestamp with time zone DEFAULT now()
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH t AS (SELECT public.chicago_day(p_now) AS today),
+  WITH t AS (SELECT public.qotd_day(p_now) AS today),
   gap AS (
     SELECT COALESCE(
              (SELECT min((SELECT today FROM t) + k)
@@ -11468,16 +11753,41 @@ $$;
 
 
 --
+-- Name: qotd_option_keys(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_option_keys(p_options jsonb) RETURNS text[]
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH arr AS (
+    SELECT CASE
+             WHEN jsonb_typeof(p_options) = 'array' THEN p_options
+             WHEN jsonb_typeof(p_options) = 'string'
+                  AND left(btrim(p_options #>> '{}'), 1) = '[' THEN (p_options #>> '{}')::jsonb
+             ELSE '[]'::jsonb
+           END AS a
+  )
+  SELECT COALESCE(array_agg(upper(btrim(e ->> 'key')) ORDER BY ord), '{}'::text[])
+    FROM arr, jsonb_array_elements(arr.a) WITH ORDINALITY AS x(e, ord)
+   WHERE jsonb_typeof(e) = 'object'
+     AND upper(btrim(COALESCE(e ->> 'key', ''))) IN ('A', 'B', 'C', 'D')
+     AND btrim(COALESCE(e ->> 'text', '')) <> ''
+$$;
+
+
+--
 -- Name: qotd_question_for(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer)
+CREATE FUNCTION public.qotd_question_for(p_date date) RETURNS TABLE(qotd_date date, question_id text, section text, domain text, skill_codes text[], difficulty integer, item_type text, stem text, passage text, options jsonb, correct_answer text, correct_variants text[], explanation text, attempts integer, correct integer, option_order text[], correct_display_letter text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT s.qotd_date, q.id, q.section, q.domain, q.skill_codes, q.difficulty, q.item_type,
          q.stem, q.passage, q.options, q.correct_answer, q.correct_variants, q.explanation,
-         COALESCE(st.attempts, 0), COALESCE(st.correct, 0)
+         COALESCE(st.attempts, 0), COALESCE(st.correct, 0),
+         s.option_order, s.correct_display_letter
     FROM public.qotd_schedule s
     JOIN public.questions q ON q.id = s.question_id
     LEFT JOIN public.qotd_daily_stats st ON st.qotd_date = s.qotd_date
@@ -11609,8 +11919,18 @@ BEGIN
   IF NOT public.qotd_question_is_eligible(p_question_id) THEN
     RETURN 'ineligible';
   END IF;
-  INSERT INTO public.qotd_schedule (qotd_date, question_id)
-  VALUES (p_date, p_question_id)
+  INSERT INTO public.qotd_schedule (qotd_date, question_id, option_order, correct_display_letter)
+  SELECT p_date, q.id, o.ord,
+         CASE WHEN q.item_type = 'mcq' THEN public.qotd_display_letter(o.ord, q.correct_answer) END
+    FROM public.questions q
+   CROSS JOIN LATERAL (
+     SELECT CASE
+              WHEN q.item_type = 'mcq'
+                THEN public.qotd_shuffled_option_order(q.options, p_date, q.id)
+              ELSE '{}'::text[]
+            END AS ord
+   ) o
+   WHERE q.id = p_question_id
   ON CONFLICT DO NOTHING;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows = 1 THEN
@@ -11621,6 +11941,58 @@ BEGIN
     RETURN 'exists';
   END IF;
   RETURN 'taken';
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_no_update(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_no_update() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'qotd_schedule is write-once: % cannot be changed (SCL-258)', OLD.qotd_date
+    USING ERRCODE = '42501';
+END
+$$;
+
+
+--
+-- Name: qotd_schedule_order_on_insert(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_schedule_order_on_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_q      record;
+  v_order  text[];
+  v_letter text;
+BEGIN
+  SELECT q.item_type, q.options, q.correct_answer INTO v_q
+    FROM public.questions q WHERE q.id = NEW.question_id;
+  IF NOT FOUND THEN
+    RETURN NEW;  -- the foreign key refuses the row
+  END IF;
+  IF v_q.item_type = 'mcq' THEN
+    v_order  := public.qotd_shuffled_option_order(v_q.options, NEW.qotd_date, NEW.question_id);
+    v_letter := public.qotd_display_letter(v_order, v_q.correct_answer);
+  ELSE
+    v_order  := '{}'::text[];
+    v_letter := NULL;
+  END IF;
+  IF (NEW.option_order IS NOT NULL AND NEW.option_order IS DISTINCT FROM v_order)
+     OR (NEW.correct_display_letter IS NOT NULL AND NEW.correct_display_letter IS DISTINCT FROM v_letter) THEN
+    RAISE EXCEPTION 'qotd_schedule: the option order and letter are the database''s, not the caller''s (SCL-258)'
+      USING ERRCODE = '42501';
+  END IF;
+  NEW.option_order := v_order;
+  NEW.correct_display_letter := v_letter;
+  RETURN NEW;
 END
 $$;
 
@@ -11684,6 +12056,48 @@ $$;
 
 
 --
+-- Name: qotd_shuffled_option_order(jsonb, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) RETURNS text[]
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_order text[] := public.qotd_option_keys(p_options);
+  v_n     integer := COALESCE(array_length(v_order, 1), 0);
+  v_bytes bytea := sha256(convert_to(p_qotd_date::text || p_question_id, 'UTF8'));
+  v_pos   integer := 0;
+  v_i     integer;
+  v_j     integer;
+  v_b     integer;
+  v_limit integer;
+  v_tmp   text;
+BEGIN
+  -- 0-based Fisher-Yates: for i from n-1 down to 1, swap position i with a uniform j in [0, i].
+  FOR v_i IN REVERSE (v_n - 1)..1 LOOP
+    v_limit := 256 - (256 % (v_i + 1));
+    LOOP
+      IF v_pos >= 32 THEN
+        v_bytes := sha256(v_bytes);
+        v_pos := 0;
+      END IF;
+      v_b := get_byte(v_bytes, v_pos);
+      v_pos := v_pos + 1;
+      EXIT WHEN v_b < v_limit;
+    END LOOP;
+    v_j := v_b % (v_i + 1);
+    -- arrays are 1-based
+    v_tmp := v_order[v_i + 1];
+    v_order[v_i + 1] := v_order[v_j + 1];
+    v_order[v_j + 1] := v_tmp;
+  END LOOP;
+  RETURN v_order;
+END
+$$;
+
+
+--
 -- Name: qotd_student_answer(uuid, uuid, date, text, jsonb, text, boolean, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11696,7 +12110,7 @@ DECLARE
   v_session  uuid;
   v_item     uuid;
 BEGIN
-  IF p_qotd_date IS DISTINCT FROM public.chicago_day(p_now) THEN
+  IF p_qotd_date IS DISTINCT FROM public.qotd_day(p_now) THEN
     RETURN jsonb_build_object('status', 'not_today');
   END IF;
   IF NOT EXISTS (
@@ -11803,7 +12217,7 @@ CREATE FUNCTION public.qotd_today() RETURNS date
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  SELECT (now() AT TIME ZONE 'America/Chicago')::date
+  SELECT public.qotd_day(now())
 $$;
 
 
@@ -14641,21 +15055,26 @@ CREATE FUNCTION public.student_answer_days(p_student_id uuid, p_since date) RETU
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  SELECT DISTINCT public.chicago_day(i.occurred_at)
-    FROM public.practice_session_items i
-   WHERE i.user_id = p_student_id AND i.status = 'answered' AND i.occurred_at IS NOT NULL
-     AND i.occurred_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
-  UNION
-  SELECT DISTINCT public.chicago_day(COALESCE(r.occurred_at, r.answered_at))
-    FROM public.review_session_items r
-   WHERE r.student_id = p_student_id AND r.status = 'answered'
-     AND COALESCE(r.occurred_at, r.answered_at) >= (p_since::timestamp AT TIME ZONE 'America/Chicago')
-  UNION
-  SELECT DISTINCT public.chicago_day(a.created_at)
-    FROM public.test_answer_submissions a
-    JOIN public.test_sessions t ON t.id = a.test_session_id
-   WHERE t.student_id = p_student_id AND a.answer IS NOT NULL
-     AND a.created_at >= (p_since::timestamp AT TIME ZONE 'America/Chicago');
+  -- From the earliest instant day p_since can start under either rule (04:00 UTC); a row before
+  -- that day's real start carries the day before, which the outer filter drops.
+  SELECT u.day FROM (
+    SELECT DISTINCT public.qotd_day(i.occurred_at)
+      FROM public.practice_session_items i
+     WHERE i.user_id = p_student_id AND i.status = 'answered' AND i.occurred_at IS NOT NULL
+       AND i.occurred_at >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+    UNION
+    SELECT DISTINCT public.qotd_day(COALESCE(r.occurred_at, r.answered_at))
+      FROM public.review_session_items r
+     WHERE r.student_id = p_student_id AND r.status = 'answered'
+       AND COALESCE(r.occurred_at, r.answered_at) >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+    UNION
+    SELECT DISTINCT public.qotd_day(a.created_at)
+      FROM public.test_answer_submissions a
+      JOIN public.test_sessions t ON t.id = a.test_session_id
+     WHERE t.student_id = p_student_id AND a.answer IS NOT NULL
+       AND a.created_at >= ((p_since::timestamp + interval '4 hours') AT TIME ZONE 'UTC')
+  ) AS u(day)
+   WHERE u.day >= p_since;
 $$;
 
 
@@ -14704,16 +15123,31 @@ CREATE FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with ti
     LANGUAGE sql STABLE
     SET search_path TO 'public', 'pg_temp'
     AS $$
-  WITH today AS (SELECT public.chicago_day(p_now) AS d),
+  WITH today AS (SELECT public.qotd_day(p_now) AS d),
   days AS (
     SELECT day FROM public.student_answer_days(p_student_id, (SELECT d FROM today) - 400)
      WHERE day <= (SELECT d FROM today)
   ),
+  -- The switch's bridge (Karl, 2026-10-27: "no student loses a streak because of the switch").
+  -- An answer at the same UTC time every night between 04:00 and the Chicago midnight carried the
+  -- day before under the Chicago day and carries its own date under the 04:00 UTC day, so the
+  -- first 04:00 UTC day is the one label that habit skips. Once that day is past, it counts for
+  -- the RUN of a student who answered the day before it. It is never "today done" and never a
+  -- ticked day in "This week" (student_answer_days is unchanged).
+  run_days AS (
+    SELECT day FROM days
+    UNION
+    SELECT b.day
+      FROM (SELECT public.qotd_day(public.qotd_day_cutover()) AS day) AS b
+     WHERE b.day IS NOT NULL
+       AND b.day < (SELECT d FROM today)
+       AND EXISTS (SELECT 1 FROM days WHERE day = b.day - 1)
+  ),
   anchor AS (
     -- The run ends today if today has an answer, else yesterday if yesterday has one.
     SELECT CASE
-             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today)) THEN (SELECT d FROM today)
-             WHEN EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM today) - 1) THEN (SELECT d FROM today) - 1
+             WHEN EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM today)) THEN (SELECT d FROM today)
+             WHEN EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM today) - 1) THEN (SELECT d FROM today) - 1
            END AS d
   ),
   run AS (
@@ -14723,7 +15157,7 @@ CREATE FUNCTION public.student_streak(p_student_id uuid, p_now timestamp with ti
      WHERE (SELECT d FROM anchor) IS NOT NULL
        AND k < COALESCE((
              SELECT min(g) FROM generate_series(0, 401) AS g
-              WHERE NOT EXISTS (SELECT 1 FROM days WHERE day = (SELECT d FROM anchor) - g)
+              WHERE NOT EXISTS (SELECT 1 FROM run_days WHERE day = (SELECT d FROM anchor) - g)
            ), 401)
   )
   SELECT (SELECT n FROM run),
@@ -17570,6 +18004,25 @@ COMMENT ON VIEW public.full_length_section_scores IS 'E9 / SCL-157: one row per 
 
 
 --
+-- Name: growth_report_posts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.growth_report_posts (
+    week_start date NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    posted_at timestamp with time zone,
+    CONSTRAINT growth_report_posts_week_start_check CHECK ((EXTRACT(isodow FROM week_start) = (1)::numeric))
+);
+
+
+--
+-- Name: TABLE growth_report_posts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.growth_report_posts IS 'One row per reported week (owner brief 2026-10-28 item 3): claimed before the Slack post, posted_at set after it, so the Monday report posts once.';
+
+
+--
 -- Name: guardian_consent_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18539,6 +18992,10 @@ CREATE TABLE public.profiles (
     actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
     analytics_user_id uuid,
     signup_source text,
+    signup_channel text,
+    signup_campaign text,
+    CONSTRAINT profiles_signup_campaign_check CHECK (((signup_campaign IS NULL) OR (signup_campaign ~ '^[a-z0-9_]{1,40}$'::text))),
+    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'facebook'::text, 'email'::text, 'direct'::text, 'other'::text])))),
     CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
@@ -18562,6 +19019,20 @@ COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA2
 --
 
 COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
+
+
+--
+-- Name: COLUMN profiles.signup_channel; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_channel IS 'Karl, 2026-10-28: the first-touch channel from the landing URL''s UTM (coarse, allowlisted; no URL). Written once by the server before onboarding; never held for an under-13 profile.';
+
+
+--
+-- Name: COLUMN profiles.signup_campaign; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_campaign IS 'Karl, 2026-10-28: the first-touch utm_campaign when it is an allowlisted name (packages/shared/src/signup-attribution.ts), else null. Written once with signup_channel; never held for an under-13 profile.';
 
 
 --
@@ -18641,13 +19112,36 @@ COMMENT ON TABLE public.qotd_daily_stats IS 'QOTD (plan R17): aggregate counters
 
 
 --
+-- Name: qotd_day_boundary; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.qotd_day_boundary (
+    id boolean DEFAULT true NOT NULL,
+    cutover_at timestamp with time zone NOT NULL,
+    set_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT qotd_day_boundary_id_check CHECK (id)
+);
+
+
+--
+-- Name: TABLE qotd_day_boundary; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.qotd_day_boundary IS 'The QOTD day switch (Karl, 2026-10-27): one row. Before cutover_at the QOTD day is the America/Chicago date; from cutover_at on it is the 04:00 UTC to 04:00 UTC day. Set once, at apply time, to the next Chicago midnight. Server-only.';
+
+
+--
 -- Name: qotd_schedule; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.qotd_schedule (
     qotd_date date NOT NULL,
     question_id text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    option_order text[] NOT NULL,
+    correct_display_letter text,
+    CONSTRAINT qotd_schedule_display_letter_check CHECK (((correct_display_letter IS NULL) OR (correct_display_letter = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text])))),
+    CONSTRAINT qotd_schedule_order_letter_check CHECK (((cardinality(option_order) <= 4) AND ((cardinality(option_order) = 0) = (correct_display_letter IS NULL))))
 );
 
 
@@ -18655,7 +19149,21 @@ CREATE TABLE public.qotd_schedule (
 -- Name: TABLE qotd_schedule; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18): one question per America/Chicago day. qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18; Karl 2026-10-27): one question per QOTD day (04:00 UTC to 04:00 UTC from the cutover in qotd_day_boundary, America/Chicago before it). qotd_date PK = one a day; question_id UNIQUE = never repeated. Server-only (no grants beyond service_role).';
+
+
+--
+-- Name: COLUMN qotd_schedule.option_order; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.qotd_schedule.option_order IS 'The canonical option keys in the order this day shows them, written once at scheduling by qotd_schedule_insert (qotd_shuffled_option_order). Identity for days scheduled before 2026-10-28 that had arrived. ''{}'' for a grid-in. SCL-258.';
+
+
+--
+-- Name: COLUMN qotd_schedule.correct_display_letter; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.qotd_schedule.correct_display_letter IS 'The correct option''s letter in option_order, written by the database in the same insert. NULL for a grid-in. SCL-258.';
 
 
 --
@@ -19403,7 +19911,7 @@ CREATE TABLE public.student_qotd_attempts (
 -- Name: TABLE student_qotd_attempts; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in student answer per America/Chicago day. selected_answer is the canonical option key. The answer itself is the linked practice_session_items row (mode qotd). ON DELETE CASCADE from profiles.';
+COMMENT ON TABLE public.student_qotd_attempts IS 'Home QOTD: one signed-in student answer per QOTD day (public.qotd_day). selected_answer is the canonical option key. The answer itself is the linked practice_session_items row (mode qotd). ON DELETE CASCADE from profiles.';
 
 
 --
@@ -20816,6 +21324,14 @@ ALTER TABLE ONLY public.exam_score_reports
 
 
 --
+-- Name: growth_report_posts growth_report_posts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.growth_report_posts
+    ADD CONSTRAINT growth_report_posts_pkey PRIMARY KEY (week_start);
+
+
+--
 -- Name: guardian_consent_requests guardian_consent_requests_consent_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21213,6 +21729,14 @@ ALTER TABLE ONLY public.psi_occurred_at_backfill_log
 
 ALTER TABLE ONLY public.qotd_daily_stats
     ADD CONSTRAINT qotd_daily_stats_pkey PRIMARY KEY (qotd_date);
+
+
+--
+-- Name: qotd_day_boundary qotd_day_boundary_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.qotd_day_boundary
+    ADD CONSTRAINT qotd_day_boundary_pkey PRIMARY KEY (id);
 
 
 --
@@ -23304,6 +23828,27 @@ CREATE TRIGGER profiles_set_age BEFORE INSERT OR UPDATE OF date_of_birth ON publ
 
 
 --
+-- Name: profiles profiles_zz_signup_attribution; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER profiles_zz_signup_attribution BEFORE INSERT OR UPDATE OF signup_channel, signup_campaign, date_of_birth, is_under_13 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.profiles_signup_attribution_guard();
+
+
+--
+-- Name: qotd_schedule qotd_schedule_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER qotd_schedule_no_update BEFORE UPDATE ON public.qotd_schedule FOR EACH ROW EXECUTE FUNCTION public.qotd_schedule_no_update();
+
+
+--
+-- Name: qotd_schedule qotd_schedule_order_on_insert; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER qotd_schedule_order_on_insert BEFORE INSERT ON public.qotd_schedule FOR EACH ROW EXECUTE FUNCTION public.qotd_schedule_order_on_insert();
+
+
+--
 -- Name: rate_limit_runtime_config_history rate_limit_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -25373,6 +25918,12 @@ ALTER TABLE public.exam_score_report_projections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.exam_score_reports ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: growth_report_posts; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.growth_report_posts ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: guardian_consent_requests; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -25640,6 +26191,12 @@ ALTER TABLE public.psi_occurred_at_backfill_log ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.qotd_daily_stats ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: qotd_day_boundary; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.qotd_day_boundary ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: qotd_schedule; Type: ROW SECURITY; Schema: public; Owner: -
@@ -27714,6 +28271,46 @@ GRANT ALL ON FUNCTION public.grant_password_recovery(p_profile_id uuid, p_ttl_se
 
 
 --
+-- Name: FUNCTION growth_report_claim(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_claim(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_claim(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_mark_posted(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_mark_posted(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_release(p_week_start date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_release(p_week_start date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_release(p_week_start date) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_week_start(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_week_start(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION growth_report_weekly(p_week_start date, p_excluded uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.growth_report_weekly(p_week_start date, p_excluded uuid[]) TO service_role;
+
+
+--
 -- Name: FUNCTION guardian_daily_digest_email_enabled(p_guardian_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -27783,6 +28380,14 @@ GRANT ALL ON FUNCTION public.landing_claim_summaries(p_now timestamp with time z
 
 REVOKE ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.landing_record_escape(p_show_id uuid, p_profile_id uuid, p_now timestamp with time zone, p_max_seconds integer) TO service_role;
+
+
+--
+-- Name: FUNCTION landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.landing_rotation_open(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -28225,6 +28830,30 @@ GRANT ALL ON FUNCTION public.qotd_daily_notify(p_now timestamp with time zone, p
 
 
 --
+-- Name: FUNCTION qotd_day(p_at timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_day(p_at timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_day(p_at timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_day_cutover(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_day_cutover() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_day_cutover() TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_display_letter(p_order text[], p_correct_answer text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_display_letter(p_order text[], p_correct_answer text) TO service_role;
+
+
+--
 -- Name: FUNCTION qotd_email_prompt_state(p_student_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28262,6 +28891,14 @@ GRANT ALL ON FUNCTION public.qotd_email_unsubscribe(p_student_id uuid, p_now tim
 
 REVOKE ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_horizon(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_option_keys(p_options jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_option_keys(p_options jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_option_keys(p_options jsonb) TO service_role;
 
 
 --
@@ -28321,6 +28958,20 @@ GRANT ALL ON FUNCTION public.qotd_schedule_insert(p_date date, p_question_id tex
 
 
 --
+-- Name: FUNCTION qotd_schedule_no_update(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_no_update() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION qotd_schedule_order_on_insert(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_schedule_order_on_insert() FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION qotd_schedule_release(p_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28342,6 +28993,14 @@ GRANT ALL ON FUNCTION public.qotd_schedule_upcoming(p_after date) TO service_rol
 
 REVOKE ALL ON FUNCTION public.qotd_servable(p_date date) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.qotd_servable(p_date date) TO service_role;
+
+
+--
+-- Name: FUNCTION qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.qotd_shuffled_option_order(p_options jsonb, p_qotd_date date, p_question_id text) TO service_role;
 
 
 --
@@ -29859,6 +30518,13 @@ GRANT SELECT ON TABLE public.full_length_section_scores TO service_role;
 
 
 --
+-- Name: TABLE growth_report_posts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.growth_report_posts TO service_role;
+
+
+--
 -- Name: TABLE guardian_consent_requests; Type: ACL; Schema: public; Owner: -
 --
 
@@ -30390,6 +31056,13 @@ GRANT SELECT,INSERT ON TABLE public.psi_occurred_at_backfill_log TO service_role
 --
 
 GRANT SELECT,INSERT,UPDATE ON TABLE public.qotd_daily_stats TO service_role;
+
+
+--
+-- Name: TABLE qotd_day_boundary; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.qotd_day_boundary TO service_role;
 
 
 --

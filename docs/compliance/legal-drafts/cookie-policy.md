@@ -45,6 +45,8 @@ We do not use advertising cookies, cross-site tracking cookies, or cookies that 
 | `ph_<project>_posthog` | Analytics | PostHog | Distinguishes visits for analytics | 1 year, or until you withdraw consent |
 | `lyceon_first_touch` (session storage) | Analytics | LYCEON | Remembers how you first arrived (for example, from an ad or a search engine) until you create an account | Until you close the tab |
 
+**How you arrived, in the link address (not a cookie).** When you follow a link on our site to sign up, the link's address may include how you first arrived: one word for the site that sent you (for example, `reddit`) and, for a named campaign, the campaign's name. Nothing is stored on your device for this, so it does not depend on your cookie choice. When you create an account we record those words with it, once. We never record them for an account of a user under 13. <!-- Proposed 2026-10-28 (Karl's ruling on SCL-257: recorded whatever the analytics choice); for counsel to accept or tighten. -->
+
 ---
 
 ## **4. Your Choices**
