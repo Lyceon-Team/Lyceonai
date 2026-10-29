@@ -23,6 +23,29 @@ export type WavInfo = {
 
 /** Reads a canonical PCM WAV (RIFF/WAVE, fmt + data chunks, 16-bit). Throws on anything else. */
 export function readWav(buf: Uint8Array): WavInfo {
+  const { dataStart: _start, dataEnd: _end, ...info } = parseWav(buf);
+  return info;
+}
+
+/** The first channel's samples as -1..1 floats, plus the file's rate and peak. */
+export function readWavSamples(buf: Uint8Array): {
+  samples: Float32Array;
+  sampleRate: number;
+  peakDbfs: number;
+} {
+  const w = parseWav(buf);
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const stride = 2 * w.channels;
+  const n = Math.floor((w.dataEnd - w.dataStart) / stride);
+  const samples = new Float32Array(n);
+  for (let k = 0; k < n; k++)
+    samples[k] = view.getInt16(w.dataStart + k * stride, true) / 32768;
+  return { samples, sampleRate: w.sampleRate, peakDbfs: w.peakDbfs };
+}
+
+function parseWav(
+  buf: Uint8Array,
+): WavInfo & { dataStart: number; dataEnd: number } {
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const tag = (at: number): string =>
     String.fromCharCode(
@@ -69,6 +92,8 @@ export function readWav(buf: Uint8Array): WavInfo {
         channels: fmt.channels,
         durationSeconds: frames / fmt.rate,
         peakDbfs: peak === 0 ? -Infinity : 20 * Math.log10(peak / 32768),
+        dataStart: body,
+        dataEnd: end,
       };
     }
     at = body + size + (size % 2);
