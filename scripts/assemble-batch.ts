@@ -494,7 +494,10 @@ function validateRecord(
       others: [
         { field: "explanation", value: rec.explanation },
         ...(Array.isArray(rec.options)
-          ? rec.options.map((o) => ({ field: `option_${o.key}`, value: o.text }))
+          ? rec.options.map((o) => ({
+              field: `option_${o.key}`,
+              value: o.text,
+            }))
           : []),
       ],
     })) {
@@ -582,6 +585,20 @@ function validateRecord(
         `DOUBLED_BACKSLASH_BEFORE_CMD: found "${match4?.[0]}" — single backslash for LaTeX commands; "\\\\" only as a row break (followed by whitespace).`,
       );
     }
+  }
+
+  // COMPOSITION_OFFSPEC — the Digital SAT does not test function composition.
+  // OCR audit of 377 official Linear/Nonlinear Functions items found zero
+  // self-compositions and only one weak two-step numeric composite.
+  // Detects nested function application: f(g(, g(f(, f(f(, etc.
+  // Does NOT flag translations like f(x+5) or f(x-1) (argument is an
+  // expression, not a function call) or \circ used as a degree symbol.
+  const compositionRe = /[fgh]\s*\(\s*[fgh]\s*\(/;
+  if (typeof rec.stem === "string" && compositionRe.test(rec.stem)) {
+    v(
+      "stem",
+      `COMPOSITION_OFFSPEC: stem contains nested function application ("${rec.stem.match(compositionRe)?.[0]}"). The Digital SAT does not test function composition — rewrite or reject.`,
+    );
   }
 
   // Rule 7 — PHANTOM_FIGURE: stem references a visual but no asset attached

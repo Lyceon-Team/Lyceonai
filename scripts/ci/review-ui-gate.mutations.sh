@@ -670,12 +670,14 @@ plant "UI53-TL1" "practice runner put back on the light lock" \
 assert s.count(a) == 1
 s = s.replace(a, "\"/practice/session/:sessionId\": focus(\"Practice\", \"/practice\")", 1)'
 
+# Re-pointed 2026-10-27 (owner ruling on #1349: the phone's LISA strip also takes
+# `sessionItemId={sessionItemId}`): anchored on the phone panel's own props, so it hits that call.
 plant "UI53-T1" "LISA handed the choices" \
   "client/src/components/practice/CanonicalPracticePage.runner.test.tsx" \
   "client/src/components/practice/CanonicalPracticePage.tsx" \
-  'a = "        sessionItemId={sessionItemId}\n"
+  'a = "        sourceSurface={tutorSurface}\n        sessionItemId={sessionItemId}\n"
 assert s.count(a) == 1
-s = s.replace(a, "        sessionItemId={sessionItemId}\n        {...{ choices: question?.options }}\n", 1)'
+s = s.replace(a, "        sourceSurface={tutorSurface}\n        sessionItemId={sessionItemId}\n        {...{ choices: question?.options }}\n", 1)'
 
 # 2026-10-22 (#1300): from 768px up LISA is the chat dock, handed a scope object instead of panel
 # props. The same rule (LISA is handed the item id and the label, never the choices) on its scope.
