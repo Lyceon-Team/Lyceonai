@@ -79,6 +79,8 @@ vi.mock("../../server/lib/tutor-orchestrator-client", () => ({
 const envelopeWatch = vi.hoisted(() => ({
   resolved: 0,
   waiters: [] as Array<() => void>,
+  /** When set, a resolution waits for it before it starts. */
+  gate: null as Promise<void> | null,
 }));
 function envelopeResolved(): Promise<void> {
   if (envelopeWatch.resolved > 0) return Promise.resolve();
@@ -94,6 +96,7 @@ vi.mock("../../server/services/tutor-context", async (importOriginal) => {
     resolveFullEnvelope: async (
       ...args: Parameters<typeof real.resolveFullEnvelope>
     ) => {
+      if (envelopeWatch.gate !== null) await envelopeWatch.gate;
       const envelope = await real.resolveFullEnvelope(...args);
       envelopeWatch.resolved += 1;
       for (const wake of envelopeWatch.waiters.splice(0)) wake();
@@ -304,6 +307,7 @@ beforeEach(() => {
   logged.info.length = 0;
   envelopeWatch.resolved = 0;
   envelopeWatch.waiters.length = 0;
+  envelopeWatch.gate = null;
   orchestrateTurn.mockReset();
   orchestrateTurn.mockResolvedValue(workerReply(REPLY));
   runCrisisClassifier.mockReset();
@@ -346,5 +350,166 @@ describe("H3: a normal turn sends the worker the same envelope as before (snapsh
     await expect(
       JSON.stringify(normaliseIds(orchestrateTurn.mock.calls), null, 2),
     ).toMatchFileSnapshot("__snapshots__/tutor-pre-model-envelope.json");
+  });
+});
+
+describe("H3: a crisis turn never reaches the model, even when the envelope finishes first", () => {
+  it("the classifier answers crisis only after the envelope has resolved: crisis resources, no model call", async () => {
+    const conversationId = await openConversation();
+    runCrisisClassifier.mockImplementation(async () => {
+      // Held until the context envelope has resolved: only parallel code can get here.
+      await envelopeResolved();
+      return CRISIS;
+    });
+    const res = await send(conversationId, FIRST_MESSAGE);
+    expect(res.status).toBe(200);
+    // Presence: the envelope really was resolved during this turn, before the verdict.
+    expect(envelopeWatch.resolved).toBe(1);
+    expect(res.body.data.response.content).toBe("crisis resources");
+    expect(res.body.data.crisis_paused).toBe(true);
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+    // The input scan keeps its place after the classifier: a crisis turn makes no Model Armor
+    // call at all (closure plan W3-1).
+    expect(scanWithModelArmor).not.toHaveBeenCalled();
+    // The discarded envelope reached nothing: no tutor message was written but the crisis copy.
+    const tutorRows = db.current
+      .rows("tutor_messages")
+      .filter((r) => r.role === "tutor");
+    expect(tutorRows.map((r) => r.message)).toEqual(["crisis resources"]);
+  });
+
+  it("a classifier that fails outright still fails closed (crisis resources, no model call)", async () => {
+    const conversationId = await openConversation();
+    runCrisisClassifier.mockImplementation(async () => {
+      await envelopeResolved();
+      throw new Error("classifier down");
+    });
+    const res = await send(conversationId, FIRST_MESSAGE);
+    expect(res.status).toBe(200);
+    expect(envelopeWatch.resolved).toBe(1);
+    expect(res.body.data.response.content).toBe("crisis resources");
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+    expect(scanWithModelArmor).not.toHaveBeenCalled();
+  });
+});
+
+describe("H3: an armor-blocked turn never reaches the model, even when the envelope finishes first", () => {
+  it("the input scan blocks only after the envelope has resolved: the substitution, no model call", async () => {
+    const conversationId = await openConversation();
+    scanWithModelArmor.mockImplementation(async (point: unknown) => {
+      if (point !== "input")
+        return { kind: "clean", templateId: "t", latencyMs: 1 };
+      await envelopeResolved();
+      return {
+        kind: "blocked",
+        templateId: "t",
+        latencyMs: 1,
+        matchedFilters: ["pi_and_jailbreak"],
+      };
+    });
+    const res = await send(conversationId, FIRST_MESSAGE);
+    expect(res.status).toBe(200);
+    expect(envelopeWatch.resolved).toBe(1);
+    expect(res.body.data.response.content).toBe(MODEL_ARMOR_SUBSTITUTION);
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+  });
+});
+
+describe("H3: the model call waits for every safety check", () => {
+  it("a slow injection scan, classifier and input scan all finish before the worker is called", async () => {
+    const conversationId = await openConversation();
+    const finished: string[] = [];
+    runCrisisClassifier.mockImplementation(async () => {
+      await envelopeResolved();
+      finished.push("crisis_classifier");
+      return NO_CRISIS;
+    });
+    scanWithModelArmor.mockImplementation(async (point: unknown) => {
+      if (point === "input") {
+        await envelopeResolved();
+        finished.push("armor_input");
+      }
+      return { kind: "clean", templateId: "t", latencyMs: 1 };
+    });
+    orchestrateTurn.mockImplementation(async () => {
+      finished.push("model");
+      return workerReply(REPLY);
+    });
+    const res = await send(conversationId, FIRST_MESSAGE);
+    expect(res.status).toBe(200);
+    expect(finished).toEqual(["crisis_classifier", "armor_input", "model"]);
+  });
+});
+
+describe("H3: route_timing marks the parallel group", () => {
+  const MEMBERS = [
+    "injection_scan",
+    "crisis_classifier",
+    "armor_input",
+    "pre_submit",
+    "correct_answer",
+    "context_envelope",
+  ];
+
+  it("one group record with its wall time; every member keeps its own step and duration", async () => {
+    const conversationId = await openConversation();
+    const res = await send(conversationId, FIRST_MESSAGE);
+    expect(res.status).toBe(200);
+    const steps = timingSteps();
+    const groups = steps.filter((s) => s.kind === "parallel_group");
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.step).toBe("pre_model");
+    expect("group" in groups[0]!).toBe(false);
+    const group = groups[0]!;
+    expect(typeof group.ms).toBe("number");
+    const members = steps.filter((s) => s.group === "pre_model");
+    expect(members.map((s) => s.step).sort()).toEqual([...MEMBERS].sort());
+    for (const m of members) {
+      expect(typeof m.ms).toBe("number");
+      // Each member started inside the group and ended within its wall time.
+      expect(m.at_ms).toBeGreaterThanOrEqual(group.at_ms);
+      expect(m.at_ms + (m.ms ?? 0)).toBeLessThanOrEqual(
+        group.at_ms + (group.ms ?? 0) + 0.2,
+      );
+    }
+    // Every step the sequential path recorded is still there.
+    for (const name of [
+      ...MEMBERS,
+      "recent_messages",
+      "model",
+      "armor_output",
+      "serialize",
+      "tutor_message_insert",
+    ]) {
+      expect(steps.some((s) => s.step === name)).toBe(true);
+    }
+    // Only the members carry the group; `recent_messages` runs after the insert, outside it.
+    expect(steps.find((s) => s.step === "recent_messages")?.group).toBe(
+      undefined,
+    );
+  });
+
+  it("a crisis turn's line still carries the group; work it never waited for keeps ms null, never a made-up number", async () => {
+    const conversationId = await openConversation();
+    let releaseEnvelope: () => void = () => undefined;
+    // The envelope is held until after the response: the crisis branch never waits for it.
+    envelopeWatch.gate = new Promise<void>((resolve) => {
+      releaseEnvelope = resolve;
+    });
+    runCrisisClassifier.mockResolvedValue(CRISIS);
+    const res = await send(conversationId, FIRST_MESSAGE);
+    expect(res.status).toBe(200);
+    expect(orchestrateTurn).not.toHaveBeenCalled();
+    const steps = timingSteps();
+    const group = steps.find((s) => s.kind === "parallel_group");
+    expect(group?.step).toBe("pre_model");
+    expect(group?.ms).toBeNull();
+    expect(steps.find((s) => s.step === "context_envelope")?.ms).toBeNull();
+    expect(typeof steps.find((s) => s.step === "crisis_classifier")?.ms).toBe(
+      "number",
+    );
+    // No input scan on a crisis turn, so no step for one.
+    expect(steps.some((s) => s.step === "armor_input")).toBe(false);
+    releaseEnvelope();
   });
 });

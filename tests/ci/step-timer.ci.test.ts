@@ -20,7 +20,8 @@ vi.mock("../../server/logger", () => ({
   logger: { info, warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { timedRoute, timedStep } = await import("../../server/lib/step-timer");
+const { beginParallelGroup, timedRoute, timedStep } =
+  await import("../../server/lib/step-timer");
 
 const SECRET_BODY_VALUE = "student-answer-C-and-a-stem";
 
@@ -163,6 +164,93 @@ describe("timedRoute / timedStep", () => {
 
   it("outside a timed route, timedStep is a plain call and logs nothing", async () => {
     expect(await timedStep("solo", () => 42)).toBe(42);
+    expect(timingCalls()).toHaveLength(0);
+  });
+});
+
+/**
+ * @spec [owner brief "H3: parallelise the pre-model work" (Karl, 2026-10-29): "route_timing keeps
+ *        every step, adds a parallel-group marker, and records each step's own duration plus the
+ *        group's wall time"] | @implemented [2026-10-29]
+ */
+describe("beginParallelGroup", () => {
+  beforeEach(() => info.mockClear());
+
+  function groupApp(): express.Express {
+    const a = express();
+    a.use((req, _res, next) => {
+      req.requestId = "req-group-test";
+      req.requestStartedAt = performance.now();
+      next();
+    });
+    a.get(
+      "/group",
+      timedRoute("tutor.message", async (_req, res) => {
+        await timedStep("before", () => pause(2));
+        const group = beginParallelGroup("pre_model");
+        const fast = group.step("fast", () => pause(10));
+        const slow = group.step("slow", () => pause(40));
+        // A member that waits for another before it starts: its own ms excludes the wait.
+        const after = fast.then(() =>
+          group.step("after_fast", () => pause(10)),
+        );
+        const failing = group.step("failing", async () => {
+          await pause(5);
+          throw new Error("member failed");
+        });
+        const failed = failing.then(
+          () => false,
+          () => true,
+        );
+        group.closeWhen([fast, slow, after, failing]);
+        await Promise.all([fast, slow, after, failed]);
+        await pause(1);
+        res.status(200).json({ ok: true });
+      }),
+    );
+    return a;
+  }
+
+  it("one group record with its wall time; members keep their own name, ms and start, tagged", async () => {
+    const res = await request(groupApp()).get("/group");
+    expect(res.status).toBe(200);
+    await pause(5);
+    const [call] = timingCalls();
+    expect(call).toBeDefined();
+    const steps = call!.data.steps as Array<Record<string, unknown>>;
+    const byName = new Map(steps.map((s) => [s.step as string, s]));
+    const group = byName.get("pre_model")!;
+    expect(group.kind).toBe("parallel_group");
+    expect("group" in group).toBe(false);
+    for (const name of ["fast", "slow", "after_fast", "failing"]) {
+      expect(byName.get(name)?.group).toBe("pre_model");
+    }
+    // Ordinary steps are untouched.
+    expect(Object.keys(byName.get("before")!).sort()).toEqual([
+      "at_ms",
+      "ms",
+      "step",
+    ]);
+    const ms = (name: string): number => byName.get(name)!.ms as number;
+    const at = (name: string): number => byName.get(name)!.at_ms as number;
+    // Wall time: from the group's start to the last member's end — at least the slowest member,
+    // and less than the members' sum (they overlapped).
+    expect(ms("pre_model")).toBeGreaterThanOrEqual(ms("slow"));
+    expect(ms("pre_model")).toBeLessThan(
+      ms("fast") + ms("slow") + ms("after_fast") + ms("failing"),
+    );
+    // The dependent member started after the one it waited for, and its ms is its own (~10).
+    expect(at("after_fast")).toBeGreaterThanOrEqual(at("fast") + ms("fast"));
+    expect(ms("after_fast")).toBeLessThan(ms("slow"));
+    // A member that failed is recorded with its real duration.
+    expect(typeof ms("failing")).toBe("number");
+  });
+
+  it("outside a timed route, members simply run and nothing is logged", async () => {
+    const group = beginParallelGroup("pre_model");
+    const value = group.step("solo", () => 7);
+    group.closeWhen([value]);
+    expect(await value).toBe(7);
     expect(timingCalls()).toHaveLength(0);
   });
 });

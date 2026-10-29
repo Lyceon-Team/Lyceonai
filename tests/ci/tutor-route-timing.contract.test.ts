@@ -113,16 +113,26 @@ const REPLY = "Try undoing the multiplication on both sides first.";
 const UUID_ANYWHERE =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-/** The reply path's steps, in the order a normal (non-crisis, first-attempt) turn runs them. */
-const REPLY_PATH_STEPS = [
-  "entitlement",
+/**
+ * The reply path's steps, in the order a normal (non-crisis, first-attempt) turn runs them. Since
+ * H3 (owner brief "H3: parallelise the pre-model work", Karl 2026-10-29) the pre-model work runs
+ * as the `pre_model` parallel group: its members start together (or as soon as what they wait for
+ * is in), so their relative order is not fixed and they are asserted as a set, between the steps
+ * that bracket them. Every step the sequential path recorded is still recorded.
+ */
+const PRE_MODEL_MEMBERS = [
   "injection_scan",
   "crisis_classifier",
+  "armor_input",
   "pre_submit",
   "correct_answer",
-  "recent_messages",
   "context_envelope",
-  "armor_input",
+];
+const REPLY_PATH_STEPS = [
+  "entitlement",
+  "pre_model",
+  ...PRE_MODEL_MEMBERS,
+  "recent_messages",
   "video_retrieval",
   "model",
   "armor_output",
@@ -267,9 +277,18 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
     expect(data.route).toBe("tutor.message");
     expect(data.status).toBe(200);
     const steps = data.steps as Array<{ step: string; ms: number | null }>;
-    expect(
-      steps.map((s) => s.step).filter((name) => !name.startsWith("db.")),
-    ).toEqual(REPLY_PATH_STEPS);
+    const named = steps
+      .map((s) => s.step)
+      .filter((name) => !name.startsWith("db."));
+    // Before the group, the group itself, its members in any order, then the rest in order.
+    const memberCount = PRE_MODEL_MEMBERS.length;
+    expect(named.slice(0, 2)).toEqual(["entitlement", "pre_model"]);
+    expect([...named.slice(2, 2 + memberCount)].sort()).toEqual(
+      [...PRE_MODEL_MEMBERS].sort(),
+    );
+    expect(named.slice(2 + memberCount)).toEqual(
+      REPLY_PATH_STEPS.slice(2 + memberCount),
+    );
     // H1: the route opted in, so its database round trips are steps too.
     expect(steps.some((s) => s.step === "db.read.tutor_conversations")).toBe(
       true,
@@ -311,7 +330,18 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
     const steps = line!.data.steps as Array<Record<string, unknown>>;
     expect(steps.length).toBeGreaterThan(REPLY_PATH_STEPS.length);
     for (const step of steps) {
-      expect(Object.keys(step).sort()).toEqual(["at_ms", "ms", "step"]);
+      // H3: the group's own record carries `kind`; its members carry `group`. Nothing else.
+      const keys = Object.keys(step).sort();
+      if (step.kind !== undefined) {
+        expect(keys).toEqual(["at_ms", "kind", "ms", "step"]);
+        expect(step.kind).toBe("parallel_group");
+        expect(step.step).toBe("pre_model");
+      } else if (step.group !== undefined) {
+        expect(keys).toEqual(["at_ms", "group", "ms", "step"]);
+        expect(step.group).toBe("pre_model");
+      } else {
+        expect(keys).toEqual(["at_ms", "ms", "step"]);
+      }
       expect(step.step).toMatch(
         /^(?:[a-z_]+|db\.(?:read|insert|update|delete|rpc|auth|other)\.[a-z][a-z0-9_]*)$/,
       );

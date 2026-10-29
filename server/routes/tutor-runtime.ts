@@ -39,10 +39,12 @@ import { emitEvent } from "../lib/analytics/emit-event";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import {
+  beginParallelGroup,
   recordVideoRecommendation,
   recordVideoRetrieval,
   timedRoute,
   timedStep,
+  type ParallelGroup,
 } from "../lib/step-timer";
 import { EntitlementService } from "../services/entitlement-service";
 // resolveFullEnvelope: context resolver lives in tutor-context.ts.
@@ -72,6 +74,7 @@ import { orchestrateTurn } from "../lib/tutor-orchestrator-client";
 import {
   MODEL_ARMOR_SUBSTITUTION,
   scanWithModelArmor,
+  type ModelArmorVerdict,
 } from "../services/tutor-model-armor";
 import { getRecentMessages } from "../services/tutor-memory";
 import { sendTutorError } from "../services/tutor-error-codes";
@@ -100,6 +103,7 @@ import {
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import {
   orchestrateRequestSchema,
+  type OrchestrateRequest,
   type TurnAttribution,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import {
@@ -963,6 +967,144 @@ function turnMetricsAttribution(attribution: TurnAttribution | null): {
 // POST /messages (continued)
 // ============================================================================
 
+// ============================================================================
+// H3: the pre-model parallel group
+// ============================================================================
+
+/** A member's outcome carried as a value, so a member that is never read cannot go unhandled. */
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
+
+function settled<T>(work: Promise<T>): Promise<Settled<T>> {
+  return work.then(
+    (value): Settled<T> => ({ ok: true, value }),
+    (error: unknown): Settled<T> => ({ ok: false, error }),
+  );
+}
+
+/** Raise a member's failure where the sequential code would have raised it: the same error. */
+function unwrapSettled<T>(outcome: Settled<T>): T {
+  if (outcome.ok) return outcome.value;
+  throw outcome.error;
+}
+
+type ModelPathWork = {
+  /** Null when the classifier did not clear the turn: the scan was never made (W3-1). */
+  armorInput: Promise<
+    Settled<{
+      verdict: ModelArmorVerdict;
+      ms: number;
+    } | null>
+  >;
+  preSubmit: Promise<Settled<boolean>>;
+  correctAnswer: Promise<Settled<CorrectAnswerResult>>;
+  envelope: Promise<Settled<OrchestrateRequest>>;
+  /** Every chain above, for the group's wall time. */
+  all: Promise<unknown>[];
+};
+
+/**
+ * @spec [owner brief "H3: parallelise the pre-model work" (Karl, 2026-10-29); Doc-03B_V4.1 §6.5
+ *        steps 13-13b; INV-03-04; Doc-03D_V1.2 §6.3] | @implemented [2026-10-29]
+ * plain English: the model path's pre-model work, inside the `pre_model` group:
+ *   - context assembly, started at once: the server-derived pre-submit flag and the BFF-local
+ *     correct answer in parallel, then the context envelope, which needs both (its question
+ *     content and its wire `correct_answer` are gated on the flag, exactly as before). The
+ *     envelope is resolved with an EMPTY recent-message window: the window is read after the
+ *     student message is persisted and set by the route (step 13);
+ *   - the Model Armor input scan, started the moment the crisis classifier CLEARS the turn, so it
+ *     overlaps the envelope but keeps its place after the classifier: a turn the classifier flags
+ *     (or could not judge, which fails closed as a crisis) makes no Model Armor call at all
+ *     (closure plan W3-1, pinned by tests/ci/tutor-model-armor.contract.test.ts).
+ * The calls and their arguments are the sequential code's, unchanged; only their start moved. All
+ * of it is reads and one external scan: nothing here writes.
+ */
+function startModelPathWork(
+  group: ParallelGroup,
+  turn: {
+    conversation: TutorConversationRow;
+    effectiveScope: ResolvedScopeRow;
+    studentId: string;
+    message: string;
+    /** The classifier's outcome: the input scan waits for it and runs only on a cleared turn. */
+    crisis: Promise<Settled<{ crisis: boolean }>>;
+  },
+): ModelPathWork {
+  const { conversation, effectiveScope, studentId } = turn;
+  const armorInput = settled(
+    turn.crisis.then((outcome) =>
+      !outcome.ok || outcome.value.crisis
+        ? null
+        : group.step("armor_input", async () => {
+            const startedAt = Date.now();
+            const verdict = await scanWithModelArmor(
+              "input",
+              turn.message,
+              conversation.id,
+            );
+            return { verdict, ms: Date.now() - startedAt };
+          }),
+    ),
+  );
+  const preSubmit = settled(
+    group.step("pre_submit", () =>
+      isPreSubmitForSurface(
+        conversation.source_surface,
+        effectiveScope.source_session_item_id,
+        supabaseServer,
+      ),
+    ),
+  );
+  // Fetched unconditionally when a question row exists: pre-submit it stays BFF-local for the
+  // answer-aware leak scan (step 15); post-submit the envelope forwards it (tutor-context.ts
+  // decides: correct_answer is isPostSubmit ? value : null).
+  const questionRowId = effectiveScope.source_question_row_id;
+  const correctAnswer = settled(
+    questionRowId
+      ? group.step("correct_answer", () =>
+          getCorrectAnswerForScope(
+            questionRowId,
+            conversation.source_surface,
+            effectiveScope.source_session_item_id,
+          ),
+        )
+      : Promise.resolve<CorrectAnswerResult>({ value: null, failed: false }),
+  );
+  // Build context envelope (Doc 03A §5.4). Anti-leak: correct_answer is null on the wire
+  // pre-submit (Doc 03D §6.3). The real value stays BFF-local for the output scan; the envelope
+  // carries is_post_submit so the worker gates on a server-derived boolean, not on field presence.
+  // Opened as a step only once both inputs are in, so its duration is its own.
+  const envelope = settled(
+    Promise.all([preSubmit, correctAnswer]).then(
+      ([preSubmitOutcome, correctAnswerOutcome]) => {
+        const isPostSubmit = !unwrapSettled(preSubmitOutcome);
+        const correctAnswerValue = unwrapSettled(correctAnswerOutcome).value;
+        return group.step("context_envelope", () =>
+          resolveFullEnvelope({
+            conversationId: conversation.id,
+            studentId,
+            entryMode: conversation.entry_mode,
+            sourceSurface: conversation.source_surface,
+            sourceSessionId: effectiveScope.source_session_id,
+            sourceSessionItemId: effectiveScope.source_session_item_id,
+            sourceQuestionRowId: effectiveScope.source_question_row_id,
+            recentMessages: [],
+            runtimeLimits: { maxOutputTokens: 2048, timeoutMs: 30_000 },
+            correctAnswer: correctAnswerValue,
+            isPostSubmit,
+          }),
+        );
+      },
+    ),
+  );
+  return {
+    armorInput,
+    preSubmit,
+    correctAnswer,
+    envelope,
+    all: [armorInput, preSubmit, correctAnswer, envelope],
+  };
+}
+
 /**
  * @spec [Doc-03B_V4.1 §6 (Append Turn, the 19-step pipeline); owner rulings on #1277 (Karl,
  *        2026-10-21), ruling 6: "H1 approved. Add the existing step timer to the tutor reply path:
@@ -987,6 +1129,15 @@ function turnMetricsAttribution(attribution: TurnAttribution | null): {
  * `worker_vertex_attempt` (the worker's own timings, returned as numbers and stripped before the
  * handler sees the response), `antileak_scan`, and `video_retrieval`. Responses and persisted rows
  * are unchanged.
+ *
+ * H3 (owner brief "H3: parallelise the pre-model work", Karl 2026-10-29) | @implemented
+ * [2026-10-29]: context assembly runs at the same time as the safety checks, as the `pre_model`
+ * parallel group (step 10, and `startModelPathWork`): the injection scan, the crisis classifier
+ * and context assembly (pre-submit flag, correct answer, envelope) start together; the Model Armor
+ * input scan starts as soon as the classifier clears the turn. Results are still taken in the old
+ * order, so the model waits for every check and a crisis or blocked turn never reaches it. The
+ * line keeps every step; the group adds one `{ step: "pre_model", kind: "parallel_group" }` record
+ * (its wall time) and `group: "pre_model"` on each member's record.
  */
 async function postTutorMessage(req: Request, res: Response): Promise<void> {
   // Step 1: Validate JWT and role — already enforced at mount.
@@ -1306,9 +1457,71 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // messages in the conversation — not just the current turn.
     const { sanitized } = sanitizeInput(input.message);
     const patternScan = scanForInjectionPatterns(sanitized);
-    const signatureScan = await timedStep("injection_scan", () =>
-      checkSignatureTable(sanitized),
+
+    // Owner ruling 4 (2026-10-27, option a; SCL-254): a guided-choice tap whose message is
+    // EXACTLY its label (step 6b refused anything else; re-checked here against the closed list)
+    // skips the model classifier (Layer 2). Layer 1 and the injection scan still run. Any
+    // typed message gets both layers.
+    const exactLabelTap =
+      turnIntent !== null && isExactIntentLabel(turnIntent, input.message);
+
+    // H3 (owner brief "H3: parallelise the pre-model work", Karl 2026-10-29): the pre-model work
+    // runs as one parallel group: context assembly (the pre-submit flag, the correct answer, the
+    // context envelope) runs at the same time as the three safety checks (the injection signature
+    // scan, the crisis classifier, then the Model Armor input scan). Nothing is decided by it:
+    // each result is AWAITED where the sequential code used it, in the same order, so
+    //   - the model call still waits for every safety check (all three are awaited before it);
+    //   - a crisis turn (step 11a) and an input-blocked turn (step 13b/14) return or substitute
+    //     exactly as before and never reach the model; their envelope work is discarded unread;
+    //   - anti-leak is untouched: the envelope is resolved with the same server-derived
+    //     pre-submit flag and correct answer (the envelope waits for both), and the same gates in
+    //     tutor-context.ts and the output scan decide what crosses the wire.
+    // What moves is only WHEN reads start. Every member is a read or an external scan; the writes
+    // (the student message, the instruction assignment, the injection log, review cases) stay
+    // where they were. Two consequences, both deliberate:
+    //   - The recent-message window is still read AFTER the student message is persisted (step
+    //     13), so the envelope carries the current turn exactly as before; the envelope is resolved
+    //     with an empty window and the real one is set after (the snapshot test proves the result
+    //     is unchanged).
+    //   - The Model Armor input scan keeps its place AFTER the crisis classifier: it starts the
+    //     moment the classifier clears the turn (still overlapping the envelope), so a crisis
+    //     turn makes no Model Armor call at all, as closure plan W3-1 pins.
+    // A video-intent turn (step 11b) never had an envelope or an input scan, and still has none:
+    // that is known here (the intent and the scope are), so they are not started for it.
+    // A member's failure is carried as a value (`settled`) and raised where the sequential code
+    // would have raised it; on a branch that returns first it is discarded with the result.
+    const videoIntentTurn =
+      turnIntent !== null &&
+      isVideoIntent(turnIntent) &&
+      conversation.source_question_row_id !== null;
+    const preModel = beginParallelGroup("pre_model");
+    const signatureScanSettled = settled(
+      preModel.step("injection_scan", () => checkSignatureTable(sanitized)),
     );
+    const crisisSettled = settled(
+      preModel.step("crisis_classifier", () =>
+        runCrisisClassifier(
+          sanitized,
+          exactLabelTap ? "signatures_only_exact_label" : "both",
+        ),
+      ),
+    );
+    const modelPathWork = videoIntentTurn
+      ? null
+      : startModelPathWork(preModel, {
+          conversation,
+          effectiveScope,
+          studentId,
+          message: input.message,
+          crisis: crisisSettled,
+        });
+    preModel.closeWhen([
+      signatureScanSettled,
+      crisisSettled,
+      ...(modelPathWork === null ? [] : modelPathWork.all),
+    ]);
+
+    const signatureScan = unwrapSettled(await signatureScanSettled);
     const injectionDetected = patternScan.detected || signatureScan.matched;
     // A resumed turn was already scanned and logged on its first attempt;
     // logging again would double-count a severity-5 abuse incident.
@@ -1329,24 +1542,14 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // B1.5: runCrisisClassifier now returns crisis=true when Layer 2 fails AND
     // Layer 1 has zero crisis signatures (classifier_degraded_no_floor). This
     // routes into the §4.6 crisis-safe response rather than normal tutoring.
-    // The catch block below handles unexpected infrastructure failure the same
+    // The failure branch below handles unexpected infrastructure failure the same
     // way — fail closed with crisis-safe response.
-    //
-    // Owner ruling 4 (2026-10-27, option a; SCL-254): a guided-choice tap whose message is
-    // EXACTLY its label (step 6b refused anything else; re-checked here against the closed list)
-    // skips the model classifier (Layer 2). Layer 1 and the injection scan above still run. Any
-    // typed message gets both layers.
-    const exactLabelTap =
-      turnIntent !== null && isExactIntentLabel(turnIntent, input.message);
     let crisisResult: Awaited<ReturnType<typeof runCrisisClassifier>>;
-    try {
-      crisisResult = await timedStep("crisis_classifier", () =>
-        runCrisisClassifier(
-          sanitized,
-          exactLabelTap ? "signatures_only_exact_label" : "both",
-        ),
-      );
-    } catch (crisisErr: unknown) {
+    const crisisOutcome = await crisisSettled;
+    if (crisisOutcome.ok) {
+      crisisResult = crisisOutcome.value;
+    } else {
+      const crisisErr = crisisOutcome.error;
       // B1.5: Unexpected infrastructure failure in the entire classifier
       // pipeline. We cannot determine Layer 1 state, so fail closed — return
       // crisis-safe response rather than proceeding to normal generation.
@@ -1985,54 +2188,27 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     //     boolean) and correct_answer (null pre-submit, real post-submit).
     // @spec [INV-03-04, Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3,
     //        LISA-FULL-007]
-    const preSubmit = await timedStep("pre_submit", () =>
-      isPreSubmitForSurface(
-        conversation.source_surface,
-        effectiveScope.source_session_item_id,
-        supabaseServer,
-      ),
+    // H3: the three are resolved in the pre-model group (startModelPathWork); they are taken here,
+    // where the sequential code computed them, so a failure raises at the same point it did.
+    if (modelPathWork === null) {
+      // A video-intent turn returned in step 11b; nothing else skips the model-path work.
+      throw new Error(
+        "tutor turn reached the model path without its pre-model work",
+      );
+    }
+    const preSubmit = unwrapSettled(await modelPathWork.preSubmit);
+    const correctAnswerResult = unwrapSettled(
+      await modelPathWork.correctAnswer,
     );
-    const isPostSubmit = !preSubmit;
 
-    // Fetch correct_answer unconditionally when a question row exists.
-    // Pre-submit: needed BFF-local for answer-aware leak detection (step 15).
-    // Post-submit: forwarded on the wire so the worker prompt can explain it.
-    // The envelope gate (tutor-context.ts) decides what reaches the wire:
-    //   correct_answer: isPostSubmit ? correctAnswer : null
-    // @spec [Doc-03B_V4.1 §6.5 step 13-15, Doc-03D_V1.2 §6.3]
-    const questionRowId = effectiveScope.source_question_row_id;
-    const correctAnswerResult = questionRowId
-      ? await timedStep("correct_answer", () =>
-          getCorrectAnswerForScope(
-            questionRowId,
-            conversation.source_surface,
-            effectiveScope.source_session_item_id,
-          ),
-        )
-      : ({ value: null, failed: false } as CorrectAnswerResult);
-
-    // Build context envelope (Doc 03A §5.4). Anti-leak: correct_answer is
-    // null on the wire pre-submit (Doc 03D §6.3). The real value stays
-    // BFF-local for the output scan; the envelope carries is_post_submit
-    // so the worker gates on a server-derived boolean, not on field presence.
+    // The window is read here, after the student message is persisted (step 11), exactly as
+    // before, so it holds the current turn; the envelope was resolved with an empty window (H3)
+    // and takes this one. getRecentMessages validates every message against the wire schema.
     const recentMessages = await timedStep("recent_messages", () =>
       getRecentMessages(conversation.id),
     );
-    const envelope = await timedStep("context_envelope", () =>
-      resolveFullEnvelope({
-        conversationId: conversation.id,
-        studentId,
-        entryMode: conversation.entry_mode,
-        sourceSurface: conversation.source_surface,
-        sourceSessionId: effectiveScope.source_session_id,
-        sourceSessionItemId: effectiveScope.source_session_item_id,
-        sourceQuestionRowId: effectiveScope.source_question_row_id,
-        recentMessages,
-        runtimeLimits: { maxOutputTokens: 2048, timeoutMs: 30_000 },
-        correctAnswer: correctAnswerResult.value,
-        isPostSubmit,
-      }),
-    );
+    const envelope = unwrapSettled(await modelPathWork.envelope);
+    envelope.recent_messages = recentMessages;
 
     await logContextResolution({
       conversationId: conversation.id,
@@ -2050,10 +2226,18 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           : "general",
     });
 
-    // The clock starts before the Model Armor input scan so that
+    // The clock covers the Model Armor input scan so that
     // turn_metrics.orchestration_duration_ms includes both scans — that is
-    // the before/after latency measurement for W3-1.
-    const turnStartedAt = Date.now();
+    // the before/after latency measurement for W3-1. Since H3 the input scan runs in the
+    // pre-model group, so its own duration is added back: the measure keeps its meaning.
+    const armorInputTimed = unwrapSettled(await modelPathWork.armorInput);
+    if (armorInputTimed === null) {
+      // Only a turn the classifier did not clear skips the scan, and that turn returned in 11a.
+      throw new Error(
+        "tutor turn reached the model path without its input scan",
+      );
+    }
+    const turnStartedAt = Date.now() - armorInputTimed.ms;
 
     // Step 13b: Model Armor input scan (closure plan W3-1 — an additional
     // layer, not in docs/Spec; see the tutor-model-armor.ts header). Runs on
@@ -2062,9 +2246,8 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     // skipped scan (logged at ERROR) lets the turn proceed. A block skips the
     // model entirely and answers with the neutral substitution.
     // @spec [closure plan W3-1; owner ruling 2026-09-24] | @implemented 2026-09-24
-    const armorInput = await timedStep("armor_input", () =>
-      scanWithModelArmor("input", input.message, conversation.id),
-    );
+    // H3: the scan ran in the pre-model group; its verdict is acted on here, as before.
+    const armorInput = armorInputTimed.verdict;
 
     // Step 13c (closure plan W3-5, owner ruling 2026-09-24): an input block on
     // Model Armor's `dangerous` filter may be a crisis the Layer 1/Layer 2
