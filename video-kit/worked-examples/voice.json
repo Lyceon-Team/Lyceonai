@@ -1,7 +1,35 @@
 {
-  "engine": "kokoro via hyperframes tts",
   "hyperframes": "0.8.143",
-  "voice": "af_heart",
+  "default_profile": "af_heart",
+  "fallback_profile": "af_heart",
+  "profiles": {
+    "af_heart": {
+      "engine": "kokoro",
+      "kokoro_voice": "af_heart",
+      "label": "the /brag voice (Kokoro af_heart via hyperframes tts)",
+      "speaking_rate": 1.0
+    },
+    "clone": {
+      "engine": "openvoice-v2",
+      "label": "OpenVoice V2 clone of the reference speaker",
+      "base_language": "EN",
+      "base_speaker": "EN-US",
+      "tau": 0.3,
+      "speaking_rate": 1.0
+    }
+  },
+  "quality": {
+    "max_character_error_rate": 0.15,
+    "max_peak_dbfs": -0.1,
+    "silence_threshold_dbfs": -40,
+    "max_lead_silence_seconds": 0.6,
+    "max_tail_silence_seconds": 0.8,
+    "max_gap_seconds": 1.2
+  },
+  "transcript_aliases": {
+    "lycian": "lyceon dot",
+    ".ai": " a i"
+  },
   "transcribe_model": "small.en",
   "gap_seconds": 0.3,
   "end_hold_seconds": 1.2,

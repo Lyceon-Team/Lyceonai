@@ -111,6 +111,11 @@ vi.mock("@/hooks/useCanonicalPractice", () => ({
 // W4-1: the panel's own behaviour (scope, one conversation per item, the
 // wire) is proven end to end in ScopedTutorPanel.contract.test.tsx; here only
 // what the page hands it.
+// The phone's LISA strip (owner ruling on #1349) reads the guided choices through the app's
+// query client; its behaviour is CanonicalPracticePage.runner.test.tsx's.
+vi.mock("@/components/tutor/GuidedChoicesBar", () => ({
+  GuidedChoicesBar: () => null,
+}));
 vi.mock("@/components/tutor/ScopedTutorPanel", () => ({
   ScopedTutorPanel: (p: {
     sourceSurface: string;

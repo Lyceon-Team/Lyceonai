@@ -445,36 +445,62 @@ async function invokeClassifier(
 // ── Combined Classifier ────────────────────────────────────────────────
 
 /**
+ * Which layers a turn's crisis screening runs.
+ *  - "both": Layer 1 (signatures) and Layer 2 (the model), every free-text turn.
+ *  - "signatures_only_exact_label": Layer 1 alone. ONLY for a guided-choice tap whose message
+ *    the route has checked is exactly that choice's fixed label (owner ruling 4, 2026-10-27).
+ */
+export type CrisisScreening = "both" | "signatures_only_exact_label";
+
+/**
  * Runs both crisis classifier layers in parallel (per SCL-023).
  * Either layer positive triggers the crisis path.
  *
  * @spec [Doc-03_V3 §21, SCL-023, INV-03-16]
+ *
+ * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), ruling 4 of
+ *        2026-10-27 (option a); SCL-254] | @implemented [2026-10-27]
+ * plain English: `screening: "signatures_only_exact_label"` skips the model classifier (Layer 2)
+ * for a tap on a guided choice: the message is then one of five fixed labels the server wrote,
+ * checked server-side to be exactly the label, so there is nothing a student wrote for the model
+ * to read. Layer 1 still runs on it, and the route's injection scan still runs. A skipped Layer 2
+ * is not a failed Layer 2: it neither forces review nor trips the B1.5 fail-closed path. Any
+ * free-text message, including one typed after a tap, gets "both".
  */
-export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
+export async function runCrisisClassifier(
+  text: string,
+  screening: CrisisScreening = "both",
+): Promise<CrisisResult> {
+  const runModel = screening === "both";
   // Run both layers in parallel per SCL-023
   const [signatureResult, classifierResult] = await Promise.all([
     checkCrisisSignatures(text),
-    classifyCrisis(text).catch((err: unknown): ClassifierResult => {
-      // If classifyCrisis itself throws (shouldn't, but defensive),
-      // treat as Layer 2 failure
-      logger.error(
-        "TUTOR_CRISIS",
-        "classifier_unexpected_error",
-        "unexpected error from classifyCrisis; treating as Layer 2 failure",
-        err instanceof Error ? err : undefined,
-      );
-      return { isCrisis: false, confidence: 0 };
-    }),
+    runModel
+      ? classifyCrisis(text).catch((err: unknown): ClassifierResult => {
+          // If classifyCrisis itself throws (shouldn't, but defensive),
+          // treat as Layer 2 failure
+          logger.error(
+            "TUTOR_CRISIS",
+            "classifier_unexpected_error",
+            "unexpected error from classifyCrisis; treating as Layer 2 failure",
+            err instanceof Error ? err : undefined,
+          );
+          return { isCrisis: false, confidence: 0 };
+        })
+      : null,
   ]);
 
   const layer1Positive = signatureResult.triggered;
-  const layer2Positive = classifierResult.isCrisis;
+  const layer2Positive = classifierResult?.isCrisis ?? false;
   const layer1Empty = signatureResult.layer1Empty;
 
   // Layer 2 failure detection: confidence 0 with isCrisis false suggests
   // the classifier could not run (returned default). Force review in this case.
+  // A Layer 2 that was not run (an exact-label tap) did not fail.
   const layer2MayHaveFailed =
-    !classifierResult.isCrisis && classifierResult.confidence === 0;
+    classifierResult !== null &&
+    !classifierResult.isCrisis &&
+    classifierResult.confidence === 0;
 
   if (!layer1Positive && !layer2Positive) {
     if (layer2MayHaveFailed && layer1Empty) {
@@ -528,7 +554,7 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
       source,
       category,
       signatureId: signatureResult.signatureId,
-      modelConfidence: classifierResult.confidence,
+      modelConfidence: classifierResult?.confidence ?? null,
     },
   );
 
@@ -537,7 +563,10 @@ export async function runCrisisClassifier(text: string): Promise<CrisisResult> {
     source,
     category,
     signatureId: signatureResult.signatureId,
-    modelConfidence: layer2Positive ? classifierResult.confidence : null,
+    modelConfidence:
+      layer2Positive && classifierResult !== null
+        ? classifierResult.confidence
+        : null,
     forceReview: true,
   };
 }

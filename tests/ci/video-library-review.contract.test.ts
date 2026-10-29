@@ -8,8 +8,9 @@
  *
  * plain English: what reaches video_resources is the reviewed file, parsed strictly.
  *  - Methods and format: a value outside VIDEO_METHODS / VIDEO_FORMATS fails the file, and so
- *    does yes on a row with no format; the committed file's 85 approved rows all carry a
- *    format, and the Desmos lessons carry `desmos`.
+ *    does yes on a row with no format; the committed file's 150 approved rows (85, plus 65
+ *    from the 2026-10-27 expansion proposal) all carry a format, and the Desmos lessons carry
+ *    `desmos`.
  *  - The methods pass's pure parts: the watch clip is the landing chapter (or the opening 20
  *    minutes); two watch runs keep only the methods both saw, and disagreeing formats fail.
  *  - apply-video-library.ts's entry check works on Windows (pathToFileURL, not `file://` +
@@ -58,10 +59,10 @@ describe("the reviewed file", () => {
     const rows = parseReviewedCsv(REAL, domainOf);
     expect(rows.length).toBe(LINES.length);
     const approved = rows.filter((r) => r.approve);
-    expect(approved.length).toBe(85);
+    expect(approved.length).toBe(150);
     expect(approved.every((r) => r.format !== null)).toBe(true);
     expect(approved.filter((r) => r.methods.includes("desmos")).length).toBe(
-      29,
+      30,
     );
     expect(
       rows.filter((r) => !r.approve).every((r) => r.methods.length === 0),

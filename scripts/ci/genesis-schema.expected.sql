@@ -15530,6 +15530,61 @@ COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean)
 
 
 --
+-- Name: sweep_tutor_eval_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '90 days';
+  v_cases  integer;
+  v_runs   integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_eval_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_cases
+      FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_runs
+      FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+    GET DIAGNOSTICS v_runs = ROW_COUNT;
+
+    DELETE FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+    GET DIAGNOSTICS v_cases = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_eval_cases'; deleted_count := v_cases; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_eval_runs';  deleted_count := v_runs;  cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) IS 'SCL-251: G0-2 evaluation cases and runs, 90 days fixed from import (captured_at) / creation. Called by the 90d retention tier.';
+
+
+--
 -- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -16827,6 +16882,27 @@ COMMENT ON VIEW public.canonical_skill_catalog IS 'Distinct (section, domain, sk
 
 
 --
+-- Name: clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.clusters (
+    id text NOT NULL,
+    display_name text NOT NULL,
+    family text NOT NULL,
+    definition text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    evidence_count integer DEFAULT 0 NOT NULL,
+    core boolean DEFAULT false NOT NULL,
+    skills_seen_in text[] DEFAULT '{}'::text[] NOT NULL,
+    method_in jsonb DEFAULT '{}'::jsonb NOT NULL,
+    playbook_move text,
+    aliases text[] DEFAULT '{}'::text[] NOT NULL,
+    taxonomy_version text NOT NULL,
+    CONSTRAINT clusters_family_check CHECK ((family = ANY (ARRAY['by_hand_doing'::text, 'by_hand_recognizing'::text, 'desmos'::text])))
+);
+
+
+--
 -- Name: consent_runtime_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -17150,6 +17226,18 @@ CREATE TABLE public.difficulties (
     value integer NOT NULL,
     label text NOT NULL,
     description text
+);
+
+
+--
+-- Name: distractor_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.distractor_clusters (
+    question_id text NOT NULL,
+    option_key text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL
 );
 
 
@@ -18788,6 +18876,19 @@ COMMENT ON TABLE public.qotd_schedule IS 'QOTD (plan R18; Karl 2026-10-27): one 
 
 
 --
+-- Name: question_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_clusters (
+    question_id text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: worked_examples; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18822,6 +18923,19 @@ CREATE TABLE public.worked_examples (
     CONSTRAINT worked_examples_takeaway_check CHECK ((length(btrim(takeaway)) > 0)),
     CONSTRAINT worked_examples_trap_check CHECK ((length(btrim(trap)) > 0)),
     CONSTRAINT worked_examples_video_script_check CHECK ((length(btrim(video_script)) > 0))
+);
+
+
+--
+-- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.question_sub_skills (
+    question_id text NOT NULL,
+    sub_skill_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -19679,6 +19793,23 @@ COMMENT ON COLUMN public.student_study_profile.target_exam_dates IS 'SCL-223: ev
 
 
 --
+-- Name: sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sub_skills (
+    id text NOT NULL,
+    skill_code text NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    name text NOT NULL,
+    definition text NOT NULL,
+    inclusion_test text NOT NULL,
+    evidence_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    taxonomy_version text NOT NULL
+);
+
+
+--
 -- Name: taxonomy_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19887,6 +20018,64 @@ COMMENT ON TABLE public.tutor_conversations IS 'LISA conversation envelopes with
 
 
 --
+-- Name: tutor_eval_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_cases (
+    case_id text NOT NULL,
+    set_version text NOT NULL,
+    student_id uuid,
+    is_owner_case boolean DEFAULT false NOT NULL,
+    source_conversation_id uuid,
+    source_message_id uuid,
+    item_canonical_id text,
+    request jsonb NOT NULL,
+    scan_correct_answer text,
+    production_reply text NOT NULL,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_cases_case_id_check CHECK ((case_id ~ '^[A-Z0-9][A-Z0-9-]*$'::text)),
+    CONSTRAINT tutor_eval_cases_request_check CHECK ((jsonb_typeof(request) = 'object'::text)),
+    CONSTRAINT tutor_eval_cases_set_version_check CHECK ((set_version <> ''::text))
+);
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_cases IS 'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27). Kept 90 days from import (SCL-251).';
+
+
+--
+-- Name: tutor_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_runs (
+    run_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    run_index integer NOT NULL,
+    record jsonb NOT NULL,
+    verdict text NOT NULL,
+    owner_grade text,
+    owner_graded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_runs_check CHECK (((owner_grade IS NULL) = (owner_graded_at IS NULL))),
+    CONSTRAINT tutor_eval_runs_owner_grade_check CHECK ((owner_grade = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text]))),
+    CONSTRAINT tutor_eval_runs_record_check CHECK ((jsonb_typeof(record) = 'object'::text)),
+    CONSTRAINT tutor_eval_runs_run_index_check CHECK ((run_index >= 1)),
+    CONSTRAINT tutor_eval_runs_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text, 'unscored'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_runs IS 'G0-2 evaluation runs. Replies and judge quotes can echo the student: service role only, RLS on, no policies.';
+
+
+--
 -- Name: tutor_injection_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -20053,7 +20242,9 @@ CREATE TABLE public.tutor_messages (
     injection_signature_matched text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'completed'::text NOT NULL,
+    intent text,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
+    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text])))),
     CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
     CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
@@ -20064,6 +20255,13 @@ CREATE TABLE public.tutor_messages (
 --
 
 COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation history. Append-only from student perspective. §18.2.';
+
+
+--
+-- Name: COLUMN tutor_messages.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
 
 
 --
@@ -20116,7 +20314,9 @@ CREATE TABLE public.tutor_turn_metrics (
     context_hash text,
     recorded_at timestamp with time zone DEFAULT now() NOT NULL,
     thinking_tokens integer,
-    thinking_budget integer
+    thinking_budget integer,
+    intent text,
+    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text]))))
 );
 
 
@@ -20153,6 +20353,13 @@ COMMENT ON COLUMN public.tutor_turn_metrics.thinking_tokens IS 'Sum of Vertex th
 --
 
 COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex thinking budget the turn''s calls were made with. NULL = no model call.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
 
 
 --
@@ -20570,6 +20777,14 @@ ALTER TABLE ONLY public.calendar_runtime_config
 
 
 --
+-- Name: clusters clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clusters
+    ADD CONSTRAINT clusters_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: consent_runtime_config_history consent_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20671,6 +20886,14 @@ ALTER TABLE ONLY public.deletion_verification_records
 
 ALTER TABLE ONLY public.difficulties
     ADD CONSTRAINT difficulties_pkey PRIMARY KEY (value);
+
+
+--
+-- Name: distractor_clusters distractor_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_pkey PRIMARY KEY (question_id, option_key, cluster_id);
 
 
 --
@@ -21194,6 +21417,22 @@ ALTER TABLE ONLY public.qotd_schedule
 
 
 --
+-- Name: question_clusters question_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_pkey PRIMARY KEY (question_id, cluster_id);
+
+
+--
+-- Name: question_sub_skills question_sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_pkey PRIMARY KEY (question_id, sub_skill_id);
+
+
+--
 -- Name: questions questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21522,6 +21761,14 @@ ALTER TABLE ONLY public.student_study_profile
 
 
 --
+-- Name: sub_skills sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sub_skills
+    ADD CONSTRAINT sub_skills_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: taxonomy_versions taxonomy_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21655,6 +21902,30 @@ ALTER TABLE ONLY public.tutor_context_runtime_config
 
 ALTER TABLE ONLY public.tutor_conversations
     ADD CONSTRAINT tutor_conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tutor_eval_cases tutor_eval_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_pkey PRIMARY KEY (case_id);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_batch_id_case_id_run_index_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_batch_id_case_id_run_index_key UNIQUE (batch_id, case_id, run_index);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_pkey PRIMARY KEY (run_id);
 
 
 --
@@ -21839,6 +22110,13 @@ CREATE INDEX curriculum_chunks_embedding_idx ON public.curriculum_chunks USING h
 --
 
 CREATE INDEX curriculum_chunks_skills_idx ON public.curriculum_chunks USING gin (skill_codes);
+
+
+--
+-- Name: distractor_clusters_cluster_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX distractor_clusters_cluster_id_idx ON public.distractor_clusters USING btree (cluster_id);
 
 
 --
@@ -22808,6 +23086,20 @@ CREATE UNIQUE INDEX profiles_student_link_code_key ON public.profiles USING btre
 
 
 --
+-- Name: question_clusters_cluster_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX question_clusters_cluster_id_idx ON public.question_clusters USING btree (cluster_id);
+
+
+--
+-- Name: question_sub_skills_sub_skill_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX question_sub_skills_sub_skill_id_idx ON public.question_sub_skills USING btree (sub_skill_id);
+
+
+--
 -- Name: scoring_constants_unique_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -22826,6 +23118,13 @@ CREATE INDEX student_background_high_school ON public.student_background USING b
 --
 
 CREATE INDEX student_dream_schools_college ON public.student_dream_schools USING btree (college_id);
+
+
+--
+-- Name: tutor_eval_runs_case_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tutor_eval_runs_case_idx ON public.tutor_eval_runs USING btree (case_id, created_at);
 
 
 --
@@ -23708,6 +24007,22 @@ ALTER TABLE ONLY public.deletion_verification_records
 
 
 --
+-- Name: distractor_clusters distractor_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: distractor_clusters distractor_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.distractor_clusters
+    ADD CONSTRAINT distractor_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: distractor_taxonomy_v1 distractor_taxonomy_v1_section_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24097,6 +24412,38 @@ ALTER TABLE ONLY public.qotd_daily_stats
 
 ALTER TABLE ONLY public.qotd_schedule
     ADD CONSTRAINT qotd_schedule_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
+
+
+--
+-- Name: question_clusters question_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: question_clusters question_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_clusters
+    ADD CONSTRAINT question_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_sub_skills question_sub_skills_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: question_sub_skills question_sub_skills_sub_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.question_sub_skills
+    ADD CONSTRAINT question_sub_skills_sub_skill_id_fkey FOREIGN KEY (sub_skill_id) REFERENCES public.sub_skills(id);
 
 
 --
@@ -24508,6 +24855,22 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.tutor_eval_cases(case_id) ON DELETE CASCADE;
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24902,6 +25265,12 @@ ALTER TABLE public.calendar_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calendar_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.clusters ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: consent_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -25028,6 +25397,12 @@ ALTER TABLE public.difficulties ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY difficulties_read ON public.difficulties FOR SELECT TO anon, authenticated USING (true);
 
+
+--
+-- Name: distractor_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.distractor_clusters ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: distractor_taxonomy_v1; Type: ROW SECURITY; Schema: public; Owner: -
@@ -25389,6 +25764,18 @@ ALTER TABLE public.qotd_day_boundary ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.qotd_schedule ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: question_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.question_clusters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: question_sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.question_sub_skills ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: questions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -25759,6 +26146,12 @@ CREATE POLICY student_study_profile_student_read ON public.student_study_profile
 
 
 --
+-- Name: sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sub_skills ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: taxonomy_versions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -25999,6 +26392,18 @@ CREATE POLICY tutor_conversations_select_own ON public.tutor_conversations FOR S
 
 CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR UPDATE TO authenticated USING ((student_id = auth.uid()));
 
+
+--
+-- Name: tutor_eval_cases; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_eval_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_runs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: tutor_injection_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -28643,6 +29048,14 @@ GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolea
 
 
 --
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29071,6 +29484,13 @@ GRANT SELECT ON TABLE public.canonical_skill_catalog TO service_role;
 
 
 --
+-- Name: TABLE clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.clusters TO service_role;
+
+
+--
 -- Name: TABLE consent_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -29140,6 +29560,13 @@ GRANT SELECT ON TABLE public.deletion_request_log TO service_role;
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.difficulties TO service_role;
 GRANT SELECT ON TABLE public.difficulties TO anon;
 GRANT SELECT ON TABLE public.difficulties TO authenticated;
+
+
+--
+-- Name: TABLE distractor_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.distractor_clusters TO service_role;
 
 
 --
@@ -30135,10 +30562,17 @@ GRANT SELECT,INSERT ON TABLE public.qotd_schedule TO service_role;
 
 
 --
--- Name: TABLE worked_examples; Type: ACL; Schema: public; Owner: -
+-- Name: TABLE question_clusters; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_examples TO service_role;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_clusters TO service_role;
+
+
+--
+-- Name: TABLE question_sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_sub_skills TO service_role;
 
 
 --
@@ -30146,6 +30580,13 @@ GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_examples TO service_role;
 --
 
 GRANT SELECT ON TABLE public.questions_with_usage TO service_role;
+
+
+--
+-- Name: TABLE worked_examples; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_examples TO service_role;
 
 
 --
@@ -30617,6 +31058,13 @@ GRANT SELECT ON TABLE public.student_study_profile TO authenticated;
 
 
 --
+-- Name: TABLE sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.sub_skills TO service_role;
+
+
+--
 -- Name: TABLE taxonomy_versions; Type: ACL; Schema: public; Owner: -
 --
 
@@ -30783,6 +31231,20 @@ GRANT ALL ON TABLE public.tutor_context_runtime_config_history TO service_role;
 --
 
 GRANT ALL ON TABLE public.tutor_conversations TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_eval_cases TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.tutor_eval_runs TO service_role;
 
 
 --

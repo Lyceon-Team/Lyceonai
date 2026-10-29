@@ -109,6 +109,7 @@ import {
   type TutorBodyCopy,
 } from "@/components/tutor/TutorConversationBody";
 import { LISA_COMPOSER_PLACEHOLDER } from "@/components/tutor/TutorThreadParts";
+import { DockedLisaPanelContext } from "@/components/tutor/docked-lisa-panel";
 import {
   LISA_LAUNCHER_LABEL,
   LISA_LAUNCHER_WIDTH_PX,
@@ -473,54 +474,57 @@ function DockPanel({
     { target: panelRef, enabled: !hidden },
   );
   return (
-    <section
-      ref={panelRef}
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby={titleId}
-      tabIndex={-1}
-      hidden={hidden}
-      // SCL-204 / R32: `ph-no-capture` — the LISA conversation is never recorded.
-      // `hidden` as a class too: the `flex` display would otherwise override the attribute and
-      // leave a minimized panel on screen (found by tests/e2e/lisa-dock.spec.ts).
-      className={`ph-no-capture pointer-events-auto ${hidden ? "hidden" : "flex"} flex-col overflow-hidden rounded-lg border border-lyc-rule-strong bg-lyc-sheet text-lyc-ink ${LYC_FOCUS}`}
-      style={
-        docked
-          ? { width: "100%", height: "100%" }
-          : {
-              width,
-              height: `min(70vh, calc(100dvh - ${lift}px - ${DOCK_EDGE_PX * 2}px))`,
-            }
-      }
-      data-testid="chat-dock-panel"
-      data-placement={docked ? "docked" : "floating"}
-    >
-      <DockHeader
-        titleId={titleId}
-        scope={scope}
-        onMinimize={onMinimize}
-        onClose={onClose}
-      />
-      {scope.kind === "question" ? (
-        scope.sessionItemId !== null ? (
-          <ScopedTutorBody
-            sourceSurface={scope.sourceSurface}
-            sessionItemId={scope.sessionItemId}
-            submitted={scope.submitted}
-            onEnded={() => undefined}
-          />
+    // 2026-10-27: a docked panel tells what renders in it (the shrunk video player) its box.
+    <DockedLisaPanelContext.Provider value={docked ? panelRef : null}>
+      <section
+        ref={panelRef}
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        hidden={hidden}
+        // SCL-204 / R32: `ph-no-capture` — the LISA conversation is never recorded.
+        // `hidden` as a class too: the `flex` display would otherwise override the attribute and
+        // leave a minimized panel on screen (found by tests/e2e/lisa-dock.spec.ts).
+        className={`ph-no-capture pointer-events-auto ${hidden ? "hidden" : "flex"} flex-col overflow-hidden rounded-lg border border-lyc-rule-strong bg-lyc-sheet text-lyc-ink ${LYC_FOCUS}`}
+        style={
+          docked
+            ? { width: "100%", height: "100%" }
+            : {
+                width,
+                height: `min(70vh, calc(100dvh - ${lift}px - ${DOCK_EDGE_PX * 2}px))`,
+              }
+        }
+        data-testid="chat-dock-panel"
+        data-placement={docked ? "docked" : "floating"}
+      >
+        <DockHeader
+          titleId={titleId}
+          scope={scope}
+          onMinimize={onMinimize}
+          onClose={onClose}
+        />
+        {scope.kind === "question" ? (
+          scope.sessionItemId !== null ? (
+            <ScopedTutorBody
+              sourceSurface={scope.sourceSurface}
+              sessionItemId={scope.sessionItemId}
+              submitted={scope.submitted}
+              onEnded={() => undefined}
+            />
+          ) : (
+            <p
+              className="m-0 flex-1 p-4 text-lyc-body text-lyc-muted"
+              role="status"
+            >
+              Loading the next question…
+            </p>
+          )
         ) : (
-          <p
-            className="m-0 flex-1 p-4 text-lyc-body text-lyc-muted"
-            role="status"
-          >
-            Loading the next question…
-          </p>
-        )
-      ) : (
-        <GeneralDockBody surface={scope.surface} />
-      )}
-    </section>
+          <GeneralDockBody surface={scope.surface} />
+        )}
+      </section>
+    </DockedLisaPanelContext.Provider>
   );
 }
 
