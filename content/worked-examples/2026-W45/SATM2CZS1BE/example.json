@@ -1,0 +1,26 @@
+{
+  "question_id": "SATM2CZS1BE",
+  "skill_code": "Percentages",
+  "post_on": "2026-11-02",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "Up 25%, then down 25%. Back to $64?",
+    "voice": "Up twenty-five percent, then down twenty-five percent. Back to sixty-four dollars?"
+  },
+  "question_voice": "A sixty-four dollar item goes up twenty-five percent, then gets twenty-five percent off. What's the final price?",
+  "signature_move": "Turn each percent change into a multiplier.",
+  "steps": [
+    { "notepad": "+25%  →  × 1.25", "voice": "Turn each percent into a multiplier. Up twenty-five percent means times one point two five." },
+    { "notepad": "−25%  →  × 0.75", "voice": "Down twenty-five percent means times zero point seven five." },
+    { "notepad": "64 × 1.25 = 80", "voice": "Sixty-four times one point two five is eighty." },
+    { "notepad": "80 × 0.75 = 60", "voice": "Eighty times zero point seven five is sixty." }
+  ],
+  "answer": { "letter": "B", "notepad": "Answer: B) $60", "voice": "So the answer is B. Sixty dollars." },
+  "trap": {
+    "summary": "Adding the percents: up 25% and down 25% look like they cancel, but the discount comes off the bigger price.",
+    "notepad": ["+25 − 25 = 0  ✗", "25% off a BIGGER price", "80 − 20 = 60  ✓"],
+    "voice": "The trap: adding the percents. Plus twenty-five, minus twenty-five, isn't zero. The discount comes off a bigger price."
+  },
+  "check": "Plug in 100: 100 × 1.25 = 125, then 125 × 0.75 = 93.75, so both changes together multiply by 0.9375, and 64 × 0.9375 = 60.",
+  "takeaway": "Percent changes multiply; they don't add."
+}
