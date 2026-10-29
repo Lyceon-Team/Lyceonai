@@ -23,6 +23,7 @@
  *    here enforces the narrower per-key type contract.
  */
 import { z } from "zod";
+import { videoMethodKeywordMapSchema } from "../../packages/shared/src/video-methods";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 
@@ -116,6 +117,24 @@ const tutorConfigKeySchemas = {
   "validation.pagination_max": {
     schema: z.number().int().positive(),
     default: 100,
+  },
+  // @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27] | @implemented
+  // [2026-10-27] | plain English: the versioned keyword map that detects the way of solving a
+  // student asks for (seeded by 20261116000000_lisa_video_methods.sql). No default: unset or
+  // invalid means no method preference, and retrieval ranks as it did before.
+  video_method_keywords: {
+    schema: videoMethodKeywordMapSchema.nullable(),
+    default: null,
+  },
+  // @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), ruling 2 of
+  // 2026-10-27; SCL-254] | @implemented [2026-10-27] | plain English: Phase B of the review
+  // panel's guided choices ("Show me on Desmos", "Explain the rule"). Off: both are hidden and
+  // their intents are refused with 400 invalid_input. OWNER RULING 2026-10-27: THIS STAYS OFF
+  // UNTIL PHASE B'S PROMPT WORK LANDS. Turning it on before then would send those intents to a
+  // prompt that does nothing with them. No row is seeded; the default serves.
+  review_guided_choices_phase_b_enabled: {
+    schema: z.boolean(),
+    default: false,
   },
 } as const;
 

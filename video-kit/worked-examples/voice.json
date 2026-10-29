@@ -1,0 +1,17 @@
+{
+  "engine": "kokoro via hyperframes tts",
+  "hyperframes": "0.8.143",
+  "voice": "af_heart",
+  "transcribe_model": "small.en",
+  "gap_seconds": 0.3,
+  "end_hold_seconds": 1.2,
+  "outro_text": "Follow for daily SAT questions. Lyceon dot A.I.",
+  "outro_caption": "Follow for daily SAT questions. lyceon.ai",
+  "outro_file": "video-kit/worked-examples/voice/outro.wav",
+  "music_track": "happy-beats-business-moves-vol-12",
+  "music_gain": 0.07,
+  "music_fade_seconds": 1,
+  "min_voice_over_music_db": 15,
+  "min_seconds": 30,
+  "max_seconds": 60
+}

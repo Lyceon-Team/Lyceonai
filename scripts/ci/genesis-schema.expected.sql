@@ -11505,6 +11505,8 @@ CREATE FUNCTION public.qotd_question_is_eligible(p_question_id text) RETURNS boo
        AND (q.assets IS NULL OR q.assets IN ('[]'::jsonb, '{}'::jsonb, 'null'::jsonb))
        AND NOT EXISTS (SELECT 1 FROM public.test_form_items t WHERE t.question_id = q.id)
        AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)
+       AND NOT EXISTS (SELECT 1 FROM public.worked_examples w
+                        WHERE w.question_id = q.id AND w.status = 'approved')
   )
 $$;
 
@@ -15239,6 +15241,61 @@ COMMENT ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolean)
 
 
 --
+-- Name: sweep_tutor_eval_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) RETURNS TABLE(swept_table text, deleted_count integer, cutoff timestamp with time zone)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_cutoff timestamptz := now() - interval '90 days';
+  v_cases  integer;
+  v_runs   integer;
+BEGIN
+  IF p_dry_run IS NULL THEN
+    RAISE EXCEPTION 'sweep_tutor_eval_retention: p_dry_run must not be null'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF p_dry_run THEN
+    SELECT count(*)::integer INTO v_cases
+      FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+
+    SELECT count(*)::integer INTO v_runs
+      FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+  ELSE
+    DELETE FROM public.tutor_eval_runs r
+     WHERE r.created_at < v_cutoff
+        OR EXISTS (SELECT 1 FROM public.tutor_eval_cases c
+                    WHERE c.case_id = r.case_id AND c.captured_at < v_cutoff);
+    GET DIAGNOSTICS v_runs = ROW_COUNT;
+
+    DELETE FROM public.tutor_eval_cases c
+     WHERE c.captured_at < v_cutoff;
+    GET DIAGNOSTICS v_cases = ROW_COUNT;
+  END IF;
+
+  swept_table := 'tutor_eval_cases'; deleted_count := v_cases; cutoff := v_cutoff;
+  RETURN NEXT;
+  swept_table := 'tutor_eval_runs';  deleted_count := v_runs;  cutoff := v_cutoff;
+  RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) IS 'SCL-251: G0-2 evaluation cases and runs, 90 days fixed from import (captured_at) / creation. Called by the 90d retention tier.';
+
+
+--
 -- Name: sweep_tutor_instruction_retention(boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -15333,6 +15390,25 @@ $$;
 --
 
 COMMENT ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() IS 'Doc 03 §14.2 / INV-03-19 / owner ruling 2026-09-22 C1: stamps tutor_conversations.deleted_at when public.entitlement_active(profile_id) turns false and clears it when it turns true. Calls the canonical predicate rather than re-listing statuses. Stamps only where deleted_at IS NULL so a second inactive transition cannot push the 7-day clock out.';
+
+
+--
+-- Name: test_form_items_worked_example_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.test_form_items_worked_example_guard() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.worked_examples w
+              WHERE w.question_id = NEW.question_id AND w.status = 'approved') THEN
+    RAISE EXCEPTION 'worked_example_leak: % has an approved worked example and cannot be a full-length item', NEW.question_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
 
 
 --
@@ -15731,18 +15807,19 @@ COMMENT ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) IS 'Doc 06D
 
 
 --
--- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: video_resource_tag(text, text, text, integer, text[], text, integer, text, text[], text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) RETURNS void
+CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) RETURNS void
     LANGUAGE sql
     SET search_path TO 'public', 'pg_temp'
     AS $$
   INSERT INTO public.video_resources AS v
     (video_id, title, channel_name, duration_seconds, status, last_checked_at,
-     skill_codes, domain, start_seconds, tagged_by, tagged_at)
+     skill_codes, domain, start_seconds, tagged_by, tagged_at, methods, format)
   VALUES (p_video_id, p_title, p_channel_name, p_duration_seconds, 'available', now(),
-          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now())
+          p_skill_codes, p_domain, p_start_seconds, p_tagged_by, now(),
+          coalesce(p_methods, '{}'), p_format)
   ON CONFLICT (video_id) DO UPDATE SET
     title            = EXCLUDED.title,
     channel_name     = EXCLUDED.channel_name,
@@ -15752,14 +15829,19 @@ CREATE FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_chann
     start_seconds    = EXCLUDED.start_seconds,
     tagged_by        = EXCLUDED.tagged_by,
     tagged_at        = EXCLUDED.tagged_at,
-    -- A changed tag set loses its approval; an unchanged one keeps it.
+    methods          = EXCLUDED.methods,
+    format           = EXCLUDED.format,
+    -- A changed tag set loses its approval; an unchanged one keeps it. Methods and format are
+    -- part of the tag set: what Karl approved is what the student is offered.
     approved_by = CASE
-      WHEN (v.skill_codes, v.domain, v.start_seconds)
-           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+      WHEN (v.skill_codes, v.domain, v.start_seconds, v.methods, v.format)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds, EXCLUDED.methods, EXCLUDED.format)
         THEN v.approved_by ELSE NULL END,
     approved_at = CASE
-      WHEN (v.skill_codes, v.domain, v.start_seconds)
-           IS NOT DISTINCT FROM (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds)
+      WHEN (v.skill_codes, v.domain, v.start_seconds, v.methods, v.format)
+           IS NOT DISTINCT FROM
+           (EXCLUDED.skill_codes, EXCLUDED.domain, EXCLUDED.start_seconds, EXCLUDED.methods, EXCLUDED.format)
         THEN v.approved_at ELSE NULL END;
 $$;
 
@@ -15799,6 +15881,57 @@ CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit 
     AND v.skill_codes && p_skill_codes        -- GIN index: the skill filter, in the statement
   ORDER BY v.duration_seconds, v.video_id     -- shortest first for a stuck student; stable
   LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
+$$;
+
+
+--
+-- Name: video_resources_for_skills(text[], integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) RETURNS TABLE(video_id text, title text, channel_name text, duration_seconds integer, start_seconds integer, methods text[], format text)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT v.video_id, v.title, v.channel_name, v.duration_seconds, v.start_seconds,
+         v.methods, v.format
+  FROM public.video_resources v
+  WHERE v.status = 'available'
+    AND v.approved_by IS NOT NULL
+    AND v.skill_codes && p_skill_codes                            -- GIN index: skill match, required
+  ORDER BY
+    (p_method IS NOT NULL AND p_method = ANY (v.methods)) DESC,   -- the method asked for, first
+    array_position(ARRAY['formula', 'worked_example', 'lesson', 'strategy']::text[], v.format)
+      NULLS LAST,                                                 -- format priority
+    v.duration_seconds,                                           -- then shortest
+    v.video_id                                                    -- stable
+  LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
+$$;
+
+
+--
+-- Name: worked_examples_leak_guard(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.worked_examples_leak_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF NEW.status = 'approved' THEN
+    IF EXISTS (SELECT 1 FROM public.test_form_items t WHERE t.question_id = NEW.question_id) THEN
+      RAISE EXCEPTION 'worked_example_leak: % is in a full-length test form', NEW.question_id
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.qotd_schedule s
+                WHERE s.question_id = NEW.question_id
+                  AND s.qotd_date >= public.qotd_today()) THEN
+      RAISE EXCEPTION 'worked_example_leak: % is a QOTD today or later', NEW.question_id
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+  NEW.updated_at := now();
+  RETURN NEW;
+END;
 $$;
 
 
@@ -16654,9 +16787,11 @@ CREATE TABLE public.curriculum_chunks (
     reviewed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    methods text[] DEFAULT '{}'::text[] NOT NULL,
     CONSTRAINT curriculum_chunks_active_reviewed CHECK (((status <> 'active'::text) OR ((reviewed_by IS NOT NULL) AND (reviewed_at IS NOT NULL)))),
     CONSTRAINT curriculum_chunks_content_nonblank CHECK ((btrim(content) <> ''::text)),
     CONSTRAINT curriculum_chunks_content_type_check CHECK ((content_type = ANY (ARRAY['textbook'::text, 'video_transcript'::text, 'strategy'::text, 'worked_example'::text]))),
+    CONSTRAINT curriculum_chunks_methods_check CHECK (((methods <@ ARRAY['desmos'::text, 'algebraic'::text, 'backsolve'::text]) AND (array_position(methods, NULL::text) IS NULL))),
     CONSTRAINT curriculum_chunks_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
     CONSTRAINT curriculum_chunks_skills_nonempty CHECK ((cardinality(skill_codes) >= 1)),
     CONSTRAINT curriculum_chunks_status_check CHECK ((status = ANY (ARRAY['pending_review'::text, 'active'::text, 'retired'::text]))),
@@ -18409,6 +18544,44 @@ CREATE TABLE public.question_clusters (
 
 
 --
+-- Name: worked_examples; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.worked_examples (
+    id text NOT NULL,
+    question_id text NOT NULL,
+    skill_code text NOT NULL,
+    signature_move text NOT NULL,
+    steps jsonb NOT NULL,
+    trap text NOT NULL,
+    check_step text NOT NULL,
+    takeaway text NOT NULL,
+    video_script text NOT NULL,
+    hook_type text NOT NULL,
+    hook_line text NOT NULL,
+    post_on date,
+    status text DEFAULT 'draft'::text NOT NULL,
+    approved_by text,
+    approved_at timestamp with time zone,
+    video_asset_path text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT worked_examples_approval_complete CHECK (((status <> 'approved'::text) OR ((approved_by IS NOT NULL) AND (approved_at IS NOT NULL) AND (post_on IS NOT NULL)))),
+    CONSTRAINT worked_examples_check_step_check CHECK ((length(btrim(check_step)) > 0)),
+    CONSTRAINT worked_examples_hook_line_check CHECK ((length(btrim(hook_line)) > 0)),
+    CONSTRAINT worked_examples_hook_type_check CHECK ((hook_type = ANY (ARRAY['puzzle'::text, 'obvious_answer_trap'::text, 'speed'::text, 'challenge'::text, 'contrarian'::text]))),
+    CONSTRAINT worked_examples_id_from_question CHECK ((id = ('we-'::text || lower(question_id)))),
+    CONSTRAINT worked_examples_signature_move_check CHECK ((length(btrim(signature_move)) > 0)),
+    CONSTRAINT worked_examples_skill_code_check CHECK ((length(btrim(skill_code)) > 0)),
+    CONSTRAINT worked_examples_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'retired'::text]))),
+    CONSTRAINT worked_examples_steps_shape CHECK (((jsonb_typeof(steps) = 'array'::text) AND ((jsonb_array_length(steps) >= 3) AND (jsonb_array_length(steps) <= 6)) AND (NOT jsonb_path_exists(steps, '$[*]?(!((@.type() == "object" && exists (@."notepad"?(@.type() == "string" && @ != ""))) && exists (@."voice"?(@.type() == "string" && @ != ""))))'::jsonpath)))),
+    CONSTRAINT worked_examples_takeaway_check CHECK ((length(btrim(takeaway)) > 0)),
+    CONSTRAINT worked_examples_trap_check CHECK ((length(btrim(trap)) > 0)),
+    CONSTRAINT worked_examples_video_script_check CHECK ((length(btrim(video_script)) > 0))
+);
+
+
+--
 -- Name: question_sub_skills; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18419,6 +18592,64 @@ CREATE TABLE public.question_sub_skills (
     tagged_by text NOT NULL,
     tagged_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: TABLE worked_examples; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.worked_examples IS 'Worked examples (Karl, 2026-10-27): one approved breakdown per bank question, posted on post_on. Leak rule enforced by trigger; QOTD eligibility skips approved rows. Server-only.';
+
+
+--
+-- Name: COLUMN worked_examples.check_step; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.worked_examples.check_step IS 'The brief''s `check` (how to confirm the answer). Renamed: CHECK is a reserved word.';
+
+
+--
+-- Name: questions_with_usage; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.questions_with_usage WITH (security_invoker='true') AS
+ SELECT id,
+    section,
+    source_type,
+    domain,
+    skill_codes,
+    difficulty,
+    stem,
+    passage,
+    options,
+    correct_answer,
+    explanation,
+    option_metadata,
+    assets,
+    status,
+    version,
+    created_at,
+    published_at,
+    retired_at,
+    source_lineage,
+    generation_attribution,
+    estimated_time_seconds,
+    premium_flag,
+    quality_score,
+    issue_flags,
+    item_type,
+    correct_variants,
+    ARRAY( SELECT t.tag
+           FROM ( VALUES (1,'qotd'::text,(EXISTS ( SELECT 1
+                           FROM public.qotd_schedule s
+                          WHERE (s.question_id = q.id)))), (2,'full_length'::text,(EXISTS ( SELECT 1
+                           FROM public.test_form_items f
+                          WHERE (f.question_id = q.id)))), (3,'worked_example'::text,(EXISTS ( SELECT 1
+                           FROM public.worked_examples w
+                          WHERE ((w.question_id = q.id) AND (w.status = 'approved'::text)))))) t(ord, tag, present)
+          WHERE t.present
+          ORDER BY t.ord) AS usage_tags
+   FROM public.questions q;
 
 
 --
@@ -19442,6 +19673,64 @@ COMMENT ON TABLE public.tutor_conversations IS 'LISA conversation envelopes with
 
 
 --
+-- Name: tutor_eval_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_cases (
+    case_id text NOT NULL,
+    set_version text NOT NULL,
+    student_id uuid,
+    is_owner_case boolean DEFAULT false NOT NULL,
+    source_conversation_id uuid,
+    source_message_id uuid,
+    item_canonical_id text,
+    request jsonb NOT NULL,
+    scan_correct_answer text,
+    production_reply text NOT NULL,
+    captured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_cases_case_id_check CHECK ((case_id ~ '^[A-Z0-9][A-Z0-9-]*$'::text)),
+    CONSTRAINT tutor_eval_cases_request_check CHECK ((jsonb_typeof(request) = 'object'::text)),
+    CONSTRAINT tutor_eval_cases_set_version_check CHECK ((set_version <> ''::text))
+);
+
+
+--
+-- Name: TABLE tutor_eval_cases; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_cases IS 'G0-2 evaluation cases. Holds student conversation text: service role only, RLS on, no policies. Never copied to the repository (Karl, 2026-10-27). Kept 90 days from import (SCL-251).';
+
+
+--
+-- Name: tutor_eval_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tutor_eval_runs (
+    run_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    case_id text NOT NULL,
+    batch_id uuid NOT NULL,
+    run_index integer NOT NULL,
+    record jsonb NOT NULL,
+    verdict text NOT NULL,
+    owner_grade text,
+    owner_graded_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT tutor_eval_runs_check CHECK (((owner_grade IS NULL) = (owner_graded_at IS NULL))),
+    CONSTRAINT tutor_eval_runs_owner_grade_check CHECK ((owner_grade = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text]))),
+    CONSTRAINT tutor_eval_runs_record_check CHECK ((jsonb_typeof(record) = 'object'::text)),
+    CONSTRAINT tutor_eval_runs_run_index_check CHECK ((run_index >= 1)),
+    CONSTRAINT tutor_eval_runs_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'review_needed'::text, 'unscored'::text])))
+);
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tutor_eval_runs IS 'G0-2 evaluation runs. Replies and judge quotes can echo the student: service role only, RLS on, no policies.';
+
+
+--
 -- Name: tutor_injection_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -19608,7 +19897,9 @@ CREATE TABLE public.tutor_messages (
     injection_signature_matched text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'completed'::text NOT NULL,
+    intent text,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
+    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text])))),
     CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
     CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
@@ -19619,6 +19910,13 @@ CREATE TABLE public.tutor_messages (
 --
 
 COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation history. Append-only from student perspective. §18.2.';
+
+
+--
+-- Name: COLUMN tutor_messages.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
 
 
 --
@@ -19659,8 +19957,8 @@ CREATE TABLE public.tutor_turn_metrics (
     turn_ordinal integer NOT NULL,
     orchestration_duration_ms integer NOT NULL,
     model_name text NOT NULL,
-    tokens_in integer DEFAULT 0 NOT NULL,
-    tokens_out integer DEFAULT 0 NOT NULL,
+    tokens_in integer,
+    tokens_out integer,
     cache_hit boolean DEFAULT false NOT NULL,
     compaction_recommended boolean DEFAULT false NOT NULL,
     anti_leak_triggered boolean DEFAULT false NOT NULL,
@@ -19669,7 +19967,11 @@ CREATE TABLE public.tutor_turn_metrics (
     crisis_classifier_outcome text,
     prompt_version text,
     context_hash text,
-    recorded_at timestamp with time zone DEFAULT now() NOT NULL
+    recorded_at timestamp with time zone DEFAULT now() NOT NULL,
+    thinking_tokens integer,
+    thinking_budget integer,
+    intent text,
+    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text]))))
 );
 
 
@@ -19678,6 +19980,41 @@ CREATE TABLE public.tutor_turn_metrics (
 --
 
 COMMENT ON TABLE public.tutor_turn_metrics IS 'Doc 03A §11.5: per-turn operational telemetry. Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.tokens_in; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.tokens_in IS 'Sum of Vertex promptTokenCount over every billed attempt in the turn. NULL = no model response (or not reported), never 0 for unknown.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.tokens_out; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.tokens_out IS 'Sum of Vertex candidatesTokenCount over every billed attempt in the turn. NULL = no model response (or not reported).';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.thinking_tokens; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.thinking_tokens IS 'Sum of Vertex thoughtsTokenCount over every billed attempt in the turn. NULL = no model response (or not reported).';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.thinking_budget; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex thinking budget the turn''s calls were made with. NULL = no model call.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.intent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
 
 
 --
@@ -19738,10 +20075,14 @@ CREATE TABLE public.video_resources (
     tagged_at timestamp with time zone,
     approved_by uuid,
     approved_at timestamp with time zone,
+    methods text[] DEFAULT '{}'::text[] NOT NULL,
+    format text,
     CONSTRAINT video_resources_approved_has_tags CHECK (((approved_by IS NULL) OR (cardinality(skill_codes) >= 1))),
     CONSTRAINT video_resources_approved_pair CHECK (((approved_by IS NULL) = (approved_at IS NULL))),
     CONSTRAINT video_resources_domain_check CHECK (((domain IS NULL) OR (domain = ANY (ARRAY['Algebra'::text, 'Advanced Math'::text, 'Problem Solving and Data Analysis'::text, 'Geometry and Trigonometry'::text, 'Information and Ideas'::text, 'Craft and Structure'::text, 'Expression of Ideas'::text, 'Standard English Conventions'::text])))),
     CONSTRAINT video_resources_duration_check CHECK ((duration_seconds > 0)),
+    CONSTRAINT video_resources_format_check CHECK (((format IS NULL) OR (format = ANY (ARRAY['worked_example'::text, 'formula'::text, 'lesson'::text, 'strategy'::text])))),
+    CONSTRAINT video_resources_methods_check CHECK (((methods <@ ARRAY['desmos'::text, 'algebraic'::text, 'backsolve'::text]) AND (array_position(methods, NULL::text) IS NULL))),
     CONSTRAINT video_resources_skills_no_blank CHECK (((array_position(skill_codes, NULL::text) IS NULL) AND (array_position(skill_codes, ''::text) IS NULL))),
     CONSTRAINT video_resources_start_check CHECK (((start_seconds IS NULL) OR ((start_seconds >= 0) AND (start_seconds < duration_seconds)))),
     CONSTRAINT video_resources_status_check CHECK ((status = ANY (ARRAY['available'::text, 'unavailable'::text]))),
@@ -19755,6 +20096,75 @@ CREATE TABLE public.video_resources (
 --
 
 COMMENT ON TABLE public.video_resources IS 'Per-video facts and skill tags: the LISA video library (offered whole, by skill) and the render-time join for curriculum_chunks.provenance. Service role only.';
+
+
+--
+-- Name: worked_example_metrics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.worked_example_metrics (
+    id bigint NOT NULL,
+    worked_example_id text NOT NULL,
+    platform text NOT NULL,
+    captured_at timestamp with time zone NOT NULL,
+    views integer NOT NULL,
+    retention_3s_pct numeric(5,2) NOT NULL,
+    avg_watch_seconds numeric(6,2) NOT NULL,
+    completion_pct numeric(5,2) NOT NULL,
+    non_follower_view_pct numeric(5,2) NOT NULL,
+    follows integer NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT worked_example_metrics_avg_watch_seconds_check CHECK ((avg_watch_seconds >= (0)::numeric)),
+    CONSTRAINT worked_example_metrics_completion_pct_check CHECK (((completion_pct >= (0)::numeric) AND (completion_pct <= (100)::numeric))),
+    CONSTRAINT worked_example_metrics_follows_check CHECK ((follows >= 0)),
+    CONSTRAINT worked_example_metrics_non_follower_view_pct_check CHECK (((non_follower_view_pct >= (0)::numeric) AND (non_follower_view_pct <= (100)::numeric))),
+    CONSTRAINT worked_example_metrics_platform_check CHECK ((platform = ANY (ARRAY['tiktok'::text, 'instagram'::text, 'youtube'::text]))),
+    CONSTRAINT worked_example_metrics_retention_3s_pct_check CHECK (((retention_3s_pct >= (0)::numeric) AND (retention_3s_pct <= (100)::numeric))),
+    CONSTRAINT worked_example_metrics_views_check CHECK ((views >= 0))
+);
+
+
+--
+-- Name: TABLE worked_example_metrics; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.worked_example_metrics IS 'Worked-example social metrics, entered by hand from each platform''s analytics (Karl, 2026-10-27). retention_3s_pct is the brief''s 3s_retention_pct. Server-only.';
+
+
+--
+-- Name: worked_example_metrics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.worked_example_metrics ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.worked_example_metrics_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: worked_example_metrics_monthly; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.worked_example_metrics_monthly WITH (security_invoker='true') AS
+ SELECT DISTINCT ON ((date_trunc('month'::text, m.captured_at)), m.worked_example_id, m.platform) (date_trunc('month'::text, m.captured_at))::date AS month,
+    m.worked_example_id,
+    w.skill_code,
+    w.hook_type,
+    m.platform,
+    m.captured_at,
+    m.views,
+    m.retention_3s_pct,
+    m.avg_watch_seconds,
+    m.completion_pct,
+    m.non_follower_view_pct,
+    m.follows
+   FROM (public.worked_example_metrics m
+     JOIN public.worked_examples w ON ((w.id = m.worked_example_id)))
+  ORDER BY (date_trunc('month'::text, m.captured_at)), m.worked_example_id, m.platform, m.captured_at DESC;
 
 
 --
@@ -21134,6 +21544,30 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_pkey PRIMARY KEY (case_id);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_batch_id_case_id_run_index_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_batch_id_case_id_run_index_key UNIQUE (batch_id, case_id, run_index);
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_pkey PRIMARY KEY (run_id);
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21227,6 +21661,38 @@ ALTER TABLE ONLY public.usage_rate_limit_ledger
 
 ALTER TABLE ONLY public.video_resources
     ADD CONSTRAINT video_resources_pkey PRIMARY KEY (video_id);
+
+
+--
+-- Name: worked_example_metrics worked_example_metrics_one_reading; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_example_metrics
+    ADD CONSTRAINT worked_example_metrics_one_reading UNIQUE (worked_example_id, platform, captured_at);
+
+
+--
+-- Name: worked_example_metrics worked_example_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_example_metrics
+    ADD CONSTRAINT worked_example_metrics_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: worked_examples worked_examples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_examples
+    ADD CONSTRAINT worked_examples_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: worked_examples worked_examples_question_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_examples
+    ADD CONSTRAINT worked_examples_question_id_key UNIQUE (question_id);
 
 
 --
@@ -22294,6 +22760,13 @@ CREATE INDEX student_dream_schools_college ON public.student_dream_schools USING
 
 
 --
+-- Name: tutor_eval_runs_case_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tutor_eval_runs_case_idx ON public.tutor_eval_runs USING btree (case_id, created_at);
+
+
+--
 -- Name: unique_active_guardian_link; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -22354,6 +22827,13 @@ CREATE UNIQUE INDEX uq_usage_rate_limit_ledger_dedupe ON public.usage_rate_limit
 --
 
 CREATE INDEX video_resources_skills_idx ON public.video_resources USING gin (skill_codes);
+
+
+--
+-- Name: worked_examples_one_per_post_day; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX worked_examples_one_per_post_day ON public.worked_examples USING btree (post_on) WHERE (status = 'approved'::text);
 
 
 --
@@ -22658,6 +23138,13 @@ CREATE TRIGGER study_profile_exam_dates_sync BEFORE INSERT OR UPDATE ON public.s
 
 
 --
+-- Name: test_form_items test_form_items_worked_example_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER test_form_items_worked_example_guard BEFORE INSERT OR UPDATE OF question_id ON public.test_form_items FOR EACH ROW EXECUTE FUNCTION public.test_form_items_worked_example_guard();
+
+
+--
 -- Name: mastery_constants trg_capture_mastery_constant_change; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -22790,6 +23277,13 @@ CREATE TRIGGER tutor_memory_summaries_validate_schema BEFORE INSERT OR UPDATE ON
 --
 
 CREATE CONSTRAINT TRIGGER tutor_messages_null_student_only_flagged AFTER INSERT OR UPDATE OF student_id ON public.tutor_messages NOT DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION public.tutor_messages_null_student_only_flagged();
+
+
+--
+-- Name: worked_examples worked_examples_leak_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER worked_examples_leak_guard BEFORE INSERT OR UPDATE ON public.worked_examples FOR EACH ROW EXECUTE FUNCTION public.worked_examples_leak_guard();
 
 
 --
@@ -23993,6 +24487,22 @@ ALTER TABLE ONLY public.tutor_conversations
 
 
 --
+-- Name: tutor_eval_cases tutor_eval_cases_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_cases
+    ADD CONSTRAINT tutor_eval_cases_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tutor_eval_runs tutor_eval_runs_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tutor_eval_runs
+    ADD CONSTRAINT tutor_eval_runs_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.tutor_eval_cases(case_id) ON DELETE CASCADE;
+
+
+--
 -- Name: tutor_injection_log tutor_injection_log_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24142,6 +24652,22 @@ ALTER TABLE ONLY public.tutor_turn_metrics
 
 ALTER TABLE ONLY public.usage_rate_limit_ledger
     ADD CONSTRAINT usage_rate_limit_ledger_student_user_id_fkey FOREIGN KEY (student_user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: worked_example_metrics worked_example_metrics_worked_example_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_example_metrics
+    ADD CONSTRAINT worked_example_metrics_worked_example_id_fkey FOREIGN KEY (worked_example_id) REFERENCES public.worked_examples(id);
+
+
+--
+-- Name: worked_examples worked_examples_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.worked_examples
+    ADD CONSTRAINT worked_examples_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.questions(id);
 
 
 --
@@ -25488,6 +26014,18 @@ CREATE POLICY tutor_conversations_update_own ON public.tutor_conversations FOR U
 
 
 --
+-- Name: tutor_eval_cases; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_cases ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tutor_eval_runs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tutor_eval_runs ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: tutor_injection_log; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -25770,6 +26308,18 @@ CREATE POLICY usage_rate_limit_ledger_select_own ON public.usage_rate_limit_ledg
 --
 
 ALTER TABLE public.video_resources ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: worked_example_metrics; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.worked_example_metrics ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: worked_examples; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.worked_examples ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
@@ -28054,6 +28604,14 @@ GRANT ALL ON FUNCTION public.sweep_tutor_conversation_retention(p_dry_run boolea
 
 
 --
+-- Name: FUNCTION sweep_tutor_eval_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.sweep_tutor_eval_retention(p_dry_run boolean) TO service_role;
+
+
+--
 -- Name: FUNCTION sweep_tutor_instruction_retention(p_dry_run boolean); Type: ACL; Schema: public; Owner: -
 --
 
@@ -28066,6 +28624,13 @@ GRANT ALL ON FUNCTION public.sweep_tutor_instruction_retention(p_dry_run boolean
 --
 
 REVOKE ALL ON FUNCTION public.sync_tutor_conversations_on_entitlement_change() FROM PUBLIC;
+
+
+--
+-- Name: FUNCTION test_form_items_worked_example_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.test_form_items_worked_example_guard() FROM PUBLIC;
 
 
 --
@@ -28115,11 +28680,11 @@ GRANT ALL ON FUNCTION public.verify_deletion_layers(p_profile_id uuid) TO servic
 
 
 --
--- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text) TO service_role;
+REVOKE ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resource_tag(p_video_id text, p_title text, p_channel_name text, p_duration_seconds integer, p_skill_codes text[], p_domain text, p_start_seconds integer, p_tagged_by text, p_methods text[], p_format text) TO service_role;
 
 
 --
@@ -28136,6 +28701,21 @@ GRANT ALL ON FUNCTION public.video_resources_approve(p_video_ids text[], p_appro
 
 REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_limit integer, p_method text) TO service_role;
+
+
+--
+-- Name: FUNCTION worked_examples_leak_guard(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.worked_examples_leak_guard() FROM PUBLIC;
 
 
 --
@@ -29538,6 +30118,20 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.question_sub_skills TO service
 
 
 --
+-- Name: TABLE questions_with_usage; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.questions_with_usage TO service_role;
+
+
+--
+-- Name: TABLE worked_examples; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_examples TO service_role;
+
+
+--
 -- Name: TABLE rate_limit_ledger; Type: ACL; Schema: public; Owner: -
 --
 
@@ -30182,6 +30776,20 @@ GRANT ALL ON TABLE public.tutor_conversations TO service_role;
 
 
 --
+-- Name: TABLE tutor_eval_cases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tutor_eval_cases TO service_role;
+
+
+--
+-- Name: TABLE tutor_eval_runs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.tutor_eval_runs TO service_role;
+
+
+--
 -- Name: TABLE tutor_injection_log; Type: ACL; Schema: public; Owner: -
 --
 
@@ -30242,6 +30850,20 @@ GRANT ALL ON TABLE public.usage_rate_limit_ledger TO service_role;
 --
 
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.video_resources TO service_role;
+
+
+--
+-- Name: TABLE worked_example_metrics; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,UPDATE ON TABLE public.worked_example_metrics TO service_role;
+
+
+--
+-- Name: TABLE worked_example_metrics_monthly; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.worked_example_metrics_monthly TO service_role;
 
 
 --

@@ -1,0 +1,44 @@
+# Worked examples: the mechanical rules on every pull request into `social` that carries an example
+# or a plan, before Codex audits the maths.
+#
+# @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): monthly plan PR,
+#   weekly batch PR ("Codex audits the maths and hook rules; Karl merges"), hook rules, "the monthly
+#   plan rotates hook types"] | @implemented [2026-10-27]
+#
+# plain English: runs scripts/worked-examples/check-content.ts on the pull request's tree: schema,
+# question (from the seed SQL), answer key, hook rules, style table, plan slot and rotation, voice
+# matching its script and loud enough over the music, one example a day. A red check means the
+# batch is not ready for review. It reads no secrets and writes nothing.
+name: Worked example checks
+
+on:
+  pull_request:
+    branches: [social]
+    paths:
+      - content/worked-examples/**
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Content rules
+        run: pnpm exec tsx scripts/worked-examples/check-content.ts --content .

@@ -230,6 +230,12 @@ export const questionContentSchema = z.object({
   explanation: z.string().nullable(),
   student_answer: z.string().nullable(),
   attempt_number: z.number().int().nonnegative(),
+  // @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27: the Desmos block goes in
+  // when questions.section = 'M', passed from the BFF, never inferred from mastery data]
+  // | @implemented [2026-10-27] | plain English: the item's subject, read by the BFF from the
+  // question row. Null when it could not be read (the block then stays off). OPTIONAL so either
+  // side can deploy first: an older worker strips it, a newer one treats absence as null.
+  section: z.enum(["M", "RW"]).nullable().optional(),
 });
 
 // ── Offered videos (video library, CC brief 2026-10-15 §6/§7) ─────────
@@ -240,15 +246,50 @@ export const questionContentSchema = z.object({
 // Strict: an offered video carries no identifier, and a request that tries to send one (a
 // video_id, a URL) is refused at the worker's parse rather than stripped silently (CC Brief
 // "Video Library" §7: the model never sees a video identifier).
+//
+// @spec [Doc-03D_V1.2 §6.8 as amended by the video retrieval-contract SCL; owner brief "Video
+// retrieval: method tags", Karl 2026-10-27 (Step 0 ruling: tell the worker each video's methods
+// and format)] | @implemented [2026-10-27]: `methods` (how the video solves) and `format` (its
+// shape) so LISA can tell which offered video is the Desmos one without relying on a title.
+// Optional, so the worker is deployed FIRST (it accepts both with or without them) and the BFF
+// second; the object stays strict, so an older worker would refuse them — never deploy the BFF
+// first. The value lists are THE vocabulary (packages/shared/src/video-methods.ts), inlined
+// because the worker builds from this file alone; a contract test keeps them equal.
+export const OFFERED_VIDEO_METHODS = [
+  "desmos",
+  "algebraic",
+  "backsolve",
+] as const;
+export const OFFERED_VIDEO_FORMATS = [
+  "worked_example",
+  "formula",
+  "lesson",
+  "strategy",
+] as const;
 export const offeredVideoSchema = z
   .object({
     index: z.number().int().min(1).max(3),
     title: z.string(),
     channel_name: z.string(),
     duration_seconds: z.number().int().positive(),
+    methods: z.array(z.enum(OFFERED_VIDEO_METHODS)).max(3).optional(),
+    format: z.enum(OFFERED_VIDEO_FORMATS).nullable().optional(),
   })
   .strict();
 export type OfferedVideo = z.infer<typeof offeredVideoSchema>;
+
+/**
+ * The guided-choice intents (packages/shared/src/tutor-guided-choices.ts `REVIEW_INTENTS`),
+ * repeated here because the worker cannot import packages/shared; a CI test asserts the two
+ * lists are equal, as it does for the video methods above.
+ */
+export const ORCHESTRATE_INTENTS = [
+  "walkthrough",
+  "desmos_walkthrough",
+  "explain_rule",
+  "video_desmos",
+  "video_explanation",
+] as const;
 
 // ── Request schema ───────────────────────────────────────────────────
 
@@ -296,6 +337,19 @@ export const orchestrateRequestSchema = z.object({
   // Optional so either side can deploy first: an older worker ignores it, and an
   // older BFF never sends it.
   offered_videos: z.array(offeredVideoSchema).max(3).optional(),
+  // @spec [docs/lisa/desmos-playbook.md §8; Karl's ruling 2026-10-27: in general mode the Desmos
+  // block goes in when the current message matches the `desmos` method in video_method_keywords]
+  // | @implemented [2026-10-27] | plain English: the way of solving the student's CURRENT message
+  // asks for, from the BFF's own detector (`requestedVideoMethod`, #1335). Null: none asked for.
+  // OPTIONAL for deploy order, as above.
+  requested_method: z.enum(OFFERED_VIDEO_METHODS).nullable().optional(),
+  // ── Guided choice (owner brief "LISA guided choices in review, Phase A", Karl 2026-10-27;
+  // SCL-255) ──
+  // The review choice the student tapped, when the turn came from one. Only `walkthrough` is
+  // ever sent: the video intents are answered by the BFF with no worker call. Recorded, never
+  // read into the prompt: Phase A changes nothing in what LISA is told. Optional, so either side
+  // can deploy first (an older worker strips it).
+  intent: z.enum(ORCHESTRATE_INTENTS).optional(),
 });
 
 // ── Response sub-schemas ─────────────────────────────────────────────
@@ -371,6 +425,79 @@ export const orchestrationTimingSchema = z
   .strict();
 export type OrchestrationTiming = z.infer<typeof orchestrationTimingSchema>;
 
+/**
+ * @spec [owner brief "Per-turn attribution: tokens, thinking, cache and prompt version" (Karl,
+ *        2026-10-27) and rulings; Doc 03C V3 `orchestration_meta` (`input_tokens`,
+ *        `output_tokens`); SCL-246 (`thinking_tokens`, `cached_tokens`, `thinking_budget`, which no
+ *        spec names); Doc 03 §24 (per-student cost); Doc 03D §8.1 (prompt_version)]
+ *        | @implemented [2026-10-27]
+ *
+ * plain English: what one tutor turn cost and which configuration produced it. Token counts are
+ * the SUM over every billed Vertex attempt in the turn (owner ruling 2026-10-27, reversing
+ * "reply attempt only"): the reply, retries, the pro→flash fallback, and responses rejected as
+ * safety-blocked or truncated, which are billed too. An attempt that returned no usage (a 429, a
+ * 5xx, a timeout) adds nothing. A count is `null` when no attempt reported it: unknown, never 0.
+ * `thinking_budget` is the budget the call was made with (the hard-coded value; recorded, not
+ * configured). Numbers only, by construction.
+ *
+ * trade-offs: every field is optional on the wire so the BFF can deploy before the worker; a
+ * turn answered by an older worker records null counts.
+ */
+const tokenCountSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(10_000_000)
+  .nullable();
+
+export const turnUsageSchema = z
+  .object({
+    input_tokens: tokenCountSchema,
+    output_tokens: tokenCountSchema,
+    thinking_tokens: tokenCountSchema,
+    cached_tokens: tokenCountSchema,
+    thinking_budget: z.number().int().nonnegative().max(1_000_000),
+  })
+  .strict();
+export type TurnUsage = z.infer<typeof turnUsageSchema>;
+
+/** The BFF's view of one turn's attribution: usage summed over its worker calls, and the
+ * prompt version the worker resolved (null when no worker answered with one). The budget is
+ * nullable here because a worker deployed before SCL-246 reports a prompt version but no budget. */
+export const turnAttributionSchema = turnUsageSchema
+  .extend({
+    thinking_budget: turnUsageSchema.shape.thinking_budget.nullable(),
+    prompt_version: z.string().max(200).nullable(),
+  })
+  .strict();
+export type TurnAttribution = z.infer<typeof turnAttributionSchema>;
+
+/**
+ * A worker error response (non-2xx). A safety block or a truncation is billed, so its body
+ * carries the turn's usage and prompt version; other errors may carry neither.
+ */
+export const orchestrateErrorResponseSchema = z.object({
+  error: z.object({
+    message: z.string(),
+    code: z.string().optional(),
+  }),
+  prompt_version: z.string().max(200).optional(),
+  ...turnUsageSchema.partial().shape,
+});
+export type OrchestrateErrorResponse = z.infer<
+  typeof orchestrateErrorResponseSchema
+>;
+
+/** Sum of two token counts where null means "not reported": null only if both are null. */
+export function addTokenCounts(
+  a: number | null,
+  b: number | null,
+): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a + b;
+}
+
 export const orchestrateResponseSchema = z.object({
   response: z.object({
     content: z.string(),
@@ -411,6 +538,8 @@ export const orchestrateResponseSchema = z.object({
     cache_used: z.boolean(),
     compaction_recommended: z.boolean(),
     timing: orchestrationTimingSchema.optional(),
+    // Per-turn attribution (SCL-246): optional so either side can deploy first.
+    ...turnUsageSchema.partial().shape,
   }),
   learner_observation: learnerObservationSchema.nullable(),
 });

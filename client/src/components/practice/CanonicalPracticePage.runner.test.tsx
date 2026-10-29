@@ -49,6 +49,7 @@ import CanonicalPracticePage from "./CanonicalPracticePage";
 import { MISS_NOTE } from "@/components/question-renderer";
 import { LYC_FOCUS } from "@/components/ui/button";
 import { queryClient as appQueryClient } from "@/lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
 
 /** OQ-35, owner ruling (Karl) 2026-10-02: the shortened-session sentence, verbatim. */
 const SHORTER_SESSION_NOTE =
@@ -203,7 +204,12 @@ function pathOf(input: RequestInfo | URL): string {
 }
 
 /** A session of `total` items. Item 1 is served first; an answer or skip resolves the current one. */
-function installNetwork(opts: { total: number; leak?: boolean }): Net {
+function installNetwork(opts: {
+  total: number;
+  leak?: boolean;
+  /** GET /api/tutor/guided-choices answers these (owner ruling on #1349); unset → 500. */
+  guidedChoices?: readonly string[];
+}): Net {
   const items = Array.from({ length: opts.total }, (_, i) =>
     servedItem(i + 1, opts.total, opts.leak === true),
   );
@@ -216,6 +222,12 @@ function installNetwork(opts: { total: number; leak?: boolean }): Net {
     const method = init?.method ?? "GET";
     calls.push(`${method} ${path}`);
     if (path === "/api/csrf-token") return jsonResponse({ csrfToken: "t" });
+    if (
+      opts.guidedChoices !== undefined &&
+      path.startsWith("/api/tutor/guided-choices")
+    ) {
+      return jsonResponse({ data: { intents: opts.guidedChoices } });
+    }
     if (/\/sessions\/[^/]+\/resume$/.test(path)) {
       return jsonResponse({
         sessionId: SESSION_ID,
@@ -304,29 +316,33 @@ function mountRunner(
     engine.domain === "review"
       ? ("/review/session/:sessionId" as const)
       : ("/practice/session/:sessionId" as const);
+  // The app root's query client (App.tsx): the phone's LISA strip reads the guided choices
+  // through it (owner ruling on #1349).
   const page = (
-    <StudentRouteFrame route={route}>
-      <CanonicalPracticePage
-        title={
-          opts.diagnostic === true
-            ? "Diagnostic Assessment"
-            : engine.domain === "review"
-              ? "Review session"
-              : "Algebra"
-        }
-        section="M"
-        sessionId={SESSION_ID}
-        engine={engine}
-        shortened={opts.shortened}
-        isDiagnostic={opts.diagnostic}
-        completionHref={
-          opts.diagnostic === true ? "/dashboard" : engine.completionHref
-        }
-        {...(opts.onSessionClosed
-          ? { onSessionClosed: opts.onSessionClosed }
-          : {})}
-      />
-    </StudentRouteFrame>
+    <QueryClientProvider client={appQueryClient}>
+      <StudentRouteFrame route={route}>
+        <CanonicalPracticePage
+          title={
+            opts.diagnostic === true
+              ? "Diagnostic Assessment"
+              : engine.domain === "review"
+                ? "Review session"
+                : "Algebra"
+          }
+          section="M"
+          sessionId={SESSION_ID}
+          engine={engine}
+          shortened={opts.shortened}
+          isDiagnostic={opts.diagnostic}
+          completionHref={
+            opts.diagnostic === true ? "/dashboard" : engine.completionHref
+          }
+          {...(opts.onSessionClosed
+            ? { onSessionClosed: opts.onSessionClosed }
+            : {})}
+        />
+      </StudentRouteFrame>
+    </QueryClientProvider>
   );
   return render(
     opts.strict ? <React.StrictMode>{page}</React.StrictMode> : page,
@@ -906,6 +922,8 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     expect(tutorProps.last).not.toBeNull();
     const props = tutorProps.last!;
     expect(Object.keys(props).sort()).toEqual([
+      "autoSend",
+      "onAutoSent",
       "onHide",
       "questionLabel",
       "revealKey",
@@ -913,6 +931,8 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
       "sessionItemId",
       "sourceSurface",
     ]);
+    // Opened from the toggle, not a choice: nothing to send.
+    expect(props.autoSend).toBeNull();
     expect(props.sourceSurface).toBe("review");
     expect(props.sessionItemId).toBe("item-1");
     expect(props.questionLabel).toBe("Question 1 of 3");
@@ -920,6 +940,61 @@ describe("UI-53 runner: OQ-35, F-64, LISA", () => {
     for (const leak of [CORRECT_TEXT, FIRST_TEXT, "opt_", EXPLANATION]) {
       expect(serialised).not.toContain(leak);
     }
+  });
+
+  /**
+   * @spec [owner ruling on #1349 (Karl, 2026-10-27), ruling 3] | @implemented [2026-10-27]
+   * The phone's LISA strip carries the server's choices while LISA is closed; a tap opens LISA,
+   * revealed, and hands it that choice to send, once.
+   */
+  it("phone, LISA closed: the strip carries the choices; a tap opens LISA and hands it the choice to send", async () => {
+    mockWidth(390);
+    const net = installNetwork({
+      total: 3,
+      guidedChoices: ["walkthrough", "video_desmos", "video_explanation"],
+    });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    const strip = await screen.findByTestId("guided-choices-bar");
+    expect(
+      within(strip)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Walk me through it", "Desmos video", "Explanation video"]);
+    expect(
+      net.calls.some((c) => c.startsWith("GET /api/tutor/guided-choices")),
+    ).toBe(true);
+    expect(screen.queryByTestId("scoped-tutor-panel-mock")).toBeNull();
+
+    await click(within(strip).getByText("Desmos video"));
+    expect(screen.getByTestId("scoped-tutor-panel-mock")).toBeTruthy();
+    const props = tutorProps.last!;
+    expect(props.revealOnOpen).toBe(true);
+    expect(props.autoSend).toEqual({
+      itemId: "item-1",
+      nonce: 1,
+      intent: "video_desmos",
+    });
+    // Open now: the strip goes, the panel carries the conversation.
+    expect(screen.queryByTestId("guided-choices-bar")).toBeNull();
+    // Handed over: cleared, so it is never sent twice.
+    await act(async () => {
+      (props.onAutoSent as () => void)();
+    });
+    expect(tutorProps.last?.autoSend).toBeNull();
+  });
+
+  it("desktop (1440): no strip; LISA is the dock", async () => {
+    mockWidth(1440);
+    installNetwork({
+      total: 3,
+      guidedChoices: ["walkthrough", "video_desmos", "video_explanation"],
+    });
+    mountRunner({ engine: REVIEW_ENGINE_CONFIG });
+    await loaded();
+    // Presence: the dock is drawn.
+    expect(screen.getByTestId("chat-dock-mock")).toBeTruthy();
+    expect(screen.queryByTestId("guided-choices-bar")).toBeNull();
   });
 
   it("QA2-D: a tap on the phone opens LISA told to reveal itself", async () => {

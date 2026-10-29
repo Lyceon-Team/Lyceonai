@@ -29,6 +29,7 @@
  */
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import type { ReviewIntent } from "../../packages/shared/src/tutor-guided-choices";
 
 // ---------------------------------------------------------------------------
 // Types — exported for route-handler / orchestrator consumers
@@ -60,8 +61,21 @@ export type TurnMetricsLog = {
   turnOrdinal: number;
   orchestrationDurationMs: number;
   modelName: string;
-  tokensIn: number;
-  tokensOut: number;
+  /**
+   * @spec [owner brief "Per-turn attribution" (Karl, 2026-10-27) and rulings; SCL-246; Doc 03 §24]
+   * | @implemented [2026-10-27]
+   * Token counts summed over every billed Vertex attempt in the turn (retries, fallback, safety
+   * blocks and truncations included). `null` when the turn made no model call (crisis bypass,
+   * Model Armor block, an error before any Vertex response) or the worker did not report it:
+   * unknown, never 0. Required, so every call site decides explicitly.
+   */
+  tokensIn: number | null;
+  tokensOut: number | null;
+  thinkingTokens: number | null;
+  /** The thinking budget the turn's calls were made with; null when no model call was made. */
+  thinkingBudget: number | null;
+  /** The prompt version the worker resolved (Doc 03D §8.1); null when no worker answered. */
+  promptVersion: string | null;
   cacheHit: boolean;
   compactionRecommended: boolean;
   antiLeakTriggered: boolean;
@@ -79,9 +93,19 @@ export type TurnMetricsLog = {
    *  - "classifier_degraded_no_floor"  — Layer 2 failed + Layer 1 empty (B1.5 fail-closed)
    *  - "infrastructure_failure"        — classifier threw unexpected error
    *  - "classifier_degraded"           — Layer 2 failed but Layer 1 had data (force-review)
+   *  - "no_crisis_signatures_only"     — a guided-choice tap (exact label): Layer 1 ran and
+   *                                       found nothing, Layer 2 was not run (ruling 4, 2026-10-27)
    *  - null                            — classifier did not run (pre-pipeline exit)
    */
   crisisClassifierOutcome: string | null;
+  /**
+   * @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27) build 4 and
+   *        ruling 5; SCL-255] | @implemented [2026-10-27]
+   * The guided choice the turn came from, or null for a typed message (and for every exit
+   * before the request was parsed). The code only: no message text. Required, so every call
+   * site decides explicitly.
+   */
+  intent: ReviewIntent | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -166,12 +190,17 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
       model_name: params.modelName,
       tokens_in: params.tokensIn,
       tokens_out: params.tokensOut,
+      thinking_tokens: params.thinkingTokens,
+      thinking_budget: params.thinkingBudget,
+      prompt_version: params.promptVersion,
       cache_hit: params.cacheHit,
       compaction_recommended: params.compactionRecommended,
       anti_leak_triggered: params.antiLeakTriggered,
       injection_detected: params.injectionDetected,
       crisis_triggered: params.crisisTriggered,
       crisis_classifier_outcome: params.crisisClassifierOutcome,
+      // Written only on a guided-choice turn: every other row's insert is unchanged.
+      ...(params.intent !== null ? { intent: params.intent } : {}),
       recorded_at: new Date().toISOString(),
     });
 
@@ -206,6 +235,7 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
         crisisTriggered: params.crisisTriggered,
         injectionDetected: params.injectionDetected,
         antiLeakTriggered: params.antiLeakTriggered,
+        intent: params.intent,
       },
     );
   } catch (err: unknown) {

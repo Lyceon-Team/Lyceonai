@@ -22,6 +22,16 @@
  *
  * edge cases: the student only ever sees videos Karl approved (approved_by set) for the item's
  * own skills. Logs carry ids and counts only, never message text.
+ *
+ * @spec [Doc-03D_V1.2 §6.7/§6.8 as amended by the video-method SCLs; owner brief "Video
+ *       retrieval: method tags", Karl 2026-10-27] | @implemented [2026-10-27]
+ *  - `requestedVideoMethod(message)`: the method the student's CURRENT message asks for, from the
+ *    versioned keyword map in runtime config (`video_method_keywords`), by the shared
+ *    deterministic matcher. No model call, no tokens. No map (unset or invalid) or no match →
+ *    no preference.
+ *  - Retrieval passes that method to `video_resources_for_skills(skills, 3, method)`: skill
+ *    match required, then the method, then format priority, then shortest. Each row carries its
+ *    methods and format, which go to the worker so LISA can tell the Desmos video apart.
  */
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
@@ -30,8 +40,15 @@ import type {
   OrchestrateRequest,
   OrchestrateResponse,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
+import {
+  detectRequestedMethod,
+  videoFormatSchema,
+  videoMethodSchema,
+  type VideoMethod,
+} from "../../packages/shared/src/video-methods";
 import { logger } from "../logger";
 import { resolveQuestionSkillCodes } from "./tutor-context";
+import { TutorConfig } from "./tutor-config";
 
 export const libraryVideoSchema = z.object({
   video_id: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
@@ -39,6 +56,8 @@ export const libraryVideoSchema = z.object({
   channel_name: z.string(),
   duration_seconds: z.number().int().positive(),
   start_seconds: z.number().int().nonnegative().nullable(),
+  methods: z.array(videoMethodSchema),
+  format: videoFormatSchema.nullable(),
 });
 export type LibraryVideo = z.infer<typeof libraryVideoSchema>;
 
@@ -54,11 +73,25 @@ export const VIDEO_SURFACES: ReadonlySet<SourceSurface> = new Set([
   "dashboard",
 ]);
 
+/** The method the student's current message asks for, and the keyword map's version (read from the loaded config; no I/O). */
+export function requestedVideoMethod(message: string): {
+  method: VideoMethod | null;
+  mapVersion: number | null;
+} {
+  const map = TutorConfig.get("video_method_keywords");
+  if (map === null) return { method: null, mapVersion: null };
+  return {
+    method: detectRequestedMethod(message, map),
+    mapVersion: map.version,
+  };
+}
+
 /** Step 13d. Never throws: any failure is logged and yields no videos. */
 export async function retrieveOfferedVideos(
   questionRowId: string | null,
   surface: SourceSurface,
   conversationId: string,
+  requestedMethod: VideoMethod | null,
 ): Promise<LibraryVideo[]> {
   if (questionRowId === null || !VIDEO_SURFACES.has(surface)) return [];
   try {
@@ -67,6 +100,7 @@ export async function retrieveOfferedVideos(
     const r = await supabaseServer.rpc("video_resources_for_skills", {
       p_skill_codes: skills,
       p_limit: MAX_OFFERED_VIDEOS,
+      p_method: requestedMethod,
     });
     if (r.error) throw r.error;
     return z
@@ -85,19 +119,42 @@ export async function retrieveOfferedVideos(
   }
 }
 
-/** The worker's view: index, title, channel, length. No id, no start. */
+/** The worker's view: index, title, channel, length, methods, format. No id, no start. */
 export function toWireVideos(videos: readonly LibraryVideo[]): OfferedVideo[] {
   return videos.map((v, i) => ({
     index: i + 1,
     title: v.title,
     channel_name: v.channel_name,
     duration_seconds: v.duration_seconds,
+    methods: v.methods,
+    format: v.format,
   }));
 }
 
 type WorkerAction = OrchestrateResponse["response"]["suggested_action"];
 
 /** The client's action: the worker's, with the offered video attached for recommend_video. */
+/**
+ * What the client is sent about a video: exactly these five fields (client/src/hooks/
+ * tutor-client.ts `TutorVideo`). Projected, never the library row itself, so a field added to
+ * `libraryVideoSchema` (methods and format, 2026-10-27) does not reach students unnoticed
+ * (CLAUDE.md anti-leak chokepoint rule).
+ */
+export type ClientVideo = Pick<
+  LibraryVideo,
+  "video_id" | "title" | "channel_name" | "duration_seconds" | "start_seconds"
+>;
+
+export function toClientVideo(v: LibraryVideo): ClientVideo {
+  return {
+    video_id: v.video_id,
+    title: v.title,
+    channel_name: v.channel_name,
+    duration_seconds: v.duration_seconds,
+    start_seconds: v.start_seconds,
+  };
+}
+
 export type ClientSuggestedAction =
   | {
       type: Exclude<WorkerAction["type"], "recommend_video">;
@@ -106,7 +163,7 @@ export type ClientSuggestedAction =
   | {
       type: "recommend_video";
       label: string | null;
-      video: LibraryVideo;
+      video: ClientVideo;
     };
 
 /**
@@ -129,5 +186,9 @@ export function resolveVideoAction(
       : offered[action.video_index - 1];
   return video === undefined
     ? { type: "none", label: null }
-    : { type: "recommend_video", label: action.label, video };
+    : {
+        type: "recommend_video",
+        label: action.label,
+        video: toClientVideo(video),
+      };
 }
