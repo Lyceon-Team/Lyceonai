@@ -22,7 +22,7 @@ unidecode==1.3.7
 langid==1.1.6
 txtsplit==1.0.0
 cached_path==1.8.10
-transformers==4.27.4
+transformers==5.10.1
 num2words==0.5.12
 unidic_lite==1.0.8
 unidic==1.1.0
