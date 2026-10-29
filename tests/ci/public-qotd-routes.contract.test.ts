@@ -672,19 +672,30 @@ describe("POST /today/answer — grading, reveal, stats, quota", () => {
   });
 });
 
-describe("opaque tokens (owner ruling 2026-10-05) in canonical order (Karl's ruling 2026-10-23)", () => {
-  it("every request serves the four options in canonical (authored) order, each as a token, never its letter", async () => {
-    const canonical = (today.options as { key: string; text: string }[]).map(
-      (o) => o.text,
+describe("opaque tokens (owner ruling 2026-10-05) in the stored order (Karl's rulings 2026-10-28, SCL-258)", () => {
+  it("every request serves the four options in the day's stored order, each as a token, never its letter", async () => {
+    const textOf = new Map(
+      (today.options as { key: string; text: string }[]).map((o) => [
+        o.key,
+        o.text,
+      ]),
     );
-    expect(canonical).toHaveLength(4);
+    const stored = today.option_order;
+    expect(stored).toHaveLength(4);
+    // Presence first: the fixture's today is shuffled, so this cannot pass on canonical order.
+    expect(stored).not.toEqual(
+      (today.options as { key: string }[]).map((o) => o.key),
+    );
     for (let i = 0; i < 10; i += 1) {
       const options = await served();
-      expect(options.map((o) => o.text)).toEqual(canonical);
+      expect(options.map((o) => o.text)).toEqual(
+        stored.map((k) => textOf.get(k)),
+      );
       for (const [index, o] of options.entries()) {
-        // Each position carries the token of the canonical key at that position.
-        const key = (today.options as { key: string }[])[index]?.key ?? "";
-        expect(o.id).toBe(qotdOptionToken(QOTD_FIXTURE_TODAY, key));
+        // Each position carries the token of the stored key at that position.
+        expect(o.id).toBe(
+          qotdOptionToken(QOTD_FIXTURE_TODAY, stored[index] ?? ""),
+        );
       }
     }
   });

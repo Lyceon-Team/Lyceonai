@@ -67,8 +67,10 @@ import {
   toTodayResponse,
 } from "../../server/services/qotd/qotd-service";
 import {
+  ApiHttpError,
   loadReveal,
   loadYesterday,
+  pickLatestDay,
   pastDateProblem,
   publishDecision,
   socialRunToday,
@@ -87,6 +89,7 @@ import {
   capTiktokTitle,
   tiktokSafePx,
   tiktokWhy,
+  QOTD_TIKTOK_WHY_MORE,
 } from "../../shared/qotd/tiktok";
 import { QOTD_TIKTOK_CSS } from "@/components/qotd/QotdTiktokSlide";
 import { plainMathText } from "../../shared/qotd/plain-math";
@@ -162,9 +165,7 @@ function tiktokFor(source: Source): TiktokBuild {
   if (!day) return { status: "skipped", qotd_date: y, reason: "withheld" };
   const built = buildTiktokCarousel(day, source.input.qotd_date);
   if (!built.ok) {
-    return built.reason === "does_not_fit"
-      ? { status: "skipped", qotd_date: y, reason: "does_not_fit" }
-      : { status: "refused", problem: built.problem };
+    return { status: "refused", problem: built.problem };
   }
   return {
     status: "built",
@@ -670,8 +671,8 @@ describe("future days are never generated early or publicly reachable", () => {
     expect(wf).toContain("scripts/qotd-social/generate.ts");
     expect(wf).toContain("actions/upload-artifact@v4");
     expect(wf).toMatch(/permissions:\s*\n\s*contents: read/);
-    // One secret reference in the whole file, the Slack token.
-    expect(wf.match(/secrets\./g)).toEqual(["secrets."]);
+    // One secret, the Slack token, referenced by the post and by the failure notice (SCL-258).
+    expect(wf.match(/secrets\./g)).toEqual(["secrets.", "secrets."]);
     expect(wf).toContain("${{ secrets.SLACK_BOT_TOKEN }}");
 
     const steps = workflowSteps();
@@ -683,12 +684,27 @@ describe("future days are never generated early or publicly reachable", () => {
     // The post comes after the upload, so a Slack failure never costs the download.
     expect(post).toBeGreaterThan(upload);
     expect(dry).toBeGreaterThan(upload);
-    // The token is in that step's env and in no other step.
+    const failure = names.indexOf("Post the failure to Slack");
+    expect(failure).toBeGreaterThan(post);
+    // The token is in those two steps' env and in no other step.
     for (const [i, step] of steps.entries()) {
       expect(JSON.stringify(step).includes("secrets."), step.name).toBe(
-        i === post,
+        i === post || i === failure,
       );
     }
+    // A failed scheduled or hand-started run posts one failure notice (Karl, 2026-10-28).
+    const failureStep = steps[failure]!;
+    expect(failureStep.if).toBe(
+      "failure() && github.event_name != 'pull_request'",
+    );
+    expect(failureStep.env).toEqual({
+      SLACK_BOT_TOKEN: "${{ secrets.SLACK_BOT_TOKEN }}",
+      SLACK_CHANNEL_ID:
+        "${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}",
+    });
+    expect(failureStep.run).toBe(
+      "pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out --failure",
+    );
     const postStep = steps[post]!;
     expect(postStep.if).toBe(
       "success() && github.event_name != 'pull_request'",
@@ -1475,7 +1491,7 @@ describe("Slack: the edges the audit named", () => {
 
 // ---------------------------------------------------------------------------------------------
 // Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
-// reveal (for r/satquestions)", Karl, 2026-10-15). Real fixture days: today is 2026-10-05 (a
+// reveal (for r/satquestion)", Karl, 2026-10-15). Real fixture days: today is 2026-10-05 (a
 // Math MCQ) and yesterday 2026-10-04 (a Math grid-in).
 // ---------------------------------------------------------------------------------------------
 
@@ -1550,9 +1566,11 @@ describe("Yesterday's reveal: always yesterday, never today (owner brief 2026-10
     const built = buildReveal(day, "2026-10-04");
     expect(built.ok).toBe(true);
     if (built.ok && built.reveal.status === "revealed") {
+      // The SERVED letter (SCL-258): the day's stored order is {C,B,D,A}, so canonical C was
+      // shown as A, and the reveal says A.
       expect(built.reveal.answer).toEqual({
         kind: "choice",
-        letter: "C",
+        letter: "A",
         text: "attracted",
       });
     }
@@ -1836,6 +1854,46 @@ describe("The leak check still blocks today's answer anywhere in today's message
         day.qotd_date,
       ).toEqual([]);
     }
+  });
+});
+
+describe("--date latest: the newest day the archive serves (pull request runs)", () => {
+  // The index can list a day the day endpoint does not serve yet (seen 2026-10-29 04:08 UTC:
+  // the index had switched at 04:00 UTC, the day route still answered 404 until 05:00 UTC).
+  const daysDesc = DAYS.map((d) => d.qotd_date)
+    .sort()
+    .reverse();
+  const load = async (date: string): Promise<Source> => {
+    const day = DAYS.find((d) => d.qotd_date === date);
+    if (date === "2026-12-31") {
+      throw new ApiHttpError(`GET /api/public/qotd/${date} -> 500`, 500);
+    }
+    if (!day) {
+      throw new ApiHttpError(
+        `GET /api/public/qotd/${date} -> 404 (not_found)`,
+        404,
+      );
+    }
+    return pastSource(day);
+  };
+
+  it("a listed day the archive answers 404 for is skipped, and the next publishable day is picked", async () => {
+    const plain = await pickLatestDay(daysDesc, load, () => undefined);
+    expect(plain).not.toBeNull();
+    const lines: string[] = [];
+    const picked = await pickLatestDay(["2026-12-30", ...daysDesc], load, (l) =>
+      lines.push(l),
+    );
+    expect(picked).toBe(plain);
+    expect(lines).toContain(
+      "qotd-social: latest: skipping 2026-12-30 (the archive does not serve it)",
+    );
+  });
+
+  it("any other failure still fails the run", async () => {
+    await expect(
+      pickLatestDay(["2026-12-31", ...daysDesc], load, () => undefined),
+    ).rejects.toThrow("-> 500");
   });
 });
 
@@ -2315,15 +2373,26 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
   it("the Why line is at most 300 characters, whole sentences only (at most three), for every bank explanation", () => {
     const all = bankExplanations();
     expect(all.length).toBeGreaterThan(1000);
-    let built = 0;
+    let whole = 0;
+    let cut = 0;
     for (const explanation of all) {
       const why = tiktokWhy(explanation);
+      // Every explanation gets a Why (Karl, 2026-10-26): no day is skipped for its length.
+      expect(why).not.toBeNull();
       if (why === null) continue;
-      built += 1;
       const plain = plainMathText(explanation).replace(/\s+/g, " ").trim();
       expect(why.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
-      // Ends at a sentence boundary: terminal punctuation, and the plain text continues (if at
-      // all) with a space after exactly this prefix.
+      if (why.endsWith(QOTD_TIKTOK_WHY_MORE)) {
+        // A first sentence over 300 characters, cut at a word boundary.
+        cut += 1;
+        const head = why.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
+        expect(plain.startsWith(head)).toBe(true);
+        expect(plain[head.length]).toMatch(/[\s,;:—–-]/);
+        continue;
+      }
+      // Whole sentences: terminal punctuation, and the plain text continues (if at all) with a
+      // space after exactly this prefix.
+      whole += 1;
       expect(why).toMatch(/[.!?]["”’)]*$/);
       expect(plain.startsWith(why.replace(/\.$/, "")) || plain === why).toBe(
         true,
@@ -2333,16 +2402,54 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
         true,
       );
     }
-    expect(built).toBeGreaterThan(all.length * 0.9);
+    // Presence before absence: both kinds occur in the real bank.
+    expect(whole).toBeGreaterThan(all.length * 0.9);
+    expect(cut).toBeGreaterThan(0);
   });
 
-  it("the Why line never splits a decimal, stops at three sentences, and is null when the first sentence is too long", () => {
+  it("the Why line never splits a decimal and stops at three sentences", () => {
     expect(
       tiktokWhy("The mean is 3.5 here. So $x = 2$. Done! A fourth one."),
     ).toBe("The mean is 3.5 here. So x = 2. Done!");
-    expect(tiktokWhy(`${"word ".repeat(70)}end. Short.`)).toBeNull();
     const two = tiktokWhy(`First one. ${"long ".repeat(70)}tail. Third.`);
     expect(two).toBe("First one.");
+  });
+
+  it("a first sentence over 300 characters is cut at the last word boundary that fits, then '…' and 'Full explanation on lyceon.ai'", () => {
+    const long = `${"abcdefghijk ".repeat(40)}end. Short.`;
+    const why = tiktokWhy(long);
+    expect(QOTD_TIKTOK_WHY_MORE).toBe("… Full explanation on lyceon.ai");
+    expect(why).not.toBeNull();
+    if (why === null) return;
+    expect(why.length).toBeLessThanOrEqual(QOTD_TIKTOK_WHY_MAX);
+    expect(why.endsWith("… Full explanation on lyceon.ai")).toBe(true);
+    const head = why.slice(0, -QOTD_TIKTOK_WHY_MORE.length);
+    // Whole words only, and the most that fit: one more word would overflow.
+    expect(head).toMatch(/^(abcdefghijk )*abcdefghijk$/);
+    expect(
+      head.length + " abcdefghijk".length + QOTD_TIKTOK_WHY_MORE.length,
+    ).toBeGreaterThan(QOTD_TIKTOK_WHY_MAX);
+    // A trailing comma is not left before the ellipsis.
+    const commas = tiktokWhy(`${"abcdefgh, ".repeat(40)}end.`);
+    expect(commas).not.toContain(",…");
+  });
+
+  it("a day whose explanation's first sentence is over 300 characters still gets a carousel, with the cut Why on slide 3", () => {
+    const day = archiveDay("2026-10-03");
+    const long: QotdArchiveResponse = {
+      ...day,
+      question: {
+        ...day.question,
+        explanation: `${"The verb must agree with its singular subject and describe a completed event ".repeat(5)}so attracted is right. Second sentence.`,
+      },
+    };
+    const built = buildTiktokCarousel(long, "2026-10-04");
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.carousel.why.endsWith(QOTD_TIKTOK_WHY_MORE)).toBe(true);
+    expect(slideText(built.carousel, 3)).toContain(
+      "Full explanation on lyceon.ai",
+    );
   });
 
   // Owner brief "One funnel for every social post" (Karl, 2026-10-28): follow line, then

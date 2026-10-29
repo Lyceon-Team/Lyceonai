@@ -42,12 +42,12 @@ export const qotdOptionKeySchema = z.enum(["A", "B", "C", "D"]);
 /** An opaque option token: 22 base64url characters (server/services/qotd/option-tokens.ts). */
 export const qotdOptionTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
 
-/** An archive option: canonical order, canonical letter. */
+/** An archive option: in the day's stored order (SCL-258), identified by its canonical key. */
 export const qotdOptionSchema = z
   .object({ id: qotdOptionKeySchema, text: z.string() })
   .strict();
 
-/** Today's option: in canonical order (2026-10-23), identified only by its token. */
+/** Today's option: in the day's stored order (SCL-258), identified only by its token. */
 export const qotdServedOptionSchema = z
   .object({ id: qotdOptionTokenSchema, text: z.string() })
   .strict();
@@ -117,9 +117,17 @@ export const qotdSubmitResponseSchema = z.object(qotdRevealShape).strict();
 export const qotdArchiveQuestionSchema = z
   .object({
     ...qotdQuestionBaseShape,
-    /** MCQ: four options in canonical order. Grid-in: empty. */
+    /** MCQ: the options in the day's stored order (SCL-258). Grid-in: empty. */
     options: z.array(qotdOptionSchema),
+    /** The correct option's canonical key (its id above). */
     correct_option_id: qotdOptionKeySchema.nullable(),
+    /**
+     * The letter the correct option is shown under, from the stored order. Grid-in: null. The
+     * server always sends it; it is optional to READ only because a reader (the social run, a
+     * browser tab) can meet a server that predates SCL-258, whose options are in the order it
+     * showed (canonical). Readers letter by position and require this to agree when present.
+     */
+    correct_letter: qotdOptionKeySchema.nullable().optional(),
     correct_answer: z.string().nullable(),
     explanation: z.string(),
   })
@@ -219,7 +227,7 @@ export function previousQotdDate(date: string): string {
 }
 
 /**
- * Yesterday's reveal, for the comment on yesterday's r/satquestions post.
+ * Yesterday's reveal, for the comment on yesterday's r/satquestion post.
  *
  * @spec [Doc 10A §7 ("no answer is revealed before submitting"; a past day's answer is public on
  *       its archive page), Doc 10B (Reddit posting stays manual); owner brief "QOTD Slack post —

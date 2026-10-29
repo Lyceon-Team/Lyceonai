@@ -588,6 +588,14 @@ describe("S7: no QOTD subject or preview contains the answer (every authored que
           rec.item_type === "mcq" ? String(rec.correct_option) : correctText,
         correct_variants: null,
         explanation: rec.explanation,
+        // SCL-258 columns; the email reads neither (asserted below: metadata and stem only).
+        option_order: rec.item_type === "mcq" ? options.map((o) => o.key) : [],
+        correct_display_letter:
+          rec.item_type === "mcq"
+            ? (["A", "B", "C", "D"][
+                options.findIndex((o) => o.key === rec.correct_option)
+              ] ?? null)
+            : null,
       });
       const fields = qotdEmailQuestionFields(row);
       expect(Object.keys(fields).sort()).toEqual(["meta", "stem"]);
