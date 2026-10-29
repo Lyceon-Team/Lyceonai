@@ -109,7 +109,13 @@ describe("every prerendered page carries its own head and body (F1)", () => {
         attr(p.html, /<meta property="og:url" content="([^"]+)"/),
         p.path,
       ).toBe(own);
-      expect(p.html, p.path).not.toContain('name="robots"');
+      // Indexable pages carry no robots tag; a prerendered page kept out of the sitemap says
+      // noindex (owner brief 2026-10-28: /start, a page for our own links).
+      if (p.indexable) expect(p.html, p.path).not.toContain('name="robots"');
+      else
+        expect(p.html, p.path).toContain(
+          '<meta name="robots" content="noindex" />',
+        );
       expect(p.html, p.path).not.toContain('name="keywords"');
     }
   });

@@ -504,6 +504,19 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/worked-examples.mutations.sh
 
+      # Social funnel (Karl, 2026-10-28): a free-text tag past the allowlist, the server trusting
+      # the browser, tags stored before consent, the cohort line ending early, /start losing
+      # noindex, a "free study plan" claim, the sign-up link dropping its tag, a rewritable
+      # signup_channel. Each must turn its named check red.
+      - name: Social funnel mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/social-funnel.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest
