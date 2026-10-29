@@ -248,13 +248,32 @@ async function consent(id: string, decision: string) {
 }
 
 /** The option token whose canonical key is `key`, read from the served question's order. */
-async function tokenFor(id: string, letter: "A" | "B" | "C" | "D") {
+/**
+ * The seeded question's choices as authored: B is correct. One list, so the seed and the lookup
+ * below cannot disagree.
+ */
+const SEED_OPTIONS = [
+  { key: "A", text: "2" },
+  { key: "B", text: "3" },
+  { key: "C", text: "4" },
+  { key: "D", text: "5" },
+] as const;
+type SeedKey = (typeof SEED_OPTIONS)[number]["key"];
+
+/**
+ * The served token of the choice authored as `key`. SCL-258 shuffles a day's choices once at
+ * scheduling (seeded by the date and question), so the served position of a choice depends on
+ * the real date: it is found by its text, never by its position.
+ */
+async function tokenFor(id: string, key: SeedKey) {
   const { body } = await getToday(id);
   if (body.state !== "unanswered") throw new Error(`state ${body.state}`);
-  const index = ["A", "B", "C", "D"].indexOf(letter);
-  const token = body.question.options[index]?.id;
-  if (!token) throw new Error("no token");
-  return { token, qotdDate: body.qotd_date };
+  const text = SEED_OPTIONS.find((o) => o.key === key)?.text;
+  const served = body.question.options.filter((o) => o.text === text);
+  if (served.length !== 1) {
+    throw new Error(`choice ${key} served ${served.length} times`);
+  }
+  return { token: served[0]!.id, qotdDate: body.qotd_date };
 }
 
 async function seedPerson(
@@ -279,11 +298,11 @@ async function seedQuestion(id: string): Promise<void> {
        (id, section, source_type, domain, skill_codes, difficulty, stem, options,
         correct_answer, explanation, option_metadata, status, item_type, published_at)
      VALUES ($1,'M',1,'Algebra',ARRAY['ALG.D01'],2,$2,
-       '[{"key":"A","text":"2"},{"key":"B","text":"3"},{"key":"C","text":"4"},{"key":"D","text":"5"}]'::jsonb,
+       $4::jsonb,
        'B',$3,
        '{"A":{"role":"distractor"},"B":{"role":"correct"},"C":{"role":"distractor"},"D":{"role":"distractor"}}'::jsonb,
        'published','mcq', now())`,
-    [id, STEM, EXPLANATION],
+    [id, STEM, EXPLANATION, JSON.stringify(SEED_OPTIONS)],
   );
 }
 
