@@ -197,6 +197,11 @@ async function sweepByRpc(
  * expected outcome: rows past 90 days are gone; rows inside the window stay.
  * The tier can no longer decline: there is nothing left to be unconfigured.
  *
+ * SCL-251 (Karl, 2026-10-27): the tier also sweeps the G0-2 evaluation tables through their own
+ * function, `sweep_tutor_eval_retention` (migration 20261118000000): cases 90 days after import,
+ * runs 90 days after creation. `per_table` lists the instruction tables, then the eval tables;
+ * if either function fails, the tier reports that failure.
+ *
  * trade-offs: the aggregate analytics Doc 03 §14.2 contemplated ("archived
  * data is moved to cold storage in aggregated form for analytics") are not
  * produced by anything. That sentence is superseded by the ruling and filed
@@ -211,13 +216,36 @@ export async function sweep90d(
   dryRun: boolean,
   _opts: SweepOpts,
 ): Promise<SweepResult> {
-  const result = await sweepByRpc(
+  const instructionResult = await sweepByRpc(
     client,
     "sweep_tutor_instruction_retention",
     "90d",
     dryRun,
     (perTable) => perTable.reduce((n, r) => n + r.count, 0),
   );
+  // SCL-251 (Karl, 2026-10-27): the G0-2 evaluation cases and runs are kept 90 days from import.
+  // Their own function, so the instruction tables' sweep is untouched; both run on every call.
+  const evalResult = await sweepByRpc(
+    client,
+    "sweep_tutor_eval_retention",
+    "90d",
+    dryRun,
+    (perTable) => perTable.reduce((n, r) => n + r.count, 0),
+  );
+  const result: SweepResult =
+    instructionResult.ok && evalResult.ok
+      ? {
+          ...instructionResult,
+          deleted_count:
+            instructionResult.deleted_count + evalResult.deleted_count,
+          per_table: [
+            ...(instructionResult.per_table ?? []),
+            ...(evalResult.per_table ?? []),
+          ],
+        }
+      : instructionResult.ok
+        ? evalResult
+        : instructionResult;
   if (result.ok && !dryRun) {
     logger.info(
       "RETENTION_SWEEP",

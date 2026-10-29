@@ -135,7 +135,7 @@ export type SerializedOutput = {
 
 // ── Scan class identifiers for logging ──────────────────────────────────
 
-type ScanClass =
+export type ScanClass =
   | "answer_leak"
   | "canonical_id_leak"
   | "system_prompt_leak"
@@ -332,15 +332,36 @@ export async function serializeTutorOutput(
   }
 }
 
+/** What the pure scan decided: the delivered text, and every class that fired, in scan order. */
+export type OutputScanOutcome = SerializedOutput & {
+  detectedClasses: ScanClass[];
+};
+
 /**
- * Internal: runs all 5 scan classes in sequence on the provided text.
- * Extracted for the try/catch fail-closed wrapper in serializeTutorOutput.
+ * The scan decision, with no IO: no log, no SLI, no dual-write.
+ *
+ * @spec [Doc-03B_V2 §16.3-16.5; docs/eval/lisa/G0-2_Teaching_Quality_Set_Design.md §5.1]
+ * @implemented 2026-10-27
+ *
+ * plain English: split out of runAllScans so the G0-2 baseline harness scores exactly the text
+ * this serializer would deliver, instead of re-implementing the scan order. runAllScans calls
+ * this and then does the logging and dual-writes, so the two cannot drift. No behaviour change
+ * for serializeTutorOutput; the gate's warning is now logged after the scan rather than during it.
  */
-async function runAllScans(
+export function scanTutorOutput(
   rawText: string,
   context: OutputScanContext,
-  scanResults: SerializedOutput["scanResults"],
-): Promise<SerializedOutput> {
+): OutputScanOutcome {
+  const scanResults: SerializedOutput["scanResults"] = {
+    metadataCleaned: false,
+    youtubeLinkRedacted: false,
+    answerLeakDetected: false,
+    canonicalIdLeakDetected: false,
+    systemPromptLeakDetected: false,
+    personaViolationDetected: false,
+    correctAnswerGateBlocked: false,
+    modelArmorOutputBlocked: false,
+  };
   const detectedClasses: ScanClass[] = [];
 
   // ── 1. Internal metadata cleanup (always applied) ─────────────────
@@ -361,12 +382,6 @@ async function runAllScans(
   if (context.isPreSubmit && context.correctAnswerResolutionFailed) {
     scanResults.correctAnswerGateBlocked = true;
     detectedClasses.push("correct_answer_gate");
-    logger.warn(
-      "TUTOR_OUTPUT_SERIALIZER",
-      "correct_answer_gate_blocked",
-      "pre-submit turn with unresolved correct_answer; blocking per LISA-FULL-007",
-      { conversationId: context.conversationId },
-    );
   }
 
   // ── 3. Answer leak detection (pre-submit only) ────────────────────
@@ -414,6 +429,34 @@ async function runAllScans(
     : scanResults.modelArmorOutputBlocked
       ? MODEL_ARMOR_SUBSTITUTION
       : TUTOR_ANTI_LEAK_SUBSTITUTION;
+
+  return { content, blocked, scanResults, detectedClasses };
+}
+
+/**
+ * Internal: runs all 5 scan classes in sequence on the provided text, then
+ * the logging and dual-writes. Extracted for the try/catch fail-closed
+ * wrapper in serializeTutorOutput.
+ */
+async function runAllScans(
+  rawText: string,
+  context: OutputScanContext,
+  initialScanResults: SerializedOutput["scanResults"],
+): Promise<SerializedOutput> {
+  const { content, blocked, detectedClasses, scanResults } = scanTutorOutput(
+    rawText,
+    context,
+  );
+  Object.assign(initialScanResults, scanResults);
+
+  if (scanResults.correctAnswerGateBlocked) {
+    logger.warn(
+      "TUTOR_OUTPUT_SERIALIZER",
+      "correct_answer_gate_blocked",
+      "pre-submit turn with unresolved correct_answer; blocking per LISA-FULL-007",
+      { conversationId: context.conversationId },
+    );
+  }
 
   // ── SLI emission (§22.2) ──────────────────────────────────────────
   emitScannerSli(blocked, detectedClasses, context.conversationId);
