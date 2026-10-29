@@ -388,7 +388,7 @@ restore
 
 echo "=== (30) LEAK: the leak check stops reading the Reddit body ==="
 plant shared/qotd/social.ts \
-  '    fields.push(["reddit_body", output.reddit_body]);' \
+  '    fields.push(["reddit_body", redditBody]);' \
   "    void 0;" || { bad "M30 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M30 explanation in Reddit body passes" "the explanation in the Reddit body" "$OUT" "$RC"
@@ -461,7 +461,7 @@ restore
 
 echo "=== (39) LEAK: the carousel leak check stops reading the TikTok caption ==="
 plant shared/qotd/social.ts \
-  '    ["tiktok caption", output.caption],' \
+  '    ["tiktok caption", withoutFunnelLines(output.caption)],' \
   "" || { bad "M39 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M39 caption unchecked" "today's explanation in the caption or the title is a leak" "$OUT" "$RC"
@@ -512,10 +512,10 @@ restore
 
 echo "=== (45) the caption loses its follow line ==="
 plant shared/qotd/tiktok.ts \
-  '  "Follow for daily SAT questions 👆",' \
+  '    QOTD_TIKTOK_FOLLOW_LINE,'$'\n' \
   "" || { bad "M45 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M45 no follow line first" "the caption starts with the follow line" "$OUT" "$RC"
+expect_red "M45 no follow line first" "the caption: follow line, comment line, link-in-bio line, hashtags" "$OUT" "$RC"
 restore
 
 echo "=== (46) the title cap is removed ==="
