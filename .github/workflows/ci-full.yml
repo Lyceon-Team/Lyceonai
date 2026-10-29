@@ -504,10 +504,12 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/worked-examples.mutations.sh
 
-      # Social funnel (Karl, 2026-10-28): a free-text tag past the allowlist, the server trusting
-      # the browser, tags stored before consent, the cohort line ending early, /start losing
-      # noindex, a "free study plan" claim, the sign-up link dropping its tag, a rewritable
-      # signup_channel. Each must turn its named check red.
+      # Social funnel (Karl, 2026-10-28): the cohort line ending early, /start losing noindex, a
+      # "free study plan" claim (F4-F6); the question back in the Reddit body, a caption losing its
+      # comment or call-to-action line, the Instagram caption outside the leak check, a loose
+      # funnel-line filter, the old worked-example line, mis-tagged links, Slack messages losing
+      # their link or posting a hand-edited caption (G1-G9). Sign-up attribution's plants are
+      # #1359's. Each must turn its named check red.
       - name: Social funnel mutations (planted defects must fail)
         if: matrix.group == 'qotd'
         env:
