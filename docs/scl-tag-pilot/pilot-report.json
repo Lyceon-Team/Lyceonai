@@ -1,0 +1,36 @@
+{
+  "pilot": "Equivalent Expressions SCL tagging",
+  "question_count": 351,
+  "mcq_count": 302,
+  "grid_in_count": 49,
+  "coverage": {
+    "with_sub_skill_tag": 351,
+    "with_cluster_tag": 351,
+    "mcq_with_distractor_cluster": 302,
+    "mcq_total": 302
+  },
+  "agreement": {
+    "sub_skill_exact_match": "69.2%",
+    "sub_skill_match_count": 243,
+    "cluster_exact_match": "74.6%",
+    "cluster_match_count": 262,
+    "distractor_exact_match": "37.4%",
+    "distractor_match_count": 113,
+    "distractor_comparable": 302
+  },
+  "first_class_count": 351,
+  "disagreement_count": 254,
+  "cost": {
+    "pass1": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_usd": "$0.00"
+    },
+    "pass2": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "estimated_usd": "$0.00"
+    },
+    "total_estimated_usd": "$0.00"
+  }
+}
