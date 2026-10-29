@@ -24,8 +24,8 @@
   },
   "counts": {
     "pass1_sub_skill_rows": 475,
-    "reconciled_sub_skill_rows": 583,
-    "sub_skill_delta": 108,
+    "reconciled_sub_skill_rows": 577,
+    "sub_skill_delta": 102,
     "pass1_cluster_rows": 684,
     "reconciled_cluster_rows": 722,
     "cluster_delta": 38,
@@ -34,11 +34,11 @@
     "distractor_delta": 65
   },
   "changes": {
-    "questions_with_sub_skill_changes": 105,
+    "questions_with_sub_skill_changes": 110,
     "questions_with_cluster_changes": 34,
     "questions_with_distractor_changes": 56,
-    "total_questions_changed": 155,
-    "ee6_tag_count": 0
+    "total_questions_changed": 159,
+    "ee6_tag_count": 11
   },
   "changed_questions": [
     {
@@ -648,8 +648,7 @@
         "EE.2"
       ],
       "reconciled_sub_skills": [
-        "EE.2",
-        "EE.5"
+        "EE.6"
       ],
       "p1_clusters": [
         "CL.0035"
@@ -1081,8 +1080,7 @@
         "EE.3"
       ],
       "reconciled_sub_skills": [
-        "EE.3",
-        "EE.5"
+        "EE.6"
       ],
       "p1_clusters": [
         "CL.0035"
@@ -1862,7 +1860,7 @@
     },
     {
       "question_id": "SATM2INNFDG",
-      "sub_skill_changed": false,
+      "sub_skill_changed": true,
       "cluster_changed": false,
       "distractor_changed": true,
       "p1_sub_skills": [
@@ -1870,8 +1868,7 @@
         "EE.5"
       ],
       "reconciled_sub_skills": [
-        "EE.3",
-        "EE.5"
+        "EE.6"
       ],
       "p1_clusters": [
         "CL.0035"
@@ -2051,8 +2048,7 @@
         "EE.3"
       ],
       "reconciled_sub_skills": [
-        "EE.3",
-        "EE.5"
+        "EE.6"
       ],
       "p1_clusters": [
         "CL.0035"
@@ -2508,8 +2504,7 @@
         "EE.3"
       ],
       "reconciled_sub_skills": [
-        "EE.3",
-        "EE.5"
+        "EE.6"
       ],
       "p1_clusters": [
         "CL.0035"
@@ -3328,8 +3323,7 @@
         "EE.3"
       ],
       "reconciled_sub_skills": [
-        "EE.3",
-        "EE.5"
+        "EE.6"
       ],
       "p1_clusters": [
         "CL.0035"
@@ -3652,8 +3646,7 @@
         "EE.3"
       ],
       "reconciled_sub_skills": [
-        "EE.3",
-        "EE.5"
+        "EE.6"
       ],
       "p1_clusters": [
         "CL.0035"
@@ -3688,6 +3681,107 @@
       ],
       "p1_distractor_count": 0,
       "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2RYVYKZ",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.6"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2UIIW31",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.6"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2UOKLIF",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.6"
+      ],
+      "p1_clusters": [
+        "CL.0094"
+      ],
+      "reconciled_clusters": [
+        "CL.0094"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2VZCT7R",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5",
+        "EE.6"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0035",
+        "CL.0039"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0035",
+        "CL.0039"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    }
+  ],
+  "item_defects": [
+    {
+      "question_id": "SATM2BJ76PY",
+      "defect": "Two answer options are mathematically correct"
+    },
+    {
+      "question_id": "SATM2ZS8KWS",
+      "defect": "Explanation text is incorrect or misleading"
+    },
+    {
+      "question_id": "SATM2JNPY1G",
+      "defect": "Explanation text is incorrect or misleading"
     }
   ],
   "sub_skill_ids_used": [
@@ -3695,7 +3789,8 @@
     "EE.2",
     "EE.3",
     "EE.4",
-    "EE.5"
+    "EE.5",
+    "EE.6"
   ],
   "cluster_ids_used": [
     "CL.0006",
