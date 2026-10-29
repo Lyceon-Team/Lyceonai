@@ -18,13 +18,15 @@
 # the plant disables that check.
 #
 # Re-pointed 2026-10-27 (owner ruling, Karl: "QOTD: day boundary at 04:00 UTC"): MIG_E
-# (20261117000000_qotd_day_04utc.sql) now LAST defines `qotd_student_answer` and
+# (20261117100000_qotd_day_04utc.sql) now LAST defines `qotd_student_answer` and
 # `student_answer_days` (the QOTD day replaced the Chicago day in both), so H2 and H4 aim there;
 # H4's anchor gained two spaces (the union is wrapped in the `day >= p_since` filter). H3 stays on
 # `chicago_day` in MIG_B (still the quota's and the reminders' day) and on the A1 case, which now
 # reads "before the 04:00 UTC cutover". D1-D10 are the new day's plants.
 # Renamed 2026-10-27 (merging main into cleanup, #1340): the migration is now 20261117000000, since
 # main's tutor migration already held 20261115000000. MIG_E follows it; need_last still checks.
+# Renamed again 2026-10-28 (owner, commit 1e07c8c6): 20261117100000, since seo/main's
+# 20261117000000_scl_consolidated.sql holds 20261117000000. MIG_E follows it.
 #
 # Each plant breaks ONE rule the brief locks and must turn a NAMED test red. Same three rules as
 # the other *.mutations.sh harnesses:
@@ -41,7 +43,7 @@ MIG_A="supabase/migrations/20261029000000_test_dates_and_consent_guard.sql"
 MIG_B="supabase/migrations/20261029010000_home_qotd_streak_email.sql"
 MIG_C="supabase/migrations/20261029020000_qotd_daily_notification.sql"
 MIG_D="supabase/migrations/20261031000000_notification_quiet_hours_expiry.sql"
-MIG_E="supabase/migrations/20261117000000_qotd_day_04utc.sql"
+MIG_E="supabase/migrations/20261117100000_qotd_day_04utc.sql"
 QOTD_DAY="server/services/qotd/qotd-day.ts"
 QOTD_SVC="server/services/qotd/qotd-service.ts"
 DISPATCH="server/lib/notifications/dispatch.ts"
