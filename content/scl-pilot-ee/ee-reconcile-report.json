@@ -1,0 +1,3723 @@
+{
+  "reconciliation": "Equivalent Expressions tagging reconciliation",
+  "taxonomy_version": "scl-v1.0.0",
+  "tagged_by": "reconciled-v1",
+  "scope": {
+    "question_count": 336,
+    "pass2_out_of_scope": [
+      "SATM23CRWWE",
+      "SATM23WY19V",
+      "SATM24Z5LEL",
+      "SATM252V7HV",
+      "SATM25XSPL6",
+      "SATM27ZGM43",
+      "SATM2AROSXO",
+      "SATM2MN1IYQ",
+      "SATM2OH2O7H",
+      "SATM2PPCM43",
+      "SATM2RHEP1Q",
+      "SATM2W3U7IP",
+      "SATM2YX3SGJ",
+      "SATM2ZS7ODX",
+      "SATM2ZXTAYN"
+    ]
+  },
+  "counts": {
+    "pass1_sub_skill_rows": 475,
+    "reconciled_sub_skill_rows": 583,
+    "sub_skill_delta": 108,
+    "pass1_cluster_rows": 684,
+    "reconciled_cluster_rows": 722,
+    "cluster_delta": 38,
+    "pass1_distractor_rows": 831,
+    "reconciled_distractor_rows": 896,
+    "distractor_delta": 65
+  },
+  "changes": {
+    "questions_with_sub_skill_changes": 105,
+    "questions_with_cluster_changes": 34,
+    "questions_with_distractor_changes": 56,
+    "total_questions_changed": 155,
+    "ee6_tag_count": 0
+  },
+  "changed_questions": [
+    {
+      "question_id": "SATM201012C",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0053"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0053",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM204PWIO",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM207LXCD",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM20FYQTC",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0034",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0034",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM20H9H6K",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM20K6LBF",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0034",
+        "CL.0094",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0094",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM20K83YX",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM20MPOE5",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM20OCYEY",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 1,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM20PCSQO",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM20YTRVB",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM21AB5DE",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM21B0PHX",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM21M66IM",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0038"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0038"
+      ],
+      "p1_distractor_count": 1,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM21SCC5H",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM222I2DF",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2232SUI",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM228QRSA",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0038"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0038"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM22A1HCF",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM22EQ4S4",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0035",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM22K74UW",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM22MQ5AF",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM22NGHUI",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM22TRXRB",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM230HBEN",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM232G4F7",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM23BNB53",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM23E33N2",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 1,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM23NGRLF",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM23O8PGM",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.3"
+      ],
+      "p1_clusters": [
+        "CL.0034",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0034",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM23SNUO5",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 1,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM244XLT9",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM245UEHV",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM24JLJ4B",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM25BYQSZ",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2",
+        "EE.3"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM25JMTZJ",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0035",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM265RWC9",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM26SM1UY",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0088"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0017",
+        "CL.0075",
+        "CL.0088"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM26VVMFB",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM279H9AJ",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM27ML2FY",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0040"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0034",
+        "CL.0040",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM27XPSWT",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM286WKRT",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM28M3ON4",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM28NHVT6",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2976BAC",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM29UFJWL",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM29VN51X",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2A733FS",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035",
+        "CL.0053"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035",
+        "CL.0053"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2A7KU63",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0095",
+        "CL.0165"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0094",
+        "CL.0095",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2ADN5B2",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2AIX2ZB",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2",
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0017",
+        "CL.0034",
+        "CL.0039"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0017",
+        "CL.0034",
+        "CL.0039"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2AW43XS",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2BAO9H0",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2BU986Z",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2BUGXMK",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2BWZN3E",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2C0T9KR",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2C8OEJF",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2DIY6L2",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2DW5TI3",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2E0JPMA",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2EKOQH9",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2ER3HAY",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2F1LJZE",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2FTLR3C",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2G4ZW12",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2G5TLFP",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2G7M3M9",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0038"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0038"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2GTUCCK",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2GUKPI9",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0040",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2HGADIP",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2HT7FPE",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0164",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2I5P9B7",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2IB589H",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2IFK0B7",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2INNFDG",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2JQRV6X",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2JXW3SR",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2K04WJK",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2K5CYTY",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2K5ILS9",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2KAEI2X",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3"
+      ],
+      "p1_clusters": [
+        "CL.0047",
+        "CL.0094"
+      ],
+      "reconciled_clusters": [
+        "CL.0037",
+        "CL.0047",
+        "CL.0094"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2KBLYF7",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0039"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0039"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2KCSKD1",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2KG05TQ",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2KLD6QG",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164",
+        "CL.0165"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2KQ98BI",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.3"
+      ],
+      "p1_clusters": [
+        "CL.0020"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0020"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2KWC7MF",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2L4DU3J",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2LC2V6U",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2LMFPU1",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0040"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0040"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2LS5UG0",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2LS8R0F",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3"
+      ],
+      "p1_clusters": [
+        "CL.0037",
+        "CL.0039"
+      ],
+      "reconciled_clusters": [
+        "CL.0037",
+        "CL.0039"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2LVOM5K",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2LZISZL",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2MFCE75",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2MTOX08",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2N04QH2",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2N3GTYN",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3"
+      ],
+      "p1_clusters": [
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 4
+    },
+    {
+      "question_id": "SATM2N9TUMU",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0053"
+      ],
+      "reconciled_clusters": [
+        "CL.0040",
+        "CL.0053"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2NBTC3W",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2NRNOR1",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2O347RK",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0035",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2OBL1OD",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2OGRT1E",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2P7VNQ4",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2PCOT2X",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035",
+        "CL.0039"
+      ],
+      "reconciled_clusters": [
+        "CL.0035",
+        "CL.0039"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2PRCBMN",
+      "sub_skill_changed": false,
+      "cluster_changed": false,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0040",
+        "CL.0079",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0040",
+        "CL.0079",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2PZJ4Q9",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2Q3X4TL",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2Q78ME8",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": true,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0034",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 2,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2QBBJ8G",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2QD5JEW",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2QIF7FG",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2QNAPTE",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2QTZKIW",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2QUEZGP",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2QXB8WT",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2RCM7IN",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2RDBQBF",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2RO62IE",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2RO8OIA",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0075"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2RXGHYU",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0075"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2SHWRK5",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2",
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0039"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0017",
+        "CL.0033",
+        "CL.0034",
+        "CL.0039",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2SNN8LN",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2SPSWQI",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0006"
+      ],
+      "reconciled_clusters": [
+        "CL.0006"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2SRITS8",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2T18KTA",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2T1I4TS",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2TD51P2",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0033",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2TZZ7AU",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2U1FL14",
+      "sub_skill_changed": true,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0075"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035",
+        "CL.0075"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2UCVWK5",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2UDIDBV",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0035",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2UHBA8L",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3"
+      ],
+      "p1_clusters": [
+        "CL.0038"
+      ],
+      "reconciled_clusters": [
+        "CL.0038",
+        "CL.0039"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2V3LS5I",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.1"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2VOGGK1",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2VU7LX4",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2VVXP08",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2WFZ452",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.2"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2WO4ECS",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2WODVHJ",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3",
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2X0GSF4",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2X1R564",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2X5IEGW",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.5"
+      ],
+      "reconciled_sub_skills": [
+        "EE.1",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "reconciled_clusters": [
+        "CL.0017",
+        "CL.0034",
+        "CL.0040"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2XMW56W",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2XRGBIN",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2Y5FHO2",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0037"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2YKFHFD",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0165"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0165"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    },
+    {
+      "question_id": "SATM2YRISN6",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "reconciled_clusters": [
+        "CL.0008",
+        "CL.0164"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2Z8K0AY",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2ZPFX0S",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.4",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0006",
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2ZS8KWS",
+      "sub_skill_changed": true,
+      "cluster_changed": false,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.3"
+      ],
+      "reconciled_sub_skills": [
+        "EE.3",
+        "EE.5"
+      ],
+      "p1_clusters": [
+        "CL.0035"
+      ],
+      "reconciled_clusters": [
+        "CL.0035"
+      ],
+      "p1_distractor_count": 3,
+      "reconciled_distractor_count": 3
+    },
+    {
+      "question_id": "SATM2ZY1PZL",
+      "sub_skill_changed": false,
+      "cluster_changed": true,
+      "distractor_changed": false,
+      "p1_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "reconciled_sub_skills": [
+        "EE.2",
+        "EE.4"
+      ],
+      "p1_clusters": [
+        "CL.0034",
+        "CL.0099"
+      ],
+      "reconciled_clusters": [
+        "CL.0034",
+        "CL.0094",
+        "CL.0099"
+      ],
+      "p1_distractor_count": 0,
+      "reconciled_distractor_count": 0
+    }
+  ],
+  "sub_skill_ids_used": [
+    "EE.1",
+    "EE.2",
+    "EE.3",
+    "EE.4",
+    "EE.5"
+  ],
+  "cluster_ids_used": [
+    "CL.0006",
+    "CL.0008",
+    "CL.0017",
+    "CL.0020",
+    "CL.0033",
+    "CL.0034",
+    "CL.0035",
+    "CL.0037",
+    "CL.0038",
+    "CL.0039",
+    "CL.0040",
+    "CL.0047",
+    "CL.0053",
+    "CL.0075",
+    "CL.0079",
+    "CL.0088",
+    "CL.0094",
+    "CL.0095",
+    "CL.0099",
+    "CL.0164",
+    "CL.0165"
+  ]
+}
