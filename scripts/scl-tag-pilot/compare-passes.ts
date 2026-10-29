@@ -41,7 +41,7 @@ function setEqual(a: string[], b: string[]): boolean {
 
 function dcEqual(
   a: { option_key: string; cluster_id: string }[],
-  b: { option_key: string; cluster_id: string }[]
+  b: { option_key: string; cluster_id: string }[],
 ): boolean {
   const keyA = new Set(a.map((d) => `${d.option_key}:${d.cluster_id}`));
   const keyB = new Set(b.map((d) => `${d.option_key}:${d.cluster_id}`));
@@ -52,10 +52,12 @@ function dcEqual(
 
 const pass1 = loadNdjson("pass-1-results.ndjson");
 const pass2 = loadNdjson("pass-2-results.ndjson");
-const questions: Question[] = JSON.parse(readFileSync("questions-ee.json", "utf-8"));
+const questions: Question[] = JSON.parse(
+  readFileSync("questions-ee.json", "utf-8"),
+);
 
 const qMap = new Map(questions.map((q) => [q.id, q]));
-const p1Map = new Map(pass1.map((r) => [r.question_id, r]));
+const _p1Map = new Map(pass1.map((r) => [r.question_id, r]));
 const p2Map = new Map(pass2.map((r) => [r.question_id, r]));
 
 // Coverage stats (from pass 1 — the working set)
@@ -139,9 +141,18 @@ for (const r of pass1) {
 }
 
 // Token costs (null/undefined tokens treated as 0)
-let p1InputTotal = 0, p1OutputTotal = 0, p2InputTotal = 0, p2OutputTotal = 0;
-for (const r of pass1) { p1InputTotal += (r.model_input_tokens ?? 0); p1OutputTotal += (r.model_output_tokens ?? 0); }
-for (const r of pass2) { p2InputTotal += (r.model_input_tokens ?? 0); p2OutputTotal += (r.model_output_tokens ?? 0); }
+let p1InputTotal = 0,
+  p1OutputTotal = 0,
+  p2InputTotal = 0,
+  p2OutputTotal = 0;
+for (const r of pass1) {
+  p1InputTotal += r.model_input_tokens ?? 0;
+  p1OutputTotal += r.model_output_tokens ?? 0;
+}
+for (const r of pass2) {
+  p2InputTotal += r.model_input_tokens ?? 0;
+  p2OutputTotal += r.model_output_tokens ?? 0;
+}
 
 // Sonnet pricing: $3/M input, $15/M output
 const p1Cost = (p1InputTotal / 1e6) * 3 + (p1OutputTotal / 1e6) * 15;
@@ -163,15 +174,26 @@ const report = {
     sub_skill_match_count: subSkillMatch,
     cluster_exact_match: `${((clusterMatch / total) * 100).toFixed(1)}%`,
     cluster_match_count: clusterMatch,
-    distractor_exact_match: dcComparable > 0 ? `${((dcMatch / dcComparable) * 100).toFixed(1)}%` : "N/A",
+    distractor_exact_match:
+      dcComparable > 0
+        ? `${((dcMatch / dcComparable) * 100).toFixed(1)}%`
+        : "N/A",
     distractor_match_count: dcMatch,
     distractor_comparable: dcComparable,
   },
   first_class_count: firstClass,
   disagreement_count: disagreements.length,
   cost: {
-    pass1: { input_tokens: p1InputTotal, output_tokens: p1OutputTotal, estimated_usd: `$${p1Cost.toFixed(2)}` },
-    pass2: { input_tokens: p2InputTotal, output_tokens: p2OutputTotal, estimated_usd: `$${p2Cost.toFixed(2)}` },
+    pass1: {
+      input_tokens: p1InputTotal,
+      output_tokens: p1OutputTotal,
+      estimated_usd: `$${p1Cost.toFixed(2)}`,
+    },
+    pass2: {
+      input_tokens: p2InputTotal,
+      output_tokens: p2OutputTotal,
+      estimated_usd: `$${p2Cost.toFixed(2)}`,
+    },
     total_estimated_usd: `$${(p1Cost + p2Cost).toFixed(2)}`,
   },
 };
@@ -181,4 +203,6 @@ writeFileSync("disagreements.json", JSON.stringify(disagreements, null, 2));
 
 console.log("\n=== PILOT REPORT ===");
 console.log(JSON.stringify(report, null, 2));
-console.log(`\nDisagreements: ${disagreements.length} (written to disagreements.json)`);
+console.log(
+  `\nDisagreements: ${disagreements.length} (written to disagreements.json)`,
+);
