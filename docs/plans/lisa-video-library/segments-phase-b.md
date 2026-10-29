@@ -245,3 +245,5 @@ Together with the miss log from Phase A ruling 4 (`video_segment_misses`, built 
 ## 8. SCL
 
 SCL-259 (Doc 03D §6.7: segment storage) is in the register. The retrieval entry belongs to Phase C and is written when Phase C is built. It covers Doc 03D §6.4 and §6.8: the Phase A §4 ranking, the taxonomy version match, no video for a tagged question with no matching segment, and the miss log.
+
+Phase C is built: SCL-260 (§6.4) and SCL-261 (§6.8); see `segments-phase-c.md`. The taxonomy version match was dropped (ruling Q6, revised), and the miss is a log line, not a table.

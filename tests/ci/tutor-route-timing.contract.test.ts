@@ -307,6 +307,11 @@ describe("H1: LISA's reply path emits one content-free route_timing line (ruling
       results: 0,
       video_ids: [],
       recommended_index: null,
+      path: null,
+      matched_sub_skill_ids: [],
+      shared_clusters: null,
+      segment_id: null,
+      miss: false,
     });
     const steps = line!.data.steps as Array<Record<string, unknown>>;
     expect(steps.length).toBeGreaterThan(REPLY_PATH_STEPS.length);
@@ -476,6 +481,11 @@ describe("method tags on the real route: a Desmos request", () => {
       results: 3,
       video_ids: ["a1QNaRnn6cE", "jCT0jTVzKy0", "UDJ2RHMFax8"],
       recommended_index: 1,
+      path: "skill",
+      matched_sub_skill_ids: [],
+      shared_clusters: null,
+      segment_id: null,
+      miss: false,
     });
     const serialised = JSON.stringify(line?.data);
     for (const word of ["Okafor", "teacher", "is there", message]) {

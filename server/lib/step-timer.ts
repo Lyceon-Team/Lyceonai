@@ -83,6 +83,14 @@ type RouteTimer = {
  * offered ids YouTube ids (11 characters, already validated by the retrieval's schema; the
  * public catalogue id, never a student value), the recommendation a 1-based index or null.
  * Nothing from the student's message is recorded: not the matched phrase, not its position.
+ *
+ * @spec [owner brief "Phase C: retrieval switch-over", Karl 2026-10-29 (build 3: "the path
+ *        used (segment or skill); the matched sub-skill IDs and the number of shared clusters;
+ *        the segment's ID; whether the request was a miss", as IDs and counts only)]
+ *        | @implemented [2026-10-29]
+ * plain English: `path` null means no retrieval ran. The segment fields describe the first row
+ * (the video a tap serves; the first offered on 13d). Sub-skill ids are kept only if they look
+ * like tag ids (short, letters, digits, dots), at most 8; the segment id only if it is a UUID.
  */
 export type VideoRetrievalTiming = {
   method: VideoMethod | null;
@@ -90,9 +98,16 @@ export type VideoRetrievalTiming = {
   results: number;
   video_ids: string[];
   recommended_index: number | null;
+  path: "segment" | "skill" | null;
+  matched_sub_skill_ids: string[];
+  shared_clusters: number | null;
+  segment_id: string | null;
+  miss: boolean;
 };
 
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+const TAG_ID = /^[A-Za-z0-9.]{1,16}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Step 13d's outcome, recorded once per turn. Outside a timed request this does nothing. */
 export function recordVideoRetrieval(
@@ -106,6 +121,21 @@ export function recordVideoRetrieval(
     results: detail.results,
     video_ids: detail.video_ids.filter((id) => YOUTUBE_ID.test(id)).slice(0, 3),
     recommended_index: null,
+    path: detail.path,
+    matched_sub_skill_ids: detail.matched_sub_skill_ids
+      .filter((id) => TAG_ID.test(id))
+      .slice(0, 8),
+    shared_clusters:
+      detail.shared_clusters !== null &&
+      Number.isInteger(detail.shared_clusters) &&
+      detail.shared_clusters >= 0
+        ? detail.shared_clusters
+        : null,
+    segment_id:
+      detail.segment_id !== null && UUID.test(detail.segment_id)
+        ? detail.segment_id
+        : null,
+    miss: detail.miss,
   };
 }
 
@@ -405,6 +435,9 @@ function emit(timer: RouteTimer, req: Request, res: Response): void {
           video_retrieval: {
             ...timer.videoRetrieval,
             video_ids: [...timer.videoRetrieval.video_ids],
+            matched_sub_skill_ids: [
+              ...timer.videoRetrieval.matched_sub_skill_ids,
+            ],
           },
         }),
   };
