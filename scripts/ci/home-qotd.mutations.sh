@@ -18,7 +18,7 @@
 # the plant disables that check.
 #
 # Re-pointed 2026-10-27 (owner ruling, Karl: "QOTD: day boundary at 04:00 UTC"): MIG_E
-# (now 20261117100000_qotd_day_04utc.sql) now LAST defines `qotd_student_answer` and
+# (20261117100000_qotd_day_04utc.sql) now LAST defines `qotd_student_answer` and
 # `student_answer_days` (the QOTD day replaced the Chicago day in both), so H2 and H4 aim there;
 # H4's anchor gained two spaces (the union is wrapped in the `day >= p_since` filter). H3 stays on
 # `chicago_day` in MIG_B (still the quota's and the reminders' day) and on the A1 case, which now
