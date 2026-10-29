@@ -2,7 +2,7 @@
 
 **Brief:** "Video segments tagged by sub-skill and cluster", Karl, 2026-10-29. Lane: video. This PR is Phase A only: design, a three-video pilot, no production writes.
 
-**Status: STOPPED again, after the re-pilot.** Karl ruled on Q1–Q6 on 2026-10-29 (§9). The re-pilot applied rulings 1 and 5 to the same three videos, for $1.40 of the $1.50 cap (§8.2). The two short videos agree 100%, but the 35-minute survey lesson still has skills below 70%. Per ruling 1, a `teaching_test` field now goes to the questions team, who own the taxonomy (§11). Phase B does not start.
+**Status: gate passed on the survey-lesson re-pilot (§8.3), with a thin sample. Phase B waits on Karl's approval of it and its cost (§6).** After the first re-pilot (§8.2), Karl held the `teaching_test` request and ruled that a segment teaches one topic, and corrected the gate (§9). The survey lesson was re-piloted alone under those rules for $1.17 of the $1.20 cap. Only Equivalent Expressions has 3 or more tagged segments, so it is the one skill judged; it agrees 100% (3/3). 14 of its 22 teaching segments are clusters-only.
 
 ## 1. Why the FOIL clip was served
 
@@ -110,6 +110,13 @@ As amended by Karl's rulings of 2026-10-29: 1 is the mapping rule, 2 is clusters
   - **Boundary check, separately:** in fixed mode each segment carries `mixes_topics` and a one-line note. Pass 2's flags go to Karl's review CSV. They don't count toward tag agreement.
 - **The mapping rule (ruling 1).** It is one general rule, the same for every sub-skill: _tag a sub-skill when a question carrying it is the kind of question this segment teaches the student to solve._ The inclusion tests are applied as written, to those questions. It is a mapping rule, not a reinterpretation of any sub-skill, so the taxonomy stays the only vocabulary.
 - **Calculator technique (ruling 2).** A segment that teaches a technique but no kind of question gets clusters only. It can't be reached by sub-skill today (closure row R-15). Cluster-based retrieval later will reach it.
+- **One topic per segment (re-pilot rule 2, Karl 2026-10-29):**
+  - **Split.** Each chapter pass 2 flags as mixing topics is split where it says the topic changes. `--splits` takes a file of split points per video, and both passes cut the chapters (or pass 1's cuts) at them, with `splitSpans`. The pilot's file, `docs/plans/lisa-video-library/segment-splits.json`, records each point, the flag it came from, and the conversion to the video's clock.
+  - **Flag.** In fixed mode every segment also answers `overview` (a survey or introduction of a topic area, not teaching one kind of question) and `topic_changes` (structured times, from which a later split file is built without reading notes).
+  - **Clusters only.** A segment still mixed or an overview after splitting keeps clusters only, the same treatment as calculator technique. It counts as flagged when **either** pass flags it, so a doubtful segment is never served as targeted teaching. Its sub-skills are set aside, listed in the review reason, and left out of agreement. The run prints who flagged each one and what the set-aside tags would have scored.
+  - **Phase B order:** round 1 runs both passes on chapters (or pass 1's cuts). Pass 2's flags become the split file. Round 2 re-runs both passes on the clips that changed; unchanged clips hit the per-clip cache, which is keyed by spans.
+    - A cut-mode video, which has no chapters, needs one small addition in Phase B: pass 1 re-tags in fixed mode on its own round-1 cuts plus the splits. Today the tagger refuses split points on a cut-mode pass 1 rather than guess.
+- **The gate (re-pilot rule 3):** 70% sub-skill agreement, judged only for skills with at least 3 tagged segments in the sample. Skills below that count are reported, not gated. Clusters are not gated. A gate with no judged skill does not pass. Phase B applies the same rule per skill across the full library (`gate` in `segment-agreement.ts`).
 - **The closed list:**
   - The prompt carries the sub-skills and clusters of the video's section only: math is 89 sub-skills and 164 clusters, 18,496 tokens; Reading and Writing is 46 and 69, 9,659 tokens.
   - Each sub-skill appears with its id, skill, name, definition and inclusion test. `display_name` is a hint only.
@@ -123,7 +130,7 @@ As amended by Karl's rulings of 2026-10-29: 1 is the mapping rule, 2 is clusters
   - Per skill, agreement is the Jaccard index of the tags. A segment only one pass calls teaching counts its tags against agreement.
   - Clusters on a segment neither pass gave a sub-skill count under `(clusters only)`.
   - A segment keeps the shared tags.
-  - Unit tests: `tests/ci/video-segment-tagging.contract.test.ts` (S1–S7).
+  - Unit tests: `tests/ci/video-segment-tagging.contract.test.ts` (S1–S9).
 
 ## 4. Retrieval contract (design only; Phase C builds it)
 
@@ -164,7 +171,8 @@ Columns are `approve` (prefilled `yes` on `approve`), `proposal`, `reason`, `vid
 The files:
 
 - the first pilot: `docs/plans/lisa-video-library/segments-pilot-review.csv` (v1 columns);
-- the re-pilot: `docs/plans/lisa-video-library/segments-repilot-review.csv`.
+- the re-pilot: `docs/plans/lisa-video-library/segments-repilot-review.csv`;
+- the survey-lesson re-pilot (rule 2): `docs/plans/lisa-video-library/segments-survey-repilot-review.csv`. Its reasons name each clusters-only segment's flag and who raised it.
 
 ## 6. Cost of the full run (both passes, 150 approved videos)
 
@@ -181,9 +189,36 @@ The files:
 | **Per pass**                                                           | **$21.2**                                             |
 | **Both passes**                                                        | **$42.4**, about $47 with a 10% allowance for retries |
 
-- **Caching:** this assumes none. Pass 2 of the long pilot video got an implicit cache hit on 81% of its input, so the real figure may be lower; the estimate does not count on it.
+- **Caching:** this assumes none. Pass 2 of the survey re-pilot got an implicit cache hit on 56k of 292k input tokens. The estimate does not count on it.
 - **Prices:** third-party list prices (`scripts/rag/vertex.ts`).
-- **The re-pilot's rates match.** Pass 1 on the survey lesson cost $0.57, as v1's did. Five chapter-aligned clips replace four fixed ones, so the extra fixed-token cost is small. The estimate stands, but it is not up for approval: the re-pilot did not clear (§8.2).
+
+### 6.1 Updated for the one-topic rule (survey re-pilot, 2026-10-29)
+
+Splitting adds a second round on the clips that hold a split, in both passes.
+
+**Measured rates:**
+
+- The `segment-tags-v3` prompt (overview and topic changes) cost $0.612 per pass on the survey lesson, against $0.570 for v2 on the same video. That is 7% more, from the extra fields' output.
+- Per pass that is $0.289 per 1,000 s on a long, chaptered video.
+
+**How much gets re-tagged:**
+
+- On the survey lesson, every clip but the last (32:19–35:20) held a chapter pass 2 flagged: 1,939 s of 2,120 s, 91%.
+- The two short pilot videos had no flags.
+- Videos over 15 minutes are 19 of 150, but 35,638 s of the 77,309 s (46%).
+
+| Item                                                                                                      | Cost                             |
+| --------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Round 1, both passes, at v3 rates: $42.4 × 1.07                                                           | $45.4                            |
+| Round 2, the 19 long videos at the survey lesson's 91%, both passes: 2 × 35,638 s × 0.91 × $0.289/1,000 s | $18.7                            |
+| Round 2, short videos: 0–20% of their 41,671 s re-tagged, both passes                                     | $0–4.8                           |
+| **Total**                                                                                                 | **about $64–69**                 |
+| **With a 10% allowance for retries**                                                                      | **about $71–76** (was about $47) |
+
+- **Assumptions to watch:**
+  - Every long video is taken as survey-like, re-tagged at the survey lesson's 91%. That is the main driver and the upper end; a long video with one topic per chapter would need no round 2.
+  - The short-video share has no pilot evidence beyond two videos with no flags.
+- **A saving Phase B can take:** pin round 1's clip edges when splitting, so a split piece stays in its original clip. Then only clips with a flagged segment are re-paid, and the rest hit the cache. On the survey lesson the last clip was already unflagged, so this is already in the 91%. It matters where re-packing would otherwise move clip edges.
 
 ## 7. SCL entries this needs (named; numbered by the register rule when written)
 
@@ -283,13 +318,57 @@ Without Desmos Basics, Linear Functions would still be 50% (2/4) and Nonlinear F
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Desmos Basics, 5:27–9:44                | arithmetic and fractions, list statistics (6:28), percentages (7:00), trig (7:16), sliders (7:53), graph features (8:56) |
 | Systems of Equations, 11:21–12:49       | linear systems, then linear–nonlinear systems at about 11:53                                                             |
-| Functions, 14:37–16:11                  | evaluating functions, then transformations at about 14:57                                                                               |
+| Functions, 14:37–16:11                  | evaluating functions, then transformations at about 14:57                                                                |
 | Regression without a Table, 16:11–24:49 | identities and systems, then a linear identity (18:00) and an exponent equation (22:55)                                  |
 | Regression with a Table, 24:49–29:49    | linear and quadratic regression to 28:23, then circle regression                                                         |
 
 Pass 1 flagged two of the same chapters (Regression without a Table and Regression with a Table) on its own. The flags are a boundary question, separate from tags. Several of the low-agreement tags sit in flagged chapters, so splitting them may raise agreement. Whether to split is Karl's review call, not something the tagger changes.
 
 **What this says:** the mapping rule fixed the short, single-topic videos. Equivalent Expressions went from 60% to 100% and Circles from 25% to 100%. The remaining spread is on survey and concept chapters, where "the kind of question this teaches" is itself ambiguous. That is what a per-sub-skill `teaching_test` would settle (§11).
+
+### 8.3 Survey-lesson re-pilot (v3: re-pilot rules 2 and 3, `UDJ2RHMFax8` only, $1.17 of the $1.20 cap, no production writes)
+
+**Spend:** pass 1 $0.612, pass 2 $0.561. Pass 2's cap check estimated each clip from pass 1's measured cost on it, ×1.25 (§6.1). Pass 2 ran all five clips, including the last chapter, "When to Use Desmos".
+
+**Boundaries:** 14 chapters cut at the 10 split points of `segment-splits.json` gave 24 segments: 22 teaching, plus the intro and "The Truth About Desmos", which both passes call not teaching.
+
+**Agreement under the corrected gate (sub-skills, Jaccard, focused segments only):**
+
+| Skill                            | Tagged segments | Agreement  | Gate               |
+| -------------------------------- | --------------- | ---------- | ------------------ |
+| Equivalent Expressions           | 3               | 100% (3/3) | **judged: passes** |
+| Linear Equations in One Variable | 2               | 100% (3/3) | reported           |
+| Circles                          | 1               | 100% (1/1) | reported           |
+| Linear Inequalities              | 1               | 100% (1/1) | reported           |
+| Systems of Two Linear Equations  | 1               | 100% (1/1) | reported           |
+
+**The gate passes, on one judged skill.** All 8 focused segments agree on every sub-skill, 10 tags in all:
+
+- 9:44–11:21: LE1.1, LE1.5
+- 11:21–11:53: SYS.1
+- 12:49–14:37: LI.4
+- 18:00–22:55: LE1.5
+- 22:55–24:49: EE.4
+- 29:49–30:53: EE.1
+- 30:53–31:38: CIR1
+- 31:38–32:19: EE.3
+
+The sample is thin: one video, and only one skill reaches 3 segments. Phase B's per-skill gate across the whole library is where the rule is really tested.
+
+**Clusters only: 14 of the 22 teaching segments,** 1,214 s of the 2,010 s of teaching time (60%):
+
+| Reason       | Flagged by both passes                                                                                | Flagged by one pass                                                                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| mixed topics | 3 (Function Basics; Desmos Basics: trig 7:16, graph features 8:56)                                    | 4, all pass 2 (linear–nonlinear systems 11:53; transformations 14:57; both regression-with-a-table pieces) |
+| overview     | 5 (Desmos Basics: arithmetic, list statistics, sliders; regression intro 16:11; "When to Use Desmos") | 2 (Desmos Basics: percentages 7:00, pass 1; evaluating functions 14:37, pass 2)                            |
+
+- **Splitting helped less than hoped.** Of the 15 pieces the splits made, 3 came out focused (SYS.1, LE1.5, EE.4) and 12 are still mixed or overviews. All six Desmos Basics pieces are calculator-feature demos, overviews or mixed in both passes.
+- **The passes agree on focus for 16 of 22 segments** (73%).
+- **What was set aside:** the clusters-only segments carried the remaining disagreement. Had their sub-skills counted, Linear Functions would score 0% (0/3) and Nonlinear Functions 33% (1/3). Rule 2 moves those tags out, it doesn't resolve them. That is the rule's intent: an overview or mixed chapter isn't targeted teaching.
+- **The union rule doesn't decide the gate.** If a segment were clusters-only only when **both** passes flag it, Equivalent Expressions would still be the only judged skill, at 3/3, and the gate would still pass (scratch check). Linear Functions would then have 1 segment at 0/1, reported, not gated.
+- **Clusters:** 52% agreement (11/21) on clusters-only segments. Clusters-only segments are reachable later only by cluster match, so 52% matters for that retrieval. Clusters are not gated today, and are reported here for Karl's view.
+
+**Review CSV:** `segments-survey-repilot-review.csv`, 10 approve, 12 retag, 2 drop. Every clusters-only row names its flag and who raised it, and lists the sub-skills set aside.
 
 ## 9. Questions for Karl after the first pilot, and the rulings (2026-10-29)
 
@@ -301,6 +380,13 @@ Pass 1 flagged two of the same chapters (Regression without a Table and Regressi
 4. **Q4:** a tagged question with no matching segment gets no video. The guided tap uses its existing no-video reply; the model-made offer offers nothing. Each miss is recorded, ids only (§2, §4).
 5. **Q5:** this deliberately changes the "two independent passes" method. Boundaries come from YouTube chapters, or else pass 1's cuts. Pass 2 tags those segments without seeing pass 1's tags, and agreement is measured on tags only. Pass 2 flags mixed-topic segments for Karl's review (§3).
 6. **Q6:** a match needs the same taxonomy version on both sides. A mismatch counts as untagged (today's skill ranking) until the segment is retagged (§4).
+
+**Rulings on the first re-pilot (Karl, 2026-10-29, on 167561a7):**
+
+1. Hold the `teaching_test` request (§11); don't send it. Short, focused segments agree 100%; the failures are in overview and mixed chapters, so the cause is boundaries, not taxonomy wording.
+2. A segment teaches one topic. Split each chapter pass 2 flagged at the points it names. A segment still mixed, or an overview, after splitting gets clusters only, like calculator technique. A student failing EE.5 should get a focused segment, not a survey chapter.
+3. Corrected gate: 70% on sub-skill tags, judged only for skills with at least 3 tagged segments in the sample; skills below that count are reported, not gated. Phase B applies it per skill across the full library.
+4. Re-pilot the survey lesson only with rule 2, including the last chapter; cap $1.20. _Done: §8.3._
 
 The questions as asked follow, kept for the record.
 
@@ -354,18 +440,19 @@ The question tags have the same question.
   - That is the questions lane's file, so it is raised here, not changed.
 - **Migration timestamps.** The range is crowded. A fresh scan finds `20261117000000` used twice on different branches (`scl_consolidated` on `main`, `qotd_day_04utc` on two others): a live collision for whoever merges second. Phase B rescans every branch and open PR first.
 
-## 11. The stop, and what goes to the questions team
+## 11. The `teaching_test` request: held (Karl, 2026-10-29)
 
-Ruling 1's stop applies: after the re-pilot the survey lesson still has six skills below 70% (§8.2). A per-sub-skill `teaching_test` goes to the questions team, who own `content/canonical/subskill-cluster-taxonomy.json`. The video lane doesn't write it.
+The first re-pilot's stop would have sent a per-sub-skill `teaching_test` to the questions team. Karl held it: focused segments agree 100%, and the failures sat in overview and mixed chapters. The survey-lesson re-pilot bears that out, since every focused segment agrees (§8.3).
 
-What the request would say, for the questions team to accept, reshape or refuse:
+The draft is kept below, unsent, in case Phase B's per-skill gate fails on focused segments. Nothing goes to the questions team unless Karl says so.
 
-- **What:** an optional `teaching_test` string per sub-skill, beside `inclusion_test`. It says when a piece of teaching (a segment, a worked example, an explanation) prepares a student for questions carrying that sub-skill. The ids, the skill tree and the `inclusion_test` stay as they are, so there is still one vocabulary.
-- **Why, with the evidence:**
-  - The pilots' disagreements sit on concept and survey teaching: Function Basics, Desmos Basics, regression chapters.
-  - The `inclusion_test`s read a question's stem, choices and CB rationale, which teaching doesn't have.
-  - Without a teaching test, two careful readings of the same chapter pick different sub-skills (LF.3/NLF.3/NLF.4 vs TVD.5 on Function Basics).
-- **Where it matters most:** Linear Functions and Nonlinear Functions. They and the four single-tag skills (three from Desmos Basics, one from Function Basics) hold every sub-skill disagreement left.
-- **Open, for Karl:** whether the boundary flags (§8.2) are resolved first. Splitting the five flagged chapters at the points pass 2 names is a boundary change, not a taxonomy one. It may lift agreement without a taxonomy change. A re-pilot after the splits would cost about $1.10 (the survey lesson's two passes, at this run's rates).
+- **What:** an optional `teaching_test` string per sub-skill, beside `inclusion_test`. It would say when a piece of teaching prepares a student for questions carrying that sub-skill. The ids, the skill tree and `inclusion_test` stay as they are.
+- **The evidence it would need:** sub-skill disagreement on **focused** segments. The survey re-pilot has none.
 
-Phase B does not start. The Phase B cost (about $42–47, §6) is not put up for approval, because the re-pilot did not clear.
+## 12. Next: Karl's approval
+
+The gate passed (§8.3). Phase B, and its cost, are Karl's to approve separately: about $64–69, about $71–76 with the retry allowance, against the earlier $42–47 (§6.1). Before Phase B starts:
+
+- `lisa` merges `main` (§10), and the PR records it.
+- The cut-mode round-2 path is added (§3).
+- Round 1's clip edges are optionally pinned, to keep re-tags to flagged clips (§6.1).

@@ -2,7 +2,8 @@
  * @spec [owner brief "Video segments tagged by sub-skill and cluster", Karl 2026-10-29, Phase A
  *       steps 2 and 4, as amended by the Phase A rulings of 2026-10-29 (2: cluster-only
  *       segments; 5: agreement on tags only, over the same segments; mixed-topic flags to
- *       review); docs/plans/lisa-video-library/segments-phase-a.md §3.3, §5]
+ *       review) and the re-pilot rulings of 2026-10-29 (2: one topic per segment; 3: the
+ *       corrected gate); docs/plans/lisa-video-library/segments-phase-a.md §3, §5]
  *       | @implemented [2026-10-29]
  *
  * plain English: compares the two tagging passes of `segment-videos.ts` and keeps only what both
@@ -14,6 +15,12 @@
  *    pass); on a segment neither pass gave a sub-skill (ruling 2: calculator technique), clusters
  *    count under CLUSTERS_ONLY. A segment one pass calls teaching and the other does not counts
  *    its tags as disagreements.
+ *  - One topic (re-pilot rule 2): a segment EITHER pass calls mixed or an overview keeps clusters
+ *    only; its sub-skills are set aside (listed in the review reason), not counted. Either pass, so
+ *    a doubtful segment is never served as targeted teaching; the run prints who flagged each one
+ *    and what the set-aside tags would have scored.
+ *  - Gate (re-pilot rule 3): 70% sub-skill agreement, judged only for skills with at least 3
+ *    tagged segments in the sample; fewer are reported, not gated (`gate`).
  *  - Kept: a segment keeps the tags both passes gave.
  *  - Boundary check: pass 2's `mixes_topics` flags are reported and carried into the review CSV,
  *    separately from tag agreement.
@@ -48,6 +55,8 @@ const segmentSchema = z.object({
   not_in_taxonomy: z.string(),
   mixes_topics: z.boolean(),
   mixes_topics_note: z.string(),
+  topic_change_seconds: z.array(z.number()),
+  overview: z.boolean(),
 });
 export type Segment = z.infer<typeof segmentSchema>;
 const passSchema = z.object({
@@ -64,15 +73,40 @@ export type PassFile = z.infer<typeof passSchema>;
 export type Pair = { a: Segment; b: Segment };
 
 /**
+ * The one-topic rule (2026-10-29 rule 2): a segment either pass flags as mixing topics, or as an
+ * overview, is not targeted teaching and gets clusters only. Mixed outranks overview.
+ */
+export type Focus = "focused" | "mixed" | "overview";
+
+export function focusOf(a: Segment, b: Segment): Focus {
+  if (a.mixes_topics || b.mixes_topics) return "mixed";
+  if (a.overview || b.overview) return "overview";
+  return "focused";
+}
+
+/** Which passes raised the flag behind a segment's focus ("" when focused). */
+export function flaggedBy(a: Segment, b: Segment, focus: Focus): string {
+  if (focus === "focused") return "";
+  const by = (x: Segment): boolean =>
+    focus === "mixed" ? x.mixes_topics : x.overview;
+  return by(a) && by(b) ? "both passes" : by(a) ? "pass 1" : "pass 2";
+}
+
+function clustersOnly(s: Segment): Segment {
+  return { ...s, sub_skills: [] };
+}
+
+/**
  * Pure. Aligns the passes' segments one to one by index; the spans must be identical (both
  * passes tagged the same boundaries). Pairs are the segments both call teaching; `unpaired` are
- * those only one calls teaching (the teaching side's segment).
+ * those only one calls teaching (the teaching side's segment). A pair or unpaired segment that is
+ * not focused has its sub-skills set aside, so it counts toward clusters only.
  */
 export function alignPasses(
   a: Segment[],
   b: Segment[],
 ):
-  | { ok: true; pairs: Pair[]; unpaired: Segment[] }
+  | { ok: true; pairs: Pair[]; unpaired: Segment[]; focus: Focus[] }
   | { ok: false; error: string } {
   if (a.length !== b.length) {
     return {
@@ -82,6 +116,7 @@ export function alignPasses(
   }
   const pairs: Pair[] = [];
   const unpaired: Segment[] = [];
+  const focus: Focus[] = [];
   for (const [i, x] of a.entries()) {
     const y = b[i];
     if (
@@ -91,16 +126,22 @@ export function alignPasses(
     ) {
       return { ok: false, error: `segment ${i + 1} spans differ` };
     }
+    const f = focusOf(x, y);
+    focus.push(f);
+    const fit = (s: Segment): Segment =>
+      f === "focused" ? s : clustersOnly(s);
     if (x.teaches_sat_content && y.teaches_sat_content)
-      pairs.push({ a: x, b: y });
-    else if (x.teaches_sat_content) unpaired.push(x);
-    else if (y.teaches_sat_content) unpaired.push(y);
+      pairs.push({ a: fit(x), b: fit(y) });
+    else if (x.teaches_sat_content) unpaired.push(fit(x));
+    else if (y.teaches_sat_content) unpaired.push(fit(y));
   }
-  return { ok: true, pairs, unpaired };
+  return { ok: true, pairs, unpaired, focus };
 }
 
 export type SkillAgreement = {
   skill: string;
+  /** Teaching segments where either pass tagged a sub-skill of this skill (the gate's count). */
+  segments: number;
   subSkills: { both: number; either: number };
   clusters: { both: number; either: number };
 };
@@ -124,11 +165,13 @@ export function skillAgreement(
   ): void => {
     const cur = acc.get(skill) ?? {
       skill,
+      segments: 0,
       subSkills: { both: 0, either: 0 },
       clusters: { both: 0, either: 0 },
     };
     cur[kind].both += both;
     cur[kind].either += either;
+    if (kind === "subSkills") cur.segments += 1;
     acc.set(skill, cur);
   };
   const ids = (tags: Array<{ id: string }>): Set<string> =>
@@ -177,6 +220,42 @@ export function skillAgreement(
   return [...acc.values()].sort((x, y) => x.skill.localeCompare(y.skill));
 }
 
+/** The corrected gate (Karl, 2026-10-29 rule 3): judged only where a skill has this many segments. */
+export const GATE_MIN_SEGMENTS = 3;
+export const GATE_MIN_AGREEMENT = 0.7;
+
+export type GateResult = {
+  /** Skills with at least GATE_MIN_SEGMENTS tagged segments, each with its verdict. */
+  judged: Array<SkillAgreement & { passes: boolean }>;
+  /** Skills below the count: reported, not gated. */
+  reported: SkillAgreement[];
+  /** True only when at least one skill is judged and every judged skill passes. */
+  passed: boolean;
+};
+
+/**
+ * Pure. 70% sub-skill agreement (Jaccard), judged only for skills with at least 3 tagged
+ * segments in the sample; the rest are reported, not gated. Clusters-only is never gated. An
+ * empty judged set does not pass: a gate over nothing proves nothing. Phase B applies the same
+ * rule per skill across the full library.
+ */
+export function gate(agreements: SkillAgreement[]): GateResult {
+  const subSkillRows = agreements.filter((a) => a.skill !== CLUSTERS_ONLY);
+  const judged = subSkillRows
+    .filter((a) => a.segments >= GATE_MIN_SEGMENTS)
+    .map((a) => ({
+      ...a,
+      passes:
+        a.subSkills.either > 0 &&
+        a.subSkills.both / a.subSkills.either >= GATE_MIN_AGREEMENT,
+    }));
+  return {
+    judged,
+    reported: subSkillRows.filter((a) => a.segments < GATE_MIN_SEGMENTS),
+    passed: judged.length > 0 && judged.every((j) => j.passes),
+  };
+}
+
 export type ReviewRow = {
   video_id: string;
   start_seconds: number;
@@ -205,11 +284,18 @@ export function reviewRows(
   for (const [i, s] of p1.segments.entries()) {
     const t = p2.segments[i];
     if (t === undefined) continue;
-    const flag = t.mixes_topics
-      ? t.mixes_topics_note === ""
-        ? "flagged"
-        : t.mixes_topics_note
-      : "";
+    const focus = aligned.focus[i] ?? "focused";
+    const by = flaggedBy(s, t, focus);
+    const note = (x: Segment): string =>
+      x.mixes_topics
+        ? x.mixes_topics_note === ""
+          ? "flagged"
+          : x.mixes_topics_note
+        : "";
+    const flag = [
+      ...(focus === "focused" ? [] : [`${focus} (${by})`]),
+      ...[note(s), note(t)].filter((x) => x !== ""),
+    ].join(" / ");
     const base = {
       ...s,
       mixes_topics_note: flag,
@@ -248,8 +334,13 @@ export function reviewRows(
       );
       continue;
     }
-    const sa = new Set(ids(s.sub_skills));
-    const sb = new Set(ids(t.sub_skills));
+    // Rule 2: a mixed or overview segment keeps clusters only; its sub-skills are set aside.
+    const setAside =
+      focus === "focused"
+        ? []
+        : [...new Set([...ids(s.sub_skills), ...ids(t.sub_skills)])].sort();
+    const sa = new Set(focus === "focused" ? ids(s.sub_skills) : []);
+    const sb = new Set(focus === "focused" ? ids(t.sub_skills) : []);
     const ca = new Set(ids(s.clusters));
     const cb = new Set(ids(t.clusters));
     const keptS = [...sa].filter((id) => sb.has(id)).sort();
@@ -261,6 +352,13 @@ export function reviewRows(
       .filter((id) => !(ca.has(id) && cb.has(id)))
       .sort();
     const clustersOnly = sa.size === 0 && sb.size === 0;
+    const why =
+      focus === "focused"
+        ? "calculator technique (ruling 2)"
+        : `${focus}, flagged by ${by} (rule 2)` +
+          (setAside.length > 0
+            ? `; sub-skills set aside: ${setAside.join(";")}`
+            : "");
     if (keptS.length === 0 && !(clustersOnly && keptC.length > 0)) {
       rows.push(
         row(
@@ -268,7 +366,7 @@ export function reviewRows(
           base,
           "retag",
           clustersOnly
-            ? "no sub-skill in either pass and no shared cluster"
+            ? `clusters only, ${why}; no shared cluster`
             : "the passes share no sub-skill",
           keptS,
           keptC,
@@ -282,7 +380,7 @@ export function reviewRows(
           videoId,
           base,
           "retag",
-          `the passes disagree on ${disS.length + disC.length} tag(s); only shared tags kept`,
+          `${clustersOnly ? `clusters only, ${why}; ` : ""}the passes disagree on ${disS.length + disC.length} tag(s); only shared tags kept`,
           keptS,
           keptC,
           disS,
@@ -295,7 +393,7 @@ export function reviewRows(
           videoId,
           base,
           "approve",
-          clustersOnly ? "clusters only (ruling 2)" : "",
+          clustersOnly ? `clusters only, ${why}` : "",
           keptS,
           keptC,
           [],
@@ -388,7 +486,7 @@ function pct(x: { both: number; either: number }): string {
 function printAgreement(label: string, rows: SkillAgreement[]): void {
   for (const s of rows) {
     process.stdout.write(
-      `${label} skill ${s.skill}: sub-skills ${pct(s.subSkills)}; clusters ${pct(s.clusters)}\n`,
+      `${label} skill ${s.skill} [${s.segments} seg]: sub-skills ${pct(s.subSkills)}; clusters ${pct(s.clusters)}\n`,
     );
   }
 }
@@ -417,6 +515,7 @@ async function main(): Promise<void> {
   const allRows: ReviewRow[] = [];
   const allPairs: Pair[] = [];
   const allUnpaired: Segment[] = [];
+  const setAside: Pair[] = [];
   let usd = 0;
   for (const id of values.only.split(",")) {
     const load = (n: number): PassFile =>
@@ -432,14 +531,23 @@ async function main(): Promise<void> {
     if (!aligned.ok) throw new Error(`${id}: ${aligned.error}`);
     allPairs.push(...aligned.pairs);
     allUnpaired.push(...aligned.unpaired);
-    const flags = p2.segments.filter((s) => s.mixes_topics);
     process.stdout.write(
-      `${id} (${p1.boundaries}): ${p1.segments.length} segment(s), both teaching ${aligned.pairs.length}, teaching disputed ${aligned.unpaired.length}; pass-2 boundary flags ${flags.length}\n`,
+      `${id} (${p1.boundaries}): ${p1.segments.length} segment(s), both teaching ${aligned.pairs.length}, teaching disputed ${aligned.unpaired.length}\n`,
     );
-    for (const f of flags) {
-      process.stdout.write(
-        `  flag ${f.start_seconds}-${f.end_seconds}s: ${f.mixes_topics_note}\n`,
-      );
+    // Clusters-only segments by reason, and who flagged them (rule 2 is a union of the passes).
+    for (const [i, a] of p1.segments.entries()) {
+      const b = p2.segments[i];
+      const f = aligned.focus[i];
+      if (b === undefined || f === undefined) continue;
+      const teaching = a.teaches_sat_content || b.teaches_sat_content;
+      const subs = a.sub_skills.length + b.sub_skills.length;
+      if (teaching && (f !== "focused" || subs === 0)) {
+        process.stdout.write(
+          `  clusters-only ${a.start_seconds}-${a.end_seconds}s: ${f === "focused" ? "no sub-skill in either pass" : `${f}, ${flaggedBy(a, b, f)}`}\n`,
+        );
+        if (f !== "focused" && a.teaches_sat_content && b.teaches_sat_content)
+          setAside.push({ a, b });
+      }
     }
     printAgreement(
       `  ${id}`,
@@ -447,7 +555,25 @@ async function main(): Promise<void> {
     );
     allRows.push(...reviewRows(id, p1, p2));
   }
-  printAgreement("all", skillAgreement(allPairs, allUnpaired, skillOf));
+  const all = skillAgreement(allPairs, allUnpaired, skillOf);
+  printAgreement("all", all);
+  const g = gate(all);
+  for (const j of g.judged) {
+    process.stdout.write(
+      `gate ${j.passes ? "PASS" : "FAIL"} ${j.skill} [${j.segments} seg]: ${pct(j.subSkills)}\n`,
+    );
+  }
+  for (const r of g.reported) {
+    process.stdout.write(
+      `reported (under ${GATE_MIN_SEGMENTS} seg) ${r.skill} [${r.segments} seg]: ${pct(r.subSkills)}\n`,
+    );
+  }
+  process.stdout.write(`gate: ${g.passed ? "PASSED" : "NOT PASSED"}\n`);
+  // Sensitivity: what the set-aside segments' sub-skills would have scored, had they counted.
+  printAgreement(
+    "set-aside (not gated)",
+    skillAgreement(setAside, [], skillOf),
+  );
   const counts = { approve: 0, retag: 0, drop: 0 };
   for (const r of allRows) counts[r.proposal] += 1;
   process.stdout.write(

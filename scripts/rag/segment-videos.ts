@@ -2,7 +2,8 @@
  * @spec [owner brief "Video segments tagged by sub-skill and cluster", Karl 2026-10-29, Phase A
  *       (design and pilot), as amended by the Phase A rulings of 2026-10-29 (1: the mapping
  *       rule; 2: calculator-technique segments keep clusters only; 5: fixed boundaries, tags
- *       compared on the same segments); docs/plans/lisa-video-library/segments-phase-a.md §3;
+ *       compared on the same segments) and the re-pilot rulings of 2026-10-29 (2: a segment
+ *       teaches one topic); docs/plans/lisa-video-library/segments-phase-a.md §3;
  *       R-14 (Gemini reads the video; transcripts are blocked)] | @implemented [2026-10-29]
  *
  * plain English: one tagging PASS over one or more approved library videos. Gemini watches the
@@ -20,6 +21,13 @@
  *  - Pass 2 always tags given segments ("fixed" mode) and sees their times only, never pass 1's
  *    tags or summaries. It also flags any segment that mixes topics (`mixes_topics`); those go to
  *    Karl's review as the boundary check, separately from tag agreement.
+ *
+ * One topic per segment (Karl, 2026-10-29, re-pilot rule 2): `--splits <file>` gives split points
+ * per video, taken from a pass's mixes_topics flags (`docs/plans/lisa-video-library/
+ * segment-splits.json` records each point and where it came from). Both passes cut the chapters,
+ * or pass 1's cuts, at those points. In fixed mode each segment also carries `overview` and the
+ * structured `topic_changes` a later split file is built from. A segment either pass still calls
+ * mixed or an overview keeps clusters only; `segment-agreement.ts` enforces that.
  *
  * Tagging (ruling 1): a sub-skill is tagged when a question carrying it is the kind of question
  * the segment teaches the student to solve. One general mapping rule for every sub-skill; the
@@ -45,7 +53,8 @@
  * to quote).
  *
  * Usage: NODE_USE_ENV_PROXY=1 pnpm exec tsx scripts/rag/segment-videos.ts --pass 1 \
- *          --only a1QNaRnn6cE,qQzeFyLYt1A,UDJ2RHMFax8 [--taxonomy <path>] [--cap-usd 0.8]
+ *          --only a1QNaRnn6cE,qQzeFyLYt1A,UDJ2RHMFax8 [--taxonomy <path>] [--cap-usd 0.8] \
+ *          [--splits docs/plans/lisa-video-library/segment-splits.json]
  *        then the same with --pass 2 (it needs pass 1's files).
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -70,7 +79,7 @@ import {
   type Usage,
 } from "./vertex";
 
-export const SEGMENT_TAG_VERSION = "segment-tags-v2";
+export const SEGMENT_TAG_VERSION = "segment-tags-v3";
 const REVIEW_CSV = resolve(
   "docs/plans/lisa-video-library/video-tags-review.csv",
 );
@@ -191,6 +200,10 @@ export const fixedAnswerSchema = z.object({
       /** Boundary check (ruling 5): the segment teaches two or more things a student would look for separately. */
       mixes_topics: z.boolean(),
       mixes_topics_note: z.string(),
+      /** Where each new topic starts, "M:SS" relative to the part; [] unless mixes_topics. */
+      topic_changes: z.array(z.string()),
+      /** One-topic rule (2026-10-29 rule 2): surveys or introduces a topic area rather than teaching one kind of question. */
+      overview: z.boolean(),
     }),
   ),
 });
@@ -250,12 +263,16 @@ const fixedResponseSchema = {
           ...tagsProperties,
           mixes_topics: { type: "BOOLEAN" },
           mixes_topics_note: { type: "STRING" },
+          topic_changes: { type: "ARRAY", items: { type: "STRING" } },
+          overview: { type: "BOOLEAN" },
         },
         required: [
           "number",
           ...tagsRequired,
           "mixes_topics",
           "mixes_topics_note",
+          "topic_changes",
+          "overview",
         ],
       },
     },
@@ -294,7 +311,9 @@ export function fixedSystem(vocabulary: string): string {
 
 SEGMENTS are given, numbered, with times relative to the start of the part you are watching. Answer every segment exactly once by its number. Do not merge, split or move them.
 
-mixes_topics: true when a segment teaches two or more different kinds of question or techniques that a student would want to find separately; then mixes_topics_note says in one line what the parts are and roughly where the change falls (times relative to the part). Otherwise false and "".
+A segment should teach one topic: one kind of question, or one technique.
+mixes_topics: true when a segment teaches two or more different kinds of question or techniques that a student would want to find separately; then mixes_topics_note says in one line what the parts are, and topic_changes lists the time each new part starts, as "M:SS" relative to the part. Otherwise false, "" and [].
+overview: true when a segment surveys or introduces a topic area (what functions are, what a calculator can do, when to use a method) rather than teaching the student to solve one kind of question. A segment that works a specific example of one kind of question is not an overview.
 
 ${TAGS_RULES}
 
@@ -316,6 +335,10 @@ export type TaggedSegment = {
   /** Fixed mode only; false in cut mode, which places its own boundaries. */
   mixes_topics: boolean;
   mixes_topics_note: string;
+  /** Fixed mode only: where pass's named topic changes fall, on the video's clock, inside the segment. */
+  topic_change_seconds: number[];
+  /** Fixed mode only (rule 2): a survey or introduction, not targeted teaching. */
+  overview: boolean;
 };
 
 type Tags = z.infer<z.ZodObject<typeof tagsFields>>;
@@ -326,7 +349,12 @@ function checkTags(
   v: Vocabulary,
 ): Omit<
   TaggedSegment,
-  "start_seconds" | "end_seconds" | "mixes_topics" | "mixes_topics_note"
+  | "start_seconds"
+  | "end_seconds"
+  | "mixes_topics"
+  | "mixes_topics_note"
+  | "topic_change_seconds"
+  | "overview"
 > {
   const skillsOfSegment = new Set(
     s.sub_skills
@@ -396,6 +424,8 @@ export function checkClipAnswer(
       ...checkTags(s, v),
       mixes_topics: false,
       mixes_topics_note: "",
+      topic_change_seconds: [],
+      overview: false,
     });
   }
   if (Math.abs(cursor - length) > 3) {
@@ -411,7 +441,9 @@ export type Span = { start: number; end: number };
 /**
  * Pure. Fixed mode: the given segments (on the video's clock) keep their times exactly; each must
  * be answered once by its 1-based number. Returns an error on a missing, repeated or unknown number.
- * A mixed-topic note is prefixed with the clip start its times are measured from.
+ * A mixed-topic note is prefixed with the clip start its times are measured from. Topic changes are
+ * moved onto the video's clock and kept only when strictly inside their segment (more than 3 s
+ * from either edge); an unparseable one is an error.
  */
 export function checkFixedAnswer(
   answer: FixedAnswer,
@@ -437,6 +469,19 @@ export function checkFixedAnswer(
     if (s === undefined) {
       return { ok: false, error: `segment ${i + 1} not answered` };
     }
+    const changes: number[] = [];
+    for (const t of s.mixes_topics ? s.topic_changes : []) {
+      const at = parseClock(t);
+      if (at === null) {
+        return {
+          ok: false,
+          error: `segment ${i + 1}: unparseable topic change ${t}`,
+        };
+      }
+      const onVideo = clipStart + at;
+      if (onVideo > span.start + 3 && onVideo < span.end - 3)
+        changes.push(onVideo);
+    }
     out.push({
       start_seconds: span.start,
       end_seconds: span.end,
@@ -445,6 +490,8 @@ export function checkFixedAnswer(
       mixes_topics_note: s.mixes_topics
         ? noteFrom + s.mixes_topics_note.trim()
         : "",
+      topic_change_seconds: [...new Set(changes)].sort((x, y) => x - y),
+      overview: s.overview,
     });
   }
   return { ok: true, segments: out };
@@ -479,6 +526,7 @@ export type Clip = Span & {
 export function chapterClips(
   chapters: Chapter[],
   duration: number,
+  splits: number[] = [],
 ): Clip[] | null {
   if (chapters.length === 0) return null;
   let cursor = 0;
@@ -504,11 +552,12 @@ export function chapterClips(
     }
     return out;
   });
+  const split = splitSpans(pieces, splits);
   if (duration <= WHOLE_VIDEO_MAX_SECONDS) {
-    return [{ start: 0, end: duration, segments: pieces }];
+    return [{ start: 0, end: duration, segments: split }];
   }
   const clips: Clip[] = [];
-  for (const p of pieces) {
+  for (const p of split) {
     const cur = clips[clips.length - 1];
     if (cur?.segments && p.end - cur.start <= CLIP_SECONDS) {
       cur.end = p.end;
@@ -521,14 +570,44 @@ export function chapterClips(
 }
 
 /** Pure. Pass 2's clips: pass 1's clips with pass 1's segments as the given ones (times only). */
-export function clipsFromPass1(clips: Span[], segments: Array<Span>): Clip[] {
+export function clipsFromPass1(
+  clips: Span[],
+  segments: Array<Span>,
+  splits: number[] = [],
+): Clip[] {
   return clips.map((c) => ({
     start: c.start,
     end: c.end,
-    segments: segments
-      .filter((s) => s.start >= c.start && s.end <= c.end)
-      .map((s) => ({ start: s.start, end: s.end, title: "" })),
+    segments: splitSpans(
+      segments
+        .filter((s) => s.start >= c.start && s.end <= c.end)
+        .map((s) => ({ start: s.start, end: s.end, title: "" })),
+      splits,
+    ),
   }));
+}
+
+/**
+ * Pure. The one-topic rule (2026-10-29 rule 2): each span is cut at every split point strictly
+ * inside it (more than 3 s from an edge). A split piece of a titled span is titled "<title>, part
+ * k of n" so the model still sees the creator's chapter.
+ */
+export function splitSpans(
+  spans: Array<Span & { title: string }>,
+  splits: number[],
+): Array<Span & { title: string }> {
+  const points = [...new Set(splits)].sort((a, b) => a - b);
+  return spans.flatMap((sp) => {
+    const inside = points.filter((t) => t > sp.start + 3 && t < sp.end - 3);
+    if (inside.length === 0) return [sp];
+    const edges = [sp.start, ...inside, sp.end];
+    const n = edges.length - 1;
+    return edges.slice(0, -1).map((start, k) => ({
+      start,
+      end: edges[k + 1] ?? sp.end,
+      title: sp.title === "" ? "" : `${sp.title}, part ${k + 1} of ${n}`,
+    }));
+  });
 }
 
 type VideoRow = {
@@ -640,6 +719,32 @@ const pass1FileSchema = z.object({
   ),
 });
 
+const splitsFileSchema = z.object({
+  /** Where the split points come from, e.g. the pass and version whose mixes_topics flags named them. */
+  source: z.string().min(1),
+  videos: z.record(
+    z.object({
+      seconds: z.array(z.number().int().nonnegative()),
+      /** One line per point: the flag it came from and the conversion to the video's clock. */
+      from: z.array(z.string()),
+    }),
+  ),
+});
+
+/** Pass 2's per-clip estimate multiplier over pass 1's measured cost (max observed 1.18). */
+const PASS2_OVER_PASS1 = 1.25;
+
+function pass1ClipUsd(
+  videoId: string,
+  start: number,
+  model: string,
+): number | null {
+  const path = resolve(SEGMENTS_DIR, `${videoId}.pass1.clip-${start}.json`);
+  if (!existsSync(path)) return null;
+  const c = clipCacheSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+  return c.success && c.data.model === model ? c.data.usage.usd : null;
+}
+
 function sameSpans(a: Span[] | null, b: Span[] | null): boolean {
   if (a === null || b === null) return a === b;
   return (
@@ -656,6 +761,7 @@ async function main(): Promise<void> {
       taxonomy: { type: "string", default: TAXONOMY_DEFAULT },
       model: { type: "string", default: GENERATION_MODEL_DEFAULT },
       "cap-usd": { type: "string", default: "0.8" },
+      splits: { type: "string" },
     },
   });
   const pass = Number(values.pass);
@@ -680,6 +786,11 @@ async function main(): Promise<void> {
     throw new Error("an --only id is not an approved row of the review CSV");
   }
   const chapters = chaptersByVideo();
+  const splitsByVideo =
+    values.splits === undefined
+      ? {}
+      : splitsFileSchema.parse(JSON.parse(readFileSync(values.splits, "utf8")))
+          .videos;
   const price = priceOf(model);
   let spent = 0;
 
@@ -690,9 +801,12 @@ async function main(): Promise<void> {
     const vocabText = vocabularyText(vocab, pass === 2);
 
     // Boundaries (ruling 5): chapters where they exist; otherwise pass 1 cuts and pass 2 reuses.
+    // One-topic rule (2026-10-29 rule 2): split points for this video, applied in both passes.
+    const splits = splitsByVideo[video.video_id]?.seconds ?? [];
     const byChapter = chapterClips(
       chapters.get(video.video_id) ?? [],
       video.duration_seconds,
+      splits,
     );
     let boundaries: "chapters" | "pass1_cuts";
     let clips: Clip[];
@@ -700,6 +814,13 @@ async function main(): Promise<void> {
       boundaries = "chapters";
       clips = byChapter;
     } else if (pass === 1) {
+      // Cut mode cannot take split points: a split cut-mode video is re-tagged in fixed mode on
+      // pass 1's cuts plus the splits (Phase B; segments-phase-a.md §3).
+      if (splits.length > 0) {
+        throw new Error(
+          `${video.video_id}: split points need chapters, or fixed-mode boundaries from an earlier run`,
+        );
+      }
       boundaries = "pass1_cuts";
       clips = clipsOf(video.duration_seconds).map(([start, end]) => ({
         start,
@@ -722,6 +843,7 @@ async function main(): Promise<void> {
           start: x.start_seconds,
           end: x.end_seconds,
         })),
+        splits,
       );
     }
 
@@ -754,11 +876,17 @@ async function main(): Promise<void> {
         answer = cached.data.answer;
         usage = addUsage(usage, cached.data.usage);
       } else {
+        // Pass 2 estimates from pass 1's measured cost on the same clip (pass 2 has run 0.83-1.18x
+        // pass 1 per clip); otherwise from the generic rates.
+        const measured =
+          pass === 2 ? pass1ClipUsd(video.video_id, start, model) : null;
         const estimate =
-          (((end - start) * VIDEO_TOKENS_PER_SECOND + system.length / 4) *
-            price.input +
-            OUTPUT_TOKENS_ESTIMATE * price.output) /
-          1_000_000;
+          measured !== null
+            ? measured * PASS2_OVER_PASS1
+            : (((end - start) * VIDEO_TOKENS_PER_SECOND + system.length / 4) *
+                price.input +
+                OUTPUT_TOKENS_ESTIMATE * price.output) /
+              1_000_000;
         if (spent + estimate > cap) {
           throw new Error(
             `stopping before ${video.video_id} ${clock(start)}: $${spent.toFixed(4)} + $${estimate.toFixed(4)} would pass the $${cap} cap`,
@@ -846,6 +974,7 @@ async function main(): Promise<void> {
           duration_seconds: video.duration_seconds,
           section,
           boundaries,
+          splits,
           clips: clips.map((c) => ({ start: c.start, end: c.end })),
           segments,
           usage,
@@ -857,8 +986,9 @@ async function main(): Promise<void> {
     const teaching = segments.filter((s) => s.teaches_sat_content).length;
     const rejected = segments.reduce((n, s) => n + s.rejected_ids.length, 0);
     const flagged = segments.filter((s) => s.mixes_topics).length;
+    const overviews = segments.filter((s) => s.overview).length;
     process.stdout.write(
-      `${video.video_id} pass${pass} (${boundaries}): ${segments.length} segment(s), ${teaching} teaching, ${flagged} flagged mixed; rejected ids ${rejected}; ${usage.prompt} in (${usage.cached} cached) / ${usage.output} out; $${usage.usd.toFixed(4)}\n`,
+      `${video.video_id} pass${pass} (${boundaries}): ${segments.length} segment(s), ${teaching} teaching, ${flagged} flagged mixed, ${overviews} overview; rejected ids ${rejected}; ${usage.prompt} in (${usage.cached} cached) / ${usage.output} out; $${usage.usd.toFixed(4)}\n`,
     );
   }
   process.stdout.write(`new spend this pass: $${spent.toFixed(4)}\n`);

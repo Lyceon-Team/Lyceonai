@@ -18,7 +18,13 @@
  *   S6 review proposals: approve on full agreement (clusters-only too), retag on any
  *      disagreement (shared tags only), drop for non-teaching, each non-approval with a reason;
  *      pass 2's boundary flag is carried.
- *   S7 fixed mode: the given spans are kept exactly; every number answered once, or refused.
+ *   S7 fixed mode: the given spans are kept exactly; every number answered once, or refused;
+ *      topic changes land on the video's clock, inside their segment only.
+ *   S8 one-topic rule (Karl, 2026-10-29 rule 2): split points cut chapters (and pass 1's cuts)
+ *      strictly inside; a mixed or overview segment, flagged by EITHER pass, keeps clusters only
+ *      and its sub-skills are set aside from agreement.
+ *   S9 the corrected gate (rule 3): 70% on sub-skills, judged only for skills with at least 3
+ *      tagged segments; fewer are reported, not gated; an empty judged set does not pass.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -26,6 +32,7 @@ import {
   checkClipAnswer,
   checkFixedAnswer,
   clipsFromPass1,
+  splitSpans,
   vocabularyFor,
   vocabularyText,
   type Taxonomy,
@@ -33,6 +40,7 @@ import {
 import {
   CLUSTERS_ONLY,
   alignPasses,
+  gate,
   reviewRows,
   skillAgreement,
   type PassFile,
@@ -133,7 +141,13 @@ function seg(
     not_in_taxonomy: "",
     mixes_topics: mixesNote !== "",
     mixes_topics_note: mixesNote,
+    topic_change_seconds: [],
+    overview: false,
   };
+}
+
+function overview(x: Segment): Segment {
+  return { ...x, overview: true };
 }
 
 function passFile(segments: Segment[], duration: number): PassFile {
@@ -411,12 +425,13 @@ describe("segment tagging: what the code enforces", () => {
       "approve",
       "retag",
     ]);
+    // Pass 2 flagged it as mixing topics, so rule 2 keeps clusters only (S8 covers the rule).
     expect(rows[1]).toMatchObject({
       start_seconds: 20,
       end_seconds: 100,
-      sub_skills: ["EE.2"],
+      sub_skills: [],
       clusters: ["CL.0001"],
-      mixes_topics_note: "expanding, then factoring at 1:00",
+      mixes_topics_note: "mixed (pass 2) / expanding, then factoring at 1:00",
     });
     expect(rows[2]).toMatchObject({
       sub_skills: ["EE.5"],
@@ -447,6 +462,9 @@ describe("segment tagging: what the code enforces", () => {
         not_in_taxonomy: "",
         mixes_topics: number === 2,
         mixes_topics_note: number === 2 ? "two kinds at 2:00" : "ignored",
+        // 1:00 is before segment 2 on the video's clock (10:00 + 1:00 = 660 < 700): dropped.
+        topic_changes: number === 2 ? ["2:00", "1:00"] : ["0:30"],
+        overview: number === 1,
       })),
     });
     const ok = checkFixedAnswer(ans([2, 1]), given, M);
@@ -462,6 +480,8 @@ describe("segment tagging: what the code enforces", () => {
       "",
       "[times from 10:00] two kinds at 2:00",
     ]);
+    expect(ok.segments.map((s) => s.topic_change_seconds)).toEqual([[], [720]]);
+    expect(ok.segments.map((s) => s.overview)).toEqual([true, false]);
     expect(checkFixedAnswer(ans([1]), given, M)).toMatchObject({ ok: false });
     expect(checkFixedAnswer(ans([1, 1, 2]), given, M)).toMatchObject({
       ok: false,
@@ -469,5 +489,154 @@ describe("segment tagging: what the code enforces", () => {
     expect(checkFixedAnswer(ans([1, 3]), given, M)).toMatchObject({
       ok: false,
     });
+  });
+
+  it("S8 one-topic rule: splits cut inside spans; mixed or overview keeps clusters only", () => {
+    expect(
+      splitSpans(
+        [
+          { start: 0, end: 100, title: "A" },
+          { start: 100, end: 300, title: "" },
+        ],
+        [50, 100, 102, 200, 299],
+      ),
+    ).toEqual([
+      { start: 0, end: 50, title: "A, part 1 of 2" },
+      { start: 50, end: 100, title: "A, part 2 of 2" },
+      { start: 100, end: 200, title: "" },
+      { start: 200, end: 300, title: "" },
+    ]);
+    const ch = [
+      { title: "A", start_seconds: 0, end_seconds: 500 },
+      { title: "B", start_seconds: 500, end_seconds: 1000 },
+    ];
+    const clips = chapterClips(ch, 1000, [450, 700]);
+    expect(clips?.map((c) => c.segments?.map((g) => [g.start, g.end]))).toEqual(
+      [
+        [
+          [0, 450],
+          [450, 500],
+        ],
+        [
+          [500, 700],
+          [700, 1000],
+        ],
+      ],
+    );
+    expect(
+      clipsFromPass1(
+        [{ start: 0, end: 400 }],
+        [{ start: 0, end: 400 }],
+        [150],
+      )[0]?.segments,
+    ).toEqual([
+      { start: 0, end: 150, title: "" },
+      { start: 150, end: 400, title: "" },
+    ]);
+
+    // Focus is a union of the passes: one pass's flag makes the segment clusters-only.
+    const p1 = passFile(
+      [
+        seg(0, 100, ["EE.2"], ["CL.0001"]),
+        overview(seg(100, 200, ["LF.1", "EE.5"], ["CL.0215"])),
+        seg(200, 300, ["PCT.1"], ["CL.0222"]),
+      ],
+      300,
+    );
+    const p2 = passFile(
+      [
+        seg(0, 100, ["EE.2"], ["CL.0001"]),
+        seg(100, 200, ["EE.2"], ["CL.0215"]),
+        seg(
+          200,
+          300,
+          ["PCT.1"],
+          ["CL.0222"],
+          true,
+          "percent, then ratios at 4:10",
+        ),
+      ],
+      300,
+    );
+    const aligned = alignPasses(p1.segments, p2.segments);
+    expect(aligned.ok).toBe(true);
+    if (!aligned.ok) return;
+    expect(aligned.focus).toEqual(["focused", "overview", "mixed"]);
+    expect(
+      aligned.pairs.map((p) => [p.a.sub_skills.length, p.b.sub_skills.length]),
+    ).toEqual([
+      [1, 1],
+      [0, 0],
+      [0, 0],
+    ]);
+    const skillOf = (id: string): string | undefined =>
+      TAXONOMY.sub_skills.find((x) => x.id === id)?.skill_code;
+    const agree = skillAgreement(aligned.pairs, aligned.unpaired, skillOf);
+    // Only the focused segment counts toward Equivalent Expressions; nothing toward Percentages.
+    expect(
+      agree.find((x) => x.skill === "Equivalent Expressions"),
+    ).toMatchObject({
+      segments: 1,
+      subSkills: { both: 1, either: 1 },
+    });
+    expect(agree.find((x) => x.skill === "Percentages")).toBeUndefined();
+    expect(agree.find((x) => x.skill === CLUSTERS_ONLY)?.clusters).toEqual({
+      both: 2,
+      either: 2,
+    });
+    const rows = reviewRows("a1QNaRnn6cE", p1, p2);
+    expect(rows.map((r) => r.proposal)).toEqual([
+      "approve",
+      "approve",
+      "approve",
+    ]);
+    expect(rows[1]).toMatchObject({ sub_skills: [], clusters: ["CL.0215"] });
+    expect(rows[1]?.reason).toContain("overview, flagged by pass 1");
+    expect(rows[1]?.reason).toContain("set aside: EE.2;EE.5;LF.1");
+    expect(rows[2]?.reason).toContain("mixed, flagged by pass 2");
+    expect(rows[2]?.mixes_topics_note).toContain(
+      "percent, then ratios at 4:10",
+    );
+  });
+
+  it("S9 the corrected gate: judged at 3 or more segments, 70%, never on nothing", () => {
+    const row = (
+      skill: string,
+      segments: number,
+      both: number,
+      either: number,
+    ) => ({
+      skill,
+      segments,
+      subSkills: { both, either },
+      clusters: { both: 0, either: 0 },
+    });
+    const g = gate([
+      row("Equivalent Expressions", 3, 7, 10),
+      row("Linear Functions", 2, 0, 3),
+      row(CLUSTERS_ONLY, 9, 0, 0),
+    ]);
+    expect(g.judged.map((j) => [j.skill, j.passes])).toEqual([
+      ["Equivalent Expressions", true],
+    ]);
+    expect(g.reported.map((r) => r.skill)).toEqual(["Linear Functions"]);
+    expect(g.passed).toBe(true);
+    expect(gate([row("Equivalent Expressions", 4, 6, 10)]).passed).toBe(false);
+    expect(gate([row("Equivalent Expressions", 2, 0, 5)]).passed).toBe(false);
+    expect(gate([]).passed).toBe(false);
+    // Segment counts come from the tagged segments themselves (one per segment per skill).
+    const agree = skillAgreement(
+      [
+        { a: seg(0, 1, ["EE.2", "EE.5"]), b: seg(0, 1, ["EE.2"]) },
+        { a: seg(1, 2, ["EE.2"]), b: seg(1, 2, []) },
+      ],
+      [seg(2, 3, ["EE.3"])],
+      (id) =>
+        TAXONOMY.sub_skills.find((x) => x.id === id)?.skill_code ??
+        (id.startsWith("EE.") ? "Equivalent Expressions" : undefined),
+    );
+    expect(
+      agree.find((x) => x.skill === "Equivalent Expressions")?.segments,
+    ).toBe(3);
   });
 });
