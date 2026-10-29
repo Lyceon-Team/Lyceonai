@@ -14,7 +14,8 @@
  *   * Without --date it builds TODAY from GET /api/public/qotd/today, the website's own
  *     pre-submit payload: the answer and explanation are the literal null there, and the
  *     database decides which day "today" is, so no future day can be fetched.
- *   * --date builds a PAST day (strictly before today in America/Chicago, else exit 2) from the
+ *   * --date builds a PAST day (strictly before today's QOTD day, 04:00 UTC to 04:00 UTC, else
+ *     exit 2) from the
  *     public archive. Its answer is dropped by socialInputFromArchive before anything is built,
  *     and the output is then checked against it with socialAssetLeaks. `--date latest` picks the
  *     newest archive day whose input passes socialInputProblems (pull request runs use it to
@@ -104,7 +105,7 @@ import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
 } from "../../shared/seo/banned-phrases";
-import { localTodayIn } from "../../server/services/calendar/adapters/local-day";
+import { qotdTodaySwitched } from "../../server/services/qotd/qotd-day";
 
 /** Status lines only (the logger is the server's; this is a CLI). */
 function out(line: string): void {
@@ -115,8 +116,12 @@ function err(line: string): void {
 }
 
 const ROOT = resolve(import.meta.dirname, "../..");
-/** The QOTD day boundary (plan R18); the same zone as public.qotd_today(). */
-const QOTD_TIME_ZONE = "America/Chicago";
+/**
+ * The QOTD day (Karl, 2026-10-27): 04:00 UTC to 04:00 UTC, the database's public.qotd_day after
+ * the switch. This script has no database, so it uses the switched rule (qotd-day.ts) and checks
+ * /today against it: a run before the database has switched is refused, never posted.
+ */
+const QOTD_DAY_RULE = "04:00 UTC to 04:00 UTC";
 const MIN_FONT_PX = 24;
 const MAX_FONT_PX: Record<QotdSocialFormat, number> = {
   portrait: 52,
@@ -150,6 +155,16 @@ function parseArgs(argv: readonly string[]): Args {
 }
 
 /**
+ * The day a run builds as "today" (Karl, 2026-10-27): the QOTD day at the run's moment, 04:00 UTC
+ * to 04:00 UTC. The 04:05 UTC run therefore posts the day that began five minutes earlier (the
+ * Reddit post and images) and reveals the day that just ended (the reveal and TikTok, read from
+ * the archive as yesterday). /today must already be this day or the run is refused.
+ */
+export function socialRunToday(now: Date = new Date()): string {
+  return qotdTodaySwitched(now);
+}
+
+/**
  * A requested date is buildable only once it has passed. Exported for the test: future days
  * and today itself are refused (today is built from /today, without a date).
  */
@@ -159,10 +174,10 @@ export function pastDateProblem(
 ): string | null {
   if (!qotdDateSchema.safeParse(date).success)
     return `${date} is not a YYYY-MM-DD date`;
-  const today = localTodayIn(QOTD_TIME_ZONE, now);
+  const today = socialRunToday(now);
   return date < today
     ? null
-    : `${date} has not passed yet (today is ${today} in ${QOTD_TIME_ZONE})`;
+    : `${date} has not passed yet (today is ${today}, QOTD day ${QOTD_DAY_RULE})`;
 }
 
 async function getJson(url: string): Promise<unknown> {
@@ -780,7 +795,7 @@ async function main(): Promise<number> {
   const { input } = source;
   // Belt and braces: the endpoint decides "today", but a day that has not begun here is refused
   // whatever the server said.
-  const today = localTodayIn(QOTD_TIME_ZONE);
+  const today = socialRunToday();
   if (input.qotd_date > today) {
     err(
       `qotd-social: refused: ${input.qotd_date} has not begun (today is ${today})`,

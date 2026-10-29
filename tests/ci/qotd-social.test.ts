@@ -71,6 +71,7 @@ import {
   loadYesterday,
   pastDateProblem,
   publishDecision,
+  socialRunToday,
   tiktokDecision,
   writePublishManifest,
   type ArchiveFetch,
@@ -559,7 +560,7 @@ describe("PLANTS: the answer in a caption turns the guard red", () => {
 });
 
 describe("future days are never generated early or publicly reachable", () => {
-  it("a date is buildable only once it has passed in America/Chicago", () => {
+  it("a date is buildable only once its QOTD day (04:00 UTC to 04:00 UTC) has passed", () => {
     expect(QOTD_FIXTURE_TODAY).toBe("2026-10-05");
     expect(pastDateProblem("2026-10-04", QOTD_FIXTURE_NOW)).toBeNull();
     expect(pastDateProblem("2026-10-05", QOTD_FIXTURE_NOW)).toMatch(
@@ -574,10 +575,71 @@ describe("future days are never generated early or publicly reachable", () => {
     expect(pastDateProblem("2026-02-30", QOTD_FIXTURE_NOW)).toMatch(
       /not a YYYY-MM-DD/,
     );
-    // 04:30 UTC on Oct 6 is still Oct 5 in Chicago: Oct 5 is today there, not yet past.
+    // Karl, 2026-10-27: the day turns over at 04:00 UTC, fixed. At 03:59 UTC on Oct 6, Oct 5 is
+    // still today; at 04:01 it has passed (it was still Oct 5 in Chicago until 05:00 UTC).
     expect(
-      pastDateProblem("2026-10-05", new Date("2026-10-06T04:30:00Z")),
+      pastDateProblem("2026-10-05", new Date("2026-10-06T03:59:00Z")),
     ).toMatch(/has not passed/);
+    expect(
+      pastDateProblem("2026-10-05", new Date("2026-10-06T04:01:00Z")),
+    ).toBeNull();
+  });
+
+  it("the 04:05 UTC run builds the new day and reveals the day that just ended", () => {
+    // Presence first: the run's today is the QOTD day, which turns over at 04:00 UTC.
+    const run = new Date(`${QOTD_FIXTURE_TODAY}T04:05:00Z`);
+    expect(socialRunToday(run)).toBe(QOTD_FIXTURE_TODAY);
+    expect(socialRunToday(new Date(`${QOTD_FIXTURE_TODAY}T03:59:00Z`))).toBe(
+      previousQotdDate(QOTD_FIXTURE_TODAY),
+    );
+    const source = todaySource();
+    expect(source.input.qotd_date).toBe(QOTD_FIXTURE_TODAY);
+    const copy = buildSocialCopy(source.input);
+    const rendered = (["portrait", "story"] as const).map((format) => ({
+      format,
+      cardText: visibleText(cardMarkup(source.input, format)),
+    }));
+    const reddit = buildRedditPost(source.input);
+    const reveal = revealFor(source.input.qotd_date);
+    const decision = publishDecision(
+      source,
+      copy,
+      rendered,
+      socialRunToday(run),
+      reddit,
+      reveal,
+      tiktokFor(source),
+    );
+    if (!decision.ok) throw new Error(decision.problems.join("; "));
+    // 4/5 and 5/5: the new day. 1/5 to 3/5: the day that just ended.
+    expect(decision.manifest.qotd_date).toBe(QOTD_FIXTURE_TODAY);
+    expect(decision.manifest.reveal.qotd_date).toBe(
+      previousQotdDate(QOTD_FIXTURE_TODAY),
+    );
+    expect(decision.manifest.tiktok.qotd_date).toBe(
+      previousQotdDate(QOTD_FIXTURE_TODAY),
+    );
+    // A site still serving the day that just ended (not switched yet) is refused, never posted
+    // twice: that day went out the night before.
+    const stale = publishDecision(
+      source,
+      copy,
+      rendered,
+      socialRunToday(new Date(`${nextQotdDate(QOTD_FIXTURE_TODAY)}T04:05:00Z`)),
+      reddit,
+      reveal,
+      tiktokFor(source),
+    );
+    expect(stale.ok).toBe(false);
+    if (!stale.ok)
+      expect(stale.problems).toContain(
+        `source: the today payload is dated ${QOTD_FIXTURE_TODAY}, not today (${nextQotdDate(QOTD_FIXTURE_TODAY)})`,
+      );
+    // The schedule is that one run: 04:05 UTC, five minutes into the new QOTD day.
+    const doc = parseYaml(
+      readFileSync(resolve(ROOT, ".github/workflows/qotd-social.yml"), "utf8"),
+    ) as { on: { schedule: { cron: string }[] } };
+    expect(doc.on.schedule).toEqual([{ cron: "5 4 * * *" }]);
   });
 
   it("the generator reads only the public no-answer endpoint and past archive days", () => {
@@ -676,6 +738,12 @@ function workflowSteps(): WorkflowStep[] {
  * Yesterday's reveal for a posted day, as loadReveal builds it: from the fixture's archive day
  * before it, or withheld when the archive has none (owner brief 2026-10-15).
  */
+function nextQotdDate(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function revealFor(postedDate: string): QotdReveal {
   const day = DAYS.find((d) => d.qotd_date === previousQotdDate(postedDate));
   if (!day) return withheldReveal(postedDate);

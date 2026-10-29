@@ -33,6 +33,7 @@ import { LEGAL_DOCS, type ConsentSource } from "../../shared/legal-consent.js";
 import { captureLegalAcceptances } from "../lib/legal-acceptance.js";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
 import { recordSignupSource } from "../lib/analytics/signup-source.js";
+import { recordSignupAttribution } from "../lib/signup-attribution.js";
 import { emitEvent } from "../lib/analytics/emit-event.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 
@@ -78,6 +79,9 @@ const signupSchema = z.object({
   // SCL-201 IS 6: the first-touch channel the browser derived in memory. Parsed by
   // recordSignupSource, never here — a bad value is dropped, it never refuses a signup.
   signupSource: z.unknown().optional(),
+  // Karl, 2026-10-28: the sign-up channel and campaign. Parsed by recordSignupAttribution, never
+  // here: a bad value is dropped, it never refuses a signup.
+  signupAttribution: z.unknown().optional(),
   // Owner brief 2026-10-10 (follow-up to #1188): the page the visitor signed up FROM (e.g.
   // `/upgrade?promo=…`). Re-sanitised below with the one return-path allowlist; an unsafe or
   // unknown value is dropped, never a refusal.
@@ -248,6 +252,11 @@ router.post(
       await recordSignupSource(
         authData.user.id,
         validation.data.signupSource,
+        req.requestId,
+      );
+      await recordSignupAttribution(
+        authData.user.id,
+        validation.data.signupAttribution,
         req.requestId,
       );
 

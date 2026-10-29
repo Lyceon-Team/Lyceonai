@@ -137,6 +137,15 @@ export const liveLandingDeps: LandingDeps = {
     return { isPro, hasPlan: isPro ? await hasCurrentPlan(profileId) : false };
   },
 
+  async rotationOpen(profileId, now) {
+    const { data, error } = await supabaseServer.rpc("landing_rotation_open", {
+      p_profile_id: profileId,
+      p_now: now.toISOString(),
+    });
+    if (error) readFailed("rotation read", error.message);
+    return z.boolean().parse(data);
+  },
+
   async resumePath(profileId, since) {
     const [practice, review] = await Promise.all([
       mostRecentOpen("practice_sessions", "user_id", profileId, since),
