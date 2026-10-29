@@ -9027,6 +9027,37 @@
         "tap the graph's points of interest (intercepts, vertex)"
       ],
       "playbook_move": "Zeros / x-intercepts"
+    },
+    {
+      "id": "CL.0231",
+      "display_name": "factor a sum or difference of cubes",
+      "family": "by_hand_doing",
+      "definition": "Recognize a^3 ± b^3 and apply the sum/difference-of-cubes identity to factor it.",
+      "evidence_ids": [
+        "SATM23CRWWE",
+        "SATM23WY19V",
+        "SATM24Z5LEL",
+        "SATM252V7HV",
+        "SATM25XSPL6",
+        "SATM2AROSXO",
+        "SATM2MN1IYQ",
+        "SATM2PPCM43",
+        "SATM2OH2O7H",
+        "SATM2RHEP1Q",
+        "SATM2W3U7IP",
+        "SATM2ZS7ODX",
+        "SATM2ZXTAYN",
+        "SATM2YX3SGJ",
+        "SATM27ZGM43"
+      ],
+      "evidence_count": 15,
+      "core": false,
+      "skills_seen_in": [
+        "Equivalent Expressions"
+      ],
+      "method_in": {},
+      "aliases": [],
+      "playbook_move": null
     }
   ]
 }

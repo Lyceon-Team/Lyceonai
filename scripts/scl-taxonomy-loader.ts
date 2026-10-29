@@ -2,22 +2,31 @@
  * SCL taxonomy loader — mirrors content/canonical/subskill-cluster-taxonomy.json
  * into the public.sub_skills and public.clusters tables.
  *
- * Re-runnable and idempotent: upserts by id, stamps taxonomy_version,
- * deletes rows whose id no longer appears in the canonical file.
+ * Re-runnable and idempotent: upserts by id and stamps taxonomy_version.
+ * It never deletes. The canonical file is updated file-first, so before any
+ * write a pre-flight guard reads every sub_skills and clusters ID from the DB
+ * and REFUSES to run if the file is missing any of them (a DB-only ID means
+ * the file is stale, not that the row should go). Removing a taxonomy row is
+ * an owner decision made outside this loader.
  *
- * DRY-RUN by default. Pass --apply to write.
+ * DRY-RUN by default: validates the file and, when SUPABASE_URL and
+ * SUPABASE_SERVICE_ROLE_KEY are set, runs the read-only pre-flight and reports
+ * which IDs would be inserted. Pass --apply to write.
  *
  * Usage:
  *   pnpm exec tsx scripts/scl-taxonomy-loader.ts [--apply]
  *
  * @spec SPEC-CHANGE_SCL.md §3 (canonical source), §6 (versioning), §7.2 (mirror)
- * @implemented 2026-10-28
+ * @implemented 2026-10-28; pre-flight guard and no-delete 2026-10-29 (owner
+ * rulings, Karl: the canonical file is the source of truth, updated
+ * file-first; no fixed taxonomy counts — sync is ID set-equality).
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { fetchDbIds, loaderPreflight } from "./scl-taxonomy-sync";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -51,7 +60,7 @@ type Cluster = {
   core: boolean;
   skills_seen_in: string[];
   method_in: Record<string, number>;
-  playbook_move?: string;
+  playbook_move?: string | null;
   aliases: string[];
 };
 
@@ -90,8 +99,8 @@ function loadTaxonomy(): Taxonomy {
         `sub_skill ${ss.id ?? "(missing id)"} has missing required fields`,
       );
     }
-    if (!Array.isArray(ss.evidence_ids)) {
-      throw new Error(`sub_skill ${ss.id} has non-array evidence_ids`);
+    if (!Array.isArray(ss.evidence_ids) || ss.evidence_ids.length === 0) {
+      throw new Error(`sub_skill ${ss.id} has no evidence_ids`);
     }
     if (subSkillIds.has(ss.id)) {
       throw new Error(`duplicate sub_skill id: ${ss.id}`);
@@ -106,8 +115,8 @@ function loadTaxonomy(): Taxonomy {
         `cluster ${cl.id ?? "(missing id)"} has missing required fields`,
       );
     }
-    if (!Array.isArray(cl.evidence_ids)) {
-      throw new Error(`cluster ${cl.id} has non-array evidence_ids`);
+    if (!Array.isArray(cl.evidence_ids) || cl.evidence_ids.length === 0) {
+      throw new Error(`cluster ${cl.id} has no evidence_ids`);
     }
     if (typeof cl.evidence_count !== "number") {
       throw new Error(`cluster ${cl.id} has non-number evidence_count`);
@@ -149,20 +158,48 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (dryRun) {
-    console.log("\nDry-run complete. Pass --apply to write to the database.");
-    return;
-  }
-
   const supabaseUrl = process.env["SUPABASE_URL"];
   const supabaseKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
   if (!supabaseUrl || !supabaseKey) {
+    if (dryRun) {
+      console.log(
+        "\nDry-run complete (file only; set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY for the read-only pre-flight). Pass --apply to write to the database.",
+      );
+      return;
+    }
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: { persistSession: false },
   });
+
+  // --- Pre-flight: the file must hold every ID the DB holds ---
+  const preflight = loaderPreflight(
+    {
+      sub_skills: taxonomy.sub_skills.map((ss) => ss.id),
+      clusters: taxonomy.clusters.map((cl) => cl.id),
+    },
+    await fetchDbIds(supabase),
+  );
+  if (!preflight.ok) {
+    const { sub_skills: ss, clusters: cl } = preflight.missingFromFile;
+    console.error(
+      "REFUSING TO RUN: the canonical file is missing IDs that exist in the database. Add them to content/canonical/subskill-cluster-taxonomy.json first.",
+    );
+    if (ss.length > 0) console.error(`  sub_skills: ${ss.join(", ")}`);
+    if (cl.length > 0) console.error(`  clusters: ${cl.join(", ")}`);
+    process.exit(1);
+  }
+  const { sub_skills: newSs, clusters: newCl } = preflight.toInsert;
+  console.log(
+    `Pre-flight passed: every DB ID is in the file. New to the DB — sub_skills: ${newSs.length > 0 ? newSs.join(", ") : "none"}; clusters: ${newCl.length > 0 ? newCl.join(", ") : "none"}.`,
+  );
+
+  if (dryRun) {
+    console.log("\nDry-run complete. Pass --apply to write to the database.");
+    return;
+  }
 
   const version = taxonomy.taxonomy_version;
 
@@ -185,23 +222,6 @@ async function main(): Promise<void> {
       .upsert(rows, { onConflict: "id" });
     if (upsertErr)
       throw new Error(`sub_skills upsert failed: ${upsertErr.message}`);
-
-    // Delete rows not in the canonical file
-    const canonicalIds = taxonomy.sub_skills.map((ss) => ss.id);
-    const { data: existing } = await supabase.from("sub_skills").select("id");
-    const stale = (existing ?? []).filter((r) => !canonicalIds.includes(r.id));
-    if (stale.length > 0) {
-      const { error: delErr } = await supabase
-        .from("sub_skills")
-        .delete()
-        .in(
-          "id",
-          stale.map((r) => r.id),
-        );
-      if (delErr)
-        throw new Error(`sub_skills stale delete failed: ${delErr.message}`);
-      console.log(`Deleted ${stale.length} stale sub_skill rows.`);
-    }
 
     console.log(`Upserted ${rows.length} sub_skills.`);
   }
@@ -228,22 +248,6 @@ async function main(): Promise<void> {
       .upsert(rows, { onConflict: "id" });
     if (upsertErr)
       throw new Error(`clusters upsert failed: ${upsertErr.message}`);
-
-    const canonicalIds = taxonomy.clusters.map((cl) => cl.id);
-    const { data: existing } = await supabase.from("clusters").select("id");
-    const stale = (existing ?? []).filter((r) => !canonicalIds.includes(r.id));
-    if (stale.length > 0) {
-      const { error: delErr } = await supabase
-        .from("clusters")
-        .delete()
-        .in(
-          "id",
-          stale.map((r) => r.id),
-        );
-      if (delErr)
-        throw new Error(`clusters stale delete failed: ${delErr.message}`);
-      console.log(`Deleted ${stale.length} stale cluster rows.`);
-    }
 
     console.log(`Upserted ${rows.length} clusters.`);
   }
