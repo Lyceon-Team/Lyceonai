@@ -36,6 +36,10 @@
  *   S13 the shopping list names every skill and sub-skill with no focused segment.
  *   S14 a skill below the gate has no row pre-marked for approval (held as retag, with the
  *       skill named); rows of passing skills and clusters-only rows are untouched.
+ *   S15 Phase B ruling 2: a row with only clusters disputed is approved with the agreed tags;
+ *       a disputed sub-skill, a teaching dispute and drop stay; the hold runs after and wins.
+ *   S16 the spot-check sample: approved rows with sub-skills only, one skill per turn, the same
+ *       draw for the same seed, each row's evidence narrowed to its sub-skills.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -58,10 +62,13 @@ import {
 import {
   CLUSTERS_ONLY,
   alignPasses,
+  CLUSTER_DISPUTE_APPROVED,
+  approveClusterOnlyDisputes,
   coverageReport,
   evidenceCell,
   gate,
   holdFailedSkills,
+  spotCheckSample,
   reviewCsv,
   reviewRows,
   skillAgreement,
@@ -1014,5 +1021,101 @@ describe("segment tagging: what the code enforces", () => {
       "Percentages is below the gate (50% sub-skill agreement); held for review",
     );
     expect(held[1]?.sub_skills).toEqual(["PCT.1"]);
+  });
+
+  it("S15 only-clusters-disputed rows are approved with the agreed tags; the hold still wins", () => {
+    const p1 = passFile(
+      [
+        seg(0, 100, ["EE.2"], ["CL.0001", "CL.0215"]),
+        seg(100, 200, ["EE.2", "EE.5"], ["CL.0001"]),
+        seg(200, 300, ["PCT.1"], ["CL.0222", "CL.0001"]),
+        seg(300, 400, ["EE.2"], ["CL.0001"]),
+        seg(400, 500, [], [], false),
+        seg(500, 600, [], ["CL.0215"]),
+      ],
+      600,
+    );
+    const p2 = passFile(
+      [
+        seg(0, 100, ["EE.2"], ["CL.0001"]),
+        seg(100, 200, ["EE.2"], ["CL.0215"]),
+        seg(200, 300, ["PCT.1"], ["CL.0001"]),
+        seg(300, 400, ["EE.2"], ["CL.0001"], false),
+        seg(400, 500, [], [], false),
+        seg(500, 600, [], [], false),
+      ],
+      600,
+    );
+    const rows = reviewRows("a1QNaRnn6cE", p1, p2);
+    expect(rows.map((r) => r.proposal)).toEqual([
+      "retag",
+      "retag",
+      "retag",
+      "retag",
+      "drop",
+      "retag",
+    ]);
+    const promoted = approveClusterOnlyDisputes(rows);
+    expect(promoted.map((r) => r.proposal)).toEqual([
+      "approve", // only CL.0215 disputed
+      "retag", // EE.5 disputed
+      "approve", // only CL.0222 disputed
+      "retag", // the passes disagree it teaches (a disputed sub-skill)
+      "drop",
+      "retag", // the passes disagree it teaches (clusters only): no tag is kept
+    ]);
+    expect(promoted[0]).toMatchObject({
+      sub_skills: ["EE.2"],
+      clusters: ["CL.0001"],
+      disputed_clusters: ["CL.0215"],
+      reason: CLUSTER_DISPUTE_APPROVED,
+    });
+    const skillOf = (id: string): string | undefined =>
+      TAXONOMY.sub_skills.find((x) => x.id === id)?.skill_code;
+    const failed = gate([
+      {
+        skill: "Percentages",
+        segments: 3,
+        subSkills: { both: 1, either: 3 },
+        clusters: { both: 0, either: 0 },
+      },
+    ]);
+    const held = holdFailedSkills(promoted, failed, skillOf);
+    expect(held.map((r) => r.proposal)).toEqual([
+      "approve",
+      "retag",
+      "retag",
+      "retag",
+      "drop",
+      "retag",
+    ]);
+    expect(held[2]?.reason).toContain("Percentages is below the gate");
+  });
+
+  it("S16 the spot-check sample: approved with sub-skills, spread across skills, reproducible", () => {
+    const rows = [
+      ...[0, 100, 200, 300].map((s) => seg(s, s + 100, ["EE.2"], ["CL.0001"])),
+      seg(400, 500, ["PCT.1"]),
+      seg(500, 600, [], ["CL.0215"]),
+      seg(600, 700, ["EE.5"], [], true),
+    ];
+    const p = passFile(rows, 700);
+    const review = reviewRows("a1QNaRnn6cE", p, p);
+    review[6] = { ...review[6]!, proposal: "retag" };
+    const skillOf = (id: string): string | undefined =>
+      TAXONOMY.sub_skills.find((x) => x.id === id)?.skill_code;
+    const a = spotCheckSample(review, 3, skillOf);
+    expect(a).toEqual(spotCheckSample(review, 3, skillOf));
+    expect(a).toHaveLength(3);
+    expect(new Set(a.map((x) => x.skill))).toEqual(
+      new Set(["Equivalent Expressions", "Percentages"]),
+    );
+    expect(
+      a.every((x) => x.sub_skills.length > 0 && x.start_seconds !== 600),
+    ).toBe(true);
+    expect(a.find((x) => x.skill === "Equivalent Expressions")?.evidence).toBe(
+      "EE.2: e",
+    );
+    expect(spotCheckSample(review, 50, skillOf)).toHaveLength(5);
   });
 });

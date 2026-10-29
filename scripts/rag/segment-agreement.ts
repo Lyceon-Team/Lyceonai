@@ -537,6 +537,36 @@ function printAgreement(label: string, rows: SkillAgreement[]): void {
   }
 }
 
+/** The reason an approved row carries when ruling 2 of 2026-10-29 promoted it. */
+export const CLUSTER_DISPUTE_APPROVED =
+  "only clusters disputed: approved with the clusters both passes agree on (Karl, 2026-10-29)";
+
+/**
+ * Pure. Karl's Phase B ruling 2 (2026-10-29): a `retag` row whose only disagreement is on
+ * clusters is approved with what both passes agree on: its kept sub-skills and kept clusters
+ * (the intersection, as every row already carries). Disputed clusters stay listed in their
+ * column for the record and are not stored. Untouched: a row with a disputed sub-skill, a row
+ * with no tag left (which covers a row the passes disagree is teaching at all: it keeps no
+ * tag), and `drop`. Runs BEFORE
+ * `holdFailedSkills`, so a promoted row of a skill below the gate is held again.
+ */
+export function approveClusterOnlyDisputes(rows: ReviewRow[]): ReviewRow[] {
+  return rows.map((r) =>
+    r.proposal === "retag" &&
+    r.disputed_sub_skills.length === 0 &&
+    r.disputed_clusters.length > 0 &&
+    r.sub_skills.length + r.clusters.length > 0
+      ? {
+          ...r,
+          proposal: "approve",
+          reason: r.reason.startsWith("clusters only,")
+            ? `${r.reason.split("; the passes disagree")[0] ?? r.reason}; ${CLUSTER_DISPUTE_APPROVED}`
+            : CLUSTER_DISPUTE_APPROVED,
+        }
+      : r,
+  );
+}
+
 /**
  * Pure. Phase B (Karl, 2026-10-29): a skill below the gate has no row pre-marked for approval.
  * A row proposed `approve` that carries a sub-skill of a failed skill becomes `retag`, with the
@@ -568,6 +598,126 @@ export function holdFailedSkills(
           reason: `${hit} is below the gate (${failed.get(hit) ?? ""} sub-skill agreement); held for review`,
         };
   });
+}
+
+export type SampleRow = {
+  skill: string;
+  video_id: string;
+  start_seconds: number;
+  end_seconds: number;
+  sub_skills: string[];
+  evidence: string;
+  summary: string;
+};
+
+/** A small deterministic PRNG (mulberry32): the same seed always draws the same sample. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Pure. Karl's spot-check (Phase B ruling 4): n approved segments with sub-skills, spread across
+ * skills. Each row is filed under the skill of its first sub-skill; skills are taken in turn
+ * (round robin, in a seeded shuffled order) and a seeded draw picks one row per turn, until n
+ * rows or none left. Random but reproducible: seed 20261029 unless given. A review sample, not
+ * question selection, so it carries no determinism rule beyond being reproducible.
+ */
+export function spotCheckSample(
+  rows: ReviewRow[],
+  n: number,
+  skillOf: (subSkillId: string) => string | undefined,
+  seed = 20261029,
+): SampleRow[] {
+  const rand = mulberry32(seed);
+  const shuffle = <T>(xs: T[]): T[] => {
+    const a = [...xs];
+    for (let i = a.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rand() * (i + 1));
+      const t = a[i];
+      const u = a[j];
+      if (t !== undefined && u !== undefined) {
+        a[i] = u;
+        a[j] = t;
+      }
+    }
+    return a;
+  };
+  const bySkill = new Map<string, ReviewRow[]>();
+  for (const r of rows) {
+    if (r.proposal !== "approve" || r.sub_skills.length === 0) continue;
+    const first = r.sub_skills[0];
+    const skill = first === undefined ? undefined : skillOf(first);
+    if (skill === undefined) continue;
+    bySkill.set(skill, [...(bySkill.get(skill) ?? []), r]);
+  }
+  const skills = shuffle([...bySkill.keys()].sort());
+  const pools = new Map(skills.map((k) => [k, shuffle(bySkill.get(k) ?? [])]));
+  const out: SampleRow[] = [];
+  while (out.length < n && [...pools.values()].some((p) => p.length > 0)) {
+    for (const k of skills) {
+      if (out.length >= n) break;
+      const r = pools.get(k)?.shift();
+      if (r === undefined) continue;
+      const keep = new Set(r.sub_skills);
+      out.push({
+        skill: k,
+        video_id: r.video_id,
+        start_seconds: r.start_seconds,
+        end_seconds: r.end_seconds,
+        sub_skills: r.sub_skills,
+        evidence: r.evidence
+          .split(" | ")
+          .filter((e) => keep.has(e.slice(0, e.indexOf(":"))))
+          .join(" | "),
+        summary: r.summary,
+      });
+    }
+  }
+  return out.sort(
+    (a, b) =>
+      a.skill.localeCompare(b.skill) || a.video_id.localeCompare(b.video_id),
+  );
+}
+
+function clockOf(s: number): string {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+export function sampleCsv(rows: SampleRow[]): string {
+  const header = [
+    "skill",
+    "video_id",
+    "start",
+    "end",
+    "link",
+    "sub_skills",
+    "evidence",
+    "summary",
+    "ok",
+  ];
+  const lines = rows.map((r) =>
+    [
+      r.skill,
+      r.video_id,
+      clockOf(r.start_seconds),
+      clockOf(r.end_seconds),
+      `https://www.youtube.com/watch?v=${r.video_id}&t=${r.start_seconds}s`,
+      r.sub_skills.join(";"),
+      r.evidence,
+      r.summary,
+      "",
+    ]
+      .map(csvCell)
+      .join(","),
+  );
+  return `${[header.join(","), ...lines].join("\n")}\n`;
 }
 
 /**
@@ -616,6 +766,8 @@ async function main(): Promise<void> {
       csv: { type: "string" },
       // Every video with both pass files in this version's cache (Phase B's whole set).
       "all-tagged": { type: "boolean", default: false },
+      // Karl's spot-check sample of approved segments (Phase B ruling 4).
+      sample: { type: "string" },
     },
   });
   const ids =
@@ -711,17 +863,25 @@ async function main(): Promise<void> {
   process.stdout.write(
     coverageReport(allRows, taxonomy.sub_skills).join("\n") + "\n",
   );
-  const held = holdFailedSkills(allRows, g, skillOf);
+  // Ruling 2 first, then the hold (ruling 1): a promoted row of a failed skill is held again.
+  const promoted = approveClusterOnlyDisputes(allRows);
+  const held = holdFailedSkills(promoted, g, skillOf);
   const heldCount = held.filter(
-    (r, i) => r.proposal !== allRows[i]?.proposal,
+    (r, i) => r.proposal !== promoted[i]?.proposal,
+  ).length;
+  const promotedCount = held.filter(
+    (r, i) => r.proposal === "approve" && allRows[i]?.proposal === "retag",
   ).length;
   // The counts of the file as written, after the hold.
   const counts = { approve: 0, retag: 0, drop: 0 };
   for (const r of held) counts[r.proposal] += 1;
   process.stdout.write(
-    `review rows: ${JSON.stringify(counts)} (${heldCount} held for review: skill below the gate); both passes $${usd.toFixed(4)}\n`,
+    `review rows: ${JSON.stringify(counts)} (${promotedCount} approved by ruling 2: only clusters disputed; ${heldCount} held for review: skill below the gate); both passes $${usd.toFixed(4)}\n`,
   );
   if (values.csv !== undefined) writeFileSync(values.csv, reviewCsv(held));
+  if (values.sample !== undefined) {
+    writeFileSync(values.sample, sampleCsv(spotCheckSample(held, 20, skillOf)));
+  }
 }
 
 // R-16 (LISA_Video_RAG_Closure_Plan.md): the entry check that also matches a Windows path.

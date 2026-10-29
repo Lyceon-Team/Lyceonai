@@ -10,7 +10,15 @@
 
 Phase C, the retrieval switch-over, waits for the questions team's Phase 2 tags. Until then the segments are tagged, reviewed and stored, and nothing reads them. The design is in `segments-phase-a.md`.
 
-**Status: tagged and ready for Karl's review. The gate does not pass for 2 of the 25 judged skills (§3).** Rows in those two skills are held for review, with none pre-marked yes. Every other judged skill passes.
+**Status: tagged; Karl's rulings of 2026-10-29 on the review applied (§5); ready for his spot-check (§5.1).** The gate does not pass for 2 of the 25 judged skills (§3). Rows in those two skills stay held for review, with none pre-marked yes. Every other judged skill passes.
+
+**Rulings on the review (Karl, 2026-10-29):**
+
+1. Inferences and Rhetorical Synthesis stay held: their rows stay `retag`.
+2. The rows where only clusters are disputed are marked `yes`, keeping the agreed sub-skills and only the clusters both passes agree on; the disputed clusters are dropped (the same intersection rule). Rows with a disputed sub-skill, rows in a skill below the gate, and `drop` rows are unchanged.
+3. The review CSV and the apply SQL are regenerated from the result (§5).
+4. Karl spot-checks a 20-row random sample of approved segments, spread across skills (§5.1), not every row.
+5. After #1369 merges: `main` into `lisa`, then `lisa` into #1364 and #1370.
 
 ## 1. What ran
 
@@ -109,26 +117,59 @@ Reported, not gated (fewer than 3 segments):
 
 ## 5. The review file
 
-`docs/plans/lisa-video-library/segments-phase-b-review.csv`: 410 rows, one per segment.
+`docs/plans/lisa-video-library/segments-phase-b-review.csv`: 410 rows, one per segment. These are the totals after rulings 1 and 2; ruling 2 is `approveClusterOnlyDisputes` and runs before the hold, `holdFailedSkills`, so a promoted row in a held skill is held again.
 
-| Proposal                | Rows | Why                                                                                                                         |
-| ----------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------- |
-| approve (prefilled yes) | 149  | every tag agrees: 107 with sub-skills, 42 clusters-only (overview, mixed or calculator technique, with the clusters agreed) |
-| retag                   | 183  | see the breakdown below                                                                                                     |
-| drop                    | 78   | neither pass calls it teaching                                                                                              |
+| Proposal                | Rows | Why                                                                                                |
+| ----------------------- | ---- | -------------------------------------------------------------------------------------------------- |
+| approve (prefilled yes) | 276  | every tag agrees, or only clusters were disputed (ruling 2); 220 with sub-skills, 56 clusters-only |
+| retag                   | 56   | see the breakdown below                                                                            |
+| drop                    | 78   | neither pass calls it teaching                                                                     |
 
-Why the 183 retag rows are retag:
+Before the rulings it was 149 approve, 183 retag and 78 drop. Ruling 2 found 136 rows where only clusters were disputed. 127 were approved; the other 9 are in Inferences or Rhetorical Synthesis and stay held (ruling 1).
 
-| Reason                                       | Rows |
-| -------------------------------------------- | ---- |
-| sub-skills agree; only clusters are disputed | 136  |
-| a sub-skill is disputed                      | 21   |
-| clusters-only, with no shared cluster        | 17   |
-| held: skill below the gate                   | 5    |
-| the passes disagree on whether it teaches    | 4    |
+Why the 56 retag rows are retag:
+
+| Reason                                    | Rows |
+| ----------------------------------------- | ---- |
+| a sub-skill is disputed                   | 21   |
+| clusters-only, with no shared cluster     | 17   |
+| held: skill below the gate                | 14   |
+| the passes disagree on whether it teaches | 4    |
 
 - Every row carries the evidence lines for its tags, kept and disputed, in the `evidence` column. The apply SQL is built from the file alone.
-- **Most retag rows are cheap to approve.** In 136 of them the sub-skills agree; the shared clusters are kept, and only the disputed ones are left out. Retrieval matches sub-skills first.
+- A row approved by ruling 2 keeps its disputed clusters listed in `disputed_clusters` for the record. They are not stored: the apply writes `sub_skills` and `clusters` only.
+
+### 5.1 Karl's spot-check: 20 approved segments
+
+`docs/plans/lisa-video-library/segments-phase-b-sample.csv`, with an empty `ok` column for Karl to fill.
+
+- The sample is drawn from approved rows that carry sub-skills, spread across skills. Skills are taken in turn, one segment each, so the 20 rows cover 20 different skills (`spotCheckSample`).
+- The draw is random but reproducible: a seeded generator, seed 20261029.
+- Each link opens the video at the segment's start.
+- Inferences and Rhetorical Synthesis are not in the sample: nothing in them is approved.
+
+| #   | Skill                                                                         | Video, start                                                             | Sub-skills         | Evidence                                                                                                                                                                                                                                        |
+| --- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Area and Volume                                                               | [`KQpliPT8ZTs` 3:30](https://www.youtube.com/watch?v=KQpliPT8ZTs&t=210s) | AV.3               | AV.3: The question asks for the volume of a sphere given its radius.                                                                                                                                                                            |
+| 2   | Boundaries                                                                    | [`vWOnLq6lNOs` 1:30](https://www.youtube.com/watch?v=vWOnLq6lNOs&t=90s)  | BND.4              | BND.4: The speaker teaches how to use semicolons to separate items in a complex list.                                                                                                                                                           |
+| 3   | Central Ideas and Details                                                     | [`NgJhXOfA3rw` 0:48](https://www.youtube.com/watch?v=NgJhXOfA3rw&t=48s)  | CID.1              | CID.1: The question asks for the main idea of the informational text.                                                                                                                                                                           |
+| 4   | Command of Evidence                                                           | [`xhDGA2vO_Vs` 0:00](https://www.youtube.com/watch?v=xhDGA2vO_Vs&t=0s)   | COE.3              | COE.3: The question asks which finding would most directly support the student's hypothesis.                                                                                                                                                    |
+| 5   | Cross-Text Connections                                                        | [`xruJh5TOl-k` 5:34](https://www.youtube.com/watch?v=xruJh5TOl-k&t=334s) | CTC.4              | CTC.4: The question asks what statement both authors would most likely agree with.                                                                                                                                                              |
+| 6   | Equivalent Expressions                                                        | [`6gLSbX3uKCg` 0:00](https://www.youtube.com/watch?v=6gLSbX3uKCg&t=0s)   | EE.2               | EE.2: The segment demonstrates how to expand and multiply a squared binomial, (x + 3)^2.                                                                                                                                                        |
+| 7   | Evaluating Statistical Claims: Observational Studies and Experiments          | [`yxedDWHDvzI` 0:00](https://www.youtube.com/watch?v=yxedDWHDvzI&t=0s)   | ESC2               | ESC2: The question asks if a sample of seventh graders during one lunch period represents the whole middle school.                                                                                                                              |
+| 8   | Form, Structure, and Sense                                                    | [`lgo1iHUCIUU` 0:50](https://www.youtube.com/watch?v=lgo1iHUCIUU&t=50s)  | FSS.2              | FSS.2: The question asks to choose the correct verb tense 'measures' based on the habit indicator 'regularly'.                                                                                                                                  |
+| 9   | Inference from Sample Statistics and Margin of Error                          | [`auBIKG1Uj7c` 4:18](https://www.youtube.com/watch?v=auBIKG1Uj7c&t=258s) | INFS.1             | INFS.1: The question asks for the approximate number of people who cycle to work in a population of 50,000 based on a sample.                                                                                                                   |
+| 10  | Linear Functions                                                              | [`QjEZuxPfKaE` 1:33](https://www.youtube.com/watch?v=QjEZuxPfKaE&t=93s)  | LF.1               | LF.1: The question asks for the value of g(x) when x = 8 for a linear function g(x) = 10x + 8.                                                                                                                                                  |
+| 11  | Lines, Angles, and Triangles                                                  | [`TtVwM6Doydg` 2:26](https://www.youtube.com/watch?v=TtVwM6Doydg&t=146s) | LAT.2, LAT.4, RTT2 | LAT.2: He calculates the third angle of the right triangle using the 180-degree sum. / LAT.4: He uses the similarity of the triangles to find the measure of angle B. / RTT2: He notes that the triangles are 45-45-90 special right triangles. |
+| 12  | Nonlinear Equations in One Variable and Systems of Equations in Two Variables | [`ZYDcmWtfLkk` 0:47](https://www.youtube.com/watch?v=ZYDcmWtfLkk&t=47s)  | NLE.3              | NLE.3: The question asks to solve a rational equation with x in the denominators.                                                                                                                                                               |
+| 13  | Nonlinear Functions                                                           | [`TIC6oYtvBGU` 2:25](https://www.youtube.com/watch?v=TIC6oYtvBGU&t=145s) | NLF.4, NLF.5       | NLF.4: The question asks for the value of x where the quadratic function reaches its minimum. / NLF.5: The question involves a translated function g(x) = f(x+5).                                                                               |
+| 14  | One-Variable Data: Distributions and Measures of Center and Spread            | [`V9Bpv0qcv7c` 3:05](https://www.youtube.com/watch?v=V9Bpv0qcv7c&t=185s) | OVD.2              | OVD.2: The segment shows how to compute the mean and median of a list of numbers.                                                                                                                                                               |
+| 15  | Percentages                                                                   | [`52vWohHiyAQ` 7:42](https://www.youtube.com/watch?v=52vWohHiyAQ&t=462s) | PCT.5              | PCT.5: The segment teaches how to write an expression for a 128% increase followed by a 29% increase.                                                                                                                                           |
+| 16  | Probability and Conditional Probability                                       | [`G39Ae3bgoDM` 1:43](https://www.youtube.com/watch?v=G39Ae3bgoDM&t=103s) | PRB.4              | PRB.4: The speaker calculates the probability of rolling a number that is not a multiple of three.                                                                                                                                              |
+| 17  | Systems of Two Linear Equations in Two Variables                              | [`szu6vufYqmA` 8:17](https://www.youtube.com/watch?v=szu6vufYqmA&t=497s) | SYS.3              | SYS.3: The question asks for the value of r that makes the system of two linear equations have no solution.                                                                                                                                     |
+| 18  | Transitions                                                                   | [`92GaKBgEG7E` 2:13](https://www.youtube.com/watch?v=92GaKBgEG7E&t=133s) | TRN.4              | TRN.4: The segment teaches how to solve a transition question where the correct answer is 'specifically'.                                                                                                                                       |
+| 19  | Two-Variable Data: Models and Scatterplots                                    | [`w9vTseYuwpU` 1:23](https://www.youtube.com/watch?v=w9vTseYuwpU&t=83s)  | TVD.1              | TVD.1: The student reads a specific temperature value on Day 9 from a line graph.                                                                                                                                                               |
+| 20  | Words in Context                                                              | [`2j1EpSyucyU` 0:00](https://www.youtube.com/watch?v=2j1EpSyucyU&t=0s)   | WIC.4              | WIC.4: The segment works through an SAT question asking for the meaning of 'a singular' in a story by Nathaniel Hawthorne.                                                                                                                      |
 
 ## 6. The shopping list: no focused segment
 
@@ -180,26 +221,26 @@ Together with the miss log from Phase A ruling 4 (`video_segment_misses`, built 
    SELECT count(*) FROM public.sub_skills WHERE taxonomy_version = 'scl-v1.0.0';
    ```
    If the count isn't 135, run `scripts/scl-taxonomy-loader.ts --apply` first. The apply SQL checks this and refuses to run otherwise.
-4. **Review** `segments-phase-b-review.csv`:
+4. **Spot-check** the 20 rows of `segments-phase-b-sample.csv` (§5.1). If you change anything, change it in `segments-phase-b-review.csv`:
    - set `approve` to `yes`, or leave it blank;
    - edit `sub_skills` or `clusters` where a tag is wrong. An id added in review is stored with the evidence "added in review".
 5. **Regenerate the apply SQL from the reviewed file**, or ask CC to:
    ```
    pnpm exec tsx scripts/rag/apply-video-segments.ts --csv docs/plans/lisa-video-library/segments-phase-b-review.csv --out docs/plans/lisa-video-library/segments-phase-b-apply.sql
    ```
-   The committed `segments-phase-b-apply.sql` reflects the file as pre-marked: 129 videos, 309 segments written, 149 approved.
+   The committed `segments-phase-b-apply.sql` reflects the file after rulings 1 and 2: 129 videos, 309 segments written, 276 approved.
 6. **Paste it into the SQL editor**, after replacing `REPLACE-WITH-YOUR-USER-ID` (in one place, near the end) with your user id. Left as it is, the uuid cast fails and the whole transaction rolls back.
 7. **Confirm:**
    ```sql
    SELECT count(*), count(approved_by), count(DISTINCT video_id) FROM public.video_segments;
    ```
-   For the pre-marked file this returns 309, 149, 129.
+   For the committed file this returns 309, 276, 129.
 
 **Proven locally**, on Postgres 16 with the full pipeline, the real taxonomy and the 131 videos:
 
 - With the placeholder left in, the transaction fails and writes nothing (0 rows).
-- Filled in, it writes 309 segments across 129 videos, 149 approved, with 257 sub-skill tags and 506 cluster tags.
-- Run a second time, the result is the same 309 and 149: an unchanged segment keeps its approval.
+- Filled in, it writes 309 segments across 129 videos, 276 approved, with 257 sub-skill tags and 506 cluster tags. (The tags are the same as before the rulings, because the clusters stored were always the agreed ones; ruling 2 changes approvals only.)
+- Run a second time, the result is the same 309 and 276: an unchanged segment keeps its approval.
 
 ## 8. SCL
 
