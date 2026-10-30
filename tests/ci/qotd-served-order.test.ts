@@ -6,6 +6,11 @@
  *       dashboard, image, Reddit post, alt text, reveal, TikTok slides, archive and email all show
  *       the same order and name the same letter (email shows none)"; rulings 1-3 of the same day]
  *       | @implemented [2026-10-28]
+ *       | Reddit post, reveal and subreddit name DROPPED [Karl's ruling 2026-10-30: the QOTD
+ *       subreddit was banned by Reddit sitewide, so the Reddit QOTD is discontinued and nothing
+ *       Reddit-related is generated; there is no Reddit post or reveal to agree, and no subreddit
+ *       name to get right. Their assertions here were removed with them, not kept alive against
+ *       code nothing calls.]
  *
  * plain English: the day is the shared fixture's 2026-10-02 row, which is REAL output of
  * qotd_archive() after qotd_schedule_insert shuffled it: stored order {B,C,A,D}, so the correct
@@ -13,8 +18,8 @@
  * back as (letter, text) pairs in display order; each must equal the stored order, and every
  * surface that names the answer must name A. Presence first: the stored order is not the authored
  * order and the letter is not the canonical key, so canonical order cannot pass.
- * Also here: the shared function's refusals, the reveal / TikTok refusal on a letter mismatch,
- * the Slack heading's subreddit, and the failure notice.
+ * Also here: the shared function's refusals, the TikTok refusal on a letter mismatch, and the
+ * failure notice.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -32,7 +37,6 @@ import {
   socialInputFromArchive,
   socialInputFromToday,
 } from "../../shared/qotd/social";
-import { buildReveal, buildRedditPost } from "../../shared/qotd/reveal";
 import { buildTiktokCarousel } from "../../shared/qotd/tiktok";
 import { toTodayResponse } from "../../server/services/qotd/qotd-service";
 import { qotdOptionToken } from "../../server/services/qotd/option-tokens";
@@ -42,13 +46,9 @@ import {
 } from "../../server/services/qotd/home-qotd-service";
 import { qotdEmailQuestionFields } from "../../server/lib/notifications/qotd-daily-send-context";
 import { qotdDailyEmail } from "../../server/lib/notifications/templates/qotd-daily";
-import {
-  slackFailureMessage,
-  slackRedditMessage,
-} from "../../scripts/qotd-social/post-to-slack";
+import { slackFailureMessage } from "../../scripts/qotd-social/post-to-slack";
 import { getPrerenderedSite } from "../lib/prerendered-site";
 import { qotdArchiveRow } from "../lib/qotd-fixture";
-import type { QotdSocialPostManifest } from "../../packages/shared/src/qotd-schema";
 
 // The option tokens are HMAC'd with this secret; any value works for the shape under test.
 process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??= "qotd-served-order-test-secret";
@@ -186,7 +186,7 @@ describe("every surface shows the stored order and names the served letter (SCL-
     expect(result.correct_display_letter).toBe(SERVED_LETTER);
   });
 
-  it("the image (both formats), the Reddit post and the alt text", () => {
+  it("the image (both formats) and the alt text", () => {
     const fromToday = socialInputFromToday(toTodayResponse(row));
     const fromArchive = socialInputFromArchive(toArchiveResponse(row));
     for (const input of [fromToday, fromArchive]) {
@@ -196,26 +196,9 @@ describe("every surface shows the stored order and names the served letter (SCL-
         );
         expect(cardPairs(html), format).toEqual(EXPECTED);
       }
-      // The Reddit post is an image post (#1357): its choices are the image's, checked
-      // above, and its text carries no choice and no letter to disagree with them.
-      const reddit = buildRedditPost(input);
-      expect(reddit.body.length).toBeGreaterThan(0);
-      expect(linePairs(reddit.body, /^([A-D])\) (.*)$/gm)).toEqual([]);
-      expect(reddit.body).not.toMatch(/\b[A-D]\)/);
       const alt = buildSocialCopy(input).alt_text;
       expect(linePairs(alt, /\b([A-D]): ([^.]*)\./g)).toEqual(EXPECTED);
     }
-  });
-
-  it("yesterday's reveal names the served letter", () => {
-    const built = buildReveal(toArchiveResponse(row), POSTED);
-    expect(built.ok).toBe(true);
-    if (!built.ok || built.reveal.status !== "revealed") return;
-    expect(built.reveal.answer).toEqual({
-      kind: "choice",
-      letter: SERVED_LETTER,
-      text: "5",
-    });
   });
 
   it("the TikTok slides: slide 1 in the stored order, slide 3 the served letter", () => {
@@ -324,14 +307,13 @@ describe("the shared function refuses a stored order that does not fit (SCL-258,
   });
 });
 
-describe("the reveal and the TikTok carousel refuse a served letter the options contradict", () => {
+describe("the TikTok carousel refuses a served letter the options contradict", () => {
   let archive: ReturnType<typeof toArchiveResponse>;
   beforeAll(() => {
     archive = toArchiveResponse(row);
   });
 
-  it("presence first: the real day builds both", () => {
-    expect(buildReveal(archive, POSTED).ok).toBe(true);
+  it("presence first: the real day builds", () => {
     expect(buildTiktokCarousel(archive, POSTED).ok).toBe(true);
   });
 
@@ -340,13 +322,6 @@ describe("the reveal and the TikTok carousel refuse a served letter the options 
       ...archive,
       question: { ...archive.question, correct_letter: "B" as const },
     };
-    const reveal = buildReveal(wrong, POSTED);
-    expect(reveal.ok).toBe(false);
-    if (!reveal.ok) {
-      expect(reveal.problem).toBe(
-        "reveal: the shown letter does not match the served letter (stored order refused)",
-      );
-    }
     const tiktok = buildTiktokCarousel(wrong, POSTED);
     expect(tiktok.ok).toBe(false);
     if (!tiktok.ok) {
@@ -358,7 +333,7 @@ describe("the reveal and the TikTok carousel refuse a served letter the options 
 });
 
 describe("a server that predates SCL-258 (no correct_letter): letters by served position", () => {
-  it("the reveal and the carousel name the letter the options were shown under", () => {
+  it("the carousel names the letter the options were shown under", () => {
     // What the production API answered before this deploy: canonical order, no correct_letter.
     // (The social run reads production, so it meets this during the deploy window.)
     const archive = toArchiveResponse(row);
@@ -371,16 +346,7 @@ describe("a server that predates SCL-258 (no correct_letter): letters by served 
       question: { ...question, options: canonical },
     };
     expect("correct_letter" in legacy.question).toBe(false);
-    const reveal = buildReveal(legacy, POSTED);
-    expect(reveal.ok).toBe(true);
-    if (reveal.ok && reveal.reveal.status === "revealed") {
-      // B was shown as B on that server.
-      expect(reveal.reveal.answer).toEqual({
-        kind: "choice",
-        letter: "B",
-        text: "5",
-      });
-    }
+    // B was shown as B on that server.
     const tiktok = buildTiktokCarousel(legacy, POSTED);
     expect(tiktok.ok).toBe(true);
     if (tiktok.ok) {
@@ -393,17 +359,7 @@ describe("a server that predates SCL-258 (no correct_letter): letters by served 
   });
 });
 
-describe("Slack: the subreddit and the failure notice", () => {
-  it("the Reddit heading names r/satquestion (singular), the whole token", () => {
-    const manifest = {
-      qotd_date: "2026-10-05",
-      reddit: { title: "t", body: "b" },
-    } as unknown as QotdSocialPostManifest;
-    const heading = slackRedditMessage(manifest).split("\n")[0] ?? "";
-    expect(heading).toMatch(/\(r\/satquestion\)/);
-    expect(heading).not.toContain("r/satquestions");
-  });
-
+describe("Slack: the failure notice", () => {
   it("a failed run posts one notice with the reason (the API's error code) and the run link", () => {
     const text = slackFailureMessage(
       [

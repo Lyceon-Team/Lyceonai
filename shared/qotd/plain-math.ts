@@ -1,16 +1,18 @@
 /**
  * Question text with $...$ maths written as plain text, for places that cannot render LaTeX
- * (a Reddit post, a Slack message).
+ * (a Slack message, a TikTok "Why" line).
  *
- * @spec [owner brief "QOTD Slack post — add yesterday's reveal (for r/satquestion)" (Karl,
- *       2026-10-15): "the worked explanation (plain text, math readable)"; "today's question as
- *       plain text for the post body"] | @implemented [2026-10-15]
+ * @spec [owner brief "QOTD Slack post — add yesterday's reveal" (Karl, 2026-10-15): "the worked
+ *       explanation (plain text, math readable)"; "today's question as plain text for the post
+ *       body"] | @implemented [2026-10-15]
  *
  * plain English: `$\frac{a}{b}$` becomes "(a)/(b)", `x^{2}` becomes "x^2", `\sqrt{x}` becomes
  * "√(x)", `\le` becomes "≤". Total: an unknown command is written as its name, so nothing throws
- * and nothing is silently dropped. Used by the reveal and Reddit post (reveal.ts) and by the leak
- * check (social.ts), so both read the maths the same way. Not the alt text's spoken form
- * (speakMixedText), which reads maths aloud for a screen reader.
+ * and nothing is silently dropped. Used by the leak check (social.ts), the TikTok carousel
+ * (tiktok.ts) and the worked examples, so all read the maths the same way. It was written for the
+ * Reddit reveal and post (reveal.ts), which are discontinued (Karl's ruling 2026-10-30: the Reddit
+ * QOTD is off) and no longer called. Not the alt text's spoken form (speakMixedText), which reads
+ * maths aloud for a screen reader.
  */
 import { tokenizeMathContent } from "../math/tokenize";
 
