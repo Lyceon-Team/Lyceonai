@@ -3,12 +3,21 @@
  *
  * @spec [Doc 10A §7 ("no answer is revealed before submitting": a past day's answer is public on
  *       its archive page), Doc 10B (Reddit posting stays manual); owner brief "QOTD Slack post —
- *       add yesterday's reveal (for r/satquestion)" (Karl, 2026-10-15); Karl's rulings 2026-10-28,
- *       SCL-258 (the reveal names the letter the day SHOWED, from the stored order)]
+ *       add yesterday's reveal" (Karl, 2026-10-15); Karl's rulings 2026-10-28, SCL-258 (the
+ *       reveal names the letter the day SHOWED, from the stored order)]
  *       | @implemented [2026-10-15, served letter 2026-10-28]
+ *       | DISCONTINUED [Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide,
+ *       so the Reddit QOTD is off; the QOTD goes to TikTok, Instagram and Facebook only]
  *
- * plain English: Karl posts today's question on r/satquestion each morning and comments
- * yesterday's answer on yesterday's post. The Slack post hands him both, ready to paste.
+ * STATUS: nothing calls this module. Since 2026-10-30 the generator builds neither the Reddit post
+ * nor the reveal (which existed only for the comment on yesterday's Reddit post), the publish
+ * manifest carries neither, and the #social Slack message has no Reddit item. The builders are
+ * left in place, untested, so the Reddit flow can be restored or deleted as one change; the TikTok
+ * carousel builds its own answer from yesterday's archive day (shared/qotd/tiktok.ts).
+ *
+ * plain English (as it worked until 2026-10-30): Karl posted today's question on the QOTD
+ * subreddit each morning and commented yesterday's answer on yesterday's post. The Slack post
+ * handed him both, ready to paste.
  *   - The reveal is built ONLY from yesterday's public archive payload (`QotdArchiveResponse`,
  *     GET /api/public/qotd/:date, which the server refuses for today and later). `buildReveal`
  *     refuses any day but the one before the posted day, so today's answer cannot become a

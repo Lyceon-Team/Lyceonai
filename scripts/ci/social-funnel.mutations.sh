@@ -95,10 +95,10 @@ ts_plant "F6 the headline promises a free study plan" shared/social/funnel.ts \
   "no line promises a free study plan" "$CONTRACT"
 
 echo "=== the social CTAs (item 2) ==="
-ts_plant "G1 the Reddit body writes the question out again" shared/qotd/reveal.ts \
-  '  const body = linkCtaLine(funnelPhase(input.qotd_date), "reddit", "qotd");' \
-  '  const body = `${input.stem}\n\n${linkCtaLine(funnelPhase(input.qotd_date), "reddit", "qotd")}`;' \
-  "is the suggested title, the portrait image and one call-to-action line" "$QOTD_SOCIAL"
+# G1 ("the Reddit body writes the question out again", shared/qotd/reveal.ts buildRedditPost) is
+# RETIRED, its guarantee obsolete: the Reddit QOTD is discontinued (Karl's ruling 2026-10-30: the
+# QOTD subreddit was banned by Reddit sitewide), so no Reddit body is built or posted, and the
+# test it reddened went with it.
 ts_plant "G2 the TikTok caption drops the comment line" shared/qotd/tiktok.ts \
   "    COMMENT_ANSWER_LINE,"$'\n'"    bioCtaLine(funnelPhase(postedOn))," \
   "    bioCtaLine(funnelPhase(postedOn))," \
