@@ -22,6 +22,12 @@ MIG="supabase/migrations/20261126000000_email_send_gate.sql"
 # so the plants on those functions (G03-G07, G11-G17, G22, G25-G28, G30, G31, G36, G39-G43) aim
 # at MIG2. need_last checks each.
 MIG2="supabase/migrations/20261127000000_email_gate_launch_pause.sql"
+# Re-pointed 2026-11-02 (Karl, "milestone send window and duplicate guard"): 20261128000000 LAST
+# defines email_milestones_notify and email_gate_verdict, so G04, G05, G11, G12, G36, G59 (the
+# verdict) and G39-G43, G60 (the milestones) aim at MIG3; G39 and G41 were rewritten for the new
+# body (once per test date in email_milestone_try; the ±1-day window).
+MIG3="supabase/migrations/20261128000000_email_gate_milestone_window.sql"
+TEMPLATES="server/lib/notifications/templates/email-gate.ts"
 DISPATCH="server/lib/notifications/dispatch.ts"
 LIFECYCLE="server/lib/lifecycle-email.ts"
 TRANSPORT="server/lib/notifications/transport.ts"
@@ -33,7 +39,7 @@ SCORE_JOB="server/services/exam-score-renewal/job.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/eg-mut.XXXX)"
 
-FILES=("$MIG" "$MIG2" "$DISPATCH" "$LIFECYCLE" "$TRANSPORT" "$SEND_CTX" "$LINKS" "$WEBHOOK" "$SCORE_SVC" "$SCORE_JOB")
+FILES=("$MIG" "$MIG2" "$MIG3" "$TEMPLATES" "$DISPATCH" "$LIFECYCLE" "$TRANSPORT" "$SEND_CTX" "$LINKS" "$WEBHOOK" "$SCORE_SVC" "$SCORE_JOB")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -109,12 +115,12 @@ plant "$MIG2" "    ELSIF v_idle_days >= public.email_gate_config_int('email_gate
 run "G03 cooling at 7 days" "S2: cooling after 7 days" "$PG_SUITE"
 
 echo "=== G04 the cooling cap is gone ==="
-need_last email_gate_verdict G04 "$MIG2"
-plant "$MIG2" "      RETURN jsonb_build_object('allow', false, 'reason', 'cooling_cap');" "      RETURN jsonb_build_object('allow', true, 'reason', 'cooling_cap');" || { bad "G04 STALE"; exit 1; }
+need_last email_gate_verdict G04 "$MIG3"
+plant "$MIG3" "      RETURN jsonb_build_object('allow', false, 'reason', 'cooling_cap');" "      RETURN jsonb_build_object('allow', true, 'reason', 'cooling_cap');" || { bad "G04 STALE"; exit 1; }
 run "G04 cooling cap" "S2: cooling after 7 days" "$PG_SUITE"
 
 echo "=== G05 the QOTD is no longer exempt from the cap ==="
-plant "$MIG2" "    IF p_kind = 'qotd_daily' THEN" "    IF false THEN" || { bad "G05 STALE"; exit 1; }
+plant "$MIG3" "    IF p_kind = 'qotd_daily' THEN" "    IF false THEN" || { bad "G05 STALE"; exit 1; }
 run "G05 QOTD exempt" "S2: cooling after 7 days" "$PG_SUITE"
 
 echo "=== G06 paused without the 14-day floor ==="
@@ -140,11 +146,11 @@ plant "$MIG" "     AND s.sent_at + make_interval(hours => public.email_gate_conf
 run "G10 72-hour window" "S5: an email counts as unengaged only after its 72-hour window" "$PG_SUITE"
 
 echo "=== G11 paused allows governed email ==="
-plant "$MIG2" $'  IF p_state = \'paused\' THEN\n    RETURN jsonb_build_object(\'allow\', false, \'reason\', \'paused\');\n  END IF;\n' "" || { bad "G11 STALE"; exit 1; }
+plant "$MIG3" $'  IF p_state = \'paused\' THEN\n    RETURN jsonb_build_object(\'allow\', false, \'reason\', \'paused\');\n  END IF;\n' "" || { bad "G11 STALE"; exit 1; }
 run "G11 paused refuses" "S6: paused refuses governed" "$PG_SUITE"
 
 echo "=== G12 milestones are blocked while paused ==="
-plant "$MIG2" $'  IF v_category = \'milestone\' THEN\n    RETURN jsonb_build_object(\'allow\', true, \'reason\', \'milestone\');\n  END IF;\n' "" || { bad "G12 STALE"; exit 1; }
+plant "$MIG3" $'  IF v_category = \'milestone\' THEN\n    RETURN jsonb_build_object(\'allow\', true, \'reason\', \'milestone\');\n  END IF;\n' "" || { bad "G12 STALE"; exit 1; }
 run "G12 milestone while paused" "S6: paused refuses governed" "$PG_SUITE"
 
 echo "=== G13 the pause note on every refresh ==="
@@ -255,7 +261,7 @@ plant "$MIG" "   WHERE c.profile_id = p_profile_id AND c.sent_at <= p_now;" "   
 run "G35 campaigns count" "R1: record_campaign_send counts" "$PG_SUITE"
 
 echo "=== G36 manual campaigns and milestones reach under-13s ==="
-plant "$MIG2" "  IF (p_kind = 'manual_campaign' OR v_category = 'milestone') AND NOT v_profile.adult_or_13 THEN" "  IF false THEN" || { bad "G36 STALE"; exit 1; }
+plant "$MIG3" "  IF (p_kind = 'manual_campaign' OR v_category = 'milestone') AND NOT v_profile.adult_or_13 THEN" "  IF false THEN" || { bad "G36 STALE"; exit 1; }
 run "G36 view flags 13+" "V1: email_gate_status flags" "$PG_SUITE"
 
 echo "=== G37 authenticated can read the status view ==="
@@ -267,25 +273,26 @@ plant "$MIG" $'  profile_id uuid NOT NULL REFERENCES public.profiles(id) ON DELE
 run "G38 deletion cascade" "X1: deleting a profile removes every gate row" "$PG_SUITE"
 
 # ── Milestones ────────────────────────────────────────────────────────────────────────────
-echo "=== G39 the week-before email twice ==="
-need_last email_milestones_notify G39 "$MIG2"
-plant "$MIG2" $'      IF NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =\n           public.notification_event_id(\'sat_week_before\'' $'      IF true OR NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =\n           public.notification_event_id(\'sat_week_before\'' || { bad "G39 STALE"; exit 1; }
-run "G39 milestone once" "T1: a week before" "$PG_SUITE"
+echo "=== G39 a milestone sent twice for one test date ==="
+need_last email_milestone_try G39 "$MIG3"
+plant "$MIG3" $'  IF EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id = v_event)\n     OR EXISTS' $'  IF false\n     OR EXISTS' || { bad "G39 STALE"; exit 1; }
+run "G39 once per test date" "MW5: once per student per test date" "$PG_SUITE"
 
 echo "=== G40 milestones to under-13s ==="
-plant "$MIG2" $'       AND COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)\n       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests x' $'       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests x' || { bad "G40 STALE"; exit 1; }
+plant "$MIG3" $'       AND COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)\n       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests x' $'       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests x' || { bad "G40 STALE"; exit 1; }
 run "G40 milestones 13+" "T1: a week before" "$PG_SUITE"
 
-echo "=== G41 the week-before window opens a day early ==="
-plant "$MIG2" "    IF v_today BETWEEN r.test_date - v_before AND r.test_date - (v_before - 2) THEN" "    IF v_today BETWEEN r.test_date - (v_before + 1) AND r.test_date - (v_before - 2) THEN" || { bad "G41 STALE"; exit 1; }
-run "G41 week-before window" "T1: a week before" "$PG_SUITE"
+echo "=== G41 the week-before window runs a day late ==="
+need_last email_milestones_notify G41 "$MIG3"
+plant "$MIG3" "      v_target, v_target - 1, v_target + 1, v_today, r.timezone," "      v_target, v_target - 1, v_target + 2, v_today, r.timezone," || { bad "G41 STALE"; exit 1; }
+run "G41 week-before ±1 day" "MW1: the week-before email fires only on target" "$PG_SUITE"
 
 echo "=== G42 the day-after email drops the release date ==="
-plant "$MIG2" "                             'release_date', CASE WHEN v_release > v_today THEN v_release END)," "                             'release_date', NULL::date)," || { bad "G42 STALE"; exit 1; }
+plant "$MIG3" "                         'release_date', CASE WHEN v_release > v_today THEN v_release END)," "                         'release_date', NULL::date)," || { bad "G42 STALE"; exit 1; }
 run "G42 release date line" "T2: the day after" "$PG_SUITE"
 
 echo "=== G43 a release-day email without a published date ==="
-plant "$MIG2" "    v_release := NULLIF(p_release_dates ->> r.test_date::text, '')::date;" "    v_release := COALESCE(NULLIF(p_release_dates ->> r.test_date::text, '')::date, r.test_date + 13);" || { bad "G43 STALE"; exit 1; }
+plant "$MIG3" "    v_release := NULLIF(p_release_dates ->> r.test_date::text, '')::date;" "    v_release := COALESCE(NULLIF(p_release_dates ->> r.test_date::text, '')::date, r.test_date + 13);" || { bad "G43 STALE"; exit 1; }
 run "G43 published dates only" "T3: release day" "$PG_SUITE"
 
 # ── The senders ───────────────────────────────────────────────────────────────────────────
@@ -354,11 +361,11 @@ plant "$MIG2" "       AND v_reason NOT IN ('pre_launch_inactive', 'internal_acco
 run "G58 no note on the launch move" "LP1: last activity before the launch date" "$PG_SUITE"
 
 echo "=== G59 an internal account may get a milestone ==="
-plant "$MIG2" $'  IF public.email_gate_is_internal(p_profile_id) THEN\n    RETURN jsonb_build_object(\'allow\', false, \'reason\', \'internal_account\');' $'  IF false THEN\n    RETURN jsonb_build_object(\'allow\', false, \'reason\', \'internal_account\');' || { bad "G59 STALE"; exit 1; }
+plant "$MIG3" $'  IF public.email_gate_is_internal(p_profile_id) THEN\n    RETURN jsonb_build_object(\'allow\', false, \'reason\', \'internal_account\');' $'  IF false THEN\n    RETURN jsonb_build_object(\'allow\', false, \'reason\', \'internal_account\');' || { bad "G59 STALE"; exit 1; }
 run "G59 internal refused" "LP5: internal and test accounts" "$PG_SUITE"
 
 echo "=== G60 milestones emitted for internal accounts ==="
-plant "$MIG2" $'       AND NOT public.email_gate_is_internal(p.id)\n' "" || { bad "G60 STALE"; exit 1; }
+plant "$MIG3" $'       AND NOT public.email_gate_is_internal(p.id)\n' "" || { bad "G60 STALE"; exit 1; }
 run "G60 no milestone for internal" "LP5: internal and test accounts" "$PG_SUITE"
 
 echo "=== G61 a parent pause email to a guardian the ruling paused ==="
@@ -369,6 +376,62 @@ echo "=== G62 the backfill is recorded as the system ==="
 need_last email_gate_launch_backfill G62 "$MIG2"
 plant "$MIG2" "    PERFORM public.email_gate_refresh(r.id, p_now, 'backfill');" "    PERFORM public.email_gate_refresh(r.id, p_now, 'system');" || { bad "G62 STALE"; exit 1; }
 run "G62 backfill actor" "LP3: the backfill moves them now" "$PG_SUITE"
+
+# ── The send window and the duplicate guard (Karl, 2026-11-02) ──────────────────────────
+echo "=== G63 a missed window is caught up ==="
+plant "$MIG3" "  IF p_today > p_window_hi THEN" "  IF false THEN" || { bad "G63 STALE"; exit 1; }
+run "G63 no late catch-up" "MW1: the week-before email fires only on target" "$PG_SUITE"
+
+echo "=== G64 a missed window is not recorded ==="
+plant "$MIG3" $'    INSERT INTO public.email_milestone_skips (student_id, test_date, kind, reason, recorded_at)\n    VALUES (p_student_id, p_test_date, p_kind, \'window_missed\', p_now)\n    ON CONFLICT DO NOTHING;\n' "" || { bad "G64 STALE"; exit 1; }
+run "G64 window_missed recorded" "MW1: the week-before email fires only on target" "$PG_SUITE"
+
+echo "=== G65 the day-after email on the test day ==="
+plant "$MIG3" "      v_target, v_target, v_target + 1, v_today, r.timezone," "      v_target, v_target - 1, v_target + 1, v_today, r.timezone," || { bad "G65 STALE"; exit 1; }
+run "G65 never on the test day" "MW2: the day-after email fires the day after" "$PG_SUITE"
+
+echo "=== G66 the release-day email a day early ==="
+plant "$MIG3" "        v_release, v_release, v_release + 1, v_today, r.timezone," "        v_release, v_release - 1, v_release + 1, v_today, r.timezone," || { bad "G66 STALE"; exit 1; }
+run "G66 never before release" "MW3: the release-day email fires on the release date" "$PG_SUITE"
+
+echo "=== G67 no spacing between milestones ==="
+plant "$MIG3" "                AND e.created_at > p_now - make_interval(days => public.email_gate_config_int('email_gate_milestone_spacing_days'))" "                AND false" || { bad "G67 STALE"; exit 1; }
+run "G67 3-day spacing" "MW4: never two different milestone emails within 3 days" "$PG_SUITE"
+
+echo "=== G68 milestones not stamped with the rule's clock ==="
+plant "$MIG3" $'  UPDATE public.notification_events SET created_at = p_now\n   WHERE event_id = v_event AND created_at IS DISTINCT FROM p_now;\n' "" || { bad "G68 STALE"; exit 1; }
+run "G68 one clock for spacing" "MW4: never two different milestone emails within 3 days" "$PG_SUITE"
+
+echo "=== G69 the day count is not the send day's ==="
+plant "$MIG3" "                         'days_until', r.test_date - v_today)," "                         'days_until', 7)," || { bad "G69 STALE"; exit 1; }
+run "G69 days_until" "MW1: the week-before email fires only on target" "$PG_SUITE"
+
+echo "=== G70 the copy says next {weekday} at 6 or 8 days ==="
+plant "$TEMPLATES" "  if (daysUntil === undefined || daysUntil === 7) {" "  if (true) {" || { bad "G70 STALE"; exit 1; }
+run "G70 copy true in the window" "T4: the week-before line is true anywhere in its window" "$CONTRACT"
+
+echo "=== G71 bounced or complained addresses are emailed ==="
+need_last email_gate_verdict G71 "$MIG3"
+plant "$MIG3" "  IF public.email_gate_suppressed(p_profile_id) THEN" "  IF false THEN" || { bad "G71 STALE"; exit 1; }
+run "G71 suppressed" "MW6: a bounced or complained address" "$PG_SUITE"
+
+echo "=== G72 a delivery since the bounce does not clear it ==="
+need_last email_gate_suppressed G72 "$MIG3"
+plant "$MIG3" "                  > COALESCE((SELECT max(at) FROM ev WHERE kind = 'delivered'), '-infinity'::timestamptz)," "                  > '-infinity'::timestamptz," || { bad "G72 STALE"; exit 1; }
+run "G72 bounce cleared by delivery" "MW6: a bounced or complained address" "$PG_SUITE"
+
+echo "=== G73 a complaint is forgotten ==="
+plant "$MIG3" "  SELECT EXISTS (SELECT 1 FROM ev WHERE kind = 'complained')" "  SELECT false" || { bad "G73 STALE"; exit 1; }
+run "G73 complaint permanent" "MW6: a bounced or complained address" "$PG_SUITE"
+
+echo "=== G74 a bounce on a lifecycle or campaign email is not linked by address ==="
+need_last link_email_delivery_recipient G74 "$MIG3"
+plant "$MIG3" "      JOIN public.profiles p ON lower(p.email) = lower(btrim(t.addr)) AND p.deleted_at IS NULL" "      JOIN public.profiles p ON false" || { bad "G74 STALE"; exit 1; }
+run "G74 link by address" "MW6: a bounced or complained address" "$PG_SUITE"
+
+echo "=== G75 the webhook links nothing ==="
+plant "$WEBHOOK" $'    p_provider_event_id: providerEventId,\n    p_recipients: linkRecipients,' $'    p_provider_event_id: "none",\n    p_recipients: linkRecipients,' || { bad "G75 STALE"; exit 1; }
+run "G75 webhook links the recipient" "an open is recorded once" "$NOTIF"
 
 echo
 echo "EMAIL GATE MUTATIONS: $PASS passed, $FAIL failed"
