@@ -176,6 +176,19 @@ describe("video pilots: check.ts", () => {
         streams: [{ ...v, width: 720, height: 1280 }, { codec_type: "audio" }],
       }),
     ).toEqual(["format: 720×1280, not 1080×1920"]);
+    // Each dimension alone: a fixture that changes both cannot prove either comparison bites.
+    expect(
+      formatProblems({
+        ...good,
+        streams: [{ ...v, width: 1920, height: 1920 }, { codec_type: "audio" }],
+      }),
+    ).toEqual(["format: 1920×1920, not 1080×1920"]);
+    expect(
+      formatProblems({
+        ...good,
+        streams: [{ ...v, width: 1080, height: 1080 }, { codec_type: "audio" }],
+      }),
+    ).toEqual(["format: 1080×1080, not 1080×1920"]);
     expect(
       formatProblems({
         ...good,

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -61,8 +62,14 @@ def read_jobs(path: Path) -> list[tuple[str, Path]]:
     return jobs
 
 
+# stdout is kept for the events alone: the libraries print to it (the PerTh watermarker prints
+# "loaded PerthNet ..." when it loads), so everything else is sent to stderr (see main).
+EVENTS = sys.stdout
+
+
 def emit(event: dict[str, object]) -> None:
-    print(json.dumps(event), flush=True)
+    EVENTS.write(json.dumps(event) + "\n")
+    EVENTS.flush()
 
 
 def main() -> None:
@@ -71,6 +78,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0, help="the fixed seed every line is generated with")
     a = ap.parse_args()
     jobs = read_jobs(Path(a.jobs))
+    sys.stdout = sys.stderr  # from here on, only emit() writes to the real stdout
 
     import soundfile
     import torch
