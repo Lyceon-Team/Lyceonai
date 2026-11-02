@@ -18,18 +18,17 @@
  *     socialAssetLeaks for a past day). The manifest is parsed with its schema, and caption.txt,
  *     alt-text.txt and the images must match it, so a hand-edited file is refused too.
  *   * Then, with Slack's standard external-upload API: files.getUploadURLExternal for each
- *     image, the bytes to the returned URL, files.completeUploadExternal to share both in the
- *     channel with the date and section; then chat.postMessage with the caption and alt text in
- *     code blocks (Slack shows a copy button on each). Every Slack response is parsed with Zod.
+ *     image, the bytes to the returned URL, files.completeUploadExternal to share them in the
+ *     channel; and chat.postMessage for each caption, in a code block (Slack shows a copy button
+ *     on each). Every Slack response is parsed with Zod.
  *   * A missing token or channel, a refusal, or any Slack error exits 1 with the reason, so the
  *     run fails loudly; the workflow has already uploaded the run download by then.
  *   * --dry-run does every check and builds the message, but sends nothing and needs no token
  *     (pull request runs use it).
  *   * Logs carry status and Slack's error codes only: never the token, never question text.
- *   * The TikTok carousel (Karl, 2026-10-23): yesterday's question as three slides, shared
- *     together with its title as the comment, then the title and caption in code blocks. When
+ *   * The TikTok carousel (Karl, 2026-10-23): yesterday's question as three slides. When
  *     post.json says it was skipped (yesterday withheld or missing on the archive, or it does not
- *     fit), one line says so instead. The slides must exist, be PNGs and carry yesterday's date.
+ *     fit), one QA line says so instead. The slides must exist, be PNGs and carry yesterday's date.
  *   * NO REDDIT (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide; the
  *     Reddit QOTD is discontinued and the QOTD goes to TikTok, Instagram and Facebook only): the
  *     #social message has no Reddit item. "Reddit: today's post" (owner brief 2026-10-15) and
@@ -37,16 +36,20 @@
  *     comment) are no longer posted, and post.json no longer carries either (its schema refuses
  *     one that does). The Reddit Slack formatters were removed with their items; the content
  *     builders are left in shared/qotd/reveal.ts, not called.
- *   * ORDER AND LABELS (owner brief "QOTD #social posts: fixed order, numbered labels", Karl
- *     2026-10-26; renumbered when the two Reddit items were dropped, Karl's ruling 2026-10-30):
- *     every day the same three items, each opening with its numbered label, posted strictly one
- *     after another (slackPostPlan):
- *       1/3 TikTok: title and caption
- *       2/3 TikTok: carousel (the three slides, in slide order)
- *       3/3 Today's question images (both images, then the caption and alt text)
- *     A file upload counts as posted only once Slack reports the files shared in the channel
- *     (shareFilesConfirmed polls files.info; bot scope files:read), so nothing overtakes it. An
- *     item with nothing to post keeps its number with a one-line "no … today (reason)".
+ *   * WHAT KARL PASTES (owner brief "Simplify the daily #social messages + add keywords" and
+ *     Karl's Step 0 rulings, 2026-11-02): each post is its one-word platform line, its media,
+ *     ONE caption block and, on TikTok only, a keywords block (one per line). In order:
+ *       TikTok     the three slides, then the caption block and the keywords block
+ *       Instagram  today's images, then the caption block
+ *       Facebook   the caption block, for the same images (not uploaded twice)
+ *     Gone from the message: the numbered labels, the headings with the date and section, the
+ *     TikTok title (now the caption's first line), the "Bio link" block, the alt text (still
+ *     attached to the uploaded images), and the "Link to send to people who comment SAT" (it is
+ *     fixed per campaign: docs/runbooks/qotd-slack.md). QA lines stay visible, outside the copy
+ *     blocks: a skipped carousel's reason, and post.json's warnings ("SAT date list needs
+ *     updating"), posted first. A file upload counts as posted only once Slack reports the files
+ *     shared in the channel (shareFilesConfirmed polls files.info; bot scope files:read), so
+ *     nothing overtakes it.
  *   * --failure (Karl's rulings 2026-10-28, SCL-258: a refused served order fails loudly, with a
  *     Slack-visible failure in the social run): when the build fails, the workflow runs this with
  *     --failure instead, and ONE message says the run failed, why (the generator's failure.txt:
@@ -176,172 +179,135 @@ export function loadPost(dir: string): Result<LoadedPost> {
   return { ok: true, value: { manifest, images, tiktokSlides } };
 }
 
-/** The heading posted with the images: the date and section. */
-export function slackImagesComment(m: QotdSocialPostManifest): string {
-  return `*SAT Question of the Day* · ${formatSocialDate(m.qotd_date)} · ${m.section}`;
-}
-
-/** The message with the copy: the caption and alt text in code blocks, ready to copy. */
-export function slackCopyMessage(m: QotdSocialPostManifest): string {
-  return [
-    `${slackImagesComment(m)}: caption and alt text`,
-    "*Caption*",
-    "```",
-    escapeMrkdwn(m.caption),
-    "```",
-    "*Alt text*",
-    "```",
-    escapeMrkdwn(m.alt_text),
-    "```",
-    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
-    "*Instagram caption*",
-    "```",
-    escapeMrkdwn(m.instagram_caption),
-    "```",
-    "*Link to send to people who comment SAT*",
-    "```",
-    escapeMrkdwn(m.links.instagram),
-    "```",
-  ].join("\n");
-}
-
-/** The comment shared with the three slides: what they are and whose day. */
-export function slackTiktokSlidesComment(m: QotdSocialPostManifest): string {
-  return `*TikTok carousel* · yesterday's question, ${formatSocialDate(m.tiktok.qotd_date)} · 3 slides, post in order`;
-}
-
-/** The TikTok title and caption, ready to copy (Karl, 2026-10-23). Only for a built carousel. */
-export function slackTiktokMessage(m: QotdSocialPostManifest): string {
-  const t = m.tiktok;
-  // A day with no carousel never reaches here: slackPostPlan posts its numbered "no … today"
-  // lines for items 1 and 2 instead (Karl, 2026-10-26).
-  if (t.status !== "built") {
-    throw new Error("slackTiktokMessage: there is no carousel on this day");
-  }
-  return [
-    `*TikTok carousel* · title and caption (${formatSocialDate(t.qotd_date)})`,
-    "*Title*",
-    "```",
-    escapeMrkdwn(t.title),
-    "```",
-    "*Caption*",
-    "```",
-    escapeMrkdwn(t.caption),
-    "```",
-    // The caption says "link in bio" (Karl, 2026-10-28): the tagged link the bio points to.
-    "*Bio link*",
-    "```",
-    escapeMrkdwn(m.links.tiktok),
-    "```",
-  ].join("\n");
-}
-
 /**
- * The three numbered labels, in posting order (Karl, 2026-10-26). Were five: the two Reddit items
- * were dropped and the rest renumbered when the Reddit QOTD was discontinued (Karl's ruling
- * 2026-10-30).
+ * The posts, in posting order, each opened by its one-word platform line (Karl's rulings
+ * 2026-11-02). Facebook uses the images just shared for Instagram (same images, rulings item 1),
+ * so it is not uploaded twice.
  */
-export const SLACK_POST_LABELS = [
-  "1/3 · TikTok: title and caption",
-  "2/3 · TikTok: carousel",
-  "3/3 · Today's question images",
-] as const;
+export const SLACK_POSTS = ["TikTok", "Instagram", "Facebook"] as const;
+export type SlackPostName = (typeof SLACK_POSTS)[number] | "QA";
 
 /** One step of the day's post: a message, or files shared with a comment. */
 export type SlackPostStep =
-  | { item: number; label: string; kind: "message"; text: string }
+  | { item: number; label: SlackPostName; kind: "message"; text: string }
   | {
       item: number;
-      label: string;
+      label: SlackPostName;
       kind: "files";
       comment: string;
       files: SlackUpload[];
     };
 
-function labelled(label: string, text: string): string {
-  return `*${label}*\n${text}`;
+/** A copy block: Slack shows a copy button on it. Nothing else goes inside. */
+function copyBlock(text: string): string {
+  return ["```", escapeMrkdwn(text), "```"].join("\n");
 }
 
-/** Why there is no carousel, for the "no … today" lines that keep items 1 and 2 numbered. */
-function tiktokSkipReason(m: QotdSocialPostManifest): string {
-  return m.tiktok.status === "skipped" && m.tiktok.reason === "does_not_fit"
-    ? `yesterday's question (${formatSocialDate(m.tiktok.qotd_date)}) does not fit three slides`
-    : `yesterday's question (${formatSocialDate(m.tiktok.qotd_date)}) is withheld or missing on the archive`;
+/** The platform line that opens a post. */
+function platformLine(name: SlackPostName): string {
+  return `*${name}*`;
+}
+
+/** The TikTok caption, then its keywords one per line, each its own copy block. */
+export function slackTiktokMessage(m: QotdSocialPostManifest): string {
+  const t = m.tiktok;
+  // A day with no carousel never reaches here: slackPostPlan posts its QA line instead.
+  if (t.status !== "built") {
+    throw new Error("slackTiktokMessage: there is no carousel on this day");
+  }
+  return [copyBlock(t.caption), copyBlock(t.keywords.join("\n"))].join("\n");
+}
+
+/** Why there is no carousel today: a QA line, outside any copy block. */
+function tiktokSkipLine(m: QotdSocialPostManifest): string {
+  const day = formatSocialDate(m.tiktok.qotd_date);
+  const why =
+    m.tiktok.status === "skipped" && m.tiktok.reason === "does_not_fit"
+      ? `yesterday's question (${day}) does not fit three slides`
+      : `yesterday's question (${day}) is withheld or missing on the archive`;
+  return `${platformLine("TikTok")}: no post today (${why})`;
+}
+
+/** The run's QA warnings (e.g. "SAT date list needs updating"), outside any copy block. */
+export function slackWarningsMessage(
+  warnings: readonly string[],
+): string | null {
+  return warnings.length === 0
+    ? null
+    : warnings.map((w) => `:warning: ${escapeMrkdwn(w)}`).join("\n");
 }
 
 /**
- * The day's post as an ordered list of steps: always items 1 to 3, in that order, each opening
- * with its label (Karl, 2026-10-26). Item 3 is two steps (the images, then their caption and alt
- * text), both under its label. No Reddit item (Karl's ruling 2026-10-30). Pure: the caller posts
- * the steps one at a time.
+ * The day's post as an ordered list of steps (Karl's rulings 2026-11-02): any QA warning first;
+ * then TikTok (the three slides, then one message with the caption and the keywords), Instagram
+ * (the images, then the caption) and Facebook (the caption, for the same images). Each post is
+ * its platform line, its media, one caption block and, on TikTok only, a keywords block: no
+ * labels, alt text, links or metadata. A day with no carousel has a TikTok QA line instead. No
+ * Reddit (Karl's ruling 2026-10-30). Pure: the caller posts the steps one at a time.
  */
 export function slackPostPlan(post: LoadedPost): SlackPostStep[] {
   const m = post.manifest;
-  const [l1, l2, l3] = SLACK_POST_LABELS;
   const steps: SlackPostStep[] = [];
+  const item = (): number => steps.length + 1;
+  const warnings = slackWarningsMessage(m.warnings);
+  if (warnings !== null)
+    steps.push({ item: item(), label: "QA", kind: "message", text: warnings });
   if (m.tiktok.status === "built") {
-    steps.push(
-      {
-        item: 1,
-        label: l1,
-        kind: "message",
-        text: labelled(l1, slackTiktokMessage(m)),
-      },
-      {
-        item: 2,
-        label: l2,
-        kind: "files",
-        comment: labelled(l2, slackTiktokSlidesComment(m)),
-        files: post.tiktokSlides.map((slide, i) => ({
-          filename: slide.file,
-          bytes: slide.bytes,
-          altText: `SAT Question of the Day TikTok slide ${i + 1} of 3`,
-        })),
-      },
-    );
-  } else {
-    const why = tiktokSkipReason(m);
-    steps.push(
-      {
-        item: 1,
-        label: l1,
-        kind: "message",
-        text: `*1/3 · TikTok: no title or caption today* (${why})`,
-      },
-      {
-        item: 2,
-        label: l2,
-        kind: "message",
-        text: `*2/3 · TikTok: no carousel today* (${why})`,
-      },
-    );
-  }
-  steps.push(
-    {
-      item: 3,
-      label: l3,
+    steps.push({
+      item: item(),
+      label: "TikTok",
       kind: "files",
-      comment: labelled(l3, slackImagesComment(m)),
-      files: post.images.map((image) => ({
-        filename: image.file,
-        bytes: image.bytes,
-        altText: m.alt_text,
+      comment: platformLine("TikTok"),
+      files: post.tiktokSlides.map((slide, i) => ({
+        filename: slide.file,
+        bytes: slide.bytes,
+        altText: `SAT Question of the Day TikTok slide ${i + 1} of 3`,
       })),
-    },
-    {
-      item: 3,
-      label: l3,
+    });
+    steps.push({
+      item: item(),
+      label: "TikTok",
       kind: "message",
-      text: labelled(l3, slackCopyMessage(m)),
-    },
-  );
+      text: slackTiktokMessage(m),
+    });
+  } else {
+    steps.push({
+      item: item(),
+      label: "QA",
+      kind: "message",
+      text: tiktokSkipLine(m),
+    });
+  }
+  steps.push({
+    item: item(),
+    label: "Instagram",
+    kind: "files",
+    comment: platformLine("Instagram"),
+    files: post.images.map((image) => ({
+      filename: image.file,
+      bytes: image.bytes,
+      altText: m.alt_text,
+    })),
+  });
+  steps.push({
+    item: item(),
+    label: "Instagram",
+    kind: "message",
+    text: copyBlock(m.instagram_caption),
+  });
+  steps.push({
+    item: item(),
+    label: "Facebook",
+    kind: "message",
+    text: [platformLine("Facebook"), copyBlock(m.caption)].join("\n"),
+  });
   return steps;
 }
 
 /** What one step left in Slack: a message timestamp, or the shared file IDs. */
 export type SlackPostSent = {
   item: number;
-  label: string;
+  label: SlackPostName;
   ts?: string;
   files?: string[];
 };
@@ -482,7 +448,7 @@ export async function run(
       );
     }
     log.out(
-      `qotd-slack: dry run: ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}) would post ${post.value.images.length} image(s), the caption and the TikTok carousel (${manifest.tiktok.qotd_date}: ${manifest.tiktok.status}, ${post.value.tiktokSlides.length} slide(s)); nothing sent`,
+      `qotd-slack: dry run: ${manifest.qotd_date} (${manifest.section}, ${manifest.source}, leak check: ${manifest.checks.leaks}) would post ${post.value.images.length} image(s), the Instagram and Facebook captions and the TikTok carousel (${manifest.tiktok.qotd_date}: ${manifest.tiktok.status}, ${post.value.tiktokSlides.length} slide(s)); nothing sent`,
     );
     return 0;
   }

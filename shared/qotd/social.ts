@@ -48,11 +48,11 @@ import { plainMathText } from "./plain-math";
 import { stemRepeatsPassage } from "./projection";
 import { qotdReadabilityProblem } from "./readability";
 import {
-  COMMENT_ANSWER_LINE,
-  funnelPhase,
-  instagramCtaLine,
-  withoutFunnelLines,
-} from "../social/funnel";
+  qotdFacebookCaption,
+  qotdInstagramCaption,
+  withoutSocialFixedLines,
+  type SocialSection,
+} from "../social/posts";
 import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
@@ -67,14 +67,9 @@ export const QOTD_SOCIAL_FORMATS = {
 } as const;
 export type QotdSocialFormat = keyof typeof QOTD_SOCIAL_FORMATS;
 
-export const QOTD_SECTION_NAME: Record<"M" | "RW", string> = {
+export const QOTD_SECTION_NAME: Record<"M" | "RW", SocialSection> = {
   M: "Math",
   RW: "Reading and Writing",
-};
-
-const HASHTAGS: Record<"M" | "RW", string> = {
-  M: "#SAT #DigitalSAT #SATPrep #SATMath #QuestionOfTheDay",
-  RW: "#SAT #DigitalSAT #SATPrep #SATReading #QuestionOfTheDay",
 };
 
 /** X's alt-text limit, the tightest of the platforms the QOTD is posted to. */
@@ -356,11 +351,9 @@ function fullAltText(input: QotdSocialInput, opening: string): string | null {
 export function buildSocialCopy(input: QotdSocialInput): QotdSocialCopy {
   const parsed = qotdSocialInputSchema.parse(input);
   const section = QOTD_SECTION_NAME[parsed.section_code];
-  const caption = [
-    `SAT Question of the Day: ${section}, ${parsed.domain}.`,
-    `Give it a try, then answer it free at ${QOTD_SOCIAL_URL}`,
-    HASHTAGS[parsed.section_code],
-  ].join("\n\n");
+  // Karl's rulings 2026-11-02: `caption` is the Facebook caption (no link, no "comment a word"
+  // ask), and the Instagram caption carries the only call to action (shared/social/posts.ts).
+  const caption = qotdFacebookCaption(parsed.qotd_date, section);
   const opening = `SAT Question of the Day from Lyceon, ${formatSocialDate(parsed.qotd_date)}. ${section}, ${parsed.domain}.`;
   const full = fullAltText(parsed, opening);
   const altText =
@@ -369,14 +362,7 @@ export function buildSocialCopy(input: QotdSocialInput): QotdSocialCopy {
       : `${opening} The image shows the question${
           parsed.item_type === "mcq" ? " and its four answer choices" : ""
         }. Answer it free at ${QOTD_SOCIAL_URL}.`;
-  // Owner brief "One funnel for every social post" (Karl, 2026-10-28): Instagram captions cannot
-  // link, so the call to action asks for a comment and the tagged link goes out by message.
-  const instagramCaption = [
-    `SAT Question of the Day: ${section}, ${parsed.domain}.`,
-    COMMENT_ANSWER_LINE,
-    instagramCtaLine(funnelPhase(parsed.qotd_date)),
-    HASHTAGS[parsed.section_code],
-  ].join("\n\n");
+  const instagramCaption = qotdInstagramCaption(parsed.qotd_date, section);
   return qotdSocialCopySchema.parse({
     caption,
     alt_text: altText,
@@ -521,12 +507,12 @@ export function socialAssetLeaks(
     ["alt_text", output.alt_text],
     ["card", output.card_text],
   ];
-  // The fixed call-to-action lines (shared/social/funnel.ts) are the same whatever the day, so
-  // they are left out: "Dec 5" in them is a test date, not a choice "5".
+  // The fixed caption lines (shared/social/posts.ts) are the same whatever the day, so they are
+  // left out: "Nov 7" in "Taking the SAT Nov 7?" is a test date, not a choice "7".
   const instagramCaption =
     output.instagram_caption === undefined
       ? undefined
-      : withoutFunnelLines(output.instagram_caption);
+      : withoutSocialFixedLines(output.instagram_caption);
   if (instagramCaption !== undefined) {
     fields.push(["instagram_caption", instagramCaption]);
   }
@@ -608,7 +594,7 @@ export function socialAssetLeaks(
 }
 
 /**
- * Every way the TikTok carousel (its three slides' visible text, its caption and its title)
+ * Every way the TikTok carousel (its three slides' visible text and its caption)
  * carries TODAY's question or answer. Empty = no leak found.
  *
  * @spec [Doc 10A §7; owner brief "QOTD social: TikTok 3-slide carousel" (Karl, 2026-10-23):
@@ -623,7 +609,7 @@ export function socialAssetLeaks(
  * explanation already says is not counted, since the carousel is allowed to show it.
  */
 export function tiktokCarouselLeaks(
-  output: { slides: readonly string[]; caption: string; title: string },
+  output: { slides: readonly string[]; caption: string },
   carouselDay: QotdArchiveResponse,
   today: { input: QotdSocialInput; revealed: QotdArchiveResponse | null },
 ): string[] {
@@ -644,8 +630,7 @@ export function tiktokCarouselLeaks(
   );
   const fields: (readonly [string, string])[] = [
     ...output.slides.map((text, i) => [`tiktok slide ${i + 1}`, text] as const),
-    ["tiktok caption", withoutFunnelLines(output.caption)],
-    ["tiktok title", output.title],
+    ["tiktok caption", withoutSocialFixedLines(output.caption)],
   ];
   const leaks: string[] = [];
   const todayText = [today.input.stem, today.input.passage ?? ""].filter(

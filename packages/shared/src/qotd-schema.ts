@@ -190,9 +190,10 @@ export const qotdSocialInputSchema = z
   );
 
 /**
- * The caption and alt text posted with the images, and the Instagram caption (owner brief "One
- * funnel for every social post", Karl, 2026-10-28: "Add an Instagram caption with 'Comment SAT
- * and I'll send you the link'").
+ * The copy for today's images: the Facebook caption (`caption`), the alt text and the Instagram
+ * caption (owner brief "One funnel for every social post", Karl, 2026-10-28: "Add an Instagram
+ * caption with 'Comment SAT and I'll send you the link'"; formats of Karl's rulings 2026-11-02,
+ * shared/social/posts.ts).
  */
 export const qotdSocialCopySchema = z
   .object({
@@ -349,8 +350,13 @@ export const qotdTiktokPostSchema = z
         status: z.literal("built"),
         /** The carousel's question day: yesterday. */
         qotd_date: qotdDateSchema,
-        title: z.string().min(1).max(QOTD_TIKTOK_TITLE_MAX),
+        /**
+         * The one block Karl pastes: headline, follow and comment line, hashtags (Karl's rulings
+         * 2026-11-02). It replaced the separate title and caption.
+         */
         caption: z.string().min(1),
+        /** TikTok's "Manage keywords", one per entry (shared/social/posts.ts socialKeywords). */
+        keywords: z.array(z.string().min(1)).min(1),
         slides: z
           .array(z.string().regex(/^qotd-\d{4}-\d{2}-\d{2}-tiktok-[123]\.png$/))
           .length(3),
@@ -397,12 +403,22 @@ export const qotdSocialPostManifestSchema = z
     qotd_date: qotdDateSchema,
     section: z.enum(["Math", "Reading and Writing"]),
     source: z.enum(["today", "past"]),
+    /** The Facebook caption (Karl's rulings 2026-11-02): no link, no "comment a word" ask. */
     caption: z.string().min(1),
+    /** Uploaded with the images in Slack; not in the message (Karl, 2026-11-02). */
     alt_text: z.string().min(1).max(1000),
-    /** The Instagram caption (owner brief 2026-10-28). */
+    /** The Instagram caption (owner brief 2026-10-28; format of Karl's rulings 2026-11-02). */
     instagram_caption: z.string().min(1),
-    /** The tagged /start links for the day's posts (owner brief 2026-10-28); no Reddit link. */
+    /**
+     * The tagged /start links (owner brief 2026-10-28); no Reddit link. Kept for the run page and
+     * the runbook: the daily #social message carries none (Karl, 2026-11-02).
+     */
     links: qotdStartLinksSchema,
+    /**
+     * QA warnings the poster shows in Slack, outside the copy blocks: today only "SAT date list
+     * needs updating" (Karl's rulings 2026-11-02).
+     */
+    warnings: z.array(z.string().min(1)),
     images: z
       .array(
         z

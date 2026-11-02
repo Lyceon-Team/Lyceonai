@@ -23,6 +23,7 @@ BACKUPS="$(mktemp -d /tmp/social-funnel-mut.XXXX)"
 
 FILES=(
   "shared/social/funnel.ts"
+  "shared/social/posts.ts"
   "shared/seo/head.ts"
   "shared/qotd/reveal.ts"
   "shared/qotd/tiktok.ts"
@@ -99,14 +100,16 @@ echo "=== the social CTAs (item 2) ==="
 # RETIRED, its guarantee obsolete: the Reddit QOTD is discontinued (Karl's ruling 2026-10-30: the
 # QOTD subreddit was banned by Reddit sitewide), so no Reddit body is built or posted, and the
 # test it reddened went with it.
-ts_plant "G2 the TikTok caption drops the comment line" shared/qotd/tiktok.ts \
-  "    COMMENT_ANSWER_LINE,"$'\n'"    bioCtaLine(funnelPhase(postedOn))," \
-  "    bioCtaLine(funnelPhase(postedOn))," \
-  "the caption: follow line, comment line, link-in-bio line, hashtags" "$QOTD_SOCIAL"
-ts_plant "G3 the Instagram caption loses its comment-SAT line" shared/qotd/social.ts \
-  "    instagramCtaLine(funnelPhase(parsed.qotd_date))," \
-  "    \"Link in bio\"," \
-  "asks for an answer and a comment" "$QOTD_SOCIAL"
+# G2 and G3 re-pointed 2026-11-02 (Karl's rulings on the daily #social messages): the captions
+# moved to shared/social/posts.ts, and the TikTok caption's comment line joined its follow line.
+ts_plant "G2 the TikTok caption drops the follow and comment line" shared/social/posts.ts \
+  "    qotdHeadline(test, section),"$'\n'"    SOCIAL_FOLLOW_AND_COMMENT_LINE," \
+  "    qotdHeadline(test, section)," \
+  "the caption: headline, follow and comment line, hashtags, for each section" "$QOTD_SOCIAL"
+ts_plant "G3 the Instagram caption loses its comment-SAT line" shared/social/posts.ts \
+  "    instagramCommentSatLine(test),"$'\n' \
+  "    \"Link in bio\","$'\n' \
+  "asks for an answer and a comment, with the next SAT's date" "$QOTD_SOCIAL"
 ts_plant "G4 the Instagram caption escapes the leak check" shared/qotd/social.ts \
   '    fields.push(["instagram_caption", instagramCaption]);' \
   '    void instagramCaption;' \
@@ -123,10 +126,12 @@ ts_plant "G7 worked-example links tagged as the QOTD campaign" scripts/worked-ex
   '    links: campaignLinks("worked_example"),' \
   '    links: campaignLinks("qotd"),' \
   "the post is built from the real title and caption and checked again" "$WORKED"
-ts_plant "G8 the TikTok Slack message drops the bio link" scripts/qotd-social/post-to-slack.ts \
-  "    escapeMrkdwn(m.links.tiktok)," \
-  "    \"(no link)\"," \
-  "the Slack TikTok message carries the tagged bio link" "$QOTD_SOCIAL"
+# G8 inverted 2026-11-02: the bio link is set once on the profile, so the message must NOT carry
+# it (Karl's rulings). The plant puts it back.
+ts_plant "G8 the TikTok Slack message carries the bio link again" scripts/qotd-social/post-to-slack.ts \
+  '  return [copyBlock(t.caption), copyBlock(t.keywords.join("\n"))].join("\n");' \
+  '  return [copyBlock(t.caption), copyBlock(t.keywords.join("\n")), `Bio: ${m.links.tiktok}`].join("\n");' \
+  "the Slack TikTok message carries no bio link" "$QOTD_SOCIAL"
 ts_plant "G9 a hand-edited Instagram caption file is posted" scripts/qotd-social/post-to-slack.ts \
   '    ["instagram-caption.txt", manifest.instagram_caption],' \
   "" \

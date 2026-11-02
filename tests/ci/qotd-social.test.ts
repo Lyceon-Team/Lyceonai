@@ -72,11 +72,9 @@ import {
   type TiktokBuild,
 } from "../../scripts/qotd-social/generate";
 import {
-  qotdTiktokCaption,
   QOTD_TIKTOK_SAFE,
   QOTD_TIKTOK_SIZE,
   buildTiktokCarousel,
-  buildTiktokTitle,
   capTiktokTitle,
   tiktokSafePx,
   tiktokWhy,
@@ -87,13 +85,13 @@ import { plainMathText } from "../../shared/qotd/plain-math";
 import {
   loadPost,
   run,
-  slackCopyMessage,
-  slackImagesComment,
+  slackFailureMessage,
+  type LoadedPost,
   slackTiktokMessage,
-  slackTiktokSlidesComment,
   slackPostPlan,
-  SLACK_POST_LABELS,
+  SLACK_POSTS,
 } from "../../scripts/qotd-social/post-to-slack";
+import { qotdTiktokCaption, socialKeywords } from "../../shared/social/posts";
 import { slackConfig, type FetchLike } from "../../scripts/slack/client";
 import { QOTD_RW_MAX_PASSAGE_CHARS } from "../../shared/qotd/readability";
 import {
@@ -107,9 +105,26 @@ import {
 process.env.PUBLIC_RATE_LIMIT_HMAC_SECRET ??=
   "qotd-social-test-secret-not-real";
 
-/** The fixture day's TikTok caption (posted on the fixture's "today", in the Dec 5 cohort phase). */
-const TIKTOK_CAPTION = qotdTiktokCaption(QOTD_FIXTURE_TODAY);
+/** The fixture's TikTok caption: yesterday's carousel (Math), posted on the fixture's "today". */
+const TIKTOK_CAPTION = qotdTiktokCaption(QOTD_FIXTURE_TODAY, "Math");
 const ROOT = resolve(import.meta.dirname, "../..");
+
+/** A manifest as the poster loads it, with stand-in PNG bytes: for planning messages only. */
+function loadedPostFor(m: QotdSocialPostManifest): LoadedPost {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return {
+    manifest: m,
+    images: m.images.map((i) => ({
+      format: i.format,
+      file: i.file,
+      bytes: png,
+    })),
+    tiktokSlides:
+      m.tiktok.status === "built"
+        ? m.tiktok.slides.map((file) => ({ file, bytes: png }))
+        : [],
+  };
+}
 const DAYS: QotdArchiveResponse[] = QOTD_ARCHIVE_ROWS.map(toArchiveResponse);
 /** Today's row as an archive day: only so the test can know its answer. */
 const TODAY_REVEALED = toArchiveResponse(qotdTodayRow());
@@ -298,26 +313,39 @@ describe("no answer in the caption, alt text or image (real fixture days)", () =
 });
 
 describe("caption and alt text", () => {
-  it("is the approved caption for each section (owner decision 2026-10-07)", () => {
+  it("the Facebook and Instagram captions for each section (Karl's rulings 2026-11-02)", () => {
+    // Oct 4: the next SAT is Nov 7. A grid-in, Math, Advanced Math.
     const math = buildSocialCopy(
       socialInputFromArchive(
         DAYS.find((d) => d.question.item_type === "grid_in")!,
       ),
     );
     expect(math.caption).toBe(
-      "SAT Question of the Day: Math, Advanced Math.\n\nGive it a try, then answer it free at lyceon.ai/sat-question-of-the-day\n\n#SAT #DigitalSAT #SATPrep #SATMath #QuestionOfTheDay",
+      "November SAT question of the day · Math\n\nHow would you solve it? Share your approach below 👇\n\n#SAT #SATprep #digitalSAT #NovemberSAT #SATMath",
     );
+    expect(math.instagram_caption).toBe(
+      "November SAT question of the day · Math\n\nComment your answer 👇\n\nTaking the SAT Nov 7? Comment SAT and I'll send you the link\n\n#SAT #SATprep #digitalSAT #NovemberSAT #SATMath",
+    );
+    // Oct 3 is itself a test day: that day's SAT, so "October".
     const rw = buildSocialCopy(
       socialInputFromArchive(
         DAYS.find((d) => d.question.section_code === "RW")!,
       ),
     );
-    expect(rw.caption).toMatch(
-      /^SAT Question of the Day: Reading and Writing, /,
+    expect(rw.caption).toBe(
+      "October SAT question of the day · Reading and Writing\n\nHow would you solve it? Share your approach below 👇\n\n#SAT #SATprep #digitalSAT #OctoberSAT #SATEnglish",
     );
-    expect(rw.caption).toMatch(
-      /#SAT #DigitalSAT #SATPrep #SATReading #QuestionOfTheDay$/,
+    expect(rw.instagram_caption).toBe(
+      "October SAT question of the day · Reading and Writing\n\nComment your answer 👇\n\nTaking the SAT Oct 3? Comment SAT and I'll send you the link\n\n#SAT #SATprep #digitalSAT #OctoberSAT #SATEnglish",
     );
+    // Facebook: no link and no "comment a word" ask; at most five hashtags everywhere.
+    for (const copy of [math, rw]) {
+      expect(copy.caption).not.toMatch(/lyceon\.ai|https?:|\bcomment\b/i);
+      for (const c of [copy.caption, copy.instagram_caption]) {
+        expect(c.match(/#\w+/g)!.length).toBeLessThanOrEqual(5);
+        expect(c).not.toMatch(/#fyp|#studytok|link in bio/i);
+      }
+    }
   });
 
   it.each(DAYS.map((d) => [d.qotd_date, d] as const))(
@@ -946,25 +974,26 @@ describe("Slack: posts only after the leak check passes", () => {
     expect(l.err.join("\n")).toMatch(/refused: no post\.json/);
   });
 
-  it("a passing day is posted: the three numbered items in order, uploads confirmed before the next", async () => {
+  it("a passing day is posted: a QA line for the missing carousel, then Instagram and Facebook, uploads confirmed before the next", async () => {
     const manifest = manifestFor(pastSource(publishable()[0]!));
     const dir = builtDir(manifest);
     const slack = fakeSlack();
     const l = logs();
     expect(await run(["--dir", dir], ENV, slack.fetch, l.log)).toBe(0);
-    // This day's yesterday is not in the archive: no carousel, items 1 and 2 say so.
+    // This day's yesterday is not in the archive: no carousel, one TikTok QA line says so.
     expect(manifest.tiktok.status).toBe("skipped");
+    expect(manifest.warnings).toEqual([]);
     expect(slack.calls.map((c) => c.url)).toEqual([
-      "https://slack.com/api/chat.postMessage", // 1/3 no TikTok title or caption
-      "https://slack.com/api/chat.postMessage", // 2/3 no carousel
-      "https://slack.com/api/files.getUploadURLExternal", // 3/3 images
+      "https://slack.com/api/chat.postMessage", // TikTok: no post today
+      "https://slack.com/api/files.getUploadURLExternal", // Instagram images
       "https://files.slack.com/upload/v1/test-1",
       "https://slack.com/api/files.getUploadURLExternal",
       "https://files.slack.com/upload/v1/test-2",
       "https://slack.com/api/files.completeUploadExternal",
       "https://slack.com/api/files.info",
       "https://slack.com/api/files.info",
-      "https://slack.com/api/chat.postMessage", // 3/3 caption and alt text
+      "https://slack.com/api/chat.postMessage", // Instagram caption
+      "https://slack.com/api/chat.postMessage", // Facebook caption
     ]);
     // The token goes to Slack's API only, never to the upload URL.
     for (const c of slack.calls) {
@@ -980,6 +1009,7 @@ describe("Slack: posts only after the leak check passes", () => {
     const first = new URLSearchParams(String(upload.body));
     expect(first.get("filename")).toBe(manifest.images[0]!.file);
     expect(first.get("length")).toBe(String(PNG.length));
+    // The alt text stays on the uploaded images; it is not in any message.
     expect(first.get("alt_txt")).toBe(manifest.alt_text);
     const share = JSON.parse(
       String(
@@ -993,27 +1023,23 @@ describe("Slack: posts only after the leak check passes", () => {
     };
     expect(share.files.map((f) => f.id)).toEqual(["F0001", "F0002"]);
     expect(share.channel_id).toBe(ENV.SLACK_CHANNEL_ID);
-    expect(share.initial_comment).toContain(manifest.section);
-    // Each message opens with its label line.
+    // Each post is its platform line, its media and ONE caption block: nothing else.
     expect(posted(slack.calls)).toEqual([
       {
         kind: "message",
-        text: "*1/3 · TikTok: no title or caption today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+        text: "*TikTok*: no post today (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+      },
+      { kind: "share", text: "*Instagram*" },
+      {
+        kind: "message",
+        text: "```\n" + manifest.instagram_caption + "\n```",
       },
       {
         kind: "message",
-        text: "*2/3 · TikTok: no carousel today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
-      },
-      {
-        kind: "share",
-        text: `*3/3 · Today's question images*\n${slackImagesComment(manifest)}`,
-      },
-      {
-        kind: "message",
-        text: `*3/3 · Today's question images*\n${slackCopyMessage(manifest)}`,
+        text: "*Facebook*\n```\n" + manifest.caption + "\n```",
       },
     ]);
-    // The log names the day and the items; never the token or the question.
+    // The log names the day and the posts; never the token or the question.
     const all = [...l.out, ...l.err].join("\n");
     expect(all).toContain(manifest.qotd_date);
     expect(all).not.toContain(ENV.SLACK_BOT_TOKEN);
@@ -1138,55 +1164,51 @@ describe("Slack: the message carries the caption and no answer (real fixture day
     expect(all.length).toBeGreaterThanOrEqual(3);
     for (const [name, makeSource, revealed] of all) {
       const m = manifestFor(makeSource());
-      const text = slackCopyMessage(m);
-      const comment = slackImagesComment(m);
-      // Presence first: the caption, the alt text, the date and the section.
-      expect(unescapeMrkdwn(text)).toContain(m.caption);
-      expect(unescapeMrkdwn(text)).toContain(m.alt_text);
+      const plan = slackPostPlan(loadedPostFor(m));
+      const text = unescapeMrkdwn(
+        plan.map((s) => (s.kind === "files" ? s.comment : s.text)).join("\n"),
+      );
+      // Presence first: the Instagram and Facebook captions.
       expect(m.caption.length).toBeGreaterThan(40);
-      expect(comment).toContain(m.section);
-      expect(comment).toContain(String(Number(m.qotd_date.slice(8))));
-      expect(comment).toContain(m.qotd_date.slice(0, 4));
-      // Then absence: each part of what Slack receives is checked against the day's revealed
-      // answer and explanation in the role it plays: the caption block and the message's own
-      // words as a caption, the alt-text block as alt text (it reads every option, as the card
-      // shows them), the image comment as card text.
-      const blocks = [
-        ...unescapeMrkdwn(text).matchAll(/```\n([\s\S]*?)\n```/g),
-      ].map((b) => b[1] ?? "");
-      // The Instagram caption and its link follow (owner brief 2026-10-28).
-      expect(blocks).toEqual([
-        m.caption,
-        m.alt_text,
-        m.instagram_caption,
-        m.links.instagram,
-      ]);
-      const outside = unescapeMrkdwn(text).replace(/```\n[\s\S]*?\n```/g, " ");
-      expect(
-        socialAssetLeaks(
-          {
-            caption: `${outside}\n${blocks[0]}`,
-            alt_text: blocks[1] ?? "",
-            card_text: comment,
-            instagram_caption: `${blocks[2] ?? ""}\n${blocks[3] ?? ""}`,
-          },
-          revealed,
-        ),
-        name,
-      ).toEqual([]);
+      expect(text).toContain(m.caption);
+      expect(text).toContain(m.instagram_caption);
+      // Then absence: every copy block is checked against the day's revealed answer and
+      // explanation as a caption, and everything outside them as a caption too.
+      const blocks = [...text.matchAll(/```\n([\s\S]*?)\n```/g)].map(
+        (b) => b[1] ?? "",
+      );
+      expect(blocks.length).toBeGreaterThanOrEqual(2);
+      const outside = text.replace(/```\n[\s\S]*?\n```/g, " ");
+      for (const block of [...blocks, outside]) {
+        expect(
+          socialAssetLeaks(
+            {
+              caption: "",
+              alt_text: "",
+              card_text: "",
+              instagram_caption: block,
+            },
+            revealed,
+          ),
+          name,
+        ).toEqual([]);
+      }
     }
   });
 
   it("escapes Slack's control characters, so a caption cannot ping or link", () => {
     const m = manifestFor(pastSource(publishable()[0]!));
-    const text = slackCopyMessage({
-      ...m,
-      caption: "a < b & c > d <!channel> <https://x.example|y>",
-    });
-    expect(text).toContain(
+    const texts = slackPostPlan(
+      loadedPostFor({
+        ...m,
+        caption: "a < b & c > d <!channel> <https://x.example|y>",
+      }),
+    ).map((s) => (s.kind === "files" ? s.comment : s.text));
+    const facebook = texts.find((t) => t.startsWith("*Facebook*"))!;
+    expect(facebook).toContain(
       "a &lt; b &amp; c &gt; d &lt;!channel&gt; &lt;https://x.example|y&gt;",
     );
-    expect(text).not.toMatch(/<!channel>|<https:/);
+    expect(texts.join("\n")).not.toMatch(/<!channel>|<https:/);
   });
 });
 
@@ -1330,11 +1352,13 @@ describe("Slack: the edges the audit named", () => {
 
   it("backticks cannot close the code block", () => {
     const m = manifestFor(pastSource(publishable()[0]!));
-    const text = slackCopyMessage({ ...m, caption: "a ``` b ```` c" });
-    // Exactly the eight fences the message is built with (caption, alt text, Instagram caption,
-    // its link), and the caption's text kept.
-    expect(text.match(/```/g)).toHaveLength(8);
-    expect(text.replace(/\u200b/g, "")).toContain("a ``` b ```` c");
+    const text = slackPostPlan(
+      loadedPostFor({ ...m, caption: "a ``` b ```` c" }),
+    ).find((s) => s.label === "Facebook" && s.kind === "message")!;
+    if (text.kind !== "message") throw new Error("not a message");
+    // Exactly the two fences of the Facebook caption block, and the caption's text kept.
+    expect(text.text.match(/```/g)).toHaveLength(2);
+    expect(text.text.replace(/\u200b/g, "")).toContain("a ``` b ```` c");
   });
 
   it("image bytes go only to a Slack https host", async () => {
@@ -1358,9 +1382,8 @@ describe("Slack: the edges the audit named", () => {
       };
       const l = logs();
       expect(await run(["--dir", dir], ENV, fetch, l.log)).toBe(1);
-      // Items 1 and 2 are messages on this day (no carousel); the first upload is refused.
+      // The TikTok QA line is a message on this day (no carousel); the first upload is refused.
       expect(calls).toEqual([
-        "https://slack.com/api/chat.postMessage",
         "https://slack.com/api/chat.postMessage",
         "https://slack.com/api/files.getUploadURLExternal",
       ]);
@@ -1447,32 +1470,38 @@ describe("Yesterday's archive day: always yesterday, never today (owner brief 20
 });
 
 describe("The Instagram caption (owner brief 2026-10-28)", () => {
-  it("asks for an answer and a comment, with the Dec 5 line until test day", () => {
+  it("asks for an answer and a comment, with the next SAT's date; no date left, no date", () => {
+    // The fixture's today is Oct 5: the next SAT is Nov 7.
     const copy = buildSocialCopy(todaySource().input);
     expect(copy.instagram_caption).toBe(
-      `SAT Question of the Day: Math, ${TODAY_REVEALED.question.domain}.\n\nComment your answer 👇\n\nTaking the SAT Dec 5? Comment SAT and I'll send you the link\n\n#SAT #DigitalSAT #SATPrep #SATMath #QuestionOfTheDay`,
+      "November SAT question of the day · Math\n\nComment your answer 👇\n\nTaking the SAT Nov 7? Comment SAT and I'll send you the link\n\n#SAT #SATprep #digitalSAT #NovemberSAT #SATMath",
     );
+    // After the last confirmed SAT (Jun 5, 2027) nothing is guessed.
     const later = buildSocialCopy({
       ...todaySource().input,
-      qotd_date: "2026-12-06",
+      qotd_date: "2027-06-06",
     });
-    expect(later.instagram_caption).toContain(
-      "\n\nComment SAT and I'll send you the link\n\n",
+    expect(later.instagram_caption).toBe(
+      "SAT question of the day · Math\n\nComment your answer 👇\n\nComment SAT and I'll send you the link\n\n#SAT #SATprep #digitalSAT #SATMath",
     );
-    expect(later.instagram_caption).not.toContain("Dec 5");
   });
 
-  it("is in the manifest, its own file and the Slack copy, with the tagged link to send", () => {
+  it("is in the manifest, its own file and the Slack message; the link to send is not in the message", () => {
     const m = manifestFor(todaySource());
     expect(m.links.instagram).toBe(
       "lyceon.ai/start?utm_source=instagram&utm_campaign=qotd",
     );
-    const text = unescapeMrkdwn(slackCopyMessage(m));
-    expect(text).toContain(m.instagram_caption);
-    expect(text).toContain(m.links.instagram);
+    const text = unescapeMrkdwn(
+      slackPostPlan(loadedPostFor(m))
+        .map((s) => (s.kind === "files" ? s.comment : s.text))
+        .join("\n"),
+    );
+    expect(text).toContain(m.instagram_caption); // presence before absence
+    expect(text).not.toContain(m.links.instagram);
+    expect(text).not.toContain("lyceon.ai/start");
   });
 
-  it("the correct choice in the Instagram caption is a leak; the fixed Dec 5 line is not", () => {
+  it("the correct choice in the Instagram caption is a leak; the fixed date line is not", () => {
     const day = publishable().find((d) => d.question.item_type === "mcq")!;
     const correct = day.question.options.find(
       (o) => o.id === day.question.correct_option_id,
@@ -1484,7 +1513,7 @@ describe("The Instagram caption (owner brief 2026-10-28)", () => {
       card_text: "",
       instagram_caption: copy.instagram_caption,
     };
-    expect(copy.instagram_caption).toContain("Dec 5"); // presence before absence
+    expect(copy.instagram_caption).toMatch(/Taking the SAT \w{3} \d+\?/); // presence before absence
     expect(socialAssetLeaks(base, day)).toEqual([]);
     expect(
       socialAssetLeaks(
@@ -1541,22 +1570,25 @@ describe("The leak check still blocks today's answer anywhere in today's message
   it("today's Slack messages (images, caption) carry none of the posted day's answer", () => {
     for (const day of publishable()) {
       const m = manifestFor(pastSource(day));
-      const today = [slackImagesComment(m), slackCopyMessage(m)].map(
-        unescapeMrkdwn,
-      );
-      // Presence: each message is non-trivial.
-      for (const t of today) expect(t.length).toBeGreaterThan(30);
-      expect(
-        socialAssetLeaks(
-          {
-            caption: m.caption,
-            alt_text: m.alt_text,
-            card_text: today[0] ?? "",
-          },
-          day,
-        ),
-        day.qotd_date,
-      ).toEqual([]);
+      const today = slackPostPlan(loadedPostFor(m))
+        .filter((s) => s.label === "Instagram" || s.label === "Facebook")
+        .map((s) => unescapeMrkdwn(s.kind === "files" ? s.comment : s.text));
+      // Presence: the Instagram caption and the Facebook caption are there.
+      expect(today.join("\n")).toContain(m.instagram_caption);
+      expect(today.join("\n")).toContain(m.caption);
+      for (const t of today)
+        expect(
+          socialAssetLeaks(
+            {
+              caption: "",
+              alt_text: "",
+              card_text: "",
+              instagram_caption: t,
+            },
+            day,
+          ),
+          day.qotd_date,
+        ).toEqual([]);
     }
   });
 });
@@ -1642,15 +1674,54 @@ describe("TikTok carousel: yesterday's question only (Karl, 2026-10-23)", () => 
     }
   });
 
-  it("today's manifest carries yesterday's three slides, title and caption", () => {
+  it("today's manifest carries yesterday's three slides, one caption and the keywords", () => {
     const m = manifestFor(todaySource());
+    // Yesterday (Oct 4) is Math, Advanced Math; posted Oct 5, so the next SAT is Nov 7.
     expect(m.tiktok).toEqual({
       status: "built",
       qotd_date: YESTERDAY,
-      title: buildTiktokTitle(YESTERDAY, "M"),
       caption: TIKTOK_CAPTION,
+      keywords: [
+        "November SAT questions",
+        "SAT",
+        "SAT prep",
+        "Digital SAT",
+        "College admissions",
+        "SAT math",
+        "Advanced math",
+        "Algebra 2",
+      ],
       slides: [1, 2, 3].map((n) => `qotd-${YESTERDAY}-tiktok-${n}.png`),
     });
+  });
+
+  it("an unknown domain refuses the post, and the run's Slack failure notice names it (Karl, 2026-11-02)", () => {
+    const source = todaySource();
+    const carousel = carouselOf(YESTERDAY, QOTD_FIXTURE_TODAY);
+    const build = (domain: string): TiktokBuild => {
+      const c = { ...carousel, question: { ...carousel.question, domain } };
+      return {
+        status: "built",
+        carouselDay: yesterdayDay(),
+        carousel: c,
+        slides: ([1, 2, 3] as const).map((slide) => ({
+          slide,
+          cardText: slideText(c, slide),
+        })),
+      };
+    };
+    // Presence: the real domain builds.
+    expect(tiktokDecision(source, build(carousel.question.domain)).ok).toBe(
+      true,
+    );
+    const d = tiktokDecision(source, build("Underwater Basket Weaving"));
+    expect(d.ok).toBe(false);
+    if (d.ok) return;
+    const problem =
+      'tiktok keywords: "Underwater Basket Weaving" is not a Math domain in SOCIAL_DOMAIN_KEYWORDS';
+    expect(d.problems).toContain(problem);
+    // generate.ts writes the problems to failure.txt; the workflow's --failure run posts them.
+    expect(slackFailureMessage(d.problems, null)).toContain(problem);
   });
 
   it("a carousel that is not yesterday's is refused by the decision and by the manifest schema", () => {
@@ -1719,10 +1790,9 @@ describe("TikTok carousel: never today's answer (leak checks over all three slid
   const leaksOf = (
     slides: string[],
     caption = TIKTOK_CAPTION,
-    title = buildTiktokTitle(YESTERDAY, "M"),
     revealed: QotdArchiveResponse | null = TODAY_REVEALED,
   ) =>
-    tiktokCarouselLeaks({ slides, caption, title }, yesterdayDay(), {
+    tiktokCarouselLeaks({ slides, caption }, yesterdayDay(), {
       input: source().input,
       revealed,
     });
@@ -1762,25 +1832,19 @@ describe("TikTok carousel: never today's answer (leak checks over all three slid
   it("today's question on a slide is a leak even when today's answer is unknown (a today build)", () => {
     const { slides } = real();
     slides[0] = `${slides[0]} ${plainMathText(TODAY_REVEALED.question.stem)}`;
-    expect(leaksOf(slides, undefined, undefined, null)).toContain(
+    expect(leaksOf(slides, undefined, null)).toContain(
       "tiktok slide 1: carries today's question",
     );
   });
 
-  it("today's explanation in the caption or the title is a leak", () => {
+  it("today's explanation in the caption is a leak", () => {
     const { slides } = real();
     const extra = TODAY_REVEALED.question.explanation;
+    expect(leaksOf(slides)).toEqual([]); // presence of a clean caption first
     expect(
       leaksOf(slides, `${TIKTOK_CAPTION}\n\n${extra}`).some((l) =>
         l.startsWith("tiktok caption: carries today's explanation"),
       ),
-    ).toBe(true);
-    expect(
-      leaksOf(
-        slides,
-        undefined,
-        `${buildTiktokTitle(YESTERDAY, "M")} ${extra}`,
-      ).some((l) => l.startsWith("tiktok title: carries today's explanation")),
     ).toBe(true);
   });
 
@@ -1835,7 +1899,7 @@ describe("TikTok carousel: withheld or missing yesterday (Karl, 2026-10-23)", ()
     });
   });
 
-  it("no carousel: no slide is uploaded, and the one-line note is posted", async () => {
+  it("no carousel: no slide is uploaded, and one TikTok QA line is posted", async () => {
     const m = manifestFor(pastSource(archiveDay("2026-10-02")));
     const slack = fakeSlack();
     expect(
@@ -1845,12 +1909,13 @@ describe("TikTok carousel: withheld or missing yesterday (Karl, 2026-10-23)", ()
       c.url.endsWith("files.getUploadURLExternal"),
     );
     expect(uploads).toHaveLength(m.images.length);
-    // The skipped carousel keeps its number (Karl, 2026-10-26).
-    const note = posted(slack.calls)[1]!;
+    // One QA line, outside any copy block (Karl's rulings 2026-11-02).
+    const note = posted(slack.calls)[0]!;
     expect(note).toEqual({
       kind: "message",
-      text: "*2/3 · TikTok: no carousel today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+      text: "*TikTok*: no post today (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
     });
+    expect(note.text).not.toContain("```");
   });
 
   it("any other archive failure fails the run loudly (never a silent missing day)", async () => {
@@ -1865,22 +1930,19 @@ describe("TikTok carousel: withheld or missing yesterday (Karl, 2026-10-23)", ()
 });
 
 describe("TikTok carousel: posted to Slack (Karl, 2026-10-23)", () => {
-  it("three slides shared together with their comment, then the title and caption", async () => {
+  it("three slides shared under the TikTok line, then one caption block and one keywords block", async () => {
     const m = manifestFor(todaySource());
-    expect(m.tiktok.status).toBe("built");
+    if (m.tiktok.status !== "built") throw new Error("no carousel");
     const dir = builtDir(m);
     const slack = fakeSlack();
     expect(await run(["--dir", dir], ENV, slack.fetch, logs().log)).toBe(0);
     const uploads = slack.calls.filter((c) =>
       c.url.endsWith("files.getUploadURLExternal"),
     );
-    // Slides (item 2) before the question images (item 3), each set in its own order.
+    // The slides before the question images, each set in its own order.
     expect(
       uploads.map((c) => new URLSearchParams(String(c.body)).get("filename")),
-    ).toEqual([
-      ...(m.tiktok.status === "built" ? m.tiktok.slides : []),
-      ...m.images.map((i) => i.file),
-    ]);
+    ).toEqual([...m.tiktok.slides, ...m.images.map((i) => i.file)]);
     const shares = slack.calls
       .filter((c) => c.url.endsWith("files.completeUploadExternal"))
       .map(
@@ -1892,14 +1954,20 @@ describe("TikTok carousel: posted to Slack (Karl, 2026-10-23)", () => {
       );
     expect(shares).toHaveLength(2);
     expect(shares[0]!.files).toHaveLength(3);
-    expect(shares[0]!.initial_comment).toBe(
-      `*2/3 · TikTok: carousel*\n${slackTiktokSlidesComment(m)}`,
-    );
-    const titleAndCaption = posted(slack.calls)[0]!;
-    expect(titleAndCaption.text).toBe(
-      `*1/3 · TikTok: title and caption*\n${slackTiktokMessage(m)}`,
-    );
-    expect(titleAndCaption.text).toContain("Follow for daily SAT questions 👆");
+    expect(shares[0]!.initial_comment).toBe("*TikTok*");
+    const tiktok = posted(slack.calls)[1]!;
+    expect(tiktok).toEqual({
+      kind: "message",
+      text: [
+        "```",
+        m.tiktok.caption,
+        "```",
+        "```",
+        m.tiktok.keywords.join("\n"),
+        "```",
+      ].join("\n"),
+    });
+    expect(tiktok.text).toBe(slackTiktokMessage(m));
   });
 
   it("a missing or non-PNG slide is refused before anything is sent", async () => {
@@ -2107,52 +2175,36 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
     );
   });
 
-  // Owner brief "One funnel for every social post" (Karl, 2026-10-28): follow line, then
-  // "Comment your answer 👇", then the link-in-bio line, then the hashtags.
-  it("the caption: follow line, comment line, link-in-bio line, hashtags", () => {
+  // Karl's rulings 2026-11-02: headline / follow and comment line / at most five hashtags. No
+  // link-in-bio line, no #studytok.
+  it("the caption: headline, follow and comment line, hashtags, for each section", () => {
     expect(TIKTOK_CAPTION).toBe(
-      "Follow for daily SAT questions 👆\n\nComment your answer 👇\n\nTaking the SAT Dec 5? Free SAT practice: link in bio\n\n#SAT #SATprep #digitalSAT #studytok",
+      "November SAT question of the day · Math\n\nFollow for daily SAT questions 👆 Comment your answer 👇\n\n#SAT #SATprep #digitalSAT #NovemberSAT #SATMath",
     );
-    expect(qotdTiktokCaption("2026-12-06")).toBe(
-      "Follow for daily SAT questions 👆\n\nComment your answer 👇\n\nFree SAT practice: link in bio\n\n#SAT #SATprep #digitalSAT #studytok",
+    expect(qotdTiktokCaption("2026-11-08", "Reading and Writing")).toBe(
+      "December SAT question of the day · Reading and Writing\n\nFollow for daily SAT questions 👆 Comment your answer 👇\n\n#SAT #SATprep #digitalSAT #DecemberSAT #SATEnglish",
     );
-    for (const caption of [TIKTOK_CAPTION, qotdTiktokCaption("2026-12-06")]) {
+    for (const caption of [
+      TIKTOK_CAPTION,
+      qotdTiktokCaption("2026-11-08", "Reading and Writing"),
+    ]) {
       expect(firstBannedPhrase(caption)).toBeNull();
       expect(firstUnapprovedOutcome(caption)).toBeNull();
+      expect(caption.match(/#\w+/g)!.length).toBeLessThanOrEqual(5);
+      expect(caption).not.toMatch(/link in bio|lyceon\.ai|#fyp|#studytok/i);
     }
   });
 
-  it("the Slack TikTok message carries the tagged bio link", () => {
+  it("the Slack TikTok message carries no bio link (it is set once on the profile)", () => {
     const m = manifestFor(todaySource());
     expect(m.links.tiktok).toBe(
       "lyceon.ai/start?utm_source=tiktok&utm_campaign=qotd",
     );
-    expect(unescapeMrkdwn(slackTiktokMessage(m))).toContain(m.links.tiktok);
-  });
-
-  it("the title is at most 90 characters for every section and every date (the longest included)", () => {
-    let longest = "";
-    for (
-      let t = Date.parse("2026-01-01");
-      t < Date.parse("2028-01-01");
-      t += 86_400_000
-    ) {
-      const date = new Date(t).toISOString().slice(0, 10);
-      for (const section of ["M", "RW"] as const) {
-        const title = buildTiktokTitle(date, section);
-        expect(title.length).toBeLessThanOrEqual(QOTD_TIKTOK_TITLE_MAX);
-        expect(title).toMatch(
-          /^SAT Question of the Day · [A-Z][a-z]{2} \d{1,2} · (Math|Reading and Writing)$/,
-        );
-        if (title.length > longest.length) longest = title;
-      }
-    }
-    expect(longest).toBe(
-      "SAT Question of the Day · Jan 10 · Reading and Writing",
-    );
-    expect(buildTiktokTitle("2026-10-22", "RW")).toBe(
-      "SAT Question of the Day · Oct 22 · Reading and Writing",
-    );
+    const text = unescapeMrkdwn(slackTiktokMessage(m));
+    if (m.tiktok.status !== "built") throw new Error("expected a carousel");
+    expect(text).toContain(m.tiktok.caption); // presence before absence
+    expect(text).not.toContain(m.links.tiktok);
+    expect(text).not.toMatch(/bio/i);
   });
 
   it("the cap cuts anything longer at a whole word, never past 90 characters", () => {
@@ -2163,12 +2215,12 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
     expect(long[capped.length]).toBe(" ");
   });
 
-  it("the title never carries question text", () => {
+  it("the caption never carries question text", () => {
     const m = manifestFor(todaySource());
     if (m.tiktok.status !== "built") throw new Error("expected a carousel");
     const q = yesterdayDay().question;
-    expect(m.tiktok.title).not.toContain(q.stem.slice(0, 12));
-    expect(m.tiktok.title).not.toContain(q.domain);
+    expect(m.tiktok.caption.length).toBeGreaterThan(40); // presence before absence
+    expect(m.tiktok.caption).not.toContain(q.stem.slice(0, 12));
   });
 });
 
@@ -2180,8 +2232,8 @@ describe("TikTok copy: the Why line, the caption and the title (Karl, 2026-10-23
 /** No real waiting in tests: the poll loop still runs, the clock does not. */
 const NO_WAIT = { timeoutMs: 5_000, intervalMs: 1_000, sleep: async () => {} };
 
-describe("#social: three numbered items, always in this order (Karl, 2026-10-26; Reddit dropped 2026-10-30)", () => {
-  it("a day with a carousel posts 1/3 to 3/3 in order, each opening with its label", async () => {
+describe("#social: each post is its platform line, media, one caption and (TikTok only) keywords (Karl's rulings 2026-11-02)", () => {
+  it("a day with a carousel posts TikTok, Instagram and Facebook in order, each opening with its platform line", async () => {
     const m = manifestFor(todaySource());
     expect(m.tiktok.status).toBe("built");
     const slack = fakeSlack();
@@ -2190,26 +2242,31 @@ describe("#social: three numbered items, always in this order (Karl, 2026-10-26;
     ).toBe(0);
     const items = posted(slack.calls);
     expect(items.map((p) => [p.kind, p.text.split("\n")[0]])).toEqual([
-      ["message", "*1/3 · TikTok: title and caption*"],
-      ["share", "*2/3 · TikTok: carousel*"],
-      ["share", "*3/3 · Today's question images*"],
-      ["message", "*3/3 · Today's question images*"],
+      ["share", "*TikTok*"],
+      ["message", "```"],
+      ["share", "*Instagram*"],
+      ["message", "```"],
+      ["message", "*Facebook*"],
     ]);
-    // The brief's labels, word for word, with the two Reddit items dropped and the rest
-    // renumbered (Karl's ruling 2026-10-30).
-    expect([...SLACK_POST_LABELS]).toEqual([
-      "1/3 · TikTok: title and caption",
-      "2/3 · TikTok: carousel",
-      "3/3 · Today's question images",
+    expect([...SLACK_POSTS]).toEqual(["TikTok", "Instagram", "Facebook"]);
+    // Copy blocks only: TikTok's caption and keywords, Instagram's caption, Facebook's caption.
+    const blocks = items
+      .filter((p) => p.kind === "message")
+      .flatMap((p) => [...p.text.matchAll(/```\n([\s\S]*?)\n```/g)])
+      .map((b) => b[1]);
+    if (m.tiktok.status !== "built") throw new Error("expected a carousel");
+    expect(blocks).toEqual([
+      m.tiktok.caption,
+      m.tiktok.keywords.join("\n"),
+      m.instagram_caption,
+      m.caption,
     ]);
     // The carousel's three slides go up in slide order.
     const slideUploads = slack.calls
       .filter((c) => c.url.endsWith("files.getUploadURLExternal"))
       .slice(0, 3)
       .map((c) => new URLSearchParams(String(c.body)).get("filename"));
-    expect(slideUploads).toEqual(
-      m.tiktok.status === "built" ? m.tiktok.slides : [],
-    );
+    expect(slideUploads).toEqual(m.tiktok.slides);
   });
 
   it("each upload is confirmed shared before the next step starts (no parallel posting)", async () => {
@@ -2254,10 +2311,9 @@ describe("#social: three numbered items, always in this order (Karl, 2026-10-26;
       await run(["--dir", builtDir(m)], ENV, slack.fetch, l.log, NO_WAIT),
     ).toBe(1);
     expect(l.err.join("\n")).toContain("not shared in the channel");
-    // Item 1 went out, item 2's share never confirmed: item 3 is never posted.
+    // The TikTok slides' share never confirmed: nothing after it is posted.
     expect(posted(slack.calls).map((p) => p.text.split("\n")[0])).toEqual([
-      "*1/3 · TikTok: title and caption*",
-      "*2/3 · TikTok: carousel*",
+      "*TikTok*",
     ]);
   });
 
@@ -2271,28 +2327,60 @@ describe("#social: three numbered items, always in this order (Karl, 2026-10-26;
     expect(l.err).toEqual([
       "qotd-slack: NOT POSTED: files.info: missing_scope",
     ]);
-    expect(posted(slack.calls).at(-1)!.text.split("\n")[0]).toBe(
-      "*2/3 · TikTok: carousel*",
-    );
+    expect(posted(slack.calls).at(-1)!.text.split("\n")[0]).toBe("*TikTok*");
   });
 
-  it("a skipped carousel still yields a 1/3 and a 2/3 message, so the numbering never shifts", () => {
+  it("a skipped carousel yields one TikTok QA line, then Instagram and Facebook", () => {
     const m = manifestFor(pastSource(archiveDay("2026-10-02")));
     expect(m.tiktok.status).toBe("skipped");
     const dir = builtDir(m);
     const loaded = loadPost(dir);
     if (!loaded.ok) throw new Error(loaded.error);
     const plan = slackPostPlan(loaded.value);
-    expect(plan.map((s) => [s.item, s.kind])).toEqual([
-      [1, "message"],
-      [2, "message"],
-      [3, "files"],
-      [3, "message"],
+    expect(plan.map((s) => [s.item, s.label, s.kind])).toEqual([
+      [1, "QA", "message"],
+      [2, "Instagram", "files"],
+      [3, "Instagram", "message"],
+      [4, "Facebook", "message"],
     ]);
-    const two = plan[1]!;
-    expect(two.kind === "message" && two.text).toBe(
-      "*2/3 · TikTok: no carousel today* (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
+    const qa = plan[0]!;
+    expect(qa.kind === "message" && qa.text).toBe(
+      "*TikTok*: no post today (yesterday's question (Thursday, October 1, 2026) is withheld or missing on the archive)",
     );
+  });
+
+  it("a warning (SAT date list needs updating) is posted first, outside the copy blocks", () => {
+    const base = manifestFor(todaySource());
+    expect(slackPostPlan(loadedPostFor(base))[0]!.label).toBe("TikTok"); // no warning: none posted
+    const warning =
+      "SAT date list needs updating: SAT_TEST_DATES has no confirmed SAT on or after 2027-06-06, so the test month is left out";
+    const plan = slackPostPlan(loadedPostFor({ ...base, warnings: [warning] }));
+    const first = plan[0]!;
+    expect(first.label).toBe("QA");
+    expect(first.kind === "message" && first.text).toBe(`:warning: ${warning}`);
+    expect(first.kind === "message" && first.text).not.toContain("```");
+  });
+
+  it("no bio line, alt text or link to send in any message, on a day with a carousel and a day without", () => {
+    for (const m of [
+      manifestFor(todaySource()),
+      manifestFor(pastSource(archiveDay("2026-10-02"))),
+    ]) {
+      const text = unescapeMrkdwn(
+        slackPostPlan(loadedPostFor(m))
+          .map((s) => (s.kind === "files" ? s.comment : s.text))
+          .join("\n"),
+      );
+      expect(text).toContain(m.caption); // presence before absence
+      expect(text).toContain(m.instagram_caption);
+      expect(text).not.toMatch(/\bbio\b/i);
+      expect(text).not.toContain(m.alt_text);
+      expect(text).not.toMatch(/alt text/i);
+      expect(text).not.toContain(m.links.instagram);
+      expect(text).not.toContain(m.links.tiktok);
+      expect(text).not.toMatch(/send to people who comment/i);
+      expect(text).not.toMatch(/\d\/3 ·|Today's question images/);
+    }
   });
 
   it("the dry run prints the sequence, in order, and sends nothing", async () => {
@@ -2303,11 +2391,12 @@ describe("#social: three numbered items, always in this order (Karl, 2026-10-26;
       await run(["--dir", builtDir(m), "--dry-run"], {}, slack.fetch, l.log),
     ).toBe(0);
     expect(slack.calls).toEqual([]);
-    expect(l.out.slice(0, 4)).toEqual([
-      "qotd-slack: dry run: 1/3 · TikTok: title and caption: *1/3 · TikTok: title and caption*",
-      "qotd-slack: dry run: 2/3 · TikTok: carousel: 3 file(s), then wait until shared",
-      `qotd-slack: dry run: 3/3 · Today's question images: ${m.images.length} file(s), then wait until shared`,
-      "qotd-slack: dry run: 3/3 · Today's question images: *3/3 · Today's question images*",
+    expect(l.out.slice(0, 5)).toEqual([
+      "qotd-slack: dry run: TikTok: 3 file(s), then wait until shared",
+      "qotd-slack: dry run: TikTok: ```",
+      `qotd-slack: dry run: Instagram: ${m.images.length} file(s), then wait until shared`,
+      "qotd-slack: dry run: Instagram: ```",
+      "qotd-slack: dry run: Facebook: *Facebook*",
     ]);
   });
 });
@@ -2387,13 +2476,13 @@ describe("No Reddit in the QOTD social run (Karl's ruling 2026-10-30)", () => {
         ),
       ).toBe(0);
       const items = posted(slack.calls);
-      // Presence first: the three remaining items, each opening with its label.
+      // Presence first: the TikTok, Instagram and Facebook posts, each opening with its line.
       const firstLines = items.map((p) => p.text.split("\n")[0] ?? "");
       expect(firstLines).toEqual(
         expect.arrayContaining([
-          expect.stringMatching(/^\*1\/3 · TikTok: /),
-          expect.stringMatching(/^\*2\/3 · TikTok: /),
-          "*3/3 · Today's question images*",
+          expect.stringMatching(/^\*TikTok\*/),
+          "*Instagram*",
+          "*Facebook*",
         ]),
       );
       // Absence: no Reddit word, subreddit, link, heading or item in anything Slack receives.
@@ -2417,8 +2506,8 @@ describe("No Reddit in the QOTD social run (Karl's ruling 2026-10-30)", () => {
         l.log,
       ),
     ).toBe(0);
-    // Presence first: every item's line and the summary line.
-    expect(l.out).toHaveLength(5);
+    // Presence first: every step's line and the summary line.
+    expect(l.out).toHaveLength(6);
     expect(l.out.at(-1)).toContain("would post");
     expect(l.out.at(-1)).toContain("TikTok carousel");
     // Absence.

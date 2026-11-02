@@ -94,12 +94,15 @@ import {
   type QotdSocialFormat,
 } from "../../shared/qotd/social";
 import {
-  qotdTiktokCaption,
   QOTD_TIKTOK_SIZE,
   buildTiktokCarousel,
-  buildTiktokTitle,
   tiktokSafePx,
 } from "../../shared/qotd/tiktok";
+import {
+  qotdTiktokCaption,
+  socialDateWarnings,
+  socialKeywords,
+} from "../../shared/social/posts";
 import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
@@ -290,22 +293,26 @@ export function tiktokDecision(
   if (tiktok.slides.length !== 3) {
     problems.push(`tiktok: ${tiktok.slides.length} slides, not 3`);
   }
-  const title = buildTiktokTitle(day, tiktok.carousel.question.section_code);
-  // Posted today, so the caption's bio line is today's (Karl, 2026-10-28).
-  const caption = qotdTiktokCaption(source.input.qotd_date);
-  for (const [field, text] of [
-    ["tiktok caption", caption],
-    ["tiktok title", title],
-  ] as const) {
-    const banned = firstBannedPhrase(text);
-    if (banned) problems.push(`${field}: banned phrase (${banned.why})`);
-    const outcome = firstUnapprovedOutcome(text);
-    if (outcome)
-      problems.push(`${field}: unapproved outcome claim (${outcome.why})`);
-  }
+  // Karl's rulings 2026-11-02: one caption block and TikTok's keywords. The section and domain
+  // are the carousel question's (yesterday's); the test month is the posting day's (today's).
+  const postedOn = source.input.qotd_date;
+  const carouselSection =
+    QOTD_SECTION_NAME[tiktok.carousel.question.section_code];
+  const caption = qotdTiktokCaption(postedOn, carouselSection);
+  const keywords = socialKeywords(
+    postedOn,
+    carouselSection,
+    tiktok.carousel.question.domain,
+  );
+  if (!keywords.ok) problems.push(`tiktok ${keywords.error}`);
+  const banned = firstBannedPhrase(caption);
+  if (banned) problems.push(`tiktok caption: banned phrase (${banned.why})`);
+  const outcome = firstUnapprovedOutcome(caption);
+  if (outcome)
+    problems.push(`tiktok caption: unapproved outcome claim (${outcome.why})`);
   problems.push(
     ...tiktokCarouselLeaks(
-      { slides: tiktok.slides.map((s) => s.cardText), caption, title },
+      { slides: tiktok.slides.map((s) => s.cardText), caption },
       tiktok.carouselDay,
       {
         input: source.input,
@@ -313,14 +320,14 @@ export function tiktokDecision(
       },
     ),
   );
-  if (problems.length > 0) return { ok: false, problems };
+  if (problems.length > 0 || !keywords.ok) return { ok: false, problems };
   return {
     ok: true,
     post: {
       status: "built",
       qotd_date: day,
-      title,
       caption,
+      keywords: keywords.keywords,
       slides: TIKTOK_SLIDES.map((n) => `qotd-${day}-tiktok-${n}.png`),
     },
   };
@@ -395,6 +402,7 @@ export function publishDecision(
       alt_text: copy.alt_text,
       instagram_caption: copy.instagram_caption,
       links: qotdLinks(),
+      warnings: socialDateWarnings(input.qotd_date),
       images: rendered.map((r) => ({
         format: r.format,
         file: `qotd-${input.qotd_date}-${r.format}.png`,
@@ -963,7 +971,9 @@ async function main(): Promise<number> {
         ]
       : []),
     "",
-    "### Caption",
+    ...decision.manifest.warnings.map((w) => `**Warning:** ${w}`),
+    "",
+    "### Facebook caption",
     fenced(copy.caption),
     "",
     "### Alt text",
@@ -980,11 +990,11 @@ async function main(): Promise<number> {
       ? [
           `${tiktokPost.qotd_date}: three slides (${tiktokRendered.map((r) => `${r.slide}: text ${r.fontPx}px`).join(", ")}).`,
           "",
-          "Title:",
-          fenced(tiktokPost.title),
-          "",
           "Caption:",
           fenced(tiktokPost.caption),
+          "",
+          "Keywords:",
+          fenced(tiktokPost.keywords.join("\n")),
         ]
       : [
           `${tiktokPost.qotd_date}: no carousel (${tiktokPost.reason === "withheld" ? "yesterday is withheld or missing on the archive" : "yesterday's question does not fit three slides"}).`,
