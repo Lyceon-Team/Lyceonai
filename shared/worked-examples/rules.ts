@@ -11,8 +11,9 @@
  *       (it replaces the brief's "no 'most people/students'" clause for "Most people" only), and
  *       the captions and keywords use the SCL-262 format (it replaces the brief's caption whose
  *       first line was "Follow for daily SAT questions 👆"); Public Disclosure Doctrine §0 rules
- *       1-3, 5 (docs/plans/seo/seo-marketing-vertical.md)]
- *       | @implemented [2026-10-27, H2 and the captions 2026-11-02]
+ *       1-3, 5 (docs/plans/seo/seo-marketing-vertical.md); SCL-267 (Karl's rulings 2026-11-02, later
+ *       the same day, script and voice): "the voice never reads the on-screen text verbatim"]
+ *       | @implemented [2026-10-27, H2 and the captions 2026-11-02, S1-S2 2026-11-02]
  *
  * plain English: every function here is pure and returns the problems it finds (empty = pass).
  * scripts/worked-examples/check-content.ts runs them on every pull request into `social` that
@@ -33,6 +34,18 @@
  *   H5 not the answer: the hook never contains the correct choice, a number that only the correct
  *      choice has, or "the answer is".
  *   H6 public-copy phrases: the shared banned list and the pipeline list (no AI, no process).
+ * H3 and H4 apply to the on-screen line only, so a spoken hook may be a challenge to the viewer
+ * ("Think you can do this one in ten seconds? Go."); H1, H2, H5 and H6 apply to both.
+ *
+ * The script rule (SCL-267, Karl's ruling 2026-11-02, "the voice never reads the on-screen text
+ * verbatim"), one function each:
+ *   S1 no spoken line shares a run of VERBATIM_RUN_WORDS (6) consecutive words with any on-screen
+ *      text: the hook line, the question's passage, stem and each option as the seed SQL has
+ *      them, each step's notepad, the answer notepad and the trap notepad. Both sides are
+ *      normalised the same way (verbatimWords: lower case, punctuation stripped, numbers kept as
+ *      written, so "$64" is "64" and "sixty-four" is "sixty four"; a spelled-out number never
+ *      matches a written one, which is the point: the voice talks about the screen).
+ *   S2 the spoken hook is not the on-screen hook line, after the same normalisation.
  */
 import {
   WORKED_EXAMPLE_HOOK_TYPES,
@@ -192,8 +205,118 @@ export function hookProblems(
   return [...new Set(out.filter((p): p is string => p !== null))];
 }
 
-/** The fixed heading of the trap callout; the spoken trap starts with it. */
+/** S1: the shortest run of consecutive words that counts as reading the screen aloud. */
+export const VERBATIM_RUN_WORDS = 6;
+
+/**
+ * Text as the verbatim rule compares it: lower case, apostrophes dropped ("what's" → "whats"),
+ * every other punctuation mark a word break, numbers as written ("1.25" stays "1.25", "1,000" is
+ * "1000"). LaTeX in seed text is read as plain text first (plainMathText) by the caller.
+ */
+export function verbatimWords(text: string): string[] {
+  const out: string[] = [];
+  const t = text.toLowerCase().replace(/['’‘]/g, "");
+  for (const m of t.matchAll(/\d+(?:[.,]\d+)*|[\p{L}\p{N}]+/gu))
+    out.push(m[0].replace(/,/g, ""));
+  return out;
+}
+
+/** The first run of `n` consecutive words `spoken` shares with `screen`, or null. */
+export function sharedRun(
+  spoken: string,
+  screen: string,
+  n: number = VERBATIM_RUN_WORDS,
+): string | null {
+  const a = verbatimWords(spoken);
+  const b = verbatimWords(screen);
+  if (a.length < n || b.length < n) return null;
+  const runs = new Set<string>();
+  for (let k = 0; k + n <= b.length; k++) runs.add(b.slice(k, k + n).join(" "));
+  for (let k = 0; k + n <= a.length; k++) {
+    const run = a.slice(k, k + n).join(" ");
+    if (runs.has(run)) return run;
+  }
+  return null;
+}
+
+/** Everything the viewer reads on screen while the voice plays, named for the problem text. */
+export function onScreenTexts(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+): { where: string; text: string }[] {
+  return [
+    { where: "the hook line", text: example.hook.line },
+    ...(q.passage && q.passage.trim() !== ""
+      ? [{ where: "the passage", text: plainMathText(q.passage) }]
+      : []),
+    { where: "the question stem", text: plainMathText(q.stem) },
+    ...q.options.map((o) => ({
+      where: `option ${o.key}`,
+      text: plainMathText(o.text),
+    })),
+    ...example.steps.map((s, k) => ({
+      where: `step ${k + 1}'s notepad`,
+      text: s.notepad,
+    })),
+    { where: "the answer notepad", text: example.answer.notepad },
+    ...example.trap.notepad.map((text, k) => ({
+      where: `trap notepad line ${k + 1}`,
+      text,
+    })),
+  ];
+}
+
+/** Every line the example's voice speaks, keyed as the voice manifest keys them. */
+export function spokenTexts(
+  example: WorkedExampleContent,
+): { key: string; text: string }[] {
+  return [
+    { key: "hook", text: example.hook.voice },
+    { key: "question", text: example.question_voice },
+    ...example.steps.map((s, k) => ({ key: `step-${k + 1}`, text: s.voice })),
+    { key: "trap", text: example.trap.voice },
+    { key: "answer", text: example.answer.voice },
+  ];
+}
+
+/** S1: no spoken line reads VERBATIM_RUN_WORDS or more consecutive on-screen words aloud. */
+export function verbatimProblems(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+): string[] {
+  const screen = onScreenTexts(example, q);
+  const out: string[] = [];
+  for (const s of spokenTexts(example))
+    for (const on of screen) {
+      const run = sharedRun(s.text, on.text);
+      if (run !== null)
+        out.push(
+          `S1 reads the screen: spoken ${s.key} repeats "${run}" from ${on.where}; talk about it, don't read it`,
+        );
+    }
+  return out;
+}
+
+/** S2: the spoken hook is not the on-screen hook line read aloud. */
+export function spokenHookEchoProblem(
+  hook: WorkedExampleContent["hook"],
+): string | null {
+  return verbatimWords(hook.voice).join(" ") ===
+    verbatimWords(hook.line).join(" ")
+    ? `S2 the spoken hook reads the on-screen hook line: "${hook.voice}"`
+    : null;
+}
+
+/** The fixed heading of the on-screen trap callout. */
 export const TRAP_HEADING = "The trap:";
+
+/**
+ * How the spoken trap opens: "The trap…", or Karl's flow wording "Here's where people slip…"
+ * (optionally after "Now"), from his 2026-11-02 script rules (SCL-267: "the trap ('here's where
+ * people slip')"; the Nov 11 reference script opens it "Now here's where people slip").
+ */
+export const TRAP_VOICE_OPENING =
+  /^(?:the trap\b|(?:now,?\s+)?here[’']?s where (?:people|you) slip\b)/i;
 
 /** The example against its question, its week, its style row and the public-copy lists. */
 export function contentProblems(
@@ -217,8 +340,10 @@ export function contentProblems(
     out.push(
       `answer.notepad "${example.answer.notepad}" does not name choice ${q.correct_answer})`,
     );
-  if (!/^the trap\b/i.test(example.trap.voice))
-    out.push(`trap.voice must start "The trap": "${example.trap.voice}"`);
+  if (!TRAP_VOICE_OPENING.test(example.trap.voice))
+    out.push(
+      `trap.voice must open "The trap" or "Here's where people slip": "${example.trap.voice}"`,
+    );
   if (isoWeekCycle(example.post_on) !== cycle)
     out.push(
       `post_on ${example.post_on} is in ${isoWeekCycle(example.post_on)}, not in its batch ${cycle}`,
@@ -230,13 +355,18 @@ export function contentProblems(
       `signature_move differs from the style table's for "${example.skill_code}"`,
     );
   out.push(...hookProblems(example.hook, q));
+  out.push(...verbatimProblems(example, q));
+  const echo = spokenHookEchoProblem(example.hook);
+  if (echo) out.push(echo);
   const spoken = [
     example.question_voice,
     ...example.steps.flatMap((s) => [s.notepad, s.voice]),
     example.answer.voice,
     example.trap.summary,
     ...example.trap.notepad,
-    example.trap.voice,
+    // The ruled trap opener ("Here's where people slip", Karl 2026-11-02, SCL-267) is the one
+    // mention of people a spoken line may make; the rest of the trap line is checked as before.
+    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),
     example.check,
     example.takeaway,
     example.signature_move,

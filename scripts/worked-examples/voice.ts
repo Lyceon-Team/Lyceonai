@@ -5,14 +5,28 @@
  *       "Worked examples: production system" (Karl, 2026-10-27): "/brag voice"; OpenVoice addendum
  *       (Karl, 2026-10-27): OpenVoice V2 clone of a reference speaker, generated at batch-writing
  *       time, reference never committed, fallback to the /brag voice for any clone line that fails
- *       the quality checks, the clone the default only after Karl picks it] | @implemented [2026-10-27]
+ *       the quality checks, the clone the default only after Karl picks it; SCL-267 (Karl's rulings
+ *       2026-11-02, later the same day): the default and fallback voice is Kokoro am_michael
+ *       (replacing af_heart), "Lyceon" is said "lye-see-on" (/ˈlaɪsiɑn/), and every line is
+ *       loudness-normalised with a peak limiter so no line clips]
+ *       | @implemented [2026-10-27, am_michael, pronunciation and loudness 2026-11-02]
  *
  * plain English: run by the person writing the weekly batch, on their machine, never in CI:
  *   pnpm exec tsx scripts/worked-examples/voice.ts <example folder> [--voice <profile>] [--out <dir>]
  *   pnpm exec tsx scripts/worked-examples/voice.ts --kit [--voice <profile>]   (the end card's line)
  * The profile comes from video-kit/worked-examples/voice.json (default_profile unless --voice):
- *   * kokoro (af_heart, the /brag voice): `hyperframes tts`. Needs HYPERFRAMES_PYTHON pointing at a
- *     Python with kokoro-onnx and soundfile.
+ *   * kokoro (am_michael, the default and fallback; af_heart, the /brag voice the W45 batch was
+ *     spoken in): `hyperframes tts`. Needs HYPERFRAMES_PYTHON pointing at a Python with kokoro-onnx
+ *     and soundfile.
+ * Pronunciation: authors write "Lyceon"; spokenBrandName respells it "Lysee-ahn" in the text the
+ * engine is given (the script, its hash and the quality check keep "Lyceon"). hyperframes tts
+ * passes text to kokoro-onnx's espeak phonemizer, which does not read misaki's inline markup
+ * ("[Lyceon](/lˈIsiˌɑn/)" is spoken as "slash L stress…", tested 2026-11-02), so the respelling
+ * is the only path; it phonemizes to lˈaɪsiːˈɑːn, the closest to /ˈlaɪsiɑn/ of those tried.
+ * Loudness: each line is normalised with two-pass ffmpeg loudnorm (voice.json `loudness`, about
+ * -14 LUFS, true peak at most -1 dBTP; each line padded so loudnorm's dynamic fallback works on
+ * short lines too) and alimiter 0.5 dB under that ceiling, before transcription and the
+ * quality checks, so the committed audio is the normalised audio.
  *   * openvoice-v2 (the clone): scripts/worked-examples/openvoice/clone_line.py, run with
  *     WE_OPENVOICE_PYTHON (a local environment built from openvoice/requirements.txt), the reference
  *     recording at WE_VOICE_REFERENCE (a private path OUTSIDE the repository; refused otherwise),
@@ -44,6 +58,7 @@ import {
   type VoiceLine,
   type VoiceManifest,
 } from "../../packages/shared/src/worked-example-schema";
+import { z } from "zod";
 import { readWav } from "./audio";
 import { scriptLines, type ScriptLine } from "./composition";
 import { sha256 } from "./content";
@@ -155,12 +170,173 @@ type Spoken = {
   problems: string[];
 };
 
+/** How "Lyceon" is spelled for the engine so it is said "lye-see-on" (/ˈlaɪsiɑn/). */
+export const BRAND_RESPELLING = "Lysee-ahn";
+
+/** The text the engine speaks: the author's text with "Lyceon" respelled (see the header). */
+export function spokenBrandName(text: string): string {
+  return text.replace(/\bLyceon\b/gi, BRAND_RESPELLING);
+}
+
+export type LoudnessTarget = VoiceSettings["loudness"];
+
+/** What loudnorm's first pass measured (its print_format=json block). */
+export const loudnormMeasureSchema = z.object({
+  input_i: z.string(),
+  input_tp: z.string(),
+  input_lra: z.string(),
+  input_thresh: z.string(),
+  target_offset: z.string(),
+});
+export type LoudnormMeasure = z.infer<typeof loudnormMeasureSchema>;
+
+/**
+ * Pass 2 pads every line with silence to at least PAD_MIN_SECONDS (and half a second past its
+ * end) and trims it back to its own length afterwards. loudnorm with pass 1's measurements
+ * applies one linear gain when that reaches the target under the peak ceiling, and otherwise
+ * falls back to riding the gain (its dynamic mode); TTS speech peaks ~20 dB over its loudness, so
+ * most lines take the fallback. That fallback needs 3 s of audio: without the pad a short line
+ * with one loud syllable stays quiet (the kit's 2.2 s "Follow, …" line measured -22.9 LUFS with a
+ * -0.8 dBTP onset and came out at -23.1 LUFS; padded, -14.7 LUFS at -1.4 dBTP, 2026-11-02).
+ */
+export const PAD_MIN_SECONDS = 3.5;
+
+function loudnormFilter(
+  target: LoudnessTarget,
+  measured: LoudnormMeasure | null,
+  print: "json" | "summary",
+): string {
+  const base = `loudnorm=I=${target.integrated_lufs}:TP=${target.true_peak_dbtp}:LRA=${target.loudness_range_lu}`;
+  return measured
+    ? `${base}:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true:print_format=${print}`
+    : `${base}:print_format=${print}`;
+}
+
+/**
+ * alimiter limits samples, not true peak: the reconstructed waveform can overshoot the samples by
+ * a few tenths of a dB (measured +0.2 dB on an am_michael line, 2026-11-02), so the backstop sits
+ * this far under the true-peak ceiling.
+ */
+export const LIMITER_HEADROOM_DB = 0.5;
+
+/** The backstop as alimiter's linear limit: -1 dBTP less the headroom is -1.5 dBFS, 0.841. */
+export function limiterCeiling(target: LoudnessTarget): number {
+  return (
+    Math.round(
+      10 ** ((target.true_peak_dbtp - LIMITER_HEADROOM_DB) / 20) * 1000,
+    ) / 1000
+  );
+}
+
+/** Pass 1: measure the line (loudnorm prints its JSON on stderr; no output file). */
+export function loudnessMeasureArgs(
+  input: string,
+  target: LoudnessTarget,
+): string[] {
+  return [
+    "-hide_banner",
+    "-nostats",
+    "-i",
+    input,
+    "-af",
+    loudnormFilter(target, null, "json"),
+    "-f",
+    "null",
+    "-",
+  ];
+}
+
+/**
+ * Pass 2: pad (PAD_MIN_SECONDS), loudnorm with pass 1's measurements (one linear gain when it
+ * fits under the ceiling), trim back to the line's length, then alimiter just under the ceiling
+ * (LIMITER_HEADROOM_DB) with auto-level off, at the line's own sample rate as 16-bit mono PCM.
+ * Without a usable measurement (a silent line measures -inf) loudnorm runs single-pass.
+ */
+export function loudnessApplyArgs(
+  input: string,
+  output: string,
+  target: LoudnessTarget,
+  measured: LoudnormMeasure | null,
+  sampleRate: number,
+  seconds: number,
+): string[] {
+  const pad = Math.max(PAD_MIN_SECONDS, Math.ceil((seconds + 0.5) * 10) / 10);
+  return [
+    "-hide_banner",
+    "-nostats",
+    "-y",
+    "-i",
+    input,
+    "-af",
+    `apad=whole_dur=${pad},${loudnormFilter(target, measured, "summary")},atrim=end=${seconds},alimiter=limit=${limiterCeiling(target)}:level=disabled`,
+    "-ar",
+    String(sampleRate),
+    "-ac",
+    "1",
+    "-c:a",
+    "pcm_s16le",
+    output,
+  ];
+}
+
+/** The last JSON block loudnorm printed, or null when it measured nothing usable. */
+export function parseLoudnorm(stderr: string): LoudnormMeasure | null {
+  const start = stderr.lastIndexOf("{");
+  const end = stderr.lastIndexOf("}");
+  if (start === -1 || end < start)
+    throw new Error("ffmpeg loudnorm printed no measurement");
+  const measured = loudnormMeasureSchema.parse(
+    JSON.parse(stderr.slice(start, end + 1)),
+  );
+  return [
+    measured.input_i,
+    measured.input_tp,
+    measured.input_lra,
+    measured.input_thresh,
+  ].every((v) => Number.isFinite(Number(v)))
+    ? measured
+    : null;
+}
+
+/** Normalises one line's WAV into `output` (measure, then apply); returns what pass 1 measured. */
+export function normaliseLoudness(
+  input: string,
+  output: string,
+  target: LoudnessTarget,
+): LoudnormMeasure | null {
+  const pass1 = spawnSync("ffmpeg", loudnessMeasureArgs(input, target), {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (pass1.status !== 0)
+    throw new Error(`ffmpeg loudnorm (measure) exited ${pass1.status}`);
+  const measured = parseLoudnorm(pass1.stderr);
+  const wav = readWav(readFileSync(input));
+  const pass2 = spawnSync(
+    "ffmpeg",
+    loudnessApplyArgs(
+      input,
+      output,
+      target,
+      measured,
+      wav.sampleRate,
+      wav.durationSeconds,
+    ),
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (pass2.status !== 0)
+    throw new Error(`ffmpeg loudnorm (apply) exited ${pass2.status}`);
+  return measured;
+}
+
 function transcribeAndCheck(
   v: VoiceSettings,
   line: ScriptLine,
-  wavPath: string,
+  rawWav: string,
   work: string,
 ): Spoken {
+  const wavPath = join(work, `${line.key}.norm.wav`);
+  normaliseLoudness(rawWav, wavPath, v.loudness);
   const words = wordsFromTranscribe(
     hyperframes(
       v,
@@ -191,7 +367,7 @@ export function kokoroTtsArgs(
 ): string[] {
   return [
     "tts",
-    text,
+    spokenBrandName(text),
     "-v",
     profile.kokoro_voice,
     "-s",
@@ -247,7 +423,7 @@ function speakClone(
     [
       join(ROOT, "scripts/worked-examples/openvoice/clone_line.py"),
       "--text",
-      line.text,
+      spokenBrandName(line.text),
       "--out",
       wav,
       "--reference",
