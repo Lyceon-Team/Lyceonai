@@ -27,7 +27,7 @@
  * accounts and Slack's error code, never an id, an address, the token or the text.
  *
  * Study time (Karl, 2026-11-02, "Study time reads 0.0 hours"): minutes from the server's own
- * served-to-answered gap per answer, capped at 5 minutes (migration 20261125000000). A week whose
+ * served-to-answered gap per answer, capped at 5 minutes (migration 20261129000000). A week whose
  * answers carry no measurable gap is shown as "not recorded yet", never as 0.0.
  *
  * Edge cases: an empty week posts zeros (a quiet week is news too). A change against a previous

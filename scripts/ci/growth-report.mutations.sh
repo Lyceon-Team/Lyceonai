@@ -26,7 +26,7 @@ MIG="supabase/migrations/20261122000000_growth_report.sql"
 # growth_report_weekly's body was replaced by MIG_STUDY (Karl, 2026-11-02, "Study time reads 0.0
 # hours"): every plant on that body targets MIG_STUDY; the other functions and the grants stay in
 # MIG (CREATE OR REPLACE keeps the ACL, so G13 still plants there).
-MIG_STUDY="supabase/migrations/20261125000000_growth_report_study_time.sql"
+MIG_STUDY="supabase/migrations/20261129000000_growth_report_study_time.sql"
 LIB="server/lib/growth-report.ts"
 ROUTES="server/routes/internal-cron-routes.ts"
 PASS=0; FAIL=0
