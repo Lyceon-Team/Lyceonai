@@ -47,6 +47,7 @@ FILES=(
   "shared/qotd/reveal.ts"
   "scripts/qotd-social/post-to-slack.ts"
   "shared/qotd/tiktok.ts"
+  "shared/social/posts.ts"
   "client/src/components/qotd/QotdTiktokSlide.tsx"
   "shared/slack/client.ts"
   "shared/qotd/projection.ts"
@@ -363,64 +364,43 @@ if [ "$HAVE_PG" = 1 ]; then
   restore
 fi
 
-# Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
-# reveal", Karl, 2026-10-15): the reveal is always yesterday's, never today's; the leak check still
-# covers every one of today's messages (the Reddit post included); a withheld yesterday posts the
-# notice and nothing else.
+# Yesterday's archive day (owner brief 2026-10-15; Karl, 2026-10-23): the TikTok carousel is
+# always built from yesterday's public archive day, never today's; a withheld yesterday is no day.
+#
+# RETIRED with the Reddit QOTD (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit
+# sitewide; nothing Reddit-related is generated), each guarantee obsolete because the output it
+# guarded is no longer built, posted or present:
+#   M27 the reveal builder accepted any day — buildReveal is no longer called (shared/qotd/
+#       reveal.ts is left in place, uncalled); the carousel's own day check is M36.
+#   M30 the leak check stopped reading the Reddit body — socialAssetLeaks no longer has Reddit
+#       fields: there is no Reddit body to check.
+#   M31 the Reddit title could name the correct choice — as M30, for the Reddit title.
+#   M32 the generator stopped handing the Reddit body to the leak check — no Reddit body is built.
+#   M34 the Slack reveal ignored "withheld" — the reveal message was removed with its Slack item.
+# RE-POINTED: M26 and M28 (the reveal's yesterday is now loadYesterday's), M29 (re-homed on
+# loadYesterday's own "is it yesterday's day" check, which replaced the reveal builder's), M33.
 echo "=== (26) 'yesterday' is computed as the posted day itself ==="
 plant packages/shared/src/qotd-schema.ts \
   "  d.setUTCDate(d.getUTCDate() - 1);" \
   "  d.setUTCDate(d.getUTCDate());" || { bad "M26 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M26 reveal is today's" "is built from yesterday's archive day" "$OUT" "$RC"
+expect_red "M26 yesterday is today" "loadYesterday asks the public archive for yesterday only" "$OUT" "$RC"
 restore
 
-echo "=== (27) the reveal builder accepts any day, today's included ==="
-plant shared/qotd/reveal.ts \
-  "  if (day.qotd_date !== yesterday) {" \
-  "  if (false) {" || { bad "M27 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M27 today's day revealed" "today's answer is never a reveal" "$OUT" "$RC"
-restore
-
-echo "=== (28) loadReveal fetches the posted day instead of yesterday ==="
+echo "=== (28) loadYesterday fetches the posted day instead of yesterday ==="
 plant scripts/qotd-social/generate.ts \
   '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);' \
   '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${postedDate}`);' || { bad "M28 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M28 today's archive fetched" "loadReveal asks the public archive for yesterday only" "$OUT" "$RC"
+expect_red "M28 today's archive fetched" "loadYesterday asks the public archive for yesterday only" "$OUT" "$RC"
 restore
 
-echo "=== (29) publishDecision stops checking the reveal's date ==="
+echo "=== (29) loadYesterday accepts a day that is not yesterday's ==="
 plant scripts/qotd-social/generate.ts \
-  "  if (reveal.qotd_date !== yesterday) {" \
+  "  if (body.data.qotd_date !== yesterday) {" \
   "  if (false) {" || { bad "M29 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M29 wrong-day reveal published" "a manifest whose reveal is not yesterday's is never written" "$OUT" "$RC"
-restore
-
-echo "=== (30) LEAK: the leak check stops reading the Reddit body ==="
-plant shared/qotd/social.ts \
-  '    fields.push(["reddit_body", redditBody]);' \
-  "    void 0;" || { bad "M30 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M30 explanation in Reddit body passes" "the explanation in the Reddit body" "$OUT" "$RC"
-restore
-
-echo "=== (31) LEAK: the Reddit title may name the correct choice ==="
-plant shared/qotd/social.ts \
-  '      leaks.push(`reddit_title: names the correct choice "${correct.text}"`);' \
-  "      void 0;" || { bad "M31 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M31 correct choice in Reddit title passes" "the correct choice named in the Reddit title" "$OUT" "$RC"
-restore
-
-echo "=== (32) LEAK: the generator stops handing the Reddit body to the leak check ==="
-plant scripts/qotd-social/generate.ts \
-  "            reddit_body: reddit.body," \
-  "" || { bad "M32 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M32 Reddit body unchecked" "the explanation in the Reddit body" "$OUT" "$RC"
+expect_red "M29 wrong day accepted" "refuses today's day served in its place" "$OUT" "$RC"
 restore
 
 echo "=== (33) a withheld yesterday (404) is no longer recognised ==="
@@ -428,15 +408,7 @@ plant scripts/qotd-social/generate.ts \
   "  if (res.status === 404) {" \
   "  if (false) {" || { bad "M33 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M33 withheld not recognised" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
-restore
-
-echo "=== (34) the Slack reveal ignores 'withheld' ==="
-plant scripts/qotd-social/post-to-slack.ts \
-  '  if (r.status === "withheld") {' \
-  "  if (false) {" || { bad "M34 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M34 withheld day posts a reveal" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
+expect_red "M33 withheld not recognised" "a 404 for yesterday gives no archive day" "$OUT" "$RC"
 restore
 
 # TikTok carousel + fixed answer order (Karl's brief 2026-10-23): one plant per rule.
@@ -472,18 +444,20 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M38 slide 3 unchecked" "today's explanation on slide 2+1 is a leak" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-11-02 (Karl's rulings on the daily #social messages): the fixed caption lines
+# now come from shared/social/posts.ts, and the carousel has no title any more.
 echo "=== (39) LEAK: the carousel leak check stops reading the TikTok caption ==="
 plant shared/qotd/social.ts \
-  '    ["tiktok caption", withoutFunnelLines(output.caption)],' \
+  '    ["tiktok caption", withoutSocialFixedLines(output.caption)],' \
   "" || { bad "M39 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M39 caption unchecked" "today's explanation in the caption or the title is a leak" "$OUT" "$RC"
+expect_red "M39 caption unchecked" "today's explanation in the caption is a leak" "$OUT" "$RC"
 restore
 
 echo "=== (40) LEAK: the generator stops handing the slides to the leak check ==="
 plant scripts/qotd-social/generate.ts \
-  "      { slides: tiktok.slides.map((s) => s.cardText), caption, title }," \
-  "      { slides: [], caption, title }," || { bad "M40 STALE"; exit 1; }
+  "      { slides: tiktok.slides.map((s) => s.cardText), caption }," \
+  "      { slides: [], caption }," || { bad "M40 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M40 slides not checked" "the generator hands every slide to the leak check" "$OUT" "$RC"
 restore
@@ -495,16 +469,16 @@ plant scripts/qotd-social/post-to-slack.ts \
   '  if (m.tiktok.status === "built") {' \
   "  if (true) {" || { bad "M41 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M41 no note" "no carousel: no slide is uploaded, and the one-line note is posted" "$OUT" "$RC"
+expect_red "M41 no note" "no carousel: no slide is uploaded, and one TikTok QA line is posted" "$OUT" "$RC"
 restore
 
 # Re-pointed 2026-10-26: the slides are now a step of slackPostPlan.
 echo "=== (42) a built carousel's slides are never uploaded ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  "        files: post.tiktokSlides.map((slide, i) => ({" \
-  "        files: post.tiktokSlides.slice(0, 0).map((slide, i) => ({" || { bad "M42 STALE"; exit 1; }
+  "      files: post.tiktokSlides.map((slide, i) => ({" \
+  "      files: post.tiktokSlides.slice(0, 0).map((slide, i) => ({" || { bad "M42 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M42 slides not posted" "three slides shared together with their comment" "$OUT" "$RC"
+expect_red "M42 slides not posted" "three slides shared under the TikTok line, then one caption block and one keywords block" "$OUT" "$RC"
 restore
 
 echo "=== (43) the Why line ignores the 300-character cap ==="
@@ -523,13 +497,18 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M44 Why not at a sentence boundary" "the Why line is at most 300 characters, whole sentences only" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-11-02: the TikTok caption moved to shared/social/posts.ts, and its follow and
+# comment lines are one line (Karl's rulings). The plant swaps it for the comment line alone.
 echo "=== (45) the caption loses its follow line ==="
-plant shared/qotd/tiktok.ts \
-  '    QOTD_TIKTOK_FOLLOW_LINE,
-    COMMENT_ANSWER_LINE,' \
-  '    COMMENT_ANSWER_LINE,' || { bad "M45 STALE"; exit 1; }
+plant shared/social/posts.ts \
+  '    qotdHeadline(test, section),
+    SOCIAL_FOLLOW_AND_COMMENT_LINE,
+    socialHashtags(test, section),' \
+  '    qotdHeadline(test, section),
+    SOCIAL_COMMENT_LINE,
+    socialHashtags(test, section),' || { bad "M45 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M45 no follow line first" "the caption: follow line, comment line, link-in-bio line, hashtags" "$OUT" "$RC"
+expect_red "M45 no follow line" "the caption: headline, follow and comment line, hashtags, for each section" "$OUT" "$RC"
 restore
 
 echo "=== (46) the title cap is removed ==="
@@ -565,21 +544,24 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M49 grid-in variant lost" "grid-in: slide 2 shows one 'Your answer' box" "$OUT" "$RC"
 restore
 
-# #social order and labels (Karl's brief 2026-10-26): one plant per rule.
-echo "=== (53) the five items go out in the wrong order ==="
+# #social order and labels (Karl's brief 2026-10-26): one plant per rule. Re-pointed 2026-11-02
+# (Karl's rulings on the daily #social messages): the numbered "n/3" labels are gone; each post
+# opens with its one-word platform line (TikTok, Instagram, Facebook), so M54 plants a lost
+# platform line and M56 a skipped carousel that posts nothing for TikTok.
+echo "=== (53) the three items go out in the wrong order ==="
 plant scripts/qotd-social/post-to-slack.ts \
   "  return steps;" \
   "  return [...steps.slice(3), ...steps.slice(0, 3)];" || { bad "M53 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M53 order" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+expect_red "M53 order" "a day with a carousel posts TikTok, Instagram and Facebook in order" "$OUT" "$RC"
 restore
 
-echo "=== (54) an item loses its numbered label ==="
+echo "=== (54) a post loses its platform line ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  "  \"4/5 · Reddit: today's post\"," \
-  "  \"Reddit: today's post\"," || { bad "M54 STALE"; exit 1; }
+  '    text: [platformLine("Facebook"), copyBlock(m.caption)].join("\n"),' \
+  '    text: copyBlock(m.caption),' || { bad "M54 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M54 label" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+expect_red "M54 platform line" "a day with a carousel posts TikTok, Instagram and Facebook in order" "$OUT" "$RC"
 restore
 
 echo "=== (55) an upload is not confirmed shared before the next step ==="
@@ -590,12 +572,12 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M55 upload not awaited" "each upload is confirmed shared before the next step starts" "$OUT" "$RC"
 restore
 
-echo "=== (56) a skipped carousel drops item 3, shifting the numbering ==="
+echo "=== (56) a skipped carousel posts nothing for TikTok ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  $'      },\n      {\n        item: 3,\n        label: l3,\n        kind: "message",\n        text: `*3/5 \xc2\xb7 TikTok: no carousel today* (${why})`,\n      },\n' \
-  $'      },\n' || { bad "M56 STALE"; exit 1; }
+  $'  } else {\n    steps.push({\n      item: item(),\n      label: "QA",\n      kind: "message",\n      text: tiktokSkipLine(m),\n    });\n  }' \
+  $'  }' || { bad "M56 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M56 skipped item 3 dropped" "a skipped carousel still yields a 2/5 and a 3/5 message" "$OUT" "$RC"
+expect_red "M56 skipped carousel silent" "a skipped carousel yields one TikTok QA line, then Instagram and Facebook" "$OUT" "$RC"
 restore
 
 echo "=== (57) the dry run stops printing the sequence ==="
@@ -681,21 +663,12 @@ if [ "$HAVE_PG" = 1 ]; then
   restore
 fi
 
-echo "=== (67) the reveal names the canonical letter, not the served one ==="
-plant shared/qotd/reveal.ts \
-  "      letter: shown," \
-  "      letter: correct.id," || { bad "M67 STALE"; exit 1; }
-OUT="$(ts_check "$AGREE")"; RC=$?
-expect_red "M67 reveal canonical letter" "yesterday's reveal names the served letter" "$OUT" "$RC"
-restore
-
-echo "=== (68) the Slack heading names the plural subreddit again ==="
-plant scripts/qotd-social/post-to-slack.ts \
-  '    `*Reddit (r/satquestion)* · today'"'"'s post' \
-  '    `*Reddit (r/satquestions)* · today'"'"'s post' || { bad "M68 STALE"; exit 1; }
-OUT="$(ts_check "$AGREE")"; RC=$?
-expect_red "M68 plural subreddit" "the Reddit heading names r/satquestion (singular)" "$OUT" "$RC"
-restore
+# RETIRED with the Reddit QOTD (Karl's ruling 2026-10-30), both obsolete:
+#   M67 the reveal named the canonical letter — the reveal is no longer built or posted; the
+#       served letter on the remaining surface that names one (the TikTok slide 3) is M47 and
+#       the served-order test's TikTok case.
+#   M68 the Slack heading named the plural subreddit — there is no Reddit heading and no
+#       subreddit name to get right (the singular/plural rename is dropped entirely).
 
 echo "=== (69) the scheduler stops skipping an explanation that names a letter ==="
 plant server/services/qotd/schedule-job.ts \
@@ -731,6 +704,41 @@ plant scripts/qotd-social/generate.ts \
   "      if (false) {" || { bad "M72 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M72 404 day not skipped" "a listed day the archive answers 404 for is skipped" "$OUT" "$RC"
+restore
+
+# No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide; the QOTD
+# goes to TikTok, Instagram and Facebook only): nothing Reddit-related is generated or posted.
+echo "=== (73) a Reddit line comes back in a #social item ==="
+# Re-pointed 2026-11-02: the header line is gone; each post opens with its platform line.
+plant scripts/qotd-social/post-to-slack.ts \
+  '  return `*${name}*`;' \
+  '  return `*${name}* · also post to Reddit`;' || { bad "M73 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M73 Reddit in Slack" "the #social message has no Reddit item" "$OUT" "$RC"
+restore
+
+echo "=== (74) post.json may carry a Reddit post again ==="
+plant packages/shared/src/qotd-schema.ts \
+  $'    tiktok: qotdTiktokPostSchema,\n  })\n  .strict()' \
+  $'    tiktok: qotdTiktokPostSchema,\n    reddit: qotdRedditPostSchema.optional(),\n  })\n  .strict()' || { bad "M74 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M74 Reddit post accepted" "post.json carries no Reddit post, no reveal and no Reddit link" "$OUT" "$RC"
+restore
+
+echo "=== (75) post.json may carry a Reddit link again ==="
+plant packages/shared/src/qotd-schema.ts \
+  "export const qotdStartLinksSchema = socialStartLinksSchema.omit({" \
+  "export const qotdStartLinksSchema = socialStartLinksSchema.partial({" || { bad "M75 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M75 Reddit link accepted" "post.json carries no Reddit post, no reveal and no Reddit link" "$OUT" "$RC"
+restore
+
+echo "=== (76) the dry run names the Reddit post again ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  ' image(s), the Instagram and Facebook captions and the TikTok carousel (' \
+  ' image(s), the Instagram and Facebook captions, the Reddit post and the TikTok carousel (' || { bad "M76 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M76 dry run names Reddit" "the dry run builds the same message and names nothing Reddit-related" "$OUT" "$RC"
 restore
 
 echo "=== RESTORED: re-check green ==="

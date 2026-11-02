@@ -21,7 +21,8 @@ Internal account IDs and all metrics are kept outside the repo while it is publi
 ## Channels
 
 - Reddit (primary; Karl posts by hand; drives most signups indirectly via brand search and DM links).
-- r/satquestion (QOTD), Instagram, X, TikTok, YouTube (walkthrough video), Facebook groups.
+- Instagram, X, TikTok, YouTube (walkthrough video), Facebook groups.
+- QOTD goes to TikTok, Instagram and Facebook only. The Reddit QOTD is discontinued: its subreddit was banned by Reddit sitewide (Karl, 2026-10-30).
 - Email via Resend (cohort automations, reminders, QOTD email, guardian digest).
 - Paid ads: not running.
 
