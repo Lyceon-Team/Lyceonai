@@ -869,6 +869,8 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
       );
       return r.rows.map((row) => row.payload);
     }
+    /** Noon UTC on day n's date: a milestone run that never straddles a date boundary. */
+    const noon = (n: number): Date => new Date(`${iso(day(n))}T12:00:00Z`);
     let s: { id: string; email: string };
     let young: { id: string; email: string };
     let testDate: string;
@@ -888,23 +890,23 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
     });
 
     it("T1: a week before: once per test date, 13+ only, even while paused", async () => {
-      expect((await milestones(day(22.5), {})).week_before).toBe(0);
+      expect((await milestones(noon(22), {})).week_before).toBe(0);
       for (const n of [2, 3, 4]) await governedSend(s.id, day(n));
       expect(await refresh(s.id, day(23))).toBe("paused");
-      expect((await milestones(day(23.5), {})).week_before).toBe(1);
-      expect((await milestones(day(24.5), {})).week_before).toBe(0);
+      expect((await milestones(noon(23), {})).week_before).toBe(1);
+      expect((await milestones(noon(24), {})).week_before).toBe(0);
       expect(await events(s.id, "sat_week_before")).toEqual([
         { first_name: "Ana", test_date: testDate },
       ]);
       expect(await events(young.id, "sat_week_before")).toEqual([]);
-      expect((await decide(s.id, "sat_week_before", day(23.5))).allow).toBe(
+      expect((await decide(s.id, "sat_week_before", noon(23))).allow).toBe(
         true,
       );
     });
 
     it("T2: the day after, with the release date when published and ahead", async () => {
       expect(
-        (await milestones(day(31.5), { [testDate]: releaseDate })).day_after,
+        (await milestones(noon(31), { [testDate]: releaseDate })).day_after,
       ).toBe(1);
       expect(await events(s.id, "sat_day_after")).toEqual([
         { first_name: "Ana", test_date: testDate, release_date: releaseDate },
@@ -912,13 +914,13 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
     });
 
     it("T3: release day: once, and only when College Board published a date", async () => {
-      expect((await milestones(day(43.5), {})).scores_released).toBe(0);
+      expect((await milestones(noon(43), {})).scores_released).toBe(0);
       expect(
-        (await milestones(day(43.5), { [testDate]: releaseDate }))
+        (await milestones(noon(43), { [testDate]: releaseDate }))
           .scores_released,
       ).toBe(1);
       expect(
-        (await milestones(day(44.5), { [testDate]: releaseDate }))
+        (await milestones(noon(44), { [testDate]: releaseDate }))
           .scores_released,
       ).toBe(0);
       expect(await events(s.id, "sat_scores_released")).toEqual([
@@ -1052,5 +1054,204 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
     expect(sent.filter((x) => x.email === s.email)).toEqual([]);
     expect(summary.gated).toBeGreaterThanOrEqual(1);
     expect(await h.state(s.id, "lifecycle_reminder_due")).toBe("pending");
+  });
+  describe("LP: who moves to paused at launch (Karl, 2026-11-02, revised)", () => {
+    const LAUNCH = "2026-09-27";
+    async function createdAt(id: string, iso: string): Promise<void> {
+      await pg.query(
+        `UPDATE public.profiles SET created_at = $2 WHERE id = $1`,
+        [id, iso],
+      );
+    }
+    async function reasonOf(id: string): Promise<string | undefined> {
+      const r = await pg.query<{ reason: string }>(
+        `SELECT reason FROM public.email_gate_state WHERE profile_id = $1`,
+        [id],
+      );
+      return r.rows[0]?.reason;
+    }
+
+    it("LP1: last activity before the launch date: paused, no pause note; activity since wakes them", async () => {
+      const s = await student();
+      await createdAt(s.id, "2026-09-01T12:00:00Z");
+      await h.answer(s.id, 1, new Date("2026-09-20T12:00:00Z"));
+      expect(await refresh(s.id, day(1))).toBe("paused");
+      expect(await reasonOf(s.id)).toBe("pre_launch_inactive");
+      expect(await pauseNotes(s.id)).toBe(0);
+      expect(await decide(s.id, "review_ask", day(1))).toMatchObject({
+        allow: false,
+        reason: "paused",
+      });
+      await h.answer(s.id, 1, day(2));
+      expect(await refresh(s.id, day(2.5))).toBe("active");
+    });
+
+    it("LP2: signed up before the launch and never active: paused; active since the launch: the normal rules", async () => {
+      const never = await student();
+      await createdAt(never.id, "2026-09-01T12:00:00Z");
+      expect(await refresh(never.id, day(1))).toBe("paused");
+      // The launch date is the start of 2026-09-27 in America/Chicago (05:00 UTC).
+      const before = await student();
+      await createdAt(before.id, "2026-09-01T12:00:00Z");
+      await h.answer(before.id, 1, new Date(`${LAUNCH}T04:59:00Z`));
+      expect(await refresh(before.id, day(1))).toBe("paused");
+      const after = await student();
+      await createdAt(after.id, "2026-09-01T12:00:00Z");
+      await h.answer(after.id, 1, new Date(`${LAUNCH}T05:01:00Z`));
+      expect(await refresh(after.id, day(1))).not.toBe("paused");
+      expect(await reasonOf(after.id)).not.toBe("pre_launch_inactive");
+      // Signed up after the launch, never active: the normal rules (3 days: active).
+      const fresh = await student();
+      expect(await refresh(fresh.id, day(3))).toBe("active");
+    });
+
+    it("LP3: the backfill moves them now, recorded as backfill, with no pause note; a rerun moves no one", async () => {
+      const a = await student();
+      const b = await student();
+      for (const p of [a, b]) await createdAt(p.id, "2026-09-02T12:00:00Z");
+      await h.answer(b.id, 1, new Date("2026-09-10T12:00:00Z"));
+      const moved = await h.asProbe(async () => {
+        const r = await pg.query<{ n: number }>(
+          `SELECT public.email_gate_launch_backfill($1::timestamptz) AS n`,
+          [day(3).toISOString()],
+        );
+        return r.rows[0]!.n;
+      });
+      expect(moved).toBe(2);
+      for (const p of [a, b]) {
+        const t = await pg.query(
+          `SELECT from_state, to_state, actor, reason FROM public.email_gate_transitions
+            WHERE profile_id = $1`,
+          [p.id],
+        );
+        expect(t.rows).toEqual([
+          {
+            from_state: "active",
+            to_state: "paused",
+            actor: "backfill",
+            reason: "pre_launch_inactive",
+          },
+        ]);
+        expect(await pauseNotes(p.id)).toBe(0);
+      }
+      const again = await h.asProbe(async () => {
+        const r = await pg.query<{ n: number }>(
+          `SELECT public.email_gate_launch_backfill($1::timestamptz) AS n`,
+          [day(3).toISOString()],
+        );
+        return r.rows[0]!.n;
+      });
+      expect(again).toBe(0);
+    });
+
+    it("LP4: a guardian quiet since before the launch is paused: no digest, no parent pause email; a sign-in wakes them", async () => {
+      const kid = await student();
+      const parent = await student({ role: "guardian", dob: null });
+      await createdAt(parent.id, "2026-09-01T12:00:00Z");
+      await h.entitle(kid.id, D0);
+      await pg.query(
+        `INSERT INTO public.guardian_links (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at, accepted_at)
+         VALUES ($1, $2, 'active', 'student', now(), now())`,
+        [parent.id, kid.id],
+      );
+      await h.answer(kid.id, 1, day(0.5));
+      expect(
+        await decide(parent.id, "guardian_daily_digest", day(9)),
+      ).toMatchObject({
+        allow: false,
+        reason: "paused",
+        state: "paused",
+      });
+      await h.asProbe(() =>
+        pg.query(`SELECT public.email_gate_guardian_refresh($1::timestamptz)`, [
+          day(9).toISOString(),
+        ]),
+      );
+      expect(
+        await count(
+          `SELECT count(*)::int AS n FROM public.email_gate_guardian_pauses WHERE guardian_id = $1`,
+          [parent.id],
+        ),
+      ).toBe(0);
+      await pg.query(
+        `UPDATE auth.users SET last_sign_in_at = $2 WHERE id = $1`,
+        [parent.id, day(10).toISOString()],
+      );
+      expect(
+        (await decide(parent.id, "guardian_daily_digest", day(10.5))).allow,
+      ).toBe(true);
+    });
+
+    it("LP5: internal and test accounts are paused whatever their dates, activity never wakes them, and they get no milestone", async () => {
+      await pg.query(
+        `UPDATE public.notification_runtime_config
+            SET value = '["lyceon.ai", "Karl.Own@Mail.Example"]'::jsonb
+          WHERE key = 'email_gate_internal_denylist'`,
+      );
+      const testLocal = await h.person({
+        completedAt: null,
+        email: "qa.test1@school.example",
+      });
+      const staff = await h.person({
+        completedAt: null,
+        email: "staff@lyceon.ai",
+      });
+      const sub = await h.person({
+        completedAt: null,
+        email: "ops@eu.lyceon.ai",
+      });
+      const own = await h.person({
+        completedAt: null,
+        email: "karl.own@mail.example",
+      });
+      const notInternal = await h.person({
+        completedAt: null,
+        email: "maya@protest.example",
+      });
+      for (const p of [testLocal, staff, sub, own]) {
+        await h.answer(p.id, 1, day(1));
+        expect(
+          await decide(p.id, "review_ask", day(1.5)),
+          p.email,
+        ).toMatchObject({
+          allow: false,
+          reason: "internal_account",
+          state: "paused",
+        });
+        expect((await decide(p.id, "sat_week_before", day(1.5))).reason).toBe(
+          "internal_account",
+        );
+        expect((await decide(p.id, "guardian_linked", day(1.5))).allow).toBe(
+          true,
+        );
+        expect(await pauseNotes(p.id)).toBe(0);
+      }
+      // "test" in the local part, like the lifecycle lane (isDenylisted); in the domain alone
+      // it is not internal.
+      await h.answer(notInternal.id, 1, day(1));
+      expect((await decide(notInternal.id, "review_ask", day(1.5))).allow).toBe(
+        true,
+      );
+      // No milestone for an internal account with a test date in its window.
+      const testDate = iso(day(8));
+      await pg.query(
+        `INSERT INTO public.student_study_profile (student_id, timezone, target_exam_dates)
+         VALUES ($1, 'UTC', ARRAY[$2::date])`,
+        [staff.id, testDate],
+      );
+      await h.asProbe(() =>
+        pg.query(
+          `SELECT public.email_milestones_notify($1::timestamptz, '{}'::jsonb)`,
+          [day(1.5).toISOString()],
+        ),
+      );
+      expect(
+        await count(
+          `SELECT count(*)::int AS n FROM public.notification_events
+            WHERE event_type = 'sat_week_before' AND subject_profile_id = $1`,
+          [staff.id],
+        ),
+      ).toBe(0);
+    });
   });
 });

@@ -10,11 +10,22 @@ What it does: decides, per recipient, whether a reminder-type ("governed") email
 2. **Resend:** set the From of the four lifecycle automations (reminder, diagnostic, Pro no plan, practising free) to the same tracked sender. Those emails are sent by Resend, not by our transport.
 3. **Resend webhook:** `email.opened` and `email.clicked` are already subscribed (read-only check, 2026-11-02). Nothing to change.
 4. **Deploy the code, then apply** `supabase/migrations/20261126000000_email_send_gate.sql` by hand. The backfill moves every student the old QOTD 7-send sunset paused into `paused` (no second note).
+5. **Launch ruling (Karl, 2026-11-02, revised):** before applying `supabase/migrations/20261127000000_email_gate_launch_pause.sql`, nothing to set; after applying it, add the internal list and re-run the move:
+
+```sql
+-- LIFECYCLE_EMAIL_DENYLIST's entries and your own addresses (full addresses or domains)
+UPDATE public.notification_runtime_config
+   SET value = '["lyceon.ai", "<your address>", "<denylisted domain>"]'::jsonb
+ WHERE key = 'email_gate_internal_denylist';
+SELECT public.email_gate_launch_backfill(now());   -- how many accounts it paused
+```
+
+   It pauses every account quiet since before 2026-09-27 (or never active and signed up before it), and every internal or test account. No pause note goes to either. Accounts active since then are unchanged.
 
 ## Checks after applying (owner-run; never run from an agent)
 
 ```sql
--- the gate exists and the config is complete (14 keys)
+-- the gate exists and the config is complete (16 keys once 20261127000000 is applied; 14 before)
 SELECT count(*) FROM public.notification_runtime_config WHERE key LIKE 'email_gate_%';
 -- the backfill: students paused by the old QOTD sunset are paused here
 SELECT count(*) FROM public.email_gate_state WHERE reason = 'qotd_sunset_backfill';
