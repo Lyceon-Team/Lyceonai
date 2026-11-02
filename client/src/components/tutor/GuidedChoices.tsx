@@ -18,7 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   REVIEW_INTENT_LABELS,
+  STEP_INTENTS,
   type ReviewIntent,
+  type StepIntent,
 } from "@lyceon/shared/tutor-guided-choices";
 
 /** What the panel knows about this item's choices. */
@@ -82,5 +84,44 @@ export function GuidedChoiceButtons({
 export function hasGuidedChoices(choices: GuidedChoicesState | null): boolean {
   return (
     choices !== null && choices.status === "ready" && choices.intents.length > 0
+  );
+}
+
+/**
+ * @spec [owner brief "Quick replies in walkthroughs" (Karl, 2026-11-02); SCL-268;
+ *        docs/plans/student-ui/design/DESIGN.md §5] | @implemented [2026-11-02]
+ * plain English: the two taps shown after a LISA reply in a walkthrough, "Got it, next step" and
+ * "I'm stuck", in that order. A tap sends exactly the label with its intent through the panel's
+ * one send path; both are model turns. When they show is decided by the caller from the
+ * server's `walkthrough_open` (never guessed here). DESIGN.md §5: two actions (each sends), not a
+ * value picked from a pair, so outline buttons, no filled primary; they wrap on a narrow panel.
+ */
+export function QuickReplyButtons({
+  onChoose,
+  disabled,
+}: {
+  onChoose: (intent: StepIntent) => void;
+  disabled: boolean;
+}): JSX.Element {
+  return (
+    <div
+      className="flex flex-wrap gap-2"
+      role="group"
+      aria-label="Quick replies"
+      data-testid="tutor-quick-replies"
+    >
+      {STEP_INTENTS.map((intent) => (
+        <Button
+          key={intent}
+          type="button"
+          variant="lyc-outline"
+          disabled={disabled}
+          onClick={() => onChoose(intent)}
+          data-testid={`tutor-quick-reply-${intent}`}
+        >
+          {REVIEW_INTENT_LABELS[intent]}
+        </Button>
+      ))}
+    </div>
   );
 }

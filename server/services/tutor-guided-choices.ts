@@ -13,6 +13,11 @@
  *    only when it is one of that question's choices (section and flag), and only when the message
  *    is exactly the intent's label (ruling 1). Anything else is `400 invalid_input`; it is never
  *    processed as free text.
+ *  - Quick replies (owner brief "Quick replies in walkthroughs", Karl 2026-11-02; SCL-268):
+ *    `step_understood` / `step_stuck` are not guided choices. The same exact-label, review-surface
+ *    and question-scope rules apply; instead of "one of the question's choices", the conversation
+ *    must be in a walkthrough, read from its STORED student messages (`isWalkthroughOpen`, the
+ *    function the panel uses to show the taps). Otherwise `400 invalid_input` ("no_walkthrough").
  *  - `pickIntentVideo`: a video intent's one video. "Desmos video" asks for method `desmos` and
  *    serves the top match only if it IS a Desmos video; otherwise there is no match. "Explanation
  *    video" asks for `algebraic`; when the skill has no algebraic video, the ranking with that
@@ -31,6 +36,10 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import {
   guidedChoicesFor,
   isExactIntentLabel,
+  isStepIntent,
+  isWalkthroughOpen,
+  REVIEW_INTENTS,
+  reviewIntentSchema,
   VIDEO_INTENT_METHOD,
   type ReviewIntent,
   type VideoIntent,
@@ -97,7 +106,45 @@ export type TurnIntentRefusal =
   | "not_review_surface"
   | "no_question_scope"
   | "label_mismatch"
-  | "not_offered";
+  | "not_offered"
+  | "no_walkthrough";
+
+// The taps that open or close a walkthrough: every intent except the quick replies.
+const STATE_CHANGING_INTENTS: readonly ReviewIntent[] = REVIEW_INTENTS.filter(
+  (intent) => !isStepIntent(intent),
+);
+
+// A typed message's row has no intent (NULL in Postgres; absent where a client omits it).
+const studentIntentRowsSchema = z.array(
+  z.object({ intent: reviewIntentSchema.nullish() }),
+);
+
+/**
+ * Whether this conversation is in a walkthrough, from its stored student messages (SCL-268).
+ * Throws on a DB error (the route's catch answers 500): a quick reply is never accepted on a
+ * guess. A stored intent outside the closed list fails the parse and throws too.
+ *
+ * Only the LAST student tap that is not a quick reply decides (typed rows and quick replies never
+ * change the state; `isWalkthroughOpen`), so this reads exactly that one row, newest first with
+ * an `id` tie-break, rather than the whole history: a bounded read that no row cap can truncate.
+ */
+export async function conversationWalkthroughOpen(
+  conversationId: string,
+): Promise<boolean> {
+  const { data, error } = await supabaseServer
+    .from("tutor_messages")
+    .select("intent")
+    .eq("conversation_id", conversationId)
+    .eq("role", "student")
+    .in("intent", STATE_CHANGING_INTENTS)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return isWalkthroughOpen(
+    studentIntentRowsSchema.parse(data ?? []).map((r) => r.intent ?? null),
+  );
+}
 
 /**
  * Whether a turn may carry this intent. `surface` and `questionRowId` are the conversation's
@@ -109,6 +156,7 @@ export async function checkTurnIntent(input: {
   message: string;
   surface: string;
   questionRowId: string | null;
+  conversationId: string;
 }): Promise<{ ok: true } | { ok: false; reason: TurnIntentRefusal }> {
   if (!isExactIntentLabel(input.intent, input.message)) {
     return { ok: false, reason: "label_mismatch" };
@@ -118,6 +166,11 @@ export async function checkTurnIntent(input: {
   }
   if (input.questionRowId === null) {
     return { ok: false, reason: "no_question_scope" };
+  }
+  if (isStepIntent(input.intent)) {
+    return (await conversationWalkthroughOpen(input.conversationId))
+      ? { ok: true }
+      : { ok: false, reason: "no_walkthrough" };
   }
   const offered = await guidedChoicesForQuestion(input.questionRowId);
   return offered.includes(input.intent)

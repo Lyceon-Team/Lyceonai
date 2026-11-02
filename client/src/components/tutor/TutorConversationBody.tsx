@@ -49,6 +49,7 @@ import {
 import {
   GuidedChoiceButtons,
   hasGuidedChoices,
+  QuickReplyButtons,
   type GuidedChoicesState,
 } from "@/components/tutor/GuidedChoices";
 import { useTutorTurn } from "@/hooks/useTutorTurn";
@@ -469,6 +470,24 @@ function TutorThread({
     void send(REVIEW_INTENT_LABELS[intent], intent);
   };
 
+  // Quick replies (owner brief "Quick replies in walkthroughs", Karl 2026-11-02; SCL-268): after
+  // a LISA reply, while the server says the conversation is in a walkthrough. Hidden while the
+  // student is typing (any draft), while a turn is in flight, and when the last message is not a
+  // LISA reply; free text always stays. The server accepts a quick reply only in a walkthrough,
+  // by the same rule, so a tap shown here is one it accepts.
+  const lastMessage = messages[messages.length - 1];
+  const showQuickReplies =
+    !isLoading &&
+    !denied &&
+    !isPaused &&
+    !isEnded &&
+    !showCrisisCard &&
+    turnState.kind === "idle" &&
+    optimisticMessage === null &&
+    detail?.walkthrough_open === true &&
+    lastMessage?.role === "tutor" &&
+    draft.trim() === "";
+
   const end = (): void => {
     endConversation.mutate(conversationId, { onSuccess: onEnded });
   };
@@ -530,6 +549,10 @@ function TutorThread({
         {isThinking && <ThinkingIndicator />}
 
         {turnState.kind === "failed" && <FailedTurnNotice onRetry={retry} />}
+
+        {showQuickReplies ? (
+          <QuickReplyButtons disabled={isThinking} onChoose={choose} />
+        ) : null}
 
         {!isLoading &&
         !denied &&

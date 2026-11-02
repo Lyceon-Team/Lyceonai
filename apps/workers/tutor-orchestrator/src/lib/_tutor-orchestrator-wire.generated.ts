@@ -289,6 +289,8 @@ export const ORCHESTRATE_INTENTS = [
   "explain_rule",
   "video_desmos",
   "video_explanation",
+  "step_understood",
+  "step_stuck",
 ] as const;
 
 // ── Request schema ───────────────────────────────────────────────────
@@ -345,10 +347,12 @@ export const orchestrateRequestSchema = z.object({
   requested_method: z.enum(OFFERED_VIDEO_METHODS).nullable().optional(),
   // ── Guided choice (owner brief "LISA guided choices in review, Phase A", Karl 2026-10-27;
   // SCL-255) ──
-  // The review choice the student tapped, when the turn came from one. Only `walkthrough` is
-  // ever sent: the video intents are answered by the BFF with no worker call. Recorded, never
-  // read into the prompt: Phase A changes nothing in what LISA is told. Optional, so either side
-  // can deploy first (an older worker strips it).
+  // The review choice the student tapped, when the turn came from one. The model turns carry
+  // it: `walkthrough`, and the walkthrough quick replies `step_understood` / `step_stuck`
+  // (SCL-268, 2026-11-02); the video intents are answered by the BFF with no worker call.
+  // Recorded, never read into the prompt: nothing changes in what LISA is told (the tap's label
+  // is the student's message). Optional, so a turn without it is unchanged. A VALUE the worker
+  // does not know fails its parse, so a new intent ships worker first (deploy order, SCL-268).
   intent: z.enum(ORCHESTRATE_INTENTS).optional(),
 });
 
