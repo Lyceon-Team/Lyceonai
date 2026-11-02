@@ -91,7 +91,7 @@ import {
   slackPostPlan,
   SLACK_POSTS,
 } from "../../scripts/qotd-social/post-to-slack";
-import { qotdTiktokCaption, socialKeywords } from "../../shared/social/posts";
+import { qotdTiktokCaption } from "../../shared/social/posts";
 import { slackConfig, type FetchLike } from "../../scripts/slack/client";
 import { QOTD_RW_MAX_PASSAGE_CHARS } from "../../shared/qotd/readability";
 import {
