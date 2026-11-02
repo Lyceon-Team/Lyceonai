@@ -156,6 +156,8 @@ FILES=(
   "packages/shared/src/question-difficulty.ts"
   "packages/shared/src/exam-runtime-schema.ts"
   "client/src/components/student-ui/Pill.tsx"
+  "packages/shared/src/tutor-guided-choices.ts"
+  "server/services/tutor-guided-choices.ts"
 )
 
 snapshot_all() {
@@ -4400,6 +4402,40 @@ plant "LL-20" "the launcher loses its accent fill" \
   'a = " border-0 bg-lyc-primary-bg px-3 "
 assert s.count(a) == 1
 s = s.replace(a, " border-0 bg-transparent px-3 ", 1)'
+
+# Quick replies in walkthroughs (owner brief, Karl 2026-11-02; SCL-268): after a LISA reply in a
+# walkthrough, "Got it, next step" / "I'm stuck"; hidden while typing; only in a walkthrough, by
+# the one shared rule the server also accepts them by.
+QR_PANEL="client/src/components/tutor/GuidedChoices.contract.test.tsx"
+QR_ROUTE="tests/ci/guided-choices.route.contract.test.ts"
+
+plant "QR-1" "the taps show after any LISA reply, walkthrough or not" \
+  "$QR_PANEL" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
+  'a = "    detail?.walkthrough_open === true &&\n"
+assert s.count(a) == 1
+s = s.replace(a, "    true &&\n", 1)'
+
+plant "QR-2" "the taps stay while the student is typing" \
+  "$QR_PANEL" \
+  "client/src/components/tutor/TutorConversationBody.tsx" \
+  'a = "    lastMessage?.role === \"tutor\" &&\n    draft.trim() === \"\";\n"
+assert s.count(a) == 1
+s = s.replace(a, "    lastMessage?.role === \"tutor\";\n", 1)'
+
+plant "QR-3" "a video tap no longer ends a walkthrough" \
+  "$QR_ROUTE tests/ci/guided-choices.contract.test.ts" \
+  "packages/shared/src/tutor-guided-choices.ts" \
+  'a = "    open = WALKTHROUGH_OPENERS.has(intent);\n"
+assert s.count(a) == 1
+s = s.replace(a, "    open = open || WALKTHROUGH_OPENERS.has(intent);\n", 1)'
+
+plant "QR-4" "the server accepts a quick reply outside a walkthrough" \
+  "$QR_ROUTE" \
+  "server/services/tutor-guided-choices.ts" \
+  'a = "    return (await conversationWalkthroughOpen(input.conversationId))\n"
+assert s.count(a) == 1
+s = s.replace(a, "    return (true || (await conversationWalkthroughOpen(input.conversationId)))\n", 1)'
 
 printf '\n────────────────────────────────\n'
 echo "plants red as expected: $PASS"

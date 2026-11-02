@@ -133,6 +133,8 @@ import {
 } from "../../packages/shared/src/tutor-guided-choices";
 import {
   checkTurnIntent,
+  conversationWalkthroughOpen,
+  GUIDED_CHOICE_SURFACE,
   guidedChoicesForReviewItem,
   pickIntentVideo,
   VIDEO_INTENT_NO_MATCH,
@@ -1211,8 +1213,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
 
     // Step 6b (SCL-253; owner rulings 1–2, 2026-10-27): a turn carrying an intent is accepted
     // only on a review conversation scoped to a question, only for one of that question's
-    // choices (its section, and the Phase B flag), and only when the message is EXACTLY the
-    // choice's label. Anything else is 400 invalid_input — never processed as free text, so no
+    // choices (its section, and the Phase B flag) — or, for a walkthrough quick reply
+    // (SCL-268), only while the conversation is in a walkthrough — and only when the message is
+    // EXACTLY the choice's label. Anything else is 400 invalid_input — never processed as free text, so no
     // text the student typed can ride on an intent. Checked against the conversation's STORED
     // scope, never the client's supplement.
     if (turnIntent !== null) {
@@ -1222,6 +1225,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           message: input.message,
           surface: conversation.source_surface,
           questionRowId: conversation.source_question_row_id,
+          conversationId: conversation.id,
         }),
       );
       if (!intentCheck.ok) {
@@ -2931,6 +2935,14 @@ router.get(
           closed_at: conversation.closed_at,
         },
         messages: safeMessages,
+        // SCL-268: whether the panel shows the walkthrough quick replies after the last LISA
+        // reply. Read from the FULL stored history (a page may not hold the walkthrough's
+        // opening tap) by the same function step 6b accepts a quick reply with. Only a review
+        // conversation scoped to a question can be in one.
+        walkthrough_open:
+          conversation.source_surface === GUIDED_CHOICE_SURFACE &&
+          conversation.source_question_row_id !== null &&
+          (await conversationWalkthroughOpen(conversation.id)),
         pagination: {
           has_more: ordered.length === messageLimit,
           // `ordered` is oldest-first; the pagination cursor for "older
