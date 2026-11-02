@@ -4,41 +4,41 @@
   "post_on": "2026-11-16",
   "hook": {
     "type": "speed",
-    "line": "Where do these graphs intersect? Faster with the graphing calculator or by hand?",
-    "voice": "Where do these graphs intersect? Faster with the graphing calculator or by hand?"
+    "line": "By hand or graphing: which finds where these graphs intersect first?",
+    "voice": "Faster with the graphing calculator or by hand? Let's race."
   },
-  "question_voice": "Where do y equals x squared minus 7x plus 5, and y equals x minus 7, intersect?",
+  "question_voice": "Okay. We want the points where the parabola and the line meet.",
   "signature_move": "Set the two expressions equal and factor, or graph both and read the crossings.",
   "steps": [
     {
       "notepad": "x² − 7x + 5 = x − 7",
-      "voice": "By hand first. Set them equal: x squared minus 7x plus 5 equals x minus 7."
+      "voice": "By hand first. Clock's running. Set the two right sides equal."
     },
     {
       "notepad": "x² − 8x + 12 = 0",
-      "voice": "Subtract x and add 7: x squared minus 8x plus 12 equals zero."
+      "voice": "Move everything over, and you've got a clean quadratic."
     },
     {
       "notepad": "(x − 2)(x − 6) = 0",
-      "voice": "That factors as x minus 2, times x minus 6, so x is 2 or 6."
+      "voice": "It factors nicely. x is two or six."
     },
     {
       "notepad": "y = x − 7:  −5 and −1",
-      "voice": "Put each into y equals x minus 7: negative 5 and negative 1."
+      "voice": "Drop those into the line, and the y values are negative five and negative one."
     },
     {
       "notepad": "graph both, read the crossings",
-      "voice": "Now the graphing method. Graph the parabola and the line."
+      "voice": "Now the graphing method. New clock. Put both on the graph."
     },
     {
       "notepad": "(2, −5) and (6, −1)",
-      "voice": "They cross at 2, negative 5, and 6, negative 1."
+      "voice": "They cross at two, negative five, and six, negative one. Done."
     }
   ],
   "answer": {
     "letter": "A",
     "notepad": "same points both ways → A)",
-    "voice": "Same two points both ways. The answer is A."
+    "voice": "Same two points both ways. That's A. Quick check: four minus fourteen plus five is negative five. Which clock won?"
   },
   "trap": {
     "summary": "Forgetting to move the x term gives x² − 7x + 12 = 0 and the points (3, −4) and (4, −3), which lie on the line but not on the parabola.",
@@ -46,7 +46,7 @@
       "x² − 7x + 12 = 0  ✗",
       "(3, −4), (4, −3): line only"
     ],
-    "voice": "The trap: forget to move the x over, and you get choice C. Those points sit on the line, not on the parabola."
+    "voice": "Now here's where people slip: forget to move the x over, and you land on choice C. Those points sit on the line, not on the parabola."
   },
   "check": "(2, −5): 4 − 14 + 5 = −5; (6, −1): 36 − 42 + 5 = −1; both are on y = x − 7.",
   "takeaway": "A parabola and a line can cross twice; the graph shows both crossings, and only real ones."
