@@ -28,6 +28,12 @@
 # Renamed again 2026-10-28 (owner, commit 1e07c8c6): 20261117100000, since seo/main's
 # 20261117000000_scl_consolidated.sql holds 20261117000000. MIG_E follows it.
 #
+# Re-pointed 2026-11-02 (owner brief "Email send gate", Karl 2026-10-30; ruling 2026-11-02 (3):
+# the QOTD pause folded into the gate; SCL-263): MIG_F (20261126000000_email_send_gate.sql) now
+# LAST defines `qotd_daily_notify` and `qotd_email_resume`, so H8, N1, N2, N3 and N5 aim there.
+# H11 (the 7-send sunset) is retired with the sunset; its slot now plants the rule ignoring the
+# gate's pause. N3's anchor follows the rule's new email column (`email_wanted`).
+#
 # Each plant breaks ONE rule the brief locks and must turn a NAMED test red. Same three rules as
 # the other *.mutations.sh harnesses:
 #   RULE 1 — APPLIED. An anchor not found exactly once is STALE: a hard failure, never a pass.
@@ -44,6 +50,7 @@ MIG_B="supabase/migrations/20261029010000_home_qotd_streak_email.sql"
 MIG_C="supabase/migrations/20261029020000_qotd_daily_notification.sql"
 MIG_D="supabase/migrations/20261031000000_notification_quiet_hours_expiry.sql"
 MIG_E="supabase/migrations/20261117100000_qotd_day_04utc.sql"
+MIG_F="supabase/migrations/20261126000000_email_send_gate.sql"
 QOTD_DAY="server/services/qotd/qotd-day.ts"
 QOTD_SVC="server/services/qotd/qotd-service.ts"
 DISPATCH="server/lib/notifications/dispatch.ts"
@@ -58,7 +65,7 @@ DATES="shared/sat-test-dates.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/hq-mut.XXXX)"
 
-FILES=("$MIG_A" "$MIG_B" "$MIG_C" "$MIG_D" "$MIG_E" "$QOTD_DAY" "$QOTD_SVC" "$DISPATCH" "$NOTIF_SECTION" "$SEND_CTX" "$JOB" "$LINKS" "$PROFILE_SVC" "$SECTION" "$PROMPT" "$DATES")
+FILES=("$MIG_A" "$MIG_B" "$MIG_C" "$MIG_D" "$MIG_E" "$MIG_F" "$QOTD_DAY" "$QOTD_SVC" "$DISPATCH" "$NOTIF_SECTION" "$SEND_CTX" "$JOB" "$LINKS" "$PROFILE_SVC" "$SECTION" "$PROMPT" "$DATES")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -154,8 +161,8 @@ plant "$MIG_C" $'    \'eligible\', COALESCE(public.marketing_opt_in_age_eligible
 run "H7 under-13" "A5: never for an under-13" "$PG_SUITE"
 
 echo "=== (8) the event id stops being one per student per day ==="
-need_last qotd_daily_notify H8 "$MIG_D"
-plant "$MIG_D" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || v_today::text);" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || p_now::text);" || { bad "H8 STALE"; exit 1; }
+need_last qotd_daily_notify H8 "$MIG_F"
+plant "$MIG_F" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || v_today::text);" "    v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || p_now::text);" || { bad "H8 STALE"; exit 1; }
 run "H8 one per student per day" "one per student per day across both evening crons" "$PG_SUITE"
 
 echo "=== (9) the job sends at any hour ==="
@@ -166,10 +173,10 @@ echo "=== (10) the hour is read in UTC (DST lost) ==="
 plant "$JOB" "  return localHourIn(QOTD_TIME_ZONE, now);" "  return localHourIn(\"UTC\", now);" || { bad "H10 STALE"; exit 1; }
 run "H10 17:00 Chicago across DST" "at 17:00 CDT" "$PG_SUITE"
 
-echo "=== (11) the sunset never fires ==="
-need_last qotd_daily_notify H11 "$MIG_D"
-plant "$MIG_D" "      IF COALESCE(v_run, 0) >= 7 THEN" "      IF false THEN" || { bad "H11 STALE"; exit 1; }
-run "H11 7-send sunset" "the sunset sends the pause email" "$PG_SUITE"
+echo "=== (11) the rule emails a student the gate has paused ==="
+need_last qotd_daily_notify H11 "$MIG_F"
+plant "$MIG_F" "    IF v_email_on AND r.gate_state = 'paused' THEN" "    IF false THEN" || { bad "H11 STALE"; exit 1; }
+run "H11 gate pause" "a student the gate has paused gets no email" "$PG_SUITE"
 
 echo "=== (12) a tampered unsubscribe link is accepted ==="
 plant "$LINKS" "  return timingSafeEqual(given, expected) ? studentId : null;" "  return studentId;" || { bad "H12 STALE"; exit 1; }
@@ -203,16 +210,16 @@ plant "$PROMPT" "        if (!next && !pending) onDecide(\"not_now\");" "       
 run "H18 Escape is Not now" "Escape closes the prompt" "$UI"
 
 echo "=== (19) a student who never consented gets no in-app reminder ==="
-need_last qotd_daily_notify N1 "$MIG_D"
-plant "$MIG_D" "                         ELSE jsonb_build_array('in_app') END" "                         ELSE jsonb_build_array() END" || { bad "N1 STALE"; exit 1; }
+need_last qotd_daily_notify N1 "$MIG_F"
+plant "$MIG_F" "                         ELSE jsonb_build_array('in_app') END" "                         ELSE jsonb_build_array() END" || { bad "N1 STALE"; exit 1; }
 run "N1 in-app without consent" "in-app for a student who never consented" "$PG_SUITE"
 
 echo "=== (20) the email goes out without consent ==="
-plant "$MIG_D" "           (COALESCE(c.enabled, false)" "           (true" || { bad "N2 STALE"; exit 1; }
+plant "$MIG_F" "           (COALESCE(c.enabled, false)" "           (true" || { bad "N2 STALE"; exit 1; }
 run "N2 email only with consent" "email only with consent" "$PG_SUITE"
 
 echo "=== (21) an under-13 with the preference on is emailed ==="
-plant "$MIG_D" $'            AND public.marketing_opt_in_age_eligible(p.date_of_birth)\n' "" || { bad "N3 STALE"; exit 1; }
+plant "$MIG_F" $'\n            AND public.marketing_opt_in_age_eligible(p.date_of_birth)) AS email_wanted,' ") AS email_wanted," || { bad "N3 STALE"; exit 1; }
 run "N3 never email under-13" "never email for an under-13" "$PG_SUITE"
 
 echo "=== (22) the unsubscribe link stops writing the one preference ==="
@@ -221,8 +228,8 @@ plant "$MIG_C" "  v_result := public.set_qotd_daily_email(p_student_id, false, '
 run "N4 one preference" "change the same preference" "$PG_SUITE"
 
 echo "=== (23) a second writer of the preference ==="
-need_last qotd_email_resume N5 "$MIG_C"
-plant "$MIG_C" "  v_result := public.set_qotd_daily_email(p_student_id, true, 'email_resume', NULL, p_now);" $'  UPDATE public.notification_channel_preferences SET enabled = true WHERE profile_id = p_student_id;\n  v_result := jsonb_build_object(\'enabled\', true, \'changed\', true);' || { bad "N5 STALE"; exit 1; }
+need_last qotd_email_resume N5 "$MIG_F"
+plant "$MIG_F" "  v_result := public.set_qotd_daily_email(p_student_id, true, 'email_resume', NULL, p_now);" $'  UPDATE public.notification_channel_preferences SET enabled = true WHERE profile_id = p_student_id;\n  v_result := jsonb_build_object(\'enabled\', true, \'changed\', true);' || { bad "N5 STALE"; exit 1; }
 run "N5 one writer" "one writer" "$PG_SUITE"
 
 echo "=== (24) the Settings switch can only turn the email on ==="

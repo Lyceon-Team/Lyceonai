@@ -21,6 +21,11 @@ import {
   postExamNoticePayloadSchema,
   qotdDailyPayloadSchema,
   reviewAskPayloadSchema,
+  emailGateGuardianPausedPayloadSchema,
+  emailGatePausedNoticePayloadSchema,
+  satDayAfterPayloadSchema,
+  satScoresReleasedPayloadSchema,
+  satWeekBeforePayloadSchema,
   type NotificationEventType,
 } from "../../../../packages/shared/src/notifications-schema";
 import { err, ok, type Result } from "../../../../packages/shared/src/result";
@@ -53,6 +58,19 @@ import {
   studyPlanChangedInApp,
 } from "./accountability";
 import { reviewAskEmail, reviewAskInApp } from "./review-ask";
+import {
+  emailGateInApp,
+  guardianPausedEmail,
+  guardianPausedSubject,
+  pausedNoticeEmail,
+  PAUSED_NOTICE_SUBJECT,
+  SAT_DAY_AFTER_SUBJECT,
+  SAT_SCORES_RELEASED_SUBJECT,
+  SAT_WEEK_BEFORE_SUBJECT,
+  satDayAfterEmail,
+  satScoresReleasedEmail,
+  satWeekBeforeEmail,
+} from "./email-gate";
 import type { EmailRender, InAppRender, RenderContext } from "./shared";
 
 export type { EmailRender, InAppRender, RenderContext } from "./shared";
@@ -154,6 +172,34 @@ export function renderInApp(
       return err(
         "a lifecycle record has no in-app notice (Resend sends its email)",
       );
+    // The email send gate's emails (Karl, 2026-10-30; rulings 2026-11-02): email only, so these
+    // render only for completeness of the switch.
+    case "sat_week_before":
+      return satWeekBeforePayloadSchema.safeParse(payload).success
+        ? ok(emailGateInApp(SAT_WEEK_BEFORE_SUBJECT))
+        : err("sat_week_before payload does not match its schema");
+    case "sat_day_after":
+      return satDayAfterPayloadSchema.safeParse(payload).success
+        ? ok(emailGateInApp(SAT_DAY_AFTER_SUBJECT))
+        : err("sat_day_after payload does not match its schema");
+    case "sat_scores_released":
+      return satScoresReleasedPayloadSchema.safeParse(payload).success
+        ? ok(emailGateInApp(SAT_SCORES_RELEASED_SUBJECT))
+        : err("sat_scores_released payload does not match its schema");
+    case "email_gate_paused_notice":
+      return emailGatePausedNoticePayloadSchema.safeParse(payload).success
+        ? ok(emailGateInApp(PAUSED_NOTICE_SUBJECT))
+        : err("email_gate_paused_notice payload does not match its schema");
+    case "email_gate_guardian_paused": {
+      const parsed = emailGateGuardianPausedPayloadSchema.safeParse(payload);
+      return parsed.success
+        ? ok(
+            emailGateInApp(
+              guardianPausedSubject(parsed.data.student_first_name),
+            ),
+          )
+        : err("email_gate_guardian_paused payload does not match its schema");
+    }
   }
 }
 
@@ -246,6 +292,40 @@ export function renderEmail(
       return err(
         "a lifecycle email is sent by Resend, never by the dispatcher",
       );
+    case "sat_week_before": {
+      const parsed = satWeekBeforePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("sat_week_before payload does not match its schema");
+      return ok(satWeekBeforeEmail(parsed.data, ctx));
+    }
+    case "sat_day_after": {
+      const parsed = satDayAfterPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("sat_day_after payload does not match its schema");
+      return ok(satDayAfterEmail(parsed.data));
+    }
+    case "sat_scores_released": {
+      const parsed = satScoresReleasedPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err("sat_scores_released payload does not match its schema");
+      return ok(satScoresReleasedEmail(parsed.data, ctx));
+    }
+    case "email_gate_paused_notice": {
+      const parsed = emailGatePausedNoticePayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err(
+          "email_gate_paused_notice payload does not match its schema",
+        );
+      return ok(pausedNoticeEmail(parsed.data, ctx));
+    }
+    case "email_gate_guardian_paused": {
+      const parsed = emailGateGuardianPausedPayloadSchema.safeParse(payload);
+      if (!parsed.success)
+        return err(
+          "email_gate_guardian_paused payload does not match its schema",
+        );
+      return ok(guardianPausedEmail(parsed.data, ctx));
+    }
   }
 }
 

@@ -84,6 +84,7 @@ export const env = {
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
   NOTIFICATION_FROM_EMAIL: process.env.NOTIFICATION_FROM_EMAIL,
+  NOTIFICATION_TRACKED_FROM_EMAIL: process.env.NOTIFICATION_TRACKED_FROM_EMAIL,
 };
 
 // OCR Configuration for Option C - SAT-aware OCR pipeline

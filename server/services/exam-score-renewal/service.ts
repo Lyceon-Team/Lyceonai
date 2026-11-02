@@ -48,6 +48,8 @@ import {
 import { setCancelAtPeriodEnd } from "../../lib/stripe/renewal-cancellation";
 import { notificationEventId } from "../../lib/notifications/event-id";
 import { upsertStudyProfile } from "../calendar/profile-service";
+import { addDaysToLocalDate } from "@lyceon/shared";
+import { localTodayIn } from "../calendar/adapters/local-day";
 
 export type ScoreRenewalFailure =
   | { kind: "no_prompt" }
@@ -161,6 +163,108 @@ async function readOccasion(
   });
 }
 
+/**
+ * @spec [owner ruling 2026-11-02 round 2, section 2: "Widen the score form to any past test date
+ *       within 45 days"; the "Got your scores?" email links `/score-report?date=`]
+ *       | @implemented [2026-11-02]
+ *
+ * plain English: an occasion the student names by date, with no post-exam prompt behind it. It
+ * must be one of the student's OWN stored test dates (the server never takes a client's word for
+ * a sitting), already past in their zone, and at most 45 days ago. Score only: there is no retake
+ * question on this path (no prompt was raised, so no billing decision is open).
+ */
+export const SCORE_FORM_WINDOW_DAYS = 45;
+
+async function readDateOccasion(
+  studentId: string,
+  date: string,
+  requestId: string | undefined,
+  now: Date,
+): Promise<Result<Occasion, ScoreRenewalFailure>> {
+  const { data, error } = await supabaseServer
+    .from("student_study_profile")
+    .select("timezone, target_exam_dates")
+    .eq("student_id", studentId)
+    .maybeSingle();
+  if (error) {
+    logger.error(
+      "BILLING",
+      "score_report_dates_read_failed",
+      "the student's test dates could not be read",
+      { ...classifyError(error), requestId },
+    );
+    return err({ kind: "read_failed" });
+  }
+  const timezone = typeof data?.timezone === "string" ? data.timezone : null;
+  const dates: unknown[] = Array.isArray(data?.target_exam_dates)
+    ? data.target_exam_dates
+    : [];
+  if (
+    timezone === null ||
+    !dates.some((d) => String(d).slice(0, 10) === date)
+  ) {
+    return err({ kind: "no_prompt" });
+  }
+  const today = localTodayIn(timezone, now);
+  if (
+    date >= today ||
+    date < addDaysToLocalDate(today, -SCORE_FORM_WINDOW_DAYS)
+  ) {
+    return err({ kind: "no_prompt" });
+  }
+  const entitlement = await supabaseServer
+    .from("entitlements")
+    .select("payer_profile_id, stripe_subscription_id")
+    .eq("profile_id", studentId)
+    .maybeSingle();
+  if (entitlement.error) {
+    logger.error(
+      "BILLING",
+      "score_report_entitlement_read_failed",
+      "the entitlement behind a score report could not be read",
+      { ...classifyError(entitlement.error), requestId },
+    );
+    return err({ kind: "read_failed" });
+  }
+  const payerProfileId = entitlement.data?.payer_profile_id ?? null;
+  return ok({
+    anchor: "exam_date",
+    occasionKey: date,
+    promptedAt: date,
+    viewerRole:
+      payerProfileId === null || payerProfileId === studentId
+        ? "payer"
+        : "student",
+    stripeSubscriptionId: entitlement.data?.stripe_subscription_id ?? null,
+  });
+}
+
+/**
+ * The occasion for the score form: the prompt we raised when it names that date (or no date was
+ * given), else the date path above. `renewalOpen` is false on the date path.
+ */
+async function readScoreOccasion(
+  studentId: string,
+  date: string | undefined,
+  requestId: string | undefined,
+  now: Date,
+): Promise<Result<Occasion & { renewalOpen: boolean }, ScoreRenewalFailure>> {
+  const prompt = await readOccasion(studentId, requestId);
+  if (date === undefined) {
+    return prompt.ok ? ok({ ...prompt.value, renewalOpen: true }) : prompt;
+  }
+  if (!prompt.ok && prompt.error.kind !== "no_prompt") return prompt;
+  if (
+    prompt.ok &&
+    prompt.value.anchor === "exam_date" &&
+    prompt.value.occasionKey === date
+  ) {
+    return ok({ ...prompt.value, renewalOpen: true });
+  }
+  const byDate = await readDateOccasion(studentId, date, requestId, now);
+  return byDate.ok ? ok({ ...byDate.value, renewalOpen: false }) : byDate;
+}
+
 function pairingOf(row: Record<string, unknown>): ProjectionPairing {
   return {
     section: row.section === "M" ? "M" : "RW",
@@ -199,8 +303,10 @@ function pairingOf(row: Record<string, unknown>): ProjectionPairing {
 export async function readScoreReportSurface(
   studentId: string,
   requestId?: string,
+  date?: string,
+  now: Date = new Date(),
 ): Promise<Result<RenewalPromptView, ScoreRenewalFailure>> {
-  const occasion = await readOccasion(studentId, requestId);
+  const occasion = await readScoreOccasion(studentId, date, requestId, now);
   if (!occasion.ok) return err(occasion.error);
 
   const decision = await supabaseServer
@@ -266,6 +372,7 @@ export async function readScoreReportSurface(
     occasion_key: occasion.value.occasionKey,
     prompted_at: occasion.value.promptedAt,
     viewer_role: occasion.value.viewerRole,
+    renewal_open: occasion.value.renewalOpen,
     decision:
       decisionRow?.decision === "retaking"
         ? "retaking"
@@ -309,8 +416,21 @@ export async function submitScoreReport(
     return err({ kind: "invalid", details: parsed.error.flatten() });
   }
 
-  const occasion = await readOccasion(studentId, requestId);
-  if (!occasion.ok) return err(occasion.error);
+  // The prompt's own occasion, or one of the student's own past test dates within 45 days
+  // (ruling 2026-11-02). Any other date is refused, so a caller still cannot choose a pairing.
+  const occasion = await readScoreOccasion(
+    studentId,
+    parsed.data.occasion_key,
+    requestId,
+    new Date(),
+  );
+  if (!occasion.ok) {
+    return err(
+      occasion.error.kind === "no_prompt"
+        ? { kind: "occasion_mismatch" }
+        : occasion.error,
+    );
+  }
   if (
     occasion.value.anchor !== "exam_date" ||
     occasion.value.occasionKey !== parsed.data.occasion_key
