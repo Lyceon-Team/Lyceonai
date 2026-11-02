@@ -1,0 +1,615 @@
+{
+  "voice": "af_heart",
+  "speaking_rate": 1,
+  "lines": [
+    {
+      "key": "hook",
+      "text_sha256": "864536b83075ccfbe44267d0eeb954bfddb46adef14cd7617c8a30404a7adc6e",
+      "file": "hook.wav",
+      "duration": 6.229,
+      "words": [
+        {
+          "text": "10",
+          "start": 0.02,
+          "end": 0.48
+        },
+        {
+          "text": "seconds,",
+          "start": 0.54,
+          "end": 1.25
+        },
+        {
+          "text": "negative",
+          "start": 1.25,
+          "end": 1.91
+        },
+        {
+          "text": "5x",
+          "start": 1.92,
+          "end": 2.2
+        },
+        {
+          "text": "plus",
+          "start": 2.27,
+          "end": 2.58
+        },
+        {
+          "text": "14",
+          "start": 2.58,
+          "end": 3.09
+        },
+        {
+          "text": "is",
+          "start": 3.16,
+          "end": 3.32
+        },
+        {
+          "text": "at",
+          "start": 3.32,
+          "end": 3.52
+        },
+        {
+          "text": "least",
+          "start": 3.52,
+          "end": 4.03
+        },
+        {
+          "text": "39.",
+          "start": 4.03,
+          "end": 4.68
+        },
+        {
+          "text": "Which",
+          "start": 4.7,
+          "end": 4.96
+        },
+        {
+          "text": "way",
+          "start": 5.07,
+          "end": 5.16
+        },
+        {
+          "text": "does",
+          "start": 5.16,
+          "end": 5.4
+        },
+        {
+          "text": "the",
+          "start": 5.4,
+          "end": 5.52
+        },
+        {
+          "text": "sign",
+          "start": 5.52,
+          "end": 5.88
+        },
+        {
+          "text": "point?",
+          "start": 5.88,
+          "end": 6.27
+        }
+      ]
+    },
+    {
+      "key": "question",
+      "text_sha256": "e26ce29b26846c63a2200351b9a87a63eba93864048631e54b42d76ea26d4e44",
+      "file": "question.wav",
+      "duration": 6.827,
+      "words": [
+        {
+          "text": "What",
+          "start": 0.04,
+          "end": 0.3
+        },
+        {
+          "text": "are",
+          "start": 0.3,
+          "end": 0.53
+        },
+        {
+          "text": "all",
+          "start": 0.53,
+          "end": 0.76
+        },
+        {
+          "text": "values",
+          "start": 0.76,
+          "end": 1.19
+        },
+        {
+          "text": "of",
+          "start": 1.2,
+          "end": 1.36
+        },
+        {
+          "text": "x",
+          "start": 1.36,
+          "end": 1.41
+        },
+        {
+          "text": "that",
+          "start": 1.51,
+          "end": 1.72
+        },
+        {
+          "text": "satisfy",
+          "start": 1.75,
+          "end": 2.3
+        },
+        {
+          "text": "negative",
+          "start": 2.3,
+          "end": 3.14
+        },
+        {
+          "text": "5x",
+          "start": 3.14,
+          "end": 3.56
+        },
+        {
+          "text": "plus",
+          "start": 3.56,
+          "end": 3.96
+        },
+        {
+          "text": "14",
+          "start": 3.99,
+          "end": 4.21
+        },
+        {
+          "text": "is",
+          "start": 4.65,
+          "end": 4.78
+        },
+        {
+          "text": "greater",
+          "start": 4.86,
+          "end": 5.24
+        },
+        {
+          "text": "than",
+          "start": 5.24,
+          "end": 5.5
+        },
+        {
+          "text": "or",
+          "start": 5.5,
+          "end": 5.56
+        },
+        {
+          "text": "equal",
+          "start": 5.66,
+          "end": 6
+        },
+        {
+          "text": "to",
+          "start": 6,
+          "end": 6.08
+        },
+        {
+          "text": "39?",
+          "start": 6.17,
+          "end": 6.72
+        }
+      ]
+    },
+    {
+      "key": "step-1",
+      "text_sha256": "c51ae75ad7f857e9b3bc9f924015aa50a315c25988ec58a547f6f59816d7b871",
+      "file": "step-1.wav",
+      "duration": 1.557,
+      "words": [
+        {
+          "text": "Solve",
+          "start": 0.14,
+          "end": 0.28
+        },
+        {
+          "text": "it",
+          "start": 0.28,
+          "end": 0.39
+        },
+        {
+          "text": "like",
+          "start": 0.39,
+          "end": 0.61
+        },
+        {
+          "text": "an",
+          "start": 0.61,
+          "end": 0.66
+        },
+        {
+          "text": "equation.",
+          "start": 0.72,
+          "end": 1.36
+        }
+      ]
+    },
+    {
+      "key": "step-2",
+      "text_sha256": "eee1115c49424a96489d4c90b15085e5a457379d78fed1270f475bf06e5da57b",
+      "file": "step-2.wav",
+      "duration": 4.821,
+      "words": [
+        {
+          "text": "Subtract",
+          "start": 0.09,
+          "end": 0.53
+        },
+        {
+          "text": "14",
+          "start": 0.63,
+          "end": 1.08
+        },
+        {
+          "text": "from",
+          "start": 1.08,
+          "end": 1.39
+        },
+        {
+          "text": "both",
+          "start": 1.39,
+          "end": 1.69
+        },
+        {
+          "text": "sides.",
+          "start": 1.69,
+          "end": 2.38
+        },
+        {
+          "text": "Negative",
+          "start": 2.47,
+          "end": 3.02
+        },
+        {
+          "text": "5x",
+          "start": 3.02,
+          "end": 3.34
+        },
+        {
+          "text": "is",
+          "start": 3.34,
+          "end": 3.46
+        },
+        {
+          "text": "at",
+          "start": 3.53,
+          "end": 3.64
+        },
+        {
+          "text": "least",
+          "start": 3.67,
+          "end": 4.05
+        },
+        {
+          "text": "25.",
+          "start": 4.05,
+          "end": 4.8
+        }
+      ]
+    },
+    {
+      "key": "step-3",
+      "text_sha256": "0b084cd62c81c27588caf918997ab8135a6ebc89080cb5860628818445820249",
+      "file": "step-3.wav",
+      "duration": 4.501,
+      "words": [
+        {
+          "text": "Now",
+          "start": 0.04,
+          "end": 0.27
+        },
+        {
+          "text": "divide",
+          "start": 0.27,
+          "end": 0.77
+        },
+        {
+          "text": "by",
+          "start": 0.87,
+          "end": 0.99
+        },
+        {
+          "text": "negative",
+          "start": 0.99,
+          "end": 1.71
+        },
+        {
+          "text": "5.",
+          "start": 1.71,
+          "end": 2.28
+        },
+        {
+          "text": "Dividing",
+          "start": 2.34,
+          "end": 2.81
+        },
+        {
+          "text": "by",
+          "start": 2.81,
+          "end": 2.94
+        },
+        {
+          "text": "a",
+          "start": 2.94,
+          "end": 3
+        },
+        {
+          "text": "negative",
+          "start": 3,
+          "end": 3.49
+        },
+        {
+          "text": "flips",
+          "start": 3.68,
+          "end": 3.84
+        },
+        {
+          "text": "the",
+          "start": 3.84,
+          "end": 4
+        },
+        {
+          "text": "sign.",
+          "start": 4,
+          "end": 4.39
+        }
+      ]
+    },
+    {
+      "key": "step-4",
+      "text_sha256": "f2fa7d1e843f1514ff2a6ee04339abfba18f7e18e2ff00dcec7872fc48fd4865",
+      "file": "step-4.wav",
+      "duration": 2.923,
+      "words": [
+        {
+          "text": "so",
+          "start": 0.06,
+          "end": 0.16
+        },
+        {
+          "text": "x",
+          "start": 0.16,
+          "end": 0.17
+        },
+        {
+          "text": "is",
+          "start": 0.24,
+          "end": 0.34
+        },
+        {
+          "text": "less",
+          "start": 0.4,
+          "end": 0.72
+        },
+        {
+          "text": "than",
+          "start": 0.72,
+          "end": 1.03
+        },
+        {
+          "text": "or",
+          "start": 1.03,
+          "end": 1.04
+        },
+        {
+          "text": "equal",
+          "start": 1.26,
+          "end": 1.61
+        },
+        {
+          "text": "to",
+          "start": 1.61,
+          "end": 1.77
+        },
+        {
+          "text": "negative",
+          "start": 1.77,
+          "end": 2.37
+        },
+        {
+          "text": "five.",
+          "start": 2.5,
+          "end": 2.78
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "9d3c48e6abfe0c70030852614220e36a408e606fc0d8ba9a976a95e67a777ec0",
+      "file": "answer.wav",
+      "duration": 4.224,
+      "words": [
+        {
+          "text": "So",
+          "start": 0.07,
+          "end": 0.18
+        },
+        {
+          "text": "the",
+          "start": 0.18,
+          "end": 0.45
+        },
+        {
+          "text": "answer",
+          "start": 0.45,
+          "end": 0.99
+        },
+        {
+          "text": "is",
+          "start": 0.99,
+          "end": 1.11
+        },
+        {
+          "text": "A.",
+          "start": 1.26,
+          "end": 1.56
+        },
+        {
+          "text": "Xis",
+          "start": 1.57,
+          "end": 1.8
+        },
+        {
+          "text": "less",
+          "start": 1.82,
+          "end": 2.16
+        },
+        {
+          "text": "than",
+          "start": 2.16,
+          "end": 2.53
+        },
+        {
+          "text": "or",
+          "start": 2.54,
+          "end": 2.7
+        },
+        {
+          "text": "equal",
+          "start": 2.7,
+          "end": 3.11
+        },
+        {
+          "text": "to",
+          "start": 3.16,
+          "end": 3.24
+        },
+        {
+          "text": "negative",
+          "start": 3.24,
+          "end": 3.62
+        },
+        {
+          "text": "5.",
+          "start": 3.76,
+          "end": 4.05
+        }
+      ]
+    },
+    {
+      "key": "trap",
+      "text_sha256": "7a8760441592a50353b6b615bd406b10196fde80019ccc80c5a8d511d0c6bd38",
+      "file": "trap.wav",
+      "duration": 7.851,
+      "words": [
+        {
+          "text": "The",
+          "start": 0.05,
+          "end": 0.25
+        },
+        {
+          "text": "trap",
+          "start": 0.25,
+          "end": 0.44
+        },
+        {
+          "text": "dividing",
+          "start": 0.71,
+          "end": 1.27
+        },
+        {
+          "text": "by",
+          "start": 1.27,
+          "end": 1.44
+        },
+        {
+          "text": "negative",
+          "start": 1.44,
+          "end": 2.12
+        },
+        {
+          "text": "5",
+          "start": 2.12,
+          "end": 2.35
+        },
+        {
+          "text": "and",
+          "start": 2.41,
+          "end": 2.67
+        },
+        {
+          "text": "keeping",
+          "start": 2.67,
+          "end": 3.29
+        },
+        {
+          "text": "the",
+          "start": 3.29,
+          "end": 3.39
+        },
+        {
+          "text": "sign.",
+          "start": 3.39,
+          "end": 3.99
+        },
+        {
+          "text": "That",
+          "start": 3.99,
+          "end": 4.27
+        },
+        {
+          "text": "gives",
+          "start": 4.27,
+          "end": 4.68
+        },
+        {
+          "text": "x",
+          "start": 4.68,
+          "end": 4.76
+        },
+        {
+          "text": "is",
+          "start": 4.76,
+          "end": 4.92
+        },
+        {
+          "text": "at",
+          "start": 4.92,
+          "end": 5.08
+        },
+        {
+          "text": "least",
+          "start": 5.08,
+          "end": 5.49
+        },
+        {
+          "text": "negative",
+          "start": 5.49,
+          "end": 6.15
+        },
+        {
+          "text": "5,",
+          "start": 6.15,
+          "end": 6.49
+        },
+        {
+          "text": "which",
+          "start": 6.57,
+          "end": 6.64
+        },
+        {
+          "text": "points",
+          "start": 6.71,
+          "end": 6.93
+        },
+        {
+          "text": "the",
+          "start": 6.97,
+          "end": 7.14
+        },
+        {
+          "text": "wrong",
+          "start": 7.14,
+          "end": 7.32
+        },
+        {
+          "text": "way.",
+          "start": 7.57,
+          "end": 7.76
+        }
+      ]
+    }
+  ]
+}

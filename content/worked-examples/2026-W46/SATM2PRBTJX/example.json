@@ -1,0 +1,26 @@
+{
+  "question_id": "SATM2PRBTJX",
+  "skill_code": "Percentages",
+  "post_on": "2026-11-13",
+  "hook": {
+    "type": "contrarian",
+    "line": "Most people divide by the wrong number here. 4,700 to 5,358?",
+    "voice": "Most people divide by the wrong number here. Four thousand seven hundred to five thousand three hundred fifty-eight?"
+  },
+  "question_voice": "A town's population grew from four thousand seven hundred to five thousand three hundred fifty-eight. What is the percent increase?",
+  "signature_move": "Turn each percent change into a multiplier.",
+  "steps": [
+    { "notepad": "change = 5,358 − 4,700 = 658", "voice": "First, the change. Five thousand three hundred fifty-eight minus four thousand seven hundred is six hundred fifty-eight." },
+    { "notepad": "658 ÷ 4,700 = 0.14", "voice": "Divide by the starting number, four thousand seven hundred. That's zero point one four." },
+    { "notepad": "multiplier: × 1.14", "voice": "As a multiplier, the town grew by a factor of one point one four." },
+    { "notepad": "1.14 → up 14%", "voice": "One point one four means up fourteen percent." }
+  ],
+  "answer": { "letter": "B", "notepad": "Answer: B) 14%", "voice": "So the answer is B. Fourteen percent." },
+  "trap": {
+    "summary": "Dividing the change by the new number, 658 ÷ 5,358, which gives 12.3%.",
+    "notepad": ["658 ÷ 5,358 = 12.3%  ✗", "divide by where you START", "658 ÷ 4,700 = 14%  ✓"],
+    "voice": "The trap: dividing by the new number, five thousand three hundred fifty-eight. That gives twelve point three percent. Percent change always divides by where you start."
+  },
+  "check": "Plug the answer back in: 4,700 × 1.14 = 5,358 exactly.",
+  "takeaway": "Percent change divides by where you start."
+}
