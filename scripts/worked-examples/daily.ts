@@ -5,8 +5,9 @@
  * @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): "a daily job at
  *       17:00 UTC renders any approved example with post_on = today and posts it to #social as the
  *       labelled set … Karl posts manually", acceptance "the daily job posts only approved,
- *       post_on-today examples, once"; Step 0 ruling 3 (post_on + a daily job)]
- *       | @implemented [2026-10-27]
+ *       post_on-today examples, once"; Step 0 ruling 3 (post_on + a daily job); SCL-270
+ *       (Karl's ruling 2026-11-02): the finished mix at most -1 dBTP true peak, checked by verify]
+ *       | @implemented [2026-10-27, the true-peak check 2026-11-02]
  *
  * plain English, three subcommands the workflow runs in order:
  *   select  --content <social checkout> --out <dir> [--dry-run --date YYYY-MM-DD]
@@ -19,8 +20,10 @@
  *           approval; SCL-265).
  *           --dry-run (pull requests only) uses the given date and a placeholder approval so the
  *           whole path is proven on the fixture tree; the workflow never claims or posts then.
- *   verify  --out <dir>   the rendered MP4 is 1080×1920, 30-60 s, within 0.25 s of the
- *           composition, with an audio stream (ffprobe).
+ *   verify  --out <dir>   the finished MP4 is 1080×1920, 30-60 s, within 0.25 s of the
+ *           composition, with an audio stream (ffprobe), and its mix peaks at most voice.json
+ *           `final_mix.max_true_peak_dbtp` (-1 dBTP) true peak (final-mix.ts; SCL-270, Karl's
+ *           ruling 2026-11-02). The workflow runs final-mix.ts on the render before this.
  *   claim   --content <social checkout> --out <dir> --run <run id>   adds the example to
  *           posted.json (refused if already there). The workflow pushes that commit to `social`
  *           BEFORE posting: a failed push stops the run, so a re-run can never post twice. A post
@@ -65,6 +68,7 @@ import {
 } from "./content";
 import { folderCommit, pullForCommit } from "./github";
 import { maxVolumeFromFfmpeg, musicPeakProblem } from "./audio";
+import { finishedMixProblems } from "./final-mix";
 import { generate } from "./generate";
 import { ROOT, loadKit } from "./kit";
 
@@ -340,6 +344,7 @@ function verify(a: Args): void {
     kit,
   );
   if (music) problems.push(music);
+  problems.push(...finishedMixProblems(join(out, post.video), kit));
   if (problems.length > 0)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
   process.stdout.write(`verify: ${post.video} OK (${format} s)\n`);

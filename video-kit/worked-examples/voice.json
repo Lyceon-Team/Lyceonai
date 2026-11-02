@@ -37,6 +37,10 @@
     "true_peak_dbtp": -1,
     "loudness_range_lu": 11
   },
+  "final_mix": {
+    "max_true_peak_dbtp": -1,
+    "aac_bitrate_kbps": 192
+  },
   "transcript_aliases": {
     "lycian": "lyceon",
     "lycion": "lyceon",

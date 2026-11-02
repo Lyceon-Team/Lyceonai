@@ -215,13 +215,20 @@ function loudnormFilter(
  */
 export const LIMITER_HEADROOM_DB = 0.5;
 
+/**
+ * alimiter's linear limit for a true-peak ceiling less some headroom, to three places. The line
+ * backstop (limiterCeiling) and the finished-mix limiter (final-mix.ts) both take it from here.
+ */
+export function alimiterLimit(
+  maxTruePeakDbtp: number,
+  headroomDb: number,
+): number {
+  return Math.round(10 ** ((maxTruePeakDbtp - headroomDb) / 20) * 1000) / 1000;
+}
+
 /** The backstop as alimiter's linear limit: -1 dBTP less the headroom is -1.5 dBFS, 0.841. */
 export function limiterCeiling(target: LoudnessTarget): number {
-  return (
-    Math.round(
-      10 ** ((target.true_peak_dbtp - LIMITER_HEADROOM_DB) / 20) * 1000,
-    ) / 1000
-  );
+  return alimiterLimit(target.true_peak_dbtp, LIMITER_HEADROOM_DB);
 }
 
 /** Pass 1: measure the line (loudnorm prints its JSON on stderr; no output file). */
