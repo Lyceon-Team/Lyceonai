@@ -21,18 +21,22 @@ import {
   workedExamplePostSchema,
   voiceLineSchema,
   type WorkedExampleContent,
+  type WorkedExamplePost,
 } from "../../packages/shared/src/worked-example-schema";
 import {
   captionProblems,
   hookAnswerProblem,
   hookCuriosityProblem,
   hookPeopleProblem,
+  hookProblems,
   hookPuzzleProblem,
   hookStatisticProblem,
   planProblems,
   titleProblems,
   workedExampleCaption,
+  workedExampleFacebookCaption,
   workedExampleInstagramCaption,
+  workedExampleKeywords,
   workedExampleLabel,
   workedExampleTitle,
 } from "../../shared/worked-examples/rules";
@@ -60,7 +64,11 @@ import {
   seedQuestion,
   voiceProblems,
 } from "../../scripts/worked-examples/content";
-import { buildPost, renderProblems } from "../../scripts/worked-examples/daily";
+import {
+  buildPost,
+  renderProblems,
+  workedExampleCopy,
+} from "../../scripts/worked-examples/daily";
 import { durationProblem } from "../../scripts/worked-examples/generate";
 import { KIT_DIR, ROOT, loadKit } from "../../scripts/worked-examples/kit";
 import {
@@ -133,9 +141,39 @@ describe("hook rules", () => {
 
   it("H2 refuses claims about students or people", () => {
     expect(hookPeopleProblem("Most students miss this one?")).toMatch(/^H2/);
-    expect(hookPeopleProblem("Most people get this wrong?")).toMatch(/^H2/);
     expect(hookPeopleProblem("Everyone picks C here?")).toMatch(/^H2/);
     expect(hookPeopleProblem("Up 25%, then down 25%. Back to $64?")).toBeNull();
+  });
+
+  // Karl's ruling 2026-11-02 (SCL-265): "'Most people…' hooks are ALLOWED; this replaces the
+  // earlier ban." Only the opening is exempt.
+  it("H2 allows a hook that opens with Most people", () => {
+    expect(hookPeopleProblem("Most people think it's $64?")).toBeNull();
+    expect(hookPeopleProblem("most people get this wrong…")).toBeNull();
+    expect(
+      hookPeopleProblem("Most people say $64. Up 25%, then down 25%?"),
+    ).toBeNull();
+  });
+
+  it("H2 still refuses every other claim about people, including after a Most people opening", () => {
+    expect(hookPeopleProblem("most students think it's $64?")).toMatch(/^H2/);
+    expect(hookPeopleProblem("Most kids pick $64 here?")).toMatch(/^H2/);
+    expect(
+      hookPeopleProblem("Most people think $64, and everyone is wrong?"),
+    ).toMatch(/^H2/);
+    expect(
+      hookPeopleProblem("Most people miss it, and most students too?"),
+    ).toMatch(/^H2/);
+    expect(hookPeopleProblem("Kids always pick $64 here?")).toMatch(/^H2/);
+    expect(hookPeopleProblem("Why do most people pick $64?")).toMatch(/^H2/);
+  });
+
+  it("a Most people hook passes every hook rule on the real question", () => {
+    const hook = withHook(
+      "Most people think it's back to $64. Is it?",
+      "Most people think it's back to sixty-four dollars. Is it?",
+    );
+    expect(hookProblems(hook, question)).toEqual([]);
   });
 
   it("H3 requires the hook to state the puzzle", () => {
@@ -381,38 +419,103 @@ describe("audio mix and licences", () => {
 });
 
 describe("title and caption", () => {
+  // SCL-265 (Karl's ruling 2026-11-02): the worked-example captions use the SCL-262 format, with
+  // the music credit (CC BY 4.0) on every one. Every expectation is on the real builders' output.
   const credit = kit.track.credit;
   const title = workedExampleTitle(fixture.content, question);
-  const caption = workedExampleCaption(fixture.content, credit);
+  const caption = workedExampleCaption(fixture.content, question, credit);
+  const instagram = workedExampleInstagramCaption(
+    fixture.content,
+    question,
+    credit,
+  );
+  const facebook = workedExampleFacebookCaption(
+    fixture.content,
+    question,
+    credit,
+  );
+  const captions = { tiktok: caption, instagram, facebook };
 
   it("the real title and caption pass, with the music credited", () => {
     expect(title).toBe("SAT Math worked example · Percentages");
     expect(titleProblems(title)).toEqual([]);
-    expect(caption.split("\n")[0]).toBe("Follow for daily SAT questions 👆");
-    expect(caption).toContain(
-      'Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.',
-    );
-    expect(captionProblems(caption, credit)).toEqual([]);
-    // Owner brief "One funnel for every social post" (Karl, 2026-10-28): the QOTD's CTA lines.
-    expect(fixture.content.post_on <= "2026-12-05").toBe(true);
-    expect(caption.split("\n\n").slice(2, 4)).toEqual([
-      "Comment your answer 👇",
-      "Taking the SAT Dec 5? Free SAT practice: link in bio",
-    ]);
-    const instagram = workedExampleInstagramCaption(fixture.content, credit);
-    expect(instagram.split("\n\n").slice(2, 4)).toEqual([
-      "Comment your answer 👇",
-      "Taking the SAT Dec 5? Comment SAT and I'll send you the link",
-    ]);
-    expect(captionProblems(instagram, credit)).toEqual([]);
-    const later = { ...fixture.content, post_on: "2026-12-07" };
-    expect(workedExampleCaption(later, credit)).toContain(
-      "\n\nFree SAT practice: link in bio\n\n",
-    );
-    expect(workedExampleCaption(later, credit)).not.toContain("Dec 5");
+    for (const [platform, text] of Object.entries(captions)) {
+      expect(text.split("\n")[0], platform).toBe(title);
+      expect(text.split("\n\n").at(-1), platform).toBe(
+        'Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.',
+      );
+      expect(captionProblems(text, credit, title), platform).toEqual([]);
+    }
     expect(workedExampleLabel(fixture.content)).toBe(
       "Worked example · Percentages · obvious_answer_trap",
     );
+  });
+
+  it("the TikTok, Instagram and Facebook captions are the SCL-262 lines, then the credit", () => {
+    // The fixture posts on 2026-11-02: the next confirmed SAT is Nov 7.
+    expect(fixture.content.post_on).toBe("2026-11-02");
+    const tags = "#SAT #SATprep #digitalSAT #NovemberSAT #SATMath";
+    expect(caption.split("\n\n")).toEqual([
+      title,
+      "Follow for daily SAT questions 👆 Comment your answer 👇",
+      tags,
+      credit,
+    ]);
+    expect(instagram.split("\n\n")).toEqual([
+      title,
+      "Comment your answer 👇",
+      "Taking the SAT Nov 7? Comment SAT and I'll send you the link",
+      tags,
+      credit,
+    ]);
+    expect(facebook.split("\n\n")).toEqual([
+      title,
+      "How would you solve it? Share your approach below 👇",
+      tags,
+      credit,
+    ]);
+    for (const text of Object.values(captions))
+      expect(text.match(/#\w+/g)?.length).toBeLessThanOrEqual(5);
+  });
+
+  it("no link, bio line or promo in any caption; Facebook asks for no comment word", () => {
+    for (const [platform, text] of Object.entries(captions)) {
+      expect(text, platform).not.toMatch(
+        /https?:\/\/|www\.|lyceon\.ai|link in bio|bio link|Free SAT practice/i,
+      );
+      expect(text, platform).not.toMatch(/#fyp|#studytok/i);
+    }
+    expect(facebook).not.toMatch(/\bComment\b/);
+    expect(
+      captionProblems(
+        caption.replace(credit, `lyceon.ai/start\n\n${credit}`),
+        credit,
+        title,
+      ).join(),
+    ).toMatch(/carries a link or bio line/);
+  });
+
+  it("TikTok's keywords: test month, always-set, Math, the canonical domain", () => {
+    expect(question.domain).toBe("Problem Solving and Data Analysis");
+    expect(workedExampleKeywords(fixture.content, question)).toEqual({
+      ok: true,
+      keywords: [
+        "November SAT questions",
+        "SAT",
+        "SAT prep",
+        "Digital SAT",
+        "College admissions",
+        "SAT math",
+        "Data analysis",
+        "Statistics",
+      ],
+    });
+    expect(
+      workedExampleKeywords(fixture.content, {
+        ...question,
+        domain: "Problem-Solving and Data Analysis",
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   it("a title over 90 characters or not starting with SAT is refused", () => {
@@ -424,16 +527,18 @@ describe("title and caption", () => {
     );
   });
 
-  it("a caption without the follow line first, or without the credit, is refused", () => {
+  it("a caption without the headline first, or without the credit, is refused", () => {
     expect(
       captionProblems(
-        caption.replace("Follow for daily SAT questions 👆\n\n", ""),
+        caption.replace(`${title}\n\n`, ""),
         credit,
+        title,
       ).join(),
-    ).toMatch(/first line must be/);
-    expect(captionProblems(caption.replace(credit, ""), credit).join()).toMatch(
-      /does not credit the music/,
-    );
+    ).toMatch(/first line must be the headline/);
+    for (const text of Object.values(captions))
+      expect(
+        captionProblems(text.replace(credit, ""), credit, title).join(),
+      ).toMatch(/does not credit the music/);
   });
 });
 
@@ -548,22 +653,17 @@ describe("the daily job: approved, post_on today, once", () => {
       mergeSha: sha,
       mergedAt: "2026-10-28T15:00:00Z",
     };
-    const instagram = workedExampleInstagramCaption(
-      fixture.content,
-      kit.track.credit,
-    );
-    const post = buildPost(
-      fixture,
-      workedExampleTitle(fixture.content, question),
-      workedExampleCaption(fixture.content, kit.track.credit),
-      kit.track.credit,
-      approval,
-      instagram,
-    );
+    const copy = workedExampleCopy(fixture, question, kit.track.credit);
+    const post = buildPost(fixture, copy, kit.track.credit, approval);
     const parsed = workedExamplePostSchema.parse(post);
     expect(parsed.video).toBe("we-satm2czs1be.mp4");
-    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
-    expect(parsed.instagram_caption).toBe(instagram);
+    expect(parsed.title).toBe(copy.title);
+    expect(parsed.caption).toBe(copy.caption);
+    expect(parsed.instagram_caption).toBe(copy.instagram_caption);
+    expect(parsed.facebook_caption).toBe(copy.facebook_caption);
+    expect(copy.keywords).toEqual({ ok: true, keywords: parsed.keywords });
+    expect(parsed.warnings).toEqual([]);
+    // Kept in post.json for the run's download, as the QOTD's (SCL-262); never posted.
     expect(parsed.links).toEqual({
       reddit: "lyceon.ai/start?utm_source=reddit&utm_campaign=worked_example",
       tiktok: "lyceon.ai/start?utm_source=tiktok&utm_campaign=worked_example",
@@ -573,23 +673,63 @@ describe("the daily job: approved, post_on today, once", () => {
     expect(() =>
       buildPost(
         fixture,
-        "Percentages",
-        "x",
+        { ...copy, title: "Percentages" },
         kit.track.credit,
         approval,
-        instagram,
       ),
     ).toThrow(/must start "SAT"/);
     expect(() =>
       buildPost(
         fixture,
-        workedExampleTitle(fixture.content, question),
-        workedExampleCaption(fixture.content, kit.track.credit),
+        { ...copy, instagram_caption: "no headline" },
         kit.track.credit,
         approval,
-        "no follow line",
       ),
-    ).toThrow(/instagram caption's first line/);
+    ).toThrow(/instagram caption's first line must be the headline/);
+    expect(() =>
+      buildPost(
+        fixture,
+        {
+          ...copy,
+          facebook_caption: copy.facebook_caption.replace(kit.track.credit, ""),
+        },
+        kit.track.credit,
+        approval,
+      ),
+    ).toThrow(/facebook caption does not credit the music/);
+    expect(() =>
+      buildPost(
+        fixture,
+        {
+          ...copy,
+          keywords: workedExampleKeywords(fixture.content, {
+            ...question,
+            domain: "Craft and Structure",
+          }),
+        },
+        kit.track.credit,
+        approval,
+      ),
+    ).toThrow(/tiktok keywords: "Craft and Structure" is not a Math domain/);
+  });
+
+  it("with no confirmed SAT left the post carries the warning and no month", () => {
+    const late = {
+      ...fixture,
+      content: { ...fixture.content, post_on: "2099-01-01" },
+    };
+    const copy = workedExampleCopy(late, question, kit.track.credit);
+    const post = buildPost(late, copy, kit.track.credit, {
+      pr: 1,
+      mergedBy: "kingk237",
+      mergeSha: sha,
+      mergedAt: "x",
+    });
+    expect(post.warnings.join()).toMatch(/SAT date list needs updating/);
+    expect(
+      [post.caption, post.instagram_caption, post.facebook_caption].join(),
+    ).not.toMatch(/January|Taking the SAT/);
+    expect(post.keywords[0]).toBe("SAT");
   });
 
   it("the rendered MP4 must be 1080×1920, 30-60 s, match the composition and carry audio", () => {
@@ -621,8 +761,30 @@ describe("the daily job: approved, post_on today, once", () => {
 });
 
 describe("the Slack set", () => {
-  it("posts the video first (confirmed in the channel), then the title, the caption, the Instagram caption", async () => {
+  // SCL-265: the QOTD's SCL-262 structure. Built from the real builders, posted through the real
+  // client against a recorded Slack.
+  const approval = {
+    pr: 1,
+    mergedBy: "kingk237",
+    mergeSha: "a".repeat(40),
+    mergedAt: "x",
+  };
+  // Built inside each test, so a planted defect in a builder fails that test, not the file.
+  const realPost = (): WorkedExamplePost =>
+    buildPost(
+      fixture,
+      workedExampleCopy(fixture, question, kit.track.credit),
+      kit.track.credit,
+      approval,
+    );
+  const fence = (text: string): string => ["```", text, "```"].join("\n");
+
+  async function sent(
+    p: WorkedExamplePost,
+  ): Promise<{ calls: string[]; texts: string[]; comment: string }> {
     const calls: string[] = [];
+    const texts: string[] = [];
+    let comment = "";
     let n = 0;
     const fetch: FetchLike = async (url, init) => {
       const method = url.replace("https://slack.com/api/", "");
@@ -641,47 +803,86 @@ describe("the Slack set", () => {
           file_id: `F${n}`,
         });
       if (url.startsWith("https://files.slack.com/")) return reply({});
-      if (method === "files.completeUploadExternal")
+      if (method === "files.completeUploadExternal") {
+        comment = String(JSON.parse(String(init.body)).initial_comment);
         return reply({ ok: true, files: [{ id: "F1" }] });
+      }
       if (method === "files.info")
         return reply({
           ok: true,
           file: { id: "F1", shares: { public: { C0TEST: [{ ts: "1.1" }] } } },
         });
       if (method === "chat.postMessage") {
-        calls.push(
-          `text:${String(JSON.parse(String(init.body)).text).split("\n")[0]}`,
-        );
+        texts.push(String(JSON.parse(String(init.body)).text));
         return reply({ ok: true, ts: "1.2" });
       }
       return { ok: false, status: 404, json: async () => ({}) };
     };
-    const post = buildPost(
-      fixture,
-      workedExampleTitle(fixture.content, question),
-      workedExampleCaption(fixture.content, kit.track.credit),
-      kit.track.credit,
-      { pr: 1, mergedBy: "kingk237", mergeSha: "a".repeat(40), mergedAt: "x" },
-      workedExampleInstagramCaption(fixture.content, kit.track.credit),
-    );
     await postWorkedExample(
       { token: "xoxb-test", channel: "C0TEST" },
-      post,
+      p,
       new Uint8Array([1, 2, 3]),
       fetch,
       { timeoutMs: 1000, intervalMs: 0, sleep: async () => undefined },
     );
+    return { calls, texts, comment };
+  }
+
+  it("posts the video first (confirmed in the channel), then TikTok's caption and keywords, Instagram, Facebook", async () => {
+    const post = realPost();
+    const { calls, texts, comment } = await sent(post);
     expect(calls.filter((c) => c !== "upload")).toEqual([
       "files.getUploadURLExternal",
       "files.completeUploadExternal",
       "files.info",
       "chat.postMessage",
-      "text:*Worked example · Percentages · obvious_answer_trap · TikTok title*",
       "chat.postMessage",
-      "text:*Worked example · Percentages · obvious_answer_trap · TikTok caption*",
       "chat.postMessage",
-      "text:*Worked example · Percentages · obvious_answer_trap · Instagram caption*",
     ]);
+    // The label and the review line stay outside the copy blocks, on the video.
+    expect(comment).toBe(
+      [
+        "*TikTok*",
+        "Worked example · Percentages · obvious_answer_trap",
+        "For review: posts on 2026-11-02. Karl posts by hand.",
+      ].join("\n"),
+    );
+    expect(texts).toEqual([
+      [fence(post.caption), fence(post.keywords.join("\n"))].join("\n"),
+      [
+        "*Instagram* (the same video as TikTok, above)",
+        fence(post.instagram_caption),
+      ].join("\n"),
+      [
+        "*Facebook* (the same video as TikTok, above)",
+        fence(post.facebook_caption),
+      ].join("\n"),
+    ]);
+    expect(post.keywords).toContain("Data analysis");
+  });
+
+  it("no link, bio line, title or label block in any message; the music credited in every caption block", async () => {
+    const { texts, comment } = await sent(realPost());
+    expect(texts.length).toBe(3);
+    for (const text of [...texts, comment]) {
+      expect(text).not.toMatch(/lyceon\.ai|https?:\/\/|Bio link|Link to send/i);
+      expect(text).not.toMatch(/TikTok title|· TikTok caption/);
+    }
+    for (const text of texts.slice(0, 3))
+      expect(text).toContain(
+        'Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.',
+      );
+  });
+
+  it("a warning (SAT date list needs updating) is posted first, outside the copy blocks", async () => {
+    const warned = {
+      ...realPost(),
+      warnings: ["SAT date list needs updating: none left"],
+    };
+    const { texts } = await sent(warned);
+    expect(texts[0]).toBe(":warning: SAT date list needs updating: none left");
+    expect(texts[0]).not.toContain("```");
+    expect(texts.length).toBe(4);
   });
 });
 

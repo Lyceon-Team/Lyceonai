@@ -3,7 +3,8 @@
 # Mutation harness for worked examples (owner brief "Worked examples: production system",
 # Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27;
 # V1-V10 per the OpenVoice addendum, Karl, 2026-10-27; V11-V12 per Karl's speaking-rate ask,
-# 2026-10-27)
+# 2026-10-27; T2, T18 re-pointed and T21-T26 added per Karl's rulings of 2026-11-02, SCL-265:
+# "Most people…" hooks allowed, and the #social set in the SCL-262 format)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -173,9 +174,16 @@ echo "=== TS: hook rules ==="
 ts_plant "T1 H1 statistics let through" shared/worked-examples/rules.ts \
   "const hit = STATISTICS.find((re) => re.test(text));" "const hit = STATISTICS.find(() => false);" \
   "H1 refuses statistics"
+# T2 re-pointed 2026-11-02 (SCL-265): H2 now tests the hook with a "Most people" opening taken off.
 ts_plant "T2 H2 claims about people let through" shared/worked-examples/rules.ts \
-  "const hit = PEOPLE.find((re) => re.test(text));" "const hit = PEOPLE.find(() => false);" \
+  "const hit = PEOPLE.find((re) => re.test(rest));" "const hit = PEOPLE.find(() => false);" \
   "H2 refuses claims about students or people"
+ts_plant "T21 H2 the Most people allowance reverted (the 2026-11-02 ruling undone)" shared/worked-examples/rules.ts \
+  'const rest = text.replace(MOST_PEOPLE_OPENING, "");' "const rest = text;" \
+  "H2 allows a hook that opens with Most people"
+ts_plant "T22 H2 allowance over-wide: any opening \"most <word>\" exempt" shared/worked-examples/rules.ts \
+  "const MOST_PEOPLE_OPENING = /^\s*most people\b/i;" "const MOST_PEOPLE_OPENING = /^\s*most \w+\b/i;" \
+  "H2 still refuses every other claim about people, including after a Most people opening"
 ts_plant "T3 H3 a hook that is not the puzzle let through" shared/worked-examples/rules.ts \
   "for (const t of tokens(hookLine)) if (question.has(t)) return null;" "return null;" \
   "H3 requires the hook to state the puzzle"
@@ -231,15 +239,34 @@ echo "=== TS: title, caption, plan, Slack ==="
 ts_plant "T17 a title not starting SAT" shared/worked-examples/rules.ts \
   'if (!title.startsWith("SAT")) out.push(' 'if (false) out.push(' \
   "a title over 90 characters or not starting with SAT is refused"
-ts_plant "T18 a caption without the follow line first" shared/worked-examples/rules.ts \
-  "if (first !== WORKED_EXAMPLE_CAPTION_FIRST_LINE)" "if (false)" \
-  "a caption without the follow line first"
+# T18 re-pointed 2026-11-02 (SCL-265): the captions open with the headline (the title), not the
+# follow line.
+ts_plant "T18 a caption without the headline first" shared/worked-examples/rules.ts \
+  "if (first !== headline)" "if (false)" \
+  "a caption without the headline first"
 ts_plant "T19 the plan repeats a hook type" shared/worked-examples/rules.ts \
   "if (prev && prev.hook_type === s.hook_type)" "if (false)" \
   "two consecutive slots with one hook type are refused"
 ts_plant "T20 the Slack set out of order" scripts/worked-examples/post-to-slack.ts \
   "for (const step of workedExampleSlackSteps(post)) {" "for (const step of workedExampleSlackSteps(post).reverse()) {" \
   "posts the video first"
+
+echo "=== TS: the SCL-262 set (SCL-265) ==="
+ts_plant "T23 the music credit dropped from the TikTok caption (CC BY 4.0 attribution)" shared/worked-examples/rules.ts \
+  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
+  "return socialTiktokCaption(c.headline, c.test, c.section, []);" \
+  "the real title and caption pass, with the music credited"
+ts_plant "T24 a link in the TikTok caption" shared/worked-examples/rules.ts \
+  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
+  'return socialTiktokCaption(c.headline, c.test, c.section, ["lyceon.ai/start", musicCredit]);' \
+  "no link, bio line or promo in any caption"
+ts_plant "T25 the caption link check removed" shared/worked-examples/rules.ts \
+  "if (link) out.push(" "if (false) out.push(" \
+  "no link, bio line or promo in any caption"
+ts_plant "T26 the link to send back in the Instagram message" scripts/worked-examples/post-to-slack.ts \
+  "        copyBlock(post.instagram_caption),"$'\n' \
+  "        copyBlock(post.instagram_caption),"$'\n'"        post.links.instagram,"$'\n' \
+  "no link, bio line, title or label block in any message"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \

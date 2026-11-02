@@ -169,11 +169,13 @@ jobs:
               echo
               echo "**$(jq -r .label "$OUT/post.json")** · posts on $(jq -r .post_on "$OUT/post.json")"
               echo
-              echo '```text'
-              jq -r .title "$OUT/post.json"
-              echo
-              jq -r .caption "$OUT/post.json"
-              echo '```'
+              # SCL-265: each caption opens with the title, so the title is not printed twice.
+              for field in caption keywords instagram_caption facebook_caption; do
+                echo "$field"
+                echo '```text'
+                if [ "$field" = keywords ]; then jq -r '.keywords[]' "$OUT/post.json"; else jq -r ".$field" "$OUT/post.json"; fi
+                echo '```'
+              done
             else
               echo "Nothing due today (or the selection failed: see 'Select today's example')."
             fi

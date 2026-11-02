@@ -3,13 +3,16 @@
  * and the checks that tie an example to its question, its week and its committed voice.
  *
  * @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): hook library
- *       ("no statistics or claims about students; no 'most people/students'; states or shows the
- *       puzzle within the first line; ends in curiosity, not the answer"; "the monthly plan
- *       rotates hook types"), cadence (the labelled set "Worked example · {skill} · {hook_type}",
- *       a TikTok title of at most 90 characters starting "SAT", a caption whose first line is
- *       "Follow for daily SAT questions 👆"), music credited in the share copy as /brag does;
- *       Public Disclosure Doctrine §0 rules 1-3, 5 (docs/plans/seo/seo-marketing-vertical.md)]
- *       | @implemented [2026-10-27]
+ *       ("no statistics or claims about students; states or shows the puzzle within the first
+ *       line; ends in curiosity, not the answer"; "the monthly plan rotates hook types"), cadence
+ *       (the labelled set "Worked example · {skill} · {hook_type}", a TikTok title of at most 90
+ *       characters starting "SAT"), music credited in the share copy as /brag does; Karl's ruling
+ *       2026-11-02 (SCL-265): "'Most people…' hooks are ALLOWED; this replaces the earlier ban"
+ *       (it replaces the brief's "no 'most people/students'" clause for "Most people" only), and
+ *       the captions and keywords use the SCL-262 format (it replaces the brief's caption whose
+ *       first line was "Follow for daily SAT questions 👆"); Public Disclosure Doctrine §0 rules
+ *       1-3, 5 (docs/plans/seo/seo-marketing-vertical.md)]
+ *       | @implemented [2026-10-27, H2 and the captions 2026-11-02]
  *
  * plain English: every function here is pure and returns the problems it finds (empty = pass).
  * scripts/worked-examples/check-content.ts runs them on every pull request into `social` that
@@ -20,7 +23,11 @@
  *   H1 no statistics: no "N% of", "N out of M", "N in M", or words that cite data (survey, study,
  *      research, statistic). A percent that is part of the puzzle ("Up 25%") is fine.
  *   H2 no claims about people: no students, people, kids, teens, test-takers, everyone, nobody,
- *      "most of you". The hook talks about the question, never about who gets it wrong.
+ *      "most of you". The hook talks about the question, never about who gets it wrong. One
+ *      exception, by Karl's ruling of 2026-11-02 (SCL-265): a hook may OPEN with "Most people"
+ *      ("Most people think it's $64…?"). Only the opening two words are exempt; the rest of the
+ *      hook is checked as before, so "Most people… and everyone…" is still refused, and "most
+ *      students", "Kids always…" or "most people" anywhere but the start are refused.
  *   H3 states the puzzle: the hook shares a number or a content word with the question.
  *   H4 ends in curiosity: the hook ends with "?" or "…".
  *   H5 not the answer: the hook never contains the correct choice, a number that only the correct
@@ -28,7 +35,6 @@
  *   H6 public-copy phrases: the shared banned list and the pipeline list (no AI, no process).
  */
 import {
-  WORKED_EXAMPLE_CAPTION_FIRST_LINE,
   WORKED_EXAMPLE_HOOK_TYPES,
   WORKED_EXAMPLE_TITLE_MAX,
   type WorkedExampleContent,
@@ -41,11 +47,14 @@ import { plainMathText } from "../qotd/plain-math";
 import { QOTD_SECTION_NAME } from "../qotd/social";
 import { capTiktokTitle } from "../qotd/tiktok";
 import {
-  bioCtaLine,
-  COMMENT_ANSWER_LINE,
-  funnelPhase,
-  instagramCtaLine,
-} from "../social/funnel";
+  nextSatTest,
+  socialFacebookCaption,
+  socialInstagramCaption,
+  socialKeywords,
+  socialTiktokCaption,
+  type SocialSection,
+  type SocialTest,
+} from "../social/posts";
 import { firstBannedPhrase, firstPipelinePhrase } from "../seo/banned-phrases";
 import type { SeedQuestion } from "./seed-question";
 
@@ -67,9 +76,13 @@ export function hookStatisticProblem(text: string): string | null {
   return hit ? `H1 statistics: "${text}" cites a figure or data` : null;
 }
 
-/** H2: no claims about students or people. */
+/** The one opening H2 allows (Karl's ruling 2026-11-02): "Most people" at the very start. */
+const MOST_PEOPLE_OPENING = /^\s*most people\b/i;
+
+/** H2: no claims about students or people, except a hook that opens "Most people". */
 export function hookPeopleProblem(text: string): string | null {
-  const hit = PEOPLE.find((re) => re.test(text));
+  const rest = text.replace(MOST_PEOPLE_OPENING, "");
+  const hit = PEOPLE.find((re) => re.test(rest));
   return hit ? `H2 claim about people: "${text}"` : null;
 }
 
@@ -290,47 +303,74 @@ export function workedExampleTitle(
   );
 }
 
-const WORKED_EXAMPLE_TAGS = "#SAT #SATprep #digitalSAT #SATmath #studytok";
-
 /**
- * The TikTok caption: the follow line first, the hook, "Comment your answer 👇", the link-in-bio
- * line, tags, the music credit.
+ * The worked example's three captions and TikTok keywords, in the SCL-262 format.
  *
- * @spec [owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2: "The
- *       worked-example captions get the same CTA lines"] | @implemented [2026-10-28]
+ * @spec [SCL-265: Karl's ruling 2026-11-02 "captions and keywords for worked examples use the
+ *       SCL-262 format"; SCL-262 items 2-5 (the caption lines, at most five hashtags, keywords
+ *       from the test month, the always-set, the section and the canonical domain); the CC BY 4.0
+ *       licence of the music (video-kit/worked-examples/music/tracks.json), credited in every
+ *       caption] | @implemented [2026-11-02]
  *
- * plain English: the same two lines as the QOTD's (shared/social/funnel.ts): the hook asks a
- * question, so the comment line asks for the answer, and the bio line sends people to /start
- * (the Dec 5 cohort's line until test day, by the example's own post_on). Was "More SAT
- * questions on lyceon.ai."
+ * plain English: the headline is the example's title ("SAT Math worked example · Percentages",
+ * at most 90 characters, starting "SAT"). The captions come from the one caption builder
+ * (shared/social/posts.ts); the only line a worked example adds is the music credit, last, on all
+ * three, because the track's licence requires attribution. Replaces (2026-11-02) the 2026-10-28
+ * captions that opened "Follow for daily SAT questions 👆", carried the hook, and carried the
+ * link-in-bio line (TikTok) or the comment-SAT line without the SCL-262 headline (Instagram).
+ * The hook is no longer in the captions: it is on screen and spoken in the video.
  */
-export function workedExampleCaption(
+function captionContext(
   example: WorkedExampleContent,
-  musicCredit: string,
-): string {
-  return [
-    WORKED_EXAMPLE_CAPTION_FIRST_LINE,
-    example.hook.line,
-    COMMENT_ANSWER_LINE,
-    bioCtaLine(funnelPhase(example.post_on)),
-    WORKED_EXAMPLE_TAGS,
-    musicCredit,
-  ].join("\n\n");
+  q: SeedQuestion,
+): { headline: string; test: SocialTest | null; section: SocialSection } {
+  return {
+    headline: workedExampleTitle(example, q),
+    test: nextSatTest(example.post_on),
+    section: QOTD_SECTION_NAME[q.section],
+  };
 }
 
-/** The Instagram caption: as the TikTok one, with "Comment SAT and I'll send you the link". */
-export function workedExampleInstagramCaption(
+/** TikTok: headline / follow and comment / hashtags / the music credit. No promo or link line. */
+export function workedExampleCaption(
   example: WorkedExampleContent,
+  q: SeedQuestion,
   musicCredit: string,
 ): string {
-  return [
-    WORKED_EXAMPLE_CAPTION_FIRST_LINE,
-    example.hook.line,
-    COMMENT_ANSWER_LINE,
-    instagramCtaLine(funnelPhase(example.post_on)),
-    WORKED_EXAMPLE_TAGS,
-    musicCredit,
-  ].join("\n\n");
+  const c = captionContext(example, q);
+  return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);
+}
+
+/** Instagram: headline / comment / "Taking the SAT <date>? Comment SAT…" / hashtags / credit. */
+export function workedExampleInstagramCaption(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+  musicCredit: string,
+): string {
+  const c = captionContext(example, q);
+  return socialInstagramCaption(c.headline, c.test, c.section, [musicCredit]);
+}
+
+/** Facebook: headline / the approach prompt / hashtags / credit. No link, no comment word. */
+export function workedExampleFacebookCaption(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+  musicCredit: string,
+): string {
+  const c = captionContext(example, q);
+  return socialFacebookCaption(c.headline, c.test, c.section, [musicCredit]);
+}
+
+/** TikTok's keywords, keyed on the question's canonical domain (SCL-262 item 4). */
+export function workedExampleKeywords(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+): ReturnType<typeof socialKeywords> {
+  return socialKeywords(
+    example.post_on,
+    QOTD_SECTION_NAME[q.section],
+    q.domain,
+  );
 }
 
 export function titleProblems(title: string): string[] {
@@ -345,18 +385,30 @@ export function titleProblems(title: string): string[] {
   return out;
 }
 
+/** A link or a bio line: no caption carries one (SCL-262 item 1). "ende.app" is the artist. */
+const CAPTION_LINK =
+  /https?:\/\/|\bwww\.|lyceon\.ai|\blink in bio\b|\bbio link\b/i;
+
+/**
+ * One caption against its headline: the headline first, the music credit present, no link, and
+ * the hook rules that apply to any public line (no claims about people, no statistics, no
+ * banned public-copy phrase).
+ */
 export function captionProblems(
   caption: string,
   musicCredit: string,
+  headline: string,
 ): string[] {
   const out: string[] = [];
   const [first] = caption.split("\n");
-  if (first !== WORKED_EXAMPLE_CAPTION_FIRST_LINE)
+  if (first !== headline)
     out.push(
-      `caption's first line must be "${WORKED_EXAMPLE_CAPTION_FIRST_LINE}", got "${first ?? ""}"`,
+      `caption's first line must be the headline "${headline}", got "${first ?? ""}"`,
     );
   if (!caption.split("\n").includes(musicCredit))
     out.push("caption does not credit the music track");
+  const link = CAPTION_LINK.exec(caption);
+  if (link) out.push(`caption carries a link or bio line ("${link[0]}")`);
   const p =
     hookPeopleProblem(caption) ??
     hookStatisticProblem(caption) ??

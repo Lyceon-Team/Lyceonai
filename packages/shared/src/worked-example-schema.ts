@@ -193,10 +193,17 @@ export const workedExampleStyleSchema = z.record(
 export type WorkedExampleStyle = z.infer<typeof workedExampleStyleSchema>;
 
 export const WORKED_EXAMPLE_TITLE_MAX = 90;
-export const WORKED_EXAMPLE_CAPTION_FIRST_LINE =
-  "Follow for daily SAT questions 👆";
 
-/** The Slack set for one example (post.json, written by the daily job only after every check). */
+/**
+ * The Slack set for one example (post.json, written by the daily job only after every check).
+ *
+ * @spec [SCL-265 (Karl's ruling 2026-11-02): the worked-example set in the SCL-262 format: one
+ *       caption per platform, TikTok keywords, the run's warnings; the title is the captions'
+ *       headline] | @implemented [2026-10-27, SCL-262 format 2026-11-02]
+ *
+ * plain English: every caption opens with the title (the headline). `links` stays in post.json
+ * for the run's download, as the QOTD's does (SCL-262): it is never posted in the message.
+ */
 export const workedExamplePostSchema = z
   .object({
     id: z.string().regex(/^we-[a-z0-9]+$/),
@@ -204,13 +211,17 @@ export const workedExamplePostSchema = z
     /** "Worked example · Percentages · obvious_answer_trap". */
     label: z.string().min(1),
     video: z.string().regex(/^[a-z0-9-]+\.mp4$/),
+    /** The captions' headline: "SAT Math worked example · Percentages". */
     title: z.string().min(1).max(WORKED_EXAMPLE_TITLE_MAX).startsWith("SAT"),
-    caption: z.string().startsWith(`${WORKED_EXAMPLE_CAPTION_FIRST_LINE}\n`),
-    /** The Instagram caption (owner brief "One funnel for every social post", Karl, 2026-10-28). */
-    instagram_caption: z
-      .string()
-      .startsWith(`${WORKED_EXAMPLE_CAPTION_FIRST_LINE}\n`),
-    /** The tagged /start links: TikTok bio, and the one sent to people who comment SAT. */
+    /** The TikTok caption. */
+    caption: z.string().min(1),
+    instagram_caption: z.string().min(1),
+    facebook_caption: z.string().min(1),
+    /** TikTok's "Manage keywords", one per entry (shared/social/posts.ts socialKeywords). */
+    keywords: z.array(z.string().min(1)).min(1),
+    /** QA warnings posted first, outside the copy blocks ("SAT date list needs updating"). */
+    warnings: z.array(z.string().min(1)),
+    /** The tagged /start links: kept for the run's download, never posted (SCL-262). */
     links: socialStartLinksSchema,
     approval: z
       .object({
@@ -221,7 +232,21 @@ export const workedExamplePostSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((post, ctx) => {
+    for (const key of [
+      "caption",
+      "instagram_caption",
+      "facebook_caption",
+    ] as const) {
+      if (!post[key].startsWith(`${post.title}\n`))
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: "must open with the title (the headline)",
+        });
+    }
+  });
 export type WorkedExamplePost = z.infer<typeof workedExamplePostSchema>;
 
 /** content/worked-examples/posted.json: one line per example the daily job has posted. */
