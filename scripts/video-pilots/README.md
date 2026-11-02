@@ -21,7 +21,9 @@ repository; the scripts also refuse an output folder inside it).
   through `spokenBrandName(text, engine)` in `scripts/worked-examples/voice.ts`, one table.
 * **Loudness:** every line, in every engine, goes through `normaliseLoudness` in
   `scripts/worked-examples/voice.ts` (two-pass loudnorm to about −14 LUFS, true peak ≤ −1 dBTP,
-  then the limiter), the function the worked examples run on every committed line.
+  then the limiter), the function the worked examples run on every committed line. The finished
+  mix (voice and music bed together) then goes through the worked examples' finished-mix limiter,
+  `scripts/worked-examples/final-mix.ts`: true peak at most −1 dBTP (SCL-270, Karl, 2026-11-02).
 
 ## Files
 
@@ -33,8 +35,8 @@ repository; the scripts also refuse an output folder inside it).
 | `chatterbox/requirements.txt` | D3: every package of the Chatterbox venv, pinned, transitive ones included (torch CPU builds) |
 | `manim/prevoiced_service.py` | The manim-voiceover speech service: plays the lines `voice-lines.ts` voiced |
 | `manim/scene.py` | The Manim scene: hook → setup → steps on the figure → trap → answer and check → end card; no captions; safe area x 71..912, y 154..1555 |
-| `manim/render.py` | Runs `voice-lines.ts`, then Manim at 1080×1920, 30 fps, then lays the worked examples' music bed under the voice with ffmpeg |
-| `manim/check.ts` | Every video: 1080×1920, 30 fps, audio, 30-60 s, every line through `quality.ts`, the voice-over-music margin, S1 on what was drawn; prints loudness (LUFS, true peak). Exit 1 on any failure |
+| `manim/render.py` | Runs `voice-lines.ts`, then Manim at 1080×1920, 30 fps, then lays the worked examples' music bed under the voice with ffmpeg, then limits the finished mix to ≤ −1 dBTP true peak with `scripts/worked-examples/final-mix.ts` (its CLI) |
+| `manim/check.ts` | Every video: 1080×1920, 30 fps, audio, 30-60 s, every line through `quality.ts`, the voice-over-music margin, S1 on what was drawn, the finished mix at most −1 dBTP true peak (`final-mix.ts` `finishedMixProblems`); prints loudness (LUFS, true peak). Exit 1 on any failure |
 | `manim/safe_area_check.py` | Samples frames and fails if any ink leaves the safe area |
 | `manim/requirements.txt` | The Manim venv: every Python package, pinned, transitive ones included |
 
@@ -119,10 +121,13 @@ and transcribes there for both engines.
 * **Music.** The worked examples' track, `video-kit/worked-examples/music/`, at `music_gain` and
   faded over the last `music_fade_seconds`. Credit wherever the video is shared:
   Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.
-* **Loudness of the finished video.** `check.ts` reports the whole video's integrated loudness and
-  true peak (the voice lines' normalised level with the music bed under them and the pauses
-  between lines).
+* **Loudness of the finished video.** `render.py` limits the finished mix with the worked
+  examples' one limiter (`final-mix.ts`, its CLI; nothing copies its ffmpeg arguments), and
+  `check.ts` fails a video whose true peak is above −1 dBTP (SCL-270). It reports the whole
+  video's integrated loudness alongside (the voice lines' normalised level with the music bed
+  under them and the pauses between lines).
 * **One drawing per question.** The scene draws this question's circle and refuses any other
   bundle. A new question needs its own figure.
 * **CI.** `tests/ci/video-pilots.test.ts` runs the committed pilot scripts through the rules and
-  proves check.ts's format and S1 checks; rendering is never run in CI.
+  proves check.ts's format, S1 and true-peak checks (the last on a real ffmpeg video, skipped
+  without ffmpeg); rendering is never run in CI.
