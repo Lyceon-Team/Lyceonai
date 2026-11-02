@@ -23,7 +23,8 @@
  *   A6 the reminder is the `qotd_daily` notification (owner ruling on #1166, 2026-10-09): in-app
  *      for every student who has not answered (no consent; under-13s too); email only with the
  *      preference on and never under-13; one per student per day across both crons and reruns
- *      (the ledger); skipped if answered; the 7-send sunset from the ledger; 17:00 Chicago across
+ *      (the ledger); skipped if answered; the email send gate's pause (which replaced the 7-send
+ *      sunset, owner ruling 2026-11-02 (3), SCL-263); 17:00 Chicago across
  *      DST; sent by the notification dispatcher
  *   A7 unsubscribe: no sign-in; a tampered link is refused. The Settings toggle, the pop-up and
  *      the unsubscribe link change ONE preference, with one SQL writer
@@ -1200,23 +1201,11 @@ describe.skipIf(!PG_AVAILABLE)(
         }
         // Answered on the send day (summer), so no notification at all.
         await seedAnswer("practice", MAILED_ANSWERED, "2026-07-14T15:00:00Z");
-        // Seven earlier daily emails, delivered, none followed by an answer that day: the sunset
-        // reads them from the notification ledger itself.
-        for (let d = 7; d <= 13; d += 1) {
-          const day = `2026-07-${String(d).padStart(2, "0")}`;
-          await pg.query(
-            `SELECT public.emit_notification_event(
-               public.notification_event_id('qotd_daily', $1::text || ':' || $2::text),
-               'qotd_daily', $1::uuid,
-               jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('in_app', 'email'))),
-               jsonb_build_object('qotd_date', $2::text, 'current_streak', 0, 'email_variant', 'daily'))`,
-            [MAILED_SUNSET, day],
-          );
-        }
+        // Paused by the email send gate (owner ruling 2026-11-02 (3): the QOTD sunset is folded
+        // into the gate), and nothing since wakes them: the state the backfill writes.
         await pg.query(
-          `UPDATE public.notification_messages m SET status = 'delivered', sent_at = now(), delivered_at = now()
-             FROM public.notification_events e
-            WHERE e.event_id = m.event_id AND e.subject_profile_id = $1 AND m.channel = 'email'`,
+          `INSERT INTO public.email_gate_state (profile_id, state, reason, state_since, pause_episode)
+           VALUES ($1, 'paused', 'qotd_sunset_backfill', '2026-07-01T00:00:00Z', 1)`,
           [MAILED_SUNSET],
         );
         await pg.query(`SELECT public.qotd_email_unsubscribe($1)`, [
@@ -1244,7 +1233,7 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(await messages(MAILED, SUMMER_DAY)).toEqual([]);
       });
 
-      it("at 17:00 CDT: the run emails the consented and the sunset sends the pause email", async () => {
+      it("at 17:00 CDT: the run emails the consented; a student the gate has paused gets no email", async () => {
         const summary = await run("2026-07-14T22:00:00Z");
         expect(summary.chicago_hour).toBe(17);
         expect(summary.emitted).toBeGreaterThanOrEqual(5);
@@ -1254,7 +1243,6 @@ describe.skipIf(!PG_AVAILABLE)(
         expect(to).toEqual(
           [
             `${MAILED}@example.test`,
-            `${MAILED_SUNSET}@example.test`,
             `${PROMPTED}@example.test`,
           ].sort(),
         );
@@ -1298,13 +1286,14 @@ describe.skipIf(!PG_AVAILABLE)(
         );
         expect(daily?.idempotencyKey).toBe(messageIds.rows[0]?.message_id);
 
-        const pause = sent.find(
-          (s) => s.to === `${MAILED_SUNSET}@example.test`,
+        // The gate's pause: in-app only, and no QOTD pause email of its own any more.
+        expect(summary.gate_paused).toBe(1);
+        expect(await messages(MAILED_SUNSET, SUMMER_DAY)).toEqual([
+          { channel: "in_app", status: "delivered" },
+        ]);
+        expect(sent.map((s) => s.subject)).not.toContain(
+          "SAT Question of the Day is paused",
         );
-        expect(pause?.subject).toBe("SAT Question of the Day is paused");
-        expect(pause?.fromCategory).toBe("qotd");
-        expect(pause?.text).toContain("/api/public/qotd-email/resume?t=");
-        expect(summary.paused_notices).toBe(1);
         // Privacy: no address and no question text in any log line.
         for (const line of logs) {
           expect(line).not.toContain("@example.test");
@@ -1409,7 +1398,7 @@ describe.skipIf(!PG_AVAILABLE)(
         ).toHaveLength(1);
       });
 
-      it("after the pause email, the student gets the in-app reminder but no email the next day", async () => {
+      it("a student the gate has paused gets the in-app reminder but no email the next day either", async () => {
         const before = sent.length;
         await run("2026-07-15T22:00:00Z");
         const fresh = sent.slice(before).map((s) => s.to);

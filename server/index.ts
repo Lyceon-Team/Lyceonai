@@ -63,6 +63,7 @@ import publicQotdRoutes from "./routes/public-qotd-routes";
 import publicQotdEmailRoutes from "./routes/public-qotd-email-routes";
 import publicGuardianDigestEmailRoutes from "./routes/public-guardian-digest-email-routes";
 import publicReviewAskEmailRoutes from "./routes/public-review-ask-email-routes";
+import publicEmailKeepPostedRoutes from "./routes/public-email-keep-posted-routes";
 import cookieConsentRoutes from "./routes/cookie-consent-routes";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { securityHeadersMiddleware } from "./middleware/security-headers";
@@ -608,6 +609,13 @@ app.use("/api/public/guardian-digest-email", publicGuardianDigestEmailRoutes);
 // HMAC-signed token. Hashed-IP limited (`qotd_unsubscribe_ip`).
 // CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL (RFC 8058 one-click POST from mailbox providers carries no CSRF token).
 app.use("/api/public/review-ask-email", publicReviewAskEmailRoutes);
+
+// Email send gate "Keep me posted" (UNAUTHENTICATED BY DESIGN — owner brief "Email send gate",
+// Karl 2026-10-30: "signed single-purpose keep-me-posted link"). The review ask's shape above: the
+// GET renders a button, the POST lifts the pause, only on a valid HMAC-signed token. Hashed-IP
+// limited (`qotd_unsubscribe_ip`).
+// CSRF_EXEMPT_REASON: no ambient credential is read; the only authority is the signed single-purpose token in the URL.
+app.use("/api/public/email", publicEmailKeepPostedRoutes);
 
 // Cookie consent log (UNAUTHENTICATED BY DESIGN — SEO F11, Doc 10 §9.11). Records each banner or
 // Settings choice: random consent id, analytics yes/no, banner version, source. No auth and no

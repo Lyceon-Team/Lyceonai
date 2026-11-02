@@ -45,6 +45,13 @@ export type RenderContext = {
     stopUrl: string | null;
     trustpilotUrl: string | null;
   };
+  /**
+   * The email send gate's two pause emails only (Karl, 2026-10-30): the recipient's signed
+   * single-purpose Keep me posted link, built by the dispatcher at send time, never stored.
+   */
+  emailGate?: {
+    keepPostedUrl: string | null;
+  };
 };
 
 export type InAppRender = {
