@@ -220,6 +220,9 @@ ts_plant "B21 voicing back in CI" .github/workflows/qotd-social.yml \
       # Yesterday's answer slide (the carousel's slide 3) for the fallback, from the QOTD run." \
   "no voicing at render: no Python, no pip, no voice models, no clone"
 
+ts_plant "B22 a malformed script throws for every day" scripts/qotd-social/check-breakdown-scripts.ts \
+  '        if (!(e instanceof SyntaxError)) throw e;' '        throw e;' \
+  "a malformed script for one day is that day's problem, not every day's"
 echo
 echo "qotd-breakdown mutations: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then echo "QOTD BREAKDOWN MUTATIONS: FAIL"; exit 1; fi

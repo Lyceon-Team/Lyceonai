@@ -106,9 +106,17 @@ export function loadBreakdownScripts(contentRoot: string): {
         problems.push(`${dir}: no script.json`);
         continue;
       }
-      const parsed = qotdBreakdownScriptSchema.safeParse(
-        JSON.parse(readFileSync(file, "utf8")),
-      );
+      // One malformed file must not stop every other day's breakdown: it is recorded as a
+      // problem, so its own day falls back with no_approved_script (spec audit F4, 2026-11-02).
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(file, "utf8"));
+      } catch (e: unknown) {
+        if (!(e instanceof SyntaxError)) throw e;
+        problems.push(`${dir}/script.json: not valid JSON (${e.message})`);
+        continue;
+      }
+      const parsed = qotdBreakdownScriptSchema.safeParse(raw);
       if (!parsed.success) {
         problems.push(
           `${dir}/script.json: ${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,

@@ -6,7 +6,8 @@
  *       video of YESTERDAY's QOTD each day, from the stored option order and display letter,
  *       dropped into #social for review (Karl's manual posting is the approval; nothing
  *       auto-publishes); the fallback rule (a)-(d), each reason with a stable code; a 14-day
- *       window with dates Karl sets, off by default; SCL-266; Karl's rulings on #1398,
+ *       window, ruled 2026-11-09 to 2026-11-22 (Karl, 2026-11-02, on #1398; the schema still
+ *       allows "off" for after the pilot); SCL-266; Karl's rulings on #1398,
  *       2026-11-02: authored scripts replace the templated one ("the voice never reads the
  *       screen"), one per scheduled QOTD date, written weekly by Claude Code for the next 7 dates
  *       from each date's stored order and letter, landed as a batch PR into `social`, Karl's

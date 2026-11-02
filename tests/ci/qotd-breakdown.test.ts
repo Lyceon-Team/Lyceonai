@@ -21,7 +21,13 @@
  * script is the fixture tree's (tests/fixtures/qotd-breakdowns/social), voiced in am_michael by
  * scripts/qotd-social/voice-breakdown.ts, the same files the pull-request dry run renders.
  */
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -453,6 +459,23 @@ describe("the authored script: approved by merge, under the worked examples' rul
 
 describe("the authoring check (check-breakdown-scripts.ts)", () => {
   const kit = loadKit();
+
+  it("a malformed script for one day is that day's problem, not every day's", () => {
+    const root = mkdtempSync(join(tmpdir(), "qotd-breakdown-bad-"));
+    cpSync(CONTENT, root, { recursive: true });
+    const badDir = join(root, SCRIPT_DIR, "..", "2026-10-03");
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(join(badDir, "script.json"), "{ not json");
+    const loaded = loadBreakdownScripts(root);
+    // Presence first: the good day still loads.
+    expect(loaded.scripts.map((e) => e.script.qotd_date)).toEqual([
+      SCRIPT_DATE,
+    ]);
+    expect(loaded.problems).toHaveLength(1);
+    expect(loaded.problems[0]).toMatch(
+      /2026-10-03\/script\.json: not valid JSON/,
+    );
+  });
 
   it("the fixture tree passes, without and with Karl's export", () => {
     expect(loadBreakdownScripts(CONTENT).scripts.length).toBe(1);

@@ -191,6 +191,10 @@ scripts, his merge the approval, am_michael, the dates below). A second job in t
 `breakdown`, runs **after** the QOTD job, whatever that job's result, so the normal QOTD post always
 goes first and nothing here can block or delay it.
 
+**Re-running posts the breakdown again.** As with the QOTD set (Karl, 2026-10-10), nothing records
+that a day's breakdown was already posted: a re-run of the `breakdown` job sends its Slack set a
+second time. Re-run it only for a failed post.
+
 **Dates.** `QOTD_BREAKDOWN_PILOT` (`shared/qotd/breakdown.ts`): posting days **2026-11-09 to
 2026-11-22**, both inclusive (14 days, the schema's limit). On a posting day the run breaks down the
 QOTD of the day before, so the QOTD dates covered are **2026-11-08 to 2026-11-21**.
