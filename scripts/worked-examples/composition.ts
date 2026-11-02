@@ -24,6 +24,13 @@
  * spoken span by character position. A fit script shrinks any line that would leave the safe
  * column before the timeline is registered, and scripts/worked-examples/layout-check.ts proves
  * the result in a browser.
+ *
+ * @spec [owner brief "QOTD breakdown pilot, 2 weeks" (Karl, 2026-11-02, Part C): the breakdown
+ *       uses the worked-example pipeline; SCL-266] | @implemented [2026-11-02]
+ * plain English (2026-11-02): one body, buildScriptComposition, renders both a worked example
+ * (buildComposition, which only maps the example and its title) and the QOTD breakdown
+ * (scripts/qotd-social/breakdown.ts), whose script has no trap: then the work scene runs to the
+ * end card and no trap callout is drawn.
  */
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import { plainMathText } from "../../shared/qotd/plain-math";
@@ -58,9 +65,29 @@ const NOTEPAD_BOTTOM = 1330;
 
 export type ScriptLine = { key: string; text: string };
 
+/**
+ * What one video is spoken and drawn from: a worked example (WorkedExampleContent is one of
+ * these), or a QOTD breakdown (shared/qotd/breakdown.ts), which has no trap. One composition
+ * path renders both (owner brief "QOTD breakdown pilot", Karl, 2026-11-02; SCL-266).
+ */
+export type CompositionScript = {
+  hook: { line: string; voice: string };
+  question_voice: string;
+  steps: readonly { notepad: string; voice: string }[];
+  answer: { notepad: string; voice: string };
+  /** The trap callout; null for a video without one (the QOTD breakdown). */
+  trap: { notepad: readonly string[]; voice: string } | null;
+};
+
+/** The question as the card shows it: the choices in the order and under the letters given. */
+export type CompositionQuestion = Pick<
+  SeedQuestion,
+  "stem" | "passage" | "options"
+>;
+
 /** Every spoken line, in screen order, with the end card's line from the kit last. */
 export function scriptLines(
-  example: WorkedExampleContent,
+  example: CompositionScript,
   outroText: string,
 ): ScriptLine[] {
   return [
@@ -68,7 +95,7 @@ export function scriptLines(
     { key: "question", text: example.question_voice },
     ...example.steps.map((s, k) => ({ key: `step-${k + 1}`, text: s.voice })),
     { key: "answer", text: example.answer.voice },
-    { key: "trap", text: example.trap.voice },
+    ...(example.trap ? [{ key: "trap", text: example.trap.voice }] : []),
     { key: "outro", text: outroText },
   ];
 }
@@ -169,8 +196,38 @@ function basename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
+/** A worked example's composition: its content as the script, titled by skill and question. */
 export function buildComposition(input: CompositionInput): Composition {
-  const { example, question, kit } = input;
+  return buildScriptComposition({
+    script: input.example,
+    question: input.question,
+    title: `Worked example: ${input.example.skill_code} (${input.example.question_id})`,
+    voice: input.voice,
+    outro: input.outro,
+    kit: input.kit,
+  });
+}
+
+export type ScriptCompositionInput = {
+  script: CompositionScript;
+  question: CompositionQuestion;
+  /** The page title (not drawn). */
+  title: string;
+  /** The script's voice lines, in scriptLines order without the outro. */
+  voice: readonly VoiceLine[];
+  outro: VoiceLine;
+  kit: Kit;
+};
+
+/**
+ * THE composition body, for every video the kit renders (worked examples and the QOTD
+ * breakdown). With no trap, the work scene runs to the end card and nothing of the trap callout
+ * is drawn.
+ */
+export function buildScriptComposition(
+  input: ScriptCompositionInput,
+): Composition {
+  const { script: example, question, kit } = input;
   const script = scriptLines(example, kit.voice.outro_caption);
   const lines = [...input.voice, input.outro];
   if (lines.map((l) => l.key).join() !== script.map((s) => s.key).join())
@@ -185,12 +242,12 @@ export function buildComposition(input: CompositionInput): Composition {
     return p;
   };
   const tWork = at("step-1").start;
-  const tTrap = at("trap").start;
   const tEnd = at("outro").start;
+  const tTrap = example.trap ? at("trap").start : tEnd;
   const scenes: Beat[] = [
     { key: "open", start: 0, end: tWork },
     { key: "work", start: tWork, end: tTrap },
-    { key: "trap", start: tTrap, end: tEnd },
+    ...(example.trap ? [{ key: "trap", start: tTrap, end: tEnd }] : []),
     { key: "endcard", start: tEnd, end: duration },
   ];
   const safe = safeArea();
@@ -256,28 +313,32 @@ export function buildComposition(input: CompositionInput): Composition {
     .join(" · ")}</div></div>`;
 
   // Trap: heading at the line's start, then each notepad line through the spoken trap.
-  const trapLine = at("trap");
-  writes.push({
-    key: "trap-head",
-    start: round(trapLine.start + 0.1),
-    end: round(trapLine.start + 0.9),
-  });
-  const trapLines = example.trap.notepad
-    .map((text, k) => {
-      const start = round(
-        trapLine.start +
-          ((k + 1) * trapLine.duration) / (example.trap.notepad.length + 1),
-      );
-      writes.push({ key: `trap-${k + 1}`, start, end: round(start + 1.2) });
-      return fill(t["step-reveal"], {
-        top: String(520 + k * 170),
-        size: "80",
-        id: `trap-${k + 1}`,
-        text: escapeHtml(text),
-      });
-    })
-    .join("\n");
-  const trap = fill(t["trap-callout"], { lines: trapLines });
+  const trapNotepad = (
+    trap: NonNullable<CompositionScript["trap"]>,
+  ): string => {
+    const trapLine = at("trap");
+    writes.push({
+      key: "trap-head",
+      start: round(trapLine.start + 0.1),
+      end: round(trapLine.start + 0.9),
+    });
+    const trapLines = trap.notepad
+      .map((text, k) => {
+        const start = round(
+          trapLine.start +
+            ((k + 1) * trapLine.duration) / (trap.notepad.length + 1),
+        );
+        writes.push({ key: `trap-${k + 1}`, start, end: round(start + 1.2) });
+        return fill(t["step-reveal"], {
+          top: String(520 + k * 170),
+          size: "80",
+          id: `trap-${k + 1}`,
+          text: escapeHtml(text),
+        });
+      })
+      .join("\n");
+    return fill(t["trap-callout"], { lines: trapLines });
+  };
 
   const scene = (
     key: string,
@@ -287,12 +348,18 @@ export function buildComposition(input: CompositionInput): Composition {
     cls = "",
   ): string =>
     `<section id="${key}" class="clip scene${cls}" data-start="${beat.start}" data-duration="${round(beat.end - beat.start)}" data-track-index="${track}">\n${body}\n</section>`;
-  const [sOpen, sWork, sTrap, sEnd] = scenes as [Beat, Beat, Beat, Beat];
+  const beat = (key: string): Beat => {
+    const b = scenes.find((s) => s.key === key);
+    if (!b) throw new Error(`no scene ${key}`);
+    return b;
+  };
   const scenesHtml = [
-    scene("open", sOpen, 0, open),
-    scene("work", sWork, 1, `${recap}\n${steps}\n${answer}`),
-    scene("trap", sTrap, 0, trap),
-    scene("endcard", sEnd, 1, t["end-card"].trim(), " end"),
+    scene("open", beat("open"), 0, open),
+    scene("work", beat("work"), 1, `${recap}\n${steps}\n${answer}`),
+    ...(example.trap
+      ? [scene("trap", beat("trap"), 0, trapNotepad(example.trap))]
+      : []),
+    scene("endcard", beat("endcard"), 1, t["end-card"].trim(), " end"),
   ].join("\n");
 
   // Captions: the script's words, chunked, each word lit while spoken.
@@ -398,9 +465,7 @@ ${karaoke.join("\n")}
     safeRightInset: String(QOTD_TIKTOK_SIZE.width - safe.right),
   });
   const html = fill(t.frame, {
-    title: escapeHtml(
-      `Worked example: ${example.skill_code} (${example.question_id})`,
-    ),
+    title: escapeHtml(input.title),
     fontFaces,
     css,
     duration: String(duration),
@@ -409,7 +474,7 @@ ${karaoke.join("\n")}
     audio,
     script: js,
   });
-  if (!html.includes(TRAP_HEADING))
+  if (example.trap && !html.includes(TRAP_HEADING))
     throw new Error("the trap callout lost its heading");
   return {
     html,

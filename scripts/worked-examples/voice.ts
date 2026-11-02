@@ -57,7 +57,11 @@ import {
 } from "./kit";
 import { lineQualityProblems } from "./quality";
 
-function hyperframes(v: VoiceSettings, args: string[], cwd: string): string {
+export function hyperframes(
+  v: VoiceSettings,
+  args: string[],
+  cwd: string,
+): string {
   return execFileSync(
     "pnpm",
     ["dlx", `hyperframes@${v.hyperframes}`, ...args],
@@ -276,7 +280,7 @@ function speakClone(
 }
 
 /** One line in the requested profile, falling back per line when the clone fails its checks. */
-function voiceLine(
+export function voiceLine(
   v: VoiceSettings,
   profileId: string,
   line: ScriptLine,

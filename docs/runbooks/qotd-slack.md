@@ -183,3 +183,69 @@ by Karl, 2026-10-10: re-runs are only for failed posts.)
 Delete the `SLACK_BOT_TOKEN` secret. The run then turns red every morning, by design. To stop
 the post without red runs, disable the workflow instead (**Actions** → **QOTD social assets** →
 **…** → **Disable workflow**). That also stops the daily download.
+
+## 6. Breakdown pilot (2 weeks)
+
+Karl's brief of 2026-11-02, Part C; SCL-266. A second job in the same workflow, `breakdown`,
+runs **after** the QOTD job, whatever that job's result, so the normal QOTD post always goes
+first and nothing here can block or delay it.
+
+**What posts.** Inside the pilot window, yesterday's QOTD as a 30-60 s video, built with the
+worked-example pipeline (`scripts/qotd-social/breakdown.ts`): a fixed hook, the question read
+aloud, each sentence of the stored explanation as a step, then the answer under its **stored**
+display letter. The choices are in the day's stored order (`qotd_schedule.option_order`,
+`correct_display_letter`), never the question's original order. The script is a template: no
+generated text. The voice is Kokoro `af_heart` only, never the clone. It goes to the same channel
+(`SOCIAL_SLACK_CHANNEL_ID`) as the TikTok, Instagram and Facebook set: the video with its label
+and review line, the TikTok caption and keywords, then the Instagram and Facebook captions
+(SCL-262 format, music credit last). **Karl posts by hand; posting it is the approval.** Nothing
+is published automatically, and nothing posts anywhere but #social.
+
+**Fallback.** If anything below holds, there is no video: the post is yesterday's answer slide
+(the carousel's slide 3 from the QOTD run) with `Breakdown skipped: <reason> (<code>)`, or the
+notice alone when the QOTD run built no carousel. The run page lists the details.
+
+| code | why |
+|---|---|
+| `script_too_long` | (a) the voiced script runs over 60 s |
+| `script_too_short` | (a) under 30 s, which the MP4 check would refuse |
+| `mp4_check_failed` | (a) the MP4 fails the 1080x1920, 30-60 s, audio check |
+| `letter_named` | (b) the stored explanation or a choice names a letter ("choice B", "(C)", "answer is D") |
+| `grid_in` | (c) a grid-in |
+| `too_long_to_read` | (c) over the QOTD's quick-read length (`shared/qotd/readability.ts`) |
+| `paired_passage` | (c) a paired passage |
+| `stem_repeats_passage` | (c) the stem repeats the passage |
+| `no_explanation` | (c) no explanation to break down |
+| `too_many_steps` | (c) more than six explanation sentences |
+| `content_rules` | (d) a hook rule (H1-H6) or a caption rule failed |
+| `voice_check_failed` | (d) a voiced line failed the transcription or audio check |
+| `hyperframes_check_failed` | (d) `hyperframes check` failed |
+| `layout_check_failed` | (d) the safe-area or blank-paper check failed |
+| `render_failed` | (d) the render failed |
+| `withheld` | yesterday is withheld or missing on the archive |
+| `order_mismatch` | the stored letter does not match the stored order: nothing is rendered |
+| `build_failed` | the build did not finish (posted from the post step) |
+
+**Turning it on.** Set both dates in `QOTD_BREAKDOWN_PILOT` (`shared/qotd/breakdown.ts`) in the
+merge PR: `start` is the first posting day, `end` the last; 14 days at most, both inclusive
+(the schema refuses more). Dates are QOTD posting days: on `start` the run posts the breakdown
+of the day before. Default: both `null`, off.
+
+**Turning it off.** At once: set the repository variable `QOTD_BREAKDOWN_PAUSED` to `true`
+(**Settings** → **Secrets and variables** → **Actions** → **Variables**); the QOTD post is
+untouched. For good: clear the dates in a PR.
+
+**End date.** After `end` the job builds nothing, posts nothing and notes **pilot ended** on the
+run page. Outside the window it does not install the browser, FFmpeg or Python either.
+
+**Voicing in CI.** The worked examples are voiced on a machine, never in CI, to protect the
+clone's reference recording. The breakdown never uses the clone, so it voices in CI: `hyperframes
+tts` (Kokoro `af_heart`) and `hyperframes transcribe` for the quality check, Python 3.11 with the
+pinned packages in `scripts/qotd-social/breakdown-requirements.txt`, the voice and transcription
+models cached under `~/.cache/hyperframes` (actions/cache). No paid service.
+
+**Pull requests** run the job as a dry run on the real fixture rows (`tests/fixtures/qotd/rows.json`,
+2026-10-03): the whole path, the MP4 uploaded as the `qotd-breakdown` artifact, nothing sent.
+
+**A hand-started run** breaks down the day before the run's QOTD day (the `date` input is the
+QOTD job's only).

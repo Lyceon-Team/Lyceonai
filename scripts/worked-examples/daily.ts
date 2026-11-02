@@ -249,21 +249,8 @@ export function renderProblems(
   return out;
 }
 
-function verify(a: Args): void {
-  const out = resolve(need(a, "--out"));
-  const post = workedExamplePostSchema.parse(
-    JSON.parse(readFileSync(join(out, "post.json"), "utf8")),
-  );
-  const meta: unknown = JSON.parse(
-    readFileSync(join(out, "composition", "meta.json"), "utf8"),
-  );
-  const expected =
-    typeof meta === "object" &&
-    meta !== null &&
-    "duration" in meta &&
-    typeof meta.duration === "number"
-      ? meta.duration
-      : NaN;
+/** The rendered MP4 as ffprobe reports it: size, length, whether it has an audio stream. */
+export function probeVideo(file: string): ProbeResult {
   const raw: unknown = JSON.parse(
     execFileSync(
       "ffprobe",
@@ -274,7 +261,7 @@ function verify(a: Args): void {
         "stream=codec_type,width,height:format=duration",
         "-of",
         "json",
-        join(out, post.video),
+        file,
       ],
       { encoding: "utf8" },
     ),
@@ -304,7 +291,24 @@ function verify(a: Args): void {
     "duration" in raw.format
       ? Number(raw.format.duration)
       : NaN;
-  const kit = loadKit();
+  return {
+    width: video?.width ?? 0,
+    height: video?.height ?? 0,
+    duration: format,
+    audio: streams.some(
+      (s) =>
+        typeof s === "object" &&
+        s !== null &&
+        "codec_type" in s &&
+        s.codec_type === "audio",
+    ),
+  };
+}
+
+/** The music track's measured peak against the one on record (ffmpeg volumedetect), or null. */
+export function musicTrackProblem(
+  kit: ReturnType<typeof loadKit>,
+): string | null {
   const detect = spawnSync(
     "ffmpeg",
     [
@@ -319,30 +323,51 @@ function verify(a: Args): void {
     ],
     { encoding: "utf8" },
   );
-  const music = musicPeakProblem(
+  return musicPeakProblem(
     maxVolumeFromFfmpeg(detect.stderr),
     kit.track.peak_dbfs,
   );
-  const problems = renderProblems(
-    {
-      width: video?.width ?? 0,
-      height: video?.height ?? 0,
-      duration: format,
-      audio: streams.some(
-        (s) =>
-          typeof s === "object" &&
-          s !== null &&
-          "codec_type" in s &&
-          s.codec_type === "audio",
-      ),
-    },
-    expected,
-    kit,
+}
+
+/**
+ * Every problem with a rendered MP4 against its composition folder's meta.json: 1080x1920, the
+ * kit's 30-60 s, within 0.25 s of the composition, an audio stream, the music peak on record.
+ * The one MP4 check for every video the kit renders (worked examples and the QOTD breakdown).
+ */
+export function videoFileProblems(
+  file: string,
+  compositionDir: string,
+): { probe: ProbeResult; problems: string[] } {
+  const meta: unknown = JSON.parse(
+    readFileSync(join(compositionDir, "meta.json"), "utf8"),
   );
+  const expected =
+    typeof meta === "object" &&
+    meta !== null &&
+    "duration" in meta &&
+    typeof meta.duration === "number"
+      ? meta.duration
+      : NaN;
+  const kit = loadKit();
+  const probe = probeVideo(file);
+  const problems = renderProblems(probe, expected, kit);
+  const music = musicTrackProblem(kit);
   if (music) problems.push(music);
+  return { probe, problems };
+}
+
+function verify(a: Args): void {
+  const out = resolve(need(a, "--out"));
+  const post = workedExamplePostSchema.parse(
+    JSON.parse(readFileSync(join(out, "post.json"), "utf8")),
+  );
+  const { probe, problems } = videoFileProblems(
+    join(out, post.video),
+    join(out, "composition"),
+  );
   if (problems.length > 0)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
-  process.stdout.write(`verify: ${post.video} OK (${format} s)\n`);
+  process.stdout.write(`verify: ${post.video} OK (${probe.duration} s)\n`);
 }
 
 function claim(a: Args): void {

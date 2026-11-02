@@ -102,7 +102,17 @@ function tokens(text: string): Set<string> {
   return out;
 }
 
-function questionText(q: SeedQuestion): string {
+/**
+ * What the hook rules read of a question: its id (for messages), text, choices and key. A seed
+ * question is one; so is a QOTD breakdown's question, lettered in the day's stored order with its
+ * stored letter as the key (shared/qotd/breakdown.ts, SCL-266).
+ */
+export type HookQuestion = Pick<
+  SeedQuestion,
+  "id" | "stem" | "passage" | "options" | "correct_answer"
+>;
+
+function questionText(q: HookQuestion): string {
   return [q.passage ?? "", q.stem, ...q.options.map((o) => o.text)]
     .map(plainMathText)
     .join(" ");
@@ -111,7 +121,7 @@ function questionText(q: SeedQuestion): string {
 /** H3: the hook states or shows the puzzle (shares a number or a content word with it). */
 export function hookPuzzleProblem(
   hookLine: string,
-  q: SeedQuestion,
+  q: HookQuestion,
 ): string | null {
   const question = tokens(questionText(q));
   for (const t of tokens(hookLine)) if (question.has(t)) return null;
@@ -128,7 +138,7 @@ export function hookCuriosityProblem(hookLine: string): string | null {
 /** H5: the hook never gives the answer away. */
 export function hookAnswerProblem(
   text: string,
-  q: SeedQuestion,
+  q: HookQuestion,
 ): string | null {
   if (/\b(the )?answer('s| is)\b/i.test(text))
     return `H5 gives the answer: "${text}" says what the answer is`;
@@ -164,8 +174,8 @@ export function publicPhraseProblem(text: string): string | null {
 
 /** Every hook rule, on the on-screen line and on the spoken hook. */
 export function hookProblems(
-  hook: WorkedExampleContent["hook"],
-  q: SeedQuestion,
+  hook: Pick<WorkedExampleContent["hook"], "line" | "voice">,
+  q: HookQuestion,
 ): string[] {
   const out: (string | null)[] = [
     hookPuzzleProblem(hook.line, q),

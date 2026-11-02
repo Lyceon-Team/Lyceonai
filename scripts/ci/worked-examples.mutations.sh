@@ -4,7 +4,8 @@
 # Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27;
 # V1-V10 per the OpenVoice addendum, Karl, 2026-10-27; V11-V12 per Karl's speaking-rate ask,
 # 2026-10-27; T2, T18 re-pointed and T21-T26 added per Karl's rulings of 2026-11-02, SCL-265:
-# "Most people…" hooks allowed, and the #social set in the SCL-262 format)
+# "Most people…" hooks allowed, and the #social set in the SCL-262 format; T20, T26 re-pointed
+# 2026-11-02 for SCL-266, the Slack steps shared with the QOTD breakdown)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -247,8 +248,10 @@ ts_plant "T18 a caption without the headline first" shared/worked-examples/rules
 ts_plant "T19 the plan repeats a hook type" shared/worked-examples/rules.ts \
   "if (prev && prev.hook_type === s.hook_type)" "if (false)" \
   "two consecutive slots with one hook type are refused"
+# T20, T26 re-pointed 2026-11-02 (SCL-266): the steps and the poster moved into videoSetSlackSteps
+# and postVideoSet, which the worked examples and the QOTD breakdown share.
 ts_plant "T20 the Slack set out of order" scripts/worked-examples/post-to-slack.ts \
-  "for (const step of workedExampleSlackSteps(post)) {" "for (const step of workedExampleSlackSteps(post).reverse()) {" \
+  "  for (const step of steps) {" "  for (const step of [...steps].reverse()) {" \
   "posts the video first"
 
 echo "=== TS: the SCL-262 set (SCL-265) ==="
@@ -264,8 +267,8 @@ ts_plant "T25 the caption link check removed" shared/worked-examples/rules.ts \
   "if (link) out.push(" "if (false) out.push(" \
   "no link, bio line or promo in any caption"
 ts_plant "T26 the link to send back in the Instagram message" scripts/worked-examples/post-to-slack.ts \
-  "        copyBlock(post.instagram_caption),"$'\n' \
-  "        copyBlock(post.instagram_caption),"$'\n'"        post.links.instagram,"$'\n' \
+  "        copyBlock(set.instagram_caption),"$'\n' \
+  "        copyBlock(set.instagram_caption),"$'\n'"        \"lyceon.ai/start?utm_campaign=worked_example\","$'\n' \
   "no link, bio line, title or label block in any message"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
