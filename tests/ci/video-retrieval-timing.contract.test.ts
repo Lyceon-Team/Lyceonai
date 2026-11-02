@@ -30,7 +30,10 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
         eq: () => ({
           maybeSingle: () =>
             Promise.resolve({
-              data: { skill_codes: ["Equivalent Expressions"] },
+              data: {
+                id: "q-row-1",
+                skill_codes: ["Equivalent Expressions"],
+              },
               error: null,
             }),
         }),

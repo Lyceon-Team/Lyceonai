@@ -45,6 +45,7 @@ import {
   timedStep,
 } from "../lib/step-timer";
 import { EntitlementService } from "../services/entitlement-service";
+import { withTurnMemo } from "../lib/turn-memo";
 // resolveFullEnvelope: context resolver lives in tutor-context.ts.
 // hasAnswerLeak was previously imported here but is now internal to the
 // output serializer — the static gate test (LISA-FULL-007) enforces that
@@ -2556,9 +2557,15 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
   }
 }
 
+// H4 (owner brief, Karl 2026-11-02): one turn shares one read of its question's metadata
+// (readQuestionMeta in tutor-context.ts) instead of reading the row at every site that needs it.
 router.post(
   "/messages",
-  timedRoute("tutor.message", postTutorMessage, { databaseTrips: true }),
+  timedRoute(
+    "tutor.message",
+    (req, res) => withTurnMemo(() => postTutorMessage(req, res)),
+    { databaseTrips: true },
+  ),
 );
 
 // ============================================================================

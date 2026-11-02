@@ -13,7 +13,8 @@
  * getGcpCredentials to return a valid shape, this test leaves the
  * credential ABSENT so the full chain fires:
  *   credential absent → getGcpCredentials() throws
- *   → invokeClassifier catches → classifyCrisis retries → exhausted
+ *   → classifyCrisis's setup step fails → exhausted (H4, 2026-11-02: a setup failure is not
+ *     retried; it would fail the same way again)
  *   → sentinel {isCrisis:false, confidence:0}
  *   → runCrisisClassifier detects layer2MayHaveFailed + layer1Empty
  *   → crisis=true, source=classifier_degraded_no_floor
