@@ -4,6 +4,7 @@ How Lyceon sounds, how content gets made outside the blog pipeline, and how each
 
 ## Contents
 1. Voice
+1a. Video scripts and voice
 2. Words and patterns to avoid
 3. The content workflow (outside the blog pipeline)
 4. Channel playbooks
@@ -23,6 +24,28 @@ How Lyceon sounds, how content gets made outside the blog pipeline, and how each
 - **Students 13+ (attention register):** quicker, lighter, can be funny; never mock a struggling student; never manufacture anxiety.
 - **Slogan:** "Study Smarter, Score Higher."
 - **Brand vs product line:** the slogan says what Lyceon believes; the headline says what the product does. Don't make either do the other's job.
+
+## 1a. Video scripts and voice (Karl, 2026-11-02)
+
+Applies to every voiced video: worked examples, QOTD breakdowns, the rotation posts.
+
+- **No burned-in word-by-word captions.** The on-screen handwriting and graphs carry the content. Karl may switch on TikTok's own auto-captions when posting.
+- **The voice never reads the on-screen text verbatim.** The screen shows the question; the voice talks about it.
+- **Script flow:**
+  1. A spoken hook, as a question or challenge to the viewer: "Think you can solve this in ten seconds?", never the label "Solve this in 10 seconds".
+  2. A one-sentence setup in plain talk.
+  3. The key move, and why.
+  4. The trap ("here's where people slip").
+  5. The answer and a quick check.
+  6. The call to action (§4a).
+- **Tone:** contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Go."). No textbook phrasing.
+- **Reference script** (Nov 11): "Think you can do this one in ten seconds? Go. … Okay. Take fourteen off both sides, and you get negative five x is at least twenty-five. Now here's where people slip: you're dividing by a negative, so the sign flips. x is less than or equal to negative five. Did you flip it? Follow, there's one of these every day."
+- **Voice:** `am_michael` (Kokoro-82M) everywhere, replacing `af_heart`. Chatterbox is being piloted (D3) for naturalness against `am_michael`.
+- **Pronunciation:** "Lyceon" is said "lye-see-on" (/ˈlaɪsiɑn/: LYE, see, ON; stress on the first syllable).
+- **Outro and end card:** no "lyceon.ai" spoken or shown; the end card reads "Lyceon SAT Prep".
+- **Loudness:** voice lines are normalised (around −14 LUFS, true peak ≤ −1 dB) so nothing clips.
+- **QOTD breakdowns** use authored scripts, not the question read aloud.
+- **Screen demos** are scripted Playwright recordings, not OpenScreen (archived).
 
 ## 2. Words and patterns to avoid
 
@@ -81,7 +104,7 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - **Channels (Karl, 2026-11-02):** TikTok, Instagram Reels, YouTube Shorts and a Facebook Page. Student register on TikTok, Instagram and Shorts; parent register on the Facebook Page (parent-leaning). X is founder / build-in-public only, in Karl's voice, and not tracked against targets.
 - **Cadence (a starting shape that changes with the data):** QOTD daily. Worked examples Mon/Wed/Fri, plus more if quality holds. Other days rotate graphing-calculator/trap, product moments, test-date/myth and parent posts. "Graphing method vs by hand" content draws its graphs in Lyceon's own rendering (Manim) and never names or shows Desmos until Desmos replies (§2).
 - Faceless videos for now. Open inside the product or the problem in the first seconds; one premise; a new beat before attention drops.
-- **Video tools:** Hyperframes is the core. Pilots: OpenScreen (screen demos; not of the Desmos interface for now), Manim with manim-voiceover (math visuals), Kokoro-82M (voice). Rejected: Remotion (licence), stock-footage generators, AI video/avatar models.
+- **Video tools:** Hyperframes is the core. Pilots: Manim with manim-voiceover (math visuals), Kokoro-82M (voice, `am_michael`), Chatterbox (D3, for naturalness against `am_michael`). Screen demos are scripted Playwright recordings, not OpenScreen (archived), and never of the Desmos interface for now. Scripts and voice follow §1a. Rejected: Remotion (licence), stock-footage generators, AI video/avatar models.
 - **TikTok keywords:** Karl adds them via TikTok's Manage keywords, from the `#social` keyword block (SCL-262).
 - **YouTube Shorts:** the same vertical videos as TikTok and Reels; the walkthrough video stays on the channel.
 - **Facebook Page:** parent-leaning; QOTD, worked examples and parent posts; end with a genuine question (§4a).
@@ -107,7 +130,7 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 
 | Channel | Call to action |
 |---|---|
-| TikTok | None in the post: no links, no promo lines. The bio link is set once. |
+| TikTok | No links, no promo lines. The follow line "Follow for daily SAT questions 👆" is allowed: a follow ask, not promo (Karl, 2026-11-02). The bio link is set once. |
 | Instagram | "Comment SAT and I'll send you the link". |
 | Facebook Page | A genuine question ("How would you solve it?"). No link, no "comment a word". |
 | Reddit | No links in public comments; a link only by DM to someone who asked. |

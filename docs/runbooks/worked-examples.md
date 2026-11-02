@@ -77,23 +77,17 @@ re-run.
 `SOCIAL_SLACK_CHANNEL_ID` and `CONTENT_APPROVER_LOGIN` (variables). The job pushes `posted.json`
 to `social` with its own token, as the approval stamp does.
 
-## Metrics (manual entry, monthly readout)
+## Metrics (the private Drive tracker is the record)
 
 Every Monday, Karl's analytics pull (Claude in Chrome, read-only) reads each platform's numbers into
 the private Drive tracker; numbers never go in the repository. Judge a video at 72 hours on
 retention, saves per 1,000 views and share of views from search; each test carries an experiment
 ID (Karl, 2026-11-02; SCL-264).
 
-Enter readings from each platform's analytics into `worked_example_metrics` (Karl, owner-run):
-
-```sql
-INSERT INTO public.worked_example_metrics (worked_example_id, platform, captured_at, views,
-  retention_3s_pct, avg_watch_seconds, completion_pct, non_follower_view_pct, follows)
-VALUES ('we-satm2czs1be', 'tiktok', '2026-11-09T17:00Z', 0, 0, 0, 0, 0, 0);
-```
-
-Monthly readout: `SELECT * FROM public.worked_example_metrics_monthly WHERE month = '2026-11-01'
-ORDER BY hook_type, worked_example_id;` (latest reading per example, platform and month).
+**The private Drive tracker is the record (Karl, 2026-11-02).** Readings are no longer entered into
+`worked_example_metrics`, and its monthly readout (`worked_example_metrics_monthly`) is no longer
+run. The table, the view and their migration (`supabase/migrations/20261118000000_worked_examples.sql`)
+stay as they are; they are not dropped or altered, but they are not the record.
 
 ## The cloned voice (OpenVoice addendum, Karl, 2026-10-27)
 
