@@ -78,6 +78,7 @@ vi.mock(
     return {
       orchestrateResponseSchema: z.any(),
       compactResponseSchema: z.any(),
+      ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE: "ORCHESTRATOR_AUTH_CONFIG_ERROR",
     };
   },
 );
@@ -503,5 +504,80 @@ describe("tutor-orchestrator-client OIDC auth", () => {
 
       fetchSpy.mockRestore();
     });
+
+    // H4 (owner ruling 2026-11-02, "BFF only"): the worker's boundary-auth configuration 503
+    // fails identically on a retry, so it is sent once; any other 503 keeps its one retry.
+    const configErrorBody = (): Response =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "ORCHESTRATOR_AUTH_CONFIG_ERROR",
+            message: "boundary auth not configured",
+          },
+        }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      );
+
+    it("does not retry the worker's configuration 503", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(configErrorBody())
+        .mockResolvedValueOnce(new Response("", { status: 200 }));
+
+      const result = await compactConversation({
+        conversation_id: "test",
+      } as never);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errorCode).toBe("orchestration_failed_recoverable");
+      }
+
+      fetchSpy.mockRestore();
+    });
+
+    it("still retries a 503 with any other error code", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              error: { code: "vertex_429_quota", message: "quota" },
+            }),
+            { status: 503, headers: { "content-type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(configErrorBody());
+
+      const result = await compactConversation({
+        conversation_id: "test",
+      } as never);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(result.ok).toBe(false);
+
+      fetchSpy.mockRestore();
+    });
+  });
+});
+
+describe("the configuration error code is the worker's", () => {
+  // The BFF matches the worker's literal without changing the worker (H4, "BFF only"); if the
+  // worker's code ever changes, the BFF would silently retry it again.
+  it("shared ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE equals boundary-auth.ts CONFIG_ERROR_CODE", async () => {
+    const { readFileSync } = await import("node:fs");
+    const worker = readFileSync(
+      "apps/workers/tutor-orchestrator/src/lib/boundary-auth.ts",
+      "utf8",
+    );
+    const shared = readFileSync("shared/tutor-orchestrator-wire.ts", "utf8");
+    const workerCode = /const CONFIG_ERROR_CODE = "([^"]+)";/.exec(worker)?.[1];
+    const sharedCode =
+      /export const ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE =\s*"([^"]+)";/.exec(
+        shared,
+      )?.[1];
+    expect(workerCode).toBe("ORCHESTRATOR_AUTH_CONFIG_ERROR");
+    expect(sharedCode).toBe(workerCode);
   });
 });

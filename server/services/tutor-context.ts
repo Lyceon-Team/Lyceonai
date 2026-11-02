@@ -33,6 +33,7 @@
 import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
+import { turnMemo } from "../lib/turn-memo";
 import {
   resolvedScopeSchema,
   recentMessageSchema,
@@ -290,11 +291,9 @@ export async function resolveScope(
   // check only. The question_id was derived from the ownership-validated
   // session item above.
   if (resolvedQuestionRowId) {
-    const { data: questionData, error: questionError } = await supabaseServer
-      .from("questions")
-      .select("id")
-      .eq("id", resolvedQuestionRowId)
-      .maybeSingle();
+    const { data: questionData, error: questionError } = await readQuestionMeta(
+      resolvedQuestionRowId,
+    );
 
     if (questionError) {
       logger.error(
@@ -370,6 +369,81 @@ export async function resolveScope(
  * expected outcome: QuestionContent | null. Degrades to null on DB error
  * or missing session item (general mode).
  */
+// ── Question metadata, read once per turn (H4) ─────────────────────────
+
+// A column the select names always comes back (NULL as null); `.nullish()` also reads an absent
+// key as null, so a row is never refused for a column it cannot be missing in Postgres.
+const questionMetaSchema = z
+  .object({
+    id: z.string(),
+    section: z.string().nullish(),
+    domain: z.string().nullish(),
+    skill_codes: z.array(z.string()).nullish(),
+  })
+  .transform((row) => ({
+    id: row.id,
+    section: row.section ?? null,
+    domain: row.domain ?? null,
+    skill_codes: row.skill_codes ?? null,
+  }));
+export type QuestionMeta = z.output<typeof questionMetaSchema>;
+
+/** Supabase-shaped: `data` null with `error` null is a missing row (`.maybeSingle()`). */
+export type QuestionMetaRead =
+  | { data: QuestionMeta | null; error: null }
+  | { data: null; error: { message: string; code?: string | undefined } };
+
+const QUESTION_META_COLUMNS = "id, section, domain, skill_codes";
+
+async function selectQuestionMeta(
+  questionRowId: string,
+): Promise<QuestionMetaRead> {
+  const { data, error } = await supabaseServer
+    .from("questions")
+    .select(QUESTION_META_COLUMNS)
+    .eq("id", questionRowId)
+    .maybeSingle();
+  if (error) {
+    return { data: null, error: { message: error.message, code: error.code } };
+  }
+  if (data === null) return { data: null, error: null };
+  const parsed = questionMetaSchema.safeParse(data);
+  if (!parsed.success) {
+    return {
+      data: null,
+      error: { message: "questions row failed the metadata schema" },
+    };
+  }
+  return { data: parsed.data, error: null };
+}
+
+/**
+ * @spec [owner brief H4 (Karl, 2026-11-02)] | @implemented [2026-11-02]
+ * plain English: a question row's metadata (`id, section, domain, skill_codes`) by row id —
+ * shared, immutable content, read by ID (this file's servable-questions allowlist entry). It
+ * carries no content and NO `correct_answer`: the answer key keeps its own BFF-local read
+ * (tutor-runtime.ts `getCorrectAnswerForScope`), so nothing that holds this object can leak it.
+ *
+ * Inside a turn (`withTurnMemo`, server/lib/turn-memo.ts; POST /api/tutor/messages runs in
+ * one) the first call reads and every later call, concurrent ones included, shares that read:
+ * one round trip where a turn made up to eight before H4. A failed read is not kept: the next
+ * caller reads again, as it would have before H4. Outside a turn it simply reads.
+ */
+export function readQuestionMeta(
+  questionRowId: string,
+): Promise<QuestionMetaRead> {
+  const memo = turnMemo()?.questionMeta;
+  if (memo === undefined) return selectQuestionMeta(questionRowId);
+  const existing = memo.get(questionRowId);
+  if (existing !== undefined) return existing;
+  const read = selectQuestionMeta(questionRowId).then((result) => {
+    if (result.error !== null) memo.delete(questionRowId);
+    return result;
+  });
+  memo.set(questionRowId, read);
+  return read;
+}
+
 /**
  * @spec [CC Brief "Video Library (ships now)", Karl 2026-10-15, §6 (retrieval on the item's
  *       skills)] | @implemented 2026-10-15
@@ -382,18 +456,9 @@ export async function resolveScope(
 export async function resolveQuestionSkillCodes(
   questionRowId: string,
 ): Promise<string[]> {
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("skill_codes")
-    .eq("id", questionRowId)
-    .maybeSingle();
-  if (error) throw error;
-  return (
-    z
-      .object({ skill_codes: z.array(z.string()).nullable() })
-      .nullable()
-      .parse(data)?.skill_codes ?? []
-  );
+  const { data, error } = await readQuestionMeta(questionRowId);
+  if (error) throw new Error(`questions read failed: ${error.message}`);
+  return data?.skill_codes ?? [];
 }
 
 /**
@@ -433,15 +498,9 @@ export async function resolveQuestionSubSkillIds(
 export async function resolveQuestionSection(
   questionRowId: string,
 ): Promise<QuestionSection | null> {
-  const { data, error } = await supabaseServer
-    .from("questions")
-    .select("section")
-    .eq("id", questionRowId)
-    .maybeSingle();
-  if (error) throw error;
-  const section =
-    z.object({ section: z.string().nullable() }).nullable().parse(data)
-      ?.section ?? null;
+  const { data, error } = await readQuestionMeta(questionRowId);
+  if (error) throw new Error(`questions read failed: ${error.message}`);
+  const section = data?.section ?? null;
   return section === "M" || section === "RW" ? section : null;
 }
 
@@ -672,11 +731,9 @@ async function resolveMasterySnapshot(
     }
 
     // Fetch question metadata to know skill/domain/section
-    const { data: questionMeta, error: questionError } = await supabaseServer
-      .from("questions")
-      .select("section, domain, skill_codes")
-      .eq("id", scope.source_question_row_id)
-      .single();
+    const { data: questionMeta, error: questionError } = await readQuestionMeta(
+      scope.source_question_row_id,
+    );
 
     if (questionError || !questionMeta) {
       logger.warn(
@@ -1042,11 +1099,9 @@ async function resolveRecentFriction(
     // ── Consecutive fails this skill (7d) ───────────────────────────
     let consecutiveFailsSkill7d = 0;
     if (scope.source_question_row_id) {
-      const { data: questionMeta } = await supabaseServer
-        .from("questions")
-        .select("skill_codes, domain, section")
-        .eq("id", scope.source_question_row_id)
-        .single();
+      const { data: questionMeta } = await readQuestionMeta(
+        scope.source_question_row_id,
+      );
 
       if (questionMeta) {
         const skillCodes = questionMeta.skill_codes as string[];
@@ -1138,11 +1193,9 @@ async function resolveRecentFriction(
     // Check if mastery for the scoped skill has decreased over 14d
     let masteryRegression: boolean | null = null;
     if (scope.source_question_row_id) {
-      const { data: questionMeta } = await supabaseServer
-        .from("questions")
-        .select("skill_codes, domain, section")
-        .eq("id", scope.source_question_row_id)
-        .single();
+      const { data: questionMeta } = await readQuestionMeta(
+        scope.source_question_row_id,
+      );
 
       if (questionMeta) {
         const skillCodes = questionMeta.skill_codes as string[];
@@ -1237,11 +1290,9 @@ async function resolveKpiState(
     }
 
     // Fetch question metadata for scope keys
-    const { data: questionMeta, error: questionError } = await supabaseServer
-      .from("questions")
-      .select("section, domain, skill_codes")
-      .eq("id", scope.source_question_row_id)
-      .single();
+    const { data: questionMeta, error: questionError } = await readQuestionMeta(
+      scope.source_question_row_id,
+    );
 
     if (questionError || !questionMeta) {
       logger.warn(

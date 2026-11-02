@@ -279,6 +279,16 @@ export const offeredVideoSchema = z
 export type OfferedVideo = z.infer<typeof offeredVideoSchema>;
 
 /**
+ * @spec [owner brief H4 (Karl, 2026-11-02), ruling of 2026-11-02 "BFF only"] | @implemented [2026-11-02]
+ * plain English: the `error.code` of the worker's 503 for a missing boundary-auth configuration
+ * (apps/workers/tutor-orchestrator/src/lib/boundary-auth.ts `CONFIG_ERROR_CODE`). That 503 is
+ * deterministic — a second request fails the same way — so the BFF does not retry it. The worker
+ * keeps its own literal (no worker change in H4); a CI test asserts the two are equal.
+ */
+export const ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE =
+  "ORCHESTRATOR_AUTH_CONFIG_ERROR";
+
+/**
  * The guided-choice intents (packages/shared/src/tutor-guided-choices.ts `REVIEW_INTENTS`),
  * repeated here because the worker cannot import packages/shared; a CI test asserts the two
  * lists are equal, as it does for the video methods above.

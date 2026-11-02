@@ -370,7 +370,10 @@ describe("the BFF resolves the index", () => {
 
 describe("Step 13d retrieval — proof 5 and fail open", () => {
   it("returns the library's rows for the item's skills, asking for at most 3", async () => {
-    db.question = { data: { skill_codes: ["Linear Functions"] }, error: null };
+    db.question = {
+      data: { id: "q-row-1", skill_codes: ["Linear Functions"] },
+      error: null,
+    };
     db.rpc = { data: LIBRARY, error: null };
     expect(
       (await retrieveOfferedVideos("q-1", "review", "c-1", "desmos")).videos,
@@ -381,7 +384,10 @@ describe("Step 13d retrieval — proof 5 and fail open", () => {
   });
 
   it("a skill with no video → no videos, no error (proof 5)", async () => {
-    db.question = { data: { skill_codes: ["Boundaries"] }, error: null };
+    db.question = {
+      data: { id: "q-row-1", skill_codes: ["Boundaries"] },
+      error: null,
+    };
     db.rpc = { data: [], error: null };
     expect(
       (await retrieveOfferedVideos("q-1", "review", "c-1", null)).videos,
@@ -397,7 +403,10 @@ describe("Step 13d retrieval — proof 5 and fail open", () => {
   });
 
   it("practice (not a named surface) → no lookup at all", async () => {
-    db.question = { data: { skill_codes: ["Circles"] }, error: null };
+    db.question = {
+      data: { id: "q-row-1", skill_codes: ["Circles"] },
+      error: null,
+    };
     db.rpc = { data: LIBRARY, error: null };
     expect(
       (await retrieveOfferedVideos("q-1", "practice", "c-1", null)).videos,
@@ -409,7 +418,10 @@ describe("Step 13d retrieval — proof 5 and fail open", () => {
   });
 
   it("an item with no skills → no retrieval call", async () => {
-    db.question = { data: { skill_codes: [] }, error: null };
+    db.question = {
+      data: { id: "q-row-1", skill_codes: [] },
+      error: null,
+    };
     expect(
       (await retrieveOfferedVideos("q-1", "review", "c-1", null)).videos,
     ).toEqual([]);
@@ -417,7 +429,10 @@ describe("Step 13d retrieval — proof 5 and fail open", () => {
   });
 
   it("a failing query → no videos, logged at ERROR, never thrown", async () => {
-    db.question = { data: { skill_codes: ["Circles"] }, error: null };
+    db.question = {
+      data: { id: "q-row-1", skill_codes: ["Circles"] },
+      error: null,
+    };
     db.rpc = { data: null, error: new Error("function does not exist") };
     expect(
       (await retrieveOfferedVideos("q-1", "review", "c-1", null)).videos,
@@ -432,7 +447,10 @@ describe("Step 13d retrieval — proof 5 and fail open", () => {
   });
 
   it("a malformed row (an id that is not a YouTube id) → no videos", async () => {
-    db.question = { data: { skill_codes: ["Circles"] }, error: null };
+    db.question = {
+      data: { id: "q-row-1", skill_codes: ["Circles"] },
+      error: null,
+    };
     db.rpc = {
       data: [{ ...LIBRARY[0], video_id: "javascript:alert(1)" }],
       error: null,
