@@ -50,7 +50,16 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-const SURFACE_KEY = ["/api/score-report"] as const;
+/**
+ * `?date=YYYY-MM-DD` (the "Got your scores?" email, owner ruling 2026-11-02): one of the
+ * student's own past test dates. The server decides whether it is one; this only passes it on.
+ */
+function surfaceKey(search: string): readonly [string] {
+  const date = new URLSearchParams(search).get("date");
+  return date !== null && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? [`/api/score-report?date=${date}`]
+    : ["/api/score-report"];
+}
 
 type SurfaceResponse = { data: RenewalPromptView };
 
@@ -71,6 +80,9 @@ export default function ScoreReportPage(): JSX.Element {
   const [total, setTotal] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
+  const SURFACE_KEY = surfaceKey(
+    typeof window === "undefined" ? "" : window.location.search,
+  );
   const surface = useQuery<SurfaceResponse>({ queryKey: SURFACE_KEY });
 
   const scoreMutation = useMutation({
@@ -163,9 +175,11 @@ export default function ScoreReportPage(): JSX.Element {
             : `Your subscription renews on ${occasionDate(prompt.occasion_key)}`}
         </h1>
         <p className="mt-2 text-muted-foreground">
-          {prompt.anchor === "exam_date"
-            ? "Two questions. The first one helps us check our projection against what actually happened."
-            : "One question, so we only keep charging you while you're still preparing."}
+          {prompt.renewal_open === false
+            ? "One question: it helps us check our projection against what actually happened."
+            : prompt.anchor === "exam_date"
+              ? "Two questions. The first one helps us check our projection against what actually happened."
+              : "One question, so we only keep charging you while you're still preparing."}
         </p>
       </header>
 
@@ -232,65 +246,67 @@ export default function ScoreReportPage(): JSX.Element {
         </section>
       )}
 
-      <section aria-labelledby="retake-heading" className="space-y-4">
-        <h2 id="retake-heading" className="font-medium">
-          {prompt.anchor === "exam_date"
-            ? "Are you taking the SAT again?"
-            : "Are you still preparing?"}
-        </h2>
+      {prompt.renewal_open !== false && (
+        <section aria-labelledby="retake-heading" className="space-y-4">
+          <h2 id="retake-heading" className="font-medium">
+            {prompt.anchor === "exam_date"
+              ? "Are you taking the SAT again?"
+              : "Are you still preparing?"}
+          </h2>
 
-        {prompt.decision === null ? (
-          <>
-            <p className="text-sm text-muted-foreground">
-              {canEndSubscription
-                ? "If you're done, we'll stop your subscription at the end of the period you've already paid for — nothing is cut off early. If we don't hear from you within two weeks, we'll do the same."
-                : "Your guardian is the one being charged, so they decide whether the subscription continues. Telling us you're still preparing keeps it going."}
-            </p>
-            <div className="flex gap-3">
-              <Button
-                onClick={() =>
-                  decisionMutation.mutate({
-                    occasion_key: prompt.occasion_key,
-                    decision: "retaking",
-                  })
-                }
-                disabled={decisionMutation.isPending}
-                data-testid="button-decision-retaking"
-              >
-                {prompt.anchor === "exam_date"
-                  ? "Yes, I'm taking it again"
-                  : "Yes, keep it going"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  decisionMutation.mutate({
-                    occasion_key: prompt.occasion_key,
-                    decision: "not_retaking",
-                    // The server refuses an unconfirmed `not_retaking`; this button IS the
-                    // confirmation, and the copy above says what it does before it is pressed.
-                    confirm: true,
-                  })
-                }
-                disabled={decisionMutation.isPending}
-                data-testid="button-decision-not-retaking"
-              >
+          {prompt.decision === null ? (
+            <>
+              <p className="text-sm text-muted-foreground">
                 {canEndSubscription
-                  ? "No — end it at the end of the period"
-                  : "No, I'm done"}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <p data-testid="text-recorded-decision">
-            {prompt.decision === "retaking"
-              ? "You told us you're still preparing, so the subscription continues."
-              : canEndSubscription
-                ? "Your subscription will end at the end of the period you've already paid for. You can undo that here or in the billing portal."
-                : "We've recorded that you're done. Your guardian is the one being charged, so the subscription is theirs to end."}
-          </p>
-        )}
-      </section>
+                  ? "If you're done, we'll stop your subscription at the end of the period you've already paid for — nothing is cut off early. If we don't hear from you within two weeks, we'll do the same."
+                  : "Your guardian is the one being charged, so they decide whether the subscription continues. Telling us you're still preparing keeps it going."}
+              </p>
+              <div className="flex gap-3">
+                <Button
+                  onClick={() =>
+                    decisionMutation.mutate({
+                      occasion_key: prompt.occasion_key,
+                      decision: "retaking",
+                    })
+                  }
+                  disabled={decisionMutation.isPending}
+                  data-testid="button-decision-retaking"
+                >
+                  {prompt.anchor === "exam_date"
+                    ? "Yes, I'm taking it again"
+                    : "Yes, keep it going"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    decisionMutation.mutate({
+                      occasion_key: prompt.occasion_key,
+                      decision: "not_retaking",
+                      // The server refuses an unconfirmed `not_retaking`; this button IS the
+                      // confirmation, and the copy above says what it does before it is pressed.
+                      confirm: true,
+                    })
+                  }
+                  disabled={decisionMutation.isPending}
+                  data-testid="button-decision-not-retaking"
+                >
+                  {canEndSubscription
+                    ? "No — end it at the end of the period"
+                    : "No, I'm done"}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p data-testid="text-recorded-decision">
+              {prompt.decision === "retaking"
+                ? "You told us you're still preparing, so the subscription continues."
+                : canEndSubscription
+                  ? "Your subscription will end at the end of the period you've already paid for. You can undo that here or in the billing portal."
+                  : "We've recorded that you're done. Your guardian is the one being charged, so the subscription is theirs to end."}
+            </p>
+          )}
+        </section>
+      )}
 
       {formError !== null && (
         <p

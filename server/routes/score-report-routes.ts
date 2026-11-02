@@ -27,7 +27,9 @@
  * 500 with an ERROR log. A refusal is a DECISION and gets its own status, never a 500.
  */
 import { Router, type Request, type Response } from "express";
+import { z } from "zod";
 import { logger } from "../logger";
+import { localDateSchema } from "../../packages/shared/src/calendar/time";
 import {
   readScoreReportSurface,
   submitRenewalDecision,
@@ -149,7 +151,22 @@ scoreReportRouter.get(
     const studentId = callerId(req, res);
     if (studentId === null) return;
 
-    const result = await readScoreReportSurface(studentId, req.requestId);
+    // `?date=` (the "Got your scores?" email, owner ruling 2026-11-02): one of the student's own
+    // past test dates; anything that is not a calendar date is a 400.
+    const date = z
+      .object({ date: localDateSchema.optional() })
+      .safeParse(req.query);
+    if (!date.success) {
+      res.status(400).json({
+        error: { message: "Invalid date", details: date.error.flatten() },
+      });
+      return;
+    }
+    const result = await readScoreReportSurface(
+      studentId,
+      req.requestId,
+      date.data.date,
+    );
     if (!result.ok) {
       sendFailure(res, result.error, req.requestId, "score_report_read");
       return;

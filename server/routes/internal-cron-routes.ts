@@ -63,6 +63,11 @@ import {
   runReviewAskEmailRule,
   type ReviewAskEmailSummary,
 } from "../services/product-feedback/review-ask-email-job.js";
+import {
+  defaultEmailGateJobDeps,
+  runEmailGateJob,
+  type EmailGateJobSummary,
+} from "../services/email-gate/email-gate-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -469,6 +474,11 @@ router.get(
  * than behind a new cron (the owner brief of 2026-09-15's rule for new sweeps), so the emails it
  * queues go out in this same dispatch. Its failure is logged and does not stop the dispatch.
  *
+ * EMAIL SEND GATE (owner brief, Karl 2026-10-30; rulings 2026-11-02) | @implemented [2026-11-02]:
+ * the gate's daily pass runs here too, after the review ask and before the dispatch
+ * (email-gate-job.ts): the SAT milestones, the state sweep (and pause notes), and the Resend
+ * `email_state` mirror. Its failure is logged and does not stop the dispatch.
+ *
  * Lifecycle email (the founding reminder from #1279, then the behaviour triggers) ran here until
  * the owner rulings on #1284 (Karl, 2026-10-21) moved it to GET /api/internal/lifecycle-email.
  */
@@ -492,6 +502,18 @@ router.get(
         );
         reviewAsk = { error: true };
       }
+      let emailGate: EmailGateJobSummary | { error: true };
+      try {
+        emailGate = await runEmailGateJob(defaultEmailGateJobDeps(new Date()));
+      } catch (err) {
+        logger.error(
+          "NOTIFICATIONS",
+          "email_gate_job_error",
+          "Email gate daily pass failed; dispatching anyway",
+          err,
+        );
+        emailGate = { error: true };
+      }
       const summary = await dispatchQueuedMessages();
       logger.info(
         "NOTIFICATIONS",
@@ -499,7 +521,7 @@ router.get(
         "Scheduled notification dispatch sweep completed",
         summary,
       );
-      res.json({ ok: true, ...summary, reviewAsk });
+      res.json({ ok: true, ...summary, reviewAsk, emailGate });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",
