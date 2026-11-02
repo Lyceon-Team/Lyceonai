@@ -125,6 +125,18 @@ export const voiceSettingsSchema = z
         loudness_range_lu: z.number().min(1).max(20),
       })
       .strict(),
+    /**
+     * The finished mix (voice and music bed, as rendered) is limited to at most
+     * max_true_peak_dbtp before any check or post (Karl's ruling 2026-11-02, SCL-270: "a
+     * true-peak limiter (≤ −1 dBTP) on the finished mix in every pipeline"); final-mix.ts
+     * re-encodes the audio as AAC at aac_bitrate_kbps.
+     */
+    final_mix: z
+      .object({
+        max_true_peak_dbtp: z.number().min(-9).max(-1),
+        aac_bitrate_kbps: z.number().int().min(128).max(320),
+      })
+      .strict(),
     /** Known mishearings of names by the transcriber, mapped to what was said. */
     transcript_aliases: z.record(z.string().min(1), z.string().min(1)),
     transcribe_model: z.string().min(1),

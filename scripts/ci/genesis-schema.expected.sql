@@ -7075,6 +7075,42 @@ $$;
 
 
 --
+-- Name: email_gate_suppressed(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_suppressed(p_profile_id uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH ev AS (
+    SELECT 'complained'::text AS kind, COALESCE(m.sent_at, m.created_at) AS at
+      FROM public.notification_messages m
+     WHERE m.recipient_profile_id = p_profile_id AND m.channel = 'email' AND m.status = 'complained'
+    UNION ALL
+    SELECT 'bounced', COALESCE(m.sent_at, m.created_at)
+      FROM public.notification_messages m
+     WHERE m.recipient_profile_id = p_profile_id AND m.channel = 'email' AND m.status = 'bounced'
+    UNION ALL
+    SELECT 'delivered', m.delivered_at
+      FROM public.notification_messages m
+     WHERE m.recipient_profile_id = p_profile_id AND m.channel = 'email'
+       AND m.status = 'delivered' AND m.delivered_at IS NOT NULL
+    UNION ALL
+    SELECT CASE d.event_type WHEN 'email.complained' THEN 'complained'
+                             WHEN 'email.bounced' THEN 'bounced' ELSE 'delivered' END,
+           d.occurred_at
+      FROM public.notification_delivery_events d
+     WHERE d.recipient_profile_id = p_profile_id
+       AND d.event_type IN ('email.complained', 'email.bounced', 'email.delivered')
+  )
+  SELECT EXISTS (SELECT 1 FROM ev WHERE kind = 'complained')
+      OR COALESCE((SELECT max(at) FROM ev WHERE kind = 'bounced')
+                  > COALESCE((SELECT max(at) FROM ev WHERE kind = 'delivered'), '-infinity'::timestamptz),
+                  false);
+$$;
+
+
+--
 -- Name: email_gate_sweep(timestamp with time zone, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7161,6 +7197,11 @@ BEGIN
   IF public.email_gate_is_internal(p_profile_id) THEN
     RETURN jsonb_build_object('allow', false, 'reason', 'internal_account');
   END IF;
+  -- Karl's ruling 2026-11-02 (milestone window and duplicate guard): an address that bounced
+  -- (with no delivery since) or complained gets no governed or milestone email.
+  IF public.email_gate_suppressed(p_profile_id) THEN
+    RETURN jsonb_build_object('allow', false, 'reason', 'suppressed');
+  END IF;
   -- Under-13 handling is unchanged for the existing governed emails; the new marketing-shaped
   -- kinds (manual campaigns, milestones) are 13+ only (Doctrine rule 7).
   IF (p_kind = 'manual_campaign' OR v_category = 'milestone') AND NOT v_profile.adult_or_13 THEN
@@ -7192,6 +7233,59 @@ $$;
 
 
 --
+-- Name: email_milestone_try(uuid, date, text, date, date, date, date, text, jsonb, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_milestone_try(p_student_id uuid, p_test_date date, p_kind text, p_target date, p_window_lo date, p_window_hi date, p_today date, p_timezone text, p_payload jsonb, p_now timestamp with time zone) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_event uuid := public.notification_event_id(p_kind, p_student_id::text || ':' || p_test_date::text);
+BEGIN
+  -- Once per student, test date and kind: sent, or skipped for good.
+  IF EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id = v_event)
+     OR EXISTS (SELECT 1 FROM public.email_milestone_skips s
+                 WHERE s.student_id = p_student_id AND s.test_date = p_test_date AND s.kind = p_kind) THEN
+    RETURN 'done';
+  END IF;
+  IF p_today < p_window_lo THEN
+    RETURN 'waiting';
+  END IF;
+  -- Never a late catch-up.
+  IF p_today > p_window_hi THEN
+    INSERT INTO public.email_milestone_skips (student_id, test_date, kind, reason, recorded_at)
+    VALUES (p_student_id, p_test_date, p_kind, 'window_missed', p_now)
+    ON CONFLICT DO NOTHING;
+    RETURN 'window_missed';
+  END IF;
+  -- Never two different milestone emails within the spacing days.
+  IF EXISTS (SELECT 1 FROM public.notification_events e
+              WHERE e.subject_profile_id = p_student_id
+                AND e.event_type IN ('sat_week_before', 'sat_day_after', 'sat_scores_released')
+                AND e.created_at > p_now - make_interval(days => public.email_gate_config_int('email_gate_milestone_spacing_days'))
+                AND e.created_at <= p_now) THEN
+    INSERT INTO public.email_milestone_skips (student_id, test_date, kind, reason, recorded_at)
+    VALUES (p_student_id, p_test_date, p_kind, 'milestone_spacing', p_now)
+    ON CONFLICT DO NOTHING;
+    RETURN 'milestone_spacing';
+  END IF;
+  PERFORM public.emit_notification_event(
+    v_event, p_kind, p_student_id,
+    jsonb_build_array(jsonb_build_object('profile_id', p_student_id, 'channels', jsonb_build_array('email'))),
+    p_payload,
+    -- Sent the day it is emitted or not at all (the copy's day count is that day's).
+    ((p_today + 1)::timestamp AT TIME ZONE p_timezone));
+  -- Stamped with the rule's clock (now() in production), so the spacing check above measures
+  -- milestones on one clock.
+  UPDATE public.notification_events SET created_at = p_now
+   WHERE event_id = v_event AND created_at IS DISTINCT FROM p_now;
+  RETURN 'emitted';
+END;
+$$;
+
+
+--
 -- Name: email_milestones_notify(timestamp with time zone, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7203,9 +7297,10 @@ DECLARE
   r         record;
   v_today   date;
   v_release date;
-  v_week    integer := 0;
-  v_after   integer := 0;
-  v_scores  integer := 0;
+  v_target  date;
+  v_out     text;
+  v_counts  jsonb := jsonb_build_object('week_before', 0, 'day_after', 0, 'scores_released', 0,
+                                        'window_missed', 0, 'milestone_spacing', 0);
   v_before  integer := public.email_gate_config_int('email_gate_milestone_days_before_test');
 BEGIN
   IF p_release_dates IS NULL OR jsonb_typeof(p_release_dates) <> 'object' THEN
@@ -7227,50 +7322,50 @@ BEGIN
     v_today := (p_now AT TIME ZONE r.timezone)::date;
     v_release := NULLIF(p_release_dates ->> r.test_date::text, '')::date;
 
-    IF v_today BETWEEN r.test_date - v_before AND r.test_date - (v_before - 2) THEN
-      IF NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =
-           public.notification_event_id('sat_week_before', r.student_id::text || ':' || r.test_date::text)) THEN
-        PERFORM public.emit_notification_event(
-          public.notification_event_id('sat_week_before', r.student_id::text || ':' || r.test_date::text),
-          'sat_week_before', r.student_id,
-          jsonb_build_array(jsonb_build_object('profile_id', r.student_id, 'channels', jsonb_build_array('email'))),
-          jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
-                             'test_date', r.test_date),
-          (r.test_date::timestamp AT TIME ZONE r.timezone));
-        v_week := v_week + 1;
-      END IF;
+    -- A week before: target ± 1 day.
+    v_target := r.test_date - v_before;
+    v_out := public.email_milestone_try(r.student_id, r.test_date, 'sat_week_before',
+      v_target, v_target - 1, v_target + 1, v_today, r.timezone,
+      jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
+                         'test_date', r.test_date,
+                         'days_until', r.test_date - v_today),
+      p_now);
+    IF v_out = 'emitted' THEN
+      v_counts := jsonb_set(v_counts, '{week_before}', to_jsonb((v_counts->>'week_before')::integer + 1));
+    ELSIF v_out IN ('window_missed', 'milestone_spacing') THEN
+      v_counts := jsonb_set(v_counts, ARRAY[v_out], to_jsonb((v_counts->>v_out)::integer + 1));
     END IF;
 
-    IF v_today BETWEEN r.test_date + 1 AND r.test_date + 3 THEN
-      IF NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =
-           public.notification_event_id('sat_day_after', r.student_id::text || ':' || r.test_date::text)) THEN
-        PERFORM public.emit_notification_event(
-          public.notification_event_id('sat_day_after', r.student_id::text || ':' || r.test_date::text),
-          'sat_day_after', r.student_id,
-          jsonb_build_array(jsonb_build_object('profile_id', r.student_id, 'channels', jsonb_build_array('email'))),
-          jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
-                             'test_date', r.test_date,
-                             'release_date', CASE WHEN v_release > v_today THEN v_release END),
-          ((r.test_date + 4)::timestamp AT TIME ZONE r.timezone));
-        v_after := v_after + 1;
-      END IF;
+    -- The day after: target and the day after it (never on the test day itself).
+    v_target := r.test_date + 1;
+    v_out := public.email_milestone_try(r.student_id, r.test_date, 'sat_day_after',
+      v_target, v_target, v_target + 1, v_today, r.timezone,
+      jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
+                         'test_date', r.test_date,
+                         'release_date', CASE WHEN v_release > v_today THEN v_release END),
+      p_now);
+    IF v_out = 'emitted' THEN
+      v_counts := jsonb_set(v_counts, '{day_after}', to_jsonb((v_counts->>'day_after')::integer + 1));
+    ELSIF v_out IN ('window_missed', 'milestone_spacing') THEN
+      v_counts := jsonb_set(v_counts, ARRAY[v_out], to_jsonb((v_counts->>v_out)::integer + 1));
     END IF;
 
-    IF v_release IS NOT NULL AND v_today BETWEEN v_release AND v_release + 3 THEN
-      IF NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =
-           public.notification_event_id('sat_scores_released', r.student_id::text || ':' || r.test_date::text)) THEN
-        PERFORM public.emit_notification_event(
-          public.notification_event_id('sat_scores_released', r.student_id::text || ':' || r.test_date::text),
-          'sat_scores_released', r.student_id,
-          jsonb_build_array(jsonb_build_object('profile_id', r.student_id, 'channels', jsonb_build_array('email'))),
-          jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
-                             'test_date', r.test_date, 'release_date', v_release),
-          ((v_release + 4)::timestamp AT TIME ZONE r.timezone));
-        v_scores := v_scores + 1;
+    -- Score release day: the release date and the day after (never before scores are out); no
+    -- published date, no email.
+    IF v_release IS NOT NULL THEN
+      v_out := public.email_milestone_try(r.student_id, r.test_date, 'sat_scores_released',
+        v_release, v_release, v_release + 1, v_today, r.timezone,
+        jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
+                           'test_date', r.test_date, 'release_date', v_release),
+        p_now);
+      IF v_out = 'emitted' THEN
+        v_counts := jsonb_set(v_counts, '{scores_released}', to_jsonb((v_counts->>'scores_released')::integer + 1));
+      ELSIF v_out IN ('window_missed', 'milestone_spacing') THEN
+        v_counts := jsonb_set(v_counts, ARRAY[v_out], to_jsonb((v_counts->>v_out)::integer + 1));
       END IF;
     END IF;
   END LOOP;
-  RETURN jsonb_build_object('week_before', v_week, 'day_after', v_after, 'scores_released', v_scores);
+  RETURN v_counts;
 END;
 $$;
 
@@ -11091,6 +11186,41 @@ CREATE FUNCTION public.lifecycle_triggers_since() RETURNS timestamp with time zo
 --
 
 COMMENT ON FUNCTION public.lifecycle_triggers_since() IS 'The behaviour triggers'' cutover (2026-10-21 08:00 UTC): a diagnostic started, an entitlement created, or a 10th item answered before it never triggers a lifecycle email.';
+
+
+--
+-- Name: link_email_delivery_recipient(text, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.link_email_delivery_recipient(p_provider_event_id text, p_recipients text[]) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_recipient uuid;
+  v_rows      integer;
+BEGIN
+  SELECT m.recipient_profile_id INTO v_recipient
+    FROM public.notification_delivery_events d
+    JOIN public.notification_messages m ON m.message_id = d.message_id
+   WHERE d.provider_event_id = p_provider_event_id;
+  IF v_recipient IS NULL THEN
+    SELECT p.id INTO v_recipient
+      FROM unnest(COALESCE(p_recipients, '{}'::text[])) WITH ORDINALITY AS t(addr, n)
+      JOIN public.profiles p ON lower(p.email) = lower(btrim(t.addr)) AND p.deleted_at IS NULL
+     ORDER BY t.n, p.id
+     LIMIT 1;
+  END IF;
+  IF v_recipient IS NULL THEN
+    RETURN false;
+  END IF;
+  UPDATE public.notification_delivery_events
+     SET recipient_profile_id = v_recipient
+   WHERE provider_event_id = p_provider_event_id AND recipient_profile_id IS NULL;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows > 0;
+END;
+$$;
 
 
 --
@@ -18905,6 +19035,28 @@ ALTER TABLE public.email_gate_transitions ALTER COLUMN id ADD GENERATED ALWAYS A
 
 
 --
+-- Name: email_milestone_skips; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_milestone_skips (
+    student_id uuid NOT NULL,
+    test_date date NOT NULL,
+    kind text NOT NULL,
+    reason text NOT NULL,
+    recorded_at timestamp with time zone NOT NULL,
+    CONSTRAINT email_milestone_skips_kind_check CHECK ((kind = ANY (ARRAY['sat_week_before'::text, 'sat_day_after'::text, 'sat_scores_released'::text]))),
+    CONSTRAINT email_milestone_skips_reason_check CHECK ((reason = ANY (ARRAY['window_missed'::text, 'milestone_spacing'::text])))
+);
+
+
+--
+-- Name: TABLE email_milestone_skips; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.email_milestone_skips IS 'A milestone email that was not sent, and why (window_missed: its send window passed; milestone_spacing: another milestone went within the spacing days). One row per student, test date and kind; a recorded skip is final. ON DELETE CASCADE from profiles.';
+
+
+--
 -- Name: entitlement_features; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -22638,6 +22790,14 @@ ALTER TABLE ONLY public.email_gate_transitions
 
 
 --
+-- Name: email_milestone_skips email_milestone_skips_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_milestone_skips
+    ADD CONSTRAINT email_milestone_skips_pkey PRIMARY KEY (student_id, test_date, kind);
+
+
+--
 -- Name: entitlement_features entitlement_features_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -25937,6 +26097,14 @@ ALTER TABLE ONLY public.email_gate_transitions
 
 
 --
+-- Name: email_milestone_skips email_milestone_skips_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_milestone_skips
+    ADD CONSTRAINT email_milestone_skips_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: entitlement_runtime_config_history entitlement_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -27409,6 +27577,12 @@ ALTER TABLE public.email_gate_state ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.email_gate_transitions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: email_milestone_skips; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_milestone_skips ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: entitlement_features; Type: ROW SECURITY; Schema: public; Owner: -
@@ -29602,6 +29776,14 @@ GRANT ALL ON FUNCTION public.email_gate_refresh(p_profile_id uuid, p_now timesta
 
 
 --
+-- Name: FUNCTION email_gate_suppressed(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_suppressed(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_suppressed(p_profile_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION email_gate_sweep(p_now timestamp with time zone, p_limit integer, p_after uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29623,6 +29805,14 @@ GRANT ALL ON FUNCTION public.email_gate_unengaged_count(p_profile_id uuid, p_now
 
 REVOKE ALL ON FUNCTION public.email_gate_verdict(p_profile_id uuid, p_kind text, p_state text, p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.email_gate_verdict(p_profile_id uuid, p_kind text, p_state text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_milestone_try(p_student_id uuid, p_test_date date, p_kind text, p_target date, p_window_lo date, p_window_hi date, p_today date, p_timezone text, p_payload jsonb, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_milestone_try(p_student_id uuid, p_test_date date, p_kind text, p_target date, p_window_lo date, p_window_hi date, p_today date, p_timezone text, p_payload jsonb, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_milestone_try(p_student_id uuid, p_test_date date, p_kind text, p_target date, p_window_lo date, p_window_hi date, p_today date, p_timezone text, p_payload jsonb, p_now timestamp with time zone) TO service_role;
 
 
 --
@@ -30225,6 +30415,14 @@ GRANT ALL ON FUNCTION public.lifecycle_reminder_since() TO service_role;
 
 REVOKE ALL ON FUNCTION public.lifecycle_triggers_since() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.lifecycle_triggers_since() TO service_role;
+
+
+--
+-- Name: FUNCTION link_email_delivery_recipient(p_provider_event_id text, p_recipients text[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.link_email_delivery_recipient(p_provider_event_id text, p_recipients text[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.link_email_delivery_recipient(p_provider_event_id text, p_recipients text[]) TO service_role;
 
 
 --
@@ -31948,6 +32146,13 @@ GRANT SELECT ON TABLE public.email_gate_status TO service_role;
 --
 
 GRANT SELECT ON TABLE public.email_gate_transitions TO service_role;
+
+
+--
+-- Name: TABLE email_milestone_skips; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.email_milestone_skips TO service_role;
 
 
 --

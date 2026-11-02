@@ -4,7 +4,9 @@
       worked examples' outro line and music, CC BY 4.0, credited) and D3 (the same script in
       Chatterbox, rendered alongside the am_michael version); Karl's script and voice rulings for
       every pilot video (2026-11-02, SCL-267): am_michael everywhere, every line through #1395's
-      loudness step] | @implemented [2026-11-02, engines and the shared voicing step 2026-11-02]
+      loudness step; SCL-270 (Karl, 2026-11-02): a true-peak limiter (≤ −1 dBTP) on the finished
+      mix in every pipeline] | @implemented [2026-11-02, engines and the shared voicing step
+      2026-11-02, the finished-mix limiter 2026-11-02]
 
 plain English, from the repository root with the pilot venv's Python (scripts/video-pilots/README.md):
   python scripts/video-pilots/manim/render.py --bundle <work>/bundle.json \
@@ -20,7 +22,10 @@ examples' normaliseLoudness, transcribes and quality-checks it, and caches the r
 Pango cannot open) to TrueType in <work>/fonts and points fontconfig there (nothing is installed
 system-wide), runs `manim render` on scene.py at 1080×1920 and 30 fps, and mixes the music bed
 under the voice with ffmpeg exactly as the worked examples' composition does: the track at
-voice.json's music_gain from 0:00, faded to silence over the last music_fade_seconds. It writes
+voice.json's music_gain from 0:00, faded to silence over the last music_fade_seconds, into
+<out without .mp4>.mix.mp4. That mix is then limited to a true peak of at most -1 dBTP by the
+worked examples' finished-mix limiter (scripts/worked-examples/final-mix.ts, its CLI; SCL-270,
+Karl's ruling 2026-11-02) into <out>, and the unlimited mix is deleted. It writes
 <out> and <out without .mp4>.lines.json (each spoken line's start, length, normalised audio and
 transcription, and every string set on screen) for check.ts, and prints the seconds each stage
 took (the Chatterbox lines' own generation times are in <work>/voice/voice.json).
@@ -163,14 +168,22 @@ def main() -> None:
         f"afade=t=out:st={max(0.0, d - fade):.3f}:d={fade}[m];"
         "[1:a][m]amix=inputs=2:duration=first:normalize=0[a]"
     )
+    mixed = out.with_suffix(".mix.mp4")
     run(
         [
             "ffmpeg", "-y", "-v", "error", "-i", str(voiced), "-i", str(voice_wav), "-i", music["file"],
             "-filter_complex", mix, "-map", "0:v", "-map", "[a]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(out),
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(mixed),
         ]
     )
     stages["mix"] = time.monotonic() - t0
+
+    # SCL-270 (Karl, 2026-11-02): the finished mix goes through the worked examples' one
+    # true-peak limiter (at most -1 dBTP), called as its CLI; its ffmpeg arguments live there only.
+    t0 = time.monotonic()
+    run(["pnpm", "exec", "tsx", "scripts/worked-examples/final-mix.ts", str(mixed), str(out)], cwd=ROOT)
+    mixed.unlink()
+    stages["limit"] = time.monotonic() - t0
     shutil.copyfile(log, out.with_suffix(".lines.json"))
     print(json.dumps({
         "out": str(out),

@@ -890,13 +890,14 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
     });
 
     it("T1: a week before: once per test date, 13+ only, even while paused", async () => {
-      expect((await milestones(noon(22), {})).week_before).toBe(0);
+      // Ten days out: before the ±1-day window (Karl, 2026-11-02).
+      expect((await milestones(noon(20), {})).week_before).toBe(0);
       for (const n of [2, 3, 4]) await governedSend(s.id, day(n));
       expect(await refresh(s.id, day(23))).toBe("paused");
       expect((await milestones(noon(23), {})).week_before).toBe(1);
       expect((await milestones(noon(24), {})).week_before).toBe(0);
       expect(await events(s.id, "sat_week_before")).toEqual([
-        { first_name: "Ana", test_date: testDate },
+        { first_name: "Ana", test_date: testDate, days_until: 7 },
       ]);
       expect(await events(young.id, "sat_week_before")).toEqual([]);
       expect((await decide(s.id, "sat_week_before", noon(23))).allow).toBe(
@@ -1252,6 +1253,202 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
           [staff.id],
         ),
       ).toBe(0);
+    });
+  });
+  describe("MW: the milestone send window and the duplicate guard (Karl, 2026-11-02)", () => {
+    // One run at noon UTC on day 1 (T0); each student's test date is placed around it.
+    const T0 = (): string => iso(day(1));
+    const at = (): Date => new Date(`${T0()}T12:00:00Z`);
+    const plus = (n: number): string => {
+      const d = new Date(`${T0()}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    async function withDates(
+      dates: string[],
+    ): Promise<{ id: string; email: string }> {
+      const p = await student();
+      await pg.query(
+        `INSERT INTO public.student_study_profile (student_id, timezone, target_exam_dates)
+         VALUES ($1, 'UTC', $2::date[])`,
+        [p.id, dates],
+      );
+      return p;
+    }
+    async function run(
+      release: Record<string, string> = {},
+      when: Date = at(),
+    ) {
+      return h.asProbe(async () => {
+        const r = await pg.query<{ r: Record<string, number> }>(
+          `SELECT public.email_milestones_notify($1::timestamptz, $2::jsonb) AS r`,
+          [when.toISOString(), JSON.stringify(release)],
+        );
+        return r.rows[0]!.r;
+      });
+    }
+    async function sent(id: string, kind: string): Promise<unknown[]> {
+      const r = await pg.query(
+        `SELECT payload FROM public.notification_events WHERE event_type = $2 AND subject_profile_id = $1`,
+        [id, kind],
+      );
+      return r.rows.map((x) => x.payload);
+    }
+    async function skips(
+      id: string,
+    ): Promise<{ kind: string; reason: string }[]> {
+      const r = await pg.query<{ kind: string; reason: string }>(
+        `SELECT kind, reason FROM public.email_milestone_skips WHERE student_id = $1 ORDER BY kind`,
+        [id],
+      );
+      return r.rows;
+    }
+
+    it("MW1: the week-before email fires only on target ± 1 day; 5 days out it is skipped as window_missed, never caught up", async () => {
+      const eight = await withDates([plus(8)]);
+      const six = await withDates([plus(6)]);
+      const five = await withDates([plus(5)]); // the 2026-11-02 incident: 5 days left
+      const nine = await withDates([plus(9)]);
+      await run();
+      expect(await sent(eight.id, "sat_week_before")).toEqual([
+        { first_name: "Ana", test_date: plus(8), days_until: 8 },
+      ]);
+      expect(await sent(six.id, "sat_week_before")).toEqual([
+        { first_name: "Ana", test_date: plus(6), days_until: 6 },
+      ]);
+      expect(await sent(five.id, "sat_week_before")).toEqual([]);
+      expect(await skips(five.id)).toEqual([
+        { kind: "sat_week_before", reason: "window_missed" },
+      ]);
+      expect(await sent(nine.id, "sat_week_before")).toEqual([]);
+      expect(await skips(nine.id)).toEqual([]);
+    });
+
+    it("MW2: the day-after email fires the day after and the next day, never on the test day; later it is window_missed", async () => {
+      const yesterday = await withDates([plus(-1)]);
+      const today = await withDates([plus(0)]);
+      const late = await withDates([plus(-3)]);
+      await run();
+      expect(await sent(yesterday.id, "sat_day_after")).toHaveLength(1);
+      expect(await sent(today.id, "sat_day_after")).toEqual([]);
+      expect((await skips(today.id)).map((x) => x.kind)).not.toContain(
+        "sat_day_after",
+      );
+      expect(await sent(late.id, "sat_day_after")).toEqual([]);
+      expect(await skips(late.id)).toContainEqual({
+        kind: "sat_day_after",
+        reason: "window_missed",
+      });
+    });
+
+    it("MW3: the release-day email fires on the release date and the next day, never before; later it is window_missed", async () => {
+      const onDay = await withDates([plus(-13)]);
+      const before = await withDates([plus(-12)]);
+      const late = await withDates([plus(-16)]);
+      await run({
+        [plus(-13)]: plus(0),
+        [plus(-12)]: plus(1),
+        [plus(-16)]: plus(-2),
+      });
+      expect(await sent(onDay.id, "sat_scores_released")).toHaveLength(1);
+      expect(await sent(before.id, "sat_scores_released")).toEqual([]);
+      expect(await sent(late.id, "sat_scores_released")).toEqual([]);
+      expect(await skips(late.id)).toContainEqual({
+        kind: "sat_scores_released",
+        reason: "window_missed",
+      });
+    });
+
+    it("MW4: never two different milestone emails within 3 days: the later one is skipped as milestone_spacing", async () => {
+      // Test A was yesterday (day-after due today); test B is in 7 days (week-before due today).
+      const s = await withDates([plus(-1), plus(7)]);
+      await run();
+      expect(await sent(s.id, "sat_day_after")).toHaveLength(1);
+      expect(await sent(s.id, "sat_week_before")).toEqual([]);
+      expect(await skips(s.id)).toContainEqual({
+        kind: "sat_week_before",
+        reason: "milestone_spacing",
+      });
+      // Outside the spacing days, a second milestone goes: a student whose day-after went 4
+      // days earlier gets the week-before for their next test.
+      const t = await withDates([plus(-5), plus(7)]);
+      await run({}, new Date(`${plus(-4)}T12:00:00Z`));
+      expect(await sent(t.id, "sat_day_after")).toHaveLength(1);
+      await run();
+      expect(await sent(t.id, "sat_week_before")).toHaveLength(1);
+    });
+
+    it("MW5: once per student per test date: a week-before already sent (as on 2026-11-02, 5 days out) is never sent again", async () => {
+      const s = await withDates([plus(5)]);
+      // The 2026-11-02 send, as the old rule wrote it (no days_until).
+      await pg.query(
+        `SELECT public.emit_notification_event(
+           public.notification_event_id('sat_week_before', $1::text || ':' || $2::text),
+           'sat_week_before', $1::uuid,
+           jsonb_build_array(jsonb_build_object('profile_id', $1::uuid, 'channels', jsonb_build_array('email'))),
+           jsonb_build_object('first_name', 'Ana', 'test_date', $2::text))`,
+        [s.id, plus(5)],
+      );
+      for (const n of [-1, 0, 1, 2]) {
+        await run({}, new Date(`${plus(n)}T12:00:00Z`));
+      }
+      expect(await sent(s.id, "sat_week_before")).toHaveLength(1);
+      expect(await skips(s.id)).toEqual([]);
+    });
+
+    it("MW6: a bounced or complained address gets no governed or milestone email; always email still goes", async () => {
+      const bounced = await student();
+      await governedSend(bounced.id, day(1));
+      await pg.query(
+        `UPDATE public.notification_messages SET status = 'bounced'
+          WHERE recipient_profile_id = $1 AND channel = 'email'`,
+        [bounced.id],
+      );
+      for (const kind of ["review_ask", "sat_week_before"]) {
+        expect(await decide(bounced.id, kind, day(1.5))).toMatchObject({
+          allow: false,
+          reason: "suppressed",
+        });
+      }
+      expect(
+        (await decide(bounced.id, "guardian_linked", day(1.5))).allow,
+      ).toBe(true);
+      // A delivery since the bounce clears it.
+      await governedSend(bounced.id, day(2));
+      await pg.query(
+        `UPDATE public.notification_messages SET status = 'delivered', delivered_at = $2
+          WHERE recipient_profile_id = $1 AND channel = 'email' AND status = 'sent'`,
+        [bounced.id, day(2).toISOString()],
+      );
+      expect((await decide(bounced.id, "review_ask", day(2.5))).allow).toBe(
+        true,
+      );
+      // A complaint on a lifecycle or campaign email (no message of ours), linked by address.
+      const complained = await student();
+      await h.asProbe(() =>
+        pg.query(
+          `SELECT public.apply_notification_delivery_event('evt_cmp', 're_cmp', 'email.complained', $1::timestamptz)`,
+          [day(1).toISOString()],
+        ),
+      );
+      const linked = await h.asProbe(async () => {
+        const r = await pg.query<{ ok: boolean }>(
+          `SELECT public.link_email_delivery_recipient('evt_cmp', ARRAY[upper($1)]) AS ok`,
+          [complained.email],
+        );
+        return r.rows[0]!.ok;
+      });
+      expect(linked).toBe(true);
+      expect(await decide(complained.id, "review_ask", day(1.5))).toMatchObject(
+        {
+          allow: false,
+          reason: "suppressed",
+        },
+      );
+      expect(
+        (await decide(complained.id, "exam_score_report_requested", day(1.5)))
+          .allow,
+      ).toBe(true);
     });
   });
 });

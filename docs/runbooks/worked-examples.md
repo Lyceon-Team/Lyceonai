@@ -143,6 +143,17 @@ and "lysian" back to "lyceon" for the quality check.
 raised too, then `alimiter` 0.5 dB under the ceiling. The committed WAV is the normalised one, so
 no line reaches the clipping check's `max_peak_dbfs` (-0.1).
 
+**The finished mix (SCL-270, Karl's ruling 2026-11-02).** The music bed is mixed under the voice
+inside `hyperframes render`, so the rendered video can peak higher than any line. Every pipeline
+runs the rendered MP4 through `scripts/worked-examples/final-mix.ts` before its checks:
+`pnpm exec tsx scripts/worked-examples/final-mix.ts <rendered.mp4> <finished.mp4>`. The video is
+copied; the audio is limited at 4x oversampling (so the limit holds for true peak, not just
+samples) 0.5 dB under `final_mix.max_true_peak_dbtp` (-1 dBTP), re-encoded as AAC, measured, and
+limited again with more headroom if the encoder overshot (at most three passes, then it refuses).
+`daily.ts verify` measures the finished MP4 and refuses it above -1 dBTP. The daily job renders to
+`we-out/render/` and only the limited video in `we-out/` is checked, uploaded and posted; the
+comparison render (`compare-voices.ts`) limits each video the same way.
+
 ## The cloned voice (OpenVoice addendum, Karl, 2026-10-27)
 
 The clone is not the default until Karl picks it after the comparison below; then

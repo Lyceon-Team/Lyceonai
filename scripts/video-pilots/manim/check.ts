@@ -6,8 +6,9 @@
  *       shared/worked-examples/rules.ts in prepare.ts/check.ts"; 7 loudness "around −14 LUFS, true
  *       peak ≤ −1 dB"; the checks for every video: 1080×1920, 30 fps, 30-60 s, audio, every voice
  *       line passing scripts/worked-examples/quality.ts, S1/S2; OpenVoice addendum (Karl,
- *       2026-10-27): the quality checks (transcription mismatch, clipping, silence)]
- *       | @implemented [2026-11-02, the SCL-267 checks 2026-11-02]
+ *       2026-10-27): the quality checks (transcription mismatch, clipping, silence); SCL-270
+ *       (Karl, 2026-11-02): the finished mix at most -1 dBTP true peak]
+ *       | @implemented [2026-11-02, the SCL-267 checks 2026-11-02, the SCL-270 check 2026-11-02]
  *
  * plain English:
  *   pnpm exec tsx scripts/video-pilots/manim/check.ts \
@@ -24,10 +25,15 @@
  *     string the scene set on screen (rules.ts sharedRun, the same normalisation as S1 at prepare
  *     time, which only sees the example's own text; this sees labels too). S2 (the spoken hook is
  *     not the hook line) is enforced by prepare.ts, which refuses the example before it is voiced.
- * It also measures the finished video's loudness with the worked examples' own loudnorm pass
- * (voice.ts loudnessMeasureArgs, parseLoudnorm) and prints integrated LUFS and true peak. That
- * column is a report: the ruled target applies to each voice line, which normalisation meets,
- * and the music bed sits under it. Exit 1 when any video fails.
+ *   * the finished mix over the ceiling: a true peak above voice.json final_mix.max_true_peak_dbtp
+ *     (-1 dBTP), or no measurable audio (final-mix.ts finishedMixProblems, the same check the
+ *     worked examples' daily verify runs; SCL-270, Karl's ruling 2026-11-02: "a true-peak limiter
+ *     (≤ −1 dBTP) on the finished mix in every pipeline"). render.py runs that limiter on every
+ *     pilot video, so a video over the ceiling here was not limited, and it fails.
+ * It prints each video's integrated LUFS and true peak, measured by final-mix.ts measureMix (the
+ * worked examples' own loudnorm pass). Integrated loudness is a report: the ruled -14 LUFS target
+ * applies to each voice line, which normalisation meets, and the music bed sits under it.
+ * Exit 1 when any video fails.
  *
  * D1 (Karl, 2026-11-02): one more gate and one more column.
  *   * The word guard (word-guard.ts): every spoken line and every string the scene set on screen
@@ -38,7 +44,7 @@
  *     (graph.py Stopwatch). The shown value must be the floored tenths of stop − start on the video
  *     clock, or the video fails; the column prints what the viewer sees.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,13 +52,13 @@ import { z } from "zod";
 import { voiceWordsSchema } from "../../../packages/shared/src/worked-example-schema";
 import { sharedRun } from "../../../shared/worked-examples/rules";
 import { mixProblem, readWav } from "../../worked-examples/audio";
+import {
+  finishedMixProblems,
+  measureMix,
+} from "../../worked-examples/final-mix";
 import { loadKit } from "../../worked-examples/kit";
 import { lineQualityProblems } from "../../worked-examples/quality";
 import { bannedWordHits, formatHit } from "./word-guard";
-import {
-  loudnessMeasureArgs,
-  parseLoudnorm,
-} from "../../worked-examples/voice";
 
 export const linesLogSchema = z.object({
   duration: z.number().positive(),
@@ -181,8 +187,9 @@ export type PilotRow = {
   video: string;
   engine: string;
   seconds: number;
-  lufs: number;
-  truePeak: number;
+  /** Integrated loudness and true peak of the finished video; null when it measured silent. */
+  lufs: number | null;
+  truePeak: number | null;
   failures: string[];
   timers: string[];
 };
@@ -205,21 +212,6 @@ function probe(video: string): Probe {
       ),
     ),
   );
-}
-
-/** The finished video's integrated loudness and true peak, by voice.ts's own measuring pass. */
-function loudness(
-  video: string,
-  target: ReturnType<typeof loadKit>["voice"]["loudness"],
-): { lufs: number; truePeak: number } {
-  const run = spawnSync("ffmpeg", loudnessMeasureArgs(video, target), {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (run.status !== 0) throw new Error(`ffmpeg loudnorm exited ${run.status}`);
-  const m = parseLoudnorm(run.stderr);
-  if (!m) throw new Error(`${video} measured silent`);
-  return { lufs: Number(m.input_i), truePeak: Number(m.input_tp) };
 }
 
 export function checkVideo(label: string, video: string): PilotRow {
@@ -258,14 +250,15 @@ export function checkVideo(label: string, video: string): PilotRow {
   failures.push(...logWordHits(log));
   const timers = timerRows(log);
   failures.push(...timers.problems);
-  const l = loudness(video, kit.voice.loudness);
+  failures.push(...finishedMixProblems(video, kit));
+  const measured = measureMix(video, kit);
   return {
     label,
     video,
     engine: log.engine,
     seconds,
-    lufs: l.lufs,
-    truePeak: l.truePeak,
+    lufs: measured?.integratedLufs ?? null,
+    truePeak: measured?.truePeakDbtp ?? null,
     failures,
     timers: timers.rows,
   };
@@ -277,7 +270,7 @@ export function pilotTable(rows: readonly PilotRow[]): string {
     "|---|---|---|---|---|---|---|---|",
     ...rows.map(
       (r) =>
-        `| ${r.label} | ${basename(r.video)} | ${r.engine} | ${r.seconds.toFixed(1)} s | ${r.lufs.toFixed(1)} LUFS | ${r.truePeak.toFixed(1)} dBTP | ${r.timers.length === 0 ? "none" : r.timers.join("; ")} | ${r.failures.length === 0 ? "none" : r.failures.join("; ")} |`,
+        `| ${r.label} | ${basename(r.video)} | ${r.engine} | ${r.seconds.toFixed(1)} s | ${r.lufs === null ? "silent" : `${r.lufs.toFixed(1)} LUFS`} | ${r.truePeak === null ? "silent" : `${r.truePeak.toFixed(2)} dBTP`} | ${r.timers.length === 0 ? "none" : r.timers.join("; ")} | ${r.failures.length === 0 ? "none" : r.failures.join("; ")} |`,
     ),
   ].join("\n");
 }

@@ -10,14 +10,17 @@
  *       (Karl, 2026-11-02): "never use the word 'Desmos' in on-screen text, captions or spoken
  *       lines ... Add a test or a check in check.ts that fails if 'desmos' (case-insensitive)
  *       appears in any pilot script, on-screen line or caption"; D1 Video 2: honest timers on the
- *       video clock] | @implemented [2026-11-02]
+ *       video clock; SCL-270 (Karl,
+ *       2026-11-02): the finished mix at most -1 dBTP true peak] | @implemented [2026-11-02]
  *
  * plain English: the fixtures are the committed pilot examples, their questions from the real seed
  * SQL, the kit's real end-card template and voice.json. Rendered videos and their logs are never
  * committed, so the rendered-log checks (check.ts) run on a log built from a committed example's
  * own spoken lines and its own on-screen texts (rules.ts onScreenTexts), proven non-trivial first.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { workedExampleContentSchema } from "../../packages/shared/src/worked-example-schema";
@@ -29,8 +32,10 @@ import {
 } from "../../shared/worked-examples/rules";
 import { scriptLines } from "../../scripts/worked-examples/composition";
 import { seedQuestion } from "../../scripts/worked-examples/content";
+import { limitFinishedMix } from "../../scripts/worked-examples/final-mix";
 import { loadKit } from "../../scripts/worked-examples/kit";
 import {
+  checkVideo,
   formatProblems,
   logWordHits,
   probeSchema,
@@ -210,6 +215,119 @@ describe("video pilots: check.ts", () => {
       "format: no audio stream",
     ]);
   });
+
+  // SCL-270: render.py is not run in CI, so its call is pinned by reading it. The mix is written to
+  // <out>.mix.mp4, the one shared limiter's CLI writes <out>, and no limiter argument is copied.
+  it("render.py limits the finished mix through final-mix.ts's CLI, copying none of its arguments", () => {
+    const render = readFileSync(
+      join(ROOT, "scripts/video-pilots/manim/render.py"),
+      "utf8",
+    );
+    const mixAt = render.indexOf(
+      '"-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(mixed),',
+    );
+    const limitAt = render.indexOf(
+      'run(["pnpm", "exec", "tsx", "scripts/worked-examples/final-mix.ts", str(mixed), str(out)], cwd=ROOT)',
+    );
+    const unlinkAt = render.indexOf("mixed.unlink()");
+    expect(mixAt).toBeGreaterThan(0);
+    expect(limitAt).toBeGreaterThan(mixAt);
+    expect(unlinkAt).toBeGreaterThan(limitAt);
+    expect(render).toContain('mixed = out.with_suffix(".mix.mp4")');
+    expect(render).not.toMatch(/alimiter|aresample|max_true_peak/);
+  });
+
+  // SCL-270 (Karl, 2026-11-02): the finished mix at most -1 dBTP true peak. A real ffmpeg video in
+  // the pilot format whose 48 kHz samples sit 3 dB under its true peak (a 12 kHz tone at phase
+  // π/4), as #1412's own round trip uses; check.ts must fail it as rendered, and pass it on true
+  // peak once the worked examples' one limiter has run. Skipped without ffmpeg.
+  const HAVE_FFMPEG = spawnSync("ffmpeg", ["-version"]).status === 0;
+  it.skipIf(!HAVE_FFMPEG)(
+    "fails a video over -1 dBTP true peak; the same video limited by final-mix.ts passes that check",
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), "pilot-true-peak-"));
+      const ffmpeg = (args: string[]): void => {
+        const r = spawnSync(
+          "ffmpeg",
+          ["-hide_banner", "-loglevel", "error", "-y", ...args],
+          { encoding: "utf8" },
+        );
+        expect(r.status, r.stderr).toBe(0);
+      };
+      const tone = "0.99*sin(2*PI*12000*t+PI/4)";
+      const hot = join(dir, "hot.mp4");
+      ffmpeg([
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=white:s=1080x1920:r=30:d=31",
+        "-f",
+        "lavfi",
+        "-i",
+        `aevalsrc=${tone}|${tone}:s=48000:d=31`,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-shortest",
+        hot,
+      ]);
+      const wav = join(dir, "hook.wav");
+      ffmpeg([
+        "-f",
+        "lavfi",
+        "-i",
+        "aevalsrc=0.3*sin(2*PI*220*t):s=24000:d=2",
+        "-c:a",
+        "pcm_s16le",
+        wav,
+      ]);
+      const lines = JSON.stringify({
+        duration: 31,
+        engine: "kokoro",
+        lines: [
+          { key: "hook", text: "Go.", wav, words, start: 0, duration: 2 },
+        ],
+        on_screen: ["Lyceon SAT Prep"],
+      });
+      writeFileSync(join(dir, "hot.lines.json"), lines);
+      const ceiling = `at most ${kit.voice.final_mix.max_true_peak_dbtp} dBTP (true peak)`;
+
+      // As rendered, unlimited: presence first, the true-peak failure is there and is the only
+      // finished-mix failure.
+      const refused = checkVideo("hot", hot);
+      expect(refused.truePeak).not.toBeNull();
+      expect(refused.truePeak ?? 0).toBeGreaterThan(-1);
+      const peakFailures = refused.failures.filter((f) =>
+        f.startsWith("the finished mix "),
+      );
+      expect(peakFailures).toEqual([
+        `the finished mix peaks at ${(refused.truePeak ?? 0).toFixed(2)} dBTP; ${ceiling}`,
+      ]);
+
+      // Limited by the worked examples' one function: the same check finds nothing.
+      const limited = join(dir, "limited.mp4");
+      limitFinishedMix(hot, limited, kit);
+      writeFileSync(join(dir, "limited.lines.json"), lines);
+      const passed = checkVideo("limited", limited);
+      expect(passed.truePeak).not.toBeNull();
+      expect(passed.truePeak ?? 0).toBeLessThanOrEqual(-1);
+      expect(
+        passed.failures.filter((f) => f.startsWith("the finished mix ")),
+      ).toEqual([]);
+      // Everything else check.ts found is the same on both (only the audio's peaks changed).
+      expect(passed.failures).toEqual(
+        refused.failures.filter((f) => !f.startsWith("the finished mix ")),
+      );
+    },
+    120_000,
+  );
 });
 
 describe("video pilots: voice-lines.ts", () => {
