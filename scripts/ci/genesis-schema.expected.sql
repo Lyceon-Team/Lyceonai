@@ -6215,6 +6215,1067 @@ $$;
 
 
 --
+-- Name: email_category(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_category(p_kind text) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  RETURN CASE
+    WHEN p_kind IN ('guardian_linked', 'guardian_unlinked', 'exam_score_report_requested',
+                    'renewal_decision_requested', 'welcome', 'entitled')
+      THEN 'always'
+    WHEN p_kind IN ('qotd_daily', 'study_plan_changed', 'missed_plan_alert', 'back_on_track',
+                    'full_length_week', 'full_length_tomorrow', 'guardian_daily_digest',
+                    'review_ask', 'lifecycle_reminder_due', 'lifecycle_diagnostic_unfinished',
+                    'lifecycle_pro_no_plan', 'lifecycle_practising_free', 'manual_campaign')
+      THEN 'governed'
+    WHEN p_kind IN ('sat_week_before', 'sat_day_after', 'sat_scores_released')
+      THEN 'milestone'
+    WHEN p_kind IN ('email_gate_paused_notice', 'email_gate_guardian_paused')
+      THEN 'notice'
+    ELSE public.email_category_unknown(p_kind)
+  END;
+END;
+$$;
+
+
+--
+-- Name: email_category_unknown(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_category_unknown(p_kind text) RETURNS text
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'email_category: unknown email kind %', p_kind USING ERRCODE = 'invalid_parameter_value';
+END;
+$$;
+
+
+--
+-- Name: email_gate_active_on(uuid, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_active_on(p_profile_id uuid, p_day date, p_timezone text) RETURNS boolean
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT public.email_gate_activity_between(
+           p_profile_id,
+           (p_day::timestamp AT TIME ZONE p_timezone),
+           ((p_day + 1)::timestamp AT TIME ZONE p_timezone)) IS NOT NULL;
+$$;
+
+
+--
+-- Name: email_gate_activity_between(uuid, timestamp with time zone, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_activity_between(p_profile_id uuid, p_from timestamp with time zone, p_to timestamp with time zone) RETURNS timestamp with time zone
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_sign_in timestamptz := public.email_gate_last_sign_in(p_profile_id);
+BEGIN
+  RETURN (
+    SELECT max(t) FROM (
+      SELECT max(i.occurred_at) AS t
+        FROM public.practice_session_items i
+       WHERE i.user_id = p_profile_id AND i.status = 'answered'
+         AND i.occurred_at >= p_from AND i.occurred_at < p_to
+      UNION ALL
+      SELECT max(COALESCE(r.occurred_at, r.answered_at))
+        FROM public.review_session_items r
+       WHERE r.student_id = p_profile_id AND r.status = 'answered'
+         AND COALESCE(r.occurred_at, r.answered_at) >= p_from
+         AND COALESCE(r.occurred_at, r.answered_at) < p_to
+      UNION ALL
+      SELECT max(s.started_at)
+        FROM public.test_sessions s
+       WHERE s.student_id = p_profile_id
+         AND s.started_at >= p_from AND s.started_at < p_to
+      UNION ALL
+      SELECT max(a.created_at)
+        FROM public.test_answer_submissions a
+        JOIN public.test_sessions s ON s.id = a.test_session_id
+       WHERE s.student_id = p_profile_id
+         AND a.created_at >= p_from AND a.created_at < p_to
+      UNION ALL
+      SELECT v_sign_in WHERE v_sign_in >= p_from AND v_sign_in < p_to
+    ) x
+  );
+END;
+$$;
+
+
+--
+-- Name: email_gate_compute(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_compute(p_profile_id uuid, p_now timestamp with time zone) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_profile   record;
+  v_row       public.email_gate_state%ROWTYPE;
+  v_activity  timestamptz;
+  v_wake      timestamptz;
+  v_since     timestamptz;
+  v_idle_days numeric;
+  v_unengaged integer;
+  v_on_plan   boolean := false;
+  v_run       integer := 0;
+  v_today     date;
+  v_state     text;
+  v_reason    text;
+  v_launch_reason text;
+BEGIN
+  SELECT p.id, p.role::text AS role, p.created_at INTO v_profile
+    FROM public.profiles p WHERE p.id = p_profile_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'email_gate_compute: no profile %', p_profile_id USING ERRCODE = 'P0002';
+  END IF;
+  SELECT * INTO v_row FROM public.email_gate_state g WHERE g.profile_id = p_profile_id;
+
+  v_activity := public.email_gate_last_activity(p_profile_id, p_now);
+
+  -- Karl's launch ruling (2026-11-02, revised): internal and test accounts, and accounts quiet
+  -- since the live launch, are paused (students and guardians alike).
+  v_launch_reason := public.email_gate_launch_pause_reason(p_profile_id, p_now);
+  IF v_launch_reason IS NOT NULL THEN
+    RETURN jsonb_build_object('state', 'paused', 'reason', v_launch_reason, 'last_active', v_activity,
+                              'unengaged', NULL, 'on_plan', false, 'plan_run', 0);
+  END IF;
+
+  -- A guardian: paused while every actively linked student's digest is paused for them.
+  IF v_profile.role = 'guardian' THEN
+    IF EXISTS (SELECT 1 FROM public.guardian_links l
+                WHERE l.guardian_profile_id = p_profile_id AND l.status = 'active')
+       AND NOT EXISTS (SELECT 1 FROM public.guardian_links l
+                        WHERE l.guardian_profile_id = p_profile_id AND l.status = 'active'
+                          AND NOT EXISTS (SELECT 1 FROM public.email_gate_guardian_pauses gp
+                                           WHERE gp.guardian_id = p_profile_id
+                                             AND gp.student_id = l.student_profile_id
+                                             AND gp.resumed_at IS NULL)) THEN
+      v_state := 'paused'; v_reason := 'all_students_paused';
+    ELSE
+      v_state := 'active'; v_reason := 'guardian';
+    END IF;
+    RETURN jsonb_build_object('state', v_state, 'reason', v_reason, 'last_active', v_activity,
+                              'unengaged', NULL, 'on_plan', false, 'plan_run', 0);
+  END IF;
+
+  v_wake := GREATEST(v_activity, v_row.resumed_at);
+  v_since := COALESCE(v_wake, v_profile.created_at);
+  IF v_profile.created_at > v_since THEN v_since := v_profile.created_at; END IF;
+  v_idle_days := EXTRACT(EPOCH FROM (p_now - v_since)) / 86400.0;
+  v_unengaged := public.email_gate_unengaged_count(p_profile_id, p_now);
+
+  IF v_row.plan_timezone IS NOT NULL AND v_row.plan_last_planned_date IS NOT NULL THEN
+    v_today := (p_now AT TIME ZONE v_row.plan_timezone)::date;
+    v_on_plan := v_row.plan_last_planned_date >= v_today - public.email_gate_config_int('email_gate_plan_recent_days');
+    v_run := v_row.plan_missed_run;
+    -- Any activity after the last missed day ended breaks the run (off-plan activity counts).
+    IF v_row.plan_last_missed_date IS NULL
+       OR (v_wake IS NOT NULL
+           AND v_wake >= ((v_row.plan_last_missed_date + 1)::timestamp AT TIME ZONE v_row.plan_timezone)) THEN
+      v_run := 0;
+    END IF;
+  END IF;
+
+  -- Paused is sticky until a wake (activity or Keep me posted) after it began.
+  IF v_row.state = 'paused' AND (v_wake IS NULL OR v_wake <= v_row.state_since) THEN
+    RETURN jsonb_build_object('state', 'paused', 'reason', v_row.reason, 'last_active', v_activity,
+                              'unengaged', v_unengaged, 'on_plan', v_on_plan, 'plan_run', v_run);
+  END IF;
+
+  IF v_on_plan THEN
+    IF v_run >= public.email_gate_config_int('email_gate_plan_pause_missed_days')
+       AND v_idle_days >= public.email_gate_config_int('email_gate_plan_pause_min_inactive_days')
+       AND v_unengaged >= public.email_gate_config_int('email_gate_pause_unengaged_sends') THEN
+      v_state := 'paused'; v_reason := 'plan_missed_and_unengaged';
+    ELSIF v_run >= public.email_gate_config_int('email_gate_plan_cooling_missed_days') THEN
+      v_state := 'cooling'; v_reason := 'plan_missed';
+    ELSE
+      v_state := 'active'; v_reason := 'plan_on_track';
+    END IF;
+  ELSE
+    IF v_idle_days >= public.email_gate_config_int('email_gate_pause_inactive_days')
+       AND v_unengaged >= public.email_gate_config_int('email_gate_pause_unengaged_sends') THEN
+      v_state := 'paused'; v_reason := 'inactive_and_unengaged';
+    ELSIF v_idle_days >= public.email_gate_config_int('email_gate_active_days') THEN
+      v_state := 'cooling'; v_reason := 'inactive';
+    ELSE
+      v_state := 'active'; v_reason := 'recent_activity';
+    END IF;
+  END IF;
+
+  RETURN jsonb_build_object('state', v_state, 'reason', v_reason, 'last_active', v_activity,
+                            'unengaged', v_unengaged, 'on_plan', v_on_plan, 'plan_run', v_run);
+END;
+$$;
+
+
+--
+-- Name: email_gate_config_bool(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_config_bool(p_key text) RETURNS boolean
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v jsonb;
+BEGIN
+  SELECT c.value INTO v FROM public.notification_runtime_config c
+   WHERE c.key = p_key AND c.value_type = 'boolean';
+  IF v IS NULL OR jsonb_typeof(v) <> 'boolean' THEN
+    RAISE EXCEPTION 'email_gate_config_bool: missing or invalid key %', p_key USING ERRCODE = 'P0002';
+  END IF;
+  RETURN (v #>> '{}')::boolean;
+END;
+$$;
+
+
+--
+-- Name: email_gate_config_date(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_config_date(p_key text) RETURNS date
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v jsonb;
+BEGIN
+  SELECT c.value INTO v FROM public.notification_runtime_config c
+   WHERE c.key = p_key AND c.value_type = 'string';
+  IF v IS NULL OR jsonb_typeof(v) <> 'string' OR (v #>> '{}') !~ '^\d{4}-\d{2}-\d{2}$' THEN
+    RAISE EXCEPTION 'email_gate_config_date: missing or invalid key %', p_key USING ERRCODE = 'P0002';
+  END IF;
+  RETURN (v #>> '{}')::date;
+END;
+$_$;
+
+
+--
+-- Name: email_gate_config_int(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_config_int(p_key text) RETURNS integer
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v jsonb;
+BEGIN
+  SELECT c.value INTO v FROM public.notification_runtime_config c
+   WHERE c.key = p_key AND c.value_type = 'integer';
+  IF v IS NULL OR jsonb_typeof(v) <> 'number' THEN
+    RAISE EXCEPTION 'email_gate_config_int: missing or invalid key %', p_key USING ERRCODE = 'P0002';
+  END IF;
+  RETURN (v #>> '{}')::integer;
+END;
+$$;
+
+
+--
+-- Name: email_gate_decide(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_decide(p_profile_id uuid, p_kind text, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_category text := public.email_category(p_kind);
+  v_state    text;
+BEGIN
+  IF v_category IN ('always', 'notice') THEN
+    RETURN jsonb_build_object('allow', true, 'reason', v_category, 'state', NULL);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = p_profile_id AND p.deleted_at IS NULL) THEN
+    RETURN jsonb_build_object('allow', false, 'reason', 'no_recipient', 'state', NULL);
+  END IF;
+  v_state := public.email_gate_refresh(p_profile_id, p_now, 'system');
+  RETURN public.email_gate_verdict(p_profile_id, p_kind, v_state, p_now)
+         || jsonb_build_object('state', v_state);
+END;
+$$;
+
+
+--
+-- Name: email_gate_enqueue_mirror(uuid, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_enqueue_mirror(p_profile_id uuid, p_state text, p_now timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  -- Never for an under-13 (Doctrine rule 7: no marketing data); guardians and 13+ students only.
+  IF NOT EXISTS (SELECT 1 FROM public.profiles p
+                  WHERE p.id = p_profile_id AND p.deleted_at IS NULL
+                    AND (p.role::text = 'guardian'
+                         OR COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false))) THEN
+    RETURN;
+  END IF;
+  INSERT INTO public.email_gate_resend_outbox
+    (profile_id, email_state, enqueued_at, attempts, next_attempt_at, last_error, synced_at)
+  VALUES (p_profile_id, p_state, p_now, 0, p_now, NULL, NULL)
+  ON CONFLICT (profile_id) DO UPDATE
+     SET email_state = EXCLUDED.email_state, enqueued_at = p_now, attempts = 0,
+         next_attempt_at = p_now, last_error = NULL, synced_at = NULL;
+END;
+$$;
+
+
+--
+-- Name: email_gate_governed_sends(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_governed_sends(p_profile_id uuid, p_now timestamp with time zone) RETURNS TABLE(kind text, sent_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT e.event_type, m.sent_at
+    FROM public.notification_messages m
+    JOIN public.notification_events e ON e.event_id = m.event_id
+   WHERE m.recipient_profile_id = p_profile_id
+     AND m.channel = 'email'
+     AND m.status IN ('sent', 'delivered')
+     AND m.sent_at IS NOT NULL AND m.sent_at <= p_now
+     AND public.email_category(e.event_type) = 'governed'
+  UNION ALL
+  SELECT e.event_type,
+         CASE WHEN e.payload = '{}'::jsonb THEN e.created_at
+              ELSE (e.payload ->> 'sent_at')::timestamptz END
+    FROM public.notification_events e
+   WHERE e.subject_profile_id = p_profile_id
+     AND e.event_type IN ('lifecycle_reminder_due', 'lifecycle_diagnostic_unfinished',
+                          'lifecycle_pro_no_plan', 'lifecycle_practising_free')
+     AND (e.payload = '{}'::jsonb OR e.payload ->> 'state' = 'sent')
+     AND CASE WHEN e.payload = '{}'::jsonb THEN e.created_at
+              ELSE (e.payload ->> 'sent_at')::timestamptz END <= p_now
+  UNION ALL
+  SELECT 'manual_campaign', c.sent_at
+    FROM public.email_campaign_sends c
+   WHERE c.profile_id = p_profile_id AND c.sent_at <= p_now;
+$$;
+
+
+--
+-- Name: email_gate_guardian_refresh(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_guardian_refresh(p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r          record;
+  v_opened   integer := 0;
+  v_closed   integer := 0;
+  v_n        integer;
+  v_episode  integer;
+  v_activity timestamptz;
+  v_idle     numeric;
+  v_run      integer;
+  v_on_plan  boolean;
+  v_g        public.email_gate_state%ROWTYPE;
+  v_test     date;
+BEGIN
+  -- Close: the link ended, the student studied, or the guardian signed in.
+  UPDATE public.email_gate_guardian_pauses gp
+     SET resumed_at = p_now, resume_reason = 'link_inactive'
+   WHERE gp.resumed_at IS NULL
+     AND NOT EXISTS (SELECT 1 FROM public.guardian_links l
+                      WHERE l.guardian_profile_id = gp.guardian_id
+                        AND l.student_profile_id = gp.student_id AND l.status = 'active');
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_closed := v_closed + v_n;
+
+  UPDATE public.email_gate_guardian_pauses gp
+     SET resumed_at = p_now, resume_reason = 'student_active'
+   WHERE gp.resumed_at IS NULL
+     AND public.email_gate_activity_between(gp.student_id, gp.paused_at, p_now) IS NOT NULL;
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_closed := v_closed + v_n;
+
+  UPDATE public.email_gate_guardian_pauses gp
+     SET resumed_at = p_now, resume_reason = 'guardian_login'
+   WHERE gp.resumed_at IS NULL
+     AND public.email_gate_last_sign_in(gp.guardian_id) > gp.paused_at
+     AND public.email_gate_last_sign_in(gp.guardian_id) <= p_now;
+  GET DIAGNOSTICS v_n = ROW_COUNT; v_closed := v_closed + v_n;
+
+  -- Open: a digest guardian whose student went quiet, once per episode.
+  FOR r IN
+    SELECT DISTINCT l.guardian_profile_id AS guardian_id, l.student_profile_id AS student_id,
+           s.created_at AS student_created_at
+      FROM public.guardian_links l
+      JOIN public.profiles g ON g.id = l.guardian_profile_id
+      JOIN public.profiles s ON s.id = l.student_profile_id
+     WHERE l.status = 'active'
+       AND g.role::text = 'guardian' AND g.deleted_at IS NULL
+       AND s.deleted_at IS NULL
+       AND public.guardian_daily_digest_email_enabled(g.id)
+       AND public.guardian_view_decision(g.id, s.id) = 'allow'
+       -- Karl's launch ruling (2026-11-02): no pause email to a guardian the ruling paused.
+       AND public.email_gate_launch_pause_reason(g.id, p_now) IS NULL
+       AND NOT EXISTS (SELECT 1 FROM public.email_gate_guardian_pauses gp
+                        WHERE gp.guardian_id = g.id AND gp.student_id = s.id AND gp.resumed_at IS NULL)
+     ORDER BY 1, 2
+  LOOP
+    v_activity := public.email_gate_last_activity(r.student_id, p_now);
+    -- Once per episode: after a pause, a new one needs student activity since it began.
+    SELECT max(gp.episode) INTO v_episode
+      FROM public.email_gate_guardian_pauses gp
+     WHERE gp.guardian_id = r.guardian_id AND gp.student_id = r.student_id;
+    IF v_episode IS NOT NULL AND (v_activity IS NULL OR v_activity <= (
+         SELECT gp.paused_at FROM public.email_gate_guardian_pauses gp
+          WHERE gp.guardian_id = r.guardian_id AND gp.student_id = r.student_id
+            AND gp.episode = v_episode)) THEN
+      CONTINUE;
+    END IF;
+    v_idle := EXTRACT(EPOCH FROM (p_now - GREATEST(COALESCE(v_activity, r.student_created_at), r.student_created_at))) / 86400.0;
+
+    SELECT * INTO v_g FROM public.email_gate_state WHERE profile_id = r.student_id;
+    v_on_plan := v_g.plan_timezone IS NOT NULL AND v_g.plan_last_planned_date IS NOT NULL
+      AND v_g.plan_last_planned_date >= (p_now AT TIME ZONE v_g.plan_timezone)::date
+                                        - public.email_gate_config_int('email_gate_plan_recent_days');
+    v_run := COALESCE(v_g.plan_missed_run, 0);
+    IF v_g.plan_last_missed_date IS NULL
+       OR (v_activity IS NOT NULL
+           AND v_activity >= ((v_g.plan_last_missed_date + 1)::timestamp AT TIME ZONE v_g.plan_timezone)) THEN
+      v_run := 0;
+    END IF;
+
+    IF (v_on_plan
+        AND v_run >= public.email_gate_config_int('email_gate_plan_guardian_missed_days')
+        AND v_idle >= public.email_gate_config_int('email_gate_plan_guardian_min_inactive_days'))
+       OR (NOT v_on_plan
+           AND v_idle >= public.email_gate_config_int('email_gate_guardian_inactive_days')) THEN
+      v_episode := COALESCE(v_episode, 0) + 1;
+      INSERT INTO public.email_gate_guardian_pauses (guardian_id, student_id, episode, paused_at)
+      VALUES (r.guardian_id, r.student_id, v_episode, p_now);
+      SELECT public.study_profile_effective_exam_date(sp.target_exam_dates, (p_now AT TIME ZONE sp.timezone)::date)
+        INTO v_test
+        FROM public.student_study_profile sp WHERE sp.student_id = r.student_id;
+      PERFORM public.emit_notification_event(
+        public.notification_event_id('email_gate_guardian_paused',
+                                     r.guardian_id::text || ':' || r.student_id::text || ':' || v_episode::text),
+        'email_gate_guardian_paused',
+        r.student_id,
+        jsonb_build_array(jsonb_build_object('profile_id', r.guardian_id,
+                                             'channels', jsonb_build_array('email'))),
+        jsonb_build_object('student_first_name', public.accountability_student_first_name(r.student_id),
+                           'guardian_first_name', public.accountability_student_first_name(r.guardian_id),
+                           'test_date', v_test,
+                           'episode', v_episode),
+        p_now + interval '3 days');
+      v_opened := v_opened + 1;
+      v_test := NULL;
+    END IF;
+  END LOOP;
+
+  -- Guardians whose pauses changed: bring their own state up to date.
+  FOR r IN
+    SELECT DISTINCT gp.guardian_id FROM public.email_gate_guardian_pauses gp
+     WHERE gp.paused_at = p_now OR gp.resumed_at = p_now
+  LOOP
+    PERFORM public.email_gate_refresh(r.guardian_id, p_now, 'system');
+  END LOOP;
+
+  RETURN jsonb_build_object('opened', v_opened, 'closed', v_closed);
+END;
+$$;
+
+
+--
+-- Name: email_gate_is_internal(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_is_internal(p_profile_id uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_email  text;
+  v_local  text;
+  v_domain text;
+  v_list   jsonb;
+BEGIN
+  SELECT lower(btrim(p.email)) INTO v_email FROM public.profiles p WHERE p.id = p_profile_id;
+  IF v_email IS NULL OR position('@' IN v_email) = 0 THEN
+    RETURN false;
+  END IF;
+  v_local := split_part(v_email, '@', 1);
+  v_domain := split_part(v_email, '@', 2);
+  IF position('test' IN v_local) > 0 THEN
+    RETURN true;
+  END IF;
+  SELECT c.value INTO v_list FROM public.notification_runtime_config c
+   WHERE c.key = 'email_gate_internal_denylist' AND c.value_type = 'array';
+  IF v_list IS NULL OR jsonb_typeof(v_list) <> 'array' THEN
+    RAISE EXCEPTION 'email_gate_is_internal: missing or invalid key email_gate_internal_denylist'
+      USING ERRCODE = 'P0002';
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM jsonb_array_elements_text(v_list) AS e(entry)
+     WHERE lower(btrim(e.entry)) = v_email
+        OR (position('@' IN ltrim(lower(btrim(e.entry)), '@')) = 0
+            AND (v_domain = ltrim(lower(btrim(e.entry)), '@')
+                 OR v_domain LIKE '%.' || ltrim(lower(btrim(e.entry)), '@'))));
+END;
+$$;
+
+
+--
+-- Name: email_gate_keep_posted(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_keep_posted(p_profile_id uuid, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_before  text;
+  v_after   text;
+  v_closed  integer := 0;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = p_profile_id AND p.deleted_at IS NULL) THEN
+    RETURN jsonb_build_object('ok', true, 'changed', false, 'state', NULL);
+  END IF;
+  PERFORM public.email_gate_refresh(p_profile_id, p_now, 'system');
+  SELECT state INTO v_before FROM public.email_gate_state WHERE profile_id = p_profile_id;
+
+  UPDATE public.email_gate_guardian_pauses
+     SET resumed_at = p_now, resume_reason = 'keep_me_posted'
+   WHERE guardian_id = p_profile_id AND resumed_at IS NULL;
+  GET DIAGNOSTICS v_closed = ROW_COUNT;
+
+  UPDATE public.email_gate_state SET resumed_at = p_now, updated_at = p_now
+   WHERE profile_id = p_profile_id;
+  v_after := public.email_gate_refresh(p_profile_id, p_now, 'keep_me_posted');
+  RETURN jsonb_build_object('ok', true, 'changed', v_before IS DISTINCT FROM v_after OR v_closed > 0,
+                            'state', v_after);
+END;
+$$;
+
+
+--
+-- Name: email_gate_last_activity(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_last_activity(p_profile_id uuid, p_now timestamp with time zone) RETURNS timestamp with time zone
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT public.email_gate_activity_between(p_profile_id, '-infinity'::timestamptz, p_now);
+$$;
+
+
+--
+-- Name: email_gate_last_capped_send(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_last_capped_send(p_profile_id uuid, p_now timestamp with time zone) RETURNS timestamp with time zone
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT max(s.sent_at)
+    FROM public.email_gate_governed_sends(p_profile_id, p_now) s
+   WHERE s.kind <> 'qotd_daily';
+$$;
+
+
+--
+-- Name: email_gate_last_click(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_last_click(p_profile_id uuid, p_now timestamp with time zone) RETURNS timestamp with time zone
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT max(d.occurred_at)
+    FROM public.notification_delivery_events d
+   WHERE d.recipient_profile_id = p_profile_id
+     AND d.event_type = 'email.clicked'
+     AND d.occurred_at <= p_now;
+$$;
+
+
+--
+-- Name: email_gate_last_sign_in(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_last_sign_in(p_profile_id uuid) RETURNS timestamp with time zone
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v timestamptz;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_attribute a
+                  WHERE a.attrelid = to_regclass('auth.users')
+                    AND a.attname = 'last_sign_in_at' AND NOT a.attisdropped) THEN
+    RETURN NULL;
+  END IF;
+  EXECUTE 'SELECT last_sign_in_at FROM auth.users WHERE id = $1' INTO v USING p_profile_id;
+  RETURN v;
+END;
+$_$;
+
+
+--
+-- Name: email_gate_launch_backfill(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_launch_backfill(p_now timestamp with time zone DEFAULT now()) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r     record;
+  v_n   integer := 0;
+BEGIN
+  FOR r IN
+    SELECT p.id FROM public.profiles p
+     WHERE p.role::text IN ('student', 'guardian') AND p.deleted_at IS NULL
+       AND public.email_gate_launch_pause_reason(p.id, p_now) IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM public.email_gate_state g
+                        WHERE g.profile_id = p.id AND g.state = 'paused')
+     ORDER BY p.id
+  LOOP
+    PERFORM public.email_gate_refresh(r.id, p_now, 'backfill');
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN v_n;
+END;
+$$;
+
+
+--
+-- Name: email_gate_launch_pause_reason(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone) RETURNS text
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_launch  timestamptz;
+  v_created timestamptz;
+  v_wake    timestamptz;
+BEGIN
+  IF public.email_gate_is_internal(p_profile_id) THEN
+    RETURN 'internal_account';
+  END IF;
+  v_launch := public.email_gate_config_date('email_gate_launch_date')::timestamp AT TIME ZONE 'America/Chicago';
+  -- Before the launch itself, "quiet since launch" means nothing.
+  IF p_now < v_launch THEN
+    RETURN NULL;
+  END IF;
+  SELECT p.created_at INTO v_created FROM public.profiles p WHERE p.id = p_profile_id;
+  v_wake := GREATEST(public.email_gate_last_activity(p_profile_id, p_now),
+                     (SELECT g.resumed_at FROM public.email_gate_state g WHERE g.profile_id = p_profile_id));
+  IF v_wake IS NULL THEN
+    RETURN CASE WHEN v_created < v_launch THEN 'pre_launch_inactive' END;
+  END IF;
+  RETURN CASE WHEN v_wake < v_launch THEN 'pre_launch_inactive' END;
+END;
+$$;
+
+
+--
+-- Name: email_gate_outbox_due(timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_outbox_due(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 100) RETURNS TABLE(profile_id uuid, email text, email_state text, attempts integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT o.profile_id, p.email, o.email_state, o.attempts
+    FROM public.email_gate_resend_outbox o
+    JOIN public.profiles p ON p.id = o.profile_id
+   WHERE o.synced_at IS NULL AND o.next_attempt_at <= p_now
+     AND p.deleted_at IS NULL AND p.email IS NOT NULL
+   ORDER BY o.next_attempt_at, o.profile_id
+   LIMIT p_limit;
+$$;
+
+
+--
+-- Name: email_gate_outbox_mark(uuid, text, boolean, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_outbox_mark(p_profile_id uuid, p_email_state text, p_ok boolean, p_error text DEFAULT NULL::text, p_now timestamp with time zone DEFAULT now()) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_ok THEN
+    UPDATE public.email_gate_resend_outbox
+       SET synced_at = p_now, last_error = NULL
+     WHERE profile_id = p_profile_id AND email_state = p_email_state AND synced_at IS NULL;
+  ELSE
+    UPDATE public.email_gate_resend_outbox
+       SET attempts = attempts + 1,
+           next_attempt_at = p_now + make_interval(mins => LEAST(power(2, attempts + 1)::integer, 1440)),
+           last_error = left(COALESCE(p_error, 'unknown'), 200)
+     WHERE profile_id = p_profile_id AND email_state = p_email_state AND synced_at IS NULL;
+  END IF;
+END;
+$$;
+
+
+--
+-- Name: email_gate_record_plan_days(uuid, jsonb, text, date, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_record_plan_days(p_student_id uuid, p_days jsonb, p_timezone text, p_through date, p_now timestamp with time zone DEFAULT now()) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row      public.email_gate_state%ROWTYPE;
+  d          record;
+  v_recorded integer := 0;
+  v_state    text;
+BEGIN
+  IF p_days IS NULL OR jsonb_typeof(p_days) <> 'array' THEN
+    RAISE EXCEPTION 'email_gate_record_plan_days: p_days must be a JSON array' USING ERRCODE = '22023';
+  END IF;
+  PERFORM public.email_gate_refresh(p_student_id, p_now, 'system');
+  PERFORM pg_advisory_xact_lock(hashtext('email_gate:' || p_student_id::text));
+  SELECT * INTO v_row FROM public.email_gate_state WHERE profile_id = p_student_id FOR UPDATE;
+
+  FOR d IN
+    SELECT (x ->> 'date')::date AS day, x ->> 'outcome' AS outcome
+      FROM jsonb_array_elements(p_days) AS x
+     ORDER BY 1
+  LOOP
+    IF d.outcome NOT IN ('did_work', 'missed') THEN
+      RAISE EXCEPTION 'email_gate_record_plan_days: unknown outcome %', d.outcome USING ERRCODE = '22023';
+    END IF;
+    CONTINUE WHEN d.day > p_through;
+    CONTINUE WHEN v_row.plan_last_evaluated_date IS NOT NULL AND d.day <= v_row.plan_last_evaluated_date;
+    IF d.outcome = 'missed' AND NOT public.email_gate_active_on(p_student_id, d.day, p_timezone) THEN
+      v_row.plan_missed_run := v_row.plan_missed_run + 1;
+      v_row.plan_last_missed_date := d.day;
+    ELSE
+      v_row.plan_missed_run := 0;
+    END IF;
+    v_row.plan_last_planned_date := d.day;
+    v_row.plan_last_evaluated_date := d.day;
+    v_recorded := v_recorded + 1;
+  END LOOP;
+
+  UPDATE public.email_gate_state
+     SET plan_timezone = p_timezone,
+         plan_missed_run = v_row.plan_missed_run,
+         plan_last_missed_date = v_row.plan_last_missed_date,
+         plan_last_planned_date = v_row.plan_last_planned_date,
+         plan_last_evaluated_date = v_row.plan_last_evaluated_date,
+         updated_at = p_now
+   WHERE profile_id = p_student_id;
+
+  v_state := public.email_gate_refresh(p_student_id, p_now, 'system');
+  RETURN jsonb_build_object('recorded', v_recorded, 'run', v_row.plan_missed_run, 'state', v_state);
+END;
+$$;
+
+
+--
+-- Name: email_gate_refresh(uuid, timestamp with time zone, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_refresh(p_profile_id uuid, p_now timestamp with time zone DEFAULT now(), p_actor text DEFAULT 'system'::text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row      public.email_gate_state%ROWTYPE;
+  v_found    boolean;
+  v_computed jsonb;
+  v_state    text;
+  v_reason   text;
+  v_profile  record;
+  v_test     date;
+  v_from     text;
+BEGIN
+  IF p_actor NOT IN ('system', 'keep_me_posted', 'backfill') THEN
+    RAISE EXCEPTION 'email_gate_refresh: unknown actor %', p_actor USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtext('email_gate:' || p_profile_id::text));
+  SELECT * INTO v_row FROM public.email_gate_state WHERE profile_id = p_profile_id FOR UPDATE;
+  v_found := FOUND;
+
+  v_computed := public.email_gate_compute(p_profile_id, p_now);
+  v_state := v_computed ->> 'state';
+  v_reason := v_computed ->> 'reason';
+
+  IF NOT v_found THEN
+    INSERT INTO public.email_gate_state (profile_id, state, reason, state_since, updated_at)
+    VALUES (p_profile_id, 'active', 'initial', p_now, p_now);
+    SELECT * INTO v_row FROM public.email_gate_state WHERE profile_id = p_profile_id;
+  END IF;
+
+  IF v_row.state = v_state THEN
+    RETURN v_state;
+  END IF;
+  v_from := v_row.state;
+
+  UPDATE public.email_gate_state
+     SET state = v_state,
+         reason = v_reason,
+         state_since = p_now,
+         pause_episode = pause_episode + CASE WHEN v_state = 'paused' THEN 1 ELSE 0 END,
+         updated_at = p_now
+   WHERE profile_id = p_profile_id
+  RETURNING * INTO v_row;
+
+  INSERT INTO public.email_gate_transitions (profile_id, from_state, to_state, reason, actor, occurred_at)
+  VALUES (p_profile_id, v_from, v_state, v_reason, p_actor, p_now);
+
+  PERFORM public.email_gate_enqueue_mirror(p_profile_id, v_state, p_now);
+
+  -- Entering paused: the student pause note, once per episode, 13+ students only.
+  IF v_state = 'paused' THEN
+    SELECT p.role::text AS role, p.deleted_at,
+           COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false) AS of_age
+      INTO v_profile
+      FROM public.profiles p WHERE p.id = p_profile_id;
+    IF v_profile.role = 'student' AND v_profile.deleted_at IS NULL AND v_profile.of_age
+       AND p_actor <> 'backfill'
+       AND v_reason NOT IN ('pre_launch_inactive', 'internal_account') THEN
+      SELECT public.study_profile_effective_exam_date(sp.target_exam_dates, (p_now AT TIME ZONE sp.timezone)::date)
+        INTO v_test
+        FROM public.student_study_profile sp WHERE sp.student_id = p_profile_id;
+      PERFORM public.emit_notification_event(
+        public.notification_event_id('email_gate_paused_notice',
+                                     p_profile_id::text || ':' || v_row.pause_episode::text),
+        'email_gate_paused_notice',
+        p_profile_id,
+        jsonb_build_array(jsonb_build_object('profile_id', p_profile_id,
+                                             'channels', jsonb_build_array('email'))),
+        jsonb_build_object('first_name', public.accountability_student_first_name(p_profile_id),
+                           'episode', v_row.pause_episode, 'test_date', v_test),
+        p_now + interval '3 days');
+    END IF;
+  END IF;
+  RETURN v_state;
+END;
+$$;
+
+
+--
+-- Name: email_gate_sweep(timestamp with time zone, integer, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_sweep(p_now timestamp with time zone DEFAULT now(), p_limit integer DEFAULT 500, p_after uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r         record;
+  v_before  text;
+  v_after   text;
+  v_n       integer := 0;
+  v_changed integer := 0;
+  v_last    uuid := NULL;
+BEGIN
+  FOR r IN
+    SELECT p.id FROM public.profiles p
+     WHERE p.role::text IN ('student', 'guardian') AND p.deleted_at IS NULL
+       AND (p_after IS NULL OR p.id > p_after)
+     ORDER BY p.id
+     LIMIT p_limit
+  LOOP
+    SELECT state INTO v_before FROM public.email_gate_state WHERE profile_id = r.id;
+    v_after := public.email_gate_refresh(r.id, p_now, 'system');
+    IF v_before IS DISTINCT FROM v_after AND NOT (v_before IS NULL AND v_after = 'active') THEN
+      v_changed := v_changed + 1;
+    END IF;
+    v_n := v_n + 1;
+    v_last := r.id;
+  END LOOP;
+  RETURN jsonb_build_object('processed', v_n, 'changed', v_changed, 'last_id', v_last);
+END;
+$$;
+
+
+--
+-- Name: email_gate_unengaged_count(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_unengaged_count(p_profile_id uuid, p_now timestamp with time zone) RETURNS integer
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH anchor AS (
+    SELECT GREATEST(
+             public.email_gate_last_activity(p_profile_id, p_now),
+             (SELECT g.resumed_at FROM public.email_gate_state g WHERE g.profile_id = p_profile_id),
+             public.email_gate_last_click(p_profile_id, p_now),
+             (SELECT p.created_at FROM public.profiles p WHERE p.id = p_profile_id)
+           ) AS at
+  )
+  SELECT count(*)::integer
+    FROM public.email_gate_governed_sends(p_profile_id, p_now) s, anchor
+   WHERE s.sent_at > COALESCE(anchor.at, '-infinity'::timestamptz)
+     AND s.sent_at + make_interval(hours => public.email_gate_config_int('email_gate_engagement_window_hours')) <= p_now;
+$$;
+
+
+--
+-- Name: email_gate_verdict(uuid, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_verdict(p_profile_id uuid, p_kind text, p_state text, p_now timestamp with time zone) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_category text := public.email_category(p_kind);
+  v_profile  record;
+  v_last     timestamptz;
+BEGIN
+  IF v_category IN ('always', 'notice') THEN
+    RETURN jsonb_build_object('allow', true, 'reason', v_category);
+  END IF;
+  SELECT p.deleted_at, COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+           OR p.role::text <> 'student' AS adult_or_13
+    INTO v_profile
+    FROM public.profiles p WHERE p.id = p_profile_id;
+  IF NOT FOUND OR v_profile.deleted_at IS NOT NULL THEN
+    RETURN jsonb_build_object('allow', false, 'reason', 'no_recipient');
+  END IF;
+  -- Karl's launch ruling (2026-11-02): internal and test accounts get no governed or milestone
+  -- email (account, billing and link mail still go).
+  IF public.email_gate_is_internal(p_profile_id) THEN
+    RETURN jsonb_build_object('allow', false, 'reason', 'internal_account');
+  END IF;
+  -- Under-13 handling is unchanged for the existing governed emails; the new marketing-shaped
+  -- kinds (manual campaigns, milestones) are 13+ only (Doctrine rule 7).
+  IF (p_kind = 'manual_campaign' OR v_category = 'milestone') AND NOT v_profile.adult_or_13 THEN
+    RETURN jsonb_build_object('allow', false, 'reason', 'under_13');
+  END IF;
+  IF v_category = 'milestone' THEN
+    RETURN jsonb_build_object('allow', true, 'reason', 'milestone');
+  END IF;
+  IF NOT public.email_gate_config_bool('email_gate_enabled') THEN
+    RETURN jsonb_build_object('allow', true, 'reason', 'gate_disabled');
+  END IF;
+  IF p_state = 'paused' THEN
+    RETURN jsonb_build_object('allow', false, 'reason', 'paused');
+  END IF;
+  IF p_state = 'cooling' THEN
+    IF p_kind = 'qotd_daily' THEN
+      RETURN jsonb_build_object('allow', true, 'reason', 'cooling_qotd_exempt');
+    END IF;
+    v_last := public.email_gate_last_capped_send(p_profile_id, p_now);
+    IF v_last IS NOT NULL
+       AND v_last > p_now - make_interval(days => public.email_gate_config_int('email_gate_cooling_min_interval_days')) THEN
+      RETURN jsonb_build_object('allow', false, 'reason', 'cooling_cap');
+    END IF;
+    RETURN jsonb_build_object('allow', true, 'reason', 'cooling');
+  END IF;
+  RETURN jsonb_build_object('allow', true, 'reason', 'active');
+END;
+$$;
+
+
+--
+-- Name: email_milestones_notify(timestamp with time zone, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_milestones_notify(p_now timestamp with time zone DEFAULT now(), p_release_dates jsonb DEFAULT '{}'::jsonb) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r         record;
+  v_today   date;
+  v_release date;
+  v_week    integer := 0;
+  v_after   integer := 0;
+  v_scores  integer := 0;
+  v_before  integer := public.email_gate_config_int('email_gate_milestone_days_before_test');
+BEGIN
+  IF p_release_dates IS NULL OR jsonb_typeof(p_release_dates) <> 'object' THEN
+    RAISE EXCEPTION 'email_milestones_notify: p_release_dates must be a JSON object' USING ERRCODE = '22023';
+  END IF;
+  FOR r IN
+    SELECT p.id AS student_id, sp.timezone, d.test_date
+      FROM public.student_study_profile sp
+      JOIN public.profiles p ON p.id = sp.student_id
+      CROSS JOIN LATERAL unnest(sp.target_exam_dates) AS d(test_date)
+     WHERE p.role::text = 'student' AND p.deleted_at IS NULL
+       AND COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
+       AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests x
+                        WHERE x.profile_id = p.id AND x.status = 'pending')
+       -- Karl's launch ruling (2026-11-02): never to internal or test accounts.
+       AND NOT public.email_gate_is_internal(p.id)
+     ORDER BY p.id, d.test_date
+  LOOP
+    v_today := (p_now AT TIME ZONE r.timezone)::date;
+    v_release := NULLIF(p_release_dates ->> r.test_date::text, '')::date;
+
+    IF v_today BETWEEN r.test_date - v_before AND r.test_date - (v_before - 2) THEN
+      IF NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =
+           public.notification_event_id('sat_week_before', r.student_id::text || ':' || r.test_date::text)) THEN
+        PERFORM public.emit_notification_event(
+          public.notification_event_id('sat_week_before', r.student_id::text || ':' || r.test_date::text),
+          'sat_week_before', r.student_id,
+          jsonb_build_array(jsonb_build_object('profile_id', r.student_id, 'channels', jsonb_build_array('email'))),
+          jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
+                             'test_date', r.test_date),
+          (r.test_date::timestamp AT TIME ZONE r.timezone));
+        v_week := v_week + 1;
+      END IF;
+    END IF;
+
+    IF v_today BETWEEN r.test_date + 1 AND r.test_date + 3 THEN
+      IF NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =
+           public.notification_event_id('sat_day_after', r.student_id::text || ':' || r.test_date::text)) THEN
+        PERFORM public.emit_notification_event(
+          public.notification_event_id('sat_day_after', r.student_id::text || ':' || r.test_date::text),
+          'sat_day_after', r.student_id,
+          jsonb_build_array(jsonb_build_object('profile_id', r.student_id, 'channels', jsonb_build_array('email'))),
+          jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
+                             'test_date', r.test_date,
+                             'release_date', CASE WHEN v_release > v_today THEN v_release END),
+          ((r.test_date + 4)::timestamp AT TIME ZONE r.timezone));
+        v_after := v_after + 1;
+      END IF;
+    END IF;
+
+    IF v_release IS NOT NULL AND v_today BETWEEN v_release AND v_release + 3 THEN
+      IF NOT EXISTS (SELECT 1 FROM public.notification_events e WHERE e.event_id =
+           public.notification_event_id('sat_scores_released', r.student_id::text || ':' || r.test_date::text)) THEN
+        PERFORM public.emit_notification_event(
+          public.notification_event_id('sat_scores_released', r.student_id::text || ':' || r.test_date::text),
+          'sat_scores_released', r.student_id,
+          jsonb_build_array(jsonb_build_object('profile_id', r.student_id, 'channels', jsonb_build_array('email'))),
+          jsonb_build_object('first_name', public.accountability_student_first_name(r.student_id),
+                             'test_date', r.test_date, 'release_date', v_release),
+          ((v_release + 4)::timestamp AT TIME ZONE r.timezone));
+        v_scores := v_scores + 1;
+      END IF;
+    END IF;
+  END LOOP;
+  RETURN jsonb_build_object('week_before', v_week, 'day_after', v_after, 'scores_released', v_scores);
+END;
+$$;
+
+
+--
 -- Name: emit_notification_event(uuid, text, uuid, jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9424,6 +10485,11 @@ BEGIN
         FROM public.guardian_links l
        WHERE l.guardian_profile_id = v_guardian.id AND l.status = 'active'
          AND public.guardian_view_decision(v_guardian.id, l.student_profile_id) = 'allow'
+         -- Email send gate (2026-11-02): a student whose digest is paused for this guardian.
+         AND NOT EXISTS (SELECT 1 FROM public.email_gate_guardian_pauses gp
+                          WHERE gp.guardian_id = v_guardian.id
+                            AND gp.student_id = l.student_profile_id
+                            AND gp.resumed_at IS NULL)
        ORDER BY 1
     LOOP
       -- Plan changes reported today: a reduced day once, from its first "before" to its last
@@ -11484,12 +12550,12 @@ CREATE FUNCTION public.qotd_daily_email_preference(p_student_id uuid) RETURNS js
     'eligible', COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
                 AND p.role = 'student' AND p.deleted_at IS NULL,
     'enabled', COALESCE(c.enabled, false),
-    'paused', COALESCE(e.paused_at IS NOT NULL, false)
+    'paused', COALESCE(g.state = 'paused', false)
   )
     FROM public.profiles p
     LEFT JOIN public.notification_channel_preferences c
            ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
-    LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+    LEFT JOIN public.email_gate_state g ON g.profile_id = p.id
    WHERE p.id = p_student_id;
 $$;
 
@@ -11506,27 +12572,25 @@ DECLARE
   v_today   date := public.chicago_day(p_now);
   v_emitted integer := 0;
   v_email   integer := 0;
-  v_paused  integer := 0;
+  v_gated   integer := 0;
   r         record;
   v_event   uuid;
-  v_run     integer;
-  v_variant text;
+  v_email_on boolean;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.qotd_schedule q WHERE q.qotd_date = v_today) THEN
-    RETURN jsonb_build_object('emitted', 0, 'mailable', 0, 'paused_notices', 0);
+    RETURN jsonb_build_object('emitted', 0, 'mailable', 0, 'gate_paused', 0);
   END IF;
 
   FOR r IN
     SELECT p.id AS student_id,
-           -- Email: the preference is on, 13+, and not paused by the sunset.
+           -- Email: the preference is on and 13+ (the gate decides the rest).
            (COALESCE(c.enabled, false)
-            AND public.marketing_opt_in_age_eligible(p.date_of_birth)
-            AND e.paused_at IS NULL) AS email_on,
-           e.run_since
+            AND public.marketing_opt_in_age_eligible(p.date_of_birth)) AS email_wanted,
+           g.state AS gate_state
       FROM public.profiles p
       LEFT JOIN public.notification_channel_preferences c
              ON c.profile_id = p.id AND c.event_type = 'qotd_daily' AND c.channel = 'email'
-      LEFT JOIN public.student_qotd_email_prefs e ON e.student_id = p.id
+      LEFT JOIN public.email_gate_state g ON g.profile_id = p.id
      WHERE p.role = 'student' AND p.deleted_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests d
                         WHERE d.profile_id = p.id AND d.status = 'pending')
@@ -11537,34 +12601,11 @@ BEGIN
      LIMIT p_limit
   LOOP
     v_event := public.notification_event_id('qotd_daily', r.student_id::text || ':' || v_today::text);
-    v_variant := 'daily';
-    IF r.email_on THEN
-      -- The sunset, from the ledger: the leading run (most recent first) of earlier days on which
-      -- a daily email went out and the student answered nothing, since the last grant or resume.
-      SELECT COALESCE(min(t.rn) FILTER (WHERE t.answered) - 1, count(*))::integer
-        INTO v_run
-        FROM (
-          SELECT row_number() OVER (ORDER BY x.day DESC) AS rn,
-                 EXISTS (SELECT 1 FROM public.student_answer_days(r.student_id, x.day) a
-                          WHERE a.day = x.day) AS answered
-            FROM (
-              SELECT (ev.payload->>'qotd_date')::date AS day
-                FROM public.notification_events ev
-                JOIN public.notification_messages m
-                  ON m.event_id = ev.event_id AND m.channel = 'email'
-                 AND m.recipient_profile_id = r.student_id
-               WHERE ev.event_type = 'qotd_daily' AND ev.subject_profile_id = r.student_id
-                 AND ev.payload->>'email_variant' = 'daily'
-                 AND m.status IN ('sent', 'delivered')
-                 AND (ev.payload->>'qotd_date')::date < v_today
-                 AND (ev.payload->>'qotd_date')::date >= COALESCE(r.run_since, (ev.payload->>'qotd_date')::date)
-               ORDER BY 1 DESC
-               LIMIT 7
-            ) x
-        ) t;
-      IF COALESCE(v_run, 0) >= 7 THEN
-        v_variant := 'paused_notice';
-      END IF;
+    v_email_on := r.email_wanted;
+    IF v_email_on AND r.gate_state = 'paused' THEN
+      -- Paused: no email unless a wake since then lifts it (refresh records the change).
+      v_email_on := public.email_gate_refresh(r.student_id, p_now, 'system') <> 'paused';
+      IF NOT v_email_on THEN v_gated := v_gated + 1; END IF;
     END IF;
 
     PERFORM public.emit_notification_event(
@@ -11573,29 +12614,23 @@ BEGIN
       r.student_id,
       jsonb_build_array(jsonb_build_object(
         'profile_id', r.student_id,
-        'channels', CASE WHEN r.email_on THEN jsonb_build_array('in_app', 'email')
+        'channels', CASE WHEN v_email_on THEN jsonb_build_array('in_app', 'email')
                          ELSE jsonb_build_array('in_app') END
       )),
       jsonb_build_object(
         'qotd_date', v_today,
         'current_streak', COALESCE((SELECT s.current_streak FROM public.student_streak(r.student_id, p_now) s), 0),
-        'email_variant', v_variant
+        'email_variant', 'daily'
       ),
       -- Owner ruling 2026-10-09 (schedule audit Step 2, item 3(1)): today's question expires
       -- when its America/Chicago day ends; a late send is a dropped send.
       ((v_today + 1)::timestamp AT TIME ZONE 'America/Chicago')
     );
     v_emitted := v_emitted + 1;
-    IF r.email_on THEN v_email := v_email + 1; END IF;
-    IF v_variant = 'paused_notice' THEN
-      UPDATE public.student_qotd_email_prefs
-         SET paused_at = p_now, updated_at = p_now
-       WHERE student_id = r.student_id;
-      v_paused := v_paused + 1;
-    END IF;
+    IF v_email_on THEN v_email := v_email + 1; END IF;
   END LOOP;
 
-  RETURN jsonb_build_object('emitted', v_emitted, 'mailable', v_email, 'paused_notices', v_paused);
+  RETURN jsonb_build_object('emitted', v_emitted, 'mailable', v_email, 'gate_paused', v_gated);
 END;
 $$;
 
@@ -11705,16 +12740,23 @@ CREATE FUNCTION public.qotd_email_resume(p_student_id uuid, p_now timestamp with
     AS $$
 DECLARE
   v_paused boolean;
-  v_result jsonb;
+  v_gate   jsonb := NULL;
+  v_result jsonb := NULL;
 BEGIN
   SELECT paused_at IS NOT NULL INTO v_paused
     FROM public.student_qotd_email_prefs WHERE student_id = p_student_id;
-  IF NOT COALESCE(v_paused, false) THEN
+  IF EXISTS (SELECT 1 FROM public.email_gate_state g WHERE g.profile_id = p_student_id AND g.state = 'paused') THEN
+    v_gate := public.email_gate_keep_posted(p_student_id, p_now);
+  END IF;
+  IF COALESCE(v_paused, false) THEN
+  v_result := public.set_qotd_daily_email(p_student_id, true, 'email_resume', NULL, p_now);
+  END IF;
+  IF v_gate IS NULL AND v_result IS NULL THEN
     RETURN jsonb_build_object('ok', true, 'changed', false);
   END IF;
-  v_result := public.set_qotd_daily_email(p_student_id, true, 'email_resume', NULL, p_now);
   RETURN jsonb_build_object('ok', true, 'changed',
-    COALESCE((v_result->>'enabled')::boolean, false) AND COALESCE((v_result->>'changed')::boolean, false));
+    COALESCE((v_gate->>'changed')::boolean, false)
+    OR (COALESCE((v_result->>'enabled')::boolean, false) AND COALESCE((v_result->>'changed')::boolean, false)));
 END;
 $$;
 
@@ -12572,6 +13614,34 @@ $$;
 
 
 --
+-- Name: record_campaign_send(text, text, text, timestamp with time zone, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_campaign_send(p_email text, p_campaign text, p_variant text, p_sent_at timestamp with time zone, p_resend_id text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_profile uuid;
+BEGIN
+  SELECT p.id INTO v_profile FROM public.profiles p
+   WHERE lower(p.email) = lower(btrim(p_email)) AND p.deleted_at IS NULL
+   ORDER BY p.id LIMIT 1;
+  IF v_profile IS NULL THEN
+    RETURN 'unknown_recipient';
+  END IF;
+  INSERT INTO public.email_campaign_sends (profile_id, campaign, variant, sent_at, resend_id)
+  VALUES (v_profile, p_campaign, p_variant, p_sent_at, p_resend_id)
+  ON CONFLICT (resend_id) DO NOTHING;
+  IF NOT FOUND THEN
+    RETURN 'duplicate';
+  END IF;
+  RETURN 'recorded';
+END;
+$$;
+
+
+--
 -- Name: record_deletion_suppression_outcome(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -12673,6 +13743,48 @@ $$;
 --
 
 COMMENT ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) IS 'Doc 06D §6.4 validated write path, keyed on log_id per owner ruling A4. Writes the record TERMINAL (pass|fail); there is no in_progress state because verification runs inside T3. Validates the §6.3 four-layer shape and refuses a pass whose in-scope layers are not verified, making §6.5 (d) unreachable. proof_manifest_ref is a SHA-256 over the canonical record (log_id, outcome, layers) per owner ruling B3. The deleted_profile_id parameter was removed 2026-09-25 (SCL-152) with the column. Called by public.complete_deletion_log (T3) and public.reconcile_deletion_log.';
+
+
+--
+-- Name: record_email_engagement_event(text, text, text, timestamp with time zone, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_email_engagement_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone, p_recipients text[]) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_message   uuid;
+  v_recipient uuid;
+BEGIN
+  IF p_event_type NOT IN ('email.opened', 'email.clicked') THEN
+    RAISE EXCEPTION 'record_email_engagement_event: not an engagement event: %', p_event_type
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+  SELECT m.message_id, m.recipient_profile_id INTO v_message, v_recipient
+    FROM public.notification_messages m
+   WHERE m.provider_message_id = p_provider_message_id AND m.channel = 'email'
+   LIMIT 1;
+  IF v_recipient IS NULL THEN
+    SELECT p.id INTO v_recipient
+      FROM unnest(COALESCE(p_recipients, '{}'::text[])) WITH ORDINALITY AS t(addr, n)
+      JOIN public.profiles p ON lower(p.email) = lower(btrim(t.addr)) AND p.deleted_at IS NULL
+     ORDER BY t.n, p.id
+     LIMIT 1;
+  END IF;
+  INSERT INTO public.notification_delivery_events
+    (provider_event_id, provider_message_id, event_type, occurred_at, message_id, outcome,
+     applied_at, recipient_profile_id)
+  VALUES (p_provider_event_id, p_provider_message_id, p_event_type, p_occurred_at, v_message,
+          CASE WHEN v_message IS NULL THEN 'unmatched' ELSE 'ignored' END,
+          CASE WHEN v_message IS NULL THEN NULL ELSE now() END, v_recipient)
+  ON CONFLICT (provider_event_id) DO NOTHING;
+  IF NOT FOUND THEN
+    RETURN 'duplicate';
+  END IF;
+  RETURN 'recorded';
+END;
+$$;
 
 
 --
@@ -17540,6 +18652,259 @@ CREATE TABLE public.distractor_taxonomy_v1 (
 
 
 --
+-- Name: email_campaign_sends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_campaign_sends (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    campaign text NOT NULL,
+    variant text,
+    sent_at timestamp with time zone NOT NULL,
+    resend_id text NOT NULL,
+    CONSTRAINT email_campaign_sends_campaign_check CHECK (((length(btrim(campaign)) >= 1) AND (length(btrim(campaign)) <= 200))),
+    CONSTRAINT email_campaign_sends_resend_id_check CHECK ((length(btrim(resend_id)) > 0)),
+    CONSTRAINT email_campaign_sends_variant_check CHECK (((variant IS NULL) OR (length(variant) <= 200)))
+);
+
+
+--
+-- Name: TABLE email_campaign_sends; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.email_campaign_sends IS 'Manual campaign sends (record_campaign_send), counted by the gate as governed emails. One row per Resend email id. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: email_campaign_sends_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_campaign_sends ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.email_campaign_sends_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: email_gate_guardian_pauses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_gate_guardian_pauses (
+    guardian_id uuid NOT NULL,
+    student_id uuid NOT NULL,
+    episode integer NOT NULL,
+    paused_at timestamp with time zone NOT NULL,
+    resumed_at timestamp with time zone,
+    resume_reason text,
+    CONSTRAINT email_gate_guardian_pauses_check CHECK (((resumed_at IS NULL) = (resume_reason IS NULL))),
+    CONSTRAINT email_gate_guardian_pauses_episode_check CHECK ((episode >= 1)),
+    CONSTRAINT email_gate_guardian_pauses_resume_reason_check CHECK ((resume_reason = ANY (ARRAY['student_active'::text, 'guardian_login'::text, 'keep_me_posted'::text, 'link_inactive'::text])))
+);
+
+
+--
+-- Name: TABLE email_gate_guardian_pauses; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.email_gate_guardian_pauses IS 'Email send gate: a guardian''s daily digest paused for one linked student after the student went quiet; one row per episode, open while resumed_at IS NULL. ON DELETE CASCADE from both profiles.';
+
+
+--
+-- Name: email_gate_resend_outbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_gate_resend_outbox (
+    profile_id uuid NOT NULL,
+    email_state text NOT NULL,
+    enqueued_at timestamp with time zone NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone NOT NULL,
+    last_error text,
+    synced_at timestamp with time zone,
+    CONSTRAINT email_gate_resend_outbox_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT email_gate_resend_outbox_email_state_check CHECK ((email_state = ANY (ARRAY['active'::text, 'cooling'::text, 'paused'::text])))
+);
+
+
+--
+-- Name: TABLE email_gate_resend_outbox; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.email_gate_resend_outbox IS 'Email send gate: the latest state to mirror to the Resend contact property email_state, with retry and backoff. Never written for an under-13. A failed mirror never blocks a send.';
+
+
+--
+-- Name: email_gate_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_gate_state (
+    profile_id uuid NOT NULL,
+    state text DEFAULT 'active'::text NOT NULL,
+    reason text DEFAULT 'initial'::text NOT NULL,
+    state_since timestamp with time zone DEFAULT now() NOT NULL,
+    pause_episode integer DEFAULT 0 NOT NULL,
+    resumed_at timestamp with time zone,
+    plan_timezone text,
+    plan_missed_run integer DEFAULT 0 NOT NULL,
+    plan_last_missed_date date,
+    plan_last_planned_date date,
+    plan_last_evaluated_date date,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT email_gate_state_pause_episode_check CHECK ((pause_episode >= 0)),
+    CONSTRAINT email_gate_state_plan_missed_run_check CHECK ((plan_missed_run >= 0)),
+    CONSTRAINT email_gate_state_state_check CHECK ((state = ANY (ARRAY['active'::text, 'cooling'::text, 'paused'::text])))
+);
+
+
+--
+-- Name: TABLE email_gate_state; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.email_gate_state IS 'Email send gate: a student''s or guardian''s state (active | cooling | paused), the pause episode count, the last Keep-me-posted, and the missed-planned-day run (plan-aware rules). Written only by the email_gate_* functions. ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.profiles (
+    id uuid NOT NULL,
+    email text NOT NULL,
+    full_name text,
+    display_name text,
+    role public.profile_role DEFAULT 'student'::public.profile_role NOT NULL,
+    date_of_birth date,
+    age_years integer,
+    is_under_13 boolean,
+    country_code text,
+    stripe_customer_id text,
+    guardian_email text,
+    guardian_profile_id uuid,
+    student_link_code text,
+    student_link_code_issued_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    profile_completed_at timestamp with time zone,
+    marketing_opt_in boolean DEFAULT false NOT NULL,
+    actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    analytics_user_id uuid,
+    signup_source text,
+    signup_channel text,
+    signup_campaign text,
+    CONSTRAINT profiles_signup_campaign_check CHECK (((signup_campaign IS NULL) OR (signup_campaign ~ '^[a-z0-9_]{1,40}$'::text))),
+    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'facebook'::text, 'email'::text, 'direct'::text, 'other'::text])))),
+    CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
+);
+
+
+--
+-- Name: COLUMN profiles.student_link_code_issued_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
+
+
+--
+-- Name: COLUMN profiles.analytics_user_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA256(ANALYTICS_SALT, profile id), UUID-shaped. Written once by the server at onboarding completion; immutable (profiles_analytics_fields_set_once).';
+
+
+--
+-- Name: COLUMN profiles.signup_source; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
+
+
+--
+-- Name: COLUMN profiles.signup_channel; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_channel IS 'Karl, 2026-10-28: the first-touch channel from the landing URL''s UTM (coarse, allowlisted; no URL). Written once by the server before onboarding; never held for an under-13 profile.';
+
+
+--
+-- Name: COLUMN profiles.signup_campaign; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.profiles.signup_campaign IS 'Karl, 2026-10-28: the first-touch utm_campaign when it is an allowlisted name (packages/shared/src/signup-attribution.ts), else null. Written once with signup_channel; never held for an under-13 profile.';
+
+
+--
+-- Name: email_gate_status; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.email_gate_status WITH (security_invoker='true') AS
+ SELECT p.id AS profile_id,
+    p.email AS recipient,
+    (p.role)::text AS role,
+    (c.v ->> 'state'::text) AS state,
+    ((c.v ->> 'last_active'::text))::timestamp with time zone AS last_active,
+    ((c.v ->> 'unengaged'::text))::integer AS unengaged_count,
+    ((NOT x.pending_deletion) AND ((public.email_gate_verdict(p.id, 'manual_campaign'::text, (c.v ->> 'state'::text), now()) ->> 'allow'::text))::boolean) AS may_send_governed,
+    ((NOT x.pending_deletion) AND ((p.role)::text = 'student'::text) AND ((public.email_gate_verdict(p.id, 'sat_week_before'::text, (c.v ->> 'state'::text), now()) ->> 'allow'::text))::boolean) AS may_send_milestone
+   FROM ((public.profiles p
+     CROSS JOIN LATERAL ( SELECT public.email_gate_compute(p.id, now()) AS v) c)
+     CROSS JOIN LATERAL ( SELECT (EXISTS ( SELECT 1
+                   FROM public.account_deletion_requests d
+                  WHERE ((d.profile_id = p.id) AND (d.status = 'pending'::text)))) AS pending_deletion) x)
+  WHERE (((p.role)::text = ANY (ARRAY['student'::text, 'guardian'::text])) AND (p.deleted_at IS NULL));
+
+
+--
+-- Name: VIEW email_gate_status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.email_gate_status IS 'Email send gate, read-only, for manual campaigns: each student''s and guardian''s live state, last activity, unengaged count, and whether a governed (campaign) or milestone email may go now. may_send_governed excludes under-13s and pending deletions. Service role only.';
+
+
+--
+-- Name: email_gate_transitions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_gate_transitions (
+    id bigint NOT NULL,
+    profile_id uuid NOT NULL,
+    from_state text,
+    to_state text NOT NULL,
+    reason text NOT NULL,
+    actor text NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    CONSTRAINT email_gate_transitions_actor_check CHECK ((actor = ANY (ARRAY['system'::text, 'keep_me_posted'::text, 'backfill'::text]))),
+    CONSTRAINT email_gate_transitions_from_state_check CHECK ((from_state = ANY (ARRAY['active'::text, 'cooling'::text, 'paused'::text]))),
+    CONSTRAINT email_gate_transitions_to_state_check CHECK ((to_state = ANY (ARRAY['active'::text, 'cooling'::text, 'paused'::text])))
+);
+
+
+--
+-- Name: TABLE email_gate_transitions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.email_gate_transitions IS 'Email send gate: every state change (who, from → to, when, why). Append-only by convention; ON DELETE CASCADE from profiles.';
+
+
+--
+-- Name: email_gate_transitions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_gate_transitions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.email_gate_transitions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: entitlement_features; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -18690,6 +20055,7 @@ CREATE TABLE public.notification_delivery_events (
     message_id uuid,
     outcome text DEFAULT 'unmatched'::text NOT NULL,
     applied_at timestamp with time zone,
+    recipient_profile_id uuid,
     CONSTRAINT notification_delivery_events_outcome_check CHECK ((outcome = ANY (ARRAY['applied'::text, 'ignored'::text, 'unmatched'::text])))
 );
 
@@ -18712,7 +20078,7 @@ CREATE TABLE public.notification_events (
     payload jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone,
-    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text, 'review_ask'::text, 'lifecycle_reminder_due'::text, 'lifecycle_diagnostic_unfinished'::text, 'lifecycle_pro_no_plan'::text, 'lifecycle_practising_free'::text])))
+    CONSTRAINT notification_events_type_check CHECK ((event_type = ANY (ARRAY['guardian_linked'::text, 'guardian_unlinked'::text, 'full_length_week'::text, 'full_length_tomorrow'::text, 'exam_score_report_requested'::text, 'renewal_decision_requested'::text, 'qotd_daily'::text, 'study_plan_changed'::text, 'missed_plan_alert'::text, 'back_on_track'::text, 'guardian_daily_digest'::text, 'review_ask'::text, 'lifecycle_reminder_due'::text, 'lifecycle_diagnostic_unfinished'::text, 'lifecycle_pro_no_plan'::text, 'lifecycle_practising_free'::text, 'sat_week_before'::text, 'sat_day_after'::text, 'sat_scores_released'::text, 'email_gate_paused_notice'::text, 'email_gate_guardian_paused'::text])))
 );
 
 
@@ -18728,6 +20094,43 @@ COMMENT ON TABLE public.notification_events IS 'One row per notifiable moment, w
 --
 
 COMMENT ON COLUMN public.notification_events.expires_at IS 'Owner ruling 2026-10-09 (schedule audit Step 2, item 3(1)): the instant after which this event''s email is dropped, never sent late. Set once by the emitter. NULL = no expiry.';
+
+
+--
+-- Name: notification_runtime_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_runtime_config (
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    value_type text NOT NULL,
+    min_value jsonb,
+    max_value jsonb,
+    allowed_values jsonb,
+    owner text NOT NULL,
+    description text NOT NULL,
+    environment text DEFAULT 'all'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by_profile_id uuid,
+    CONSTRAINT notification_runtime_config_environment_check CHECK ((environment = ANY (ARRAY['all'::text, 'development'::text, 'staging'::text, 'production'::text]))),
+    CONSTRAINT notification_runtime_config_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'string'::text, 'boolean'::text, 'array'::text, 'object'::text, 'float'::text])))
+);
+
+
+--
+-- Name: notification_runtime_config_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_runtime_config_history (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    table_name text NOT NULL,
+    key text NOT NULL,
+    old_value jsonb,
+    new_value jsonb NOT NULL,
+    changed_by_profile_id uuid,
+    change_reason text,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
 
 --
@@ -18976,76 +20379,6 @@ ALTER TABLE public.product_reviews ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
     NO MAXVALUE
     CACHE 1
 );
-
-
---
--- Name: profiles; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.profiles (
-    id uuid NOT NULL,
-    email text NOT NULL,
-    full_name text,
-    display_name text,
-    role public.profile_role DEFAULT 'student'::public.profile_role NOT NULL,
-    date_of_birth date,
-    age_years integer,
-    is_under_13 boolean,
-    country_code text,
-    stripe_customer_id text,
-    guardian_email text,
-    guardian_profile_id uuid,
-    student_link_code text,
-    student_link_code_issued_at timestamp with time zone,
-    deleted_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    profile_completed_at timestamp with time zone,
-    marketing_opt_in boolean DEFAULT false NOT NULL,
-    actor_id uuid DEFAULT gen_random_uuid() NOT NULL,
-    analytics_user_id uuid,
-    signup_source text,
-    signup_channel text,
-    signup_campaign text,
-    CONSTRAINT profiles_signup_campaign_check CHECK (((signup_campaign IS NULL) OR (signup_campaign ~ '^[a-z0-9_]{1,40}$'::text))),
-    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'facebook'::text, 'email'::text, 'direct'::text, 'other'::text])))),
-    CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
-);
-
-
---
--- Name: COLUMN profiles.student_link_code_issued_at; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.profiles.student_link_code_issued_at IS 'SCL-080: when the current student_link_code was issued. NULL means no code has been issued yet. TTL comes from auth_runtime_config.student_link_code_ttl_seconds.';
-
-
---
--- Name: COLUMN profiles.analytics_user_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.profiles.analytics_user_id IS 'Doc 07A §7.1: HMAC-SHA256(ANALYTICS_SALT, profile id), UUID-shaped. Written once by the server at onboarding completion; immutable (profiles_analytics_fields_set_once).';
-
-
---
--- Name: COLUMN profiles.signup_source; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.profiles.signup_source IS 'Doc 07A §6.2 / SCL-201 IS 6: first-touch channel at account creation. Written once by the server.';
-
-
---
--- Name: COLUMN profiles.signup_channel; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.profiles.signup_channel IS 'Karl, 2026-10-28: the first-touch channel from the landing URL''s UTM (coarse, allowlisted; no URL). Written once by the server before onboarding; never held for an under-13 profile.';
-
-
---
--- Name: COLUMN profiles.signup_campaign; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.profiles.signup_campaign IS 'Karl, 2026-10-28: the first-touch utm_campaign when it is an allowlisted name (packages/shared/src/signup-attribution.ts), else null. Written once with signup_channel; never held for an under-13 profile.';
 
 
 --
@@ -21257,6 +22590,54 @@ ALTER TABLE ONLY public.distractor_taxonomy_v1
 
 
 --
+-- Name: email_campaign_sends email_campaign_sends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_campaign_sends
+    ADD CONSTRAINT email_campaign_sends_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_campaign_sends email_campaign_sends_resend_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_campaign_sends
+    ADD CONSTRAINT email_campaign_sends_resend_id_key UNIQUE (resend_id);
+
+
+--
+-- Name: email_gate_guardian_pauses email_gate_guardian_pauses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_guardian_pauses
+    ADD CONSTRAINT email_gate_guardian_pauses_pkey PRIMARY KEY (guardian_id, student_id, episode);
+
+
+--
+-- Name: email_gate_resend_outbox email_gate_resend_outbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_resend_outbox
+    ADD CONSTRAINT email_gate_resend_outbox_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: email_gate_state email_gate_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_state
+    ADD CONSTRAINT email_gate_state_pkey PRIMARY KEY (profile_id);
+
+
+--
+-- Name: email_gate_transitions email_gate_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_transitions
+    ADD CONSTRAINT email_gate_transitions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: entitlement_features entitlement_features_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -21582,6 +22963,22 @@ ALTER TABLE ONLY public.notification_messages
 
 ALTER TABLE ONLY public.notification_messages
     ADD CONSTRAINT notification_messages_unique UNIQUE (event_id, recipient_profile_id, channel);
+
+
+--
+-- Name: notification_runtime_config_history notification_runtime_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_runtime_config_history
+    ADD CONSTRAINT notification_runtime_config_history_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_runtime_config notification_runtime_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_runtime_config
+    ADD CONSTRAINT notification_runtime_config_pkey PRIMARY KEY (key);
 
 
 --
@@ -22504,6 +23901,34 @@ CREATE INDEX distractor_clusters_cluster_id_idx ON public.distractor_clusters US
 
 
 --
+-- Name: email_campaign_sends_profile_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_campaign_sends_profile_idx ON public.email_campaign_sends USING btree (profile_id, sent_at);
+
+
+--
+-- Name: email_gate_guardian_pauses_open_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_gate_guardian_pauses_open_idx ON public.email_gate_guardian_pauses USING btree (guardian_id, student_id) WHERE (resumed_at IS NULL);
+
+
+--
+-- Name: email_gate_resend_outbox_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_gate_resend_outbox_due_idx ON public.email_gate_resend_outbox USING btree (next_attempt_at) WHERE (synced_at IS NULL);
+
+
+--
+-- Name: email_gate_transitions_profile_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_gate_transitions_profile_idx ON public.email_gate_transitions USING btree (profile_id, occurred_at);
+
+
+--
 -- Name: entitlements_profile_id_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -23400,6 +24825,13 @@ CREATE UNIQUE INDEX mastery_levels_sort_order_unique ON public.mastery_levels US
 
 
 --
+-- Name: notification_delivery_events_recipient_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_delivery_events_recipient_idx ON public.notification_delivery_events USING btree (recipient_profile_id, event_type, occurred_at) WHERE (recipient_profile_id IS NOT NULL);
+
+
+--
 -- Name: notification_delivery_events_unmatched_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -23775,6 +25207,20 @@ CREATE TRIGGER mobile_auth_config_notify AFTER INSERT OR UPDATE ON public.mobile
 --
 
 CREATE TRIGGER notification_messages_recipient_guard BEFORE UPDATE ON public.notification_messages FOR EACH ROW EXECUTE FUNCTION public.notification_messages_guard_recipient_update();
+
+
+--
+-- Name: notification_runtime_config_history notification_runtime_config_history_no_mutate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER notification_runtime_config_history_no_mutate BEFORE DELETE OR UPDATE ON public.notification_runtime_config_history FOR EACH ROW EXECUTE FUNCTION public.prevent_update_delete();
+
+
+--
+-- Name: notification_runtime_config notification_runtime_config_notify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER notification_runtime_config_notify AFTER INSERT OR UPDATE ON public.notification_runtime_config FOR EACH ROW EXECUTE FUNCTION public.notify_config_change();
 
 
 --
@@ -24443,6 +25889,54 @@ ALTER TABLE ONLY public.distractor_taxonomy_v1
 
 
 --
+-- Name: email_campaign_sends email_campaign_sends_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_campaign_sends
+    ADD CONSTRAINT email_campaign_sends_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_gate_guardian_pauses email_gate_guardian_pauses_guardian_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_guardian_pauses
+    ADD CONSTRAINT email_gate_guardian_pauses_guardian_id_fkey FOREIGN KEY (guardian_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_gate_guardian_pauses email_gate_guardian_pauses_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_guardian_pauses
+    ADD CONSTRAINT email_gate_guardian_pauses_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_gate_resend_outbox email_gate_resend_outbox_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_resend_outbox
+    ADD CONSTRAINT email_gate_resend_outbox_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_gate_state email_gate_state_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_state
+    ADD CONSTRAINT email_gate_state_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_gate_transitions email_gate_transitions_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_gate_transitions
+    ADD CONSTRAINT email_gate_transitions_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: entitlement_runtime_config_history entitlement_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24675,6 +26169,14 @@ ALTER TABLE ONLY public.notification_delivery_events
 
 
 --
+-- Name: notification_delivery_events notification_delivery_events_recipient_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_delivery_events
+    ADD CONSTRAINT notification_delivery_events_recipient_profile_id_fkey FOREIGN KEY (recipient_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
 -- Name: notification_events notification_events_subject_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24696,6 +26198,22 @@ ALTER TABLE ONLY public.notification_messages
 
 ALTER TABLE ONLY public.notification_messages
     ADD CONSTRAINT notification_messages_recipient_profile_id_fkey FOREIGN KEY (recipient_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_runtime_config_history notification_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_runtime_config_history
+    ADD CONSTRAINT notification_runtime_config_history_changed_by_profile_id_fkey FOREIGN KEY (changed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: notification_runtime_config notification_runtime_config_updated_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_runtime_config
+    ADD CONSTRAINT notification_runtime_config_updated_by_profile_id_fkey FOREIGN KEY (updated_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
 
 
 --
@@ -25863,6 +27381,36 @@ ALTER TABLE public.distractor_clusters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.distractor_taxonomy_v1 ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: email_campaign_sends; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_campaign_sends ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: email_gate_guardian_pauses; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_gate_guardian_pauses ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: email_gate_resend_outbox; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_gate_resend_outbox ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: email_gate_state; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_gate_state ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: email_gate_transitions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_gate_transitions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: entitlement_features; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -26093,6 +27641,18 @@ CREATE POLICY notification_messages_select_self ON public.notification_messages 
 
 CREATE POLICY notification_messages_update_self ON public.notification_messages FOR UPDATE TO authenticated USING ((recipient_profile_id = auth.uid())) WITH CHECK ((recipient_profile_id = auth.uid()));
 
+
+--
+-- Name: notification_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_runtime_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notification_runtime_config_history; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notification_runtime_config_history ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: observability_runtime_config; Type: ROW SECURITY; Schema: public; Owner: -
@@ -27850,6 +29410,230 @@ GRANT ALL ON FUNCTION public.diagnostic_projection_repair(p_limit integer) TO se
 
 
 --
+-- Name: FUNCTION email_category(p_kind text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_category(p_kind text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_category(p_kind text) TO service_role;
+
+
+--
+-- Name: FUNCTION email_category_unknown(p_kind text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_category_unknown(p_kind text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_category_unknown(p_kind text) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_active_on(p_profile_id uuid, p_day date, p_timezone text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_active_on(p_profile_id uuid, p_day date, p_timezone text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_active_on(p_profile_id uuid, p_day date, p_timezone text) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_activity_between(p_profile_id uuid, p_from timestamp with time zone, p_to timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_activity_between(p_profile_id uuid, p_from timestamp with time zone, p_to timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_activity_between(p_profile_id uuid, p_from timestamp with time zone, p_to timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_compute(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_compute(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_compute(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_config_bool(p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_config_bool(p_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_config_bool(p_key text) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_config_date(p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_config_date(p_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_config_date(p_key text) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_config_int(p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_config_int(p_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_config_int(p_key text) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_decide(p_profile_id uuid, p_kind text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_decide(p_profile_id uuid, p_kind text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_decide(p_profile_id uuid, p_kind text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_enqueue_mirror(p_profile_id uuid, p_state text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_enqueue_mirror(p_profile_id uuid, p_state text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_enqueue_mirror(p_profile_id uuid, p_state text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_governed_sends(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_governed_sends(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_governed_sends(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_guardian_refresh(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_guardian_refresh(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_guardian_refresh(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_is_internal(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_is_internal(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_is_internal(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_keep_posted(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_keep_posted(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_keep_posted(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_last_activity(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_last_activity(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_last_activity(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_last_capped_send(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_last_capped_send(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_last_capped_send(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_last_click(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_last_click(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_last_click(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_last_sign_in(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_last_sign_in(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_last_sign_in(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_launch_backfill(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_launch_backfill(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_launch_backfill(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_outbox_due(p_now timestamp with time zone, p_limit integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_outbox_due(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_outbox_due(p_now timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_outbox_mark(p_profile_id uuid, p_email_state text, p_ok boolean, p_error text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_outbox_mark(p_profile_id uuid, p_email_state text, p_ok boolean, p_error text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_outbox_mark(p_profile_id uuid, p_email_state text, p_ok boolean, p_error text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_record_plan_days(p_student_id uuid, p_days jsonb, p_timezone text, p_through date, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_record_plan_days(p_student_id uuid, p_days jsonb, p_timezone text, p_through date, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_record_plan_days(p_student_id uuid, p_days jsonb, p_timezone text, p_through date, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_refresh(p_profile_id uuid, p_now timestamp with time zone, p_actor text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_refresh(p_profile_id uuid, p_now timestamp with time zone, p_actor text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_refresh(p_profile_id uuid, p_now timestamp with time zone, p_actor text) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_sweep(p_now timestamp with time zone, p_limit integer, p_after uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_sweep(p_now timestamp with time zone, p_limit integer, p_after uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_sweep(p_now timestamp with time zone, p_limit integer, p_after uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_unengaged_count(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_unengaged_count(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_unengaged_count(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_verdict(p_profile_id uuid, p_kind text, p_state text, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_verdict(p_profile_id uuid, p_kind text, p_state text, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_verdict(p_profile_id uuid, p_kind text, p_state text, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_milestones_notify(p_now timestamp with time zone, p_release_dates jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_milestones_notify(p_now timestamp with time zone, p_release_dates jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_milestones_notify(p_now timestamp with time zone, p_release_dates jsonb) TO service_role;
+
+
+--
 -- Name: FUNCTION emit_notification_event(p_event_id uuid, p_event_type text, p_subject_profile_id uuid, p_recipients jsonb, p_payload jsonb); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29080,6 +30864,14 @@ GRANT ALL ON FUNCTION public.reconcile_deletion_log() TO service_role;
 
 
 --
+-- Name: FUNCTION record_campaign_send(p_email text, p_campaign text, p_variant text, p_sent_at timestamp with time zone, p_resend_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_campaign_send(p_email text, p_campaign text, p_variant text, p_sent_at timestamp with time zone, p_resend_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_campaign_send(p_email text, p_campaign text, p_variant text, p_sent_at timestamp with time zone, p_resend_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION record_deletion_suppression_outcome(p_log_id uuid, p_status text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29093,6 +30885,14 @@ GRANT ALL ON FUNCTION public.record_deletion_suppression_outcome(p_log_id uuid, 
 
 REVOKE ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.record_deletion_verification(p_log_id uuid, p_layers_verified jsonb, p_outcome text) TO service_role;
+
+
+--
+-- Name: FUNCTION record_email_engagement_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone, p_recipients text[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_email_engagement_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone, p_recipients text[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_email_engagement_event(p_provider_event_id text, p_provider_message_id text, p_event_type text, p_occurred_at timestamp with time zone, p_recipients text[]) TO service_role;
 
 
 --
@@ -30101,6 +31901,56 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.distractor_taxonomy_v1 TO serv
 
 
 --
+-- Name: TABLE email_campaign_sends; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.email_campaign_sends TO service_role;
+
+
+--
+-- Name: TABLE email_gate_guardian_pauses; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.email_gate_guardian_pauses TO service_role;
+
+
+--
+-- Name: TABLE email_gate_resend_outbox; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.email_gate_resend_outbox TO service_role;
+
+
+--
+-- Name: TABLE email_gate_state; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.email_gate_state TO service_role;
+
+
+--
+-- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.profiles TO service_role;
+GRANT SELECT ON TABLE public.profiles TO authenticated;
+
+
+--
+-- Name: TABLE email_gate_status; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.email_gate_status TO service_role;
+
+
+--
+-- Name: TABLE email_gate_transitions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.email_gate_transitions TO service_role;
+
+
+--
 -- Name: TABLE entitlement_features; Type: ACL; Schema: public; Owner: -
 --
 
@@ -30973,6 +32823,20 @@ GRANT ALL ON TABLE public.notification_events TO service_role;
 
 
 --
+-- Name: TABLE notification_runtime_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.notification_runtime_config TO service_role;
+
+
+--
+-- Name: TABLE notification_runtime_config_history; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT ON TABLE public.notification_runtime_config_history TO service_role;
+
+
+--
 -- Name: TABLE observability_runtime_config; Type: ACL; Schema: public; Owner: -
 --
 
@@ -31033,14 +32897,6 @@ GRANT SELECT,INSERT,UPDATE ON TABLE public.product_review_prompt_state TO servic
 --
 
 GRANT SELECT,INSERT ON TABLE public.product_reviews TO service_role;
-
-
---
--- Name: TABLE profiles; Type: ACL; Schema: public; Owner: -
---
-
-GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.profiles TO service_role;
-GRANT SELECT ON TABLE public.profiles TO authenticated;
 
 
 --
