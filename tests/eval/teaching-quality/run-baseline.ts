@@ -112,7 +112,7 @@ function workerGitSha(): string {
 }
 
 /** Vertex via @google/genai; the proxy (or ADC) supplies the credential. */
-function vertexGenerate(): GenerateFn {
+export function vertexGenerate(): GenerateFn {
   // Behind the cloud session's proxy, a placeholder token the proxy replaces; on a workstation,
   // the SDK's own Application Default Credentials.
   const proxyAuth = new OAuth2Client();
