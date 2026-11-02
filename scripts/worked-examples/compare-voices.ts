@@ -8,7 +8,7 @@
  * plain English, on the batch writer's machine:
  *   pnpm exec tsx scripts/worked-examples/compare-voices.ts --content <checkout of social> \
  *     --dir content/worked-examples/2026-W45/SATM2CZS1BE --out <folder> \
- *     [--voices af_heart,clone,clone@1.1]
+ *     [--voices am_michael,clone,clone@1.1]
  * A voice is a profile id, or `<profile>@<rate>` to render it at another speaking_rate (Karl,
  * 2026-10-27: the clone at its natural rate and about 10% faster, so he can pick one). The rate
  * he picks then goes into voice.json; the comparison never changes it.

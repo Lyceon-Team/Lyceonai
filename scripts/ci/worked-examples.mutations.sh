@@ -4,7 +4,10 @@
 # Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27;
 # V1-V10 per the OpenVoice addendum, Karl, 2026-10-27; V11-V12 per Karl's speaking-rate ask,
 # 2026-10-27; T2, T18 re-pointed and T21-T26 added per Karl's rulings of 2026-11-02, SCL-265:
-# "Most people…" hooks allowed, and the #social set in the SCL-262 format)
+# "Most people…" hooks allowed, and the #social set in the SCL-262 format; T8 and V9 re-pointed and
+# W1-W19 added per Karl's rulings of 2026-11-02 (later the same day), SCL-267: no captions, the voice
+# never reads the screen, spoken order hook → setup → steps → trap → answer → CTA, the end card
+# "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -30,6 +33,8 @@ FILES=(
   "$MIG"
   "shared/worked-examples/rules.ts"
   "scripts/worked-examples/approval.ts"
+  "scripts/worked-examples/composition.ts"
+  "video-kit/worked-examples/templates/end-card.html"
   "scripts/worked-examples/audio.ts"
   "scripts/worked-examples/content.ts"
   "scripts/worked-examples/generate.ts"
@@ -202,10 +207,11 @@ ts_plant "T6 30-60 s bound broken (|| for &&)" scripts/worked-examples/generate.
 ts_plant "T7 safe area: the right edge unchecked" scripts/worked-examples/layout-check.ts \
   "b.right > safe.right + 1 ||" "" \
   "the safe area is x 71..912"
+# T8 re-pointed 2026-11-02 (SCL-267): the end card's ".url" rule is now ".brand-name".
 ts_plant "T8 ruled lines on the paper" video-kit/worked-examples/templates/kit.css \
-  ".url { display: block;" \
+  ".brand-name { display: block;" \
   "#root { background-image: repeating-linear-gradient(#FFFDF6 0 40px, #C8D8E8 40px 42px); }
-.url { display: block;" \
+.brand-name { display: block;" \
   "the paper is one flat colour"
 ts_plant "T9 the pixel check counts nothing" scripts/worked-examples/layout-check.ts \
   "      n++;" "      n += 0;" \
@@ -293,9 +299,10 @@ ts_plant "V7 a reference inside the repository is accepted" scripts/worked-examp
 ts_plant "V8 reference recordings no longer ignored by git" .gitignore \
   "*.reference.wav" "# reference.wav" \
   "git ignores reference recordings and none is tracked"
+# V9 re-pointed 2026-11-02 (SCL-267): the default is am_michael, no longer af_heart.
 ts_plant "V9 the clone made the default before Karl picks it" video-kit/worked-examples/voice.json \
-  '"default_profile": "af_heart",' '"default_profile": "clone",' \
-  "default and fallback are the /brag voice"
+  '"default_profile": "am_michael",' '"default_profile": "clone",' \
+  "default and fallback are am_michael"
 ts_plant "V10 CI installs the clone's Python stack" .github/workflows/worked-example-daily.yml \
   "      - name: Install dependencies" "      - name: Clone stack
         run: pip install -r scripts/worked-examples/openvoice/requirements.txt
@@ -308,6 +315,74 @@ ts_plant "V11 the speaking rate never reaches the /brag voice" scripts/worked-ex
 ts_plant "V12 a rate change keeps the old voicing" scripts/worked-examples/voice.ts \
   "    (previous.speaking_rate ?? 1) === speakingRate" "    true" \
   "a rate change re-voices the batch"
+
+echo "=== TS: script and voice (SCL-267, Karl's rulings 2026-11-02) ==="
+ts_plant "W1 S1 the verbatim rule finds nothing" shared/worked-examples/rules.ts \
+  "      if (run !== null)" "      if (false)" \
+  "a setup that reads the question stem is refused"
+ts_plant "W2 S1 a run of six shared words let through (seven needed)" shared/worked-examples/rules.ts \
+  "export const VERBATIM_RUN_WORDS = 6;" "export const VERBATIM_RUN_WORDS = 7;" \
+  "S1 finds a run of six shared words, and not five"
+ts_plant "W3 S1 not run by the content check" shared/worked-examples/rules.ts \
+  "  out.push(...verbatimProblems(example, q));" "" \
+  "a setup that reads the question stem is refused"
+ts_plant "W4 S1 the trap notepad left out of the on-screen text" shared/worked-examples/rules.ts \
+  '    ...example.trap.notepad.map((text, k) => ({' '    ...[].map((text: string, k: number) => ({' \
+  "S1 checks every spoken line against every on-screen text"
+ts_plant "W5 S2 the spoken hook may read the hook line" shared/worked-examples/rules.ts \
+  "  if (echo) out.push(echo);" "" \
+  "S2 refuses a spoken hook that is the on-screen hook line read aloud"
+ts_plant "W6 the old order: answer spoken before the trap" scripts/worked-examples/composition.ts \
+  '    { key: "trap", text: example.trap.voice },
+    { key: "answer", text: example.answer.voice },
+    { key: "outro", text: outroText },' \
+  '    { key: "answer", text: example.answer.voice },
+    { key: "trap", text: example.trap.voice },
+    { key: "outro", text: outroText },' \
+  "the spoken order is hook → setup → steps → trap → answer → call to action"
+ts_plant "W7 the trap scene runs over the answer" scripts/worked-examples/composition.ts \
+  '    { key: "trap", start: tTrap, end: tAnswer },' '    { key: "trap", start: tTrap, end: tEnd },' \
+  "the spoken order is hook → setup → steps → trap → answer → call to action"
+ts_plant "W8 voice lines placed by position, not key (the W45 manifests misplaced)" scripts/worked-examples/composition.ts \
+  "  const lines = script.map((s) => byKey.get(s.key));" "  const lines = given;" \
+  "a manifest voiced before the ruling (answer before trap) places every line in the new order"
+ts_plant "W9 committed lines matched by position, not key" scripts/worked-examples/content.ts \
+  "    const line = manifest.lines.find((l) => l.key === s.key);" \
+  "    const line = manifest.lines[script.indexOf(s)];" \
+  "a manifest voiced before the ruling (answer before trap) places every line in the new order"
+ts_plant "W10 a caption track back in the composition" scripts/worked-examples/composition.ts \
+  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),' \
+  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),
+    `<section id="cap-hook-0" class="clip cap" data-start="0" data-duration="1" data-track-index="5"><div class="cap-box">Up</div></section>`,' \
+  "no caption track"
+ts_plant "W11 the end card shows lyceon.ai" video-kit/worked-examples/templates/end-card.html \
+  '<div class="brand-name">Lyceon SAT Prep</div>' '<div class="brand-name">lyceon.ai</div>' \
+  "the end card reads Lyceon SAT Prep"
+ts_plant "W12 the call to action says lyceon dot A.I." video-kit/worked-examples/voice.json \
+  "\"outro_text\": \"Follow, there's one of these every day.\"," \
+  "\"outro_text\": \"Follow, there's one of these every day. Lyceon dot A.I.\"," \
+  "the end card reads Lyceon SAT Prep and the call to action never says lyceon.ai"
+ts_plant "W13 the default voice back to af_heart" video-kit/worked-examples/voice.json \
+  '"default_profile": "am_michael",' '"default_profile": "af_heart",' \
+  "default and fallback are am_michael"
+ts_plant "W14 the engine given Lyceon unrespelled" scripts/worked-examples/voice.ts \
+  "    spokenBrandName(text)," "    text," \
+  "authors write Lyceon; the engine is given the respelling"
+ts_plant "W15 the limiter dropped from the loudness step" scripts/worked-examples/voice.ts \
+  ',alimiter=limit=${limiterCeiling(target)}:level=disabled`,' '`,' \
+  "pass 2 pads, applies the measured loudnorm, trims back, then limits"
+ts_plant "W16 pass 2 ignores pass 1's measurement (one pass)" scripts/worked-examples/voice.ts \
+  '${loudnormFilter(target, measured, "summary")}' '${loudnormFilter(target, null, "summary")}' \
+  "pass 2 pads, applies the measured loudnorm, trims back, then limits"
+ts_plant "W17 short lines not padded (the dynamic fallback lost)" scripts/worked-examples/voice.ts \
+  '`apad=whole_dur=${pad},' '`' \
+  "pass 2 pads, applies the measured loudnorm, trims back, then limits"
+ts_plant "W18 the limiter at the true-peak ceiling (no headroom for overshoot)" scripts/worked-examples/voice.ts \
+  "export const LIMITER_HEADROOM_DB = 0.5;" "export const LIMITER_HEADROOM_DB = 0;" \
+  "the limiter sits 0.5 dB under the ceiling"
+ts_plant "W19 loudnorm's measurement misread" scripts/worked-examples/voice.ts \
+  "  const start = stderr.lastIndexOf(\"{\");" "  const start = stderr.indexOf(\"[\");" \
+  "reads loudnorm's measurement, and none from a silent line"
 
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"
