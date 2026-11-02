@@ -1,14 +1,18 @@
 """Video pilot D2 (SATM2BVZSMV): the circle (x − 2)² + (y − 5)² = 13² against the x-axis.
 
-@spec [owner brief "Video tools pilot" (Karl, 2026-11-02) Part D2, Video 3 and Video 4: "one
-      geometry or graph worked example"; Part D1: "keeping the D2 video reproducible"]
-      | @implemented [2026-11-02, moved out of scene.py unchanged 2026-11-02 (D1)]
+@spec [owner brief "Video tools pilot" (Karl, 2026-11-02) Part D2, Video 3: "one geometry or graph
+      worked example"; D3 (the same script in Chatterbox); Part D1: "keeping the D2 video
+      reproducible"; Karl's script and voice rulings for every pilot video (2026-11-02, SCL-267):
+      the flow hook → setup → key move → trap → answer and quick check → call to action]
+      | @implemented [2026-11-02, moved out of scene.py 2026-11-02 (D1), re-ordered to the SCL-267
+      flow 2026-11-02]
 
-plain English: the D2 drawing and its choreography, moved verbatim from scene.py when the scene
-was split so each question has its own module: the recap, the axes, the circle and its centre,
-the radius, the drop to the x-axis, the two right triangles, the two crossing points, the chord,
-then under "The trap:" the diameter against the chord. Only the names changed (self → scene, and
-the notepad and recap helpers now live on the scene).
+plain English: the D2 drawing and its choreography, in the spoken order. Hook and setup over the
+open card; the four steps draw the circle and its centre with the radius, the drop to the x-axis,
+the two right triangles, and the two crossing points; the trap clears the triangle and draws the
+diameter under "The trap:"; the answer brings the steps and the triangle back, draws the chord, and
+writes and circles the answer while the quick check is spoken; then the shared end card. The same
+choreography as #1400's single-file scene, with self → scene.
 """
 
 from __future__ import annotations
@@ -41,11 +45,10 @@ def run(scene) -> None:
     b = scene.b
     lines, keys = scene.lines, scene.keys
     hook, stem, opts = scene.open_card()
-
     scene.line("hook", lines["hook"], keys, lambda d: None)
     scene.line("question", lines["question"], keys, lambda d: None)
 
-    # Work: recap, the figure, the notepad.
+    # Work: recap, the figure, the notepad; one step per line (the key move and why).
     recap, _ = scene.recap()
     fig = Figure(scene, top=175 + 43 * len(recap[0]) + 70)
 
@@ -59,48 +62,30 @@ def run(scene) -> None:
         scene.play(Create(fig.radius), FadeIn(fig.radius_label), run_time=0.5)
 
     def step2(d: float) -> None:
-        scene.play(fig.axes[0].animate.set_color(scene.hi).set_stroke(width=8), run_time=0.4)
+        scene.play(fig.axes[0].animate.set_color(scene.red).set_stroke(width=8), run_time=0.4)
         scene.play(Create(fig.drop), FadeIn(fig.drop_label), Write(notepad_lines[1]), run_time=min(1.6, d * 0.4))
 
     def step3(d: float) -> None:
-        scene.play(Write(notepad_lines[2]), run_time=min(1.4, d * 0.35))
         scene.play(Create(fig.halves), Create(fig.hyps), FadeIn(fig.half_labels), run_time=min(1.4, d * 0.35))
+        scene.play(Write(notepad_lines[2]), run_time=min(1.4, d * 0.35))
 
     def step4(d: float) -> None:
         scene.play(FadeIn(fig.points), FadeIn(fig.point_labels), Write(notepad_lines[3]), run_time=min(1.6, d * 0.4))
 
-    rings: list[Ellipse] = []
-
-    def answer(d: float) -> None:
-        scene.play(Create(fig.chord), FadeIn(fig.chord_label), run_time=0.5)
-        scene.play(Write(answer_line), run_time=min(1.2, d * 0.4))
-        ring = Ellipse(
-            width=answer_line.width + px(40), height=answer_line.height + px(46),
-            stroke_color=scene.red, stroke_width=7,
-        ).move_to(answer_line)
-        rings.append(ring)
-        scene.play(Create(ring), run_time=0.35)
-
     notepad_lines = [notepad(k, s) for k, s in enumerate(b["steps"])]
-    answer_line = notepad(len(b["steps"]), b["answer"]["notepad"], scene.red, 80)
-    answer_line.shift(RIGHT * px(20))  # room for the ring inside the safe column
     step_fns = [step1, step2, step3, step4]
-    for k, fn in enumerate(step_fns[: len(b["steps"])]):
+    if len(b["steps"]) != len(step_fns):
+        raise RuntimeError(f"this drawing has {len(step_fns)} steps; the example has {len(b['steps'])}")
+    for k, fn in enumerate(step_fns):
         scene.line(f"step-{k + 1}", lines[f"step-{k + 1}"], keys, fn)
-    scene.line("answer", lines["answer"], keys, answer)
 
-    # Trap: the diameter against the chord, and "The trap:" with its lines.
+    # Trap ("here's where people slip"): the diameter against the chord, under "The trap:".
     trap_head = notepad(0, b["trap"]["heading"], scene.red, 84)
     trap_lines = [notepad(k + 1, s) for k, s in enumerate(b["trap"]["notepad"])]
+    triangle = [fig.half_labels, fig.hyps, fig.halves, fig.drop, fig.drop_label, fig.radius, fig.radius_label]
 
     def trap(d: float) -> None:
-        scene.play(
-            *[FadeOut(m) for m in [*notepad_lines, answer_line, *rings]],
-            FadeOut(fig.half_labels), FadeOut(fig.hyps), FadeOut(fig.halves),
-            FadeOut(fig.drop), FadeOut(fig.drop_label), FadeOut(fig.radius), FadeOut(fig.radius_label),
-            FadeOut(fig.centre[1]),
-            run_time=0.3,
-        )
+        scene.play(*[FadeOut(m) for m in [*notepad_lines, *triangle]], FadeOut(fig.centre[1]), run_time=0.3)
         scene.play(Write(trap_head), Create(fig.diameter), FadeIn(fig.diameter_label), run_time=0.9)
         each = max(0.6, (d - 1.4) / max(len(trap_lines), 1) - 0.2)
         for t in trap_lines:
@@ -108,6 +93,27 @@ def run(scene) -> None:
             scene.wait(max(0.0, each - 1.2))
 
     scene.line("trap", lines["trap"], keys, trap)
+
+    # Answer and quick check: the steps back, the chord drawn, the answer written and circled.
+    answer_line = notepad(len(b["steps"]), b["answer"]["notepad"], scene.red, 80)
+    answer_line.shift(RIGHT * px(20))  # room for the ring inside the safe column
+    ring = Ellipse(
+        width=answer_line.width + px(40), height=answer_line.height + px(46),
+        stroke_color=scene.red, stroke_width=7,
+    ).move_to(answer_line)
+
+    def answer(d: float) -> None:
+        scene.play(
+            FadeOut(trap_head), *[FadeOut(t) for t in trap_lines],
+            FadeOut(fig.diameter), FadeOut(fig.diameter_label), run_time=0.3,
+        )
+        scene.play(*[FadeIn(m) for m in notepad_lines], FadeIn(fig.halves), FadeIn(fig.hyps),
+                   FadeIn(fig.half_labels), run_time=0.4)
+        scene.play(Create(fig.chord), FadeIn(fig.chord_label), run_time=0.5)
+        scene.play(Write(answer_line), run_time=min(1.2, d * 0.3))
+        scene.play(Create(ring), run_time=0.35)
+
+    scene.line("answer", lines["answer"], keys, answer)
     scene.outro()
 
 

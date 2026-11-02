@@ -13,7 +13,7 @@ plain English:
   Stopwatch: "By hand  12.3 s" style readout whose value is the scene's own clock (renderer.time)
   minus the moment start() was called, frozen at stop(). Every digit is drawn up front and shown
   by opacity, because Manim draws a play's moving mobjects from the list it takes when the play
-  starts (the captions work the same way); the value shown is floored to tenths, and stop()
+  starts; the value shown is floored to tenths, and stop()
   returns exactly that shown value, which the scene logs.
 
 edge cases: a function is plotted only where it is defined and inside the window, as one piece

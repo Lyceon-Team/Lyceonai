@@ -12,7 +12,7 @@ neither imports the other (manim loads scene.py under its own module name, so a 
 scene.py would run a second copy of it).
 
 ON_SCREEN records every string `text` sets, in order, so the scene's log carries everything put
-on screen (captions included) for check.ts's word guard. It is a superset of what is shown: wrap's
+on screen for check.ts (S1 on what was drawn, and the word guard). It is a superset of what is shown: wrap's
 trial lines are set to be measured. Nothing here logs.
 """
 

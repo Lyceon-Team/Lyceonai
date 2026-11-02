@@ -7,7 +7,8 @@
 # "Most people…" hooks allowed, and the #social set in the SCL-262 format; T8 and V9 re-pointed and
 # W1-W19 added per Karl's rulings of 2026-11-02 (later the same day), SCL-267: no captions, the voice
 # never reads the screen, spoken order hook → setup → steps → trap → answer → CTA, the end card
-# "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation)
+# "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation; W24 per the
+# owner brief "Video tools pilot" D3, Karl, 2026-11-02: Chatterbox's own respelling, same table)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -397,6 +398,12 @@ ts_plant "W22 trap opener exemption dropped" shared/worked-examples/rules.ts \
 ts_plant "W23 whole trap line exempted" shared/worked-examples/rules.ts \
   '    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),' '    "",' \
   "the people-slip opener is not a claim about people; anything after it still is"
+
+# The video pilots' Chatterbox engine (owner brief "Video tools pilot" D3, Karl, 2026-11-02) takes
+# its "Lyceon" respelling from voice.ts's one table.
+ts_plant "W24 chatterbox given the kokoro respelling" scripts/worked-examples/voice.ts \
+  '  chatterbox: "Lie-see-on",' '  chatterbox: "Lysee-ahn",' \
+  "each engine gets its own respelling from the one table"
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then echo "WORKED EXAMPLE MUTATIONS: FAIL"; exit 1; fi

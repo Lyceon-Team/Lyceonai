@@ -4,13 +4,17 @@
       Math question solved ONLY by graphing: plot the function(s) in Manim, read the intersection
       ... and map it to the answer"; "recompute the maths and confirm the graph read-off is exact";
       owner ruling (Karl, 2026-11-02): the graph is drawn by us and called "the graphing method" /
-      "graphing calculator", with no third-party calculator shown or named] | @implemented [2026-11-02]
+      "graphing calculator", with no third-party calculator shown or named; Karl's script and voice
+      rulings for every pilot video (2026-11-02, SCL-267): the flow hook → setup → key move → trap
+      → answer and quick check → call to action] | @implemented [2026-11-02, re-ordered to the
+      SCL-267 flow 2026-11-02]
 
 plain English: each side of the equation is graphed as its own function, y = √(6x + 19) (ink) and
 y = x + 2 (red), on a square grid from x = −4 to 7 and y = −2 to 9. They cross once, at the
-lattice point (5, 7), which the dashed guides read off to both axes; x = 5 is the only solution,
-so the answer is C) {5}. Under "The trap:" the graph shows why squaring misleads: at x = −3 the
-curve is at 1 and the line at −1, a gap of 2, so −3 is not a crossing and B) {−3, 5} is wrong.
+lattice point (5, 7), which the dashed guides read off to both axes; x = 5 is the only solution.
+Under "The trap:" the graph shows why squaring misleads: at x = −3 the curve is at 1 and the line
+at −1, a gap of 2, so −3 is not a crossing and B) {−3, 5} is wrong. Then the steps and guides come
+back and C) {5} is written and circled while the quick check is spoken.
 
 The maths is checked before anything is drawn (assert_maths): squaring gives x² − 2x − 15 = 0,
 discriminant 64, roots 5 and −3; only x = 5 keeps x + 2 ≥ 0 (a square root is never negative), and
@@ -92,23 +96,11 @@ def run(scene) -> None:
     def step4(d: float) -> None:
         scene.play(Write(notepad_lines[3]), run_time=min(1.4, d * 0.4))
 
-    rings: list[Ellipse] = []
-
-    def answer(d: float) -> None:
-        scene.play(Write(answer_line), run_time=min(1.2, d * 0.4))
-        ring = Ellipse(
-            width=answer_line.width + px(40), height=answer_line.height + px(46),
-            stroke_color=red, stroke_width=7,
-        ).move_to(answer_line)
-        rings.append(ring)
-        scene.play(Create(ring), run_time=0.35)
-
     step_fns = [step1, step2, step3, step4]
     if len(b["steps"]) != len(step_fns):
         raise RuntimeError(f"this drawing has {len(step_fns)} steps; the example has {len(b['steps'])}")
     for k, fn in enumerate(step_fns):
         scene.line(f"step-{k + 1}", lines[f"step-{k + 1}"], keys, fn)
-    scene.line("answer", lines["answer"], keys, answer)
 
     # Trap: at x = −3 the curve is at 1 and the line at −1, so the graphs do not meet there.
     trap_head = notepad(0, b["trap"]["heading"], red, 84)
@@ -121,7 +113,7 @@ def run(scene) -> None:
     )
 
     def trap(d: float) -> None:
-        scene.play(*[FadeOut(m) for m in [*notepad_lines, answer_line, *rings]], FadeOut(guides), run_time=0.3)
+        scene.play(*[FadeOut(m) for m in notepad_lines], FadeOut(guides), run_time=0.3)
         scene.play(Write(trap_head), run_time=0.6)
         scene.play(Write(trap_lines[0]), run_time=min(1.2, d * 0.15))
         scene.play(FadeIn(on_curve), FadeIn(on_line), Create(gap), FadeIn(gap_labels), Write(trap_lines[1]),
@@ -130,5 +122,19 @@ def run(scene) -> None:
             scene.play(Write(t), run_time=min(1.2, d * 0.15))
 
     scene.line("trap", lines["trap"], keys, trap)
-    scene.outro()
 
+    # Answer and quick check: the steps and the read-off back, then C) written and circled.
+    ring = Ellipse(
+        width=answer_line.width + px(40), height=answer_line.height + px(46),
+        stroke_color=red, stroke_width=7,
+    ).move_to(answer_line)
+
+    def answer(d: float) -> None:
+        scene.play(FadeOut(trap_head), *[FadeOut(t) for t in trap_lines], FadeOut(on_curve), FadeOut(on_line),
+                   FadeOut(gap), FadeOut(gap_labels), run_time=0.3)
+        scene.play(*[FadeIn(m) for m in notepad_lines], FadeIn(guides), run_time=0.4)
+        scene.play(Write(answer_line), run_time=min(1.2, d * 0.3))
+        scene.play(Create(ring), run_time=0.35)
+
+    scene.line("answer", lines["answer"], keys, answer)
+    scene.outro()

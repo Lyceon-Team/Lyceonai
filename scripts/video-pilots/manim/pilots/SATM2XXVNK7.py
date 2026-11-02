@@ -6,7 +6,9 @@
       durations of each segment as shown in the video, so the timer runs on the video clock. Don't
       claim real-world solve times."; owner ruling (Karl, 2026-11-02): the graph is drawn by us and
       called "the graphing method" / "graphing calculator", with no third-party calculator shown or
-      named] | @implemented [2026-11-02]
+      named; Karl's script and voice rulings for every pilot video (2026-11-02, SCL-267): the flow
+      hook → setup → key move → trap → answer and quick check → call to action] | @implemented
+      [2026-11-02, trap before the answer (SCL-267 flow) 2026-11-02; the stopwatches unchanged]
 
 plain English: two stopwatches sit under the question, "By hand" and "Graphing". The by-hand
 stopwatch starts as step 1's voice starts and stops as step 4's voice ends (set equal, collect,
@@ -137,20 +139,6 @@ def run(scene) -> None:
     scene.line("step-5", lines["step-5"], keys, graph_step1)
     scene.line("step-6", lines["step-6"], keys, graph_step2, on_end=stop("graphing", graphing))
 
-    rings: list[Ellipse] = []
-
-    def answer(d: float) -> None:
-        by_hand.dim(1)
-        scene.play(Write(answer_line), run_time=min(1.2, d * 0.4))
-        ring = Ellipse(
-            width=answer_line.width + px(40), height=answer_line.height + px(46),
-            stroke_color=red, stroke_width=7,
-        ).move_to(answer_line)
-        rings.append(ring)
-        scene.play(Create(ring), run_time=0.35)
-
-    scene.line("answer", lines["answer"], keys, answer)
-
     # Trap: choice C's points sit on the line; the parabola is at −7 there.
     trap_head = graph_line(0, b["trap"]["heading"], red, 74)
     trap_lines = [graph_line(k + 1, s) for k, s in enumerate(b["trap"]["notepad"])]
@@ -161,13 +149,27 @@ def run(scene) -> None:
     )
 
     def trap(d: float) -> None:
-        scene.play(*[FadeOut(m) for m in [*graph_lines, answer_line, *rings]], FadeOut(guides),
-                   FadeOut(crossing_labels), run_time=0.3)
+        scene.play(*[FadeOut(m) for m in graph_lines], FadeOut(guides), FadeOut(crossing_labels), run_time=0.3)
         scene.play(Write(trap_head), run_time=0.6)
         scene.play(Write(trap_lines[0]), run_time=min(1.2, d * 0.2))
         scene.play(FadeIn(c_points, scale=1.4), FadeIn(c_labels), *[Write(t) for t in trap_lines[1:]],
                    run_time=min(1.4, d * 0.25))
 
     scene.line("trap", lines["trap"], keys, trap)
-    scene.outro()
 
+    # Answer and quick check: the crossings back, both stopwatches at full, A) written and circled.
+    ring = Ellipse(
+        width=answer_line.width + px(40), height=answer_line.height + px(46),
+        stroke_color=red, stroke_width=7,
+    ).move_to(answer_line)
+
+    def answer(d: float) -> None:
+        by_hand.dim(1)
+        scene.play(FadeOut(trap_head), *[FadeOut(t) for t in trap_lines], FadeOut(c_points), FadeOut(c_labels),
+                   run_time=0.3)
+        scene.play(*[FadeIn(m) for m in graph_lines], FadeIn(guides), FadeIn(crossing_labels), run_time=0.4)
+        scene.play(Write(answer_line), run_time=min(1.2, d * 0.3))
+        scene.play(Create(ring), run_time=0.35)
+
+    scene.line("answer", lines["answer"], keys, answer)
+    scene.outro()
