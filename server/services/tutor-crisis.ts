@@ -331,6 +331,8 @@ type PreparedClassifier = { modelId: string; models: ClassifierModels };
 
 // One client per process (per project and location), built on first use. Each GoogleGenAI owns
 // its GoogleAuth, so a client built per call minted a fresh OAuth token on every attempt.
+// A key rotated within the same project is picked up on the next process start; until then a
+// failing attempt takes the normal path (one retry, then Layer 1 stands and review).
 let cachedClient: { key: string; models: ClassifierModels } | null = null;
 
 /**

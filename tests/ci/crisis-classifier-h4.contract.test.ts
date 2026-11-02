@@ -196,4 +196,35 @@ describe("crisis classifier, H4", () => {
       "classifier_attempt_failed",
     ]);
   });
+
+  it("a timed-out Layer 2 with no Layer 1 floor still fails closed (B1.5)", async () => {
+    vi.useFakeTimers();
+    // Layer 1: the signature table reads fine and holds no crisis rows.
+    const empty = { data: [], error: null };
+    supabaseFrom.mockImplementation(() => ({
+      select: () => ({
+        or: () => ({ eq: async () => empty }),
+        eq: () => ({ eq: async () => empty }),
+      }),
+    }));
+    generateContent.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never answers */
+        }),
+    );
+    const { runCrisisClassifier, CRISIS_CLASSIFIER_TIMEOUT_MS } =
+      await import("../../server/services/tutor-crisis");
+
+    const pending = runCrisisClassifier("a message");
+    await vi.advanceTimersByTimeAsync(2 * CRISIS_CLASSIFIER_TIMEOUT_MS);
+    const result = await pending;
+
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(result.crisis).toBe(true);
+    if (result.crisis) {
+      expect(result.source).toBe("classifier_degraded_no_floor");
+      expect(result.forceReview).toBe(true);
+    }
+  });
 });
