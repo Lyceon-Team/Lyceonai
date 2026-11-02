@@ -6334,6 +6334,7 @@ DECLARE
   v_today     date;
   v_state     text;
   v_reason    text;
+  v_launch_reason text;
 BEGIN
   SELECT p.id, p.role::text AS role, p.created_at INTO v_profile
     FROM public.profiles p WHERE p.id = p_profile_id;
@@ -6343,6 +6344,14 @@ BEGIN
   SELECT * INTO v_row FROM public.email_gate_state g WHERE g.profile_id = p_profile_id;
 
   v_activity := public.email_gate_last_activity(p_profile_id, p_now);
+
+  -- Karl's launch ruling (2026-11-02, revised): internal and test accounts, and accounts quiet
+  -- since the live launch, are paused (students and guardians alike).
+  v_launch_reason := public.email_gate_launch_pause_reason(p_profile_id, p_now);
+  IF v_launch_reason IS NOT NULL THEN
+    RETURN jsonb_build_object('state', 'paused', 'reason', v_launch_reason, 'last_active', v_activity,
+                              'unengaged', NULL, 'on_plan', false, 'plan_run', 0);
+  END IF;
 
   -- A guardian: paused while every actively linked student's digest is paused for them.
   IF v_profile.role = 'guardian' THEN
@@ -6432,6 +6441,27 @@ BEGIN
   RETURN (v #>> '{}')::boolean;
 END;
 $$;
+
+
+--
+-- Name: email_gate_config_date(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_config_date(p_key text) RETURNS date
+    LANGUAGE plpgsql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v jsonb;
+BEGIN
+  SELECT c.value INTO v FROM public.notification_runtime_config c
+   WHERE c.key = p_key AND c.value_type = 'string';
+  IF v IS NULL OR jsonb_typeof(v) <> 'string' OR (v #>> '{}') !~ '^\d{4}-\d{2}-\d{2}$' THEN
+    RAISE EXCEPTION 'email_gate_config_date: missing or invalid key %', p_key USING ERRCODE = 'P0002';
+  END IF;
+  RETURN (v #>> '{}')::date;
+END;
+$_$;
 
 
 --
@@ -6595,6 +6625,8 @@ BEGIN
        AND s.deleted_at IS NULL
        AND public.guardian_daily_digest_email_enabled(g.id)
        AND public.guardian_view_decision(g.id, s.id) = 'allow'
+       -- Karl's launch ruling (2026-11-02): no pause email to a guardian the ruling paused.
+       AND public.email_gate_launch_pause_reason(g.id, p_now) IS NULL
        AND NOT EXISTS (SELECT 1 FROM public.email_gate_guardian_pauses gp
                         WHERE gp.guardian_id = g.id AND gp.student_id = s.id AND gp.resumed_at IS NULL)
      ORDER BY 1, 2
@@ -6660,6 +6692,45 @@ BEGIN
   END LOOP;
 
   RETURN jsonb_build_object('opened', v_opened, 'closed', v_closed);
+END;
+$$;
+
+
+--
+-- Name: email_gate_is_internal(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_is_internal(p_profile_id uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_email  text;
+  v_local  text;
+  v_domain text;
+  v_list   jsonb;
+BEGIN
+  SELECT lower(btrim(p.email)) INTO v_email FROM public.profiles p WHERE p.id = p_profile_id;
+  IF v_email IS NULL OR position('@' IN v_email) = 0 THEN
+    RETURN false;
+  END IF;
+  v_local := split_part(v_email, '@', 1);
+  v_domain := split_part(v_email, '@', 2);
+  IF position('test' IN v_local) > 0 THEN
+    RETURN true;
+  END IF;
+  SELECT c.value INTO v_list FROM public.notification_runtime_config c
+   WHERE c.key = 'email_gate_internal_denylist' AND c.value_type = 'array';
+  IF v_list IS NULL OR jsonb_typeof(v_list) <> 'array' THEN
+    RAISE EXCEPTION 'email_gate_is_internal: missing or invalid key email_gate_internal_denylist'
+      USING ERRCODE = 'P0002';
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM jsonb_array_elements_text(v_list) AS e(entry)
+     WHERE lower(btrim(e.entry)) = v_email
+        OR (position('@' IN ltrim(lower(btrim(e.entry)), '@')) = 0
+            AND (v_domain = ltrim(lower(btrim(e.entry)), '@')
+                 OR v_domain LIKE '%.' || ltrim(lower(btrim(e.entry)), '@'))));
 END;
 $$;
 
@@ -6759,6 +6830,66 @@ BEGIN
   RETURN v;
 END;
 $_$;
+
+
+--
+-- Name: email_gate_launch_backfill(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_launch_backfill(p_now timestamp with time zone DEFAULT now()) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  r     record;
+  v_n   integer := 0;
+BEGIN
+  FOR r IN
+    SELECT p.id FROM public.profiles p
+     WHERE p.role::text IN ('student', 'guardian') AND p.deleted_at IS NULL
+       AND public.email_gate_launch_pause_reason(p.id, p_now) IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM public.email_gate_state g
+                        WHERE g.profile_id = p.id AND g.state = 'paused')
+     ORDER BY p.id
+  LOOP
+    PERFORM public.email_gate_refresh(r.id, p_now, 'backfill');
+    v_n := v_n + 1;
+  END LOOP;
+  RETURN v_n;
+END;
+$$;
+
+
+--
+-- Name: email_gate_launch_pause_reason(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone) RETURNS text
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_launch  timestamptz;
+  v_created timestamptz;
+  v_wake    timestamptz;
+BEGIN
+  IF public.email_gate_is_internal(p_profile_id) THEN
+    RETURN 'internal_account';
+  END IF;
+  v_launch := public.email_gate_config_date('email_gate_launch_date')::timestamp AT TIME ZONE 'America/Chicago';
+  -- Before the launch itself, "quiet since launch" means nothing.
+  IF p_now < v_launch THEN
+    RETURN NULL;
+  END IF;
+  SELECT p.created_at INTO v_created FROM public.profiles p WHERE p.id = p_profile_id;
+  v_wake := GREATEST(public.email_gate_last_activity(p_profile_id, p_now),
+                     (SELECT g.resumed_at FROM public.email_gate_state g WHERE g.profile_id = p_profile_id));
+  IF v_wake IS NULL THEN
+    RETURN CASE WHEN v_created < v_launch THEN 'pre_launch_inactive' END;
+  END IF;
+  RETURN CASE WHEN v_wake < v_launch THEN 'pre_launch_inactive' END;
+END;
+$$;
 
 
 --
@@ -6921,7 +7052,8 @@ BEGIN
       INTO v_profile
       FROM public.profiles p WHERE p.id = p_profile_id;
     IF v_profile.role = 'student' AND v_profile.deleted_at IS NULL AND v_profile.of_age
-       AND p_actor <> 'backfill' THEN
+       AND p_actor <> 'backfill'
+       AND v_reason NOT IN ('pre_launch_inactive', 'internal_account') THEN
       SELECT public.study_profile_effective_exam_date(sp.target_exam_dates, (p_now AT TIME ZONE sp.timezone)::date)
         INTO v_test
         FROM public.student_study_profile sp WHERE sp.student_id = p_profile_id;
@@ -7024,6 +7156,11 @@ BEGIN
   IF NOT FOUND OR v_profile.deleted_at IS NOT NULL THEN
     RETURN jsonb_build_object('allow', false, 'reason', 'no_recipient');
   END IF;
+  -- Karl's launch ruling (2026-11-02): internal and test accounts get no governed or milestone
+  -- email (account, billing and link mail still go).
+  IF public.email_gate_is_internal(p_profile_id) THEN
+    RETURN jsonb_build_object('allow', false, 'reason', 'internal_account');
+  END IF;
   -- Under-13 handling is unchanged for the existing governed emails; the new marketing-shaped
   -- kinds (manual campaigns, milestones) are 13+ only (Doctrine rule 7).
   IF (p_kind = 'manual_campaign' OR v_category = 'milestone') AND NOT v_profile.adult_or_13 THEN
@@ -7083,6 +7220,8 @@ BEGIN
        AND COALESCE(public.marketing_opt_in_age_eligible(p.date_of_birth), false)
        AND NOT EXISTS (SELECT 1 FROM public.account_deletion_requests x
                         WHERE x.profile_id = p.id AND x.status = 'pending')
+       -- Karl's launch ruling (2026-11-02): never to internal or test accounts.
+       AND NOT public.email_gate_is_internal(p.id)
      ORDER BY p.id, d.test_date
   LOOP
     v_today := (p_now AT TIME ZONE r.timezone)::date;
@@ -29306,6 +29445,14 @@ GRANT ALL ON FUNCTION public.email_gate_config_bool(p_key text) TO service_role;
 
 
 --
+-- Name: FUNCTION email_gate_config_date(p_key text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_config_date(p_key text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_config_date(p_key text) TO service_role;
+
+
+--
 -- Name: FUNCTION email_gate_config_int(p_key text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29346,6 +29493,14 @@ GRANT ALL ON FUNCTION public.email_gate_guardian_refresh(p_now timestamp with ti
 
 
 --
+-- Name: FUNCTION email_gate_is_internal(p_profile_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_is_internal(p_profile_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_is_internal(p_profile_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION email_gate_keep_posted(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29383,6 +29538,22 @@ GRANT ALL ON FUNCTION public.email_gate_last_click(p_profile_id uuid, p_now time
 
 REVOKE ALL ON FUNCTION public.email_gate_last_sign_in(p_profile_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.email_gate_last_sign_in(p_profile_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_launch_backfill(p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_launch_backfill(p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_launch_backfill(p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_gate_launch_pause_reason(p_profile_id uuid, p_now timestamp with time zone) TO service_role;
 
 
 --
