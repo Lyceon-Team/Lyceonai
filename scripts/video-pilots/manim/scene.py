@@ -1,19 +1,21 @@
-"""Video pilot (Manim): one graph worked example, 1080×1920 at 30 fps, voiced with Kokoro-82M.
+"""Video pilot (Manim): one graph worked example, 1080×1920 at 30 fps, voiced line by line.
 
-@spec [owner brief "Video tools pilot" (Karl, 2026-11-02) Part D2, Video 3 and Video 4; owner brief
-      "Worked examples: production system" (Karl, 2026-10-27), Video: hook → question → steps →
-      answer near the end → "The trap:" → end card "Follow for daily SAT questions" + lyceon.ai;
-      blank paper, Caveat, Lyceon colours; word-by-word highlighted captions; TikTok safe area
-      x 71..912, y 154..1555; Public Disclosure Doctrine §0 rules 1-2] | @implemented [2026-11-02]
+@spec [owner brief "Video tools pilot" (Karl, 2026-11-02) Part D2, Video 3, and D3 (the same script
+      and visuals voiced with Chatterbox); Karl's script and voice rulings for every pilot video
+      (2026-11-02, SCL-267): 1 "No burned-in word-by-word captions ... the on-screen handwriting and
+      graphs carry the content"; 3 the flow hook → setup → key move → trap → answer and quick check
+      → "Follow, there's one of these every day.", the end card shows "Lyceon SAT Prep", no
+      lyceon.ai spoken or shown; owner brief "Worked examples: production system" (Karl,
+      2026-10-27): blank paper, Caveat, Lyceon colours, TikTok safe area x 71..912, y 154..1555;
+      Public Disclosure Doctrine §0 rules 1-2]
+      | @implemented [2026-11-02, captions removed and re-ordered to the SCL-267 flow 2026-11-02]
 
 plain English: rendered by scripts/video-pilots/manim/render.py, which sets the environment this
 file reads (manim's command line cannot pass arguments to a scene):
-  LYCEON_PILOT_BUNDLE  bundle.json from prepare.ts (question, script, kit settings)
-  LYCEON_PILOT_VOICE   a Kokoro voice id (af_heart, af_bella, am_michael, ...)
-  LYCEON_PILOT_RATE    Kokoro speed (voice.json's speaking_rate; 1 = natural)
-  LYCEON_PILOT_PYTHON  the Python hyperframes runs Kokoro in (kokoro-onnx + soundfile)
-  LYCEON_PILOT_CACHE   where the voiced lines are kept (outside the repository)
-  LYCEON_PILOT_LOG     where the placed lines are written for check.ts
+  LYCEON_PILOT_BUNDLE  bundle.json from prepare.ts (question, script, end card, kit settings)
+  LYCEON_PILOT_VOICE   voice.json from voice-lines.ts (every line voiced, normalised, checked)
+  LYCEON_PILOT_CACHE   manim-voiceover's working folder (outside the repository)
+  LYCEON_PILOT_LOG     where the placed lines and the on-screen strings are written for check.ts
 Every spoken line is a manim-voiceover block, back to back with the kit's gap, so the picture is
 timed by the voice exactly as the worked examples are. Nothing on screen is typed here: the hook,
 question, choices, key, notepad lines, trap and end card all come from the bundle. The one thing
@@ -21,11 +23,17 @@ this file knows about the question is the drawing: the circle (x − 2)² + (y �
 the x-axis, which is what makes this question a visual one. A different question needs its own
 drawing; the scene refuses a bundle for any other question rather than draw the wrong figure.
 
-trade-offs: captions follow composition.ts (at most five words a chunk, each word lit while it is
-spoken; word times from the transcription when it heard the same number of words, otherwise
-spread by character position: scriptWordTimes, ported). Text is set with Pango, which cannot
-fit-to-width the way the HTML kit's fit script does, so long lines are wrapped or scaled to the
-safe column here and safe_area_check.py proves the result on sampled frames.
+The spoken order (scriptLines): hook and setup over the open card; the four steps draw the circle,
+the drop from the centre, the right triangle and the two crossings; the trap clears the triangle
+and draws the diameter under "The trap:"; the answer brings the steps back, draws the chord and
+writes and circles the answer while the quick check is spoken; the call to action plays over the
+end card (logo, "Follow for daily SAT questions", "Lyceon SAT Prep", from the kit's template).
+
+trade-offs: no captions, by ruling, so the notepad and the figure carry the content. Text is set
+with Pango, which cannot fit-to-width the way the HTML kit's fit script does, so long lines are
+wrapped or scaled to the safe column here and safe_area_check.py proves the result on sampled
+frames. ON_SCREEN records every string set on screen so check.ts can prove the voice never reads
+six of its words in a row (rule S1) against what was actually drawn, labels included.
 """
 
 from __future__ import annotations
@@ -34,6 +42,7 @@ import json
 import math
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -63,13 +72,17 @@ from manim import (
 from manim_voiceover import VoiceoverScene
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from kokoro_service import KokoroHyperframesService  # noqa: E402
+from prevoiced_service import PrevoicedService  # noqa: E402
 
 PILOT_QUESTION = "SATM2BVZSMV"
 
 config.frame_height = 16.0
 config.frame_width = 9.0
 PX = 120.0  # pixels per Manim unit on a 1080×1920 frame
+
+# Every string set on screen, in the order it was first set (check.ts reads it from the log).
+ON_SCREEN: list[str] = []
+_seen: set[str] = set()
 
 
 def at(x: float, y: float) -> np.ndarray:
@@ -87,6 +100,9 @@ _cap_at_48: dict[tuple[str, str], float] = {}
 
 
 def text(s: str, font: str, size_px: float, color: str, weight: str = NORMAL) -> Text:
+    if s not in _seen:
+        _seen.add(s)
+        ON_SCREEN.append(s)
     key = (font, weight)
     if key not in _cap_at_48:
         _cap_at_48[key] = Text("H", font=font, weight=weight, font_size=48).height
@@ -123,30 +139,6 @@ def fit_width(m: Mobject, width_px: float) -> Mobject:
     return m
 
 
-def script_word_times(text_: str, words: list[dict], duration: float) -> list[tuple[str, float, float]]:
-    """composition.ts scriptWordTimes: the script's words with times relative to the line."""
-    script = [w for w in text_.split() if w]
-    if len(script) == len(words):
-        return [(w, float(words[k]["start"]), float(words[k]["end"])) for k, w in enumerate(script)]
-    first = float(words[0]["start"]) if words else 0.0
-    last = float(words[-1]["end"]) if words else duration
-    total = sum(len(w) + 1 for w in script)
-    out: list[tuple[str, float, float]] = []
-    offset = 0
-    for w in script:
-        start = first + (last - first) * offset / total
-        offset += len(w) + 1
-        out.append((w, start, first + (last - first) * offset / total))
-    return out
-
-
-def caption_chunks(items: list, max_words: int) -> list[list]:
-    """composition.ts captionChunks: consecutive chunks of at most max_words, sized evenly."""
-    n = math.ceil(len(items) / max_words)
-    size = math.ceil(len(items) / max(n, 1))
-    return [items[k : k + size] for k in range(0, len(items), size)]
-
-
 class WorkedExample(VoiceoverScene):
     def construct(self) -> None:
         b = json.loads(Path(os.environ["LYCEON_PILOT_BUNDLE"]).read_text(encoding="utf8"))
@@ -154,39 +146,100 @@ class WorkedExample(VoiceoverScene):
             raise RuntimeError(f"this scene draws {PILOT_QUESTION}, not {b['question']['id']}")
         self.b = b
         c = b["colours"]
-        self.ink, self.red, self.hi, self.paper = c["ink"], c["red"], c["highlight"], c["paper"]
-        self.cap_text = c["captionText"]
+        self.ink, self.red, self.paper = c["ink"], c["red"], c["paper"]
         self.camera.background_color = self.paper
         safe = b["safe_area"]
         self.left, self.right = safe["left"], safe["right"]
         self.width_px = self.right - self.left
-        self.set_speech_service(
-            KokoroHyperframesService(
-                voice=os.environ["LYCEON_PILOT_VOICE"],
-                speed=float(os.environ["LYCEON_PILOT_RATE"]),
-                hyperframes=b["hyperframes"],
-                transcribe_model=b["transcribe_model"],
-                python=os.environ["LYCEON_PILOT_PYTHON"],
-                cache_dir=os.environ["LYCEON_PILOT_CACHE"],
-            ),
-            create_subcaption=False,
+        self.voice = PrevoicedService(
+            manifest=os.environ["LYCEON_PILOT_VOICE"], cache_dir=os.environ["LYCEON_PILOT_CACHE"]
         )
+        self.set_speech_service(self.voice, create_subcaption=False)
         self.placed: list[dict] = []
-        self.captions: list[tuple[float, float, VGroup, list[tuple[Mobject, float, float]]]] = []
-        # One holder with its own updater: Manim treats a mobject with an updater as moving, so
-        # it is redrawn every frame even inside self.play (a scene-level add during a play would
-        # be frozen into the static background).
-        self.caption_holder = VGroup()
-        self.caption_holder.add_updater(lambda m, dt: self.update_captions(dt))
-        self.add(self.caption_holder)
+        self.lines = {line["key"]: line["text"] for line in b["lines"]}
+        self.keys = [line["key"] for line in b["lines"]]
+        lines, keys = self.lines, self.keys
 
-        lines = {line["key"]: line["text"] for line in b["lines"]}
-        keys = [line["key"] for line in b["lines"]]
-        q = b["question"]
+        # Open: hook and question on screen from frame 0, under the hook and the setup.
+        hook, stem, opts = self.open_card()
+        self.line("hook", lines["hook"], keys, lambda d: None)
+        self.line("question", lines["question"], keys, lambda d: None)
 
-        # Open: hook and question on screen from frame 0.
+        # Work: recap, the figure, the notepad; one step per line (the key move and why).
+        recap = self.recap()
+        fig = Figure(self, top=175 + 43 * len(recap[0]) + 70)
+
+        def notepad(k: int, s: str, color: str | None = None, size: float = 70) -> Text:
+            return self.notepad_at(fig.bottom + 24 + k * 78, s, color, size)
+
+        def step1(d: float) -> None:
+            self.play(FadeOut(hook), FadeOut(stem), FadeOut(opts), FadeIn(recap), run_time=0.4)
+            self.play(Create(fig.axes), run_time=0.5)
+            self.play(Create(fig.circle), FadeIn(fig.centre), Write(notepad_lines[0]), run_time=min(1.6, d * 0.4))
+            self.play(Create(fig.radius), FadeIn(fig.radius_label), run_time=0.5)
+
+        def step2(d: float) -> None:
+            self.play(fig.axes[0].animate.set_color(self.red).set_stroke(width=8), run_time=0.4)
+            self.play(Create(fig.drop), FadeIn(fig.drop_label), Write(notepad_lines[1]), run_time=min(1.6, d * 0.4))
+
+        def step3(d: float) -> None:
+            self.play(Create(fig.halves), Create(fig.hyps), FadeIn(fig.half_labels), run_time=min(1.4, d * 0.35))
+            self.play(Write(notepad_lines[2]), run_time=min(1.4, d * 0.35))
+
+        def step4(d: float) -> None:
+            self.play(FadeIn(fig.points), FadeIn(fig.point_labels), Write(notepad_lines[3]), run_time=min(1.6, d * 0.4))
+
+        notepad_lines = [notepad(k, s) for k, s in enumerate(b["steps"])]
+        step_fns = [step1, step2, step3, step4]
+        if len(b["steps"]) != len(step_fns):
+            raise RuntimeError(f"this drawing has {len(step_fns)} steps; the example has {len(b['steps'])}")
+        for k, fn in enumerate(step_fns):
+            self.line(f"step-{k + 1}", lines[f"step-{k + 1}"], keys, fn)
+
+        # Trap ("here's where people slip"): the diameter against the chord, under "The trap:".
+        trap_head = notepad(0, b["trap"]["heading"], self.red, 84)
+        trap_lines = [notepad(k + 1, s) for k, s in enumerate(b["trap"]["notepad"])]
+        triangle = [fig.half_labels, fig.hyps, fig.halves, fig.drop, fig.drop_label, fig.radius, fig.radius_label]
+
+        def trap(d: float) -> None:
+            self.play(*[FadeOut(m) for m in [*notepad_lines, *triangle]], FadeOut(fig.centre[1]), run_time=0.3)
+            self.play(Write(trap_head), Create(fig.diameter), FadeIn(fig.diameter_label), run_time=0.9)
+            each = max(0.6, (d - 1.4) / max(len(trap_lines), 1) - 0.2)
+            for t in trap_lines:
+                self.play(Write(t), run_time=min(1.2, each))
+                self.wait(max(0.0, each - 1.2))
+
+        self.line("trap", lines["trap"], keys, trap)
+
+        # Answer and quick check: the steps back, the chord drawn, the answer written and circled.
+        answer_line = notepad(len(b["steps"]), b["answer"]["notepad"], self.red, 80)
+        answer_line.shift(RIGHT * px(20))  # room for the ring inside the safe column
+        ring = Ellipse(
+            width=answer_line.width + px(40), height=answer_line.height + px(46),
+            stroke_color=self.red, stroke_width=7,
+        ).move_to(answer_line)
+
+        def answer(d: float) -> None:
+            self.play(
+                FadeOut(trap_head), *[FadeOut(t) for t in trap_lines],
+                FadeOut(fig.diameter), FadeOut(fig.diameter_label), run_time=0.3,
+            )
+            self.play(*[FadeIn(m) for m in notepad_lines], FadeIn(fig.halves), FadeIn(fig.hyps),
+                      FadeIn(fig.half_labels), run_time=0.4)
+            self.play(Create(fig.chord), FadeIn(fig.chord_label), run_time=0.5)
+            self.play(Write(answer_line), run_time=min(1.2, d * 0.3))
+            self.play(Create(ring), run_time=0.35)
+
+        self.line("answer", lines["answer"], keys, answer)
+        self.outro()
+        self.wait(b["end_hold_seconds"])
+        self.write_log()
+
+    # The open: hook and question on screen from frame 0.
+    def open_card(self) -> tuple[VGroup, VGroup, VGroup]:
+        q = self.b["question"]
         hook = paragraph(
-            wrap(b["hook_line"], "Poppins", 64, self.ink, self.width_px, BOLD), self.left, 180, 74
+            wrap(self.b["hook_line"], "Poppins", 64, self.ink, self.width_px, BOLD), self.left, 180, 74
         )
         stem = paragraph(wrap(q["stem"], "Inter", 42, self.ink, self.width_px), self.left, 410, 59)
         opts_top = 410 + 59 * len(stem) + 30
@@ -203,178 +256,64 @@ class WorkedExample(VoiceoverScene):
             label.move_to(box).align_to(at(x0 + 22, 0), LEFT)
             opts.add(VGroup(box, label))
         self.add(hook, stem, opts)
+        return hook, stem, opts
 
-        self.line("hook", lines["hook"], keys, lambda d: None)
-        self.line("question", lines["question"], keys, lambda d: None)
-
-        # Work: recap, the figure, the notepad.
+    # The question, small and dimmed, at the top of the working screen.
+    def recap(self) -> VGroup:
+        q = self.b["question"]
         recap_stem = paragraph(wrap(q["stem"], "Inter", 32, self.ink, self.width_px), self.left, 175, 43)
         recap_opts = text(
             "   ·   ".join(f"{o['key']}) {o['text']}" for o in q["options"]), "Inter", 32, self.ink
         ).next_to(at(self.left, 175 + 43 * len(recap_stem) + 6), DOWN, buff=0).align_to(at(self.left, 0), LEFT)
-        recap = VGroup(recap_stem, recap_opts).set_opacity(0.72)
-        fig = Figure(self, top=175 + 43 * len(recap_stem) + 70)
-        self.fig = fig
+        return VGroup(recap_stem, recap_opts).set_opacity(0.72)
 
-        def notepad(k: int, s: str, color: str | None = None, size: float = 70) -> Text:
-            t = text(s, "Caveat", size, color or self.ink, BOLD)
-            fit_width(t, self.width_px - 20)
-            return t.next_to(at(90, fig.bottom + 24 + k * 78), DOWN, buff=0).align_to(at(90, 0), LEFT)
+    # A Caveat notepad line, left at x 90, its top at `top` pixels.
+    def notepad_at(self, top: float, s: str, color: str | None = None, size: float = 70) -> Text:
+        t = text(s, "Caveat", size, color or self.ink, BOLD)
+        fit_width(t, self.width_px - 20)
+        return t.next_to(at(90, top), DOWN, buff=0).align_to(at(90, 0), LEFT)
 
-        def step1(d: float) -> None:
-            self.play(FadeOut(hook), FadeOut(stem), FadeOut(opts), FadeIn(recap), run_time=0.4)
-            self.play(Create(fig.axes), run_time=0.5)
-            self.play(Create(fig.circle), FadeIn(fig.centre), Write(notepad_lines[0]), run_time=min(1.6, d * 0.4))
-            self.play(Create(fig.radius), FadeIn(fig.radius_label), run_time=0.5)
-
-        def step2(d: float) -> None:
-            self.play(fig.axes[0].animate.set_color(self.hi).set_stroke(width=8), run_time=0.4)
-            self.play(Create(fig.drop), FadeIn(fig.drop_label), Write(notepad_lines[1]), run_time=min(1.6, d * 0.4))
-
-        def step3(d: float) -> None:
-            self.play(Write(notepad_lines[2]), run_time=min(1.4, d * 0.35))
-            self.play(Create(fig.halves), Create(fig.hyps), FadeIn(fig.half_labels), run_time=min(1.4, d * 0.35))
-
-        def step4(d: float) -> None:
-            self.play(FadeIn(fig.points), FadeIn(fig.point_labels), Write(notepad_lines[3]), run_time=min(1.6, d * 0.4))
-
-        def answer(d: float) -> None:
-            self.play(Create(fig.chord), FadeIn(fig.chord_label), run_time=0.5)
-            self.play(Write(answer_line), run_time=min(1.2, d * 0.4))
-            ring = Ellipse(
-                width=answer_line.width + px(40), height=answer_line.height + px(46),
-                stroke_color=self.red, stroke_width=7,
-            ).move_to(answer_line)
-            self.answer_ring = ring
-            self.play(Create(ring), run_time=0.35)
-
-        notepad_lines = [notepad(k, s) for k, s in enumerate(b["steps"])]
-        answer_line = notepad(len(b["steps"]), b["answer"]["notepad"], self.red, 80)
-        answer_line.shift(RIGHT * px(20))  # room for the ring inside the safe column
-        step_fns = [step1, step2, step3, step4]
-        for k, fn in enumerate(step_fns[: len(b["steps"])]):
-            self.line(f"step-{k + 1}", lines[f"step-{k + 1}"], keys, fn)
-        self.line("answer", lines["answer"], keys, answer)
-
-        # Trap: the diameter against the chord, and "The trap:" with its lines.
-        trap_head = notepad(0, b["trap"]["heading"], self.red, 84)
-        trap_lines = [notepad(k + 1, s) for k, s in enumerate(b["trap"]["notepad"])]
-
-        def trap(d: float) -> None:
-            self.play(
-                *[FadeOut(m) for m in [*notepad_lines, answer_line, self.answer_ring]],
-                FadeOut(fig.half_labels), FadeOut(fig.hyps), FadeOut(fig.halves),
-                FadeOut(fig.drop), FadeOut(fig.drop_label), FadeOut(fig.radius), FadeOut(fig.radius_label),
-                FadeOut(fig.centre[1]),
-                run_time=0.3,
-            )
-            self.play(Write(trap_head), Create(fig.diameter), FadeIn(fig.diameter_label), run_time=0.9)
-            each = max(0.6, (d - 1.4) / max(len(trap_lines), 1) - 0.2)
-            for t in trap_lines:
-                self.play(Write(t), run_time=min(1.2, each))
-                self.wait(max(0.0, each - 1.2))
-
-        self.line("trap", lines["trap"], keys, trap)
-
-        # End card: logo, "Follow for daily SAT questions", lyceon.ai.
-        logo = ImageMobject(str(Path(b["kit_dir"]) / "lyceon-logo.png"))
+    # End card: logo, "Follow for daily SAT questions", "Lyceon SAT Prep", over the call to action.
+    def outro(self) -> None:
+        card = self.b["end_card"]
+        logo = ImageMobject(str(Path(self.b["logo"])))
         logo.height = px(280)
-        follow = fit_width(text("Follow for daily SAT questions", "Caveat", 80, self.ink, BOLD), self.width_px)
-        url = text("lyceon.ai", "Poppins", 84, self.ink, BOLD)
+        follow = fit_width(text(card["follow"], "Caveat", 80, self.ink, BOLD), self.width_px)
+        brand = fit_width(text(card["brand"], "Poppins", 76, self.ink, BOLD), self.width_px)
         centre_x = (self.left + self.right) / 2
         logo.move_to(at(centre_x, 551 + 140))
         follow.next_to(logo, DOWN, buff=px(34)).set_x(at(centre_x, 0)[0])
-        url.next_to(follow, DOWN, buff=px(34)).set_x(at(centre_x, 0)[0])
-        on_screen = [m for m in self.mobjects if m is not self.caption_holder]
+        brand.next_to(follow, DOWN, buff=px(34)).set_x(at(centre_x, 0)[0])
+        on_screen = list(self.mobjects)
 
-        def outro(d: float) -> None:
+        def fade(d: float) -> None:
             self.play(*[FadeOut(m) for m in on_screen], run_time=0.3)
-            self.play(FadeIn(logo), FadeIn(follow), FadeIn(url), run_time=0.4)
+            self.play(FadeIn(logo), FadeIn(follow), FadeIn(brand), run_time=0.4)
 
-        self.line("outro", lines["outro"], keys, outro, caption=b["outro_caption"])
-        self.wait(b["end_hold_seconds"])
-        self.write_log()
+        self.line("outro", self.lines["outro"], self.keys, fade)
 
-    # A spoken line: its voice from the current time, its animation, its captions, then the gap.
-    def line(self, key: str, spoken: str, keys: list[str], animate, caption: str | None = None) -> None:
+    # A spoken line: its voice from the current time, its animation, then the gap.
+    def line(self, key: str, spoken: str, keys: list[str], animate: Callable[[float], None]) -> None:
+        voiced = self.voice.line_for(spoken)
+        if voiced["key"] != key:
+            raise RuntimeError(f"line {key} is voiced as {voiced['key']} in the manifest")
         with self.voiceover(text=spoken) as tracker:
-            wav = Path(self.speech_service.cache_dir) / tracker.data["final_audio"]
-            words = json.loads(wav.with_suffix(".words.json").read_text(encoding="utf8"))
             self.placed.append({
-                "key": key, "text": spoken, "wav": str(wav), "words": words,
+                "key": key, "text": spoken, "wav": voiced["wav"], "words": voiced["words"],
                 "start": round(tracker.start_t, 3), "duration": round(tracker.duration, 3),
             })
-            self.add_captions(caption or spoken, words, tracker.start_t, tracker.duration, key == keys[-1])
             animate(tracker.duration)
         if key != keys[-1]:
             self.wait(self.b["gap_seconds"])
 
-    def add_captions(self, caption: str, words: list[dict], start: float, duration: float, last: bool) -> None:
-        # Between plays: retire the previous line's chunks and hold all of this line's.
-        self.caption_holder.remove(*self.caption_holder.submobjects)
-        self.captions = []
-        timed = script_word_times(caption, words, duration)
-        chunks = caption_chunks(list(range(len(timed))), self.b["caption_max_words"])
-        line_end = start + duration + (self.b["end_hold_seconds"] if last else self.b["gap_seconds"])
-        centre_x = (self.left + self.right) / 2
-        for ci, chunk in enumerate(chunks):
-            # One Text per chunk, so the words share a baseline; Text drops spaces from its
-            # glyphs, so each word is the slice of glyphs its letters occupy.
-            row = text(" ".join(timed[k][0] for k in chunk), "Poppins", 44, self.cap_text, BOLD)
-            fit_width(row, self.width_px - 44)
-            box = RoundedRectangle(
-                corner_radius=px(20), width=row.width + px(44), height=px(44 * 1.32 + 32),
-                fill_color=self.ink, fill_opacity=1, stroke_width=0,
-            )
-            box.move_to(at(centre_x, 1360 + box.height * PX / 2))
-            row.move_to(box)
-            lit: list[tuple[Mobject, float, float]] = []
-            pads = VGroup()
-            offset = 0
-            for k in chunk:
-                glyphs = row[offset : offset + len(timed[k][0])]
-                offset += len(timed[k][0])
-                pad = RoundedRectangle(
-                    corner_radius=px(8), width=glyphs.width + px(10), height=px(44 * 1.25),
-                    fill_color=self.hi, fill_opacity=0, stroke_width=0,
-                ).move_to(glyphs).set_y(box.get_y())
-                pads.add(pad)
-                lit.append((VGroup(pad, glyphs), start + timed[k][1], start + timed[k][2]))
-            group = VGroup(box, pads, row)
-            c_start = start if ci == 0 else start + timed[chunk[0]][1]
-            nxt = chunks[ci + 1][0] if ci + 1 < len(chunks) else None
-            c_end = start + timed[nxt][1] if nxt is not None else line_end
-            group.set_fill(opacity=0)
-            self.caption_holder.add(group)
-            self.captions.append((c_start, c_end, group, lit))
-
-    def update_captions(self, dt: float) -> None:
-        """Shows the chunk being spoken and lights its word, by opacity only.
-
-        Manim draws a play's moving mobjects from the family list it takes when the play starts,
-        so adding or removing a chunk mid-play leaves the old one drawn. Every chunk of a line is
-        therefore put in the holder before the line's first play (add_captions), and this only
-        changes opacities and colours.
-        """
-        t = self.renderer.time
-        for s, e, g, lit in self.captions:
-            box, pads, row = g[0], g[1], g[2]
-            if not s <= t < e:
-                g.set_fill(opacity=0)
-                continue
-            box.set_fill(opacity=1)
-            row.set_fill(opacity=1)
-            for word, ws, we in lit:
-                pad, w = word[0], word[1]
-                on = ws <= t < we
-                pad.set_fill(opacity=1 if on else 0)
-                w.set_color(self.ink if on else self.cap_text)
-
     def write_log(self) -> None:
-        Path(os.environ["LYCEON_PILOT_LOG"]).write_text(
-            json.dumps({"duration": round(self.renderer.time, 3), "lines": self.placed}, indent=2),
-            encoding="utf8",
-        )
+        log = {
+            "duration": round(self.renderer.time, 3),
+            "engine": self.voice.engine,
+            "lines": self.placed,
+            "on_screen": ON_SCREEN,
+        }
+        Path(os.environ["LYCEON_PILOT_LOG"]).write_text(json.dumps(log, indent=2), encoding="utf8")
 
 
 class Figure:

@@ -3,12 +3,16 @@
  * example rules, then writes the bundle the Manim scene renders from.
  *
  * @spec [owner brief "Video tools pilot" (Karl, 2026-11-02) Part D2, Video 3: "one geometry or
- *       graph worked example, 1080×1920, voiced in the current voice"; the question from the seed
- *       SQL with its stored A-D order and key; the worked-example script shape and rules (hook
- *       H1-H6, steps, answer, trap); brand colours and fonts; safe area x 71..912, y 154..1555;
- *       the same outro line and music. Owner brief "Worked examples: production system" (Karl,
- *       2026-10-27); Public Disclosure Doctrine §0 rules 1-3 (docs/plans/seo/seo-marketing-vertical.md)]
- *       | @implemented [2026-11-02]
+ *       graph worked example, 1080×1920"; the question from the seed SQL with its stored A-D order
+ *       and key; the worked-example script shape and rules (hook H1-H6, steps, answer, trap); brand
+ *       colours and fonts; safe area x 71..912, y 154..1555; the same outro line and music. Karl's
+ *       script and voice rulings for every pilot video (2026-11-02, SCL-267): no burned-in
+ *       captions; the voice never reads the on-screen text verbatim (rules S1/S2); the flow hook →
+ *       setup → key move → trap → answer and check → "Follow, there's one of these every day.";
+ *       the end card shows "Lyceon SAT Prep", no lyceon.ai. Owner brief "Worked examples:
+ *       production system" (Karl, 2026-10-27); Public Disclosure Doctrine §0 rules 1-3
+ *       (docs/plans/seo/seo-marketing-vertical.md)]
+ *       | @implemented [2026-11-02, re-scripted to the SCL-267 rules 2026-11-02]
  *
  * plain English:
  *   pnpm exec tsx scripts/video-pilots/manim/prepare.ts \
@@ -16,13 +20,17 @@
  * reads the pilot's example.json (the same schema as a weekly batch's), reads its question from
  * the seed SQL that created it (scripts/worked-examples/content.ts seedQuestion, which refuses a
  * question a seed patch changes), and runs the worked-example content checks on it
- * (shared/worked-examples/rules.ts contentProblems: hook H1-H6, the key, "The trap", the public-copy
- * lists on every spoken line). Any problem stops the run. It then writes <out>/bundle.json: the
- * question as plain text in the bank's A-D order with its key, every spoken line in screen order
- * (scriptLines, the end card's line from voice.json), and the kit's colours, fonts, logo, music,
- * line gap, end hold and safe area, so the Python scene never re-reads or re-states any of them.
+ * (shared/worked-examples/rules.ts contentProblems: hook H1-H6, the key, the trap's spoken opening
+ * (TRAP_VOICE_OPENING), S1 "no spoken line reads six on-screen words in a row", S2 "the spoken hook
+ * is not the hook line", and the public-copy lists on every spoken line). Any problem stops the
+ * run. It then writes <out>/bundle.json: the question as plain text in the bank's A-D order with its
+ * key, every spoken line in spoken order (scriptLines, the call to action from voice.json), the end
+ * card's two lines as the kit's own end-card template has them, and the kit's colours, fonts, logo,
+ * music, line gap, end hold and safe area, so the Python scene never re-reads or re-states any of
+ * them. check.ts runs S1 a second time, on the rendered video, against every string the scene
+ * actually set on screen.
  *
- * trade-offs: the pilot is not in a monthly plan and Circles has no row in the social branch's
+ * trade-offs: the pilot is not in a monthly plan and its skill has no row in the social branch's
  * STYLE.json, so the style-row check is run against the pilot's own signature move (it cannot
  * fail) and the plan-slot check is not run. post_on is a placeholder the schema requires; the
  * pilot is not scheduled. Nothing here touches a database.
@@ -37,11 +45,7 @@ import {
   TRAP_HEADING,
   contentProblems,
 } from "../../../shared/worked-examples/rules";
-import {
-  CAPTION_MAX_WORDS,
-  safeArea,
-  scriptLines,
-} from "../../worked-examples/composition";
+import { safeArea, scriptLines } from "../../worked-examples/composition";
 import { seedQuestion } from "../../worked-examples/content";
 import { KIT_DIR, ROOT, loadKit } from "../../worked-examples/kit";
 
@@ -54,6 +58,24 @@ export const PILOT_EXCLUDED_IDS: readonly string[] = [
   "SATM26X8W2L",
   "SATM2PRBTJX",
 ];
+
+/**
+ * The end card's two text lines, read from the kit's end-card template (the worked examples'
+ * single source: "Follow for daily SAT questions" and "Lyceon SAT Prep"), so the pilot never
+ * re-types them. Throws when the template lacks either element.
+ */
+export function endCardText(template: string): {
+  follow: string;
+  brand: string;
+} {
+  const pick = (cls: string): string => {
+    const m = new RegExp(`class="${cls}">([^<]+)<`).exec(template);
+    const t = m?.[1]?.trim();
+    if (!t) throw new Error(`the end-card template has no .${cls} text`);
+    return t;
+  };
+  return { follow: pick("follow"), brand: pick("brand-name") };
+}
 
 function main(): void {
   const args = process.argv.slice(2);
@@ -114,7 +136,7 @@ function main(): void {
     answer: { letter: example.answer.letter, notepad: example.answer.notepad },
     trap: { heading: TRAP_HEADING, notepad: example.trap.notepad },
     lines: scriptLines(example, kit.voice.outro_text),
-    outro_caption: kit.voice.outro_caption,
+    end_card: endCardText(kit.templates["end-card"]),
     colours: kit.brand.colours,
     fonts: ["Caveat", "Poppins-700", "Inter"].map(fontFile),
     logo: abs(kit.brand.logo),
@@ -128,10 +150,7 @@ function main(): void {
     end_hold_seconds: kit.voice.end_hold_seconds,
     min_seconds: kit.voice.min_seconds,
     max_seconds: kit.voice.max_seconds,
-    caption_max_words: CAPTION_MAX_WORDS,
     safe_area: safeArea(),
-    hyperframes: kit.voice.hyperframes,
-    transcribe_model: kit.voice.transcribe_model,
     kit_dir: abs(KIT_DIR),
   };
   mkdirSync(out, { recursive: true });

@@ -23,6 +23,10 @@
  * passes text to kokoro-onnx's espeak phonemizer, which does not read misaki's inline markup
  * ("[Lyceon](/lˈIsiˌɑn/)" is spoken as "slash L stress…", tested 2026-11-02), so the respelling
  * is the only path; it phonemizes to lˈaɪsiːˈɑːn, the closest to /ˈlaɪsiɑn/ of those tried.
+ * The video pilots' Chatterbox engine takes its own respelling from the same table
+ * (BRAND_RESPELLINGS, spokenBrandName(text, "chatterbox"); owner brief "Video tools pilot" D3).
+ * The pilots also call normaliseLoudness and hyperframes from here, so a pilot line is normalised
+ * and transcribed exactly as a worked-example line is.
  * Loudness: each line is normalised with two-pass ffmpeg loudnorm (voice.json `loudness`, about
  * -14 LUFS, true peak at most -1 dBTP; each line padded so loudnorm's dynamic fallback works on
  * short lines too) and alimiter 0.5 dB under that ceiling, before transcription and the
@@ -72,7 +76,12 @@ import {
 } from "./kit";
 import { lineQualityProblems } from "./quality";
 
-function hyperframes(v: VoiceSettings, args: string[], cwd: string): string {
+/** Runs `hyperframes` at voice.json's pinned version (tts, transcribe); returns its stdout. */
+export function hyperframes(
+  v: VoiceSettings,
+  args: string[],
+  cwd: string,
+): string {
   return execFileSync(
     "pnpm",
     ["dlx", `hyperframes@${v.hyperframes}`, ...args],
@@ -166,12 +175,27 @@ type Spoken = {
   problems: string[];
 };
 
-/** How "Lyceon" is spelled for the engine so it is said "lye-see-on" (/ˈlaɪsiɑn/). */
-export const BRAND_RESPELLING = "Lysee-ahn";
+/**
+ * How "Lyceon" is spelled for each engine so it is said "lye-see-on" (/ˈlaɪsiɑn/). One table:
+ *   * kokoro (hyperframes tts, espeak phonemizer): "Lysee-ahn", see the header.
+ *   * chatterbox (the D3 video pilot, scripts/video-pilots/chatterbox/): "Lie-see-on"; its plain
+ *     spelling is heard as "Lycian" (owner brief "Video tools pilot" D3, Karl, 2026-11-02).
+ */
+export const BRAND_RESPELLINGS = {
+  kokoro: "Lysee-ahn",
+  chatterbox: "Lie-see-on",
+} as const;
+export type BrandEngine = keyof typeof BRAND_RESPELLINGS;
 
-/** The text the engine speaks: the author's text with "Lyceon" respelled (see the header). */
-export function spokenBrandName(text: string): string {
-  return text.replace(/\bLyceon\b/gi, BRAND_RESPELLING);
+/** The kokoro respelling: the one the worked examples speak. */
+export const BRAND_RESPELLING = BRAND_RESPELLINGS.kokoro;
+
+/** The text an engine speaks: the author's text with "Lyceon" respelled (see the header). */
+export function spokenBrandName(
+  text: string,
+  engine: BrandEngine = "kokoro",
+): string {
+  return text.replace(/\bLyceon\b/gi, BRAND_RESPELLINGS[engine]);
 }
 
 export type LoudnessTarget = VoiceSettings["loudness"];
