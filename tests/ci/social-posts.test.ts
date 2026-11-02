@@ -59,17 +59,19 @@ describe("TikTok keywords", () => {
 
   it.each(
     SECTIONS.flatMap(([section, code]) =>
-      CANONICAL_DOMAINS_BY_SECTION[code].map((d) => [section, d] as const),
+      CANONICAL_DOMAINS_BY_SECTION[code].map(
+        (d) => [section, d, code] as const,
+      ),
     ),
   )(
     "%s · %s: test month, always-set, section, domain, in that order",
-    (section, domain) => {
+    (section, domain, code) => {
       // 2026-10-20: the next SAT is Nov 7.
       const r = socialKeywords("2026-10-20", section, domain);
       expect(r.ok).toBe(true);
       if (!r.ok) return;
       const sectionKeywords =
-        section === "Math" ? ["SAT math"] : ["SAT english", "SAT reading"];
+        code === "M" ? ["SAT math"] : ["SAT english", "SAT reading"];
       expect(r.keywords).toEqual([
         "November SAT questions",
         "SAT",
@@ -186,11 +188,11 @@ describe("Captions and hashtags (Karl's rulings 2026-11-02)", () => {
     );
   });
 
-  it.each(SECTIONS.map(([s]) => s))(
+  it.each(SECTIONS)(
     "%s: the TikTok, Instagram and Facebook formats",
-    (section) => {
+    (section, code) => {
       const date = "2026-11-08";
-      const tag = section === "Math" ? "#SATMath" : "#SATEnglish";
+      const tag = code === "M" ? "#SATMath" : "#SATEnglish";
       const hashtags = `#SAT #SATprep #digitalSAT #DecemberSAT ${tag}`;
       const headline = `December SAT question of the day · ${section}`;
       expect(qotdTiktokCaption(date, section)).toBe(
