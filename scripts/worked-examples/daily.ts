@@ -14,7 +14,9 @@
  *           due today and not in posted.json (dueExamples). None: writes nothing, exit 0. More
  *           than one: refuses (one example a day). One: checks Karl's merge from GitHub's record
  *           (approval.ts), runs every content rule, generates the composition into <dir>/composition
- *           and writes <dir>/post.json (label, title, caption with the music credit, approval).
+ *           and writes <dir>/post.json (label, title, the TikTok, Instagram and Facebook captions
+ *           in the SCL-262 format with the music credit, TikTok's keywords, the run's warnings,
+ *           approval; SCL-265).
  *           --dry-run (pull requests only) uses the given date and a placeholder approval so the
  *           whole path is proven on the fixture tree; the workflow never claims or posts then.
  *   verify  --out <dir>   the rendered MP4 is 1080×1920, 30-60 s, within 0.25 s of the
@@ -36,14 +38,18 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import { chicagoToday } from "../../shared/sat-test-dates";
 import { campaignLinks } from "../../shared/social/funnel";
+import { socialDateWarnings } from "../../shared/social/posts";
 import {
   captionProblems,
   titleProblems,
   workedExampleCaption,
+  workedExampleFacebookCaption,
   workedExampleInstagramCaption,
+  workedExampleKeywords,
   workedExampleLabel,
   workedExampleTitle,
 } from "../../shared/worked-examples/rules";
+import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import {
   approvalFromRecord,
   dueExamples,
@@ -85,21 +91,58 @@ function need(a: Args, name: string): string {
   return v;
 }
 
-/** The post for one example: label, title, caption (music credited), approval. Refuses on a rule. */
+/** What Karl pastes for one example: the headline and each platform's caption, TikTok's keywords. */
+export type WorkedExampleCopy = {
+  title: string;
+  caption: string;
+  instagram_caption: string;
+  facebook_caption: string;
+  keywords: ReturnType<typeof workedExampleKeywords>;
+};
+
+/** The real copy for one example, from the one caption builder (SCL-265). */
+export function workedExampleCopy(
+  e: ExampleOnBranch,
+  question: SeedQuestion,
+  credit: string,
+): WorkedExampleCopy {
+  return {
+    title: workedExampleTitle(e.content, question),
+    caption: workedExampleCaption(e.content, question, credit),
+    instagram_caption: workedExampleInstagramCaption(
+      e.content,
+      question,
+      credit,
+    ),
+    facebook_caption: workedExampleFacebookCaption(e.content, question, credit),
+    keywords: workedExampleKeywords(e.content, question),
+  };
+}
+
+/**
+ * The post for one example: label, title, the three captions (music credited, no link), TikTok's
+ * keywords, the run's warnings, approval. Refuses on any rule (SCL-265, in the SCL-262 format).
+ */
 export function buildPost(
   e: ExampleOnBranch,
-  title: string,
-  caption: string,
+  copy: WorkedExampleCopy,
   credit: string,
   approval: ExampleApproval,
-  instagramCaption: string,
 ): WorkedExamplePost {
   const problems = [
-    ...titleProblems(title),
-    ...captionProblems(caption, credit),
-    ...captionProblems(instagramCaption, credit).map((p) => `instagram ${p}`),
+    ...titleProblems(copy.title),
+    ...captionProblems(copy.caption, credit, copy.title).map(
+      (p) => `tiktok ${p}`,
+    ),
+    ...captionProblems(copy.instagram_caption, credit, copy.title).map(
+      (p) => `instagram ${p}`,
+    ),
+    ...captionProblems(copy.facebook_caption, credit, copy.title).map(
+      (p) => `facebook ${p}`,
+    ),
+    ...(copy.keywords.ok ? [] : [`tiktok ${copy.keywords.error}`]),
   ];
-  if (problems.length > 0)
+  if (problems.length > 0 || !copy.keywords.ok)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
   const id = workedExampleId(e.content.question_id);
   return workedExamplePostSchema.parse({
@@ -107,10 +150,12 @@ export function buildPost(
     post_on: e.content.post_on,
     label: workedExampleLabel(e.content),
     video: `${id}.mp4`,
-    title,
-    caption,
-    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
-    instagram_caption: instagramCaption,
+    title: copy.title,
+    caption: copy.caption,
+    instagram_caption: copy.instagram_caption,
+    facebook_caption: copy.facebook_caption,
+    keywords: copy.keywords.keywords,
+    warnings: socialDateWarnings(e.content.post_on),
     links: campaignLinks("worked_example"),
     approval,
   });
@@ -163,11 +208,9 @@ async function select(a: Args): Promise<void> {
   generate(content, e.dir, join(out, "composition"));
   const post = buildPost(
     e,
-    workedExampleTitle(e.content, question),
-    workedExampleCaption(e.content, kit.track.credit),
+    workedExampleCopy(e, question, kit.track.credit),
     kit.track.credit,
     approval,
-    workedExampleInstagramCaption(e.content, kit.track.credit),
   );
   writeFileSync(join(out, "post.json"), `${JSON.stringify(post, null, 2)}\n`);
   process.stdout.write(

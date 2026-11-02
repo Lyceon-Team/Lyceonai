@@ -173,6 +173,11 @@ const optionsSchema = z
 export const seedQuestionSchema = z.object({
   id: z.string().regex(/^SAT(M|RW)[12][A-Z0-9]{6}$/),
   section: z.enum(["M", "RW"]),
+  /**
+   * The canonical domain string the seed row carries (shared/canonical-domains.ts). Read for the
+   * TikTok keywords (SCL-265, SCL-262 item 4); socialKeywords refuses one that is not canonical.
+   */
+  domain: z.string().min(1),
   skill_codes: z.array(z.string().min(1)).min(1),
   item_type: z.literal("mcq"),
   stem: z.string().min(1),
