@@ -75,7 +75,10 @@ import {
   boxProblems,
   nonPaperPixels,
 } from "../../scripts/worked-examples/layout-check";
-import { postWorkedExample } from "../../scripts/worked-examples/post-to-slack";
+import {
+  postWorkedExample,
+  workedExampleSlackSteps,
+} from "../../scripts/worked-examples/post-to-slack";
 import { seedRow } from "../../scripts/worked-examples/seed-sql";
 import type { FetchLike } from "../../shared/slack/client";
 
@@ -644,6 +647,52 @@ describe("the daily job: approved, post_on today, once", () => {
       ok: false,
       reason: expect.stringMatching(/CONTENT_APPROVER_LOGIN/),
     });
+  });
+
+  it("no caption, keyword or message gives away the answer or the explanation (anti-leak)", () => {
+    const copy = workedExampleCopy(fixture, question, kit.track.credit);
+    const post = buildPost(fixture, copy, kit.track.credit, {
+      pr: 1300,
+      mergedBy: "kingk237",
+      mergeSha: sha,
+      mergedAt: "2026-10-28T15:00:00Z",
+    });
+    const copyTexts = [
+      post.caption,
+      post.instagram_caption,
+      post.facebook_caption,
+      ...post.keywords,
+    ];
+    const messages = workedExampleSlackSteps(post).map((s) =>
+      s.kind === "video" ? s.comment : s.text,
+    );
+    // Presence first: the copy is real and non-trivial (an empty set would pass the absence check).
+    expect(post.keywords.length).toBeGreaterThan(0);
+    for (const t of [
+      post.caption,
+      post.instagram_caption,
+      post.facebook_caption,
+    ])
+      expect(t.startsWith(post.title)).toBe(true);
+    expect(messages.length).toBeGreaterThan(0);
+    const correct = question.options.find(
+      (o) => o.key === question.correct_answer,
+    );
+    expect(correct).toBeDefined();
+    const secrets = [
+      correct?.text ?? "",
+      fixture.content.answer.notepad,
+      fixture.content.answer.voice,
+      fixture.content.trap.summary,
+      fixture.content.check,
+      fixture.content.takeaway,
+      ...fixture.content.steps.map((s) => s.notepad),
+    ];
+    for (const secret of secrets) {
+      expect(secret.trim().length).toBeGreaterThan(0);
+      for (const text of [...copyTexts, ...messages])
+        expect(text).not.toContain(secret);
+    }
   });
 
   it("the post is built from the real title and caption and checked again", () => {
