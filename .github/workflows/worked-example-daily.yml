@@ -4,16 +4,18 @@
 #   17:00 UTC renders any approved example with post_on = today and posts it to #social as the
 #   labelled set 'Worked example · {skill} · {hook_type}': the video, a TikTok title … and a caption
 #   … This is separate from the QOTD set. Karl posts manually."; acceptance "the daily job posts
-#   only approved, post_on-today examples, once"; Karl's pick (2026-10-27): Hyperframes]
-#   | @implemented [2026-10-27]
+#   only approved, post_on-today examples, once"; Karl's pick (2026-10-27): Hyperframes; SCL-270
+#   (Karl's ruling 2026-11-02): "a true-peak limiter (≤ −1 dBTP) on the finished mix"]
+#   | @implemented [2026-10-27, the final-mix limiter 2026-11-02]
 #
 # plain English: the code comes from the default branch (a schedule only runs there); the content
 # comes from `social`, checked out beside it with full history (approval is read from the commit
 # that last changed each example). scripts/worked-examples/daily.ts picks the one example due today
 # (America/Chicago) that is not in content/worked-examples/posted.json, refuses it unless GitHub's
 # record shows Karl merged it, runs every content rule, and generates the composition. Then:
-# `hyperframes check`, render, the browser layout check (safe area, blank paper), the MP4 check
-# (1080×1920, 30-60 s, audio, the music peak on record). Only then is the example claimed in
+# `hyperframes check`, render, the final-mix true-peak limiter (SCL-270: at most -1 dBTP), the
+# browser layout check (safe area, blank paper), the MP4 check (1080×1920, 30-60 s, audio, the
+# music peak on record, the finished mix's true peak). Only then is the example claimed in
 # posted.json, committed and pushed to `social` with this run's token (covered by Karl's ruling of
 # 2026-10-15 on the approval stamp; confirmed for this ledger, decision 2 on #1336, 2026-10-27),
 # and only after that push succeeds is it posted: a re-run finds the
@@ -116,7 +118,16 @@ jobs:
           set -euo pipefail
           id=$(jq -r .id "$OUT/post.json")
           ( cd "$OUT/composition" && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" check \
-            && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/$OUT/$id.mp4" )
+            && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/$OUT/render/$id.mp4" )
+
+      # SCL-270 (Karl's ruling 2026-11-02): the finished mix is limited to at most -1 dBTP true
+      # peak before any check; only the limited video is checked, uploaded and posted.
+      - name: Final-mix limiter (true peak at most -1 dBTP)
+        if: steps.select.outputs.due == 'true'
+        run: |
+          set -euo pipefail
+          id=$(jq -r .id "$OUT/post.json")
+          pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"
 
       - name: Layout check (safe area, blank paper) and MP4 check
         if: steps.select.outputs.due == 'true'
