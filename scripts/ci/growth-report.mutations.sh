@@ -23,12 +23,16 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261122000000_growth_report.sql"
+# growth_report_weekly's body was replaced by MIG_STUDY (Karl, 2026-11-02, "Study time reads 0.0
+# hours"): every plant on that body targets MIG_STUDY; the other functions and the grants stay in
+# MIG (CREATE OR REPLACE keeps the ACL, so G13 still plants there).
+MIG_STUDY="supabase/migrations/20261125000000_growth_report_study_time.sql"
 LIB="server/lib/growth-report.ts"
 ROUTES="server/routes/internal-cron-routes.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/growth-report-mut.XXXX)"
 
-FILES=("$MIG" "$LIB" "$ROUTES")
+FILES=("$MIG" "$MIG_STUDY" "$LIB" "$ROUTES")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -77,11 +81,15 @@ plant_check() {
   restore
 }
 
+# The migration each function's plants target: its LAST definition, asserted before every plant.
+target_for() { case "$1" in growth_report_weekly) echo "$MIG_STUDY" ;; *) echo "$MIG" ;; esac; }
+
 # sql_plant <function> <name> <old> <new> <expected test name>
 sql_plant() {
   local fn="$1"; shift
-  [ "$(last_definer "$fn")" = "$MIG" ] || { bad "$1 targets $MIG but $fn is last defined in $(last_definer "$fn")"; return; }
-  plant_check "$1" "$MIG" "$2" "$3" "$4" "$PG_SUITE"
+  local target; target="$(target_for "$fn")"
+  [ "$(last_definer "$fn")" = "$target" ] || { bad "$1 targets $target but $fn is last defined in $(last_definer "$fn")"; return; }
+  plant_check "$1" "$target" "$2" "$3" "$4" "$PG_SUITE"
 }
 
 echo "=== (0) GREEN BASELINE ==="
@@ -116,8 +124,10 @@ if [ "$HAVE_PG" = 1 ]; then
   sql_plant growth_report_weekly "G7 skips counted as answers" \
     "        FROM public.practice_session_items"$'\n'"       WHERE status = 'answered' AND answered_at >= p0" \
     "        FROM public.practice_session_items"$'\n'"       WHERE answered_at >= p0" "$NUMBERS"
+  # G8 re-pointed 2026-11-02: the cap now applies to the server-measured gap.
   sql_plant growth_report_weekly "G8 study time uncapped" \
-    "sum(LEAST(a.time_spent_ms, 300000))" "sum(a.time_spent_ms)" "$NUMBERS"
+    "LEAST(a.answered_at - a.served_at, interval '5 minutes')" "(a.answered_at - a.served_at)" \
+    "$NUMBERS"
   sql_plant growth_report_weekly "G9 the 24-hour window widened" \
     "                          AND a.answered_at < s.created_at + interval '24 hours'" \
     "                          AND a.answered_at < s.created_at + interval '48 hours'" "$NUMBERS"
@@ -130,11 +140,33 @@ if [ "$HAVE_PG" = 1 ]; then
   sql_plant growth_report_claim "G12 the ledger lets a week post twice" \
     "  RETURN v_rows = 1;" "  RETURN true;" \
     "the ledger: claim once, a second claim refused"
-  sql_plant growth_report_weekly "G13 a client role can run the report" \
+  # G13 plants the grant, not the body: the ACL is set in MIG and kept by MIG_STUDY's
+  # CREATE OR REPLACE, so it stays there (shown red 2026-11-02 with MIG_STUDY in the pipeline).
+  plant_check "G13 a client role can run the report" "$MIG" \
     "REVOKE ALL ON FUNCTION public.growth_report_weekly(date, uuid[]) FROM PUBLIC, anon, authenticated;"$'\n' \
-    "" "no client role can run the functions or read the ledger"
+    "" "no client role can run the functions or read the ledger" "$PG_SUITE"
+
+  echo "=== study time from the server's timestamps (Karl, 2026-11-02) ==="
+  sql_plant growth_report_weekly "S1 review answers left out of study time" \
+    "      SELECT student_id, answered_at, served_at" \
+    "      SELECT student_id, answered_at, NULL::timestamptz" "$NUMBERS"
+  sql_plant growth_report_weekly "S2 the exclusions skipped for study time" \
+    "               END"$'\n'"          FROM answers a JOIN stu ON stu.id = a.sid" \
+    "               END"$'\n'"          FROM answers a" "$NUMBERS"
+  sql_plant growth_report_weekly "S3 the client duration read again" \
+    "      SELECT user_id AS sid, answered_at, served_at" \
+    "      SELECT user_id AS sid, answered_at, answered_at - make_interval(secs => COALESCE(time_spent_ms, 0) / 1000.0)" \
+    "$NUMBERS"
+  sql_plant growth_report_weekly "S4 nothing measurable reported as 0, not null" \
+    "                 WHEN count(*) FILTER (WHERE a.answered_at > a.served_at) = 0 AND count(*) > 0" \
+    "                 WHEN false" \
+    "a week with answers but nothing measurable is null"
+  sql_plant growth_report_weekly "S5 a zero gap (a QOTD answer) counted as a measured time" \
+    "                 WHEN count(*) FILTER (WHERE a.answered_at > a.served_at) = 0 AND count(*) > 0" \
+    "                 WHEN count(*) FILTER (WHERE a.answered_at >= a.served_at) = 0 AND count(*) > 0" \
+    "a week with answers but nothing measurable is null"
 else
-  echo "  SKIP  G1-G13 (SQL) — no Postgres (a skip, not a pass)"
+  echo "  SKIP  G1-G13, S1-S5 (SQL) — no Postgres (a skip, not a pass)"
 fi
 
 echo "=== the run and the route ==="
@@ -145,6 +177,10 @@ plant_check "G14 a failed post keeps its claim" "$LIB" \
 plant_check "G15 a percentage of zero" "$LIB" \
   "  if (previous === 0) return \`\${sign}\${amount}\`;"$'\n' "" \
   "shows each change; a week before of 0 gets the difference only" "$CONTRACT"
+plant_check "S6 'not recorded yet' shown as 0.0" "$LIB" \
+  "    m === null ? STUDY_TIME_NOT_RECORDED : hours(m).toFixed(1);" \
+  "    hours(m ?? 0).toFixed(1);" \
+  "reads 'not recorded yet', never 0.0, in either week" "$CONTRACT"
 plant_check "G16 the route runs without the cron secret" "$ROUTES" \
   "  \"/growth-report\","$'\n'"  async (req: Request, res: Response): Promise<void> => {"$'\n'"    if (!cronAuthorized(req)) {" \
   "  \"/growth-report\","$'\n'"  async (req: Request, res: Response): Promise<void> => {"$'\n'"    if (req.method === \"POST\") {" \
