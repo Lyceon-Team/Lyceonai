@@ -19,6 +19,8 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261031000000_notification_quiet_hours_expiry.sql"
+# Re-pointed 2026-11-02 (SCL-263): the email send gate's migration LAST defines qotd_daily_notify.
+MIG_GATE="supabase/migrations/20261126000000_email_send_gate.sql"
 VERCEL="vercel.json"
 SHARED="packages/shared/src/notifications-schema.ts"
 QUIET="server/lib/notifications/quiet-hours.ts"
@@ -32,7 +34,7 @@ ROUTES="server/routes/internal-cron-routes.ts"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/nqh-mut.XXXX)"
 
-FILES=("$MIG" "$VERCEL" "$SHARED" "$QUIET" "$TRANSPORT" "$DIRECT" "$DISPATCH" "$QOTD_JOB" "$WEEKLY" "$NOTIFY" "$ROUTES")
+FILES=("$MIG" "$MIG_GATE" "$VERCEL" "$SHARED" "$QUIET" "$TRANSPORT" "$DIRECT" "$DISPATCH" "$QOTD_JOB" "$WEEKLY" "$NOTIFY" "$ROUTES")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -160,8 +162,8 @@ plant "$QOTD_JOB" '        eventType: "qotd_daily",
 run "Q14 QOTD only" "the 17:00 run sends qotd_daily only" "$QOTD_SUITE"
 
 echo "=== (15) the QOTD event is born without an expiry ==="
-need_last qotd_daily_notify Q15 "$MIG"
-plant "$MIG" "      ((v_today + 1)::timestamp AT TIME ZONE 'America/Chicago')" "      NULL::timestamptz" || { bad "Q15 STALE"; exit 1; }
+need_last qotd_daily_notify Q15 "$MIG_GATE"
+plant "$MIG_GATE" "      ((v_today + 1)::timestamp AT TIME ZONE 'America/Chicago')" "      NULL::timestamptz" || { bad "Q15 STALE"; exit 1; }
 run "Q15 QOTD expiry" "the rule's qotd_daily event expires at the end of its Chicago day" "$QOTD_SUITE"
 
 echo "=== (16) the recipient may move their own deferral ==="

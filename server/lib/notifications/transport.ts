@@ -49,6 +49,7 @@ import {
   formatFromHeader,
   type EmailSenderCategory,
 } from "../../../packages/shared/src/email-sender";
+import type { EmailSenderTracking } from "../../../packages/shared/src/email-gate";
 import { logger } from "../../logger";
 import { quietHoursApply, quietHoursDeferral } from "./quiet-hours";
 
@@ -76,6 +77,17 @@ export type EmailSendInput = {
    * still sends, as "Lyceon".
    */
   fromCategory: EmailSenderCategory;
+  /**
+   * @spec [owner brief "Email send gate" (Karl, 2026-10-30); owner ruling 2026-11-02 round 2
+   *       (1)] | @implemented [2026-11-02]
+   * plain English: which address the email goes out from. `tracked` is
+   * NOTIFICATION_TRACKED_FROM_EMAIL on lyceon.ai, where Resend tracks clicks (the gate's
+   * unengaged count reads them); governed and milestone emails use it. `untracked` (the default)
+   * is NOTIFICATION_FROM_EMAIL on send.lyceon.ai, for account, billing and link mail. Tracked
+   * with no tracked address configured falls back to untracked with a warning: an email without
+   * click data is better than no email.
+   */
+  sender?: EmailSenderTracking;
   /**
    * @spec [owner brief "Question of the Day on Home" (Karl, 2026-10-08/09), "Daily email":
    *       "a List-Unsubscribe header"; RFC 2369, RFC 8058] | @implemented [2026-10-09]
@@ -226,9 +238,21 @@ export function createResendTransport(
 
   return async (input) => {
     const envParsed = notificationEnvSchema.safeParse(envSource);
-    const from = envParsed.success
+    const untracked = envParsed.success
       ? envParsed.data.NOTIFICATION_FROM_EMAIL
       : undefined;
+    const tracked = envParsed.success
+      ? envParsed.data.NOTIFICATION_TRACKED_FROM_EMAIL
+      : undefined;
+    if (input.sender === "tracked" && !tracked) {
+      logger.warn(
+        "NOTIFICATIONS",
+        "email_tracked_sender_unconfigured",
+        "NOTIFICATION_TRACKED_FROM_EMAIL is not set; sending from the untracked address",
+        { idempotencyKey: input.idempotencyKey },
+      );
+    }
+    const from = input.sender === "tracked" && tracked ? tracked : untracked;
     if (!from) {
       logger.warn(
         "NOTIFICATIONS",
@@ -834,6 +858,46 @@ export function createResendContactsTransport(
       }
       return ok(true);
     },
+  };
+}
+
+/**
+ * @spec [owner brief "Email send gate" (Karl, 2026-10-30): "mirrored to Resend contact property
+ *       email_state with retry, never blocking sends"] | @implemented [2026-11-02]
+ *
+ * plain English: sets properties on an EXISTING Resend contact. Never creates one: a person who
+ * is not a Resend contact (never onboarded, or an under-13, who is never added) has nothing to
+ * mirror to, so a 404 is `updated: false`, not a failure. The address is never logged.
+ */
+export type ContactPropertiesUpdater = (
+  email: string,
+  properties: Record<string, string>,
+  context: SuppressionLogContext,
+) => Promise<Result<{ updated: boolean }, ContactsFailure>>;
+
+export function createResendContactPropertiesUpdater(
+  options: TransportOptions = {},
+): ContactPropertiesUpdater {
+  const request = createResendRequest(options);
+  return async (email, properties, context) => {
+    const response = await request(
+      "PATCH",
+      `/contacts/${encodeURIComponent(normaliseAddress(email))}`,
+      { properties },
+    );
+    if (response.ok) return ok({ updated: true });
+    if (response.error.status === 404) return ok({ updated: false });
+    logger.warn(
+      "EMAIL_GATE",
+      "contact_property_update_failed",
+      "Resend did not accept the contact property update",
+      {
+        recipientProfileId: context.recipientProfileId,
+        kind: response.error.kind,
+        status: response.error.status,
+      },
+    );
+    return response;
   };
 }
 

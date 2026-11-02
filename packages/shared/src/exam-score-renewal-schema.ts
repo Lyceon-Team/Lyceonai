@@ -227,6 +227,11 @@ export const renewalPromptViewSchema = z
     prompted_at: z.string(),
     /** The viewer's authority over this occasion: a payer may end the subscription. */
     viewer_role: renewalDeciderRoleSchema,
+    /**
+     * False when the occasion is a past test date the student opened by date, with no post-exam
+     * prompt behind it (owner ruling 2026-11-02): score only, no retake question.
+     */
+    renewal_open: z.boolean().optional(),
     decision: renewalDecisionSchema.nullable(),
     report: examScoreReportViewSchema.nullable(),
   })

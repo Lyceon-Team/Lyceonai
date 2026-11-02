@@ -592,5 +592,16 @@ export async function setQotdEmailPreference(
       message: "Daily emails aren't available for this account.",
     });
   }
+  if (update.enabled) {
+    // Email send gate (ruling 2026-11-02 (3)): the QOTD pause is the gate's pause now, so
+    // Settings "Resume" (and any turn-on) lifts it the way Keep me posted does. A no-op when
+    // nothing is paused.
+    const resumed = await db().rpc("qotd_email_resume", {
+      p_student_id: studentId,
+      p_now: now.toISOString(),
+    });
+    if (resumed.error)
+      throw new Error(`qotd_email_resume failed: ${resumed.error.message}`);
+  }
   return ok(await getQotdEmailPreference(studentId));
 }
