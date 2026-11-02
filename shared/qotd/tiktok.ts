@@ -38,7 +38,6 @@ import {
 } from "../../packages/shared/src/qotd-schema";
 import { plainMathText } from "./plain-math";
 import { QOTD_SECTION_NAME, socialInputFromArchive } from "./social";
-import { bioCtaLine, COMMENT_ANSWER_LINE, funnelPhase } from "../social/funnel";
 
 export const QOTD_TIKTOK_SIZE = { width: 1080, height: 1920 } as const;
 
@@ -67,50 +66,17 @@ export function tiktokSafePx(): {
   };
 }
 
-/** The caption's follow line, always first (Karl, 2026-10-23). */
-export const QOTD_TIKTOK_FOLLOW_LINE = "Follow for daily SAT questions 👆";
-
-/**
- * The TikTok caption: the follow line, then "Comment your answer 👇", then the link-in-bio line
- * (owner brief "One funnel for every social post", Karl, 2026-10-28, item 2), then the tags. The
- * bio line speaks to the Dec 5 cohort until test day, by the day the carousel is posted.
+/*
+ * The TikTok caption is built by shared/social/posts.ts (qotdTiktokCaption): one block with the
+ * headline, the follow and comment line and the hashtags (Karl's rulings 2026-11-02). It replaced
+ * the follow line, the "link in bio" line and the separate title built here.
  */
-export function qotdTiktokCaption(postedOn: string): string {
-  return [
-    QOTD_TIKTOK_FOLLOW_LINE,
-    COMMENT_ANSWER_LINE,
-    bioCtaLine(funnelPhase(postedOn)),
-    "#SAT #SATprep #digitalSAT #studytok",
-  ].join("\n\n");
-}
-
-/** "2026-10-22" -> "Oct 22" (UTC, so the build machine's zone never shifts it). */
-export function formatShortDate(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 /** At most 90 characters, cut at the last whole word (and no trailing separator) if longer. */
 export function capTiktokTitle(text: string): string {
   if (text.length <= QOTD_TIKTOK_TITLE_MAX) return text;
   const cut = text.slice(0, QOTD_TIKTOK_TITLE_MAX + 1);
   return cut.slice(0, cut.lastIndexOf(" ")).replace(/[\s·]+$/, "");
-}
-
-/**
- * "SAT Question of the Day · Oct 22 · Reading and Writing": the date and section only, never
- * question text, hard-capped at 90 characters.
- */
-export function buildTiktokTitle(
-  qotdDate: string,
-  sectionCode: "M" | "RW",
-): string {
-  return capTiktokTitle(
-    `SAT Question of the Day · ${formatShortDate(qotdDate)} · ${QOTD_SECTION_NAME[sectionCode]}`,
-  );
 }
 
 /**

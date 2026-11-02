@@ -519,6 +519,16 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/social-funnel.mutations.sh
 
+      # Daily #social posts (Karl's rulings 2026-11-02): a domain dropped from the keyword map, an
+      # unknown or other-section domain accepted quietly, the keyword order swapped, the test month
+      # rolling over on test day or using an anticipated date, no warning when the SAT date list
+      # runs out, a sixth hashtag, a Facebook link, a headline without its section, a failure
+      # notice that does not name the domain, the warning not posted, and the alt text or the
+      # link to send back in a message (P1-P14). Each must turn its named check red.
+      - name: Social posts mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        run: bash scripts/ci/social-posts.mutations.sh
+
       # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
       # counted, the week cut at UTC midnight, the current week reported, skips counted as
       # answers, study time uncapped, a wider 24-hour window, returning without the week before,
