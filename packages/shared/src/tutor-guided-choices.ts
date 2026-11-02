@@ -20,6 +20,11 @@
  *  - `VIDEO_INTENT_METHOD`: the two video intents and the video method each asks for
  *    (`packages/shared/src/video-methods.ts`). They are served by the server with no model call.
  *
+ *  - Quick replies in walkthroughs (owner brief "Quick replies in walkthroughs", Karl 2026-11-02;
+ *    SCL-268, extending SCL-253/254/255): `step_understood` ("Got it, next step") and `step_stuck`
+ *    ("I'm stuck"). Not guided choices (never in `guidedChoicesFor`): they are offered after a
+ *    LISA reply while a walkthrough is open (`isWalkthroughOpen`), and both are model turns.
+ *
  * Nothing here is recorded as anything but the intent code itself (ruling 5): no memory field,
  * no `preferred_explanation_style`, no `explanation_form`, no mastery.
  */
@@ -32,6 +37,8 @@ export const REVIEW_INTENTS = [
   "explain_rule",
   "video_desmos",
   "video_explanation",
+  "step_understood",
+  "step_stuck",
 ] as const;
 export const reviewIntentSchema = z.enum(REVIEW_INTENTS);
 export type ReviewIntent = z.infer<typeof reviewIntentSchema>;
@@ -43,6 +50,8 @@ export const REVIEW_INTENT_LABELS: Readonly<Record<ReviewIntent, string>> = {
   explain_rule: "Explain the rule",
   video_desmos: "Desmos video",
   video_explanation: "Explanation video",
+  step_understood: "Got it, next step",
+  step_stuck: "I'm stuck",
 };
 
 /** `questions.section`: math or Reading and Writing. */
@@ -72,6 +81,42 @@ export const VIDEO_INTENT_METHOD: Readonly<Record<VideoIntent, VideoMethod>> = {
 
 export function isVideoIntent(intent: ReviewIntent): intent is VideoIntent {
   return intent === "video_desmos" || intent === "video_explanation";
+}
+
+/** The quick replies shown after a LISA reply in a walkthrough, in display order. */
+export const STEP_INTENTS = ["step_understood", "step_stuck"] as const;
+export type StepIntent = (typeof STEP_INTENTS)[number];
+
+export function isStepIntent(intent: ReviewIntent): intent is StepIntent {
+  return intent === "step_understood" || intent === "step_stuck";
+}
+
+/** The intents that open a walkthrough. */
+const WALKTHROUGH_OPENERS: ReadonlySet<ReviewIntent> = new Set([
+  "walkthrough",
+  "desmos_walkthrough",
+]);
+
+/**
+ * @spec [owner brief "Quick replies in walkthroughs" (Karl, 2026-11-02): "After every LISA reply in
+ *        a walkthrough, show two taps … free text always remains"; SCL-268] | @implemented [2026-11-02]
+ * plain English: whether a conversation is in a walkthrough, from the intents of its student
+ * messages in order (null for a typed message). A walkthrough tap ("Walk me through it", Phase B's
+ * "Show me on Desmos") opens one; a quick reply or a typed message leaves it as it was (a question
+ * typed mid-walkthrough does not end it, and a quick reply never opens one); any other tap (a
+ * video, Phase B's "Explain the rule") ends it. The server uses this to
+ * accept a quick reply only inside a walkthrough, and the panel uses the same function to decide
+ * when to show the two taps, so a tap the student sees is one the server accepts. Pure.
+ */
+export function isWalkthroughOpen(
+  studentIntents: readonly (ReviewIntent | null)[],
+): boolean {
+  let open = false;
+  for (const intent of studentIntents) {
+    if (intent === null || isStepIntent(intent)) continue;
+    open = WALKTHROUGH_OPENERS.has(intent);
+  }
+  return open;
 }
 
 /** The choices a review item of this section offers, in order. Pure. */

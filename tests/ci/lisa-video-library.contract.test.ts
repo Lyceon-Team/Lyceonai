@@ -247,12 +247,17 @@ describe("the worker's video marker", () => {
   });
 
   it("no offered videos → no [VIDEOS] block", () => {
-    expect(renderVideoBlock(CASE_35.request)).toBeNull();
+    expect(
+      renderVideoBlock(CASE_35.request, { dataBoundary: false }),
+    ).toBeNull();
   });
 
   // @spec [owner brief "Video retrieval: method tags", Karl 2026-10-27] | @implemented [2026-10-27]
   it("each offered video says how it solves and what shape it is", () => {
-    const block = renderVideoBlock(withVideos(CASE_35.request, LIBRARY)) ?? "";
+    const block =
+      renderVideoBlock(withVideos(CASE_35.request, LIBRARY), {
+        dataBoundary: false,
+      }) ?? "";
     expect(block).toContain(
       `2. "Point Slope Form (SAT Math Formula 3/23)" (Scalar Learning, 0:26; solves with Desmos; lesson)`,
     );
@@ -266,7 +271,9 @@ describe("the worker's video marker", () => {
         { index: 1, title: "T", channel_name: "C", duration_seconds: 61 },
       ],
     });
-    expect(renderVideoBlock(old)).toContain(`1. "T" (C, 1:01)`);
+    expect(renderVideoBlock(old, { dataBoundary: false })).toContain(
+      `1. "T" (C, 1:01)`,
+    );
   });
 
   it("the wire refuses a method or format outside the vocabulary", () => {

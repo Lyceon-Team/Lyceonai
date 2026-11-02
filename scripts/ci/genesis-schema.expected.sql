@@ -21868,7 +21868,7 @@ CREATE TABLE public.tutor_messages (
     status text DEFAULT 'completed'::text NOT NULL,
     intent text,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
-    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text])))),
+    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text])))),
     CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
     CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
@@ -21885,7 +21885,7 @@ COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation histor
 -- Name: COLUMN tutor_messages.intent; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
+COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice or walkthrough quick reply this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
 
 
 --
@@ -21940,7 +21940,7 @@ CREATE TABLE public.tutor_turn_metrics (
     thinking_tokens integer,
     thinking_budget integer,
     intent text,
-    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text]))))
+    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text]))))
 );
 
 
@@ -21983,7 +21983,7 @@ COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex think
 -- Name: COLUMN tutor_turn_metrics.intent; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
+COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice or walkthrough quick reply the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
 
 
 --
