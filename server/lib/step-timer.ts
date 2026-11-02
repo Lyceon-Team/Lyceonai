@@ -26,7 +26,9 @@
  * over it as it does over every line.
  *
  * `at_ms` is the step's start offset from the handler's start, so steps that ran in parallel
- * (a `Promise.all`) are visible as overlapping rather than being read as a sequence.
+ * (a `Promise.all`) are visible as overlapping rather than being read as a sequence. Work opened as
+ * a parallel group (`beginParallelGroup`, H3 2026-10-29) is also marked: one record for the group
+ * with its wall time, and `group` on each member's record.
  * `pre_handler_ms` is the time from the request-id middleware (the first middleware) to the
  * handler: the auth session lookup and profile read happen there, so a slow request whose
  * steps are all fast is attributable.
@@ -59,7 +61,21 @@ export type RouteTimingName =
   | "calendar.read"
   | "tutor.message";
 
-type StepRecord = { step: string; ms: number | null; at_ms: number };
+/**
+ * The parallel groups (owner brief "H3: parallelise the pre-model work", Karl 2026-10-29). A
+ * closed union, like the routes: a new group is a reviewed addition.
+ */
+export type ParallelGroupName = "pre_model";
+
+type StepRecord = {
+  step: string;
+  ms: number | null;
+  at_ms: number;
+  /** On a step that ran as a member of a parallel group: the group's name. */
+  group?: ParallelGroupName;
+  /** On the group's own record, whose `ms` is the group's wall time. */
+  kind?: "parallel_group";
+};
 
 type RouteTimer = {
   route: RouteTimingName;
@@ -156,7 +172,7 @@ export async function timedStep<T>(
  * gates anchor on (the answer route's mastery emission block). Outside a timed request it
  * returns a no-op. Calling the returned function more than once records only the first.
  */
-export function beginStep(step: string): () => void {
+export function beginStep(step: string, group?: ParallelGroupName): () => void {
   const timer = store.getStore();
   if (timer === undefined) return () => undefined;
   const start = performance.now();
@@ -168,6 +184,73 @@ export function beginStep(step: string): () => void {
     step,
     ms: null,
     at_ms: round(start - timer.startedAt),
+    ...(group === undefined ? {} : { group }),
+  };
+  timer.steps.push(record);
+  return () => {
+    if (record.ms === null && !timer.emitted) {
+      record.ms = round(performance.now() - start);
+    }
+  };
+}
+
+// ── Parallel groups ───────────────────────────────────────────────────────────
+
+/**
+ * @spec [owner brief "H3: parallelise the pre-model work" (Karl, 2026-10-29): "route_timing keeps
+ *        every step, adds a parallel-group marker, and records each step's own duration plus the
+ *        group's wall time"] | @implemented [2026-10-29]
+ *
+ * plain English: work that runs at the same time is opened as one group. The group writes ONE
+ * record of its own, `{ step: <group>, kind: "parallel_group", ms: <wall time>, at_ms }`, and each
+ * member's record is the ordinary step record (its own name, its own `ms`, its own `at_ms`) plus
+ * `group: <group>`. Wall time runs from the group's start until every member chain handed to
+ * `closeWhen` has settled. A member that waits on another member before it starts (the context
+ * envelope waits for the pre-submit flag) is opened only when it starts, so its `ms` is its own.
+ * A group still running when the response finished (a crisis turn returns without waiting for the
+ * envelope) keeps `ms: null`, like any step that had not ended. Only the members are tagged: the
+ * `db.*` round trips beneath them are ordinary steps.
+ *
+ * WHAT IT CAN CARRY: the group name is this closed union; the rest are numbers. Outside a timed
+ * request the members simply run.
+ */
+export type ParallelGroup = {
+  /** Run one member now; its record carries the group's name. */
+  step<T>(step: string, fn: () => PromiseLike<T> | T): Promise<T>;
+  /** Close the group's wall time when every one of these has settled (fulfilled or rejected). */
+  closeWhen(members: readonly PromiseLike<unknown>[]): void;
+};
+
+export function beginParallelGroup(group: ParallelGroupName): ParallelGroup {
+  const end = beginGroupRecord(group);
+  return {
+    async step<T>(step: string, fn: () => PromiseLike<T> | T): Promise<T> {
+      const close = beginStep(step, group);
+      try {
+        return await fn();
+      } finally {
+        close();
+      }
+    },
+    closeWhen(members: readonly PromiseLike<unknown>[]): void {
+      void Promise.allSettled(members).then(end);
+    },
+  };
+}
+
+function beginGroupRecord(group: ParallelGroupName): () => void {
+  const timer = store.getStore();
+  if (timer === undefined) return () => undefined;
+  const start = performance.now();
+  if (timer.steps.length >= MAX_STEPS) {
+    timer.dropped += 1;
+    return () => undefined;
+  }
+  const record: StepRecord = {
+    step: group,
+    ms: null,
+    at_ms: round(start - timer.startedAt),
+    kind: "parallel_group",
   };
   timer.steps.push(record);
   return () => {
