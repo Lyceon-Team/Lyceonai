@@ -38,6 +38,7 @@ import {
   planProblems,
   sharedRun,
   spokenHookEchoProblem,
+  TRAP_VOICE_OPENING,
   titleProblems,
   verbatimProblems,
   verbatimWords,
@@ -229,6 +230,39 @@ describe("hook rules", () => {
         "\n",
       ),
     ).toMatch(/H2 claim about people/);
+  });
+});
+
+describe("the spoken trap opens with the trap (Karl's flow wording allowed, SCL-267)", () => {
+  const withTrapVoice = (voice: string): typeof fixture => ({
+    ...fixture,
+    content: { ...fixture.content, trap: { ...fixture.content.trap, voice } },
+  });
+  it("accepts the trap opening and the people-slip opening", () => {
+    for (const voice of [
+      "The trap: adding the percents.",
+      "Here's where people slip. They add the percents.",
+      "Now here's where people slip: you're dividing by a negative.",
+      "Now, here\u2019s where you slip.",
+    ]) {
+      expect(TRAP_VOICE_OPENING.test(voice), voice).toBe(true);
+      expect(
+        exampleProblems(CONTENT, withTrapVoice(voice), kit).problems.join("\n"),
+      ).not.toMatch(/trap\.voice must open/);
+    }
+  });
+  it("refuses a trap line that opens any other way", () => {
+    for (const voice of [
+      "So the answer is wrong if you add.",
+      "People slip here.",
+    ]) {
+      expect(TRAP_VOICE_OPENING.test(voice), voice).toBe(false);
+      expect(
+        exampleProblems(CONTENT, withTrapVoice(voice), kit).problems.join("\n"),
+      ).toMatch(
+        /trap\.voice must open "The trap" or "Here's where people slip"/,
+      );
+    }
   });
 });
 

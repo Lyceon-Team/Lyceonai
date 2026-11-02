@@ -93,7 +93,7 @@ export const workedExampleContentSchema = z
         summary: line,
         /** Written under the fixed "The trap:" heading. */
         notepad: z.array(notepadLine).min(1).max(3),
-        /** Spoken before the answer (SCL-267); starts "The trap". */
+        /** Spoken before the answer (SCL-267); opens "The trap" or "Here's where people slip". */
         voice: line,
       })
       .strict(),

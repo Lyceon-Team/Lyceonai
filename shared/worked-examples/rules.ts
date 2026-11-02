@@ -297,8 +297,16 @@ export function spokenHookEchoProblem(
     : null;
 }
 
-/** The fixed heading of the trap callout; the spoken trap starts with it. */
+/** The fixed heading of the on-screen trap callout. */
 export const TRAP_HEADING = "The trap:";
+
+/**
+ * How the spoken trap opens: "The trap…", or Karl's flow wording "Here's where people slip…"
+ * (optionally after "Now"), from his 2026-11-02 script rules (SCL-267: "the trap ('here's where
+ * people slip')"; the Nov 11 reference script opens it "Now here's where people slip").
+ */
+export const TRAP_VOICE_OPENING =
+  /^(?:the trap\b|(?:now,?\s+)?here[’']?s where (?:people|you) slip\b)/i;
 
 /** The example against its question, its week, its style row and the public-copy lists. */
 export function contentProblems(
@@ -322,8 +330,10 @@ export function contentProblems(
     out.push(
       `answer.notepad "${example.answer.notepad}" does not name choice ${q.correct_answer})`,
     );
-  if (!/^the trap\b/i.test(example.trap.voice))
-    out.push(`trap.voice must start "The trap": "${example.trap.voice}"`);
+  if (!TRAP_VOICE_OPENING.test(example.trap.voice))
+    out.push(
+      `trap.voice must open "The trap" or "Here's where people slip": "${example.trap.voice}"`,
+    );
   if (isoWeekCycle(example.post_on) !== cycle)
     out.push(
       `post_on ${example.post_on} is in ${isoWeekCycle(example.post_on)}, not in its batch ${cycle}`,

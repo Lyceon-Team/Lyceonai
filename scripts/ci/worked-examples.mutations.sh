@@ -384,6 +384,13 @@ ts_plant "W19 loudnorm's measurement misread" scripts/worked-examples/voice.ts \
   "  const start = stderr.lastIndexOf(\"{\");" "  const start = stderr.indexOf(\"[\");" \
   "reads loudnorm's measurement, and none from a silent line"
 
+ts_plant "W20 trap opening narrowed back to The trap only" shared/worked-examples/rules.ts \
+  "  /^(?:the trap\\b|(?:now,?\\s+)?here[’']?s where (?:people|you) slip\\b)/i;" "  /^(?:the trap\\b)/i;" \
+  "accepts the trap opening and the people-slip opening"
+ts_plant "W21 trap opening accepts anything" shared/worked-examples/rules.ts \
+  "  /^(?:the trap\\b|(?:now,?\\s+)?here[’']?s where (?:people|you) slip\\b)/i;" "  /^/i;" \
+  "refuses a trap line that opens any other way"
+
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then echo "WORKED EXAMPLE MUTATIONS: FAIL"; exit 1; fi
