@@ -113,6 +113,10 @@ export const emailMilestonesResultSchema = z.object({
   week_before: z.number().int().min(0),
   day_after: z.number().int().min(0),
   scores_released: z.number().int().min(0),
+  // Karl, 2026-11-02 (the send window and spacing): skips recorded this run. Defaulted so the
+  // code can deploy before 20261128000000 is applied.
+  window_missed: z.number().int().min(0).default(0),
+  milestone_spacing: z.number().int().min(0).default(0),
 });
 
 export const emailGuardianRefreshResultSchema = z.object({

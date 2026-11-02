@@ -485,7 +485,15 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
  * no address.
  */
 export const satWeekBeforePayloadSchema = z
-  .object({ first_name: z.string(), test_date: isoDate })
+  .object({
+    first_name: z.string(),
+    test_date: isoDate,
+    /**
+     * Days from the day the email was emitted to the test (Karl, 2026-11-02: the ±1-day send
+     * window). Absent on events emitted before the window ruling.
+     */
+    days_until: z.number().int().min(1).optional(),
+  })
   .strict();
 export type SatWeekBeforePayload = z.infer<typeof satWeekBeforePayloadSchema>;
 
