@@ -153,9 +153,11 @@ if [ "$HAVE_PG" = 1 ]; then
   sql_plant growth_report_weekly "S2 the exclusions skipped for study time" \
     "               END"$'\n'"          FROM answers a JOIN stu ON stu.id = a.sid" \
     "               END"$'\n'"          FROM answers a" "$NUMBERS"
+  # S3 ADDS the client duration to the server's gap (the fixture's one legacy row carries 10
+  # minutes on a 30-second gap), so it bites only if the client value is read at all.
   sql_plant growth_report_weekly "S3 the client duration read again" \
     "      SELECT user_id AS sid, answered_at, served_at" \
-    "      SELECT user_id AS sid, answered_at, answered_at - make_interval(secs => COALESCE(time_spent_ms, 0) / 1000.0)" \
+    "      SELECT user_id AS sid, answered_at, served_at - make_interval(secs => COALESCE(time_spent_ms, 0) / 1000.0)" \
     "$NUMBERS"
   sql_plant growth_report_weekly "S4 nothing measurable reported as 0, not null" \
     "                 WHEN count(*) FILTER (WHERE a.answered_at > a.served_at) = 0 AND count(*) > 0" \

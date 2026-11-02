@@ -136,7 +136,9 @@ function hours(minutes: number): number {
 export const STUDY_TIME_NOT_RECORDED = "not recorded yet";
 
 /**
- * The study-time line. A week with no measurable time reads "not recorded yet", never 0.0, and
+ * @spec [owner brief "Growth report: 'Study time' reads 0.0 hours" (Karl, 2026-11-02) item 3]
+ *       | @implemented [2026-11-02]
+ * plain English: the study-time line. A week with no measurable time reads "not recorded yet", never 0.0, and
  * no change is computed against it (there is nothing to compare).
  */
 function studyTimeLine(

@@ -9294,6 +9294,9 @@ BEGIN
     ),
     -- served_at and answered_at are both written by the server (served_at once, when the item is
     -- promoted to served; answered_at when the answer is graded), so the gap is server-measured.
+    -- answered_at is Doc 05F's occurred_at: every answer path writes both from the same server
+    -- `now` (practice-canonical.ts, review-canonical.ts, qotd_student_answer). If a path ever
+    -- writes them apart, this measure must follow occurred_at.
     answers AS (
       SELECT user_id AS sid, answered_at, served_at
         FROM public.practice_session_items

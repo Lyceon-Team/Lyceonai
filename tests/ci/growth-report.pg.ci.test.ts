@@ -73,6 +73,7 @@ async function practice(
   answeredAt: string,
   gapMs: number,
   status: "answered" | "skipped" = "answered",
+  legacyClientMs: number | null = null,
 ): Promise<void> {
   const s = randomUUID();
   await pg.query(
@@ -87,9 +88,9 @@ async function practice(
         question_difficulty, question_section, question_item_type, status, is_correct,
         selected_answer, time_spent_ms, occurred_at, served_at, answered_at)
      VALUES ($1, $2, $3, $3, 1, 'SATM1Q90001', 's', '[]'::jsonb, 'B', 'e', 'Algebra', 'ALG.D01', 2,
-             'M', 'mcq', $4, true, 'B', NULL, $5::timestamptz,
+             'M', 'mcq', $4, true, 'B', $7::integer, $5::timestamptz,
              $5::timestamptz - make_interval(secs => $6::double precision / 1000), $5::timestamptz)`,
-    [randomUUID(), s, pid, status, answeredAt, gapMs],
+    [randomUUID(), s, pid, status, answeredAt, gapMs, legacyClientMs],
   );
 }
 
@@ -221,6 +222,9 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
     await practice(G, "2026-11-02T05:30:00Z", 120_000); // 2 min
     // Monday Nov 2 00:30 CST = 06:30 UTC: the NEXT week.
     await practice(G, "2026-11-02T06:30:00Z", 120_000);
+    // A legacy row: a client duration of 10 minutes (the server no longer writes one) on a
+    // 30-second served-to-answered gap. Only the server's 30 s may count.
+    await practice(G, "2026-10-29T12:00:00Z", 30_000, "answered", 600_000);
     await practice(H, "2026-10-28T18:00:00Z", 0); // 30 h after sign-up; a QOTD answer: no gap
     await practice(K, "2026-10-07T12:00:00Z", 0); // the week of Oct 5: answered, nothing measurable
     await premium(H, "2026-10-30T12:00:00Z"); // upgrade, this week
@@ -250,16 +254,17 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
     const rows = await pg.query<{ n: string }>(
       `SELECT count(*) AS n FROM public.practice_session_items`,
     );
-    // A 3, B 1, G 3, H 1, K 1, and 2 each for the four accounts that never count.
-    expect(Number(rows.rows[0]?.n)).toBe(17);
-    // As the server writes them: no client duration anywhere, a served time on every row.
+    // A 3, B 1, G 4, H 1, K 1, and 2 each for the four accounts that never count.
+    expect(Number(rows.rows[0]?.n)).toBe(18);
+    // As the server writes them: a served time on every row, and a client duration only on the
+    // one legacy row (which the report must ignore).
     const shape = await pg.query<{ client: string; served: string }>(
       `SELECT count(*) FILTER (WHERE time_spent_ms IS NOT NULL) AS client,
               count(*) FILTER (WHERE served_at IS NOT NULL) AS served
          FROM (SELECT time_spent_ms, served_at FROM public.practice_session_items
                UNION ALL SELECT time_spent_ms, served_at FROM public.review_session_items) x`,
     );
-    expect(shape.rows[0]).toEqual({ client: "0", served: "22" });
+    expect(shape.rows[0]).toEqual({ client: "1", served: "23" });
   });
 
   it("the reported week is the last complete Monday–Sunday in Chicago", async () => {
@@ -287,12 +292,12 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
         { test_date: "2026-12-05", students: 1 },
         { test_date: null, students: 1 },
       ],
-      questions_answered: 5, // A 2 (skip not counted), B review 1, G Sunday 1, H 1
+      questions_answered: 6, // A 2 (skip not counted), B review 1, G 2 (Sunday, legacy row), H 1
       full_length_answers: 1, // B: one saved, one blank
       reviews_done: 1, // B
-      // A 1 + 5 (1 h capped) + G 2 + B review 3; H's QOTD answer has no gap; the never-counted
-      // accounts' 1- and 2-minute answers are excluded.
-      study_minutes_estimate: 11,
+      // A 1 + 5 (1 h capped) + G 2 + G's legacy row 0.5 (its 10-minute client duration ignored)
+      // + B review 3; H's QOTD answer has no gap; the never-counted accounts are excluded.
+      study_minutes_estimate: 11.5,
       signups_answered_24h: 1, // A (H answered after 30 h)
       upgrades: 1, // H
     });
