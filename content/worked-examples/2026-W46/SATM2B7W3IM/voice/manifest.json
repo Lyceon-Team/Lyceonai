@@ -1,633 +1,678 @@
 {
-  "voice": "af_heart",
+  "voice": "am_michael",
   "speaking_rate": 1,
   "lines": [
     {
       "key": "hook",
-      "text_sha256": "b4f456b2caee67b90d95be4fb3004c3db71f80a241c972a12900c52f19d0fd34",
+      "text_sha256": "4d84a993b89e6df2226a52cdc8e88d68ffbbf33dacbe480fc51d3c1f8e927948",
       "file": "hook.wav",
-      "duration": 6.976,
+      "duration": 5.888,
       "words": [
         {
           "text": "Took",
-          "start": 0.02,
-          "end": 0.37
+          "start": 0.03,
+          "end": 0.41
         },
         {
           "text": "the",
-          "start": 0.37,
-          "end": 0.65
+          "start": 0.43,
+          "end": 0.74
         },
         {
-          "text": "November",
-          "start": 0.65,
-          "end": 1.38
+          "text": "SAT",
+          "start": 0.74,
+          "end": 1.06
         },
         {
-          "text": "7th",
-          "start": 1.39,
-          "end": 1.86
+          "text": "on",
+          "start": 1.06,
+          "end": 1.27
         },
         {
-          "text": "SAT,",
-          "start": 1.86,
-          "end": 2.36
+          "text": "Saturday.",
+          "start": 1.27,
+          "end": 2.2
         },
         {
-          "text": "diameter",
-          "start": 2.37,
-          "end": 2.95
+          "text": "Try",
+          "start": 2.23,
+          "end": 2.35
         },
         {
-          "text": "6,",
-          "start": 2.98,
-          "end": 3.35
+          "text": "this",
+          "start": 2.49,
+          "end": 2.86
         },
         {
-          "text": "height",
-          "start": 3.51,
-          "end": 3.91
+          "text": "one.",
+          "start": 2.86,
+          "end": 3.44
         },
         {
-          "text": "11,",
-          "start": 3.91,
-          "end": 4.6
+          "text": "Is",
+          "start": 3.47,
+          "end": 3.59
         },
         {
-          "text": "is",
-          "start": 4.65,
-          "end": 4.81
+          "text": "it",
+          "start": 3.73,
+          "end": 3.85
         },
         {
-          "text": "the",
-          "start": 4.81,
-          "end": 5.12
-        },
-        {
-          "text": "volume",
-          "start": 5.12,
-          "end": 5.75
+          "text": "really",
+          "start": 3.87,
+          "end": 4.49
         },
         {
           "text": "396",
-          "start": 5.75,
-          "end": 6.68
+          "start": 4.49,
+          "end": 5.23
         },
         {
-          "text": "pi.",
-          "start": 6.68,
-          "end": 6.94
+          "text": "pi?",
+          "start": 5.65,
+          "end": 5.98
         }
       ]
     },
     {
       "key": "question",
-      "text_sha256": "aa0ee3cbeb25d6cb7c8f9c31f9956aa01a9fcbd9c4513a32e3712ba3087177d4",
+      "text_sha256": "84d9baa074cdb554b21e0905b1b0b9ac90348ff143f82fcfe15fc7761a08b107",
       "file": "question.wav",
-      "duration": 6.635,
+      "duration": 4.544,
       "words": [
         {
-          "text": "A",
-          "start": 0.03,
-          "end": 0.06
+          "text": "We've",
+          "start": 0.06,
+          "end": 0.36
         },
         {
-          "text": "cylindrical",
-          "start": 0.06,
-          "end": 0.8
+          "text": "got",
+          "start": 0.38,
+          "end": 0.59
+        },
+        {
+          "text": "a",
+          "start": 0.59,
+          "end": 0.66
         },
         {
           "text": "water",
-          "start": 0.8,
-          "end": 1.14
+          "start": 0.66,
+          "end": 1.03
         },
         {
           "text": "tank",
-          "start": 1.14,
-          "end": 1.35
+          "start": 1.03,
+          "end": 1.33
         },
         {
-          "text": "has",
-          "start": 1.44,
-          "end": 1.61
+          "text": "shaped",
+          "start": 1.33,
+          "end": 1.78
+        },
+        {
+          "text": "like",
+          "start": 1.78,
+          "end": 2.08
         },
         {
           "text": "a",
-          "start": 1.61,
-          "end": 1.67
+          "start": 2.08,
+          "end": 2.15
         },
         {
-          "text": "diameter",
-          "start": 1.67,
-          "end": 2.28
-        },
-        {
-          "text": "of",
-          "start": 2.28,
-          "end": 2.41
-        },
-        {
-          "text": "6",
-          "start": 2.46,
-          "end": 2.7
-        },
-        {
-          "text": "feet",
-          "start": 2.76,
-          "end": 2.97
+          "text": "cylinder,",
+          "start": 2.15,
+          "end": 2.93
         },
         {
           "text": "and",
-          "start": 3.28,
-          "end": 3.32
+          "start": 2.93,
+          "end": 3.13
         },
         {
-          "text": "a",
-          "start": 3.32,
-          "end": 3.4
+          "text": "we",
+          "start": 3.13,
+          "end": 3.25
         },
         {
-          "text": "height",
-          "start": 3.4,
-          "end": 3.95
+          "text": "want",
+          "start": 3.27,
+          "end": 3.53
         },
         {
-          "text": "of",
-          "start": 3.95,
-          "end": 4.12
+          "text": "how",
+          "start": 3.53,
+          "end": 3.7
         },
         {
-          "text": "11",
-          "start": 4.12,
-          "end": 4.6
+          "text": "much",
+          "start": 3.75,
+          "end": 4
         },
         {
-          "text": "feet.",
-          "start": 5.08,
-          "end": 5.24
+          "text": "it",
+          "start": 4,
+          "end": 4.13
         },
         {
-          "text": "What",
-          "start": 5.27,
-          "end": 5.41
-        },
-        {
-          "text": "is",
-          "start": 5.44,
-          "end": 5.54
-        },
-        {
-          "text": "the",
-          "start": 5.54,
-          "end": 5.69
-        },
-        {
-          "text": "volume",
-          "start": 5.69,
-          "end": 5.99
-        },
-        {
-          "text": "of",
-          "start": 5.99,
-          "end": 6.09
-        },
-        {
-          "text": "the",
-          "start": 6.09,
-          "end": 6.24
-        },
-        {
-          "text": "tank?",
-          "start": 6.24,
-          "end": 6.59
+          "text": "holds.",
+          "start": 4.13,
+          "end": 4.52
         }
       ]
     },
     {
       "key": "step-1",
-      "text_sha256": "14512c5da5134ec6ace3dc5b541ace5327d67cbf10a77c89722e5a763d92abed",
+      "text_sha256": "0455e9b8850a8bc76fa686c4b848366cd7164d6e00e058228c18d4b998ceddea",
       "file": "step-1.wav",
-      "duration": 4.309,
+      "duration": 4.672,
       "words": [
         {
-          "text": "Write",
-          "start": 0.04,
-          "end": 0.3
-        },
-        {
-          "text": "the",
-          "start": 0.4,
-          "end": 0.56
-        },
-        {
-          "text": "formula",
-          "start": 0.56,
-          "end": 0.99
-        },
-        {
-          "text": "first.",
-          "start": 0.99,
-          "end": 1.64
-        },
-        {
-          "text": "The",
-          "start": 1.64,
-          "end": 1.81
+          "text": "Okay,",
+          "start": 0.13,
+          "end": 0.52
         },
         {
           "text": "volume",
-          "start": 1.81,
-          "end": 2.15
+          "start": 0.52,
+          "end": 1.04
         },
         {
           "text": "of",
-          "start": 2.15,
-          "end": 2.2
+          "start": 1.04,
+          "end": 1.21
         },
         {
           "text": "a",
-          "start": 2.2,
-          "end": 2.33
+          "start": 1.21,
+          "end": 1.29
         },
         {
           "text": "cylinder",
-          "start": 2.33,
-          "end": 2.76
+          "start": 1.29,
+          "end": 1.97
         },
         {
           "text": "is",
-          "start": 2.78,
-          "end": 2.92
+          "start": 1.98,
+          "end": 2.15
         },
         {
           "text": "pi",
-          "start": 3,
-          "end": 3.15
+          "start": 2.15,
+          "end": 2.31
         },
         {
-          "text": "r",
-          "start": 3.15,
-          "end": 3.23
-        },
-        {
-          "text": "squared",
-          "start": 3.23,
-          "end": 3.84
+          "text": "r-squared",
+          "start": 2.32,
+          "end": 3.07
         },
         {
           "text": "h.",
-          "start": 3.84,
-          "end": 4.3
+          "start": 3.07,
+          "end": 3.28
+        },
+        {
+          "text": "Write",
+          "start": 3.67,
+          "end": 3.79
+        },
+        {
+          "text": "that",
+          "start": 3.79,
+          "end": 4.01
+        },
+        {
+          "text": "first.",
+          "start": 4.18,
+          "end": 4.5
         }
       ]
     },
     {
       "key": "step-2",
-      "text_sha256": "63f83602b512543e022f143a78321e73f301991270225d7cd9e1d9d9c1d99078",
+      "text_sha256": "29520cdb1ceee211043477d24c7f3679f9e703f1390ae1ae6d380c7068864fac",
       "file": "step-2.wav",
-      "duration": 4.032,
+      "duration": 4.395,
       "words": [
         {
-          "text": "The",
-          "start": 0.03,
-          "end": 0.23
+          "text": "Now",
+          "start": 0.05,
+          "end": 0.2
         },
         {
-          "text": "radius",
-          "start": 0.23,
-          "end": 0.7
+          "text": "they",
+          "start": 0.2,
+          "end": 0.44
         },
         {
-          "text": "is",
-          "start": 0.7,
-          "end": 0.85
+          "text": "gave",
+          "start": 0.5,
+          "end": 0.74
         },
         {
-          "text": "half",
-          "start": 0.85,
-          "end": 1.16
+          "text": "you",
+          "start": 0.74,
+          "end": 0.94
         },
         {
           "text": "the",
-          "start": 1.16,
-          "end": 1.39
+          "start": 0.94,
+          "end": 1.14
         },
         {
           "text": "diameter,",
-          "start": 1.39,
-          "end": 2.2
+          "start": 1.14,
+          "end": 1.82
+        },
+        {
+          "text": "not",
+          "start": 1.82,
+          "end": 2.02
+        },
+        {
+          "text": "the",
+          "start": 2.02,
+          "end": 2.22
+        },
+        {
+          "text": "radius.",
+          "start": 2.22,
+          "end": 2.9
+        },
+        {
+          "text": "Half",
+          "start": 2.95,
+          "end": 3.27
+        },
+        {
+          "text": "of",
+          "start": 3.27,
+          "end": 3.44
         },
         {
           "text": "6",
-          "start": 2.21,
-          "end": 2.47
-        },
-        {
-          "text": "divided",
-          "start": 2.57,
-          "end": 3.09
-        },
-        {
-          "text": "by",
-          "start": 3.09,
-          "end": 3.26
-        },
-        {
-          "text": "2",
-          "start": 3.3,
-          "end": 3.54
-        },
-        {
-          "text": "is",
-          "start": 3.54,
+          "start": 3.5,
           "end": 3.72
         },
         {
-          "text": "3.",
+          "text": "is",
           "start": 3.72,
-          "end": 4
+          "end": 3.9
+        },
+        {
+          "text": "3.",
+          "start": 3.9,
+          "end": 4.2
         }
       ]
     },
     {
       "key": "step-3",
-      "text_sha256": "963fec9984bf11c1324f3a4918a7432f38cb38ee1318bb9157a8514ee0f7fd0a",
+      "text_sha256": "9ed05f4e168c187b0de7cd56d4b2cdbbd3e3a5f7842c5636aa3ea23f9c71200c",
       "file": "step-3.wav",
-      "duration": 3.477,
+      "duration": 3.584,
       "words": [
         {
-          "text": "Now",
-          "start": 0.04,
-          "end": 0.24
+          "text": "Plug",
+          "start": 0.03,
+          "end": 0.42
         },
         {
-          "text": "substitute,",
-          "start": 0.24,
-          "end": 1.24
+          "text": "it",
+          "start": 0.42,
+          "end": 0.63
         },
         {
-          "text": "pi",
-          "start": 1.31,
-          "end": 1.37
+          "text": "in.",
+          "start": 0.63,
+          "end": 1.16
+        },
+        {
+          "text": "Pi",
+          "start": 1.19,
+          "end": 1.31
         },
         {
           "text": "times",
-          "start": 1.37,
-          "end": 1.71
+          "start": 1.31,
+          "end": 1.69
         },
         {
           "text": "three",
-          "start": 1.71,
-          "end": 2.05
+          "start": 1.69,
+          "end": 1.9
         },
         {
           "text": "squared",
-          "start": 2.05,
-          "end": 2.52
+          "start": 2.37,
+          "end": 2.61
         },
         {
           "text": "times",
-          "start": 2.52,
-          "end": 2.86
+          "start": 2.61,
+          "end": 2.99
         },
         {
-          "text": "eleven.",
-          "start": 2.86,
-          "end": 3.36
+          "text": "11.",
+          "start": 2.99,
+          "end": 3.72
         }
       ]
     },
     {
       "key": "step-4",
-      "text_sha256": "6a5a4f4faac5e12df5d129e865f85d962e7b45a3af7ace383a2f4a2a66185449",
+      "text_sha256": "8befaa2b6c222b4ea7e553d7c5e54812f1ce1e4d828b3b3da6c1bb845c7a08a7",
       "file": "step-4.wav",
-      "duration": 4.992,
+      "duration": 5.653,
       "words": [
         {
           "text": "3",
-          "start": 0.12,
-          "end": 0.26
+          "start": 0.1,
+          "end": 0.31
         },
         {
           "text": "squared",
-          "start": 0.26,
-          "end": 0.87
+          "start": 0.31,
+          "end": 1.03
         },
         {
           "text": "is",
-          "start": 0.87,
-          "end": 1.04
-        },
-        {
-          "text": "9,",
-          "start": 1.04,
-          "end": 1.49
-        },
-        {
-          "text": "and",
-          "start": 1.49,
-          "end": 1.74
-        },
-        {
-          "text": "9",
-          "start": 1.74,
-          "end": 1.99
-        },
-        {
-          "text": "times",
-          "start": 1.99,
-          "end": 2.41
-        },
-        {
-          "text": "11",
-          "start": 2.41,
-          "end": 2.92
-        },
-        {
-          "text": "is",
-          "start": 2.92,
-          "end": 3.09
-        },
-        {
-          "text": "99.",
-          "start": 3.09,
-          "end": 3.8
-        },
-        {
-          "text": "99",
-          "start": 3.92,
-          "end": 4.94
-        },
-        {
-          "text": "pi.",
-          "start": 5.19,
-          "end": 6
-        }
-      ]
-    },
-    {
-      "key": "answer",
-      "text_sha256": "2109097cb583770c154f07df22373da769080cfcaf00616508ec3c5779feb882",
-      "file": "answer.wav",
-      "duration": 3.157,
-      "words": [
-        {
-          "text": "So",
-          "start": 0.07,
-          "end": 0.17
-        },
-        {
-          "text": "the",
-          "start": 0.17,
-          "end": 0.43
-        },
-        {
-          "text": "answer",
-          "start": 0.43,
-          "end": 0.95
-        },
-        {
-          "text": "is",
-          "start": 0.95,
+          "start": 1.03,
           "end": 1.08
         },
         {
-          "text": "C,",
-          "start": 1.2,
-          "end": 1.4
+          "text": "9,",
+          "start": 1.56,
+          "end": 1.76
+        },
+        {
+          "text": "9",
+          "start": 1.76,
+          "end": 2.06
+        },
+        {
+          "text": "times",
+          "start": 2.06,
+          "end": 2.56
+        },
+        {
+          "text": "11",
+          "start": 2.56,
+          "end": 3.16
+        },
+        {
+          "text": "is",
+          "start": 3.16,
+          "end": 3.36
+        },
+        {
+          "text": "99,",
+          "start": 3.36,
+          "end": 4.04
+        },
+        {
+          "text": "so",
+          "start": 4.09,
+          "end": 4.34
         },
         {
           "text": "99",
-          "start": 1.45,
-          "end": 1.92
+          "start": 4.34,
+          "end": 5.25
         },
         {
-          "text": "pi",
-          "start": 1.92,
-          "end": 2.09
-        },
-        {
-          "text": "cubic",
-          "start": 2.09,
-          "end": 2.53
-        },
-        {
-          "text": "feet.",
-          "start": 2.53,
-          "end": 3.06
+          "text": "pi.",
+          "start": 5.25,
+          "end": 5.56
         }
       ]
     },
     {
       "key": "trap",
-      "text_sha256": "1fb578fa42e2a18fbf76ec70a7a56fdf5819c0a49c9c5b17b9aba7850e4dca04",
+      "text_sha256": "e90507f484044d45e136c752c017ce5c9e248d3eebe1a341e9ac9c31bc503b17",
       "file": "trap.wav",
-      "duration": 8.128,
+      "duration": 10.347,
       "words": [
         {
-          "text": "The",
-          "start": 0.05,
-          "end": 0.24
+          "text": "Here's",
+          "start": 0.09,
+          "end": 0.45
         },
         {
-          "text": "trap,",
-          "start": 0.24,
-          "end": 0.72
+          "text": "where",
+          "start": 0.53,
+          "end": 0.88
         },
         {
-          "text": "plugging",
-          "start": 0.72,
-          "end": 1.35
+          "text": "people",
+          "start": 0.88,
+          "end": 1.15
+        },
+        {
+          "text": "slip.",
+          "start": 1.15,
+          "end": 1.81
+        },
+        {
+          "text": "They",
+          "start": 1.81,
+          "end": 2.02
+        },
+        {
+          "text": "plug",
+          "start": 2.07,
+          "end": 2.39
         },
         {
           "text": "in",
-          "start": 1.43,
-          "end": 1.52
+          "start": 2.45,
+          "end": 2.59
         },
         {
           "text": "six",
-          "start": 1.52,
-          "end": 1.76
+          "start": 2.59,
+          "end": 2.85
         },
         {
           "text": "as",
-          "start": 1.76,
-          "end": 1.92
+          "start": 2.85,
+          "end": 2.88
         },
         {
           "text": "the",
-          "start": 1.92,
-          "end": 2.16
+          "start": 3,
+          "end": 3.25
         },
         {
-          "text": "radius.",
-          "start": 2.16,
-          "end": 2.94
+          "text": "radius,",
+          "start": 3.5,
+          "end": 4.04
         },
         {
-          "text": "Six",
-          "start": 2.99,
-          "end": 3.18
-        },
-        {
-          "text": "is",
-          "start": 3.18,
-          "end": 3.33
+          "text": "square",
+          "start": 4.13,
+          "end": 4.45
         },
         {
           "text": "the",
-          "start": 3.33,
-          "end": 3.66
+          "start": 4.45,
+          "end": 4.66
         },
         {
-          "text": "diameter,",
-          "start": 3.66,
-          "end": 4.42
+          "text": "wrong",
+          "start": 4.66,
+          "end": 5.01
         },
         {
-          "text": "so",
-          "start": 4.42,
-          "end": 4.56
+          "text": "number,",
+          "start": 5.01,
+          "end": 5.68
         },
         {
-          "text": "you",
-          "start": 4.56,
-          "end": 4.76
+          "text": "and",
+          "start": 5.82,
+          "end": 6.03
         },
         {
-          "text": "get",
-          "start": 4.76,
-          "end": 4.96
+          "text": "land",
+          "start": 6.06,
+          "end": 6.52
+        },
+        {
+          "text": "on",
+          "start": 6.52,
+          "end": 6.76
         },
         {
           "text": "396",
-          "start": 4.98,
-          "end": 6.46
+          "start": 6.76,
+          "end": 7.8
         },
         {
-          "text": "pi,",
-          "start": 6.46,
-          "end": 6.91
+          "text": "pi.",
+          "start": 8.09,
+          "end": 8.48
+        },
+        {
+          "text": "That's",
+          "start": 8.57,
+          "end": 8.93
         },
         {
           "text": "four",
-          "start": 6.91,
-          "end": 7.13
+          "start": 9.01,
+          "end": 9.3
         },
         {
           "text": "times",
-          "start": 7.13,
-          "end": 7.4
+          "start": 9.3,
+          "end": 9.63
         },
         {
           "text": "too",
-          "start": 7.42,
-          "end": 7.58
+          "start": 9.77,
+          "end": 9.78
         },
         {
           "text": "big.",
-          "start": 7.58,
-          "end": 7.78
+          "start": 10.21,
+          "end": 10.47
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "e6507fb1fee8d84bb8419d7ebd0e54c6056a9659a5dd94d576f17a58ada3a098",
+      "file": "answer.wav",
+      "duration": 9.877,
+      "words": [
+        {
+          "text": "So",
+          "start": 0.05,
+          "end": 0.26
+        },
+        {
+          "text": "it's",
+          "start": 0.32,
+          "end": 0.78
+        },
+        {
+          "text": "C99",
+          "start": 0.78,
+          "end": 1.69
+        },
+        {
+          "text": "pi",
+          "start": 1.69,
+          "end": 1.91
+        },
+        {
+          "text": "cubic",
+          "start": 1.96,
+          "end": 2.55
+        },
+        {
+          "text": "feet.",
+          "start": 2.59,
+          "end": 3.16
+        },
+        {
+          "text": "Quick",
+          "start": 3.21,
+          "end": 3.61
+        },
+        {
+          "text": "check,",
+          "start": 3.61,
+          "end": 4.19
+        },
+        {
+          "text": "radius",
+          "start": 4.24,
+          "end": 4.91
+        },
+        {
+          "text": "3",
+          "start": 4.91,
+          "end": 5.24
+        },
+        {
+          "text": "not",
+          "start": 5.24,
+          "end": 5.44
+        },
+        {
+          "text": "6",
+          "start": 5.57,
+          "end": 5.75
+        },
+        {
+          "text": "and",
+          "start": 5.91,
+          "end": 6.03
+        },
+        {
+          "text": "99",
+          "start": 6.37,
+          "end": 6.86
+        },
+        {
+          "text": "is",
+          "start": 6.93,
+          "end": 7.05
+        },
+        {
+          "text": "a",
+          "start": 7.05,
+          "end": 7.13
+        },
+        {
+          "text": "quarter",
+          "start": 7.13,
+          "end": 7.73
+        },
+        {
+          "text": "of",
+          "start": 7.73,
+          "end": 7.9
+        },
+        {
+          "text": "396,",
+          "start": 7.9,
+          "end": 8.79
+        },
+        {
+          "text": "makes",
+          "start": 8.84,
+          "end": 9.16
+        },
+        {
+          "text": "sense.",
+          "start": 9.27,
+          "end": 9.98
         }
       ]
     }
