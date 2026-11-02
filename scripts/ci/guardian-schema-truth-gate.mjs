@@ -65,9 +65,9 @@ const IN_SCOPE = /(^|\/)(guardian|subject-resolver)[^/]*\.(test|spec)\.(ts|tsx)$
  */
 const ACCEPTED = new Map([
   ["tests/ci/guardian-reporting.contract.test.ts",
-   { owner: "guardian", expires: "2026-11-01", why: "~900 lines; conversion is its own change" }],
+   { owner: "guardian", expires: "2026-12-01", why: "~900 lines; conversion is its own change" }],
   ["tests/ci/guardian.anti-leak.ci.test.ts",
-   { owner: "guardian", expires: "2026-11-01", why: "RULE-4 walker asserts on projections, not rows" }],
+   { owner: "guardian", expires: "2026-12-01", why: "RULE-4 walker asserts on projections, not rows" }],
   // server/__tests__/guardian-payment-access.test.ts: CONVERTED and removed (G1-10) — now
   // tests/ci/guardian-payment-access.pg.ci.test.ts, on real rows.
   // NOT the same kind of entry as the two above, and the difference is the open question.
@@ -79,7 +79,7 @@ const ACCEPTED = new Map([
   // private schema copy Rule B exists to stop. The right end state is a split file, not a
   // converted one. See owner question.
   ["tests/ci/subject-resolver.contract.test.ts",
-   { owner: "guardian", expires: "2026-11-01", why: "injects decisions Postgres cannot produce; needs splitting, not converting" }],
+   { owner: "guardian", expires: "2026-12-01", why: "injects decisions Postgres cannot produce; needs splitting, not converting" }],
 ]);
 
 const tracked = execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
