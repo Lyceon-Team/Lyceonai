@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM2PW20AL",
+  "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+  "post_on": "2026-11-16",
+  "hook": {
+    "type": "contrarian",
+    "line": "Most people think the calculator is the fastest way to solve this equation…",
+    "voice": "Most people think the calculator is the fastest way to solve this equation…"
+  },
+  "question_voice": "What is the solution set of the equation: the square root of 6x plus 19 equals x plus 2?",
+  "signature_move": "Graph each side of the equation as its own function and read where the two graphs cross.",
+  "steps": [
+    {
+      "notepad": "y = √(6x + 19)",
+      "voice": "Graph the left side as its own curve: y equals the square root of 6x plus 19."
+    },
+    {
+      "notepad": "y = x + 2",
+      "voice": "Graph the right side as a line: y equals x plus 2."
+    },
+    {
+      "notepad": "one crossing: (5, 7)",
+      "voice": "The two graphs cross once, at the point 5, 7."
+    },
+    {
+      "notepad": "x = 5 is the only solution",
+      "voice": "The crossing's x value, 5, is the only solution."
+    }
+  ],
+  "answer": {
+    "letter": "C",
+    "notepad": "only x = 5 → C) {5}",
+    "voice": "So the solution set holds just 5. The answer is C."
+  },
+  "trap": {
+    "summary": "Squaring both sides gives x = 5 or x = −3, and keeping −3 without checking it picks {−3, 5}.",
+    "notepad": [
+      "square it: x = 5 or x = −3",
+      "x = −3: √1 = 1, but −3 + 2 = −1",
+      "the graphs never meet at −3  ✗"
+    ],
+    "voice": "The trap: squaring both sides also gives negative 3. But there, the root is 1 and x plus 2 is negative 1. The graphs never meet there, so B is wrong."
+  },
+  "check": "At x = 5: √(6 · 5 + 19) = √49 = 7, and 5 + 2 = 7.",
+  "takeaway": "Graphing both sides shows only the real crossings, so a root that squaring adds never appears."
+}
