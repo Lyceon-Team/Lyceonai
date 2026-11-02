@@ -1,12 +1,13 @@
 # 08: Content and voice
 
-How Lyceon sounds, how content gets made outside the blog pipeline, and how each channel works.
+How Lyceon sounds, how content gets made outside the blog pipeline, and how each channel works. Channels, cadence, calls to action and "free" follow Karl's content rulings of 2026-11-02 (`02` §10a), which supersede Doc 10B where they conflict (SCL-264).
 
 ## Contents
 1. Voice
 2. Words and patterns to avoid
 3. The content workflow (outside the blog pipeline)
 4. Channel playbooks
+4a. Calls to action and "free"
 5. Copy checklist (run before anything goes to Quinn)
 
 ---
@@ -29,7 +30,9 @@ How Lyceon sounds, how content gets made outside the blog pipeline, and how each
 - "AI" in headlines; any mention of models, automation or how content was made (LISA as a feature excepted).
 - Score promises ("raise your score 200 points"), "guaranteed", "better than a tutor".
 - Fear lines aimed at teens ("you'll fall behind", "don't ruin your future").
-- Normalizing the problem ("most students procrastinate").
+- Normalizing the problem as pressure in student-facing copy ("most students procrastinate", "everyone else has already started").
+- **Exception: "Most people…" hooks are allowed** (Karl, 2026-11-02; replaces the earlier ban). A hook may open with "Most people…" ("Most people think it's $64…?"). Only the opening is exempt: the rest of the hook is held to every other rule, and the fear and pressure bans above still apply. The worked-example check is PR #1395 (`shared/worked-examples/rules.ts`, H2; SCL-265).
+- The Desmos interface, logo or the word "Desmos" in on-screen text or captions, until Desmos replies to Karl's permission request (Karl, 2026-11-02). Say "graphing calculator"; draw graphs in Lyceon's own rendering (Manim).
 - Fake urgency ("only today!", "spots filling fast" when untrue).
 - Any internal metric, mechanism or architecture detail.
 
@@ -47,18 +50,20 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 
 ## 4. Channel playbooks
 
-### Reddit (the primary channel)
-- Karl posts, by hand, in his own voice. The CMO drafts and suggests; never posts.
-- Each subreddit's rules come first; many restrict self-promotion. Lead with genuine help; mention Lyceon only when relevant.
-- The DM link should carry UTM tags (`lyceon.ai/login?utm_source=reddit&utm_medium=dm`); a public link in a post gets `utm_medium=post` and a campaign name.
-- r/satquestions (Lyceon's own) carries the daily QOTD.
-- Risk to watch: dependence on one channel run by one person's time; a moderation change could cut it off. Build the second channel while this one works.
+### Reddit (founder-led, manual only)
+- Karl, by hand, in his own voice. The CMO drafts and suggests; never posts (Karl, 2026-11-02).
+- What Karl does there: replies, DMs to people who ask, and at most one promo post per subreddit per week, following each subreddit's rules. Each subreddit's rules come first; many restrict self-promotion. Lead with genuine help; mention Lyceon only when relevant.
+- No links in public comments. No cross-posting Lyceon's own content (QOTD, worked examples, videos). No new subreddits or accounts.
+- The Reddit Question of the Day is discontinued: the subreddit that carried it was banned by Reddit (Karl, 2026-10-30).
+- The DM link carries UTM tags (`lyceon.ai/login?utm_source=reddit&utm_medium=dm`); a link in a promo post, where the subreddit's rules allow one, gets `utm_medium=post` and a campaign name.
+- Risk to watch: dependence on one channel run by one person's time; a moderation change could cut it off (the QOTD subreddit already was). Build the social channels while this one works.
 
 ### Question of the Day
 - A ready-made premise: one question, answerable in seconds, works without knowing the brand.
 - Only quick-to-read questions: mostly Math multiple choice plus short Reading and Writing; no grid-ins, no long or paired passages.
 - "% got this right" only after 5 entries, and only the real number.
-- Judge each place it's posted on its own numbers. As of 2026-10-15, Instagram sent almost no visitors; Reddit drives most signups indirectly.
+- Daily, to TikTok (carousel), Instagram and the Facebook Page, by hand from `#social` (`docs/runbooks/qotd-slack.md`). Not on Reddit (discontinued 2026-10-30).
+- Judge each place it's posted on its own numbers.
 
 ### Blog and SEO
 - Content-ops runs it: 3 posts a week, calendar-aware (days to the next test, deadlines, score releases).
@@ -72,11 +77,17 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - UTM-tag every link. Click tracking only once the policy update covering it is live.
 - The founding-cohort sequence and its lapse plan are the most important emails of the next two months.
 
-### Social and short video (TikTok, Instagram, X, YouTube, Facebook)
-- Faceless videos for now; 2 a week. Open inside the product in the first seconds; one premise; a new beat before attention drops.
-- Student register on TikTok and Instagram; parent register on Facebook.
+### Social and short video (TikTok, Instagram Reels, YouTube Shorts, Facebook Page, X)
+- **Channels (Karl, 2026-11-02):** TikTok, Instagram Reels, YouTube Shorts and a Facebook Page. Student register on TikTok, Instagram and Shorts; parent register on the Facebook Page (parent-leaning). X is founder / build-in-public only, in Karl's voice, and not tracked against targets.
+- **Cadence (a starting shape that changes with the data):** QOTD daily. Worked examples Mon/Wed/Fri, plus more if quality holds. Other days rotate graphing-calculator/trap, product moments, test-date/myth and parent posts. "Graphing method vs by hand" content draws its graphs in Lyceon's own rendering (Manim) and never names or shows Desmos until Desmos replies (§2).
+- Faceless videos for now. Open inside the product or the problem in the first seconds; one premise; a new beat before attention drops.
+- **Video tools:** Hyperframes is the core. Pilots: OpenScreen (screen demos; not of the Desmos interface for now), Manim with manim-voiceover (math visuals), Kokoro-82M (voice). Rejected: Remotion (licence), stock-footage generators, AI video/avatar models.
+- **TikTok keywords:** Karl adds them via TikTok's Manage keywords, from the `#social` keyword block (SCL-262).
+- **YouTube Shorts:** the same vertical videos as TikTok and Reels; the walkthrough video stays on the channel.
+- **Facebook Page:** parent-leaning; QOTD, worked examples and parent posts; end with a genuine question (§4a).
+- **Measure:** the Monday analytics pull (`03` §2); judge a video at 72 hours on retention, saves per 1,000 views and share of views from search; each test has an experiment ID. Numbers go in the private Drive tracker, never in the repo.
 - Karl applies platform AI labels at publish time; the content never mentions how it was made.
-- Delivered to Slack #social for Karl's approval; posted by hand today (QOTD to Reddit and TikTok nightly). Automated posting is planned on Buffer's free plan when the schedule expands across platforms, Blotato if its limits bind; Reddit never (SCL-243).
+- Delivered to Slack #social for Karl's approval; posted by hand. No scheduler for now (Karl, 2026-11-02; replaces SCL-243's Buffer/Blotato plan). Reddit never.
 
 ### Landing pages and the homepage
 - Order by the Hierarchy of Skepticism for parents: who we are and is it safe, then can it help, will my kid use it, then price.
@@ -92,6 +103,17 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - Only when the gate is open; every message is an action file Karl approves.
 - Research what they need before writing; lead with their problem, not Lyceon.
 
+## 4a. Calls to action and "free" (Karl, 2026-11-02)
+
+| Channel | Call to action |
+|---|---|
+| TikTok | None in the post: no links, no promo lines. The bio link is set once. |
+| Instagram | "Comment SAT and I'll send you the link". |
+| Facebook Page | A genuine question ("How would you solve it?"). No link, no "comment a word". |
+| Reddit | No links in public comments; a link only by DM to someone who asked. |
+
+**"Free"** only ever refers to the diagnostic, daily practice (40 questions a day) or the Question of the Day. The study calendar, the parent view, LISA (the tutor) and full-length tests are always presented as Pro. LISA is never promoted as free.
+
 ## 5. Copy checklist (run before anything goes to Quinn)
 
 - [ ] One promise, stated plainly.
@@ -102,7 +124,9 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - [ ] No "AI" in the headline; no mention of how the content was made.
 - [ ] No score promises, guarantees, or "better than a tutor".
 - [ ] No fake urgency or scarcity; any deadline is real.
-- [ ] No fear aimed at teens; no normalizing the problem.
+- [ ] No fear aimed at teens; no normalizing the problem as pressure ("Most people…" hooks are fine).
+- [ ] "Free" only for the diagnostic, daily practice or the QOTD; calendar, parent view, LISA and full-length tests shown as Pro.
+- [ ] The channel's call to action (§4a); no Desmos name, logo or interface.
 - [ ] Written to one person; plain words; no AI-tell phrases.
 - [ ] Links carry UTM tags; the success metric and run length are set.
 - [ ] Passes the ethical test: would the reader be glad if they knew how we persuaded them?

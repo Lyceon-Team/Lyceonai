@@ -4,6 +4,15 @@ Owner brief: "Worked examples: production system" (Karl, 2026-10-27). Engine: Hy
 (Karl's pick, 2026-10-27; Hypit shelved until 1.0). Music: "Happy Beats / Business Moves Vol. 12"
 by ende.app, CC BY 4.0, credited in every caption.
 
+**Cadence and tools (Karl's content rulings, 2026-11-02; SCL-264).** Worked examples post Mon/Wed/Fri,
+plus more if quality holds; the other days rotate graphing-calculator/trap, product moments,
+test-date/myth and parent posts. A starting shape that changes with the data. Hyperframes stays the
+core; pilots are OpenScreen (screen demos), Manim with manim-voiceover (math visuals) and Kokoro-82M
+(voice); Remotion (licence), stock-footage generators, AI video/avatar models and schedulers are
+rejected for now. Until Desmos replies to the permission request, no example shows the Desmos
+interface or logo or says "Desmos" on screen or in a caption (OpenScreen included): a graphing
+method is drawn in our own rendering (Manim). Posting stays by hand from `#social`.
+
 ## What runs where
 
 | Piece | Where | What it does |
@@ -69,6 +78,11 @@ re-run.
 to `social` with its own token, as the approval stamp does.
 
 ## Metrics (manual entry, monthly readout)
+
+Every Monday, Karl's analytics pull (Claude in Chrome, read-only) reads each platform's numbers into
+the private Drive tracker; numbers never go in the repository. Judge a video at 72 hours on
+retention, saves per 1,000 views and share of views from search; each test carries an experiment
+ID (Karl, 2026-11-02; SCL-264).
 
 Enter readings from each platform's analytics into `worked_example_metrics` (Karl, owner-run):
 

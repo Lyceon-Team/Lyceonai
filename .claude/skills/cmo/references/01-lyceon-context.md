@@ -30,17 +30,19 @@ What the CMO needs to know about the company. Facts carry the date they were tru
 
 Say what it does for the student; never how (SKILL.md rule 12). Verify each against `docs/marketing/cmo/product-facts.md` before public use.
 
+**Free vs Pro in public copy (Karl, 2026-11-02).** "Free" only ever refers to the diagnostic, daily practice (40 questions a day) or the Question of the Day. The study calendar, the parent view, LISA (the tutor) and full-length tests are always presented as Pro. LISA is never promoted as free.
+
 | Feature | What you may say | Notes |
 |---|---|---|
-| Diagnostic | A free diagnostic shows where the student stands across the SAT's skill areas | Starting point; activation hinges on it |
-| Study calendar | A plan from today to test day; targets weak spots while keeping strong ones from slipping; rebuilds around the test date | "Adaptive" is a stated differentiator; practice adaptivity happens through what the calendar picks |
-| Practice | Practice by skill, with explanations | |
+| Diagnostic | A free diagnostic shows where the student stands across the SAT's skill areas | Free. Starting point; activation hinges on it |
+| Study calendar | A plan from today to test day; targets weak spots while keeping strong ones from slipping; rebuilds around the test date | Pro. "Adaptive" is a stated differentiator; practice adaptivity happens through what the calendar picks |
+| Practice | Practice by skill, with explanations | Free up to 40 questions a day ("daily practice") |
 | Review | Brings back exactly what the student missed, by skill | |
-| Full-length tests | Timed, adaptive full-length practice tests with score reports | |
-| LISA | "LISA, your AI tutor": walks through any question step by step, any time; works from the student's own mastery data; knows weak and strong areas | Scoped to SAT only. Honest limit you can joke about: it won't tell you the capital of France |
+| Full-length tests | Timed, adaptive full-length practice tests with score reports | Pro |
+| LISA | "LISA, your AI tutor": walks through any question step by step, any time; works from the student's own mastery data; knows weak and strong areas | Pro; never promoted as free. Scoped to SAT only. Honest limit you can joke about: it won't tell you the capital of France |
 | Mastery | Mastery by skill, earned from real answers, not guesses | Never explain how it's computed |
-| Guardian view | Parent sees scores, the study calendar, test results; guardian accountability loop (plan-change and missed-day notifications, an evening digest) | Live 2026-10-13. Strong answer to "my kid will quit in two weeks" |
-| Question of the Day | Daily question on the homepage (answerable logged out) and dashboard, with a streak; opt-in daily email | "% got this right" shown only after 5 entries |
+| Guardian view | Parent sees scores, the study calendar, test results; guardian accountability loop (plan-change and missed-day notifications, an evening digest) | Pro. Live 2026-10-13. Strong answer to "my kid will quit in two weeks" |
+| Question of the Day | Daily question on the homepage (answerable logged out) and dashboard, with a streak; opt-in daily email | Free. "% got this right" shown only after 5 entries |
 | Score projections | Projected score from mastery | Never publish projection method |
 
 ## 3. Customers and audiences
@@ -73,20 +75,24 @@ Competitor comparison pages are deferred until activation is fixed and reviews e
 
 ## 6. Channels and owned assets
 
+Channels and cadence follow Karl's content rulings of 2026-11-02 (`02` §10a), which supersede Doc 10B §3 where they conflict (SCL-264).
+
 | Channel | Status | Notes |
 |---|---|---|
-| Reddit | Primary acquisition (see §7) | Karl posts manually in SAT subreddits (r/TheSATprep, r/satprep, others besides r/SAT). Never auto-post. Karl's own subreddit r/satquestions (created 2026-10-11) carries the daily QOTD. |
+| Reddit | Primary acquisition today (see §7); founder-led and manual only | Karl, by hand, in his own voice: replies, DMs to people who ask, at most one promo post per subreddit per week, following each subreddit's rules (r/TheSATprep, r/satprep, others besides r/SAT). No links in public comments, no cross-posting Lyceon's own content, no new subreddits or accounts. The Reddit Question of the Day is discontinued (Karl, 2026-10-30). Never auto-post. |
 | Google search | Brand search is strong ("Lyceon AI" ranks first) | Non-branded SEO is early; blog runs 3 posts/week through the Doc 10B pipeline. Search Console is set up. Bing Webmaster partial. |
 | Email (Resend) | Live | Founding-cohort automations, study reminders, QOTD email, guardian digest. Marketing broadcasts only to the "Marketing — students" and "Marketing — guardians" segments. UTM-tag every link. |
-| Instagram | instagram.com/lyceon.ai | QOTD images; faceless short videos |
-| X | x.com/lyceonai | |
-| TikTok | tiktok.com/@lyceon.ai | Faceless short videos, 2 per week planned |
-| YouTube | youtube.com/@lyceonai | Walkthrough video live (https://youtu.be/XLAScABaaoM) |
-| Facebook groups | Karl posts in groups he's in | |
+| TikTok | tiktok.com/@lyceon.ai; tracked against the follower targets | QOTD carousel daily; worked examples; faceless short video. No links or promo lines in posts. Keywords added by Karl via Manage keywords, from the `#social` keyword block (SCL-262). |
+| Instagram (Reels) | instagram.com/lyceon.ai; tracked against the follower targets | QOTD images; Reels. Call to action: "Comment SAT and I'll send you the link". |
+| YouTube (Shorts) | youtube.com/@lyceonai; tracked against the follower targets | Shorts from the same short-video output. Walkthrough video live (https://youtu.be/XLAScABaaoM). |
+| Facebook Page | Parent-leaning; tracked against the follower targets | QOTD and parent posts. A genuine question as the call to action; no link, no "comment a word". Karl also posts in Facebook groups he's in. |
+| X | x.com/lyceonai | Founder / build-in-public only; not tracked against targets. |
 | Discord | Planned for founding members who actually engage | Not live as of 2026-10-15 |
 | Slack | "Lyceon AI" workspace; #social carries content assets via the "Lyceon Social" app | CMO reports channel: see `07` |
 | Trustpilot | The public review site | Review ask for all users (in-app plus email) is wanted |
 | Paid ads (Meta, Google) | Not running | Gated (G1). No ad pixels; UTM links plus PostHog only, unless the privacy policy is updated first. |
+
+Posting is by hand: no scheduler for now (Karl, 2026-11-02; replaces SCL-243's Buffer/Blotato plan).
 
 ## 7. Acquisition reality (how people actually arrive)
 
