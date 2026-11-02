@@ -45,11 +45,13 @@ jobs:
       duplicate: ${{ steps.scope.outputs.duplicate }}
       docs_only: ${{ steps.scope.outputs.docs_only }}
       tree: ${{ steps.scope.outputs.tree }}
-      # The change itself, for the review UI gate's plant selection, and the path groups that
-      # switch change-triggered checks on (scripts/ci/ci-path-groups.mjs). Unknown means
-      # everything: changed_known=false and every group true.
+      # Whether the change is known, for the review UI gate's plant selection, and the path
+      # groups that switch change-triggered checks on (scripts/ci/ci-path-groups.mjs). Unknown
+      # means everything: changed_known=false and every group true. The changed-file LIST is
+      # not an output: it travels as the `ci-changed-files` artifact (see "Upload the changed
+      # files"), because a sync PR's list (#1388: ~3,640 paths) passed as an environment
+      # variable exceeds the kernel's argument limit and bash cannot even start (E2BIG).
       changed_known: ${{ steps.files.outputs.known }}
-      changed_files: ${{ steps.files.outputs.changed_files }}
       review_ui_gate: ${{ steps.groups.outputs.review_ui_gate }}
       boot_probe: ${{ steps.groups.outputs.boot_probe }}
       section_vocabulary: ${{ steps.groups.outputs.section_vocabulary }}
@@ -84,12 +86,25 @@ jobs:
           f="$RUNNER_TEMP/changed-files.txt"
           if [ -f "$f" ]; then
             echo "known=true" >> "$GITHUB_OUTPUT"
-            { echo "changed_files<<CHANGED_FILES_EOF"; cat "$f"; echo "CHANGED_FILES_EOF"; } >> "$GITHUB_OUTPUT"
             echo "$(wc -l < "$f") changed files"
           else
             echo "known=false" >> "$GITHUB_OUTPUT"
             echo "changed files unknown: every change-triggered check runs"
           fi
+
+      # The list itself goes to the consuming job as a FILE, never as an env var or job output
+      # (both have size limits a large sync PR exceeds). Name and path are pinned by
+      # tests/ci/review-ui-gate-fast-lane.test.ts against the download in the `ci` job.
+      # overwrite: a re-run of this job replaces the list rather than colliding on the name.
+      - name: Upload the changed files
+        if: steps.files.outputs.known == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-changed-files
+          path: ${{ runner.temp }}/changed-files.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
       # A full PR run records the tree it tests, so the push that merges exactly this tree can
       # recognise it. The marker counts only if the run it belongs to concludes `success`.
@@ -413,10 +428,20 @@ jobs:
       # gate for that change (on a pull request into cleanup, via the `ci:full` label). The
       # 25-minute limit stays. Proven by tests/ci/review-ui-gate-fast-lane.test.ts, which runs
       # this exact block.
+      # The changed-file list arrives as the `ci-changed-files` artifact (uploaded by the
+      # `changes` job), never as an env var: on #1388 (~3,640 changed files, 2026-11-02) the
+      # env form exceeded the kernel's argument limit and the runner could not start bash
+      # ("Argument list too long"), which any large integration-to-main sync PR would hit.
+      - name: Download the changed files
+        if: ${{ needs.changes.outputs.changed_known == 'true' && needs.changes.outputs.review_ui_gate != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-changed-files
+          path: ${{ runner.temp }}/changed-files
+
       - name: Review UI mutation gate — the plants this change touches (proves U1-U9 are load-bearing)
         env:
           CHANGED_KNOWN: ${{ needs.changes.outputs.changed_known }}
-          CHANGED_FILES: ${{ needs.changes.outputs.changed_files }}
           ALL_PLANTS: ${{ needs.changes.outputs.review_ui_gate }}
         run: |
           set -euo pipefail
@@ -427,8 +452,12 @@ jobs:
             echo "::notice title=Review UI mutation gate deferred to ci-full::Full plant set selected; ci-full (review-ui-gate-shard) runs it. On a PR into cleanup, add the ci:full label."
             exit 0
           fi
-          printf '%s\n' "$CHANGED_FILES" > "$RUNNER_TEMP/review-ui-changed.txt"
-          export REVIEW_UI_GATE_ONLY_CHANGED="$RUNNER_TEMP/review-ui-changed.txt"
+          changed="$RUNNER_TEMP/changed-files/changed-files.txt"
+          if [ ! -f "$changed" ]; then
+            echo "::error title=Review UI mutation gate::the change is known but the ci-changed-files artifact is missing; refusing to guess a selection."
+            exit 1
+          fi
+          export REVIEW_UI_GATE_ONLY_CHANGED="$changed"
           bash scripts/ci/review-ui-gate.parallel.sh
 
       # The docs-only skip (changes job) is sound only while no job it skips reads those docs.
