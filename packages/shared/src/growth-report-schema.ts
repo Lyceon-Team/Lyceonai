@@ -27,7 +27,12 @@ export const growthReportWeekSchema = z
     questions_answered: count,
     full_length_answers: count,
     reviews_done: count,
-    study_minutes_estimate: z.number().min(0),
+    /**
+     * Minutes, from the server's served-to-answered gap per answer (5-minute cap). null = the week
+     * had answers but none with a measurable gap: shown as "not recorded yet", never as 0
+     * (Karl, 2026-11-02).
+     */
+    study_minutes_estimate: z.number().min(0).nullable(),
     signups_answered_24h: count,
     upgrades: count,
   })

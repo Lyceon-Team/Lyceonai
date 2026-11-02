@@ -10448,12 +10448,17 @@ BEGIN
     signups AS (
       SELECT * FROM stu WHERE created_at >= t0 AND created_at < t1
     ),
+    -- served_at and answered_at are both written by the server (served_at once, when the item is
+    -- promoted to served; answered_at when the answer is graded), so the gap is server-measured.
+    -- answered_at is Doc 05F's occurred_at: every answer path writes both from the same server
+    -- `now` (practice-canonical.ts, review-canonical.ts, qotd_student_answer). If a path ever
+    -- writes them apart, this measure must follow occurred_at.
     answers AS (
-      SELECT user_id AS sid, answered_at, time_spent_ms
+      SELECT user_id AS sid, answered_at, served_at
         FROM public.practice_session_items
        WHERE status = 'answered' AND answered_at >= p0
       UNION ALL
-      SELECT student_id, answered_at, NULL::integer
+      SELECT student_id, answered_at, served_at
         FROM public.review_session_items
        WHERE status = 'answered' AND answered_at >= p0
     )
@@ -10483,10 +10488,18 @@ BEGIN
       'reviews_done', (
         SELECT count(*) FROM public.review_sessions rs JOIN stu ON stu.id = rs.student_id
          WHERE rs.status = 'completed' AND rs.completed_at >= t0 AND rs.completed_at < t1),
+      -- NULL ("not recorded yet") when the week has answers but none with a measurable gap; 0
+      -- only when there are no answers at all. Never 0 standing in for "unknown".
       'study_minutes_estimate', (
-        SELECT COALESCE(round(sum(LEAST(a.time_spent_ms, 300000))::numeric / 60000, 1), 0)
+        SELECT CASE
+                 WHEN count(*) FILTER (WHERE a.answered_at > a.served_at) = 0 AND count(*) > 0
+                   THEN NULL
+                 ELSE COALESCE(round((extract(epoch FROM sum(
+                        LEAST(a.answered_at - a.served_at, interval '5 minutes'))
+                        FILTER (WHERE a.answered_at > a.served_at)) / 60)::numeric, 1), 0)
+               END
           FROM answers a JOIN stu ON stu.id = a.sid
-         WHERE a.answered_at >= t0 AND a.answered_at < t1 AND a.time_spent_ms > 0),
+         WHERE a.answered_at >= t0 AND a.answered_at < t1),
       'signups_answered_24h', (
         SELECT count(*) FROM signups s
          WHERE EXISTS (SELECT 1 FROM answers a
