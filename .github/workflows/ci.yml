@@ -1236,6 +1236,10 @@ jobs:
             tests/ci/explanation-corrections.pg.ci.test.ts \
             tests/ci/guardian-invite.pg.ci.test.ts \
             tests/ci/guardian-payment-access.pg.ci.test.ts \
+            tests/ci/guardian.anti-leak.pg.ci.test.ts \
+            tests/ci/guardian-reporting.pg.ci.test.ts \
+            tests/ci/subject-resolver.pg.ci.test.ts \
+            tests/ci/subject-resolver.faults.pg.ci.test.ts \
             tests/ci/deletion-completed-notice.pg.ci.test.ts \
             tests/ci/deletion-evidence-bundle.pg.ci.test.ts \
             tests/ci/deletion-phases-235.pg.ci.test.ts \
@@ -1320,6 +1324,10 @@ jobs:
             --file tests/ci/explanation-corrections.pg.ci.test.ts \
             --file tests/ci/guardian-invite.pg.ci.test.ts \
             --file tests/ci/guardian-payment-access.pg.ci.test.ts \
+            --file tests/ci/guardian.anti-leak.pg.ci.test.ts \
+            --file tests/ci/guardian-reporting.pg.ci.test.ts \
+            --file tests/ci/subject-resolver.pg.ci.test.ts \
+            --file tests/ci/subject-resolver.faults.pg.ci.test.ts \
             --file tests/ci/deletion-completed-notice.pg.ci.test.ts \
             --file tests/ci/deletion-evidence-bundle.pg.ci.test.ts \
             --file tests/ci/deletion-phases-235.pg.ci.test.ts \

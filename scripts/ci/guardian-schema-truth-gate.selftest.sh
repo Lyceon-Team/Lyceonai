@@ -65,14 +65,37 @@ git add -N "$PLANT" >/dev/null 2>&1
 if $GATE >/dev/null 2>&1; then echo "  ok   PG-backed file exempt (green)"; else echo "  FAIL: gate flagged a PG-backed file — it would flag the exemplar"; fails=1; fi
 git rm -q --cached "$PLANT" >/dev/null 2>&1; rm -f "$PLANT"
 
+# (D) and (F) PLANT their accept-list entry. Until 2026-11-02 (D) renamed a real entry, which
+# stopped being possible when the list was emptied by converting every file it held: a replace
+# that matches nothing leaves the gate green and reads as "stale entry passed". So the entry is
+# inserted, not borrowed, and each plant first checks that its anchor exists exactly once.
+ACCEPT_ANCHOR='const ACCEPTED = new Map(['
+plant_accept_entry() {  # $1 = file path, $2 = expiry
+python3 - "$1" "$2" "$ACCEPT_ANCHOR" <<'PYEOF'
+import sys
+p = "scripts/ci/guardian-schema-truth-gate.mjs"; t = open(p).read()
+f, exp, anchor = sys.argv[1], sys.argv[2], sys.argv[3]
+if t.count(anchor) != 1:
+    sys.exit("accept-list anchor not found exactly once: the plant would not land")
+entry = '\n  ["%s", { owner: "selftest", expires: "%s", why: "planted" }],\n' % (f, exp)
+open(p, "w").write(t.replace(anchor, anchor + entry, 1))
+PYEOF
+}
+
 echo "==> (D) a stale accept-list entry must fail, not pass"
 tmp=$(mktemp); cp scripts/ci/guardian-schema-truth-gate.mjs "$tmp"
-python3 - <<'PYEOF'
-p="scripts/ci/guardian-schema-truth-gate.mjs"; t=open(p).read()
-open(p,"w").write(t.replace('"tests/ci/guardian-reporting.contract.test.ts"','"tests/ci/this-file-does-not-exist.test.ts"',1))
-PYEOF
-out="$($GATE 2>&1)"
-if printf '%s' "$out" | grep -q "STALE ACCEPT-LIST ENTRY"; then echo "  ok   stale entry -> RED"; else echo "  FAIL: stale accept-list entry passed"; echo "$out" | sed 's/^/       | /'; fails=1; fi
+if plant_accept_entry "tests/ci/this-file-does-not-exist.test.ts" "2999-01-01"; then
+  out="$($GATE 2>&1)"
+  if printf '%s' "$out" | grep -q "STALE ACCEPT-LIST ENTRY (file is gone, remove it): tests/ci/this-file-does-not-exist.test.ts"; then echo "  ok   stale entry -> RED"; else echo "  FAIL: stale accept-list entry passed"; echo "$out" | sed 's/^/       | /'; fails=1; fi
+else echo "  FAIL: (D) plant did not land"; fails=1; fi
+cp "$tmp" scripts/ci/guardian-schema-truth-gate.mjs; rm -f "$tmp"
+
+echo "==> (F) an EXPIRED accept-list entry must fail, even on a file that is otherwise clean"
+tmp=$(mktemp); cp scripts/ci/guardian-schema-truth-gate.mjs "$tmp"
+if plant_accept_entry "tests/ci/guardian-payment-access.pg.ci.test.ts" "2000-01-01"; then
+  out="$($GATE 2>&1)"
+  if printf '%s' "$out" | grep -q "EXPIRED 2000-01-01: tests/ci/guardian-payment-access.pg.ci.test.ts"; then echo "  ok   expired entry -> RED"; else echo "  FAIL: expired accept-list entry passed"; echo "$out" | sed 's/^/       | /'; fails=1; fi
+else echo "  FAIL: (F) plant did not land"; fails=1; fi
 cp "$tmp" scripts/ci/guardian-schema-truth-gate.mjs; rm -f "$tmp"
 
 echo "==> (E) green again after every plant is removed"
