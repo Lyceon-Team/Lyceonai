@@ -15,11 +15,15 @@ import { readFileSync } from "node:fs";
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GrowthReport } from "../../packages/shared/src/growth-report-schema";
+import {
+  growthReportSchema,
+  type GrowthReport,
+} from "../../packages/shared/src/growth-report-schema";
 import {
   change,
   formatGrowthReport,
   runGrowthReport,
+  STUDY_TIME_NOT_RECORDED,
   weekLabel,
   type GrowthPostOutcome,
   type GrowthReportDeps,
@@ -105,6 +109,64 @@ describe("the message", () => {
     expect(text).toContain(
       "under-13, deleted, internal and test accounts excluded",
     );
+  });
+});
+
+/**
+ * Karl, 2026-11-02 ("Study time reads 0.0 hours"): a week whose answers carry no measurable time
+ * (study_minutes_estimate null) reads "not recorded yet", never 0.0, and nothing else moves.
+ */
+describe("study time with no measurable time", () => {
+  const withStudy = (
+    week: number | null,
+    previous: number | null,
+  ): GrowthReport => ({
+    week: { ...SAMPLE_REPORT.week, study_minutes_estimate: week },
+    previous: { ...SAMPLE_REPORT.previous, study_minutes_estimate: previous },
+  });
+  const studyLine = (text: string): string =>
+    text.split("\n").find((l) => l.startsWith("• Study time")) ?? "";
+
+  it("reads 'not recorded yet', never 0.0, in either week", () => {
+    expect(studyLine(formatGrowthReport(withStudy(null, null)))).toBe(
+      `• Study time, estimated (hours): *${STUDY_TIME_NOT_RECORDED}* (week before: ${STUDY_TIME_NOT_RECORDED})`,
+    );
+    expect(studyLine(formatGrowthReport(withStudy(2478, null)))).toBe(
+      `• Study time, estimated (hours): *41.3* (week before: ${STUDY_TIME_NOT_RECORDED})`,
+    );
+    expect(studyLine(formatGrowthReport(withStudy(null, 2160)))).toBe(
+      `• Study time, estimated (hours): *${STUDY_TIME_NOT_RECORDED}* (week before: 36.0)`,
+    );
+    for (const text of [
+      formatGrowthReport(withStudy(null, null)),
+      formatGrowthReport(withStudy(null, 2160)),
+    ]) {
+      expect(studyLine(text)).not.toMatch(/\*0\.0\*/);
+    }
+  });
+
+  it("a real zero (no answers at all) still reads 0.0", () => {
+    expect(studyLine(formatGrowthReport(withStudy(0, 0)))).toBe(
+      "• Study time, estimated (hours): *0.0* (no change vs 0.0)",
+    );
+  });
+
+  it("every other line is unchanged", () => {
+    const others = (text: string): string[] =>
+      text.split("\n").filter((l) => !l.startsWith("• Study time"));
+    const base = others(formatGrowthReport(SAMPLE_REPORT));
+    expect(base.length).toBeGreaterThan(10); // presence before comparison
+    expect(others(formatGrowthReport(withStudy(null, null)))).toEqual(base);
+  });
+
+  it("the schema takes null for study time and nothing else", () => {
+    expect(() => growthReportSchema.parse(withStudy(null, null))).not.toThrow();
+    expect(() =>
+      growthReportSchema.parse({
+        ...SAMPLE_REPORT,
+        week: { ...SAMPLE_REPORT.week, questions_answered: null },
+      }),
+    ).toThrow();
   });
 });
 
