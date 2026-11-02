@@ -62,12 +62,16 @@ python3.11 -m venv ~/.venvs/lyceon-chatterbox          # its own venv, outside t
 ```
 
 * chatterbox-tts 0.1.7, MIT code and weights. Every line carries Resemble's PerTh watermark,
-  applied inside `generate()`; nothing here removes it.
+  applied inside `generate()`; nothing here removes it. It survives the loudness step: PerTh's
+  own detector reads 1.0 on a raw line and on the same line normalised (and 0.0 on a Kokoro line),
+  measured 2026-11-02.
+* With the weights cached, `HF_HUB_OFFLINE=1` skips the Hub check on every model load.
 * The default built-in voice (`conds.pt`); no reference recording is used or needed.
 * The first run downloads the weights (about 3.2 GB) to `~/.cache/huggingface`, outside the
   repository.
-* **Slow on CPU:** 12-38× slower than real time under load, plus about a minute to load the model.
-  A 45-second script takes 15-30 minutes. `voice-lines.ts` renders line by line and caches each
+* **Slow on CPU:** 12-38× slower than real time under load, plus up to a minute to load the
+  model. The D3 script (nine lines, 38.6 s of speech) took 1,625 s of generation on 4 CPU cores
+  shared with a build (5-200× real time per line; 5× alone), about 30 minutes in all. `voice-lines.ts` renders line by line and caches each
   raw line under `<work>/voice/raw`, so a re-render, or an edit to one line, re-voices only what
   changed.
 * "Lyceon" is given to it as "Lie-see-on" (`BRAND_RESPELLINGS.chatterbox`): it says the plain
