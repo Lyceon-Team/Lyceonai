@@ -35,9 +35,9 @@
 - Question-level answer/reveal payloads and tutor transcripts.
 
 ## Regression Guards
-- `tests/ci/guardian-reporting.contract.test.ts`
-- `tests/ci/guardian.anti-leak.ci.test.ts`
-- `tests/ci/subject-resolver.contract.test.ts`
+- `tests/ci/guardian-reporting.pg.ci.test.ts` (was `guardian-reporting.contract.test.ts`; on real Postgres since 2026-11-02)
+- `tests/ci/guardian.anti-leak.pg.ci.test.ts` (was `guardian.anti-leak.ci.test.ts`; on real Postgres since 2026-11-02)
+- `tests/ci/subject-resolver.pg.ci.test.ts` and `tests/ci/subject-resolver.faults.pg.ci.test.ts` (split from `subject-resolver.contract.test.ts` on 2026-11-02)
 - `tests/ci/student-resources.contract.test.ts`
 - `tests/ci/guardian-denial-sweep.pg.ci.test.ts`
 - `tests/ci/guardian-exam-results.handler-pg.ci.test.ts`
