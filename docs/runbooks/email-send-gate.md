@@ -24,7 +24,9 @@ SELECT public.email_gate_launch_backfill(now());   -- how many accounts it pause
 
 6. **Milestone window and duplicate guard (Karl, 2026-11-02):** apply `supabase/migrations/20261128000000_email_gate_milestone_window.sql` after 20261127000000. No manual check-ins around test dates from now on: the milestones are automatic only.
 
-## Checks after applying (owner-run; never run from an agent)
+## Checks after applying
+
+Owner-run, with one exception: the first sweep after `20261128000000` is applied is verified by Claude directly in production, read-only, using the queries below (Karl's ruling on #1403, 2026-11-02). Nothing else here is run by an agent.
 
 ```sql
 -- the gate exists and the config is complete (16 keys once 20261127000000 is applied; 14 before)

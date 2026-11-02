@@ -16,9 +16,10 @@
 --       sat_week_before      target = test date − 7; window target − 1 … target + 1
 --       sat_day_after        target = test date + 1; window target … target + 1
 --       sat_scores_released  target = College Board's release date; window target … target + 1
---     The day-after and release-day windows have no early day (Claude's push-back, recorded in
---     the PR): one day early would send "you did it" on the morning of the test, and "scores
---     are out" the day before they are. Past its window, a milestone is never sent: the skip is
+--     The day-after and release-day windows have no early day: one day early would send "you
+--     did it" on the morning of the test, and "scores are out" the day before they are. Ruled
+--     by Karl 2026-11-02 on #1403 (push-back 1 accepted): target day and the day after only;
+--     the week-before email keeps ±1. Past its window, a milestone is never sent: the skip is
 --     recorded once in `email_milestone_skips` with reason `window_missed`.
 --  2. COPY. `sat_week_before` carries `days_until` (from the day it is emitted); the template
 --     keeps "Your SAT is next {weekday}, {date}" at 7 days and says "in N days" otherwise. The
@@ -32,7 +33,7 @@
 --     claim). "Always" email is unchanged. Bounces and complaints on lifecycle and campaign
 --     email now carry the recipient (`link_email_delivery_recipient`, called by the webhook).
 --     Resend's own suppression list is enforced by Resend on every send (contract §11A), so it
---     is not re-read here.
+--     is not re-read here (ruled by Karl 2026-11-02 on #1403, push-back 2 accepted).
 -- Once per student per test date per kind still holds (insert-once event ids), so the 27
 -- `sat_week_before` emails sent for 7 November are never sent again.
 --
