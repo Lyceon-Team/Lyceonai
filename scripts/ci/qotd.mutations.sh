@@ -47,6 +47,7 @@ FILES=(
   "shared/qotd/reveal.ts"
   "scripts/qotd-social/post-to-slack.ts"
   "shared/qotd/tiktok.ts"
+  "shared/social/posts.ts"
   "client/src/components/qotd/QotdTiktokSlide.tsx"
   "shared/slack/client.ts"
   "shared/qotd/projection.ts"
@@ -443,18 +444,20 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M38 slide 3 unchecked" "today's explanation on slide 2+1 is a leak" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-11-02 (Karl's rulings on the daily #social messages): the fixed caption lines
+# now come from shared/social/posts.ts, and the carousel has no title any more.
 echo "=== (39) LEAK: the carousel leak check stops reading the TikTok caption ==="
 plant shared/qotd/social.ts \
-  '    ["tiktok caption", withoutFunnelLines(output.caption)],' \
+  '    ["tiktok caption", withoutSocialFixedLines(output.caption)],' \
   "" || { bad "M39 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M39 caption unchecked" "today's explanation in the caption or the title is a leak" "$OUT" "$RC"
+expect_red "M39 caption unchecked" "today's explanation in the caption is a leak" "$OUT" "$RC"
 restore
 
 echo "=== (40) LEAK: the generator stops handing the slides to the leak check ==="
 plant scripts/qotd-social/generate.ts \
-  "      { slides: tiktok.slides.map((s) => s.cardText), caption, title }," \
-  "      { slides: [], caption, title }," || { bad "M40 STALE"; exit 1; }
+  "      { slides: tiktok.slides.map((s) => s.cardText), caption }," \
+  "      { slides: [], caption }," || { bad "M40 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M40 slides not checked" "the generator hands every slide to the leak check" "$OUT" "$RC"
 restore
@@ -466,16 +469,16 @@ plant scripts/qotd-social/post-to-slack.ts \
   '  if (m.tiktok.status === "built") {' \
   "  if (true) {" || { bad "M41 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M41 no note" "no carousel: no slide is uploaded, and the one-line note is posted" "$OUT" "$RC"
+expect_red "M41 no note" "no carousel: no slide is uploaded, and one TikTok QA line is posted" "$OUT" "$RC"
 restore
 
 # Re-pointed 2026-10-26: the slides are now a step of slackPostPlan.
 echo "=== (42) a built carousel's slides are never uploaded ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  "        files: post.tiktokSlides.map((slide, i) => ({" \
-  "        files: post.tiktokSlides.slice(0, 0).map((slide, i) => ({" || { bad "M42 STALE"; exit 1; }
+  "      files: post.tiktokSlides.map((slide, i) => ({" \
+  "      files: post.tiktokSlides.slice(0, 0).map((slide, i) => ({" || { bad "M42 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M42 slides not posted" "three slides shared together with their comment" "$OUT" "$RC"
+expect_red "M42 slides not posted" "three slides shared under the TikTok line, then one caption block and one keywords block" "$OUT" "$RC"
 restore
 
 echo "=== (43) the Why line ignores the 300-character cap ==="
@@ -494,13 +497,18 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M44 Why not at a sentence boundary" "the Why line is at most 300 characters, whole sentences only" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-11-02: the TikTok caption moved to shared/social/posts.ts, and its follow and
+# comment lines are one line (Karl's rulings). The plant swaps it for the comment line alone.
 echo "=== (45) the caption loses its follow line ==="
-plant shared/qotd/tiktok.ts \
-  '    QOTD_TIKTOK_FOLLOW_LINE,
-    COMMENT_ANSWER_LINE,' \
-  '    COMMENT_ANSWER_LINE,' || { bad "M45 STALE"; exit 1; }
+plant shared/social/posts.ts \
+  '    qotdHeadline(test, section),
+    SOCIAL_FOLLOW_AND_COMMENT_LINE,
+    socialHashtags(test, section),' \
+  '    qotdHeadline(test, section),
+    SOCIAL_COMMENT_LINE,
+    socialHashtags(test, section),' || { bad "M45 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M45 no follow line first" "the caption: follow line, comment line, link-in-bio line, hashtags" "$OUT" "$RC"
+expect_red "M45 no follow line" "the caption: headline, follow and comment line, hashtags, for each section" "$OUT" "$RC"
 restore
 
 echo "=== (46) the title cap is removed ==="
@@ -536,23 +544,24 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M49 grid-in variant lost" "grid-in: slide 2 shows one 'Your answer' box" "$OUT" "$RC"
 restore
 
-# #social order and labels (Karl's brief 2026-10-26): one plant per rule. Three items since the
-# two Reddit items were dropped and the rest renumbered (Karl's ruling 2026-10-30); M54 was
-# re-pointed from the dropped "4/5 · Reddit: today's post" label to a remaining one.
+# #social order and labels (Karl's brief 2026-10-26): one plant per rule. Re-pointed 2026-11-02
+# (Karl's rulings on the daily #social messages): the numbered "n/3" labels are gone; each post
+# opens with its one-word platform line (TikTok, Instagram, Facebook), so M54 plants a lost
+# platform line and M56 a skipped carousel that posts nothing for TikTok.
 echo "=== (53) the three items go out in the wrong order ==="
 plant scripts/qotd-social/post-to-slack.ts \
   "  return steps;" \
   "  return [...steps.slice(3), ...steps.slice(0, 3)];" || { bad "M53 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M53 order" "a day with a carousel posts 1/3 to 3/3 in order" "$OUT" "$RC"
+expect_red "M53 order" "a day with a carousel posts TikTok, Instagram and Facebook in order" "$OUT" "$RC"
 restore
 
-echo "=== (54) an item loses its numbered label ==="
+echo "=== (54) a post loses its platform line ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  "  \"2/3 · TikTok: carousel\"," \
-  "  \"TikTok: carousel\"," || { bad "M54 STALE"; exit 1; }
+  '    text: [platformLine("Facebook"), copyBlock(m.caption)].join("\n"),' \
+  '    text: copyBlock(m.caption),' || { bad "M54 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M54 label" "a day with a carousel posts 1/3 to 3/3 in order" "$OUT" "$RC"
+expect_red "M54 platform line" "a day with a carousel posts TikTok, Instagram and Facebook in order" "$OUT" "$RC"
 restore
 
 echo "=== (55) an upload is not confirmed shared before the next step ==="
@@ -563,12 +572,12 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M55 upload not awaited" "each upload is confirmed shared before the next step starts" "$OUT" "$RC"
 restore
 
-echo "=== (56) a skipped carousel drops item 2, shifting the numbering ==="
+echo "=== (56) a skipped carousel posts nothing for TikTok ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  $'      },\n      {\n        item: 2,\n        label: l2,\n        kind: "message",\n        text: `*2/3 \xc2\xb7 TikTok: no carousel today* (${why})`,\n      },\n' \
-  $'      },\n' || { bad "M56 STALE"; exit 1; }
+  $'  } else {\n    steps.push({\n      item: item(),\n      label: "QA",\n      kind: "message",\n      text: tiktokSkipLine(m),\n    });\n  }' \
+  $'  }' || { bad "M56 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M56 skipped item 2 dropped" "a skipped carousel still yields a 1/3 and a 2/3 message" "$OUT" "$RC"
+expect_red "M56 skipped carousel silent" "a skipped carousel yields one TikTok QA line, then Instagram and Facebook" "$OUT" "$RC"
 restore
 
 echo "=== (57) the dry run stops printing the sequence ==="
@@ -700,9 +709,10 @@ restore
 # No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide; the QOTD
 # goes to TikTok, Instagram and Facebook only): nothing Reddit-related is generated or posted.
 echo "=== (73) a Reddit line comes back in a #social item ==="
+# Re-pointed 2026-11-02: the header line is gone; each post opens with its platform line.
 plant scripts/qotd-social/post-to-slack.ts \
-  '  return `*SAT Question of the Day* · ${formatSocialDate(m.qotd_date)} · ${m.section}`;' \
-  '  return `*SAT Question of the Day* · ${formatSocialDate(m.qotd_date)} · ${m.section} · also post to Reddit`;' || { bad "M73 STALE"; exit 1; }
+  '  return `*${name}*`;' \
+  '  return `*${name}* · also post to Reddit`;' || { bad "M73 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M73 Reddit in Slack" "the #social message has no Reddit item" "$OUT" "$RC"
 restore
@@ -725,8 +735,8 @@ restore
 
 echo "=== (76) the dry run names the Reddit post again ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  ' image(s), the caption and the TikTok carousel (' \
-  ' image(s), the caption, the Reddit post and the TikTok carousel (' || { bad "M76 STALE"; exit 1; }
+  ' image(s), the Instagram and Facebook captions and the TikTok carousel (' \
+  ' image(s), the Instagram and Facebook captions, the Reddit post and the TikTok carousel (' || { bad "M76 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M76 dry run names Reddit" "the dry run builds the same message and names nothing Reddit-related" "$OUT" "$RC"
 restore
