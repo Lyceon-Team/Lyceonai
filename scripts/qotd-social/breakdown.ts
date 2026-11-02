@@ -72,7 +72,6 @@ import {
   pilotWindow,
 } from "../../shared/qotd/breakdown";
 import { qotdRowSchema, toArchiveResponse } from "../../shared/qotd/projection";
-import { QOTD_SECTION_NAME } from "../../shared/qotd/social";
 import {
   escapeMrkdwn,
   postMessage,
@@ -295,7 +294,7 @@ export async function buildBreakdown(
     status: "built",
     qotd_date: date,
     posted_on: postedOn,
-    section: QOTD_SECTION_NAME[day.question.section_code],
+    section: day.question.section_code,
     video,
     label: copy.copy.label,
     headline: copy.copy.headline,

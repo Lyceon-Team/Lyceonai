@@ -499,7 +499,7 @@ describe("the post: the video, or the answer slide and the notice; nothing outsi
     status: "built",
     qotd_date: "2026-10-03",
     posted_on: "2026-10-04",
-    section: "Reading and Writing",
+    section: "RW",
     video: "qotd-2026-10-03-breakdown.mp4",
     label: "QOTD breakdown · 2026-10-03 · Reading and Writing",
     headline: "H",

@@ -20,6 +20,7 @@ import {
   qotdDateSchema,
   qotdOptionKeySchema,
 } from "./qotd-schema";
+import { masterySectionSchema } from "./mastery-levels";
 
 /** The pilot runs at most this many days, start and end included (Karl: "2 weeks"). */
 export const QOTD_BREAKDOWN_PILOT_MAX_DAYS = 14;
@@ -116,7 +117,8 @@ export const qotdBreakdownManifestSchema = z
       .object({
         status: z.literal("built"),
         ...dayShape,
-        section: z.enum(["Math", "Reading and Writing"]),
+        /** The canonical section ('M' | 'RW'); its long form is rendered only in the label and captions. */
+        section: masterySectionSchema,
         video: qotdBreakdownVideoSchema,
         /** The run's label, outside the copy blocks: "QOTD breakdown · 2026-10-03". */
         label: z.string().min(1),
