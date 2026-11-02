@@ -660,6 +660,17 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
       { id: "msg_late" },
     );
     expect(late.body.status).toBe("ignored");
+    // Karl, 2026-11-02 (suppressed addresses): the bounce records whose address it was.
+    expect(
+      (
+        await pg.query(
+          `SELECT d.recipient_profile_id = m.recipient_profile_id AS linked
+             FROM public.notification_delivery_events d
+             JOIN public.notification_messages m ON m.message_id = d.message_id
+            WHERE d.provider_event_id = 'msg_bounce'`,
+        )
+      ).rows[0],
+    ).toEqual({ linked: true });
     expect(
       (
         await pg.query(

@@ -22,7 +22,11 @@ SELECT public.email_gate_launch_backfill(now());   -- how many accounts it pause
 
    It pauses every account quiet since before 2026-09-27 (or never active and signed up before it), and every internal or test account. No pause note goes to either. Accounts active since then are unchanged.
 
-## Checks after applying (owner-run; never run from an agent)
+6. **Milestone window and duplicate guard (Karl, 2026-11-02):** apply `supabase/migrations/20261128000000_email_gate_milestone_window.sql` after 20261127000000. No manual check-ins around test dates from now on: the milestones are automatic only.
+
+## Checks after applying
+
+Owner-run, with one exception: the first sweep after `20261128000000` is applied is verified by Claude directly in production, read-only, using the queries below (Karl's ruling on #1403, 2026-11-02). Nothing else here is run by an agent.
 
 ```sql
 -- the gate exists and the config is complete (16 keys once 20261127000000 is applied; 14 before)
@@ -31,6 +35,14 @@ SELECT count(*) FROM public.notification_runtime_config WHERE key LIKE 'email_ga
 SELECT count(*) FROM public.email_gate_state WHERE reason = 'qotd_sunset_backfill';
 -- the decision for one profile, now
 SELECT public.email_gate_decide('<profile id>', 'review_ask');
+-- after a sweep: milestones sent today, and the ones skipped and why
+SELECT event_type, count(*) FROM public.notification_events
+ WHERE event_type LIKE 'sat\_%' AND created_at >= current_date GROUP BY 1;
+SELECT kind, reason, count(*) FROM public.email_milestone_skips
+ WHERE recorded_at >= current_date GROUP BY 1, 2;
+-- milestone or governed emails refused for a bounced or complained address
+SELECT count(*) FROM public.notification_messages
+ WHERE last_error = 'email_gate:suppressed' AND created_at >= current_date;
 ```
 
 ## Daily operation
