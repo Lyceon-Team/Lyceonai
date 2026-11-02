@@ -672,9 +672,14 @@ describe.skipIf(!PG_AVAILABLE)("email send gate → real PG", () => {
         `UPDATE auth.users SET last_sign_in_at = $2 WHERE id = $1`,
         [parent.id, day(19).toISOString()],
       );
-      expect((await guardianRefresh(day(19.5))).closed).toBe(1);
+      // Closed by the sign-in, and NOT reopened in the same pass: no student activity since.
+      expect(await guardianRefresh(day(19.5))).toEqual({
+        opened: 0,
+        closed: 1,
+      });
       expect((await openPauses())[1]?.resume_reason).toBe("guardian_login");
       expect((await guardianRefresh(day(40))).opened).toBe(0);
+      expect(await openPauses()).toHaveLength(2);
     });
   });
 
