@@ -2,12 +2,14 @@
  * Worked examples: the content file a weekly batch carries, the monthly plan, the committed
  * voice manifest and the Slack post.
  *
- * @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): video order (hook →
- *       question → steps → answer near the end → "The trap:" → end card), hook library (five
+ * @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): hook library (five
  *       types), cadence (monthly plan PR; weekly batch PR of 3 examples into `social`; Karl merges),
  *       the labelled Slack set; Step 0 rulings (Karl, 2026-10-27): 2 puzzle hooks, 3 post_on + a
  *       daily job, 4 render from the merged content file + seed SQL, 5 voice audio committed at
- *       batch time, 6 a per-skill style table] | @implemented [2026-10-27]
+ *       batch time, 6 a per-skill style table; SCL-267 (Karl's rulings 2026-11-02, script and
+ *       voice): spoken order hook → setup → steps → trap → answer and check → call to action
+ *       (replacing the brief's hook → question → steps → answer → "The trap:"), and the voice
+ *       never reads the on-screen text] | @implemented [2026-10-27, spoken order 2026-11-02]
  *
  * plain English: one file per example, content/worked-examples/<YYYY-Www>/<question_id>/example.json,
  * on `social`. It names the question by id only: the question text, choices and key are read from
@@ -64,7 +66,12 @@ export const workedExampleContentSchema = z
         voice: line,
       })
       .strict(),
-    /** The spoken reading of the question while it is on screen. */
+    /**
+     * The one-sentence SETUP, in plain talk, spoken while the question card is on screen: what
+     * the question is about, never a reading of it (SCL-267, Karl's ruling 2026-11-02; the key
+     * keeps its name so the W45 batch still parses, where it held a reading of the question).
+     * shared/worked-examples/rules.ts refuses any run of 6 words it shares with the screen.
+     */
     question_voice: line,
     signature_move: line,
     steps: z
@@ -76,6 +83,7 @@ export const workedExampleContentSchema = z
         /** The choice letter the answer names; must be the question's key. */
         letter: z.enum(["A", "B", "C", "D"]),
         notepad: notepadLine,
+        /** Spoken last, after the trap: the answer and a quick check (SCL-267). */
         voice: line,
       })
       .strict(),
@@ -85,7 +93,7 @@ export const workedExampleContentSchema = z
         summary: line,
         /** Written under the fixed "The trap:" heading. */
         notepad: z.array(notepadLine).min(1).max(3),
-        /** Spoken; starts "The trap". */
+        /** Spoken before the answer (SCL-267); opens "The trap" or "Here's where people slip". */
         voice: line,
       })
       .strict(),
@@ -98,13 +106,18 @@ export const workedExampleContentSchema = z
   .strict();
 export type WorkedExampleContent = z.infer<typeof workedExampleContentSchema>;
 
-/** The spoken lines, in screen order. The end card's line is the kit's, not the example's. */
+/**
+ * The spoken lines, in spoken order (SCL-267, Karl's ruling 2026-11-02): the hook, the setup
+ * (`question_voice`), the steps, the trap, then the answer with its quick check. The call to
+ * action on the end card is the kit's line, not the example's. A manifest voiced before the
+ * ruling lists the same keys in the old order (answer before trap); lines are matched by key.
+ */
 export const WORKED_EXAMPLE_VOICE_LINES = [
   "hook",
   "question",
   "steps",
-  "answer",
   "trap",
+  "answer",
 ] as const;
 
 /** One voiced line's committed timing: words as spoken, seconds from the line's start. */
@@ -122,7 +135,7 @@ export const voiceWordsSchema = z.array(voiceWordSchema).min(1);
 
 export const voiceLineSchema = z
   .object({
-    /** hook, question, step-1..step-6, answer, trap. */
+    /** hook, question (the setup), step-1..step-6, trap, answer; outro for the kit's line. */
     key: z.string().regex(/^(hook|question|step-[1-6]|answer|trap|outro)$/),
     /** sha256 of the exact text that was voiced. */
     text_sha256: z.string().regex(/^[0-9a-f]{64}$/),

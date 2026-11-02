@@ -5,12 +5,15 @@
  *       rules; 30-60 s and the safe area; blank-paper template; audio mix (voice peak above music
  *       by a set dB margin); a licence file for each track used; the daily job posts only
  *       approved, post_on-today examples, once; title and caption rules"; the metrics table schema
- *       and RLS are proven by scripts/ci/worked-examples-schema-gates.sql] | @implemented [2026-10-27]
+ *       and RLS are proven by scripts/ci/worked-examples-schema-gates.sql; SCL-267 (Karl's rulings
+ *       2026-11-02, later the same day): no burned-in captions, the voice never reads the screen
+ *       (S1, S2), spoken order hook → setup → steps → trap → answer → call to action, the end card
+ *       "Lyceon SAT Prep"] | @implemented [2026-10-27, SCL-267 2026-11-02]
  *
  * plain English: fixtures are derived from real output, never typed shapes: the example is the
  * fixture tree's real content file (tests/fixtures/worked-examples/social, the same tree the
  * workflow's pull-request run renders), its question is read from the real seed SQL, its voice is
- * the committed Kokoro audio, and the composition is the real generator's output from the real
+ * the committed Kokoro audio (am_michael since SCL-267), and the composition is the real generator's output from the real
  * kit. scripts/ci/worked-examples.mutations.sh plants one defect per rule and requires these tests
  * to go red on the named assertion.
  */
@@ -18,6 +21,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  WORKED_EXAMPLE_VOICE_LINES,
   workedExamplePostSchema,
   voiceLineSchema,
   type WorkedExampleContent,
@@ -32,7 +36,12 @@ import {
   hookPuzzleProblem,
   hookStatisticProblem,
   planProblems,
+  sharedRun,
+  spokenHookEchoProblem,
+  TRAP_VOICE_OPENING,
   titleProblems,
+  verbatimProblems,
+  verbatimWords,
   workedExampleCaption,
   workedExampleFacebookCaption,
   workedExampleInstagramCaption,
@@ -54,6 +63,7 @@ import {
 import {
   buildComposition,
   safeArea,
+  scriptLines,
   type Composition,
 } from "../../scripts/worked-examples/composition";
 import {
@@ -223,6 +233,179 @@ describe("hook rules", () => {
   });
 });
 
+describe("the spoken trap opens with the trap (Karl's flow wording allowed, SCL-267)", () => {
+  const withTrapVoice = (voice: string): typeof fixture => ({
+    ...fixture,
+    content: { ...fixture.content, trap: { ...fixture.content.trap, voice } },
+  });
+  it("accepts the trap opening and the people-slip opening", () => {
+    for (const voice of [
+      "The trap: adding the percents.",
+      "Here's where people slip. They add the percents.",
+      "Now here's where people slip: you're dividing by a negative.",
+      "Now, here\u2019s where you slip.",
+    ]) {
+      expect(TRAP_VOICE_OPENING.test(voice), voice).toBe(true);
+      expect(
+        exampleProblems(CONTENT, withTrapVoice(voice), kit).problems.join("\n"),
+      ).not.toMatch(/trap\.voice must open/);
+    }
+  });
+  it("the people-slip opener is not a claim about people; anything after it still is", () => {
+    expect(
+      exampleProblems(
+        CONTENT,
+        withTrapVoice("Here's where people slip. They add the percents."),
+        kit,
+      ).problems.join("\n"),
+    ).not.toMatch(/claim about people/);
+    expect(
+      exampleProblems(
+        CONTENT,
+        withTrapVoice(
+          "Here's where people slip. Most students add the percents.",
+        ),
+        kit,
+      ).problems.join("\n"),
+    ).toMatch(/claim about people/);
+  });
+  it("refuses a trap line that opens any other way", () => {
+    for (const voice of [
+      "So the answer is wrong if you add.",
+      "People slip here.",
+    ]) {
+      expect(TRAP_VOICE_OPENING.test(voice), voice).toBe(false);
+      expect(
+        exampleProblems(CONTENT, withTrapVoice(voice), kit).problems.join("\n"),
+      ).toMatch(
+        /trap\.voice must open "The trap" or "Here's where people slip"/,
+      );
+    }
+  });
+});
+
+// SCL-267 (Karl's ruling 2026-11-02, later the same day): "Tone: contractions, short sentences,
+// 'you/we', natural beats … just don't add any rule that would forbid it." H3 and H4 apply to the
+// on-screen line only.
+describe("a spoken hook may be a challenge to the viewer", () => {
+  it('"Think you can do this one in ten seconds? Go." passes H1-H6 and the script rule', () => {
+    const hook = withHook(
+      fixture.content.hook.line,
+      "Think you can do this one in ten seconds? Go.",
+    );
+    expect(hookProblems(hook, question)).toEqual([]);
+    expect(spokenHookEchoProblem(hook)).toBeNull();
+    const content = { ...fixture.content, hook };
+    expect(verbatimProblems(content, question)).toEqual([]);
+  });
+});
+
+// SCL-267 (Karl's ruling 2026-11-02): "The voice never reads the on-screen text verbatim."
+describe("the voice never reads the screen (S1, S2)", () => {
+  it("normalises case, punctuation and apostrophes, and keeps numbers as written", () => {
+    expect(verbatimWords("What's the FINAL price, after $64 × 1.25?")).toEqual([
+      "whats",
+      "the",
+      "final",
+      "price",
+      "after",
+      "64",
+      "1.25",
+    ]);
+    expect(verbatimWords("Sixty-four, 1,000")).toEqual([
+      "sixty",
+      "four",
+      "1000",
+    ]);
+  });
+
+  it("S1 finds a run of six shared words, and not five", () => {
+    const stem =
+      "If the original price of the item was $64, what is the final price after both changes?";
+    expect(sharedRun("So, what is the final price after that?", stem)).toBe(
+      "what is the final price after",
+    );
+    expect(sharedRun("Okay: what is the final price?", stem)).toBeNull();
+    expect(sharedRun("If the original price was sixty-four", stem)).toBeNull();
+  });
+
+  it("the fixture's setup and lines pass; a setup that reads the question stem is refused", () => {
+    expect(verbatimProblems(fixture.content, question)).toEqual([]);
+    const reads = {
+      ...fixture.content,
+      question_voice:
+        "A store increases the price of an item by twenty-five percent.",
+    };
+    expect(verbatimProblems(reads, question).join("\n")).toMatch(
+      /^S1 reads the screen: spoken question repeats "a store increases the price of" from the question stem/,
+    );
+    expect(
+      exampleProblems(
+        CONTENT,
+        { ...fixture, content: reads },
+        kit,
+      ).problems.join("\n"),
+    ).toMatch(/S1 reads the screen/);
+  });
+
+  it("S1 checks every spoken line against every on-screen text: notepads and the stem", () => {
+    const trap = {
+      ...fixture.content,
+      trap: {
+        ...fixture.content.trap,
+        notepad: ["the discount comes off the bigger price"],
+      },
+    };
+    expect(verbatimProblems(trap, question).join("\n")).toMatch(
+      /spoken trap repeats "the discount comes off the bigger" from trap notepad line 1/,
+    );
+    const withNotepad = (notepad: string): WorkedExampleContent => ({
+      ...fixture.content,
+      steps: fixture.content.steps.map((s, k) =>
+        k === 0 ? { ...s, notepad } : s,
+      ),
+    });
+    // Five shared words are talk; six are reading.
+    expect(
+      verbatimProblems(withNotepad("make each percent a multiplier"), question),
+    ).toEqual([]);
+    expect(
+      verbatimProblems(
+        withNotepad("up twenty-five means times one"),
+        question,
+      ).join("\n"),
+    ).toMatch(
+      /spoken step-1 repeats "up twenty five means times one" from step 1's notepad/,
+    );
+    const answer = {
+      ...fixture.content,
+      answer: {
+        ...fixture.content.answer,
+        voice: "B. $60 is the final price after both changes.",
+      },
+    };
+    expect(verbatimProblems(answer, question).join("\n")).toMatch(
+      /spoken answer repeats "is the final price after both" from the question stem/,
+    );
+  });
+
+  it("S2 refuses a spoken hook that is the on-screen hook line read aloud", () => {
+    expect(spokenHookEchoProblem(fixture.content.hook)).toBeNull();
+    const echo = withHook(
+      "Up 25%, then down 25%. Back to $64?",
+      "Up 25% then down 25%... back to $64?",
+    );
+    expect(spokenHookEchoProblem(echo)).toMatch(/^S2 the spoken hook reads/);
+    expect(
+      exampleProblems(
+        CONTENT,
+        { ...fixture, content: { ...fixture.content, hook: echo } },
+        kit,
+      ).problems.join("\n"),
+    ).toMatch(/S2 the spoken hook reads the on-screen hook line/);
+  });
+});
+
 describe("the monthly plan rotates hook types", () => {
   const plan = JSON.parse(
     readFileSync(
@@ -267,7 +450,7 @@ describe("30-60 s, order and the safe area", () => {
     expect(durationProblem(61, kit)).toMatch(/must be 30-60 s/);
   });
 
-  it("voice starts at 0:00; hook and question are on screen from frame 0", () => {
+  it("voice starts at 0:00; hook and question are on screen from frame 0 while the setup is spoken", () => {
     expect(comp.voice[0]?.key).toBe("hook");
     expect(comp.voice[0]?.start).toBe(0);
     expect(comp.scenes[0]).toMatchObject({ key: "open", start: 0 });
@@ -278,9 +461,22 @@ describe("30-60 s, order and the safe area", () => {
     expect(open).toContain('id="question-card"');
     // Nothing animates them in: they are drawn, not revealed.
     expect(comp.html).not.toMatch(/"#(hook-line|question-card)"/);
+    const setup = comp.voice.find((v) => v.key === "question");
+    expect(setup && setup.start + setup.duration).toBeLessThanOrEqual(
+      comp.scenes[0]?.end ?? 0,
+    );
   });
 
-  it("the order is hook → question → steps → answer → trap → end card", () => {
+  // SCL-267 (Karl's ruling 2026-11-02): hook, setup, the key move, the trap, the answer and a
+  // quick check, the call to action.
+  it("the spoken order is hook → setup → steps → trap → answer → call to action", () => {
+    expect(WORKED_EXAMPLE_VOICE_LINES).toEqual([
+      "hook",
+      "question",
+      "steps",
+      "trap",
+      "answer",
+    ]);
     expect(comp.voice.map((v) => v.key)).toEqual([
       "hook",
       "question",
@@ -288,21 +484,86 @@ describe("30-60 s, order and the safe area", () => {
       "step-2",
       "step-3",
       "step-4",
-      "answer",
       "trap",
+      "answer",
       "outro",
     ]);
     expect(comp.scenes.map((s) => s.key)).toEqual([
       "open",
       "work",
       "trap",
+      "answer",
       "endcard",
     ]);
+    const at = (key: string): number =>
+      comp.voice.find((v) => v.key === key)?.start ?? -1;
+    expect(comp.scenes.find((x) => x.key === "trap")).toEqual({
+      key: "trap",
+      start: at("trap"),
+      end: at("answer"),
+    });
+    expect(comp.scenes.find((x) => x.key === "answer")).toEqual({
+      key: "answer",
+      start: at("answer"),
+      end: at("outro"),
+    });
+    const trapHead = comp.writes.find((w) => w.key === "trap-head");
     const answer = comp.writes.find((w) => w.key === "answer");
+    expect(trapHead && answer && trapHead.start < answer.start).toBe(true);
+    expect(answer && answer.start).toBeGreaterThan(at("answer"));
     expect(answer && answer.start / comp.duration).toBeGreaterThan(0.5);
     expect(comp.html).toContain(">The trap:<");
-    expect(comp.html).toContain("Follow for daily SAT questions");
-    expect(comp.html).toContain("lyceon.ai");
+  });
+
+  it("a manifest voiced before the ruling (answer before trap) places every line in the new order", () => {
+    const oldOrder = [
+      ...voice.lines.filter((l) => l.key !== "answer" && l.key !== "trap"),
+      ...voice.lines.filter((l) => l.key === "answer"),
+      ...voice.lines.filter((l) => l.key === "trap"),
+    ];
+    expect(oldOrder.map((l) => l.key).slice(-2)).toEqual(["answer", "trap"]);
+    expect(
+      voiceProblems(fixture.content, { ...voice, lines: oldOrder }, kit, wav),
+    ).toEqual([]);
+    const rebuilt = buildComposition({
+      example: fixture.content,
+      question,
+      voice: oldOrder,
+      outro,
+      kit,
+    });
+    expect(rebuilt.html).toBe(comp.html);
+    expect(() =>
+      buildComposition({
+        example: fixture.content,
+        question,
+        voice: oldOrder.slice(1),
+        outro,
+        kit,
+      }),
+    ).toThrow(/do not match the script/);
+  });
+
+  // SCL-267 (Karl's ruling 2026-11-02): "no 'lyceon.ai' spoken or shown"; the CTA "Follow,
+  // there's one of these every day."; the end card reads "Lyceon SAT Prep".
+  it("the end card reads Lyceon SAT Prep and the call to action never says lyceon.ai", () => {
+    const end =
+      /<section id="endcard"[^>]*>([\s\S]*?)<\/section>/.exec(comp.html)?.[1] ??
+      "";
+    expect(end).toContain('<div class="brand-name">Lyceon SAT Prep</div>');
+    expect(end).toContain("Follow for daily SAT questions");
+    expect(comp.html).not.toMatch(/lyceon\.ai|lyceon dot/i);
+    expect(kit.voice.outro_text).toBe(
+      "Follow, there's one of these every day.",
+    );
+    expect(kit.voice.outro_caption).toBe(kit.voice.outro_text);
+    expect(outro.words.map((w) => w.text).join(" ")).not.toMatch(
+      /lyceon|lycian|\bai\b/i,
+    );
+    expect(scriptLines(fixture.content, kit.voice.outro_text).at(-1)).toEqual({
+      key: "outro",
+      text: "Follow, there's one of these every day.",
+    });
   });
 
   it("the safe area is x 71..912, y 154..1555 and a box outside it is refused", () => {
@@ -329,16 +590,18 @@ describe("30-60 s, order and the safe area", () => {
     expect(boxProblems([], safeArea())).toEqual(["nothing was measured"]);
   });
 
-  it("captions show the script, never the transcription, at most five words a chunk", () => {
-    expect(comp.html).not.toMatch(/lycian/i);
-    const chunks = [
-      ...comp.html.matchAll(/<div class="cap-box">([\s\S]*?)<\/div>/g),
-    ].map((m) => (m[1] ?? "").split("</span>").length - 1);
-    expect(chunks.length).toBeGreaterThan(10);
-    expect(Math.max(...chunks)).toBeLessThanOrEqual(5);
-    expect(comp.html).toMatch(
-      /tl\.set\("#w-hook-0", \{ backgroundColor: "#F4C542"/,
+  // SCL-267 (Karl's ruling 2026-11-02): "No burned-in word-by-word captions … give the freed
+  // space back to the notepad."
+  it("no caption track: no caption clip, word span or highlight, and the notepad uses the freed space", () => {
+    expect(comp.html).not.toMatch(
+      /class="clip cap"|class="cap-|class="wd"|id="w-|backgroundColor/,
     );
+    const css = readFileSync(join(ROOT, KIT_DIR, "templates/kit.css"), "utf8");
+    expect(css).not.toMatch(/\.cap|\.wd\b/);
+    const lowest = [...comp.html.matchAll(/class="hand" style="top:(\d+)px/g)]
+      .map((m) => Number(m[1]))
+      .reduce((x, y) => Math.max(x, y), 0);
+    expect(lowest).toBeGreaterThan(1200);
   });
 });
 
