@@ -34,11 +34,6 @@ type SanitizeResult = {
   truncated: boolean;
 };
 
-type BoundaryContentType =
-  | "student_input"
-  | "question_content"
-  | "memory_content";
-
 type InjectionScanResult = {
   detected: boolean;
   patterns: string[];
@@ -51,38 +46,8 @@ type SignatureCheckResult = {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-import {
-  STUDENT_INPUT_OPEN,
-  STUDENT_INPUT_CLOSE,
-} from "../../shared/tutor-safety-constants";
-
 /** Default max input length from tutor_context_runtime_config (injection_length_bound_chars). */
 const DEFAULT_MAX_INPUT_LENGTH = 4000;
-
-/**
- * Boundary marker templates per Doc 03A §12.3.
- * Content wrapped in these markers is treated as data, not instructions.
- *
- * student_input open/close are imported from the shared safety constants
- * (single source of truth — same file is copied into the worker at prebuild).
- * question_content and memory_content are BFF-only (not mirrored to worker).
- */
-const BOUNDARY_MARKERS: Readonly<
-  Record<BoundaryContentType, { open: string; close: string }>
-> = {
-  student_input: {
-    open: STUDENT_INPUT_OPEN,
-    close: STUDENT_INPUT_CLOSE,
-  },
-  question_content: {
-    open: "<<<QUESTION_CONTENT>>>",
-    close: "<<<END_QUESTION_CONTENT>>>",
-  },
-  memory_content: {
-    open: "<<<MEMORY_CONTENT>>>",
-    close: "<<<END_MEMORY_CONTENT>>>",
-  },
-};
 
 /**
  * Heuristic injection patterns with pattern names for logging.
@@ -138,20 +103,6 @@ export function sanitizeInput(
     .replace(/>/g, "&gt;");
 
   return { sanitized, truncated };
-}
-
-/**
- * Wraps content in distinctive boundary markers per Doc 03A §12.3.
- * Gemini is instructed that content inside these markers is data, not instructions.
- *
- * @spec [Doc-03A_V3 §12.3]
- */
-export function wrapWithBoundaryMarkers(
-  content: string,
-  contentType: BoundaryContentType,
-): string {
-  const markers = BOUNDARY_MARKERS[contentType];
-  return `${markers.open}\n${content}\n${markers.close}`;
 }
 
 // ── Injection Pattern Scanning (Layer 4 input side) ────────────────────
