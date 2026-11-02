@@ -390,6 +390,26 @@ export async function processResendWebhook(
     );
   }
 
+  // Karl, 2026-11-02 (suppressed addresses): a delivery status event records whose address it
+  // was, so a bounce or complaint on a lifecycle or campaign email (no message row of ours)
+  // still stops governed and milestone email to that person. Idempotent; a failure is a 500 so
+  // Resend retries (the status above is then a duplicate, and the link is tried again).
+  const to = resendComplaintRecipientsSchema.safeParse(event.data.data);
+  const linkRecipients = to.success
+    ? Array.isArray(to.data.to)
+      ? to.data.to
+      : [to.data.to]
+    : [];
+  const link = await supabaseServer.rpc("link_email_delivery_recipient", {
+    p_provider_event_id: providerEventId,
+    p_recipients: linkRecipients,
+  });
+  if (link.error) {
+    throw new Error(
+      `link_email_delivery_recipient failed: ${link.error.code ?? "unknown"} ${link.error.message}`,
+    );
+  }
+
   logger.info(
     "NOTIFICATIONS",
     "webhook_processed",

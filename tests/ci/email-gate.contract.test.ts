@@ -255,4 +255,30 @@ describe("email send gate — contract", () => {
       expect(scores.text).toContain(line);
     }
   });
+  /**
+   * @spec [owner brief "Email gate: milestone send window and duplicate guard" (Karl,
+   *       2026-11-02) item 2] | @implemented [2026-11-02]
+   * Across the ±1-day window the line stays true: Karl's wording at 7 days, the day count from
+   * the send day at 8 and 6.
+   */
+  it("T4: the week-before line is true anywhere in its window", () => {
+    const line = (days: number | undefined): string =>
+      satWeekBeforeEmail(
+        {
+          first_name: "Maya",
+          test_date: "2026-12-05",
+          ...(days === undefined ? {} : { days_until: days }),
+        },
+        ctx,
+      ).text;
+    expect(line(7)).toContain("Your SAT is next Saturday, December 5.");
+    expect(line(undefined)).toContain("Your SAT is next Saturday, December 5.");
+    expect(line(8)).toContain(
+      "Your SAT is in 8 days, on Saturday, December 5.",
+    );
+    expect(line(6)).toContain(
+      "Your SAT is in 6 days, on Saturday, December 5.",
+    );
+    for (const d of [6, 8]) expect(line(d)).not.toContain("next Saturday");
+  });
 });
