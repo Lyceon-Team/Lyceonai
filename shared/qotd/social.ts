@@ -14,8 +14,9 @@
  *     no-answer input (qotdSocialInputSchema). Both keep the order they are served in, which is
  *     canonical for today and for a past day alike (Karl's ruling 2026-10-23: no shuffle for the
  *     QOTD; the earlier re-sort into token order lettered the image differently from the
- *     archive and the Reddit reveal). The archive's answer and explanation are dropped here, before anything
- *     is built.
+ *     archive and the Reddit reveal, since discontinued with the Reddit QOTD, Karl's ruling
+ *     2026-10-30). The archive's answer and explanation are dropped here, before anything is
+ *     built.
  *   * buildSocialCopy writes the approved caption and an alt text that reads the question out in
  *     full. Maths is spoken through a short fixed table; anything outside it (or an alt text over
  *     1000 characters, X's limit) falls back to a generic description, never to garbled LaTeX.
@@ -496,19 +497,18 @@ function containsPhrase(haystack: string, phrase: string): boolean {
 const EXPLANATION_WINDOW = 8;
 
 /**
- * Every way the caption, alt text, card text or Reddit post gives away the revealed answer of
- * `day`. Empty = no leak found. `card_text` is the card's visible text (innerText of the rendered
- * card). The Reddit title and body (owner brief 2026-10-15) are today's messages too, so the same
- * checks run over them; the title, like the caption, names no choice, and the body, like the alt
- * text, shows all four choices or none.
+ * Every way the caption, alt text, card text or Instagram caption gives away the revealed answer
+ * of `day`. Empty = no leak found. `card_text` is the card's visible text (innerText of the
+ * rendered card). The Instagram caption, like the caption, names no choice; the alt text and card
+ * show all four choices or none. (The Reddit title and body were checked here too until the
+ * Reddit QOTD was discontinued, Karl's ruling 2026-10-30: nothing builds them, so their fields
+ * were removed rather than left unexercised in a leak check.)
  */
 export function socialAssetLeaks(
   output: {
     caption: string;
     alt_text: string;
     card_text: string;
-    reddit_title?: string;
-    reddit_body?: string;
     instagram_caption?: string;
   },
   day: QotdArchiveResponse,
@@ -521,31 +521,17 @@ export function socialAssetLeaks(
     ["alt_text", output.alt_text],
     ["card", output.card_text],
   ];
-  if (output.reddit_title !== undefined) {
-    fields.push(["reddit_title", output.reddit_title]);
-  }
   // The fixed call-to-action lines (shared/social/funnel.ts) are the same whatever the day, so
   // they are left out: "Dec 5" in them is a test date, not a choice "5".
-  const redditBody =
-    output.reddit_body === undefined
-      ? undefined
-      : withoutFunnelLines(output.reddit_body);
   const instagramCaption =
     output.instagram_caption === undefined
       ? undefined
       : withoutFunnelLines(output.instagram_caption);
-  if (redditBody !== undefined) {
-    fields.push(["reddit_body", redditBody]);
-  }
   if (instagramCaption !== undefined) {
     fields.push(["instagram_caption", instagramCaption]);
   }
   /** Fields that must name no choice at all. */
-  const namesNoChoice = new Set([
-    "caption",
-    "reddit_title",
-    "instagram_caption",
-  ]);
+  const namesNoChoice = new Set(["caption", "instagram_caption"]);
 
   const explanationWords = normalize(day.question.explanation)
     .trim()
@@ -583,9 +569,9 @@ export function socialAssetLeaks(
     if (reveal) leaks.push(`${field}: ${reveal}`);
   }
 
-  // 4. MCQ: the caption and the Reddit title name no choice; the alt text, card and Reddit
-  //    body show all four or none, so no one choice is singled out. A choice counts as shown in
-  //    its raw form or as plain text (the Reddit body writes maths as plain text).
+  // 4. MCQ: the caption and the Instagram caption name no choice; the alt text and card show
+  //    all four or none, so no one choice is singled out. A choice counts as shown in its raw
+  //    form or as plain text (maths written out as text).
   if (day.question.item_type === "mcq") {
     const showsChoice = (haystack: string, text: string): boolean =>
       containsPhrase(haystack, text) ||
@@ -604,13 +590,6 @@ export function socialAssetLeaks(
       leaks.push(
         `instagram_caption: names the correct choice "${correct.text}"`,
       );
-    }
-    if (
-      correct &&
-      output.reddit_title !== undefined &&
-      showsChoice(normalize(output.reddit_title), correct.text)
-    ) {
-      leaks.push(`reddit_title: names the correct choice "${correct.text}"`);
     }
     for (const [field, text] of fields) {
       if (namesNoChoice.has(field)) continue;

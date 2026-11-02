@@ -28,16 +28,21 @@
  *   * Every day: socialCopyProblems over the caption and alt text, revealWording over the card's
  *     visible text. Any problem: nothing is written, exit 1.
  *
- *   * Yesterday's reveal (owner brief 2026-10-15, for r/satquestion): read from yesterday's
- *     PUBLIC archive page data only (GET /api/public/qotd/<the day before>; the server refuses
- *     today and later), never from today's payload. A 404 is a withheld day (a repaired
- *     question): the reveal is the notice alone. Any other failure fails the run, loudly.
- *     Today's suggested Reddit title and plain-text body are built from the social input and go
- *     through the same leak check as the caption and alt text.
+ *   * No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide,
+ *     so the Reddit QOTD is discontinued and the QOTD goes to TikTok, Instagram and Facebook
+ *     only): nothing Reddit-related is built. The suggested Reddit post and yesterday's reveal (the
+ *     answer for the comment on yesterday's Reddit post; owner brief 2026-10-15) are no longer
+ *     generated, and the manifest carries neither, nor a Reddit link. Their builders are left in
+ *     shared/qotd/reveal.ts, not called.
+ *
+ *   * Yesterday's archive day: read from yesterday's PUBLIC archive page data only (GET
+ *     /api/public/qotd/<the day before>; the server refuses today and later), never from today's
+ *     payload (loadYesterday). A 404 is a withheld day (a repaired question): no carousel. A day
+ *     that is not yesterday, or any other failure, fails the run, loudly.
  *
  *   * TikTok carousel (Karl, 2026-10-23): yesterday's question as three 1080x1920 slides
- *     (question, pause, answer; client/src/components/qotd/QotdTiktokSlide.tsx), built from the
- *     SAME yesterday archive payload as the reveal (buildTiktokCarousel refuses any other day),
+ *     (question, pause, answer; client/src/components/qotd/QotdTiktokSlide.tsx), built from
+ *     yesterday's archive payload (buildTiktokCarousel refuses any other day),
  *     with the fixed CTA-first caption and the short title. tiktokCarouselLeaks checks the slides,
  *     caption and title against today: today's question text never, and today's answer when it
  *     is known. Yesterday withheld or missing (404), or a slide that does not fit at 24px: no
@@ -68,19 +73,12 @@ import {
   qotdTodayResponseSchema,
   qotdSocialPostManifestSchema,
   type QotdArchiveResponse,
-  type QotdRedditPost,
-  type QotdReveal,
   type QotdSocialCopy,
   type QotdSocialInput,
   type QotdSocialPostManifest,
   type QotdTiktokCarousel,
   type QotdTiktokPost,
 } from "../../packages/shared/src/qotd-schema";
-import {
-  buildReveal,
-  buildRedditPost,
-  withheldReveal,
-} from "../../shared/qotd/reveal";
 import { campaignLinks } from "../../shared/social/funnel";
 import {
   QOTD_SECTION_NAME,
@@ -179,8 +177,8 @@ function parseArgs(argv: readonly string[]): Args {
 /**
  * The day a run builds as "today" (Karl, 2026-10-27): the QOTD day at the run's moment, 04:00 UTC
  * to 04:00 UTC. The 04:05 UTC run therefore posts the day that began five minutes earlier (the
- * Reddit post and images) and reveals the day that just ended (the reveal and TikTok, read from
- * the archive as yesterday). /today must already be this day or the run is refused.
+ * images and their copy) and reveals the day that just ended (the TikTok carousel, read from the
+ * archive as yesterday). /today must already be this day or the run is refused.
  */
 export function socialRunToday(now: Date = new Date()): string {
   return qotdTodaySwitched(now);
@@ -347,8 +345,6 @@ export function publishDecision(
   copy: QotdSocialCopy,
   rendered: readonly { format: QotdSocialFormat; cardText: string }[],
   today: string,
-  reddit: QotdRedditPost,
-  reveal: QotdReveal,
   tiktok: TiktokBuild,
 ):
   | { ok: true; manifest: QotdSocialPostManifest }
@@ -372,30 +368,12 @@ export function publishDecision(
             caption: copy.caption,
             alt_text: copy.alt_text,
             card_text: r.cardText,
-            reddit_title: reddit.title,
-            reddit_body: reddit.body,
             instagram_caption: copy.instagram_caption,
           },
           source.revealed,
         ).map((leak) => `${r.format}: ${leak}`),
       );
     }
-  }
-  // Today's Reddit post is one of today's messages: reveal wording is refused there on every
-  // day, as on the card (the leak check above adds the answer itself when it is known).
-  for (const [field, text] of [
-    ["reddit_title", reddit.title],
-    ["reddit_body", reddit.body],
-  ] as const) {
-    const wording = revealWording(text, input);
-    if (wording) problems.push(`${field}: ${wording}`);
-  }
-  // The reveal is yesterday's, never today's (owner brief 2026-10-15).
-  const yesterday = previousQotdDate(input.qotd_date);
-  if (reveal.qotd_date !== yesterday) {
-    problems.push(
-      `reveal: is for ${reveal.qotd_date}, not yesterday (${yesterday})`,
-    );
   }
   // "no-answer-in-source" is true only of today's own payload. A today source dated any other
   // day (a stale cache at the day boundary) is a day whose answer is already public: refused,
@@ -416,7 +394,7 @@ export function publishDecision(
       caption: copy.caption,
       alt_text: copy.alt_text,
       instagram_caption: copy.instagram_caption,
-      links: campaignLinks("qotd"),
+      links: qotdLinks(),
       images: rendered.map((r) => ({
         format: r.format,
         file: `qotd-${input.qotd_date}-${r.format}.png`,
@@ -427,8 +405,6 @@ export function publishDecision(
         reveal_wording: "passed",
         leaks: source.kind === "past" ? "passed" : "no-answer-in-source",
       },
-      reddit,
-      reveal,
       tiktok: tiktokChecked.post,
     }),
   };
@@ -500,51 +476,51 @@ async function loadSource(args: Args): Promise<Source> {
   };
 }
 
-/** The one HTTP shape loadReveal needs, injectable for tests. */
+/** The one HTTP shape loadYesterday needs, injectable for tests. */
 export type ArchiveFetch = (
   url: string,
 ) => Promise<{ status: number; ok: boolean; json(): Promise<unknown> }>;
 
 /**
- * Yesterday's reveal for `postedDate`: from the PUBLIC archive page data of the day before, and
- * nothing else (owner brief 2026-10-15). A 404 is a day the archive does not publish (a repaired
- * question, owner 2026-10-08): withheld, the notice alone. Anything else that is not a 200, and
- * any payload that does not parse or is not yesterday's, fails the run.
- */
-export async function loadReveal(
-  baseUrl: string,
-  postedDate: string,
-  fetchImpl: ArchiveFetch,
-): Promise<QotdReveal> {
-  return (await loadYesterday(baseUrl, postedDate, fetchImpl)).reveal;
-}
-
-/**
- * Yesterday's public archive day and its reveal, read once: the reveal and the TikTok carousel
- * are both built from this one payload (Karl, 2026-10-23). `day` is null when yesterday is
- * withheld or missing (404).
+ * Yesterday's public archive day for `postedDate`: the PUBLIC archive page data of the day
+ * before, and nothing else (owner brief 2026-10-15; Karl, 2026-10-23). The TikTok carousel is
+ * built from it. `day` is null when yesterday is withheld or missing (404: a day the archive does
+ * not publish, a repaired question, owner 2026-10-08). Anything else that is not a 200, and any
+ * payload that does not parse or is not yesterday's, fails the run.
  */
 export async function loadYesterday(
   baseUrl: string,
   postedDate: string,
   fetchImpl: ArchiveFetch,
-): Promise<{ reveal: QotdReveal; day: QotdArchiveResponse | null }> {
+): Promise<{ day: QotdArchiveResponse | null }> {
   const yesterday = previousQotdDate(postedDate);
   const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);
   if (res.status === 404) {
-    return { reveal: withheldReveal(postedDate), day: null };
+    return { day: null };
   }
   if (!res.ok) {
     throw new Error(
-      `GET /api/public/qotd/${yesterday} -> ${res.status} (yesterday's reveal)`,
+      `GET /api/public/qotd/${yesterday} -> ${res.status} (yesterday's archive day)`,
     );
   }
   const body = z
     .object({ data: qotdArchiveResponseSchema })
     .parse(await res.json());
-  const built = buildReveal(body.data, postedDate);
-  if (!built.ok) throw new Error(built.problem);
-  return { reveal: built.reveal, day: body.data };
+  if (body.data.qotd_date !== yesterday) {
+    throw new Error(
+      `yesterday's archive day: the archive returned ${body.data.qotd_date}, not yesterday (${yesterday})`,
+    );
+  }
+  return { day: body.data };
+}
+
+/**
+ * The QOTD's tagged /start links: TikTok's and Instagram's only. The Reddit QOTD is discontinued
+ * (Karl's ruling 2026-10-30), so the manifest carries no Reddit link (qotdStartLinksSchema).
+ */
+function qotdLinks(): { tiktok: string; instagram: string } {
+  const all = campaignLinks("qotd");
+  return { tiktok: all.tiktok, instagram: all.instagram };
 }
 
 function archiveFetch(url: string): ReturnType<ArchiveFetch> {
@@ -873,13 +849,11 @@ async function main(): Promise<number> {
     return 2;
   }
   const copy = buildSocialCopy(input);
-  const reddit = buildRedditPost(input);
   const yesterday = await loadYesterday(
     args.baseUrl,
     input.qotd_date,
     archiveFetch,
   );
-  const { reveal } = yesterday;
 
   rmSync(args.out, { recursive: true, force: true });
   const workDir = join(args.out, ".render");
@@ -936,8 +910,6 @@ async function main(): Promise<number> {
     copy,
     result.rendered,
     today,
-    reddit,
-    reveal,
     tiktok,
   );
   if (!decision.ok) {
@@ -1001,15 +973,7 @@ async function main(): Promise<number> {
     fenced(copy.instagram_caption),
     `Send to people who comment SAT: ${links.instagram}`,
     "",
-    "### Reddit (today's post, with the portrait image)",
-    fenced(`${reddit.title}\n\n${reddit.body}`),
-    "",
     `### TikTok bio link\n${links.tiktok}`,
-    "",
-    "### Yesterday's reveal",
-    reveal.status === "withheld"
-      ? `${reveal.qotd_date}: withheld (not published on the archive), so there is no reveal.`
-      : `${reveal.qotd_date}: posted to Slack with the answer and explanation; ${reveal.archive_url}`,
     "",
     "### TikTok carousel (yesterday's question)",
     ...(tiktokPost.status === "built"

@@ -363,64 +363,43 @@ if [ "$HAVE_PG" = 1 ]; then
   restore
 fi
 
-# Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
-# reveal", Karl, 2026-10-15): the reveal is always yesterday's, never today's; the leak check still
-# covers every one of today's messages (the Reddit post included); a withheld yesterday posts the
-# notice and nothing else.
+# Yesterday's archive day (owner brief 2026-10-15; Karl, 2026-10-23): the TikTok carousel is
+# always built from yesterday's public archive day, never today's; a withheld yesterday is no day.
+#
+# RETIRED with the Reddit QOTD (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit
+# sitewide; nothing Reddit-related is generated), each guarantee obsolete because the output it
+# guarded is no longer built, posted or present:
+#   M27 the reveal builder accepted any day — buildReveal is no longer called (shared/qotd/
+#       reveal.ts is left in place, uncalled); the carousel's own day check is M36.
+#   M30 the leak check stopped reading the Reddit body — socialAssetLeaks no longer has Reddit
+#       fields: there is no Reddit body to check.
+#   M31 the Reddit title could name the correct choice — as M30, for the Reddit title.
+#   M32 the generator stopped handing the Reddit body to the leak check — no Reddit body is built.
+#   M34 the Slack reveal ignored "withheld" — the reveal message was removed with its Slack item.
+# RE-POINTED: M26 and M28 (the reveal's yesterday is now loadYesterday's), M29 (re-homed on
+# loadYesterday's own "is it yesterday's day" check, which replaced the reveal builder's), M33.
 echo "=== (26) 'yesterday' is computed as the posted day itself ==="
 plant packages/shared/src/qotd-schema.ts \
   "  d.setUTCDate(d.getUTCDate() - 1);" \
   "  d.setUTCDate(d.getUTCDate());" || { bad "M26 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M26 reveal is today's" "is built from yesterday's archive day" "$OUT" "$RC"
+expect_red "M26 yesterday is today" "loadYesterday asks the public archive for yesterday only" "$OUT" "$RC"
 restore
 
-echo "=== (27) the reveal builder accepts any day, today's included ==="
-plant shared/qotd/reveal.ts \
-  "  if (day.qotd_date !== yesterday) {" \
-  "  if (false) {" || { bad "M27 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M27 today's day revealed" "today's answer is never a reveal" "$OUT" "$RC"
-restore
-
-echo "=== (28) loadReveal fetches the posted day instead of yesterday ==="
+echo "=== (28) loadYesterday fetches the posted day instead of yesterday ==="
 plant scripts/qotd-social/generate.ts \
   '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);' \
   '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${postedDate}`);' || { bad "M28 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M28 today's archive fetched" "loadReveal asks the public archive for yesterday only" "$OUT" "$RC"
+expect_red "M28 today's archive fetched" "loadYesterday asks the public archive for yesterday only" "$OUT" "$RC"
 restore
 
-echo "=== (29) publishDecision stops checking the reveal's date ==="
+echo "=== (29) loadYesterday accepts a day that is not yesterday's ==="
 plant scripts/qotd-social/generate.ts \
-  "  if (reveal.qotd_date !== yesterday) {" \
+  "  if (body.data.qotd_date !== yesterday) {" \
   "  if (false) {" || { bad "M29 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M29 wrong-day reveal published" "a manifest whose reveal is not yesterday's is never written" "$OUT" "$RC"
-restore
-
-echo "=== (30) LEAK: the leak check stops reading the Reddit body ==="
-plant shared/qotd/social.ts \
-  '    fields.push(["reddit_body", redditBody]);' \
-  "    void 0;" || { bad "M30 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M30 explanation in Reddit body passes" "the explanation in the Reddit body" "$OUT" "$RC"
-restore
-
-echo "=== (31) LEAK: the Reddit title may name the correct choice ==="
-plant shared/qotd/social.ts \
-  '      leaks.push(`reddit_title: names the correct choice "${correct.text}"`);' \
-  "      void 0;" || { bad "M31 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M31 correct choice in Reddit title passes" "the correct choice named in the Reddit title" "$OUT" "$RC"
-restore
-
-echo "=== (32) LEAK: the generator stops handing the Reddit body to the leak check ==="
-plant scripts/qotd-social/generate.ts \
-  "            reddit_body: reddit.body," \
-  "" || { bad "M32 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M32 Reddit body unchecked" "the explanation in the Reddit body" "$OUT" "$RC"
+expect_red "M29 wrong day accepted" "refuses today's day served in its place" "$OUT" "$RC"
 restore
 
 echo "=== (33) a withheld yesterday (404) is no longer recognised ==="
@@ -428,15 +407,7 @@ plant scripts/qotd-social/generate.ts \
   "  if (res.status === 404) {" \
   "  if (false) {" || { bad "M33 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M33 withheld not recognised" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
-restore
-
-echo "=== (34) the Slack reveal ignores 'withheld' ==="
-plant scripts/qotd-social/post-to-slack.ts \
-  '  if (r.status === "withheld") {' \
-  "  if (false) {" || { bad "M34 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M34 withheld day posts a reveal" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
+expect_red "M33 withheld not recognised" "a 404 for yesterday gives no archive day" "$OUT" "$RC"
 restore
 
 # TikTok carousel + fixed answer order (Karl's brief 2026-10-23): one plant per rule.
@@ -565,21 +536,23 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M49 grid-in variant lost" "grid-in: slide 2 shows one 'Your answer' box" "$OUT" "$RC"
 restore
 
-# #social order and labels (Karl's brief 2026-10-26): one plant per rule.
-echo "=== (53) the five items go out in the wrong order ==="
+# #social order and labels (Karl's brief 2026-10-26): one plant per rule. Three items since the
+# two Reddit items were dropped and the rest renumbered (Karl's ruling 2026-10-30); M54 was
+# re-pointed from the dropped "4/5 · Reddit: today's post" label to a remaining one.
+echo "=== (53) the three items go out in the wrong order ==="
 plant scripts/qotd-social/post-to-slack.ts \
   "  return steps;" \
   "  return [...steps.slice(3), ...steps.slice(0, 3)];" || { bad "M53 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M53 order" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+expect_red "M53 order" "a day with a carousel posts 1/3 to 3/3 in order" "$OUT" "$RC"
 restore
 
 echo "=== (54) an item loses its numbered label ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  "  \"4/5 · Reddit: today's post\"," \
-  "  \"Reddit: today's post\"," || { bad "M54 STALE"; exit 1; }
+  "  \"2/3 · TikTok: carousel\"," \
+  "  \"TikTok: carousel\"," || { bad "M54 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M54 label" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+expect_red "M54 label" "a day with a carousel posts 1/3 to 3/3 in order" "$OUT" "$RC"
 restore
 
 echo "=== (55) an upload is not confirmed shared before the next step ==="
@@ -590,12 +563,12 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M55 upload not awaited" "each upload is confirmed shared before the next step starts" "$OUT" "$RC"
 restore
 
-echo "=== (56) a skipped carousel drops item 3, shifting the numbering ==="
+echo "=== (56) a skipped carousel drops item 2, shifting the numbering ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  $'      },\n      {\n        item: 3,\n        label: l3,\n        kind: "message",\n        text: `*3/5 \xc2\xb7 TikTok: no carousel today* (${why})`,\n      },\n' \
+  $'      },\n      {\n        item: 2,\n        label: l2,\n        kind: "message",\n        text: `*2/3 \xc2\xb7 TikTok: no carousel today* (${why})`,\n      },\n' \
   $'      },\n' || { bad "M56 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M56 skipped item 3 dropped" "a skipped carousel still yields a 2/5 and a 3/5 message" "$OUT" "$RC"
+expect_red "M56 skipped item 2 dropped" "a skipped carousel still yields a 1/3 and a 2/3 message" "$OUT" "$RC"
 restore
 
 echo "=== (57) the dry run stops printing the sequence ==="
@@ -681,21 +654,12 @@ if [ "$HAVE_PG" = 1 ]; then
   restore
 fi
 
-echo "=== (67) the reveal names the canonical letter, not the served one ==="
-plant shared/qotd/reveal.ts \
-  "      letter: shown," \
-  "      letter: correct.id," || { bad "M67 STALE"; exit 1; }
-OUT="$(ts_check "$AGREE")"; RC=$?
-expect_red "M67 reveal canonical letter" "yesterday's reveal names the served letter" "$OUT" "$RC"
-restore
-
-echo "=== (68) the Slack heading names the plural subreddit again ==="
-plant scripts/qotd-social/post-to-slack.ts \
-  '    `*Reddit (r/satquestion)* · today'"'"'s post' \
-  '    `*Reddit (r/satquestions)* · today'"'"'s post' || { bad "M68 STALE"; exit 1; }
-OUT="$(ts_check "$AGREE")"; RC=$?
-expect_red "M68 plural subreddit" "the Reddit heading names r/satquestion (singular)" "$OUT" "$RC"
-restore
+# RETIRED with the Reddit QOTD (Karl's ruling 2026-10-30), both obsolete:
+#   M67 the reveal named the canonical letter — the reveal is no longer built or posted; the
+#       served letter on the remaining surface that names one (the TikTok slide 3) is M47 and
+#       the served-order test's TikTok case.
+#   M68 the Slack heading named the plural subreddit — there is no Reddit heading and no
+#       subreddit name to get right (the singular/plural rename is dropped entirely).
 
 echo "=== (69) the scheduler stops skipping an explanation that names a letter ==="
 plant server/services/qotd/schedule-job.ts \
@@ -731,6 +695,40 @@ plant scripts/qotd-social/generate.ts \
   "      if (false) {" || { bad "M72 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M72 404 day not skipped" "a listed day the archive answers 404 for is skipped" "$OUT" "$RC"
+restore
+
+# No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide; the QOTD
+# goes to TikTok, Instagram and Facebook only): nothing Reddit-related is generated or posted.
+echo "=== (73) a Reddit line comes back in a #social item ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  '  return `*SAT Question of the Day* · ${formatSocialDate(m.qotd_date)} · ${m.section}`;' \
+  '  return `*SAT Question of the Day* · ${formatSocialDate(m.qotd_date)} · ${m.section} · also post to Reddit`;' || { bad "M73 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M73 Reddit in Slack" "the #social message has no Reddit item" "$OUT" "$RC"
+restore
+
+echo "=== (74) post.json may carry a Reddit post again ==="
+plant packages/shared/src/qotd-schema.ts \
+  $'    tiktok: qotdTiktokPostSchema,\n  })\n  .strict()' \
+  $'    tiktok: qotdTiktokPostSchema,\n    reddit: qotdRedditPostSchema.optional(),\n  })\n  .strict()' || { bad "M74 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M74 Reddit post accepted" "post.json carries no Reddit post, no reveal and no Reddit link" "$OUT" "$RC"
+restore
+
+echo "=== (75) post.json may carry a Reddit link again ==="
+plant packages/shared/src/qotd-schema.ts \
+  "export const qotdStartLinksSchema = socialStartLinksSchema.omit({" \
+  "export const qotdStartLinksSchema = socialStartLinksSchema.partial({" || { bad "M75 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M75 Reddit link accepted" "post.json carries no Reddit post, no reveal and no Reddit link" "$OUT" "$RC"
+restore
+
+echo "=== (76) the dry run names the Reddit post again ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  ' image(s), the caption and the TikTok carousel (' \
+  ' image(s), the caption, the Reddit post and the TikTok carousel (' || { bad "M76 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M76 dry run names Reddit" "the dry run builds the same message and names nothing Reddit-related" "$OUT" "$RC"
 restore
 
 echo "=== RESTORED: re-check green ==="
