@@ -26,6 +26,10 @@
  * logged or posted; the message carries counts only. Logs carry the week, counts of excluded
  * accounts and Slack's error code, never an id, an address, the token or the text.
  *
+ * Study time (Karl, 2026-11-02, "Study time reads 0.0 hours"): minutes from the server's own
+ * served-to-answered gap per answer, capped at 5 minutes (migration 20261129000000). A week whose
+ * answers carry no measurable gap is shown as "not recorded yet", never as 0.0.
+ *
  * Edge cases: an empty week posts zeros (a quiet week is news too). A change against a previous
  * week of 0 shows the difference only, never a percentage.
  */
@@ -128,6 +132,28 @@ function hours(minutes: number): number {
   return Math.round((minutes / 60) * 10) / 10;
 }
 
+/** What the report shows for a week whose answers carry no measurable time (Karl, 2026-11-02). */
+export const STUDY_TIME_NOT_RECORDED = "not recorded yet";
+
+/**
+ * @spec [owner brief "Growth report: 'Study time' reads 0.0 hours" (Karl, 2026-11-02) item 3]
+ *       | @implemented [2026-11-02]
+ * plain English: the study-time line. A week with no measurable time reads "not recorded yet", never 0.0, and
+ * no change is computed against it (there is nothing to compare).
+ */
+function studyTimeLine(
+  current: number | null,
+  previous: number | null,
+): string {
+  const label = "Study time, estimated (hours)";
+  if (current !== null && previous !== null) {
+    return line(label, hours(current), hours(previous), (v) => v.toFixed(1));
+  }
+  const shown = (m: number | null): string =>
+    m === null ? STUDY_TIME_NOT_RECORDED : hours(m).toFixed(1);
+  return `• ${label}: *${shown(current)}* (week before: ${shown(previous)})`;
+}
+
 /** The Slack message. Counts only; every label is our own text. */
 export function formatGrowthReport(report: GrowthReport): string {
   const w = report.week;
@@ -150,12 +176,7 @@ export function formatGrowthReport(report: GrowthReport): string {
       p.full_length_answers,
     ),
     line("Reviews done", w.reviews_done, p.reviews_done),
-    line(
-      "Study time, estimated (hours)",
-      hours(w.study_minutes_estimate),
-      hours(p.study_minutes_estimate),
-      (v) => v.toFixed(1),
-    ),
+    studyTimeLine(w.study_minutes_estimate, p.study_minutes_estimate),
     `• Sign-ups who answered a question within 24 h: *${n(w.signups_answered_24h)} of ${n(w.signups)}* (week before: ${n(p.signups_answered_24h)} of ${n(p.signups)})`,
     line("Upgrades", w.upgrades, p.upgrades),
     "    ALPHA and paid are not split here: only Stripe records the code.",
