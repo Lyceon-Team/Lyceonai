@@ -89,20 +89,21 @@ function mockSignatureQuery(result: {
   };
   mockSupabaseFrom.mockImplementation((table: string) => {
     if (table === "tutor_injection_signatures") return chain;
-    if (table === "tutor_context_runtime_config") {
-      return {
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({
-              data: null,
-              error: { message: "not found", code: "PGRST116" },
-            }),
-          }),
-        }),
-      };
-    }
     return chain;
   });
+
+  // Layer 2 fails: every Vertex attempt rejects. (Before H4 this was a missing
+  // `crisis_classifier_model_alias` config row; H4 removed that read — its value was never used —
+  // so the failure is planted where a real one happens, at the model call.)
+  vi.doMock("@google/genai", () => ({
+    GoogleGenAI: class {
+      models = {
+        generateContent: vi
+          .fn()
+          .mockRejectedValue(new Error("vertex unavailable (test)")),
+      };
+    },
+  }));
 }
 
 /**
@@ -185,7 +186,7 @@ describe("B1.5 — crisis Layer 1 fail-closed", () => {
 
   it("CASE_A: empty signatures + Layer 2 fails → crisis=true, source=classifier_degraded_no_floor", async () => {
     // Layer 1: empty signature set (zero rows)
-    // Layer 2: fails (classifier_config_missing → returns isCrisis=false, confidence=0)
+    // Layer 2: fails (every Vertex attempt rejects → returns isCrisis=false, confidence=0)
     mockSignatureQuery({
       data: [],
       error: null,
@@ -223,7 +224,7 @@ describe("B1.5 — crisis Layer 1 fail-closed", () => {
 
   it("CASE_C: populated signatures (no match) + Layer 2 fails → crisis=false, forceReview=true (Layer 1 stands)", async () => {
     // Layer 1: has signatures but none match
-    // Layer 2: fails (no config → returns isCrisis=false, confidence=0)
+    // Layer 2: fails (every Vertex attempt rejects → returns isCrisis=false, confidence=0)
     mockSignatureQuery({
       data: [
         {
@@ -346,6 +347,12 @@ describe("B1.5 — crisis Layer 1 fail-closed", () => {
 });
 
 describe("B1.5 — new source values accepted by CHECK constraint", () => {
+  // The classifier keeps one Vertex client per process (H4). A fresh module per test makes each
+  // test construct its own, so the constructor options it captures are this test's.
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
   /**
    * This test validates the migration SQL for the widened CHECK constraint
    * by parsing the constraint values from the migration file. The actual
