@@ -361,6 +361,40 @@ describe.skipIf(!PG_AVAILABLE)(
       ]);
     });
 
+    /**
+     * @spec [owner ruling 2026-11-02 round 2, section 2: "the day-18 email becomes renewal-only
+     *       when a score is already on file; billing behaviour unchanged"; SCL-263]
+     *       | @implemented [2026-11-02]
+     */
+    it("D18: a score already on file: the day-18 run asks the renewal question only", async () => {
+      await seedProfile(STUDENT, "student");
+      await seedEntitlement(STUDENT);
+      await seedStudyProfile(STUDENT, EXAM_DATE_DUE);
+      await pg.query(
+        `SELECT public.record_exam_score_report($1, $2::date, 1290, 640, 650)`,
+        [STUDENT, EXAM_DATE_DUE],
+      );
+      const { runExamScoreRenewal } =
+        await import("../../server/services/exam-score-renewal/job");
+      await runExamScoreRenewal({ now: new Date(NOW) });
+      const rows = await pg.query<{
+        event_type: string;
+        recipient_profile_id: string;
+      }>(
+        `SELECT e.event_type, m.recipient_profile_id
+           FROM public.notification_events e
+           JOIN public.notification_messages m USING (event_id)
+          WHERE m.channel = 'email' AND e.subject_profile_id = $1`,
+        [STUDENT],
+      );
+      expect(rows.rows).toEqual([
+        {
+          event_type: "renewal_decision_requested",
+          recipient_profile_id: STUDENT,
+        },
+      ]);
+    });
+
     // ── Claim 4 ────────────────────────────────────────────────────────────
     it("claim 4: a reported score is stored with the projection that was LIVE at the exam date", async () => {
       await seedProfile(STUDENT, "student");
@@ -726,6 +760,53 @@ describe.skipIf(!PG_AVAILABLE)(
         if (surface.ok) expect(surface.value.report?.total_score).toBe(1300);
       });
 
+      /**
+       * @spec [owner ruling 2026-11-02 round 2, section 2: "Widen the score form to any past test
+       *       date within 45 days"; SCL-263] | @implemented [2026-11-02]
+       */
+      it("W1: the score form takes one of the student's own past test dates within 45 days, score only", async () => {
+        const daysAgo = (n: number): string =>
+          new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+        const recent = daysAgo(10);
+        await seedProfile(STUDENT, "student");
+        await seedStudyProfile(STUDENT, recent);
+        const { submitScoreReport, readScoreReportSurface } =
+          await import("../../server/services/exam-score-renewal/service");
+        // No prompt was ever raised: without a date there is nothing to answer...
+        const none = await readScoreReportSurface(STUDENT);
+        expect(none.ok).toBe(false);
+        // ...and with the student's own past date, the score form (no retake question).
+        const surface = await readScoreReportSurface(
+          STUDENT,
+          undefined,
+          recent,
+        );
+        expect(surface.ok).toBe(true);
+        if (surface.ok) {
+          expect(surface.value.occasion_key).toBe(recent);
+          expect(surface.value.renewal_open).toBe(false);
+        }
+        const score = {
+          total_score: 1290,
+          rw_score: 640,
+          math_score: 650,
+        };
+        expect(
+          (await submitScoreReport(STUDENT, { occasion_key: recent, ...score }))
+            .ok,
+        ).toBe(true);
+        // A date the student never chose, one older than 45 days, and a future date: refused.
+        for (const date of [daysAgo(11), daysAgo(50), daysAgo(-3)]) {
+          await seedStudyProfile(STUDENT, date === daysAgo(11) ? recent : date);
+          const r = await submitScoreReport(STUDENT, {
+            occasion_key: date,
+            ...score,
+          });
+          expect(r.ok, date).toBe(false);
+          if (!r.ok) expect(r.error.kind).toBe("occasion_mismatch");
+        }
+      });
+
       it("a body naming an occasion we never asked about is refused", async () => {
         await primeExamPrompt(STUDENT, null);
         const { submitScoreReport } =
@@ -772,6 +853,24 @@ describe("noticesFor — who is asked what", () => {
         payer_profile_id: GUARDIAN,
       }),
     ).toEqual(["exam_score_report_requested", "renewal_decision_requested"]);
+    // Owner ruling 2026-11-02 (SCL-263): a score already on file means the renewal question only,
+    // to the payer (a self-paid student is their own payer).
+    expect(
+      noticesFor(
+        { anchor: "exam_date", student_id: STUDENT, payer_profile_id: null },
+        true,
+      ),
+    ).toEqual(["renewal_decision_requested"]);
+    expect(
+      noticesFor(
+        {
+          anchor: "exam_date",
+          student_id: STUDENT_OF_GUARDIAN,
+          payer_profile_id: GUARDIAN,
+        },
+        true,
+      ),
+    ).toEqual(["renewal_decision_requested"]);
     // Owner ruling #1: no score prompt on the billing-cycle anchor.
     expect(
       noticesFor({

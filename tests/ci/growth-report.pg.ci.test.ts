@@ -33,6 +33,7 @@ const G = id(7); // older; active both weeks, no test date; answers at the week'
 const H = id(8); // new this week via tiktok; first answer after 30 h; upgraded this week
 const I = id(9); // new LAST week, untagged, no activity
 const J = id(10); // older; only activity this week is one LISA message
+const K = id(11); // older; one QOTD answer (no measurable time) in the week of Oct 5, nothing else
 
 const WEEK = "2026-10-26";
 
@@ -62,11 +63,17 @@ async function profile(
   );
 }
 
+/**
+ * A practice item as the server writes it (Karl, 2026-11-02): served_at when served, answered_at
+ * when graded, time_spent_ms NULL (the server never stores a client duration). `gapMs` is the
+ * served-to-answered gap; 0 is a QOTD answer, which the server serves and answers in one call.
+ */
 async function practice(
   pid: string,
   answeredAt: string,
-  timeMs: number | null,
+  gapMs: number,
   status: "answered" | "skipped" = "answered",
+  legacyClientMs: number | null = null,
 ): Promise<void> {
   const s = randomUUID();
   await pg.query(
@@ -79,17 +86,20 @@ async function practice(
        (id, session_id, user_id, actor_id, ordinal, question_id, question_stem, question_options,
         question_correct_answer, question_explanation, question_domain, question_skill,
         question_difficulty, question_section, question_item_type, status, is_correct,
-        selected_answer, time_spent_ms, occurred_at, answered_at)
+        selected_answer, time_spent_ms, occurred_at, served_at, answered_at)
      VALUES ($1, $2, $3, $3, 1, 'SATM1Q90001', 's', '[]'::jsonb, 'B', 'e', 'Algebra', 'ALG.D01', 2,
-             'M', 'mcq', $4, true, 'B', $5, $6::timestamptz, $6::timestamptz)`,
-    [randomUUID(), s, pid, status, timeMs, answeredAt],
+             'M', 'mcq', $4, true, 'B', $7::integer, $5::timestamptz,
+             $5::timestamptz - make_interval(secs => $6::double precision / 1000), $5::timestamptz)`,
+    [randomUUID(), s, pid, status, answeredAt, gapMs, legacyClientMs],
   );
 }
 
+/** A review item as the server writes it: served_at, answered_at, time_spent_ms NULL. */
 async function review(
   pid: string,
   answeredAt: string,
   completedAt: string | null,
+  gapMs: number,
 ): Promise<void> {
   const s = randomUUID();
   await pg.query(
@@ -103,10 +113,11 @@ async function review(
        (id, session_id, student_id, actor_id, ordinal, question_id, question_stem, question_options,
         question_correct_answer, question_explanation, question_domain, question_skill,
         question_difficulty, question_section, question_item_type, status, is_correct,
-        selected_answer, occurred_at, answered_at)
+        selected_answer, time_spent_ms, occurred_at, served_at, answered_at)
      VALUES ($1, $2, $3, $3, 1, 'SATM1Q90001', 's', '[]'::jsonb, 'B', 'e', 'Algebra', 'ALG.D01', 2,
-             'M', 'mcq', 'answered', true, 'B', $4::timestamptz, $4::timestamptz)`,
-    [randomUUID(), s, pid, answeredAt],
+             'M', 'mcq', 'answered', true, 'B', NULL, $4::timestamptz,
+             $4::timestamptz - make_interval(secs => $5::double precision / 1000), $4::timestamptz)`,
+    [randomUUID(), s, pid, answeredAt, gapMs],
   );
 }
 
@@ -184,6 +195,7 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
     await profile(H, "student", "2026-10-27T12:00:00Z", { channel: "tiktok" });
     await profile(I, "student", "2026-10-21T12:00:00Z"); // previous week, untagged
     await profile(J, "student", "2026-08-01T12:00:00Z");
+    await profile(K, "student", "2026-08-01T12:00:00Z");
     const NEVER = [
       [C, "student", { dob: "2015-06-01", channel: "reddit" }], // under 13
       [D, "guardian", { dob: "1980-01-01", channel: "reddit" }],
@@ -202,7 +214,7 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
     await practice(A, "2026-10-28T10:00:00Z", 30_000, "skipped"); // active, not answered
     await testDate(B, "2026-12-05");
     await practice(B, "2026-10-20T12:00:00Z", 30_000); // previous week
-    await review(B, "2026-10-28T12:00:00Z", "2026-10-29T12:00:00Z"); // this week; review done
+    await review(B, "2026-10-28T12:00:00Z", "2026-10-29T12:00:00Z", 180_000); // this week; 3 min; review done
     await fullLength(B, "2026-10-30T12:00:00Z"); // one answer saved, one blank
     await premium(B, "2026-10-22T12:00:00Z"); // upgrade, previous week
     await practice(G, "2026-10-21T12:00:00Z", 30_000); // previous week
@@ -210,14 +222,23 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
     await practice(G, "2026-11-02T05:30:00Z", 120_000); // 2 min
     // Monday Nov 2 00:30 CST = 06:30 UTC: the NEXT week.
     await practice(G, "2026-11-02T06:30:00Z", 120_000);
-    await practice(H, "2026-10-28T18:00:00Z", null); // 30 h after sign-up; untimed
+    // A legacy row: a client duration of 10 minutes (the server no longer writes one) on a
+    // 30-second served-to-answered gap. Only the server's 30 s may count.
+    await practice(G, "2026-10-29T12:00:00Z", 30_000, "answered", 600_000);
+    await practice(H, "2026-10-28T18:00:00Z", 0); // 30 h after sign-up; a QOTD answer: no gap
+    await practice(K, "2026-10-07T12:00:00Z", 0); // the week of Oct 5: answered, nothing measurable
     await premium(H, "2026-10-30T12:00:00Z"); // upgrade, this week
     await lisaMessage(J, "2026-10-29T12:00:00Z");
     // Never counted: each does everything a counted student does, in both weeks.
     for (const [pid] of NEVER) {
       await practice(pid, "2026-10-27T14:00:00Z", 60_000);
       await practice(pid, "2026-10-20T14:00:00Z", 60_000);
-      await review(pid, "2026-10-28T12:00:00Z", "2026-10-29T12:00:00Z");
+      await review(
+        pid,
+        "2026-10-28T12:00:00Z",
+        "2026-10-29T12:00:00Z",
+        120_000,
+      );
       await fullLength(pid, "2026-10-30T12:00:00Z");
       await lisaMessage(pid, "2026-10-29T12:00:00Z");
       await premium(pid, "2026-10-30T12:00:00Z");
@@ -233,8 +254,17 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
     const rows = await pg.query<{ n: string }>(
       `SELECT count(*) AS n FROM public.practice_session_items`,
     );
-    // A 3, B 1, G 3, H 1, and 2 each for the four accounts that never count.
-    expect(Number(rows.rows[0]?.n)).toBe(16);
+    // A 3, B 1, G 4, H 1, K 1, and 2 each for the four accounts that never count.
+    expect(Number(rows.rows[0]?.n)).toBe(18);
+    // As the server writes them: a served time on every row, and a client duration only on the
+    // one legacy row (which the report must ignore).
+    const shape = await pg.query<{ client: string; served: string }>(
+      `SELECT count(*) FILTER (WHERE time_spent_ms IS NOT NULL) AS client,
+              count(*) FILTER (WHERE served_at IS NOT NULL) AS served
+         FROM (SELECT time_spent_ms, served_at FROM public.practice_session_items
+               UNION ALL SELECT time_spent_ms, served_at FROM public.review_session_items) x`,
+    );
+    expect(shape.rows[0]).toEqual({ client: "1", served: "23" });
   });
 
   it("the reported week is the last complete Monday–Sunday in Chicago", async () => {
@@ -262,10 +292,12 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
         { test_date: "2026-12-05", students: 1 },
         { test_date: null, students: 1 },
       ],
-      questions_answered: 5, // A 2 (skip not counted), B review 1, G Sunday 1, H 1
+      questions_answered: 6, // A 2 (skip not counted), B review 1, G 2 (Sunday, legacy row), H 1
       full_length_answers: 1, // B: one saved, one blank
       reviews_done: 1, // B
-      study_minutes_estimate: 8, // A 1 + 5 (capped), G 2; H untimed, B review untimed
+      // A 1 + 5 (1 h capped) + G 2 + G's legacy row 0.5 (its 10-minute client duration ignored)
+      // + B review 3; H's QOTD answer has no gap; the never-counted accounts are excluded.
+      study_minutes_estimate: 11.5,
       signups_answered_24h: 1, // A (H answered after 30 h)
       upgrades: 1, // H
     });
@@ -280,8 +312,22 @@ describe.skipIf(!PG_AVAILABLE)("growth report numbers (real Postgres)", () => {
       active_students: 2, // B, G
       returning_students: 0,
       questions_answered: 2,
+      study_minutes_estimate: 1, // B 30 s + G 30 s
       upgrades: 1, // B
     });
+  });
+
+  it('study time: a week with answers but nothing measurable is null ("not recorded yet"), a week with no answers is 0', async () => {
+    const res = await pg.query<{ r: unknown }>(
+      `SELECT public.growth_report_weekly('2026-10-12'::date, '{}') AS r`,
+    );
+    const r = growthReportSchema.parse(res.rows[0]?.r);
+    // The week of Oct 5: K's one QOTD answer, served and answered at the same instant.
+    expect(r.previous.questions_answered).toBe(1); // presence first
+    expect(r.previous.study_minutes_estimate).toBeNull();
+    // The week of Oct 12: no answers at all.
+    expect(r.week.questions_answered).toBe(0);
+    expect(r.week.study_minutes_estimate).toBe(0);
   });
 
   it("the internal account counts when it is not passed as excluded (the list is what excludes it)", async () => {

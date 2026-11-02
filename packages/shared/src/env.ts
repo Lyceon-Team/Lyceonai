@@ -64,6 +64,10 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   NOTIFICATION_FROM_EMAIL: z.string().email().optional(),
+  // Email send gate (owner ruling 2026-11-02, round 2 (1)): governed and milestone emails go out
+  // from a click-tracked sender on lyceon.ai. Read at server/lib/notifications/transport.ts.
+  // Optional: unset, those emails fall back to NOTIFICATION_FROM_EMAIL with a warning.
+  NOTIFICATION_TRACKED_FROM_EMAIL: z.string().email().optional(),
 
   // Ops alerts to the owner (QOTD resilience brief, Karl 2026-10-09). Read at:
   //   SLACK_ALERTS_WEBHOOK_URL  server/services/qotd/qotd-health.ts (Production only; a Slack
@@ -121,6 +125,7 @@ export const notificationEnvSchema = envSchema.pick({
   RESEND_API_KEY: true,
   RESEND_WEBHOOK_SECRET: true,
   NOTIFICATION_FROM_EMAIL: true,
+  NOTIFICATION_TRACKED_FROM_EMAIL: true,
 });
 export type NotificationEnv = z.infer<typeof notificationEnvSchema>;
 

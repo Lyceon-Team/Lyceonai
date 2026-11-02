@@ -36,6 +36,7 @@
 import { z } from "zod";
 import { supabaseServer } from "../../../apps/api/src/lib/supabase-server";
 import { addDaysToLocalDate, evaluateAccountabilityDays } from "@lyceon/shared";
+import { emailGuardianRefreshResultSchema } from "../../../packages/shared/src/email-gate";
 import {
   GUARDIAN_DIGEST_SEND_HOUR_CHICAGO,
   GUARDIAN_DIGEST_TIME_ZONE,
@@ -68,6 +69,8 @@ export const ACCOUNTABILITY_EMAIL_TYPES: readonly NotificationEventType[] = [
   "missed_plan_alert",
   "back_on_track",
   "guardian_daily_digest",
+  // The email send gate's parent pause email (Karl, 2026-10-30), emitted in step 2a.
+  "email_gate_guardian_paused",
 ];
 
 export type AccountabilityJobSummary = {
@@ -78,6 +81,8 @@ export type AccountabilityJobSummary = {
   student_failures: number;
   alerts: number;
   back_on_track: number;
+  /** Parent pause emails emitted this run (the email send gate). */
+  guardian_pauses: number;
   digests: number;
   sent: number;
   failed: number;
@@ -185,6 +190,22 @@ async function evaluateStudent(
     );
   }
   const result = outcomeResultSchema.parse(data);
+  // @spec [owner rulings 2026-11-02 round 1 (plan-aware inactivity) and round 2 section 2 ("a
+  // planned day counts as missed only if there was no activity of any kind that day")]
+  // | @implemented [2026-11-02] — the same planned days feed the email send gate's missed run;
+  // the SQL re-checks each missed day for activity of any kind and skips days it has seen.
+  const gate = await deps.db.rpc("email_gate_record_plan_days", {
+    p_student_id: row.student_id,
+    p_days: JSON.stringify(evaluation.days),
+    p_timezone: row.timezone,
+    p_through: window.through,
+    p_now: deps.now.toISOString(),
+  });
+  if (gate.error) {
+    throw new Error(
+      `email_gate_record_plan_days failed: ${gate.error.message}`,
+    );
+  }
   return { alerts: result.alerts, backOnTrack: result.back_on_track };
 }
 
@@ -198,6 +219,7 @@ export async function runGuardianAccountabilityJob(
     student_failures: 0,
     alerts: 0,
     back_on_track: 0,
+    guardian_pauses: 0,
     digests: 0,
     sent: 0,
     failed: 0,
@@ -245,6 +267,20 @@ export async function runGuardianAccountabilityJob(
     after = last.student_id;
   }
 
+  // 2a. The email send gate's parent pauses (Karl, 2026-10-30): before the digest, so a student
+  // paused today is already left out of it, and their guardian gets the one pause email.
+  const pauses = await deps.db.rpc("email_gate_guardian_refresh", {
+    p_now: deps.now.toISOString(),
+  });
+  if (pauses.error) {
+    throw new Error(
+      `email_gate_guardian_refresh failed: ${pauses.error.message}`,
+    );
+  }
+  summary.guardian_pauses = emailGuardianRefreshResultSchema.parse(
+    pauses.data,
+  ).opened;
+
   // 3. The digests.
   for (;;) {
     const { data, error } = await deps.db.rpc("guardian_daily_digest_notify", {
@@ -288,6 +324,7 @@ export async function runGuardianAccountabilityJob(
       studentFailures: summary.student_failures,
       alerts: summary.alerts,
       backOnTrack: summary.back_on_track,
+      guardianPauses: summary.guardian_pauses,
       digests: summary.digests,
       sent: summary.sent,
       failed: summary.failed,

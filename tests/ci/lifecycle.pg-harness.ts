@@ -16,7 +16,11 @@
  * never the wall clock.
  */
 import { Client } from "pg";
-import { bootstrapPgDatabase, pgConnConfig } from "../helpers/pg-supabase";
+import {
+  bootstrapPgDatabase,
+  makePgSupabase,
+  pgConnConfig,
+} from "../helpers/pg-supabase";
 
 export const PROBE_ROLE = "lc_service_role_probe";
 export const DAY = 86_400_000;
@@ -335,6 +339,14 @@ export async function setupLifecycleDb(dbName: string, idPrefix: string) {
           );
           return r.rows[0]?.ok === true;
         }),
+      // The real email send gate (owner brief "Email send gate", Karl 2026-10-30).
+      gate: async (profileId: string, kind: Trigger, now: Date) => {
+        const { emailGate } =
+          await import("../../server/lib/notifications/email-gate");
+        return asProbe(() =>
+          emailGate(makePgSupabase(pg), profileId, kind, now),
+        );
+      },
     });
     return { summary, sent };
   }
