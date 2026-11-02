@@ -97,7 +97,8 @@ export function NotificationsSection(): JSX.Element {
             data-testid="settings-qotd-email-paused"
           >
             <p className={FIELD_HELP}>
-              Paused after 7 emails in a row went unanswered.
+              Paused while you&apos;ve been away. Answer a question or tap
+              Resume to turn it back on.
             </p>
             <Button
               type="button"

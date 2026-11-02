@@ -28,7 +28,9 @@ describe("notifications schema", () => {
   // reminder's record `lifecycle_reminder_due` on 2026-10-21 (owner brief "Lifecycle emails",
   // 20261109000000, SCL-239); the three behaviour triggers' records on 2026-10-21 (same brief,
   // PR 2, 20261111000000, SCL-240).
-  it("names exactly the sixteen event types, in the CHECK's own order", () => {
+  // The email send gate's five on 2026-11-02 (owner brief "Email send gate", 20261126000000,
+  // SCL-263): the three SAT milestones and the two pause emails.
+  it("names exactly the twenty-one event types, in the CHECK's own order", () => {
     expect([...NOTIFICATION_EVENT_TYPES]).toEqual([
       "guardian_linked",
       "guardian_unlinked",
@@ -46,6 +48,11 @@ describe("notifications schema", () => {
       "lifecycle_diagnostic_unfinished",
       "lifecycle_pro_no_plan",
       "lifecycle_practising_free",
+      "sat_week_before",
+      "sat_day_after",
+      "sat_scores_released",
+      "email_gate_paused_notice",
+      "email_gate_guardian_paused",
     ]);
   });
 

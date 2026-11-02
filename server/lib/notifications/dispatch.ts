@@ -60,11 +60,14 @@ import { logger } from "../../logger";
 import { qotdDailySendContext } from "./qotd-daily-send-context";
 import { guardianDigestSendContext } from "./guardian-digest-send-context";
 import { reviewAskSendContext } from "./review-ask-send-context";
+import { emailGateSendContext } from "./email-gate-send-context";
 import { emitEvent } from "../analytics/emit-event";
 import { reviewAskPayloadSchema } from "../../../packages/shared/src/notifications-schema";
 import { quietHoursDeferral } from "./quiet-hours";
 import { renderEmail, siteUrlFromEnv, type RenderContext } from "./templates";
 import { defaultEmailTransport, type EmailTransport } from "./transport";
+import { emailGate } from "./email-gate";
+import { emailSenderTrackingOf } from "../../../packages/shared/src/email-gate";
 
 export type DispatchSummary = {
   selected: number;
@@ -76,6 +79,8 @@ export type DispatchSummary = {
   postponed: number;
   /** Past its event's `expires_at` (or would be by 08:00): failed, never sent. */
   expired: number;
+  /** Refused by the email send gate (paused, cooling cap): failed at once, never retried. */
+  gated: number;
   selectFailed: boolean;
 };
 
@@ -164,7 +169,7 @@ async function dispatchOne(
   row: NotificationMessageRow,
   transport: EmailTransport,
   now: Date,
-): Promise<"sent" | "failed" | "deferred" | "postponed" | "expired"> {
+): Promise<"sent" | "failed" | "deferred" | "postponed" | "expired" | "gated"> {
   const { data: eventRows, error: eventError } = await supabaseServer
     .from("notification_events")
     .select("*")
@@ -260,6 +265,47 @@ async function dispatchOne(
       p_max_attempts: NOTIFICATION_EMAIL_MAX_ATTEMPTS,
     });
     return "failed";
+  }
+
+  // @spec [owner brief "Email send gate" (Karl, 2026-10-30); contract C15] | @implemented
+  // [2026-11-02] — the gate is asked at send time, for every governed and milestone email: the
+  // state may have changed since the event was emitted. A refusal fails the row at once (cap of
+  // one, never retried); a gate that cannot be read defers the row, never sends it.
+  const gate = await emailGate(
+    supabaseServer,
+    row.recipient_profile_id,
+    eventRow.event_type,
+    now,
+  );
+  if (!gate.ok) {
+    logger.error(
+      "NOTIFICATIONS",
+      "dispatch_gate_read_failed",
+      "Could not ask the email send gate",
+      { messageId: row.message_id, reason: gate.error },
+    );
+    return "deferred";
+  }
+  if (!gate.value.allow) {
+    logger.info(
+      "NOTIFICATIONS",
+      "dispatch_gated",
+      "The email send gate refused a send",
+      {
+        messageId: row.message_id,
+        eventType: eventRow.event_type,
+        reason: gate.value.reason,
+        state: gate.value.state,
+      },
+    );
+    await recordAttempt({
+      p_message_id: row.message_id,
+      p_ok: false,
+      p_provider_message_id: null,
+      p_error: `email_gate:${gate.value.reason}`,
+      p_max_attempts: 1,
+    });
+    return "gated";
   }
 
   // @spec [contracts/notifications.contract.md §11A; owner follow-up 2026-09-17 "Replace Bespoke
@@ -358,6 +404,39 @@ async function dispatchOne(
     }
     ctx.reviewAskEmail = extras.value;
   }
+  // The email send gate's pause emails (Karl, 2026-10-30): the signed Keep me posted link, and
+  // withdrawn if the pause ended while the email waited.
+  if (
+    eventRow.event_type === "email_gate_paused_notice" ||
+    eventRow.event_type === "email_gate_guardian_paused"
+  ) {
+    const extras = await emailGateSendContext(
+      eventRow.event_type,
+      eventRow.payload,
+      eventRow.subject_profile_id,
+      row.recipient_profile_id,
+      siteUrl,
+    );
+    if (!extras.ok) {
+      logger.info(
+        "NOTIFICATIONS",
+        "dispatch_email_gate_context_failed",
+        "A pause email was not prepared",
+        { messageId: row.message_id, reason: extras.error.reason },
+      );
+      await recordAttempt({
+        p_message_id: row.message_id,
+        p_ok: false,
+        p_provider_message_id: null,
+        p_error: extras.error.reason,
+        p_max_attempts: extras.error.final
+          ? 1
+          : NOTIFICATION_EMAIL_MAX_ATTEMPTS,
+      });
+      return "failed";
+    }
+    ctx.emailGate = extras.value;
+  }
   const rendered = renderEmail(eventRow.event_type, eventRow.payload, ctx);
   if (!rendered.ok) {
     await recordAttempt({
@@ -379,6 +458,8 @@ async function dispatchOne(
     text: rendered.value.text,
     // The sender name the template chose for this recipient (Karl, 2026-10-14).
     fromCategory: rendered.value.fromCategory,
+    // Governed and milestone emails from the click-tracked sender (ruling 2026-11-02 (1)).
+    sender: emailSenderTrackingOf(eventRow.event_type),
     ...(rendered.value.headers ? { headers: rendered.value.headers } : {}),
     // Every notification email goes to a student, a guardian or a payer.
     audience: "student_or_guardian",
@@ -437,6 +518,7 @@ export async function dispatchQueuedMessages(
     deferred: 0,
     postponed: 0,
     expired: 0,
+    gated: 0,
     selectFailed: false,
   };
   const transport = options.transport ?? defaultEmailTransport();

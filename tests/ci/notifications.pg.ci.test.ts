@@ -588,7 +588,7 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
     ]);
   });
 
-  it("C5.4 a duplicate svix-id is a 200 no-op; open/click events are acknowledged and never recorded", async () => {
+  it("C5.4 a duplicate svix-id is a 200 no-op; an open is recorded once and never moves the status (C7.4 as amended 2026-11-02)", async () => {
     const app = await buildApp();
     await redeem(app);
     const providerId = String(
@@ -620,14 +620,31 @@ describe.skipIf(!PG_AVAILABLE)("notifications — real Postgres", () => {
       { id: "msg_open" },
     );
     expect(opened.status).toBe(200);
-    expect(opened.body.status).toBe("acknowledged");
+    expect(opened.body.status).toBe("applied");
+    const openReplay = await postWebhook(
+      app,
+      webhookBody("email.opened", providerId),
+      { id: "msg_open" },
+    );
+    expect(openReplay.body.status).toBe("duplicate");
     expect(
       (
         await pg.query(
           `SELECT count(*)::int AS c FROM public.notification_delivery_events`,
         )
       ).rows[0].c,
-    ).toBe(1);
+    ).toBe(2);
+    // The open is the recipient's, and the message is still `delivered`.
+    expect(
+      (
+        await pg.query(
+          `SELECT d.recipient_profile_id = m.recipient_profile_id AS same, m.status
+             FROM public.notification_delivery_events d
+             JOIN public.notification_messages m ON m.message_id = d.message_id
+            WHERE d.provider_event_id = 'msg_open'`,
+        )
+      ).rows[0],
+    ).toEqual({ same: true, status: "delivered" });
 
     // Terminal statuses do not move: a second delivered after bounced is recorded as ignored.
     expect(
