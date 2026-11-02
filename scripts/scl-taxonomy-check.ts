@@ -1,6 +1,11 @@
 /**
- * SCL taxonomy CI consistency check — verifies the canonical JSON
- * matches the DB mirror (row counts + version match).
+ * SCL taxonomy CI consistency check — verifies the canonical JSON and the DB
+ * mirror hold the same IDs: for sub_skills and for clusters, the set of IDs in
+ * the file equals the set of IDs in the DB, checked in both directions.
+ *
+ * No row counts and no taxonomy_version comparison: the taxonomy grows over
+ * time and the version string is not evidence of sync (owner ruling
+ * 2026-10-29, Karl). IDs are read page by page, so table size is unbounded.
  *
  * Exits 0 on pass, 1 on mismatch. Intended for CI gates.
  *
@@ -8,13 +13,14 @@
  *   pnpm exec tsx scripts/scl-taxonomy-check.ts
  *
  * @spec SPEC-CHANGE_SCL.md §9 (determinism / testing)
- * @implemented 2026-10-28
+ * @implemented 2026-10-28; ID set-equality replaced count + version checks 2026-10-29
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { SCL_TABLES, diffIds, fetchDbIds } from "./scl-taxonomy-sync";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -47,73 +53,26 @@ async function main(): Promise<void> {
     auth: { persistSession: false },
   });
 
+  const fileIds = {
+    sub_skills: taxonomy.sub_skills.map((s) => s.id),
+    clusters: taxonomy.clusters.map((c) => c.id),
+  };
+  const dbIds = await fetchDbIds(supabase);
+
   const failures: string[] = [];
-
-  // Check sub_skills count
-  const { count: subSkillCount, error: ssErr } = await supabase
-    .from("sub_skills")
-    .select("*", { count: "exact", head: true });
-  if (ssErr) throw new Error(`sub_skills count query failed: ${ssErr.message}`);
-  if (subSkillCount !== taxonomy.sub_skills.length) {
-    failures.push(
-      `sub_skills count: DB=${subSkillCount}, JSON=${taxonomy.sub_skills.length}`,
+  for (const table of SCL_TABLES) {
+    const { missingFromFile, missingFromDb } = diffIds(
+      fileIds[table],
+      dbIds[table],
     );
-  }
-
-  // Check clusters count
-  const { count: clusterCount, error: clErr } = await supabase
-    .from("clusters")
-    .select("*", { count: "exact", head: true });
-  if (clErr) throw new Error(`clusters count query failed: ${clErr.message}`);
-  if (clusterCount !== taxonomy.clusters.length) {
-    failures.push(
-      `clusters count: DB=${clusterCount}, JSON=${taxonomy.clusters.length}`,
-    );
-  }
-
-  // Check taxonomy_version on sub_skills
-  if (taxonomy.sub_skills.length > 0) {
-    const { data: ssVersions, error: ssVErr } = await supabase
-      .from("sub_skills")
-      .select("taxonomy_version")
-      .neq("taxonomy_version", taxonomy.taxonomy_version)
-      .limit(1);
-    if (ssVErr)
-      throw new Error(`sub_skills version query failed: ${ssVErr.message}`);
-    if (ssVersions && ssVersions.length > 0) {
+    if (missingFromFile.length > 0) {
       failures.push(
-        `sub_skills version mismatch: found rows with version != "${taxonomy.taxonomy_version}"`,
+        `${table} in DB but not in file: ${missingFromFile.join(", ")}`,
       );
     }
-  }
-
-  // Check taxonomy_version on clusters
-  if (taxonomy.clusters.length > 0) {
-    const { data: clVersions, error: clVErr } = await supabase
-      .from("clusters")
-      .select("taxonomy_version")
-      .neq("taxonomy_version", taxonomy.taxonomy_version)
-      .limit(1);
-    if (clVErr)
-      throw new Error(`clusters version query failed: ${clVErr.message}`);
-    if (clVersions && clVersions.length > 0) {
+    if (missingFromDb.length > 0) {
       failures.push(
-        `clusters version mismatch: found rows with version != "${taxonomy.taxonomy_version}"`,
-      );
-    }
-  }
-
-  // Check no DB ids missing from JSON
-  if (taxonomy.sub_skills.length > 0) {
-    const canonicalIds = new Set(taxonomy.sub_skills.map((s) => s.id));
-    const { data: dbIds, error: dbErr } = await supabase
-      .from("sub_skills")
-      .select("id");
-    if (dbErr) throw new Error(`sub_skills id query failed: ${dbErr.message}`);
-    const stale = (dbIds ?? []).filter((r) => !canonicalIds.has(r.id));
-    if (stale.length > 0) {
-      failures.push(
-        `sub_skills has ${stale.length} DB rows not in JSON: ${stale.map((r) => r.id).join(", ")}`,
+        `${table} in file but not in DB: ${missingFromDb.join(", ")}`,
       );
     }
   }
@@ -124,14 +83,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log("SCL consistency check PASSED.");
   console.log(
-    `  sub_skills: ${taxonomy.sub_skills.length} (JSON) = ${subSkillCount} (DB)`,
+    "SCL consistency check PASSED: sub_skills and clusters ID sets are equal in the file and the DB.",
   );
-  console.log(
-    `  clusters: ${taxonomy.clusters.length} (JSON) = ${clusterCount} (DB)`,
-  );
-  console.log(`  taxonomy_version: ${taxonomy.taxonomy_version}`);
 }
 
 main().catch((err: unknown) => {

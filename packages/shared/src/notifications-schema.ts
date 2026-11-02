@@ -76,6 +76,11 @@ export const NOTIFICATION_EVENT_TYPES = [
   "lifecycle_diagnostic_unfinished",
   "lifecycle_pro_no_plan",
   "lifecycle_practising_free",
+  "sat_week_before",
+  "sat_day_after",
+  "sat_scores_released",
+  "email_gate_paused_notice",
+  "email_gate_guardian_paused",
 ] as const;
 export const notificationEventTypeSchema = z.enum(NOTIFICATION_EVENT_TYPES);
 export type NotificationEventType = z.infer<typeof notificationEventTypeSchema>;
@@ -466,6 +471,65 @@ export const reviewAskPayloadSchema = z
   .strict();
 export type ReviewAskPayload = z.infer<typeof reviewAskPayloadSchema>;
 
+// ── Email send gate (owner brief "Email send gate", Karl 2026-10-30; rulings 2026-11-02) ───
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/**
+ * @spec [owner rulings 2026-11-02 (round 2, section 2); contracts/notifications.contract.md C15]
+ *        | @implemented [2026-11-02]
+ *
+ * The three SAT milestones (`email_milestones_notify`): the student's own test date, and for the
+ * day-after and release-day emails College Board's published score release date (from
+ * `SAT_TEST_DATES`; null when none is published, which skips the release-day email). No score,
+ * no address.
+ */
+export const satWeekBeforePayloadSchema = z
+  .object({ first_name: z.string(), test_date: isoDate })
+  .strict();
+export type SatWeekBeforePayload = z.infer<typeof satWeekBeforePayloadSchema>;
+
+export const satDayAfterPayloadSchema = z
+  .object({
+    first_name: z.string(),
+    test_date: isoDate,
+    release_date: isoDate.nullable(),
+  })
+  .strict();
+export type SatDayAfterPayload = z.infer<typeof satDayAfterPayloadSchema>;
+
+export const satScoresReleasedPayloadSchema = z
+  .object({ first_name: z.string(), test_date: isoDate, release_date: isoDate })
+  .strict();
+export type SatScoresReleasedPayload = z.infer<
+  typeof satScoresReleasedPayloadSchema
+>;
+
+/** The student pause note (`email_gate_refresh`, once per pause episode). */
+export const emailGatePausedNoticePayloadSchema = z
+  .object({
+    first_name: z.string(),
+    episode: z.number().int().min(1),
+    test_date: isoDate.nullable(),
+  })
+  .strict();
+export type EmailGatePausedNoticePayload = z.infer<
+  typeof emailGatePausedNoticePayloadSchema
+>;
+
+/** The parent pause email (`email_gate_guardian_refresh`, once per guardian, student, episode). */
+export const emailGateGuardianPausedPayloadSchema = z
+  .object({
+    student_first_name: z.string(),
+    guardian_first_name: z.string(),
+    test_date: isoDate.nullable(),
+    episode: z.number().int().min(1),
+  })
+  .strict();
+export type EmailGateGuardianPausedPayload = z.infer<
+  typeof emailGateGuardianPausedPayloadSchema
+>;
+
 export const guardianDigestPreferenceSchema = z
   .object({ enabled: z.boolean() })
   .strict();
@@ -681,6 +745,25 @@ export const RESEND_STATUS_EVENTS = {
   "email.failed": "failed",
 } as const;
 export type ResendStatusEventType = keyof typeof RESEND_STATUS_EVENTS;
+
+/**
+ * @spec [owner brief "Email send gate" (Karl, 2026-10-30), tracking addendum: "subscribe the app's
+ *       Resend webhook to email.opened and email.clicked; accept and store them in
+ *       notification_delivery_events (idempotent, as today)"] | @implemented [2026-11-02]
+ * Stored with the recipient's profile (`record_email_engagement_event`); only clicks feed the
+ * gate's unengaged count (opens are inflated by Apple Mail).
+ */
+export const RESEND_ENGAGEMENT_EVENTS = [
+  "email.opened",
+  "email.clicked",
+] as const;
+export type ResendEngagementEventType =
+  (typeof RESEND_ENGAGEMENT_EVENTS)[number];
+export function isResendEngagementEvent(
+  type: string,
+): type is ResendEngagementEventType {
+  return (RESEND_ENGAGEMENT_EVENTS as readonly string[]).includes(type);
+}
 
 export function isResendStatusEvent(
   type: string,

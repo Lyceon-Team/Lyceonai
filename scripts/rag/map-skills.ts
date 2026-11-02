@@ -131,8 +131,6 @@ async function main(): Promise<void> {
   const seed =
     values.seed ?? `tier${tier}-${new Date().toISOString().slice(0, 10)}`;
   const skills = loadSkillNames();
-  if (skills.length !== 29)
-    throw new Error(`taxonomy lists ${skills.length} skills, expected 29`);
   const taxonomy = new Set<string>(skills);
 
   const dir = resolve(tierDir(tier), "videos");

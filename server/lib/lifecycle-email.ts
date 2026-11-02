@@ -57,6 +57,9 @@ import {
   type ContactsTransport,
 } from "./notifications/transport";
 import { logger } from "../logger";
+import { emailGate } from "./notifications/email-gate";
+import type { EmailGateDecision } from "../../packages/shared/src/email-gate";
+import type { Result } from "../../packages/shared/src/result";
 
 export const ONBOARDED_EVENT = "lyceon.onboarded";
 export const ENTITLED_EVENT = "lyceon.entitled";
@@ -355,6 +358,18 @@ export type LifecycleClaimDeps = {
   claimDue: (now: Date, limit: number) => Promise<LifecycleClaim[] | null>;
   /** lifecycle_release: put a refused send back to pending, so the next sweep tries again. */
   release: (claim: LifecycleClaim) => Promise<boolean>;
+  /**
+   * @spec [owner brief "Email send gate" (Karl, 2026-10-30): "every governed sender must call
+   *       it"] | @implemented [2026-11-02]
+   * The email send gate (server/lib/notifications/email-gate.ts). A refusal releases the claim:
+   * the trigger stays pending, so the email can still go once the person is active again or
+   * the cooling cap has passed.
+   */
+  gate: (
+    profileId: string,
+    kind: LifecycleTrigger,
+    now: Date,
+  ) => Promise<Result<EmailGateDecision, string>>;
 };
 
 export type LifecycleRuleSummary = {
@@ -362,6 +377,8 @@ export type LifecycleRuleSummary = {
   claimed: number;
   sent: number;
   skipped: number;
+  /** Refused by the email send gate; the claim was released. */
+  gated: number;
   failed: number;
 };
 
@@ -389,6 +406,7 @@ export async function runLifecycleRule(
     claimed: 0,
     sent: 0,
     skipped: 0,
+    gated: 0,
     failed: 0,
   };
   if (!isLifecycleSendSlot(now)) {
@@ -430,6 +448,28 @@ export async function runLifecycleRule(
           await deps.release(claim);
         }
         summary.skipped += 1;
+        continue;
+      }
+      const gate = await deps.gate(claim.profileId, claim.trigger, now);
+      if (!gate.ok || !gate.value.allow) {
+        // Unreadable or refused: nothing is sent, and the trigger stays pending.
+        await deps.release(claim);
+        if (gate.ok) {
+          summary.gated += 1;
+          logger.info("LIFECYCLE_EMAIL", "gated", "Email send gate refused", {
+            profileId: claim.profileId,
+            event,
+            reason: gate.value.reason,
+          });
+        } else {
+          summary.failed += 1;
+          logger.error(
+            "LIFECYCLE_EMAIL",
+            "gate_read_failed",
+            "Could not ask the email send gate",
+            { profileId: claim.profileId, reason: gate.error },
+          );
+        }
         continue;
       }
       const sent = await deps.contacts.sendEvent(
@@ -523,6 +563,8 @@ export function defaultLifecycleRuleDeps(): LifecycleDeps & LifecycleClaimDeps {
     ...defaultLifecycleDeps(),
     claimDue: claimDueInDb,
     release: releaseInDb,
+    gate: (profileId, kind, now) =>
+      emailGate(supabaseServer, profileId, kind, now),
   };
 }
 

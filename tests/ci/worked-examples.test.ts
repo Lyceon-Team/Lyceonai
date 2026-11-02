@@ -32,6 +32,7 @@ import {
   planProblems,
   titleProblems,
   workedExampleCaption,
+  workedExampleInstagramCaption,
   workedExampleLabel,
   workedExampleTitle,
 } from "../../shared/worked-examples/rules";
@@ -392,6 +393,23 @@ describe("title and caption", () => {
       'Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.',
     );
     expect(captionProblems(caption, credit)).toEqual([]);
+    // Owner brief "One funnel for every social post" (Karl, 2026-10-28): the QOTD's CTA lines.
+    expect(fixture.content.post_on <= "2026-12-05").toBe(true);
+    expect(caption.split("\n\n").slice(2, 4)).toEqual([
+      "Comment your answer 👇",
+      "Taking the SAT Dec 5? Free SAT practice: link in bio",
+    ]);
+    const instagram = workedExampleInstagramCaption(fixture.content, credit);
+    expect(instagram.split("\n\n").slice(2, 4)).toEqual([
+      "Comment your answer 👇",
+      "Taking the SAT Dec 5? Comment SAT and I'll send you the link",
+    ]);
+    expect(captionProblems(instagram, credit)).toEqual([]);
+    const later = { ...fixture.content, post_on: "2026-12-07" };
+    expect(workedExampleCaption(later, credit)).toContain(
+      "\n\nFree SAT practice: link in bio\n\n",
+    );
+    expect(workedExampleCaption(later, credit)).not.toContain("Dec 5");
     expect(workedExampleLabel(fixture.content)).toBe(
       "Worked example · Percentages · obvious_answer_trap",
     );
@@ -530,19 +548,48 @@ describe("the daily job: approved, post_on today, once", () => {
       mergeSha: sha,
       mergedAt: "2026-10-28T15:00:00Z",
     };
+    const instagram = workedExampleInstagramCaption(
+      fixture.content,
+      kit.track.credit,
+    );
     const post = buildPost(
       fixture,
       workedExampleTitle(fixture.content, question),
       workedExampleCaption(fixture.content, kit.track.credit),
       kit.track.credit,
       approval,
+      instagram,
     );
-    expect(workedExamplePostSchema.parse(post).video).toBe(
-      "we-satm2czs1be.mp4",
-    );
+    const parsed = workedExamplePostSchema.parse(post);
+    expect(parsed.video).toBe("we-satm2czs1be.mp4");
+    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
+    expect(parsed.instagram_caption).toBe(instagram);
+    expect(parsed.links).toEqual({
+      reddit: "lyceon.ai/start?utm_source=reddit&utm_campaign=worked_example",
+      tiktok: "lyceon.ai/start?utm_source=tiktok&utm_campaign=worked_example",
+      instagram:
+        "lyceon.ai/start?utm_source=instagram&utm_campaign=worked_example",
+    });
     expect(() =>
-      buildPost(fixture, "Percentages", "x", kit.track.credit, approval),
+      buildPost(
+        fixture,
+        "Percentages",
+        "x",
+        kit.track.credit,
+        approval,
+        instagram,
+      ),
     ).toThrow(/must start "SAT"/);
+    expect(() =>
+      buildPost(
+        fixture,
+        workedExampleTitle(fixture.content, question),
+        workedExampleCaption(fixture.content, kit.track.credit),
+        kit.track.credit,
+        approval,
+        "no follow line",
+      ),
+    ).toThrow(/instagram caption's first line/);
   });
 
   it("the rendered MP4 must be 1080×1920, 30-60 s, match the composition and carry audio", () => {
@@ -574,7 +621,7 @@ describe("the daily job: approved, post_on today, once", () => {
 });
 
 describe("the Slack set", () => {
-  it("posts the video first (confirmed in the channel), then the title, then the caption", async () => {
+  it("posts the video first (confirmed in the channel), then the title, the caption, the Instagram caption", async () => {
     const calls: string[] = [];
     let n = 0;
     const fetch: FetchLike = async (url, init) => {
@@ -615,6 +662,7 @@ describe("the Slack set", () => {
       workedExampleCaption(fixture.content, kit.track.credit),
       kit.track.credit,
       { pr: 1, mergedBy: "kingk237", mergeSha: "a".repeat(40), mergedAt: "x" },
+      workedExampleInstagramCaption(fixture.content, kit.track.credit),
     );
     await postWorkedExample(
       { token: "xoxb-test", channel: "C0TEST" },
@@ -631,6 +679,8 @@ describe("the Slack set", () => {
       "text:*Worked example · Percentages · obvious_answer_trap · TikTok title*",
       "chat.postMessage",
       "text:*Worked example · Percentages · obvious_answer_trap · TikTok caption*",
+      "chat.postMessage",
+      "text:*Worked example · Percentages · obvious_answer_trap · Instagram caption*",
     ]);
   });
 });

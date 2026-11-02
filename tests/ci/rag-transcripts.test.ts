@@ -3,8 +3,10 @@
  *
  * plain English: the transcript fetch's pure parts — reading the caption tracks out of a watch
  * page, choosing a creator-made English track over the automatic one, turning json3 events into
- * cues — and the tagging schema refusing a skill that isn't one of the 29 taxonomy names.
+ * cues — and the tagging schema refusing a skill that isn't one of the taxonomy names.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   captionTracksFromWatchPage,
@@ -78,8 +80,16 @@ describe("json3 → cues", () => {
 describe("skill tagging schema", () => {
   const skills = loadSkillNames();
 
-  it("lists the 29 taxonomy names", () => {
-    expect(skills).toHaveLength(29);
+  it("lists every taxonomy name exactly once (no fixed size)", () => {
+    const parent = JSON.parse(
+      readFileSync(
+        join(__dirname, "..", "..", "content", "canonical", "taxonomy.json"),
+        "utf8",
+      ),
+    ) as { skills: Record<string, string[]> };
+    const expected = [...new Set(Object.values(parent.skills).flat())].sort();
+    expect(new Set(skills).size).toBe(skills.length);
+    expect([...skills].sort()).toEqual(expected);
     expect(skills).toContain("Linear Equations in One Variable");
   });
 

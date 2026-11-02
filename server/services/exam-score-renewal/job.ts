@@ -188,8 +188,13 @@ export function noticesFor(
     PromptCandidate,
     "anchor" | "student_id" | "payer_profile_id"
   >,
+  scoreOnFile = false,
 ): readonly NotificationEventType[] {
-  if (candidate.anchor !== "exam_date") {
+  // Owner ruling 2026-11-02 (round 2, section 2) | @implemented [2026-11-02]: a student who
+  // already reported this sitting's score (from the "Got your scores?" email) is not asked for it
+  // again; only the renewal question goes, to the payer (or the self-paid student). Billing
+  // behaviour is unchanged.
+  if (candidate.anchor !== "exam_date" || scoreOnFile) {
     return ["renewal_decision_requested"];
   }
   const payerIsSomebodyElse =
@@ -240,6 +245,7 @@ async function runPromptPass(
   },
   limit: number,
   requestId?: string,
+  now?: Date,
 ): Promise<void> {
   const { data, error } = await supabaseServer.rpc(
     "exam_score_renewal_candidates",
@@ -248,6 +254,7 @@ async function runPromptPass(
       p_max_exam_age_days: thresholds.maxExamAgeDays,
       p_lead_days: thresholds.reminderLeadDays,
       p_limit: limit,
+      ...(now === undefined ? {} : { p_now: now.toISOString() }),
     },
   );
 
@@ -305,7 +312,19 @@ async function runPromptPass(
       const emitted: NotificationEventType[] = [];
       let unknownResult = false;
 
-      for (const eventType of noticesFor(row)) {
+      let scoreOnFile = false;
+      if (row.anchor === "exam_date") {
+        const report = await supabaseServer
+          .from("exam_score_reports")
+          .select("report_id")
+          .eq("student_id", row.student_id)
+          .eq("occasion_key", row.occasion_key)
+          .limit(1);
+        if (report.error) throw new Error(report.error.message);
+        scoreOnFile = Array.isArray(report.data) && report.data.length > 0;
+      }
+
+      for (const eventType of noticesFor(row, scoreOnFile)) {
         const result = await supabaseServer.rpc("exam_score_renewal_emit", {
           p_student_id: row.student_id,
           p_anchor: row.anchor,
@@ -515,6 +534,8 @@ async function runSilencePass(
 export async function runExamScoreRenewal(options?: {
   limit?: number;
   requestId?: string;
+  /** The prompt pass's clock (a test's fixed day); default: the database's now(). */
+  now?: Date;
 }): Promise<ExamScoreRenewalSummary> {
   const requestId = options?.requestId;
   const limit = options?.limit ?? 500;
@@ -536,6 +557,7 @@ export async function runExamScoreRenewal(options?: {
     },
     limit,
     requestId,
+    options?.now,
   );
   await runSilencePass(
     summary,

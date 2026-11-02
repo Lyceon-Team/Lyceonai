@@ -646,7 +646,7 @@ async function resetQotd(
   try {
     await db.query(
       `INSERT INTO public.qotd_schedule (qotd_date, question_id)
-       SELECT public.chicago_day(now()), q.id
+       SELECT public.qotd_today(), q.id
          FROM public.questions q
         WHERE q.status = 'published' AND q.item_type = 'mcq'
           AND NOT EXISTS (SELECT 1 FROM public.qotd_schedule s WHERE s.question_id = q.id)
@@ -655,7 +655,7 @@ async function resetQotd(
        ON CONFLICT (qotd_date) DO NOTHING`,
     );
     await db.query(
-      "DELETE FROM public.student_qotd_attempts WHERE student_id = $1 AND qotd_date = public.chicago_day(now())",
+      "DELETE FROM public.student_qotd_attempts WHERE student_id = $1 AND qotd_date = public.qotd_today()",
       [id],
     );
     await db.query(

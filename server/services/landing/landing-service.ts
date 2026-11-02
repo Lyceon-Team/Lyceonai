@@ -17,10 +17,17 @@
  *        same day): `set_math_5` (5 Math, first 2 easy or medium, already on Q1) replaces
  *        `set_mixed` and `set_math_first`; "5 more?" is 5 Math, same rules] | @implemented
  *        [2026-10-26]. Ruling D's "math first 5+5" above is superseded by it.
+ * @spec [owner brief "Smart landing: new students land on Home; capture sign-up channel" (Karl,
+ *        2026-10-28) item 1: no rotation until the student's first QOTD day after the day they
+ *        onboarded has started; nothing recorded in `landing_windows` before then]
+ *       | @implemented [2026-10-28]
  *
  * plain English, `openLanding` in order (each step that ends the landing returns `NO_LANDING`, so
  * the student simply stays on Home):
  *   1. Students only; 13+ only (an unknown age is not 13+); the kill switch must be on.
+ *   1b. A new student lands on Home (the Getting Started checklist) until their first QOTD day
+ *      after the day they onboarded has started (`landing_rotation_open`, the database's own
+ *      QOTD day). Nothing else runs before then: no resume, no window, no show, no event.
  *   2. An in-progress session (a practice or review session touched since this window began)
  *      resumes: the route is its runner. No show is claimed, so a later open the same day can
  *      still land. A landing set from earlier in the window is such a session (ruling B).
@@ -96,6 +103,8 @@ export type LandingDeps = {
     eligible_arms: StoredLandingArm[];
   } | null>;
   readFacts: (profileId: string) => Promise<LandingEligibilityFacts>;
+  /** The rotation applies: the first QOTD day after the day the student onboarded has started. */
+  rotationOpen: (profileId: string, now: Date) => Promise<boolean>;
   /** The runner of the student's most recent practice/review session active since `since`. */
   resumePath: (profileId: string, since: Date) => Promise<string | null>;
   claimOpen: (args: {
@@ -237,6 +246,10 @@ export async function openLanding(
   const now = deps.now();
   const windowIndex = landingWindowIndex(now);
   if (windowIndex < 0) return NO_LANDING;
+
+  // 1b. A new student lands on Home until their first QOTD day after onboarding (Karl,
+  // 2026-10-28): before any read or write of the rotation, so the period records nothing.
+  if (!(await deps.rotationOpen(caller.id, now))) return NO_LANDING;
 
   // 2. Precedence: an in-progress session resumes (ruling B covers a landing set).
   const resume = await deps.resumePath(caller.id, windowStart(windowIndex));

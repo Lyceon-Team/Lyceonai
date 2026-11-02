@@ -262,7 +262,10 @@ export function buildSystemInstruction(request: OrchestrateRequest): string {
   // SCL-041: append state blocks to systemInstruction. Flash-class models
   // attend to systemInstruction directives; the same directives placed in
   // user turns (§7.2's original placement) were consistently ignored.
-  const stateBlocks = renderStateBlocks(request);
+  // G2-1: an artifact whose rules carry DATA_BLOCK_RULE gets its data as data blocks.
+  const stateBlocks = renderStateBlocks(request, {
+    dataBoundary: artifact.dataBoundary === true,
+  });
   if (stateBlocks) {
     return `${behavioralRules}\n\n--- CONTEXT FOR CURRENT QUESTION ---\n\n${stateBlocks}`;
   }

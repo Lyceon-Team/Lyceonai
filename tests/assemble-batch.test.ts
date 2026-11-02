@@ -480,6 +480,46 @@ describe("assemble-batch gate", () => {
     expect(result.stderr).toContain("RAW_HTML: explanation carries <b>, </b>");
   });
 
+  it("rejects a real authored sum-of-cubes record as CUBES_OFFSPEC", () => {
+    const dir = join(SCRATCH, "cubes-offspec");
+    const rec = readFileSync(
+      resolve(ROOT, "content/canonical/batch_026_parts/advanced_math.ndjson"),
+      "utf-8",
+    )
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .find((r) => String(r.stem).includes("8x^3 + 27"));
+    expect(rec).toBeDefined();
+    writeParts(dir, [rec ?? {}]);
+    const result = runGate(dir, { dryRun: true });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("CUBES_OFFSPEC");
+  });
+
+  it("does not flag like-terms cubic arithmetic as CUBES_OFFSPEC", () => {
+    const dir = join(SCRATCH, "cubes-like-terms");
+    writeParts(dir, [
+      validMcqRecord({
+        domain: "Advanced Math",
+        skill: "Equivalent Expressions",
+        stem: "Which expression is equivalent to $(8x^3 + 8) - (x^3 - 2)$?",
+        options: [
+          { key: "A", text: "$7x^3 + 10$" },
+          { key: "B", text: "$7x^3 + 6$" },
+          { key: "C", text: "$9x^3 + 10$" },
+          { key: "D", text: "$7x^3 - 10$" },
+        ],
+        explanation:
+          "The correct answer is A. Subtract like terms: 8x^3 - x^3 = 7x^3 and 8 - (-2) = 10.",
+      }),
+    ]);
+    const result = runGate(dir, { dryRun: true });
+    // Presence before absence: the gate ran and judged the record.
+    expect(result.stderr + result.stdout).not.toBe("");
+    expect(result.stderr).not.toContain("CUBES_OFFSPEC");
+  });
+
   it("report JSON has expected shape on success", () => {
     const dir = join(SCRATCH, "report-shape");
     const reportPath = join(SCRATCH, "report-shape.json");

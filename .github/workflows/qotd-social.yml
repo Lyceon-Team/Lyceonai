@@ -4,8 +4,8 @@
 #   GitHub run downloads, the caption and alt text on the run page; portrait 1080x1350 + story
 #   1080x1920; existing tooling only)] | @implemented [2026-10-07]
 #
-# plain English: at 06:20 UTC (always after midnight in America/Chicago, the QOTD day boundary,
-# with or without daylight saving) this builds today's assets from the website's own public
+# plain English: at 04:05 UTC (Karl, 2026-10-27: five minutes after the QOTD day turns over at
+# 04:00 UTC, fixed, no daylight-saving logic) this builds the new day's assets from the website's own public
 # pre-submit payload (/api/public/qotd/today: no answer, no explanation, and only today exists
 # there). Karl downloads the zip from the run's Artifacts; the run page shows the caption and
 # alt text with a copy button. No database access; the build's only network call is to lyceon.ai.
@@ -14,13 +14,18 @@
 # posts the day to Slack (#social): both images, then the caption and alt text, with the date and
 # section (scripts/qotd-social/post-to-slack.ts). It posts only from post.json, which the build
 # writes only when every check passed, the leak check included; a build that failed never reaches
-# the step. The bot token is the GitHub secret SLACK_BOT_TOKEN, read by that one step and nothing
+# the step. A failed run instead posts ONE failure notice (post-to-slack.ts --failure: the
+# generator's refusal lines from failure.txt and the run link), so a refused day is visible in
+# Slack, never silent (Karl's rulings 2026-10-28, SCL-258: a stored answer-choice order the
+# server refuses is a 503 qotd_order_invalid, and the notice names it). The bot token is the GitHub secret SLACK_BOT_TOKEN, read by that one step and nothing
 # else; the channel is the variable SOCIAL_SLACK_CHANNEL_ID (or the run's slack_channel input, for
 # a test post). A missing token or a Slack error fails the run, after the download is uploaded.
 # Pull requests run the same step as a dry run: every check, no token, nothing sent.
 # TikTok (Karl, 2026-10-23): the same run builds yesterday's question as a three-slide TikTok
-# carousel (qotd-<yesterday>-tiktok-1..3.png, in the same download) and posts it to #social after
-# the reveal, or a one-line note when yesterday is withheld or missing.
+# carousel (qotd-<yesterday>-tiktok-1..3.png, in the same download) and posts it to #social, or a
+# one-line note when yesterday is withheld or missing.
+# No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide): the run
+# builds and posts nothing Reddit-related; the QOTD goes to TikTok, Instagram and Facebook only.
 # Setup: docs/runbooks/qotd-slack.md.
 #
 # Run it by hand with no date for today, or with a PAST date to rebuild that day (today and
@@ -31,7 +36,11 @@ name: QOTD social assets
 
 on:
   schedule:
-    - cron: "20 6 * * *"
+    # 04:05 UTC: the QOTD day turns over at 04:00 UTC (Karl, 2026-10-27). The set is unchanged:
+    # 1/3-2/3 the day that just finished (TikTok), 3/3 the new day. A run
+    # before the database has switched finds /today still on the old day and is refused (the
+    # generator checks it against the 04:00 UTC day), so nothing is posted twice.
+    - cron: "5 4 * * *"
   pull_request:
     paths:
       - .github/workflows/qotd-social.yml
@@ -39,7 +48,9 @@ on:
       - shared/qotd/social.ts
       - shared/qotd/tiktok.ts
       - shared/qotd/reveal.ts
+      - shared/qotd/projection.ts
       - shared/qotd/plain-math.ts
+      - shared/social/funnel.ts
       - shared/math/tokenize.ts
       - client/src/components/qotd/QotdSocialCard.tsx
       - client/src/components/qotd/QotdTiktokSlide.tsx
@@ -142,6 +153,7 @@ jobs:
           path: |
             qotd-social-out/*.png
             qotd-social-out/caption.txt
+            qotd-social-out/instagram-caption.txt
             qotd-social-out/alt-text.txt
             qotd-social-out/post.json
           if-no-files-found: error
@@ -159,3 +171,12 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
         run: pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out
+
+      # SCL-258 (Karl, 2026-10-28): a failure is loud. Any failed step on a scheduled or
+      # hand-started run posts one notice with the reason and the run link.
+      - name: Post the failure to Slack
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/qotd-social/post-to-slack.ts --dir qotd-social-out --failure
