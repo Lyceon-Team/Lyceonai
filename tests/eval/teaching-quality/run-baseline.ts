@@ -45,6 +45,7 @@ import {
   PROJECT,
   assertProxied,
   vertexAuthMode,
+  withVertexRetry,
 } from "../../../scripts/rag/vertex";
 import { JUDGE_MODEL_DEFAULT, vertexJudge } from "./judge";
 import { replayOnce, type GenerateFn, type ReplayCase } from "./replay";
@@ -133,11 +134,13 @@ export function vertexGenerate(): GenerateFn {
       role: m.role,
       parts: [{ text: m.text }],
     }));
-    const response = await ai.models.generateContent({
-      model,
-      contents,
-      config,
-    });
+    const response = await withVertexRetry("g0-2-tutor", () =>
+      ai.models.generateContent({
+        model,
+        contents,
+        config,
+      }),
+    );
     const usage = response.usageMetadata;
     return {
       text: response.text ?? "",

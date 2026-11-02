@@ -14,7 +14,8 @@
  *      here. Presence first: the paths a student or third party writes into must appear.
  *   B3 planted delimiters cannot close a block early or forge a directive, in any of the three
  *      write paths (grid-in answer, video title, memory summary) or the stem.
- *   B4 v5 = v4's rules + DATA_BLOCK_RULE, once; v5 resolves by exact version only; production
+ *   B4 v5 = DATA_BLOCK_RULE as a preamble, then v4's rules, so the Desmos block still ends them
+ *      (ruling 1 on #1406); the rule appears once; v5 resolves by exact version only; production
  *      (prompt_version null) stays on v3.
  *   B5 v1–v4 are untouched: the system instruction for every golden fixture and both sentinel
  *      envelopes hashes to what the pre-G2-1 code produced (fixture recorded from that code).
@@ -41,7 +42,10 @@ import {
 } from "../../shared/tutor-safety-constants";
 import { buildSystemInstruction } from "../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
 import { resolvePromptArtifact } from "../../apps/workers/tutor-orchestrator/src/prompts/prompt-registry";
-import { LISA_DEFAULT_V4 } from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v4";
+import {
+  DESMOS_BLOCK,
+  LISA_DEFAULT_V4,
+} from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v4";
 import { LISA_DEFAULT_V5 } from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v5";
 import type { PromptFields } from "../../apps/workers/tutor-orchestrator/src/prompts/types";
 import type { OrchestrateRequest } from "../../shared/tutor-orchestrator-wire";
@@ -236,12 +240,14 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
     requestedMethod: null,
   };
 
-  it("renders v4 byte for byte, then DATA_BLOCK_RULE, exactly once", () => {
+  it("opens with DATA_BLOCK_RULE, then v4 byte for byte, so the Desmos block ends the rules", () => {
     const v5 = LISA_DEFAULT_V5.renderSystemInstruction(fields);
     expect(v5).toBe(
-      `${LISA_DEFAULT_V4.renderSystemInstruction(fields)}\n\n${DATA_BLOCK_RULE}`,
+      `${DATA_BLOCK_RULE}\n\n${LISA_DEFAULT_V4.renderSystemInstruction(fields)}`,
     );
     expect(v5.split(DATA_BLOCK_RULE).length - 1).toBe(1);
+    expect(v5.startsWith(DATA_BLOCK_RULE)).toBe(true);
+    expect(v5.endsWith(DESMOS_BLOCK)).toBe(true);
     expect(LISA_DEFAULT_V5.dataBoundary).toBe(true);
     expect(LISA_DEFAULT_V4.dataBoundary).toBeUndefined();
   });
