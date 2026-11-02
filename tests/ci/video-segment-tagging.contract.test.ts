@@ -30,7 +30,8 @@
  *   S11 the apply refuses a bad file whole: unknown id, wrong section, span outside the video,
  *       overlap, a yes row with no tag, a video outside the library; drop and untagged rows are
  *       left out.
- *   S12 the apply SQL: one transaction, the vocabulary precondition first, one writer call per
+ *   S12 the apply SQL: one transaction, the precondition first (every sub-skill, cluster and
+ *       video id the file uses exists; no vocabulary size is assumed), one writer call per
  *       video, only yes rows approved, the approver a placeholder that fails the cast, and no
  *       text able to close its dollar quote.
  *   S13 the shopping list names every skill and sub-skill with no focused segment.
@@ -926,13 +927,29 @@ describe("segment tagging: what the code enforces", () => {
         approve: true,
       },
     ];
-    const sql = buildApplySql(segs, "scl-test", "segment-tags-v4", 4);
+    const sql = buildApplySql(segs, "scl-test", "segment-tags-v4");
     expect(sql.indexOf("BEGIN;")).toBeLessThan(sql.indexOf("DO $pre$"));
     expect(sql.indexOf("DO $pre$")).toBeLessThan(
       sql.indexOf("video_segments_set"),
     );
     expect(sql.trimEnd().endsWith("COMMIT;")).toBe(true);
-    expect(sql).toContain("taxonomy_version = $seg$scl-test$seg$) <> 4");
+    // The precondition checks the ids this file uses exist, never a size of the vocabulary
+    // (the taxonomy grows over time; Karl, 2026-10-29).
+    expect(sql).toContain("FROM unnest(ARRAY['EE.5']::text[]) AS t(id)");
+    expect(sql).toContain("FROM unnest(ARRAY['CL.0215']::text[]) AS t(id)");
+    expect(sql).toContain("FROM unnest(ARRAY['a1QNaRnn6cE']::text[]) AS t(id)");
+    expect(sql).toContain(
+      "WHERE NOT EXISTS (SELECT 1 FROM public.sub_skills x WHERE x.id = t.id)",
+    );
+    expect(sql).toContain(
+      "WHERE NOT EXISTS (SELECT 1 FROM public.clusters x WHERE x.id = t.id)",
+    );
+    expect(sql).not.toMatch(
+      /count\(\*\)\s+FROM\s+public\.(sub_skills|clusters)/i,
+    );
+    expect(sql.indexOf("FROM public.sub_skills x")).toBeLessThan(
+      sql.indexOf("video_segments_set"),
+    );
     expect(sql.match(/video_segments_set\(/g)).toHaveLength(1);
     // Start order inside the one call; the summary's "$seg$" forces a longer tag.
     const call =
@@ -948,8 +965,9 @@ describe("segment tagging: what the code enforces", () => {
       [{ ...segs[0]!, approve: false }],
       "scl-test",
       "t",
-      4,
     );
+    // A file with no cluster tag checks no cluster (nothing to be missing).
+    expect(none).not.toContain("public.clusters x");
     expect(none).toContain("nothing to approve");
     expect(none).not.toContain("video_segments_approve");
   });
