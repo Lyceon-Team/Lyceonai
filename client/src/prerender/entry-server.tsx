@@ -59,7 +59,7 @@ import {
 import { BLOG_PAGES, BLOG_POSTS } from "@shared/content/blog";
 import { resolvePublicMeta } from "@shared/seo/public-meta";
 import { stemRepeatsPassage, toArchiveIndex } from "@shared/qotd/projection";
-import { qotdToday } from "../../../server/services/qotd/qotd-service";
+import { qotdTodayWithoutCutover } from "../../../server/services/qotd/qotd-day";
 import {
   qotdArchiveDayQueryOptions,
   qotdArchiveIndexQueryOptions,
@@ -367,8 +367,10 @@ export async function prerenderSite(options: {
   const loaded: QotdArchiveSource = options.qotdArchive
     ? { source: "fixture", days: [...options.qotdArchive] }
     : await loadQotdArchiveForBuild(process.env, globalThis.fetch);
-  // The one canonical QOTD day helper (America/Chicago), shared with the API.
-  const today = qotdToday(options.now);
+  // The build has no database to read the QOTD day switch from (Karl, 2026-10-27): it takes the
+  // earlier of the two days' "today", so no page ever publishes a day either rule still calls
+  // today (qotd-day.ts). The archive source is the API's past days in any case.
+  const today = qotdTodayWithoutCutover(options.now ?? new Date());
   const pastDays = loaded.days.filter((d) => d.qotd_date < today);
   // Owner 2026-10-08: a past day whose question has no prompt (the stem repeats the passage) is
   // not published, so neither its page nor its sitemap entry nor its hub link exists. The test is

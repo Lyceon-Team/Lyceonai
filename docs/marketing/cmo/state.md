@@ -21,7 +21,7 @@ Internal account IDs and all metrics are kept outside the repo while it is publi
 ## Channels
 
 - Reddit (primary; Karl posts by hand; drives most signups indirectly via brand search and DM links).
-- r/satquestions (QOTD), Instagram, X, TikTok, YouTube (walkthrough video), Facebook groups.
+- r/satquestion (QOTD), Instagram, X, TikTok, YouTube (walkthrough video), Facebook groups.
 - Email via Resend (cohort automations, reminders, QOTD email, guardian digest).
 - Paid ads: not running.
 

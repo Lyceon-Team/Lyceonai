@@ -204,8 +204,8 @@ export function approvedDesmosVideos(csvText: string): VideoRow[] {
 
 /** A video over 15 minutes is read in 10-minute clips: whole-video calls on the 22-minute lesson
  * failed six times running with a proxy 502 (2026-10-27). */
-const WHOLE_VIDEO_MAX_SECONDS = 900;
-const CLIP_SECONDS = 600;
+export const WHOLE_VIDEO_MAX_SECONDS = 900;
+export const CLIP_SECONDS = 600;
 export function clipsOf(duration: number): Array<[number, number]> {
   if (duration <= WHOLE_VIDEO_MAX_SECONDS) return [[0, duration]];
   const clips: Array<[number, number]> = [];

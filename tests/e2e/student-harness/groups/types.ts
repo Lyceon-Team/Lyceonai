@@ -137,7 +137,7 @@ export type Shot = {
   freshReviewPrompt?: true;
   /**
    * Owner brief "Question of the Day on Home" (2026-10-08/09): before every capture, today's
-   * (America/Chicago) question is scheduled in the harness database if it is not, and the
+   * question (the QOTD day, `qotd_today()`) is scheduled in the harness database if it is not, and the
    * persona's QOTD answer for today, its one-item practice session and its daily-email prompt
    * state are deleted, so each viewport and theme starts unanswered. `priorAsks` seeds that many
    * earlier prompt asks (on earlier days), e.g. 2 so the next answer is the 3rd ask.

@@ -1221,4 +1221,47 @@ router.post(
   },
 );
 
+/**
+ * GET /api/internal/growth-report
+ * @spec [owner brief "One funnel for every social post: /start + CTAs + weekly growth report"
+ *        (Karl, 2026-10-28) item 3 ("Monday growth report to #social at 14:00 UTC");
+ *        CLAUDE.md "Managed-service first": a Vercel cron (`0 14 * * 1`), the project's existing
+ *        scheduler] | @implemented [2026-10-28]
+ *
+ * plain English: every Monday at 14:00 UTC, last week's numbers (Monday–Sunday, Chicago) go to
+ * #social once (server/lib/growth-report.ts). Safe to rerun: a week already posted, or claimed by
+ * a run in progress, is skipped. A Slack failure or missing Slack setting releases the week and
+ * answers 500, so the run shows as failed and re-running it by hand posts the report.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/growth-report",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      // Loaded on use: the report's module reaches the lifecycle email rule (the denylist).
+      const { liveGrowthReportDeps, runGrowthReport } =
+        await import("../lib/growth-report.js");
+      const summary = await runGrowthReport(liveGrowthReportDeps());
+      res.status(summary.status === "not_posted" ? 500 : 200).json({
+        ok: summary.status !== "not_posted",
+        job: "growth_report",
+        summary,
+      });
+    } catch (err) {
+      logger.error(
+        "GROWTH_REPORT",
+        "growth_report_job_error",
+        "Scheduled growth report failed",
+        err,
+      );
+      res.status(500).json({ error: "growth_report_failed" });
+    }
+  },
+);
+
 export default router;

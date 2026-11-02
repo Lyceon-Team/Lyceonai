@@ -42,12 +42,12 @@ export const qotdOptionKeySchema = z.enum(["A", "B", "C", "D"]);
 /** An opaque option token: 22 base64url characters (server/services/qotd/option-tokens.ts). */
 export const qotdOptionTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
 
-/** An archive option: canonical order, canonical letter. */
+/** An archive option: in the day's stored order (SCL-258), identified by its canonical key. */
 export const qotdOptionSchema = z
   .object({ id: qotdOptionKeySchema, text: z.string() })
   .strict();
 
-/** Today's option: in canonical order (2026-10-23), identified only by its token. */
+/** Today's option: in the day's stored order (SCL-258), identified only by its token. */
 export const qotdServedOptionSchema = z
   .object({ id: qotdOptionTokenSchema, text: z.string() })
   .strict();
@@ -117,9 +117,17 @@ export const qotdSubmitResponseSchema = z.object(qotdRevealShape).strict();
 export const qotdArchiveQuestionSchema = z
   .object({
     ...qotdQuestionBaseShape,
-    /** MCQ: four options in canonical order. Grid-in: empty. */
+    /** MCQ: the options in the day's stored order (SCL-258). Grid-in: empty. */
     options: z.array(qotdOptionSchema),
+    /** The correct option's canonical key (its id above). */
     correct_option_id: qotdOptionKeySchema.nullable(),
+    /**
+     * The letter the correct option is shown under, from the stored order. Grid-in: null. The
+     * server always sends it; it is optional to READ only because a reader (the social run, a
+     * browser tab) can meet a server that predates SCL-258, whose options are in the order it
+     * showed (canonical). Readers letter by position and require this to agree when present.
+     */
+    correct_letter: qotdOptionKeySchema.nullable().optional(),
     correct_answer: z.string().nullable(),
     explanation: z.string(),
   })
@@ -181,9 +189,31 @@ export const qotdSocialInputSchema = z
     "an MCQ has four options; a grid-in has none",
   );
 
-/** The caption and alt text posted with the images. */
+/**
+ * The caption and alt text posted with the images, and the Instagram caption (owner brief "One
+ * funnel for every social post", Karl, 2026-10-28: "Add an Instagram caption with 'Comment SAT
+ * and I'll send you the link'").
+ */
 export const qotdSocialCopySchema = z
-  .object({ caption: z.string().min(1), alt_text: z.string().min(1).max(1000) })
+  .object({
+    caption: z.string().min(1),
+    alt_text: z.string().min(1).max(1000),
+    instagram_caption: z.string().min(1),
+  })
+  .strict();
+
+/**
+ * The tagged /start links for a post's channels (owner brief "One funnel for every social post",
+ * Karl, 2026-10-28: "Tagged links for each"): Reddit's goes in its post; TikTok's goes in the
+ * bio; Instagram's is the one sent to people who comment SAT. Shared by the QOTD and the
+ * worked-example manifests (shared/social/funnel.ts campaignLinks builds them).
+ */
+export const socialStartLinksSchema = z
+  .object({
+    reddit: z.string().startsWith("lyceon.ai/start?"),
+    tiktok: z.string().startsWith("lyceon.ai/start?"),
+    instagram: z.string().startsWith("lyceon.ai/start?"),
+  })
   .strict();
 
 /**
@@ -197,7 +227,7 @@ export function previousQotdDate(date: string): string {
 }
 
 /**
- * Yesterday's reveal, for the comment on yesterday's r/satquestions post.
+ * Yesterday's reveal, for the comment on yesterday's r/satquestion post.
  *
  * @spec [Doc 10A §7 ("no answer is revealed before submitting"; a past day's answer is public on
  *       its archive page), Doc 10B (Reddit posting stays manual); owner brief "QOTD Slack post —
@@ -245,7 +275,11 @@ export const qotdRevealSchema = z
     "the archive link is the revealed day's page",
   );
 
-/** Today's suggested Reddit post: the title and the question as plain text. */
+/**
+ * Today's suggested Reddit post: the title, then the portrait image, then one call-to-action line
+ * with the tagged /start link (owner brief 2026-10-28: "title + image + one-line CTA … Remove the
+ * written question/choices from the body"). Was the title and the question as plain text.
+ */
 export const qotdRedditPostSchema = z
   .object({
     title: z.string().min(1).max(300),
@@ -342,6 +376,10 @@ export const qotdSocialPostManifestSchema = z
     source: z.enum(["today", "past"]),
     caption: z.string().min(1),
     alt_text: z.string().min(1).max(1000),
+    /** The Instagram caption (owner brief 2026-10-28). */
+    instagram_caption: z.string().min(1),
+    /** The tagged /start links for the day's posts (owner brief 2026-10-28). */
+    links: socialStartLinksSchema,
     images: z
       .array(
         z

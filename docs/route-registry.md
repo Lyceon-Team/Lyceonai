@@ -57,6 +57,7 @@ This document records, for those routes:
 | `/blog/:slug` | public | free | BlogPost | N/A (static) | ACTIVE |
 | `/sat-question-of-the-day` | public | free | QotdHub | `/api/public/qotd/today`, `/api/public/qotd/today/answer` | ACTIVE |
 | `/sat-question-of-the-day/:date` | public | free | QotdArchiveDay | `/api/public/qotd/:date` | ACTIVE |
+| `/start` | public | free | StartPage | `/api/public/qotd/today`, `/api/public/qotd/today/answer` | ACTIVE |
 | `/trust` | public | free | TrustHub | N/A (static SEO) | ACTIVE |
 | `/contact` | public | free | ContactPage | N/A (static, no form) | ACTIVE |
 | `/tutor` | public | free | TutorPage | N/A (static SEO) | ACTIVE |
@@ -125,6 +126,7 @@ This document records, for those routes:
 - `/legal/:slug` (currently: `privacy-policy`, `student-terms`, `honor-code`, `community-guidelines`, `parent-guardian-terms`, `trust-and-safety`)
 
 ### Active + Non-indexable (intentional)
+- `/start` (prerendered, `noindex`, not in the sitemap: the social landing page, owner brief 2026-10-28)
 - `/login`
 - `/signup`
 - `/privacy` (301 to `/legal/privacy-policy`)

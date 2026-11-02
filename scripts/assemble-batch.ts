@@ -22,6 +22,7 @@ import {
 } from "../shared/question-ingestion-qa.js";
 import { explanationNamesChoiceLetter } from "../shared/practice/letter-reference.js";
 import { questionMarkupViolations } from "../shared/question-markup.js";
+import { cubeFactoringMatch } from "./cubes-offspec.js";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
 
@@ -599,6 +600,27 @@ function validateRecord(
       "stem",
       `COMPOSITION_OFFSPEC: stem contains nested function application ("${rec.stem.match(compositionRe)?.[0]}"). The Digital SAT does not test function composition — rewrite or reject.`,
     );
+  }
+
+  // CUBES_OFFSPEC — the Digital SAT does not test sum/difference-of-cubes
+  // factoring. The 1,618-item official CB OCR corpus has zero such items;
+  // 15 authored ones were retired 2026-10-29 and CL.0231 dropped. Detector
+  // (scripts/cubes-offspec.ts): a standalone a^3 ± b^3 binomial in the stem,
+  // the identity named in stem/explanation, or its a^2 ∓ ab + b^2 factor.
+  if (rec.section === mathSection && typeof rec.stem === "string") {
+    const cubeMatch = cubeFactoringMatch({
+      stem: rec.stem,
+      explanation: typeof rec.explanation === "string" ? rec.explanation : null,
+      options: Array.isArray(rec.options)
+        ? rec.options.map((o) => (typeof o.text === "string" ? o.text : ""))
+        : [],
+    });
+    if (cubeMatch !== null) {
+      v(
+        "stem",
+        `CUBES_OFFSPEC: record factors a sum or difference of cubes ("${cubeMatch}"). The Digital SAT does not test a^3 ± b^3 factoring — rewrite or reject.`,
+      );
+    }
   }
 
   // Rule 7 — PHANTOM_FIGURE: stem references a visual but no asset attached

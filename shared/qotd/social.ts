@@ -47,6 +47,12 @@ import { plainMathText } from "./plain-math";
 import { stemRepeatsPassage } from "./projection";
 import { qotdReadabilityProblem } from "./readability";
 import {
+  COMMENT_ANSWER_LINE,
+  funnelPhase,
+  instagramCtaLine,
+  withoutFunnelLines,
+} from "../social/funnel";
+import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
 } from "../seo/banned-phrases";
@@ -362,7 +368,19 @@ export function buildSocialCopy(input: QotdSocialInput): QotdSocialCopy {
       : `${opening} The image shows the question${
           parsed.item_type === "mcq" ? " and its four answer choices" : ""
         }. Answer it free at ${QOTD_SOCIAL_URL}.`;
-  return qotdSocialCopySchema.parse({ caption, alt_text: altText });
+  // Owner brief "One funnel for every social post" (Karl, 2026-10-28): Instagram captions cannot
+  // link, so the call to action asks for a comment and the tagged link goes out by message.
+  const instagramCaption = [
+    `SAT Question of the Day: ${section}, ${parsed.domain}.`,
+    COMMENT_ANSWER_LINE,
+    instagramCtaLine(funnelPhase(parsed.qotd_date)),
+    HASHTAGS[parsed.section_code],
+  ].join("\n\n");
+  return qotdSocialCopySchema.parse({
+    caption,
+    alt_text: altText,
+    instagram_caption: instagramCaption,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -448,6 +466,7 @@ export function socialCopyProblems(
   for (const [field, text] of [
     ["caption", copy.caption],
     ["alt_text", copy.alt_text],
+    ["instagram_caption", copy.instagram_caption],
   ] as const) {
     const banned = firstBannedPhrase(text);
     if (banned) problems.push(`${field}: banned phrase (${banned.why})`);
@@ -490,6 +509,7 @@ export function socialAssetLeaks(
     card_text: string;
     reddit_title?: string;
     reddit_body?: string;
+    instagram_caption?: string;
   },
   day: QotdArchiveResponse,
 ): string[] {
@@ -504,11 +524,28 @@ export function socialAssetLeaks(
   if (output.reddit_title !== undefined) {
     fields.push(["reddit_title", output.reddit_title]);
   }
-  if (output.reddit_body !== undefined) {
-    fields.push(["reddit_body", output.reddit_body]);
+  // The fixed call-to-action lines (shared/social/funnel.ts) are the same whatever the day, so
+  // they are left out: "Dec 5" in them is a test date, not a choice "5".
+  const redditBody =
+    output.reddit_body === undefined
+      ? undefined
+      : withoutFunnelLines(output.reddit_body);
+  const instagramCaption =
+    output.instagram_caption === undefined
+      ? undefined
+      : withoutFunnelLines(output.instagram_caption);
+  if (redditBody !== undefined) {
+    fields.push(["reddit_body", redditBody]);
+  }
+  if (instagramCaption !== undefined) {
+    fields.push(["instagram_caption", instagramCaption]);
   }
   /** Fields that must name no choice at all. */
-  const namesNoChoice = new Set(["caption", "reddit_title"]);
+  const namesNoChoice = new Set([
+    "caption",
+    "reddit_title",
+    "instagram_caption",
+  ]);
 
   const explanationWords = normalize(day.question.explanation)
     .trim()
@@ -558,6 +595,15 @@ export function socialAssetLeaks(
     );
     if (correct && showsChoice(normalize(output.caption), correct.text)) {
       leaks.push(`caption: names the correct choice "${correct.text}"`);
+    }
+    if (
+      correct &&
+      instagramCaption !== undefined &&
+      showsChoice(normalize(instagramCaption), correct.text)
+    ) {
+      leaks.push(
+        `instagram_caption: names the correct choice "${correct.text}"`,
+      );
     }
     if (
       correct &&
@@ -619,7 +665,7 @@ export function tiktokCarouselLeaks(
   );
   const fields: (readonly [string, string])[] = [
     ...output.slides.map((text, i) => [`tiktok slide ${i + 1}`, text] as const),
-    ["tiktok caption", output.caption],
+    ["tiktok caption", withoutFunnelLines(output.caption)],
     ["tiktok title", output.title],
   ];
   const leaks: string[] = [];

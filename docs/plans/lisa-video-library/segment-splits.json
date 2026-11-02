@@ -1,0 +1,20 @@
+{
+  "source": "segment-tags-v2 pass 2 mixes_topics notes (re-pilot of 2026-10-29); each note's times are relative to its clip and are converted onto the video's clock here. Rule 2 (Karl, 2026-10-29): split each chapter pass 2 flagged at the points where it says the topic changes.",
+  "videos": {
+    "UDJ2RHMFax8": {
+      "seconds": [388, 420, 436, 473, 536, 713, 897, 1080, 1375, 1703],
+      "from": [
+        "Desmos Basics 327-584, clip 0:00: list statistics (6:28) -> 388",
+        "Desmos Basics: percentages (7:00) -> 420",
+        "Desmos Basics: trigonometry (7:16) -> 436",
+        "Desmos Basics: sliders (7:53) -> 473",
+        "Desmos Basics: graph features (8:56) -> 536",
+        "Systems of Equations 681-769, clip from 9:44: linear-nonlinear systems at around 2:09 -> 584+129 = 713",
+        "Functions 877-971, clip from 9:44: function transformations at around 5:13 -> 584+313 = 897",
+        "Regression without a Table 971-1489, clip from 16:11: a linear identity at 1:49 -> 971+109 = 1080",
+        "Regression without a Table: an exponent equation at 6:44 -> 971+404 = 1375",
+        "Regression with a Table 1489-1789, clip from 24:49: circle regression from 3:34 -> 1489+214 = 1703"
+      ]
+    }
+  }
+}
