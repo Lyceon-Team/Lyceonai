@@ -30,7 +30,9 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
    (`packages/shared/src/worked-example-schema.ts`). `post_on` is in that week and matches the
    plan's slot. `signature_move` matches `STYLE.json` for the skill.
 3. Hook rules: no statistics, no claims about students or people, states the puzzle, ends with
-   `?` or `…`, never the answer. They apply to the spoken hook too.
+   `?` or `…`, never the answer. They apply to the spoken hook too. One exception (Karl's ruling
+   2026-11-02, SCL-265): a hook may open with "Most people" ("Most people think it's $64…?");
+   everything else about people stays refused, including a second claim later in the same hook.
 4. Voice it on your machine (never in CI):
    `HYPERFRAMES_PYTHON=<python with kokoro-onnx and soundfile> pnpm exec tsx scripts/worked-examples/voice.ts content/worked-examples/<week>/<QUESTION_ID>`.
    Commit `voice/*.wav` and `voice/manifest.json`. Editing a line later re-voices only that line;
@@ -48,11 +50,26 @@ At 17:00 UTC: select the one example with `post_on` = today (America/Chicago), n
 `posted.json`, approved by Karl's merge → all content rules → generate → `hyperframes check` →
 render → layout check (safe area x 71..912, y 154..1555; blank paper) → MP4 check (1080×1920,
 30-60 s, audio, music peak on record) → claim in `posted.json`, pushed to `social` → post to
-#social: the video, the TikTok title, the TikTok caption with its bio link
-(`lyceon.ai/start?utm_source=tiktok&utm_campaign=worked_example`), then the Instagram caption with
-the link to send to people who comment SAT. Both captions end with "Comment your answer 👇" and
-the Dec 5 line (evergreen from Dec 6) (owner brief "One funnel for every social post", Karl,
-2026-10-28). Karl posts by hand.
+#social in the QOTD's format (SCL-262; for worked examples SCL-265, Karl's ruling 2026-11-02):
+
+1. Any QA warning first ("SAT date list needs updating"), outside the copy blocks.
+2. **TikTok**: the video, its comment the platform line, the label ("Worked example · {skill} ·
+   {hook_type}") and "For review: posts on <date>. Karl posts by hand."; then ONE caption block and
+   a keywords block (one keyword per line, for TikTok's "Manage keywords").
+3. **Instagram** (the same video as TikTok, above: not uploaded again): its caption block.
+4. **Facebook** (the same video): its caption block.
+
+The captions are the SCL-262 lines with the example's title ("SAT Math worked example ·
+Percentages") as the headline. TikTok: headline / "Follow for daily SAT questions 👆 Comment your
+answer 👇" / hashtags. Instagram: headline / "Comment your answer 👇" / "Taking the SAT <next test
+date>? Comment SAT and I'll send you the link" / hashtags. Facebook: headline / "How would you solve
+it? Share your approach below 👇" / hashtags. Hashtags: `#SAT #SATprep #digitalSAT #<Month>SAT
+#SATMath`. Every caption ends with the music credit, which the track's CC BY 4.0 licence requires.
+Keywords: the test month, `SAT`, `SAT prep`, `Digital SAT`, `College admissions`, `SAT math`, then
+the question's canonical domain's. No link, bio line or metadata in any copy block: the TikTok bio
+link and the Instagram link to send are set once (`docs/runbooks/qotd-slack.md`); the tagged
+`/start` links (`utm_campaign=worked_example`) stay in `post.json` in the run's download. Karl
+posts by hand.
 
 Nothing due: green, "nothing due". Two due on one day, or a due example not approved: red, nothing
 posted.
