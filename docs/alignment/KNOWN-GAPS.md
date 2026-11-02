@@ -778,20 +778,24 @@ comm -23 <(grep -rln 'vi\.mock(.*supabase' tests/ server/__tests__/ client/src |
          <(grep -rln "makePgSupabase\|new Client(" tests/ server/__tests__/ | sort)
 ```
 
-**Guardian files still accepted, inside the gate's own scope.** Three (updated 2026-10-01: was four;
-`server/__tests__/guardian-payment-access.test.ts` was converted to
-`tests/ci/guardian-payment-access.pg.ci.test.ts` in G1-10 and left the map), each with owner `guardian`
-and expiry `2026-11-01`, listed in the gate's `ACCEPTED` map with a per-file reason. Two,
-`guardian-reporting.contract.test.ts` (~900 lines) and `guardian.anti-leak.ci.test.ts`, predate
-the PG harness and converting them is real work. The third, `subject-resolver.contract.test.ts`, is a different case and is the more
-interesting one: it deliberately INJECTS decisions a real database cannot produce — an RPC error,
-a CASE arm no build recognises, a failed audit write — to prove the resolver fails closed on each.
-Its four *real* decisions could run against Postgres and its one row literal asserts a row the
-resolver writes. The right end state is a split file, not a converted one.
+**Guardian files still accepted, inside the gate's own scope: none** (updated 2026-11-02). The
+accept-list held three files with owner `guardian` and expiry `2026-11-01` (four until 2026-10-01,
+when `server/__tests__/guardian-payment-access.test.ts` was converted in G1-10). The expiry passed,
+turned the `ci` job red, and the owner chose conversion over extending the date. All three were
+converted to the real-Postgres harness on 2026-11-02:
 
-**What the gate buys today:** the class cannot grow. A new guardian test that mocks the query layer
-or spells a row by hand reds on arrival, and adding an accept-list entry is a reviewable edit
-rather than an accident. It does not retroactively fix the three accepted files.
+- `guardian.anti-leak.ci.test.ts` → `tests/ci/guardian.anti-leak.pg.ci.test.ts`
+- `guardian-reporting.contract.test.ts` → `tests/ci/guardian-reporting.pg.ci.test.ts`
+- `subject-resolver.contract.test.ts` → split into `tests/ci/subject-resolver.pg.ci.test.ts` (the
+  four real decisions, and the audit row the resolver writes read back from `audit_logs`) and
+  `tests/ci/subject-resolver.faults.pg.ci.test.ts` (the RPC error, the unrecognised CASE arm and
+  the refused audit write, each produced by the DATABASE — the function replaced, a trigger refusing
+  the insert — rather than by a mock). The earlier note that these were "decisions a real database
+  cannot produce" was true of the mock's way of producing them, not of the failures.
+
+**What the gate buys now:** the class cannot grow, and it has no accepted remainder. A new guardian
+test that mocks the query layer or spells a row by hand reds on arrival, and adding an accept-list
+entry is a reviewable edit rather than an accident.
 
 **Spec citations:** Coding Standards §14 (tests required for anti-leak / idempotency / auth /
 redaction changes — a test that agrees with the code instead of the schema satisfies none of it);
