@@ -251,6 +251,24 @@ describe("the spoken trap opens with the trap (Karl's flow wording allowed, SCL-
       ).not.toMatch(/trap\.voice must open/);
     }
   });
+  it("the people-slip opener is not a claim about people; anything after it still is", () => {
+    expect(
+      exampleProblems(
+        CONTENT,
+        withTrapVoice("Here's where people slip. They add the percents."),
+        kit,
+      ).problems.join("\n"),
+    ).not.toMatch(/claim about people/);
+    expect(
+      exampleProblems(
+        CONTENT,
+        withTrapVoice(
+          "Here's where people slip. Most students add the percents.",
+        ),
+        kit,
+      ).problems.join("\n"),
+    ).toMatch(/claim about people/);
+  });
   it("refuses a trap line that opens any other way", () => {
     for (const voice of [
       "So the answer is wrong if you add.",

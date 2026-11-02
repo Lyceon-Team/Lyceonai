@@ -354,7 +354,9 @@ export function contentProblems(
     example.answer.voice,
     example.trap.summary,
     ...example.trap.notepad,
-    example.trap.voice,
+    // The ruled trap opener ("Here's where people slip", Karl 2026-11-02, SCL-267) is the one
+    // mention of people a spoken line may make; the rest of the trap line is checked as before.
+    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),
     example.check,
     example.takeaway,
     example.signature_move,

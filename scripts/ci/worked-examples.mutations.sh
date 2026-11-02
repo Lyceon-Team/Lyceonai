@@ -391,6 +391,12 @@ ts_plant "W21 trap opening accepts anything" shared/worked-examples/rules.ts \
   "  /^(?:the trap\\b|(?:now,?\\s+)?here[’']?s where (?:people|you) slip\\b)/i;" "  /^/i;" \
   "refuses a trap line that opens any other way"
 
+ts_plant "W22 trap opener exemption dropped" shared/worked-examples/rules.ts \
+  '    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),' '    example.trap.voice,' \
+  "the people-slip opener is not a claim about people; anything after it still is"
+ts_plant "W23 whole trap line exempted" shared/worked-examples/rules.ts \
+  '    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),' '    "",' \
+  "the people-slip opener is not a claim about people; anything after it still is"
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then echo "WORKED EXAMPLE MUTATIONS: FAIL"; exit 1; fi
