@@ -17,6 +17,18 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Clean up orphaned pass-1 tags on the 15 retired cube questions
+-- These are not published EE questions but may carry stale tags from earlier runs
+DELETE FROM question_sub_skills
+WHERE question_id IN ('SATM23CRWWE','SATM23WY19V','SATM24Z5LEL','SATM252V7HV','SATM25XSPL6','SATM27ZGM43','SATM2AROSXO','SATM2MN1IYQ','SATM2OH2O7H','SATM2PPCM43','SATM2RHEP1Q','SATM2W3U7IP','SATM2YX3SGJ','SATM2ZS7ODX','SATM2ZXTAYN')
+  AND taxonomy_version = 'scl-v1.0.0';
+DELETE FROM question_clusters
+WHERE question_id IN ('SATM23CRWWE','SATM23WY19V','SATM24Z5LEL','SATM252V7HV','SATM25XSPL6','SATM27ZGM43','SATM2AROSXO','SATM2MN1IYQ','SATM2OH2O7H','SATM2PPCM43','SATM2RHEP1Q','SATM2W3U7IP','SATM2YX3SGJ','SATM2ZS7ODX','SATM2ZXTAYN')
+  AND taxonomy_version = 'scl-v1.0.0';
+DELETE FROM distractor_clusters
+WHERE question_id IN ('SATM23CRWWE','SATM23WY19V','SATM24Z5LEL','SATM252V7HV','SATM25XSPL6','SATM27ZGM43','SATM2AROSXO','SATM2MN1IYQ','SATM2OH2O7H','SATM2PPCM43','SATM2RHEP1Q','SATM2W3U7IP','SATM2YX3SGJ','SATM2ZS7ODX','SATM2ZXTAYN')
+  AND taxonomy_version = 'scl-v1.0.0';
+
 -- Delete existing EE sub_skills for scl-v1.0.0
 DELETE FROM question_sub_skills
 WHERE taxonomy_version = 'scl-v1.0.0'
