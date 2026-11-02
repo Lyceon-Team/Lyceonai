@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM2BVZSMV",
+  "skill_code": "Circles",
+  "post_on": "2026-11-16",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "A radius-13 circle crosses the x-axis twice. Are the two points 26 apart?",
+    "voice": "Radius 13, and it crosses the x-axis twice. Are those two points 26 apart?"
+  },
+  "question_voice": "A circle has center 2, 5 and radius 13. How far apart are the two points where it crosses the x-axis?",
+  "signature_move": "Drop a line from the center to the chord: it makes a right triangle with the radius.",
+  "steps": [
+    {
+      "notepad": "(x − 2)² + (y − 5)² = 169",
+      "voice": "The circle is x minus 2, squared, plus y minus 5, squared, equals 169."
+    },
+    {
+      "notepad": "y = 0:  (x − 2)² + 25 = 169",
+      "voice": "On the x-axis, y is zero, and 5 squared is 25."
+    },
+    {
+      "notepad": "(x − 2)² = 144,  x − 2 = ±12",
+      "voice": "So x minus 2, squared, is 144. That makes x minus 2 equal to 12, or negative 12."
+    },
+    {
+      "notepad": "x = 14  or  x = −10",
+      "voice": "The points are at 14 and negative 10."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "14 − (−10) → A) 24",
+    "voice": "That's 24 apart. The answer is A."
+  },
+  "trap": {
+    "summary": "Doubling the radius and taking the diameter, 26, as the distance between the x-axis points.",
+    "notepad": [
+      "2 × 13 = 26   ✗ diameter",
+      "the axis is 5 below the center",
+      "chord = 2 × 12 = 24   ✓"
+    ],
+    "voice": "The trap: doubling the radius to get 26. That's the diameter, and this chord misses the center."
+  },
+  "check": "Both points satisfy the equation: 12² + 5² = 144 + 25 = 169 = 13².",
+  "takeaway": "A chord that misses the center is shorter than the diameter; find half of it with a right triangle."
+}

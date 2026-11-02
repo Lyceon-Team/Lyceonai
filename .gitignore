@@ -105,3 +105,19 @@ voice-reference/
 *.reference.mp3
 *.reference.m4a
 *.reference.flac
+
+# Video pilots (scripts/video-pilots/README.md): renders, voiced lines, Manim media and caches are
+# never committed; they belong in a folder outside the repository. These catch a run pointed inside it.
+video-pilots-out/
+scripts/video-pilots/**/media/
+scripts/video-pilots/**/voiceovers/
+scripts/video-pilots/**/*.mp4
+scripts/video-pilots/**/*.wav
+scripts/video-pilots/**/*.words.json
+video-kit/pilots/**/*.mp4
+video-kit/pilots/**/*.wav
+.venv-video-pilots/
+scripts/video-pilots/**/*.onnx
+scripts/video-pilots/**/*.bin
+video-kit/pilots/**/*.onnx
+video-kit/pilots/**/*.bin
