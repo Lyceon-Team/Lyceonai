@@ -10,9 +10,14 @@
  * carries (claim row, then effect, two statements) is not copied.
  *
  * Responses: 400 for anything unverifiable or unparseable (the provider must not retry it),
- * 200 for applied / ignored / unmatched / duplicate / acknowledged (open, click, sent and
+ * 200 for applied / ignored / unmatched / duplicate / acknowledged (sent, delivery_delayed and
  * unknown types are acknowledged and never written), 500 when the database call fails so the
  * provider retries. Replays are no-ops by the provider_event_id primary key.
+ *
+ * ENGAGEMENT (owner brief "Email send gate", Karl 2026-10-30, tracking addendum): email.opened
+ * and email.clicked are stored once per svix-id in notification_delivery_events with the
+ * recipient's profile (`record_email_engagement_event`); a recorded event answers `applied`.
+ * The gate counts clicks only.
  *
  * Logging carries ids and outcomes only: no addresses, no subject, no body.
  *
@@ -25,6 +30,7 @@
  */
 import type { Request, Response } from "express";
 import {
+  isResendEngagementEvent,
   isResendStatusEvent,
   RESEND_CONTACT_UPDATED,
   RESEND_EMAIL_COMPLAINED,
@@ -225,9 +231,60 @@ export async function processResendWebhook(
     };
   }
 
+  if (isResendEngagementEvent(eventType)) {
+    const engagement = resendWebhookEventSchema.safeParse(json);
+    if (!engagement.success) {
+      logger.warn(
+        "NOTIFICATIONS",
+        "webhook_bad_shape",
+        "Resend engagement event did not match the schema",
+        {
+          requestId,
+          providerEventId,
+          issues: engagement.error.issues.length,
+        },
+      );
+      return {
+        ok: false,
+        reason: "bad_payload",
+        message: "Body does not match the expected shape.",
+      };
+    }
+    const to = resendComplaintRecipientsSchema.safeParse(engagement.data.data);
+    const recipients = to.success
+      ? Array.isArray(to.data.to)
+        ? to.data.to
+        : [to.data.to]
+      : [];
+    const { data, error } = await supabaseServer.rpc(
+      "record_email_engagement_event",
+      {
+        p_provider_event_id: providerEventId,
+        p_provider_message_id: engagement.data.data.email_id,
+        p_event_type: eventType,
+        p_occurred_at: engagement.data.created_at,
+        p_recipients: recipients,
+      },
+    );
+    if (error) {
+      // 500 so Resend retries; nothing was written (one statement).
+      throw new Error(
+        `record_email_engagement_event failed: ${error.code ?? "unknown"} ${error.message}`,
+      );
+    }
+    const status = data === "duplicate" ? "duplicate" : "applied";
+    logger.info(
+      "NOTIFICATIONS",
+      "webhook_engagement_recorded",
+      "Resend engagement event recorded",
+      { requestId, providerEventId, eventType, status },
+    );
+    return { ok: true, status, providerEventId, marketing: null };
+  }
+
   if (!isResendStatusEvent(eventType)) {
-    // email.sent / email.opened / email.clicked / email.delivery_delayed / other contact events /
-    // unknown: acknowledged, never written.
+    // email.sent / email.delivery_delayed / other contact events / unknown: acknowledged, never
+    // written.
     logger.info(
       "NOTIFICATIONS",
       "webhook_acknowledged",

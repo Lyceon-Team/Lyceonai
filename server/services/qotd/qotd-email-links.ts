@@ -26,6 +26,11 @@
  * is served by `/api/public/review-ask-email/stop`, which ends the review asks through
  * `product_review_prompt_stop`. Its own action, so it can neither stop nor be stopped by another.
  *
+ * KEEP ME POSTED (owner brief "Email send gate", Karl 2026-10-30: "signed single-purpose
+ * keep-me-posted link"): the action `email_keep_posted` signs the recipient's profile id (a
+ * student in the pause note, a guardian in the parent pause email) and is served by
+ * `/api/public/email/keep-posted`, which lifts the pause through `email_gate_keep_posted`.
+ *
  * trade-offs: the token does not expire. An unsubscribe link must keep working for as long as the
  * email exists (industry practice and CAN-SPAM's 30-day minimum), and both actions are safe to
  * repeat. The token names a student id, which is opaque and is not personal data on its own.
@@ -42,6 +47,7 @@ export const QOTD_EMAIL_LINK_ACTIONS = [
   "resume",
   "guardian_digest_unsubscribe",
   "review_ask_stop",
+  "email_keep_posted",
 ] as const;
 export type QotdEmailLinkAction = (typeof QOTD_EMAIL_LINK_ACTIONS)[number];
 
@@ -108,6 +114,18 @@ export function reviewAskStopUrl(
     qotdEmailLinkToken("review_ask_stop", profileId),
   );
   return `${siteUrl}/api/public/review-ask-email/stop?t=${t}`;
+}
+
+/** The pause emails' "Keep me posted" URL, or null when the site URL is unset. */
+export function emailKeepPostedUrl(
+  siteUrl: string,
+  profileId: string,
+): string | null {
+  if (!siteUrl) return null;
+  const t = encodeURIComponent(
+    qotdEmailLinkToken("email_keep_posted", profileId),
+  );
+  return `${siteUrl}/api/public/email/keep-posted?t=${t}`;
 }
 
 /** The public URL for a link action, or null when the site URL is not configured. */
