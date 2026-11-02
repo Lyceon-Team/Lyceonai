@@ -25,6 +25,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261020000000_qotd_schema.sql"
 MIG_READ="supabase/migrations/20261031000000_qotd_readability_scheduler.sql"
+# SCL-258 (shuffle once): the last definer of qotd_question_for, qotd_archive and qotd_schedule_insert.
+MIG_SHUF="supabase/migrations/20261123000000_qotd_shuffle_once.sql"
 DB=qotd_mutations
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/qotd-mut.XXXX)"
@@ -32,6 +34,7 @@ BACKUPS="$(mktemp -d /tmp/qotd-mut.XXXX)"
 FILES=(
   "$MIG"
   "$MIG_READ"
+  "$MIG_SHUF"
   "shared/qotd/readability.ts"
   "server/services/qotd/qotd-service.ts"
   "packages/shared/src/qotd-schema.ts"
@@ -44,8 +47,11 @@ FILES=(
   "shared/qotd/reveal.ts"
   "scripts/qotd-social/post-to-slack.ts"
   "shared/qotd/tiktok.ts"
+  "shared/social/posts.ts"
   "client/src/components/qotd/QotdTiktokSlide.tsx"
   "shared/slack/client.ts"
+  "shared/qotd/projection.ts"
+  ".github/workflows/qotd-social.yml"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -97,6 +103,10 @@ WIDGET=client/src/components/qotd/QotdWidget.test.tsx
 SOCIAL=tests/ci/qotd-social.test.ts
 SCHED=tests/ci/qotd-schedule-job.test.ts
 READ=tests/ci/qotd-readability.test.ts
+AGREE=tests/ci/qotd-served-order.test.ts
+
+# The backfill check (SCL-258): its own database, every migration before the shuffle one, then it.
+backfill_check() { QOTD_BACKFILL_DB=qotd_mutations_backfill bash scripts/ci/qotd-shuffle-backfill-gates.sh 2>&1; }
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -117,8 +127,12 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?
-[ "$RC" = 0 ] && ok "route + page + widget + social + scheduler tests green" || { bad "route + page + widget + social + scheduler tests not green"; echo "$OUT" | tail -30; }
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ" "$AGREE")"; RC=$?
+[ "$RC" = 0 ] && ok "route + page + widget + social + scheduler + served-order tests green" || { bad "route + page + widget + social + scheduler + served-order tests not green"; echo "$OUT" | tail -30; }
+if [ "$HAVE_PG" = 1 ]; then
+  OUT="$(backfill_check)"; RC=$?
+  case "$OUT" in *"QOTD SHUFFLE BACKFILL GATES: PASS"*) [ "$RC" = 0 ] && ok "backfill gates green" || bad "backfill gates printed PASS but exited $RC" ;; *) bad "backfill gates not green"; echo "$OUT" | tail -20 ;; esac
+fi
 if [ "$FAIL" -gt 0 ]; then echo "QOTD MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 if [ "$HAVE_PG" = 1 ]; then
@@ -130,8 +144,9 @@ if [ "$HAVE_PG" = 1 ]; then
   restore
 
   echo "=== (2) a future day becomes readable (qotd_question_for drops its <= today bound) ==="
-  [ "$(last_definer qotd_question_for)" = "$MIG" ] || { bad "M2 targets $MIG but qotd_question_for is last defined in $(last_definer qotd_question_for)"; exit 1; }
-  plant "$MIG" "     AND s.qotd_date <= public.qotd_today()" "     AND TRUE" || { bad "M2 STALE"; exit 1; }
+  # Re-pointed to $MIG_SHUF (SCL-258), which replaced qotd_question_for's body.
+  [ "$(last_definer qotd_question_for)" = "$MIG_SHUF" ] || { bad "M2 targets $MIG_SHUF but qotd_question_for is last defined in $(last_definer qotd_question_for)"; exit 1; }
+  plant "$MIG_SHUF" "     AND s.qotd_date <= public.qotd_today()" "     AND TRUE" || { bad "M2 STALE"; exit 1; }
   OUT="$(sql_check)"; RC=$?
   expect_red "M2 future day readable" "Q-06 tomorrow is readable" "$OUT" "$RC"
   restore
@@ -169,20 +184,20 @@ restore
 # Owner ruling 2026-10-05 (QOTD follow-up): shuffled, tokenised options; one answer per visit.
 echo "=== (6) LEAK: today's options carry the canonical letter instead of the token ==="
 plant server/services/qotd/qotd-service.ts \
-  "    id: qotdOptionToken(row.qotd_date, o.key)," \
-  "    id: o.key," || { bad "M6 STALE"; exit 1; }
+  "    id: qotdOptionToken(row.qotd_date, o.id)," \
+  "    id: o.id," || { bad "M6 STALE"; exit 1; }
 OUT="$(ts_check "$ROUTES")"; RC=$?
 expect_red "M6 canonical letter served" "returns the question with correct_answer and explanation null" "$OUT" "$RC"
 restore
 
-# Re-pointed 2026-10-23: Karl's ruling replaced the per-request shuffle with canonical order, so
-# the defect is now any reordering of today's options.
-echo "=== (7) today's options leave canonical order ==="
+# Re-pointed 2026-10-23 (canonical order), and again 2026-10-28 (SCL-258: the stored order), so
+# the defect is any reordering of today's options away from the day's stored order.
+echo "=== (7) today's options leave the stored order ==="
 plant server/services/qotd/qotd-service.ts \
-  "  return parseCanonicalMcOptions(row.options).map((o) => ({" \
-  "  return [...parseCanonicalMcOptions(row.options)].reverse().map((o) => ({" || { bad "M7 STALE"; exit 1; }
+  "  return qotdServedChoices(row).options.map((o) => ({" \
+  "  return [...qotdServedChoices(row).options].reverse().map((o) => ({" || { bad "M7 STALE"; exit 1; }
 OUT="$(ts_check "$ROUTES")"; RC=$?
-expect_red "M7 not canonical" "every request serves the four options in canonical (authored) order" "$OUT" "$RC"
+expect_red "M7 not the stored order" "every request serves the four options in the day's stored order" "$OUT" "$RC"
 restore
 
 echo "=== (8) a bare canonical letter is accepted as an answer ==="
@@ -236,7 +251,7 @@ plant scripts/qotd-social/generate.ts \
   "  return date < today" \
   "  return date <= today" || { bad "M13 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M13 today buildable by date" "a date is buildable only once it has passed in America/Chicago" "$OUT" "$RC"
+expect_red "M13 today buildable by date" "a date is buildable only once its QOTD day (04:00 UTC to 04:00 UTC) has passed" "$OUT" "$RC"
 restore
 
 echo "=== (14) the scheduler stops skipping a stem that repeats its passage (owner 2026-10-08) ==="
@@ -349,64 +364,43 @@ if [ "$HAVE_PG" = 1 ]; then
   restore
 fi
 
-# Yesterday's reveal and today's Reddit post (owner brief "QOTD Slack post — add yesterday's
-# reveal", Karl, 2026-10-15): the reveal is always yesterday's, never today's; the leak check still
-# covers every one of today's messages (the Reddit post included); a withheld yesterday posts the
-# notice and nothing else.
+# Yesterday's archive day (owner brief 2026-10-15; Karl, 2026-10-23): the TikTok carousel is
+# always built from yesterday's public archive day, never today's; a withheld yesterday is no day.
+#
+# RETIRED with the Reddit QOTD (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit
+# sitewide; nothing Reddit-related is generated), each guarantee obsolete because the output it
+# guarded is no longer built, posted or present:
+#   M27 the reveal builder accepted any day — buildReveal is no longer called (shared/qotd/
+#       reveal.ts is left in place, uncalled); the carousel's own day check is M36.
+#   M30 the leak check stopped reading the Reddit body — socialAssetLeaks no longer has Reddit
+#       fields: there is no Reddit body to check.
+#   M31 the Reddit title could name the correct choice — as M30, for the Reddit title.
+#   M32 the generator stopped handing the Reddit body to the leak check — no Reddit body is built.
+#   M34 the Slack reveal ignored "withheld" — the reveal message was removed with its Slack item.
+# RE-POINTED: M26 and M28 (the reveal's yesterday is now loadYesterday's), M29 (re-homed on
+# loadYesterday's own "is it yesterday's day" check, which replaced the reveal builder's), M33.
 echo "=== (26) 'yesterday' is computed as the posted day itself ==="
 plant packages/shared/src/qotd-schema.ts \
   "  d.setUTCDate(d.getUTCDate() - 1);" \
   "  d.setUTCDate(d.getUTCDate());" || { bad "M26 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M26 reveal is today's" "is built from yesterday's archive day" "$OUT" "$RC"
+expect_red "M26 yesterday is today" "loadYesterday asks the public archive for yesterday only" "$OUT" "$RC"
 restore
 
-echo "=== (27) the reveal builder accepts any day, today's included ==="
-plant shared/qotd/reveal.ts \
-  "  if (day.qotd_date !== yesterday) {" \
-  "  if (false) {" || { bad "M27 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M27 today's day revealed" "today's answer is never a reveal" "$OUT" "$RC"
-restore
-
-echo "=== (28) loadReveal fetches the posted day instead of yesterday ==="
+echo "=== (28) loadYesterday fetches the posted day instead of yesterday ==="
 plant scripts/qotd-social/generate.ts \
   '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);' \
   '  const res = await fetchImpl(`${baseUrl}/api/public/qotd/${postedDate}`);' || { bad "M28 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M28 today's archive fetched" "loadReveal asks the public archive for yesterday only" "$OUT" "$RC"
+expect_red "M28 today's archive fetched" "loadYesterday asks the public archive for yesterday only" "$OUT" "$RC"
 restore
 
-echo "=== (29) publishDecision stops checking the reveal's date ==="
+echo "=== (29) loadYesterday accepts a day that is not yesterday's ==="
 plant scripts/qotd-social/generate.ts \
-  "  if (reveal.qotd_date !== yesterday) {" \
+  "  if (body.data.qotd_date !== yesterday) {" \
   "  if (false) {" || { bad "M29 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M29 wrong-day reveal published" "a manifest whose reveal is not yesterday's is never written" "$OUT" "$RC"
-restore
-
-echo "=== (30) LEAK: the leak check stops reading the Reddit body ==="
-plant shared/qotd/social.ts \
-  '    fields.push(["reddit_body", output.reddit_body]);' \
-  "    void 0;" || { bad "M30 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M30 explanation in Reddit body passes" "the explanation in the Reddit body" "$OUT" "$RC"
-restore
-
-echo "=== (31) LEAK: the Reddit title may name the correct choice ==="
-plant shared/qotd/social.ts \
-  '      leaks.push(`reddit_title: names the correct choice "${correct.text}"`);' \
-  "      void 0;" || { bad "M31 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M31 correct choice in Reddit title passes" "the correct choice named in the Reddit title" "$OUT" "$RC"
-restore
-
-echo "=== (32) LEAK: the generator stops handing the Reddit body to the leak check ==="
-plant scripts/qotd-social/generate.ts \
-  "            reddit_body: reddit.body," \
-  "" || { bad "M32 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M32 Reddit body unchecked" "the explanation in the Reddit body" "$OUT" "$RC"
+expect_red "M29 wrong day accepted" "refuses today's day served in its place" "$OUT" "$RC"
 restore
 
 echo "=== (33) a withheld yesterday (404) is no longer recognised ==="
@@ -414,15 +408,7 @@ plant scripts/qotd-social/generate.ts \
   "  if (res.status === 404) {" \
   "  if (false) {" || { bad "M33 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M33 withheld not recognised" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
-restore
-
-echo "=== (34) the Slack reveal ignores 'withheld' ==="
-plant scripts/qotd-social/post-to-slack.ts \
-  '  if (r.status === "withheld") {' \
-  "  if (false) {" || { bad "M34 STALE"; exit 1; }
-OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M34 withheld day posts a reveal" "a 404 from the archive (a repaired question) is withheld" "$OUT" "$RC"
+expect_red "M33 withheld not recognised" "a 404 for yesterday gives no archive day" "$OUT" "$RC"
 restore
 
 # TikTok carousel + fixed answer order (Karl's brief 2026-10-23): one plant per rule.
@@ -458,18 +444,20 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M38 slide 3 unchecked" "today's explanation on slide 2+1 is a leak" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-11-02 (Karl's rulings on the daily #social messages): the fixed caption lines
+# now come from shared/social/posts.ts, and the carousel has no title any more.
 echo "=== (39) LEAK: the carousel leak check stops reading the TikTok caption ==="
 plant shared/qotd/social.ts \
-  '    ["tiktok caption", output.caption],' \
+  '    ["tiktok caption", withoutSocialFixedLines(output.caption)],' \
   "" || { bad "M39 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M39 caption unchecked" "today's explanation in the caption or the title is a leak" "$OUT" "$RC"
+expect_red "M39 caption unchecked" "today's explanation in the caption is a leak" "$OUT" "$RC"
 restore
 
 echo "=== (40) LEAK: the generator stops handing the slides to the leak check ==="
 plant scripts/qotd-social/generate.ts \
-  "      { slides: tiktok.slides.map((s) => s.cardText), caption, title }," \
-  "      { slides: [], caption, title }," || { bad "M40 STALE"; exit 1; }
+  "      { slides: tiktok.slides.map((s) => s.cardText), caption }," \
+  "      { slides: [], caption }," || { bad "M40 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M40 slides not checked" "the generator hands every slide to the leak check" "$OUT" "$RC"
 restore
@@ -481,16 +469,16 @@ plant scripts/qotd-social/post-to-slack.ts \
   '  if (m.tiktok.status === "built") {' \
   "  if (true) {" || { bad "M41 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M41 no note" "no carousel: no slide is uploaded, and the one-line note is posted" "$OUT" "$RC"
+expect_red "M41 no note" "no carousel: no slide is uploaded, and one TikTok QA line is posted" "$OUT" "$RC"
 restore
 
 # Re-pointed 2026-10-26: the slides are now a step of slackPostPlan.
 echo "=== (42) a built carousel's slides are never uploaded ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  "        files: post.tiktokSlides.map((slide, i) => ({" \
-  "        files: post.tiktokSlides.slice(0, 0).map((slide, i) => ({" || { bad "M42 STALE"; exit 1; }
+  "      files: post.tiktokSlides.map((slide, i) => ({" \
+  "      files: post.tiktokSlides.slice(0, 0).map((slide, i) => ({" || { bad "M42 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M42 slides not posted" "three slides shared together with their comment" "$OUT" "$RC"
+expect_red "M42 slides not posted" "three slides shared under the TikTok line, then one caption block and one keywords block" "$OUT" "$RC"
 restore
 
 echo "=== (43) the Why line ignores the 300-character cap ==="
@@ -509,12 +497,18 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M44 Why not at a sentence boundary" "the Why line is at most 300 characters, whole sentences only" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-11-02: the TikTok caption moved to shared/social/posts.ts, and its follow and
+# comment lines are one line (Karl's rulings). The plant swaps it for the comment line alone.
 echo "=== (45) the caption loses its follow line ==="
-plant shared/qotd/tiktok.ts \
-  '  "Follow for daily SAT questions 👆",' \
-  "" || { bad "M45 STALE"; exit 1; }
+plant shared/social/posts.ts \
+  '    qotdHeadline(test, section),
+    SOCIAL_FOLLOW_AND_COMMENT_LINE,
+    socialHashtags(test, section),' \
+  '    qotdHeadline(test, section),
+    SOCIAL_COMMENT_LINE,
+    socialHashtags(test, section),' || { bad "M45 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M45 no follow line first" "the caption starts with the follow line" "$OUT" "$RC"
+expect_red "M45 no follow line" "the caption: headline, follow and comment line, hashtags, for each section" "$OUT" "$RC"
 restore
 
 echo "=== (46) the title cap is removed ==="
@@ -525,10 +519,11 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M46 title uncapped" "the cap cuts anything longer at a whole word" "$OUT" "$RC"
 restore
 
+# Re-pointed 2026-10-28 (SCL-258): the guard compares the shown letter with the SERVED letter.
 echo "=== (47) slide 3 may name a letter slide 1 does not show for that choice ==="
 plant shared/qotd/tiktok.ts \
-  '    if ("ABCD"[index] !== correct.id) {' \
-  "    if (false) {" || { bad "M47 STALE"; exit 1; }
+  "      (q.correct_letter !== undefined && shown !== q.correct_letter)" \
+  "      false" || { bad "M47 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M47 letter mismatch" "refuses a day whose correct letter is not the letter slide 1 shows" "$OUT" "$RC"
 restore
@@ -549,21 +544,24 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M49 grid-in variant lost" "grid-in: slide 2 shows one 'Your answer' box" "$OUT" "$RC"
 restore
 
-# #social order and labels (Karl's brief 2026-10-26): one plant per rule.
-echo "=== (53) the five items go out in the wrong order ==="
+# #social order and labels (Karl's brief 2026-10-26): one plant per rule. Re-pointed 2026-11-02
+# (Karl's rulings on the daily #social messages): the numbered "n/3" labels are gone; each post
+# opens with its one-word platform line (TikTok, Instagram, Facebook), so M54 plants a lost
+# platform line and M56 a skipped carousel that posts nothing for TikTok.
+echo "=== (53) the three items go out in the wrong order ==="
 plant scripts/qotd-social/post-to-slack.ts \
   "  return steps;" \
   "  return [...steps.slice(3), ...steps.slice(0, 3)];" || { bad "M53 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M53 order" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+expect_red "M53 order" "a day with a carousel posts TikTok, Instagram and Facebook in order" "$OUT" "$RC"
 restore
 
-echo "=== (54) an item loses its numbered label ==="
+echo "=== (54) a post loses its platform line ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  "  \"4/5 · Reddit: today's post\"," \
-  "  \"Reddit: today's post\"," || { bad "M54 STALE"; exit 1; }
+  '    text: [platformLine("Facebook"), copyBlock(m.caption)].join("\n"),' \
+  '    text: copyBlock(m.caption),' || { bad "M54 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M54 label" "a day with a carousel posts 1/5 to 5/5 in order" "$OUT" "$RC"
+expect_red "M54 platform line" "a day with a carousel posts TikTok, Instagram and Facebook in order" "$OUT" "$RC"
 restore
 
 echo "=== (55) an upload is not confirmed shared before the next step ==="
@@ -574,12 +572,12 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M55 upload not awaited" "each upload is confirmed shared before the next step starts" "$OUT" "$RC"
 restore
 
-echo "=== (56) a skipped carousel drops item 3, shifting the numbering ==="
+echo "=== (56) a skipped carousel posts nothing for TikTok ==="
 plant scripts/qotd-social/post-to-slack.ts \
-  $'      },\n      {\n        item: 3,\n        label: l3,\n        kind: "message",\n        text: `*3/5 \xc2\xb7 TikTok: no carousel today* (${why})`,\n      },\n' \
-  $'      },\n' || { bad "M56 STALE"; exit 1; }
+  $'  } else {\n    steps.push({\n      item: item(),\n      label: "QA",\n      kind: "message",\n      text: tiktokSkipLine(m),\n    });\n  }' \
+  $'  }' || { bad "M56 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
-expect_red "M56 skipped item 3 dropped" "a skipped carousel still yields a 2/5 and a 3/5 message" "$OUT" "$RC"
+expect_red "M56 skipped carousel silent" "a skipped carousel yields one TikTok QA line, then Instagram and Facebook" "$OUT" "$RC"
 restore
 
 echo "=== (57) the dry run stops printing the sequence ==="
@@ -590,8 +588,161 @@ OUT="$(ts_check "$SOCIAL")"; RC=$?
 expect_red "M57 dry run silent" "the dry run prints the sequence" "$OUT" "$RC"
 restore
 
+# Karl's ruling 2026-10-26 on #1308: a long first sentence is cut, never a skipped carousel.
+echo "=== (58) a long first sentence skips the Why again (no cut fallback) ==="
+plant shared/qotd/tiktok.ts \
+  "  if (first.length > QOTD_TIKTOK_WHY_MAX) return cutFirstSentence(first);" \
+  "" || { bad "M58 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M58 no cut fallback" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
+restore
+
+echo "=== (59) the cut falls mid-word ==="
+plant shared/qotd/tiktok.ts \
+  '  const space = head.lastIndexOf(" ");' \
+  "  const space = -1;" || { bad "M59 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M59 cut mid-word" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
+restore
+
+echo "=== (60) the cut Why loses its '…' and pointer to the full explanation ==="
+plant shared/qotd/tiktok.ts \
+  '  return `${cut}${QOTD_TIKTOK_WHY_MORE}`;' \
+  "  return cut;" || { bad "M60 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M60 no pointer" "a first sentence over 300 characters is cut at the last word boundary" "$OUT" "$RC"
+restore
+
+# ── SCL-258 (Karl, 2026-10-28): the options are shuffled once, in the database, and every
+#    surface serves the stored order and letter. One plant per rule.
+echo "=== (61) a renderer reads canonical order: the shared function serves authored order ==="
+plant shared/qotd/projection.ts \
+  "  for (const key of order) {" \
+  "  for (const key of byKey.keys()) {" || { bad "M61 STALE"; exit 1; }
+OUT="$(ts_check "$AGREE")"; RC=$?
+expect_red "M61 shared function canonical" "the archive response: the same order, and correct_letter is the served letter" "$OUT" "$RC"
+restore
+
+echo "=== (62) a renderer reads canonical order: today's route bypasses the stored order ==="
+plant server/services/qotd/qotd-service.ts \
+  "  return qotdServedChoices(row).options.map((o) => ({" \
+  "  return parseCanonicalMcOptions(row.options).map((o) => ({ id: o.key, text: o.text })).map((o) => ({" || { bad "M62 STALE"; exit 1; }
+OUT="$(ts_check "$ROUTES")"; RC=$?
+expect_red "M62 today canonical" "every request serves the four options in the day's stored order" "$OUT" "$RC"
+restore
+
+if [ "$HAVE_PG" = 1 ]; then
+  echo "=== (63) a stored order can be UPDATEd (the write-once trigger raises nothing) ==="
+  [ "$(grep -ln 'FUNCTION public\.qotd_schedule_no_update\b' supabase/migrations/*.sql | sort | tail -1)" = "$MIG_SHUF" ] || { bad "M63 targets $MIG_SHUF but qotd_schedule_no_update is defined later"; exit 1; }
+  plant "$MIG_SHUF" "  RAISE EXCEPTION 'qotd_schedule is write-once: % cannot be changed (SCL-258)', OLD.qotd_date
+    USING ERRCODE = '42501';" "  RETURN NEW;" || { bad "M63 STALE"; exit 1; }
+  OUT="$(sql_check)"; RC=$?
+  expect_red "M63 UPDATE allowed" "Q-10 an UPDATE of a stored order was accepted" "$OUT" "$RC"
+  restore
+
+  echo "=== (64) the backfill reshuffles a past date (and today) ==="
+  plant "$MIG_SHUF" "                            WHEN s.qotd_date <= public.qotd_today() THEN public.qotd_option_keys(q.options)" \
+                    "                            WHEN false THEN public.qotd_option_keys(q.options)" || { bad "M64 STALE"; exit 1; }
+  OUT="$(backfill_check)"; RC=$?
+  expect_red "M64 past reshuffled" "B-01 past or today" "$OUT" "$RC"
+  restore
+
+  echo "=== (65) qotd_schedule_insert stores the authored order, not the shuffle ==="
+  [ "$(last_definer qotd_schedule_insert)" = "$MIG_SHUF" ] || { bad "M65 targets $MIG_SHUF but qotd_schedule_insert is last defined in $(last_definer qotd_schedule_insert)"; exit 1; }
+  plant "$MIG_SHUF" "                THEN public.qotd_shuffled_option_order(q.options, p_date, q.id)" \
+                    "                THEN public.qotd_option_keys(q.options)" || { bad "M65 STALE"; exit 1; }
+  OUT="$(sql_check)"; RC=$?
+  expect_red "M65 insert unshuffled" "the option order and letter are the database's, not the caller's" "$OUT" "$RC"
+  restore
+
+  echo "=== (66) a caller-supplied order is accepted on a direct INSERT (letter derived from it) ==="
+  plant "$MIG_SHUF" "    v_order  := public.qotd_shuffled_option_order(v_q.options, NEW.qotd_date, NEW.question_id);" \
+                    "    v_order  := COALESCE(NEW.option_order, public.qotd_shuffled_option_order(v_q.options, NEW.qotd_date, NEW.question_id));" || { bad "M66 STALE"; exit 1; }
+  OUT="$(sql_check)"; RC=$?
+  expect_red "M66 caller order accepted" "Q-10 a caller-supplied order was accepted" "$OUT" "$RC"
+  restore
+fi
+
+# RETIRED with the Reddit QOTD (Karl's ruling 2026-10-30), both obsolete:
+#   M67 the reveal named the canonical letter — the reveal is no longer built or posted; the
+#       served letter on the remaining surface that names one (the TikTok slide 3) is M47 and
+#       the served-order test's TikTok case.
+#   M68 the Slack heading named the plural subreddit — there is no Reddit heading and no
+#       subreddit name to get right (the singular/plural rename is dropped entirely).
+
+echo "=== (69) the scheduler stops skipping an explanation that names a letter ==="
+plant server/services/qotd/schedule-job.ts \
+  "    explanationNamesChoiceLetter(c.explanation)
+  ) {" \
+  "    false
+  ) {" || { bad "M69 STALE"; exit 1; }
+OUT="$(ts_check "$SCHED")"; RC=$?
+expect_red "M69 letter skip off" "skips an MCQ whose explanation names a choice letter" "$OUT" "$RC"
+restore
+
+# The QOTD day at 04:00 UTC (Karl, 2026-10-27): the 04:05 UTC run uses the right days.
+echo "=== (70) the social run takes the Chicago day as today ==="
+plant scripts/qotd-social/generate.ts \
+  "  return qotdTodaySwitched(now);" \
+  "  return new Date(now.getTime() - 5 * 3_600_000).toISOString().slice(0, 10);" || { bad "M70 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M70 run day is the 04:00 UTC day" "the 04:05 UTC run builds the new day and reveals the day that just ended" "$OUT" "$RC"
+restore
+
+echo "=== (71) the run is scheduled before the day turns over ==="
+plant .github/workflows/qotd-social.yml \
+  '    - cron: "5 4 * * *"' \
+  '    - cron: "55 3 * * *"' || { bad "M71 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M71 04:05 UTC schedule" "the 04:05 UTC run builds the new day and reveals the day that just ended" "$OUT" "$RC"
+restore
+
+# A listed day the archive does not serve is skipped by `--date latest` (seen 2026-10-29).
+echo "=== (72) --date latest stops skipping a day the archive answers 404 for ==="
+plant scripts/qotd-social/generate.ts \
+  "      if (e instanceof ApiHttpError && e.status === 404) {" \
+  "      if (false) {" || { bad "M72 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M72 404 day not skipped" "a listed day the archive answers 404 for is skipped" "$OUT" "$RC"
+restore
+
+# No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide; the QOTD
+# goes to TikTok, Instagram and Facebook only): nothing Reddit-related is generated or posted.
+echo "=== (73) a Reddit line comes back in a #social item ==="
+# Re-pointed 2026-11-02: the header line is gone; each post opens with its platform line.
+plant scripts/qotd-social/post-to-slack.ts \
+  '  return `*${name}*`;' \
+  '  return `*${name}* · also post to Reddit`;' || { bad "M73 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M73 Reddit in Slack" "the #social message has no Reddit item" "$OUT" "$RC"
+restore
+
+echo "=== (74) post.json may carry a Reddit post again ==="
+plant packages/shared/src/qotd-schema.ts \
+  $'    tiktok: qotdTiktokPostSchema,\n  })\n  .strict()' \
+  $'    tiktok: qotdTiktokPostSchema,\n    reddit: qotdRedditPostSchema.optional(),\n  })\n  .strict()' || { bad "M74 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M74 Reddit post accepted" "post.json carries no Reddit post, no reveal and no Reddit link" "$OUT" "$RC"
+restore
+
+echo "=== (75) post.json may carry a Reddit link again ==="
+plant packages/shared/src/qotd-schema.ts \
+  "export const qotdStartLinksSchema = socialStartLinksSchema.omit({" \
+  "export const qotdStartLinksSchema = socialStartLinksSchema.partial({" || { bad "M75 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M75 Reddit link accepted" "post.json carries no Reddit post, no reveal and no Reddit link" "$OUT" "$RC"
+restore
+
+echo "=== (76) the dry run names the Reddit post again ==="
+plant scripts/qotd-social/post-to-slack.ts \
+  ' image(s), the Instagram and Facebook captions and the TikTok carousel (' \
+  ' image(s), the Instagram and Facebook captions, the Reddit post and the TikTok carousel (' || { bad "M76 STALE"; exit 1; }
+OUT="$(ts_check "$SOCIAL")"; RC=$?
+expect_red "M76 dry run names Reddit" "the dry run builds the same message and names nothing Reddit-related" "$OUT" "$RC"
+restore
+
 echo "=== RESTORED: re-check green ==="
-OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ")"; RC=$?
+OUT="$(ts_check "$ROUTES" "$PAGES" "$WIDGET" "$SOCIAL" "$SCHED" "$READ" "$AGREE")"; RC=$?
 [ "$RC" = 0 ] && ok "green after restore" || bad "not green after restore"
 
 echo "QOTD MUTATIONS: $PASS passed, $FAIL failed"

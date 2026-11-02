@@ -87,6 +87,10 @@
     {
       "path": "/api/internal/landing-summaries",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/internal/growth-report",
+      "schedule": "0 14 * * 1"
     }
   ],
   "routes": [

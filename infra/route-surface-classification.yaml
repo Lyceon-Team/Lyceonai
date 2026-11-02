@@ -378,6 +378,21 @@ routes:
     prerender: true
     indexable: true
     content_source: blog
+  # Social funnel landing (owner brief "One funnel for every social post", Karl, 2026-10-28):
+  # prerendered for speed, kept out of the sitemap and search indexes (a page for links we post
+  # ourselves); today's question loads in the browser, so the HTML carries no answer.
+  - path_pattern: /start
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-10
+    last_classified_at: 2026-10-28
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: true
+    indexable: false
+    last_modified: 2026-10-28
   # Question of the Day hub (SEO Wave 2, plan Q3): static copy; today's question loads in the
   # browser, so the HTML carries no answer. lastmod = the latest archive day.
   - path_pattern: /sat-question-of-the-day

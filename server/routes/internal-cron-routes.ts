@@ -63,6 +63,11 @@ import {
   runReviewAskEmailRule,
   type ReviewAskEmailSummary,
 } from "../services/product-feedback/review-ask-email-job.js";
+import {
+  defaultEmailGateJobDeps,
+  runEmailGateJob,
+  type EmailGateJobSummary,
+} from "../services/email-gate/email-gate-job.js";
 
 /**
  * @spec [contracts/auth-standard-flow.contract.md AS-1/§3 | AS1-DRAIN-LIVENESS-001] | @implemented 2026-06-18
@@ -469,6 +474,11 @@ router.get(
  * than behind a new cron (the owner brief of 2026-09-15's rule for new sweeps), so the emails it
  * queues go out in this same dispatch. Its failure is logged and does not stop the dispatch.
  *
+ * EMAIL SEND GATE (owner brief, Karl 2026-10-30; rulings 2026-11-02) | @implemented [2026-11-02]:
+ * the gate's daily pass runs here too, after the review ask and before the dispatch
+ * (email-gate-job.ts): the SAT milestones, the state sweep (and pause notes), and the Resend
+ * `email_state` mirror. Its failure is logged and does not stop the dispatch.
+ *
  * Lifecycle email (the founding reminder from #1279, then the behaviour triggers) ran here until
  * the owner rulings on #1284 (Karl, 2026-10-21) moved it to GET /api/internal/lifecycle-email.
  */
@@ -492,6 +502,18 @@ router.get(
         );
         reviewAsk = { error: true };
       }
+      let emailGate: EmailGateJobSummary | { error: true };
+      try {
+        emailGate = await runEmailGateJob(defaultEmailGateJobDeps(new Date()));
+      } catch (err) {
+        logger.error(
+          "NOTIFICATIONS",
+          "email_gate_job_error",
+          "Email gate daily pass failed; dispatching anyway",
+          err,
+        );
+        emailGate = { error: true };
+      }
       const summary = await dispatchQueuedMessages();
       logger.info(
         "NOTIFICATIONS",
@@ -499,7 +521,7 @@ router.get(
         "Scheduled notification dispatch sweep completed",
         summary,
       );
-      res.json({ ok: true, ...summary, reviewAsk });
+      res.json({ ok: true, ...summary, reviewAsk, emailGate });
     } catch (err) {
       logger.error(
         "NOTIFICATIONS",
@@ -1217,6 +1239,49 @@ router.post(
         err,
       );
       res.status(500).json({ error: "video_link_check_failed" });
+    }
+  },
+);
+
+/**
+ * GET /api/internal/growth-report
+ * @spec [owner brief "One funnel for every social post: /start + CTAs + weekly growth report"
+ *        (Karl, 2026-10-28) item 3 ("Monday growth report to #social at 14:00 UTC");
+ *        CLAUDE.md "Managed-service first": a Vercel cron (`0 14 * * 1`), the project's existing
+ *        scheduler] | @implemented [2026-10-28]
+ *
+ * plain English: every Monday at 14:00 UTC, last week's numbers (Monday–Sunday, Chicago) go to
+ * #social once (server/lib/growth-report.ts). Safe to rerun: a week already posted, or claimed by
+ * a run in progress, is skipped. A Slack failure or missing Slack setting releases the week and
+ * answers 500, so the run shows as failed and re-running it by hand posts the report.
+ *
+ * CRON_SECRET-gated like every other endpoint in this file; unauthorized => 404.
+ */
+router.get(
+  "/growth-report",
+  async (req: Request, res: Response): Promise<void> => {
+    if (!cronAuthorized(req)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    try {
+      // Loaded on use: the report's module reaches the lifecycle email rule (the denylist).
+      const { liveGrowthReportDeps, runGrowthReport } =
+        await import("../lib/growth-report.js");
+      const summary = await runGrowthReport(liveGrowthReportDeps());
+      res.status(summary.status === "not_posted" ? 500 : 200).json({
+        ok: summary.status !== "not_posted",
+        job: "growth_report",
+        summary,
+      });
+    } catch (err) {
+      logger.error(
+        "GROWTH_REPORT",
+        "growth_report_job_error",
+        "Scheduled growth report failed",
+        err,
+      );
+      res.status(500).json({ error: "growth_report_failed" });
     }
   },
 );

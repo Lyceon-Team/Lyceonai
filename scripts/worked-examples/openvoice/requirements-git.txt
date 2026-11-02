@@ -1,0 +1,4 @@
+# OpenVoice V2 and its base TTS, pinned to the commits whose licences are quoted in
+# video-kit/worked-examples/voice/OPENVOICE-LICENCE.md (both MIT).
+git+https://github.com/myshell-ai/OpenVoice@74a1d147b17a8c3092dd5430504bd83ef6c7eb23
+git+https://github.com/myshell-ai/MeloTTS@209145371cff8fc3bd60d7be902ea69cbdb7965a

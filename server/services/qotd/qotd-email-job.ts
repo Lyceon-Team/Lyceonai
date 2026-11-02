@@ -56,7 +56,7 @@ export type QotdEmailJobSummary = {
   skipped?: "not_send_hour" | "no_question";
   emitted: number;
   mailable: number;
-  paused_notices: number;
+  gate_paused: number;
   sent: number;
   failed: number;
 };
@@ -92,7 +92,7 @@ export function chicagoHour(now: Date): number {
 const notifyResultSchema = z.object({
   emitted: z.number().int().min(0),
   mailable: z.number().int().min(0),
-  paused_notices: z.number().int().min(0),
+  gate_paused: z.number().int().min(0),
 });
 
 export async function runQotdEmailJob(
@@ -105,7 +105,7 @@ export async function runQotdEmailJob(
     chicago_hour: chicagoHour(now),
     emitted: 0,
     mailable: 0,
-    paused_notices: 0,
+    gate_paused: 0,
     sent: 0,
     failed: 0,
   };
@@ -146,7 +146,7 @@ export async function runQotdEmailJob(
   // notification-dispatch-sweep cron (internal-cron-routes.ts).
   const { data: servable, error: servableError } = await db.rpc(
     "qotd_servable",
-    { p_date: qotdToday(now) },
+    { p_date: await qotdToday(db, now) },
   );
   if (servableError) {
     throw new Error(`qotd_servable failed: ${servableError.message}`);
@@ -157,7 +157,7 @@ export async function runQotdEmailJob(
       mailable: 0,
       sent: 0,
       failed: 0,
-      pausedNotices: 0,
+      gatePaused: 0,
       skippedNoQuestion: true,
     });
     return { ...summary, skipped: "no_question" };
@@ -172,7 +172,7 @@ export async function runQotdEmailJob(
     const batch = notifyResultSchema.parse(data);
     summary.emitted += batch.emitted;
     summary.mailable += batch.mailable;
-    summary.paused_notices += batch.paused_notices;
+    summary.gate_paused += batch.gate_paused;
     if (batch.emitted < NOTIFY_BATCH) break;
   }
 
@@ -200,7 +200,7 @@ export async function runQotdEmailJob(
   logger.info(COMPONENT, "qotd_daily_rule_done", "Daily question rule run", {
     emitted: summary.emitted,
     mailable: summary.mailable,
-    pausedNotices: summary.paused_notices,
+    gatePaused: summary.gate_paused,
     sent: summary.sent,
     failed: summary.failed,
     skippedNoQuestion: false,

@@ -386,6 +386,139 @@ BEGIN
   RAISE NOTICE '    OK Q-09 release refuses today and the past, upcoming lists only future days, candidate pages advance';
 END $$;
 
+-- ---------------------------------------------------------------------------
+-- Q-10 shuffle once at scheduling (Karl, 2026-10-28; SCL-258):
+--   (a) the insert stores exactly qotd_shuffled_option_order's order and the letter derived from
+--       it, for every scheduled day; the readers return both;
+--   (b) the stored order and letter are write-once: an UPDATE raises 42501;
+--   (c) the shuffle is deterministic and is a permutation of the authored keys;
+--   (d) distribution: over 40,000 (date, question) pairs with the correct key 'B', each display
+--       letter lands within 5 standard deviations of 25% (sd = sqrt(n * .25 * .75) ~ 86.6),
+--       and all 24 orders of four keys appear, each within 5 sd of n/24;
+--   (e) three options shuffle too, each letter within 5 sd of a third.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+  r record; v_n integer; v_cnt integer; v_exp numeric; v_sd numeric; v_ord text[]; v_q text;
+BEGIN
+  -- (a) every day Q-04 scheduled carries the helper's order and the derived letter.
+  IF (SELECT count(*) FROM public.qotd_schedule) = 0 THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 no scheduled rows to check (presence first)';
+  END IF;
+  FOR r IN SELECT s.*, q.options, q.correct_answer FROM public.qotd_schedule s
+             JOIN public.questions q ON q.id = s.question_id LOOP
+    IF r.option_order IS DISTINCT FROM public.qotd_shuffled_option_order(r.options, r.qotd_date, r.question_id) THEN
+      RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 % stored order % is not the shuffle helper''s', r.qotd_date, r.option_order;
+    END IF;
+    IF r.correct_display_letter IS DISTINCT FROM public.qotd_display_letter(r.option_order, r.correct_answer) THEN
+      RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 % stored letter disagrees with its order', r.qotd_date;
+    END IF;
+  END LOOP;
+  IF NOT EXISTS (SELECT 1 FROM public.qotd_schedule WHERE option_order <> '{A,B,C,D}') THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 no scheduled day was shuffled';
+  END IF;
+  SELECT f.option_order INTO v_ord FROM public.qotd_question_for(public.qotd_today() - 3) f;
+  IF v_ord IS DISTINCT FROM (SELECT option_order FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() - 3) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 qotd_question_for does not return the stored order';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.qotd_archive() a JOIN public.qotd_schedule s USING (qotd_date)
+              WHERE a.option_order IS DISTINCT FROM s.option_order
+                 OR a.correct_display_letter IS DISTINCT FROM s.correct_display_letter) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 qotd_archive does not return the stored order and letter';
+  END IF;
+
+  -- (b) write-once.
+  BEGIN
+    UPDATE public.qotd_schedule SET option_order = '{A,B,C,D}' WHERE qotd_date = (SELECT min(qotd_date) FROM public.qotd_schedule);
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 an UPDATE of a stored order was accepted';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    UPDATE public.qotd_schedule SET correct_display_letter = 'A' WHERE qotd_date = (SELECT min(qotd_date) FROM public.qotd_schedule);
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 an UPDATE of a stored letter was accepted';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+
+  -- (b2) no caller chooses an order: a direct INSERT carrying one other than the helper's (here
+  --      the helper's reversed) is refused (42501); a direct INSERT without one gets the helper's.
+  SELECT question_id INTO v_q FROM public.qotd_schedule_candidates('RW', 'Craft and Structure', 1);
+  IF v_q IS NULL THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 fixture has no unscheduled candidate left';
+  END IF;
+  SELECT array_agg(k ORDER BY n DESC) INTO v_ord
+    FROM unnest(public.qotd_shuffled_option_order(
+           (SELECT options FROM public.questions WHERE id = v_q), public.qotd_today() + 300, v_q))
+         WITH ORDINALITY AS t(k, n);
+  BEGIN
+    INSERT INTO public.qotd_schedule (qotd_date, question_id, option_order)
+    VALUES (public.qotd_today() + 300, v_q, v_ord);
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 a caller-supplied order was accepted';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  DELETE FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() + 300;
+  INSERT INTO public.qotd_schedule (qotd_date, question_id) VALUES (public.qotd_today() + 300, v_q);
+  IF (SELECT option_order FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() + 300)
+     IS DISTINCT FROM public.qotd_shuffled_option_order(
+       (SELECT options FROM public.questions WHERE id = v_q), public.qotd_today() + 300, v_q)
+     OR (SELECT correct_display_letter FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() + 300) IS NULL THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 a direct INSERT did not get the helper''s order and letter';
+  END IF;
+  DELETE FROM public.qotd_schedule WHERE qotd_date = public.qotd_today() + 300;
+
+  -- (c) deterministic and a permutation.
+  IF public.qotd_shuffled_option_order('[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb, DATE '2026-11-01', 'SATM1Q10002')
+     IS DISTINCT FROM
+     public.qotd_shuffled_option_order('[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb, DATE '2026-11-01', 'SATM1Q10002') THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 the shuffle is not deterministic';
+  END IF;
+
+  -- (d) four options.
+  CREATE TEMP TABLE q10_runs ON COMMIT DROP AS
+    SELECT public.qotd_shuffled_option_order(
+             '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"},{"key":"D","text":"d"}]'::jsonb,
+             DATE '2026-01-01' + (g % 2000), 'SATM1Q' || lpad((g / 2000)::text, 5, '0')) AS ord
+      FROM generate_series(0, 39999) AS g;
+  SELECT count(*) INTO v_n FROM q10_runs;
+  IF EXISTS (SELECT 1 FROM q10_runs WHERE (SELECT array_agg(x ORDER BY x) FROM unnest(ord) x) <> '{A,B,C,D}') THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 a shuffle is not a permutation of A-D';
+  END IF;
+  v_exp := v_n * 0.25; v_sd := sqrt(v_n * 0.25 * 0.75);
+  FOR r IN SELECT l, count(*) FILTER (WHERE public.qotd_display_letter(ord, 'B') = l) AS c
+             FROM q10_runs, unnest(ARRAY['A','B','C','D']) AS l GROUP BY l LOOP
+    IF abs(r.c - v_exp) > 5 * v_sd THEN
+      RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 letter % holds the answer % times in % (expected % +/- %)',
+        r.l, r.c, v_n, v_exp, round(5 * v_sd);
+    END IF;
+  END LOOP;
+  SELECT count(DISTINCT ord) INTO v_cnt FROM q10_runs;
+  IF v_cnt <> 24 THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 only % of the 24 orders appear', v_cnt;
+  END IF;
+  v_exp := v_n / 24.0; v_sd := sqrt(v_n * (1 / 24.0) * (23 / 24.0));
+  FOR r IN SELECT ord, count(*) AS c FROM q10_runs GROUP BY ord LOOP
+    IF abs(r.c - v_exp) > 5 * v_sd THEN
+      RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 order % appears % times (expected % +/- %)', r.ord, r.c, round(v_exp), round(5 * v_sd);
+    END IF;
+  END LOOP;
+
+  -- (e) three options.
+  v_exp := 12000 / 3.0; v_sd := sqrt(12000 * (1 / 3.0) * (2 / 3.0));
+  FOR r IN
+    SELECT public.qotd_display_letter(o, 'B') AS l, count(*) AS c
+      FROM (SELECT public.qotd_shuffled_option_order(
+                     '[{"key":"A","text":"a"},{"key":"B","text":"b"},{"key":"C","text":"c"}]'::jsonb,
+                     DATE '2026-01-01' + g, 'SATRW1Q00001') AS o
+              FROM generate_series(0, 11999) AS g) t
+     GROUP BY 1
+  LOOP
+    IF r.l NOT IN ('A', 'B', 'C') OR abs(r.c - v_exp) > 5 * v_sd THEN
+      RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-10 three options: letter % holds the answer % times in 12000', r.l, r.c;
+    END IF;
+  END LOOP;
+
+  RAISE NOTICE '    OK Q-10 stored order = shuffle helper, letter derived, write-once, permutation, 40k-run distribution within 5 sd of 25%%';
+END $$;
+
 ROLLBACK;
 
 \echo 'QOTD SCHEMA GATES: PASS'
