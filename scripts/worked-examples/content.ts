@@ -24,8 +24,8 @@ import {
   workedExamplePostedLedgerSchema,
   workedExampleStyleSchema,
   type VoiceManifest,
-  type WorkedExampleContent,
   type WorkedExamplePlan,
+  type WorkedExampleScript,
   type WorkedExamplePostedLedger,
   type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
@@ -170,7 +170,7 @@ export function seedQuestion(
  * music. A fallback line must be in the kit's fallback voice and say why it fell back.
  */
 export function voiceProblems(
-  example: WorkedExampleContent,
+  example: WorkedExampleScript,
   manifest: VoiceManifest,
   kit: Kit,
   wav: (file: string) => Uint8Array,

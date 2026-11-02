@@ -57,6 +57,7 @@ import {
   workedExampleContentSchema,
   type VoiceLine,
   type VoiceManifest,
+  type WorkedExampleScript,
 } from "../../packages/shared/src/worked-example-schema";
 import { z } from "zod";
 import { readWav } from "./audio";
@@ -135,12 +136,26 @@ export function referenceProblem(
     return "WE_VOICE_REFERENCE is not set (the private path of the reference recording)";
   if (!isAbsolute(path)) return "WE_VOICE_REFERENCE must be an absolute path";
   if (!existsSync(path)) return `WE_VOICE_REFERENCE does not exist: ${path}`;
+  const root = containingRoot(path, guarded);
+  return root === null
+    ? null
+    : `the reference recording is inside ${root}; keep it outside every repository checkout`;
+}
+
+/**
+ * The first of `guarded` that contains `path` (an existing file, resolved through links), or
+ * null. Shared by every private input that must never be committed: the reference recording and
+ * the QOTD breakdown's schedule export (SCL-266, Karl's rulings on #1398, 2026-11-02).
+ */
+export function containingRoot(
+  path: string,
+  guarded: readonly string[],
+): string | null {
   const real = realpathSync(path);
   for (const dir of guarded) {
     const root = existsSync(dir) ? realpathSync(dir) : resolve(dir);
     const rel = relative(root, real);
-    if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)))
-      return `the reference recording is inside ${root}; keep it outside every repository checkout`;
+    if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return root;
   }
   return null;
 }
@@ -504,7 +519,7 @@ export function voiceLine(
 }
 
 /** The git checkout a path belongs to (the content checkout of `social`, say), or null. */
-function checkoutRoot(path: string): string | null {
+export function checkoutRoot(path: string): string | null {
   const run = spawnSync(
     "git",
     [
@@ -546,10 +561,25 @@ export function voiceExample(
   profileId: string,
   outDir: string = join(dir, "voice"),
 ): VoiceManifest {
-  const reference = referenceFor(kit, profileId, [dir, outDir]);
   const example = workedExampleContentSchema.parse(
     JSON.parse(readFileSync(join(dir, "example.json"), "utf8")),
   );
+  return voiceScript(kit, example, profileId, outDir, [dir, outDir]);
+}
+
+/**
+ * Voices one spoken script (a worked example's, or a QOTD breakdown's: SCL-266, Karl's ruling
+ * 2026-11-02 on #1398) into outDir/<line>.wav + manifest.json, keeping every line whose text, voice
+ * and speaking rate already match. `guarded` are the paths a clone's reference must stay outside.
+ */
+export function voiceScript(
+  kit: Kit,
+  example: WorkedExampleScript,
+  profileId: string,
+  outDir: string,
+  guarded: readonly string[],
+): VoiceManifest {
+  const reference = referenceFor(kit, profileId, guarded);
   mkdirSync(outDir, { recursive: true });
   const manifestFile = join(outDir, "manifest.json");
   const previous: VoiceManifest | null = existsSync(manifestFile)

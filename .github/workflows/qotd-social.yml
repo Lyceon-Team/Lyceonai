@@ -26,17 +26,19 @@
 # one-line note when yesterday is withheld or missing.
 # No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide): the run
 # builds and posts nothing Reddit-related; the QOTD goes to TikTok, Instagram and Facebook only.
-# Breakdown pilot (Karl's brief 2026-11-02, Part C; SCL-266): a second job, `breakdown`, runs
-# AFTER this one, whatever its result, so the QOTD always posts first and a breakdown can never
-# block or delay it. Inside the pilot window (shared/qotd/breakdown.ts QOTD_BREAKDOWN_PILOT, off
-# by default; the variable QOTD_BREAKDOWN_PAUSED=true stops it at once) it renders yesterday's
-# QOTD as a 30-60 s video with the worked-example pipeline, in the stored order and letter, and
-# posts it to the same channel for Karl to post by hand; or, on any fallback reason, yesterday's
-# answer slide and "Breakdown skipped: <reason> (<code>)". Outside the window it does nothing.
-# Voiced in CI with Kokoro af_heart only (never the clone; the exception to the worked examples'
-# "never in CI" rule is SCL-266's, for Karl to confirm), Python pinned in
-# scripts/qotd-social/breakdown-requirements.txt, the voice and transcription models cached.
-# Pull requests run it as a dry run on the real fixture rows: the MP4 is uploaded, nothing sent.
+# Breakdown pilot (Karl's brief 2026-11-02, Part C; SCL-266, as ruled on #1398 2026-11-02): a
+# second job, `breakdown`, runs AFTER this one, whatever its result, so the QOTD always posts first
+# and a breakdown can never block or delay it. Inside the pilot window (shared/qotd/breakdown.ts
+# QOTD_BREAKDOWN_PILOT: posting days 2026-11-09 to 2026-11-22; the variable
+# QOTD_BREAKDOWN_PAUSED=true stops it at once) it renders yesterday's QOTD as a 30-60 s video with
+# the worked-example pipeline from the AUTHORED script for that date on `social`
+# (content/qotd-breakdowns/<week>/<date>/, voiced in am_michael when it was written), only if
+# GitHub's record shows Karl merged it and its order and letter are the stored row; it posts the
+# video to the same channel for Karl to post by hand; or, on any fallback reason (no approved
+# script among them), yesterday's answer slide and "Breakdown skipped: <reason> (<code>)". Outside
+# the window it does nothing. Nothing is voiced here and no Python is set up: the voice is
+# committed with the script. Pull requests run it as a dry run on the real fixture rows and the
+# fixture script tree: the MP4 is uploaded, nothing sent.
 # Setup: docs/runbooks/qotd-slack.md.
 #
 # Run it by hand with no date for today, or with a PAST date to rebuild that day (today and
@@ -77,6 +79,7 @@ on:
       - scripts/worked-examples/**
       - video-kit/worked-examples/**
       - shared/slack/client.ts
+      - tests/fixtures/qotd-breakdowns/**
   workflow_dispatch:
     inputs:
       date:
@@ -207,6 +210,10 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Read-only: the script approval is read from GitHub's record of the merge (pull requests).
+    permissions:
+      contents: read
+      pull-requests: read
     env:
       HYPERFRAMES_NO_TELEMETRY: "1"
       DO_NOT_TRACK: "1"
@@ -246,30 +253,15 @@ jobs:
           shell=$(find "$HOME/.cache/ms-playwright" -type f \( -name headless_shell -o -name chrome-headless-shell \) -path '*chromium_headless_shell-*' | head -1)
           test -x "$shell"
           echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
-          echo "HYPERFRAMES_VERSION=$(jq -r .hyperframes video-kit/worked-examples/voice.json)" >> "$GITHUB_ENV"
 
-      # Kokoro af_heart only: every Python package pinned (SCL-266, for Karl's sign-off).
-      - name: Setup Python (Kokoro af_heart for hyperframes tts)
-        if: steps.window.outputs.window == 'active' || steps.window.outputs.window == 'dry-run'
-        uses: actions/setup-python@v5
+      # The approved scripts and their committed voice, with the history the approval is read from.
+      - name: Checkout social (scripts, full history)
+        if: github.event_name != 'pull_request' && steps.window.outputs.window == 'active'
+        uses: actions/checkout@v4
         with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: scripts/qotd-social/breakdown-requirements.txt
-
-      - name: Install the pinned voice packages
-        if: steps.window.outputs.window == 'active' || steps.window.outputs.window == 'dry-run'
-        run: |
-          python -m pip install -r scripts/qotd-social/breakdown-requirements.txt
-          echo "HYPERFRAMES_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
-
-      # The Kokoro voice data and the transcription model (and its build), downloaded once.
-      - name: Cache the voice and transcription models
-        if: steps.window.outputs.window == 'active' || steps.window.outputs.window == 'dry-run'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/hyperframes
-          key: hyperframes-${{ env.HYPERFRAMES_VERSION }}-af_heart-small.en-${{ runner.os }}
+          ref: social
+          path: social
+          fetch-depth: 0
 
       # Yesterday's answer slide (the carousel's slide 3) for the fallback, from the QOTD run.
       - name: Download the QOTD assets
@@ -283,12 +275,15 @@ jobs:
       - name: Build the breakdown
         env:
           QOTD_BREAKDOWN_PAUSED: ${{ vars.QOTD_BREAKDOWN_PAUSED }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pnpm exec tsx scripts/qotd-social/breakdown.ts build --fixture tests/fixtures/qotd/rows.json \
-              --date 2026-10-03 --now 2026-10-04T04:05:00Z --dry-run --out "$OUT"
+            pnpm exec tsx scripts/qotd-social/breakdown.ts build --content tests/fixtures/qotd-breakdowns/social \
+              --fixture tests/fixtures/qotd/rows.json \
+              --date 2026-10-02 --now 2026-10-03T04:05:00Z --dry-run --out "$OUT"
           else
-            pnpm exec tsx scripts/qotd-social/breakdown.ts build --out "$OUT"
+            pnpm exec tsx scripts/qotd-social/breakdown.ts build --content social --out "$OUT"
           fi
 
       - name: Breakdown on the run page

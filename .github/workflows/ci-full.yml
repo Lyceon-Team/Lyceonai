@@ -529,11 +529,14 @@ jobs:
         if: matrix.group == 'qotd'
         run: bash scripts/ci/social-posts.mutations.sh
 
-      # QOTD breakdown pilot (Karl's brief 2026-11-02, Part C; SCL-266): the original order or
-      # the canonical letter used, the stored-letter check dropped, today's QOTD accepted, a
-      # letter-naming explanation or a grid-in let through, the music credit dropped, the clone
-      # voice, the pilot on by default or never ending, the breakdown inside the QOTD job, an
-      # unpinned Python package, maths spoken as symbols (B1-B13). Each must turn its named check red.
+      # QOTD breakdown pilot (Karl's brief 2026-11-02, Part C; SCL-266, as ruled on #1398 the same
+      # day): the original order or the canonical letter used, the stored-letter check dropped,
+      # the script's order or letter not compared with the stored row, today's QOTD accepted, the
+      # schedule export read from a checkout, printed, widened or carrying the canonical key (SQL,
+      # gate Q-11), no approval asked, the script rules or the voice checks skipped, a voice other
+      # than am_michael, a grid-in let through, the music credit dropped, the pilot dates moved or
+      # never ending, the breakdown inside the QOTD job, voicing back in CI (B1-B21). Each must turn
+      # its named check red.
       - name: QOTD breakdown mutations (planted defects must fail)
         if: matrix.group == 'qotd'
         run: bash scripts/ci/qotd-breakdown.mutations.sh

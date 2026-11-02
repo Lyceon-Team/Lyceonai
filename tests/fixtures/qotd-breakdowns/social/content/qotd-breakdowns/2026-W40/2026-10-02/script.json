@@ -1,0 +1,37 @@
+{
+  "qotd_date": "2026-10-02",
+  "question_id": "SATM1FXQ001",
+  "option_order": ["B", "C", "A", "D"],
+  "correct_display_letter": "A",
+  "hook": {
+    "line": "3x + 5 = 20. Can you find x before the clock runs out?",
+    "voice": "Think you can crack this one before I do? Go."
+  },
+  "question_voice": "We've got one equation, one unknown, and we just need to figure out what x is worth.",
+  "steps": [
+    {
+      "notepad": "3x + 5 = 20",
+      "voice": "The key move is to undo things in reverse order. The plus five came last, so it goes first."
+    },
+    {
+      "notepad": "3x + 5 − 5 = 20 − 5",
+      "voice": "Take five away from both sides, and the left side is just three x."
+    },
+    {
+      "notepad": "3x = 15",
+      "voice": "That leaves three x equal to fifteen."
+    },
+    {
+      "notepad": "x = 15 ÷ 3",
+      "voice": "Then divide both sides by three to get x on its own."
+    }
+  ],
+  "trap": {
+    "notepad": ["15 is 3x, not x"],
+    "voice": "Here's where people slip: they stop at fifteen and grab it. But fifteen is three x, not x, so you're one step short."
+  },
+  "answer": {
+    "notepad": "A) 5",
+    "voice": "So x is five, and that's A. Quick check: three times five is fifteen, plus five is twenty. It works."
+  }
+}

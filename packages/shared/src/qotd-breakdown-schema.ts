@@ -6,9 +6,24 @@
  *       video of YESTERDAY's QOTD each day, from the stored option order and display letter,
  *       dropped into #social for review (Karl's manual posting is the approval; nothing
  *       auto-publishes); the fallback rule (a)-(d), each reason with a stable code; a 14-day
- *       window with dates Karl sets, off by default; SCL-266] | @implemented [2026-11-02]
+ *       window with dates Karl sets, off by default; SCL-266; Karl's rulings on #1398,
+ *       2026-11-02: authored scripts replace the templated one ("the voice never reads the
+ *       screen"), one per scheduled QOTD date, written weekly by Claude Code for the next 7 dates
+ *       from each date's stored order and letter, landed as a batch PR into `social`, Karl's
+ *       merge the approval; no approved script = the fallback with a new skip code; the pilot
+ *       2026-11-09 to 2026-11-22] | @implemented [2026-11-02, authored scripts 2026-11-02]
  *
- * plain English: `qotdBreakdownManifestSchema` is breakdown.json, written by
+ * plain English: `qotdBreakdownScriptSchema` is one authored script,
+ * content/qotd-breakdowns/<YYYY-Www>/<qotd_date>/script.json on `social`: the QOTD date, the
+ * question id, the day's stored option order (canonical keys, as qotd_schedule.option_order) and
+ * correct display letter, and the spoken script in the worked examples' own field schemas
+ * (workedExampleScriptSchema: hook line and voice, setup, steps, trap, answer). The order and
+ * letter are copied from the owner-run schedule export (qotdBreakdownScheduleSchema) and must
+ * equal the archive's stored row at render time, or nothing is rendered (order_mismatch).
+ * `qotdBreakdownScheduleSchema` is that export: the next days' schedule, JSON from
+ * scripts/qotd-social/breakdown-schedule.sql. It carries FUTURE answers: it is read from a path
+ * outside the repository and never committed, posted or logged.
+ * `qotdBreakdownManifestSchema` is breakdown.json, written by
  * scripts/qotd-social/breakdown.ts build and read by its `post` step. Three shapes: `built` (the
  * MP4 and its captions), `skipped` (a stable code; the poster posts yesterday's answer slide and
  * "Breakdown skipped: <reason>") and `inactive` (outside the pilot window: nothing is posted).
@@ -21,6 +36,11 @@ import {
   qotdOptionKeySchema,
 } from "./qotd-schema";
 import { masterySectionSchema } from "./mastery-levels";
+import {
+  workedExamplePostSchema,
+  workedExampleQuestionIdSchema,
+  workedExampleScriptSchema,
+} from "./worked-example-schema";
 
 /** The pilot runs at most this many days, start and end included (Karl: "2 weeks"). */
 export const QOTD_BREAKDOWN_PILOT_MAX_DAYS = 14;
@@ -63,23 +83,20 @@ export type QotdBreakdownWindow = z.infer<typeof qotdBreakdownWindowSchema>;
 
 /**
  * Why a day's breakdown was skipped: one stable code per reason (Karl's fallback rule, approved
- * as written). (a) length, (b) a letter named, (c) unsuitable, (d) a check failed; plus the days
- * there is nothing to break down.
+ * as written; amended by his 2026-11-02 rulings on #1398: the script is authored, so the codes
+ * that judged the stored explanation as a script (letter_named, no_explanation, too_many_steps)
+ * are gone, and a day with no approved script is `no_approved_script`).
  */
 export const QOTD_BREAKDOWN_SKIP_CODES = [
   // (a) the voiced script over 60 s, or under the 30 s the MP4 check requires; the MP4 check
   "script_too_long",
   "script_too_short",
   "mp4_check_failed",
-  // (b) the stored explanation or a choice names a letter (wrong under the shuffled order)
-  "letter_named",
   // (c) unsuitable for a QOTD breakdown (the QOTD's own readability rules, and grid-ins)
   "grid_in",
   "too_long_to_read",
   "paired_passage",
   "stem_repeats_passage",
-  "no_explanation",
-  "too_many_steps",
   // (d) a check failed
   "content_rules",
   "voice_check_failed",
@@ -88,11 +105,71 @@ export const QOTD_BREAKDOWN_SKIP_CODES = [
   "render_failed",
   // nothing to break down
   "withheld",
+  "no_approved_script",
   "order_mismatch",
   "build_failed",
 ] as const;
 export const qotdBreakdownSkipCodeSchema = z.enum(QOTD_BREAKDOWN_SKIP_CODES);
 export type QotdBreakdownSkipCode = z.infer<typeof qotdBreakdownSkipCodeSchema>;
+
+/** Four distinct canonical keys: a stored MCQ order (qotd_schedule.option_order). */
+const storedOrderSchema = z
+  .array(qotdOptionKeySchema)
+  .length(4)
+  .refine((o) => new Set(o).size === 4, {
+    message: "the stored order names each canonical key once",
+  });
+
+/**
+ * One authored breakdown script. The spoken fields are the worked examples' own
+ * (workedExampleScriptSchema), so the same hook, notepad and trap limits apply.
+ */
+export const qotdBreakdownScriptSchema = workedExampleScriptSchema
+  .extend({
+    /** The QOTD day it breaks down (it posts the day after). */
+    qotd_date: qotdDateSchema,
+    /** The scheduled question, by id only (its text is read from the seed SQL, never copied). */
+    question_id: workedExampleQuestionIdSchema,
+    /** The day's stored order: canonical keys in the order shown under A-D (SCL-258). */
+    option_order: storedOrderSchema,
+    /** The day's stored correct_display_letter: the letter the correct choice is shown under. */
+    correct_display_letter: qotdOptionKeySchema,
+  })
+  .strict();
+export type QotdBreakdownScript = z.infer<typeof qotdBreakdownScriptSchema>;
+
+/**
+ * The owner-run schedule export (scripts/qotd-social/breakdown-schedule.sql): one row per
+ * scheduled day after today, in date order. A grid-in has an empty order and no letter.
+ */
+export const qotdBreakdownScheduleSchema = z
+  .array(
+    z
+      .object({
+        qotd_date: qotdDateSchema,
+        question_id: z.string().min(1),
+        option_order: z.union([
+          storedOrderSchema,
+          z.array(z.string()).length(0),
+        ]),
+        correct_display_letter: qotdOptionKeySchema.nullable(),
+        section: masterySectionSchema,
+      })
+      .strict()
+      .refine(
+        (r) =>
+          (r.option_order.length === 0) === (r.correct_display_letter === null),
+        { message: "an order has a letter; a grid-in has neither" },
+      ),
+  )
+  .refine(
+    (rows) =>
+      rows.every(
+        (r, k) => k === 0 || r.qotd_date > (rows[k - 1]?.qotd_date ?? ""),
+      ),
+    { message: "one row per day, in date order" },
+  );
+export type QotdBreakdownSchedule = z.infer<typeof qotdBreakdownScheduleSchema>;
 
 /** The MP4's file name: the QOTD day it breaks down. */
 export const qotdBreakdownVideoSchema = z
@@ -132,7 +209,11 @@ export const qotdBreakdownManifestSchema = z
         /** The stored order and letter the video shows (SCL-258), for the record. */
         option_order: z.array(qotdOptionKeySchema).length(4),
         display_letter: qotdOptionKeySchema,
+        /** The scheduled question the approved script names. */
+        question_id: workedExampleQuestionIdSchema,
         duration_seconds: z.number().min(30).max(60),
+        /** Karl's merge of the script, from GitHub's record (the worked examples' approval). */
+        approval: workedExamplePostSchema.innerType().shape.approval,
       })
       .strict(),
     z

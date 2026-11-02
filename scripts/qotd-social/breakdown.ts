@@ -1,45 +1,54 @@
 /**
- * The QOTD breakdown pilot: yesterday's Question of the Day as a 30-60 s video in #social, or
- * yesterday's answer slide and "Breakdown skipped: <reason>".
+ * The QOTD breakdown pilot: yesterday's Question of the Day as a 30-60 s video in #social, from the
+ * script Karl approved for that day, or yesterday's answer slide and "Breakdown skipped: <reason>".
  *
  * @spec [owner brief "QOTD breakdown pilot, 2 weeks" (Karl, 2026-11-02, Part C): each day render
  *       a breakdown of YESTERDAY's QOTD with the worked-example pipeline (Hyperframes, the
- *       video-kit templates, scripts/worked-examples composition / voice / quality / layout
- *       check); it drops into the nightly #social QOTD message; the stored option_order and
- *       correct_display_letter, never the original order; Karl's ruling: his manual posting is
- *       the approval, nothing auto-publishes, no per-video GitHub approval; the fallback rule
- *       (a)-(d), approved as written; the fallback never blocks or delays the QOTD post; no
- *       posting outside #social; SCL-258, SCL-262, SCL-265, SCL-266] | @implemented [2026-11-02]
+ *       video-kit templates, scripts/worked-examples composition / quality / layout check); it
+ *       drops into the nightly #social QOTD message; the stored option_order and
+ *       correct_display_letter, never the original order; Karl's manual posting is the approval
+ *       of the video, nothing auto-publishes; the fallback rule (a)-(d), approved as written; the
+ *       fallback never blocks or delays the QOTD post; no posting outside #social; SCL-258,
+ *       SCL-262, SCL-265, SCL-266. Karl's rulings on #1398, 2026-11-02: AUTHORED scripts (one per
+ *       QOTD date, batch PR into `social`, his merge the approval, read from GitHub's record by
+ *       scripts/worked-examples/approval.ts); at render time the merged script for that date; no
+ *       approved script = the fallback with `no_approved_script`; am_michael]
+ *       | @implemented [2026-11-02, authored scripts 2026-11-02]
  *
  * Usage (.github/workflows/qotd-social.yml, job `breakdown`, after the QOTD job):
  *   pnpm exec tsx scripts/qotd-social/breakdown.ts window   (prints off|not_started|active|ended|paused)
- *   pnpm exec tsx scripts/qotd-social/breakdown.ts build [--date YYYY-MM-DD] [--out DIR]
- *       [--base-url URL] [--fixture tests/fixtures/qotd/rows.json --now ISO] [--dry-run]
+ *   pnpm exec tsx scripts/qotd-social/breakdown.ts build --content <social checkout> [--date YYYY-MM-DD]
+ *       [--out DIR] [--base-url URL] [--fixture tests/fixtures/qotd/rows.json --now ISO] [--dry-run]
  *   pnpm exec tsx scripts/qotd-social/breakdown.ts post --dir DIR --assets qotd-social-out [--dry-run]
  *
  * plain English:
  *   * build: the day is yesterday's QOTD (the day before the 04:00 UTC QOTD day the run is in;
  *     `--date` names a past day by hand). A day that has not passed, today included, is refused
  *     (exit 2) before anything is fetched: its answer is not public yet. Outside the pilot window
- *     (shared/qotd/breakdown.ts QOTD_BREAKDOWN_PILOT, off by default, or the repository variable
- *     QOTD_BREAKDOWN_PAUSED=true) it writes an `inactive` manifest and does nothing else
- *     ("pilot ended"). Otherwise it reads the day from the PUBLIC archive (loadYesterday, the
- *     generator's own read), then: the fallback checks (b) and (c); the deterministic script and
- *     its content rules; the captions; each line voiced in Kokoro af_heart only (never the clone)
- *     and transcribed and checked (voice.ts voiceLine, quality.ts); the composition
- *     (buildScriptComposition) and its folder (writeCompositionFolder); the 30-60 s bound;
- *     `hyperframes check`; the layout check; the render; the MP4 check (daily.ts
- *     videoFileProblems). The first failure becomes a `skipped` manifest with its stable code; a
- *     pass becomes a `built` manifest. Fallbacks exit 0: nothing here can fail the QOTD.
- *     --fixture (pull requests only) serves the archive from rows.json through the real
- *     projection (toArchiveResponse), so the dry run proves the whole path on real output.
+ *     (shared/qotd/breakdown.ts QOTD_BREAKDOWN_PILOT, 2026-11-09 to 2026-11-22, or the repository
+ *     variable QOTD_BREAKDOWN_PAUSED=true) it writes an `inactive` manifest and does nothing else.
+ *     Otherwise it reads the day from the PUBLIC archive (loadYesterday, the generator's own
+ *     read), then, stopping at the first failure with its code: the suitability checks (c); the
+ *     day's script on `social` (content/qotd-breakdowns/<week>/<date>/script.json), refused unless
+ *     GitHub's record shows Karl merged it (approvalFromRecord, the worked examples' own);
+ *     THE HARD RULE, the script's option_order and correct_display_letter equal the stored row
+ *     the archive serves (order_mismatch); the worked examples' script rules on the day's
+ *     question as served, and the captions; the committed voice (voiceProblems: refused when a
+ *     line's text changed since it was voiced); the composition (buildScriptComposition) and its
+ *     folder (writeCompositionFolder); the 30-60 s bound; `hyperframes check`; the layout check;
+ *     the render; the MP4 check (daily.ts videoFileProblems). A pass becomes a `built` manifest.
+ *     Fallbacks exit 0: nothing here can fail the QOTD. No Python and no voicing at render time:
+ *     the voice was committed with the script and approved with it.
+ *     --dry-run (pull requests only) uses a placeholder approval; --fixture serves the archive
+ *     from rows.json through the real projection (toArchiveResponse), so the dry run proves the
+ *     whole path on real output with the fixture script tree.
  *   * post: built: the video and the SCL-262 set (videoSetSlackSteps, the worked examples' own
  *     message builder). skipped: yesterday's answer slide (the QOTD run's carousel slide 3), with
  *     "Breakdown skipped: <reason> (<code>)", or the notice alone when there is no slide. No
  *     breakdown.json at all (the build crashed): the notice with build_failed. inactive: nothing.
  *     --dry-run builds every message and sends nothing.
  *   * Logs carry the day, the status and the code only, never question text; the details go to
- *     summary.md (the run page).
+ *     summary.md (the run page). Every day handled here has passed, so its answer is public.
  */
 import {
   existsSync,
@@ -63,14 +72,14 @@ import {
 import {
   QOTD_BREAKDOWN_PILOT,
   QOTD_BREAKDOWN_WINDOW_NOTE,
-  breakdownContentProblems,
   breakdownCopy,
   breakdownQuestion,
-  breakdownScript,
   breakdownSkipCode,
   breakdownSkipLine,
   pilotWindow,
+  scriptOrderProblem,
 } from "../../shared/qotd/breakdown";
+import { scriptProblems } from "../../shared/worked-examples/rules";
 import { qotdRowSchema, toArchiveResponse } from "../../shared/qotd/projection";
 import {
   escapeMrkdwn,
@@ -79,10 +88,12 @@ import {
   slackConfig,
 } from "../../shared/slack/client";
 import {
-  buildScriptComposition,
-  scriptLines,
-} from "../worked-examples/composition";
+  approvalFromRecord,
+  type ExampleApproval,
+} from "../worked-examples/approval";
+import { buildScriptComposition } from "../worked-examples/composition";
 import { videoFileProblems } from "../worked-examples/daily";
+import { folderCommit, pullForCommit } from "../worked-examples/github";
 import { writeCompositionFolder } from "../worked-examples/generate";
 import { KIT_DIR, ROOT, loadKit } from "../worked-examples/kit";
 import { layoutCheck } from "../worked-examples/layout-check";
@@ -92,11 +103,12 @@ import {
   videoSetSlackSteps,
   type WorkedExampleSlackStep,
 } from "../worked-examples/post-to-slack";
-import { hyperframes, voiceLine } from "../worked-examples/voice";
+import { hyperframes } from "../worked-examples/voice";
+import { voiceLineSchema } from "../../packages/shared/src/worked-example-schema";
 import {
-  voiceLineSchema,
-  type VoiceLine,
-} from "../../packages/shared/src/worked-example-schema";
+  breakdownVoice,
+  loadBreakdownScripts,
+} from "./check-breakdown-scripts";
 import {
   archiveFetch,
   loadYesterday,
@@ -105,8 +117,6 @@ import {
   type ArchiveFetch,
 } from "./generate";
 
-/** The only voice the breakdown speaks in: Kokoro af_heart (the /brag voice), never the clone. */
-export const QOTD_BREAKDOWN_VOICE_PROFILE = "af_heart";
 export const QOTD_BREAKDOWN_MANIFEST = "breakdown.json";
 
 function out(line: string): void {
@@ -183,16 +193,27 @@ function message(e: unknown): string {
   throw e;
 }
 
+/** Where the day's script comes from: a checkout of `social`, and Karl's merge of its folder. */
+export type ScriptSource = {
+  contentRoot: string;
+  approve: (
+    dir: string,
+  ) => Promise<
+    { ok: true; approval: ExampleApproval } | { ok: false; reason: string }
+  >;
+};
+
 /**
  * Everything from yesterday's archive day to a checked MP4, stopping at the first failure with
- * its code. The steps that need no machine (the fallback checks, the script, the copy) come
- * first, so a refused day costs nothing.
+ * its code. The steps that need no machine (the suitability checks, the script, its approval,
+ * the hard rule, the rules and the copy) come first, so a refused day costs nothing.
  */
 export async function buildBreakdown(
   day: QotdArchiveResponse | null,
   date: string,
   postedOn: string,
   outDir: string,
+  source: ScriptSource,
 ): Promise<BuildOutcome> {
   if (day === null) return skipped(date, postedOn, "withheld");
   if (day.qotd_date !== date)
@@ -204,9 +225,28 @@ export async function buildBreakdown(
   const asked = breakdownQuestion(day);
   if (!asked.ok) return skipped(date, postedOn, asked.code);
   const question = asked.question;
-  const script = breakdownScript(day, question);
+
+  // The day's script, merged by Karl (the worked examples' approval, from GitHub's record).
+  const loaded = loadBreakdownScripts(source.contentRoot);
+  const entry = loaded.scripts.find((e) => e.script.qotd_date === date);
+  if (!entry)
+    return skipped(date, postedOn, "no_approved_script", [
+      `no script for ${date} under content/qotd-breakdowns on social`,
+      ...loaded.problems.filter((p) => p.includes(date)),
+    ]);
+  const approved = await source.approve(entry.dir);
+  if (!approved.ok)
+    return skipped(date, postedOn, "no_approved_script", [
+      `${entry.dir}: ${approved.reason}`,
+    ]);
+  const { script } = entry;
+
+  // THE HARD RULE: the script's order and letter are the stored row the archive serves.
+  const order = scriptOrderProblem(script, day, question);
+  if (order) return skipped(date, postedOn, "order_mismatch", [order]);
+
   const kit = loadKit();
-  const content = breakdownContentProblems(script, question);
+  const content = scriptProblems(script, question);
   const copy = breakdownCopy(day, postedOn, kit.track.credit);
   if (content.length > 0 || !copy.ok)
     return skipped(date, postedOn, "content_rules", [
@@ -214,32 +254,13 @@ export async function buildBreakdown(
       ...(copy.ok ? [] : copy.problems),
     ]);
 
-  // Voice: Kokoro af_heart only, each line transcribed and checked (quality.ts).
-  const profile = kit.voice.profiles[QOTD_BREAKDOWN_VOICE_PROFILE];
-  if (profile?.engine !== "kokoro")
-    throw new Error(`${QOTD_BREAKDOWN_VOICE_PROFILE} is not a kokoro profile`);
-  const voiceDir = join(outDir, "voice");
-  mkdirSync(voiceDir, { recursive: true });
-  const lines: VoiceLine[] = [];
-  for (const line of scriptLines(script, kit.voice.outro_text).filter(
-    (l) => l.key !== "outro",
-  )) {
-    try {
-      lines.push(
-        voiceLine(
-          kit.voice,
-          QOTD_BREAKDOWN_VOICE_PROFILE,
-          line,
-          voiceDir,
-          null,
-        ),
-      );
-    } catch (e: unknown) {
-      return skipped(date, postedOn, "voice_check_failed", [
-        `${line.key}: ${message(e)}`,
-      ]);
-    }
-  }
+  // The committed voice: am_michael, every line voiced from the text it now has, and passing the
+  // audio checks (the worked examples' voiceProblems). Nothing is voiced here.
+  const voiceDir = join(source.contentRoot, entry.dir, "voice");
+  const voice = breakdownVoice(source.contentRoot, entry, kit);
+  if (voice.problems.length > 0)
+    return skipped(date, postedOn, "voice_check_failed", voice.problems);
+  const lines = voice.lines;
   const outro = voiceLineSchema.parse(
     JSON.parse(
       readFileSync(join(ROOT, KIT_DIR, "voice", "outro.json"), "utf8"),
@@ -305,9 +326,48 @@ export async function buildBreakdown(
     warnings: copy.copy.warnings,
     option_order: question.option_order,
     display_letter: question.correct_answer,
+    question_id: script.question_id,
     duration_seconds: Math.round(verified.probe.duration * 100) / 100,
+    approval: approved.approval,
   };
   return { manifest: qotdBreakdownManifestSchema.parse(manifest), details: [] };
+}
+
+/**
+ * Karl's merge of a script folder on `social`, from GitHub's record of the pull request that last
+ * changed it (the worked examples' approvalFromRecord). A dry run approves with a placeholder.
+ */
+export function scriptApproval(
+  contentRoot: string,
+  dryRun: boolean,
+  env: NodeJS.ProcessEnv,
+): ScriptSource["approve"] {
+  if (dryRun)
+    return async () => ({
+      ok: true,
+      approval: {
+        pr: 1,
+        mergedBy: "dry-run",
+        mergeSha: "0".repeat(40),
+        mergedAt: "1970-01-01T00:00:00Z",
+      },
+    });
+  return async (dir) => {
+    const repo = env.GITHUB_REPOSITORY;
+    const token = env.GITHUB_TOKEN;
+    if (!repo || !token)
+      return {
+        ok: false,
+        reason: "GITHUB_REPOSITORY or GITHUB_TOKEN is not set",
+      };
+    const sha = folderCommit(contentRoot, dir);
+    if (sha === "") return { ok: false, reason: "the folder has no commit" };
+    return approvalFromRecord(
+      await pullForCommit(repo, sha, token),
+      sha,
+      env.CONTENT_APPROVER_LOGIN?.trim() || undefined,
+    );
+  };
 }
 
 function fenced(text: string): string {
@@ -332,7 +392,7 @@ export function breakdownSummary(o: BuildOutcome): string {
   return [
     head,
     "",
-    `${m.video}: ${m.duration_seconds} s. Order ${m.option_order.join("")}, answer ${m.display_letter} (stored). Download it from this run's **Artifacts**.`,
+    `${m.video}: ${m.duration_seconds} s. ${m.question_id}, order ${m.option_order.join("")}, answer ${m.display_letter} (stored). Script approved by ${m.approval.mergedBy} in #${m.approval.pr}. Download it from this run's **Artifacts**.`,
     "",
     "### TikTok caption",
     fenced(m.caption),
@@ -367,6 +427,10 @@ async function build(f: Flags): Promise<number> {
   const nowFlag = f.get("--now");
   if (nowFlag !== undefined && fixture === undefined)
     throw new Error("--now is for --fixture runs only");
+  const content = f.get("--content");
+  if (content === undefined)
+    throw new Error("--content <checkout of social> is required");
+  const contentRoot = resolve(content);
   const now = nowFlag ? new Date(nowFlag) : new Date();
   if (Number.isNaN(now.getTime())) throw new Error("--now is not a time");
   const dryRun = f.has("--dry-run");
@@ -414,6 +478,10 @@ async function build(f: Flags): Promise<number> {
       day.date,
       day.postedOn,
       outDir,
+      {
+        contentRoot,
+        approve: scriptApproval(contentRoot, dryRun, process.env),
+      },
     );
   }
   const manifest = qotdBreakdownManifestSchema.parse(outcome.manifest);

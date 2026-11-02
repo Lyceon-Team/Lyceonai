@@ -186,66 +186,122 @@ the post without red runs, disable the workflow instead (**Actions** → **QOTD 
 
 ## 6. Breakdown pilot (2 weeks)
 
-Karl's brief of 2026-11-02, Part C; SCL-266. A second job in the same workflow, `breakdown`,
-runs **after** the QOTD job, whatever that job's result, so the normal QOTD post always goes
-first and nothing here can block or delay it.
+Karl's brief of 2026-11-02, Part C; SCL-266, as ruled by Karl on #1398 the same day (authored
+scripts, his merge the approval, am_michael, the dates below). A second job in the same workflow,
+`breakdown`, runs **after** the QOTD job, whatever that job's result, so the normal QOTD post always
+goes first and nothing here can block or delay it.
 
-**What posts.** Inside the pilot window, yesterday's QOTD as a 30-60 s video, built with the
-worked-example pipeline (`scripts/qotd-social/breakdown.ts`): a fixed hook, the question read
-aloud, each sentence of the stored explanation as a step, then the answer under its **stored**
-display letter. The choices are in the day's stored order (`qotd_schedule.option_order`,
-`correct_display_letter`), never the question's original order. The script is a template: no
-generated text. The voice is Kokoro `af_heart` only, never the clone. It goes to the same channel
-(`SOCIAL_SLACK_CHANNEL_ID`) as the TikTok, Instagram and Facebook set: the video with its label
-and review line, the TikTok caption and keywords, then the Instagram and Facebook captions
-(SCL-262 format, music credit last). **Karl posts by hand; posting it is the approval.** Nothing
-is published automatically, and nothing posts anywhere but #social.
+**Dates.** `QOTD_BREAKDOWN_PILOT` (`shared/qotd/breakdown.ts`): posting days **2026-11-09 to
+2026-11-22**, both inclusive (14 days, the schema's limit). On a posting day the run breaks down the
+QOTD of the day before, so the QOTD dates covered are **2026-11-08 to 2026-11-21**.
 
-**Fallback.** If anything below holds, there is no video: the post is yesterday's answer slide
-(the carousel's slide 3 from the QOTD run) with `Breakdown skipped: <reason> (<code>)`, or the
-notice alone when the QOTD run built no carousel. The run page lists the details.
+**What posts.** Inside the window, yesterday's QOTD as a 30-60 s video, built with the
+worked-example pipeline from the **authored script Karl merged for that date**
+(`scripts/qotd-social/breakdown.ts`). The script speaks in Karl's order: the hook as a challenge to
+the viewer, a one-sentence setup, the key move, the trap ("here's where people slip"), the answer
+and a quick check, then the kit's call to action. The voice talks about the screen and never reads
+it (S1, S2). The choices are shown in the day's stored order (`qotd_schedule.option_order`) and the
+answer is named by the stored `correct_display_letter`, never the question's original order or
+letter. The voice is Kokoro `am_michael`, committed with the script; nothing is voiced at render
+time and the job sets up no Python. It goes to the same channel (`SOCIAL_SLACK_CHANNEL_ID`) as the
+TikTok, Instagram and Facebook set: the video with its label and review line, the TikTok caption and
+keywords, then the Instagram and Facebook captions (SCL-262 format, music credit last). **Karl
+posts by hand.** Nothing is published automatically, and nothing posts anywhere but #social.
+
+### 6.1 The weekly authoring flow
+
+1. **Karl exports the schedule (owner-run, read-only).** Run
+   `scripts/qotd-social/breakdown-schedule.sql` against production (the Supabase SQL editor, or
+   `PGOPTIONS='-c default_transaction_read_only=on' psql "$DATABASE_URL" -At -f
+   scripts/qotd-social/breakdown-schedule.sql > ~/qotd-breakdown-schedule.json`). It returns one
+   JSON array: for each scheduled day after today, up to today + 7, `qotd_date`, `question_id`,
+   `option_order`, `correct_display_letter`, `section`. Give the file to the authoring session
+   (attach or paste it in the session). **It holds the answers of QOTDs not yet published: never
+   commit it, post it to Slack, paste it into a PR or issue, or keep it inside a repository
+   checkout.**
+2. **The authoring session (Claude Code) writes the scripts**, one per date, at
+   `content/qotd-breakdowns/<YYYY-Www>/<qotd_date>/script.json` on a branch of `social` (the ISO
+   week of the QOTD date). Each names the date, the question id, and the export's `option_order`
+   and `correct_display_letter`, and carries the spoken script in the worked examples' fields
+   (`hook.line`/`hook.voice`, `question_voice` as the one-sentence setup, 3-6 `steps` with notepad
+   and voice, `trap.notepad`/`trap.voice`, `answer.notepad`/`answer.voice`). The question text
+   comes from the seed SQL, never copied. A day that cannot have a breakdown (a grid-in, a paired
+   or long passage) gets no script.
+3. **It voices each script** on its machine:
+   `pnpm exec tsx scripts/qotd-social/voice-breakdown.ts <social checkout>/content/qotd-breakdowns/<week>/<date>`
+   (am_michael; writes `voice/*.wav` and `voice/manifest.json`; needs `HYPERFRAMES_PYTHON`).
+4. **It checks them against the export:**
+   `pnpm exec tsx scripts/qotd-social/check-breakdown-scripts.ts --content <social checkout> --schedule ~/qotd-breakdown-schedule.json`
+   (the export must be outside every checkout; a mismatch names the date and the field, never a
+   value). Without `--schedule` the same check runs on every pull request into `social` that
+   touches `content/qotd-breakdowns/` (`.github/workflows/qotd-breakdown-checks.yml`): layout,
+   schema, the question from the seed SQL, the order and letter fitting that question, H1-H6, S1,
+   S2, the trap opener, the voice matching its text and passing the audio checks.
+5. **It opens one batch PR into `social`** (draft), on the same review path as the worked
+   examples. **Karl's merge is the approval** (read at render time from GitHub's record of the merge,
+   `scripts/worked-examples/approval.ts`; the merger must be `CONTENT_APPROVER_LOGIN`). A later
+   push to a script's folder that is not Karl's merge un-approves it.
+6. **First batch:** the QOTD dates 2026-11-08 to 2026-11-14, merged by 2026-11-08; the second,
+   2026-11-15 to 2026-11-21, merged by 2026-11-15. The scheduler fills 7 days ahead, so the export
+   taken on the day before the first date covers the week.
+
+**Leak risk, pending Karl's decision.** A merged script names the answer of a QOTD that has not been
+published yet (so do the worked examples, which use questions kept out of the QOTD pool). That is
+safe only while `social` is not publicly readable. The options for Karl: confirm the repository
+stays private (and is never made public with this history), and/or land each script no earlier than
+the day before its QOTD date (the run on posting day D reads the script for D-1, so a script merged
+on D-1 is in time). Until he rules, the weekly batch lands as written above.
+
+### 6.2 At render time
+
+The job checks out `social` with full history and, for yesterday's QOTD:
+
+1. reads the day from the public archive (`/api/public/qotd/<date>`; today is refused);
+2. the QOTD's own suitability rules (grid-in, long or paired passage, stem repeats passage);
+3. finds the date's script; none, or not merged by Karl: `no_approved_script`;
+4. **the hard rule:** the script's `option_order` and `correct_display_letter` must equal the stored
+   row the archive serves, or nothing renders (`order_mismatch`);
+5. the script rules again on the question as served, and the captions;
+6. the committed voice: am_michael, every line voiced from the text it has now (a script edited
+   after voicing is refused), the audio checks;
+7. composition, 30-60 s, `hyperframes check`, the layout check, the render, the MP4 check.
+
+**Fallback.** If anything fails, there is no video: the post is yesterday's answer slide (the
+carousel's slide 3 from the QOTD run) with `Breakdown skipped: <reason> (<code>)`, or the notice
+alone when the QOTD run built no carousel. The run page lists the details.
 
 | code | why |
 |---|---|
 | `script_too_long` | (a) the voiced script runs over 60 s |
 | `script_too_short` | (a) under 30 s, which the MP4 check would refuse |
 | `mp4_check_failed` | (a) the MP4 fails the 1080x1920, 30-60 s, audio check |
-| `letter_named` | (b) the stored explanation or a choice names a letter ("choice B", "(C)", "answer is D") |
 | `grid_in` | (c) a grid-in |
 | `too_long_to_read` | (c) over the QOTD's quick-read length (`shared/qotd/readability.ts`) |
 | `paired_passage` | (c) a paired passage |
 | `stem_repeats_passage` | (c) the stem repeats the passage |
-| `no_explanation` | (c) no explanation to break down |
-| `too_many_steps` | (c) more than six explanation sentences |
-| `content_rules` | (d) a hook rule (H1-H6) or a caption rule failed |
-| `voice_check_failed` | (d) a voiced line failed the transcription or audio check |
+| `content_rules` | (d) a hook rule (H1-H6), the verbatim rule (S1, S2), the trap opener or a caption rule failed |
+| `voice_check_failed` | (d) the committed voice is not am_michael, was voiced from other text, or fails the audio check |
 | `hyperframes_check_failed` | (d) `hyperframes check` failed |
 | `layout_check_failed` | (d) the safe-area or blank-paper check failed |
 | `render_failed` | (d) the render failed |
 | `withheld` | yesterday is withheld or missing on the archive |
-| `order_mismatch` | the stored letter does not match the stored order: nothing is rendered |
+| `no_approved_script` | no script for the date on `social`, or its folder was not last changed by Karl's merge |
+| `order_mismatch` | the script's order or letter differs from the stored row (or the stored row is inconsistent): nothing is rendered |
 | `build_failed` | the build did not finish (posted from the post step) |
 
-**Turning it on.** Set both dates in `QOTD_BREAKDOWN_PILOT` (`shared/qotd/breakdown.ts`) in the
-merge PR: `start` is the first posting day, `end` the last; 14 days at most, both inclusive
-(the schema refuses more). Dates are QOTD posting days: on `start` the run posts the breakdown
-of the day before. Default: both `null`, off.
+The templated script's codes (`letter_named`, `no_explanation`, `too_many_steps`) are gone with it
+(2026-11-02).
 
 **Turning it off.** At once: set the repository variable `QOTD_BREAKDOWN_PAUSED` to `true`
 (**Settings** → **Secrets and variables** → **Actions** → **Variables**); the QOTD post is
-untouched. For good: clear the dates in a PR.
+untouched. For good: change the dates in a PR (both `null` is off).
 
-**End date.** After `end` the job builds nothing, posts nothing and notes **pilot ended** on the
-run page. Outside the window it does not install the browser, FFmpeg or Python either.
-
-**Voicing in CI.** The worked examples are voiced on a machine, never in CI, to protect the
-clone's reference recording. The breakdown never uses the clone, so it voices in CI: `hyperframes
-tts` (Kokoro `af_heart`) and `hyperframes transcribe` for the quality check, Python 3.11 with the
-pinned packages in `scripts/qotd-social/breakdown-requirements.txt`, the voice and transcription
-models cached under `~/.cache/hyperframes` (actions/cache). No paid service.
+**End date.** After 2026-11-22 the job builds nothing, posts nothing and notes **pilot ended** on
+the run page. Outside the window it does not install the browser or FFmpeg either.
 
 **Pull requests** run the job as a dry run on the real fixture rows (`tests/fixtures/qotd/rows.json`,
-2026-10-03): the whole path, the MP4 uploaded as the `qotd-breakdown` artifact, nothing sent.
+2026-10-02) and the fixture script tree (`tests/fixtures/qotd-breakdowns/social`): the whole path,
+the MP4 uploaded as the `qotd-breakdown` artifact, nothing sent.
 
 **A hand-started run** breaks down the day before the run's QOTD day (the `date` input is the
 QOTD job's only).

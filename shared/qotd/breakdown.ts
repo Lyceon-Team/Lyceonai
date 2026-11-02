@@ -1,34 +1,42 @@
 /**
- * The QOTD breakdown pilot: yesterday's Question of the Day as a short worked video, by template.
+ * The QOTD breakdown pilot: yesterday's Question of the Day as a short worked video, from a script
+ * Karl approved by merge.
  *
  * @spec [owner brief "QOTD breakdown pilot, 2 weeks" (Karl, 2026-11-02, Part C): render a
  *       breakdown of YESTERDAY's QOTD with the worked-example pipeline; HARD RULE "the breakdown
  *       uses the stored option_order and correct_display_letter for that QOTD date, never the
- *       question's original order"; a deterministic script (no generated text): hook, question
- *       read, the explanation's sentences as steps, the answer by its stored display letter; the
- *       hook passes H1-H6; the fallback rule (a)-(d) with a stable code per reason; captions and
- *       keywords in the SCL-262 format through shared/social/posts.ts, the CC BY 4.0 music credit
- *       on every caption; a 14-day window, off by default; SCL-258 (the stored order), SCL-262,
- *       SCL-265, SCL-266] | @implemented [2026-11-02]
+ *       question's original order"; the fallback rule (a)-(d) with a stable code per reason;
+ *       captions and keywords in the SCL-262 format through shared/social/posts.ts, the CC BY 4.0
+ *       music credit on every caption; SCL-258, SCL-262, SCL-265, SCL-266. Karl's rulings on
+ *       #1398, 2026-11-02: the templated script (the question read aloud plus the explanation's
+ *       sentences) broke "the voice never reads the screen" and is replaced by AUTHORED scripts,
+ *       one per scheduled date, approved by his merge into `social`; the authored script owns the
+ *       hook (a challenge to the viewer), the one-sentence setup, the key move, the trap ("here's
+ *       where people slip"), the answer and a quick check, then the kit's call to action, under
+ *       the worked examples' rules H1-H6, S1, S2 and the trap opener, reused, not forked; no
+ *       approved script = the fallback with `no_approved_script`; the pilot runs 2026-11-09 to
+ *       2026-11-22] | @implemented [2026-11-02, authored scripts 2026-11-02]
  *
  * plain English: every function is pure.
- *   * The question comes ONLY from yesterday's public archive payload (GET /api/public/qotd/:date,
- *     the shape scripts/qotd-social/generate.ts reads): its options are in the day's stored order
- *     (qotd_schedule.option_order, projected by shared/qotd/projection.ts qotdServedChoices) and
- *     `correct_letter` is the stored correct_display_letter. breakdownQuestion letters the
- *     choices A-D by that position and takes the stored letter as the key; it refuses a day whose
- *     correct choice is not at the stored letter (order_mismatch). The canonical key
- *     (correct_option_id) is used only to find that choice, never as a letter.
- *   * breakdownScript: the hook (fixed spoken line; the on-screen line is "Yesterday's SAT
- *     question: " + the stem's question sentence, so H3 holds), the question read (passage, stem,
- *     each choice under its display letter), one step per explanation sentence, then "The answer
- *     is <display letter>: <choice>." No trap. Maths is spoken through spokenMathText.
- *   * breakdownSkipCode: the fallback rule's (b) and (c), before anything is voiced.
+ *   * The question comes ONLY from the day as the public archive serves it
+ *     (GET /api/public/qotd/:date: its options in the day's stored order, `correct_letter` the
+ *     stored correct_display_letter). breakdownQuestion letters the choices A-D by that position
+ *     and takes the stored letter as the key; it refuses a day whose correct choice is not at the
+ *     stored letter (order_mismatch). The canonical key (correct_option_id) only finds that choice.
+ *   * scheduledDay builds the same day for the authoring check, before it is served: the seed
+ *     question and a stored order and letter, through the real projection (toArchiveResponse,
+ *     which refuses an order or letter that does not fit the question). So the authoring check
+ *     and the render letter the question by one function.
+ *   * scriptOrderProblem is the hard rule at render: the approved script's option_order and
+ *     correct_display_letter must equal the stored row the archive serves, or nothing renders.
+ *   * The script's content rules are the worked examples' own (shared/worked-examples/rules.ts
+ *     scriptProblems), run against that question.
  *   * breakdownCopy: the SCL-262 captions through the one caption builder, the music credit last.
  */
 import {
   qotdBreakdownPilotSchema,
   type QotdBreakdownPilot,
+  type QotdBreakdownScript,
   type QotdBreakdownSkipCode,
   type QotdBreakdownWindow,
 } from "../../packages/shared/src/qotd-breakdown-schema";
@@ -36,11 +44,7 @@ import type {
   QotdArchiveResponse,
   QotdOption,
 } from "../../packages/shared/src/qotd-schema";
-import type {
-  CompositionQuestion,
-  CompositionScript,
-} from "../../scripts/worked-examples/composition";
-import { tokenizeMathContent } from "../math/tokenize";
+import { isoWeekCycle } from "../content/schedule";
 import {
   nextSatTest,
   qotdHeadline,
@@ -51,25 +55,23 @@ import {
   socialTiktokCaption,
   type SocialSection,
 } from "../social/posts";
+import { captionProblems, type HookQuestion } from "../worked-examples/rules";
+import type { SeedQuestion } from "../worked-examples/seed-question";
 import {
-  captionProblems,
-  hookPeopleProblem,
-  hookProblems,
-  hookStatisticProblem,
-  publicPhraseProblem,
-  type HookQuestion,
-} from "../worked-examples/rules";
-import { plainMathText, spokenMathText } from "./plain-math";
-import { stemRepeatsPassage } from "./projection";
+  QotdServedOrderError,
+  stemRepeatsPassage,
+  toArchiveResponse,
+} from "./projection";
 import { qotdReadabilityProblem } from "./readability";
 import { QOTD_SECTION_NAME } from "./social";
 
 /**
- * The pilot window (Karl sets both dates in the merge PR: 14 days from his merge). Both null =
- * off, the default: the workflow step does nothing.
+ * The pilot window, as QOTD posting days (the day a breakdown of the day before posts): Karl's
+ * ruling on #1398, 2026-11-02, "start 2026-11-09 and end 2026-11-22", 14 days inclusive. So the
+ * QOTD days broken down are 2026-11-08 to 2026-11-21.
  */
 export const QOTD_BREAKDOWN_PILOT: QotdBreakdownPilot =
-  qotdBreakdownPilotSchema.parse({ start: null, end: null });
+  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });
 
 /** Where `postedOn` (the QOTD posting day) sits against the window. `paused` wins over all. */
 export function pilotWindow(
@@ -101,22 +103,21 @@ export const QOTD_BREAKDOWN_SKIP_REASON: Record<QotdBreakdownSkipCode, string> =
     script_too_long: "the voiced script runs over 60 s",
     script_too_short: "the voiced script runs under 30 s",
     mp4_check_failed: "the MP4 failed the 30-60 s video check",
-    letter_named:
-      "the explanation or a choice names a letter, which the shuffled order makes wrong",
     grid_in: "a grid-in has no choices to break down",
     too_long_to_read: "the question is over the quick-read length",
     paired_passage: "a paired passage",
     stem_repeats_passage: "the stem repeats the passage (no question prompt)",
-    no_explanation: "the day has no explanation",
-    too_many_steps: "the explanation has more than six sentences",
-    content_rules: "a content rule failed (hook rules H1-H6, caption rules)",
-    voice_check_failed: "a voiced line failed the transcription or audio check",
+    content_rules:
+      "a content rule failed (hook rules H1-H6, the verbatim rule S1-S2, caption rules)",
+    voice_check_failed:
+      "the committed voice does not match the script or fails the audio check",
     hyperframes_check_failed: "hyperframes check failed",
     layout_check_failed: "the layout check failed (safe area or blank paper)",
     render_failed: "the render failed",
     withheld: "yesterday is withheld or missing on the archive",
+    no_approved_script: "no approved script for the day",
     order_mismatch:
-      "the stored letter does not match the stored order (nothing rendered)",
+      "the script's option order or letter differs from the stored row (nothing rendered)",
     build_failed: "the breakdown build did not finish",
   };
 
@@ -125,58 +126,23 @@ export function breakdownSkipLine(code: QotdBreakdownSkipCode): string {
   return `Breakdown skipped: ${QOTD_BREAKDOWN_SKIP_REASON[code]} (${code})`;
 }
 
-/** The most explanation sentences a breakdown voices (the voice manifest keys step-1..6). */
-export const QOTD_BREAKDOWN_MAX_STEPS = 6;
-
 /**
- * A letter named as a choice: "choice B", "options A and C", "answer is D", "Answer: C", "(C)",
- * "B)". The letter must be a capital A-D standing alone, so "a number", "f(A)" and "Dr." pass.
+ * The only voice a breakdown is spoken in: Kokoro am_michael (Karl's ruling on #1398,
+ * 2026-11-02, "with am_michael"; the worked examples' default since SCL-267), never the clone.
  */
-const LETTER_NAMED: readonly RegExp[] = [
-  /\b(?:[Cc]hoices?|[Oo]ptions?|[Aa]nswers?|[Ll]etters?)\s+(?:(?:is|was|are)\s+)?\(?[A-D]\)?(?![\w'’])/,
-  /\b[Aa]nswers?\s*:\s*\(?[A-D]\)?(?![\w'’])/,
-  /(?<![\w$\\])\([A-D]\)/,
-  /(?:^|[\s"“'‘])[A-D]\)(?=[\s,.;:]|$)/,
-];
+export const QOTD_BREAKDOWN_VOICE_PROFILE = "am_michael";
 
-/** Whether `text` names a choice by its letter (fallback rule (b)). */
-export function namesALetter(text: string): boolean {
-  return LETTER_NAMED.some((re) => re.test(text));
+/** Where a day's script lives on `social`: content/qotd-breakdowns/<ISO week>/<qotd_date>. */
+export const QOTD_BREAKDOWN_CONTENT_DIR = "content/qotd-breakdowns";
+
+export function breakdownScriptDir(qotdDate: string): string {
+  return `${QOTD_BREAKDOWN_CONTENT_DIR}/${isoWeekCycle(qotdDate)}/${qotdDate}`;
 }
 
 /**
- * Whole sentences of raw question text: split at a space after . ! or ? (and any closing quote or
- * bracket) that is outside $...$ maths, so "$3.5$" never splits. Escaped characters are skipped.
- */
-export function explanationSentences(text: string): string[] {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (clean === "") return [];
-  const out: string[] = [];
-  let start = 0;
-  let inMath = false;
-  for (let i = 0; i < clean.length; i += 1) {
-    const ch = clean[i];
-    if (ch === "\\") {
-      i += 1;
-      continue;
-    }
-    if (ch === "$") {
-      inMath = !inMath;
-      continue;
-    }
-    if (!inMath && ch === " " && /[.!?]["”’)]*$/.test(clean.slice(start, i))) {
-      out.push(clean.slice(start, i));
-      start = i + 1;
-    }
-  }
-  out.push(clean.slice(start));
-  return out.filter((s) => s.trim().length > 0);
-}
-
-/**
- * Fallback rules (b) and (c), checked before anything is voiced: the first that holds, or null.
- * (c) reuses the QOTD's own suitability rules (shared/qotd/readability.ts, the scheduler's and
- * the social generator's, and stemRepeatsPassage).
+ * Fallback rule (c), checked before anything else: the first that holds, or null. It reuses the
+ * QOTD's own suitability rules (shared/qotd/readability.ts, the scheduler's and the social
+ * generator's, and stemRepeatsPassage).
  */
 export function breakdownSkipCode(
   day: QotdArchiveResponse,
@@ -193,14 +159,6 @@ export function breakdownSkipCode(
   if (unreadable === "paired_passage") return "paired_passage";
   if (stemRepeatsPassage(q.stem, q.passage)) return "stem_repeats_passage";
   if (unreadable !== null) return "too_long_to_read";
-  const sentences = explanationSentences(q.explanation);
-  if (sentences.length === 0) return "no_explanation";
-  if (
-    namesALetter(q.explanation) ||
-    q.options.some((o) => namesALetter(o.text))
-  )
-    return "letter_named";
-  if (sentences.length > QOTD_BREAKDOWN_MAX_STEPS) return "too_many_steps";
   return null;
 }
 
@@ -208,11 +166,10 @@ const DISPLAY_LETTERS = ["A", "B", "C", "D"] as const;
 type DisplayLetter = (typeof DISPLAY_LETTERS)[number];
 
 /** The breakdown's question: the choices in the stored order, lettered by position. */
-export type BreakdownQuestion = HookQuestion &
-  CompositionQuestion & {
-    /** The stored order, as canonical keys (for the record only; never a letter). */
-    option_order: QotdOption["id"][];
-  };
+export type BreakdownQuestion = HookQuestion & {
+  /** The stored order, as canonical keys (compared with the script's; never a letter). */
+  option_order: QotdOption["id"][];
+};
 
 /**
  * The day's question as the breakdown shows it: options in the archive's (stored) order, each
@@ -256,117 +213,71 @@ export function breakdownQuestion(
   };
 }
 
-/** The spoken hook (fixed): passes H1, H2, H4-H6; H3 is the on-screen line's. */
-export const QOTD_BREAKDOWN_HOOK_VOICE =
-  "Yesterday's SAT question. Did you get it?";
-/** The on-screen hook's opening; the stem's question sentence follows it. */
-export const QOTD_BREAKDOWN_HOOK_PREFIX = "Yesterday's SAT question: ";
-/** The on-screen hook's cap (the worked-example hook line's). */
-export const QOTD_BREAKDOWN_HOOK_MAX = 90;
-/** A notepad line's cap (the worked-example notepad line's). */
-export const QOTD_BREAKDOWN_NOTEPAD_MAX = 32;
-
-/** The stem's last sentence in plain text: the question it asks. */
-function questionSentence(stem: string): string {
-  const all = explanationSentences(stem);
-  return plainMathText(all[all.length - 1] ?? stem);
+/**
+ * The day as the archive will serve it, built for the authoring check from the seed question and a
+ * stored order and letter (the schedule export's, or the script's own): the real projection
+ * (toArchiveResponse, through qotdServedChoices) letters it, and refuses an order that is not a
+ * permutation of the choices or a letter that is not where the correct choice lands. The message
+ * names no key or letter: the inputs may be a future day's.
+ */
+export function scheduledDay(
+  seed: SeedQuestion,
+  qotdDate: string,
+  order: readonly string[],
+  letter: string,
+): { ok: true; day: QotdArchiveResponse } | { ok: false; problem: string } {
+  try {
+    return {
+      ok: true,
+      day: toArchiveResponse({
+        qotd_date: qotdDate,
+        question_id: seed.id,
+        section: seed.section,
+        domain: seed.domain,
+        skill_codes: seed.skill_codes,
+        difficulty: null,
+        item_type: seed.item_type,
+        stem: seed.stem,
+        passage: seed.passage,
+        options: seed.options,
+        correct_answer: seed.correct_answer,
+        correct_variants: null,
+        explanation: null,
+        option_order: [...order],
+        correct_display_letter: letter,
+      }),
+    };
+  } catch (e: unknown) {
+    if (e instanceof QotdServedOrderError)
+      return {
+        ok: false,
+        problem:
+          "the option_order and correct_display_letter do not fit the question (not a permutation of its choices, or the letter is not where its key lands)",
+      };
+    throw e;
+  }
 }
 
 /**
- * "Yesterday's SAT question: <the stem's question>", at most 90 characters: cut at the last
- * whole word and ended with "…" when longer. It shows the puzzle (H3) and ends in "?" or "…"
- * (H4).
+ * THE hard rule at render: the approved script names the stored row the archive serves for its
+ * date: the same option order (canonical keys) and the same display letter. Null when it does.
+ * The message names no value (the day has passed, but the notice and logs carry codes only).
  */
-export function breakdownHookLine(stem: string): string {
-  const full = `${QOTD_BREAKDOWN_HOOK_PREFIX}${questionSentence(stem)}`;
-  if (full.length <= QOTD_BREAKDOWN_HOOK_MAX) return full;
-  const head = full.slice(0, QOTD_BREAKDOWN_HOOK_MAX);
-  const cut = head.slice(0, head.lastIndexOf(" ")).replace(/[\s,;:—–-]+$/, "");
-  return `${cut}…`;
-}
-
-/** A step's notepad line: the sentence's last formula in plain text, when it fits; else "Step k". */
-function stepNotepad(sentence: string, k: number): string {
-  const maths = tokenizeMathContent(sentence).filter((t) => t.type === "math");
-  const last = maths[maths.length - 1];
-  const text = last ? plainMathText(`$${last.content}$`) : "";
-  return text.length > 0 && text.length <= QOTD_BREAKDOWN_NOTEPAD_MAX
-    ? text
-    : `Step ${k}`;
-}
-
-function spokenSentence(text: string): string {
-  const s = spokenMathText(text);
-  return /[.?!]$/.test(s) ? s : `${s}.`;
-}
-
-/**
- * The deterministic script: hook, question read, the explanation's sentences as steps, the answer
- * under its stored display letter. No trap. Built only from a question breakdownQuestion has
- * accepted, so every letter in it is the stored one.
- */
-export function breakdownScript(
+export function scriptOrderProblem(
+  script: Pick<
+    QotdBreakdownScript,
+    "qotd_date" | "option_order" | "correct_display_letter"
+  >,
   day: QotdArchiveResponse,
   question: BreakdownQuestion,
-): CompositionScript {
-  const correct = question.options.find(
-    (o) => o.key === question.correct_answer,
-  );
-  if (!correct)
-    throw new Error("breakdownScript: no choice at the stored letter");
-  const read = [
-    ...(question.passage && question.passage.trim() !== ""
-      ? [spokenSentence(question.passage)]
-      : []),
-    spokenSentence(question.stem),
-    ...question.options.map((o) => `${o.key}: ${spokenSentence(o.text)}`),
-  ].join(" ");
-  const correctPlain = plainMathText(correct.text);
-  const notepad = `${question.correct_answer}) ${correctPlain}`;
-  return {
-    hook: {
-      line: breakdownHookLine(question.stem),
-      voice: QOTD_BREAKDOWN_HOOK_VOICE,
-    },
-    question_voice: read,
-    steps: explanationSentences(day.question.explanation).map((s, k) => ({
-      notepad: stepNotepad(s, k + 1),
-      voice: spokenSentence(s),
-    })),
-    answer: {
-      notepad:
-        notepad.length <= QOTD_BREAKDOWN_NOTEPAD_MAX
-          ? notepad
-          : `${question.correct_answer})`,
-      voice: `The answer is ${question.correct_answer}: ${spokenSentence(correct.text)}`,
-    },
-    trap: null,
-  };
-}
-
-/**
- * The content rules (fallback (d)): H1-H6 on the hook, and on every spoken line the rules the
- * worked examples apply to theirs (no claims about people, no statistics, no banned public-copy
- * phrase).
- */
-export function breakdownContentProblems(
-  script: CompositionScript,
-  question: BreakdownQuestion,
-): string[] {
-  const out = [...hookProblems(script.hook, question)];
-  const spoken = [
-    script.question_voice,
-    ...script.steps.map((s) => s.voice),
-    script.answer.voice,
-  ];
-  for (const text of spoken) {
-    const p =
-      hookPeopleProblem(text) ??
-      hookStatisticProblem(text) ??
-      publicPhraseProblem(text);
-    if (p) out.push(p.replace(/^H\d /, ""));
-  }
-  return out;
+): string | null {
+  if (script.qotd_date !== day.qotd_date)
+    return "the script is for another day";
+  if (script.option_order.join(",") !== question.option_order.join(","))
+    return "the script's option_order differs from the stored row";
+  if (script.correct_display_letter !== question.correct_answer)
+    return "the script's correct_display_letter differs from the stored row";
+  return null;
 }
 
 export type BreakdownCopy = {

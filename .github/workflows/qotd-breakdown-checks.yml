@@ -1,0 +1,49 @@
+# QOTD breakdown scripts: the mechanical rules on every pull request into `social` that carries a
+# breakdown script, before Karl reads and merges the batch.
+#
+# @spec [SCL-266 as ruled by Karl 2026-11-02 on #1398: authored breakdown scripts for the next 7
+#   scheduled QOTD dates land as a batch PR into `social` "on the same review path as worked
+#   examples"; Karl's merge is the approval; the worked examples' content rules H1-H6, S1, S2 and
+#   the trap opener] | @implemented [2026-11-02]
+#
+# plain English: runs scripts/qotd-social/check-breakdown-scripts.ts on the pull request's tree:
+# the folder layout (content/qotd-breakdowns/<YYYY-Www>/<qotd_date>/script.json + voice/), the
+# schema, the question from the seed SQL, the script's stored order and letter fitting that
+# question (through the real projection), the script rules, and the committed am_michael voice
+# matching its text and passing the audio checks. The owner-run schedule export is never here (it
+# holds future answers and is never committed): the authoring session checks the scripts against
+# it before opening the pull request. Modelled on worked-example-checks.yml. It reads no secrets
+# and writes nothing.
+name: QOTD breakdown script checks
+
+on:
+  pull_request:
+    branches: [social]
+    paths:
+      - content/qotd-breakdowns/**
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Script rules
+        run: pnpm exec tsx scripts/qotd-social/check-breakdown-scripts.ts --content .

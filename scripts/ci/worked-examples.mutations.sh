@@ -320,6 +320,9 @@ ts_plant "V12 a rate change keeps the old voicing" scripts/worked-examples/voice
   "a rate change re-voices the batch"
 
 echo "=== TS: script and voice (SCL-267, Karl's rulings 2026-11-02) ==="
+# 2026-11-02 (SCL-266, Karl's rulings on #1398): W3, W5, W22 and W23 keep their anchors, which now
+# sit in scriptProblems (shared/worked-examples/rules.ts), the script rules contentProblems calls and
+# the QOTD breakdown shares; observed red there at rules.ts:350 (W3), :352 (W5), :361 (W22, W23).
 ts_plant "W1 S1 the verbatim rule finds nothing" shared/worked-examples/rules.ts \
   "      if (run !== null)" "      if (false)" \
   "a setup that reads the question stem is refused"
