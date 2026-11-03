@@ -19,7 +19,10 @@
  *    must be in a walkthrough, read from its STORED student messages (`isWalkthroughOpen`, the
  *    function the panel uses to show the taps). Otherwise `400 invalid_input` ("no_walkthrough").
  *  - `pickIntentVideo`: a video intent's one video. "Desmos video" asks for method `desmos` and
- *    serves the top match only if it IS a Desmos video; otherwise there is no match. "Explanation
+ *    serves the top match only if it IS a Desmos video; otherwise there is no match. On a
+ *    sub-skill-tagged item (Phase C, Karl 2026-10-29, ruling Q3; SCL-260) the tap REQUIRES
+ *    Desmos: only Desmos segments are candidates, so it gets one whenever one exists even when
+ *    an algebraic segment shares more; no matching segment is no match. "Explanation
  *    video" asks for `algebraic`; when the skill has no algebraic video, the ranking with that
  *    method is exactly the ranking with none (the method is the first sort key, false for every
  *    row), so the top row is already the brief's fallback ("no method and the normal ranking").
@@ -49,6 +52,7 @@ import { resolveQuestionSection, sessionTablesFor } from "./tutor-context";
 import {
   retrieveOfferedVideos,
   type LibraryVideo,
+  type VideoRetrieval,
 } from "./tutor-video-library";
 
 /** The only surface the choices are offered on (owner brief: "the review LISA panel only"). */
@@ -186,19 +190,20 @@ export async function pickIntentVideo(
   intent: VideoIntent,
   questionRowId: string,
   conversationId: string,
-): Promise<{ video: LibraryVideo | null; offered: LibraryVideo[] }> {
+): Promise<{ video: LibraryVideo | null; retrieval: VideoRetrieval }> {
   const method = VIDEO_INTENT_METHOD[intent];
-  const offered = await retrieveOfferedVideos(
+  const retrieval = await retrieveOfferedVideos(
     questionRowId,
     GUIDED_CHOICE_SURFACE,
     conversationId,
     method,
+    { methodRequired: intent === "video_desmos" },
   );
-  const top = offered[0] ?? null;
-  if (top === null) return { video: null, offered };
+  const top = retrieval.videos[0] ?? null;
+  if (top === null) return { video: null, retrieval };
   // Desmos: a non-Desmos video is not what was asked for.
   if (intent === "video_desmos" && !top.methods.includes("desmos")) {
-    return { video: null, offered };
+    return { video: null, retrieval };
   }
-  return { video: top, offered };
+  return { video: top, retrieval };
 }
