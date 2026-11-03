@@ -1,147 +1,147 @@
-{"id": "SATM200U6DX", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047", "CL.0081"], "distractors": [], "why": "Greatest number of prints; translate 13n+29≤120, isolate n≤7, round down to whole number"}
-{"id": "SATM2044BKK", "sub_skills": ["LI.1"], "clusters": ["CL.0047", "CL.0016"], "distractors": [], "why": "Solve one-sided inequality x/7+3>6; clear fraction by multiplying by 7, isolate x>21"}
-{"id": "SATM206RZ1Z", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0017", "CL.0047", "CL.0081"], "distractors": [], "why": "Maximum whole pounds; model 23+1.70p+9≤84.50, combine constants, isolate p≤30.88, round down to 30"}
-{"id": "SATM20A9LKV", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model constraint: flat fee + rate×hours ≤ budget; translate 'at most' to ≤"}
-{"id": "SATM20L2PDV", "sub_skills": ["LI.3"], "clusters": ["CL.0104", "CL.0005", "CL.0060", "CL.0047"], "distractors": [], "why": "Two-sided range: 125<47+13g≤203; compound inequality, isolate g, count whole-number values 7–12"}
-{"id": "SATM20OL8DL", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094"], "distractors": [], "why": "Test which point satisfies both symbolic inequalities; substitute each ordered pair and evaluate"}
-{"id": "SATM20QPN2X", "sub_skills": ["LI.4"], "clusters": ["CL.0101", "CL.0047"], "distractors": [], "why": "Which value satisfies 5−2x>11; solve to x<−3 then pick, or test each choice"}
-{"id": "SATM20QRZIF", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model warehouse constraint as system of inequalities: weight ≤ 800, S≥9, L≥0; translate at most/at least"}
-{"id": "SATM20RN4R8", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Model delivery cost ≤ budget; translate and solve 4m+17≤53 to m≤9; answer choices in solved form"}
-{"id": "SATM20W4N05", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0060", "CL.0047", "CL.0081"], "distractors": [], "why": "Maximum pens; available budget 52−11=41, solve 7n≤41, n≤5.857, round down to 5"}
-{"id": "SATM215FYBC", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0017", "CL.0047"], "distractors": [], "why": "Compare two cost expressions; model 37+4w<19+7w, combine like terms, isolate w>6"}
-{"id": "SATM21AMGAE", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047"], "distractors": [], "why": "Minimum bracelets; model profit 11b−67≥131, isolate b≥18"}
-{"id": "SATM21B0F7Y", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094"], "distractors": [], "why": "Test which ordered pair satisfies both symbolic inequalities; substitute and check each"}
-{"id": "SATM21CWMJ8", "sub_skills": ["LI.3"], "clusters": ["CL.0005", "CL.0047", "CL.0016"], "distractors": [], "why": "Compound inequality −4<3−x/2≤11; subtract 3, multiply by −2 and flip, get −16≤x<14, greatest integer 13"}
-{"id": "SATM21GGD7R", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Maximum copies; model 7n+19≤103, isolate n≤12"}
-{"id": "SATM21J9GIF", "sub_skills": ["LI.2"], "clusters": ["CL.0017", "CL.0047"], "distractors": [], "why": "Greatest integer; solve −4x+9≥2x−21, combine to −6x≥−30, x≤5"}
-{"id": "SATM21OGTSG", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094"], "distractors": [], "why": "Test which point satisfies both symbolic inequalities; substitute each ordered pair"}
-{"id": "SATM21T1MCK", "sub_skills": ["LI.2"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "Greatest integer a with (a,11) in system; sub y=11 into both, get a<6 and a<12, binding a<6, greatest 5"}
-{"id": "SATM21VLA7C", "sub_skills": ["LI.1"], "clusters": ["CL.0016", "CL.0047"], "distractors": [], "why": "Solve (17−5x)/2>6; multiply by 2 to clear fraction, isolate x<1"}
-{"id": "SATM21VZLQS", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model lumber constraint; translate 4s+3b≤58, 'at most' → ≤"}
-{"id": "SATM21YBGXL", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0060", "CL.0047"], "distractors": [], "why": "Model reimbursement condition; 2m+11>37, isolate m>13"}
-{"id": "SATM220EQ51", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve −4x+7≤31; isolate x≥−6, flip when dividing by negative"}
-{"id": "SATM222N63O", "sub_skills": ["LI.2"], "clusters": ["CL.0047"], "distractors": [], "why": "Least value; solve −3x+14≤5, isolate x≥3, least is 3"}
-{"id": "SATM223A82P", "sub_skills": ["LI.2"], "clusters": ["CL.0017", "CL.0047"], "distractors": [], "why": "Greatest integer; solve −5x+13≥2x−8, combine terms, x≤3"}
-{"id": "SATM2256DX5", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model shipping cost; flat fee + rate×books ≤ budget; translate 'at most' → ≤"}
-{"id": "SATM228E764", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value satisfies 5x+3>38; solve x>7 then pick 8, or test each choice"}
-{"id": "SATM229B9W4", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model furniture budget; translate 29k+58m≤1740, 'at most' → ≤, match variable to cost"}
-{"id": "SATM22AH9F9", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0060", "CL.0047"], "distractors": [], "why": "Maximum packages; model 17+6(m−1)≤71, simplify 11+6m≤71, m≤10"}
-{"id": "SATM22IQVLR", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 3x−7≥5; add 7, divide by 3, x≥4"}
-{"id": "SATM22L0HF2", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model labor cost constraint; translate 47h+89≤650, 'no more than' → ≤"}
-{"id": "SATM22M3D2H", "sub_skills": ["LI.3"], "clusters": ["CL.0005", "CL.0047"], "distractors": [], "why": "Compound inequality −5<2−3t≤11; subtract 2, divide by −3 and flip, −3≤t<7/3"}
-{"id": "SATM22TPGR3", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0017", "CL.0047", "CL.0081"], "distractors": [], "why": "Minimum sessions for Plan B cheaper; model 189+23s<47s, combine, s>7.875, round up to 8"}
-{"id": "SATM231WRT1", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model nutrition constraints as system; protein ≥50 and calories ≤2000, translate at least/no more than"}
-{"id": "SATM233NCYP", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094"], "distractors": [], "why": "Test which point satisfies both symbolic inequalities; substitute each ordered pair"}
-{"id": "SATM2365QTL", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0017", "CL.0047"], "distractors": [], "why": "Compare two plan costs; model 37+0.06t<22+0.11t, combine, isolate t>300"}
-{"id": "SATM23ACL9G", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve −5x+13≥−17; isolate x≤6, flip when dividing by negative"}
-{"id": "SATM23EF1UE", "sub_skills": ["LI.1", "LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Both model the inequality AND find maximum; 13+4p≤53, solve p≤10"}
-{"id": "SATM23LY086", "sub_skills": ["LI.4"], "clusters": ["CL.0101", "CL.0094"], "distractors": [], "why": "Which value of t satisfies 7t+13>62 — test each choice in given inequality"}
-{"id": "SATM23NB7HS", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0047"], "distractors": [], "why": "Translate studio cost scenario into inequality for h, solve for solution set"}
-{"id": "SATM23P7SBR", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0094", "CL.0047", "CL.0081"], "distractors": [], "why": "Two-product labor constraint with minimum Y; maximize X → substitute min Y, solve for max X boundary"}
-{"id": "SATM23QM9A9", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model system: earnings ≥ 300 and hours ≤ 30; translate words to inequality system"}
-{"id": "SATM23WBBC9", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047"], "distractors": [], "why": "Budget ≤ $83 with flat fee + per-cupcake; find maximum whole cupcakes → boundary value"}
-{"id": "SATM23YBTUL", "sub_skills": ["LI.2", "LI.3"], "clusters": ["CL.0060", "CL.0047", "CL.0081"], "distractors": [], "why": "Two-sided weight constraint (>200 and ≤377); ask is greatest number of large containers → max boundary with compound bounds"}
-{"id": "SATM246UDUX", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0094", "CL.0047", "CL.0081"], "distractors": [], "why": "Labor ≤97 with min sensor modules; maximize circuit boards → substitute min, solve for max boundary, round down"}
-{"id": "SATM24863YG", "sub_skills": ["LI.2"], "clusters": ["CL.0017", "CL.0047"], "distractors": [], "why": "Smallest integer satisfying -4x+17<2x-31; boundary value question (least integer)"}
-{"id": "SATM24AVPZ1", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047", "CL.0081"], "distractors": [], "why": "Budget ≤ $413 with fixed fee + per-board cost; find maximum boards → boundary value, round down"}
-{"id": "SATM24KD60M", "sub_skills": ["LI.2"], "clusters": ["CL.0047", "CL.0081"], "distractors": [], "why": "Inequality 6p+43≤250 given; find maximum p → isolate and round down"}
-{"id": "SATM24P2UK0", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model system: at least 13 packages total and cost ≤ 209; translate to inequality system"}
-{"id": "SATM24TXK7M", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 4x+9≤37 for x; straightforward one-sided inequality"}
-{"id": "SATM253MMYO", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0047"], "distractors": [], "why": "Word problem: raise more than $200, already have $135, $5/ticket; model and solve for t"}
-{"id": "SATM253N95H", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201"], "distractors": [], "why": "Which inequality represents notebooks within budget; translate context to inequality"}
-{"id": "SATM255WBPG", "sub_skills": ["LI.2"], "clusters": ["CL.0047"], "distractors": [], "why": "Least integer value of x satisfying 7x-19>23 → boundary value (minimum)"}
-{"id": "SATM25AAY3Y", "sub_skills": ["LI.3"], "clusters": ["CL.0016", "CL.0005", "CL.0047"], "distractors": [], "why": "Compound inequality -3<(4x-7)/3≤5; two-sided range, solve for a and b, compute b-a"}
-{"id": "SATM25DYNFP", "sub_skills": ["LI.4"], "clusters": ["CL.0094", "CL.0009"], "distractors": [], "why": "Which point lies in solution region of system y≤... and y≥...; test each point in both inequalities"}
-{"id": "SATM25PX02T", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 3x+7>22; one-sided inequality, isolate x"}
-{"id": "SATM25UFIIE", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0094", "CL.0047", "CL.0081"], "distractors": [], "why": "Max scones with two resource constraints (flour, sugar) and fixed muffins; substitute, solve both, take binding constraint"}
-{"id": "SATM25VB61N", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0060", "CL.0201"], "distractors": [], "why": "Model system: revenue >910 and tickets ≤100; translate to inequality system"}
-{"id": "SATM25WARUB", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 8x+13≤77; one-sided inequality"}
-{"id": "SATM25XGUW3", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047", "CL.0081"], "distractors": [], "why": "Budget ≤ $529 with delivery fee + per-centerpiece; find maximum → boundary value, round down"}
-{"id": "SATM261TM6O", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0060", "CL.0201"], "distractors": [], "why": "Model system: cost ≤450, painter ≥6h, helper ≥3h; translate to inequality system"}
-{"id": "SATM263V7VD", "sub_skills": ["LI.2"], "clusters": ["CL.0034", "CL.0033", "CL.0017", "CL.0047"], "distractors": [], "why": "Greatest integer satisfying -3(2x+7)+4x≥5x-9; distribute, combine, isolate → boundary value"}
-{"id": "SATM267EXSL", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047"], "distractors": [], "why": "Max packages within budget (flat fee + per-package ≤ $53) → boundary value"}
-{"id": "SATM269J338", "sub_skills": ["LI.4"], "clusters": ["CL.0101", "CL.0094"], "distractors": [], "why": "Which value of x satisfies 9x+7>61; test each choice"}
-{"id": "SATM26BRCH7", "sub_skills": ["LI.4"], "clusters": ["CL.0101", "CL.0094"], "distractors": [], "why": "Which value of x satisfies 7x-13>22; test each choice"}
-{"id": "SATM26O9JXP", "sub_skills": ["LI.4"], "clusters": ["CL.0094", "CL.0009"], "distractors": [], "why": "Which point in solution set of system 2x-5y<11 and x+3y≥4; test each ordered pair"}
-{"id": "SATM26RU3M9", "sub_skills": ["LI.4"], "clusters": ["CL.0101", "CL.0094"], "distractors": [], "why": "Which value satisfies 7x-11>24; test each choice"}
-{"id": "SATM26TG7FL", "sub_skills": ["LI.4"], "clusters": ["CL.0094", "CL.0009"], "distractors": [], "why": "Which ordered pair satisfies 2x-y<6 and x+3y≥9; test each point in both"}
-{"id": "SATM26X8W2L", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve -5x+14≥39; one-sided inequality, divide by negative flips sign"}
-{"id": "SATM272N01A", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 7x+11>53; one-sided inequality"}
-{"id": "SATM2731MZ0", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047"], "distractors": [], "why": "Delivery flat fee + per-package ≤ $53; model inequality AND find max packages → boundary value"}
-{"id": "SATM273QC02", "sub_skills": ["LI.4"], "clusters": ["CL.0094", "CL.0009"], "distractors": [], "why": "Which point in solution region of 3x-2y>7 and x+5y≤18; test each point"}
-{"id": "SATM276DZ0E", "sub_skills": ["LI.4"], "clusters": ["CL.0094", "CL.0009"], "distractors": [], "why": "Which ordered pair satisfies y>2x-7 and y≤-x+14; test each point in both"}
-{"id": "SATM279O5PC", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 2x-5≥9; one-sided inequality"}
-{"id": "SATM27JHSYB", "sub_skills": ["LI.2"], "clusters": ["CL.0016", "CL.0017", "CL.0047", "CL.0081"], "distractors": [], "why": "Greatest integer x where y ≤ -3/4x+9 and y ≥ 2/5x-1 overlap. Set upper≥lower: -3/4x+9≥2/5x-1. Clear fractions (CL.0016), combine terms (CL.0017), isolate x (CL.0047)→x≤200/23≈8.696, round down (CL.0081)→8. LI.2: asks greatest integer (boundary value)."}
-{"id": "SATM28BOB9S", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: $13/hr tutoring + $9/hr filing, at least $390, at most 35 hrs. Translate words→system (CL.0104), at least/at most→symbols (CL.0201), rate×amount (CL.0060). LI.1: model situation with system of inequalities."}
-{"id": "SATM28HS33E", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: flat $11 + $3/lb, at most $47. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1: translate context into inequality."}
-{"id": "SATM28II13Z", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: flat $11 + $3/lb, at most $47 → 3p+11≤47. Same structure as SATM28HS33E. LI.1: translate context into inequality."}
-{"id": "SATM28WM1T7", "sub_skills": ["LI.3"], "clusters": ["CL.0005", "CL.0047", "CL.0101"], "distractors": [], "why": "Compound inequality -1<2m-7≤9, which value could be m? Add 7 to all parts (CL.0005), divide by 2 (CL.0047)→3<m≤8, test choices (CL.0101). LI.3: two-sided range."}
-{"id": "SATM290SGDG", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 11x-33≥44 for solution set. Add 33 (CL.0047), divide by 11→x≥7. Pure symbolic one-sided inequality, solution set asked. LI.1."}
-{"id": "SATM291TK3I", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: flat $7 + $3/lb, at most $34 → 3w+7≤34. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM2937HVI", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value of x satisfies 9x+17>80? Solve: x>7 (CL.0047), test choices (CL.0101)→8. LI.4: test which value satisfies a symbolic inequality."}
-{"id": "SATM2980QX4", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0094", "CL.0047", "CL.0081"], "distractors": [], "why": "At most $53, notebooks $7 each, pens $3 each, buys 4 notebooks, max pens? Translate (CL.0104), at most→≤ (CL.0201), substitute 4 notebooks (CL.0094), isolate p (CL.0047), round down (CL.0081). LI.2: maximum number."}
-{"id": "SATM2981UEX", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value of x satisfies 5x-17>23? Solve: x>8 (CL.0047), test choices (CL.0101)→11. LI.4: test solutions of symbolic inequality."}
-{"id": "SATM299S1WV", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: flat $29 + $3/lb, at most $71 → 3p+29≤71. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM29AL4NX", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: $19 fee + $7/class, at most $82 → 7c+19≤82. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM29B6T7F", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: $23/poster + $47 fee, at most $300 → 23n+47≤300. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM29D6790", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value of x satisfies 8x-13>27? Solve: x>5 (CL.0047), test choices (CL.0101)→7. LI.4: test solutions of symbolic inequality."}
-{"id": "SATM29KW517", "sub_skills": ["LI.2"], "clusters": ["CL.0034", "CL.0017", "CL.0047"], "distractors": [], "why": "Greatest integer n for -4(2n+3)≥5n-51. Distribute (CL.0034), combine terms (CL.0017), isolate n (CL.0047)→n≤3. LI.2: greatest integer (boundary value)."}
-{"id": "SATM29LFEYT", "sub_skills": ["LI.2"], "clusters": ["CL.0034", "CL.0017", "CL.0047"], "distractors": [], "why": "Least integer x for 3(2x-7)>4x+11. Distribute (CL.0034), combine terms (CL.0017), isolate x (CL.0047)→x>16, least integer=17. LI.2: least integer (boundary value)."}
-{"id": "SATM29NU4MY", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: $3/notebook + $8 shipping, at most $47 → 3n+8≤47. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM29NUKOI", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value of x satisfies 5x+3>48? Solve: x>9 (CL.0047), test choices (CL.0101)→12. LI.4: test solutions of symbolic inequality."}
-{"id": "SATM29QDY91", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value of x satisfies 8x+7>50? Solve: x>5.375 (CL.0047), test choices (CL.0101)→6. LI.4: test solutions of symbolic inequality."}
-{"id": "SATM29RWCGI", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: at least 340 tickets (f+s≥340) and revenue 23s>529. Translate (CL.0104), at least/more than→symbols (CL.0201), rate×amount (CL.0060). LI.1: model with system of inequalities."}
-{"id": "SATM29TKVXG", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094"], "distractors": [], "why": "Which point lies in solution region of 2x+5y≤43 and 3x-y≥2? Substitute each point (CL.0094), check both inequalities (CL.0009). LI.4: test solutions of a system."}
-{"id": "SATM29U5FIU", "sub_skills": ["LI.1"], "clusters": ["CL.0047", "CL.0017", "CL.0016"], "distractors": [], "why": "Point (a,b) in region y<-2x+13 and y>1/3x-4. Must be true? Combine: 1/3a-4<-2a+13, clear fractions (CL.0016), combine terms (CL.0017), isolate a (CL.0047)→a<51/7. LI.1: interpret a system to derive a constraint."}
-{"id": "SATM29ZLQXS", "sub_skills": ["LI.2"], "clusters": ["CL.0047"], "distractors": [], "why": "Largest integer x for 3x+4≤19. Isolate x (CL.0047)→x≤5. LI.2: largest integer (boundary value)."}
-{"id": "SATM2A3MGOO", "sub_skills": ["LI.3"], "clusters": ["CL.0005", "CL.0016", "CL.0047", "CL.0081"], "distractors": [], "why": "Compound inequality -4<(3x-11)/7≤5. Multiply all parts by 7 (CL.0016/CL.0005), add 11 (CL.0005), divide by 3 (CL.0047)→-17/3<x≤46/3≈15.33, round down (CL.0081)→15. LI.3: two-sided range."}
-{"id": "SATM2A4A9EF", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value of t satisfies 3t-17>4? Solve: t>7 (CL.0047), test choices (CL.0101)→8. LI.4: test solutions of symbolic inequality."}
-{"id": "SATM2A5NURD", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0095", "CL.0034", "CL.0017", "CL.0047", "CL.0081"], "distractors": [], "why": "Factory: 11x+7y≤613, y≥x+17, maximize x. Translate (CL.0104), substitute y=x+17 (CL.0095), distribute (CL.0034), combine (CL.0017), isolate (CL.0047)→x≤27.44, round down (CL.0081)→27. LI.2: maximize x."}
-{"id": "SATM2A7FLDP", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: candle A uses 3oz wax/2min labor, B uses 5oz/1min, at most 310oz and 94min. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1: model with system."}
-{"id": "SATM2A9B84J", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 9x+17>71 for solution set. Subtract 17, divide by 9 (CL.0047)→x>6. LI.1: one-sided inequality, solution set asked."}
-{"id": "SATM2AMV2AH", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: planks $17 + nails $8, at most $340 → 17p+8n≤340. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM2AWPJ6K", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094"], "distractors": [], "why": "Which point is solution to y>3x-5 and y≤-2x+11? Substitute each (CL.0094), check both (CL.0009). LI.4: test solutions of a system."}
-{"id": "SATM2B2LE4X", "sub_skills": ["LI.3"], "clusters": ["CL.0005", "CL.0047"], "distractors": [], "why": "|2x-5|≤9 splits to -9≤2x-5≤9. Apply operations to all parts (CL.0005), isolate x (CL.0047)→-2≤x≤7, b-a=9. LI.3: compound (two-sided) inequality from absolute value."}
-{"id": "SATM2BB1ORX", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0047"], "distractors": [], "why": "At most $403, $13/vase + $52 kiln. Max vases? Translate (CL.0104), at most→≤ (CL.0201), isolate v (CL.0047)→v≤27. LI.2: maximum number."}
-{"id": "SATM2BDE7HK", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value of x satisfies 5x-9>26? Solve: x>7 (CL.0047), test choices (CL.0101)→8. LI.4: test solutions of symbolic inequality."}
-{"id": "SATM2BKT37E", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: $47 fee + $3/sqft, budget ≤$200 → 3s+47≤200. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM2BL1GPY", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: $4 sourdough + $6 rye, no more than $38 → 4s+6r≤38. Translate (CL.0104), no more than→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM2BMASAO", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: flat $19 + $4/mile, at most $75 → 19+4m≤75. Translate (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM2BR1LDU", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: $17/hr consulting - $263 fee, profit>$1500 → 17h-263>1500. Translate (CL.0104), more than→> (CL.0201), rate×amount (CL.0060). LI.1."}
-{"id": "SATM2BX2LYY", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0094", "CL.0047"], "distractors": [], "why": "Asks maximum whole soaps; translate constraints with at-most, substitute 6 candles, isolate s from binding labor constraint"}
-{"id": "SATM2C3004V", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value satisfies printed inequality 5x-8>27; solve to find boundary x>7 then pick from choices"}
-{"id": "SATM2C9YJF4", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Maximum centerpieces; translate at-most budget into 17c+51≤340, rate×amount for per-centerpiece cost, isolate c"}
-{"id": "SATM2CN39N2", "sub_skills": ["LI.3"], "clusters": ["CL.0034", "CL.0017", "CL.0047", "CL.0005"], "distractors": [], "why": "Two inequalities yield compound range -2<x<7; distribute, combine like terms, isolate x in first ineq, combine both bounds"}
-{"id": "SATM2COQ3PZ", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0095", "CL.0047", "CL.0081"], "distractors": [], "why": "Maximum whole hours at job Y; model two-constraint system, substitute expression from one into other, isolate y, round down"}
-{"id": "SATM2CTD72T", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Maximum notebooks; at-most budget, rate×amount for $3/notebook, isolate n"}
-{"id": "SATM2CVN9E2", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Greatest number of items; translate at-most shipping budget, rate×amount, isolate n"}
-{"id": "SATM2D2BU5K", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201"], "distractors": [], "why": "Translate 'more than $25' into x>25; pure modeling, no solving needed"}
-{"id": "SATM2DD0ROY", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Which inequality models taxi cost; translate at-most budget with rate×miles into 2.25m+3.50≤30"}
-{"id": "SATM2DHC25B", "sub_skills": ["LI.1"], "clusters": ["CL.0034", "CL.0033", "CL.0017", "CL.0133"], "distractors": [], "why": "Which inequality has no solution; simplify each by distributing (incl negative), combine like terms, compare coefficients to find contradiction"}
-{"id": "SATM2DKTVQ5", "sub_skills": ["LI.1", "LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Both asks: which inequality models the delivery cost AND what is the maximum miles; translate, isolate m"}
-{"id": "SATM2DOGPUE", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0094", "CL.0047", "CL.0081"], "distractors": [], "why": "Minimum burritos; translate at-least revenue, rate×amount, substitute 23 tacos, isolate b, round up to whole number"}
-{"id": "SATM2DQA081", "sub_skills": ["LI.3"], "clusters": ["CL.0005", "CL.0047"], "distractors": [], "why": "Compound inequality -4<2x+9≤17; apply operations to all three parts, isolate x, find greatest integer in range"}
-{"id": "SATM2E5R43H", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value satisfies 11t-19>58; solve for boundary t>7, test choices"}
-{"id": "SATM2E6GZSX", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Which inequality models parking cost; translate at-most budget with rate×hours"}
-{"id": "SATM2E7JHEH", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value satisfies 7x-4<31; solve for x<5, pick 3 from choices"}
-{"id": "SATM2EAF3A8", "sub_skills": ["LI.1"], "clusters": ["CL.0034", "CL.0033", "CL.0047"], "distractors": [], "why": "Solve -3(2x-7)>39; distribute negative, isolate x (flip ineq when dividing by -6)"}
-{"id": "SATM2EBIDXF", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value satisfies 8x-23>17; solve for x>5, pick 7 from choices"}
-{"id": "SATM2EEKC69", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value satisfies 7x-11>31; solve for x>6, pick 7 from choices"}
-{"id": "SATM2EJWGGN", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0094", "CL.0047"], "distractors": [], "why": "Maximum acres corn; model constraints, substitute w=50 to minimize wheat, isolate c from binding worker constraint"}
-{"id": "SATM2ELCL69", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Maximum shirts; translate no-more-than budget, rate×amount, isolate s"}
-{"id": "SATM2EO18KN", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0094", "CL.0047"], "distractors": [], "why": "Maximum acres Crop Y; model two constraints, substitute x=15, isolate y from binding fertilizer constraint"}
-{"id": "SATM2ETCFG7", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 6x-23>31 for solution set x>9; straightforward isolate variable"}
-{"id": "SATM2EU3R0N", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094", "CL.0101"], "distractors": [], "why": "Which point satisfies system of two inequalities; substitute each choice into both, check truth"}
-{"id": "SATM2EUL15S", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201"], "distractors": [], "why": "Which inequality models the average-score requirement; translate 'at least 78' average into inequality"}
-{"id": "SATM2EYCMBQ", "sub_skills": ["LI.1", "LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Both asks: which inequality AND maximum classes; translate no-more-than, rate×amount, isolate c"}
-{"id": "SATM2F3UGM1", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0047"], "distractors": [], "why": "Which inequality models remaining widget capacity; translate at-most into 75+w≤200, simplify"}
-{"id": "SATM2F6WWS8", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 4x+11≤39 for solution set x≤7; straightforward isolate variable"}
-{"id": "SATM2FDVR6R", "sub_skills": ["LI.4"], "clusters": ["CL.0047", "CL.0101"], "distractors": [], "why": "Which value satisfies 4x+11>39; solve for x>7, pick 8 from choices"}
-{"id": "SATM2FET6U3", "sub_skills": ["LI.4"], "clusters": ["CL.0009", "CL.0094", "CL.0101"], "distractors": [], "why": "Which point satisfies system of two inequalities; substitute each choice into both, check truth"}
-{"id": "SATM2FFWAE6", "sub_skills": ["LI.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Solve 7x-13>22 for solution set x>5; straightforward isolate variable"}
-{"id": "SATM2FK7MJ8", "sub_skills": ["LI.2"], "clusters": ["CL.0104", "CL.0201", "CL.0060", "CL.0047"], "distractors": [], "why": "Greatest number of notebooks; translate at-most budget, rate×amount, isolate n"}
-{"id": "SATM2FWE4BL", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Which inequality models shipping cost; translate at-most budget with rate×weight"}
-{"id": "SATM2FYF3UQ", "sub_skills": ["LI.3"], "clusters": ["CL.0016", "CL.0047", "CL.0005"], "distractors": [], "why": "Two separate inequalities combine into range -5<x≤9; clear fraction in first, isolate x in each, combine bounds, count integers"}
-{"id": "SATM2G2AU5J", "sub_skills": ["LI.2"], "clusters": ["CL.0047"], "distractors": [], "why": "Greatest integer satisfying -4x+19>3; isolate x (flip ineq dividing by -4), x<4, greatest integer is 3"}
-{"id": "SATM2G5ZUIF", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Which inequality models parking cost; translate no-more-than budget with rate×hours"}
-{"id": "SATM2G9NKZS", "sub_skills": ["LI.1"], "clusters": ["CL.0104", "CL.0201", "CL.0060"], "distractors": [], "why": "Model: flat $11 + $4/lb, at most $59 → 4p+11≤59. Translate words→inequality (CL.0104), at most→≤ (CL.0201), rate×amount (CL.0060). LI.1: translate context into inequality."}
+{"id":"SATM200U6DX","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047","CL.0081"],"distractors":[],"why":"Max photo prints with flat fee + per-print ≤ 120 → model inequality, isolate, round down to boundary"}
+{"id":"SATM2044BKK","sub_skills":["LI.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Solve x/7 + 3 > 6 for all x → clear fraction, isolate variable; one-sided inequality"}
+{"id":"SATM206RZ1Z","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047","CL.0081"],"distractors":[],"why":"Maximum whole pounds with budget ≤ $84.50 including surcharge → translate, isolate, round down boundary"}
+{"id":"SATM20A9LKV","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality represents hours h → translate flat-fee + rate context to inequality"}
+{"id":"SATM20L2PDV","sub_skills":["LI.3"],"clusters":["CL.0104","CL.0047","CL.0005"],"distractors":[],"why":"Count whole-number g values in compound 125 < 47+13g ≤ 203 → two-sided range, solve both bounds"}
+{"id":"SATM20OL8DL","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point lies in solution region of 5x-3y ≥ 11 and 2x+7y < 19 → test each pair in both"}
+{"id":"SATM20QPN2X","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value of x satisfies 5-2x > 11 → test each choice, substitute evaluate"}
+{"id":"SATM20QRZIF","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Model system: weight ≤ 800, S ≥ 9 → translate words with rate×amount to inequality system"}
+{"id":"SATM20RN4R8","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Which inequality represents miles m with budget ≤ $53 → translate and solve for solved form"}
+{"id":"SATM20W4N05","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0047","CL.0081"],"distractors":[],"why":"Maximum pens: $52 minus $11 reserve, $7/pen → model inequality, isolate, round down"}
+{"id":"SATM215FYBC","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"For what weights is express cheaper → model comparison inequality, combine like terms, solve for range"}
+{"id":"SATM21AMGAE","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0047","CL.0081"],"distractors":[],"why":"Minimum bracelets for profit ≥ 131 → model, isolate, round up to boundary"}
+{"id":"SATM21B0F7Y","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which ordered pair satisfies y > 4x-9 and y ≤ -2x+13 → test each point in both inequalities"}
+{"id":"SATM21CWMJ8","sub_skills":["LI.2","LI.3"],"clusters":["CL.0016","CL.0005","CL.0047"],"distractors":[],"why":"Greatest integer x in compound -4 < 3 - x/2 ≤ 11 → solve two-sided range, find boundary value"}
+{"id":"SATM21GGD7R","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Maximum copies with 7n + 19 ≤ 103 → translate, isolate, exact boundary"}
+{"id":"SATM21J9GIF","sub_skills":["LI.2"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Greatest integer x with -4x+9 ≥ 2x-21 → combine like terms, isolate, boundary value"}
+{"id":"SATM21OGTSG","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point in solution region of 7x+2y > 13 and -x+3y ≤ -5 → test each in both"}
+{"id":"SATM21T1MCK","sub_skills":["LI.2"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Greatest integer a where (a,11) satisfies system → substitute y=11, solve both, binding constraint gives boundary"}
+{"id":"SATM21VLA7C","sub_skills":["LI.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Solve (17-5x)/2 > 6 for all x → clear fraction, isolate; one-sided inequality"}
+{"id":"SATM21VZLQS","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Which inequality represents lumber constraint → translate rate×amount context to inequality"}
+{"id":"SATM21YBGXL","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"For how many miles is reimbursement → model cost > 37, solve for m; result is condition not boundary"}
+{"id":"SATM220EQ51","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve -4x + 7 ≤ 31 for all x → one-sided, isolate with sign flip"}
+{"id":"SATM222N63O","sub_skills":["LI.2"],"clusters":["CL.0047"],"distractors":[],"why":"Least value of x with -3x+14 ≤ 5 → isolate, boundary value (minimum)"}
+{"id":"SATM223A82P","sub_skills":["LI.2"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Greatest integer x with -5x+13 ≥ 2x-8 → combine like terms, isolate, boundary value"}
+{"id":"SATM2256DX5","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality represents books b within budget → translate flat-fee + per-book to inequality"}
+{"id":"SATM228E764","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value of x satisfies 5x+3 > 38 → test each choice"}
+{"id":"SATM229B9W4","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Which inequality represents budget constraint for oak+maple → translate rate×amount to inequality"}
+{"id":"SATM22AH9F9","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0034","CL.0047"],"distractors":[],"why":"Max total packages: first $17 + $6 each additional ≤ $71 → distribute 6(m-1), isolate, boundary"}
+{"id":"SATM22IQVLR","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 3x - 7 ≥ 5 for x → one-sided inequality, isolate variable"}
+{"id":"SATM22L0HF2","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality represents hours h within budget → translate flat-fee + rate context to inequality"}
+{"id":"SATM22M3D2H","sub_skills":["LI.3"],"clusters":["CL.0005","CL.0047"],"distractors":[],"why":"Range of t in compound -5 < 2-3t ≤ 11 → two-sided, isolate with sign flip, strict/non-strict tracking"}
+{"id":"SATM22TPGR3","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047","CL.0081"],"distractors":[],"why":"Min sessions for Plan B < Plan A → compare rate expressions, combine, isolate, round up boundary"}
+{"id":"SATM231WRT1","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Model system: protein ≥ 50 and calories ≤ 2000 → translate dual constraints with rate×amount"}
+{"id":"SATM233NCYP","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point in solution region of 3x-2y ≤ 7 and x+5y > 13 → test each in both"}
+{"id":"SATM2365QTL","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"For what t is plan 1 cheaper → model comparison inequality, combine like terms, solve for range"}
+{"id":"SATM23ACL9G","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve -5x + 13 ≥ -17 → one-sided inequality, isolate with sign flip"}
+{"id":"SATM23EF1UE","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Dual ask: which inequality represents AND max packages → model flat-fee+per-package ≤ 53, then boundary value"}
+{"id":"SATM23LY086","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value of t satisfies 7t+13>62 — test each choice in given inequality"}
+{"id":"SATM23NB7HS","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Translate studio cost scenario into inequality for h, solve for solution set"}
+{"id":"SATM23P7SBR","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"Two-product labor constraint with minimum Y; maximize X → substitute min Y, solve for max X boundary"}
+{"id":"SATM23QM9A9","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Model system: earnings ≥ 300 and hours ≤ 30; translate words to inequality system"}
+{"id":"SATM23WBBC9","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Budget ≤ $83 with flat fee + per-cupcake; find maximum whole cupcakes → boundary value"}
+{"id":"SATM23YBTUL","sub_skills":["LI.2","LI.3"],"clusters":["CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"Two-sided weight constraint (>200 and ≤377); ask is greatest number of large containers → max boundary with compound bounds"}
+{"id":"SATM246UDUX","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"Labor ≤97 with min sensor modules; maximize circuit boards → substitute min, solve for max boundary, round down"}
+{"id":"SATM24863YG","sub_skills":["LI.2"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Smallest integer satisfying -4x+17<2x-31; boundary value question (least integer)"}
+{"id":"SATM24AVPZ1","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047","CL.0081"],"distractors":[],"why":"Budget ≤ $413 with fixed fee + per-board cost; find maximum boards → boundary value, round down"}
+{"id":"SATM24KD60M","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0081"],"distractors":[],"why":"Inequality 6p+43≤250 given; find maximum p → isolate and round down"}
+{"id":"SATM24P2UK0","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Model system: at least 13 packages total and cost ≤ 209; translate to inequality system"}
+{"id":"SATM24TXK7M","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 4x+9≤37 for x; straightforward one-sided inequality"}
+{"id":"SATM253MMYO","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Word problem: raise more than $200, already have $135, $5/ticket; model and solve for t"}
+{"id":"SATM253N95H","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality represents notebooks within budget; translate context to inequality"}
+{"id":"SATM255WBPG","sub_skills":["LI.2"],"clusters":["CL.0047"],"distractors":[],"why":"Least integer value of x satisfying 7x-19>23 → boundary value (minimum)"}
+{"id":"SATM25AAY3Y","sub_skills":["LI.3"],"clusters":["CL.0016","CL.0005","CL.0047"],"distractors":[],"why":"Compound inequality -3<(4x-7)/3≤5; two-sided range, solve for a and b, compute b-a"}
+{"id":"SATM25DYNFP","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point lies in solution region of system y≤... and y≥...; test each point in both inequalities"}
+{"id":"SATM25PX02T","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 3x+7>22; one-sided inequality, isolate x"}
+{"id":"SATM25UFIIE","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"Max scones with two resource constraints (flour, sugar) and fixed muffins; substitute, solve both, take binding constraint"}
+{"id":"SATM25VB61N","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"Model system: revenue >910 and tickets ≤100; translate to inequality system"}
+{"id":"SATM25WARUB","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 8x+13≤77; one-sided inequality"}
+{"id":"SATM25XGUW3","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047","CL.0081"],"distractors":[],"why":"Budget ≤ $529 with delivery fee + per-centerpiece; find maximum → boundary value, round down"}
+{"id":"SATM261TM6O","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"Model system: cost ≤450, painter ≥6h, helper ≥3h; translate to inequality system"}
+{"id":"SATM263V7VD","sub_skills":["LI.2"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Greatest integer satisfying -3(2x+7)+4x≥5x-9; distribute, combine, isolate → boundary value"}
+{"id":"SATM267EXSL","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Max packages within budget (flat fee + per-package ≤ $53) → boundary value"}
+{"id":"SATM269J338","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value of x satisfies 9x+7>61; test each choice"}
+{"id":"SATM26BRCH7","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value of x satisfies 7x-13>22; test each choice"}
+{"id":"SATM26O9JXP","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point in solution set of system 2x-5y<11 and x+3y≥4; test each ordered pair"}
+{"id":"SATM26RU3M9","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 7x-11>24; test each choice"}
+{"id":"SATM26TG7FL","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which ordered pair satisfies 2x-y<6 and x+3y≥9; test each point in both"}
+{"id":"SATM26X8W2L","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve -5x+14≥39; one-sided inequality, divide by negative flips sign"}
+{"id":"SATM272N01A","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 7x+11>53; one-sided inequality"}
+{"id":"SATM2731MZ0","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Delivery flat fee + per-package ≤ $53; model inequality AND find max packages → boundary value"}
+{"id":"SATM273QC02","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point in solution region of 3x-2y>7 and x+5y≤18; test each point"}
+{"id":"SATM276DZ0E","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which ordered pair satisfies y>2x-7 and y≤-x+14; test each point in both"}
+{"id":"SATM279O5PC","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 2x-5≥9; one-sided inequality"}
+{"id":"SATM27JHSYB","sub_skills":["LI.2"],"clusters":["CL.0016","CL.0017","CL.0047","CL.0081"],"distractors":[],"why":"Greatest integer x for system y≤-3/4x+9 and y≥2/5x-1 → set upper≥lower, clear fractions, isolate, round down"}
+{"id":"SATM28BOB9S","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Model system: earnings≥390, hours≤35 → translate with rate×amount"}
+{"id":"SATM28HS33E","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for shipping weight → translate flat-fee+per-pound ≤ budget"}
+{"id":"SATM28II13Z","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for pounds → translate flat-fee+per-pound ≤ budget"}
+{"id":"SATM28WM1T7","sub_skills":["LI.4"],"clusters":["CL.0005","CL.0047","CL.0094","CL.0101"],"distractors":[],"why":"Which value of m could satisfy compound -1<2m-7≤9 → solve compound, test choices"}
+{"id":"SATM290SGDG","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 11x-33≥44 for all x → one-sided, isolate"}
+{"id":"SATM291TK3I","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for shipping weight → translate"}
+{"id":"SATM2937HVI","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 9x+17>80 → test choices"}
+{"id":"SATM2980QX4","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0047","CL.0081"],"distractors":[],"why":"Max pens with budget: 7(4)+3p≤53 → isolate, round down"}
+{"id":"SATM2981UEX","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 5x-17>23 → test choices"}
+{"id":"SATM299S1WV","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for pounds → translate"}
+{"id":"SATM29AL4NX","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for classes → translate"}
+{"id":"SATM29B6T7F","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for posters → translate"}
+{"id":"SATM29D6790","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 8x-13>27 → test choices"}
+{"id":"SATM29KW517","sub_skills":["LI.2"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Greatest integer n with -4(2n+3)≥5n-51 → distribute negative, combine, isolate, boundary"}
+{"id":"SATM29LFEYT","sub_skills":["LI.2"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Least integer x with 3(2x-7)>4x+11 → distribute, combine, isolate, boundary"}
+{"id":"SATM29NU4MY","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for notebooks → translate"}
+{"id":"SATM29NUKOI","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 5x+3>48 → test choices"}
+{"id":"SATM29QDY91","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 8x+7>50 → test choices"}
+{"id":"SATM29RWCGI","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Model system: tickets≥340, revenue>529 → translate with rate×amount"}
+{"id":"SATM29TKVXG","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point in solution region of system → test each in both"}
+{"id":"SATM29U5FIU","sub_skills":["LI.1"],"clusters":["CL.0016","CL.0017","CL.0047"],"distractors":[],"why":"What must be true about a → derive constraint from system, fractions, combine, isolate"}
+{"id":"SATM29ZLQXS","sub_skills":["LI.2"],"clusters":["CL.0047"],"distractors":[],"why":"Largest integer x with 3x+4≤19 → isolate, boundary"}
+{"id":"SATM2A3MGOO","sub_skills":["LI.2","LI.3"],"clusters":["CL.0016","CL.0005","CL.0047"],"distractors":[],"why":"Greatest integer x in compound -4<(3x-11)/7≤5 → clear fraction, compound op, isolate"}
+{"id":"SATM2A4A9EF","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 3t-17>4 → test choices"}
+{"id":"SATM2A5NURD","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0095","CL.0017","CL.0047","CL.0081"],"distractors":[],"why":"Max x with constraints 11x+7y≤613 and y≥x+17 → substitute min y, combine, isolate, round down"}
+{"id":"SATM2A7FLDP","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0060"],"distractors":[],"why":"Model system: wax≤310, labor≤94 → translate with rate×amount"}
+{"id":"SATM2A9B84J","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 9x+17>71 for all x → isolate"}
+{"id":"SATM2AMV2AH","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for planks+nails budget → translate"}
+{"id":"SATM2AWPJ6K","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point satisfies y>3x-5 and y≤-2x+11 → test each in both"}
+{"id":"SATM2B2LE4X","sub_skills":["LI.3"],"clusters":["CL.0005","CL.0047"],"distractors":[],"why":"|2x-5|≤9 → compound -9≤2x-5≤9, solve for range, compute b-a"}
+{"id":"SATM2BB1ORX","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Max vases: 13v+52≤403 → translate, isolate, exact boundary 27"}
+{"id":"SATM2BDE7HK","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 5x-9>26 → test choices"}
+{"id":"SATM2BKT37E","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for garden sq ft → translate"}
+{"id":"SATM2BL1GPY","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for bakery budget → translate"}
+{"id":"SATM2BMASAO","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for delivery miles → translate"}
+{"id":"SATM2BR1LDU","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for profit (17h-263>1500) → translate with subtraction"}
+{"id":"SATM2BX2LYY","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094","CL.0047"],"distractors":[],"why":"Max soaps with two resource constraints, 6 candles fixed → substitute, isolate, binding constraint (exact 7)"}
+{"id":"SATM2C3004V","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 5x-8>27 → test choices"}
+{"id":"SATM2C9YJF4","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Max centerpieces: 17c+51≤340 → translate, isolate, exact 17"}
+{"id":"SATM2CN39N2","sub_skills":["LI.3"],"clusters":["CL.0034","CL.0017","CL.0047","CL.0005"],"distractors":[],"why":"How many integers in -2<x<7 from 4(x+3)-7<2x+19 and x>-2 → distribute, combine, compound range"}
+{"id":"SATM2COQ3PZ","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0047","CL.0081"],"distractors":[],"why":"Max hours at job Y with time≤13, earnings≥173 → substitute, combine constraints, round down 9.25→9"}
+{"id":"SATM2CTD72T","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Max notebooks: 3n+11≤47 → translate, isolate, exact 12"}
+{"id":"SATM2CVN9E2","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Greatest items: 8+3n≤35 → translate, isolate, exact 9"}
+{"id":"SATM2D2BU5K","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for spending >$25 → translate"}
+{"id":"SATM2DD0ROY","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for taxi miles → translate"}
+{"id":"SATM2DHC25B","sub_skills":["LI.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Which inequality has no solution → simplify each, identify contradiction"}
+{"id":"SATM2DKTVQ5","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Dual: which inequality AND max miles → translate + boundary 9"}
+{"id":"SATM2DOGPUE","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"Min burritos: 92+9b≥261 → substitute taco revenue, isolate, round up 18.78→19"}
+{"id":"SATM2DQA081","sub_skills":["LI.2","LI.3"],"clusters":["CL.0005","CL.0047"],"distractors":[],"why":"Greatest integer x in compound -4<2x+9≤17 → compound op, isolate, boundary 4"}
+{"id":"SATM2E5R43H","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 11t-19>58 → test choices"}
+{"id":"SATM2E6GZSX","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for parking hours → translate"}
+{"id":"SATM2E7JHEH","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which is a possible value of x with 7x-4<31 → test choices"}
+{"id":"SATM2EAF3A8","sub_skills":["LI.1"],"clusters":["CL.0034","CL.0033","CL.0047"],"distractors":[],"why":"Solve -3(2x-7)>39 for all x → distribute negative, isolate with sign flip"}
+{"id":"SATM2EBIDXF","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 8x-23>17 → test choices"}
+{"id":"SATM2EEKC69","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 7x-11>31 → test choices"}
+{"id":"SATM2EJWGGN","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"Max corn acres with 3 constraints (acres≤200, workers≤760, wheat≥50) → substitute min wheat, solve both, binding=122"}
+{"id":"SATM2ELCL69","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Max shirts: 13s+9≤74 → translate, isolate, exact 5"}
+{"id":"SATM2EO18KN","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"Max Crop Y acres with 3 constraints → substitute min X=15, binding fertilizer=33"}
+{"id":"SATM2ETCFG7","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 6x-23>31 → isolate"}
+{"id":"SATM2EU3R0N","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point in solution region of 5x-7y≥23 and 3x+11y<40 → test each"}
+{"id":"SATM2EUL15S","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for test average score ≥78 → translate"}
+{"id":"SATM2EYCMBQ","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Dual: which inequality AND max classes → translate + boundary 8"}
+{"id":"SATM2F3UGM1","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Which inequality for additional widgets → translate, solve to answer-choice form"}
+{"id":"SATM2F6WWS8","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 4x+11≤39 → isolate"}
+{"id":"SATM2FDVR6R","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0094"],"distractors":[],"why":"Which value satisfies 4x+11>39 → test choices"}
+{"id":"SATM2FET6U3","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"Which point in solution region of 4x-3y≥19 and 2x+9y<31 → test each"}
+{"id":"SATM2FFWAE6","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 7x-13>22 for all x → isolate"}
+{"id":"SATM2FK7MJ8","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0201","CL.0047"],"distractors":[],"why":"Greatest notebooks: 3n+11≤47 → translate, isolate, exact 12"}
+{"id":"SATM2FWE4BL","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for shipping weight → translate"}
+{"id":"SATM2FYF3UQ","sub_skills":["LI.3"],"clusters":["CL.0016","CL.0017","CL.0047","CL.0005"],"distractors":[],"why":"How many integers with (3x-7)/2≤10 and 5x+1>3x-9 → clear fraction, combine, compound range, count 14"}
+{"id":"SATM2G2AU5J","sub_skills":["LI.2"],"clusters":["CL.0047"],"distractors":[],"why":"Greatest integer x with -4x+19>3 → isolate with sign flip, boundary 3"}
+{"id":"SATM2G5ZUIF","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for parking hours → translate"}
+{"id":"SATM2G9NKZS","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Which inequality for shipping pounds → translate flat-fee+per-pound ≤ budget"}
