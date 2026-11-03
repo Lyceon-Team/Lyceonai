@@ -61,6 +61,7 @@ import {
 } from "../../scripts/worked-examples/final-mix";
 import {
   BRAND_RESPELLING,
+  BRAND_RESPELLINGS,
   LIMITER_HEADROOM_DB,
   PAD_MIN_SECONDS,
   alimiterLimit,
@@ -485,6 +486,24 @@ describe("pronunciation of Lyceon", () => {
     if (p?.engine !== "kokoro") throw new Error("am_michael is not kokoro");
     expect(kokoroTtsArgs(p, "Follow Lyceon.", "/x/a.wav")[1]).toBe(
       "Follow Lysee-ahn.",
+    );
+  });
+
+  // Owner brief "Video tools pilot" D3 (Karl, 2026-11-02): Chatterbox hears the plain spelling as
+  // "Lycian", so it is given "Lie-see-on", from the same table and the same function.
+  it("each engine gets its own respelling from the one table; kokoro stays the default", () => {
+    expect(BRAND_RESPELLINGS).toEqual({
+      kokoro: "Lysee-ahn",
+      chatterbox: "Lie-see-on",
+    });
+    expect(spokenBrandName("Lyceon SAT Prep.", "chatterbox")).toBe(
+      "Lie-see-on SAT Prep.",
+    );
+    expect(spokenBrandName("Lyceon SAT Prep.", "kokoro")).toBe(
+      "Lysee-ahn SAT Prep.",
+    );
+    expect(spokenBrandName("Lyceon SAT Prep.")).toBe(
+      spokenBrandName("Lyceon SAT Prep.", "kokoro"),
     );
   });
 
