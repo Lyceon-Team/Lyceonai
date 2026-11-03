@@ -5,6 +5,7 @@ How Lyceon sounds, how content gets made outside the blog pipeline, and how each
 ## Contents
 1. Voice
 1a. Video scripts and voice
+1b. Positioning: students who want to grind
 2. Words and patterns to avoid
 3. The content workflow (outside the blog pipeline)
 4. Channel playbooks
@@ -46,6 +47,20 @@ Applies to every voiced video: worked examples, QOTD breakdowns, the rotation po
 - **Loudness:** voice lines are normalised (around −14 LUFS, true peak ≤ −1 dB) so nothing clips.
 - **QOTD breakdowns** use authored scripts, not the question read aloud.
 - **Screen demos** are scripted Playwright recordings, not OpenScreen (archived).
+
+## 1b. Positioning: students who want to grind (Karl, 2026-11-03)
+
+Lyceon is for serious, hardworking students: the ones who want to put in the work.
+
+- **Student line:** "Lyceon is for students who want to grind."
+- **Parent line:** "For students who are serious about their score." (Parents get the credibility register, §1; "grind" is the student word.)
+- **Grind-style hooks and calls to action are allowed**, within each channel's rules (§4a). For example, "Follow if you're grinding for Dec 5", or on Instagram "Comment GRIND for the link".
+- **Guardrail: "grind" means effort, never burnout.**
+  - Never glorify all-nighters, skipping sleep, or studying through exhaustion.
+  - Never shame students who aren't grinding, or imply they're behind or lazy.
+  - The fear and pressure bans (§2) still apply.
+  - The audience is 15–18, and parents pay.
+- Positioning is not the slogan: "Study Smarter, Score Higher." stays the slogan (§1).
 
 ## 2. Words and patterns to avoid
 
@@ -131,7 +146,7 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 | Channel | Call to action |
 |---|---|
 | TikTok | No links, no promo lines. The follow line "Follow for daily SAT questions 👆" is allowed: a follow ask, not promo (Karl, 2026-11-02). The bio link is set once. |
-| Instagram | "Comment SAT and I'll send you the link". |
+| Instagram | "Comment SAT and I'll send you the link". "Comment GRIND for the link" is also allowed (Karl, 2026-11-03; §1b). |
 | Facebook Page | A genuine question ("How would you solve it?"). No link, no "comment a word". |
 | Reddit | No links in public comments; a link only by DM to someone who asked. |
 
@@ -148,6 +163,7 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - [ ] No score promises, guarantees, or "better than a tutor".
 - [ ] No fake urgency or scarcity; any deadline is real.
 - [ ] No fear aimed at teens; no normalizing the problem as pressure ("Most people…" hooks are fine).
+- [ ] Any "grind" line means effort, never burnout: no all-nighters or skipped sleep, no shaming students who aren't grinding (§1b).
 - [ ] "Free" only for the diagnostic, daily practice or the QOTD; calendar, parent view, LISA and full-length tests shown as Pro.
 - [ ] The channel's call to action (§4a); no Desmos name, logo or interface.
 - [ ] Written to one person; plain words; no AI-tell phrases.
