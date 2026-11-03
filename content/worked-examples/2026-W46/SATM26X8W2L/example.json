@@ -1,0 +1,42 @@
+{
+  "question_id": "SATM26X8W2L",
+  "skill_code": "Linear Inequalities in One or Two Variables",
+  "post_on": "2026-11-11",
+  "hook": {
+    "type": "speed",
+    "line": "Ten seconds: −5x + 14 ≥ 39. Which way does the sign point?",
+    "voice": "Think you can do this one in ten seconds? Go."
+  },
+  "question_voice": "We need every x that makes this true.",
+  "signature_move": "Solve it like an equation; flip the sign when you multiply or divide by a negative.",
+  "steps": [
+    {
+      "notepad": "−5x + 14 ≥ 39",
+      "voice": "Okay. Treat it like an equation for now."
+    },
+    {
+      "notepad": "−5x ≥ 25",
+      "voice": "Take fourteen off both sides, and you get negative five x is at least twenty-five."
+    },
+    {
+      "notepad": "÷ (−5)",
+      "voice": "Last move. Divide both sides by negative five."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) x ≤ −5",
+    "voice": "x is less than or equal to negative five. That's A. Did you flip it? Quick check: try negative six. Thirty plus fourteen is forty-four, and that's at least thirty-nine."
+  },
+  "trap": {
+    "summary": "Dividing by −5 without flipping the sign, and answering x ≥ −5.",
+    "notepad": [
+      "x ≥ −5  ✗",
+      "÷ negative flips the sign",
+      "x ≤ −5  ✓"
+    ],
+    "voice": "Now here's where people slip. You're dividing by a negative, so the sign flips."
+  },
+  "check": "Test x = −6 from the answer: −5(−6) + 14 = 30 + 14 = 44, and 44 ≥ 39, so it works; x = 0 gives 14, which is not at least 39.",
+  "takeaway": "Divide by a negative, flip the sign."
+}

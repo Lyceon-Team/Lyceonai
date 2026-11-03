@@ -250,7 +250,7 @@ describe("runQotdSchedule", () => {
     expect(db.schedule.get("2026-10-05")).toBeDefined();
   });
 
-  it("skips an MCQ whose explanation names a choice letter (options are shuffled per request), and takes the next", async () => {
+  it("skips an MCQ whose explanation names a choice letter (options are shuffled once at scheduling, SCL-258), and takes the next", async () => {
     const pool = makePool(2);
     const first = rotationFor("2026-10-05")[0];
     const inDomain = pool

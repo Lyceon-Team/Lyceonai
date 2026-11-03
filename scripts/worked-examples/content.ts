@@ -40,6 +40,7 @@ import {
 } from "../../shared/worked-examples/seed-question";
 import type { ExampleOnBranch } from "./approval";
 import { mixProblem, readWav } from "./audio";
+import { lineQualityProblems } from "./quality";
 import { scriptLines } from "./composition";
 import { ROOT, type Kit } from "./kit";
 
@@ -163,7 +164,11 @@ export function seedQuestion(
     : { ok: false, problem: `${id} not found` };
 }
 
-/** The committed voice against the script and the kit: same lines, same text, same voice, loud enough. */
+/**
+ * The committed voice against the script and the kit: same lines, same text, a known voice, every
+ * line passing the quality checks (says the script, no clipping, no silence), loud enough over the
+ * music. A fallback line must be in the kit's fallback voice and say why it fell back.
+ */
 export function voiceProblems(
   example: WorkedExampleContent,
   manifest: VoiceManifest,
@@ -171,8 +176,8 @@ export function voiceProblems(
   wav: (file: string) => Uint8Array,
 ): string[] {
   const out: string[] = [];
-  if (manifest.voice !== kit.voice.voice)
-    out.push(`voice is ${manifest.voice}, the kit's is ${kit.voice.voice}`);
+  if (kit.voice.profiles[manifest.voice] === undefined)
+    out.push(`voice ${manifest.voice} is not a profile in voice.json`);
   const script = scriptLines(example, kit.voice.outro_text).filter(
     (s) => s.key !== "outro",
   );
@@ -190,7 +195,26 @@ export function voiceProblems(
       out.push(
         `voice/${line.file} was voiced from different text than ${s.key} now has: re-voice it`,
       );
-    const info = readWav(wav(line.file));
+    if (line.voice !== undefined) {
+      if (line.voice !== kit.voice.fallback_profile)
+        out.push(
+          `voice/${line.file} fell back to ${line.voice}, not the fallback voice ${kit.voice.fallback_profile}`,
+        );
+      if (manifest.voice === kit.voice.fallback_profile)
+        out.push(
+          `voice/${line.file} records a fallback in a batch already in the fallback voice`,
+        );
+    }
+    const audio = wav(line.file);
+    for (const p of lineQualityProblems(
+      s.text,
+      line.words,
+      audio,
+      kit.voice.quality,
+      kit.voice.transcript_aliases,
+    ))
+      out.push(`voice/${line.file}: ${p}`);
+    const info = readWav(audio);
     if (Math.abs(info.durationSeconds - line.duration) > 0.05)
       out.push(
         `voice/${line.file} lasts ${info.durationSeconds.toFixed(2)} s, the manifest says ${line.duration}`,

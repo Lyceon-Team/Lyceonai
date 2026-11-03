@@ -42,12 +42,12 @@ export const qotdOptionKeySchema = z.enum(["A", "B", "C", "D"]);
 /** An opaque option token: 22 base64url characters (server/services/qotd/option-tokens.ts). */
 export const qotdOptionTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
 
-/** An archive option: canonical order, canonical letter. */
+/** An archive option: in the day's stored order (SCL-258), identified by its canonical key. */
 export const qotdOptionSchema = z
   .object({ id: qotdOptionKeySchema, text: z.string() })
   .strict();
 
-/** Today's option: in canonical order (2026-10-23), identified only by its token. */
+/** Today's option: in the day's stored order (SCL-258), identified only by its token. */
 export const qotdServedOptionSchema = z
   .object({ id: qotdOptionTokenSchema, text: z.string() })
   .strict();
@@ -117,9 +117,17 @@ export const qotdSubmitResponseSchema = z.object(qotdRevealShape).strict();
 export const qotdArchiveQuestionSchema = z
   .object({
     ...qotdQuestionBaseShape,
-    /** MCQ: four options in canonical order. Grid-in: empty. */
+    /** MCQ: the options in the day's stored order (SCL-258). Grid-in: empty. */
     options: z.array(qotdOptionSchema),
+    /** The correct option's canonical key (its id above). */
     correct_option_id: qotdOptionKeySchema.nullable(),
+    /**
+     * The letter the correct option is shown under, from the stored order. Grid-in: null. The
+     * server always sends it; it is optional to READ only because a reader (the social run, a
+     * browser tab) can meet a server that predates SCL-258, whose options are in the order it
+     * showed (canonical). Readers letter by position and require this to agree when present.
+     */
+    correct_letter: qotdOptionKeySchema.nullable().optional(),
     correct_answer: z.string().nullable(),
     explanation: z.string(),
   })
@@ -181,14 +189,48 @@ export const qotdSocialInputSchema = z
     "an MCQ has four options; a grid-in has none",
   );
 
-/** The caption and alt text posted with the images. */
+/**
+ * The copy for today's images: the Facebook caption (`caption`), the alt text and the Instagram
+ * caption (owner brief "One funnel for every social post", Karl, 2026-10-28: "Add an Instagram
+ * caption with 'Comment SAT and I'll send you the link'"; formats of Karl's rulings 2026-11-02,
+ * shared/social/posts.ts).
+ */
 export const qotdSocialCopySchema = z
-  .object({ caption: z.string().min(1), alt_text: z.string().min(1).max(1000) })
+  .object({
+    caption: z.string().min(1),
+    alt_text: z.string().min(1).max(1000),
+    instagram_caption: z.string().min(1),
+  })
   .strict();
 
 /**
+ * The tagged /start links for a post's channels (owner brief "One funnel for every social post",
+ * Karl, 2026-10-28: "Tagged links for each"): Reddit's goes in its post; TikTok's goes in the
+ * bio; Instagram's is the one sent to people who comment SAT. The worked-example manifest carries
+ * all three (shared/social/funnel.ts campaignLinks builds them).
+ */
+export const socialStartLinksSchema = z
+  .object({
+    reddit: z.string().startsWith("lyceon.ai/start?"),
+    tiktok: z.string().startsWith("lyceon.ai/start?"),
+    instagram: z.string().startsWith("lyceon.ai/start?"),
+  })
+  .strict();
+
+/**
+ * The QOTD's tagged /start links: TikTok's (the bio) and Instagram's (sent to people who comment
+ * SAT). No Reddit link: the Reddit QOTD is discontinued (its subreddit was banned by Reddit
+ * sitewide; Karl's ruling 2026-10-30), so nothing Reddit-related is generated for the QOTD. The
+ * schema is strict, so a manifest that still carries a Reddit link is refused.
+ */
+export const qotdStartLinksSchema = socialStartLinksSchema.omit({
+  reddit: true,
+});
+
+/**
  * The day before a QOTD date (YYYY-MM-DD, calendar arithmetic in UTC so no zone shifts it).
- * "Yesterday" for the reveal is always this, taken from the posted day itself, never the clock.
+ * "Yesterday" for the TikTok carousel is always this, taken from the posted day itself, never
+ * the clock.
  */
 export function previousQotdDate(date: string): string {
   const d = new Date(`${qotdDateSchema.parse(date)}T00:00:00Z`);
@@ -197,16 +239,21 @@ export function previousQotdDate(date: string): string {
 }
 
 /**
- * Yesterday's reveal, for the comment on yesterday's r/satquestions post.
+ * Yesterday's reveal: the answer and explanation for the comment on yesterday's Reddit post.
  *
  * @spec [Doc 10A §7 ("no answer is revealed before submitting"; a past day's answer is public on
  *       its archive page), Doc 10B (Reddit posting stays manual); owner brief "QOTD Slack post —
  *       add yesterday's reveal" (Karl, 2026-10-15)] | @implemented [2026-10-15]
+ *       | DISCONTINUED [Karl's ruling 2026-10-30: the Reddit QOTD is off, its subreddit having been
+ *       banned by Reddit sitewide]
  *
- * plain English: built ONLY from yesterday's public archive payload (GET
- * /api/public/qotd/:date, which refuses today and future days). `withheld` is a day the archive
- * does not publish (a repaired question, owner 2026-10-08): it carries the date and nothing else,
- * so there is nothing to post but the notice.
+ * plain English: `qotdRevealSchema` is no longer part of the publish manifest: the reveal existed
+ * only for the Reddit comment, so since 2026-10-30 nothing builds or posts it. It is left in place
+ * (with shared/qotd/reveal.ts) so the Reddit flow can be restored or deleted as one change.
+ * `qotdRevealAnswerSchema` is live: the TikTok carousel's slide 3 uses it.
+ * Built ONLY from yesterday's public archive payload (GET /api/public/qotd/:date, which refuses
+ * today and future days). `withheld` is a day the archive does not publish (a repaired question,
+ * owner 2026-10-08): it carries the date and nothing else.
  */
 export const qotdRevealAnswerSchema = z.discriminatedUnion("kind", [
   z
@@ -245,7 +292,13 @@ export const qotdRevealSchema = z
     "the archive link is the revealed day's page",
   );
 
-/** Today's suggested Reddit post: the title and the question as plain text. */
+/**
+ * Today's suggested Reddit post: the title, then the portrait image, then one call-to-action line
+ * with the tagged /start link (owner brief 2026-10-28: "title + image + one-line CTA … Remove the
+ * written question/choices from the body"). Was the title and the question as plain text.
+ * DISCONTINUED (Karl's ruling 2026-10-30: the Reddit QOTD is off): no longer in the publish
+ * manifest; left in place with shared/qotd/reveal.ts buildRedditPost, which nothing calls.
+ */
 export const qotdRedditPostSchema = z
   .object({
     title: z.string().min(1).max(300),
@@ -265,8 +318,8 @@ export const QOTD_TIKTOK_TITLE_MAX = 90;
  *       its archive page), §11; owner brief "QOTD social: TikTok 3-slide carousel + fixed answer
  *       order + CTA-first caption + short title" (Karl, 2026-10-23)] | @implemented [2026-10-23]
  *
- * plain English: built ONLY from yesterday's public archive payload, like the Reddit reveal, so
- * it can never carry today's answer. `question` is the strict no-answer social input (slide 1);
+ * plain English: built ONLY from yesterday's public archive payload, so it can never carry
+ * today's answer. `question` is the strict no-answer social input (slide 1);
  * `answer` and `why` are slide 3: the correct choice's letter and RAW text (drawn with the site's
  * maths renderer) or the grid-in value, and at most 300 characters of the explanation, ending
  * at a sentence boundary. The letter is the one slide 1 shows for that choice (refused by the
@@ -297,8 +350,13 @@ export const qotdTiktokPostSchema = z
         status: z.literal("built"),
         /** The carousel's question day: yesterday. */
         qotd_date: qotdDateSchema,
-        title: z.string().min(1).max(QOTD_TIKTOK_TITLE_MAX),
+        /**
+         * The one block Karl pastes: headline, follow and comment line, hashtags (Karl's rulings
+         * 2026-11-02). It replaced the separate title and caption.
+         */
         caption: z.string().min(1),
+        /** TikTok's "Manage keywords", one per entry (shared/social/posts.ts socialKeywords). */
+        keywords: z.array(z.string().min(1)).min(1),
         slides: z
           .array(z.string().regex(/^qotd-\d{4}-\d{2}-\d{2}-tiktok-[123]\.png$/))
           .length(3),
@@ -334,14 +392,33 @@ export const qotdTiktokPostSchema = z
  * nothing (a past day), or "no-answer-in-source" for today, whose public pre-submit payload
  * carries the answer and explanation as the literal null (qotdSocialInputSchema), so there is
  * nothing to leak and nothing to check against. Any other value fails to parse.
+ *
+ * No Reddit: since Karl's ruling 2026-10-30 (the QOTD subreddit banned by Reddit sitewide; the QOTD
+ * goes to TikTok, Instagram and Facebook only) the manifest carries no Reddit post, no reveal for
+ * a Reddit comment and no Reddit link. It is strict, so a post.json that still carries any of
+ * them is refused and nothing is posted.
  */
 export const qotdSocialPostManifestSchema = z
   .object({
     qotd_date: qotdDateSchema,
     section: z.enum(["Math", "Reading and Writing"]),
     source: z.enum(["today", "past"]),
+    /** The Facebook caption (Karl's rulings 2026-11-02): no link, no "comment a word" ask. */
     caption: z.string().min(1),
+    /** Uploaded with the images in Slack; not in the message (Karl, 2026-11-02). */
     alt_text: z.string().min(1).max(1000),
+    /** The Instagram caption (owner brief 2026-10-28; format of Karl's rulings 2026-11-02). */
+    instagram_caption: z.string().min(1),
+    /**
+     * The tagged /start links (owner brief 2026-10-28); no Reddit link. Kept for the run page and
+     * the runbook: the daily #social message carries none (Karl, 2026-11-02).
+     */
+    links: qotdStartLinksSchema,
+    /**
+     * QA warnings the poster shows in Slack, outside the copy blocks: today only "SAT date list
+     * needs updating" (Karl's rulings 2026-11-02).
+     */
+    warnings: z.array(z.string().min(1)),
     images: z
       .array(
         z
@@ -362,18 +439,10 @@ export const qotdSocialPostManifestSchema = z
         leaks: z.enum(["passed", "no-answer-in-source"]),
       })
       .strict(),
-    /** Today's suggested Reddit title and body (owner brief 2026-10-15). */
-    reddit: qotdRedditPostSchema,
-    /** Yesterday's reveal: always the day before `qotd_date` (owner brief 2026-10-15). */
-    reveal: qotdRevealSchema,
     /** Yesterday's question as a TikTok carousel, or why there is none (Karl, 2026-10-23). */
     tiktok: qotdTiktokPostSchema,
   })
   .strict()
-  .refine(
-    (m) => m.reveal.qotd_date === previousQotdDate(m.qotd_date),
-    "the reveal is yesterday's, never today's",
-  )
   .refine(
     (m) => m.tiktok.qotd_date === previousQotdDate(m.qotd_date),
     "the TikTok carousel is yesterday's question, never today's",

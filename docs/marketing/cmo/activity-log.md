@@ -6,5 +6,5 @@ What Lyceon actually did each week, so the numbers can be explained. Karl adds e
 
 - Founding-cohort emails sent (code ALPHA), plus a reminder to non-redeemers on 2026-10-12.
 - Karl posted in SAT subreddits (other than r/SAT). Posts ask readers to DM him or search "Lyceon AI"; people who DM get a direct lyceon.ai/login link. (Karl, 2026-10-15)
-- Question of the Day posted to social channels and r/satquestions.
+- Question of the Day posted to social channels and r/satquestion.
 - Guardian accountability loop went live (2026-10-13).

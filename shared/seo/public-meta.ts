@@ -27,6 +27,12 @@ export interface PublicMeta {
   canonical: string;
   ogImage?: string;
   jsonLd?: Record<string, unknown>[];
+  /**
+   * Keep the page out of search indexes (`<meta name="robots" content="noindex">`). For pages
+   * made for links we post ourselves, not for search (owner brief 2026-10-28: /start), so they
+   * are never thin or doorway pages in an index (Public Disclosure Doctrine 8).
+   */
+  noindex?: true;
 }
 
 /**
@@ -156,6 +162,14 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
         { name: "Blog", url: `${BASE_URL}/blog` },
       ]),
     ],
+  },
+  "/start": {
+    title: "Start free SAT practice | Lyceon",
+    description:
+      "Find your SAT blind spots free, then practise with a free SAT question every day.",
+    canonical: `${BASE_URL}/start`,
+    ogImage: DEFAULT_OG_IMAGE,
+    noindex: true,
   },
   "/sat-question-of-the-day": {
     title: "SAT Question of the Day – Free Daily SAT Practice | Lyceon",

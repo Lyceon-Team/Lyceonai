@@ -19,6 +19,10 @@ import { logger } from "../logger.js";
 import { createSupabaseServerClient } from "../lib/supabase-ssr.js";
 import { getSupabaseAdmin } from "../middleware/supabase-auth.js";
 import { recordSignupSource } from "../lib/analytics/signup-source.js";
+import {
+  recordSignupAttribution,
+  signupAttributionFromQuery,
+} from "../lib/signup-attribution.js";
 import { emitEvent } from "../lib/analytics/emit-event.js";
 import { hasActiveGuardianLink } from "../lib/guardian-link-state.js";
 import {
@@ -415,6 +419,15 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
         await recordSignupSource(
           user.id,
           req.query.signupSource,
+          req.requestId,
+        );
+        // Karl, 2026-10-28: the sign-up channel rides this URL like `signupSource`.
+        await recordSignupAttribution(
+          user.id,
+          signupAttributionFromQuery(
+            req.query.signup_channel,
+            req.query.signup_campaign,
+          ),
           req.requestId,
         );
       } else {

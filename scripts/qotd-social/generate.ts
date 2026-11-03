@@ -14,7 +14,8 @@
  *   * Without --date it builds TODAY from GET /api/public/qotd/today, the website's own
  *     pre-submit payload: the answer and explanation are the literal null there, and the
  *     database decides which day "today" is, so no future day can be fetched.
- *   * --date builds a PAST day (strictly before today in America/Chicago, else exit 2) from the
+ *   * --date builds a PAST day (strictly before today's QOTD day, 04:00 UTC to 04:00 UTC, else
+ *     exit 2) from the
  *     public archive. Its answer is dropped by socialInputFromArchive before anything is built,
  *     and the output is then checked against it with socialAssetLeaks. `--date latest` picks the
  *     newest archive day whose input passes socialInputProblems (pull request runs use it to
@@ -27,21 +28,27 @@
  *   * Every day: socialCopyProblems over the caption and alt text, revealWording over the card's
  *     visible text. Any problem: nothing is written, exit 1.
  *
- *   * Yesterday's reveal (owner brief 2026-10-15, for r/satquestions): read from yesterday's
- *     PUBLIC archive page data only (GET /api/public/qotd/<the day before>; the server refuses
- *     today and later), never from today's payload. A 404 is a withheld day (a repaired
- *     question): the reveal is the notice alone. Any other failure fails the run, loudly.
- *     Today's suggested Reddit title and plain-text body are built from the social input and go
- *     through the same leak check as the caption and alt text.
+ *   * No Reddit (Karl's ruling 2026-10-30: the QOTD subreddit was banned by Reddit sitewide,
+ *     so the Reddit QOTD is discontinued and the QOTD goes to TikTok, Instagram and Facebook
+ *     only): nothing Reddit-related is built. The suggested Reddit post and yesterday's reveal (the
+ *     answer for the comment on yesterday's Reddit post; owner brief 2026-10-15) are no longer
+ *     generated, and the manifest carries neither, nor a Reddit link. Their builders are left in
+ *     shared/qotd/reveal.ts, not called.
+ *
+ *   * Yesterday's archive day: read from yesterday's PUBLIC archive page data only (GET
+ *     /api/public/qotd/<the day before>; the server refuses today and later), never from today's
+ *     payload (loadYesterday). A 404 is a withheld day (a repaired question): no carousel. A day
+ *     that is not yesterday, or any other failure, fails the run, loudly.
  *
  *   * TikTok carousel (Karl, 2026-10-23): yesterday's question as three 1080x1920 slides
- *     (question, pause, answer; client/src/components/qotd/QotdTiktokSlide.tsx), built from the
- *     SAME yesterday archive payload as the reveal (buildTiktokCarousel refuses any other day),
+ *     (question, pause, answer; client/src/components/qotd/QotdTiktokSlide.tsx), built from
+ *     yesterday's archive payload (buildTiktokCarousel refuses any other day),
  *     with the fixed CTA-first caption and the short title. tiktokCarouselLeaks checks the slides,
  *     caption and title against today: today's question text never, and today's answer when it
- *     is known. Yesterday withheld or missing (404), a "Why" whose first sentence is over 300
- *     characters, or a slide that does not fit at 24px: no carousel, and post.json records why
- *     (the Slack poster posts a one-line note). A 4th slide is never added.
+ *     is known. Yesterday withheld or missing (404), or a slide that does not fit at 24px: no
+ *     carousel, and post.json records why (the Slack poster posts a one-line note). A 4th slide
+ *     is never added. A long explanation no longer skips the day: its "Why" is cut with a
+ *     pointer to the full explanation (shared/qotd/tiktok.ts tiktokWhy; Karl, 2026-10-26).
  *
  * Writes to DIR (default qotd-social-out/): qotd-<date>-portrait.png, qotd-<date>-story.png,
  * qotd-<yesterday>-tiktok-1..3.png (when built),
@@ -66,19 +73,13 @@ import {
   qotdTodayResponseSchema,
   qotdSocialPostManifestSchema,
   type QotdArchiveResponse,
-  type QotdRedditPost,
-  type QotdReveal,
   type QotdSocialCopy,
   type QotdSocialInput,
   type QotdSocialPostManifest,
   type QotdTiktokCarousel,
   type QotdTiktokPost,
 } from "../../packages/shared/src/qotd-schema";
-import {
-  buildReveal,
-  buildRedditPost,
-  withheldReveal,
-} from "../../shared/qotd/reveal";
+import { campaignLinks } from "../../shared/social/funnel";
 import {
   QOTD_SECTION_NAME,
   QOTD_SOCIAL_FORMATS,
@@ -93,29 +94,50 @@ import {
   type QotdSocialFormat,
 } from "../../shared/qotd/social";
 import {
-  QOTD_TIKTOK_CAPTION,
   QOTD_TIKTOK_SIZE,
   buildTiktokCarousel,
-  buildTiktokTitle,
   tiktokSafePx,
 } from "../../shared/qotd/tiktok";
+import {
+  qotdTiktokCaption,
+  socialDateWarnings,
+  socialKeywords,
+} from "../../shared/social/posts";
 import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
 } from "../../shared/seo/banned-phrases";
-import { localTodayIn } from "../../server/services/calendar/adapters/local-day";
+import { qotdTodaySwitched } from "../../server/services/qotd/qotd-day";
 
 /** Status lines only (the logger is the server's; this is a CLI). */
 function out(line: string): void {
   process.stdout.write(`${line}\n`);
 }
+/** Every error line this run printed; written to failure.txt when the run exits non-zero. */
+const errorLines: string[] = [];
 function err(line: string): void {
+  errorLines.push(line);
   process.stderr.write(`${line}\n`);
 }
 
+/**
+ * A failed run leaves its reasons in <out>/failure.txt, which the workflow's failure step posts
+ * to Slack (post-to-slack.ts --failure; Karl's rulings 2026-10-28, SCL-258: a refused served
+ * order fails loudly and visibly, never silently). Lines are this run's own refusals and the API
+ * status and error code; a refused order's reason carries no letter.
+ */
+function writeFailure(outDir: string): void {
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, "failure.txt"), `${errorLines.join("\n")}\n`);
+}
+
 const ROOT = resolve(import.meta.dirname, "../..");
-/** The QOTD day boundary (plan R18); the same zone as public.qotd_today(). */
-const QOTD_TIME_ZONE = "America/Chicago";
+/**
+ * The QOTD day (Karl, 2026-10-27): 04:00 UTC to 04:00 UTC, the database's public.qotd_day after
+ * the switch. This script has no database, so it uses the switched rule (qotd-day.ts) and checks
+ * /today against it: a run before the database has switched is refused, never posted.
+ */
+const QOTD_DAY_RULE = "04:00 UTC to 04:00 UTC";
 const MIN_FONT_PX = 24;
 const MAX_FONT_PX: Record<QotdSocialFormat, number> = {
   portrait: 52,
@@ -128,6 +150,13 @@ const TIKTOK_SLIDES = [1, 2, 3] as const;
 const SHORT_OPTION_CHARS = 24;
 
 type Args = { date: string | null; out: string; baseUrl: string };
+
+/** Where failure.txt goes: --out when it is given, else the default (even if other args are bad). */
+function failureOutDir(argv: readonly string[]): string {
+  const at = argv.indexOf("--out");
+  const value = at >= 0 ? argv[at + 1] : undefined;
+  return value ? resolve(value) : join(ROOT, "qotd-social-out");
+}
 
 function parseArgs(argv: readonly string[]): Args {
   const args: Args = {
@@ -149,6 +178,16 @@ function parseArgs(argv: readonly string[]): Args {
 }
 
 /**
+ * The day a run builds as "today" (Karl, 2026-10-27): the QOTD day at the run's moment, 04:00 UTC
+ * to 04:00 UTC. The 04:05 UTC run therefore posts the day that began five minutes earlier (the
+ * images and their copy) and reveals the day that just ended (the TikTok carousel, read from the
+ * archive as yesterday). /today must already be this day or the run is refused.
+ */
+export function socialRunToday(now: Date = new Date()): string {
+  return qotdTodaySwitched(now);
+}
+
+/**
  * A requested date is buildable only once it has passed. Exported for the test: future days
  * and today itself are refused (today is built from /today, without a date).
  */
@@ -158,10 +197,24 @@ export function pastDateProblem(
 ): string | null {
   if (!qotdDateSchema.safeParse(date).success)
     return `${date} is not a YYYY-MM-DD date`;
-  const today = localTodayIn(QOTD_TIME_ZONE, now);
+  const today = socialRunToday(now);
   return date < today
     ? null
-    : `${date} has not passed yet (today is ${today} in ${QOTD_TIME_ZONE})`;
+    : `${date} has not passed yet (today is ${today}, QOTD day ${QOTD_DAY_RULE})`;
+}
+
+/** The `error.code` of an API error body ({ error: { code, message } }); nothing else is read. */
+const API_ERROR_CODE = /"error"\s*:\s*\{\s*"code"\s*:\s*"([a-z_]{1,64})"/;
+
+/** A non-2xx answer from the public API: its status, and the API's error code at most. */
+export class ApiHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiHttpError";
+  }
 }
 
 async function getJson(url: string): Promise<unknown> {
@@ -169,7 +222,15 @@ async function getJson(url: string): Promise<unknown> {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(20_000),
   });
-  if (!res.ok) throw new Error(`GET ${new URL(url).pathname} -> ${res.status}`);
+  if (!res.ok) {
+    // The API's error code (e.g. qotd_order_invalid: a stored order the server refused), never
+    // the rest of the body.
+    const code = API_ERROR_CODE.exec(await res.text())?.[1];
+    throw new ApiHttpError(
+      `GET ${new URL(url).pathname} -> ${res.status}${code ? ` (${code})` : ""}`,
+      res.status,
+    );
+  }
   return res.json();
 }
 
@@ -232,21 +293,26 @@ export function tiktokDecision(
   if (tiktok.slides.length !== 3) {
     problems.push(`tiktok: ${tiktok.slides.length} slides, not 3`);
   }
-  const title = buildTiktokTitle(day, tiktok.carousel.question.section_code);
-  const caption = QOTD_TIKTOK_CAPTION;
-  for (const [field, text] of [
-    ["tiktok caption", caption],
-    ["tiktok title", title],
-  ] as const) {
-    const banned = firstBannedPhrase(text);
-    if (banned) problems.push(`${field}: banned phrase (${banned.why})`);
-    const outcome = firstUnapprovedOutcome(text);
-    if (outcome)
-      problems.push(`${field}: unapproved outcome claim (${outcome.why})`);
-  }
+  // Karl's rulings 2026-11-02: one caption block and TikTok's keywords. The section and domain
+  // are the carousel question's (yesterday's); the test month is the posting day's (today's).
+  const postedOn = source.input.qotd_date;
+  const carouselSection =
+    QOTD_SECTION_NAME[tiktok.carousel.question.section_code];
+  const caption = qotdTiktokCaption(postedOn, carouselSection);
+  const keywords = socialKeywords(
+    postedOn,
+    carouselSection,
+    tiktok.carousel.question.domain,
+  );
+  if (!keywords.ok) problems.push(`tiktok ${keywords.error}`);
+  const banned = firstBannedPhrase(caption);
+  if (banned) problems.push(`tiktok caption: banned phrase (${banned.why})`);
+  const outcome = firstUnapprovedOutcome(caption);
+  if (outcome)
+    problems.push(`tiktok caption: unapproved outcome claim (${outcome.why})`);
   problems.push(
     ...tiktokCarouselLeaks(
-      { slides: tiktok.slides.map((s) => s.cardText), caption, title },
+      { slides: tiktok.slides.map((s) => s.cardText), caption },
       tiktok.carouselDay,
       {
         input: source.input,
@@ -254,14 +320,14 @@ export function tiktokDecision(
       },
     ),
   );
-  if (problems.length > 0) return { ok: false, problems };
+  if (problems.length > 0 || !keywords.ok) return { ok: false, problems };
   return {
     ok: true,
     post: {
       status: "built",
       qotd_date: day,
-      title,
       caption,
+      keywords: keywords.keywords,
       slides: TIKTOK_SLIDES.map((n) => `qotd-${day}-tiktok-${n}.png`),
     },
   };
@@ -286,8 +352,6 @@ export function publishDecision(
   copy: QotdSocialCopy,
   rendered: readonly { format: QotdSocialFormat; cardText: string }[],
   today: string,
-  reddit: QotdRedditPost,
-  reveal: QotdReveal,
   tiktok: TiktokBuild,
 ):
   | { ok: true; manifest: QotdSocialPostManifest }
@@ -311,29 +375,12 @@ export function publishDecision(
             caption: copy.caption,
             alt_text: copy.alt_text,
             card_text: r.cardText,
-            reddit_title: reddit.title,
-            reddit_body: reddit.body,
+            instagram_caption: copy.instagram_caption,
           },
           source.revealed,
         ).map((leak) => `${r.format}: ${leak}`),
       );
     }
-  }
-  // Today's Reddit post is one of today's messages: reveal wording is refused there on every
-  // day, as on the card (the leak check above adds the answer itself when it is known).
-  for (const [field, text] of [
-    ["reddit_title", reddit.title],
-    ["reddit_body", reddit.body],
-  ] as const) {
-    const wording = revealWording(text, input);
-    if (wording) problems.push(`${field}: ${wording}`);
-  }
-  // The reveal is yesterday's, never today's (owner brief 2026-10-15).
-  const yesterday = previousQotdDate(input.qotd_date);
-  if (reveal.qotd_date !== yesterday) {
-    problems.push(
-      `reveal: is for ${reveal.qotd_date}, not yesterday (${yesterday})`,
-    );
   }
   // "no-answer-in-source" is true only of today's own payload. A today source dated any other
   // day (a stale cache at the day boundary) is a day whose answer is already public: refused,
@@ -353,6 +400,9 @@ export function publishDecision(
       source: source.kind,
       caption: copy.caption,
       alt_text: copy.alt_text,
+      instagram_caption: copy.instagram_caption,
+      links: qotdLinks(),
+      warnings: socialDateWarnings(input.qotd_date),
       images: rendered.map((r) => ({
         format: r.format,
         file: `qotd-${input.qotd_date}-${r.format}.png`,
@@ -363,8 +413,6 @@ export function publishDecision(
         reveal_wording: "passed",
         leaks: source.kind === "past" ? "passed" : "no-answer-in-source",
       },
-      reddit,
-      reveal,
       tiktok: tiktokChecked.post,
     }),
   };
@@ -389,6 +437,36 @@ export function writePublishManifest(
 /** How far back `--date latest` looks for a day whose input passes. */
 const LATEST_LOOKBACK_DAYS = 14;
 
+/**
+ * `--date latest`: the newest of `dates` (newest first) whose day the archive serves and whose
+ * input passes, or null. A day the archive answers 404 is not published there, as loadYesterday
+ * already treats it (a withheld day, or one the index lists before the day endpoint will serve
+ * it), so it is skipped like a refused input. Any other failure is rethrown.
+ */
+export async function pickLatestDay(
+  dates: readonly string[],
+  load: (date: string) => Promise<Source>,
+  log: (line: string) => void,
+): Promise<string | null> {
+  for (const date of dates) {
+    let candidate: Source;
+    try {
+      candidate = await load(date);
+    } catch (e: unknown) {
+      if (e instanceof ApiHttpError && e.status === 404) {
+        log(
+          `qotd-social: latest: skipping ${date} (the archive does not serve it)`,
+        );
+        continue;
+      }
+      throw e;
+    }
+    if (socialInputProblems(candidate.input).length === 0) return date;
+    log(`qotd-social: latest: skipping ${date} (input refused)`);
+  }
+  return null;
+}
+
 async function loadSource(args: Args): Promise<Source> {
   if (args.date === null) {
     const body = z
@@ -406,51 +484,51 @@ async function loadSource(args: Args): Promise<Source> {
   };
 }
 
-/** The one HTTP shape loadReveal needs, injectable for tests. */
+/** The one HTTP shape loadYesterday needs, injectable for tests. */
 export type ArchiveFetch = (
   url: string,
 ) => Promise<{ status: number; ok: boolean; json(): Promise<unknown> }>;
 
 /**
- * Yesterday's reveal for `postedDate`: from the PUBLIC archive page data of the day before, and
- * nothing else (owner brief 2026-10-15). A 404 is a day the archive does not publish (a repaired
- * question, owner 2026-10-08): withheld, the notice alone. Anything else that is not a 200, and
- * any payload that does not parse or is not yesterday's, fails the run.
- */
-export async function loadReveal(
-  baseUrl: string,
-  postedDate: string,
-  fetchImpl: ArchiveFetch,
-): Promise<QotdReveal> {
-  return (await loadYesterday(baseUrl, postedDate, fetchImpl)).reveal;
-}
-
-/**
- * Yesterday's public archive day and its reveal, read once: the reveal and the TikTok carousel
- * are both built from this one payload (Karl, 2026-10-23). `day` is null when yesterday is
- * withheld or missing (404).
+ * Yesterday's public archive day for `postedDate`: the PUBLIC archive page data of the day
+ * before, and nothing else (owner brief 2026-10-15; Karl, 2026-10-23). The TikTok carousel is
+ * built from it. `day` is null when yesterday is withheld or missing (404: a day the archive does
+ * not publish, a repaired question, owner 2026-10-08). Anything else that is not a 200, and any
+ * payload that does not parse or is not yesterday's, fails the run.
  */
 export async function loadYesterday(
   baseUrl: string,
   postedDate: string,
   fetchImpl: ArchiveFetch,
-): Promise<{ reveal: QotdReveal; day: QotdArchiveResponse | null }> {
+): Promise<{ day: QotdArchiveResponse | null }> {
   const yesterday = previousQotdDate(postedDate);
   const res = await fetchImpl(`${baseUrl}/api/public/qotd/${yesterday}`);
   if (res.status === 404) {
-    return { reveal: withheldReveal(postedDate), day: null };
+    return { day: null };
   }
   if (!res.ok) {
     throw new Error(
-      `GET /api/public/qotd/${yesterday} -> ${res.status} (yesterday's reveal)`,
+      `GET /api/public/qotd/${yesterday} -> ${res.status} (yesterday's archive day)`,
     );
   }
   const body = z
     .object({ data: qotdArchiveResponseSchema })
     .parse(await res.json());
-  const built = buildReveal(body.data, postedDate);
-  if (!built.ok) throw new Error(built.problem);
-  return { reveal: built.reveal, day: body.data };
+  if (body.data.qotd_date !== yesterday) {
+    throw new Error(
+      `yesterday's archive day: the archive returned ${body.data.qotd_date}, not yesterday (${yesterday})`,
+    );
+  }
+  return { day: body.data };
+}
+
+/**
+ * The QOTD's tagged /start links: TikTok's and Instagram's only. The Reddit QOTD is discontinued
+ * (Karl's ruling 2026-10-30), so the manifest carries no Reddit link (qotdStartLinksSchema).
+ */
+function qotdLinks(): { tiktok: string; instagram: string } {
+  const all = campaignLinks("qotd");
+  return { tiktok: all.tiktok, instagram: all.instagram };
 }
 
 function archiveFetch(url: string): ReturnType<ArchiveFetch> {
@@ -746,15 +824,11 @@ async function main(): Promise<number> {
     // The newest one whose input passes, so the run proves the full path (images, manifest,
     // Slack dry run) rather than an older input refusal, which the unit tests already cover.
     // Checked through loadSource, the same past-day read the build makes.
-    let picked: string | null = null;
-    for (const day of index.data.days.slice(0, LATEST_LOOKBACK_DAYS)) {
-      const candidate = await loadSource({ ...args, date: day.qotd_date });
-      if (socialInputProblems(candidate.input).length === 0) {
-        picked = day.qotd_date;
-        break;
-      }
-      out(`qotd-social: latest: skipping ${day.qotd_date} (input refused)`);
-    }
+    const picked = await pickLatestDay(
+      index.data.days.slice(0, LATEST_LOOKBACK_DAYS).map((d) => d.qotd_date),
+      (date) => loadSource({ ...args, date }),
+      out,
+    );
     if (!picked) {
       err(
         `qotd-social: refused: no publishable day among the newest ${LATEST_LOOKBACK_DAYS} archive days`,
@@ -775,7 +849,7 @@ async function main(): Promise<number> {
   const { input } = source;
   // Belt and braces: the endpoint decides "today", but a day that has not begun here is refused
   // whatever the server said.
-  const today = localTodayIn(QOTD_TIME_ZONE);
+  const today = socialRunToday();
   if (input.qotd_date > today) {
     err(
       `qotd-social: refused: ${input.qotd_date} has not begun (today is ${today})`,
@@ -783,13 +857,11 @@ async function main(): Promise<number> {
     return 2;
   }
   const copy = buildSocialCopy(input);
-  const reddit = buildRedditPost(input);
   const yesterday = await loadYesterday(
     args.baseUrl,
     input.qotd_date,
     archiveFetch,
   );
-  const { reveal } = yesterday;
 
   rmSync(args.out, { recursive: true, force: true });
   const workDir = join(args.out, ".render");
@@ -811,14 +883,7 @@ async function main(): Promise<number> {
     } else {
       const built = buildTiktokCarousel(yesterday.day, input.qotd_date);
       if (!built.ok) {
-        tiktok =
-          built.reason === "does_not_fit"
-            ? {
-                status: "skipped",
-                qotd_date: yesterdayDate,
-                reason: "does_not_fit",
-              }
-            : { status: "refused", problem: built.problem };
+        tiktok = { status: "refused", problem: built.problem };
       } else {
         const shot = await renderTiktok(slides, built.carousel, workDir);
         if (shot.unfit.length > 0) {
@@ -853,8 +918,6 @@ async function main(): Promise<number> {
     copy,
     result.rendered,
     today,
-    reddit,
-    reveal,
     tiktok,
   );
   if (!decision.ok) {
@@ -891,6 +954,11 @@ async function main(): Promise<number> {
   rmSync(workDir, { recursive: true, force: true });
   writeFileSync(join(args.out, "caption.txt"), `${copy.caption}\n`);
   writeFileSync(join(args.out, "alt-text.txt"), `${copy.alt_text}\n`);
+  writeFileSync(
+    join(args.out, "instagram-caption.txt"),
+    `${copy.instagram_caption}\n`,
+  );
+  const links = decision.manifest.links;
 
   const summary = [
     `## SAT Question of the Day: ${date}`,
@@ -903,30 +971,30 @@ async function main(): Promise<number> {
         ]
       : []),
     "",
-    "### Caption",
+    ...decision.manifest.warnings.map((w) => `**Warning:** ${w}`),
+    "",
+    "### Facebook caption",
     fenced(copy.caption),
     "",
     "### Alt text",
     fenced(copy.alt_text),
     "",
-    "### Reddit (today's post)",
-    fenced(`${reddit.title}\n\n${reddit.body}`),
+    "### Instagram caption",
+    fenced(copy.instagram_caption),
+    `Send to people who comment SAT: ${links.instagram}`,
     "",
-    "### Yesterday's reveal",
-    reveal.status === "withheld"
-      ? `${reveal.qotd_date}: withheld (not published on the archive), so there is no reveal.`
-      : `${reveal.qotd_date}: posted to Slack with the answer and explanation; ${reveal.archive_url}`,
+    `### TikTok bio link\n${links.tiktok}`,
     "",
     "### TikTok carousel (yesterday's question)",
     ...(tiktokPost.status === "built"
       ? [
           `${tiktokPost.qotd_date}: three slides (${tiktokRendered.map((r) => `${r.slide}: text ${r.fontPx}px`).join(", ")}).`,
           "",
-          "Title:",
-          fenced(tiktokPost.title),
-          "",
           "Caption:",
           fenced(tiktokPost.caption),
+          "",
+          "Keywords:",
+          fenced(tiktokPost.keywords.join("\n")),
         ]
       : [
           `${tiktokPost.qotd_date}: no carousel (${tiktokPost.reason === "withheld" ? "yesterday is withheld or missing on the archive" : "yesterday's question does not fit three slides"}).`,
@@ -952,10 +1020,15 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
+  const outDir = failureOutDir(process.argv.slice(2));
   main().then(
-    (code) => process.exit(code),
+    (code) => {
+      if (code !== 0) writeFailure(outDir);
+      process.exit(code);
+    },
     (e: unknown) => {
       err(`qotd-social: failed: ${e instanceof Error ? e.message : String(e)}`);
+      writeFailure(outDir);
       process.exit(1);
     },
   );

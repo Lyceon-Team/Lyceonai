@@ -41,13 +41,31 @@
  * protects nothing. Their inventory is recorded in `docs/alignment/KNOWN-GAPS.md` under
  * `SCHEMA-TRUTH-GATE-OUT-OF-SCOPE` with an owner and an expiry.
  *
- * THE ACCEPT-LIST, and what it does and does not buy. Three guardian files predate this gate.
- * Converting them is a real piece of work (`guardian-reporting.contract.test.ts` alone is ~900
- * lines) and is NOT done here, because this change is a deletion pass. They are accepted AT A
- * SIZE with an owner and an expiry, exactly as `ci-known-gaps` accepts its suppressions. What
- * the gate buys today is that the class cannot GROW: a new guardian test that mocks the query
- * layer, or spells a row by hand, reds on arrival. Adding a file to the accept-list is a
- * deliberate, reviewable edit rather than an accident.
+ * THE ACCEPT-LIST, and what it does and does not buy. Three guardian files predated this gate
+ * and were accepted AT A SIZE with an owner and an expiry (2026-11-01), exactly as
+ * `ci-known-gaps` accepts its suppressions, because this change was a deletion pass and
+ * converting them was real work. That work is DONE (2026-11-02, owner chose conversion over
+ * extending the date) and the list is EMPTY:
+ *
+ *   tests/ci/guardian.anti-leak.ci.test.ts      → tests/ci/guardian.anti-leak.pg.ci.test.ts
+ *   tests/ci/guardian-reporting.contract.test.ts → tests/ci/guardian-reporting.pg.ci.test.ts
+ *   tests/ci/subject-resolver.contract.test.ts  → SPLIT, both halves on real Postgres:
+ *       tests/ci/subject-resolver.pg.ci.test.ts         the four real decisions and the
+ *                                                       audit row the resolver writes, read back
+ *       tests/ci/subject-resolver.faults.pg.ci.test.ts  the three fail-closed paths, with the
+ *                                                       DATABASE made to fail (function replaced,
+ *                                                       insert refused by a trigger) instead of
+ *                                                       a mock returning an error
+ *
+ * The third was recorded here as "injects decisions Postgres cannot produce; needs splitting,
+ * not converting". The split was right; the premise was narrower than stated. An RPC error, an
+ * unrecognised CASE arm and a refused audit write are all things a real database does — only
+ * the mock's way of producing them was unreal — so neither half needs an entry.
+ *
+ * What the gate buys now: the class cannot grow AND has no accepted remainder. A guardian test
+ * that mocks the query layer, or spells a row by hand, reds on arrival. Adding a file to the
+ * accept-list is a deliberate, reviewable edit rather than an accident, and needs the owner's
+ * review.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -62,25 +80,17 @@ const IN_SCOPE = /(^|\/)(guardian|subject-resolver)[^/]*\.(test|spec)\.(ts|tsx)$
 /**
  * Accepted at a size, with an owner and an expiry. Every entry is a file that existed before
  * the gate and has NOT been converted. Removing an entry is the fix; adding one needs review.
+ *
+ * EMPTY since 2026-11-02. Every entry it held was converted and removed (see the header):
+ *   server/__tests__/guardian-payment-access.test.ts → tests/ci/guardian-payment-access.pg.ci.test.ts (G1-10)
+ *   tests/ci/guardian.anti-leak.ci.test.ts           → tests/ci/guardian.anti-leak.pg.ci.test.ts
+ *   tests/ci/guardian-reporting.contract.test.ts     → tests/ci/guardian-reporting.pg.ci.test.ts
+ *   tests/ci/subject-resolver.contract.test.ts       → subject-resolver.pg.ci.test.ts + subject-resolver.faults.pg.ci.test.ts
+ * The stale and expiry checks below stay armed for any future entry; the self-test plants one
+ * of each (scripts/ci/guardian-schema-truth-gate.selftest.sh, D and F).
  */
-const ACCEPTED = new Map([
-  ["tests/ci/guardian-reporting.contract.test.ts",
-   { owner: "guardian", expires: "2026-12-01", why: "~900 lines; conversion is its own change" }],
-  ["tests/ci/guardian.anti-leak.ci.test.ts",
-   { owner: "guardian", expires: "2026-12-01", why: "RULE-4 walker asserts on projections, not rows" }],
-  // server/__tests__/guardian-payment-access.test.ts: CONVERTED and removed (G1-10) — now
-  // tests/ci/guardian-payment-access.pg.ci.test.ts, on real rows.
-  // NOT the same kind of entry as the two above, and the difference is the open question.
-  // This file deliberately INJECTS decisions a real database cannot produce — an RPC error, a
-  // CASE arm no build recognises, a failed audit write — to prove the resolver fails closed on
-  // each. Those cases cannot be driven from Postgres by construction. But its four REAL
-  // decisions (self / allow / not_linked / student_unentitled) could be, and its one row
-  // literal asserts the shape of a row the resolver WRITES, which is exactly the kind of
-  // private schema copy Rule B exists to stop. The right end state is a split file, not a
-  // converted one. See owner question.
-  ["tests/ci/subject-resolver.contract.test.ts",
-   { owner: "guardian", expires: "2026-12-01", why: "injects decisions Postgres cannot produce; needs splitting, not converting" }],
-]);
+/** @type {Map<string, { owner: string; expires: string; why: string }>} */
+const ACCEPTED = new Map([]);
 
 const tracked = execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
 

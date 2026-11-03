@@ -14,8 +14,9 @@
  *     no-answer input (qotdSocialInputSchema). Both keep the order they are served in, which is
  *     canonical for today and for a past day alike (Karl's ruling 2026-10-23: no shuffle for the
  *     QOTD; the earlier re-sort into token order lettered the image differently from the
- *     archive and the Reddit reveal). The archive's answer and explanation are dropped here, before anything
- *     is built.
+ *     archive and the Reddit reveal, since discontinued with the Reddit QOTD, Karl's ruling
+ *     2026-10-30). The archive's answer and explanation are dropped here, before anything is
+ *     built.
  *   * buildSocialCopy writes the approved caption and an alt text that reads the question out in
  *     full. Maths is spoken through a short fixed table; anything outside it (or an alt text over
  *     1000 characters, X's limit) falls back to a generic description, never to garbled LaTeX.
@@ -47,6 +48,12 @@ import { plainMathText } from "./plain-math";
 import { stemRepeatsPassage } from "./projection";
 import { qotdReadabilityProblem } from "./readability";
 import {
+  qotdFacebookCaption,
+  qotdInstagramCaption,
+  withoutSocialFixedLines,
+  type SocialSection,
+} from "../social/posts";
+import {
   firstBannedPhrase,
   firstUnapprovedOutcome,
 } from "../seo/banned-phrases";
@@ -60,14 +67,9 @@ export const QOTD_SOCIAL_FORMATS = {
 } as const;
 export type QotdSocialFormat = keyof typeof QOTD_SOCIAL_FORMATS;
 
-export const QOTD_SECTION_NAME: Record<"M" | "RW", string> = {
+export const QOTD_SECTION_NAME: Record<"M" | "RW", SocialSection> = {
   M: "Math",
   RW: "Reading and Writing",
-};
-
-const HASHTAGS: Record<"M" | "RW", string> = {
-  M: "#SAT #DigitalSAT #SATPrep #SATMath #QuestionOfTheDay",
-  RW: "#SAT #DigitalSAT #SATPrep #SATReading #QuestionOfTheDay",
 };
 
 /** X's alt-text limit, the tightest of the platforms the QOTD is posted to. */
@@ -349,11 +351,9 @@ function fullAltText(input: QotdSocialInput, opening: string): string | null {
 export function buildSocialCopy(input: QotdSocialInput): QotdSocialCopy {
   const parsed = qotdSocialInputSchema.parse(input);
   const section = QOTD_SECTION_NAME[parsed.section_code];
-  const caption = [
-    `SAT Question of the Day: ${section}, ${parsed.domain}.`,
-    `Give it a try, then answer it free at ${QOTD_SOCIAL_URL}`,
-    HASHTAGS[parsed.section_code],
-  ].join("\n\n");
+  // Karl's rulings 2026-11-02: `caption` is the Facebook caption (no link, no "comment a word"
+  // ask), and the Instagram caption carries the only call to action (shared/social/posts.ts).
+  const caption = qotdFacebookCaption(parsed.qotd_date, section);
   const opening = `SAT Question of the Day from Lyceon, ${formatSocialDate(parsed.qotd_date)}. ${section}, ${parsed.domain}.`;
   const full = fullAltText(parsed, opening);
   const altText =
@@ -362,7 +362,12 @@ export function buildSocialCopy(input: QotdSocialInput): QotdSocialCopy {
       : `${opening} The image shows the question${
           parsed.item_type === "mcq" ? " and its four answer choices" : ""
         }. Answer it free at ${QOTD_SOCIAL_URL}.`;
-  return qotdSocialCopySchema.parse({ caption, alt_text: altText });
+  const instagramCaption = qotdInstagramCaption(parsed.qotd_date, section);
+  return qotdSocialCopySchema.parse({
+    caption,
+    alt_text: altText,
+    instagram_caption: instagramCaption,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -448,6 +453,7 @@ export function socialCopyProblems(
   for (const [field, text] of [
     ["caption", copy.caption],
     ["alt_text", copy.alt_text],
+    ["instagram_caption", copy.instagram_caption],
   ] as const) {
     const banned = firstBannedPhrase(text);
     if (banned) problems.push(`${field}: banned phrase (${banned.why})`);
@@ -477,19 +483,19 @@ function containsPhrase(haystack: string, phrase: string): boolean {
 const EXPLANATION_WINDOW = 8;
 
 /**
- * Every way the caption, alt text, card text or Reddit post gives away the revealed answer of
- * `day`. Empty = no leak found. `card_text` is the card's visible text (innerText of the rendered
- * card). The Reddit title and body (owner brief 2026-10-15) are today's messages too, so the same
- * checks run over them; the title, like the caption, names no choice, and the body, like the alt
- * text, shows all four choices or none.
+ * Every way the caption, alt text, card text or Instagram caption gives away the revealed answer
+ * of `day`. Empty = no leak found. `card_text` is the card's visible text (innerText of the
+ * rendered card). The Instagram caption, like the caption, names no choice; the alt text and card
+ * show all four choices or none. (The Reddit title and body were checked here too until the
+ * Reddit QOTD was discontinued, Karl's ruling 2026-10-30: nothing builds them, so their fields
+ * were removed rather than left unexercised in a leak check.)
  */
 export function socialAssetLeaks(
   output: {
     caption: string;
     alt_text: string;
     card_text: string;
-    reddit_title?: string;
-    reddit_body?: string;
+    instagram_caption?: string;
   },
   day: QotdArchiveResponse,
 ): string[] {
@@ -501,14 +507,17 @@ export function socialAssetLeaks(
     ["alt_text", output.alt_text],
     ["card", output.card_text],
   ];
-  if (output.reddit_title !== undefined) {
-    fields.push(["reddit_title", output.reddit_title]);
-  }
-  if (output.reddit_body !== undefined) {
-    fields.push(["reddit_body", output.reddit_body]);
+  // The fixed caption lines (shared/social/posts.ts) are the same whatever the day, so they are
+  // left out: "Nov 7" in "Taking the SAT Nov 7?" is a test date, not a choice "7".
+  const instagramCaption =
+    output.instagram_caption === undefined
+      ? undefined
+      : withoutSocialFixedLines(output.instagram_caption);
+  if (instagramCaption !== undefined) {
+    fields.push(["instagram_caption", instagramCaption]);
   }
   /** Fields that must name no choice at all. */
-  const namesNoChoice = new Set(["caption", "reddit_title"]);
+  const namesNoChoice = new Set(["caption", "instagram_caption"]);
 
   const explanationWords = normalize(day.question.explanation)
     .trim()
@@ -546,9 +555,9 @@ export function socialAssetLeaks(
     if (reveal) leaks.push(`${field}: ${reveal}`);
   }
 
-  // 4. MCQ: the caption and the Reddit title name no choice; the alt text, card and Reddit
-  //    body show all four or none, so no one choice is singled out. A choice counts as shown in
-  //    its raw form or as plain text (the Reddit body writes maths as plain text).
+  // 4. MCQ: the caption and the Instagram caption name no choice; the alt text and card show
+  //    all four or none, so no one choice is singled out. A choice counts as shown in its raw
+  //    form or as plain text (maths written out as text).
   if (day.question.item_type === "mcq") {
     const showsChoice = (haystack: string, text: string): boolean =>
       containsPhrase(haystack, text) ||
@@ -561,10 +570,12 @@ export function socialAssetLeaks(
     }
     if (
       correct &&
-      output.reddit_title !== undefined &&
-      showsChoice(normalize(output.reddit_title), correct.text)
+      instagramCaption !== undefined &&
+      showsChoice(normalize(instagramCaption), correct.text)
     ) {
-      leaks.push(`reddit_title: names the correct choice "${correct.text}"`);
+      leaks.push(
+        `instagram_caption: names the correct choice "${correct.text}"`,
+      );
     }
     for (const [field, text] of fields) {
       if (namesNoChoice.has(field)) continue;
@@ -583,7 +594,7 @@ export function socialAssetLeaks(
 }
 
 /**
- * Every way the TikTok carousel (its three slides' visible text, its caption and its title)
+ * Every way the TikTok carousel (its three slides' visible text and its caption)
  * carries TODAY's question or answer. Empty = no leak found.
  *
  * @spec [Doc 10A §7; owner brief "QOTD social: TikTok 3-slide carousel" (Karl, 2026-10-23):
@@ -598,7 +609,7 @@ export function socialAssetLeaks(
  * explanation already says is not counted, since the carousel is allowed to show it.
  */
 export function tiktokCarouselLeaks(
-  output: { slides: readonly string[]; caption: string; title: string },
+  output: { slides: readonly string[]; caption: string },
   carouselDay: QotdArchiveResponse,
   today: { input: QotdSocialInput; revealed: QotdArchiveResponse | null },
 ): string[] {
@@ -619,8 +630,7 @@ export function tiktokCarouselLeaks(
   );
   const fields: (readonly [string, string])[] = [
     ...output.slides.map((text, i) => [`tiktok slide ${i + 1}`, text] as const),
-    ["tiktok caption", output.caption],
-    ["tiktok title", output.title],
+    ["tiktok caption", withoutSocialFixedLines(output.caption)],
   ];
   const leaks: string[] = [];
   const todayText = [today.input.stem, today.input.passage ?? ""].filter(

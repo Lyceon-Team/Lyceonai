@@ -291,6 +291,8 @@ payload", and it is the plant behind gate `Z-64` in `scripts/ci/calendar-writer-
 **C7.4** Mapping: `email.delivered → delivered`, `email.bounced → bounced`, `email.complained → complained`, `email.failed → failed`. `email.opened`, `email.clicked`, `email.sent`, and unknown types are acknowledged (200) and not recorded.
 *Violated if:* an open/click event writes any row, or a listed type maps to a different status.
 
+> **Amended 2026-11-02 (email send gate, C15.6; SCL-263):** `email.opened` and `email.clicked` are now recorded, once per svix-id, in `notification_delivery_events` with the recipient's profile (`record_email_engagement_event`); a recorded event answers 200 `applied`. The C7.4 status mapping is unchanged; an open or click never changes a message's status.
+
 > **Amended 2026-10-07 (marketing lane, §14):** the receiver now reads the body as an envelope first, so a `contact.*` event (which has no `email_id`) is not rejected as malformed. `contact.updated` with `unsubscribed: true` and `email.complained` are recorded by the marketing lane (C14.5, C14.6); every other `contact.*` event is acknowledged (200) and not recorded, like the other untracked types. The C7.4 status mapping itself is unchanged.
 
 **C7.5** Dedupe and effect are one transaction: `public.apply_notification_delivery_event` inserts the `provider_event_id` and applies the status change in one function call. "Claimed but not applied" is unrepresentable.
@@ -433,6 +435,8 @@ with nothing in the product to explain why.
 **C12.2** `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `NOTIFICATION_FROM_EMAIL` are declared in `packages/shared/src/env.ts` and checked at startup by `validateEnvironment()` in `apps/api/src/env.ts` (fatal in production when missing).
 *Violated if:* production boots with any of the three unset, or the names are absent from the shared schema.
 
+> **Amended 2026-11-02 (C15.5; SCL-263):** governed and milestone emails are sent from `NOTIFICATION_TRACKED_FROM_EMAIL` (a sender on lyceon.ai, where Resend's domain-level open and click tracking is on); every other email stays on `NOTIFICATION_FROM_EMAIL`. Unset, the tracked sender falls back to `NOTIFICATION_FROM_EMAIL` with a warning. C12.3 still holds for the request body: tracking is a domain setting, never a per-message option.
+
 **C12.3** Open and click tracking stay off: the send request body contains no tracking option and no per-message tag or header that enables it.
 *Violated if:* a captured request body to `/emails` contains a `tags` entry or header enabling open/click tracking.
 
@@ -540,3 +544,42 @@ with nothing in the product to explain why.
 | C14A.5 | `tests/ci/lifecycle-triggers.pg.ci.test.ts` (real Postgres; the shared scenario `tests/ci/lifecycle.pg-harness.ts`); plants in `scripts/ci/lifecycle-email.mutations.sh` (LT1–LT22, LT17 withdrawn; LS6–LS7 for the cutovers) |
 | C14A.3 (`waitUntil`) | `lifecycle-email.contract.test.ts` (the kept promise settles only after the send, and never rejects); `lifecycle-email.pg.ci.test.ts` O1 (registered while the response is open; with the response held open 300 ms, Resend hears nothing before it closes) |
 | C14.2 (amended) | `tests/ci/marketing-email-sync.plan.test.ts`, `tests/ci/marketing-email-sync.pg.ci.test.ts` S5–S6 |
+
+---
+
+## 15. Email send gate
+
+> Added 2026-11-02 (owner brief "Email send gate", Karl 2026-10-30, and its tracking addendum;
+> rulings 2026-11-02 rounds 1 and 2; SCL-263). Every threshold below is a key in
+> `notification_runtime_config`; the readers fail closed on a missing or malformed key.
+
+**C15.1** FOUR CATEGORIES. Every email kind is exactly one of `always` (guardian linked/unlinked, the two post-exam billing notices, the welcome and entitled lifecycle events), `governed` (the QOTD reminder, study-plan and accountability emails, the full-length reminders, the guardian daily digest, the review ask, the four lifecycle nudges, manual campaigns), `milestone` (the three SAT-date emails) or `notice` (the two pause emails). The one map is `public.email_category` and `EMAIL_KIND_CATEGORY` (`packages/shared/src/email-gate.ts`); an unknown kind is an error.
+*Violated if:* the two maps disagree on any kind, an unknown kind gets a category, or an `always` or `notice` email is ever refused.
+
+**C15.2** STATES (students). active: activity within 7 days. cooling: 7+ days without activity; at most one governed email per 7 days, the QOTD reminder exempt. paused: 14+ days without activity AND 3+ governed emails since the last activity, click or Keep me posted whose 72-hour window has passed (clicks, never opens); no governed email. On a study plan (a planned day within 14 days): cooling at 2 consecutive missed planned days, paused at 3 AND 14+ days without activity AND the same 3 unengaged emails. A planned day is missed only if there was no activity of any kind that day (`email_gate_record_plan_days`); a day with no planned block never counts. Paused is sticky until a wake: any activity, or the signed Keep me posted link. Activity is an answered practice, QOTD or review item, a practice test started or answered, or a sign-in.
+*Violated if:* a governed email reaches a paused student; a second capped governed email reaches a cooling student within 7 days; a QOTD reminder is refused for cooling; a paused student stays paused after activity or Keep me posted; or an open counts as engagement.
+
+**C15.2a** WHO IS PAUSED AT LAUNCH (Karl's ruling, 2026-11-02, revised; `20261127000000`). (1) Every account, student or guardian, whose last activity (the C15.2 definition) was before 2026-09-27 (the live launch date, read as the start of that day in America/Chicago, config `email_gate_launch_date`), or which signed up before it and was never active, is paused, reason `pre_launch_inactive`; activity or Keep me posted after it wakes the account, and the normal rules apply from then. (2) Internal and test accounts ("test" in the address's local part, as the lifecycle lane's `isDenylisted`, or an address or domain in config `email_gate_internal_denylist`, seeded `lyceon.ai` and kept in step with `LIFECYCLE_EMAIL_DENYLIST`) are paused whatever their dates, reason `internal_account`; activity never wakes them, and they get no governed or milestone email. (3) Everyone else: unchanged. Neither group gets the pause note, and a guardian paused by (1) or (2) gets no parent pause email. The move is recorded as `backfill` (`email_gate_launch_backfill`, run by the migration; re-run after the internal list grows).
+*Violated if:* an account covered by (1) or (2) is not paused, or is sent a pause note, a governed email, or (internal) a milestone; an internal account wakes on activity; or an account active on or after the launch date is moved.
+
+**C15.3** THE GATE IS ASKED BEFORE EVERY GOVERNED OR MILESTONE SEND (`email_gate_decide`, through `emailGate` in `server/lib/notifications/email-gate.ts`): by the dispatcher at send time (a refusal fails the message at once, `email_gate:<reason>`, never retried; an unreadable gate defers it) and by the lifecycle rule (a refusal releases the claim). Milestones are allowed in every state; manual campaigns and milestones are 13+ only. The `email_gate_enabled` key off allows every governed email.
+*Violated if:* a governed sender sends without asking, or sends on a refusal or an unreadable answer.
+
+**C15.4** TRANSITIONS AND NOTICES. Every state change writes `email_gate_transitions` (who: `system`, `keep_me_posted` or `backfill`; from, to, reason, when) and queues `email_state` for Resend (`email_gate_resend_outbox`), never for an under-13. The mirror PATCHes the existing contact only (never creates one), retries with backoff, and never blocks a send. Entering paused sends the student pause note (13+), once per episode; it is withdrawn if the pause ended before it went. Parents: after 7 days without student activity (on a plan: 2 missed planned days AND 7 days), the guardian gets one pause email for that student and the digest stops reporting them; resumes on student activity, guardian sign-in, Keep me posted, or the link ending; a new episode needs student activity after the last pause.
+*Violated if:* a change has no transition row; an under-13 is queued for Resend; a mirror failure stops a send; a pause note or parent email is sent twice in one episode, or after its pause ended; or a paused student appears in the digest.
+
+**C15.5** SENDERS. Governed and milestone emails go out from `NOTIFICATION_TRACKED_FROM_EMAIL` (lyceon.ai, tracked); always and notice emails, and Supabase Auth mail, from send.lyceon.ai (untracked).
+*Violated if:* a captured send of one category uses the other's sender (the fallback aside).
+
+**C15.6** ENGAGEMENT AND CAMPAIGNS. `email.opened` and `email.clicked` are stored once per svix-id with the recipient's profile. Manual campaigns read `email_gate_status` (service role; `may_send_governed` excludes under-13s and pending deletions) and record each send with `record_campaign_send(email, campaign, variant, sent_at, resend_id)`, idempotent by Resend id, counted as a governed send.
+*Violated if:* a replayed webhook or campaign record writes twice; or the view or the tables are readable by `anon` or `authenticated`.
+
+**C15.7** MILESTONES (`email_milestones_notify`, in the 14:00 UTC sweep): a week before the test (days −7 to −5), the day after (days +1 to +3, with College Board's release date when published and still ahead) and on the score release day (release to +3; skipped when none is published). Email only, 13+ only, once per (student, test date, kind), each expiring with its window. The release-day email links `/score-report?date=`, which accepts any of the student's own past test dates within 45 days (score only); the day-18 post-exam email is renewal-only once a score is on file.
+*Violated if:* a milestone goes twice for one test date, outside its window, to an under-13, or for a date with no published release (the release-day email).
+
+> **Amended 2026-11-02 (Karl, "milestone send window and duplicate guard"; `20261128000000`):** each milestone fires only around its target day in the student's zone: a week before, target − 1 … target + 1 (target = test date − 7); the day after, the day after the test and the next day (never the test day itself); release day, the release date and the next day (never before). Past its window it is never sent: the skip is recorded once in `email_milestone_skips` (`window_missed`). No two different milestone emails to one student within `email_gate_milestone_spacing_days` (3): the later is skipped (`milestone_spacing`). Each milestone expires at the end of the day it was emitted; `sat_week_before` carries `days_until` and says "next {weekday}" only at 7 days ("in N days" otherwise). Before any governed or milestone send, an address that complained, or bounced with no delivery since, is refused (`suppressed`, C15.3); always email is unchanged. Delivery status events now carry the recipient (`link_email_delivery_recipient`), so bounces on lifecycle and campaign email count. Resend's own suppression list stays Resend's to enforce (§11A).
+*Violated if:* a milestone is sent outside its window or after a recorded skip, two different milestones reach one student within the spacing days, the week-before line says "next" at any count but 7, or a governed or milestone email reaches a suppressed address.
+
+| Clause | Falsified by |
+|---|---|
+| C15.1–C15.7, C15.2a | `tests/ci/email-gate.pg.ci.test.ts` (LP1–LP5 for C15.2a) (real Postgres, as a service_role probe), `tests/ci/email-gate.contract.test.ts`; plants in `scripts/ci/email-gate.mutations.sh` |
