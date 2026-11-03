@@ -29,13 +29,22 @@
  * column before the timeline is registered, and scripts/worked-examples/layout-check.ts proves
  * the result in a browser. Voice lines are matched to the script by key, so a manifest voiced
  * before the 2026-11-02 order (answer before trap) still places every line correctly.
+ *
+ * @spec [SCL-266 as ruled by Karl 2026-11-02 (#1398): the QOTD breakdown is rendered by the
+ *       worked-example pipeline from an authored script, under the same script rules and the
+ *       same spoken order] | @implemented [2026-11-02]
+ * plain English (2026-11-02): one body, buildScriptComposition, renders every video the kit
+ * makes from a spoken script (WorkedExampleScript): a worked example (buildComposition, which
+ * only maps the example and its title) and a QOTD breakdown (scripts/qotd-social/breakdown.ts),
+ * whose question card shows the choices in the day's stored order under its display letters.
  */
-import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
+import type { HookQuestion } from "../../shared/worked-examples/rules";
 import { plainMathText } from "../../shared/qotd/plain-math";
 import { tiktokSafePx, QOTD_TIKTOK_SIZE } from "../../shared/qotd/tiktok";
 import type {
   VoiceLine,
   WorkedExampleContent,
+  WorkedExampleScript,
 } from "../../packages/shared/src/worked-example-schema";
 import { TRAP_HEADING } from "../../shared/worked-examples/rules";
 import { escapeHtml, fill, type Kit } from "./kit";
@@ -71,7 +80,7 @@ export type ScriptLine = { key: string; text: string };
  * the kit's call to action.
  */
 export function scriptLines(
-  example: WorkedExampleContent,
+  example: WorkedExampleScript,
   outroText: string,
 ): ScriptLine[] {
   return [
@@ -133,8 +142,25 @@ export type Composition = {
 
 export type CompositionInput = {
   example: WorkedExampleContent;
-  question: SeedQuestion;
+  question: CompositionQuestion;
   /** The example's voice lines (any order: matched to scriptLines by key), without the outro. */
+  voice: readonly VoiceLine[];
+  outro: VoiceLine;
+  kit: Kit;
+};
+
+/** The question as the card shows it: the choices in the order and under the letters given. */
+export type CompositionQuestion = Pick<
+  HookQuestion,
+  "stem" | "passage" | "options"
+>;
+
+export type ScriptCompositionInput = {
+  script: WorkedExampleScript;
+  question: CompositionQuestion;
+  /** The page title (not drawn). */
+  title: string;
+  /** The script's voice lines (any order: matched to scriptLines by key), without the outro. */
   voice: readonly VoiceLine[];
   outro: VoiceLine;
   kit: Kit;
@@ -144,8 +170,23 @@ function basename(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
+/** A worked example's composition: its content as the script, titled by skill and question. */
 export function buildComposition(input: CompositionInput): Composition {
-  const { example, question, kit } = input;
+  return buildScriptComposition({
+    script: input.example,
+    question: input.question,
+    title: `Worked example: ${input.example.skill_code} (${input.example.question_id})`,
+    voice: input.voice,
+    outro: input.outro,
+    kit: input.kit,
+  });
+}
+
+/** THE composition body, for every video the kit renders from a spoken script. */
+export function buildScriptComposition(
+  input: ScriptCompositionInput,
+): Composition {
+  const { script: example, question, kit } = input;
   const script = scriptLines(example, kit.voice.outro_text);
   const given = [...input.voice, input.outro];
   const byKey = new Map(given.map((l) => [l.key, l]));
@@ -359,9 +400,7 @@ ${wipes}
     safeRightInset: String(QOTD_TIKTOK_SIZE.width - safe.right),
   });
   const html = fill(t.frame, {
-    title: escapeHtml(
-      `Worked example: ${example.skill_code} (${example.question_id})`,
-    ),
+    title: escapeHtml(input.title),
     fontFaces,
     css,
     duration: String(duration),

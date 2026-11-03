@@ -107,6 +107,41 @@ export const workedExampleContentSchema = z
 export type WorkedExampleContent = z.infer<typeof workedExampleContentSchema>;
 
 /**
+ * The spoken script alone: what the composition draws and the voice says, and what the script
+ * rules (shared/worked-examples/rules.ts S1, S2, H1-H6, the trap opener) read. A worked example is
+ * one (its content file carries these keys, plus the fields only a worked example has); a QOTD
+ * breakdown script is another (packages/shared/src/qotd-breakdown-schema.ts).
+ *
+ * @spec [SCL-266 as ruled by Karl 2026-11-02 (#1398): "replace the templated script with
+ *       authored scripts", under the same content rules as worked examples, reusing the
+ *       worked-example functions rather than forking them] | @implemented [2026-11-02]
+ *
+ * plain English: the same field schemas as workedExampleContentSchema, picked from it (never
+ * re-declared), so a change to a worked example's hook, step, answer or trap rules is a change to
+ * the breakdown's too. Dropped: the hook type, the answer letter (a breakdown names its letter as
+ * correct_display_letter, the stored row's), the trap summary.
+ */
+export const workedExampleScriptSchema = z
+  .object({
+    hook: workedExampleContentSchema.shape.hook.pick({
+      line: true,
+      voice: true,
+    }),
+    question_voice: workedExampleContentSchema.shape.question_voice,
+    steps: workedExampleContentSchema.shape.steps,
+    answer: workedExampleContentSchema.shape.answer.pick({
+      notepad: true,
+      voice: true,
+    }),
+    trap: workedExampleContentSchema.shape.trap.pick({
+      notepad: true,
+      voice: true,
+    }),
+  })
+  .strict();
+export type WorkedExampleScript = z.infer<typeof workedExampleScriptSchema>;
+
+/**
  * The spoken lines, in spoken order (SCL-267, Karl's ruling 2026-11-02): the hook, the setup
  * (`question_voice`), the steps, the trap, then the answer with its quick check. The call to
  * action on the end card is the kit's line, not the example's. A manifest voiced before the

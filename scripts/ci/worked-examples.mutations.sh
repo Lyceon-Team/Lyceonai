@@ -266,8 +266,10 @@ ts_plant "T18 a caption without the headline first" shared/worked-examples/rules
 ts_plant "T19 the plan repeats a hook type" shared/worked-examples/rules.ts \
   "if (prev && prev.hook_type === s.hook_type)" "if (false)" \
   "two consecutive slots with one hook type are refused"
+# T20, T26 re-pointed 2026-11-02 (SCL-266): the steps and the poster moved into videoSetSlackSteps
+# and postVideoSet, which the worked examples and the QOTD breakdown share.
 ts_plant "T20 the Slack set out of order" scripts/worked-examples/post-to-slack.ts \
-  "for (const step of workedExampleSlackSteps(post)) {" "for (const step of workedExampleSlackSteps(post).reverse()) {" \
+  "  for (const step of steps) {" "  for (const step of [...steps].reverse()) {" \
   "posts the video first"
 
 echo "=== TS: the SCL-262 set (SCL-265) ==="
@@ -283,8 +285,8 @@ ts_plant "T25 the caption link check removed" shared/worked-examples/rules.ts \
   "if (link) out.push(" "if (false) out.push(" \
   "no link, bio line or promo in any caption"
 ts_plant "T26 the link to send back in the Instagram message" scripts/worked-examples/post-to-slack.ts \
-  "        copyBlock(post.instagram_caption),"$'\n' \
-  "        copyBlock(post.instagram_caption),"$'\n'"        post.links.instagram,"$'\n' \
+  "        copyBlock(set.instagram_caption),"$'\n' \
+  "        copyBlock(set.instagram_caption),"$'\n'"        \"lyceon.ai/start?utm_campaign=worked_example\","$'\n' \
   "no link, bio line, title or label block in any message"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
@@ -330,6 +332,9 @@ ts_plant "V12 a rate change keeps the old voicing" scripts/worked-examples/voice
   "a rate change re-voices the batch"
 
 echo "=== TS: script and voice (SCL-267, Karl's rulings 2026-11-02) ==="
+# 2026-11-02 (SCL-266, Karl's rulings on #1398): W3, W5, W22 and W23 keep their anchors, which now
+# sit in scriptProblems (shared/worked-examples/rules.ts), the script rules contentProblems calls and
+# the QOTD breakdown shares; observed red there at rules.ts:350 (W3), :352 (W5), :361 (W22, W23).
 ts_plant "W1 S1 the verbatim rule finds nothing" shared/worked-examples/rules.ts \
   "      if (run !== null)" "      if (false)" \
   "a setup that reads the question stem is refused"

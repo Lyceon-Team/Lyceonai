@@ -18,7 +18,10 @@
  * plain English: every function here is pure and returns the problems it finds (empty = pass).
  * scripts/worked-examples/check-content.ts runs them on every pull request into `social` that
  * touches an example, and the daily job runs them again before it renders, so an example that
- * breaks a rule is never posted.
+ * breaks a rule is never posted. scriptProblems is the part that reads only the spoken script and
+ * the question as shown (the answer notepad's letter, the trap opener, H1-H6, S1, S2, the
+ * public-copy lists); the QOTD breakdown's authored scripts run the same function (SCL-266, Karl's
+ * rulings on #1398, 2026-11-02: the worked examples' rules, reused, not forked).
  *
  * The hook rules, one function each so each can be proven separately:
  *   H1 no statistics: no "N% of", "N out of M", "N in M", or words that cite data (survey, study,
@@ -52,6 +55,7 @@ import {
   WORKED_EXAMPLE_TITLE_MAX,
   type WorkedExampleContent,
   type WorkedExampleHookType,
+  type WorkedExampleScript,
   type WorkedExamplePlan,
   type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
@@ -115,7 +119,17 @@ function tokens(text: string): Set<string> {
   return out;
 }
 
-function questionText(q: SeedQuestion): string {
+/**
+ * What the hook rules read of a question: its id (for messages), text, choices and key. A seed
+ * question is one; so is a QOTD breakdown's question, lettered in the day's stored order with its
+ * stored letter as the key (shared/qotd/breakdown.ts, SCL-266).
+ */
+export type HookQuestion = Pick<
+  SeedQuestion,
+  "id" | "stem" | "passage" | "options" | "correct_answer"
+>;
+
+function questionText(q: HookQuestion): string {
   return [q.passage ?? "", q.stem, ...q.options.map((o) => o.text)]
     .map(plainMathText)
     .join(" ");
@@ -124,7 +138,7 @@ function questionText(q: SeedQuestion): string {
 /** H3: the hook states or shows the puzzle (shares a number or a content word with it). */
 export function hookPuzzleProblem(
   hookLine: string,
-  q: SeedQuestion,
+  q: HookQuestion,
 ): string | null {
   const question = tokens(questionText(q));
   for (const t of tokens(hookLine)) if (question.has(t)) return null;
@@ -141,7 +155,7 @@ export function hookCuriosityProblem(hookLine: string): string | null {
 /** H5: the hook never gives the answer away. */
 export function hookAnswerProblem(
   text: string,
-  q: SeedQuestion,
+  q: HookQuestion,
 ): string | null {
   if (/\b(the )?answer('s| is)\b/i.test(text))
     return `H5 gives the answer: "${text}" says what the answer is`;
@@ -177,8 +191,8 @@ export function publicPhraseProblem(text: string): string | null {
 
 /** Every hook rule, on the on-screen line and on the spoken hook. */
 export function hookProblems(
-  hook: WorkedExampleContent["hook"],
-  q: SeedQuestion,
+  hook: Pick<WorkedExampleContent["hook"], "line" | "voice">,
+  q: HookQuestion,
 ): string[] {
   const out: (string | null)[] = [
     hookPuzzleProblem(hook.line, q),
@@ -231,8 +245,8 @@ export function sharedRun(
 
 /** Everything the viewer reads on screen while the voice plays, named for the problem text. */
 export function onScreenTexts(
-  example: WorkedExampleContent,
-  q: SeedQuestion,
+  example: WorkedExampleScript,
+  q: HookQuestion,
 ): { where: string; text: string }[] {
   return [
     { where: "the hook line", text: example.hook.line },
@@ -258,7 +272,7 @@ export function onScreenTexts(
 
 /** Every line the example's voice speaks, keyed as the voice manifest keys them. */
 export function spokenTexts(
-  example: WorkedExampleContent,
+  example: WorkedExampleScript,
 ): { key: string; text: string }[] {
   return [
     { key: "hook", text: example.hook.voice },
@@ -271,8 +285,8 @@ export function spokenTexts(
 
 /** S1: no spoken line reads VERBATIM_RUN_WORDS or more consecutive on-screen words aloud. */
 export function verbatimProblems(
-  example: WorkedExampleContent,
-  q: SeedQuestion,
+  example: WorkedExampleScript,
+  q: HookQuestion,
 ): string[] {
   const screen = onScreenTexts(example, q);
   const out: string[] = [];
@@ -289,7 +303,7 @@ export function verbatimProblems(
 
 /** S2: the spoken hook is not the on-screen hook line read aloud. */
 export function spokenHookEchoProblem(
-  hook: WorkedExampleContent["hook"],
+  hook: WorkedExampleScript["hook"],
 ): string | null {
   return verbatimWords(hook.voice).join(" ") ===
     verbatimWords(hook.line).join(" ")
@@ -307,6 +321,61 @@ export const TRAP_HEADING = "The trap:";
  */
 export const TRAP_VOICE_OPENING =
   /^(?:the trap\b|(?:now,?\s+)?here[’']?s where (?:people|you) slip\b)/i;
+
+/**
+ * The spoken script against the question as the screen shows it: the answer notepad names the
+ * key, the trap opens as ruled, H1-H6 on the hook, S1 and S2, and no claim about people, no
+ * statistic and no banned public-copy phrase on any spoken or written line. Every video the kit
+ * renders runs it: a worked example (contentProblems, below) and a QOTD breakdown, whose question
+ * is lettered in the day's stored order with the stored letter as its key (SCL-266).
+ *
+ * @spec [SCL-267 (S1, S2, the trap opener, Karl 2026-11-02); SCL-266 as ruled by Karl 2026-11-02
+ *       (#1398): the breakdown scripts follow the worked examples' content rules, through these
+ *       functions, not a fork] | @implemented [2026-11-02]
+ */
+export function scriptProblems(
+  example: WorkedExampleScript,
+  q: HookQuestion,
+): string[] {
+  const out: string[] = [];
+  if (!example.answer.notepad.includes(`${q.correct_answer})`))
+    out.push(
+      `answer.notepad "${example.answer.notepad}" does not name choice ${q.correct_answer})`,
+    );
+  if (!TRAP_VOICE_OPENING.test(example.trap.voice))
+    out.push(
+      `trap.voice must open "The trap" or "Here's where people slip": "${example.trap.voice}"`,
+    );
+  out.push(...hookProblems(example.hook, q));
+  out.push(...verbatimProblems(example, q));
+  const echo = spokenHookEchoProblem(example.hook);
+  if (echo) out.push(echo);
+  out.push(
+    ...lineProblems([
+      example.question_voice,
+      ...example.steps.flatMap((s) => [s.notepad, s.voice]),
+      example.answer.voice,
+      ...example.trap.notepad,
+      // The ruled trap opener ("Here's where people slip", Karl 2026-11-02, SCL-267) is the one
+      // mention of people a spoken line may make; the rest of the trap line is checked as before.
+      example.trap.voice.replace(TRAP_VOICE_OPENING, ""),
+    ]),
+  );
+  return out;
+}
+
+/** No claim about people, no statistic, no banned public-copy phrase, on each line. */
+function lineProblems(lines: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const text of lines) {
+    const p =
+      hookPeopleProblem(text) ??
+      hookStatisticProblem(text) ??
+      publicPhraseProblem(text);
+    if (p) out.push(p.replace(/^H\d /, ""));
+  }
+  return out;
+}
 
 /** The example against its question, its week, its style row and the public-copy lists. */
 export function contentProblems(
@@ -326,14 +395,6 @@ export function contentProblems(
     out.push(
       `answer.letter ${example.answer.letter} is not ${q.id}'s key ${q.correct_answer}`,
     );
-  if (!example.answer.notepad.includes(`${q.correct_answer})`))
-    out.push(
-      `answer.notepad "${example.answer.notepad}" does not name choice ${q.correct_answer})`,
-    );
-  if (!TRAP_VOICE_OPENING.test(example.trap.voice))
-    out.push(
-      `trap.voice must open "The trap" or "Here's where people slip": "${example.trap.voice}"`,
-    );
   if (isoWeekCycle(example.post_on) !== cycle)
     out.push(
       `post_on ${example.post_on} is in ${isoWeekCycle(example.post_on)}, not in its batch ${cycle}`,
@@ -344,30 +405,15 @@ export function contentProblems(
     out.push(
       `signature_move differs from the style table's for "${example.skill_code}"`,
     );
-  out.push(...hookProblems(example.hook, q));
-  out.push(...verbatimProblems(example, q));
-  const echo = spokenHookEchoProblem(example.hook);
-  if (echo) out.push(echo);
-  const spoken = [
-    example.question_voice,
-    ...example.steps.flatMap((s) => [s.notepad, s.voice]),
-    example.answer.voice,
-    example.trap.summary,
-    ...example.trap.notepad,
-    // The ruled trap opener ("Here's where people slip", Karl 2026-11-02, SCL-267) is the one
-    // mention of people a spoken line may make; the rest of the trap line is checked as before.
-    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),
-    example.check,
-    example.takeaway,
-    example.signature_move,
-  ];
-  for (const text of spoken) {
-    const p =
-      hookPeopleProblem(text) ??
-      hookStatisticProblem(text) ??
-      publicPhraseProblem(text);
-    if (p) out.push(p.replace(/^H\d /, ""));
-  }
+  out.push(...scriptProblems(example, q));
+  out.push(
+    ...lineProblems([
+      example.trap.summary,
+      example.check,
+      example.takeaway,
+      example.signature_move,
+    ]),
+  );
   return out;
 }
 

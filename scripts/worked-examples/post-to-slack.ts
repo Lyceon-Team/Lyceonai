@@ -63,28 +63,41 @@ function platformLine(name: "TikTok" | "Instagram" | "Facebook"): string {
 /** Instagram and Facebook post the video already shared above, so they say so. */
 const SAME_VIDEO = "(the same video as TikTok, above)";
 
-/** The steps, in order. Text only: the video's bytes are passed separately. */
-export function workedExampleSlackSteps(
-  post: WorkedExamplePost,
-): WorkedExampleSlackStep[] {
+/**
+ * One video's #social set: what the message carries besides the video. A worked example is one
+ * (workedExampleSlackSteps); so is a QOTD breakdown (scripts/qotd-social/breakdown.ts, SCL-266).
+ */
+export type VideoSet = {
+  label: string;
+  /** The review line under the label, outside the copy blocks. */
+  review: string;
+  warnings: readonly string[];
+  caption: string;
+  keywords: readonly string[];
+  instagram_caption: string;
+  facebook_caption: string;
+};
+
+/** The steps for any video set, in order. Text only: the video's bytes are passed separately. */
+export function videoSetSlackSteps(set: VideoSet): WorkedExampleSlackStep[] {
   const steps: WorkedExampleSlackStep[] = [];
-  if (post.warnings.length > 0)
+  if (set.warnings.length > 0)
     steps.push({
       kind: "message",
-      text: post.warnings.map((w) => `:warning: ${escapeMrkdwn(w)}`).join("\n"),
+      text: set.warnings.map((w) => `:warning: ${escapeMrkdwn(w)}`).join("\n"),
     });
   steps.push(
     {
       kind: "video",
       comment: [
         platformLine("TikTok"),
-        escapeMrkdwn(post.label),
-        `For review: posts on ${post.post_on}. Karl posts by hand.`,
+        escapeMrkdwn(set.label),
+        set.review,
       ].join("\n"),
     },
     {
       kind: "message",
-      text: [copyBlock(post.caption), copyBlock(post.keywords.join("\n"))].join(
+      text: [copyBlock(set.caption), copyBlock(set.keywords.join("\n"))].join(
         "\n",
       ),
     },
@@ -92,18 +105,50 @@ export function workedExampleSlackSteps(
       kind: "message",
       text: [
         `${platformLine("Instagram")} ${SAME_VIDEO}`,
-        copyBlock(post.instagram_caption),
+        copyBlock(set.instagram_caption),
       ].join("\n"),
     },
     {
       kind: "message",
       text: [
         `${platformLine("Facebook")} ${SAME_VIDEO}`,
-        copyBlock(post.facebook_caption),
+        copyBlock(set.facebook_caption),
       ].join("\n"),
     },
   );
   return steps;
+}
+
+/** The steps for one worked example, in order. */
+export function workedExampleSlackSteps(
+  post: WorkedExamplePost,
+): WorkedExampleSlackStep[] {
+  return videoSetSlackSteps({
+    ...post,
+    review: `For review: posts on ${post.post_on}. Karl posts by hand.`,
+  });
+}
+
+/** Posts a video set, each step confirmed before the next starts. */
+export async function postVideoSet(
+  config: SlackConfig,
+  steps: readonly WorkedExampleSlackStep[],
+  filename: string,
+  video: Uint8Array,
+  fetchImpl: FetchLike,
+  wait: ShareWait = DEFAULT_SHARE_WAIT,
+): Promise<void> {
+  for (const step of steps) {
+    if (step.kind === "video")
+      await shareFilesConfirmed(
+        config,
+        [{ filename, bytes: video }],
+        step.comment,
+        fetchImpl,
+        wait,
+      );
+    else await postMessage(config, step.text, fetchImpl);
+  }
 }
 
 export async function postWorkedExample(
@@ -113,21 +158,18 @@ export async function postWorkedExample(
   fetchImpl: FetchLike,
   wait: ShareWait = DEFAULT_SHARE_WAIT,
 ): Promise<void> {
-  for (const step of workedExampleSlackSteps(post)) {
-    if (step.kind === "video")
-      await shareFilesConfirmed(
-        config,
-        [{ filename: post.video, bytes: video }],
-        step.comment,
-        fetchImpl,
-        wait,
-      );
-    else await postMessage(config, step.text, fetchImpl);
-  }
+  await postVideoSet(
+    config,
+    workedExampleSlackSteps(post),
+    post.video,
+    video,
+    fetchImpl,
+    wait,
+  );
 }
 
 /** The platform fetch as the Slack client's FetchLike (bytes sent as a Blob). */
-const nodeFetch: FetchLike = (url, init) =>
+export const nodeFetch: FetchLike = (url, init) =>
   fetch(url, {
     method: init.method,
     ...(init.headers ? { headers: init.headers } : {}),

@@ -105,6 +105,10 @@ voice-reference/
 *.reference.mp3
 *.reference.m4a
 *.reference.flac
+# QOTD breakdown (SCL-266, Karl's rulings on #1398, 2026-11-02): the owner-run schedule export holds
+# the answers of QOTDs not yet published. It is kept outside every checkout
+# (check-breakdown-scripts.ts refuses one inside); this is the backstop.
+qotd-breakdown-schedule*.json
 
 # Video pilots (scripts/video-pilots/README.md): renders, voiced lines, Manim media and caches are
 # never committed; they belong in a folder outside the repository. These catch a run pointed inside it.
