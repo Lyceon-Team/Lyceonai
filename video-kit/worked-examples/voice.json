@@ -1,12 +1,18 @@
 {
   "hyperframes": "0.8.143",
-  "default_profile": "af_heart",
-  "fallback_profile": "af_heart",
+  "default_profile": "am_michael",
+  "fallback_profile": "am_michael",
   "profiles": {
+    "am_michael": {
+      "engine": "kokoro",
+      "kokoro_voice": "am_michael",
+      "label": "Kokoro am_michael via hyperframes tts (the default and fallback from 2026-11-02, SCL-267)",
+      "speaking_rate": 1.0
+    },
     "af_heart": {
       "engine": "kokoro",
       "kokoro_voice": "af_heart",
-      "label": "the /brag voice (Kokoro af_heart via hyperframes tts)",
+      "label": "the /brag voice (Kokoro af_heart via hyperframes tts); the W45 batch was voiced in it",
       "speaking_rate": 1.0
     },
     "clone": {
@@ -26,15 +32,25 @@
     "max_tail_silence_seconds": 0.8,
     "max_gap_seconds": 1.2
   },
+  "loudness": {
+    "integrated_lufs": -14,
+    "true_peak_dbtp": -1,
+    "loudness_range_lu": 11
+  },
+  "final_mix": {
+    "max_true_peak_dbtp": -1,
+    "aac_bitrate_kbps": 192
+  },
   "transcript_aliases": {
-    "lycian": "lyceon dot",
-    ".ai": " a i"
+    "lycian": "lyceon",
+    "lycion": "lyceon",
+    "lysian": "lyceon"
   },
   "transcribe_model": "small.en",
   "gap_seconds": 0.3,
   "end_hold_seconds": 1.2,
-  "outro_text": "Follow for daily SAT questions. Lyceon dot A.I.",
-  "outro_caption": "Follow for daily SAT questions. lyceon.ai",
+  "outro_text": "Follow, there's one of these every day.",
+  "outro_caption": "Follow, there's one of these every day.",
   "outro_file": "video-kit/worked-examples/voice/outro.wav",
   "music_track": "happy-beats-business-moves-vol-12",
   "music_gain": 0.07,

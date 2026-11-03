@@ -102,9 +102,11 @@ echo "=== the social CTAs (item 2) ==="
 # test it reddened went with it.
 # G2 and G3 re-pointed 2026-11-02 (Karl's rulings on the daily #social messages): the captions
 # moved to shared/social/posts.ts, and the TikTok caption's comment line joined its follow line.
+# G2 re-pointed again 2026-11-02 (SCL-265): the QOTD headline is passed into the one TikTok caption
+# builder (socialTiktokCaption), which the worked examples share.
 ts_plant "G2 the TikTok caption drops the follow and comment line" shared/social/posts.ts \
-  "    qotdHeadline(test, section),"$'\n'"    SOCIAL_FOLLOW_AND_COMMENT_LINE," \
-  "    qotdHeadline(test, section)," \
+  "    headline,"$'\n'"    SOCIAL_FOLLOW_AND_COMMENT_LINE," \
+  "    headline," \
   "the caption: headline, follow and comment line, hashtags, for each section" "$QOTD_SOCIAL"
 ts_plant "G3 the Instagram caption loses its comment-SAT line" shared/social/posts.ts \
   "    instagramCommentSatLine(test),"$'\n' \
@@ -118,10 +120,12 @@ ts_plant "G5 the funnel-line filter drops any line that merely contains one" sha
   "    .filter((line) => !fixed.has(line.trim()))" \
   "    .filter((line) => ![...fixed].some((f) => line.includes(f)))" \
   "the leak checks leave out only whole lines that ARE a funnel line" "$CONTRACT"
-ts_plant "G6 worked-example captions keep the old line" shared/worked-examples/rules.ts \
-  "    bioCtaLine(funnelPhase(example.post_on))," \
-  "    \"More SAT questions on lyceon.ai.\"," \
-  "the real title and caption pass, with the music credited" "$WORKED"
+# G6 inverted 2026-11-02 (SCL-265): the worked-example captions follow SCL-262, so they carry no
+# bio or link line at all. The plant puts the 2026-10-28 bio line back.
+ts_plant "G6 the worked-example TikTok caption carries a bio line again" shared/worked-examples/rules.ts \
+  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
+  'return socialTiktokCaption(c.headline, c.test, c.section, ["Free SAT practice: link in bio", musicCredit]);' \
+  "no link, bio line or promo in any caption" "$WORKED"
 ts_plant "G7 worked-example links tagged as the QOTD campaign" scripts/worked-examples/daily.ts \
   '    links: campaignLinks("worked_example"),' \
   '    links: campaignLinks("qotd"),' \

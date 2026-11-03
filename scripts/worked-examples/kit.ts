@@ -45,8 +45,6 @@ export const brandSchema = z
         inkSoft: colour,
         border: colour,
         red: colour,
-        highlight: colour,
-        captionText: colour,
       })
       .strict(),
     fonts: z.record(
@@ -115,12 +113,41 @@ export const voiceSettingsSchema = z
         max_gap_seconds: z.number().positive(),
       })
       .strict(),
+    /**
+     * Loudness normalisation applied to every voiced line before it is transcribed and checked
+     * (SCL-267, Karl's ruling 2026-11-02: "no line clips"): ffmpeg loudnorm to integrated_lufs
+     * with true peak at most true_peak_dbtp, then alimiter 0.5 dB under it as a backstop.
+     */
+    loudness: z
+      .object({
+        integrated_lufs: z.number().min(-30).max(-5),
+        true_peak_dbtp: z.number().min(-9).max(-0.5),
+        loudness_range_lu: z.number().min(1).max(20),
+      })
+      .strict(),
+    /**
+     * The finished mix (voice and music bed, as rendered) is limited to at most
+     * max_true_peak_dbtp before any check or post (Karl's ruling 2026-11-02, SCL-270: "a
+     * true-peak limiter (≤ −1 dBTP) on the finished mix in every pipeline"); final-mix.ts
+     * re-encodes the audio as AAC at aac_bitrate_kbps.
+     */
+    final_mix: z
+      .object({
+        max_true_peak_dbtp: z.number().min(-9).max(-1),
+        aac_bitrate_kbps: z.number().int().min(128).max(320),
+      })
+      .strict(),
     /** Known mishearings of names by the transcriber, mapped to what was said. */
     transcript_aliases: z.record(z.string().min(1), z.string().min(1)),
     transcribe_model: z.string().min(1),
     gap_seconds: z.number().min(0).max(2),
     end_hold_seconds: z.number().min(0).max(5),
+    /** The call to action the end card speaks (SCL-267: no "lyceon.ai" spoken). */
     outro_text: z.string().min(1),
+    /**
+     * The same call to action as written, for reviewers and the runbook. Nothing renders it since
+     * the burned-in captions were removed (SCL-267, Karl's ruling 2026-11-02).
+     */
     outro_caption: z.string().min(1),
     outro_file: z.string().endsWith(".wav"),
     music_track: z.string().min(1),
