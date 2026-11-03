@@ -1,0 +1,53 @@
+{
+  "question_id": "SATM2XXVNK7",
+  "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+  "post_on": "2026-11-16",
+  "hook": {
+    "type": "speed",
+    "line": "By hand or graphing: which finds where these graphs intersect first?",
+    "voice": "Faster with the graphing calculator or by hand? Let's race."
+  },
+  "question_voice": "Okay. We want the points where the parabola and the line meet.",
+  "signature_move": "Set the two expressions equal and factor, or graph both and read the crossings.",
+  "steps": [
+    {
+      "notepad": "x² − 7x + 5 = x − 7",
+      "voice": "By hand first. Clock's running. Set the two right sides equal."
+    },
+    {
+      "notepad": "x² − 8x + 12 = 0",
+      "voice": "Move everything over, and you've got a clean quadratic."
+    },
+    {
+      "notepad": "(x − 2)(x − 6) = 0",
+      "voice": "It factors nicely. x is two or six."
+    },
+    {
+      "notepad": "y = x − 7:  −5 and −1",
+      "voice": "Drop those into the line, and the y values are negative five and negative one."
+    },
+    {
+      "notepad": "graph both, read the crossings",
+      "voice": "Now the graphing method. New clock. Put both on the graph."
+    },
+    {
+      "notepad": "(2, −5) and (6, −1)",
+      "voice": "They cross at two, negative five, and six, negative one. Done."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "same points both ways → A)",
+    "voice": "Same two points both ways. That's A. Quick check: four minus fourteen plus five is negative five. Which clock won?"
+  },
+  "trap": {
+    "summary": "Forgetting to move the x term gives x² − 7x + 12 = 0 and the points (3, −4) and (4, −3), which lie on the line but not on the parabola.",
+    "notepad": [
+      "x² − 7x + 12 = 0  ✗",
+      "(3, −4), (4, −3): line only"
+    ],
+    "voice": "Now here's where people slip: forget to move the x over, and you land on choice C. Those points sit on the line, not on the parabola."
+  },
+  "check": "(2, −5): 4 − 14 + 5 = −5; (6, −1): 36 − 42 + 5 = −1; both are on y = x − 7.",
+  "takeaway": "A parabola and a line can cross twice; the graph shows both crossings, and only real ones."
+}

@@ -1,9 +1,12 @@
 # Runbook — Question of the Day to Slack
 
-> @spec [Doc 10A §7, §11; owner briefs 2026-10-10 (QOTD social assets to Slack) and 2026-10-15 (add yesterday's reveal, for Reddit); Karl's ruling 2026-10-30 (Reddit QOTD discontinued)] | @implemented [2026-10-10; reveal 2026-10-15; TikTok carousel and canonical choice order, Karl's brief 2026-10-23; Reddit items removed 2026-10-30]
+> @spec [Doc 10A §7, §11; owner briefs 2026-10-10 (QOTD social assets to Slack) and 2026-10-15 (add yesterday's reveal, for Reddit); Karl's ruling 2026-10-30 (Reddit QOTD discontinued); Karl's content rulings 2026-11-02 (SCL-264: Reddit manual only, no scheduler)] | @implemented [2026-10-10; reveal 2026-10-15; TikTok carousel and canonical choice order, Karl's brief 2026-10-23; Reddit items removed 2026-10-30]
 
-**Reddit QOTD is discontinued** (r/SatQuestion was banned by Reddit sitewide; Karl, 2026-10-30).
-The QOTD goes to **TikTok, Instagram and Facebook only**. Nothing Reddit-related is built or
+**Reddit QOTD is discontinued** (Karl, 2026-10-30; the subreddit that carried it was banned by
+Reddit). Reddit is founder-led and manual only, and Lyceon's own content is not cross-posted there
+(Karl, 2026-11-02).
+The QOTD goes to **TikTok, Instagram and the Facebook Page only**, daily, posted by Karl by hand
+from `#social`: no scheduler for now (Karl, 2026-11-02; SCL-264). Nothing Reddit-related is built or
 posted: the run no longer makes a suggested Reddit post or yesterday's reveal (the answer for the
 comment on yesterday's Reddit post), the build's `post.json` carries neither (and is refused if it
 does), and `#social` has no Reddit item.

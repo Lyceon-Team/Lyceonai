@@ -109,3 +109,26 @@ voice-reference/
 # the answers of QOTDs not yet published. It is kept outside every checkout
 # (check-breakdown-scripts.ts refuses one inside); this is the backstop.
 qotd-breakdown-schedule*.json
+
+# Video pilots (scripts/video-pilots/README.md): renders, voiced lines, Manim media and caches are
+# never committed; they belong in a folder outside the repository. These catch a run pointed inside it.
+video-pilots-out/
+scripts/video-pilots/**/media/
+scripts/video-pilots/**/voiceovers/
+scripts/video-pilots/**/*.mp4
+scripts/video-pilots/**/*.wav
+scripts/video-pilots/**/*.words.json
+video-kit/pilots/**/*.mp4
+video-kit/pilots/**/*.wav
+.venv-video-pilots/
+scripts/video-pilots/**/*.onnx
+scripts/video-pilots/**/*.bin
+video-kit/pilots/**/*.onnx
+video-kit/pilots/**/*.bin
+# D3 (Chatterbox): its weights live in ~/.cache/huggingface; these catch a copy or a venv inside.
+scripts/video-pilots/**/*.pt
+scripts/video-pilots/**/*.safetensors
+scripts/video-pilots/**/*.timing.json
+scripts/video-pilots/chatterbox/.venv/
+video-kit/pilots/**/*.pt
+video-kit/pilots/**/*.safetensors

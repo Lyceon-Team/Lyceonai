@@ -5,8 +5,9 @@
  *
  * @spec [OpenVoice addendum (Karl, 2026-10-27); SCL-267 (Karl's rulings 2026-11-02, later the same
  *       day): the default and fallback voice am_michael (af_heart kept for the W45 batch),
- *       "Lyceon" said "lye-see-on", loudness normalisation with a peak limiter on every line]
- *       | @implemented [2026-10-27, SCL-267 2026-11-02]
+ *       "Lyceon" said "lye-see-on", loudness normalisation with a peak limiter on every line;
+ *       SCL-270 (Karl's ruling 2026-11-02): a true-peak limiter (at most -1 dBTP) on the finished
+ *       mix] | @implemented [2026-10-27, SCL-267 2026-11-02, SCL-270 2026-11-02]
  *
  * plain English: fixtures are the real committed voice (the fixture example's eight am_michael lines and
  * the kit's end-card line, with their real transcriptions); the failing cases are built by changing
@@ -21,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import {
   voiceLineSchema,
   voiceManifestSchema,
+  workedExamplePostSchema,
   type VoiceManifest,
 } from "../../packages/shared/src/worked-example-schema";
 import { readWavSamples } from "../../scripts/worked-examples/audio";
@@ -36,7 +38,12 @@ import {
   loadVoice,
   voiceProblems,
 } from "../../scripts/worked-examples/content";
-import { KIT_DIR, ROOT, loadKit } from "../../scripts/worked-examples/kit";
+import {
+  KIT_DIR,
+  ROOT,
+  loadKit,
+  voiceSettingsSchema,
+} from "../../scripts/worked-examples/kit";
 import {
   audioProblems,
   errorRate,
@@ -45,8 +52,19 @@ import {
   transcriptProblem,
 } from "../../scripts/worked-examples/quality";
 import {
+  FINAL_MIX_MAX_ATTEMPTS,
+  TRUE_PEAK_OVERSAMPLE,
+  afterLimiting,
+  finalMixLimitArgs,
+  finalMixProblem,
+  measureMix,
+} from "../../scripts/worked-examples/final-mix";
+import {
   BRAND_RESPELLING,
+  BRAND_RESPELLINGS,
+  LIMITER_HEADROOM_DB,
   PAD_MIN_SECONDS,
+  alimiterLimit,
   decideLine,
   keepsEarlierVoicing,
   kokoroTtsArgs,
@@ -471,6 +489,24 @@ describe("pronunciation of Lyceon", () => {
     );
   });
 
+  // Owner brief "Video tools pilot" D3 (Karl, 2026-11-02): Chatterbox hears the plain spelling as
+  // "Lycian", so it is given "Lie-see-on", from the same table and the same function.
+  it("each engine gets its own respelling from the one table; kokoro stays the default", () => {
+    expect(BRAND_RESPELLINGS).toEqual({
+      kokoro: "Lysee-ahn",
+      chatterbox: "Lie-see-on",
+    });
+    expect(spokenBrandName("Lyceon SAT Prep.", "chatterbox")).toBe(
+      "Lie-see-on SAT Prep.",
+    );
+    expect(spokenBrandName("Lyceon SAT Prep.", "kokoro")).toBe(
+      "Lysee-ahn SAT Prep.",
+    );
+    expect(spokenBrandName("Lyceon SAT Prep.")).toBe(
+      spokenBrandName("Lyceon SAT Prep.", "kokoro"),
+    );
+  });
+
   it("what the transcriber hears for it is mapped back, so the quality check passes", () => {
     for (const heard of ["Lycian", "Lycion", "lysian"])
       expect(speechWords(`This is ${heard} SAT Prep.`, aliases)).toEqual(
@@ -567,6 +603,236 @@ describe("loudness normalisation", () => {
     }
     expect(readWavSamples(outroWav).peakDbfs).toBeLessThanOrEqual(-1);
   });
+});
+
+// SCL-270 (Karl's ruling 2026-11-02): "a true-peak limiter (≤ −1 dBTP) on the finished mix in
+// every pipeline". final-mix.ts limits the rendered video's audio at 4× oversampling, measures it,
+// and the daily job's MP4 check refuses a finished mix above -1 dBTP.
+describe("the final-mix true-peak limiter", () => {
+  const fm = kit.voice.final_mix;
+
+  it("voice.json caps the finished mix at -1 dBTP; the first pass limits 0.5 dB under it", () => {
+    expect(fm).toEqual({ max_true_peak_dbtp: -1, aac_bitrate_kbps: 192 });
+    expect(alimiterLimit(fm.max_true_peak_dbtp, LIMITER_HEADROOM_DB)).toBe(
+      0.841,
+    );
+    expect(limiterCeiling(kit.voice.loudness)).toBe(0.841);
+  });
+
+  it("voice.json may not raise the ceiling above -1 dBTP", () => {
+    const raised = voiceSettingsSchema.safeParse({
+      ...kit.voice,
+      final_mix: { ...fm, max_true_peak_dbtp: -0.5 },
+    });
+    expect(raised.success).toBe(false);
+    expect(
+      voiceSettingsSchema.safeParse({
+        ...kit.voice,
+        final_mix: { ...fm, max_true_peak_dbtp: -1.5 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("limits at 4× the sample rate, video copied, audio re-encoded once", () => {
+    expect(TRUE_PEAK_OVERSAMPLE).toBe(4);
+    expect(
+      finalMixLimitArgs("/x/render.mp4", "/x/final.mp4", 0.841, 48000, fm),
+    ).toEqual([
+      "-hide_banner",
+      "-nostats",
+      "-y",
+      "-i",
+      "/x/render.mp4",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0",
+      "-c:v",
+      "copy",
+      "-af",
+      "aresample=192000,alimiter=limit=0.841:level=disabled:latency=1,aresample=48000",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
+      "-movflags",
+      "+faststart",
+      "/x/final.mp4",
+    ]);
+  });
+
+  it("refuses a finished mix over -1 dBTP or with no measurable audio, and passes one at or under it", () => {
+    expect(
+      finalMixProblem({ integratedLufs: -12, truePeakDbtp: -0.9 }, fm),
+    ).toMatch(/peaks at -0\.90 dBTP; at most -1 dBTP \(true peak\)/);
+    expect(
+      finalMixProblem({ integratedLufs: -12, truePeakDbtp: -1 }, fm),
+    ).toBeNull();
+    expect(
+      finalMixProblem({ integratedLufs: -12, truePeakDbtp: -1.35 }, fm),
+    ).toBeNull();
+    expect(finalMixProblem(null, fm)).toMatch(/no measurable audio/);
+  });
+
+  it("an encoder overshoot is limited again with that much more headroom, then refused", () => {
+    const at = (tp: number) => ({ integratedLufs: -12, truePeakDbtp: tp });
+    expect(afterLimiting(at(-1.1), fm, 0.5, 1)).toEqual({ kind: "done" });
+    expect(afterLimiting(at(-0.8), fm, 0.5, 1)).toEqual({
+      kind: "again",
+      headroomDb: 0.8,
+    });
+    expect(afterLimiting(at(-0.95), fm, 0.8, 2)).toEqual({
+      kind: "again",
+      headroomDb: 0.95,
+    });
+    const last = afterLimiting(at(-0.95), fm, 0.95, FINAL_MIX_MAX_ATTEMPTS);
+    expect(last.kind).toBe("refused");
+    expect(afterLimiting(null, fm, 0.5, 1).kind).toBe("refused");
+  });
+
+  it("the daily job renders, limits, then checks, uploads and posts only the limited video", () => {
+    const yml = readFileSync(
+      join(ROOT, ".github/workflows/worked-example-daily.yml"),
+      "utf8",
+    );
+    const render = yml.indexOf(
+      'render --quality delivery --output "$GITHUB_WORKSPACE/$OUT/render/$id.mp4"',
+    );
+    const limit = yml.indexOf(
+      'pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"',
+    );
+    const layout = yml.indexOf("scripts/worked-examples/layout-check.ts");
+    const verify = yml.indexOf("scripts/worked-examples/daily.ts verify");
+    const upload = yml.indexOf("${{ env.OUT }}/*.mp4");
+    for (const [name, at] of Object.entries({
+      render,
+      limit,
+      layout,
+      verify,
+      upload,
+    }))
+      expect(at, name).toBeGreaterThan(-1);
+    expect(render).toBeLessThan(limit);
+    expect(limit).toBeLessThan(layout);
+    expect(limit).toBeLessThan(verify);
+    expect(verify).toBeLessThan(upload);
+    expect(yml.match(/render --quality delivery --output/g)).toHaveLength(1);
+  });
+
+  // A real round trip through ffmpeg: the daily job's own select, verify and final-mix commands
+  // on a video whose 48 kHz samples sit 3 dB under its true peak (a 12 kHz tone at phase π/4),
+  // the case a sample limiter misses. Needs ffmpeg (the daily job and the mutation harness
+  // install it); skipped without it.
+  const HAVE_FFMPEG = spawnSync("ffmpeg", ["-version"]).status === 0;
+  it.skipIf(!HAVE_FFMPEG)(
+    "verify refuses an unlimited intersample-peak mix; after final-mix.ts it is at most -1 dBTP and passes",
+    () => {
+      const out = mkdtempSync(join(tmpdir(), "we-final-mix-"));
+      const tsx = (args: string[]) =>
+        spawnSync("pnpm", ["exec", "tsx", ...args], {
+          cwd: ROOT,
+          encoding: "utf8",
+        });
+      const select = tsx([
+        "scripts/worked-examples/daily.ts",
+        "select",
+        "--content",
+        CONTENT,
+        "--out",
+        out,
+        "--dry-run",
+        "--date",
+        fixture.content.post_on,
+      ]);
+      expect(select.status, select.stderr).toBe(0);
+      const post = workedExamplePostSchema.parse(
+        JSON.parse(readFileSync(join(out, "post.json"), "utf8")),
+      );
+      const meta: unknown = JSON.parse(
+        readFileSync(join(out, "composition", "meta.json"), "utf8"),
+      );
+      const duration =
+        typeof meta === "object" &&
+        meta !== null &&
+        "duration" in meta &&
+        typeof meta.duration === "number"
+          ? meta.duration
+          : NaN;
+      expect(duration).toBeGreaterThan(30);
+      const rendered = join(out, "render.mp4");
+      const tone = "0.99*sin(2*PI*12000*t+PI/4)";
+      const make = spawnSync(
+        "ffmpeg",
+        [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-y",
+          "-f",
+          "lavfi",
+          "-i",
+          `color=c=white:s=1080x1920:r=1:d=${duration}`,
+          "-f",
+          "lavfi",
+          "-i",
+          `aevalsrc=${tone}|${tone}:s=48000:d=${duration}`,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "ultrafast",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "192k",
+          "-shortest",
+          rendered,
+        ],
+        { encoding: "utf8" },
+      );
+      expect(make.status, make.stderr).toBe(0);
+      const before = measureMix(rendered, kit);
+      expect(before?.truePeakDbtp).toBeGreaterThan(-1);
+
+      // Unlimited, as rendered: the MP4 check refuses it on true peak.
+      writeFileSync(join(out, post.video), readFileSync(rendered));
+      const refused = tsx([
+        "scripts/worked-examples/daily.ts",
+        "verify",
+        "--out",
+        out,
+      ]);
+      expect(refused.status).not.toBe(0);
+      expect(refused.stderr).toMatch(
+        /the finished mix peaks at -?\d+\.\d\d dBTP; at most -1 dBTP/,
+      );
+
+      // Limited by the one shared function's CLI: at most -1 dBTP, and the MP4 check passes.
+      const limited = tsx([
+        "scripts/worked-examples/final-mix.ts",
+        rendered,
+        join(out, post.video),
+      ]);
+      expect(limited.status, limited.stderr).toBe(0);
+      // A true-peak limiter gets there in one pass at the first limit (0.5 dB under). Limited at
+      // the sample rate, the samples never reach 0.841, so only the retries rescue it, at a limit
+      // near 0.61: 2.8 dB more limiting than the mix needs (measured 2026-11-02).
+      expect(limited.stdout).toMatch(/\(limit 0\.841 at \d+x, 1 pass\)/);
+      const after = measureMix(join(out, post.video), kit);
+      expect(after).not.toBeNull();
+      expect(after?.truePeakDbtp).toBeLessThanOrEqual(-1);
+      const passed = tsx([
+        "scripts/worked-examples/daily.ts",
+        "verify",
+        "--out",
+        out,
+      ]);
+      expect(passed.status, passed.stderr).toBe(0);
+      expect(passed.stdout).toMatch(/verify: .* OK/);
+    },
+    180_000,
+  );
 });
 
 describe("CI never installs OpenVoice or Python", () => {

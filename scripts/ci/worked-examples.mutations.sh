@@ -7,8 +7,10 @@
 # "Most people…" hooks allowed, and the #social set in the SCL-262 format; T8 and V9 re-pointed and
 # W1-W19 added per Karl's rulings of 2026-11-02 (later the same day), SCL-267: no captions, the voice
 # never reads the screen, spoken order hook → setup → steps → trap → answer → CTA, the end card
-# "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation; T20, T26
-# re-pointed 2026-11-02 for SCL-266, the Slack steps shared with the QOTD breakdown)
+# "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation; W24 per the
+# owner brief "Video tools pilot" D3, Karl, 2026-11-02: Chatterbox's own respelling, same table;
+# F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
+# the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -45,9 +47,14 @@ FILES=(
   "video-kit/worked-examples/music/tracks.json"
   "scripts/worked-examples/quality.ts"
   "scripts/worked-examples/voice.ts"
+  "scripts/worked-examples/final-mix.ts"
+  "scripts/worked-examples/daily.ts"
+  "scripts/worked-examples/kit.ts"
   "video-kit/worked-examples/voice.json"
   ".gitignore"
   ".github/workflows/worked-example-daily.yml"
+  "scripts/video-pilots/manim/check.ts"
+  "scripts/video-pilots/manim/render.py"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -131,8 +138,13 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
+# The F plants' round trip runs real ffmpeg; without it that test skips and its plants could not
+# bite, so a missing ffmpeg fails the baseline (a skip is not a pass).
+if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then ok "ffmpeg present"; else bad "ffmpeg/ffprobe not installed (the F plants need them)"; fi
 OUT="$(ts_check)"; RC=$?
 [ "$RC" = 0 ] && ok "worked-example tests green" || { bad "worked-example tests not green"; echo "$OUT" | tail -30; }
+OUT="$(pnpm exec vitest run tests/ci/video-pilots.test.ts 2>&1)"; RC=$?
+[ "$RC" = 0 ] && ok "video-pilot tests green" || { bad "video-pilot tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "WORKED EXAMPLE MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 if [ "$HAVE_PG" = 1 ]; then
@@ -403,6 +415,62 @@ ts_plant "W22 trap opener exemption dropped" shared/worked-examples/rules.ts \
 ts_plant "W23 whole trap line exempted" shared/worked-examples/rules.ts \
   '    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),' '    "",' \
   "the people-slip opener is not a claim about people; anything after it still is"
+
+# The video pilots' Chatterbox engine (owner brief "Video tools pilot" D3, Karl, 2026-11-02) takes
+# its "Lyceon" respelling from voice.ts's one table.
+ts_plant "W24 chatterbox given the kokoro respelling" scripts/worked-examples/voice.ts \
+  '  chatterbox: "Lie-see-on",' '  chatterbox: "Lysee-ahn",' \
+  "each engine gets its own respelling from the one table"
+
+echo "=== TS: the final-mix true-peak limiter (SCL-270, Karl's ruling 2026-11-02) ==="
+ts_plant "F1 the daily job skips the limiter (the render copied as the finished video)" .github/workflows/worked-example-daily.yml \
+  '          pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
+  '          cp "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
+  "the daily job renders, limits, then checks, uploads and posts only the limited video"
+ts_plant "F2 the limiter dropped from the final-mix pass" scripts/worked-examples/final-mix.ts \
+  ',alimiter=limit=${limit}:level=disabled:latency=1,' ',' \
+  "after final-mix.ts it is at most -1 dBTP and passes"
+ts_plant "F3 limited at the sample rate, not 4x (a sample limiter misses intersample peaks)" scripts/worked-examples/final-mix.ts \
+  'export const TRUE_PEAK_OVERSAMPLE = 4;' 'export const TRUE_PEAK_OVERSAMPLE = 1;' \
+  "after final-mix.ts it is at most -1 dBTP and passes"
+ts_plant "F4 the ceiling raised in voice.json" video-kit/worked-examples/voice.json \
+  '"max_true_peak_dbtp": -1,' '"max_true_peak_dbtp": -0.5,' \
+  "max_true_peak_dbtp"
+ts_plant "F5 the schema lets the ceiling rise above -1 dBTP" scripts/worked-examples/kit.ts \
+  "max_true_peak_dbtp: z.number().min(-9).max(-1)," "max_true_peak_dbtp: z.number().min(-9).max(0)," \
+  "voice.json may not raise the ceiling above -1 dBTP"
+ts_plant "F6 the check compares against a raised ceiling" scripts/worked-examples/final-mix.ts \
+  "  return measured.truePeakDbtp <= settings.max_true_peak_dbtp" "  return measured.truePeakDbtp <= settings.max_true_peak_dbtp + 0.5" \
+  "refuses a finished mix over -1 dBTP or with no measurable audio"
+ts_plant "F7 verify does not measure the finished mix" scripts/worked-examples/daily.ts \
+  "  problems.push(...finishedMixProblems(join(out, post.video), kit));" "" \
+  "verify refuses an unlimited intersample-peak mix"
+ts_plant "F8 an encoder overshoot retried at the same headroom" scripts/worked-examples/final-mix.ts \
+  "      Math.round((headroomDb + overshoot + FINAL_MIX_STEP_DB) * 100) / 100," "      headroomDb," \
+  "an encoder overshoot is limited again with that much more headroom"
+
+# The D pilots call the same limiter (SCL-270: "on the finished mix in every pipeline ... the D
+# pilots"); their tests live in tests/ci/video-pilots.test.ts.
+PILOT_TEST=tests/ci/video-pilots.test.ts
+pilot_plant() {
+  plant "$2" "$3" "$4" || { bad "$1 STALE"; restore; return; }
+  OUT="$(pnpm exec vitest run "$PILOT_TEST" 2>&1)"; RC=$?
+  expect_red "$1" "$5" "$OUT" "$RC"
+  restore
+}
+echo "=== TS: the D pilots' finished mix (SCL-270) ==="
+pilot_plant "F9 the pilot check reports true peak but does not fail on it" scripts/video-pilots/manim/check.ts \
+  "  failures.push(...finishedMixProblems(video, kit));" "" \
+  "fails a video over -1 dBTP true peak"
+pilot_plant "F10 render.py writes the unlimited mix as the finished video" scripts/video-pilots/manim/render.py \
+  '"-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(mixed),' \
+  '"-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(out),' \
+  "render.py limits the finished mix through final-mix.ts"
+pilot_plant "F11 render.py skips the limiter" scripts/video-pilots/manim/render.py \
+  '    run(["pnpm", "exec", "tsx", "scripts/worked-examples/final-mix.ts", str(mixed), str(out)], cwd=ROOT)' \
+  '    shutil.copyfile(mixed, out)' \
+  "render.py limits the finished mix through final-mix.ts"
+
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then echo "WORKED EXAMPLE MUTATIONS: FAIL"; exit 1; fi
