@@ -31,14 +31,21 @@
 # and a breakdown can never block or delay it. Inside the pilot window (shared/qotd/breakdown.ts
 # QOTD_BREAKDOWN_PILOT: posting days 2026-11-09 to 2026-11-22; the variable
 # QOTD_BREAKDOWN_PAUSED=true stops it at once) it renders yesterday's QOTD as a 30-60 s video with
-# the worked-example pipeline from the AUTHORED script for that date on `social`
-# (content/qotd-breakdowns/<week>/<date>/, voiced in am_michael when it was written), only if
-# GitHub's record shows Karl merged it and its order and letter are the stored row; it posts the
-# video to the same channel for Karl to post by hand; or, on any fallback reason (no approved
-# script among them), yesterday's answer slide and "Breakdown skipped: <reason> (<code>)". Outside
-# the window it does nothing. Nothing is voiced here and no Python is set up: the voice is
-# committed with the script. Pull requests run it as a dry run on the real fixture rows and the
-# fixture script tree: the MP4 is uploaded, nothing sent.
+# the worked-example pipeline from the AUTHORED script for that date, only if GitHub's record shows
+# Karl merged it and its order and letter are the stored row; it posts the video to the same
+# channel for Karl to post by hand; or, on any fallback reason (no approved script among them),
+# yesterday's answer slide and "Breakdown skipped: <reason> (<code>)". Outside the window it does
+# nothing. Nothing is voiced here and no Python is set up: the voice is committed with the script.
+# The scripts live in the PRIVATE repo Lyceon-Team/lyceon-content-private (Karl's rulings
+# 2026-11-02/03: nothing breakdown-specific that names an answer in this public repo), at
+# qotd-breakdowns/<week>/<date>/, approved by Karl's merge into its `main`. Scheduled and
+# hand-started runs use the `qotd-breakdown` environment (deployments from `main` only), whose
+# fine-grained token CONTENT_PRIVATE_TOKEN reads that one repo (Contents + Pull requests: Read);
+# the checkout fetches YESTERDAY's folder only (sparse, blob:none: no other day's file content
+# reaches the runner) and keeps no credentials. Each video is limited to at most -1 dBTP true peak
+# (SCL-270, the worked examples' final-mix.ts) before its MP4 check. Pull requests run it as a dry
+# run on the SYNTHETIC fixture (tests/fixtures/qotd-breakdowns-synthetic: a made-up question,
+# order and script, no environment and no token): the MP4 is uploaded, nothing sent.
 # Setup: docs/runbooks/qotd-slack.md.
 #
 # Run it by hand with no date for today, or with a PAST date to rebuild that day (today and
@@ -79,7 +86,7 @@ on:
       - scripts/worked-examples/**
       - video-kit/worked-examples/**
       - shared/slack/client.ts
-      - tests/fixtures/qotd-breakdowns/**
+      - tests/fixtures/qotd-breakdowns-synthetic/**
   workflow_dispatch:
     inputs:
       date:
@@ -210,10 +217,13 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Read-only: the script approval is read from GitHub's record of the merge (pull requests).
+    # The private repo's token lives in this environment, limited to deployments from `main`: no
+    # pull request, fork or other branch can read it. Pull requests run with no environment.
+    environment: ${{ github.event_name != 'pull_request' && 'qotd-breakdown' || '' }}
+    # This repository is only read; the approval is read from the PRIVATE repo's record of the
+    # merge, with CONTENT_PRIVATE_TOKEN (not this job's GITHUB_TOKEN).
     permissions:
       contents: read
-      pull-requests: read
     env:
       HYPERFRAMES_NO_TELEMETRY: "1"
       DO_NOT_TRACK: "1"
@@ -254,14 +264,31 @@ jobs:
           test -x "$shell"
           echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
 
-      # The approved scripts and their committed voice, with the history the approval is read from.
-      - name: Checkout social (scripts, full history)
+      # Yesterday's folder in the private repo: the one path the checkout below fetches. Its QOTD
+      # day closed at 04:00 UTC, so its answer is public; no other day is fetched.
+      - name: Yesterday's script folder
+        id: target
+        if: github.event_name != 'pull_request' && steps.window.outputs.window == 'active'
+        run: |
+          t="$(pnpm exec tsx scripts/qotd-social/breakdown.ts target)"
+          echo "dir=$t" >> "$GITHUB_OUTPUT"
+          echo "qotd-breakdown: target $t"
+
+      # The approved script and its committed voice, with the commit history the approval is read
+      # from (blob:none: commits and trees only, so no other day's file content is downloaded).
+      - name: Checkout the private repo (yesterday's folder only, read-only token)
         if: github.event_name != 'pull_request' && steps.window.outputs.window == 'active'
         uses: actions/checkout@v4
         with:
-          ref: social
-          path: social
+          repository: Lyceon-Team/lyceon-content-private
+          ref: main
+          token: ${{ secrets.CONTENT_PRIVATE_TOKEN }}
+          path: content-private
           fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: ${{ steps.target.outputs.dir }}
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       # Yesterday's answer slide (the carousel's slide 3) for the fallback, from the QOTD run.
       - name: Download the QOTD assets
@@ -275,15 +302,15 @@ jobs:
       - name: Build the breakdown
         env:
           QOTD_BREAKDOWN_PAUSED: ${{ vars.QOTD_BREAKDOWN_PAUSED }}
-          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_PRIVATE_TOKEN: ${{ secrets.CONTENT_PRIVATE_TOKEN }}
           CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pnpm exec tsx scripts/qotd-social/breakdown.ts build --content tests/fixtures/qotd-breakdowns/social \
-              --fixture tests/fixtures/qotd/rows.json \
-              --date 2026-10-02 --now 2026-10-03T04:05:00Z --dry-run --out "$OUT"
+            pnpm exec tsx scripts/qotd-social/breakdown.ts build --content tests/fixtures/qotd-breakdowns-synthetic/content \
+              --fixture tests/fixtures/qotd-breakdowns-synthetic/rows.json \
+              --date 2026-01-14 --now 2026-01-15T04:05:00Z --dry-run --out "$OUT"
           else
-            pnpm exec tsx scripts/qotd-social/breakdown.ts build --content social --out "$OUT"
+            pnpm exec tsx scripts/qotd-social/breakdown.ts build --content content-private --out "$OUT"
           fi
 
       - name: Breakdown on the run page

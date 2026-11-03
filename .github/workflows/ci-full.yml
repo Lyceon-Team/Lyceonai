@@ -184,6 +184,10 @@ jobs:
       - name: Section vocabulary self-test (proves each mutation turns it red)
         run: bash scripts/ci/section-vocabulary-gate.mutations.sh
 
+      # The public repo holds no QOTD breakdown script, voice or export (Karl, 2026-11-02/03).
+      - name: Breakdown content gate self-test (proves each plant turns it red)
+        run: bash scripts/ci/breakdown-content-gate.mutations.sh
+
       - name: Fixture canonicality self-test (proves each mutation turns it red)
         run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
 
@@ -543,8 +547,10 @@ jobs:
       # schedule export read from a checkout, printed, widened or carrying the canonical key (SQL,
       # gate Q-11), no approval asked, the script rules or the voice checks skipped, a voice other
       # than am_michael, a grid-in let through, the music credit dropped, the pilot dates moved or
-      # never ending, the breakdown inside the QOTD job, voicing back in CI (B1-B21). Each must turn
-      # its named check red.
+      # never ending, the breakdown inside the QOTD job, voicing back in CI (B1-B22); and, for
+      # Karl's rulings of 2026-11-03, the rendered mix posted or its check dropped, approval by a
+      # merge into any branch or read from this repo, the whole private repo checked out, its
+      # token's environment entered by pull requests (B23-B28). Each must turn its named check red.
       - name: QOTD breakdown mutations (planted defects must fail)
         if: matrix.group == 'qotd'
         run: bash scripts/ci/qotd-breakdown.mutations.sh

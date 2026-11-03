@@ -1,0 +1,585 @@
+{
+  "voice": "am_michael",
+  "speaking_rate": 1,
+  "lines": [
+    {
+      "key": "hook",
+      "text_sha256": "e793595e43b6d47aedfd3555f933c174ccb5529c8f6dd2268c8b78d9b88c0a49",
+      "file": "hook.wav",
+      "duration": 2.709,
+      "words": [
+        {
+          "text": "think",
+          "start": 0.08,
+          "end": 0.31
+        },
+        {
+          "text": "you",
+          "start": 0.33,
+          "end": 0.53
+        },
+        {
+          "text": "can",
+          "start": 0.53,
+          "end": 0.73
+        },
+        {
+          "text": "get",
+          "start": 0.73,
+          "end": 0.93
+        },
+        {
+          "text": "this",
+          "start": 0.93,
+          "end": 1.18
+        },
+        {
+          "text": "one",
+          "start": 1.2,
+          "end": 1.39
+        },
+        {
+          "text": "before",
+          "start": 1.39,
+          "end": 1.77
+        },
+        {
+          "text": "I",
+          "start": 1.77,
+          "end": 2
+        },
+        {
+          "text": "do.",
+          "start": 2,
+          "end": 2.08
+        },
+        {
+          "text": "Go.",
+          "start": 2.16,
+          "end": 2.89
+        }
+      ]
+    },
+    {
+      "key": "question",
+      "text_sha256": "eb78f0812a8fa53369c27c46162c0530511765fa1245954c53f3f8d1fa1d954c",
+      "file": "question.wav",
+      "duration": 4.672,
+      "words": [
+        {
+          "text": "One",
+          "start": 0.1,
+          "end": 0.24
+        },
+        {
+          "text": "equation,",
+          "start": 0.24,
+          "end": 0.98
+        },
+        {
+          "text": "one",
+          "start": 1.17,
+          "end": 1.44
+        },
+        {
+          "text": "unknown.",
+          "start": 1.5,
+          "end": 2.48
+        },
+        {
+          "text": "We",
+          "start": 2.57,
+          "end": 2.64
+        },
+        {
+          "text": "just",
+          "start": 2.64,
+          "end": 2.97
+        },
+        {
+          "text": "need",
+          "start": 2.97,
+          "end": 3.3
+        },
+        {
+          "text": "to",
+          "start": 3.3,
+          "end": 3.43
+        },
+        {
+          "text": "work",
+          "start": 3.5,
+          "end": 3.73
+        },
+        {
+          "text": "out",
+          "start": 3.79,
+          "end": 4.03
+        },
+        {
+          "text": "what",
+          "start": 4.03,
+          "end": 4.34
+        },
+        {
+          "text": "x",
+          "start": 4.35,
+          "end": 4.36
+        },
+        {
+          "text": "is.",
+          "start": 4.46,
+          "end": 4.67
+        }
+      ]
+    },
+    {
+      "key": "step-1",
+      "text_sha256": "8039e53c33d8d90e0c2706f9fd378822c10ddf03204c0581799b00196869c2b8",
+      "file": "step-1.wav",
+      "duration": 5.099,
+      "words": [
+        {
+          "text": "Undo",
+          "start": 0.12,
+          "end": 0.3
+        },
+        {
+          "text": "things",
+          "start": 0.33,
+          "end": 0.82
+        },
+        {
+          "text": "in",
+          "start": 0.82,
+          "end": 0.98
+        },
+        {
+          "text": "reverse",
+          "start": 0.98,
+          "end": 1.54
+        },
+        {
+          "text": "order.",
+          "start": 1.61,
+          "end": 2.38
+        },
+        {
+          "text": "The",
+          "start": 2.38,
+          "end": 2.57
+        },
+        {
+          "text": "minus",
+          "start": 2.57,
+          "end": 2.87
+        },
+        {
+          "text": "seven",
+          "start": 2.88,
+          "end": 3.18
+        },
+        {
+          "text": "came",
+          "start": 3.21,
+          "end": 3.44
+        },
+        {
+          "text": "last,",
+          "start": 3.44,
+          "end": 3.84
+        },
+        {
+          "text": "so",
+          "start": 3.84,
+          "end": 3.98
+        },
+        {
+          "text": "it",
+          "start": 3.98,
+          "end": 4.12
+        },
+        {
+          "text": "goes",
+          "start": 4.12,
+          "end": 4.41
+        },
+        {
+          "text": "first.",
+          "start": 4.41,
+          "end": 4.95
+        }
+      ]
+    },
+    {
+      "key": "step-2",
+      "text_sha256": "4d21baf715afb23ecf9c8df577bce7bbda3a69ac5de246e2769ab2ce4ad03f39",
+      "file": "step-2.wav",
+      "duration": 4.117,
+      "words": [
+        {
+          "text": "Add",
+          "start": 0.13,
+          "end": 0.31
+        },
+        {
+          "text": "7",
+          "start": 0.35,
+          "end": 0.64
+        },
+        {
+          "text": "to",
+          "start": 0.64,
+          "end": 0.85
+        },
+        {
+          "text": "both",
+          "start": 0.85,
+          "end": 1.28
+        },
+        {
+          "text": "sides,",
+          "start": 1.28,
+          "end": 2
+        },
+        {
+          "text": "and",
+          "start": 2,
+          "end": 2.24
+        },
+        {
+          "text": "the",
+          "start": 2.24,
+          "end": 2.48
+        },
+        {
+          "text": "left",
+          "start": 2.48,
+          "end": 2.81
+        },
+        {
+          "text": "side",
+          "start": 2.81,
+          "end": 3.14
+        },
+        {
+          "text": "is",
+          "start": 3.14,
+          "end": 3.2
+        },
+        {
+          "text": "just",
+          "start": 3.38,
+          "end": 3.59
+        },
+        {
+          "text": "4x.",
+          "start": 3.67,
+          "end": 4.03
+        }
+      ]
+    },
+    {
+      "key": "step-3",
+      "text_sha256": "52721c452895174ac0d127faeff6859dd6218e99be5747def25c1db651ef7451",
+      "file": "step-3.wav",
+      "duration": 1.984,
+      "words": [
+        {
+          "text": "So",
+          "start": 0.06,
+          "end": 0.2
+        },
+        {
+          "text": "4x",
+          "start": 0.2,
+          "end": 0.6
+        },
+        {
+          "text": "equals",
+          "start": 0.6,
+          "end": 1.16
+        },
+        {
+          "text": "28.",
+          "start": 1.23,
+          "end": 1.84
+        }
+      ]
+    },
+    {
+      "key": "step-4",
+      "text_sha256": "ad3322142cccd63b1565665b04c64f3815ef257806ce8e4c966a85487aa0f77a",
+      "file": "step-4.wav",
+      "duration": 3.648,
+      "words": [
+        {
+          "text": "Now",
+          "start": 0.12,
+          "end": 0.29
+        },
+        {
+          "text": "divide",
+          "start": 0.29,
+          "end": 0.88
+        },
+        {
+          "text": "both",
+          "start": 0.88,
+          "end": 1.27
+        },
+        {
+          "text": "sides",
+          "start": 1.27,
+          "end": 1.76
+        },
+        {
+          "text": "by",
+          "start": 1.76,
+          "end": 1.86
+        },
+        {
+          "text": "4",
+          "start": 2.01,
+          "end": 2.23
+        },
+        {
+          "text": "to",
+          "start": 2.3,
+          "end": 2.43
+        },
+        {
+          "text": "get",
+          "start": 2.43,
+          "end": 2.72
+        },
+        {
+          "text": "x",
+          "start": 2.72,
+          "end": 2.74
+        },
+        {
+          "text": "by",
+          "start": 2.83,
+          "end": 3.01
+        },
+        {
+          "text": "itself.",
+          "start": 3.01,
+          "end": 3.64
+        }
+      ]
+    },
+    {
+      "key": "trap",
+      "text_sha256": "46dffec31d89aa5d198568bead1d20a1e5781e0232a676136a3d49bc0557a72b",
+      "file": "trap.wav",
+      "duration": 6.827,
+      "words": [
+        {
+          "text": "Here's",
+          "start": 0.1,
+          "end": 0.46
+        },
+        {
+          "text": "where",
+          "start": 0.46,
+          "end": 0.85
+        },
+        {
+          "text": "people",
+          "start": 0.85,
+          "end": 1.17
+        },
+        {
+          "text": "slip.",
+          "start": 1.17,
+          "end": 1.74
+        },
+        {
+          "text": "They",
+          "start": 1.74,
+          "end": 1.93
+        },
+        {
+          "text": "see",
+          "start": 1.93,
+          "end": 2.1
+        },
+        {
+          "text": "28",
+          "start": 2.18,
+          "end": 2.59
+        },
+        {
+          "text": "in",
+          "start": 2.59,
+          "end": 2.73
+        },
+        {
+          "text": "the",
+          "start": 2.73,
+          "end": 2.82
+        },
+        {
+          "text": "choices",
+          "start": 3.32,
+          "end": 3.48
+        },
+        {
+          "text": "and",
+          "start": 3.48,
+          "end": 3.78
+        },
+        {
+          "text": "grab",
+          "start": 3.84,
+          "end": 4.28
+        },
+        {
+          "text": "it.",
+          "start": 4.28,
+          "end": 4.52
+        },
+        {
+          "text": "But",
+          "start": 4.62,
+          "end": 4.82
+        },
+        {
+          "text": "28",
+          "start": 4.82,
+          "end": 5.42
+        },
+        {
+          "text": "is",
+          "start": 5.42,
+          "end": 5.62
+        },
+        {
+          "text": "for",
+          "start": 5.62,
+          "end": 5.7
+        },
+        {
+          "text": "X,",
+          "start": 5.91,
+          "end": 6.22
+        },
+        {
+          "text": "not",
+          "start": 6.22,
+          "end": 6.52
+        },
+        {
+          "text": "X.",
+          "start": 6.52,
+          "end": 6.96
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "c5601d8013a46927a95e7823d84397f7f02d1fb1b599bae4eed84b3e0b2c99ff",
+      "file": "answer.wav",
+      "duration": 7.829,
+      "words": [
+        {
+          "text": "So",
+          "start": 0.06,
+          "end": 0.2
+        },
+        {
+          "text": "Xis",
+          "start": 0.26,
+          "end": 0.55
+        },
+        {
+          "text": "7",
+          "start": 0.55,
+          "end": 0.88
+        },
+        {
+          "text": "and",
+          "start": 0.88,
+          "end": 1.21
+        },
+        {
+          "text": "that's",
+          "start": 1.21,
+          "end": 1.8
+        },
+        {
+          "text": "C.",
+          "start": 2,
+          "end": 2.3
+        },
+        {
+          "text": "Quick",
+          "start": 2.35,
+          "end": 2.72
+        },
+        {
+          "text": "check,",
+          "start": 2.72,
+          "end": 3.29
+        },
+        {
+          "text": "4",
+          "start": 3.46,
+          "end": 3.62
+        },
+        {
+          "text": "times",
+          "start": 3.62,
+          "end": 4.13
+        },
+        {
+          "text": "7",
+          "start": 4.13,
+          "end": 4.43
+        },
+        {
+          "text": "is",
+          "start": 4.43,
+          "end": 4.63
+        },
+        {
+          "text": "28",
+          "start": 4.63,
+          "end": 5.25
+        },
+        {
+          "text": "minus",
+          "start": 5.3,
+          "end": 5.73
+        },
+        {
+          "text": "7",
+          "start": 5.73,
+          "end": 6
+        },
+        {
+          "text": "is",
+          "start": 6,
+          "end": 6.18
+        },
+        {
+          "text": "21.",
+          "start": 6.18,
+          "end": 6.83
+        },
+        {
+          "text": "It",
+          "start": 7.1,
+          "end": 7.21
+        },
+        {
+          "text": "works.",
+          "start": 7.21,
+          "end": 7.76
+        }
+      ]
+    }
+  ]
+}
