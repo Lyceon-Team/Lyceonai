@@ -1,0 +1,2572 @@
+{
+  "sub_skills": [
+    {
+      "id": "EE.1",
+      "skill_code": "Equivalent Expressions",
+      "name": "Add, subtract, and combine like terms",
+      "definition": "Simplify a sum or difference of terms or of polynomials by grouping like terms, including subtracting a parenthesized polynomial.",
+      "inclusion_test": "The given expression (after any stated substitution) contains NO product in which a factor is a sum (other than a leading +/- sign before parentheses), no radical/rational/negative exponent and no variable denominator; the work is grouping like terms."
+    },
+    {
+      "id": "EE.2",
+      "skill_code": "Equivalent Expressions",
+      "name": "Expand and multiply",
+      "definition": "Multiply out products (constant or monomial x sum, binomial x polynomial, squared binomial, product of monomials) into a sum of terms.",
+      "inclusion_test": "The given expression contains a product with a sum as a factor, or a product of monomials, AND the target form (choices or the stated form) is expanded (a sum of terms). If the target is a product, use EE.3 instead."
+    },
+    {
+      "id": "EE.3",
+      "skill_code": "Equivalent Expressions",
+      "name": "Factor polynomials (and rewrite quadratic forms)",
+      "definition": "Rewrite an expanded polynomial as a product (GCF, trinomial, grouping, difference of squares, perfect square) or in completed-square form; identify a factor.",
+      "inclusion_test": "The target form is a product or vertex form ((...)(...), k(...), (x+h)^2+k), or the stem asks which expression is / has a factor. Tag even when CB solves it by expanding the target form and matching coefficients. In an EE.4/EE.5 question, co-tag EE.3 only when a trinomial, difference of squares or perfect square (not just a GCF) must be factored."
+    },
+    {
+      "id": "EE.4",
+      "skill_code": "Equivalent Expressions",
+      "name": "Exponents and radicals",
+      "definition": "Rewrite expressions with radicals, rational exponents, negative exponents, or quotients of powers of the same base.",
+      "inclusion_test": "The given expression or choices contain a radical sign, a fractional or negative exponent, or a quotient of powers of the same base, so the answer depends on exponent/radical rules. Products of monomials with only positive integer exponents stay in EE.2."
+    },
+    {
+      "id": "EE.5",
+      "skill_code": "Equivalent Expressions",
+      "name": "Rational expressions",
+      "definition": "Add, subtract, simplify or divide fractions whose denominators contain the variable.",
+      "inclusion_test": "A denominator contains a polynomial with two or more terms, OR two or more fractions with variable denominators must be added/subtracted. Monomial quotients such as h^15q^7/(h^5q^21) are EE.4."
+    },
+    {
+      "id": "NLE.1",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "name": "Rearrange a formula to isolate a variable",
+      "definition": "Solve a literal equation or formula (two or more letters) for a named variable or expression, possibly through fractions, reciprocals or a square root.",
+      "inclusion_test": "The stem asks to express a variable or expression 'in terms of' other letters, or to rewrite a formula in a stated form ('Which equation correctly expresses…', 'Which of the following is equivalent to n', 'rewritten in the form v_f = xa + y'). This test wins over NLE.2/NLE.3 even when the formula contains a square root or a variable denominator."
+    },
+    {
+      "id": "NLE.2",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "name": "Solve a quadratic or polynomial equation in one variable",
+      "definition": "Find the solutions (or the sum, product, or a stated form of the solutions) of a one-variable equation whose unknown is squared or appears in a product of linear factors, by square roots, factoring and the zero-product property, completing the square, or the quadratic formula.",
+      "inclusion_test": "One unknown; the unknown is squared or multiplied by itself (x^2, (x+a)^2, (x-a)(x-b)…), with no absolute value, no radical over the unknown, no unknown in a denominator; and the stem asks for a solution or a quantity built from the solutions, NOT for how many solutions exist (that is NLE.4) and NOT 'in terms of' (NLE.1)."
+    },
+    {
+      "id": "NLE.3",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "name": "Solve an absolute value, radical, or rational equation in one variable",
+      "definition": "Solve a one-variable equation in which the unknown sits inside absolute-value bars, under a square root, or in a denominator, including the two-case split, squaring, clearing denominators, and rejecting extraneous or excluded values.",
+      "inclusion_test": "One unknown and the unknown appears inside absolute-value bars, under a radical sign, or in a denominator; the stem asks for a solution or a quantity built from the solutions. Not 'in terms of' (NLE.1). Also tag NLE.4 if the stem states or asks a solution count."
+    },
+    {
+      "id": "NLE.4",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "name": "Determine the number of real solutions",
+      "definition": "Decide how many real solutions an equation or system has, or find the constant that forces a stated number of solutions (exactly one / none / more than one), using the discriminant, the sign of a square, or the position of a line relative to a parabola.",
+      "inclusion_test": "The stem asks 'how many (distinct real) solutions / points of intersection', asks which equation has no real solutions, OR states a solution count as a condition ('has exactly one solution', 'no real solutions', 'intersects … at exactly one point', 'more than one real solution'). Co-tags with NLE.5 when the object is a system."
+    },
+    {
+      "id": "NLE.5",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "name": "Solve a system of a linear and a nonlinear equation",
+      "definition": "Find (or read from a graph) the intersection point(s) of a system in two variables where at least one equation is nonlinear (quadratic, absolute value, radical, xy = k, or f(a) = g(a)), then report x, y, or a combination such as xy or y1 + y2.",
+      "inclusion_test": "The stem gives two equations in x and y (or two functions f and g, or a graph of two curves) and at least one is not linear; the question is about their common solution(s)/intersection(s). Co-tags NLE.4 when the stem asks or states the number of solutions."
+    },
+    {
+      "id": "NLF.1",
+      "skill_code": "Nonlinear Functions",
+      "name": "Function notation: evaluate, read and solve input-output",
+      "definition": "Use a fully or partly specified nonlinear function (equation, graph, or table) to get an output from an input, an input from an output, or an unknown constant from given points.",
+      "inclusion_test": "Tag if the asked quantity is a function value, an input value, a y-intercept, an unknown constant found by substituting given points into the function, or a table/graph whose points must match the function; AND the answer choices are not context statements. Exclude when the target is a vertex/extremum, zero found by factoring, growth factor/percent/period, or a transformed rule (those go to NLF.3/4/5; co-tag NLF.1 only if a final f(a) evaluation is still asked)."
+    },
+    {
+      "id": "NLF.2",
+      "skill_code": "Nonlinear Functions",
+      "name": "Interpret a nonlinear function in context",
+      "definition": "State what a point, f(a)=b statement, intercept, vertex, constant/coefficient, or expression means in the real-world situation.",
+      "inclusion_test": "Tag if the answer choices (MC) are verbal context statements or context-quantity descriptions (typically 'best interpretation', 'what does X represent', 'which does the model predict', 'best describes'). Choices that are numbers, expressions, equations, or graphs do NOT qualify even if the stem is in context."
+    },
+    {
+      "id": "NLF.3",
+      "skill_code": "Nonlinear Functions",
+      "name": "Exponential growth and decay structure",
+      "definition": "Write, rewrite, or analyze an exponential function using its growth/decay factor, percent rate, time period in the exponent, or increasing/decreasing behavior.",
+      "inclusion_test": "Tag if the function is exponential (a(b)^x, a(b)^(x/k), a^x+b, or described as changing by a constant factor/percent per step) AND the solution needs the base/factor, the percent<->factor conversion, the exponent's time scaling, exponent-rule rewriting of the form, or growth-vs-decay direction. Exponential questions needing only f(0)/f(a) or constants from substituted points are NLF.1 (or NLF.2) only."
+    },
+    {
+      "id": "NLF.4",
+      "skill_code": "Nonlinear Functions",
+      "name": "Quadratic and polynomial structure and models",
+      "definition": "Use the structure of a quadratic or polynomial (vertex/extremum, axis of symmetry, zeros and factors, multiplicity, standard/vertex/factored forms) or set up and solve a quadratic/polynomial from a verbal or geometric relationship.",
+      "inclusion_test": "Tag if the function/equation is a polynomial of degree >= 2 given by equation, table, verbal or geometric description (not a graph to be read directly) AND the question asks for or requires: vertex, min/max, axis of symmetry, zeros/x-intercepts/factors (by factoring, zero product property or symmetry), number of distinct zeros, conversion between forms, OR writing/solving a quadratic/polynomial model from words (area, volume, product of numbers, formula). Reading a vertex/intercept straight off a displayed graph is NLF.1."
+    },
+    {
+      "id": "NLF.5",
+      "skill_code": "Nonlinear Functions",
+      "name": "Transformations of functions",
+      "definition": "Relate a function to its translation or input-shift: g(x)=f(x)+k, f(x-h), f(x+h), or a shifted graph/table.",
+      "inclusion_test": "Tag if the stem defines one function as a translation/input shift of another (words 'shifted/translated up/down/left/right', or g(x)=f(x±h), y=f(x)±k), or a context change that adds/subtracts a constant to every output (7fe7cf26: platform 2 ft shorter), and the answer depends on applying that shift."
+    },
+    {
+      "id": "LE1.1",
+      "skill_code": "Linear Equations in One Variable",
+      "name": "Solve a linear equation for its variable",
+      "definition": "Find the value of the variable that makes a given one-variable linear equation (no real-world context) true, including equations that need distributing, combining like terms, or clearing fractions first.",
+      "inclusion_test": "The stem gives a symbolic linear equation with no real-world context AND asks for the value of the variable itself (\"what value of x/p/t is the solution\", \"what is the solution\"); not tagged if the requested quantity is any other expression, or if the stem asks how many solutions or for a constant."
+    },
+    {
+      "id": "LE1.2",
+      "skill_code": "Linear Equations in One Variable",
+      "name": "Find the value of an expression or an equivalent equation without stopping at the variable",
+      "definition": "Use a given linear equation to get the value of a requested expression in the variable (e.g., 6x - 1, x - 7, 9x, 2 - 4x) or to pick the equation that has the same solution.",
+      "inclusion_test": "The stem gives a symbolic linear equation (no context) and EITHER asks for the value of an expression that is not the bare variable (\"what is the value of 3x + 8\", \"x - 5 is between which values\") OR asks which equation \"has the same solution as\" / \"is equivalent to\" the given one."
+    },
+    {
+      "id": "LE1.3",
+      "skill_code": "Linear Equations in One Variable",
+      "name": "Translate between a context and a linear equation or expression",
+      "definition": "Write the linear equation or expression that models a described situation, or interpret what a number or term in a given context equation means.",
+      "inclusion_test": "The stem describes a situation in words AND the answer choices are equations/expressions in a variable (\"which equation represents this situation\", \"in terms of n\") OR the choices are verbal interpretations of a number or term in a given equation (\"best interpretation of 2.00x\")."
+    },
+    {
+      "id": "LE1.4",
+      "skill_code": "Linear Equations in One Variable",
+      "name": "Solve a context problem for an unknown quantity",
+      "definition": "Find a numeric quantity in a real-world situation that reduces to one linear equation in one unknown (totals, rates, remaining amounts, perimeters).",
+      "inclusion_test": "The stem describes a situation in words AND the correct answer is a number (MCQ numeric choices or a grid-in), not an equation, expression, or interpretation."
+    },
+    {
+      "id": "LE1.5",
+      "skill_code": "Linear Equations in One Variable",
+      "name": "Determine the number of solutions or the constant that sets it",
+      "definition": "Decide whether a linear equation has zero, one, or infinitely many solutions, or find (or constrain) a constant that makes it have no or infinitely many solutions.",
+      "inclusion_test": "The stem asks \"how many solutions\" OR states that the equation has no solution / infinitely many solutions and asks for a constant's value or what must be true."
+    },
+    {
+      "id": "LF.1",
+      "skill_code": "Linear Functions",
+      "name": "Evaluate or invert a given linear rule",
+      "definition": "Use a fully specified linear rule (equation, function, or plotted line) to get the output for a given input, or the input that gives a given output.",
+      "inclusion_test": "Tag when the answer requires computing f(input) or solving f(x) = output (output not described as an intercept) for a rule whose coefficients are all known numbers or whose graph is shown; also tag when such a computation is the final step after the rule is built (LF.2) or completed (LF.3). Do not tag when the computation is f(0)/f(x)=0 asked as an intercept (LF.5)."
+    },
+    {
+      "id": "LF.2",
+      "skill_code": "Linear Functions",
+      "name": "Build a linear model from a verbal description",
+      "definition": "Translate a context stated in words (a rate per unit plus a fixed/starting amount, including first-unit-then-additional pricing) into a linear expression or equation.",
+      "inclusion_test": "Tag when the stem gives NO equation for the relationship and states a rate in words ('per', 'each', 'for every', 'additional') and/or a fixed amount that the student must write as an expression (the target may be the equation itself or a value computed from it). Two data points stated in words without a stated rate are LF.3, not LF.2."
+    },
+    {
+      "id": "LF.3",
+      "skill_code": "Linear Functions",
+      "name": "Determine a linear function from points, a table, values, or slope",
+      "definition": "Find the slope, the intercept, an unknown constant, or the whole equation of a linear function from two or more (x, y) facts: coordinate pairs, table rows, f(a) = b statements, a stated slope plus a point, or gridline points on a graph.",
+      "inclusion_test": "Tag when at least one of the rule's constants (slope, intercept, or another named constant) is not given as a numeric coefficient and must be obtained from (x, y) information; includes 'which equation defines f' given slope + intercept in words."
+    },
+    {
+      "id": "LF.4",
+      "skill_code": "Linear Functions",
+      "name": "Interpret slope, intercept, and constants in context",
+      "definition": "State what a coefficient, constant term, intercept, slope, or function-value statement means in the situation (rate per unit vs. starting value vs. zero-output point), or produce the contextual quantity that is one of them.",
+      "inclusion_test": "Tag when the stem asks for the 'best interpretation'/'meaning'/'what X represents', OR asks for a contextual quantity (per-unit amount, initial amount, change in output for a change in input, fixed dimension) that is answered by identifying the slope or constant of a given model rather than by evaluating it."
+    },
+    {
+      "id": "LF.5",
+      "skill_code": "Linear Functions",
+      "name": "Intercepts and graph features of a linear function",
+      "definition": "Find or use the x-intercept, y-intercept, a parallel line's slope, the graph that matches an equation, or a vertical shift y = f(x) + k / sum of functions.",
+      "inclusion_test": "Tag when the stem names an x- or y-intercept, a parallel line, a choice of graphs, or a graph of y = f(x) + k (or h = f + g graphed). Questions that ask for f(0) or an initial amount without naming an intercept are not LF.5."
+    },
+    {
+      "id": "LE2.1",
+      "skill_code": "Linear Equations in Two Variables",
+      "name": "Model a situation with a linear equation",
+      "definition": "Build the two-variable (or reduced one-variable) equation that a described real-world situation implies.",
+      "inclusion_test": "Stem is a word context AND either asks which equation represents/models the situation, OR asks for a value while giving no equation, graph or table that relates the quantities (the student must create the relationship)."
+    },
+    {
+      "id": "LE2.2",
+      "skill_code": "Linear Equations in Two Variables",
+      "name": "Interpret parts of a contextual linear equation or graph",
+      "definition": "State what a coefficient, constant, term, variable, ordered pair or difference of coefficients means in context.",
+      "inclusion_test": "Stem gives a contextual equation or graph and the question asks 'best interpretation' / 'what does N represent' / 'price of each' / 'how many more points per', answerable from structure without solving for an unknown."
+    },
+    {
+      "id": "LE2.3",
+      "skill_code": "Linear Equations in Two Variables",
+      "name": "Find one quantity in context when the other is known",
+      "definition": "Use a contextual linear relationship to get one variable's value from the other's given value.",
+      "inclusion_test": "Context stem; the value of one variable (or a relation fixing it, e.g. c = 2p, or a point read off a contextual graph) is given and the answer is the value of another quantity in the relationship."
+    },
+    {
+      "id": "LE2.4",
+      "skill_code": "Linear Equations in Two Variables",
+      "name": "Connect a line's equation, graph, table, slope and intercepts",
+      "definition": "For a single line, move between equation, graph, table, slope, intercepts and points (incl. missing coordinates and unknown constants).",
+      "inclusion_test": "Question asks for a line's slope, intercept, equation, matching table/graph, a missing coordinate, or an unknown constant in its equation, from an equation, graph, table, points or slope; includes contextual graphs/tables when the question asks for the equation."
+    },
+    {
+      "id": "LE2.5",
+      "skill_code": "Linear Equations in Two Variables",
+      "name": "Relate a second line: parallel, perpendicular or translated",
+      "definition": "Get a second line's slope or equation from a given line via parallel/perpendicular rules or a vertical shift.",
+      "inclusion_test": "Stem defines one line or graph as parallel to, perpendicular to, or a translation/shift (incl. y = f(x) + k) of another."
+    },
+    {
+      "id": "SYS.1",
+      "skill_code": "Systems of Two Linear Equations in Two Variables",
+      "name": "Solve a system algebraically",
+      "definition": "Find x, y, or the ordered pair satisfying both equations.",
+      "inclusion_test": "Two equations are given symbolically (or the graphs are said to intersect at (a, b)) and the question asks for x, y, or (x, y)."
+    },
+    {
+      "id": "SYS.2",
+      "skill_code": "Systems of Two Linear Equations in Two Variables",
+      "name": "Value of an expression from a system",
+      "definition": "Find an expression in the solution (x + y, 39x, x - y, xy, 6(x - 2)) from the system.",
+      "inclusion_test": "The question asks for any quantity other than x alone, y alone, or (x, y)."
+    },
+    {
+      "id": "SYS.3",
+      "skill_code": "Systems of Two Linear Equations in Two Variables",
+      "name": "Number of solutions and conditions on constants",
+      "definition": "Decide whether a system has zero, one, or infinitely many solutions, find a constant giving a stated count, or describe the solution set of a dependent system.",
+      "inclusion_test": "The question asks how many solutions/intersection points, which system has no solution, which second equation gives no/infinitely many solutions, a constant for no/infinitely many solutions, or which parametric point lies on both coincident lines."
+    },
+    {
+      "id": "SYS.4",
+      "skill_code": "Systems of Two Linear Equations in Two Variables",
+      "name": "Model a context with a system",
+      "definition": "Write (and, when asked, solve) a system of two linear equations for a situation with two unknowns and two conditions.",
+      "inclusion_test": "A situation with two unknown quantities and two stated conditions (totals, 'times as many', 'more than') is given, and the question asks for the system or a value of one unknown."
+    },
+    {
+      "id": "SYS.5",
+      "skill_code": "Systems of Two Linear Equations in Two Variables",
+      "name": "Solutions shown on a graph",
+      "definition": "Read a system's solution as the intersection of graphed lines, or match a system to its graph.",
+      "inclusion_test": "A graph of the lines is shown (or the answer choices are graphs) and the question asks for the solution, a matching system, or the number of solutions when a further line is added."
+    },
+    {
+      "id": "LI.1",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "name": "Model a situation with a one-sided inequality or system",
+      "definition": "Translate a context or verbal statement into a linear inequality (or a system of them) in one or two variables, or interpret a term or point of such a contextual inequality.",
+      "inclusion_test": "Tag when the stem describes a situation in words AND either (a) asks which inequality/system represents it, (b) asks for a value that can only be reached by first writing an inequality that is NOT printed in the stem, or (c) prints a contextual inequality and asks what a term, coefficient or point means. Exclusion: if the only constraint in the stem is a two-sided bound on one quantity (between / minimum and maximum), tag LI.3 instead."
+    },
+    {
+      "id": "LI.2",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "name": "Solve for a boundary value (maximum / minimum)",
+      "definition": "Isolate the variable in a one-sided linear inequality and turn the result into the extreme value asked for, including whole-number rounding when the context counts objects.",
+      "inclusion_test": "Tag when the stem asks for a maximum, minimum, greatest, least, or 'closest to the maximum possible' value (or a one-sided allowable range whose only other bound is positivity, e.g. 0 < x <= c) AND CB's rationale reaches it by isolating a variable in an inequality. Not tagged when the answer is chosen only by testing membership of given candidates."
+    },
+    {
+      "id": "LI.3",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "name": "Two-sided ranges (compound inequalities)",
+      "definition": "Write, check membership in, or transform a range a <= x <= b: combine a lower and an upper bound, or push both ends of a range through a multiplication, division or addition.",
+      "inclusion_test": "Tag when the stem states both a lower and an upper bound on the same quantity (between, from X to Y, minimum ... maximum, at least ... no more than, more than ... less than) OR the answer choices are two-sided inequalities whose two bounds both come from the problem (a lower bound that is only positivity, as in 0 < x, does not count)."
+    },
+    {
+      "id": "LI.4",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "name": "Test solutions of a given inequality or system",
+      "definition": "Decide which points, tables of (x, y) pairs, coordinate values or y-ranges satisfy a two-variable inequality or system that is printed symbolically in the stem or choices.",
+      "inclusion_test": "Tag when the stem or choices print an inequality or system in x and y (or in context letters) symbolically AND the question asks which point(s), table, coordinate value, or set of y-values satisfies it, or which system a given point satisfies."
+    },
+    {
+      "id": "LI.5",
+      "skill_code": "Linear Inequalities in One or Two Variables",
+      "name": "Read an inequality from its graph",
+      "definition": "Connect a graphed boundary line and shaded half-plane to its inequality, or read solutions directly from the shaded region.",
+      "inclusion_test": "Tag when the stem contains a [FIGURE] of a boundary line with a shaded region (solid or dashed) and the question asks which inequality it represents or which point lies in the solution region."
+    },
+    {
+      "id": "AV.1",
+      "skill_code": "Area and Volume",
+      "name": "Polygon perimeter and area",
+      "definition": "Find the perimeter or area of a 2D polygon (rectangle, square, triangle, or a figure built from them), or work back from it to a side length.",
+      "inclusion_test": "Tag if the solution computes a perimeter (sum of sides) or area (lw, s², ½bh) of a polygon from numeric lengths, or inverts one to a side length. Do NOT tag when two similar figures are compared and no polygon formula is evaluated with numbers (those are AV.5 only)."
+    },
+    {
+      "id": "AV.2",
+      "skill_code": "Area and Volume",
+      "name": "Circle area and circumference",
+      "definition": "Use A = πr² or C = 2πr for a circle, including radius/diameter from a given circumference or area.",
+      "inclusion_test": "Tag if the stem gives or asks a plane circle's area, circumference, radius or diameter, OR gives a solid's circular base as a circumference or as an area in π that must be turned back into r. Do NOT tag a cylinder/cone volume where r or d is given and simply substituted into the volume formula."
+    },
+    {
+      "id": "AV.3",
+      "skill_code": "Area and Volume",
+      "name": "Volume of solids",
+      "definition": "Compute a volume of a prism, cube, cylinder, cone, sphere/hemisphere (or a stem-given volume formula), or work back from a volume to a dimension.",
+      "inclusion_test": "Tag if the solution evaluates or inverts a volume formula (lwh, s³, s²h, Bh, πr²h, ⅓πr²h, ⁴⁄₃πr³, or a formula printed in the stem). A volume that is only given and scaled by k³ without evaluating a formula does not count."
+    },
+    {
+      "id": "AV.4",
+      "skill_code": "Area and Volume",
+      "name": "Surface area of solids",
+      "definition": "Find the total or exterior surface area of a prism/cube as the sum of its face areas, or work back from it.",
+      "inclusion_test": "Tag if the solution adds (or removes) face areas of a solid, or inverts a surface-area expression (6s², 2lw+2lh+2wh). A surface area that is only given and scaled by k² does not count."
+    },
+    {
+      "id": "AV.5",
+      "skill_code": "Area and Volume",
+      "name": "Similarity and scaling between figures",
+      "definition": "Carry a stated length factor between two figures to a side, perimeter (×k), area (×k²) or volume (×k³).",
+      "inclusion_test": "Tag if the stem relates corresponding measures of TWO figures multiplicatively (\"similar\", \"k times\", \"twice the radius\", \"x% longer/increased\", \"scale model\", \"how many times\") and the answer requires applying that factor. An additive relation inside one figure (\"40 cm longer than the width\") does not count."
+    },
+    {
+      "id": "LAT.1",
+      "skill_code": "Lines, Angles, and Triangles",
+      "name": "Angle relationships at intersecting and parallel lines",
+      "definition": "Find or relate angle measures formed where lines cross: vertical angles, angles on a straight line / around a point, and the angle pairs a transversal makes with parallel lines (corresponding, alternate, same-side).",
+      "inclusion_test": "Tag when the CB rationale uses at least one of: 'vertical angles', 'linear pair' / 'form a straight line' / 'supplementary' for two adjacent angles on a line, or a transversal pair ('corresponding', 'alternate interior', 'same-side/consecutive interior', 'exterior angles on the same side') across lines stated parallel. Not tagged for the 180 sum of a triangle's interior angles alone (that is LAT.2)."
+    },
+    {
+      "id": "LAT.2",
+      "skill_code": "Lines, Angles, and Triangles",
+      "name": "Triangle angle sum and exterior angles",
+      "definition": "Use that a triangle's interior angles sum to 180 degrees (including the right-triangle form: acute angles sum to 90) and the exterior-angle theorem, alone or chained across several triangles.",
+      "inclusion_test": "Tag when the CB rationale (or alternate approach used as most direct) invokes 'sum of the interior angles of a triangle is 180', 'acute angles of a right triangle are complementary', or 'exterior angle ... equal to the sum of the (remote/nonadjacent) interior angles'."
+    },
+    {
+      "id": "LAT.3",
+      "skill_code": "Lines, Angles, and Triangles",
+      "name": "Isosceles and equilateral triangles",
+      "definition": "Translate equal sides into equal angles (base angles of an isosceles triangle) or into the definition of equilateral, then use the resulting angle or side facts.",
+      "inclusion_test": "Tag when the stem states two sides are equal (e.g., 'AB = AC', 'RT = TU'), states two angles are equal and they must be used as base angles, says 'isosceles' or 'equilateral', or the triangle is shown (by coordinates) to have two equal legs; and the CB rationale uses 'isosceles', 'base angles', or 'all three sides have the same length'. Not tagged when the triangle merely happens to have two equal given angles that are simply summed (fd8745fc)."
+    },
+    {
+      "id": "LAT.4",
+      "skill_code": "Lines, Angles, and Triangles",
+      "name": "Congruence and similarity: correspondence, criteria, and angle preservation",
+      "definition": "Use the correspondence between congruent or similar figures (triangles, quadrilaterals, dilations) to transfer angle measures, and decide which information is sufficient to establish similarity or congruence.",
+      "inclusion_test": "Tag when the stem says 'congruent', 'similar', or 'dilated' (or asks what is 'sufficient/needed to prove' similarity/congruence) AND the asked quantity is an angle measure, an equal-ratio identity, or a sufficiency choice. If the asked quantity is a side length found from a ratio, tag LAT.5 instead (both when a ratio identity is matched between two right triangles, 933fee1a)."
+    },
+    {
+      "id": "LAT.5",
+      "skill_code": "Lines, Angles, and Triangles",
+      "name": "Similar figures: proportional side lengths",
+      "definition": "Find an unknown length (or a length ratio) from similar figures by using a scale factor or a proportion of corresponding sides, including similarity hidden in a figure (shared angle, parallel side, vertical angles, altitude to the hypotenuse) and real-world shadow models.",
+      "inclusion_test": "Tag when the asked quantity is a length, a ratio of lengths, an area built from such a length, or a possible scale factor, AND the CB rationale writes a proportion of corresponding sides or multiplies by a scale factor ('corresponding sides ... proportional', 'scale factor', 'proportional relationship')."
+    },
+    {
+      "id": "RTT1",
+      "skill_code": "Right Triangles and Trigonometry",
+      "name": "Pythagorean theorem: missing side",
+      "definition": "Find (or write the relation for) a missing side of a right triangle from the other two, including right triangles hidden in rectangles and inscribed figures.",
+      "inclusion_test": "Tag if CB's rationale applies a^2 + b^2 = c^2 (or its rearrangement) to get a length that is not available from a stated special-triangle ratio."
+    },
+    {
+      "id": "RTT2",
+      "skill_code": "Right Triangles and Trigonometry",
+      "name": "Special right triangles (45-45-90, 30-60-90)",
+      "definition": "Use the fixed side ratios x : x : x*sqrt(2) and x : x*sqrt(3) : 2x (including equilateral-triangle altitudes and radical perimeters).",
+      "inclusion_test": "Tag if the rationale names an isosceles right / 45-45-90 or 30-60-90 / special right triangle, or uses 'hypotenuse = sqrt(2) times a leg' or 'side opposite 30 = half the hypotenuse'."
+    },
+    {
+      "id": "RTT3",
+      "skill_code": "Right Triangles and Trigonometry",
+      "name": "Right-triangle trig ratios (SOH-CAH-TOA)",
+      "definition": "Compute sin/cos/tan of an acute angle from side lengths, or turn a given ratio into side lengths.",
+      "inclusion_test": "Tag if the solution writes sin, cos or tan as opposite/adjacent/hypotenuse for a specific acute angle of a right triangle (either direction: sides to ratio or ratio to sides)."
+    },
+    {
+      "id": "RTT4",
+      "skill_code": "Right Triangles and Trigonometry",
+      "name": "Trig-ratio relationships: complements and similarity",
+      "definition": "Use that sin of an angle = cos of its complement, the two acute tangents are reciprocals, and similar triangles share trig ratios / proportional sides.",
+      "inclusion_test": "Tag if the rationale uses 'sine ... equal to the cosine of its complement', 'tangents ... reciprocals', 'in similar triangles the [ratio] of corresponding angles are equal', or a similar-triangle side proportion."
+    },
+    {
+      "id": "CIR1",
+      "skill_code": "Circles",
+      "name": "Circle equation: center and radius",
+      "definition": "Move between a circle's equation (standard or expanded) and its center/radius: read them, write the equation, complete the square, or apply a translation/radius change.",
+      "inclusion_test": "Tag if the solution must read (h,k)/r from an equation or graph, or write/rewrite an equation from (h,k)/r. Not tagged when the point is substituted directly without using the center/radius (b96ff36e)."
+    },
+    {
+      "id": "CIR2",
+      "skill_code": "Circles",
+      "name": "Points and lines relative to a circle in the xy-plane",
+      "definition": "Use a specific non-center point or a line with a circle in the coordinate plane: on/inside, diameter endpoint, coordinate bounds, tangency to an axis, tangent-line slope.",
+      "inclusion_test": "Tag if the stem names a specific point (other than the center) or a line/axis and the solution uses that point's/line's relation to the circle (lies on, interior, endpoint of a diameter, tangent at it, touches the axis)."
+    },
+    {
+      "id": "CIR3",
+      "skill_code": "Circles",
+      "name": "Arcs, central angles and circumference",
+      "definition": "Relate arc length/arc measure to the central angle and the whole circle (fraction of circumference, arcs summing to the whole).",
+      "inclusion_test": "Tag if the stem gives or asks for an arc (length or degree measure) or asks for circumference from an arc."
+    },
+    {
+      "id": "CIR4",
+      "skill_code": "Circles",
+      "name": "Radius-built triangles and tangent segments",
+      "definition": "Build a triangle from radii and/or tangent segments and use equal radii (isosceles), tangent-perpendicular-to-radius (right angle), or equal tangent segments.",
+      "inclusion_test": "Tag if CB's rationale states 'radii are congruent/equal' to set two triangle sides or base angles, or 'tangent ... perpendicular to the radius', or 'tangent segments ... equal length'."
+    },
+    {
+      "id": "CIR5",
+      "skill_code": "Circles",
+      "name": "Radian measure and the unit circle",
+      "definition": "Convert degrees and radians and evaluate sin/cos/tan of radian angles via coterminal angles on the unit circle.",
+      "inclusion_test": "Tag if the stem or a choice expresses an angle in radians (a multiple of pi) or asks for a radian/degree measure, or asks for sin/cos/tan of a radian angle."
+    },
+    {
+      "id": "RAT.1",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "name": "Unit conversion (linear units)",
+      "definition": "Convert a quantity or a rate from one unit to another of the same kind using given or standard conversion factors, single- or multi-step.",
+      "inclusion_test": "Asked quantity is the same physical quantity as a given one but in a different unit, every unit involved is to the first power, AND the student does not have to form a rate between two different kinds of quantity to get it. (Converting the units of a given rate, e.g. yd/h → mi/h, is RAT.1.)"
+    },
+    {
+      "id": "RAT.2",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "name": "Ratios and proportional scaling",
+      "definition": "Use a stated ratio (or a quotient/multiple relation between two quantities) to find a missing term, a ratio in simplest form, or how one quantity changes when the other is scaled.",
+      "inclusion_test": "Stem contains the word 'ratio' (or ':'), OR relates two quantities of the same kind/unitless variables by a quotient or multiple (x/y = 4, t = 4u, 'is 9/10 of'), and the answer comes from that relation."
+    },
+    {
+      "id": "RAT.3",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "name": "Rates between different quantities",
+      "definition": "Compute a rate of one kind of quantity per another (speed, price, output per time) or use one to find an amount, time, or a scaled amount.",
+      "inclusion_test": "Stem pairs two DIFFERENT kinds of quantity via 'per', 'for every', 'in', 'every' (distance/time, dollars/pounds, items/hour, kg per object) and neither is an area or volume (else RAT.4)."
+    },
+    {
+      "id": "RAT.4",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "name": "Density and per-area/per-volume rates",
+      "definition": "Use mass density, population density, pressure, area-per-person, or flux: a rate where one quantity is an area or volume, often computed from a cube or square.",
+      "inclusion_test": "Stem names density/pressure/flux or a rate whose denominator or factor is a square or cubic unit (people per square mile, square feet per person, grams per cubic cm). Takes priority over RAT.3."
+    },
+    {
+      "id": "RAT.5",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "name": "Converting squared or cubed units",
+      "definition": "Convert a quantity whose unit is raised to a power (square yards ↔ square miles, ft²/h → m²/min, m/s² → mi/min²) using a linear factor raised to that power.",
+      "inclusion_test": "A unit with an exponent (square, cubic, 'squared') must be converted to another unit. Subsumes RAT.1 for that question (no double tag)."
+    },
+    {
+      "id": "PCT.1",
+      "skill_code": "Percentages",
+      "name": "Percent of a quantity",
+      "definition": "Find the part that is a given percent of a given whole (part = p/100 x whole), including percents over 100% stated as 'p% of'.",
+      "inclusion_test": "The stem gives a percent and the quantity it is taken OF (words 'p% of', 'of these ... p% are', a tip/share of a total) and the unknown is the resulting amount or expression; the percent is not worded as an increase/decrease ('greater/less than', 'increased/reduced by', 'off', 'tax added')."
+    },
+    {
+      "id": "PCT.2",
+      "skill_code": "Percentages",
+      "name": "Unknown percent or unknown whole",
+      "definition": "Given two of part, percent and whole in a 'part is p% of whole' relationship, find the missing percent or the missing whole.",
+      "inclusion_test": "The stem fixes a 'part is p% of whole' relation (wording 'what percent(age) of', 'is p% of', 'of what number', 'p% of the items ... there are N') and the unknown is the percent p or the whole; no increase/decrease wording attaches to the unknown."
+    },
+    {
+      "id": "PCT.3",
+      "skill_code": "Percentages",
+      "name": "Apply or undo a single percent increase or decrease",
+      "definition": "Turn one percent increase/decrease into the multiplier (1 + p/100) or (1 - p/100) and use it forward (new value), backward (original value), or report the multiplier itself.",
+      "inclusion_test": "The stem contains an increase/decrease phrase with a GIVEN percent ('p% greater/more/less than', 'increased/reduced/decreased by p%', 'p% off', 'p% tax is added', 'depreciate by p%') and the unknown is the new value, the original value, or the multiplier/expression."
+    },
+    {
+      "id": "PCT.4",
+      "skill_code": "Percentages",
+      "name": "Percent change between two values",
+      "definition": "Find the percent by which one value is greater or less than another: (new - old)/old x 100, or read the percent change off a multiplier.",
+      "inclusion_test": "The stem gives (or lets you compute) both the original and the new value, possibly as a multiple like 1.13 x 100 or 0.35x, and the unknown is the percent increase/decrease/change or the p in 'p% greater/less than'."
+    },
+    {
+      "id": "PCT.5",
+      "skill_code": "Percentages",
+      "name": "Chained percents (percent of a percent result)",
+      "definition": "Combine two or more percent relationships whose reference quantities differ, so a later percent is taken of (or compared with) a quantity defined by an earlier one.",
+      "inclusion_test": "The stem states two or more percents AND they have different bases (the 'of' / 'than' / 'from' quantity of a later percent is the result of, or linked through, an earlier percent: 'of those', 'of the red items', 'each year ... of the previous year's value', 'a is p% of b ... c is q% of a'). Several percents of ONE common whole do not qualify."
+    },
+    {
+      "id": "OVD.1",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "name": "Read and interpret a data display",
+      "definition": "Read counts, categories, or extreme values from a bar graph, frequency table or data table, or build a frequency table from a list.",
+      "inclusion_test": "Answer is a count, a category, a single data value, the min/max, or a sum/difference of read counts (or a frequency table); no mean, median, mode, range or SD has to be computed (a mean printed as a table entry counts as a read value)."
+    },
+    {
+      "id": "OVD.2",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "name": "Find a measure of center from data",
+      "definition": "Compute or identify the mean, median or mode of a data set given as a list, table, frequency table, dot plot, histogram or box plot, including a median known only to lie in a bin.",
+      "inclusion_test": "CB's main rationale computes or reads off the value of a mean, median or mode from the given data values (or bins), including 'which could be the median' and numeric differences between computed centers."
+    },
+    {
+      "id": "OVD.3",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "name": "Measures of spread: range and standard deviation",
+      "definition": "Compute a range, or compare/judge standard deviation or range across data sets or after a change.",
+      "inclusion_test": "The stem or the keyed choice names range, standard deviation, or 'spread', and the answer depends on that measure."
+    },
+    {
+      "id": "OVD.4",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "name": "Use the mean-total relationship",
+      "definition": "Use mean = total / count to find a missing or removed value, a combined mean, or the mean from a total.",
+      "inclusion_test": "The stem gives a mean (or a total and a count, or an equality between means) as a known quantity and asks for an unknown data value, a total, a combined mean, or the mean-sum ratio; the solution multiplies or divides by the count."
+    },
+    {
+      "id": "OVD.5",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "name": "Compare measures across data sets or after a change",
+      "definition": "Decide which measure is greater, equal, or unchanged between two data sets, after adding/removing/changing values, or between mean and median of one set, and which measures a summary determines.",
+      "inclusion_test": "The keyed answer is a relational or 'must/could/can be' statement (greater/less/equal/unchanged/order/which data set/which can be calculated) about measures of center or spread, not a single number."
+    },
+    {
+      "id": "TVD.1",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "name": "Read data and changes from a graph",
+      "definition": "Read plotted data values off a scatterplot or line graph and compare them: a single point's value, the highest/lowest point, the change or average rate of change between two plotted points.",
+      "inclusion_test": "Stem asks about the recorded/actual data (a point's value, greatest/least, change or average rate of change between two given x-values) AND does not ask for a value 'predicted by'/'according to' a line of best fit, model, or trend. A drawn curve that the stem never calls a model counts here."
+    },
+    {
+      "id": "TVD.2",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "name": "Predict with a fitted model and compare data to it",
+      "definition": "Use a drawn line/curve of best fit (or the stated trend) to predict y at a given x, or compare actual data points with the model (residual size, points above/below).",
+      "inclusion_test": "Stem contains 'predicted by', 'according to the line of best fit/model', or 'according to the trend' AND asks for a y-value at a given x, the difference between an actual and predicted value, or a count of points above/below the line. Excludes questions asking for slope/rate per unit (TVD.3)."
+    },
+    {
+      "id": "TVD.3",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "name": "Linear model: direction, slope, intercept, equation, interpretation",
+      "definition": "Describe a linear trend or line of best fit by its direction, slope and y-intercept: estimate the slope, choose its equation, interpret the slope/rate in context, or transform it when the data are rescaled.",
+      "inclusion_test": "Asks for the association direction, the slope (or 'increase per 1 unit'/'per k units'), an equation of a line of best fit / linear model for a scatterplot, or the meaning of a given linear model's slope; the correct choice/answer is a linear quantity or linear equation."
+    },
+    {
+      "id": "TVD.4",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "name": "Nonlinear model fitted to a scatterplot",
+      "definition": "Choose or characterize a quadratic or exponential model (equation or curve) for data shown in a scatterplot.",
+      "inclusion_test": "Data shown in a scatterplot AND the correct answer is a nonlinear model (curve or quadratic/exponential equation) or a parameter of a named exponential/quadratic model of the data."
+    },
+    {
+      "id": "TVD.5",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "name": "Classify linear vs exponential relationships",
+      "definition": "Decide whether a relationship given by a description, table, function rule or single graph is linear or exponential and increasing or decreasing, or compare linear with exponential growth.",
+      "inclusion_test": "Choices name a model type (increasing/decreasing linear/exponential), ask which table is (non)linear, or compare a linear and an exponential quantity over time; no scatterplot of data with a fitted model is involved."
+    },
+    {
+      "id": "PRB.1",
+      "skill_code": "Probability and Conditional Probability",
+      "name": "Probability of an event in the whole group",
+      "definition": "Probability (or fraction/percent) of one event when the denominator is the entire group: favorable count / total count, no restriction on who is selected.",
+      "inclusion_test": "The asked value is a probability, fraction or percent AND the stem selects from all members (\"one of these ...\", \"a ... from the bag/table\") with no \"given that\", \"if the person chosen is/works in ...\", \"of those/the ... who ...\", or \"if one of the [subgroup] is selected\" restriction."
+    },
+    {
+      "id": "PRB.2",
+      "skill_code": "Probability and Conditional Probability",
+      "name": "Conditional probability (restricted sample space)",
+      "definition": "Probability or fraction/percent of an event within a named subgroup: count of (event AND subgroup) / count of subgroup.",
+      "inclusion_test": "The stem restricts selection to a subgroup with \"given that\", \"if the person chosen [is in X]\", \"if one of the [X] is selected\", \"of the/those [X] ...\", or \"what fraction/percent of [X] ...\" AND the correct denominator is that subgroup's total, not the grand total (confirm against the CB rationale's denominator)."
+    },
+    {
+      "id": "PRB.3",
+      "skill_code": "Probability and Conditional Probability",
+      "name": "Find a count from a probability or from totals",
+      "definition": "Work backward: the probability/fraction (or the grand total) is given and the unknown is a count, a variable in a table, or the category whose count matches a stated fraction.",
+      "inclusion_test": "The asked value is a count or the value of a variable standing for a count (or a category chosen by comparing counts to a given fraction of a total), AND the stem supplies a probability/fraction or a total that the count must satisfy."
+    },
+    {
+      "id": "PRB.4",
+      "skill_code": "Probability and Conditional Probability",
+      "name": "Complement and exclusion events",
+      "definition": "The event is defined by exclusion: \"not\", \"neither ... nor\", \"but does not\", or the one remaining category whose count/probability is not given.",
+      "inclusion_test": "The stem's target event contains \"not\", \"neither\", \"nor\", \"but does not\", or \"other than\", OR the target is the only listed category whose count/probability is not given (so it equals the total minus the others). Applied to stem wording, not to whether the table already labels the negated category (see open question)."
+    },
+    {
+      "id": "INFS.1",
+      "skill_code": "Inference from Sample Statistics and Margin of Error",
+      "name": "Estimate a population count from a sample",
+      "definition": "Scale a random sample's proportion, percent, or mean up to an estimated number (or range of numbers) in the population.",
+      "inclusion_test": "The stem gives a sample result (count out of n, percent, or mean) and a population size or number of units, and the answer is an estimated COUNT or total for the population (alone or as an interval)."
+    },
+    {
+      "id": "INFS.2",
+      "skill_code": "Inference from Sample Statistics and Margin of Error",
+      "name": "Interpret an estimate with a margin of error",
+      "definition": "Turn an estimate plus a margin of error into the interval of plausible values for the population parameter and judge statements against it.",
+      "inclusion_test": "The stem states an estimate AND a margin of error, and the question asks which conclusion, interpretation, or value is plausible/appropriate."
+    },
+    {
+      "id": "INFS.3",
+      "skill_code": "Inference from Sample Statistics and Margin of Error",
+      "name": "What the sampling design supports",
+      "definition": "Judge a conclusion by a property of the sample itself (which population it was drawn from, or its size) rather than by computing an estimate.",
+      "inclusion_test": "The keyed answer is decided by the sampled population or the sample size (e.g. 'only largemouth bass', 'smaller sample size'), and choosing it requires no arithmetic on the estimate. Only 3 CB items exist; see open questions."
+    },
+    {
+      "id": "ESC1",
+      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
+      "name": "Scope of generalization: the largest population the results apply to",
+      "definition": "Results from a sample selected at random apply to the population it was selected from - no larger group, and more than just the sample.",
+      "inclusion_test": "Stem says from which group the sample was selected at random, and the choices name groups (or make claims about groups) of different breadth; the key is the sampled population (or the claim restricted to it)."
+    },
+    {
+      "id": "ESC2",
+      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
+      "name": "Detect a biased (non-representative) sample",
+      "definition": "Recognize that a sample not drawn at random from the target population (a subgroup, a convenience location, or self-selected respondents) cannot represent it.",
+      "inclusion_test": "The target population named in the stem differs from the group actually sampled (dog owners only, families at a playground, viewers who chose to answer a web poll), and the key states the sample is biased / not random / not representative."
+    },
+    {
+      "id": "ESC3",
+      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
+      "name": "Sampling variability: a sample result is not a certainty",
+      "definition": "A random sample's percent does not have to equal the population percent, and another sample need not give the same percent.",
+      "inclusion_test": "Statements claim the population value or another sample's value 'must' equal the observed sample value, and the key is that none of those statements must be true."
+    },
+    {
+      "id": "WIC.1",
+      "skill_code": "Words in Context",
+      "name": "Restated-meaning blank",
+      "definition": "Complete a blank whose meaning the text supplies elsewhere as a paraphrase, definition, or set of examples of the same idea.",
+      "inclusion_test": "Fill-in-the-blank stem (\"Which choice completes the text...\"), AND the word or phrase CB's rationale quotes as the deciding clue is a near-synonym, definition, or examples of the correct answer (typically after a colon/dash, 'that is', 'for example/such as', or in the next sentence). Applies even if a contrast or cause signal is also present, as long as the answer means the same as the quoted clue."
+    },
+    {
+      "id": "WIC.2",
+      "skill_code": "Words in Context",
+      "name": "Contrasted-meaning blank",
+      "definition": "Complete a blank whose meaning is the opposite or other side of an idea the text sets against it.",
+      "inclusion_test": "Fill-in-the-blank stem, AND a contrast or negation (but, however, although/though, while, whereas, unlike, instead, rather, on the other hand, in contrast, 'challenging the view', not/isn't/hardly/little/unlikely/declines to/fails to) or two juxtaposed facts that differ ('typically X' vs. this case) links the blank to the deciding clue, AND the correct answer means the opposite of that clue (e.g., 'consistent' vs. 'it varies'; 'negligible' vs. 'as many as half')."
+    },
+    {
+      "id": "WIC.3",
+      "skill_code": "Words in Context",
+      "name": "Inferred-relationship blank",
+      "definition": "Complete a blank whose meaning is not restated or contrasted anywhere but must be inferred from a cause, effect, purpose, or consequence the text states.",
+      "inclusion_test": "Fill-in-the-blank stem, AND no quoted clue is a synonym or opposite of the correct answer, AND the rationale reasons through a cause/result/purpose link (because, since, due to, given, so...that, thus, therefore, in order to, to + verb, so that, by + -ing, as a result, making, allowing) or evidence-to-conclusion step to reach the answer."
+    },
+    {
+      "id": "WIC.4",
+      "skill_code": "Words in Context",
+      "name": "Given word's meaning in context",
+      "definition": "Choose the sense of a word or phrase printed in a (literary) passage, usually a common word used in one of its several meanings.",
+      "inclusion_test": "Stem reads 'As used in the text, what does the word/phrase \"X\" most nearly mean?' (all 36 such items in this set are from fiction, poetry, drama, or memoir)."
+    },
+    {
+      "id": "TSP.1",
+      "skill_code": "Text Structure and Purpose",
+      "name": "Main purpose of an informational text",
+      "definition": "Name the author's overall goal for a whole non-literary text (explain, present a study, argue, describe, challenge a view).",
+      "inclusion_test": "Prompt asks for the 'main purpose' or 'overall purpose' of the text AND the passage does NOT open with 'The following text is (adapted) from ...'."
+    },
+    {
+      "id": "TSP.2",
+      "skill_code": "Text Structure and Purpose",
+      "name": "Overall structure of a text",
+      "definition": "Describe the ordered sequence of moves the whole text makes (e.g., common view then challenge; question then answer; phenomenon, two refuted explanations, plausible third).",
+      "inclusion_test": "Prompt asks for the 'overall structure of the text' (or 'the text's overall structure') and does NOT ask about the function of a specific sentence/portion; applies to literary and informational passages alike."
+    },
+    {
+      "id": "TSP.3",
+      "skill_code": "Text Structure and Purpose",
+      "name": "Function of a part in an informational text",
+      "definition": "Say what logical job an underlined or numbered sentence/portion does relative to the rest of a non-literary text (defines a term, gives an example of a claim, concedes, supplies background, states a limitation, answers a question, poses the problem a study tried to solve).",
+      "inclusion_test": "Prompt contains 'function' (or 'purpose of the underlined portion') about an underlined portion or an Nth sentence AND the passage does NOT open with 'The following text is (adapted) from ...'."
+    },
+    {
+      "id": "TSP.4",
+      "skill_code": "Text Structure and Purpose",
+      "name": "Purpose or function in a literary text",
+      "definition": "In an excerpt from a novel, story, play, poem, or memoir, say what the whole excerpt or a part of it conveys: a character's or speaker's feelings, traits, or relationships, the setting, or what an image stands for.",
+      "inclusion_test": "Passage opens with 'The following text is (adapted) from <author>'s <year> <novel|short story|play|poem|memoir|nonfiction work>' AND the prompt asks for main/overall purpose OR the function of an underlined/numbered part (literary 'overall structure' prompts go to TSP.2 instead)."
+    },
+    {
+      "id": "CTC.1",
+      "skill_code": "Cross-Text Connections",
+      "name": "Predict a rebuttal",
+      "definition": "One author (or a party named in one text) would reject or undercut a specific claim, conclusion, or view in the other text, conceding none of it.",
+      "inclusion_test": "Stem asks how a party in one text would respond to / characterize / say about something in the other text, AND (a) CB's rationale or the correct choice uses rejection language (disagree, challenge, dispute, counter, contradict, questionable, misconception, illogical, not supported) OR (b) the correct choice asserts the target is wrong or offers a competing claim, with NO concession clause and NO scope limiter from the CTC.2 list. Rejection language overrides a limiter (e.g. d6c77ae5 'questionable ... incomplete' -> CTC.1)."
+    },
+    {
+      "id": "CTC.2",
+      "skill_code": "Cross-Text Connections",
+      "name": "Predict a qualified (yes-but) response",
+      "definition": "One author would partly accept the other text's claim but limit, complicate, or temper it.",
+      "inclusion_test": "Response stem (as CTC.1) AND the correct choice or CB rationale contains a concession (agree, concede, acknowledge, understandable, while/although X, even though) OR the correct choice contains a scope limiter from this closed list: 'not the only', 'not exclusively', 'not only', 'incomplete', 'overly', 'not inevitably', 'overlooks/fails to consider certain aspects', 'instead of completely' -- AND CB's rationale does not use the CTC.1 rejection verbs. 'not necessarily' is NOT on the list (see open questions)."
+    },
+    {
+      "id": "CTC.3",
+      "skill_code": "Cross-Text Connections",
+      "name": "Predict a supportive or applied response",
+      "definition": "One text's position is used to explain, solve, confirm, extend, or apply to the claim, problem, finding, or situation in the other text.",
+      "inclusion_test": "Response stem (as CTC.1) AND the correct choice accepts the target without disagreement or limiter and states that the responder's idea solves it, prevents it, supports it, makes it expected/unsurprising, contributes to its goal, or applies its advice to a described situation."
+    },
+    {
+      "id": "CTC.4",
+      "skill_code": "Cross-Text Connections",
+      "name": "Identify common ground",
+      "definition": "Find the statement both texts (or the named parties in each) would accept, usually beneath their disagreement.",
+      "inclusion_test": "Stem contains 'both ... would most likely agree' or 'X (Text 1) and Y (Text 2) would most likely agree'."
+    },
+    {
+      "id": "CTC.5",
+      "skill_code": "Cross-Text Connections",
+      "name": "Describe the difference or relationship between the texts",
+      "definition": "State how the two authors' views differ, or how Text 2 functions relative to Text 1.",
+      "inclusion_test": "Stem contains 'best describes a difference in how' or 'best describes how Text 1 and Text 2 relate'."
+    },
+    {
+      "id": "RS.1",
+      "skill_code": "Rhetorical Synthesis",
+      "name": "Compare or contrast two or more items",
+      "definition": "Write a sentence that relates two (or more) named items: a similarity, a difference, a comparison of amounts, or the order of two events.",
+      "inclusion_test": "Goal sentence names two or more items AND contains one of: similarity, difference/differ(s), contrast, compare, 'order in which', relative, highest, 'different orders'."
+    },
+    {
+      "id": "RS.2",
+      "skill_code": "Rhetorical Synthesis",
+      "name": "Fit the sentence to a stated audience",
+      "definition": "Introduce, describe, or present something to an audience the goal labels as already familiar, unfamiliar, or new: add background for an unfamiliar or new audience, leave it out for a familiar one.",
+      "inclusion_test": "Goal sentence contains the word 'audience' (e.g. 'to an audience unfamiliar with', 'already familiar with', 'to a new audience')."
+    },
+    {
+      "id": "RS.3",
+      "skill_code": "Rhetorical Synthesis",
+      "name": "Report a research study",
+      "definition": "Present or emphasize a study as a whole or one of its parts (aim, method, findings, results, conclusion, or the sequence the researchers proposed).",
+      "inclusion_test": "Goal sentence contains study (not 'field of study'), research, researchers, findings, results, conclusion, methodology, or aim, AND does not ask for a generalization."
+    },
+    {
+      "id": "RS.4",
+      "skill_code": "Rhetorical Synthesis",
+      "name": "Generalize, define, or give an example",
+      "definition": "Make (and support) a generalization about a category, define a term or explain what something is, or give or illustrate an example.",
+      "inclusion_test": "Goal sentence contains generalization, define, example, illustrate, or 'explain what a ...'."
+    },
+    {
+      "id": "RS.5",
+      "skill_code": "Rhetorical Synthesis",
+      "name": "Focus on one named feature of one subject",
+      "definition": "Write a sentence about a single subject that delivers the one feature the goal names: a fact (where, when, how many, name), a cause, advantage, significance or origin, a description or overview, a quotation-based claim, or a narrative opening.",
+      "inclusion_test": "None of the RS.1 to RS.4 tests fire (residual sub-skill). The goal names one subject plus the feature to deliver."
+    },
+    {
+      "id": "TRN.1",
+      "skill_code": "Transitions",
+      "name": "Contrast and concession",
+      "definition": "The sentence after the blank goes against, qualifies, is an exception to, or is an alternative to the idea before it.",
+      "inclusion_test": "Keyed transition is in the TRN.1 lexicon (however, by/in contrast, conversely, on the other hand, in/by comparison (differing items), nevertheless, nonetheless, still, though, that said, granted, of course, instead, alternatively, on the contrary), and CB rationale for the key uses contrasts / despite / exception / qualification / alternative / disagreement / acknowledges a limitation."
+    },
+    {
+      "id": "TRN.2",
+      "skill_code": "Transitions",
+      "name": "Cause, result and purpose",
+      "definition": "The sentence after the blank is a result, consequence, logical conclusion, or goal-driven action that follows from the idea before it.",
+      "inclusion_test": "Keyed transition is in the TRN.2 lexicon (as a result, therefore, thus, hence, consequently, for this reason, accordingly, as such, in turn, with this in mind, to that end, in so doing, fittingly; also \"then\" when CB says the claim \"follows logically\" (42e6cc83)), and CB rationale for the key uses result / consequence / follows logically / product of a goal / in accordance with / fitting outcome."
+    },
+    {
+      "id": "TRN.3",
+      "skill_code": "Transitions",
+      "name": "Addition and similarity",
+      "definition": "The sentence after the blank adds a separate new point, or a parallel point that is like the one before it.",
+      "inclusion_test": "Keyed transition is in the TRN.3 lexicon (in addition, additionally, moreover, furthermore, what’s more, similarly, likewise; also \"second\" when CB calls it a second supporting point (82ec9628)), and CB rationale for the key uses additional / separate / adds new information / similar / second supporting point."
+    },
+    {
+      "id": "TRN.4",
+      "skill_code": "Transitions",
+      "name": "Example, specification, restatement and emphasis",
+      "definition": "The sentence after the blank develops the SAME point: gives an example of it, specifies its details, restates or clarifies it, or emphasizes it.",
+      "inclusion_test": "Keyed transition is in the TRN.4 lexicon (for example, for instance, specifically, in particular, to be exact, that is, in other words, in fact, indeed, in many cases, more often), and CB rationale for the key uses example / exemplifies / specific, precise details / restatement / clarifies / emphasizes and supports / elaborates on the same idea."
+    },
+    {
+      "id": "TRN.5",
+      "skill_code": "Transitions",
+      "name": "Time, sequence and place",
+      "definition": "The sentence after the blank is placed relative to the idea before it in time (before, after, at the same time, now, in the end), as a step in a process or list, or in a place.",
+      "inclusion_test": "Keyed transition is in the TRN.5 lexicon (next, then, later, earlier, previously, afterward, finally, eventually, ultimately, today, currently, meanwhile, increasingly, again and again, first, second (step in a process), there), and CB rationale for the key uses next step / chronological sequence / occurred after or before / simultaneous / present day / conclusion of a process / multiple times / location."
+    },
+    {
+      "id": "CID.1",
+      "skill_code": "Central Ideas and Details",
+      "name": "Identify the central idea of the whole text",
+      "definition": "Determine the single claim, topic, purpose or question that the whole text develops, as opposed to any one detail in it.",
+      "inclusion_test": "Stem asks for the text's main idea, main topic, main purpose, main idea about a named subject, 'what is happening in the text', or 'which question does the text most directly attempt to answer'. Tag on stem wording alone."
+    },
+    {
+      "id": "CID.2",
+      "skill_code": "Central Ideas and Details",
+      "name": "Retrieve an explicitly stated key detail",
+      "definition": "Find a fact, reason, method, result, difference or view that the text states outright and recognize it in reworded form.",
+      "inclusion_test": "Stem is 'According to the text...', 'What does the text say/indicate...', 'The text makes which point...', 'In the text, which point does X most directly make', or 'as presented in the text', AND the stem contains none of the CID.3 markers. Single listed exception: 11a9f635 ('indicate' stem, CB rationale says 'implies') goes to CID.3. Note 'what do some historians suggest' (9fe7aafa) is CID.2: 'suggest' there is the historians' verb, not the text's."
+    },
+    {
+      "id": "CID.3",
+      "skill_code": "Central Ideas and Details",
+      "name": "Draw a conclusion the details support but do not state",
+      "definition": "Combine or extend stated details to reach a conclusion, likely consequence, or position the text supports without saying it in one sentence.",
+      "inclusion_test": "Stem asks what the text '(most strongly) suggests', what is 'most likely', which statement is 'best/most strongly supported', what 'can be concluded' or 'inferred', what someone 'would most likely agree with', or begins 'Based on the text'; plus 11a9f635. Not tagged if the stem is a CID.1 stem."
+    },
+    {
+      "id": "CID.4",
+      "skill_code": "Central Ideas and Details",
+      "name": "Characterize a person's feelings, traits or attitudes in a literary text",
+      "definition": "Name a character's, narrator's or speaker's feeling, trait, motive, or attitude toward / regard for someone, from description and action. Co-tagged with CID.1/2/3.",
+      "inclusion_test": "Passage is introduced as from a novel, short story, poem, play or memoir AND the correct choice's content is a feeling, personality trait, motive, or attitude/regard (e.g. 'annoyed', 'delighted', 'remarkably mature', 'holds Thornton in higher regard', 'few feel concerned he will divulge'). Not tagged when the correct choice is only an action/event (487a05f8, c228bd45, e677fa6c, 69d662af) or a claim/idea a speaker makes (a12a83ce, b69d821d, 36e2868f, 2fdfe002)."
+    },
+    {
+      "id": "COE.1",
+      "skill_code": "Command of Evidence",
+      "name": "Read data accurately from a table or graph",
+      "definition": "Select the choice that correctly reports a value, extreme, comparison, or trend that the sentence specifies from a table or graph.",
+      "inclusion_test": "Stem refers to data in a table/graph (\"uses data from the table/graph\", \"According to the table/graph\", \"Based on the information in the table\") AND CB rejects every incorrect choice because it misstates, misreads, or reports the wrong cell/series/value of the data (no incorrect choice is rejected as accurate-but-irrelevant to the claim)."
+    },
+    {
+      "id": "COE.2",
+      "skill_code": "Command of Evidence",
+      "name": "Use data as evidence for a claim",
+      "definition": "Select data from a table or graph that support, weaken, illustrate, or complete a claim, conclusion, hypothesis, or example stated in the text, where accurate data can still fail to bear on the claim.",
+      "inclusion_test": "Stem refers to data in a table/graph AND at least one incorrect choice is rejected by CB because it does not support/weaken/illustrate/complete the claim (e.g., 'although it accurately describes the graph...', 'isn't relevant', 'doesn't include the ... for comparison', or conflicts with the text's stated reasoning) rather than only because it misreads the data."
+    },
+    {
+      "id": "COE.3",
+      "skill_code": "Command of Evidence",
+      "name": "Choose a finding or source statement that supports or weakens a claim",
+      "definition": "Select a hypothetical finding/statement/detail, or a quotation from a non-literary source (historian, critic, article, participant, survey respondent, interviewee), that would most directly support, illustrate, weaken, or challenge a claim, hypothesis, conclusion, or explanation in an informational text.",
+      "inclusion_test": "No table/graph is needed AND the stem asks for a 'finding', 'statement', 'detail', 'response', or 'quotation from a/an [person or source about the subject]' (often 'if true') that would support/illustrate/weaken/undermine/challenge a claim; choices are descriptions of results or facts, or quotations by people other than the author of the work named in the text."
+    },
+    {
+      "id": "COE.4",
+      "skill_code": "Command of Evidence",
+      "name": "Choose a quotation from a named work that illustrates a claim about it",
+      "definition": "Select the quotation from the literary or primary work introduced in the text (novel, poem, play, story, essay, letters) that most effectively illustrates a claim about a character, speaker, author, or theme.",
+      "inclusion_test": "Stem reads 'Which quotation from [title of the work named in the text]' (including 'a translation of [title]', 'the poem', '[character]'s letters') or 'uses a quotation from [title] to illustrate the claim', AND all choices are excerpts from that work."
+    },
+    {
+      "id": "INF.1",
+      "skill_code": "Inferences",
+      "name": "Draw a conclusion from a comparison",
+      "definition": "Infer what a contrast between groups, conditions, or time points shows, by attributing the difference in outcome to the one factor that differs.",
+      "inclusion_test": "The text reports a result for two or more groups/conditions/time points that differ in a named factor (with vs without, modified vs original, before vs after, X% vs Y%), AND the correct choice attributes the outcome difference to that factor or states what the difference shows. Apply only if INF.5, INF.3 and INF.4 do not apply."
+    },
+    {
+      "id": "INF.2",
+      "skill_code": "Inferences",
+      "name": "Chain stated premises to a consequence",
+      "definition": "Combine facts, a rule, or a mechanism the text states to deduce what follows: a consequence, a prediction, an explanation for a stated outcome, or the application of a stated theory to a case.",
+      "inclusion_test": "Default class: the correct choice follows by joining two or more stated premises (or applying a stated rule/theory/definition to a stated case) and none of INF.5, INF.3, INF.4, INF.1 applies. Typical lead-ins: 'As a result', 'Therefore', 'consequently', 'because ______', 'If this view is correct', 'According to X's logic'."
+    },
+    {
+      "id": "INF.3",
+      "skill_code": "Inferences",
+      "name": "Weigh new evidence against a stated claim",
+      "definition": "Decide what new evidence means for a claim, belief, or expectation the text attributes to someone, or how two facts the text marks as in tension fit together: the claim is weakened, not conclusive, replaced, or the tension is reconciled.",
+      "inclusion_test": "The text (a) attributes a view/theory/assumption/expectation to someone ('some scholars claim', 'was thought', 'presumed', 'one theory', 'appeared to', 'often thought') or (b) marks two facts as in tension (however, but, nonetheless, even though, only partly, barring), AND the correct choice revises, limits, rejects, or reconciles that claim/tension (e.g., 'not conclusive', 'cannot say', 'did not depend on', 'contains later additions'). Apply only if INF.5 does not apply."
+    },
+    {
+      "id": "INF.4",
+      "skill_code": "Inferences",
+      "name": "Generalize from specific cases",
+      "definition": "Move from one or more specific instances in the text to a broader pattern, or name the general point a specific case illustrates.",
+      "inclusion_test": "The correct choice's subject is a broader class than the specific instance(s) the text describes (many organizations, a language, social media, the pricing model, scholarly regard for ephemera) or says the case 'illustrates/exemplifies' a general point. Apply only if INF.5 and INF.3 do not apply."
+    },
+    {
+      "id": "INF.5",
+      "skill_code": "Inferences",
+      "name": "Infer a person's view or motive",
+      "definition": "Infer what a named person or group believes, assumes, perceives, expects, wants, or would agree/disagree with, from what the text says they said, did, or hold.",
+      "inclusion_test": "The lead-in to the blank or the correct choice uses a mental-state frame from this closed list: in X's view; X thought/believed/assumed/perceived/anticipated/wanted; X would have disputed; X and Y likely agree; X may have determined; 'more important to X'; 'than X think'. The conclusion verbs conclude/suggest/hypothesize/posit/propose/reason/imply do NOT trigger it. Highest priority in tagging order."
+    },
+    {
+      "id": "BND.1",
+      "skill_code": "Boundaries",
+      "name": "Linking independent clauses",
+      "definition": "Mark the boundary between two independent clauses with a period, a semicolon, or a comma plus a coordinating conjunction (and/but/so); avoid run-ons and comma splices.",
+      "inclusion_test": "Tag when, in the correct answer, the blank sits between two independent clauses (each has its own subject + finite verb and could stand alone) and the correct mark is a period, a semicolon, or comma+FANBOYS. CB rationale typically says 'punctuation use between sentences' or 'coordination of main clauses'. A colon between two clauses goes to BND.4 instead. One tag per boundary: if the blank also contains a supplement boundary (e.g. ', though;'), add BND.2."
+    },
+    {
+      "id": "BND.2",
+      "skill_code": "Boundaries",
+      "name": "Setting off supplements and introductory elements",
+      "definition": "Punctuate the edge of a nonessential (supplementary) element or an introductory/subordinate element: paired commas, dashes or parentheses around an interrupter, a comma after an introductory phrase or dependent clause, a comma before a trailing appositive/participial phrase or a supplementary adverb (however, though).",
+      "inclusion_test": "Tag when a boundary in the blank is the opening or closing edge of an element CB calls 'supplementary', 'nonessential', 'aside', 'subordinate/dependent clause' or 'introductory phrase', and the correct mark there is a comma, dash or parenthesis (not a colon -> BND.4). Observable cue: the element can be deleted and the remaining sentence is still complete, or it is a dependent clause/phrase before or after a main clause."
+    },
+    {
+      "id": "BND.3",
+      "skill_code": "Boundaries",
+      "name": "No punctuation inside an integrated structure",
+      "definition": "Recognize when nothing belongs at the blank because the words on either side form one grammatical unit: subject-verb, verb-object/complement, preposition-object, noun + essential modifier, title/label + name (restrictive appositive), integrated 'that' relative clause, or exactly two coordinated elements.",
+      "inclusion_test": "Tag when the correct answer has NO punctuation at the blank (and no conjunction is added) and CB's rationale says 'no punctuation is needed' / 'essential' / 'restrictive' / 'integrated'."
+    },
+    {
+      "id": "BND.4",
+      "skill_code": "Boundaries",
+      "name": "Colons and series punctuation",
+      "definition": "Use a colon after a complete independent clause to introduce an explanation, elaboration, example or list; separate three or more series items with commas, or with semicolons when the items already contain commas (complex series).",
+      "inclusion_test": "Tag when the correct answer's mark at the blank is a colon, OR the blank sits between items of a series of three or more (simple or complex). Every series blank is BND.4 only, even if an item contains internal commas."
+    },
+    {
+      "id": "BND.5",
+      "skill_code": "Boundaries",
+      "name": "End-of-sentence punctuation (direct vs indirect question)",
+      "definition": "Choose between a question mark and a period, and the matching word order, depending on whether the sentence asks a direct question or reports an indirect question / makes a statement.",
+      "inclusion_test": "Tag when the four choices differ in terminal mark (? vs .) and/or in question word order (auxiliary before subject vs subject before verb)."
+    },
+    {
+      "id": "FSS.1",
+      "skill_code": "Form, Structure, and Sense",
+      "name": "Subject-verb agreement",
+      "definition": "Pick the verb form whose number (singular/plural) matches the head of the grammatical subject, including subjects that are relative pronouns, gerunds, 'each one of', titles, or compounds joined by 'and'.",
+      "inclusion_test": "Blank is (or contains) a finite verb AND either CB's rationale names 'subject-verb agreement' / says the verb 'agrees in number with the ... subject', or (if CB names no convention) the key is the only option whose verb number matches the subject while other finite options differ in number."
+    },
+    {
+      "id": "FSS.2",
+      "skill_code": "Form, Structure, and Sense",
+      "name": "Verb tense and aspect",
+      "definition": "Pick the tense/aspect (simple, progressive, perfect; past, present, future) that fits the passage's time frame, its other verbs, or its time markers.",
+      "inclusion_test": "All options are finite verbs that agree with the subject in number (or number is not decisive) and differ in tense/aspect, AND CB's rationale justifies the key by tense ('express tense', 'consistent with the other ... tense verbs', past perfect, a time phrase)."
+    },
+    {
+      "id": "FSS.3",
+      "skill_code": "Form, Structure, and Sense",
+      "name": "Finite vs. nonfinite verb forms",
+      "definition": "Decide whether the blank needs a conjugated (finite) verb to complete a clause, or a nonfinite form (to-infinitive, -ing participle, -ed participle, plain form after a modal) to build a modifying/supplementary phrase.",
+      "inclusion_test": "Options mix finite and nonfinite forms (to + verb, -ing, having + -ed, bare participle) AND the key is chosen because the clause does or does not already have a finite verb; CB's rationale says 'finite', 'nonfinite', 'infinitive', 'participle', or 'conjugated'."
+    },
+    {
+      "id": "FSS.4",
+      "skill_code": "Form, Structure, and Sense",
+      "name": "Number and possession in nouns, pronouns, and determiners",
+      "definition": "Choose the correct pronoun or determiner for its antecedent (it/they/them/this/these, its/their) and the correct plural vs. possessive spelling of nouns (apostrophe placement, its/it's, their/they're).",
+      "inclusion_test": "What varies across the options is a noun, pronoun, or determiner (not a verb and not the clause's subject choice) - in number, in case/possession, or in apostrophe placement; CB's rationale names pronoun-antecedent agreement, possessive determiners, determiners, or plural/possessive nouns."
+    },
+    {
+      "id": "FSS.5",
+      "skill_code": "Form, Structure, and Sense",
+      "name": "Subject-modifier placement",
+      "definition": "Complete a sentence that opens with a modifying phrase so that the noun the modifier describes is the first noun phrase after the modifier's comma.",
+      "inclusion_test": "The sentence opens with a phrase ending in a comma before the blank, the options are full clauses beginning with different noun phrases, and CB's rationale names 'subject-modifier placement' or says the modifier and its subject must be next to each other."
+    }
+  ],
+  "clusters": [
+    {
+      "id": "CL.0001",
+      "display_name": "account for a negation that reverses the meaning",
+      "family": "by_hand_doing",
+      "definition": "When not, hardly, no, less, unlikely, fail to, need not, by no means, declines to sits in front of the blank or claim, reverse the predicted meaning before choosing (and reverse twice for a double negative).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0002",
+      "display_name": "add and subtract the margin of error",
+      "family": "by_hand_doing",
+      "definition": "Form the plausible interval estimate - margin of error to estimate + margin of error.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0003",
+      "display_name": "add or subtract equations to eliminate a variable",
+      "family": "by_hand_doing",
+      "definition": "Add or subtract the two equations so one variable cancels.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0004",
+      "display_name": "add the parts to get the whole, or subtract to find a part",
+      "family": "by_hand_doing",
+      "definition": "Whole = sum of the parts: add pieces (lengths, areas, volumes, counts, cells) to get an unprinted total, or take the total minus the known parts to get a missing or leftover part (5 - x, t - 2).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0005",
+      "display_name": "apply an operation to every part of a compound inequality",
+      "family": "by_hand_doing",
+      "definition": "Multiply/add the lower and upper bounds of a range (a < x < b) to get the range of a derived quantity.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0006",
+      "display_name": "apply exponent rules",
+      "family": "by_hand_doing",
+      "definition": "Add exponents when multiplying like bases, subtract when dividing, multiply for a power of a power.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0007",
+      "display_name": "apply the quadratic formula",
+      "family": "by_hand_doing",
+      "definition": "Substitute a, b, c into x = (-b +/- sqrt(b^2-4ac))/(2a) and simplify the radical.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0008",
+      "display_name": "cancel a common factor (noting the excluded value)",
+      "family": "by_hand_doing",
+      "definition": "Divide numerator and denominator by the same nonzero factor, using the given domain restriction to justify it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0009",
+      "display_name": "check a point in the equation or inequality",
+      "family": "by_hand_doing",
+      "definition": "Substitute an ordered pair (or each table row) and test whether the equation/inequality (each one in a system) is true.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0010",
+      "display_name": "check every part of the choice against the text",
+      "family": "by_hand_doing",
+      "definition": "Split a choice with two or three parts (or 'X because Y') and confirm each part against the text; one false part makes the whole choice wrong.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0011",
+      "display_name": "check that the second idea really follows from the first",
+      "family": "by_hand_doing",
+      "definition": "Test a cause/result option by asking whether the second idea is actually produced by or follows from the first (and not the reverse or merely next in time).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0012",
+      "display_name": "check that the subject can logically do the action",
+      "family": "by_hand_doing",
+      "definition": "Check that the subject of the word can actually do or be what the choice says (an inanimate delay cannot 'dispute'; a price rise cannot 'exploit').",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0013",
+      "display_name": "check whether the specific case fits the general rule",
+      "family": "by_hand_doing",
+      "definition": "When one text states a general rule, problem or caution and another gives a particular case, check whether the case fits, breaks or solves the general statement.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0014",
+      "display_name": "check with a test value",
+      "family": "by_hand_doing",
+      "definition": "Substitute a convenient number (often 0 or 1) into the given expression and a choice to rule choices in or out.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0015",
+      "display_name": "classify the relationship between two views as agree, disagree, or qualify",
+      "family": "by_hand_doing",
+      "definition": "Decide whether one view fully agrees with, rejects, or partly accepts and limits the other before reading the choices.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0016",
+      "display_name": "clear fractions by multiplying by the common denominator",
+      "family": "by_hand_doing",
+      "definition": "Multiply both sides by the expression in the denominator (noting it cannot be zero).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0017",
+      "display_name": "combine like terms",
+      "family": "by_hand_doing",
+      "definition": "Add or subtract coefficients of terms with the same variable and the same exponent.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0018",
+      "display_name": "combine two facts to reach a conclusion",
+      "family": "by_hand_doing",
+      "definition": "Join two separately stated facts into the conclusion that follows from both together.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0019",
+      "display_name": "compare the values for the groups or conditions",
+      "family": "by_hand_doing",
+      "definition": "Compare the quantities in the notes (larger/smaller, highest, percentage vs. total) to see which choice states the comparison correctly.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0020",
+      "display_name": "complete the square",
+      "family": "by_hand_doing",
+      "definition": "Add and subtract (b/2)^2 to rewrite x^2+bx+c as (x+b/2)^2 plus a constant.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0021",
+      "display_name": "compute a frequency-weighted mean",
+      "family": "by_hand_doing",
+      "definition": "Sum value x frequency over all rows (or dot-plot columns) and divide by the total frequency.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0022",
+      "display_name": "compute a residual",
+      "family": "by_hand_doing",
+      "definition": "Find actual y minus the model's predicted y at the same x; its sign is decided by whether the point is above or below the model.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0023",
+      "display_name": "compute percent change from two values",
+      "family": "by_hand_doing",
+      "definition": "Compute (new - original) / original x 100 for a percent increase or decrease.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0024",
+      "display_name": "compute slope from two points",
+      "family": "by_hand_doing",
+      "definition": "Find (y2 - y1)/(x2 - x1) from two points, two table rows, or two graph points.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0025",
+      "display_name": "compute the discriminant",
+      "family": "by_hand_doing",
+      "definition": "Evaluate b^2-4ac and read its sign: positive two, zero one, negative no real solutions.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0026",
+      "display_name": "compute the mean",
+      "family": "by_hand_doing",
+      "definition": "Sum the values and divide by the number of values.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0027",
+      "display_name": "compute the range",
+      "family": "by_hand_doing",
+      "definition": "Subtract the minimum value from the maximum value.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0028",
+      "display_name": "convert between degrees and radians",
+      "family": "by_hand_doing",
+      "definition": "Multiply by pi/180 or 180/pi (or use 180 deg = pi).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0029",
+      "display_name": "convert between fraction, decimal, and percent",
+      "family": "by_hand_doing",
+      "definition": "Write p% of a quantity as (p/100) times the quantity, e.g., 60% of x as 0.6x, 7% tax as 1.07.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0030",
+      "display_name": "convert between radical and rational exponent",
+      "family": "by_hand_doing",
+      "definition": "Rewrite the n-th root of x^m as x^(m/n) and back.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0031",
+      "display_name": "convert diameter or circumference to radius",
+      "family": "by_hand_doing",
+      "definition": "Halve a diameter, or divide a circumference by 2pi, before using a radius-based formula.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0032",
+      "display_name": "convert units with a conversion factor",
+      "family": "by_hand_doing",
+      "definition": "Multiply by one or more unit fractions (e.g. 1 yard / 36 inches) arranged so unwanted units cancel; chained factors are the same action repeated.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0033",
+      "display_name": "distribute a negative sign",
+      "family": "by_hand_doing",
+      "definition": "When a parenthesized group is subtracted, change the sign of every term in it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0034",
+      "display_name": "distribute over every term",
+      "family": "by_hand_doing",
+      "definition": "Multiply the outside factor by every term inside the parentheses.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0035",
+      "display_name": "divide polynomials",
+      "family": "by_hand_doing",
+      "definition": "Divide one polynomial by another (long division or rewriting the numerator in terms of the denominator) to get quotient plus remainder over divisor. Single EE instance.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0036",
+      "display_name": "eliminate choices that go beyond the text",
+      "family": "by_hand_doing",
+      "definition": "Cross out choices that bring in topics, comparisons, or claims the text (or neither text) mentions.",
+      "method_in": {
+        "Central Ideas and Details": 0.94,
+        "Cross-Text Connections": 0.87,
+        "Inferences": 0.872,
+        "Text Structure and Purpose": 0.977
+      }
+    },
+    {
+      "id": "CL.0037",
+      "display_name": "factor a trinomial",
+      "family": "by_hand_doing",
+      "definition": "Write ax^2+bx+c as a product of two binomials (find two numbers with the right sum and product).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0038",
+      "display_name": "factor by grouping",
+      "family": "by_hand_doing",
+      "definition": "Split the middle term, factor each pair, then pull out the shared binomial.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0039",
+      "display_name": "factor out the greatest common factor",
+      "family": "by_hand_doing",
+      "definition": "Pull the largest factor shared by every term (a number, a power of a variable, or a shared binomial) outside parentheses.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0040",
+      "display_name": "find a common denominator",
+      "family": "by_hand_doing",
+      "definition": "Rewrite fractions over one shared denominator before adding or subtracting them.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0041",
+      "display_name": "find a trig value on the unit circle",
+      "family": "by_hand_doing",
+      "definition": "Read cos/sin/tan from the coordinates of the unit-circle point, using the reference angle and the quadrant's signs.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0042",
+      "display_name": "find the sentence that answers the question",
+      "family": "by_hand_doing",
+      "definition": "Locate the sentence(s) that the question's named subject points to and answer from them, not from memory.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0043",
+      "display_name": "find the vertex with x = -b/(2a)",
+      "family": "by_hand_doing",
+      "definition": "Compute the axis of symmetry from standard form.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0044",
+      "display_name": "find what both sides accept beneath their disagreement",
+      "family": "by_hand_doing",
+      "definition": "When two texts disagree about a cause or meaning, find the fact or phenomenon both still take for granted.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0045",
+      "display_name": "generalize the listed examples into one idea",
+      "family": "by_hand_doing",
+      "definition": "When the text lists several details or examples, name the single quality or point they all share.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0046",
+      "display_name": "infer a feeling from a character's words and actions",
+      "family": "by_hand_doing",
+      "definition": "Work out a character's or speaker's feeling or attitude from what they do and say rather than from a stated label.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0047",
+      "display_name": "isolate the variable",
+      "family": "by_hand_doing",
+      "definition": "Undo operations in reverse order on both sides until the wanted variable stands alone.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0048",
+      "display_name": "join two complete sentences with a period, semicolon, or comma plus and/but/so",
+      "family": "by_hand_doing",
+      "definition": "Once both sides are complete sentences, pick a legal joiner and reject the comma splice and the run-on.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0049",
+      "display_name": "label what each sentence does",
+      "family": "by_hand_doing",
+      "definition": "Give each sentence a short role label (claim, example, prior view, method, finding, problem, solution, definition) and read the labels in order.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0050",
+      "display_name": "locate the median position in a frequency table",
+      "family": "by_hand_doing",
+      "definition": "Find the ((n+1)/2)th position, then accumulate frequencies (or plot dots/grouped rows) to find which value or interval holds it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0051",
+      "display_name": "match a pronoun or determiner's number to the noun it refers to",
+      "family": "by_hand_doing",
+      "definition": "Choose singular (it, its, this) or plural (they, their, these, them) to agree with the antecedent.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0052",
+      "display_name": "match a verb to the parallel verb it pairs with",
+      "family": "by_hand_doing",
+      "definition": "When two verbs share a subject and are joined by and, put the blank in the same form and tense as its partner.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0053",
+      "display_name": "match coefficients",
+      "family": "by_hand_doing",
+      "definition": "Set coefficients of the same power equal on both sides of an identity.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0054",
+      "display_name": "match the data to the claim's groups and measure",
+      "family": "by_hand_doing",
+      "definition": "Check that an accurate data statement is about the same groups, measure and relationship the claim is about; reject accurate-but-irrelevant data.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0055",
+      "display_name": "match the function input to the given argument",
+      "family": "by_hand_doing",
+      "definition": "When f is defined on an expression such as f(3x), solve inner expression = given input first, then substitute.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0056",
+      "display_name": "match the positive or negative charge of the context",
+      "family": "by_hand_doing",
+      "definition": "Decide whether the context calls for a positive or negative word (or a mild versus harsh one) and drop choices with the wrong charge.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0057",
+      "display_name": "match the scope of the choice to the text",
+      "family": "by_hand_doing",
+      "definition": "Reject choices that cover only one detail when the question asks about the whole, or that widen the text's claim (all plants vs. one group).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0058",
+      "display_name": "match the strength of the claim",
+      "family": "by_hand_doing",
+      "definition": "Match how certain, strong, broad or hedged the answer is to what the text supports, using its qualifiers (some, may, only, all, not always; speculates vs proves).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0059",
+      "display_name": "match the verb's number to its subject",
+      "family": "by_hand_doing",
+      "definition": "Pick the singular or plural verb that agrees with the identified subject.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0060",
+      "display_name": "multiply a rate by the amount",
+      "family": "by_hand_doing",
+      "definition": "Total = rate x amount (distance = speed x time, cost = price x quantity, change in output = slope x change in input); divide to solve for the missing one.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0061",
+      "display_name": "multiply successive multipliers",
+      "family": "by_hand_doing",
+      "definition": "Chain two or more percent changes (or a percent of a percent) by multiplying their multipliers, not adding or subtracting the percents.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0062",
+      "display_name": "order the data and find the middle value",
+      "family": "by_hand_doing",
+      "definition": "Sort the list; take the middle value (odd n) or the average of the two middle values (even n).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0063",
+      "display_name": "pin down the exact claim in your own words",
+      "family": "by_hand_doing",
+      "definition": "Find the specific underlined or named claim (the 'conventional wisdom', 'what some researchers contend', a conclusion) and respond to that claim, not to the text in general.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0064",
+      "display_name": "predict the answer in your own words before reading the choices",
+      "family": "by_hand_doing",
+      "definition": "Before reading the choices, say what the blank or answer must mean, or how the two sentences relate (contrast, result, example, time), using the text's own clue.",
+      "method_in": {
+        "Transitions": 1
+      }
+    },
+    {
+      "id": "CL.0065",
+      "display_name": "punctuate a list: commas for three or more items, semicolons when items contain commas",
+      "family": "by_hand_doing",
+      "definition": "Separate items in a series with commas, upgrade to semicolons when any item has internal commas, and use no comma between just two coordinated items.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0066",
+      "display_name": "put a comma between an introductory or trailing phrase and the main clause",
+      "family": "by_hand_doing",
+      "definition": "Separate a leading subordinate clause or phrase, or a trailing participial or appositive phrase, from the main clause with a single comma.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0067",
+      "display_name": "put the noun the opening modifier describes right after it",
+      "family": "by_hand_doing",
+      "definition": "Identify who or what the introductory phrase describes and choose the version where that noun immediately follows the comma.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0068",
+      "display_name": "put the part over the whole",
+      "family": "by_hand_doing",
+      "definition": "Write the count or amount asked about over the count or amount of the whole reference group (a probability, a fraction, or x100 for 'what percent of').",
+      "method_in": {
+        "Probability and Conditional Probability": 0.86
+      }
+    },
+    {
+      "id": "CL.0069",
+      "display_name": "rationalize the denominator",
+      "family": "by_hand_doing",
+      "definition": "Multiply by a conjugate (e.g., (2 - sqrt2)/(2 - sqrt2)) to clear a radical from a denominator.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0070",
+      "display_name": "read a box plot's five-number summary",
+      "family": "by_hand_doing",
+      "definition": "Read minimum, Q1, median, Q3 and maximum from the whiskers and box lines of a box plot.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0071",
+      "display_name": "read a prediction off the model at a given x",
+      "family": "by_hand_doing",
+      "definition": "Go to the given x on the line/curve of best fit (not a data point) and read the model's y-value.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0072",
+      "display_name": "read a value from a table or graph",
+      "family": "by_hand_doing",
+      "definition": "Read the y-value at a given x (or an intercept, vertex, or maximum) off a graph.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0073",
+      "display_name": "read center and radius from standard form",
+      "family": "by_hand_doing",
+      "definition": "Read (h, k) with sign changes and r = sqrt(right side) from (x-h)^2 + (y-k)^2 = r^2, or write the equation from a center and radius.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0074",
+      "display_name": "read the whole sentence after the blank before deciding",
+      "family": "by_hand_doing",
+      "definition": "Read to the end of the sentence containing the blank, because a later clause (a 'but', 'even in', 'yet') determines the relationship.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0075",
+      "display_name": "reduce a fraction or ratio to lowest terms",
+      "family": "by_hand_doing",
+      "definition": "Divide both parts of a fraction or ratio by their greatest common factor (7:28 -> 1:4, 12/48 -> 1/4).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0076",
+      "display_name": "reduce an angle by full rotations",
+      "family": "by_hand_doing",
+      "definition": "Subtract multiples of 2pi (360 deg) to get a coterminal angle between 0 and 2pi.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0077",
+      "display_name": "reject extraneous solutions",
+      "family": "by_hand_doing",
+      "definition": "Substitute candidate solutions back into the original equation and discard any that fail or make a denominator zero.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0078",
+      "display_name": "rescale the exponent for a different time unit",
+      "family": "by_hand_doing",
+      "definition": "Rewrite the exponent when the change happens every k units or the input unit changes (t/k, 12t months, q/4 quarters).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0079",
+      "display_name": "rewrite a negative exponent as a reciprocal",
+      "family": "by_hand_doing",
+      "definition": "Rewrite x^-n as 1/x^n (and 1/x^n as x^-n).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0080",
+      "display_name": "rewrite in slope-intercept form",
+      "family": "by_hand_doing",
+      "definition": "Solve a standard-form (Ax + By = C) or rearranged linear equation for y to expose slope and intercept.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0081",
+      "display_name": "round to the whole number the context allows",
+      "family": "by_hand_doing",
+      "definition": "After solving an inequality, take the greatest/least whole number that still satisfies it (round down for 'at most', up for 'at least').",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0082",
+      "display_name": "rule out an alternative explanation",
+      "family": "by_hand_doing",
+      "definition": "Use a stated fact to eliminate a competing explanation, leaving the conclusion the text supports.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0083",
+      "display_name": "scale both quantities by the same factor",
+      "family": "by_hand_doing",
+      "definition": "When one quantity in a proportional relationship is multiplied by k, multiply the other by k (multiplicatively, not additively), without solving for individual values.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0084",
+      "display_name": "set a variable to zero to find an intercept or initial value",
+      "family": "by_hand_doing",
+      "definition": "Evaluate at x = 0 to get the y-intercept or starting amount.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0085",
+      "display_name": "set off removable information with a matching pair of commas, dashes, or parentheses",
+      "family": "by_hand_doing",
+      "definition": "Find the opening mark of an interruption already in the text (or supply both) and close it with the same mark.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0086",
+      "display_name": "set up and solve a proportion",
+      "family": "by_hand_doing",
+      "definition": "Write two equal ratios of corresponding quantities (similar-figure sides, arc to circumference, part angle to 360 deg or 2pi) and cross-multiply.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0087",
+      "display_name": "shift a graph by adjusting its equation",
+      "family": "by_hand_doing",
+      "definition": "Replace x with x-h to shift right h, add k to shift up k, and simplify.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0088",
+      "display_name": "simplify a radical",
+      "family": "by_hand_doing",
+      "definition": "Pull perfect-square factors out of a square root (sqrt(1,184) = 4sqrt(74)) or multiply radicals.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0089",
+      "display_name": "solve for the constant",
+      "family": "by_hand_doing",
+      "definition": "Solve the equation that the matched coefficients produce for the unknown constant.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0090",
+      "display_name": "split an absolute value equation into two cases",
+      "family": "by_hand_doing",
+      "definition": "From |A| = k (k >= 0), solve A = k and A = -k.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0091",
+      "display_name": "square both sides",
+      "family": "by_hand_doing",
+      "definition": "Isolate the radical, then square both sides to remove it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0092",
+      "display_name": "square or cube a conversion factor for area or volume units",
+      "family": "by_hand_doing",
+      "definition": "Convert squared/cubed units (sq yd, m^3, s^2) by squaring or cubing the linear factor before applying it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0093",
+      "display_name": "state what must be true for both facts to hold",
+      "family": "by_hand_doing",
+      "definition": "When two pieces of information are in tension, state the condition that lets both be true.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0094",
+      "display_name": "substitute a value and evaluate",
+      "family": "by_hand_doing",
+      "definition": "Substitute the input for x in the rule and simplify using order of operations.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0095",
+      "display_name": "substitute an expression",
+      "family": "by_hand_doing",
+      "definition": "Replace a variable or a group with the expression it is given to equal.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0096",
+      "display_name": "sum the face areas",
+      "family": "by_hand_doing",
+      "definition": "Find surface area by adding the areas of every face (pairs of congruent faces on a prism; 5 faces for an open box; overlap removed when solids are glued).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0097",
+      "display_name": "sum up the text's main point in one sentence",
+      "family": "by_hand_doing",
+      "definition": "State in one sentence what the whole text (or each text) is mainly saying before judging purpose or comparing texts.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0098",
+      "display_name": "take a percent of a quantity",
+      "family": "by_hand_doing",
+      "definition": "Compute p% of a whole as (p/100) x whole.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0099",
+      "display_name": "take the square root of both sides",
+      "family": "by_hand_doing",
+      "definition": "From (expression)^2 = k (or ^3), take the root of both sides: keep both + and - for an equation; keep only the positive root when the quantity is a length.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0100",
+      "display_name": "tell a possessive pronoun from a contraction (its/it's, their/they're)",
+      "family": "by_hand_doing",
+      "definition": "Use its or their for possession and it's or they're only where \"it is\" or \"they are\" fits.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0101",
+      "display_name": "test each answer choice",
+      "family": "by_hand_doing",
+      "definition": "Plug each choice into the condition and keep the one that satisfies it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0102",
+      "display_name": "translate a circle by moving its center",
+      "family": "by_hand_doing",
+      "definition": "Shift a circle by adding the shift to its center's coordinates (radius unchanged), then rewrite its equation.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0103",
+      "display_name": "translate figurative language into plain meaning",
+      "family": "by_hand_doing",
+      "definition": "Turn a metaphor, simile, or personification into a plain statement of what it shows about a character, feeling, or scene.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0104",
+      "display_name": "translate words into an equation or inequality",
+      "family": "by_hand_doing",
+      "definition": "Name the unknown and write the relationship described in words as an equation or function.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0105",
+      "display_name": "treat a ratio as side lengths with a common multiplier",
+      "family": "by_hand_doing",
+      "definition": "Turn a given trig ratio such as cos A = 3/5 into sides 3n and 5n, find the third side, then scale to the given length.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0106",
+      "display_name": "turn a percent change into a multiplier",
+      "family": "by_hand_doing",
+      "definition": "Turn 'p% longer/increased' into multiplication by (1 + p/100) before substituting.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0107",
+      "display_name": "undo a percent change by dividing by the multiplier",
+      "family": "by_hand_doing",
+      "definition": "Recover the original value from a changed value by dividing by (1 +/- p/100).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0108",
+      "display_name": "use a colon only after a complete sentence to introduce an explanation, example, or list",
+      "family": "by_hand_doing",
+      "definition": "Place a colon only where the words before it form a complete sentence and the words after it explain, specify, or list.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0109",
+      "display_name": "use an apostrophe only to show possession, placed for a singular or plural owner",
+      "family": "by_hand_doing",
+      "definition": "Ask \"does something belong to it?\" and \"is there more than one?\"; add 's for one owner, s' for plural owners, and no apostrophe for a plain plural.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0110",
+      "display_name": "use dates or time words to set the order of events",
+      "family": "by_hand_doing",
+      "definition": "Line up dates and time words (already, in 1928, as decades passed) to decide whether the new event is earlier, later, repeated, or final.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0111",
+      "display_name": "use interval endpoints to bound a statistic",
+      "family": "by_hand_doing",
+      "definition": "With grouped data (histogram bins, table ranges, tanks), use each interval's least/greatest possible value to bound a mean or to place the median.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0112",
+      "display_name": "use supplementary angles",
+      "family": "by_hand_doing",
+      "definition": "Use that angles forming a straight line (linear pair, angles on a line) sum to 180 deg.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0113",
+      "display_name": "use the distance formula",
+      "family": "by_hand_doing",
+      "definition": "Compute the length between two coordinate points with sqrt((x2-x1)^2 + (y2-y1)^2).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0114",
+      "display_name": "use the exterior angle theorem",
+      "family": "by_hand_doing",
+      "definition": "Set an exterior angle of a triangle equal to the sum of the two remote interior angles.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0115",
+      "display_name": "use the midpoint formula",
+      "family": "by_hand_doing",
+      "definition": "Use that a center/midpoint is the average of the endpoint coordinates (or that equal distances locate the center) to find a missing point.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0116",
+      "display_name": "use the negative-reciprocal slope for a perpendicular line",
+      "family": "by_hand_doing",
+      "definition": "The slope of a perpendicular line is -1/m (horizontal vs vertical when m is 0 or undefined).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0117",
+      "display_name": "use the past perfect (had + verb) for the earlier of two past events",
+      "family": "by_hand_doing",
+      "definition": "When one past action finishes before another past action, put the earlier one in had + past participle.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0118",
+      "display_name": "use the Pythagorean theorem",
+      "family": "by_hand_doing",
+      "definition": "Write a^2 + b^2 = c^2 with the hypotenuse as c and solve for the missing side.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0119",
+      "display_name": "use the reference-sheet formula",
+      "family": "by_hand_doing",
+      "definition": "Substitute the given dimensions into the standard area, perimeter, circumference, or volume formula and evaluate.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0120",
+      "display_name": "use the sum and product of the solutions",
+      "family": "by_hand_doing",
+      "definition": "For ax^2+bx+c=0 use sum = -b/a and product = c/a (or build the equation from its roots) without finding each root.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0121",
+      "display_name": "use the triangle angle sum",
+      "family": "by_hand_doing",
+      "definition": "Use that the interior angles of a triangle sum to 180 deg (the two acute angles of a right triangle sum to 90 deg).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0122",
+      "display_name": "use the zero product property",
+      "family": "by_hand_doing",
+      "definition": "Set each factor of a product equal to zero and solve each.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0123",
+      "display_name": "use total = mean x count",
+      "family": "by_hand_doing",
+      "definition": "Convert a mean into a sum (sum = mean x n) to find a missing/removed value, a combined mean, or an unknown in a list.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0124",
+      "display_name": "work backward from a part to the whole",
+      "family": "by_hand_doing",
+      "definition": "Given a part and the percent it represents, solve (p/100) x whole = part for the whole.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0125",
+      "display_name": "work out what result the claim predicts",
+      "family": "by_hand_doing",
+      "definition": "Ask 'if this claim were true, what would we observe?' and pick the evidence that shows that (or its opposite, for weaken).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0126",
+      "display_name": "write a trig ratio as opposite, adjacent, hypotenuse",
+      "family": "by_hand_doing",
+      "definition": "Read sin = opp/hyp, cos = adj/hyp, tan = opp/adj for a named acute angle, or use one to find a side.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0127",
+      "display_name": "write an exponential model a(1 +/- r)^t",
+      "family": "by_hand_doing",
+      "definition": "Use the initial amount as a and 1 + r (growth) or 1 - r (decay) as the base.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0128",
+      "display_name": "write y = mx + b from slope and a point",
+      "family": "by_hand_doing",
+      "definition": "Put the slope in for m, then use the y-intercept or substitute a known point to find b.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0129",
+      "display_name": "check whether each side of the punctuation is a complete sentence",
+      "family": "by_hand_recognizing",
+      "definition": "Test the words before and after the blank for a subject and a finite verb (and no subordinator) to decide whether it is a clause seam.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0130",
+      "display_name": "check whether the clause still needs its main verb",
+      "family": "by_hand_recognizing",
+      "definition": "Decide whether the clause already has a finite verb: if not, the blank must be conjugated; if so, the blank is a to-verb or -ing/past-participle phrase.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0131",
+      "display_name": "check whether the sample was random",
+      "family": "by_hand_recognizing",
+      "definition": "Ask whether the sample was randomly drawn from the whole target population; a convenience, self-selected, or one-subgroup sample is biased, whatever its size.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0132",
+      "display_name": "classify growth as linear or exponential",
+      "family": "by_hand_recognizing",
+      "definition": "Constant amount of change per unit -> linear; constant percent/factor of change per unit -> exponential; direction gives increasing vs decreasing.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0133",
+      "display_name": "compare coefficients and constants to count solutions",
+      "family": "by_hand_recognizing",
+      "definition": "Equal x-coefficients (proportional coefficients for a system) with unequal constants give no solution; fully equivalent sides/equations give infinitely many; otherwise exactly one.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0134",
+      "display_name": "compare spread visually",
+      "family": "by_hand_recognizing",
+      "definition": "Judge standard deviation from how many values sit far from vs. close to the center (shape of histogram/dot plot, or a reported SD).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0135",
+      "display_name": "decide whether the added information is essential or removable",
+      "family": "by_hand_recognizing",
+      "definition": "Delete the phrase and reread: if the sentence still identifies the same thing and stays grammatical, the phrase is removable (punctuate it); if not, it is essential (no punctuation).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0136",
+      "display_name": "decompose a figure into simpler shapes",
+      "family": "by_hand_recognizing",
+      "definition": "See that a figure splits into (or is boxed by) triangles/rectangles whose measures are easy, e.g., a square cut by its diagonals, a triangle enclosed in a rectangle, an extra segment drawn to create a triangle.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0137",
+      "display_name": "describe the trend of a scatterplot",
+      "family": "by_hand_recognizing",
+      "definition": "Identify whether the data increase or decrease and whether the trend is straight or curved.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0138",
+      "display_name": "distinguish 'p% of' from 'p% more/less than'",
+      "family": "by_hand_recognizing",
+      "definition": "Recognize that 'p% of x' is (p/100)x while 'p% greater than x' is (1 + p/100)x and 'p% less than x' is (1 - p/100)x.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0139",
+      "display_name": "distinguish a data value from its frequency",
+      "family": "by_hand_recognizing",
+      "definition": "In a frequency table/bar graph/dot plot, keep apart the value (horizontal axis or 'Value' column) and how many times it occurs (bar height or 'Frequency').",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0140",
+      "display_name": "find the cause-and-effect signal word",
+      "family": "by_hand_recognizing",
+      "definition": "Spot because, since, so, thus, therefore, consequently, due to, as a result (including the connector right before the blank) and use it to know whether a cause, effect or conclusion is needed.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0141",
+      "display_name": "find the claim the new sentence actually connects to",
+      "family": "by_hand_recognizing",
+      "definition": "Identify which earlier sentence or clause the new one responds to; it may be the second sentence, a clause after a semicolon, or a claim rather than the most recent fact.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0142",
+      "display_name": "find the clue that restates the blank",
+      "family": "by_hand_recognizing",
+      "definition": "Locate the phrase (often after a colon, dash, 'that is', or in the next sentence) that says the same thing as the blank in other words.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0143",
+      "display_name": "find the contrast signal word",
+      "family": "by_hand_recognizing",
+      "definition": "Spot a word or phrase such as but, however, although, unlike, instead, rather, on the other hand, despite, whereas that tells you the two parts point in opposite directions.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0144",
+      "display_name": "find the true subject by skipping the interrupting phrase",
+      "family": "by_hand_recognizing",
+      "definition": "Bracket off modifiers or interrupting phrases to find the head noun of the subject (and where it ends), including inverted or delayed subjects.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0145",
+      "display_name": "follow a comparison word to the term being compared",
+      "family": "by_hand_recognizing",
+      "definition": "Use comparatively, less, more, as ... as to find the other thing being compared and make the answer its opposite or match.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0146",
+      "display_name": "identify the base quantity (the 'of' or 'per' denominator)",
+      "family": "by_hand_recognizing",
+      "definition": "Decide which quantity is the whole/original/'per' unit a percent or rate refers to (original vs new value, row total vs grand total, land area vs total area).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0147",
+      "display_name": "identify the hypotenuse",
+      "family": "by_hand_recognizing",
+      "definition": "Take the side opposite the right angle (equivalently the longest side) as the hypotenuse, and so locate the right angle.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0148",
+      "display_name": "identify the transversal angle pair",
+      "family": "by_hand_recognizing",
+      "definition": "Name the pair formed by a transversal across parallel lines (corresponding / alternate interior equal; same-side interior or exterior supplementary); every angle is one of only two measures, acute or obtuse.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0149",
+      "display_name": "identify which clause a transition word belongs to",
+      "family": "by_hand_recognizing",
+      "definition": "Decide from the logic of the passage whether a conjunctive adverb (however, though, rather, for example) ends the first clause or opens the second, and put the semicolon or period on the correct side of it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0150",
+      "display_name": "interpret a function statement f(a) = b",
+      "family": "by_hand_recognizing",
+      "definition": "Read f(a) = b as \"at input a, the output is b\", in the units of the context.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0151",
+      "display_name": "judge what the audience already knows",
+      "family": "by_hand_recognizing",
+      "definition": "Decide whether the audience needs a term or background explained (unfamiliar) or would find it redundant (already familiar), and keep or cut it accordingly.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0152",
+      "display_name": "keep subject, verb, object, and preposition together with no punctuation",
+      "family": "by_hand_recognizing",
+      "definition": "Recognize that the blank splits two core sentence parts that are never separated by punctuation.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0153",
+      "display_name": "locate the matching cell or total in a table",
+      "family": "by_hand_recognizing",
+      "definition": "Find the row/column (or total) whose labels match the wording of the question.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0154",
+      "display_name": "match a number in the model to its meaning in context",
+      "family": "by_hand_recognizing",
+      "definition": "Match a constant, coefficient, base, intercept or vertex of a model to what it means (initial value, rate, time, maximum) in the context's units.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0155",
+      "display_name": "match corresponding parts from the vertex order",
+      "family": "by_hand_recognizing",
+      "definition": "Use the stated correspondence (A to D, B to E...) to pair angles and sides of congruent/similar figures.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0156",
+      "display_name": "match equation parameters to graph features",
+      "family": "by_hand_recognizing",
+      "definition": "Use the sign/size of slope and y-intercept (or the sign of the leading coefficient and the intercept/vertex of a quadratic, or b < 1 vs b > 1 for an exponential) to pick the model equation that fits the graph.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0157",
+      "display_name": "match the conclusion to the population sampled",
+      "family": "by_hand_recognizing",
+      "definition": "Generalize only to the group the random sample was drawn from - not a larger group, not just the sample itself, not a subset of it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0158",
+      "display_name": "merge categories that together meet the condition",
+      "family": "by_hand_recognizing",
+      "definition": "Notice that the condition (e.g. 'at least 10', 'neither blue nor yellow') covers several rows/columns/categories and combine them.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0159",
+      "display_name": "pick the equivalent form that displays a value",
+      "family": "by_hand_recognizing",
+      "definition": "Choose the rewritten form whose coefficient, constant, or base equals the asked value (f(0), f(1), maximum, y-intercept).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0160",
+      "display_name": "read slope and intercept from the equation",
+      "family": "by_hand_recognizing",
+      "definition": "In y = mx + b (or f(x) = b + mx) see m as the slope/rate and b as the y-intercept without computation.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0161",
+      "display_name": "read the title, axes, key, and scale before the data",
+      "family": "by_hand_recognizing",
+      "definition": "Notice that an axis does not start at 0, has non-unit gridlines, or is labeled in a shifted unit (years since 1940, days after Jan 11) before reading values or slope.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0162",
+      "display_name": "read the vertex from vertex form",
+      "family": "by_hand_recognizing",
+      "definition": "From a(x-h)^2+k, the vertex is (h, k) and k is the max (a<0) or min (a>0).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0163",
+      "display_name": "read the zeros from factored form",
+      "family": "by_hand_recognizing",
+      "definition": "From a(x-p)(x-q)..., the zeros are p, q, ... (repeated factors count once as x-intercepts).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0164",
+      "display_name": "recognize a difference of squares",
+      "family": "by_hand_recognizing",
+      "definition": "See that a^2 - b^2 (including radicals or squared groups) factors as (a-b)(a+b).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0165",
+      "display_name": "recognize a perfect-square trinomial",
+      "family": "by_hand_recognizing",
+      "definition": "See that a^2 + 2ab + b^2 is (a+b)^2.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0166",
+      "display_name": "recognize a proportional relationship",
+      "family": "by_hand_recognizing",
+      "definition": "A line through the origin (or a table with constant ratio y/x) means y = kx with b = 0.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0167",
+      "display_name": "recognize a special right triangle",
+      "family": "by_hand_recognizing",
+      "definition": "Identify a 45-45-90 (legs x, hypotenuse x sqrt2) or 30-60-90 (x, x sqrt3, 2x) triangle from its angles, equal legs, a tangent of sqrt3, or an equilateral triangle's altitude.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0168",
+      "display_name": "recognize a square cannot equal a negative",
+      "family": "by_hand_recognizing",
+      "definition": "See that a squared quantity is never negative, so (expression)^2 = negative has no real solution.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0169",
+      "display_name": "recognize all radii are equal",
+      "family": "by_hand_recognizing",
+      "definition": "Use that segments from the center to points on a circle are radii and so have the same length.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0170",
+      "display_name": "recognize an isosceles triangle",
+      "family": "by_hand_recognizing",
+      "definition": "Use equal sides (stated, or two radii) to conclude equal base angles, or equal angles to conclude equal sides.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0171",
+      "display_name": "recognize equal angles have equal trig ratios",
+      "family": "by_hand_recognizing",
+      "definition": "Use that corresponding angles of similar right triangles (or equal angles anywhere) have the same sine, cosine and tangent.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0172",
+      "display_name": "recognize parallel lines have equal slopes",
+      "family": "by_hand_recognizing",
+      "definition": "A parallel line shares the slope; only the intercept may change.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0173",
+      "display_name": "recognize similar triangles",
+      "family": "by_hand_recognizing",
+      "definition": "Find two pairs of equal angles (shared angle, right angles, vertical angles, parallel-line angles) to conclude triangles are similar (AA), including nested and 'bow-tie' figures and the altitude to a hypotenuse.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0174",
+      "display_name": "recognize sin of an angle equals cos of its complement",
+      "family": "by_hand_recognizing",
+      "definition": "Use sin x = cos(90 deg - x): the two acute angles of a right triangle, or two angles with sin of one equal to cos of the other, are complementary.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0175",
+      "display_name": "recognize that a constant shift preserves spread",
+      "family": "by_hand_recognizing",
+      "definition": "Adding the same number to every value shifts center measures by that number but leaves range and standard deviation unchanged.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0176",
+      "display_name": "recognize the shaded side of a boundary line",
+      "family": "by_hand_recognizing",
+      "definition": "Match a shaded half-plane to the inequality direction (above: y > ..., below: y < ...), with solid vs dashed boundary.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0177",
+      "display_name": "recognize the solution as the intersection point",
+      "family": "by_hand_recognizing",
+      "definition": "Read the coordinates (or count) where two given graphs cross.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0178",
+      "display_name": "recognize the two acute-angle tangents are reciprocals",
+      "family": "by_hand_recognizing",
+      "definition": "Use tan of one acute angle = 1 / tan of the other acute angle in a right triangle.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0179",
+      "display_name": "recognize vertical angles",
+      "family": "by_hand_recognizing",
+      "definition": "See that angles opposite each other at an intersection are equal.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0180",
+      "display_name": "recognize when evidence can't settle the question",
+      "family": "by_hand_recognizing",
+      "definition": "Notice that the evidence leaves a question open (alternative reading, undated, no clear evidence) so the right conclusion is a limit, not a verdict.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0181",
+      "display_name": "restrict to the given condition's row or column",
+      "family": "by_hand_recognizing",
+      "definition": "Notice a 'given that' / 'of the ...' / 'if the one chosen is ...' condition and use that subgroup's total, not the grand total, as the denominator.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0182",
+      "display_name": "scale lengths by k, areas by k^2, volumes by k^3",
+      "family": "by_hand_recognizing",
+      "definition": "Recognize that when every length is multiplied by k (similar figures or a stated dimension change), perimeter scales by k, area by k^2 and volume by k^3; or run it backward (area ratio -> k by square root).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0183",
+      "display_name": "see that extreme values pull the mean, not the median",
+      "family": "by_hand_recognizing",
+      "definition": "An extreme value or a long tail on one side pulls the mean (and range/SD) toward it but leaves the median unchanged or barely changed.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0184",
+      "display_name": "see the right triangle inside the figure",
+      "family": "by_hand_recognizing",
+      "definition": "Notice a right triangle hidden in another figure: rectangle diagonal, cone radius/height/slant height, radius and tangent, two radii with a right central angle, equilateral triangle altitude, inscribed polygon.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0185",
+      "display_name": "set aside information the question doesn't need",
+      "family": "by_hand_recognizing",
+      "definition": "Notice that a table or number in the stem is not needed for what is asked and ignore it.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0186",
+      "display_name": "spot a concession before the main claim",
+      "family": "by_hand_recognizing",
+      "definition": "Notice when a text grants a point (acknowledging, while, although, certainly, nevertheless) before making its real claim, and separate what is granted from what is argued.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0187",
+      "display_name": "spot a word used in an uncommon sense",
+      "family": "by_hand_recognizing",
+      "definition": "Notice that a familiar word is used in a less common meaning here and reject choices that give its everyday meaning.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0188",
+      "display_name": "spot comparison wording (both, whereas, while, unlike)",
+      "family": "by_hand_recognizing",
+      "definition": "Recognize whether a choice's wording expresses similarity ('both', 'like', 'also') or difference ('whereas', 'while', 'unlike', 'even though') and match it to what the goal asks.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0189",
+      "display_name": "spot that the target expression can be reached without solving",
+      "family": "by_hand_recognizing",
+      "definition": "Notice the asked-for expression (3x + 8, x - 7, 39x, x + y, 2x - 1) is a multiple, shift, or sum of what the given equation(s) already contain.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0190",
+      "display_name": "spot the turn from a common view to the real point",
+      "family": "by_hand_recognizing",
+      "definition": "Notice a text that gives a common/long-held view or background and then turns (often with but, however, yet) to the point the author or new finding makes; the old view is not the answer.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0191",
+      "display_name": "take an unusual transition at its literal meaning",
+      "family": "by_hand_recognizing",
+      "definition": "When the keyed-looking word is not a standard logic connector (fittingly, there, increasingly, again and again, in many cases), read its literal meaning and check it against the content.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0192",
+      "display_name": "tell a direct question from a reported question",
+      "family": "by_hand_recognizing",
+      "definition": "Check whether the sentence asks the question itself (inverted order plus question mark) or reports it inside a statement (subject-verb order plus period).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0193",
+      "display_name": "tell a general claim from a specific example",
+      "family": "by_hand_recognizing",
+      "definition": "Distinguish a broad statement about a category from a specific instance, so a 'generalization', 'definition' or 'explanation and example' goal gets the right level (or both levels).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0194",
+      "display_name": "tell a population mean apart from individual values",
+      "family": "by_hand_recognizing",
+      "definition": "Recognize that an interval for a mean says nothing about where every (or most) individual value lies.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0195",
+      "display_name": "tell an example from a restatement or a specification",
+      "family": "by_hand_recognizing",
+      "definition": "Distinguish an instance of a broader claim (for example) from the same idea in other words (in other words, that is) and from more precise detail of the same thing (specifically, to be exact).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0196",
+      "display_name": "tell describing from arguing",
+      "family": "by_hand_recognizing",
+      "definition": "Decide whether the author is informing/describing or arguing/recommending, and reject purpose verbs (argue, criticize, urge) the text does not do.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0197",
+      "display_name": "tell evidence from interpretation",
+      "family": "by_hand_recognizing",
+      "definition": "Separate what was observed or measured from what someone concluded from it, and from models or assumptions, so you can see what a critic is targeting.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0198",
+      "display_name": "tell growth from decay by the base",
+      "family": "by_hand_recognizing",
+      "definition": "A base above 1 means growth, between 0 and 1 means decay; a decreasing exponential has no minimum on an open domain.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0199",
+      "display_name": "trace a pronoun or 'this' back to what it refers to",
+      "family": "by_hand_recognizing",
+      "definition": "Find the noun or earlier idea a pronoun, determiner or pointing word (it, they, this, such, these) stands for, even with other nouns in between.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0200",
+      "display_name": "track whose view each sentence presents",
+      "family": "by_hand_recognizing",
+      "definition": "Keep straight who holds each view (the author, a named researcher, critics, 'some scholars', a common assumption) so an answer does not credit a view to the wrong person.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0201",
+      "display_name": "translate 'at least / at most' into an inequality symbol",
+      "family": "by_hand_recognizing",
+      "definition": "Map at least / minimum to >=, at most / no more than / maximum to <=, between to a compound inequality.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0202",
+      "display_name": "treat a random sample's rate as the population's rate",
+      "family": "by_hand_recognizing",
+      "definition": "Recognize that a random (representative) sample's proportion or mean is the best estimate for the population, so it can be scaled up.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0203",
+      "display_name": "treat a repeated expression as one unit",
+      "family": "by_hand_recognizing",
+      "definition": "Notice a repeated group (x^2-x, x-7, x^2) and treat it as a single variable.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0204",
+      "display_name": "treat a sample statistic as an estimate, not an exact value",
+      "family": "by_hand_recognizing",
+      "definition": "Reject statements that the population value (or another sample's value) is exactly, or certainly, the sample value; keep 'best estimate' / 'plausible'.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0205",
+      "display_name": "treat an arc as a fraction of the circle",
+      "family": "by_hand_recognizing",
+      "definition": "See arc length / circumference = central angle / 360 deg (or / 2pi); arcs together make the full circle; arc measure equals central angle.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0206",
+      "display_name": "turn the goal into a checklist of required parts",
+      "family": "by_hand_recognizing",
+      "definition": "Split the goal into every part it demands (both items, 'study and its findings', 'duration and purpose', 'generalization and support', 'explanation and example', a quotation) and require all of them in the answer.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0207",
+      "display_name": "use symmetry to locate the mean",
+      "family": "by_hand_recognizing",
+      "definition": "In a symmetric distribution the mean equals the median, at the center of symmetry.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0208",
+      "display_name": "use tangent facts",
+      "family": "by_hand_recognizing",
+      "definition": "Use that a tangent is perpendicular to the radius at the point of tangency (slopes are negative reciprocals; tangent to an axis means r = distance from center to that axis) and that two tangent segments from one outside point are equal.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0209",
+      "display_name": "use the complement",
+      "family": "by_hand_recognizing",
+      "definition": "Find the share not in a category as 100% minus the given percent(s).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0210",
+      "display_name": "use the symmetry of a parabola",
+      "family": "by_hand_recognizing",
+      "definition": "The vertex x-value is the average of two inputs with equal outputs (e.g. the two zeros).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0211",
+      "display_name": "use time clues in the text to choose the verb tense",
+      "family": "by_hand_recognizing",
+      "definition": "Locate the date, sequence, or surrounding verb that fixes when the action happens, and choose the tense that fits that time frame.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0212",
+      "display_name": "Desmos: graph a circle and read its center and radius",
+      "family": "desmos",
+      "definition": "Type the circle equation in any form; click the top and bottom points and use midpoint(...) for the center and distance(...)/2 for the radius.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0213",
+      "display_name": "Desmos: convert a decimal result to a fraction",
+      "family": "desmos",
+      "definition": "Answer-form utility for any Math skill: convert a decimal Desmos result to a fraction with the fraction button; never answers a question alone.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0214",
+      "display_name": "Desmos: rename the variable to x before graphing",
+      "family": "desmos",
+      "definition": "Utility move: rename the equation's letter (t, n, p, w) to x before graphing; it never answers a question alone.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0215",
+      "display_name": "Desmos: graph and compare equivalent forms",
+      "family": "desmos",
+      "definition": "Graph the original and each choice; the equivalent one overlaps exactly (toggle it to see the overlap).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0216",
+      "display_name": "Desmos: define f(x) and evaluate it",
+      "family": "desmos",
+      "definition": "Define f(x) = ..., then evaluate f(3) or a combination; a table of inputs, or the same test input in the expression and each choice, is the same move.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0217",
+      "display_name": "Desmos: graph an inequality and test the shaded region",
+      "family": "desmos",
+      "definition": "Graph the inequality or system; a point is a solution if it is inside the shaded region (the overlap for a system), not on a dashed edge.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0218",
+      "display_name": "Desmos: fit a model through points by regression",
+      "family": "desmos",
+      "definition": "Enter the points in a table and fit y_1 ~ m x_1 + b (or a quadratic or exponential) to read the parameters (r^2 = 1 for an exact fit).",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0219",
+      "display_name": "Desmos: graph and click the vertex (max or min)",
+      "family": "desmos",
+      "definition": "Graph y = the expression and click the vertex (x or y as asked); on a restricted domain also evaluate the endpoints.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0220",
+      "display_name": "Desmos: graph each side and read the crossing x",
+      "family": "desmos",
+      "definition": "Type the equation as written (a vertical line) or each side as y = ..., and read the x of the line or crossing, never its y.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0221",
+      "display_name": "Desmos: test choices as parameterized points on a slider",
+      "family": "desmos",
+      "definition": "Enter each choice as a point in a parameter (r) with a slider; the right one stays on the line as r moves.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0222",
+      "display_name": "Desmos: compute a percent or multiplier as typed arithmetic",
+      "family": "desmos",
+      "definition": "Type a percent, a multiplier (1 + 27/100) or a percent change ((92 - 45)/45*100) and read the value; the same typed-arithmetic move covers a chained unit-conversion computation.",
+      "method_in": {
+        "Percentages": 0.934
+      }
+    },
+    {
+      "id": "CL.0223",
+      "display_name": "Desmos: test whether a point lies on a graph",
+      "family": "desmos",
+      "definition": "Type the point and see whether it sits on the graphed circle or line.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0224",
+      "display_name": "Desmos: compute list statistics (mean, median)",
+      "family": "desmos",
+      "definition": "Type mean(...), median(...) of the data; for a missing value, graph mean or median of a list containing x.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0225",
+      "display_name": "Desmos: graph a system and click the intersection",
+      "family": "desmos",
+      "definition": "Graph both equations and click the crossing for (x, y); parallel lines mean no solution, the same line infinitely many.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0226",
+      "display_name": "Desmos: define a translated function and read its feature",
+      "family": "desmos",
+      "definition": "Define f, then g(x) = f(x + h) + k, hide f, and read the feature of g asked for.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0227",
+      "display_name": "Desmos: evaluate a trig value in degree mode",
+      "family": "desmos",
+      "definition": "Type sin(56) (or cos, tan) after switching the settings to degrees for a degree question; read the value.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0228",
+      "display_name": "Desmos: solve for an unknown constant with a slider",
+      "family": "desmos",
+      "definition": "Put the unknown constant on a slider (widen its bounds) or type each choice's value, until the condition holds.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0229",
+      "display_name": "Desmos: find exact constants by regression",
+      "family": "desmos",
+      "definition": "Regression between two expressions, [left] ~ [right] with subscripted variables and conditions, to read exact constants.",
+      "method_in": {}
+    },
+    {
+      "id": "CL.0230",
+      "display_name": "Desmos: graph and click the zeros",
+      "family": "desmos",
+      "definition": "Graph y = the expression (or left side minus right side) and click the gray points on the x-axis.",
+      "method_in": {}
+    }
+  ]
+}
