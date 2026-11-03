@@ -184,6 +184,10 @@ jobs:
       - name: Section vocabulary self-test (proves each mutation turns it red)
         run: bash scripts/ci/section-vocabulary-gate.mutations.sh
 
+      # The public repo holds no QOTD breakdown script, voice or export (Karl, 2026-11-02/03).
+      - name: Breakdown content gate self-test (proves each plant turns it red)
+        run: bash scripts/ci/breakdown-content-gate.mutations.sh
+
       - name: Fixture canonicality self-test (proves each mutation turns it red)
         run: bash scripts/ci/test-fixture-canonicality-gate.selftest.sh
 
@@ -495,6 +499,14 @@ jobs:
       # one a day, RLS and grants, metric bounds; hook rules H1-H5, 30-60 s, safe area, blank
       # paper, audio mix, licence file, approval, post_on today, once, title, caption, plan
       # rotation, stale voice, Slack order). Each must turn its named check red.
+      # SCL-270 (Karl's ruling 2026-11-02): the final-mix plants (F1-F8) run a real ffmpeg round
+      # trip; the harness fails its baseline without ffmpeg rather than letting them skip.
+      - name: Install FFmpeg (the final-mix plants)
+        if: matrix.group == 'qotd'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg
+
       - name: Worked-example mutations (planted defects must fail)
         if: matrix.group == 'qotd'
         env:
@@ -528,6 +540,20 @@ jobs:
       - name: Social posts mutations (planted defects must fail)
         if: matrix.group == 'qotd'
         run: bash scripts/ci/social-posts.mutations.sh
+
+      # QOTD breakdown pilot (Karl's brief 2026-11-02, Part C; SCL-266, as ruled on #1398 the same
+      # day): the original order or the canonical letter used, the stored-letter check dropped,
+      # the script's order or letter not compared with the stored row, today's QOTD accepted, the
+      # schedule export read from a checkout, printed, widened or carrying the canonical key (SQL,
+      # gate Q-11), no approval asked, the script rules or the voice checks skipped, a voice other
+      # than am_michael, a grid-in let through, the music credit dropped, the pilot dates moved or
+      # never ending, the breakdown inside the QOTD job, voicing back in CI (B1-B22); and, for
+      # Karl's rulings of 2026-11-03, the rendered mix posted or its check dropped, approval by a
+      # merge into any branch or read from this repo, the whole private repo checked out, its
+      # token's environment entered by pull requests (B23-B28). Each must turn its named check red.
+      - name: QOTD breakdown mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        run: bash scripts/ci/qotd-breakdown.mutations.sh
 
       # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
       # counted, the week cut at UTC midnight, the current week reported, skips counted as
@@ -569,6 +595,18 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: bash scripts/ci/video-segments.mutations.sh
+
+      # LISA retrieval by segment (SCL-260/261, Phase C): plants an unapproved segment served,
+      # the Desmos requirement dropped, the method_in default dropped, a segment served without a
+      # shared sub-skill, and the ranking's sub-skill key removed. Each must turn its named gate red.
+      - name: LISA segment retrieval mutations (planted defects must fail)
+        if: matrix.group == 'qotd'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/video-segment-retrieval.mutations.sh
 
       # SEO Wave 2, plans Q5/Q6: plants the opt-in reset bug, under-13 opt-ins at every layer, a
       # lost consent source, a withdrawal emitting consent_captured, a non-atomic prompt claim,

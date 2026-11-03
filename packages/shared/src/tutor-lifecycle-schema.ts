@@ -140,6 +140,11 @@ export const conversationDetailSchema = z.object({
     closed_at: z.string().nullable(),
   }),
   messages: z.array(conversationDetailMessageSchema),
+  // SCL-268 (owner brief "Quick replies in walkthroughs", Karl 2026-11-02): true while the
+  // conversation is in a walkthrough, from its full stored history; the panel shows "Got it,
+  // next step" / "I'm stuck" after the last LISA reply only then. Optional so a client reading a
+  // server that predates it shows no quick replies (absent reads as false).
+  walkthrough_open: z.boolean().optional(),
   pagination: z.object({
     has_more: z.boolean(),
     next_cursor: z.string().nullable(),

@@ -519,6 +519,70 @@ BEGIN
   RAISE NOTICE '    OK Q-10 stored order = shuffle helper, letter derived, write-once, permutation, 40k-run distribution within 5 sd of 25%%';
 END $$;
 
+-- ---------------------------------------------------------------------------
+-- Q-11 the QOTD breakdown's owner-run schedule export (scripts/qotd-social/breakdown-schedule.sql,
+-- SCL-266 as ruled by Karl 2026-11-02 on #1398), run as written against the Q-04 schedule: every
+-- scheduled day of the 7 after today, in order, each exactly the stored row (question, order, letter) and its
+-- question's section, and nothing else (no stem, no text, no canonical key). Run with
+-- -v breakdown_export_out=<file> to also write the JSON it returned (the breakdown harness parses
+-- it with the Zod schema the authoring check reads it with).
+-- ---------------------------------------------------------------------------
+\set breakdown_export `grep -v '^--' scripts/qotd-social/breakdown-schedule.sql | tr -d ';'`
+CREATE TEMP TABLE q11_export AS :breakdown_export;
+\if :{?breakdown_export_out}
+\pset tuples_only on
+\pset format unaligned
+SELECT schedule FROM q11_export \g :breakdown_export_out
+\pset tuples_only off
+\pset format aligned
+\endif
+DO $$
+DECLARE
+  v json;
+  n integer;
+BEGIN
+  SELECT schedule INTO v FROM q11_export;
+  n := json_array_length(v);
+  -- Every scheduled day in (today, today + 7], and a non-trivial number of them (an earlier gate
+  -- releases one upcoming day, so the fixture holds six of the seven).
+  IF n < 5 OR n <> (SELECT count(*) FROM public.qotd_schedule
+                     WHERE qotd_date > public.qotd_today()
+                       AND qotd_date <= public.qotd_today() + 7) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-11 the export holds % days, not every scheduled day of the 7 after today', n;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM json_array_elements(v) WITH ORDINALITY e(x, k)
+     WHERE (x->>'qotd_date')::date <= public.qotd_today()
+        OR (x->>'qotd_date')::date > public.qotd_today() + 7
+        OR (x->>'qotd_date')::date <> (SELECT s.qotd_date FROM public.qotd_schedule s
+                                        WHERE s.qotd_date > public.qotd_today()
+                                        ORDER BY s.qotd_date OFFSET k - 1 LIMIT 1)
+  ) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-11 the export is not the days after today, in order (today or the past included?)';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM json_array_elements(v) e(x)
+     WHERE ARRAY(SELECT json_object_keys(x) ORDER BY 1)
+           <> ARRAY['correct_display_letter', 'option_order', 'qotd_date', 'question_id', 'section']
+  ) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-11 an export row carries other keys than the five';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM json_array_elements(v) e(x)
+      LEFT JOIN public.qotd_schedule s ON s.qotd_date = (x->>'qotd_date')::date
+      LEFT JOIN public.questions q ON q.id = s.question_id
+     WHERE s.qotd_date IS NULL
+        OR x->>'question_id' IS DISTINCT FROM s.question_id
+        OR ARRAY(SELECT json_array_elements_text(x->'option_order')) IS DISTINCT FROM s.option_order
+        OR x->>'correct_display_letter' IS DISTINCT FROM s.correct_display_letter
+        OR x->>'section' IS DISTINCT FROM q.section
+  ) THEN
+    RAISE EXCEPTION 'QOTD_SCHEMA_GATE_FAILED: Q-11 an export row is not the stored row';
+  END IF;
+  RAISE NOTICE '    OK Q-11 the breakdown schedule export is the stored rows of the 7 days after today (%), five keys each', n;
+END $$;
+
 ROLLBACK;
 
 \echo 'QOTD SCHEMA GATES: PASS'

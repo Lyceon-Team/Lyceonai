@@ -57,4 +57,7 @@ export type PromptArtifact = {
   readonly version: string;
   readonly policyVariant: string;
   readonly renderSystemInstruction: (fields: PromptFields) => string;
+  /** G2-1: the artifact's rules carry DATA_BLOCK_RULE, so the state blocks render data-derived
+   * values as data blocks. Absent (v1–v4): the blocks render exactly as they always did. */
+  readonly dataBoundary?: true;
 };

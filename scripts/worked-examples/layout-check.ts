@@ -8,9 +8,9 @@
  *
  * plain English: `pnpm exec tsx scripts/worked-examples/layout-check.ts <composition folder>`
  * opens index.html at 1080×1920, waits for the fit script to register the timeline, and measures
- * every element that draws something (hook, question card, recap, notepad lines, circle,
- * captions, end card). Without the Hyperframes runtime every scene is laid out at once, so every
- * element of every scene is measured. Then it hides everything on the page and screenshots it:
+ * every element that draws something (hook, question card, recaps, notepad lines, circle, end
+ * card; there are no captions since SCL-267, Karl's ruling 2026-11-02). Without the Hyperframes
+ * runtime every scene is laid out at once, so every element of every scene is measured. Then it hides everything on the page and screenshots it:
  * every pixel must be the kit's paper colour, so no ruled line, margin or texture can creep into
  * the template. Exits 1 with each problem.
  */
@@ -27,10 +27,9 @@ export const DRAWN_SELECTORS = [
   ".recap",
   ".hand",
   ".circle",
-  ".cap-box",
   ".logo",
   ".follow",
-  ".url",
+  ".brand-name",
 ] as const;
 
 export type Box = {
