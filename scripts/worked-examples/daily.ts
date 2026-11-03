@@ -5,8 +5,9 @@
  * @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): "a daily job at
  *       17:00 UTC renders any approved example with post_on = today and posts it to #social as the
  *       labelled set … Karl posts manually", acceptance "the daily job posts only approved,
- *       post_on-today examples, once"; Step 0 ruling 3 (post_on + a daily job)]
- *       | @implemented [2026-10-27]
+ *       post_on-today examples, once"; Step 0 ruling 3 (post_on + a daily job); SCL-270
+ *       (Karl's ruling 2026-11-02): the finished mix at most -1 dBTP true peak, checked by verify]
+ *       | @implemented [2026-10-27, the true-peak check 2026-11-02]
  *
  * plain English, three subcommands the workflow runs in order:
  *   select  --content <social checkout> --out <dir> [--dry-run --date YYYY-MM-DD]
@@ -14,11 +15,15 @@
  *           due today and not in posted.json (dueExamples). None: writes nothing, exit 0. More
  *           than one: refuses (one example a day). One: checks Karl's merge from GitHub's record
  *           (approval.ts), runs every content rule, generates the composition into <dir>/composition
- *           and writes <dir>/post.json (label, title, caption with the music credit, approval).
+ *           and writes <dir>/post.json (label, title, the TikTok, Instagram and Facebook captions
+ *           in the SCL-262 format with the music credit, TikTok's keywords, the run's warnings,
+ *           approval; SCL-265).
  *           --dry-run (pull requests only) uses the given date and a placeholder approval so the
  *           whole path is proven on the fixture tree; the workflow never claims or posts then.
- *   verify  --out <dir>   the rendered MP4 is 1080×1920, 30-60 s, within 0.25 s of the
- *           composition, with an audio stream (ffprobe).
+ *   verify  --out <dir>   the finished MP4 is 1080×1920, 30-60 s, within 0.25 s of the
+ *           composition, with an audio stream (ffprobe), and its mix peaks at most voice.json
+ *           `final_mix.max_true_peak_dbtp` (-1 dBTP) true peak (final-mix.ts; SCL-270, Karl's
+ *           ruling 2026-11-02). The workflow runs final-mix.ts on the render before this.
  *   claim   --content <social checkout> --out <dir> --run <run id>   adds the example to
  *           posted.json (refused if already there). The workflow pushes that commit to `social`
  *           BEFORE posting: a failed push stops the run, so a re-run can never post twice. A post
@@ -36,14 +41,18 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import { chicagoToday } from "../../shared/sat-test-dates";
 import { campaignLinks } from "../../shared/social/funnel";
+import { socialDateWarnings } from "../../shared/social/posts";
 import {
   captionProblems,
   titleProblems,
   workedExampleCaption,
+  workedExampleFacebookCaption,
   workedExampleInstagramCaption,
+  workedExampleKeywords,
   workedExampleLabel,
   workedExampleTitle,
 } from "../../shared/worked-examples/rules";
+import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import {
   approvalFromRecord,
   dueExamples,
@@ -59,6 +68,7 @@ import {
 } from "./content";
 import { folderCommit, pullForCommit } from "./github";
 import { maxVolumeFromFfmpeg, musicPeakProblem } from "./audio";
+import { finishedMixProblems } from "./final-mix";
 import { generate } from "./generate";
 import { ROOT, loadKit } from "./kit";
 
@@ -85,21 +95,58 @@ function need(a: Args, name: string): string {
   return v;
 }
 
-/** The post for one example: label, title, caption (music credited), approval. Refuses on a rule. */
+/** What Karl pastes for one example: the headline and each platform's caption, TikTok's keywords. */
+export type WorkedExampleCopy = {
+  title: string;
+  caption: string;
+  instagram_caption: string;
+  facebook_caption: string;
+  keywords: ReturnType<typeof workedExampleKeywords>;
+};
+
+/** The real copy for one example, from the one caption builder (SCL-265). */
+export function workedExampleCopy(
+  e: ExampleOnBranch,
+  question: SeedQuestion,
+  credit: string,
+): WorkedExampleCopy {
+  return {
+    title: workedExampleTitle(e.content, question),
+    caption: workedExampleCaption(e.content, question, credit),
+    instagram_caption: workedExampleInstagramCaption(
+      e.content,
+      question,
+      credit,
+    ),
+    facebook_caption: workedExampleFacebookCaption(e.content, question, credit),
+    keywords: workedExampleKeywords(e.content, question),
+  };
+}
+
+/**
+ * The post for one example: label, title, the three captions (music credited, no link), TikTok's
+ * keywords, the run's warnings, approval. Refuses on any rule (SCL-265, in the SCL-262 format).
+ */
 export function buildPost(
   e: ExampleOnBranch,
-  title: string,
-  caption: string,
+  copy: WorkedExampleCopy,
   credit: string,
   approval: ExampleApproval,
-  instagramCaption: string,
 ): WorkedExamplePost {
   const problems = [
-    ...titleProblems(title),
-    ...captionProblems(caption, credit),
-    ...captionProblems(instagramCaption, credit).map((p) => `instagram ${p}`),
+    ...titleProblems(copy.title),
+    ...captionProblems(copy.caption, credit, copy.title).map(
+      (p) => `tiktok ${p}`,
+    ),
+    ...captionProblems(copy.instagram_caption, credit, copy.title).map(
+      (p) => `instagram ${p}`,
+    ),
+    ...captionProblems(copy.facebook_caption, credit, copy.title).map(
+      (p) => `facebook ${p}`,
+    ),
+    ...(copy.keywords.ok ? [] : [`tiktok ${copy.keywords.error}`]),
   ];
-  if (problems.length > 0)
+  if (problems.length > 0 || !copy.keywords.ok)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
   const id = workedExampleId(e.content.question_id);
   return workedExamplePostSchema.parse({
@@ -107,10 +154,12 @@ export function buildPost(
     post_on: e.content.post_on,
     label: workedExampleLabel(e.content),
     video: `${id}.mp4`,
-    title,
-    caption,
-    // Owner brief "One funnel for every social post" (Karl, 2026-10-28) item 2.
-    instagram_caption: instagramCaption,
+    title: copy.title,
+    caption: copy.caption,
+    instagram_caption: copy.instagram_caption,
+    facebook_caption: copy.facebook_caption,
+    keywords: copy.keywords.keywords,
+    warnings: socialDateWarnings(e.content.post_on),
     links: campaignLinks("worked_example"),
     approval,
   });
@@ -163,11 +212,9 @@ async function select(a: Args): Promise<void> {
   generate(content, e.dir, join(out, "composition"));
   const post = buildPost(
     e,
-    workedExampleTitle(e.content, question),
-    workedExampleCaption(e.content, kit.track.credit),
+    workedExampleCopy(e, question, kit.track.credit),
     kit.track.credit,
     approval,
-    workedExampleInstagramCaption(e.content, kit.track.credit),
   );
   writeFileSync(join(out, "post.json"), `${JSON.stringify(post, null, 2)}\n`);
   process.stdout.write(
@@ -206,21 +253,8 @@ export function renderProblems(
   return out;
 }
 
-function verify(a: Args): void {
-  const out = resolve(need(a, "--out"));
-  const post = workedExamplePostSchema.parse(
-    JSON.parse(readFileSync(join(out, "post.json"), "utf8")),
-  );
-  const meta: unknown = JSON.parse(
-    readFileSync(join(out, "composition", "meta.json"), "utf8"),
-  );
-  const expected =
-    typeof meta === "object" &&
-    meta !== null &&
-    "duration" in meta &&
-    typeof meta.duration === "number"
-      ? meta.duration
-      : NaN;
+/** The rendered MP4 as ffprobe reports it: size, length, whether it has an audio stream. */
+export function probeVideo(file: string): ProbeResult {
   const raw: unknown = JSON.parse(
     execFileSync(
       "ffprobe",
@@ -231,7 +265,7 @@ function verify(a: Args): void {
         "stream=codec_type,width,height:format=duration",
         "-of",
         "json",
-        join(out, post.video),
+        file,
       ],
       { encoding: "utf8" },
     ),
@@ -261,7 +295,24 @@ function verify(a: Args): void {
     "duration" in raw.format
       ? Number(raw.format.duration)
       : NaN;
-  const kit = loadKit();
+  return {
+    width: video?.width ?? 0,
+    height: video?.height ?? 0,
+    duration: format,
+    audio: streams.some(
+      (s) =>
+        typeof s === "object" &&
+        s !== null &&
+        "codec_type" in s &&
+        s.codec_type === "audio",
+    ),
+  };
+}
+
+/** The music track's measured peak against the one on record (ffmpeg volumedetect), or null. */
+export function musicTrackProblem(
+  kit: ReturnType<typeof loadKit>,
+): string | null {
   const detect = spawnSync(
     "ffmpeg",
     [
@@ -276,30 +327,53 @@ function verify(a: Args): void {
     ],
     { encoding: "utf8" },
   );
-  const music = musicPeakProblem(
+  return musicPeakProblem(
     maxVolumeFromFfmpeg(detect.stderr),
     kit.track.peak_dbfs,
   );
-  const problems = renderProblems(
-    {
-      width: video?.width ?? 0,
-      height: video?.height ?? 0,
-      duration: format,
-      audio: streams.some(
-        (s) =>
-          typeof s === "object" &&
-          s !== null &&
-          "codec_type" in s &&
-          s.codec_type === "audio",
-      ),
-    },
-    expected,
-    kit,
+}
+
+/**
+ * Every problem with a rendered MP4 against its composition folder's meta.json: 1080x1920, the
+ * kit's 30-60 s, within 0.25 s of the composition, an audio stream, the music peak on record.
+ * The one MP4 check for every video the kit renders (worked examples and the QOTD breakdown).
+ */
+export function videoFileProblems(
+  file: string,
+  compositionDir: string,
+): { probe: ProbeResult; problems: string[] } {
+  const meta: unknown = JSON.parse(
+    readFileSync(join(compositionDir, "meta.json"), "utf8"),
   );
+  const expected =
+    typeof meta === "object" &&
+    meta !== null &&
+    "duration" in meta &&
+    typeof meta.duration === "number"
+      ? meta.duration
+      : NaN;
+  const kit = loadKit();
+  const probe = probeVideo(file);
+  const problems = renderProblems(probe, expected, kit);
+  const music = musicTrackProblem(kit);
   if (music) problems.push(music);
+  return { probe, problems };
+}
+
+function verify(a: Args): void {
+  const out = resolve(need(a, "--out"));
+  const post = workedExamplePostSchema.parse(
+    JSON.parse(readFileSync(join(out, "post.json"), "utf8")),
+  );
+  const { probe, problems } = videoFileProblems(
+    join(out, post.video),
+    join(out, "composition"),
+  );
+  const kit = loadKit();
+  problems.push(...finishedMixProblems(join(out, post.video), kit));
   if (problems.length > 0)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
-  process.stdout.write(`verify: ${post.video} OK (${format} s)\n`);
+  process.stdout.write(`verify: ${post.video} OK (${probe.duration} s)\n`);
 }
 
 function claim(a: Args): void {

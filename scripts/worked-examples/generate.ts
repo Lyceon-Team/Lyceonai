@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import {
   voiceLineSchema,
   workedExampleId,
+  type VoiceLine,
 } from "../../packages/shared/src/worked-example-schema";
 import { buildComposition, type Composition } from "./composition";
 import { exampleProblems, loadExamples, loadVoice } from "./content";
@@ -58,6 +59,33 @@ export function generate(
   const tooLong = durationProblem(comp.duration, kit);
   if (tooLong) throw new Error(`refused: ${tooLong}`);
 
+  writeCompositionFolder(
+    comp,
+    out,
+    workedExampleId(example.content.question_id),
+    join(contentRoot, dir, "voice"),
+    manifest.lines,
+    outro,
+    kit,
+  );
+  return comp;
+}
+
+/**
+ * Writes a built composition's Hyperframes project: index.html with the fonts, logo, music, GSAP
+ * and the voice clips copied beside it, and meta.json (scenes, writes, voice clips) for the
+ * layout check. The one writer for every video the kit renders (worked examples and the QOTD
+ * breakdown, SCL-266).
+ */
+export function writeCompositionFolder(
+  comp: Composition,
+  out: string,
+  id: string,
+  voiceDir: string,
+  lines: readonly VoiceLine[],
+  outro: VoiceLine,
+  kit: Kit,
+): void {
   const put = (from: string, to: string): void => {
     mkdirSync(dirname(join(out, to)), { recursive: true });
     copyFileSync(from, join(out, to));
@@ -72,14 +100,12 @@ export function generate(
     `assets/music/${comp.assets.music.slice(comp.assets.music.lastIndexOf("/") + 1)}`,
   );
   put(join(ROOT, comp.assets.gsap), "vendor/gsap.min.js");
-  for (const l of manifest.lines)
-    put(join(contentRoot, dir, "voice", l.file), `assets/voice/${l.file}`);
+  for (const l of lines) put(join(voiceDir, l.file), `assets/voice/${l.file}`);
   put(join(ROOT, kit.voice.outro_file), `assets/voice/${outro.file}`);
   writeFileSync(
     join(out, "meta.json"),
-    `${JSON.stringify({ id: workedExampleId(example.content.question_id), duration: comp.duration, scenes: comp.scenes, writes: comp.writes, voice: comp.voice.map(({ key, start, duration }) => ({ key, start, duration })) }, null, 2)}\n`,
+    `${JSON.stringify({ id, duration: comp.duration, scenes: comp.scenes, writes: comp.writes, voice: comp.voice.map(({ key, start, duration }) => ({ key, start, duration })) }, null, 2)}\n`,
   );
-  return comp;
 }
 
 function main(): void {

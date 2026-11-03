@@ -22,6 +22,11 @@
  * section's canonical domains is an error, never a quiet drop.
  *
  * The wording lives in the exported constants, so it can change without touching the logic.
+ *
+ * The caption builders take the headline (socialTiktokCaption, socialInstagramCaption,
+ * socialFacebookCaption): the QOTD passes qotdHeadline, and the worked examples pass their title
+ * plus the music credit as a trailing line (SCL-265, Karl's ruling 2026-11-02: worked-example
+ * captions and keywords use this format). One builder, no second copy.
  */
 import { CANONICAL_DOMAINS_BY_SECTION } from "../canonical-domains";
 import { SAT_TEST_DATES } from "../sat-test-dates";
@@ -195,44 +200,87 @@ export function instagramCommentSatLine(test: SocialTest | null): string {
     : SOCIAL_INSTAGRAM_COMMENT_SAT;
 }
 
-/** TikTok, QOTD carousel: headline / follow and comment / hashtags. */
+/**
+ * TikTok: headline / follow and comment / hashtags, then any `trailing` lines.
+ *
+ * @spec [SCL-262 item 2 (Karl's rulings 2026-11-02); SCL-265 (Karl's ruling 2026-11-02: the
+ *       worked-example captions use the SCL-262 format)] | @implemented [2026-11-02]
+ *
+ * plain English: the one TikTok caption builder. The QOTD passes its headline
+ * (qotdTiktokCaption); a worked example passes its title and, as `trailing`, the music credit its
+ * CC BY 4.0 licence requires (shared/worked-examples/rules.ts). Nothing else may be appended: no
+ * promo or link line on TikTok.
+ */
+export function socialTiktokCaption(
+  headline: string,
+  test: SocialTest | null,
+  section: SocialSection,
+  trailing: readonly string[] = [],
+): string {
+  return [
+    headline,
+    SOCIAL_FOLLOW_AND_COMMENT_LINE,
+    socialHashtags(test, section),
+    ...trailing,
+  ].join("\n\n");
+}
+
+/** Instagram: headline / comment / the comment-SAT ask (the only call to action) / hashtags. */
+export function socialInstagramCaption(
+  headline: string,
+  test: SocialTest | null,
+  section: SocialSection,
+  trailing: readonly string[] = [],
+): string {
+  return [
+    headline,
+    SOCIAL_COMMENT_LINE,
+    instagramCommentSatLine(test),
+    socialHashtags(test, section),
+    ...trailing,
+  ].join("\n\n");
+}
+
+/** Facebook: headline / the approach prompt / hashtags. No link, no "comment a word" ask. */
+export function socialFacebookCaption(
+  headline: string,
+  test: SocialTest | null,
+  section: SocialSection,
+  trailing: readonly string[] = [],
+): string {
+  return [
+    headline,
+    SOCIAL_FACEBOOK_PROMPT_LINE,
+    socialHashtags(test, section),
+    ...trailing,
+  ].join("\n\n");
+}
+
+/** TikTok, QOTD carousel: the QOTD headline through socialTiktokCaption. */
 export function qotdTiktokCaption(
   postDate: string,
   section: SocialSection,
 ): string {
   const test = nextSatTest(postDate);
-  return [
-    qotdHeadline(test, section),
-    SOCIAL_FOLLOW_AND_COMMENT_LINE,
-    socialHashtags(test, section),
-  ].join("\n\n");
+  return socialTiktokCaption(qotdHeadline(test, section), test, section);
 }
 
-/** Instagram: headline / comment / the comment-SAT ask (the only call to action) / hashtags. */
+/** Instagram, QOTD: the QOTD headline through socialInstagramCaption. */
 export function qotdInstagramCaption(
   postDate: string,
   section: SocialSection,
 ): string {
   const test = nextSatTest(postDate);
-  return [
-    qotdHeadline(test, section),
-    SOCIAL_COMMENT_LINE,
-    instagramCommentSatLine(test),
-    socialHashtags(test, section),
-  ].join("\n\n");
+  return socialInstagramCaption(qotdHeadline(test, section), test, section);
 }
 
-/** Facebook: headline / the approach prompt / hashtags. */
+/** Facebook, QOTD: the QOTD headline through socialFacebookCaption. */
 export function qotdFacebookCaption(
   postDate: string,
   section: SocialSection,
 ): string {
   const test = nextSatTest(postDate);
-  return [
-    qotdHeadline(test, section),
-    SOCIAL_FACEBOOK_PROMPT_LINE,
-    socialHashtags(test, section),
-  ].join("\n\n");
+  return socialFacebookCaption(qotdHeadline(test, section), test, section);
 }
 
 /**

@@ -24,8 +24,8 @@ import {
   workedExamplePostedLedgerSchema,
   workedExampleStyleSchema,
   type VoiceManifest,
-  type WorkedExampleContent,
   type WorkedExamplePlan,
+  type WorkedExampleScript,
   type WorkedExamplePostedLedger,
   type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
@@ -170,7 +170,7 @@ export function seedQuestion(
  * music. A fallback line must be in the kit's fallback voice and say why it fell back.
  */
 export function voiceProblems(
-  example: WorkedExampleContent,
+  example: WorkedExampleScript,
   manifest: VoiceManifest,
   kit: Kit,
   wav: (file: string) => Uint8Array,
@@ -181,15 +181,27 @@ export function voiceProblems(
   const script = scriptLines(example, kit.voice.outro_text).filter(
     (s) => s.key !== "outro",
   );
-  const keys = manifest.lines.map((l) => l.key).join(",");
-  if (keys !== script.map((s) => s.key).join(","))
+  // Lines are matched by key, not position: a manifest voiced before the 2026-11-02 spoken order
+  // (SCL-267: trap before answer) lists the same keys with answer before trap.
+  const keys = manifest.lines
+    .map((l) => l.key)
+    .sort()
+    .join(",");
+  if (
+    keys !==
+      script
+        .map((s) => s.key)
+        .sort()
+        .join(",") ||
+    manifest.lines.length !== script.length
+  )
     return [
       ...out,
-      `voice lines ${keys} do not match the script ${script.map((s) => s.key).join(",")}`,
+      `voice lines ${manifest.lines.map((l) => l.key).join(",")} do not match the script ${script.map((s) => s.key).join(",")}`,
     ];
   const peaks: number[] = [];
-  script.forEach((s, k) => {
-    const line = manifest.lines[k];
+  script.forEach((s) => {
+    const line = manifest.lines.find((l) => l.key === s.key);
     if (!line) return;
     if (line.text_sha256 !== sha256(s.text))
       out.push(
