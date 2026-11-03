@@ -19,17 +19,17 @@
     {
       "post_on": "2026-11-09",
       "skill_code": "Area and Volume",
-      "hook_type": "challenge"
+      "hook_type": "obvious_answer_trap"
     },
     {
       "post_on": "2026-11-11",
       "skill_code": "Linear Inequalities in One or Two Variables",
-      "hook_type": "contrarian"
+      "hook_type": "speed"
     },
     {
       "post_on": "2026-11-13",
       "skill_code": "Percentages",
-      "hook_type": "puzzle"
+      "hook_type": "contrarian"
     },
     {
       "post_on": "2026-11-16",
