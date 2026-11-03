@@ -1,69 +1,94 @@
-# LE2+LF WRITE PASS — Tagging Report
-Date: 2026-11-03
-Taxonomy version: scl-v1.0.0
-Total questions tagged: 594 (LE2: 300, LF: 294)
+# LE2+LF Write Pass Report
+# Date: 2026-11-03
+# Taxonomy: scl-v1.0.0
+# Questions: 594 (LE2: 300, LF: 294)
+# MCQ: LE2=221, LF=227
 
 ## Sub-skill distribution
-Total sub-skill assignments: 722
 
-  LE2.4 (Connect a lines equation, graph, table, slope and intercepts): 233
-  LE2.5 (Relate a second line: parallel, perpendicular or translated): 94
-  LF.1 (Evaluate or invert a given linear rule): 187
-  LF.2 (Build a linear model from a verbal description): 37
-  LF.3 (Determine a linear function from points, a table, values, or slope): 128
-  LF.4 (Interpret slope, intercept, and constants in context): 35
-  LF.5 (Intercepts and graph features of a linear function): 8
+### LE2 questions (300):
+  LE2.1: 0
+  LE2.2: 0
+  LE2.3: 0
+  LE2.4: 233
+  LE2.5: 93
+  LF.1: 0
+  LF.2: 0
+  LF.3: 0
+  LF.4: 0
+  LF.5: 0
+  Total tags: 326
 
-## Cluster distribution
-Unique clusters used: 26
-Total cluster assignments: 1261
-Total distractor assignments: 1344
+### LF questions (294):
+  LE2.1: 0
+  LE2.2: 0
+  LE2.3: 0
+  LE2.4: 0
+  LE2.5: 1
+  LF.1: 187
+  LF.2: 37
+  LF.3: 128
+  LF.4: 35
+  LF.5: 8
+  Total tags: 396
 
-  CL.0128 (write y = mx + b from slope and a point): 239
-  CL.0024 (compute slope from two points): 201
-  CL.0047 (isolate the variable): 175
-  CL.0094 (substitute a value and evaluate): 147
-  CL.0084 (set a variable to zero to find an intercept or initial value): 107
-  CL.0080 (rewrite in slope-intercept form): 101
-  CL.0116 (use the negative-reciprocal slope for a perpendicular line): 82
-  CL.0160 (read slope and intercept from the equation): 40
-  CL.0104 (translate words into an equation or inequality): 36
-  CL.0154 (match a number in the model to its meaning in context): 33
-  CL.0089 (solve for the constant): 22
-  CL.0009 (check a point in the equation or inequality): 11
-  CL.0172 (recognize parallel lines have equal slopes): 10
-  CL.0095 (substitute an expression): 9
-  CL.0004 (add the parts to get the whole, or subtract to find a part): 9
-  CL.0016 (clear fractions by multiplying by the common denominator): 9
-  CL.0017 (combine like terms): 7
-  CL.0034 (distribute over every term): 6
-  CL.0060 (multiply a rate by the amount): 5
-  CL.0053 (match coefficients): 3
-  CL.0087 (shift a graph by adjusting its equation): 2
-  CL.0081 (round to the whole number the context allows): 2
-  CL.0003 (add or subtract equations to eliminate a variable): 2
-  CL.0166 (recognize a proportional relationship): 1
-  CL.0119 (use the reference-sheet formula): 1
-  CL.0072 (read a value from a table or graph): 1
+## Cluster distribution (top 20 overall)
+  CL.0128: 239
+  CL.0024: 201
+  CL.0047: 175
+  CL.0094: 147
+  CL.0084: 107
+  CL.0080: 101
+  CL.0116: 82
+  CL.0160: 40
+  CL.0104: 36
+  CL.0154: 33
+  CL.0089: 22
+  CL.0009: 11
+  CL.0172: 10
+  CL.0095: 9
+  CL.0004: 9
+  CL.0016: 9
+  CL.0017: 7
+  CL.0034: 6
+  CL.0060: 5
+  CL.0053: 3
+  Distinct clusters used: 26
 
-## Cross-skill tagging
-Questions with both LE2 and LF sub-skills: 1
-  SATM2YANYDS
+## Distractor tags
+  LE2: 663 tags across 221 MCQ questions
+  LF: 681 tags across 227 MCQ questions
 
-## Notation-boundary cases
-LE2 uses y= / slope-intercept notation; LF uses f(x)= / function notation.
-No notation-boundary ambiguous cases flagged — CB skill_codes respected as home skill per standing ruling.
+## FINDINGS
 
-## Suspected mis-skills
-None identified.
+### 1. LE2 sub-skill coverage gap (LE2.1, LE2.2, LE2.3 = 0)
+All 300 LE2 questions are pure-math (abstract lines, slopes, intercepts,
+perpendicular/parallel). NONE have contextual word problems, so:
+  - LE2.1 (model from context): 0 — no questions ask to BUILD an equation from a word scenario
+  - LE2.2 (interpret in context): 0 — no questions ask what a coefficient MEANS in a situation
+  - LE2.3 (find quantity in context): 0 — no questions give one contextual variable to find another
+This is a BANK GAP, not a tagging error. The LE2 bank contains only abstract
+line-equation questions (LE2.4: connect representations, LE2.5: parallel/perp).
+Contextual linear-equation questions may exist under other skill_codes or may be missing entirely.
 
-## Taxonomy gaps
-None identified. Every question found a home sub-skill.
+### 2. LF.5 very low (8 tags)
+LF.5 (intercepts and graph features) has only 8 tags across 294 LF questions.
+Most intercept questions land in LF.3 (determine function from data) instead,
+because they require computing the intercept from given information rather than
+just reading/using it as a graph feature.
 
-## Off-spec patterns
-None identified.
+### 3. No mis-skills detected
+No question's content clearly belongs to the other skill than its skill_code.
+The notation boundary (y= vs f(x)=) is respected by the bank.
 
-## Notes
-- LE2.1, LE2.2, LE2.3 have 0 tags — these require contextual/word-problem stems absent from this batch.
-- LF.5 has only 8 tags — most intercept work tagged under CL.0084 as a step within LF.1/LF.3.
-- 1 cross-skill question (SATM2YANYDS) legitimately tests LF.3/LF.1/LF.5 + LE2.5 via function shift.
+### 4. No taxonomy gaps detected
+Every question found a sub-skill home. No content fell outside the taxonomy.
+
+### 5. No off-spec patterns detected
+No question patterns appear absent from official College Board content.
+
+### 6. Cross-skill tags: 1
+One LF question received an LE2.5 tag (parallel/perpendicular content in function notation).
+
+## Zero-coverage sub-skills (candidates for bank expansion)
+  LE2.1, LE2.2, LE2.3 — see Finding #1 above
