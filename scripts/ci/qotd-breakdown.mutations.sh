@@ -120,6 +120,10 @@ sql_plant() {
 echo "=== (0) GREEN BASELINE ==="
 OUT="$(ts_check)"; RC=$?
 [ "$RC" = 0 ] && ok "breakdown tests green" || { bad "breakdown tests not green"; echo "$OUT" | tail -30; }
+# B23 and B24 run a real ffmpeg round trip; without ffmpeg those tests skip and the plants could
+# not bite, so a missing ffmpeg fails the baseline (a skip is not a pass), as in
+# worked-examples.mutations.sh.
+if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then ok "ffmpeg present"; else bad "ffmpeg/ffprobe not installed (B23, B24 need them)"; fi
 if [ "$HAVE_PG" = 1 ]; then
   EXPORT_JSON="$BACKUPS/export.json"
   OUT="$(sql_check "$EXPORT_JSON")"; RC=$?
