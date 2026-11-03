@@ -21,15 +21,28 @@ import {
   guidedChoicesFor,
   isExactIntentLabel,
   isVideoIntent,
+  isStepIntent,
+  isWalkthroughOpen,
+  STEP_INTENTS,
 } from "../../packages/shared/src/tutor-guided-choices";
 import { ORCHESTRATE_INTENTS } from "../../shared/tutor-orchestrator-wire";
 import { TutorConfig } from "../../server/services/tutor-config";
 
+// The LAST migration that defines the CHECKs (SCL-268 widened them in 20261130000000): a test
+// pinned to the first one would keep passing against a body the pipeline overwrites.
+const MIGRATIONS_DIR = path.resolve(__dirname, "../../supabase/migrations");
+const MIGRATION_FILE = fs
+  .readdirSync(MIGRATIONS_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .sort()
+  .filter((f) =>
+    fs
+      .readFileSync(path.join(MIGRATIONS_DIR, f), "utf8")
+      .includes("tutor_messages_intent_check"),
+  )
+  .at(-1);
 const MIGRATION = fs.readFileSync(
-  path.resolve(
-    __dirname,
-    "../../supabase/migrations/20261119000000_lisa_guided_choice_intent.sql",
-  ),
+  path.join(MIGRATIONS_DIR, MIGRATION_FILE ?? "missing.sql"),
   "utf8",
 );
 
@@ -91,6 +104,8 @@ describe("labels and the exact-label rule", () => {
       explain_rule: "Explain the rule",
       video_desmos: "Desmos video",
       video_explanation: "Explanation video",
+      step_understood: "Got it, next step",
+      step_stuck: "I'm stuck",
     });
   });
 
@@ -131,7 +146,8 @@ describe("one vocabulary everywhere", () => {
     expect([...ORCHESTRATE_INTENTS]).toEqual([...REVIEW_INTENTS]);
   });
 
-  it("both SQL CHECKs list exactly REVIEW_INTENTS", () => {
+  it("both SQL CHECKs list exactly REVIEW_INTENTS, in the last migration that defines them", () => {
+    expect(MIGRATION_FILE).toBe("20261130000000_lisa_quick_reply_intents.sql");
     const checks = [
       ...MIGRATION.matchAll(/intent IS NULL OR intent IN \(([^)]*)\)/g),
     ];
@@ -142,5 +158,42 @@ describe("one vocabulary everywhere", () => {
       );
       expect(values).toEqual([...REVIEW_INTENTS]);
     }
+  });
+});
+
+/**
+ * @spec [owner brief "Quick replies in walkthroughs" (Karl, 2026-11-02); SCL-268]
+ *       | @implemented [2026-11-02]
+ */
+describe("quick replies: when a conversation is in a walkthrough", () => {
+  it("the quick replies are never guided choices (no section, either flag, offers them)", () => {
+    for (const section of ["M", "RW"] as const) {
+      for (const flag of [false, true]) {
+        const offered = guidedChoicesFor(section, flag);
+        expect(offered.some((i) => isStepIntent(i))).toBe(false);
+      }
+    }
+    expect([...STEP_INTENTS]).toEqual(["step_understood", "step_stuck"]);
+  });
+
+  it("a walkthrough tap opens it, quick replies and typed messages keep it, any other tap ends it", () => {
+    // Presence first: nothing is open with no messages, or with only typed ones.
+    expect(isWalkthroughOpen([])).toBe(false);
+    expect(isWalkthroughOpen([null, null])).toBe(false);
+    expect(isWalkthroughOpen(["walkthrough"])).toBe(true);
+    expect(isWalkthroughOpen(["desmos_walkthrough"])).toBe(true);
+    expect(isWalkthroughOpen(["walkthrough", "step_stuck", null])).toBe(true);
+    expect(isWalkthroughOpen(["walkthrough", "step_understood"])).toBe(true);
+    expect(isWalkthroughOpen(["walkthrough", "video_desmos"])).toBe(false);
+    expect(isWalkthroughOpen(["walkthrough", "video_explanation", null])).toBe(
+      false,
+    );
+    expect(
+      isWalkthroughOpen(["video_desmos", "walkthrough", null, "step_stuck"]),
+    ).toBe(true);
+    // A quick reply never opens one; "Explain the rule" (Phase B) ends one.
+    expect(isWalkthroughOpen(["step_understood"])).toBe(false);
+    expect(isWalkthroughOpen([null, "step_stuck"])).toBe(false);
+    expect(isWalkthroughOpen(["walkthrough", "explain_rule"])).toBe(false);
   });
 });

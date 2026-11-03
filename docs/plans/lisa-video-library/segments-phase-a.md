@@ -138,6 +138,8 @@ As amended by Karl's rulings of 2026-10-29: 1 is the mapping rule, 2 is clusters
 
 As ruled on 2026-10-29: 3 sets the order and the Desmos tap's direct ask, 4 serves no video on a miss, and 6 matches versions.
 
+**No fixed vocabulary size (Karl, 2026-10-29).** The sub-skill and cluster totals grow over time. Retrieval matches on the ids a question and a segment carry, and on their taxonomy version. It never assumes how many sub-skills or clusters exist: no array sized to the vocabulary, no count compared to a constant, no test or gate pinning a live total.
+
 **One SQL function replaces the call inside `retrieveOfferedVideos`, so both entry points change together.** It is `video_segments_for_question(p_question_id, p_skill_codes, p_limit, p_method, p_method_required)`, one statement, at most 3 rows.
 
 - **Untagged question (no `question_sub_skills` rows at the current taxonomy version):** the body returns exactly `video_resources_for_skills(p_skill_codes, p_limit, p_method)`, today's skill-only ranking. It calls the existing function, so the behaviour is identical by construction. Every question is in this state until the questions team's tags land.

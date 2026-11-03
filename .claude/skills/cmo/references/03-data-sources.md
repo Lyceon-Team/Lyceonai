@@ -35,6 +35,7 @@ The CMO's credibility rests on numbers that mean the same thing every week. This
 | How many visited, from where? | PostHog web analytics | Search Console (search only) |
 | What did people search to find us? | Search Console | PostHog organic visitors |
 | Did emails arrive? | Resend | Supabase `notification_messages` (transactional only) |
+| How did each social post do (TikTok, Instagram, YouTube Shorts, Facebook)? | The Monday analytics pull from each platform's own analytics, via Claude in Chrome, read-only (Karl, 2026-11-02). Numbers go in the private Drive tracker, never in the repo. Judge a video at 72 hours; key metrics: retention, saves per 1,000 views, share of views from search. Each test carries an experiment ID; a lesson moves hunch → likely (2 independent confirmations) → settled (3). | PostHog (UTM-tagged arrivals) |
 | What did Karl do this week? | `activity-log.md`, or ask Karl | — |
 | What are competitors/the market doing? | Web research (researcher persona) | — |
 
@@ -80,7 +81,7 @@ Windows are `[t0, now)`. "Internal" means Karl's own and test accounts, listed b
 | New students | `profiles` with role `student`, `created_at` in window, not deleted, not internal | Supabase |
 | New guardians | same, role `guardian` | Supabase |
 | Active students | distinct students with any of: a practice item answered, a review item answered, a LISA message sent (role `student`), or a full-length session started, in window | Supabase |
-| Activated | **Not yet defined** (open decision in `02` §13). Until Karl rules, report the candidate steps separately and don't call any one "activation". | Supabase |
+| Activated | A signed-up student (not internal) who has answered at least one question (Karl, 2026-11-02; `02` §10a ruling 6). Goal: 10% of engagers (likes + comments) to activated; 2–3% of accounts to paid. | Supabase |
 | Diagnostics started / completed | `practice_sessions` mode `diagnostic`, by `created_at` / `completed_at` in window | Supabase |
 | Full-length started / completed | `test_sessions` by `created_at` / `completed_at` | Supabase |
 | Questions answered | practice items answered + review items answered (+ full-length answers, reported separately) | Supabase |

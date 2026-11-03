@@ -1,427 +1,583 @@
 {
-  "voice": "af_heart",
+  "voice": "am_michael",
+  "speaking_rate": 1,
   "lines": [
     {
       "key": "hook",
-      "text_sha256": "0557d68417670d6bc3ae4920bed427070132f0ff1d669c2720530ba27352dded",
+      "text_sha256": "cf28f2e46972edb71da4ce9e9eae09f36275b10350383d717c4a03477a7dcf11",
       "file": "hook.wav",
-      "duration": 5.013,
+      "duration": 4.779,
       "words": [
         {
-          "text": "up",
-          "start": 0.04,
-          "end": 0.23
+          "text": "think",
+          "start": 0.08,
+          "end": 0.49
         },
         {
-          "text": "25%,",
-          "start": 0.3,
-          "end": 1.27
+          "text": "it",
+          "start": 0.49,
+          "end": 0.68
         },
         {
-          "text": "then",
-          "start": 1.48,
-          "end": 1.91
+          "text": "lands",
+          "start": 0.68,
+          "end": 1.18
         },
         {
-          "text": "down",
-          "start": 1.91,
-          "end": 2.38
-        },
-        {
-          "text": "25%,",
-          "start": 2.38,
-          "end": 3.44
+          "text": "right",
+          "start": 1.18,
+          "end": 1.67
         },
         {
           "text": "back",
-          "start": 3.5,
-          "end": 3.83
+          "start": 1.67,
+          "end": 2.07
         },
         {
-          "text": "to",
-          "start": 3.83,
-          "end": 4.02
+          "text": "on",
+          "start": 2.07,
+          "end": 2.27
         },
         {
           "text": "$64.",
-          "start": 4.02,
-          "end": 4.93
+          "start": 2.27,
+          "end": 3
+        },
+        {
+          "text": "Don't",
+          "start": 3.08,
+          "end": 3.4
+        },
+        {
+          "text": "be",
+          "start": 3.4,
+          "end": 3.56
+        },
+        {
+          "text": "so",
+          "start": 3.56,
+          "end": 3.71
+        },
+        {
+          "text": "sure,",
+          "start": 3.71,
+          "end": 4.2
+        },
+        {
+          "text": "go.",
+          "start": 4.26,
+          "end": 4.8
         }
       ]
     },
     {
       "key": "question",
-      "text_sha256": "817970fb549c6d7b7837bf09b87b85ef95a277c028752e1facc877e7d725dc71",
+      "text_sha256": "cbda59430c3a40a89a5ccadf02b58a681ec36ef3005bcf0b78e24239e08cd706",
       "file": "question.wav",
-      "duration": 6.955,
+      "duration": 5.419,
       "words": [
         {
-          "text": "A",
-          "start": 0.03,
-          "end": 0.1
+          "text": "Ok,",
+          "start": 0.13,
+          "end": 0.4
         },
         {
-          "text": "$64",
-          "start": 0.16,
-          "end": 0.98
+          "text": "so",
+          "start": 0.4,
+          "end": 0.6
         },
         {
-          "text": "item",
-          "start": 0.98,
-          "end": 1.47
+          "text": "a",
+          "start": 0.6,
+          "end": 0.7
+        },
+        {
+          "text": "price",
+          "start": 0.7,
+          "end": 1.2
         },
         {
           "text": "goes",
-          "start": 1.47,
-          "end": 1.95
+          "start": 1.2,
+          "end": 1.6
         },
         {
           "text": "up",
-          "start": 2.05,
-          "end": 2.2
+          "start": 1.6,
+          "end": 1.77
         },
         {
-          "text": "25%,",
-          "start": 2.2,
-          "end": 3.01
+          "text": "by",
+          "start": 1.89,
+          "end": 2
+        },
+        {
+          "text": "a",
+          "start": 2,
+          "end": 2.07
+        },
+        {
+          "text": "quarter,",
+          "start": 2.14,
+          "end": 2.88
+        },
+        {
+          "text": "and",
+          "start": 2.98,
+          "end": 3.04
         },
         {
           "text": "then",
-          "start": 3.37,
-          "end": 3.71
-        },
-        {
-          "text": "gets",
-          "start": 3.79,
-          "end": 4.13
-        },
-        {
-          "text": "25%",
-          "start": 4.22,
-          "end": 4.93
-        },
-        {
-          "text": "off.",
-          "start": 4.93,
-          "end": 5.6
-        },
-        {
-          "text": "What's",
-          "start": 5.63,
-          "end": 6.23
+          "start": 3.04,
+          "end": 3.26
         },
         {
           "text": "the",
-          "start": 6.23,
-          "end": 6.54
+          "start": 3.26,
+          "end": 3.42
         },
         {
-          "text": "final",
-          "start": 6.54,
-          "end": 7.06
+          "text": "new",
+          "start": 3.42,
+          "end": 3.54
         },
         {
-          "text": "price?",
-          "start": 7.06,
-          "end": 7.83
+          "text": "price",
+          "start": 3.61,
+          "end": 3.85
+        },
+        {
+          "text": "gets",
+          "start": 3.85,
+          "end": 4.07
+        },
+        {
+          "text": "a",
+          "start": 4.07,
+          "end": 4.1
+        },
+        {
+          "text": "quarter",
+          "start": 4.15,
+          "end": 4.51
+        },
+        {
+          "text": "knocked",
+          "start": 4.51,
+          "end": 4.82
+        },
+        {
+          "text": "off.",
+          "start": 4.95,
+          "end": 5.29
         }
       ]
     },
     {
       "key": "step-1",
-      "text_sha256": "45c502e2f8b410f1f51ce80b2ceeecfba6ff65a2eabf7b3297ac91f812cebfa8",
+      "text_sha256": "4bab4d25fa15f62da4ca39aa050ecaf41dafeb87d63c9034523d38cedab6612b",
       "file": "step-1.wav",
-      "duration": 5.845,
+      "duration": 6.955,
       "words": [
         {
-          "text": "Turn",
-          "start": 0.03,
-          "end": 0.34
+          "text": "First",
+          "start": 0.14,
+          "end": 0.35
+        },
+        {
+          "text": "move,",
+          "start": 0.43,
+          "end": 0.86
+        },
+        {
+          "text": "make",
+          "start": 1.24,
+          "end": 1.3
         },
         {
           "text": "each",
-          "start": 0.34,
-          "end": 0.64
+          "start": 1.3,
+          "end": 1.61
         },
         {
           "text": "percent",
-          "start": 0.72,
-          "end": 1.28
-        },
-        {
-          "text": "into",
-          "start": 1.28,
-          "end": 1.57
+          "start": 1.65,
+          "end": 2.26
         },
         {
           "text": "a",
-          "start": 1.62,
-          "end": 1.68
+          "start": 2.26,
+          "end": 2.34
         },
         {
           "text": "multiplier.",
-          "start": 1.72,
-          "end": 2.6
+          "start": 2.34,
+          "end": 3.5
         },
         {
-          "text": "Up",
-          "start": 2.63,
-          "end": 2.8
+          "text": "Going",
+          "start": 3.64,
+          "end": 3.99
         },
         {
-          "text": "25%",
-          "start": 2.8,
-          "end": 3.52
+          "text": "up",
+          "start": 3.99,
+          "end": 4.18
+        },
+        {
+          "text": "25",
+          "start": 4.18,
+          "end": 4.76
         },
         {
           "text": "means",
-          "start": 3.52,
-          "end": 4.04
+          "start": 4.76,
+          "end": 5.2
         },
         {
           "text": "times",
-          "start": 4.04,
-          "end": 4.55
+          "start": 5.28,
+          "end": 5.74
         },
         {
           "text": "1.25.",
-          "start": 4.55,
-          "end": 5.9
+          "start": 5.74,
+          "end": 7.04
         }
       ]
     },
     {
       "key": "step-2",
-      "text_sha256": "219e7879609f908cf93fd6f692d035ea4f0163705c707995acafe66a527ee4a4",
+      "text_sha256": "6d75f8419753090fac6c4377a8e22dedd5db05f520c78ea08fbad0ed9ede822a",
       "file": "step-2.wav",
-      "duration": 3.627,
+      "duration": 4.032,
       "words": [
         {
-          "text": "down",
-          "start": 0.03,
-          "end": 0.38
+          "text": "Coming",
+          "start": 0.04,
+          "end": 0.63
         },
         {
-          "text": "25%",
-          "start": 0.38,
-          "end": 1.04
+          "text": "down",
+          "start": 0.63,
+          "end": 1.05
+        },
+        {
+          "text": "25",
+          "start": 1.05,
+          "end": 1.67
         },
         {
           "text": "means",
-          "start": 1.08,
-          "end": 1.53
+          "start": 1.67,
+          "end": 2.07
         },
         {
           "text": "times",
-          "start": 1.53,
-          "end": 1.78
+          "start": 2.36,
+          "end": 2.72
         },
         {
           "text": "0.75.",
-          "start": 2.07,
-          "end": 3.62
+          "start": 2.72,
+          "end": 4.03
         }
       ]
     },
     {
       "key": "step-3",
-      "text_sha256": "c837a3e56edf0458b4e873afa72e36a2aefa206a7df3e4f1c5f971f6ff48e73a",
+      "text_sha256": "712931b5de4fbc43866181c59704597cbc6202468900163cce83501f06567f23",
       "file": "step-3.wav",
-      "duration": 2.795,
+      "duration": 3.733,
       "words": [
         {
           "text": "64",
-          "start": 0.09,
-          "end": 0.58
+          "start": 0.06,
+          "end": 0.64
         },
         {
-          "text": "x",
-          "start": 0.62,
-          "end": 0.7
+          "text": "times",
+          "start": 0.64,
+          "end": 1.17
         },
         {
-          "text": "1.25",
-          "start": 0.7,
-          "end": 1.9
+          "text": "1.25,",
+          "start": 1.17,
+          "end": 2.76
         },
         {
-          "text": "is",
-          "start": 1.9,
-          "end": 1.98
+          "text": "that's",
+          "start": 2.81,
+          "end": 3.13
         },
         {
           "text": "80.",
-          "start": 2.18,
-          "end": 2.72
+          "start": 3.13,
+          "end": 3.6
         }
       ]
     },
     {
       "key": "step-4",
-      "text_sha256": "01f5512eb01e9cec95b133b2e7a36b067fbc779590f4f0d702f2bb13195e166c",
+      "text_sha256": "e6181df6f2d79e067adb2f6aef9f635587d3462dd75b2e4e62f05c6282a2153e",
       "file": "step-4.wav",
-      "duration": 2.837,
+      "duration": 3.989,
       "words": [
         {
+          "text": "Now",
+          "start": 0.09,
+          "end": 0.32
+        },
+        {
           "text": "80",
-          "start": 0.03,
-          "end": 0.52
+          "start": 0.32,
+          "end": 0.96
         },
         {
           "text": "times",
-          "start": 0.52,
-          "end": 0.95
+          "start": 0.96,
+          "end": 1.46
         },
         {
-          "text": "0.75",
-          "start": 0.95,
-          "end": 1.99
+          "text": "0.75,",
+          "start": 1.52,
+          "end": 2.92
         },
         {
-          "text": "is",
-          "start": 1.99,
-          "end": 2.16
+          "text": "that's",
+          "start": 2.97,
+          "end": 3.28
         },
         {
           "text": "60.",
-          "start": 2.16,
-          "end": 2.76
-        }
-      ]
-    },
-    {
-      "key": "answer",
-      "text_sha256": "65b5316ff85e040ba784f90c53c809b011acb601838148b14367eaa9eb7b545f",
-      "file": "answer.wav",
-      "duration": 2.453,
-      "words": [
-        {
-          "text": "So",
-          "start": 0.08,
-          "end": 0.21
-        },
-        {
-          "text": "the",
-          "start": 0.21,
-          "end": 0.48
-        },
-        {
-          "text": "answer",
-          "start": 0.52,
-          "end": 1.12
-        },
-        {
-          "text": "is",
-          "start": 1.12,
-          "end": 1.44
-        },
-        {
-          "text": "B,",
-          "start": 1.44,
-          "end": 1.65
-        },
-        {
-          "text": "$60.",
-          "start": 1.7,
-          "end": 2.45
+          "start": 3.28,
+          "end": 3.73
         }
       ]
     },
     {
       "key": "trap",
-      "text_sha256": "b74e725c4b64db8b2736864f416f724352e8a760c47260626e33bc44983a438c",
+      "text_sha256": "d46506ffee6a017307bea3e6e3cf04ce80766b4d0971760ad4d794b3eecbd91e",
       "file": "trap.wav",
-      "duration": 7.253,
+      "duration": 8.235,
       "words": [
         {
           "text": "The",
-          "start": 0.05,
-          "end": 0.2
+          "start": 0.04,
+          "end": 0.22
         },
         {
           "text": "trap",
-          "start": 0.24,
-          "end": 0.53
+          "start": 0.25,
+          "end": 0.47
         },
         {
-          "text": "adding",
-          "start": 0.68,
-          "end": 1.03
+          "text": "thinking",
+          "start": 0.71,
+          "end": 1.19
         },
         {
           "text": "the",
-          "start": 1.08,
-          "end": 1.21
+          "start": 1.21,
+          "end": 1.45
         },
         {
-          "text": "percents.",
-          "start": 1.28,
-          "end": 2
+          "text": "two",
+          "start": 1.45,
+          "end": 1.69
         },
         {
-          "text": "Plus",
-          "start": 2.05,
-          "end": 2.4
+          "text": "changes",
+          "start": 1.69,
+          "end": 2.26
         },
         {
-          "text": "25",
-          "start": 2.4,
-          "end": 3
+          "text": "cancel",
+          "start": 2.26,
+          "end": 2.56
         },
         {
-          "text": "minus",
-          "start": 3,
-          "end": 3.43
+          "text": "out.",
+          "start": 2.56,
+          "end": 3.08
         },
         {
-          "text": "25",
-          "start": 3.49,
-          "end": 4.1
+          "text": "They",
+          "start": 3.08,
+          "end": 3.41
         },
         {
-          "text": "isn't",
-          "start": 4.1,
-          "end": 4.54
-        },
-        {
-          "text": "zero.",
-          "start": 4.64,
-          "end": 5.32
+          "text": "don't.",
+          "start": 3.41,
+          "end": 4.12
         },
         {
           "text": "The",
-          "start": 5.37,
-          "end": 5.5
+          "start": 4.2,
+          "end": 4.36
         },
         {
           "text": "discount",
-          "start": 5.5,
-          "end": 5.85
+          "start": 4.36,
+          "end": 4.9
         },
         {
           "text": "comes",
-          "start": 6,
-          "end": 6.28
+          "start": 4.9,
+          "end": 5.23
         },
         {
           "text": "off",
-          "start": 6.28,
-          "end": 6.46
+          "start": 5.23,
+          "end": 5.43
         },
         {
-          "text": "a",
-          "start": 6.46,
-          "end": 6.52
+          "text": "the",
+          "start": 5.43,
+          "end": 5.62
         },
         {
           "text": "bigger",
-          "start": 6.52,
-          "end": 6.88
+          "start": 5.64,
+          "end": 6.01
         },
         {
-          "text": "price.",
-          "start": 6.88,
-          "end": 7.36
+          "text": "price,",
+          "start": 6.13,
+          "end": 6.4
+        },
+        {
+          "text": "so",
+          "start": 6.44,
+          "end": 6.5
+        },
+        {
+          "text": "you",
+          "start": 6.54,
+          "end": 6.73
+        },
+        {
+          "text": "lose",
+          "start": 6.73,
+          "end": 6.96
+        },
+        {
+          "text": "more",
+          "start": 7.11,
+          "end": 7.26
+        },
+        {
+          "text": "than",
+          "start": 7.28,
+          "end": 7.53
+        },
+        {
+          "text": "you",
+          "start": 7.54,
+          "end": 7.74
+        },
+        {
+          "text": "gained.",
+          "start": 7.74,
+          "end": 8.4
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "f18d7e529efffdc23c46609e49ff943d28e34cb6a563191627207b8abb4221a8",
+      "file": "answer.wav",
+      "duration": 6.976,
+      "words": [
+        {
+          "text": "So",
+          "start": 0.06,
+          "end": 0.21
+        },
+        {
+          "text": "it's",
+          "start": 0.21,
+          "end": 0.63
+        },
+        {
+          "text": "B,",
+          "start": 0.63,
+          "end": 0.94
+        },
+        {
+          "text": "$60.",
+          "start": 1.01,
+          "end": 2.08
+        },
+        {
+          "text": "Quick",
+          "start": 2.14,
+          "end": 2.51
+        },
+        {
+          "text": "check,",
+          "start": 2.51,
+          "end": 3.12
+        },
+        {
+          "text": "a",
+          "start": 3.12,
+          "end": 3.19
+        },
+        {
+          "text": "quarter",
+          "start": 3.19,
+          "end": 3.69
+        },
+        {
+          "text": "of",
+          "start": 3.69,
+          "end": 3.74
+        },
+        {
+          "text": "80",
+          "start": 4.18,
+          "end": 4.25
+        },
+        {
+          "text": "is",
+          "start": 4.25,
+          "end": 4.3
+        },
+        {
+          "text": "20,",
+          "start": 4.4,
+          "end": 4.84
+        },
+        {
+          "text": "and",
+          "start": 4.9,
+          "end": 5.05
+        },
+        {
+          "text": "80",
+          "start": 5.05,
+          "end": 5.48
+        },
+        {
+          "text": "minus",
+          "start": 5.48,
+          "end": 5.78
+        },
+        {
+          "text": "20",
+          "start": 5.85,
+          "end": 6.26
+        },
+        {
+          "text": "is",
+          "start": 6.26,
+          "end": 6.33
+        },
+        {
+          "text": "60.",
+          "start": 6.4,
+          "end": 7.07
         }
       ]
     }

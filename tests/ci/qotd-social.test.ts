@@ -619,8 +619,18 @@ describe("future days are never generated early or publicly reachable", () => {
     expect(wf).toContain("scripts/qotd-social/generate.ts");
     expect(wf).toContain("actions/upload-artifact@v4");
     expect(wf).toMatch(/permissions:\s*\n\s*contents: read/);
-    // One secret, the Slack token, referenced by the post and by the failure notice (SCL-258).
-    expect(wf.match(/secrets\./g)).toEqual(["secrets.", "secrets."]);
+    // The QOTD job's one secret is the Slack token, referenced by the post and by the failure
+    // notice (SCL-258). The breakdown job adds its own post's Slack token and, since Karl's ruling
+    // of 2026-11-03, the private repo's read-only token in its checkout and its build, from the
+    // `qotd-breakdown` environment (SCL-266; tests/ci/qotd-breakdown.test.ts pins those steps).
+    expect(wf.match(/secrets\./g)).toHaveLength(5);
+    expect(wf.match(/secrets\.[A-Z_]+/g)).toEqual([
+      "secrets.SLACK_BOT_TOKEN",
+      "secrets.SLACK_BOT_TOKEN",
+      "secrets.CONTENT_PRIVATE_TOKEN",
+      "secrets.CONTENT_PRIVATE_TOKEN",
+      "secrets.SLACK_BOT_TOKEN",
+    ]);
     expect(wf).toContain("${{ secrets.SLACK_BOT_TOKEN }}");
 
     const steps = workflowSteps();

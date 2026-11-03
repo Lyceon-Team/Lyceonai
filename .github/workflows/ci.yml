@@ -55,6 +55,7 @@ jobs:
       review_ui_gate: ${{ steps.groups.outputs.review_ui_gate }}
       boot_probe: ${{ steps.groups.outputs.boot_probe }}
       section_vocabulary: ${{ steps.groups.outputs.section_vocabulary }}
+      breakdown_content: ${{ steps.groups.outputs.breakdown_content }}
       fixture_canonicality: ${{ steps.groups.outputs.fixture_canonicality }}
       guardian_dead_code: ${{ steps.groups.outputs.guardian_dead_code }}
       deps: ${{ steps.groups.outputs.deps }}
@@ -404,6 +405,18 @@ jobs:
       - name: Section vocabulary self-test (proves each mutation turns it red)
         if: ${{ needs.changes.outputs.section_vocabulary == 'true' }}
         run: bash scripts/ci/section-vocabulary-gate.mutations.sh
+
+      # This repository is public (Karl's rulings 2026-11-02/03): nothing breakdown-specific that
+      # names an answer may exist here. Fails on a qotd-breakdowns/ path, the schedule export, or a
+      # breakdown script under any name, outside the synthetic fixture. SCL-266.
+      - name: Breakdown content gate (no QOTD breakdown script, voice or export in the public repo)
+        run: pnpm exec tsx scripts/ci/breakdown-content-gate.ts
+
+      # Its gate rarely changes: on a pull request the plants run when the gate does; they always
+      # run in the full tier.
+      - name: Breakdown content gate self-test (proves each plant turns it red)
+        if: ${{ needs.changes.outputs.breakdown_content == 'true' }}
+        run: bash scripts/ci/breakdown-content-gate.mutations.sh
 
       # Deleting a route removes the server half; a forgotten caller fails at RUNTIME as a
       # 404 the UI renders as an error state or an empty list. The path is a string, so tsc
@@ -1516,6 +1529,18 @@ jobs:
           PGUSER: postgres
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-segment-gates.sql
+
+      # LISA retrieval by segment (owner brief "Phase C: retrieval switch-over"; SCL-260/261):
+      # a tagged question gets the approved segment that shares its sub-skills, at the segment's
+      # start; the Desmos tap requires Desmos; no match is no video; the untagged path's function
+      # is unchanged (snapshot). Same database; one transaction, rolled back.
+      - name: LISA segment retrieval gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-segment-retrieval-gates.sql
 
       - name: Calendar write-RPC gates
         env:

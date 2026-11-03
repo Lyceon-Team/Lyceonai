@@ -1,0 +1,171 @@
+{
+  "_synthetic": "Made-up questions for the QOTD breakdown tests (Karl, 2026-11-03: no real answer in the public repo). Never scheduled, never in the question bank; ids in the SYNTH namespace the breakdown content gate allows only here.",
+  "generated_on": "2026-01-16",
+  "archive": [
+    {
+      "qotd_date": "2026-01-12",
+      "question_id": "SATRW1SYNTH1",
+      "section": "RW",
+      "domain": "Standard English Conventions",
+      "skill_codes": ["FX"],
+      "difficulty": 1,
+      "item_type": "mcq",
+      "stem": "Which choice completes the text so that it conforms to the conventions of Standard English?",
+      "passage": "The robotics team, which practiced every evening for a month, ______ first place at the regional contest.",
+      "options": [
+        {
+          "key": "A",
+          "text": "win"
+        },
+        {
+          "key": "B",
+          "text": "winning"
+        },
+        {
+          "key": "C",
+          "text": "won"
+        },
+        {
+          "key": "D",
+          "text": "to win"
+        }
+      ],
+      "correct_answer": "C",
+      "correct_variants": null,
+      "explanation": "The subject is the singular team and the action is finished, so the past-tense verb won completes the sentence.",
+      "attempts": 0,
+      "correct": 0,
+      "option_order": ["D", "C", "A", "B"],
+      "correct_display_letter": "B"
+    },
+    {
+      "qotd_date": "2026-01-13",
+      "question_id": "SATM2SYNTH1",
+      "section": "M",
+      "domain": "Advanced Math",
+      "skill_codes": ["FX"],
+      "difficulty": 1,
+      "item_type": "grid_in",
+      "stem": "If $y^2 = 64$ and $y > 0$, what is the value of $y$?",
+      "passage": null,
+      "options": [],
+      "correct_answer": "8",
+      "correct_variants": ["8", "8.0"],
+      "explanation": "The positive number whose square is 64 is 8.",
+      "attempts": 0,
+      "correct": 0,
+      "option_order": [],
+      "correct_display_letter": null
+    },
+    {
+      "qotd_date": "2026-01-14",
+      "question_id": "SATM1SYNTH1",
+      "section": "M",
+      "domain": "Algebra",
+      "skill_codes": ["FX"],
+      "difficulty": 1,
+      "item_type": "mcq",
+      "stem": "If $4x - 7 = 21$, what is the value of $x$?",
+      "passage": null,
+      "options": [
+        {
+          "key": "A",
+          "text": "3.5"
+        },
+        {
+          "key": "B",
+          "text": "7"
+        },
+        {
+          "key": "C",
+          "text": "14"
+        },
+        {
+          "key": "D",
+          "text": "28"
+        }
+      ],
+      "correct_answer": "B",
+      "correct_variants": null,
+      "explanation": "Add 7 to both sides to get $4x = 28$, then divide both sides by 4 to get $x = 7$.",
+      "attempts": 0,
+      "correct": 0,
+      "option_order": ["C", "A", "B", "D"],
+      "correct_display_letter": "C"
+    },
+    {
+      "qotd_date": "2026-01-15",
+      "question_id": "SATM1SYNTH2",
+      "section": "M",
+      "domain": "Algebra",
+      "skill_codes": ["FX"],
+      "difficulty": 1,
+      "item_type": "mcq",
+      "stem": "If $2y + 9 = 25$, what is the value of $y$?",
+      "passage": null,
+      "options": [
+        {
+          "key": "A",
+          "text": "4"
+        },
+        {
+          "key": "B",
+          "text": "8"
+        },
+        {
+          "key": "C",
+          "text": "16"
+        },
+        {
+          "key": "D",
+          "text": "17"
+        }
+      ],
+      "correct_answer": "B",
+      "correct_variants": null,
+      "explanation": "Subtract 9 from both sides to get $2y = 16$, then divide both sides by 2 to get $y = 8$.",
+      "attempts": 0,
+      "correct": 0,
+      "option_order": ["B", "D", "A", "C"],
+      "correct_display_letter": "A"
+    }
+  ],
+  "today": [
+    {
+      "qotd_date": "2026-01-16",
+      "question_id": "SATM1SYNTH3",
+      "section": "M",
+      "domain": "Algebra",
+      "skill_codes": ["FX"],
+      "difficulty": 1,
+      "item_type": "mcq",
+      "stem": "If $5z - 3 = 32$, what is the value of $z$?",
+      "passage": null,
+      "options": [
+        {
+          "key": "A",
+          "text": "5"
+        },
+        {
+          "key": "B",
+          "text": "7"
+        },
+        {
+          "key": "C",
+          "text": "29"
+        },
+        {
+          "key": "D",
+          "text": "35"
+        }
+      ],
+      "correct_answer": "B",
+      "correct_variants": null,
+      "explanation": "Add 3 to both sides to get $5z = 35$, then divide both sides by 5 to get $z = 7$.",
+      "attempts": 0,
+      "correct": 0,
+      "option_order": ["A", "C", "D", "B"],
+      "correct_display_letter": "D"
+    }
+  ]
+}
