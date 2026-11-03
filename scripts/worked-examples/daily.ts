@@ -369,6 +369,7 @@ function verify(a: Args): void {
     join(out, post.video),
     join(out, "composition"),
   );
+  const kit = loadKit();
   problems.push(...finishedMixProblems(join(out, post.video), kit));
   if (problems.length > 0)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
