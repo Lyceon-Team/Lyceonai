@@ -24,6 +24,10 @@ export const GROUPS = {
   review_ui_gate: ["scripts/ci/review-ui-gate."],
   boot_probe: ["scripts/ci/boot-probe", "scripts/ci/boot-env.manifest.json"],
   section_vocabulary: ["scripts/ci/section-vocabulary-gate."],
+  breakdown_content: [
+    "scripts/ci/breakdown-content-gate.",
+    "tests/ci/breakdown-content-gate.test.ts",
+  ],
   fixture_canonicality: ["scripts/ci/test-fixture-canonicality-gate."],
   guardian_dead_code: ["scripts/ci/guardian-dead-code-gate."],
   deps: [

@@ -7,7 +7,7 @@
  *       time] | @implemented [2026-11-02]
  *
  * plain English: run by the authoring session on its machine:
- *   pnpm exec tsx scripts/qotd-social/voice-breakdown.ts <social checkout>/content/qotd-breakdowns/<week>/<date>
+ *   pnpm exec tsx scripts/qotd-social/voice-breakdown.ts <private repo checkout>/qotd-breakdowns/<week>/<date>
  * reads script.json and writes voice/<line>.wav + voice/manifest.json through the worked examples'
  * voiceScript (hyperframes tts, the "Lyceon" respelling, loudness normalisation, transcription and
  * the quality checks), always in am_michael. A line whose text and voice already match is kept, so

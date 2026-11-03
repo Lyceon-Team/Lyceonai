@@ -1,18 +1,21 @@
 /**
- * The QOTD breakdown scripts on `social`: load them, and check every one against its question,
+ * The QOTD breakdown scripts in the private repo (Lyceon-Team/lyceon-content-private, Karl's ruling
+ * 2026-11-03): load them, and check every one against its question,
  * its stored order and letter, the worked examples' script rules and its committed voice.
  *
  * @spec [SCL-266 as ruled by Karl 2026-11-02 on #1398: "Each week, CC writes conversational
  *       breakdown scripts for the next 7 scheduled QOTD dates, using each date's stored order and
  *       letter, as a batch PR into `social` on the same review path as worked examples. Karl's
  *       merge is the approval"; the content rules of the worked examples (H1-H6, S1, S2, the trap
- *       opener), reused; the owner-run schedule export, never committed, posted or logged]
- *       | @implemented [2026-11-02]
+ *       opener), reused; the owner-run schedule export, never committed, posted or logged.
+ *       Karl's rulings 2026-11-03: the scripts and their voice move to the private repo, approved
+ *       by his merge into its `main`; nothing breakdown-specific that names an answer in the
+ *       public repo] | @implemented [2026-11-02, private repo 2026-11-03]
  *
  * plain English:
  *   pnpm exec tsx scripts/qotd-social/check-breakdown-scripts.ts --content <root>
  *       [--schedule <export.json, a path OUTSIDE every checkout>]
- * reads content/qotd-breakdowns/<YYYY-Www>/<qotd_date>/ under <root> (a checkout of `social`):
+ * reads qotd-breakdowns/<YYYY-Www>/<qotd_date>/ under <root> (a checkout of the private repo):
  * script.json and voice/ (manifest.json + one .wav per line), nothing else. For each script:
  *   * the folder is its date's, in its date's ISO week;
  *   * the question is read from the seed SQL by id (the worked examples' seedQuestion), and the
@@ -25,9 +28,11 @@
  *     fails the audio checks;
  *   * with --schedule, Karl's export: the script's question_id, option_order and
  *     correct_display_letter equal the export's row for its date, and the section is the seed's.
- * Run by .github/workflows/qotd-breakdown-checks.yml on pull requests into `social` (no export
+ * Run by the private repo's own pull-request check (its .github/workflows/check.yml, which checks
+ * out this public code without a token; template in docs/runbooks/qotd-slack.md §6; no export
  * there: the order and letter are then checked against the seed question only) and by the
- * authoring session with --schedule before it opens the PR.
+ * authoring session with --schedule before it opens the PR. The code stays public; only the
+ * content is private.
  *
  * Anti-leak: the export holds FUTURE answers. It is read from a path outside the repository and
  * the content checkout (refused otherwise), and no message here prints a value from it: a
@@ -61,7 +66,7 @@ import { ROOT, loadKit, type Kit } from "../worked-examples/kit";
 import { checkoutRoot, containingRoot } from "../worked-examples/voice";
 
 export type BreakdownOnBranch = {
-  /** content/qotd-breakdowns/<YYYY-Www>/<qotd_date> */
+  /** qotd-breakdowns/<YYYY-Www>/<qotd_date> */
   dir: string;
   script: QotdBreakdownScript;
 };
