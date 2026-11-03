@@ -280,7 +280,12 @@ export default function GuardianStudentsPage(): JSX.Element {
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              className="min-h-[44px] bg-destructive text-base text-destructive-foreground hover:bg-destructive/90"
+              // The fill was hand-written here because the default variant's was invisible
+              // (the `--primary` defect). `hover:bg-destructive/90` never existed either:
+              // Tailwind generates no alpha utility for a plain `var()` colour, a separate
+              // finding recorded in this PR.
+              variant="destructive"
+              className="min-h-[44px] text-base"
               disabled={remove.isPending}
               onClick={(e) => {
                 // Keep the dialog open until the server answers.
