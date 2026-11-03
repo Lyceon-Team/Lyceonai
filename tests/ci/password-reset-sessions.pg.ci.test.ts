@@ -285,6 +285,17 @@ async function ledgerUsed(): Promise<number | null> {
   return r.rows[0]?.used_count ?? null;
 }
 
+/**
+ * The ledger counts in fixed clock windows (`windowFor`: floor(now / window_seconds)), and every
+ * reset request is held to the response floor, so four requests take seconds of wall clock. Run
+ * across an hour boundary, they split between two windows and a count of 3 reads 2 (seen on
+ * 2026-11-02 at 18:59:59 UTC, PR #1411). Freeze only `Date`, at the real current instant, so every
+ * request in a test falls in one window; timers stay real, so the floor's wait still elapses.
+ */
+function pinLedgerWindow(): void {
+  vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
+}
+
 describe.skipIf(!PG_AVAILABLE)(
   "F-46: recovery revokes other sessions; reset is throttled per account (real Postgres)",
   () => {
@@ -330,6 +341,7 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     afterEach(() => {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
       vi.restoreAllMocks();
       Object.assign(process.env, baselineEnv);
@@ -397,6 +409,7 @@ describe.skipIf(!PG_AVAILABLE)(
 
     // ── Doc 01 §12.1 step 2 ───────────────────────────────────────────────────────────────────
     it("the limit is 3 per account per hour across separate requests, whatever case, spacing or IP", async () => {
+      pinLedgerWindow();
       const app = await loadApp();
       const variants = [
         STUDENT_EMAIL,
@@ -425,6 +438,7 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     it("an address stored in mixed case is matched and counted when requested in lower case", async () => {
+      pinLedgerWindow();
       const app = await loadApp();
       for (let i = 0; i < 4; i += 1) {
         await request(app)
@@ -440,6 +454,7 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     it("an unknown address gets the same response as a known one, allowed or throttled", async () => {
+      pinLedgerWindow();
       const app = await loadApp();
       const known = await request(app)
         .post("/api/auth/reset-password")
@@ -475,13 +490,15 @@ describe.skipIf(!PG_AVAILABLE)(
     });
 
     it("allowed, unknown and throttled requests all take at least the response floor (SCL-197)", async () => {
+      pinLedgerWindow();
       const app = await loadApp();
       const timed = async (email: string) => {
-        const t0 = Date.now();
+        // performance.now(): Date is pinned in this test, and a Date-only fake leaves it real.
+        const t0 = performance.now();
         const res = await request(app)
           .post("/api/auth/reset-password")
           .send({ email });
-        return { res, ms: Date.now() - t0 };
+        return { res, ms: performance.now() - t0 };
       };
       const allowed = await timed(STUDENT_EMAIL);
       const unknown = await timed("nobody-here@example.test");
