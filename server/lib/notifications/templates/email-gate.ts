@@ -233,6 +233,18 @@ export function guardianPausedEmail(
 }
 
 // ── 1. A week before the test ───────────────────────────────────────────────────────────────
+/** "Your SAT is next Saturday, November 7." at 7 days; "Your SAT is in 8 days, on …" otherwise. */
+export function weekBeforeWhen(
+  daysUntil: number | undefined,
+  weekday: string,
+  date: string,
+): string {
+  if (daysUntil === undefined || daysUntil === 7) {
+    return `Your SAT is next ${weekday}, ${date}.`;
+  }
+  return `Your SAT is in ${daysUntil} days, on ${weekday}, ${date}.`;
+}
+
 export const SAT_WEEK_BEFORE_SUBJECT = "SAT: one week to go";
 
 export function satWeekBeforeEmail(
@@ -245,7 +257,9 @@ export function satWeekBeforeEmail(
     { kind: "p", text: hi(payload.first_name) },
     {
       kind: "p",
-      text: `Your SAT is next ${weekday}, ${date}. If you're still taking it, this week is about sharpening, not cramming.`,
+      // Karl's copy at 7 days; anywhere else in the ±1-day window (Karl, 2026-11-02), the day
+      // count from the day it was sent, so the line is never untrue.
+      text: `${weekBeforeWhen(payload.days_until, weekday, date)} If you're still taking it, this week is about sharpening, not cramming.`,
     },
     {
       kind: "p",
