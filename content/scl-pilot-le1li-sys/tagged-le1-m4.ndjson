@@ -1,0 +1,30 @@
+{"id":"SATM2FN8B9S","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"}],"why":"Two-fraction eq, clear LCD, distribute, isolate x"}
+{"id":"SATM2FTRRU2","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: equal cost plumber vs electrician, translate to eq, isolate h"}
+{"id":"SATM2GBNLS8","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2GYX46C","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2H7RFZX","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2HAB1TP","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133"],"distractors":[],"why":"Find a for no solution: match x-coefficients, check constants differ"}
+{"id":"SATM2HEN2FW","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"},{"option":"B","cluster_id":"CL.0047"}],"why":"Context: consecutive odd integers sum, translate to eq, solve"}
+{"id":"SATM2HFL93P","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133"],"distractors":[],"why":"Find k for no solution: match x-coefficients, check constants differ"}
+{"id":"SATM2HFTJWF","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Distribute, combine like terms, isolate x"}
+{"id":"SATM2HH4JP6","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Fraction eq with multiple terms, clear LCD, distribute, combine, isolate x"}
+{"id":"SATM2HJ6FWI","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Distribute, combine like terms, isolate x"}
+{"id":"SATM2HJH0CQ","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0034"},{"option":"D","cluster_id":"CL.0047"}],"why":"Distribute, combine like terms, isolate x"}
+{"id":"SATM2HOIJSY","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0016"}],"why":"Fraction eq, clear denominator, isolate x"}
+{"id":"SATM2HOTYEL","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2HOZZB5","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"},{"option":"C","cluster_id":"CL.0034"}],"why":"Distribute both sides, combine like terms, isolate x"}
+{"id":"SATM2HS6KL7","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Context: plumber bill, translate to eq, isolate h"}
+{"id":"SATM2HVV5AS","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2HY1BLM","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0053"],"distractors":[{"option":"A","cluster_id":"CL.0053"}],"why":"Infinitely many solutions: expand and match coefficients for identity"}
+{"id":"SATM2I6NQMW","sub_skills":["LE1.2"],"clusters":["CL.0016","CL.0034","CL.0047","CL.0094"],"distractors":[{"option":"D","cluster_id":"CL.0094"}],"why":"Solve eq then evaluate x-1; asks for expression not bare variable"}
+{"id":"SATM2I8H1TG","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Distribute, combine like terms, isolate x"}
+{"id":"SATM2I8OXZ7","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0016"},{"option":"D","cluster_id":"CL.0016"}],"why":"Multi-fraction eq, clear LCD, distribute, combine, isolate x"}
+{"id":"SATM2I9UE2J","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Fraction eq, clear denominator, isolate x"}
+{"id":"SATM2IFZNTU","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2IN5N8T","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Distribute, combine like terms, isolate x"}
+{"id":"SATM2IOWGKE","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2IPPQVW","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"},{"option":"B","cluster_id":"CL.0047"}],"why":"Context: equal cost mechanics, translate to eq, isolate h"}
+{"id":"SATM2IXDYCC","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Fraction eq, clear denominator, distribute, isolate x"}
+{"id":"SATM2IY1BD4","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq, isolate x"}
+{"id":"SATM2IYB16J","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0034"},{"option":"D","cluster_id":"CL.0047"}],"why":"Distribute, combine like terms, isolate x"}
+{"id":"SATM2J81B4A","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq, isolate x"}
