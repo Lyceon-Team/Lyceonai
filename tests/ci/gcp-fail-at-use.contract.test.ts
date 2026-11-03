@@ -34,26 +34,6 @@ vi.mock("../../server/logger", () => ({
 }));
 
 /**
- * The classifier reads its model alias from `tutor_context_runtime_config`
- * BEFORE it reaches the credential. Without this the test would prove the
- * config lookup fails, not that the credential does.
- */
-vi.mock("../../apps/api/src/lib/supabase-server", () => ({
-  supabaseServer: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          single: async () => ({
-            data: { value: "classifier_class" },
-            error: null,
-          }),
-        }),
-      }),
-    }),
-  },
-}));
-
-/**
  * The SDK is mocked so the test can assert it is NEVER CONSTRUCTED. That is
  * the "no synthetic model response" proof: the credential throws first, so no
  * client exists to produce one.
@@ -124,21 +104,24 @@ describe("crisis Layer 2 with the credential absent", () => {
    * The failure is LOUD and it NAMES THE CREDENTIAL. Without this the operator
    * sees "Layer 2 failed" and has to guess why.
    */
-  it("logs the retry and the exhaustion, naming the variable", async () => {
+  it("logs the failure once, naming the variable, and does not retry it", async () => {
     const { classifyCrisis } = await import(
       "../../server/services/tutor-crisis"
     );
 
     await classifyCrisis("I need help with algebra");
 
-    // Attempt 0 warns with the message in `data.error`.
-    expect(loggerWarn).toHaveBeenCalled();
-    const warnPayload = JSON.stringify(loggerWarn.mock.calls);
-    expect(warnPayload).toContain(GCP_VAR);
+    // H4 (owner ruling 2026-11-02, "BFF only"): an absent credential fails the same way on a
+    // second try, so the classifier no longer retries it — no attempt warning, no model step.
+    expect(loggerWarn).not.toHaveBeenCalled();
 
-    // Attempt 1 escalates to error — this is the line that must not be silent.
-    expect(loggerError).toHaveBeenCalled();
-    const errorEvents = loggerError.mock.calls.map((c) => c[1]);
-    expect(errorEvents).toContain("classifier_retry_exhausted");
+    // The one error line is the one that must not be silent, and it names the credential.
+    const exhausted = loggerError.mock.calls.filter(
+      (c) => c[1] === "classifier_retry_exhausted",
+    );
+    expect(exhausted).toHaveLength(1);
+    const cause = exhausted[0]?.[3];
+    expect(cause).toBeInstanceOf(Error);
+    expect(cause instanceof Error ? cause.message : "").toContain(GCP_VAR);
   });
 });

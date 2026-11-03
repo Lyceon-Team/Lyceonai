@@ -12,8 +12,11 @@
  *  2. The rows marked `approve` = `yes` approved through `public.video_segments_approve`. The
  *     approver is a placeholder Karl replaces with his user id; left as it is, the uuid cast
  *     fails and the whole transaction rolls back, so nothing is half-applied.
- *  3. A precondition block first: the vocabulary version is loaded (the tag rows' foreign keys
- *     need it) and every video is in `video_resources`.
+ *  3. A precondition block first: every sub-skill and cluster id the file uses exists in
+ *     `sub_skills` / `clusters` (the tag rows' foreign keys need them), and every video is in
+ *     `video_resources`. Each check names what is missing. No vocabulary SIZE is assumed
+ *     anywhere: the taxonomy grows over time (Karl, 2026-10-29), so the guard is about the ids
+ *     this file uses, never a count of the live tables.
  *
  * Checked before anything is written, so one bad cell fails the run: every id is in the
  * taxonomy and in the video's section; a span lies inside the video and does not overlap the
@@ -211,17 +214,49 @@ function dollar(text: string): string {
   return `$${tag}$${text}$${tag}$`;
 }
 
+/** Taxonomy and video ids are plain tokens; anything else is refused rather than quoted. */
+const ID_TOKEN = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * One precondition: every id in `ids` exists in `table`.`column`, or the transaction raises
+ * naming the missing ones. An empty list checks nothing (there is nothing to be missing).
+ */
+function missingCheck(
+  ids: string[],
+  table: string,
+  column: string,
+  message: string,
+): string[] {
+  if (ids.length === 0) return [];
+  const bad = ids.find((id) => !ID_TOKEN.test(id));
+  if (bad !== undefined)
+    throw new Error(`refusing to embed id ${JSON.stringify(bad)}`);
+  return [
+    "  SELECT string_agg(t.id, ', ' ORDER BY t.id) INTO missing",
+    `  FROM unnest(ARRAY[${ids.map((v) => `'${v}'`).join(", ")}]::text[]) AS t(id)`,
+    `  WHERE NOT EXISTS (SELECT 1 FROM ${table} x WHERE x.${column} = t.id);`,
+    "  IF missing IS NOT NULL THEN",
+    `    RAISE EXCEPTION '${message}', missing;`,
+    "  END IF;",
+  ];
+}
+
 /** Pure. The transaction Karl pastes. Videos in id order, segments in start order. */
 export function buildApplySql(
   segments: ReviewedSegment[],
   taxonomyVersion: string,
   taggedBy: string,
-  expectedSubSkills: number,
 ): string {
   const byVideo = new Map<string, ReviewedSegment[]>();
   for (const s of segments)
     byVideo.set(s.video_id, [...(byVideo.get(s.video_id) ?? []), s]);
   const videoIds = [...byVideo.keys()].sort();
+  const subSkillIds = [
+    ...new Set(segments.flatMap((s) => s.sub_skills.map((t) => t.id))),
+  ].sort();
+  const clusterIds = [
+    ...new Set(segments.flatMap((s) => s.clusters.map((t) => t.id))),
+  ].sort();
   const approved = segments
     .filter((s) => s.approve)
     .sort(
@@ -238,13 +273,26 @@ export function buildApplySql(
     "BEGIN;",
     "",
     "DO $pre$",
+    "DECLARE missing text;",
     "BEGIN",
-    `  IF (SELECT count(*) FROM public.sub_skills WHERE taxonomy_version = ${dollar(taxonomyVersion)}) <> ${expectedSubSkills} THEN`,
-    `    RAISE EXCEPTION 'vocabulary ${taxonomyVersion} is not loaded (expected ${expectedSubSkills} sub-skills): run scripts/scl-taxonomy-loader.ts --apply first';`,
-    "  END IF;",
-    `  IF (SELECT count(*) FROM public.video_resources WHERE video_id = ANY (ARRAY[${videoIds.map((v) => `'${v}'`).join(", ")}]::text[])) <> ${videoIds.length} THEN`,
-    "    RAISE EXCEPTION 'a video in this file is not in video_resources';",
-    "  END IF;",
+    ...missingCheck(
+      subSkillIds,
+      "public.sub_skills",
+      "id",
+      "sub-skill id(s) in this file are not in sub_skills: % (load the vocabulary first: scripts/scl-taxonomy-loader.ts --apply)",
+    ),
+    ...missingCheck(
+      clusterIds,
+      "public.clusters",
+      "id",
+      "cluster id(s) in this file are not in clusters: % (load the vocabulary first: scripts/scl-taxonomy-loader.ts --apply)",
+    ),
+    ...missingCheck(
+      videoIds,
+      "public.video_resources",
+      "video_id",
+      "video(s) in this file are not in video_resources: %",
+    ),
     "END",
     "$pre$;",
     "",
@@ -341,7 +389,6 @@ async function main(): Promise<void> {
     parsed.segments,
     taxonomy.taxonomy_version,
     `${SEGMENT_TAG_VERSION} gemini 2-pass, reviewed`,
-    taxonomy.sub_skills.length,
   );
   writeFileSync(values.out, sql);
   const approved = parsed.segments.filter((s) => s.approve).length;

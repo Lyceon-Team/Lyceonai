@@ -171,6 +171,46 @@ async function postJson(
   }
 }
 
+/** The HTTP status an SDK call failed with (the @google/genai ApiError carries `status`). */
+function errorStatus(err: unknown): number | null {
+  if (typeof err === "object" && err !== null && "status" in err) {
+    const status = (err as { status: unknown }).status;
+    if (typeof status === "number") return status;
+  }
+  return null;
+}
+
+/**
+ * Retries a Vertex call made through the SDK on 429 and 5xx, on the same schedule as the
+ * fetch path above (6 tries; 5, 10, 20, 40, 80 s plus jitter). Anything else rethrows at
+ * once. Owner ruling 2026-11-02 (G2-1): rate limits must not cut an eval run short.
+ */
+export async function withVertexRetry<T>(
+  step: string,
+  call: () => Promise<T>,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((r) => setTimeout(r, ms)),
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await call();
+    } catch (err: unknown) {
+      const status = errorStatus(err);
+      const retryable = status !== null && (status === 429 || status >= 500);
+      if (!retryable || attempt >= 5) {
+        if (retryable) {
+          throw new Error(
+            `${step}: Vertex returned ${status} after ${attempt + 1} tries`,
+            { cause: err },
+          );
+        }
+        throw err;
+      }
+      await sleep(5_000 * 2 ** attempt + Math.floor(Math.random() * 1_000));
+    }
+  }
+}
+
 const generateResponseSchema = z.object({
   candidates: z
     .array(
