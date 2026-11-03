@@ -23,7 +23,7 @@
 {"id":"SATM231Q29K","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047","CL.0094"],"distractors":[],"why":"Asks for x+y (expression). Substitute y=3x-13, distribute, combine, solve x, compute x+y."}
 {"id":"SATM2372TIX","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x: add equations to eliminate y (2y and -2y cancel), divide."}
 {"id":"SATM239UMU4","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"No solution: set 6/4 = -9/k, cross-multiply to find k=-6."}
-{"id":"SATM23EOC9G","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0080","CL.0089"],"distractors":[],"why":"Find k for no solution by equating slopes in slope-intercept form"}
+{"id":"SATM23EOC9G","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089","CL.0080"],"distractors":[],"why":"No solution: rewrite in slope-intercept, set slopes equal 3/2=-k/10, solve k=-15. Intercepts differ, confirming inconsistency."}
 {"id":"SATM23IUJ3M","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Substitute x=y+3 into first equation, distribute and solve for y"}
 {"id":"SATM23J3TLG","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute given x=3 into equation and solve for y"}
 {"id":"SATM23J7OR3","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0033","CL.0047"],"distractors":[],"why":"Subtract equations to eliminate x, solve for y"}
@@ -72,31 +72,31 @@
 {"id":"SATM29D0RVY","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Word problem: ticket counts and revenue, translate, substitute, distribute, solve"}
 {"id":"SATM29H7WT7","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Infinitely many solutions: find scalar multiple ratio, solve for k"}
 {"id":"SATM2A3X07X","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Infinitely many solutions: set coefficient ratios equal, solve for k"}
-{"id":"SATM2A9D9KD","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"asks for x+y not individual variables; elimination with multiplier then back-sub"}
-{"id":"SATM2AF3F3O","sub_skills":["SYS.1"],"clusters":["CL.0003"],"distractors":[],"why":"asks for (x,y) pair; add equations to eliminate y directly"}
-{"id":"SATM2AS8HKH","sub_skills":["SYS.1"],"clusters":["CL.0003"],"distractors":[],"why":"asks for x; add equations, y-coefficients cancel"}
-{"id":"SATM2ASW6U0","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"asks for x+y; substitute x=y+2 from eq2, distribute, combine"}
-{"id":"SATM2AU6WD4","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"asks for x+y; elimination with multipliers to cancel y"}
-{"id":"SATM2B2GAX0","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"find k for no solution; set coefficient ratios equal, solve for k"}
-{"id":"SATM2B6GBYP","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"asks for y; substitute x=19-2y from eq2, distribute, combine"}
-{"id":"SATM2B9PSZ1","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"find c for infinitely many solutions; compute scalar multiple between equations"}
-{"id":"SATM2BFE5B8","sub_skills":["SYS.2"],"clusters":["CL.0003"],"distractors":[],"why":"asks for x+y; add equations to eliminate y, then back-sub"}
-{"id":"SATM2BG0T6W","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0094"],"distractors":[],"why":"asks for y; add equations to find x, then substitute x=5 to get y"}
-{"id":"SATM2BMZ6FH","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"find k for no solution; set k/3 = 4/2, solve"}
-{"id":"SATM2BR87UE","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"ticket word problem; translate two conditions, price*qty, substitute and solve"}
-{"id":"SATM2BTN71R","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"find k for infinitely many solutions; ratio of coefficients must all equal 3"}
-{"id":"SATM2BZGKLZ","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"find k for no solution; set slope ratio equal, solve for k"}
-{"id":"SATM2BZSZNV","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"ticket word problem; translate, substitute, solve for adult count"}
-{"id":"SATM2C15CR9","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"find k for no solution; set k/3 = 6/9, solve"}
-{"id":"SATM2C25OSV","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"bakery word problem; muffins+scones, translate and solve"}
-{"id":"SATM2C2QKU3","sub_skills":["SYS.1"],"clusters":["CL.0003"],"distractors":[],"why":"asks for y; subtract equations to eliminate x (4x cancels)"}
-{"id":"SATM2CHS8VQ","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0003"],"distractors":[],"why":"bakery word problem with named variables; subtract equations (3r cancels)"}
-{"id":"SATM2CJWX0U","sub_skills":["SYS.1"],"clusters":["CL.0003"],"distractors":[],"why":"asks for y; subtract equations to eliminate x (2x cancels)"}
-{"id":"SATM2CK3Z3B","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"ticket word problem; translate, substitute, solve for adult count"}
-{"id":"SATM2CKYT9I","sub_skills":["SYS.2"],"clusters":["CL.0003"],"distractors":[],"why":"asks for x+y; subtract equations to eliminate x, solve for y, back-sub"}
-{"id":"SATM2CNHCPY","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0094"],"distractors":[],"why":"asks for 3x+2y; add equations to eliminate y, solve, evaluate expression"}
-{"id":"SATM2CR7Y03","sub_skills":["SYS.1"],"clusters":["CL.0003"],"distractors":[],"why":"asks for x; add equations to eliminate y"}
-{"id":"SATM2CT20PF","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"ticket word problem; translate, substitute, solve for adult count"}
+{"id":"SATM2A9D9KD","sub_skills":["SYS.2"],"clusters":["CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Asks for x+y (expression). Multiply eq2 by 2 to match x-coefficients, subtract to eliminate x, solve y=-5, back-sub x=-1, evaluate x+y=-6."}
+{"id":"SATM2AF3F3O","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for (x,y): add equations to eliminate y, 2x=26, x=13, back-sub y=6."}
+{"id":"SATM2AS8HKH","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x: add equations to eliminate y (-2y and +2y cancel), 10x=50, x=5."}
+{"id":"SATM2ASW6U0","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047","CL.0094"],"distractors":[],"why":"Asks for x+y (expression). Isolate x=y+2 from eq2, substitute into eq1, distribute, combine, solve y=2, x=4, evaluate x+y=6."}
+{"id":"SATM2AU6WD4","sub_skills":["SYS.2"],"clusters":["CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Asks for x+y (expression). Scale both equations to align y-coefficients, add to eliminate y, solve x=3, back-sub y=-4, evaluate x+y=-1."}
+{"id":"SATM2B2GAX0","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"No solution: set k/6=4/8, solve k=3. Verify constant ratio differs to confirm inconsistency."}
+{"id":"SATM2B6GBYP","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve for y: isolate x=19-2y from eq2, substitute into eq1, distribute, combine, solve y=7."}
+{"id":"SATM2B9PSZ1","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Infinitely many solutions: find scalar multiple -3/2 between equations, so c=-3/2*33=-99/2."}
+{"id":"SATM2BFE5B8","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Asks for x+y (expression). Add equations to eliminate y, 8x=40, x=5, back-sub y=4, evaluate x+y=9."}
+{"id":"SATM2BG0T6W","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for y: add equations to eliminate y, 12x=60, x=5, back-sub into eq2 to get y=5.5."}
+{"id":"SATM2BMZ6FH","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"No solution: set k/3=4/2=2, so k=6. Verify constant ratio 12/5!=2 confirms inconsistency."}
+{"id":"SATM2BR87UE","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0060","CL.0047"],"distractors":[],"why":"Word problem: count+revenue equations (rate*amount). a+c=153, 13a+7c=1503. Substitute, distribute, solve c=81."}
+{"id":"SATM2BTN71R","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Infinitely many solutions: ratio 9/3=3, 54/18=3, so k=3*11=33."}
+{"id":"SATM2BZGKLZ","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089","CL.0080"],"distractors":[],"why":"No solution: rewrite in slope-intercept form, set slopes equal 6/5=-9/k, cross-multiply to get k=-15/2."}
+{"id":"SATM2BZSZNV","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0060","CL.0047"],"distractors":[],"why":"Word problem: count+revenue equations (rate*amount). a+c=173, 14a+9c=1937. Substitute, distribute, solve a=76."}
+{"id":"SATM2C15CR9","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"No solution: set k/3=6/9=2/3, solve k=2. Verify constant ratio 19/25!=2/3 confirms inconsistency."}
+{"id":"SATM2C25OSV","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0060","CL.0047"],"distractors":[],"why":"Word problem: count+revenue equations (rate*amount). m+s=23, 3m+5s=89. Substitute, distribute, solve m=13."}
+{"id":"SATM2C2QKU3","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for y: subtract eq2 from eq1 to eliminate x (4x cancels), 10y=40, y=4."}
+{"id":"SATM2CHS8VQ","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[],"why":"Word problem: pricing context. 7s+3r=83, 4s+3r=56. Subtract to eliminate r, 3s=27, s=9."}
+{"id":"SATM2CJWX0U","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for y: subtract eq2 from eq1 to eliminate x (2x cancels), 10y=50, y=5."}
+{"id":"SATM2CK3Z3B","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0060","CL.0047"],"distractors":[],"why":"Word problem: count+revenue equations (rate*amount). a+c=9, 17a+11c=129. Substitute, distribute, solve a=5."}
+{"id":"SATM2CKYT9I","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Asks for x+y (expression). Subtract eq2 from eq1, 5y=25, y=5, back-sub x=4, evaluate x+y=9."}
+{"id":"SATM2CNHCPY","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Asks for 3x+2y (expression). Add equations to eliminate y, 10x=30, x=3, back-sub y=5, evaluate 3(3)+2(5)=19."}
+{"id":"SATM2CR7Y03","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x: add equations to eliminate y (2y and -2y cancel), 10x=50, x=5."}
+{"id":"SATM2CT20PF","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0060","CL.0047"],"distractors":[],"why":"Word problem: count+revenue equations (rate*amount). a+c=53, 11a+7c=471. Substitute, distribute, solve a=25."}
 {"id":"SATM2D2UJ0D","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0047","CL.0060"],"distractors":[],"why":"Mixture word problem: two unknowns (liters of P and Q), two conditions (total volume, total acid). Translate to system, substitute, distribute, isolate. Rate×amount for acid content."}
 {"id":"SATM2D52R1J","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133","CL.0089"],"distractors":[],"why":"Find k for no solution. Rewrite in slope-intercept, compare slopes (coefficients), solve for k."}
 {"id":"SATM2DAOR5V","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y, then isolate x."}
@@ -146,4 +146,4 @@
 {"id":"SATM2IBV8UL","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"No solution: proportional coefficients 3/9=k/-12 gives k=-4; constants differ confirming parallel lines"}
 {"id":"SATM2IBYGS8","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0034","CL.0047"],"distractors":[],"why":"Mixture word problem: concentration × volume, translate to x+y=600 and 0.23x+0.71y=246, substitute and solve"}
 {"id":"SATM2IHKOHY","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0095","CL.0094"],"distractors":[],"why":"Asks for x+y (expression, not x or y alone); add equations to eliminate y, find x=5, y=1, evaluate x+y=6"}
-{"id":"SATM2IJGAE9","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Add equations to eliminate y, get 7x=28 then x=4, substitute back for y=1"}
+{"id":"SATM2IJGAE9","sub_skills":["SYS.1"],"clusters":["CL.0003"],"distractors":[],"why":"asks for y; add equations to eliminate y (coefficients cancel), find x=4, substitute back"}
