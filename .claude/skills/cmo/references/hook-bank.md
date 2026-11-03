@@ -8,6 +8,9 @@ Long-term angles for content, ads, video and Reddit. Each is a real bottleneck, 
 - No promised score outcomes.
 - Any figure (prices, fees, tutor rates) needs a cited source before use.
 - New angles are added in the same columns, marked `proposed` until Karl approves.
+- "Most people…" openers are allowed (Karl, 2026-11-02; replaces the earlier ban), e.g. "Most people think it's $64…?". Only the opening is exempt: no statistic, no fear or pressure, nothing else about what students do.
+- "Free" only for the diagnostic, daily practice (40 questions a day) or the Question of the Day. Hooks about the study calendar, the parent view, LISA or full-length tests never call them free; LISA is never promoted as free (Karl, 2026-11-02).
+- Hooks for public copy describe outcomes, never mechanisms (Public Disclosure Doctrine 2).
 
 ## Students
 

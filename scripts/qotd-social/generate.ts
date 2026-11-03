@@ -531,7 +531,7 @@ function qotdLinks(): { tiktok: string; instagram: string } {
   return { tiktok: all.tiktok, instagram: all.instagram };
 }
 
-function archiveFetch(url: string): ReturnType<ArchiveFetch> {
+export function archiveFetch(url: string): ReturnType<ArchiveFetch> {
   return fetch(url, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(20_000),
