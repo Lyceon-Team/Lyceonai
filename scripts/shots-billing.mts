@@ -14,6 +14,7 @@
 import { chromium } from "@playwright/test";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import type Stripe from "stripe";
 import { cancellableSubscriptionSchema } from "../packages/shared/src/billing-schema";
@@ -121,11 +122,49 @@ const SCENES: ReadonlyArray<{
   { name: "active-confirm-mobile", shape: { status: "active" }, confirm: true, width: 390 },
 ];
 
+/**
+ * Resolve a request path inside the build directory, or refuse.
+ *
+ * The request path is attacker-controlled in the general case — `GET /../../etc/passwd` is a
+ * real request a real client can send — so joining it straight onto `DIR` is a path traversal
+ * whatever the server's intended lifetime. CodeQL flagged exactly that here (alert 107,
+ * "uncontrolled data used in path expression") and it was right: this binds to a port, and
+ * "it only runs for eight screenshots" is a property of today's caller, not of the code.
+ *
+ * Decoded first, because `%2e%2e%2f` is `../` by the time the filesystem sees it, and then
+ * checked by RESOLVED PREFIX rather than by scanning for "..", which is the check that cannot
+ * be spelled around.
+ */
+function resolveInside(requestPath: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(requestPath);
+  } catch {
+    return null;
+  }
+  const resolved = path.resolve(DIR, `.${path.posix.normalize(decoded)}`);
+  return resolved === DIR || resolved.startsWith(`${DIR}${path.sep}`)
+    ? resolved
+    : null;
+}
+
+// `pnpm build`'s prebuild step rimrafs `dist/`, so this directory goes away whenever a build
+// runs. Say so, rather than serving 404s and timing out on a locator 30 seconds later.
+if (!existsSync(path.join(DIR, "index.html"))) {
+  throw new Error(
+    `No harness build at ${DIR}. Run: pnpm exec vite build --config vite.shots-billing.config.ts`,
+  );
+}
+
 const server = createServer(async (req, res) => {
   const url = (req.url ?? "/").split("?")[0] ?? "/";
-  const file = url === "/" ? "/index.html" : url;
+  const file = resolveInside(url === "/" ? "/index.html" : url);
+  if (file === null) {
+    res.writeHead(403).end("forbidden");
+    return;
+  }
   try {
-    const body = await readFile(path.join(DIR, file));
+    const body = await readFile(file);
     res.writeHead(200, {
       "Content-Type": TYPES[path.extname(file)] ?? "application/octet-stream",
     });
