@@ -1,0 +1,80 @@
+=== LE2+LF WRITE PASS — TAGGING REPORT ===
+Date: 2026-11-03
+Taxonomy: scl-v1.0.0
+Total questions tagged: 594
+  LE2 (Linear Equations in Two Variables): 300
+  LF (Linear Functions): 294
+
+=== TAG COUNTS ===
+Sub-skill tags: 722 (1.22 per question)
+Cluster tags: 1261 (2.12 per question)
+Distractor tags: 1344 (2.26 per question)
+
+=== SUB-SKILL DISTRIBUTION ===
+LE2 sub-skills:
+  LE2.1 (Model a situation with a linear equation): 0
+  LE2.2 (Interpret parts of a contextual linear equation or graph): 0
+  LE2.3 (Find one quantity in context when the other is known): 0
+  LE2.4 (Connect a lines equation, graph, table, slope and intercepts): 233
+  LE2.5 (Relate a second line: parallel, perpendicular or translated): 94
+LF sub-skills:
+  LF.1 (Evaluate or invert a given linear rule): 187
+  LF.2 (Build a linear model from a verbal description): 37
+  LF.3 (Determine a linear function from points, a table, values, or slope): 128
+  LF.4 (Interpret slope, intercept, and constants in context): 35
+  LF.5 (Intercepts and graph features of a linear function): 8
+
+=== CLUSTER DISTRIBUTION (top 25) ===
+  CL.0128 (write y = mx + b from slope and a point): 239
+  CL.0024 (compute slope from two points): 201
+  CL.0047 (isolate the variable): 175
+  CL.0094 (substitute a value and evaluate): 147
+  CL.0084 (set a variable to zero to find an intercept or initial value): 107
+  CL.0080 (rewrite in slope-intercept form): 101
+  CL.0116 (use the negative-reciprocal slope for a perpendicular line): 82
+  CL.0160 (read slope and intercept from the equation): 40
+  CL.0104 (translate words into an equation or inequality): 36
+  CL.0154 (match a number in the model to its meaning in context): 33
+  CL.0089 (solve for the constant): 22
+  CL.0009 (check a point in the equation or inequality): 11
+  CL.0172 (recognize parallel lines have equal slopes): 10
+  CL.0095 (substitute an expression): 9
+  CL.0004 (add the parts to get the whole, or subtract to find a part): 9
+  CL.0016 (clear fractions by multiplying by the common denominator): 9
+  CL.0017 (combine like terms): 7
+  CL.0034 (distribute over every term): 6
+  CL.0060 (multiply a rate by the amount): 5
+  CL.0053 (match coefficients): 3
+  CL.0087 (shift a graph by adjusting its equation): 2
+  CL.0081 (round to the whole number the context allows): 2
+  CL.0003 (add or subtract equations to eliminate a variable): 2
+  CL.0166 (recognize a proportional relationship): 1
+  CL.0119 (use the reference-sheet formula): 1
+  ... 26 distinct clusters total
+
+=== CROSS-SKILL TAGGING ===
+Questions tagged with both LE2.x and LF.x sub-skills: 1
+  SATM2YANYDS
+
+=== NOTATION BOUNDARY ===
+No notation-boundary ambiguous cases found.
+LE2 questions uniformly use y= / slope-intercept / standard form notation.
+LF questions uniformly use f(x)= / function notation.
+The skill_code split aligns with notation as expected.
+
+=== SUSPECTED MIS-SKILLS ===
+None found. All questions' tags align with their skill_code.
+
+=== TAXONOMY GAPS ===
+LE2.1 (Model a situation): 0 questions — no word-problem modeling questions in the LE2 bank.
+LE2.2 (Interpret parts of contextual equation): 0 questions — no contextual interpretation in LE2 bank.
+LE2.3 (Find one quantity in context): 0 questions — no contextual quantity-finding in LE2 bank.
+LF.5 (Intercepts and graph features): low count — limited intercept/parallel/shift questions in LF bank.
+These are coverage gaps in the question bank, not taxonomy gaps — the sub-skills are well-defined,
+but the bank has no questions that test them.
+
+=== OFF-SPEC PATTERNS ===
+None detected.
+
+Output: /home/user/Lyceonai/content/scl-pilot-le2lf/tagged-all.ndjson
+Total records: 594
