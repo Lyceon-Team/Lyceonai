@@ -13,12 +13,18 @@
  *       QOTD date, batch PR into `social`, his merge the approval, read from GitHub's record by
  *       scripts/worked-examples/approval.ts); at render time the merged script for that date; no
  *       approved script = the fallback with `no_approved_script`; am_michael]
- *       | @implemented [2026-11-02, authored scripts 2026-11-02]
+ *       Karl's rulings 2026-11-03: the scripts and their voice live in the PRIVATE repo
+ *       QOTD_BREAKDOWN_CONTENT_REPO (the public repo holds nothing breakdown-specific that names an
+ *       answer), approved by his merge into its `main`; the job reads yesterday's folder only;
+ *       the final-mix true-peak limiter (SCL-270, at most -1 dBTP) runs on the breakdown too]
+ *       | @implemented [2026-11-02, authored scripts 2026-11-02, private repo + limiter 2026-11-03]
  *
  * Usage (.github/workflows/qotd-social.yml, job `breakdown`, after the QOTD job):
  *   pnpm exec tsx scripts/qotd-social/breakdown.ts window   (prints off|not_started|active|ended|paused)
- *   pnpm exec tsx scripts/qotd-social/breakdown.ts build --content <social checkout> [--date YYYY-MM-DD]
- *       [--out DIR] [--base-url URL] [--fixture tests/fixtures/qotd/rows.json --now ISO] [--dry-run]
+ *   pnpm exec tsx scripts/qotd-social/breakdown.ts target   (prints yesterday's folder in the private
+ *       repo, qotd-breakdowns/<week>/<date>: the one path the job's sparse checkout fetches)
+ *   pnpm exec tsx scripts/qotd-social/breakdown.ts build --content <private repo checkout> [--date YYYY-MM-DD]
+ *       [--out DIR] [--base-url URL] [--fixture <rows.json> --now ISO] [--dry-run]
  *   pnpm exec tsx scripts/qotd-social/breakdown.ts post --dir DIR --assets qotd-social-out [--dry-run]
  *
  * plain English:
@@ -29,19 +35,23 @@
  *     variable QOTD_BREAKDOWN_PAUSED=true) it writes an `inactive` manifest and does nothing else.
  *     Otherwise it reads the day from the PUBLIC archive (loadYesterday, the generator's own
  *     read), then, stopping at the first failure with its code: the suitability checks (c); the
- *     day's script on `social` (content/qotd-breakdowns/<week>/<date>/script.json), refused unless
- *     GitHub's record shows Karl merged it (approvalFromRecord, the worked examples' own);
+ *     day's script in the private repo (qotd-breakdowns/<week>/<date>/script.json), refused unless
+ *     GitHub's record shows Karl merged it into that repo's `main` (approvalFromRecord, the worked
+ *     examples' own, read with the read-only CONTENT_PRIVATE_TOKEN);
  *     THE HARD RULE, the script's option_order and correct_display_letter equal the stored row
  *     the archive serves (order_mismatch); the worked examples' script rules on the day's
  *     question as served, and the captions; the committed voice (voiceProblems: refused when a
  *     line's text changed since it was voiced); the composition (buildScriptComposition) and its
  *     folder (writeCompositionFolder); the 30-60 s bound; `hyperframes check`; the layout check;
- *     the render; the MP4 check (daily.ts videoFileProblems). A pass becomes a `built` manifest.
+ *     the render (into render/); the final-mix true-peak limiter (final-mix.ts limitFinishedMix,
+ *     SCL-270); the MP4 check (daily.ts videoFileProblems) and the finished-mix check
+ *     (finishedMixProblems, at most -1 dBTP). A pass becomes a `built` manifest.
  *     Fallbacks exit 0: nothing here can fail the QOTD. No Python and no voicing at render time:
  *     the voice was committed with the script and approved with it.
  *     --dry-run (pull requests only) uses a placeholder approval; --fixture serves the archive
- *     from rows.json through the real projection (toArchiveResponse), so the dry run proves the
- *     whole path on real output with the fixture script tree.
+ *     from a rows file through the real projection (toArchiveResponse). Pull requests use the
+ *     SYNTHETIC fixture (tests/fixtures/qotd-breakdowns-synthetic: a made-up question, order and
+ *     script, voiced in am_michael), so no real answer is used and the whole path still runs.
  *   * post: built: the video and the SCL-262 set (videoSetSlackSteps, the worked examples' own
  *     message builder). skipped: yesterday's answer slide (the QOTD run's carousel slide 3), with
  *     "Breakdown skipped: <reason> (<code>)", or the notice alone when there is no slide. No
@@ -70,9 +80,12 @@ import {
   type QotdArchiveResponse,
 } from "../../packages/shared/src/qotd-schema";
 import {
+  QOTD_BREAKDOWN_CONTENT_BRANCH,
+  QOTD_BREAKDOWN_CONTENT_REPO,
   QOTD_BREAKDOWN_PILOT,
   QOTD_BREAKDOWN_WINDOW_NOTE,
   breakdownCopy,
+  breakdownScriptDir,
   breakdownQuestion,
   breakdownSkipCode,
   breakdownSkipLine,
@@ -92,10 +105,14 @@ import {
   type ExampleApproval,
 } from "../worked-examples/approval";
 import { buildScriptComposition } from "../worked-examples/composition";
-import { videoFileProblems } from "../worked-examples/daily";
+import { videoFileProblems, type ProbeResult } from "../worked-examples/daily";
+import {
+  finishedMixProblems,
+  limitFinishedMix,
+} from "../worked-examples/final-mix";
 import { folderCommit, pullForCommit } from "../worked-examples/github";
 import { writeCompositionFolder } from "../worked-examples/generate";
-import { KIT_DIR, ROOT, loadKit } from "../worked-examples/kit";
+import { KIT_DIR, ROOT, loadKit, type Kit } from "../worked-examples/kit";
 import { layoutCheck } from "../worked-examples/layout-check";
 import {
   nodeFetch,
@@ -193,7 +210,10 @@ function message(e: unknown): string {
   throw e;
 }
 
-/** Where the day's script comes from: a checkout of `social`, and Karl's merge of its folder. */
+/**
+ * Where the day's script comes from: a checkout of the private repo (in the nightly job, only
+ * yesterday's folder), and Karl's merge of that folder into its `main`.
+ */
 export type ScriptSource = {
   contentRoot: string;
   approve: (
@@ -231,7 +251,7 @@ export async function buildBreakdown(
   const entry = loaded.scripts.find((e) => e.script.qotd_date === date);
   if (!entry)
     return skipped(date, postedOn, "no_approved_script", [
-      `no script for ${date} under content/qotd-breakdowns on social`,
+      `no script for ${date} under ${breakdownScriptDir(date)} in the private repo`,
       ...loaded.problems.filter((p) => p.includes(date)),
     ]);
   const approved = await source.approve(entry.dir);
@@ -298,17 +318,19 @@ export async function buildBreakdown(
   const layout = await layoutCheck(compDir);
   if (layout.length > 0)
     return skipped(date, postedOn, "layout_check_failed", layout);
+  const rendered = join(outDir, "render", video);
+  mkdirSync(join(outDir, "render"), { recursive: true });
   try {
     hyperframes(
       kit.voice,
-      ["render", "--quality", "delivery", "--output", join(outDir, video)],
+      ["render", "--quality", "delivery", "--output", rendered],
       compDir,
     );
   } catch (e: unknown) {
     return skipped(date, postedOn, "render_failed", [message(e)]);
   }
-  const verified = videoFileProblems(join(outDir, video), compDir);
-  if (verified.problems.length > 0)
+  const verified = finishVideo(rendered, join(outDir, video), compDir, kit);
+  if (!verified.ok)
     return skipped(date, postedOn, "mp4_check_failed", verified.problems);
 
   const manifest: Built = {
@@ -334,8 +356,39 @@ export async function buildBreakdown(
 }
 
 /**
- * Karl's merge of a script folder on `social`, from GitHub's record of the pull request that last
- * changed it (the worked examples' approvalFromRecord). A dry run approves with a placeholder.
+ * From the rendered MP4 to the video that is posted. SCL-270 (Karl, 2026-11-03: "include the
+ * limiter" in the breakdown): the finished mix, limited to at most -1 dBTP true peak by the one
+ * shared limiter (final-mix.ts limitFinishedMix), is the video, and the rendered file is never
+ * posted. Then the MP4 check every kit video takes (daily.ts videoFileProblems) and the
+ * finished-mix check (finishedMixProblems). `limit` is the limiter (a parameter only so a test can
+ * prove the check refuses a mix the limiter did not bring down).
+ */
+export function finishVideo(
+  rendered: string,
+  video: string,
+  compDir: string,
+  kit: Kit,
+  limit: (
+    input: string,
+    output: string,
+    kit: Kit,
+  ) => unknown = limitFinishedMix,
+): { ok: true; probe: ProbeResult } | { ok: false; problems: string[] } {
+  try {
+    limit(rendered, video, kit);
+  } catch (e: unknown) {
+    return { ok: false, problems: [message(e)] };
+  }
+  const { probe, problems } = videoFileProblems(video, compDir);
+  problems.push(...finishedMixProblems(video, kit));
+  return problems.length > 0 ? { ok: false, problems } : { ok: true, probe };
+}
+
+/**
+ * Karl's merge of a script folder into the private repo's `main`, from GitHub's record of the pull
+ * request that last changed it (the worked examples' approvalFromRecord), read with the read-only
+ * CONTENT_PRIVATE_TOKEN (Contents + Pull requests: Read on that repo only, Karl 2026-11-03). The
+ * repo is fixed here, never read from the environment. A dry run approves with a placeholder.
  */
 export function scriptApproval(
   contentRoot: string,
@@ -353,19 +406,16 @@ export function scriptApproval(
       },
     });
   return async (dir) => {
-    const repo = env.GITHUB_REPOSITORY;
-    const token = env.GITHUB_TOKEN;
-    if (!repo || !token)
-      return {
-        ok: false,
-        reason: "GITHUB_REPOSITORY or GITHUB_TOKEN is not set",
-      };
+    const token = env.CONTENT_PRIVATE_TOKEN;
+    if (!token)
+      return { ok: false, reason: "CONTENT_PRIVATE_TOKEN is not set" };
     const sha = folderCommit(contentRoot, dir);
     if (sha === "") return { ok: false, reason: "the folder has no commit" };
     return approvalFromRecord(
-      await pullForCommit(repo, sha, token),
+      await pullForCommit(QOTD_BREAKDOWN_CONTENT_REPO, sha, token),
       sha,
       env.CONTENT_APPROVER_LOGIN?.trim() || undefined,
+      QOTD_BREAKDOWN_CONTENT_BRANCH,
     );
   };
 }
@@ -429,7 +479,7 @@ async function build(f: Flags): Promise<number> {
     throw new Error("--now is for --fixture runs only");
   const content = f.get("--content");
   if (content === undefined)
-    throw new Error("--content <checkout of social> is required");
+    throw new Error("--content <checkout of the private repo> is required");
   const contentRoot = resolve(content);
   const now = nowFlag ? new Date(nowFlag) : new Date();
   if (Number.isNaN(now.getTime())) throw new Error("--now is not a time");
@@ -625,9 +675,16 @@ async function main(): Promise<number> {
     );
     return 0;
   }
+  if (cmd === "target") {
+    // The one folder the job's sparse checkout fetches: yesterday's (its answer is public).
+    const day = breakdownDay(null, new Date());
+    if (!day.ok) throw new Error(day.problem);
+    out(breakdownScriptDir(day.date));
+    return 0;
+  }
   if (cmd === "build") return build(f);
   if (cmd === "post") return post(f);
-  throw new Error("usage: breakdown.ts build|post …");
+  throw new Error("usage: breakdown.ts window|target|build|post …");
 }
 
 if (

@@ -4,10 +4,14 @@
 # Karl, 2026-11-02, Part C: "Plant a mutation that uses the original order or the canonical
 # letter, and show it red"; SCL-266; re-planted 2026-11-02 for Karl's rulings on #1398: authored
 # scripts approved by merge, the script's order and letter equal to the stored row at render, the
-# worked examples' rules reused, am_michael, the pilot dates, the owner-run schedule export)
+# worked examples' rules reused, am_michael, the pilot dates, the owner-run schedule export;
+# extended 2026-11-03 for Karl's rulings: the private repo (its own token, its `main`, yesterday's
+# folder only, the environment pull requests never enter) and the final-mix limiter, B23-B28.
+# The public-repo content gate has its own harness: breakdown-content-gate.mutations.sh)
 # ============================================================================
 # @spec [owner brief "QOTD breakdown pilot, 2 weeks" (Karl, 2026-11-02), Part C; SCL-266; Karl's
-#   rulings on #1398, 2026-11-02] | @implemented [2026-11-02, authored scripts 2026-11-02]
+#   rulings on #1398, 2026-11-02; Karl's rulings 2026-11-03 (private repo, limiter)]
+#   | @implemented [2026-11-02, authored scripts 2026-11-02, private repo + limiter 2026-11-03]
 #
 # plain English: each plant puts one defect into the breakdown, runs its test file and requires
 # it to go RED on a NAMED assertion. The rules of the other *.mutations.sh harnesses:
@@ -223,6 +227,29 @@ ts_plant "B21 voicing back in CI" .github/workflows/qotd-social.yml \
 ts_plant "B22 a malformed script throws for every day" scripts/qotd-social/check-breakdown-scripts.ts \
   '        if (!(e instanceof SyntaxError)) throw e;' '        throw e;' \
   "a malformed script for one day is that day's problem, not every day's"
+
+echo "=== the private repo and the limiter (Karl, 2026-11-03) ==="
+ts_plant "B23 the rendered mix posted (the limiter skipped)" scripts/qotd-social/breakdown.ts \
+  "  ) => unknown = limitFinishedMix," "  ) => unknown = (i: string, o: string) => writeFileSync(o, readFileSync(i))," \
+  "the video is the limited mix: at most -1 dBTP"
+ts_plant "B24 the finished-mix check dropped" scripts/qotd-social/breakdown.ts \
+  "  problems.push(...finishedMixProblems(video, kit));" "" \
+  "a mix the limiter did not bring down is refused by the finished-mix check"
+ts_plant "B25 approved by a merge into any branch (the private repo's main not required)" scripts/qotd-social/breakdown.ts \
+  "      QOTD_BREAKDOWN_CONTENT_BRANCH,"$'\n'"    );" "    );" \
+  "refused when merged into another branch"
+ts_plant "B26 the approval read from this repository with its own token" scripts/qotd-social/breakdown.ts \
+  "      await pullForCommit(QOTD_BREAKDOWN_CONTENT_REPO, sha, token)," \
+  "      await pullForCommit(env.GITHUB_REPOSITORY ?? \"\", sha, env.GITHUB_TOKEN ?? token)," \
+  "approved when the record shows the approver merged it into the private repo's main"
+ts_plant "B27 the whole private repo checked out (not yesterday's folder only)" .github/workflows/qotd-social.yml \
+  "          sparse-checkout: \${{ steps.target.outputs.dir }}"$'\n' "" \
+  "checks out yesterday's folder only from the private repo"
+ts_plant "B28 the private token's environment entered by pull requests" .github/workflows/qotd-social.yml \
+  "    environment: \${{ github.event_name != 'pull_request' && 'qotd-breakdown' || '' }}" \
+  "    environment: qotd-breakdown" \
+  "the private repo's token lives in the qotd-breakdown environment, which pull requests never enter"
+
 echo
 echo "qotd-breakdown mutations: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then echo "QOTD BREAKDOWN MUTATIONS: FAIL"; exit 1; fi

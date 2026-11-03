@@ -132,8 +132,18 @@ export function breakdownSkipLine(code: QotdBreakdownSkipCode): string {
  */
 export const QOTD_BREAKDOWN_VOICE_PROFILE = "am_michael";
 
-/** Where a day's script lives on `social`: content/qotd-breakdowns/<ISO week>/<qotd_date>. */
-export const QOTD_BREAKDOWN_CONTENT_DIR = "content/qotd-breakdowns";
+/**
+ * Where the scripts live (Karl's ruling 2026-11-03, approving the private-repo proposal: the
+ * public repository may hold nothing breakdown-specific that names an answer). A private repo,
+ * its `main` protected so only Karl merges; each day at qotd-breakdowns/<ISO week>/<qotd_date>/
+ * (script.json + voice/). The nightly job checks out yesterday's folder only (sparse, no other
+ * day's file contents) with a read-only token held in the `qotd-breakdown` environment.
+ */
+export const QOTD_BREAKDOWN_CONTENT_REPO = "Lyceon-Team/lyceon-content-private";
+/** The private repo's protected branch: Karl's merge into it is the approval. */
+export const QOTD_BREAKDOWN_CONTENT_BRANCH = "main";
+/** The scripts' root inside the private repo: qotd-breakdowns/<ISO week>/<qotd_date>. */
+export const QOTD_BREAKDOWN_CONTENT_DIR = "qotd-breakdowns";
 
 export function breakdownScriptDir(qotdDate: string): string {
   return `${QOTD_BREAKDOWN_CONTENT_DIR}/${isoWeekCycle(qotdDate)}/${qotdDate}`;

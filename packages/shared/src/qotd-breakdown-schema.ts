@@ -15,7 +15,8 @@
  *       2026-11-09 to 2026-11-22] | @implemented [2026-11-02, authored scripts 2026-11-02]
  *
  * plain English: `qotdBreakdownScriptSchema` is one authored script,
- * content/qotd-breakdowns/<YYYY-Www>/<qotd_date>/script.json on `social`: the QOTD date, the
+ * qotd-breakdowns/<YYYY-Www>/<qotd_date>/script.json in the private repo
+ * Lyceon-Team/lyceon-content-private (Karl, 2026-11-03; never in this public repo): the QOTD date, the
  * question id, the day's stored option order (canonical keys, as qotd_schedule.option_order) and
  * correct display letter, and the spoken script in the worked examples' own field schemas
  * (workedExampleScriptSchema: hook line and voice, setup, steps, trap, answer). The order and
