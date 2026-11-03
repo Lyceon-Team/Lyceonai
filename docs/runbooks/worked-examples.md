@@ -4,6 +4,16 @@ Owner brief: "Worked examples: production system" (Karl, 2026-10-27). Engine: Hy
 (Karl's pick, 2026-10-27; Hypit shelved until 1.0). Music: "Happy Beats / Business Moves Vol. 12"
 by ende.app, CC BY 4.0, credited in every caption.
 
+**Cadence and tools (Karl's content rulings, 2026-11-02; SCL-264).** Worked examples post Mon/Wed/Fri,
+plus more if quality holds; the other days rotate graphing-calculator/trap, product moments,
+test-date/myth and parent posts. A starting shape that changes with the data. Hyperframes stays the
+core; pilots are Manim with manim-voiceover (math visuals) and Chatterbox (a naturalness comparison
+against the Kokoro-82M `am_michael` voice); screen demos are scripted Playwright recordings, not
+OpenScreen, whose repository is archived (Karl, 2026-11-02); Remotion (licence), stock-footage
+generators, AI video/avatar models and schedulers are rejected for now. Until Desmos replies to the permission request, no example shows the Desmos
+interface or logo or says "Desmos" on screen or in a caption (screen recordings included): a graphing
+method is drawn in our own rendering (Manim). Posting stays by hand from `#social`.
+
 ## What runs where
 
 | Piece | Where | What it does |
@@ -106,18 +116,17 @@ re-run.
 `SOCIAL_SLACK_CHANNEL_ID` and `CONTENT_APPROVER_LOGIN` (variables). The job pushes `posted.json`
 to `social` with its own token, as the approval stamp does.
 
-## Metrics (manual entry, monthly readout)
+## Metrics (the private Drive tracker is the record)
 
-Enter readings from each platform's analytics into `worked_example_metrics` (Karl, owner-run):
+Every Monday, Karl's analytics pull (Claude in Chrome, read-only) reads each platform's numbers into
+the private Drive tracker; numbers never go in the repository. Judge a video at 72 hours on
+retention, saves per 1,000 views and share of views from search; each test carries an experiment
+ID (Karl, 2026-11-02; SCL-264).
 
-```sql
-INSERT INTO public.worked_example_metrics (worked_example_id, platform, captured_at, views,
-  retention_3s_pct, avg_watch_seconds, completion_pct, non_follower_view_pct, follows)
-VALUES ('we-satm2czs1be', 'tiktok', '2026-11-09T17:00Z', 0, 0, 0, 0, 0, 0);
-```
-
-Monthly readout: `SELECT * FROM public.worked_example_metrics_monthly WHERE month = '2026-11-01'
-ORDER BY hook_type, worked_example_id;` (latest reading per example, platform and month).
+**The private Drive tracker is the record (Karl, 2026-11-02).** Readings are no longer entered into
+`worked_example_metrics`, and its monthly readout (`worked_example_metrics_monthly`) is no longer
+run. The table, the view and their migration (`supabase/migrations/20261118000000_worked_examples.sql`)
+stay as they are; they are not dropped or altered, but they are not the record.
 
 ## The voice (Kokoro `am_michael`), pronunciation and loudness
 
