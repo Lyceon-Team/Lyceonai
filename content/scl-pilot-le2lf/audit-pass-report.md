@@ -5,7 +5,7 @@ Total questions tagged: 594
 
 ## Per-sub-skill counts
 
-| Sub-skill | Count | %% of bank |
+| Sub-skill | Count | % of bank |
 |-----------|------:|----------:|
 | LE2.4 | 300 | 50.5% |
 | LE2.5 | 93 | 15.7% |
