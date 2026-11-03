@@ -215,6 +215,10 @@ ts_plant "B18 the pilot dates moved off Karl's ruling" shared/qotd/breakdown.ts 
 ts_plant "B19 the pilot never ends" shared/qotd/breakdown.ts \
   '  if (postedOn > pilot.end) return "ended";' "" \
   "is set to Karl's dates, posting days, 14 inclusive"
+ts_plant "B29 the hold lifted (the live window set while Karl holds the pilot, 2026-11-03)" shared/qotd/breakdown.ts \
+  '  qotdBreakdownPilotSchema.parse({ start: null, end: null });' \
+  '  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });' \
+  "held: the live window is off"
 ts_plant "B20 the breakdown blocks the QOTD (inside its job)" .github/workflows/qotd-social.yml \
   "    needs: assets"$'\n'"    if: always()" "    needs: assets" \
   "runs after the QOTD job, whatever its result"

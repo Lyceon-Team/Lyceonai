@@ -66,12 +66,23 @@ import { qotdReadabilityProblem } from "./readability";
 import { QOTD_SECTION_NAME } from "./social";
 
 /**
- * The pilot window, as QOTD posting days (the day a breakdown of the day before posts): Karl's
- * ruling on #1398, 2026-11-02, "start 2026-11-09 and end 2026-11-22", 14 days inclusive. So the
- * QOTD days broken down are 2026-11-08 to 2026-11-21.
+ * The pilot window Karl ruled on #1398, 2026-11-02, as QOTD posting days (the day a breakdown of
+ * the day before posts): "start 2026-11-09 and end 2026-11-22", 14 days inclusive, so the QOTD
+ * days broken down are 2026-11-08 to 2026-11-21. Kept as the record of that ruling; the live window
+ * is QOTD_BREAKDOWN_PILOT below.
+ */
+export const QOTD_BREAKDOWN_PILOT_RULED: QotdBreakdownPilot =
+  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });
+
+/**
+ * The live window. HELD by Karl, 2026-11-03: "Hold the private repo. Pause the QOTD breakdown
+ * pilot ... so nothing posts 'no approved script' notices to #social from Nov 9. Leave the code
+ * merged. Karl will un-pause when the private repo exists." Off (no dates): the job installs,
+ * builds and posts nothing on any day. To un-pause, set the dates Karl then gives (or
+ * QOTD_BREAKDOWN_PILOT_RULED's, if still ahead).
  */
 export const QOTD_BREAKDOWN_PILOT: QotdBreakdownPilot =
-  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });
+  qotdBreakdownPilotSchema.parse({ start: null, end: null });
 
 /** Where `postedOn` (the QOTD posting day) sits against the window. `paused` wins over all. */
 export function pilotWindow(
