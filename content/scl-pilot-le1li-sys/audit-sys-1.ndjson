@@ -1,4 +1,3 @@
-{"id":"SATM2IJGAE9","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Two symbolic equations; asks for y; add to eliminate y then back-substitute"}
 {"id":"SATM2IL32II","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Two symbolic equations; asks for x; add to eliminate y"}
 {"id":"SATM2IQUICO","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047","CL.0094"],"distractors":[],"why":"Two symbolic equations; asks for x+y; substitute x=4y-3, distribute, combine, solve, evaluate sum"}
 {"id":"SATM2ISGEGS","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Two symbolic equations; asks for y; subtract to eliminate x"}
@@ -147,3 +146,4 @@
 {"id":"SATM2Z7RBHV","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Asks for x+y (expression, not bare variable); elimination then evaluate sum"}
 {"id":"SATM2ZL0F7Q","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0060","CL.0003","CL.0047"],"distractors":[],"why":"Context: notebook/pen pricing with variables p,q; elimination solves for notebook price"}
 {"id":"SATM2ZM4XNO","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"No solution condition: find k by comparing coefficient ratios for parallel lines"}
+{"id": "SATM2ZWX0JK", "sub_skills": ["SYS.2"], "clusters": ["CL.0095", "CL.0094", "CL.0034", "CL.0047"], "distractors": [], "why": "System with constraint x=2y-1; substitute into 3x-2y=11 to find y=7/2, then x=6, then c=7(6)+4(7/2)=56. Asks for c (not x or y) so SYS.2."}
