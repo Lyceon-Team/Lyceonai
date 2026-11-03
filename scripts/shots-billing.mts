@@ -13,8 +13,7 @@
  */
 import { chromium } from "@playwright/test";
 import { createServer } from "node:http";
-import { readFile, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readFile, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import type Stripe from "stripe";
 import { cancellableSubscriptionSchema } from "../packages/shared/src/billing-schema";
@@ -123,55 +122,57 @@ const SCENES: ReadonlyArray<{
 ];
 
 /**
- * Resolve a request path inside the build directory, or refuse.
+ * The built harness, read once into memory and served from a lookup.
  *
- * The request path is attacker-controlled in the general case — `GET /../../etc/passwd` is a
- * real request a real client can send — so joining it straight onto `DIR` is a path traversal
- * whatever the server's intended lifetime. CodeQL flagged exactly that here (alert 107,
- * "uncontrolled data used in path expression") and it was right: this binds to a port, and
- * "it only runs for eight screenshots" is a property of today's caller, not of the code.
+ * NO REQUEST PATH EVER REACHES THE FILESYSTEM. The first cut of this server joined the request
+ * path onto the build directory, which is a path traversal — `GET /../../etc/passwd` is a real
+ * request a real client can send, and "it only runs for eight screenshots" is a property of
+ * today's caller, not of the code. CodeQL flagged it (alerts 107 and 108) and it was right.
  *
- * Decoded first, because `%2e%2e%2f` is `../` by the time the filesystem sees it, and then
- * checked by RESOLVED PREFIX rather than by scanning for "..", which is the check that cannot
- * be spelled around.
+ * The second cut resolved and prefix-checked the path, which is correct but is still
+ * tainted-value-to-`readFile`, and CodeQL went on flagging it — fairly, since the guard's
+ * correctness is something a reader has to verify rather than see. So the request path is now a
+ * KEY, not a path: it either names an entry in a map built from the directory listing, or it is
+ * a 404. There is nothing left to get wrong.
  */
-function resolveInside(requestPath: string): string | null {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(requestPath);
-  } catch {
-    return null;
-  }
-  const resolved = path.resolve(DIR, `.${path.posix.normalize(decoded)}`);
-  return resolved === DIR || resolved.startsWith(`${DIR}${path.sep}`)
-    ? resolved
-    : null;
+async function loadBuild(dir: string): Promise<Map<string, Buffer>> {
+  const files = new Map<string, Buffer>();
+  const walk = async (sub: string): Promise<void> => {
+    for (const entry of await readdir(path.join(dir, sub), {
+      withFileTypes: true,
+    })) {
+      const rel = path.posix.join(sub, entry.name);
+      if (entry.isDirectory()) await walk(rel);
+      else files.set(`/${rel}`, await readFile(path.join(dir, rel)));
+    }
+  };
+  await walk("");
+  return files;
 }
 
 // `pnpm build`'s prebuild step rimrafs `dist/`, so this directory goes away whenever a build
 // runs. Say so, rather than serving 404s and timing out on a locator 30 seconds later.
-if (!existsSync(path.join(DIR, "index.html"))) {
+const BUILD = await loadBuild(DIR).catch(() => new Map<string, Buffer>());
+if (!BUILD.has("/index.html")) {
   throw new Error(
     `No harness build at ${DIR}. Run: pnpm exec vite build --config vite.shots-billing.config.ts`,
   );
 }
 
-const server = createServer(async (req, res) => {
+const server = createServer((req, res) => {
   const url = (req.url ?? "/").split("?")[0] ?? "/";
-  const file = resolveInside(url === "/" ? "/index.html" : url);
-  if (file === null) {
-    res.writeHead(403).end("forbidden");
+  // The KEY, not the raw url: `path.extname("/")` is "", which served index.html as
+  // application/octet-stream and made the browser download the page instead of rendering it.
+  const key = url === "/" ? "/index.html" : url;
+  const body = BUILD.get(key);
+  if (body === undefined) {
+    res.writeHead(404).end("not found");
     return;
   }
-  try {
-    const body = await readFile(file);
-    res.writeHead(200, {
-      "Content-Type": TYPES[path.extname(file)] ?? "application/octet-stream",
-    });
-    res.end(body);
-  } catch {
-    res.writeHead(404).end("not found");
-  }
+  res.writeHead(200, {
+    "Content-Type": TYPES[path.extname(key)] ?? "application/octet-stream",
+  });
+  res.end(body);
 });
 await new Promise<void>((r) => server.listen(4601, () => r()));
 await mkdir(OUT, { recursive: true });
