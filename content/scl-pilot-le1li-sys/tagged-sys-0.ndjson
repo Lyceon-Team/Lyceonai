@@ -1,0 +1,75 @@
+{"id":"SATM2015CIV","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"B","cluster_id":"CL.0089"},{"option":"C","cluster_id":"CL.0133"}],"why":"No-solution system; compare coefficient ratios to set proportionality condition, solve for k."}
+{"id":"SATM20LTQ13","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"B","cluster_id":"CL.0089"}],"why":"No-solution system; set coefficient ratios equal, cross-multiply to find k."}
+{"id":"SATM20NYOFN","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve system for (x,y) by substituting x=y+2 from second equation into first."}
+{"id":"SATM20OQEW1","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"Infinitely-many-solutions system; second equation is 3x first, so k=54/3=18."}
+{"id":"SATM20Q0Q6E","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[{"option":"A","cluster_id":"CL.0094"}],"why":"Find expression 3x-2y+7; add equations to eliminate y, solve for x and y, evaluate."}
+{"id":"SATM20XXNAR","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"C","cluster_id":"CL.0089"}],"why":"Infinitely-many-solutions; match all three coefficient ratios to find k=-8."}
+{"id":"SATM216HJB8","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve system for (x,y) by adding equations to eliminate y."}
+{"id":"SATM2172MBA","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"A","cluster_id":"CL.0089"}],"why":"No-solution system; set coefficient ratios equal, solve k/8=1/2, so k=4."}
+{"id":"SATM21840C6","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047","CL.0094"],"distractors":[{"option":"B","cluster_id":"CL.0047"}],"why":"Context problem with two conditions; set up system, subtract equations to eliminate m, solve."}
+{"id":"SATM219NCJC","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to h+p=31 and 23h+9p=433, substitute and solve."}
+{"id":"SATM21HIJCS","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0003","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"Context problem; set up system, subtract equations to eliminate q, solve."}
+{"id":"SATM21JM0BW","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133","CL.0089"],"distractors":[{"option":"A","cluster_id":"CL.0089"}],"why":"No-solution system; rewrite in slope-intercept, set slopes equal, solve for k."}
+{"id":"SATM21UDQS8","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM226F7DB","sub_skills":["SYS.2"],"clusters":["CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Find xy; multiply first equation by 3 to match y-coefficients, add to eliminate y, solve, compute product."}
+{"id":"SATM22AV2E6","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve for y by substituting x=y+3 from second equation into first."}
+{"id":"SATM22G0RT8","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM22QILJH","sub_skills":["SYS.1"],"clusters":["CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Solve for y; multiply first equation by 2, add to eliminate y, find x, substitute back."}
+{"id":"SATM22QYTCL","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to m+p=53 and 3m+7p=247, substitute and solve for p."}
+{"id":"SATM22WJKQM","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to b+e=47 and 11b+3e=293, substitute and solve for b."}
+{"id":"SATM22XG5VF","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to a+c=143 and 11a+6c=1243, substitute and solve for a."}
+{"id":"SATM22Z69BY","sub_skills":["SYS.2"],"clusters":["CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Find 5x-y; multiply to eliminate, solve for x and y, evaluate expression."}
+{"id":"SATM230WSU9","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[{"option":"A","cluster_id":"CL.0047"}],"why":"Solve for y by adding equations to eliminate y, find x, substitute back."}
+{"id":"SATM231Q29K","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Find x+y; substitute y=3x-13 into first equation, solve, compute sum."}
+{"id":"SATM2372TIX","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM239UMU4","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"No-solution system; set coefficient ratios equal to find k=-6."}
+{"id":"SATM23EOC9G","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133","CL.0089"],"distractors":[{"option":"C","cluster_id":"CL.0089"}],"why":"No-solution system; rewrite in slope-intercept, set slopes equal, solve for k."}
+{"id":"SATM23IUJ3M","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve for y by substituting x=y+3 into first equation."}
+{"id":"SATM23J3TLG","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=3 directly into first equation, solve for y."}
+{"id":"SATM23J7OR3","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for y by subtracting equations to eliminate x."}
+{"id":"SATM23M4N0L","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Solve for y; add equations to eliminate y, find x=12, substitute back."}
+{"id":"SATM23OVOH4","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM23U2GK2","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM23UJDLX","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to 3n+2g=43 and n+4g=51, substitute and solve for g."}
+{"id":"SATM23XCLGT","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"B","cluster_id":"CL.0089"}],"why":"No-solution system; set coefficient ratios equal, solve for k=-8."}
+{"id":"SATM241VKNF","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133","CL.0089"],"distractors":[{"option":"D","cluster_id":"CL.0089"}],"why":"No-solution system; rewrite in slope-intercept, set slopes equal, solve for p."}
+{"id":"SATM2454NC3","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Find x+y; add equations to eliminate y, find x=3, substitute to find y=5, compute sum."}
+{"id":"SATM24RKXOB","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to s+c=13 and 4s+7c=67, substitute and solve for c."}
+{"id":"SATM24UTXUF","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Solve for y; add equations to eliminate y-terms, find x=3, substitute back."}
+{"id":"SATM254VUZ0","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Context problem; translate to two equations in s and g, multiply to align coefficients, eliminate, solve."}
+{"id":"SATM258L57F","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"A","cluster_id":"CL.0089"}],"why":"No-solution system; set a/5=8/2=4, so a=20."}
+{"id":"SATM259XIMT","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to h+p=40 and 17h+9p=504, substitute and solve."}
+{"id":"SATM25BRAOK","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"}],"why":"Solve for x by adding equations to eliminate y; 2x=32, x=16."}
+{"id":"SATM25LOORP","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133","CL.0089"],"distractors":[{"option":"B","cluster_id":"CL.0089"}],"why":"No-solution system; rewrite in slope-intercept, set slopes equal, solve for k=-8."}
+{"id":"SATM25MHDI2","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM25R26DA","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to h+p=41 and 23h+9p=565, substitute and solve."}
+{"id":"SATM25Z0A1X","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to h+p=37 and 19h+11p=511, substitute and solve."}
+{"id":"SATM2606GL8","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM26AU2BL","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"C","cluster_id":"CL.0089"},{"option":"D","cluster_id":"CL.0133"}],"why":"No-solution system; set k/5=8/10=4/5, so k=4."}
+{"id":"SATM26S82FE","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"B","cluster_id":"CL.0089"}],"why":"Infinitely-many-solutions; find scalar multiplier -3/2, apply to constant to get k=-63/2."}
+{"id":"SATM26TRXQD","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for y by subtracting equations to eliminate x."}
+{"id":"SATM26XF1XG","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Solve for y; add equations to eliminate y, find x=10, substitute back."}
+{"id":"SATM26Y6D3P","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM26ZH7V4","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"D","cluster_id":"CL.0089"}],"why":"Infinitely-many-solutions; multiply second by -3 to match first, so c=-21."}
+{"id":"SATM2756XZJ","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve for y by substituting y=4x-3 from second equation into first."}
+{"id":"SATM27A2CG0","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for y by subtracting equations to eliminate x."}
+{"id":"SATM27ETSS9","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Solve for x; subtract equations to find y=4, substitute back to get x=7."}
+{"id":"SATM27GZLGE","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by subtracting equations to eliminate y."}
+{"id":"SATM27SBDRB","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM27SZWFR","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133","CL.0089"],"distractors":[{"option":"C","cluster_id":"CL.0089"}],"why":"No-solution system; rewrite in slope-intercept, set slopes equal, solve for k=27."}
+{"id":"SATM27UQHZD","sub_skills":["SYS.2"],"clusters":["CL.0189","CL.0003"],"distractors":[{"option":"C","cluster_id":"CL.0003"}],"why":"Adding the two equations directly yields 7x+4y=27, the asked expression."}
+{"id":"SATM27YKNRE","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Find 5x+2y; subtract equations to find x=6, substitute to find y=5.5, evaluate."}
+{"id":"SATM284B7H3","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve for y by substituting x=y+3 from second equation into first."}
+{"id":"SATM2889FQE","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to a+c=85 and 13a+7c=859, substitute and solve."}
+{"id":"SATM28AVWF6","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[{"option":"A","cluster_id":"CL.0047"}],"why":"Context problem; set up system, multiply to align coefficients, eliminate, solve for truck rate."}
+{"id":"SATM28E736P","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to x+y=10000 and 0.04x+0.06y=480, substitute and solve."}
+{"id":"SATM28EVZ7R","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM28ODSJL","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM28Q6HAK","sub_skills":["SYS.3"],"clusters":["CL.0080","CL.0133","CL.0089"],"distractors":[{"option":"C","cluster_id":"CL.0089"}],"why":"No-solution system; rewrite in slope-intercept, set slopes equal, solve for k=-2."}
+{"id":"SATM28UAI26","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM297LIMV","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[],"why":"No-solution system; set k/2=3/6=1/2, so k=1."}
+{"id":"SATM299T7DH","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"Solve for x by adding equations to eliminate y."}
+{"id":"SATM29D0RVY","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Context problem; translate to a+c=200 and 12a+7c=1800, substitute and solve."}
+{"id":"SATM29H7WT7","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"D","cluster_id":"CL.0089"}],"why":"Infinitely-many-solutions; find scalar -3/2, apply to constant to get k=-21."}
+{"id":"SATM2A3X07X","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0089"],"distractors":[{"option":"B","cluster_id":"CL.0089"}],"why":"Infinitely-many-solutions; coefficient ratio -2/3, so k/12=-2/3 gives k=-8."}
+{"id":"SATM2A9D9KD","sub_skills":["SYS.2"],"clusters":["CL.0053","CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Find x+y; multiply second by 2, subtract first to eliminate x, solve, compute sum."}
