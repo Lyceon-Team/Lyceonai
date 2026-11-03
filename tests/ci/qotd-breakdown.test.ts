@@ -1243,6 +1243,11 @@ describe("the approval: Karl's merge into the private repo's main, read with its
 });
 
 describe("the finished mix: limited to at most -1 dBTP before the MP4 check (SCL-270)", () => {
+  // A real round trip through ffmpeg, as the worked examples' limiter test does. Needs ffmpeg (the
+  // breakdown job, the qotd pull-request job and the mutation harness have it; the fast lane may
+  // not), so it is skipped only where ffmpeg is absent.
+  const HAVE_FFMPEG = spawnSync("ffmpeg", ["-version"]).status === 0;
+
   /** An MP4 the kit's checks accept in every way but its mix: a hot tone with intersample peaks. */
   function hotRender(): { dir: string; rendered: string } {
     const dir = mkdtempSync(join(tmpdir(), "qotd-breakdown-mix-"));
@@ -1284,28 +1289,36 @@ describe("the finished mix: limited to at most -1 dBTP before the MP4 check (SCL
     return { dir, rendered };
   }
 
-  it("the video is the limited mix: at most -1 dBTP, and the MP4 check passes", () => {
-    const kit = loadKit();
-    const { dir, rendered } = hotRender();
-    // Presence first: as rendered, the mix is over the ceiling.
-    expect(measureMix(rendered, kit)?.truePeakDbtp).toBeGreaterThan(-1);
-    const video = join(dir, "video.mp4");
-    const done = finishVideo(rendered, video, dir, kit);
-    expect(done.ok ? [] : done.problems).toEqual([]);
-    expect(measureMix(video, kit)?.truePeakDbtp).toBeLessThanOrEqual(-1);
-  }, 120_000);
+  it.skipIf(!HAVE_FFMPEG)(
+    "the video is the limited mix: at most -1 dBTP, and the MP4 check passes",
+    () => {
+      const kit = loadKit();
+      const { dir, rendered } = hotRender();
+      // Presence first: as rendered, the mix is over the ceiling.
+      expect(measureMix(rendered, kit)?.truePeakDbtp).toBeGreaterThan(-1);
+      const video = join(dir, "video.mp4");
+      const done = finishVideo(rendered, video, dir, kit);
+      expect(done.ok ? [] : done.problems).toEqual([]);
+      expect(measureMix(video, kit)?.truePeakDbtp).toBeLessThanOrEqual(-1);
+    },
+    120_000,
+  );
 
-  it("a mix the limiter did not bring down is refused by the finished-mix check", () => {
-    const kit = loadKit();
-    const { dir, rendered } = hotRender();
-    const video = join(dir, "video.mp4");
-    const done = finishVideo(rendered, video, dir, kit, (input, output) =>
-      cpSync(input, output),
-    );
-    expect(done.ok).toBe(false);
-    if (!done.ok)
-      expect(done.problems.join("\n")).toMatch(
-        /the finished mix peaks at -?\d+\.\d\d dBTP; at most -1 dBTP/,
+  it.skipIf(!HAVE_FFMPEG)(
+    "a mix the limiter did not bring down is refused by the finished-mix check",
+    () => {
+      const kit = loadKit();
+      const { dir, rendered } = hotRender();
+      const video = join(dir, "video.mp4");
+      const done = finishVideo(rendered, video, dir, kit, (input, output) =>
+        cpSync(input, output),
       );
-  }, 120_000);
+      expect(done.ok).toBe(false);
+      if (!done.ok)
+        expect(done.problems.join("\n")).toMatch(
+          /the finished mix peaks at -?\d+\.\d\d dBTP; at most -1 dBTP/,
+        );
+    },
+    120_000,
+  );
 });
