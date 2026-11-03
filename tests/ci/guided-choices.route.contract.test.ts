@@ -93,6 +93,8 @@ vi.mock("@google/genai", async () => {
 });
 
 import tutorRuntimeRouter from "../../server/routes/tutor-runtime";
+import { getRecentMessages } from "../../server/services/tutor-memory";
+import { resolveFullEnvelope } from "../../server/services/tutor-context";
 import { orchestrateRouter } from "../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
 import { CRISIS_CLASSIFIER_SYSTEM_PROMPT } from "../../server/services/crisis-classifier-prompt";
 import { TutorConfig } from "../../server/services/tutor-config";
@@ -468,6 +470,164 @@ describe("video intents are served with no model call", () => {
   });
 });
 
+/**
+ * @spec [owner brief "Phase C: retrieval switch-over", Karl 2026-10-29 (ruling Q3: the Desmos
+ *       tap asks for Desmos directly; ruling Q4: a tagged item with no matching approved
+ *       segment serves no video); SCL-260/261] | @implemented [2026-10-29]
+ * plain English: on a sub-skill-tagged item the tap goes to `video_segments_for_question`
+ * (never the skill-only function), the Desmos tap REQUIRES Desmos, and the served video opens
+ * at the segment's start. The fake answers as the SQL does for these rows (ranking itself is
+ * proven in scripts/ci/video-segment-retrieval-gates.sql).
+ */
+const SEGMENT_DESMOS = {
+  video_id: "a1QNaRnn6cE",
+  title: "Desmos Lesson #10",
+  channel_name: "Tutorllini Test Prep",
+  duration_seconds: 398,
+  start_seconds: 159,
+  methods: ["desmos"],
+  format: "lesson",
+  segment_id: "11111111-1111-4111-8111-111111111111",
+  matched_sub_skills: ["EE.5"],
+  shared_clusters: 1,
+};
+const SEGMENT_ALGEBRAIC = {
+  ...SEGMENT_DESMOS,
+  video_id: "AlgebraAAAA",
+  title: "Rational expressions by hand",
+  start_seconds: 42,
+  methods: ["algebraic"],
+  format: "worked_example",
+  segment_id: "22222222-2222-4222-8222-222222222222",
+  shared_clusters: 3,
+};
+
+function serveSegments(rows: Array<typeof SEGMENT_DESMOS>): void {
+  db.current.onRpc("video_segments_for_question", (args) => {
+    const method = args.p_method as string | null;
+    const required = args.p_method_required === true;
+    // The algebraic segment shares more clusters, so it ranks first unless Desmos is required.
+    const data = rows.filter(
+      (r) => !required || (method !== null && r.methods.includes(method)),
+    );
+    return { data, error: null };
+  });
+}
+
+function videoRetrievalLine(): Record<string, unknown> {
+  const lines = logged.info.filter(
+    (a) =>
+      a[0] === "PERF" &&
+      a[1] === "route_timing" &&
+      (a[3] as { route?: string }).route === "tutor.message",
+  );
+  expect(lines).toHaveLength(1);
+  return (lines[0]![3] as { video_retrieval: Record<string, unknown> })
+    .video_retrieval;
+}
+
+describe("Phase C: a video tap on a sub-skill-tagged item", () => {
+  beforeEach(() => {
+    db.current.seed("question_sub_skills", {
+      question_id: Q_MATH,
+      sub_skill_id: "EE.5",
+      taxonomy_version: "scl-v1.0.0",
+      tagged_by: "test",
+    });
+  });
+
+  it("'Desmos video' requires Desmos: the Desmos segment, at its start, even though an algebraic one shares more", async () => {
+    serveSegments([SEGMENT_ALGEBRAIC, SEGMENT_DESMOS]);
+    const conv = seedConversation(Q_MATH);
+    const res = await tap(conv, "video_desmos");
+    expect(res.status).toBe(200);
+    expect(res.body.data.response.content).toBe(
+      VIDEO_INTENT_REPLY.video_desmos,
+    );
+    expect(res.body.data.response.suggested_action).toEqual({
+      type: "recommend_video",
+      label: null,
+      video: {
+        video_id: "a1QNaRnn6cE",
+        title: "Desmos Lesson #10",
+        channel_name: "Tutorllini Test Prep",
+        duration_seconds: 398,
+        start_seconds: 159,
+      },
+    });
+    const call = db.current.rpcCalls.find(
+      (c) => c.name === "video_segments_for_question",
+    );
+    expect(call?.args).toMatchObject({
+      p_question_id: Q_MATH,
+      p_method: "desmos",
+      p_method_required: true,
+    });
+    expect(
+      db.current.rpcCalls.some((c) => c.name === "video_resources_for_skills"),
+    ).toBe(false);
+    expect(videoRetrievalLine()).toEqual({
+      method: "desmos",
+      map_version: null,
+      results: 1,
+      video_ids: ["a1QNaRnn6cE"],
+      recommended_index: 1,
+      path: "segment",
+      matched_sub_skill_ids: ["EE.5"],
+      shared_clusters: 1,
+      segment_id: "11111111-1111-4111-8111-111111111111",
+      miss: false,
+    });
+  });
+
+  it("'Explanation video' does not require its method: the top segment, algebraic here", async () => {
+    serveSegments([SEGMENT_ALGEBRAIC, SEGMENT_DESMOS]);
+    const conv = seedConversation(Q_MATH);
+    const res = await tap(conv, "video_explanation");
+    expect(res.body.data.response.suggested_action.video).toMatchObject({
+      video_id: "AlgebraAAAA",
+      start_seconds: 42,
+    });
+    const call = db.current.rpcCalls.find(
+      (c) => c.name === "video_segments_for_question",
+    );
+    expect(call?.args).toMatchObject({
+      p_method: "algebraic",
+      p_method_required: false,
+    });
+  });
+
+  it("no approved matching segment: the no-video sentence, no action, no skill-only fallback, the miss logged as ids", async () => {
+    serveSegments([]);
+    const conv = seedConversation(Q_MATH);
+    const res = await tap(conv, "video_desmos");
+    expect(res.status).toBe(200);
+    expect(res.body.data.response.content).toBe(VIDEO_INTENT_NO_MATCH);
+    expect(res.body.data.response.suggested_action).toEqual({
+      type: "none",
+      label: null,
+    });
+    expect(
+      db.current.rpcCalls.some((c) => c.name === "video_resources_for_skills"),
+    ).toBe(false);
+    const miss = logged.info.filter((a) => a[1] === "video_segment_miss");
+    expect(miss).toHaveLength(1);
+    expect(miss[0]![3]).toEqual({
+      conversationId: conv,
+      questionRowId: Q_MATH,
+      subSkillIds: ["EE.5"],
+      method: "desmos",
+      methodRequired: true,
+    });
+    expect(videoRetrievalLine()).toMatchObject({
+      path: "segment",
+      results: 0,
+      miss: true,
+      segment_id: null,
+    });
+  });
+});
+
 describe("walkthrough is a normal turn", () => {
   // REPLY is what the model returned; the route may serve a substitution of it.
   it("'Walk me through it' reaches the worker with intent walkthrough, and the reply is LISA's", async () => {
@@ -658,5 +818,254 @@ describe("GET /guided-choices", () => {
     const res = await choices("not-a-uuid");
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("invalid_input");
+  });
+});
+
+/**
+ * @spec [owner brief "Quick replies in walkthroughs" (Karl, 2026-11-02): after every LISA reply in
+ *        a walkthrough, "Got it, next step" / "I'm stuck"; new intents `step_understood` /
+ *        `step_stuck`; the fixed label is the message and the server checks it; both taps call
+ *        the model and the label reaches LISA as the student's message; Layer 1 and the
+ *        injection scan run, the classifier is skipped only on an exact-label tap; the intent on
+ *        the turn rows, never mastery or memory; SCL-268] | @implemented [2026-11-02]
+ */
+describe("quick replies in a walkthrough", () => {
+  afterEach(() => {
+    vi.mocked(getRecentMessages).mockImplementation(async () => []);
+    vi.mocked(resolveFullEnvelope).mockImplementation(async () =>
+      structuredClone(CASE_36.request),
+    );
+  });
+  /**
+   * The real window: what the conversation's stored rows hold, oldest first, carried into the
+   * golden-set envelope the way the real resolver carries `recentMessages`.
+   */
+  function windowFromRows(): void {
+    vi.mocked(resolveFullEnvelope).mockImplementation(async (params) => ({
+      ...structuredClone(CASE_36.request),
+      recent_messages: params.recentMessages,
+    }));
+    vi.mocked(getRecentMessages).mockImplementation(async (conversationId) =>
+      db.current
+        .rows("tutor_messages")
+        .filter((r) => r.conversation_id === conversationId)
+        .map((r) => ({
+          id: r.id as string,
+          role: r.role as "student" | "tutor",
+          content_kind: "message",
+          message: r.message as string,
+          created_at: r.created_at as string,
+        })),
+    );
+  }
+  /** The last student-role text the tutor model was given, in the real worker's request. */
+  function lastStudentTextSentToModel(): string | undefined {
+    const tutorCalls = generateContent.mock.calls.filter(
+      ([params]) =>
+        (
+          params as {
+            config?: {
+              systemInstruction?: { parts?: Array<{ text?: string }> };
+            };
+          }
+        ).config?.systemInstruction?.parts?.[0]?.text !==
+        CRISIS_CLASSIFIER_SYSTEM_PROMPT,
+    );
+    const contents = (
+      tutorCalls.at(-1)?.[0] as {
+        contents?: Array<{ role: string; parts: Array<{ text?: string }> }>;
+      }
+    ).contents;
+    return JSON.stringify(
+      contents?.filter((c) => c.role === "user").at(-1) ?? null,
+    );
+  }
+
+  it("'I'm stuck' then 'Got it, next step': one LISA reply per tap, each label reaching LISA, both intents recorded", async () => {
+    windowFromRows();
+    const conv = seedConversation(Q_MATH);
+    expect((await tap(conv, "walkthrough")).status).toBe(200);
+
+    logged.info.length = 0;
+    const stuck = await tap(conv, "step_stuck");
+    expect(stuck.status).toBe(200);
+    expect(timingSteps()).toContain("model");
+    expect(lastStudentTextSentToModel()).toContain("I'm stuck");
+
+    logged.info.length = 0;
+    const understood = await tap(conv, "step_understood");
+    expect(understood.status).toBe(200);
+    expect(timingSteps()).toContain("model");
+    expect(lastStudentTextSentToModel()).toContain("Got it, next step");
+
+    // One model reply per turn: the walkthrough tap and the two quick replies.
+    expect(tutorModelCalls).toBe(3);
+    expect(workerBodies.map((b) => b.intent)).toEqual([
+      "walkthrough",
+      "step_stuck",
+      "step_understood",
+    ]);
+    // Never a server-written video sentence: LISA's reply path both times.
+    for (const res of [stuck, understood]) {
+      expect(res.body.data.response.suggested_action.type).not.toBe(
+        "recommend_video",
+      );
+    }
+    expect(studentRows().map((r) => [r.intent, r.message])).toEqual([
+      ["walkthrough", "Walk me through it"],
+      ["step_stuck", "I'm stuck"],
+      ["step_understood", "Got it, next step"],
+    ]);
+    expect(db.current.rows("tutor_turn_metrics").map((r) => r.intent)).toEqual([
+      "walkthrough",
+      "step_stuck",
+      "step_understood",
+    ]);
+    // Exact-label taps: Layer 2 skipped every time (ruling 4 extended).
+    expect(classifierCalls).toBe(0);
+    expect(
+      db.current
+        .rows("tutor_turn_metrics")
+        .map((r) => r.crisis_classifier_outcome),
+    ).toEqual([
+      "no_crisis_signatures_only",
+      "no_crisis_signatures_only",
+      "no_crisis_signatures_only",
+    ]);
+  });
+
+  it("a typed question mid-walkthrough is screened in full and does not end it", async () => {
+    const conv = seedConversation(Q_MATH);
+    await tap(conv, "walkthrough");
+    const typed = await send(conv, "why do we subtract first?");
+    expect(typed.status).toBe(200);
+    expect(classifierCalls).toBe(1);
+    expect(studentRows()[1]).not.toHaveProperty("intent");
+    expect((await tap(conv, "step_understood")).status).toBe(200);
+    expect(studentRows()[2]).toMatchObject({ intent: "step_understood" });
+  });
+
+  describe("refused with 400 invalid_input, nothing written", () => {
+    function expectRefusedAfter(
+      rowsBefore: number,
+      res: request.Response,
+      reason: string,
+    ): void {
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe("invalid_input");
+      expect(res.body.error.details?.fieldErrors?.intent).toEqual([reason]);
+      expect(studentRows()).toHaveLength(rowsBefore);
+    }
+
+    it("outside a walkthrough: a fresh conversation, a typed-only one, after a video tap", async () => {
+      const fresh = seedConversation(Q_MATH);
+      expectRefusedAfter(0, await tap(fresh, "step_stuck"), "no_walkthrough");
+
+      const typedOnly = seedConversation(Q_MATH);
+      await send(typedOnly, "how do I start");
+      const before = studentRows().length;
+      expectRefusedAfter(
+        before,
+        await tap(typedOnly, "step_understood"),
+        "no_walkthrough",
+      );
+
+      const afterVideo = seedConversation(Q_MATH);
+      await tap(afterVideo, "walkthrough");
+      await tap(afterVideo, "video_desmos");
+      const beforeVideo = studentRows().length;
+      expectRefusedAfter(
+        beforeVideo,
+        await tap(afterVideo, "step_stuck"),
+        "no_walkthrough",
+      );
+      // The typed turn and the walkthrough tap reached the worker; no quick reply did.
+      expect(workerBodies.map((b) => b.intent ?? null)).toEqual([
+        null,
+        "walkthrough",
+      ]);
+    });
+
+    it("an altered label, even inside a walkthrough, before any screening or model call", async () => {
+      const conv = seedConversation(Q_MATH);
+      await tap(conv, "walkthrough");
+      const calls = generateContent.mock.calls.length;
+      for (const altered of [
+        "I'm stuck!",
+        "i'm stuck",
+        "I’m stuck",
+        "Got it, next step please",
+      ]) {
+        const intent = altered.startsWith("Got")
+          ? "step_understood"
+          : "step_stuck";
+        expectRefusedAfter(
+          1,
+          await send(conv, altered, intent),
+          "label_mismatch",
+        );
+      }
+      expect(generateContent.mock.calls.length).toBe(calls);
+    });
+
+    it("on a practice conversation", async () => {
+      const conv = seedConversation(Q_MATH, "practice");
+      expectRefusedAfter(
+        0,
+        await tap(conv, "step_stuck"),
+        "not_review_surface",
+      );
+    });
+  });
+
+  it("Layer 1 still runs on a quick-reply tap: a crisis signature takes the crisis path, no worker", async () => {
+    const conv = seedConversation(Q_MATH);
+    await tap(conv, "walkthrough");
+    db.current.seed("tutor_injection_signatures", {
+      signature_pattern: "stuck",
+      signature_type: "crisis",
+      enabled: true,
+      category: "crisis",
+    });
+    db.current.onRpc("flag_conversation_for_crisis_review", () => ({
+      data: null,
+      error: { message: "test stops here", code: "XX000" },
+    }));
+    await tap(conv, "step_stuck");
+    const flag = db.current.rpcCalls.find(
+      (c) => c.name === "flag_conversation_for_crisis_review",
+    );
+    expect(flag?.args).toMatchObject({ p_source: "signature" });
+    expect(classifierCalls).toBe(0);
+    expect(workerBodies.map((b) => b.intent)).toEqual(["walkthrough"]);
+  });
+
+  describe("GET /conversations/:id carries walkthrough_open (the panel shows the taps only then)", () => {
+    async function walkthroughOpen(conv: string): Promise<unknown> {
+      const res = await request(app()).get(`/api/tutor/conversations/${conv}`);
+      expect(res.status).toBe(200);
+      return res.body.data.walkthrough_open;
+    }
+
+    it("false before any tap and after typed turns; true after a walkthrough tap, a typed question and a quick reply; false after a video tap", async () => {
+      const conv = seedConversation(Q_MATH);
+      expect(await walkthroughOpen(conv)).toBe(false);
+      await send(conv, "hi");
+      expect(await walkthroughOpen(conv)).toBe(false);
+      await tap(conv, "walkthrough");
+      expect(await walkthroughOpen(conv)).toBe(true);
+      await send(conv, "why that step?");
+      expect(await walkthroughOpen(conv)).toBe(true);
+      await tap(conv, "step_understood");
+      expect(await walkthroughOpen(conv)).toBe(true);
+      await tap(conv, "video_explanation");
+      expect(await walkthroughOpen(conv)).toBe(false);
+    });
+
+    it("false on a conversation that is not a review item", async () => {
+      expect(await walkthroughOpen(seedConversation(Q_MATH, "practice"))).toBe(
+        false,
+      );
+    });
   });
 });

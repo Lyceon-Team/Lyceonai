@@ -37,6 +37,7 @@ import { TutorConfig } from "../services/tutor-config";
 import type { TutorResult } from "../services/tutor-error-codes";
 import {
   addTokenCounts,
+  ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE,
   orchestrateErrorResponseSchema,
   orchestrateResponseSchema,
   compactResponseSchema,
@@ -241,13 +242,22 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
 
     // A worker error body may carry billed usage (a safety block, a truncation): hand it to the
     // caller before deciding what the status means. Content-free by schema; never logged here.
+    // A 503's body is also read to tell a configuration error from a transient one (H4).
+    const errorBody =
+      !response.ok && (onErrorBody !== undefined || response.status === 503)
+        ? await readErrorBody(response, path)
+        : null;
     if (!response.ok && onErrorBody !== undefined) {
-      onErrorBody(await readErrorBody(response, path));
+      onErrorBody(errorBody);
     }
 
     if (response.status >= 500) {
       const isLastAttempt = attempt === MAX_ATTEMPTS - 1;
-      if (!isLastAttempt) {
+      // H4 (owner ruling 2026-11-02, "BFF only"): the worker's boundary-auth configuration 503
+      // fails identically on a second request, so it is not retried.
+      const isConfigError =
+        response.status === 503 && isWorkerConfigError(errorBody);
+      if (!isLastAttempt && !isConfigError) {
         logger.warn(
           "TUTOR_ORCHESTRATOR_CLIENT",
           "worker_5xx_retry",
@@ -258,10 +268,12 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
       }
       logger.error(
         "TUTOR_ORCHESTRATOR_CLIENT",
-        "worker_5xx_exhausted",
-        `Orchestrator worker returned ${response.status} after retry`,
+        isConfigError ? "worker_config_error" : "worker_5xx_exhausted",
+        isConfigError
+          ? `Orchestrator worker returned ${response.status} ${ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE}; not retried (configuration)`
+          : `Orchestrator worker returned ${response.status} after retry`,
         { status: response.status },
-        { path },
+        { path, attempt },
       );
       return {
         ok: false,
@@ -354,6 +366,20 @@ async function postToWorker<TSchema extends z.ZodTypeAny>(
     errorCode: "orchestration_failed_recoverable",
     details: { path },
   };
+}
+
+const workerConfigErrorBodySchema = z.object({
+  error: z.object({ code: z.literal(ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE) }),
+});
+
+/**
+ * @spec [owner brief H4 (Karl, 2026-11-02), ruling "BFF only"] | @implemented [2026-11-02]
+ * plain English: whether a worker error body is the boundary-auth configuration error. Anything
+ * else — another code, no body, a body that is not JSON — reads as not a configuration error, so
+ * it keeps the one 5xx retry it always had.
+ */
+function isWorkerConfigError(body: unknown): boolean {
+  return workerConfigErrorBodySchema.safeParse(body).success;
 }
 
 /** A non-2xx worker body as JSON, or null when it is not JSON (logged, never thrown). */
