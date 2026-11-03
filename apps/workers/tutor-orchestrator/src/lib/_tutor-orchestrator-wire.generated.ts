@@ -279,6 +279,16 @@ export const offeredVideoSchema = z
 export type OfferedVideo = z.infer<typeof offeredVideoSchema>;
 
 /**
+ * @spec [owner brief H4 (Karl, 2026-11-02), ruling of 2026-11-02 "BFF only"] | @implemented [2026-11-02]
+ * plain English: the `error.code` of the worker's 503 for a missing boundary-auth configuration
+ * (apps/workers/tutor-orchestrator/src/lib/boundary-auth.ts `CONFIG_ERROR_CODE`). That 503 is
+ * deterministic — a second request fails the same way — so the BFF does not retry it. The worker
+ * keeps its own literal (no worker change in H4); a CI test asserts the two are equal.
+ */
+export const ORCHESTRATOR_AUTH_CONFIG_ERROR_CODE =
+  "ORCHESTRATOR_AUTH_CONFIG_ERROR";
+
+/**
  * The guided-choice intents (packages/shared/src/tutor-guided-choices.ts `REVIEW_INTENTS`),
  * repeated here because the worker cannot import packages/shared; a CI test asserts the two
  * lists are equal, as it does for the video methods above.
@@ -289,6 +299,8 @@ export const ORCHESTRATE_INTENTS = [
   "explain_rule",
   "video_desmos",
   "video_explanation",
+  "step_understood",
+  "step_stuck",
 ] as const;
 
 // ── Request schema ───────────────────────────────────────────────────
@@ -345,10 +357,12 @@ export const orchestrateRequestSchema = z.object({
   requested_method: z.enum(OFFERED_VIDEO_METHODS).nullable().optional(),
   // ── Guided choice (owner brief "LISA guided choices in review, Phase A", Karl 2026-10-27;
   // SCL-255) ──
-  // The review choice the student tapped, when the turn came from one. Only `walkthrough` is
-  // ever sent: the video intents are answered by the BFF with no worker call. Recorded, never
-  // read into the prompt: Phase A changes nothing in what LISA is told. Optional, so either side
-  // can deploy first (an older worker strips it).
+  // The review choice the student tapped, when the turn came from one. The model turns carry
+  // it: `walkthrough`, and the walkthrough quick replies `step_understood` / `step_stuck`
+  // (SCL-268, 2026-11-02); the video intents are answered by the BFF with no worker call.
+  // Recorded, never read into the prompt: nothing changes in what LISA is told (the tap's label
+  // is the student's message). Optional, so a turn without it is unchanged. A VALUE the worker
+  // does not know fails its parse, so a new intent ships worker first (deploy order, SCL-268).
   intent: z.enum(ORCHESTRATE_INTENTS).optional(),
 });
 

@@ -26,7 +26,9 @@
  * over it as it does over every line.
  *
  * `at_ms` is the step's start offset from the handler's start, so steps that ran in parallel
- * (a `Promise.all`) are visible as overlapping rather than being read as a sequence.
+ * (a `Promise.all`) are visible as overlapping rather than being read as a sequence. Work opened as
+ * a parallel group (`beginParallelGroup`, H3 2026-10-29) is also marked: one record for the group
+ * with its wall time, and `group` on each member's record.
  * `pre_handler_ms` is the time from the request-id middleware (the first middleware) to the
  * handler: the auth session lookup and profile read happen there, so a slow request whose
  * steps are all fast is attributable.
@@ -59,7 +61,21 @@ export type RouteTimingName =
   | "calendar.read"
   | "tutor.message";
 
-type StepRecord = { step: string; ms: number | null; at_ms: number };
+/**
+ * The parallel groups (owner brief "H3: parallelise the pre-model work", Karl 2026-10-29). A
+ * closed union, like the routes: a new group is a reviewed addition.
+ */
+export type ParallelGroupName = "pre_model";
+
+type StepRecord = {
+  step: string;
+  ms: number | null;
+  at_ms: number;
+  /** On a step that ran as a member of a parallel group: the group's name. */
+  group?: ParallelGroupName;
+  /** On the group's own record, whose `ms` is the group's wall time. */
+  kind?: "parallel_group";
+};
 
 type RouteTimer = {
   route: RouteTimingName;
@@ -83,6 +99,14 @@ type RouteTimer = {
  * offered ids YouTube ids (11 characters, already validated by the retrieval's schema; the
  * public catalogue id, never a student value), the recommendation a 1-based index or null.
  * Nothing from the student's message is recorded: not the matched phrase, not its position.
+ *
+ * @spec [owner brief "Phase C: retrieval switch-over", Karl 2026-10-29 (build 3: "the path
+ *        used (segment or skill); the matched sub-skill IDs and the number of shared clusters;
+ *        the segment's ID; whether the request was a miss", as IDs and counts only)]
+ *        | @implemented [2026-10-29]
+ * plain English: `path` null means no retrieval ran. The segment fields describe the first row
+ * (the video a tap serves; the first offered on 13d). Sub-skill ids are kept only if they look
+ * like tag ids (short, letters, digits, dots), at most 8; the segment id only if it is a UUID.
  */
 export type VideoRetrievalTiming = {
   method: VideoMethod | null;
@@ -90,9 +114,16 @@ export type VideoRetrievalTiming = {
   results: number;
   video_ids: string[];
   recommended_index: number | null;
+  path: "segment" | "skill" | null;
+  matched_sub_skill_ids: string[];
+  shared_clusters: number | null;
+  segment_id: string | null;
+  miss: boolean;
 };
 
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+const TAG_ID = /^[A-Za-z0-9.]{1,16}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Step 13d's outcome, recorded once per turn. Outside a timed request this does nothing. */
 export function recordVideoRetrieval(
@@ -106,6 +137,21 @@ export function recordVideoRetrieval(
     results: detail.results,
     video_ids: detail.video_ids.filter((id) => YOUTUBE_ID.test(id)).slice(0, 3),
     recommended_index: null,
+    path: detail.path,
+    matched_sub_skill_ids: detail.matched_sub_skill_ids
+      .filter((id) => TAG_ID.test(id))
+      .slice(0, 8),
+    shared_clusters:
+      detail.shared_clusters !== null &&
+      Number.isInteger(detail.shared_clusters) &&
+      detail.shared_clusters >= 0
+        ? detail.shared_clusters
+        : null,
+    segment_id:
+      detail.segment_id !== null && UUID.test(detail.segment_id)
+        ? detail.segment_id
+        : null,
+    miss: detail.miss,
   };
 }
 
@@ -156,7 +202,7 @@ export async function timedStep<T>(
  * gates anchor on (the answer route's mastery emission block). Outside a timed request it
  * returns a no-op. Calling the returned function more than once records only the first.
  */
-export function beginStep(step: string): () => void {
+export function beginStep(step: string, group?: ParallelGroupName): () => void {
   const timer = store.getStore();
   if (timer === undefined) return () => undefined;
   const start = performance.now();
@@ -168,6 +214,73 @@ export function beginStep(step: string): () => void {
     step,
     ms: null,
     at_ms: round(start - timer.startedAt),
+    ...(group === undefined ? {} : { group }),
+  };
+  timer.steps.push(record);
+  return () => {
+    if (record.ms === null && !timer.emitted) {
+      record.ms = round(performance.now() - start);
+    }
+  };
+}
+
+// ── Parallel groups ───────────────────────────────────────────────────────────
+
+/**
+ * @spec [owner brief "H3: parallelise the pre-model work" (Karl, 2026-10-29): "route_timing keeps
+ *        every step, adds a parallel-group marker, and records each step's own duration plus the
+ *        group's wall time"] | @implemented [2026-10-29]
+ *
+ * plain English: work that runs at the same time is opened as one group. The group writes ONE
+ * record of its own, `{ step: <group>, kind: "parallel_group", ms: <wall time>, at_ms }`, and each
+ * member's record is the ordinary step record (its own name, its own `ms`, its own `at_ms`) plus
+ * `group: <group>`. Wall time runs from the group's start until every member chain handed to
+ * `closeWhen` has settled. A member that waits on another member before it starts (the context
+ * envelope waits for the pre-submit flag) is opened only when it starts, so its `ms` is its own.
+ * A group still running when the response finished (a crisis turn returns without waiting for the
+ * envelope) keeps `ms: null`, like any step that had not ended. Only the members are tagged: the
+ * `db.*` round trips beneath them are ordinary steps.
+ *
+ * WHAT IT CAN CARRY: the group name is this closed union; the rest are numbers. Outside a timed
+ * request the members simply run.
+ */
+export type ParallelGroup = {
+  /** Run one member now; its record carries the group's name. */
+  step<T>(step: string, fn: () => PromiseLike<T> | T): Promise<T>;
+  /** Close the group's wall time when every one of these has settled (fulfilled or rejected). */
+  closeWhen(members: readonly PromiseLike<unknown>[]): void;
+};
+
+export function beginParallelGroup(group: ParallelGroupName): ParallelGroup {
+  const end = beginGroupRecord(group);
+  return {
+    async step<T>(step: string, fn: () => PromiseLike<T> | T): Promise<T> {
+      const close = beginStep(step, group);
+      try {
+        return await fn();
+      } finally {
+        close();
+      }
+    },
+    closeWhen(members: readonly PromiseLike<unknown>[]): void {
+      void Promise.allSettled(members).then(end);
+    },
+  };
+}
+
+function beginGroupRecord(group: ParallelGroupName): () => void {
+  const timer = store.getStore();
+  if (timer === undefined) return () => undefined;
+  const start = performance.now();
+  if (timer.steps.length >= MAX_STEPS) {
+    timer.dropped += 1;
+    return () => undefined;
+  }
+  const record: StepRecord = {
+    step: group,
+    ms: null,
+    at_ms: round(start - timer.startedAt),
+    kind: "parallel_group",
   };
   timer.steps.push(record);
   return () => {
@@ -405,6 +518,9 @@ function emit(timer: RouteTimer, req: Request, res: Response): void {
           video_retrieval: {
             ...timer.videoRetrieval,
             video_ids: [...timer.videoRetrieval.video_ids],
+            matched_sub_skill_ids: [
+              ...timer.videoRetrieval.matched_sub_skill_ids,
+            ],
           },
         }),
   };

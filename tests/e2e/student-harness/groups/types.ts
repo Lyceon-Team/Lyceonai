@@ -325,7 +325,8 @@ export type PageGroup = {
     | "bare-pages"
     | "notifications"
     | "quota-config"
-    | "lisa-dock";
+    | "lisa-dock"
+    | "lisa-quick-replies";
   /**
    * Where the group's evidence goes, relative to the repo root. Defaults to the student-UI Wave 5
    * evidence directory; the SEO vertical's groups write under docs/plans/seo/evidence/.

@@ -88,6 +88,69 @@ const LISA_DOCK = process.env.STUDENT_HARNESS_SEED === "lisa-dock";
  * any landing (the brief's precedence), which is not what this run exercises.
  */
 const SMART_LANDING = process.env.STUDENT_HARNESS_SEED === "smart-landing";
+/**
+ * Quick replies in walkthroughs (owner brief, Karl 2026-11-02; SCL-268): the review history (a
+ * review runner session per capture) and, in THIS seed only, real tutor TURNS for guided-choice
+ * taps. The route, the crisis screening (an exact-label tap runs Layer 1 only, so no Vertex call),
+ * the envelope and the serializer are the real ones; the model call goes to a stub worker on
+ * localhost (`startStubWorker`, a fixed LISA reply per intent; the orchestrator client sends no
+ * token to a localhost worker). Model Armor is unconfigured here and fails open, as designed. A
+ * typed message would call the model classifier, which this harness cannot reach, so the group
+ * only taps. Every other seed refuses the turn as before.
+ */
+const LISA_QUICK_REPLIES =
+  process.env.STUDENT_HARNESS_SEED === "lisa-quick-replies";
+const STUB_WORKER_PORT = PORT + 1;
+if (LISA_QUICK_REPLIES) {
+  process.env.TUTOR_ORCHESTRATOR_WORKER_URL = `http://localhost:${STUB_WORKER_PORT}`;
+}
+
+/** The stub worker's reply to each tap: what a LISA walkthrough step reads like. */
+const STUB_REPLIES: Readonly<Record<string, string>> = {
+  walkthrough:
+    "Let's take it one step at a time. Step 1: what is the equation asking you to find, and what's being done to it?",
+  step_stuck:
+    "No problem, let's slow down. Look only at the left side: which number is attached to the variable, and how?",
+  step_understood:
+    "Nice. Step 2: undo that operation on both sides. What do you get?",
+};
+
+function startStubWorker(): void {
+  const worker = express();
+  worker.use(express.json());
+  worker.post("/orchestrate/turn", (req: Request, res: Response) => {
+    const body: unknown = req.body;
+    const intent =
+      typeof body === "object" &&
+      body !== null &&
+      typeof (body as Record<string, unknown>).intent === "string"
+        ? ((body as Record<string, unknown>).intent as string)
+        : "walkthrough";
+    res.json({
+      response: {
+        content: STUB_REPLIES[intent] ?? STUB_REPLIES.walkthrough,
+        content_kind: "message",
+        suggested_action: { type: "none", label: null },
+        ui_hints: {
+          show_accept_decline: false,
+          allow_freeform_reply: true,
+          suggested_chip: null,
+        },
+      },
+      question_links: [],
+      instruction_exposures: [],
+      orchestration_meta: {
+        model_name: "student-harness-stub",
+        prompt_version: "stub",
+        cache_used: false,
+        compaction_recommended: false,
+      },
+      learner_observation: null,
+    });
+  });
+  worker.listen(STUB_WORKER_PORT);
+}
+
 if (BARE_PAGES) process.env.ACCOUNT_DELETION_LIFECYCLE_V2 = "true";
 // The Home QOTD's option tokens are an HMAC under the public secret (option-tokens.ts); a
 // throwaway value here, never a real one.
@@ -326,14 +389,18 @@ async function main(): Promise<void> {
   // is refused before the router; the typing-state capture holds the browser's request instead
   // (capture.ts `holdRequest`), so it never arrives. Every other tutor route (list, detail,
   // create, end) is the real router, behind the stub's guards.
-  app.post("/api/tutor/messages", (_req: Request, res: Response) => {
-    res.status(503).json({
-      error: {
-        code: "not_in_student_harness",
-        message: "The student harness never runs a tutor turn.",
-      },
+  if (LISA_QUICK_REPLIES) {
+    startStubWorker();
+  } else {
+    app.post("/api/tutor/messages", (_req: Request, res: Response) => {
+      res.status(503).json({
+        error: {
+          code: "not_in_student_harness",
+          message: "The student harness never runs a tutor turn.",
+        },
+      });
     });
-  });
+  }
   app.use(
     "/api/tutor",
     auth.requireSupabaseAuth,
@@ -356,7 +423,9 @@ async function main(): Promise<void> {
     void seedPracticeHistory(`http://localhost:${PORT}`, {
       // capture.ts passes the group's `seed` (groups/types.ts); only UI-52 asks for this.
       reviewHistory:
-        process.env.STUDENT_HARNESS_SEED === "review-history" || LISA_DOCK,
+        process.env.STUDENT_HARNESS_SEED === "review-history" ||
+        LISA_DOCK ||
+        LISA_QUICK_REPLIES,
       // UI-54: a scored and an in-progress full-length test for the paid student.
       examHistory:
         process.env.STUDENT_HARNESS_SEED === "exam-history" || LISA_DOCK,

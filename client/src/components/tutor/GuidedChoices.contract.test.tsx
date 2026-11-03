@@ -445,3 +445,78 @@ describe("a choice tapped outside the panel (the phone strip)", () => {
     expect(messagePosts()).toHaveLength(2);
   });
 });
+
+/**
+ * @spec [owner brief "Quick replies in walkthroughs" (Karl, 2026-11-02); SCL-268]
+ *       | @implemented [2026-11-02]
+ * After every LISA reply in a walkthrough, "Got it, next step" and "I'm stuck"; hidden while the
+ * student is typing; free text always remains; never on a reply outside a walkthrough. The panel
+ * reads `walkthrough_open` from the real router's replay.
+ */
+describe("quick replies in a walkthrough", () => {
+  function quickReplies(): string[] {
+    return screen
+      .getAllByRole("button")
+      .filter((b) => b.dataset.testid?.startsWith("tutor-quick-reply-"))
+      .map((b) => b.textContent ?? "");
+  }
+
+  it("after LISA's walkthrough reply: both taps; each sends its exact label with its intent and gets one LISA reply", async () => {
+    renderPanel(seedReviewItem(MATH_QUESTION));
+    fireEvent.click(await screen.findByTestId("tutor-choice-walkthrough"));
+    await screen.findByTestId("tutor-quick-replies");
+    expect(quickReplies()).toEqual(["Got it, next step", "I'm stuck"]);
+    // Free text always remains.
+    expect(screen.getByLabelText("Message")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("tutor-quick-reply-step_stuck"));
+    await waitFor(() => expect(messagePosts()).toHaveLength(2));
+    expect(messagePosts()[1]).toMatchObject({
+      message: "I'm stuck",
+      intent: "step_stuck",
+    });
+    // Shown again after LISA's next reply.
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(2));
+    fireEvent.click(
+      await screen.findByTestId("tutor-quick-reply-step_understood"),
+    );
+    await waitFor(() => expect(messagePosts()).toHaveLength(3));
+    expect(messagePosts()[2]).toMatchObject({
+      message: "Got it, next step",
+      intent: "step_understood",
+    });
+    await waitFor(() => expect(orchestrateTurn).toHaveBeenCalledTimes(3));
+    await screen.findByTestId("tutor-quick-replies");
+  });
+
+  it("hidden while the student is typing, back when the draft is cleared", async () => {
+    renderPanel(seedReviewItem(MATH_QUESTION));
+    fireEvent.click(await screen.findByTestId("tutor-choice-walkthrough"));
+    await screen.findByTestId("tutor-quick-replies");
+    const box = screen.getByLabelText("Message");
+    fireEvent.change(box, { target: { value: "w" } });
+    expect(screen.queryByTestId("tutor-quick-replies")).toBeNull();
+    fireEvent.change(box, { target: { value: "" } });
+    expect(screen.getByTestId("tutor-quick-replies")).toBeTruthy();
+  });
+
+  it("never on a reply outside a walkthrough: a typed first message, then a video tap", async () => {
+    renderPanel(seedReviewItem(MATH_QUESTION));
+    await screen.findByTestId("tutor-guided-choices");
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "how do I start?" },
+    });
+    fireEvent.submit(
+      screen.getByRole("form", { name: /send a message to lisa/i }),
+    );
+    // Presence first: LISA's reply is on screen.
+    await screen.findByText(TUTOR_TEXT);
+    await screen.findByTestId("tutor-other-ways");
+    expect(screen.queryByTestId("tutor-quick-replies")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("tutor-other-ways"));
+    fireEvent.click(await screen.findByTestId("tutor-choice-video_desmos"));
+    await screen.findByTestId("tutor-video-card");
+    expect(screen.queryByTestId("tutor-quick-replies")).toBeNull();
+  });
+});
