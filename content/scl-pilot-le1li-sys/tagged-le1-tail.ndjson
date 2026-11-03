@@ -1,0 +1,73 @@
+{"id":"SATM2RKTF9O","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0104"}],"why":"Context: Plan X exceeds Plan Y by $4.80, translate to difference eq, simplify, isolate t"}
+{"id":"SATM2RL25D9","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0033"},{"option":"C","cluster_id":"CL.0047"}],"why":"Two-fraction eq, LCD=12, distribute negative, combine, isolate x"}
+{"id":"SATM2RLCWF5","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Two-fraction eq, LCD=10, distribute negative, combine, isolate x"}
+{"id":"SATM2RMILUX","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Fraction eq (4x-9)/5+3=x-2, clear denominator, distribute, isolate x"}
+{"id":"SATM2RZ6TBO","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Fraction eq 3(5x+7)/11=9, clear denominator, distribute, isolate x"}
+{"id":"SATM2S6C9W3","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: two mechanics equal cost, translate to eq, isolate h"}
+{"id":"SATM2S7HAO9","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"Two-step linear eq 13x+47=151, isolate x"}
+{"id":"SATM2S849GG","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"}],"why":"Two-step linear eq 7x+28=91, isolate x"}
+{"id":"SATM2SEF3TH","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 8x-23=41, isolate x"}
+{"id":"SATM2SF0OT7","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Fraction eq 3(2x-5)/4+11=29, clear denominator, distribute, isolate x"}
+{"id":"SATM2SHUZ17","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq 5x+17=82, isolate x"}
+{"id":"SATM2SLURAC","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 7x-19=30, isolate x"}
+{"id":"SATM2T4GQOH","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0016"}],"why":"Two-fraction eq (3x+1)/5+3=(x+11)/2, LCD=10, distribute, combine, isolate x"}
+{"id":"SATM2TA50Z2","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Fraction eq 3(2x-7)/4+5=14, clear denominator, distribute, isolate x"}
+{"id":"SATM2TR9A9P","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133"],"distractors":[{"option":"D","cluster_id":"CL.0133"}],"why":"Find a for no solution: match x-coefficients, check constants differ"}
+{"id":"SATM2TS1UOT","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0016"}],"why":"Fraction eq 3(2x-7)/4=9, clear denominator, distribute, isolate x"}
+{"id":"SATM2TWOVHH","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Fraction eq (3x-7)/4=5, clear denominator, isolate x"}
+{"id":"SATM2UJLDAR","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Fraction eq 5(x+3)/2=3x+11, clear denominator, distribute, isolate x"}
+{"id":"SATM2UJTMSY","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 4x+29=57, isolate x"}
+{"id":"SATM2UN5QW5","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 8x+13=69, isolate x"}
+{"id":"SATM2UPDVSX","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0016"},{"option":"D","cluster_id":"CL.0047"}],"why":"Fraction eq 5(x-3)/2=x+9, clear denominator, distribute, isolate x"}
+{"id":"SATM2UQ0EDQ","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0033"}],"why":"Two-fraction eq, LCD=12, distribute negative, combine, isolate x"}
+{"id":"SATM2USLBN0","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq 7x+35=91, isolate x"}
+{"id":"SATM2UV4PPP","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"}],"why":"Fraction eq 3(2x-7)/4=15, clear denominator, distribute, isolate x"}
+{"id":"SATM2UXSBH3","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 3p+17=41, isolate p"}
+{"id":"SATM2UYH4DB","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 7x+23=121, isolate x"}
+{"id":"SATM2UYTDYG","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq 13x-29=62, isolate x"}
+{"id":"SATM2V565VZ","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0034"}],"why":"Distribute 4(3x+5)-11=69, combine, isolate x"}
+{"id":"SATM2VCE8R0","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"},{"option":"C","cluster_id":"CL.0047"}],"why":"Two-step linear eq 7x-19=30, isolate x"}
+{"id":"SATM2VGQ5BA","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0016"}],"why":"Fraction eq 3(2x-7)/4=(x+11)/2, clear denominators, distribute, isolate x"}
+{"id":"SATM2VLAICU","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq 7x-13=50, isolate x"}
+{"id":"SATM2VQRKCM","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 7x-23=54, isolate x"}
+{"id":"SATM2W0KBAE","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"},{"option":"C","cluster_id":"CL.0047"}],"why":"Context: two mechanics equal cost, translate to eq, isolate h"}
+{"id":"SATM2W2P6E8","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 9x-23=40, isolate x"}
+{"id":"SATM2W3FQ34","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0034"},{"option":"D","cluster_id":"CL.0017"}],"why":"Distribute 3(2x-7)+11=5x+8, combine, isolate x"}
+{"id":"SATM2W6LNTJ","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"}],"why":"Context: electrician vs plumber equal cost, translate to eq, isolate h"}
+{"id":"SATM2WA4NR1","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0016"}],"why":"Fraction eq 3(2x-5)/4+7=16, clear denominator, distribute, isolate x"}
+{"id":"SATM2WGM6E5","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 5x+15=40, isolate x"}
+{"id":"SATM2WLUB4R","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Fraction eq 4(x-3)/5+2=(x+7)/5, clear denominator, distribute, combine, isolate x"}
+{"id":"SATM2WOVJHL","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"}],"why":"Fraction eq 7(x-3)/5=14, clear denominator, distribute, isolate x"}
+{"id":"SATM2WS441R","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0033"}],"why":"Two-fraction eq, LCD=20, distribute negative, combine, isolate x"}
+{"id":"SATM2WSIGYA","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"},{"option":"B","cluster_id":"CL.0033"}],"why":"Two-fraction eq, LCD=10, distribute negative, combine, isolate x"}
+{"id":"SATM2WTGS6T","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0017"},{"option":"D","cluster_id":"CL.0047"}],"why":"Distribute 3(2x+7)-4x=51, combine, isolate x"}
+{"id":"SATM2WUN5ED","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0016"}],"why":"Fraction eq (5x+3)/2-4=13, clear denominator, isolate x"}
+{"id":"SATM2WY36VW","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"},{"option":"C","cluster_id":"CL.0034"}],"why":"Distribute 2(x+9)=52, isolate x"}
+{"id":"SATM2WYDEIF","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq 5x+17=52, isolate x"}
+{"id":"SATM2WZ0SH3","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0016"},{"option":"D","cluster_id":"CL.0047"}],"why":"Fraction eq (2x+11)/3=9, clear denominator, isolate x"}
+{"id":"SATM2WZ7R4X","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 8x-23=41, isolate x"}
+{"id":"SATM2X0CAQ4","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 3x-11=46, isolate x"}
+{"id":"SATM2X6Y870","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0016"}],"why":"Fraction eq 5(x-3)/2=20, clear denominator, distribute, isolate x"}
+{"id":"SATM2XGRW3G","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 9x-23=40, isolate x"}
+{"id":"SATM2XN0MZG","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Three-fraction eq, LCD=15, distribute negative, combine, isolate x"}
+{"id":"SATM2XQW8GO","sub_skills":["LE1.1"],"clusters":["CL.0086","CL.0034","CL.0047"],"distractors":[],"why":"Proportion 5(x-3)/2=(3x+7)/4, cross-multiply, distribute, isolate x"}
+{"id":"SATM2XYLP38","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Three-fraction eq, LCD=6, distribute, combine, isolate x"}
+{"id":"SATM2Y0ELHC","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"Context: car rental cost, translate to eq, isolate d"}
+{"id":"SATM2Y2ZQC4","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0034"},{"option":"B","cluster_id":"CL.0033"},{"option":"C","cluster_id":"CL.0033"}],"why":"Distribute both sides 4(3x-13)-5(2x+1)=x-38, combine, isolate x"}
+{"id":"SATM2Y6Z7E9","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"Context: mechanic bill, translate to eq, isolate h"}
+{"id":"SATM2YCNH6I","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 7x-19=30, isolate x"}
+{"id":"SATM2YH80I1","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"Fraction eq x/3+7=12, clear denominator, isolate x"}
+{"id":"SATM2Z34GAR","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: two plumbers equal cost, translate to eq, isolate h"}
+{"id":"SATM2Z5IP5I","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: carpenter bill, translate to eq, isolate h"}
+{"id":"SATM2Z7HLQG","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Distribute both sides 3(2x-5)+4=2(x+3)-1, combine, isolate x"}
+{"id":"SATM2ZFB72U","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Two-step linear eq 11x-34=43, isolate x"}
+{"id":"SATM2ZGDB5P","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"Fraction eq (2x-9)/7=5, clear denominator, isolate x"}
+{"id":"SATM2ZJAPOB","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Fraction eq 3(2x-7)/4+5=x/2, clear denominators, distribute, combine, isolate x"}
+{"id":"SATM2ZJUS8F","sub_skills":["LE1.1"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Eq 6x+13=4x+37, combine like terms, isolate x"}
+{"id":"SATM2ZJW913","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"Two-step linear eq 9x-37=44, isolate x"}
+{"id":"SATM2ZKUIHZ","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Distribute both sides 4(3x-7)=2(5x+3)+8, combine, isolate x"}
+{"id":"SATM2ZLOMPR","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Fraction eq 4(2x-5)/3+6=18, clear denominator, distribute, isolate x"}
+{"id":"SATM2ZNEX9B","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Distribute 4(2x-5)+6=3x+11, combine, isolate x"}
+{"id":"SATM2ZO1S2H","sub_skills":["LE1.2"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047","CL.0094"],"distractors":[{"option":"C","cluster_id":"CL.0094"}],"why":"Solve eq then evaluate x-3; asks for expression not bare variable"}
+{"id":"SATM2ZQIMT5","sub_skills":["LE1.1"],"clusters":["CL.0086","CL.0034","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0034"}],"why":"Proportion (4x-3)/5=(2x+9)/3, cross-multiply, distribute, isolate x"}
+{"id":"SATM2ZQU200","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Fraction eq 3(2x-7)/4+11=5x-2, clear denominator, distribute, combine, isolate x"}
