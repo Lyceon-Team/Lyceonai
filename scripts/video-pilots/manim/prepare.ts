@@ -11,8 +11,13 @@
  *       setup → key move → trap → answer and check → "Follow, there's one of these every day.";
  *       the end card shows "Lyceon SAT Prep", no lyceon.ai. Owner brief "Worked examples:
  *       production system" (Karl, 2026-10-27); Public Disclosure Doctrine §0 rules 1-3
- *       (docs/plans/seo/seo-marketing-vertical.md)]
- *       | @implemented [2026-11-02, re-scripted to the SCL-267 rules 2026-11-02]
+ *       (docs/plans/seo/seo-marketing-vertical.md); Part D1 and the owner ruling of 2026-11-02 (no
+ *       third-party calculator named)]
+ *       | @implemented [2026-11-02, the calculator-name guard 2026-11-02 (D1), re-scripted to the
+ *       SCL-267 rules 2026-11-02]
+ *
+ * Before anything else, an example whose file names the third-party calculator is refused
+ * (word-guard.ts), with the line that names it.
  *
  * plain English:
  *   pnpm exec tsx scripts/video-pilots/manim/prepare.ts \
@@ -48,6 +53,7 @@ import {
 import { safeArea, scriptLines } from "../../worked-examples/composition";
 import { seedQuestion } from "../../worked-examples/content";
 import { KIT_DIR, ROOT, loadKit } from "../../worked-examples/kit";
+import { bannedWordHits, formatHit } from "./word-guard";
 
 /** The worked examples already in use (W45/W46); a pilot must use another question. */
 export const PILOT_EXCLUDED_IDS: readonly string[] = [
@@ -90,9 +96,13 @@ function main(): void {
   };
   const examplePath = resolve(opt("--example"));
   const out = resolve(opt("--out"));
-  const example = workedExampleContentSchema.parse(
-    JSON.parse(readFileSync(examplePath, "utf8")),
-  );
+  const raw = readFileSync(examplePath, "utf8");
+  const named = bannedWordHits(examplePath, raw);
+  if (named.length > 0)
+    throw new Error(
+      `the pilot example names the third-party calculator:\n  ${named.map(formatHit).join("\n  ")}`,
+    );
+  const example = workedExampleContentSchema.parse(JSON.parse(raw));
   if (PILOT_EXCLUDED_IDS.includes(example.question_id))
     throw new Error(
       `${example.question_id} is a W45/W46 worked example; the pilot uses another question`,

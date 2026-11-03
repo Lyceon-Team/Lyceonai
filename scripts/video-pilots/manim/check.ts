@@ -34,6 +34,15 @@
  * worked examples' own loudnorm pass). Integrated loudness is a report: the ruled -14 LUFS target
  * applies to each voice line, which normalisation meets, and the music bed sits under it.
  * Exit 1 when any video fails.
+ *
+ * D1 (Karl, 2026-11-02): one more gate and one more column.
+ *   * The word guard (word-guard.ts): every spoken line and every string the scene set on screen
+ *     (the log's on_screen list) is scanned for the third-party calculator's name. Any hit is
+ *     listed with the line key or on-screen index and fails the video: by the owner's ruling that
+ *     word never ships.
+ *   * Timers: a video with on-screen stopwatches logs each one's start, stop and shown value
+ *     (graph.py Stopwatch). The shown value must be the floored tenths of stop − start on the video
+ *     clock, or the video fails; the column prints what the viewer sees.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -49,6 +58,7 @@ import {
 } from "../../worked-examples/final-mix";
 import { loadKit } from "../../worked-examples/kit";
 import { lineQualityProblems } from "../../worked-examples/quality";
+import { bannedWordHits, formatHit } from "./word-guard";
 
 export const linesLogSchema = z.object({
   duration: z.number().positive(),
@@ -67,6 +77,17 @@ export const linesLogSchema = z.object({
     .min(1),
   /** Every string the scene set on screen (scene.py ON_SCREEN). */
   on_screen: z.array(z.string()).min(1),
+  /** The on-screen stopwatches, if the video has any (graph.py Stopwatch.stop). */
+  timers: z
+    .array(
+      z.object({
+        label: z.string().min(1),
+        start: z.number().min(0),
+        stop: z.number().min(0),
+        shown: z.string().regex(/^\d+\.\d s$/),
+      }),
+    )
+    .optional(),
 });
 export type PilotLinesLog = z.infer<typeof linesLogSchema>;
 
@@ -128,6 +149,39 @@ export function screenEchoProblems(log: PilotLinesLog): string[] {
   return out;
 }
 
+/** The word guard over a rendered video's log: spoken lines by key, on-screen strings by index. */
+export function logWordHits(log: PilotLinesLog): string[] {
+  return [
+    ...log.lines.flatMap((l) =>
+      bannedWordHits(`spoken line "${l.key}"`, l.text),
+    ),
+    ...log.on_screen.flatMap((s, k) =>
+      bannedWordHits(`on-screen string ${k + 1}`, s),
+    ),
+  ].map(formatHit);
+}
+
+/** Each stopwatch as the viewer sees it, or why its shown value is not its measured segment. */
+export function timerRows(log: PilotLinesLog): {
+  rows: string[];
+  problems: string[];
+} {
+  const rows: string[] = [];
+  const problems: string[] = [];
+  for (const t of log.timers ?? []) {
+    const tenths = Math.floor((t.stop - t.start) * 10 + 1e-9);
+    const expected = `${Math.floor(tenths / 10)}.${tenths % 10} s`;
+    rows.push(
+      `${t.label} ${t.shown} (${t.start.toFixed(2)}-${t.stop.toFixed(2)} s)`,
+    );
+    if (t.shown !== expected)
+      problems.push(
+        `timer ${t.label}: shows ${t.shown}, but its segment ran ${expected}`,
+      );
+  }
+  return { rows, problems };
+}
+
 export type PilotRow = {
   label: string;
   video: string;
@@ -137,6 +191,7 @@ export type PilotRow = {
   lufs: number | null;
   truePeak: number | null;
   failures: string[];
+  timers: string[];
 };
 
 function probe(video: string): Probe {
@@ -192,6 +247,9 @@ export function checkVideo(label: string, video: string): PilotRow {
   );
   if (mix) failures.push(`mix: ${mix}`);
   failures.push(...screenEchoProblems(log));
+  failures.push(...logWordHits(log));
+  const timers = timerRows(log);
+  failures.push(...timers.problems);
   failures.push(...finishedMixProblems(video, kit));
   const measured = measureMix(video, kit);
   return {
@@ -202,16 +260,17 @@ export function checkVideo(label: string, video: string): PilotRow {
     lufs: measured?.integratedLufs ?? null,
     truePeak: measured?.truePeakDbtp ?? null,
     failures,
+    timers: timers.rows,
   };
 }
 
 export function pilotTable(rows: readonly PilotRow[]): string {
   return [
-    "| Video | File | Engine | Length | Loudness | True peak | Failures |",
-    "|---|---|---|---|---|---|---|",
+    "| Video | File | Engine | Length | Loudness | True peak | On-screen timers | Failures |",
+    "|---|---|---|---|---|---|---|---|",
     ...rows.map(
       (r) =>
-        `| ${r.label} | ${basename(r.video)} | ${r.engine} | ${r.seconds.toFixed(1)} s | ${r.lufs === null ? "silent" : `${r.lufs.toFixed(1)} LUFS`} | ${r.truePeak === null ? "silent" : `${r.truePeak.toFixed(2)} dBTP`} | ${r.failures.length === 0 ? "none" : r.failures.join("; ")} |`,
+        `| ${r.label} | ${basename(r.video)} | ${r.engine} | ${r.seconds.toFixed(1)} s | ${r.lufs === null ? "silent" : `${r.lufs.toFixed(1)} LUFS`} | ${r.truePeak === null ? "silent" : `${r.truePeak.toFixed(2)} dBTP`} | ${r.timers.length === 0 ? "none" : r.timers.join("; ")} | ${r.failures.length === 0 ? "none" : r.failures.join("; ")} |`,
     ),
   ].join("\n");
 }

@@ -1,6 +1,6 @@
 # Video pilots
 
-Pilots for Karl's review (owner brief "Video tools pilot", Karl, 2026-11-02, Parts D2 and D3).
+Pilots for Karl's review (owner brief "Video tools pilot", Karl, 2026-11-02, Parts D1, D2 and D3).
 Nothing here is part of the worked-example pipeline, and nothing here posts anything. Renders,
 voiced lines and model weights are never committed (`.gitignore` covers a run pointed inside the
 repository; the scripts also refuse an output folder inside it).
@@ -34,7 +34,10 @@ repository; the scripts also refuse an output folder inside it).
 | `chatterbox/speak_lines.py` | D3: Chatterbox on CPU, the built-in voice, one fixed seed, one raw WAV per line (its PerTh watermark kept) |
 | `chatterbox/requirements.txt` | D3: every package of the Chatterbox venv, pinned, transitive ones included (torch CPU builds) |
 | `manim/prevoiced_service.py` | The manim-voiceover speech service: plays the lines `voice-lines.ts` voiced |
-| `manim/scene.py` | The Manim scene: hook → setup → steps on the figure → trap → answer and check → end card; no captions; safe area x 71..912, y 154..1555 |
+| `manim/scene.py` | The shared scene: voice, open card, recap, notepad, end card, log; no captions; safe area x 71..912, y 154..1555. It calls `pilots/<question id>.py` |
+| `manim/pilots/<id>.py` | One module per question: its figure and its choreography in the spoken order (hook, setup, steps, trap, answer and check, end card) |
+| `manim/layout.py`, `manim/graph.py` | Shared layout helpers (and `ON_SCREEN`, every string drawn); the D1 graph panel and the video-clock stopwatch |
+| `manim/word-guard.ts` | D1: refuses the third-party calculator's name in pilot sources, spoken lines and anything drawn |
 | `manim/render.py` | Runs `voice-lines.ts`, then Manim at 1080×1920, 30 fps, then lays the worked examples' music bed under the voice with ffmpeg, then limits the finished mix to ≤ −1 dBTP true peak with `scripts/worked-examples/final-mix.ts` (its CLI) |
 | `manim/check.ts` | Every video: 1080×1920, 30 fps, audio, 30-60 s, every line through `quality.ts`, the voice-over-music margin, S1 on what was drawn, the finished mix at most −1 dBTP true peak (`final-mix.ts` `finishedMixProblems`); prints loudness (LUFS, true peak). Exit 1 on any failure |
 | `manim/safe_area_check.py` | Samples frames and fails if any ink leaves the safe area |
@@ -114,6 +117,24 @@ HYPERFRAMES_PYTHON=$PY pnpm exec tsx scripts/video-pilots/voice-lines.ts --say "
 `render.py` sets `HYPERFRAMES_PYTHON` to the Manim venv's Python, so hyperframes runs Kokoro there
 and transcribes there for both engines.
 
+### D1: graphing pilots
+
+```bash
+for Q in SATM2PW20AL SATM2XXVNK7; do
+  pnpm exec tsx scripts/video-pilots/manim/prepare.ts \
+    --example video-kit/pilots/manim/$Q/example.json --out $OUT/build-$Q
+done
+$PY scripts/video-pilots/manim/render.py --bundle $OUT/build-SATM2PW20AL/bundle.json --engine kokoro \
+  --work $OUT/build-SATM2PW20AL/kokoro --out $OUT/d1-graphing-only.mp4
+$PY scripts/video-pilots/manim/render.py --bundle $OUT/build-SATM2XXVNK7/bundle.json --engine kokoro \
+  --work $OUT/build-SATM2XXVNK7/kokoro --out $OUT/d1-graphing-vs-hand.mp4
+$PY scripts/video-pilots/manim/safe_area_check.py $OUT/d1-graphing-only.mp4 $OUT/build-SATM2PW20AL/bundle.json
+$PY scripts/video-pilots/manim/safe_area_check.py $OUT/d1-graphing-vs-hand.mp4 $OUT/build-SATM2XXVNK7/bundle.json
+pnpm exec tsx scripts/video-pilots/manim/check.ts \
+  --video "D1 graphing only=$OUT/d1-graphing-only.mp4" \
+  --video "D1 by hand vs graphing=$OUT/d1-graphing-vs-hand.mp4"
+```
+
 ## Notes
 
 * **Fonts.** The kit's fonts are WOFF2, which Pango cannot open; `render.py` converts them to
@@ -126,8 +147,19 @@ and transcribes there for both engines.
   `check.ts` fails a video whose true peak is above −1 dBTP (SCL-270). It reports the whole
   video's integrated loudness alongside (the voice lines' normalised level with the music bed
   under them and the pauses between lines).
-* **One drawing per question.** The scene draws this question's circle and refuses any other
-  bundle. A new question needs its own figure.
-* **CI.** `tests/ci/video-pilots.test.ts` runs the committed pilot scripts through the rules and
-  proves check.ts's format, S1 and true-peak checks (the last on a real ffmpeg video, skipped
+* **One module per question.** `scene.py` loads `pilots/<question id>.py` and refuses a bundle
+  with no module there. A new question needs its own module (its figure and choreography); the
+  open card, recap, end card, voice and log are shared.
+* **No third-party calculator.** By the owner's ruling of 2026-11-02 the graphs are drawn here in
+  Manim and called "the graphing method" or "graphing calculator"; no product's interface, logo or
+  screenshot is shown and its name is never on screen or spoken. `word-guard.ts` enforces the name
+  in three places (prepare, check, the test suite).
+* **Stopwatches are honest by construction.** `graph.py`'s `Stopwatch` reads the scene's own
+  clock, so each readout is the length of its segment in the video (from its first step's voice
+  to the end of its last), not a real-world solve time; re-voicing re-measures them. The log
+  records each start, stop and shown value, and `check.ts` fails a readout that is not the floored
+  tenths of stop − start.
+* **CI.** `tests/ci/video-pilots.test.ts` runs every committed pilot script through the rules
+  (S1 and S2 included), the calculator-name guard over the pilot sources, and proves check.ts's
+  format, S1, word-guard, timer and true-peak checks (the last on a real ffmpeg video, skipped
   without ffmpeg); rendering is never run in CI.
