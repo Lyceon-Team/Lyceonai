@@ -307,7 +307,78 @@ export async function checkCrisisSignatures(
 // ── Layer 2: Model Inference ───────────────────────────────────────────
 
 /**
- * Classifies crisis using the classifier_class model alias.
+ * @spec [owner brief H4 "database cheap wins" (Karl, 2026-11-02), ruling of 2026-11-02:
+ *        "3000 ms (Recommended)"; CR-03C-V3-01 §3.4 (the "timeout" failure class) and §3.6]
+ *       | @implemented [2026-11-02]
+ * plain English: the most one classifier attempt may take. Before H4 there was no limit at all:
+ * a hung Vertex call held the whole turn and never reached the retry or the Layer 1-stands branch
+ * §3.4 describes. 3000 ms is the owner's ruled value for a Flash call that outputs at most 64
+ * tokens; it includes the token mint on a process's first call. With the one retry the worst case
+ * is about 6 s, after which the turn takes the existing failure path. The `crisis_model` step in
+ * route_timing records every attempt's own time, so the value can be tightened on real numbers.
+ */
+export const CRISIS_CLASSIFIER_TIMEOUT_MS = 3000;
+
+type ClassifierModels = {
+  generateContent: (params: {
+    model: string;
+    contents: Array<{ role: string; parts: Array<{ text: string }> }>;
+    config: Record<string, unknown>;
+  }) => Promise<{ text?: string | undefined }>;
+};
+
+type PreparedClassifier = { modelId: string; models: ClassifierModels };
+
+// One client per process (per project and location), built on first use. Each GoogleGenAI owns
+// its GoogleAuth, so a client built per call minted a fresh OAuth token on every attempt.
+// A key rotated within the same project is picked up on the next process start; until then a
+// failing attempt takes the normal path (one retry, then Layer 1 stands and review).
+let cachedClient: { key: string; models: ClassifierModels } | null = null;
+
+/**
+ * Everything an attempt needs that does not depend on the network: the model id, the credential
+ * and the client. A failure here (a missing env var, an absent credential) repeats identically on
+ * a second try, so it is not retried (H4 ruling of 2026-11-02, "BFF only").
+ *
+ * The client is built only after the credential resolves, so an absent credential never
+ * constructs one (tests/ci/gcp-fail-at-use.contract.test.ts).
+ */
+async function prepareClassifier(): Promise<PreparedClassifier> {
+  const modelId = process.env.VERTEX_CLASSIFIER_CLASS_MODEL;
+  if (!modelId) {
+    throw new Error(
+      "VERTEX_CLASSIFIER_CLASS_MODEL env var not set; crisis classifier cannot run",
+    );
+  }
+
+  const location =
+    (process.env.VERTEX_CLASSIFIER_LOCATION ?? "").trim() || "global";
+
+  // Explicit credential injection — ADC is removed from the BFF path.
+  // The credential and the project it authenticates against cannot disagree,
+  // so project_id comes from the credential, not from a separate env var.
+  const creds = getGcpCredentials();
+
+  const key = `${creds.project_id}|${location}`;
+  if (cachedClient !== null && cachedClient.key === key) {
+    return { modelId, models: cachedClient.models };
+  }
+
+  // Dynamic import — @google/genai is a root dependency. If unavailable at
+  // runtime the throw reaches classifyCrisis and Layer 1 stands (SCL-023).
+  const { GoogleGenAI } = await import("@google/genai");
+  const client = new GoogleGenAI({
+    vertexai: true,
+    project: creds.project_id,
+    location,
+    googleAuthOptions: { credentials: creds },
+  });
+  cachedClient = { key, models: client.models };
+  return { modelId, models: client.models };
+}
+
+/**
+ * Classifies crisis using the classifier_class model (VERTEX_CLASSIFIER_CLASS_MODEL).
  *
  * On failure: retry ONCE, then the Layer 1 result stands, turn proceeds,
  * turn is force-enqueued to review queue. This is NOT fail-closed — it is
@@ -315,40 +386,41 @@ export async function checkCrisisSignatures(
  * who may be the person the gate exists for" (SCL-023).
  *
  * @spec [Doc-03_V3 §21.1, SCL-023, INV-03-16]
+ *
+ * @spec [owner brief H4 (Karl, 2026-11-02), rulings of 2026-11-02] | @implemented [2026-11-02]
+ * plain English (H4): three changes, the failure semantics otherwise unchanged.
+ *  - No config read. The turn used to read `tutor_context_runtime_config`
+ *    (`crisis_classifier_model_alias`) and pass the value to a parameter nothing read; the model
+ *    has only ever come from VERTEX_CLASSIFIER_CLASS_MODEL. One DB round trip gone per turn. The
+ *    read's only effect was as a gate (a missing row failed Layer 2); that gate guarded nothing.
+ *  - A setup failure (prepareClassifier) is not retried: it would fail the same way again. It
+ *    still ends in the same "could not classify" sentinel and the same error event.
+ *  - Each attempt is bounded by CRISIS_CLASSIFIER_TIMEOUT_MS; a timeout is a failed attempt, so
+ *    it gets the one retry like any other Vertex failure.
  */
 export async function classifyCrisis(text: string): Promise<ClassifierResult> {
-  // Load classifier model alias from runtime config.
-  // The config KEY is "crisis_classifier_model_alias"; its VALUE is the
-  // alias name (e.g. "classifier_class") that resolves to a provider model.
-  const { data: configData, error: configError } = await supabaseServer
-    .from("tutor_context_runtime_config")
-    .select("value")
-    .eq("key", "crisis_classifier_model_alias")
-    .single();
-
-  if (configError || !configData) {
+  let prepared: PreparedClassifier;
+  try {
+    prepared = await prepareClassifier();
+  } catch (err: unknown) {
     logger.error(
       "TUTOR_CRISIS",
-      "classifier_config_missing",
-      "crisis_classifier_model_alias config not found in tutor_context_runtime_config",
-      configError,
+      "classifier_retry_exhausted",
+      "Layer 2 crisis classifier cannot run (setup failed; not retried, it would fail the same way); Layer 1 result stands, force-enqueuing to review queue",
+      err instanceof Error ? err : { message: String(err) },
+      { retried: false },
     );
-    // Cannot classify — return non-crisis so Layer 1 result stands
-    // The caller (runCrisisClassifier) handles the force-review logic
+    // Return non-crisis — Layer 1 result stands per SCL-023
+    // The caller sets forceReview = true
     return { isCrisis: false, confidence: 0 };
   }
-
-  const modelAlias =
-    typeof configData.value === "string"
-      ? configData.value
-      : String(configData.value);
 
   // Attempt classification with retry-once on failure
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       // H1 (P2 Revised §2): one `crisis_model` step per attempt (route_timing; no content).
       const result = await timedStep("crisis_model", () =>
-        invokeClassifier(text, modelAlias),
+        invokeClassifier(text, prepared),
       );
       return result;
     } catch (err: unknown) {
@@ -386,44 +458,33 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
 }
 
 /**
- * Invokes the crisis classifier model via Vertex AI.
- * Uses the classifier_class model alias (VERTEX_CLASSIFIER_CLASS_MODEL env var).
+ * Invokes the crisis classifier model via Vertex AI, bounded by CRISIS_CLASSIFIER_TIMEOUT_MS.
  * Returns structured crisis classification result.
+ *
+ * The timeout both aborts the SDK request (`abortSignal`) and rejects the attempt itself, so an
+ * attempt ends on time even if a request ignores the signal.
  *
  * @spec [CR-03C-V3-01 §3.4, Doc-03_V3 §21]
  */
 async function invokeClassifier(
   text: string,
-  _modelAlias: string,
+  prepared: PreparedClassifier,
 ): Promise<ClassifierResult> {
-  const modelId = process.env.VERTEX_CLASSIFIER_CLASS_MODEL;
-  if (!modelId) {
-    throw new Error(
-      "VERTEX_CLASSIFIER_CLASS_MODEL env var not set; crisis classifier cannot run",
-    );
-  }
-
-  const location =
-    (process.env.VERTEX_CLASSIFIER_LOCATION ?? "").trim() || "global";
-
-  // Explicit credential injection — ADC is removed from the BFF path.
-  // The credential and the project it authenticates against cannot disagree,
-  // so project_id comes from the credential, not from a separate env var.
-  const creds = getGcpCredentials();
-
-  // Dynamic import — @google/genai is a root dependency. If unavailable at
-  // runtime the throw is caught by classifyCrisis's retry logic and Layer 1
-  // stands (SCL-023).
-  const { GoogleGenAI } = await import("@google/genai");
-  const client = new GoogleGenAI({
-    vertexai: true,
-    project: creds.project_id,
-    location,
-    googleAuthOptions: { credentials: creds },
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(
+        new Error(
+          `crisis classifier timed out after ${CRISIS_CLASSIFIER_TIMEOUT_MS} ms`,
+        ),
+      );
+    }, CRISIS_CLASSIFIER_TIMEOUT_MS);
   });
 
-  const response = await client.models.generateContent({
-    model: modelId,
+  const request = {
+    model: prepared.modelId,
     contents: [
       {
         role: "user",
@@ -435,11 +496,20 @@ async function invokeClassifier(
     config: {
       systemInstruction: { parts: [{ text: CRISIS_CLASSIFIER_SYSTEM_PROMPT }] },
       ...CRISIS_CLASSIFIER_GENERATION,
+      abortSignal: controller.signal,
     },
-  });
+  };
 
-  // Unparseable output throws; classifyCrisis retries once, then Layer 1 stands.
-  return parseClassifierResponse(response.text ?? "");
+  try {
+    const response = await Promise.race([
+      prepared.models.generateContent(request),
+      timedOut,
+    ]);
+    // Unparseable output throws; classifyCrisis retries once, then Layer 1 stands.
+    return parseClassifierResponse(response.text ?? "");
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Combined Classifier ────────────────────────────────────────────────

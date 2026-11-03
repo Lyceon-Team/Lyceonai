@@ -1,617 +1,500 @@
 {
-  "voice": "af_heart",
+  "voice": "am_michael",
+  "speaking_rate": 1,
   "lines": [
     {
       "key": "hook",
-      "text_sha256": "78ce6de002f8bb484c171d065c5a68db85ad20a3523d78bd4017404dee7e132a",
+      "text_sha256": "45ed71ffdc858dde9f22e9806598fec551029c0562be9a3c92eadf0af044096c",
       "file": "hook.wav",
-      "duration": 3.669,
+      "duration": 2.667,
       "words": [
         {
-          "text": "Ten",
-          "start": 0.03,
-          "end": 0.22
+          "text": "Think",
+          "start": 0.08,
+          "end": 0.3
         },
         {
-          "text": "seconds,",
-          "start": 0.22,
-          "end": 0.75
+          "text": "you",
+          "start": 0.3,
+          "end": 0.48
         },
         {
-          "text": "a",
-          "start": 0.75,
-          "end": 0.95
+          "text": "can",
+          "start": 0.48,
+          "end": 0.62
         },
         {
-          "text": "king",
-          "start": 0.95,
-          "end": 1.25
+          "text": "get",
+          "start": 0.71,
+          "end": 0.84
         },
         {
-          "text": "is",
-          "start": 1.25,
-          "end": 1.38
+          "text": "this",
+          "start": 0.84,
+          "end": 1.08
         },
         {
-          "text": "already",
-          "start": 1.39,
-          "end": 1.92
+          "text": "in",
+          "start": 1.08,
+          "end": 1.2
         },
         {
-          "text": "gone.",
-          "start": 1.92,
-          "end": 2.48
+          "text": "10",
+          "start": 1.2,
+          "end": 1.56
         },
         {
-          "text": "Is",
-          "start": 2.51,
-          "end": 2.58
+          "text": "seconds.",
+          "start": 1.56,
+          "end": 2.04
         },
         {
-          "text": "the",
-          "start": 2.58,
-          "end": 2.72
-        },
-        {
-          "text": "next",
-          "start": 2.8,
+          "text": "Go!",
+          "start": 2.12,
           "end": 2.88
-        },
-        {
-          "text": "card",
-          "start": 2.95,
-          "end": 3.15
-        },
-        {
-          "text": "a",
-          "start": 3.15,
-          "end": 3.21
-        },
-        {
-          "text": "king?",
-          "start": 3.21,
-          "end": 3.58
         }
       ]
     },
     {
       "key": "question",
-      "text_sha256": "45d538d7853e333d45a160d48e017ba4257fce3f37a79b2c34402a48f0d5d8da",
+      "text_sha256": "1220e6455021f3910614f5fbc1ed16ba37b0952dce137312607c816c25a42a04",
       "file": "question.wav",
-      "duration": 9.451,
+      "duration": 4.459,
       "words": [
         {
-          "text": "two",
-          "start": 0.04,
-          "end": 0.23
+          "text": "We",
+          "start": 0.11,
+          "end": 0.14
         },
         {
-          "text": "cards",
-          "start": 0.23,
-          "end": 0.61
-        },
-        {
-          "text": "are",
-          "start": 0.61,
-          "end": 0.84
-        },
-        {
-          "text": "drawn",
-          "start": 0.84,
-          "end": 1.22
-        },
-        {
-          "text": "from",
-          "start": 1.22,
-          "end": 1.52
+          "text": "pulled",
+          "start": 0.14,
+          "end": 0.52
         },
         {
           "text": "a",
-          "start": 1.53,
-          "end": 1.6
-        },
-        {
-          "text": "standard",
-          "start": 1.6,
-          "end": 2.21
-        },
-        {
-          "text": "deck",
-          "start": 2.21,
-          "end": 2.34
-        },
-        {
-          "text": "without",
-          "start": 2.59,
-          "end": 3.16
-        },
-        {
-          "text": "replacement.",
-          "start": 3.16,
-          "end": 4.12
-        },
-        {
-          "text": "Given",
-          "start": 4.16,
-          "end": 4.49
-        },
-        {
-          "text": "that",
-          "start": 4.49,
-          "end": 4.77
-        },
-        {
-          "text": "the",
-          "start": 4.81,
-          "end": 5
-        },
-        {
-          "text": "first",
-          "start": 5,
-          "end": 5.37
-        },
-        {
-          "text": "card",
-          "start": 5.37,
-          "end": 5.65
-        },
-        {
-          "text": "is",
-          "start": 5.7,
-          "end": 5.8
-        },
-        {
-          "text": "a",
-          "start": 5.8,
-          "end": 5.87
+          "start": 0.58,
+          "end": 0.65
         },
         {
           "text": "king,",
-          "start": 5.87,
-          "end": 6.2
+          "start": 0.65,
+          "end": 0.99
         },
         {
-          "text": "what",
-          "start": 6.24,
-          "end": 6.44
+          "text": "kept",
+          "start": 1.24,
+          "end": 1.51
         },
         {
-          "text": "is",
-          "start": 6.49,
-          "end": 6.56
+          "text": "it",
+          "start": 1.51,
+          "end": 1.7
+        },
+        {
+          "text": "out,",
+          "start": 1.7,
+          "end": 2.14
+        },
+        {
+          "text": "and",
+          "start": 2.22,
+          "end": 2.35
+        },
+        {
+          "text": "now",
+          "start": 2.35,
+          "end": 2.56
+        },
+        {
+          "text": "we",
+          "start": 2.56,
+          "end": 2.69
+        },
+        {
+          "text": "want",
+          "start": 2.69,
+          "end": 2.98
         },
         {
           "text": "the",
-          "start": 6.56,
-          "end": 6.74
+          "start": 2.98,
+          "end": 3.16
         },
         {
-          "text": "probability",
-          "start": 6.74,
-          "end": 7.4
+          "text": "odds",
+          "start": 3.24,
+          "end": 3.47
         },
         {
-          "text": "that",
-          "start": 7.4,
-          "end": 7.62
+          "text": "of",
+          "start": 3.47,
+          "end": 3.6
         },
         {
-          "text": "the",
-          "start": 7.62,
-          "end": 7.76
+          "text": "another",
+          "start": 3.61,
+          "end": 4.1
         },
         {
-          "text": "second",
-          "start": 7.78,
-          "end": 8.11
-        },
-        {
-          "text": "card",
-          "start": 8.11,
-          "end": 8.36
-        },
-        {
-          "text": "is",
-          "start": 8.36,
-          "end": 8.45
-        },
-        {
-          "text": "also",
-          "start": 8.54,
-          "end": 8.85
-        },
-        {
-          "text": "a",
-          "start": 8.89,
-          "end": 8.95
-        },
-        {
-          "text": "king?",
-          "start": 8.95,
-          "end": 9.56
+          "text": "one.",
+          "start": 4.1,
+          "end": 4.36
         }
       ]
     },
     {
       "key": "step-1",
-      "text_sha256": "857010fa940393023f54ca85ca692bb64ec95de449e25736d658cd5221ef6cd9",
+      "text_sha256": "a253f7ecfc778440166d166f6ad0413caa19bd6f4490e010fc2859439bcd63fd",
       "file": "step-1.wav",
-      "duration": 5.376,
+      "duration": 3.883,
       "words": [
         {
-          "text": "shrink",
-          "start": 0.05,
-          "end": 0.4
+          "text": "Okay,",
+          "start": 0.12,
+          "end": 0.42
         },
         {
-          "text": "the",
-          "start": 0.4,
-          "end": 0.6
-        },
-        {
-          "text": "sample",
-          "start": 0.6,
-          "end": 1
-        },
-        {
-          "text": "space",
-          "start": 1,
-          "end": 1.33
-        },
-        {
-          "text": "to",
-          "start": 1.33,
-          "end": 1.46
-        },
-        {
-          "text": "what",
-          "start": 1.46,
-          "end": 1.73
-        },
-        {
-          "text": "you're",
-          "start": 1.73,
-          "end": 2
-        },
-        {
-          "text": "given.",
-          "start": 2,
-          "end": 2.56
-        },
-        {
-          "text": "The",
-          "start": 2.56,
-          "end": 2.74
+          "text": "that",
+          "start": 0.42,
+          "end": 0.7
         },
         {
           "text": "first",
-          "start": 2.74,
-          "end": 3.15
-        },
-        {
-          "text": "card",
-          "start": 3.15,
-          "end": 3.42
-        },
-        {
-          "text": "is",
-          "start": 3.49,
-          "end": 3.63
-        },
-        {
-          "text": "a",
-          "start": 3.63,
-          "end": 3.71
+          "start": 0.7,
+          "end": 1.05
         },
         {
           "text": "king",
-          "start": 3.71,
-          "end": 4.06
+          "start": 1.05,
+          "end": 1.33
         },
         {
-          "text": "and",
-          "start": 4.06,
-          "end": 4.23
+          "text": "is",
+          "start": 1.33,
+          "end": 1.47
         },
         {
-          "text": "it",
-          "start": 4.23,
-          "end": 4.34
+          "text": "gone",
+          "start": 1.47,
+          "end": 1.75
         },
         {
-          "text": "stays",
-          "start": 4.34,
-          "end": 4.5
-        },
-        {
-          "text": "out",
-          "start": 4.61,
-          "end": 4.73
-        },
-        {
-          "text": "of",
-          "start": 4.73,
-          "end": 4.89
+          "text": "shrink",
+          "start": 1.75,
+          "end": 1.91
         },
         {
           "text": "the",
-          "start": 5.03,
-          "end": 5.07
+          "start": 2.29,
+          "end": 2.39
         },
         {
-          "text": "deck.",
-          "start": 5.07,
-          "end": 5.48
+          "text": "deck",
+          "start": 2.39,
+          "end": 2.67
+        },
+        {
+          "text": "to",
+          "start": 2.67,
+          "end": 2.81
+        },
+        {
+          "text": "what's",
+          "start": 2.81,
+          "end": 3.23
+        },
+        {
+          "text": "left",
+          "start": 3.23,
+          "end": 3.56
         }
       ]
     },
     {
       "key": "step-2",
-      "text_sha256": "360d23359d7f5dbab7cfcc8e8aa5907fdd681a3257b64f9b5ee895ed8542bbb8",
+      "text_sha256": "695629c48ed165ef5a9e6c6dd97bb453b9348941babf3b6c52157abf81660805",
       "file": "step-2.wav",
-      "duration": 1.579,
+      "duration": 1.6,
       "words": [
         {
-          "text": "That",
-          "start": 0.06,
-          "end": 0.28
-        },
-        {
-          "text": "leaves",
-          "start": 0.28,
-          "end": 0.7
-        },
-        {
           "text": "51",
-          "start": 0.7,
-          "end": 1.12
+          "start": 0.1,
+          "end": 0.55
         },
         {
-          "text": "cards.",
-          "start": 1.12,
-          "end": 1.49
+          "text": "cards",
+          "start": 0.55,
+          "end": 0.99
+        },
+        {
+          "text": "now.",
+          "start": 1,
+          "end": 1.47
         }
       ]
     },
     {
       "key": "step-3",
-      "text_sha256": "2fe2bf2e2deb7b0ef4b2cde36df73b12319071939758f724dc6221f356820033",
+      "text_sha256": "5152ab0f2523b0d7748db066a5916a08573d9c2005989a1ac03aaf0d906b7bba",
       "file": "step-3.wav",
-      "duration": 1.643,
+      "duration": 1.472,
       "words": [
         {
           "text": "and",
-          "start": 0.08,
-          "end": 0.2
+          "start": 0.11,
+          "end": 0.22
         },
         {
-          "text": "only",
-          "start": 0.2,
-          "end": 0.43
+          "text": "just",
+          "start": 0.23,
+          "end": 0.54
         },
         {
           "text": "three",
-          "start": 0.59,
-          "end": 0.78
+          "start": 0.54,
+          "end": 0.92
         },
         {
-          "text": "kings",
-          "start": 0.83,
-          "end": 1.12
-        },
-        {
-          "text": "are",
-          "start": 1.12,
-          "end": 1.31
-        },
-        {
-          "text": "left.",
-          "start": 1.33,
-          "end": 1.6
-        }
-      ]
-    },
-    {
-      "key": "step-4",
-      "text_sha256": "a39b4f7ebe21f130a5c13d2c7b31e2fe016b381cba3a0515cef0b02578a8a20a",
-      "file": "step-4.wav",
-      "duration": 2.389,
-      "words": [
-        {
-          "text": "So",
-          "start": 0.06,
-          "end": 0.14
-        },
-        {
-          "text": "the",
-          "start": 0.14,
-          "end": 0.23
-        },
-        {
-          "text": "probability",
-          "start": 0.34,
-          "end": 1.13
-        },
-        {
-          "text": "is",
-          "start": 1.28,
-          "end": 1.29
-        },
-        {
-          "text": "3",
-          "start": 1.3,
-          "end": 1.5
-        },
-        {
-          "text": "over",
-          "start": 1.5,
-          "end": 1.74
-        },
-        {
-          "text": "51.",
-          "start": 1.82,
-          "end": 2.27
-        }
-      ]
-    },
-    {
-      "key": "answer",
-      "text_sha256": "8ed2aae3470bb7ee6a54a6bb6791d07db4adabe4d6976b2795f4bc919e2c0e45",
-      "file": "answer.wav",
-      "duration": 2.56,
-      "words": [
-        {
-          "text": "So",
-          "start": 0.07,
-          "end": 0.16
-        },
-        {
-          "text": "the",
-          "start": 0.16,
-          "end": 0.41
-        },
-        {
-          "text": "answer",
-          "start": 0.41,
-          "end": 0.91
-        },
-        {
-          "text": "is",
-          "start": 0.91,
-          "end": 1.07
-        },
-        {
-          "text": "A,",
-          "start": 1.07,
-          "end": 1.31
-        },
-        {
-          "text": "3",
-          "start": 1.44,
-          "end": 1.56
-        },
-        {
-          "text": "over",
-          "start": 1.56,
-          "end": 1.89
-        },
-        {
-          "text": "51.",
-          "start": 1.89,
-          "end": 2.55
+          "text": "kings.",
+          "start": 0.92,
+          "end": 1.34
         }
       ]
     },
     {
       "key": "trap",
-      "text_sha256": "e740dc10eb1dd60edba588f367f1be466d103fb77c2b0624d440f7130f505689",
+      "text_sha256": "d18c8c9274425f531232d4ddddda2530e5e5289295ed911234eecabf52a6a2cd",
       "file": "trap.wav",
-      "duration": 7.147,
+      "duration": 8.064,
       "words": [
         {
-          "text": "The",
-          "start": 0.05,
-          "end": 0.22
+          "text": "Here's",
+          "start": 0.1,
+          "end": 0.52
         },
         {
-          "text": "trap,",
-          "start": 0.24,
-          "end": 0.68
+          "text": "where",
+          "start": 0.52,
+          "end": 0.95
         },
         {
-          "text": "four",
-          "start": 0.74,
-          "end": 0.98
+          "text": "people",
+          "start": 0.95,
+          "end": 1.25
+        },
+        {
+          "text": "slip.",
+          "start": 1.84,
+          "end": 1.96
+        },
+        {
+          "text": "They",
+          "start": 2.06,
+          "end": 2.32
+        },
+        {
+          "text": "say",
+          "start": 2.32,
+          "end": 2.58
+        },
+        {
+          "text": "4",
+          "start": 2.58,
+          "end": 2.86
         },
         {
           "text": "over",
-          "start": 0.98,
-          "end": 1.28
+          "start": 2.86,
+          "end": 3.2
         },
         {
-          "text": "52,",
-          "start": 1.28,
-          "end": 1.88
+          "text": "52",
+          "start": 3.22,
+          "end": 3.33
         },
         {
-          "text": "as",
-          "start": 1.96,
-          "end": 2.07
-        },
-        {
-          "text": "if",
-          "start": 2.09,
-          "end": 2.15
+          "text": "like",
+          "start": 3.84,
+          "end": 4.11
         },
         {
           "text": "nothing",
-          "start": 2.24,
-          "end": 2.79
+          "start": 4.11,
+          "end": 4.73
         },
         {
-          "text": "was",
-          "start": 2.81,
-          "end": 3.04
+          "text": "came",
+          "start": 4.73,
+          "end": 5.08
         },
         {
-          "text": "drawn.",
-          "start": 3.04,
-          "end": 3.72
+          "text": "out,",
+          "start": 5.09,
+          "end": 5.43
         },
         {
-          "text": "Without",
-          "start": 3.77,
-          "end": 4.1
-        },
-        {
-          "text": "replacement,",
-          "start": 4.1,
-          "end": 4.82
+          "text": "but",
+          "start": 5.43,
+          "end": 5.52
         },
         {
           "text": "the",
-          "start": 4.82,
-          "end": 5.01
+          "start": 5.52,
+          "end": 5.72
         },
         {
           "text": "deck",
-          "start": 5.01,
-          "end": 5.28
+          "start": 5.72,
+          "end": 6
         },
         {
           "text": "and",
-          "start": 5.28,
-          "end": 5.38
+          "start": 6,
+          "end": 6.16
         },
         {
           "text": "the",
-          "start": 5.38,
-          "end": 5.55
+          "start": 6.16,
+          "end": 6.3
         },
         {
           "text": "kings",
-          "start": 5.55,
-          "end": 5.84
+          "start": 6.35,
+          "end": 6.6
         },
         {
           "text": "both",
-          "start": 5.84,
-          "end": 6.11
+          "start": 6.6,
+          "end": 6.75
         },
         {
-          "text": "shrink",
-          "start": 6.19,
-          "end": 6.56
+          "text": "drop",
+          "start": 7.29,
+          "end": 7.42
         },
         {
           "text": "by",
-          "start": 6.56,
-          "end": 6.68
+          "start": 7.47,
+          "end": 7.61
         },
         {
           "text": "one.",
-          "start": 6.68,
-          "end": 6.92
+          "start": 7.62,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "87db31cc11bd6b51ca7319cce6ee1b461a9d32959c1bea912d73ea0e360704a9",
+      "file": "answer.wav",
+      "duration": 8.491,
+      "words": [
+        {
+          "text": "3",
+          "start": 0.13,
+          "end": 0.41
+        },
+        {
+          "text": "over",
+          "start": 0.41,
+          "end": 0.89
+        },
+        {
+          "text": "51.",
+          "start": 0.89,
+          "end": 2
+        },
+        {
+          "text": "That's",
+          "start": 2,
+          "end": 2.4
+        },
+        {
+          "text": "a",
+          "start": 2.4,
+          "end": 2.57
+        },
+        {
+          "text": "quick",
+          "start": 2.57,
+          "end": 2.89
+        },
+        {
+          "text": "check.",
+          "start": 2.89,
+          "end": 3.36
+        },
+        {
+          "text": "It's",
+          "start": 3.38,
+          "end": 3.45
+        },
+        {
+          "text": "a",
+          "start": 3.47,
+          "end": 3.52
+        },
+        {
+          "text": "little",
+          "start": 3.52,
+          "end": 3.76
+        },
+        {
+          "text": "under",
+          "start": 3.76,
+          "end": 4
+        },
+        {
+          "text": "4",
+          "start": 4,
+          "end": 4.36
+        },
+        {
+          "text": "over",
+          "start": 4.36,
+          "end": 4.61
+        },
+        {
+          "text": "52,",
+          "start": 4.73,
+          "end": 5.37
+        },
+        {
+          "text": "which",
+          "start": 5.37,
+          "end": 5.6
+        },
+        {
+          "text": "makes",
+          "start": 5.6,
+          "end": 5.84
+        },
+        {
+          "text": "sense.",
+          "start": 5.84,
+          "end": 6.64
+        },
+        {
+          "text": "One",
+          "start": 6.77,
+          "end": 6.85
+        },
+        {
+          "text": "king's",
+          "start": 6.85,
+          "end": 7.28
+        },
+        {
+          "text": "already",
+          "start": 7.28,
+          "end": 7.79
+        },
+        {
+          "text": "gone.",
+          "start": 7.79,
+          "end": 8.09
         }
       ]
     }

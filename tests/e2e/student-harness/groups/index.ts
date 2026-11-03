@@ -32,6 +32,7 @@ import { HOMEPAGE_HERO } from "./homepage-hero";
 import { LISA_DOCK } from "./lisa-dock";
 import { LISA_LAUNCHER } from "./lisa-launcher";
 import { RUNNER_LISA_DOCKED } from "./runner-lisa-docked";
+import { LISA_QUICK_REPLIES } from "./lisa-quick-replies";
 
 export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [UI_41.id]: UI_41,
@@ -68,4 +69,5 @@ export const PAGE_GROUPS: Readonly<Record<string, PageGroup>> = {
   [LISA_DOCK.id]: LISA_DOCK,
   [LISA_LAUNCHER.id]: LISA_LAUNCHER,
   [RUNNER_LISA_DOCKED.id]: RUNNER_LISA_DOCKED,
+  [LISA_QUICK_REPLIES.id]: LISA_QUICK_REPLIES,
 };

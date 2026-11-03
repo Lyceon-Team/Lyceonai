@@ -310,6 +310,65 @@ describe("POST /conversations and /messages on a review item", () => {
   });
 });
 
+// ── H4: one turn reads its question's metadata once ────────────────────────
+
+/**
+ * @spec [owner brief H4 "database cheap wins" (Karl, 2026-11-02): "the repeated `questions`
+ *        reads"] | @implemented [2026-11-02]
+ * plain English: a scoped turn used to read the same `questions` row at every site that needed a
+ * piece of it — scope, mastery, friction (twice), KPI, question section — plus the answer key.
+ * Now the metadata sites share one read (readQuestionMeta inside the route's turn memo) and the
+ * answer key keeps its own BFF-local read, so a turn reads the row exactly twice. The columns
+ * each read selects are recorded, so the test also proves the shared read carries no answer.
+ */
+describe("a turn reads its question row twice: metadata once, the answer key once", () => {
+  function recordQuestionSelects(): string[] {
+    const selects: string[] = [];
+    const fake = db.current;
+    const realClient = fake.client.bind(fake);
+    vi.spyOn(fake, "client").mockImplementation(() => {
+      const c = realClient();
+      return {
+        ...c,
+        from: (table: string) => {
+          const q = c.from(table);
+          if (table !== "questions") return q;
+          const realSelect = q.select.bind(q);
+          q.select = (cols, opts) => {
+            selects.push(cols ?? "*");
+            return realSelect(cols, opts);
+          };
+          return q;
+        },
+      };
+    });
+    return selects;
+  }
+
+  it("after submit (every reader runs): one metadata read, one answer-key read", async () => {
+    const itemId = seedReview("served");
+    const created = await createReviewConversation(itemId);
+    const item = db.current
+      .rows("review_session_items")
+      .find((r) => r.id === itemId);
+    if (item) {
+      item.status = "answered";
+      item.selected_answer = "A";
+    }
+
+    const selects = recordQuestionSelects();
+    const env = await turnEnvelope(created.body.data.conversation_id);
+
+    // Presence first: the turn really resolved the question and its answer.
+    expect(env.question_content?.stem).toBe("If 3x - 4 = 11, what is x?");
+    expect(env.correct_answer).toBe("B");
+
+    expect(selects.sort()).toEqual(
+      ["correct_answer", "id, section, domain, skill_codes"].sort(),
+    );
+  });
+});
+
 // ── W4-4: looking up an item's conversation without creating one ──────────
 
 describe("GET /conversations?source_session_item_id — read-only, owner-scoped", () => {

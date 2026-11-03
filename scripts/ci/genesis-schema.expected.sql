@@ -10448,12 +10448,17 @@ BEGIN
     signups AS (
       SELECT * FROM stu WHERE created_at >= t0 AND created_at < t1
     ),
+    -- served_at and answered_at are both written by the server (served_at once, when the item is
+    -- promoted to served; answered_at when the answer is graded), so the gap is server-measured.
+    -- answered_at is Doc 05F's occurred_at: every answer path writes both from the same server
+    -- `now` (practice-canonical.ts, review-canonical.ts, qotd_student_answer). If a path ever
+    -- writes them apart, this measure must follow occurred_at.
     answers AS (
-      SELECT user_id AS sid, answered_at, time_spent_ms
+      SELECT user_id AS sid, answered_at, served_at
         FROM public.practice_session_items
        WHERE status = 'answered' AND answered_at >= p0
       UNION ALL
-      SELECT student_id, answered_at, NULL::integer
+      SELECT student_id, answered_at, served_at
         FROM public.review_session_items
        WHERE status = 'answered' AND answered_at >= p0
     )
@@ -10483,10 +10488,18 @@ BEGIN
       'reviews_done', (
         SELECT count(*) FROM public.review_sessions rs JOIN stu ON stu.id = rs.student_id
          WHERE rs.status = 'completed' AND rs.completed_at >= t0 AND rs.completed_at < t1),
+      -- NULL ("not recorded yet") when the week has answers but none with a measurable gap; 0
+      -- only when there are no answers at all. Never 0 standing in for "unknown".
       'study_minutes_estimate', (
-        SELECT COALESCE(round(sum(LEAST(a.time_spent_ms, 300000))::numeric / 60000, 1), 0)
+        SELECT CASE
+                 WHEN count(*) FILTER (WHERE a.answered_at > a.served_at) = 0 AND count(*) > 0
+                   THEN NULL
+                 ELSE COALESCE(round((extract(epoch FROM sum(
+                        LEAST(a.answered_at - a.served_at, interval '5 minutes'))
+                        FILTER (WHERE a.answered_at > a.served_at)) / 60)::numeric, 1), 0)
+               END
           FROM answers a JOIN stu ON stu.id = a.sid
-         WHERE a.answered_at >= t0 AND a.answered_at < t1 AND a.time_spent_ms > 0),
+         WHERE a.answered_at >= t0 AND a.answered_at < t1),
       'signups_answered_24h', (
         SELECT count(*) FROM signups s
          WHERE EXISTS (SELECT 1 FROM answers a
@@ -17606,6 +17619,72 @@ $$;
 
 
 --
+-- Name: video_segments_for_question(text, text[], integer, text, boolean, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.video_segments_for_question(p_question_id text, p_skill_codes text[], p_limit integer, p_method text, p_method_required boolean, p_format_priority text[]) RETURNS TABLE(video_id text, title text, channel_name text, duration_seconds integer, start_seconds integer, methods text[], format text, segment_id uuid, matched_sub_skills text[], shared_clusters integer)
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  WITH q_sub AS (
+    SELECT qs.sub_skill_id FROM public.question_sub_skills qs WHERE qs.question_id = p_question_id
+  ),
+  -- method_in clusters of the question's skills: present on both sides by default.
+  defaults AS (
+    SELECT c.id FROM public.clusters c WHERE c.method_in ?| p_skill_codes
+  ),
+  q_cl AS (
+    SELECT qc.cluster_id AS id FROM public.question_clusters qc WHERE qc.question_id = p_question_id
+    UNION
+    SELECT d.id FROM defaults d
+  ),
+  candidates AS (
+    SELECT v.video_id, v.title, v.channel_name, v.duration_seconds, s.start_seconds,
+           v.methods, v.format, s.segment_id,
+           s.end_seconds - s.start_seconds AS seg_len,
+           m.matched,
+           (SELECT count(*)::integer
+              FROM (SELECT sc.cluster_id AS id FROM public.video_segment_clusters sc
+                     WHERE sc.segment_id = s.segment_id
+                    UNION
+                    SELECT d.id FROM defaults d) seg_cl
+             WHERE seg_cl.id IN (SELECT id FROM q_cl)) AS shared
+    FROM public.video_segments s
+    JOIN public.video_resources v ON v.video_id = s.video_id
+    CROSS JOIN LATERAL (
+      SELECT array_agg(t.sub_skill_id ORDER BY t.sub_skill_id) AS matched
+      FROM public.video_segment_sub_skills t
+      WHERE t.segment_id = s.segment_id
+        AND t.sub_skill_id IN (SELECT sub_skill_id FROM q_sub)
+    ) m
+    WHERE s.approved_by IS NOT NULL                                -- approved segments only
+      AND v.status = 'available'
+      AND v.approved_by IS NOT NULL
+      AND v.skill_codes && p_skill_codes                           -- skill gate, required
+      AND m.matched IS NOT NULL                                    -- shares a sub-skill
+      AND (NOT coalesce(p_method_required, false)
+           OR (p_method IS NOT NULL AND p_method = ANY (v.methods)))
+  ),
+  best_per_video AS (
+    SELECT DISTINCT ON (c.video_id) c.*
+    FROM candidates c
+    ORDER BY c.video_id, cardinality(c.matched) DESC, c.shared DESC, c.seg_len, c.start_seconds
+  )
+  SELECT b.video_id, b.title, b.channel_name, b.duration_seconds, b.start_seconds,
+         b.methods, b.format, b.segment_id, b.matched, b.shared
+  FROM best_per_video b
+  ORDER BY
+    cardinality(b.matched) DESC,                                     -- 1. shared sub-skills
+    (p_method IS NOT NULL AND p_method = ANY (b.methods)) DESC,      -- 2. the method asked for
+    b.shared DESC,                                                   -- 3. shared clusters
+    array_position(p_format_priority, b.format) NULLS LAST,          -- 4. format priority
+    b.seg_len,                                                       -- 5. segment length
+    b.video_id                                                       -- 6. stable
+  LIMIT greatest(1, least(coalesce(p_limit, 3), 3));
+$$;
+
+
+--
 -- Name: video_segments_set(text, text, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -22020,7 +22099,7 @@ CREATE TABLE public.tutor_messages (
     status text DEFAULT 'completed'::text NOT NULL,
     intent text,
     CONSTRAINT tutor_messages_content_kind_check CHECK ((content_kind = ANY (ARRAY['message'::text, 'suggestion'::text, 'consent_prompt'::text, 'system_note'::text]))),
-    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text])))),
+    CONSTRAINT tutor_messages_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text])))),
     CONSTRAINT tutor_messages_role_check CHECK ((role = ANY (ARRAY['student'::text, 'tutor'::text, 'system'::text]))),
     CONSTRAINT tutor_messages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text])))
 );
@@ -22037,7 +22116,7 @@ COMMENT ON TABLE public.tutor_messages IS 'LISA line-by-line conversation histor
 -- Name: COLUMN tutor_messages.intent; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
+COMMENT ON COLUMN public.tutor_messages.intent IS 'The review guided choice or walkthrough quick reply this student message came from (REVIEW_INTENTS); NULL for a typed message and for tutor rows. The code only; never read into memory or mastery.';
 
 
 --
@@ -22092,7 +22171,7 @@ CREATE TABLE public.tutor_turn_metrics (
     thinking_tokens integer,
     thinking_budget integer,
     intent text,
-    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text]))))
+    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text]))))
 );
 
 
@@ -22135,7 +22214,7 @@ COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex think
 -- Name: COLUMN tutor_turn_metrics.intent; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
+COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice or walkthrough quick reply the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
 
 
 --
@@ -31654,6 +31733,14 @@ GRANT ALL ON FUNCTION public.video_resources_for_skills(p_skill_codes text[], p_
 
 REVOKE ALL ON FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.video_segments_approve(p_segment_ids uuid[], p_approver uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION video_segments_for_question(p_question_id text, p_skill_codes text[], p_limit integer, p_method text, p_method_required boolean, p_format_priority text[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.video_segments_for_question(p_question_id text, p_skill_codes text[], p_limit integer, p_method text, p_method_required boolean, p_format_priority text[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.video_segments_for_question(p_question_id text, p_skill_codes text[], p_limit integer, p_method text, p_method_required boolean, p_format_priority text[]) TO service_role;
 
 
 --
