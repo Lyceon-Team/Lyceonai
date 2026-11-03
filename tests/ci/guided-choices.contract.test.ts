@@ -28,7 +28,7 @@ import {
 import { ORCHESTRATE_INTENTS } from "../../shared/tutor-orchestrator-wire";
 import { TutorConfig } from "../../server/services/tutor-config";
 
-// The LAST migration that defines the CHECKs (SCL-268 widened them in 20261129000000): a test
+// The LAST migration that defines the CHECKs (SCL-268 widened them in 20261130000000): a test
 // pinned to the first one would keep passing against a body the pipeline overwrites.
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../supabase/migrations");
 const MIGRATION_FILE = fs
@@ -147,7 +147,7 @@ describe("one vocabulary everywhere", () => {
   });
 
   it("both SQL CHECKs list exactly REVIEW_INTENTS, in the last migration that defines them", () => {
-    expect(MIGRATION_FILE).toBe("20261129000000_lisa_quick_reply_intents.sql");
+    expect(MIGRATION_FILE).toBe("20261130000000_lisa_quick_reply_intents.sql");
     const checks = [
       ...MIGRATION.matchAll(/intent IS NULL OR intent IN \(([^)]*)\)/g),
     ];

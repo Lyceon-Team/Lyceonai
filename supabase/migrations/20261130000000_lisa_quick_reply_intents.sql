@@ -19,6 +19,11 @@
 --
 -- IDEMPOTENT: each CHECK is dropped if present and re-added.
 --
+-- RENUMBERED 2026-11-03 from 20261129000000: `20261129000000_growth_report_study_time.sql` took
+-- that version one minute earlier (the later allocation renumbers; caught by
+-- tests/ci/migration-duplicate-version.contract.test.ts). The SQL is unchanged and idempotent,
+-- so a database that already ran it under the old name is unaffected by running it again.
+--
 -- DEPLOY ORDER: (1) apply this; (2) deploy the worker from `lisa` (its request schema must know
 -- the two values, or a quick-reply turn fails its parse); (3) merge to `main` (the BFF and the
 -- panel).
