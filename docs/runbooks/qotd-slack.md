@@ -201,9 +201,13 @@ goes first and nothing here can block or delay it.
 that a day's breakdown was already posted: a re-run of the `breakdown` job sends its Slack set a
 second time. Re-run it only for a failed post.
 
-**Dates.** `QOTD_BREAKDOWN_PILOT` (`shared/qotd/breakdown.ts`): posting days **2026-11-09 to
-2026-11-22**, both inclusive (14 days, the schema's limit). On a posting day the run breaks down the
-QOTD of the day before, so the QOTD dates covered are **2026-11-08 to 2026-11-21**.
+**Dates.** **HELD (Karl, 2026-11-03):** the live window `QOTD_BREAKDOWN_PILOT`
+(`shared/qotd/breakdown.ts`) is off (no dates) until the private repo exists, so nothing builds or
+posts, and no "no approved script" notice reaches #social. The code stays merged. To un-pause, a
+one-line PR sets the dates Karl gives. The ruled window is kept as `QOTD_BREAKDOWN_PILOT_RULED`:
+posting days **2026-11-09 to 2026-11-22**, both inclusive (14 days, the schema's limit). On a
+posting day the run breaks down the QOTD of the day before, so those QOTD dates were **2026-11-08
+to 2026-11-21**.
 
 **What posts.** Inside the window, yesterday's QOTD as a 30-60 s video, built with the
 worked-example pipeline from the **authored script Karl merged for that date**

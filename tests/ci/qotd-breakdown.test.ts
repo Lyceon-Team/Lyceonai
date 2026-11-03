@@ -53,6 +53,7 @@ import {
   QOTD_BREAKDOWN_CONTENT_BRANCH,
   QOTD_BREAKDOWN_CONTENT_REPO,
   QOTD_BREAKDOWN_PILOT,
+  QOTD_BREAKDOWN_PILOT_RULED,
   QOTD_BREAKDOWN_SKIP_REASON,
   QOTD_BREAKDOWN_VOICE_PROFILE,
   breakdownCopy,
@@ -816,8 +817,27 @@ describe("captions and keywords: SCL-262 through the canonical builders, music c
   });
 });
 
-describe("the pilot window: 2026-11-09 to 2026-11-22 (Karl, 2026-11-02)", () => {
+describe("the pilot window: 2026-11-09 to 2026-11-22 (Karl, 2026-11-02), held (Karl, 2026-11-03)", () => {
+  it("held: the live window is off, so nothing builds or posts on any of the ruled days", () => {
+    expect(QOTD_BREAKDOWN_PILOT).toEqual({ start: null, end: null });
+    for (const day of ["2026-11-08", "2026-11-09", "2026-11-15", "2026-11-22"])
+      expect(pilotWindow(QOTD_BREAKDOWN_PILOT, day, false)).toBe("off");
+    // An inactive manifest posts nothing (no "no approved script" notice).
+    expect(
+      breakdownPlan(
+        qotdBreakdownManifestSchema.parse({
+          status: "inactive",
+          qotd_date: "2026-11-08",
+          posted_on: "2026-11-09",
+          window: "off",
+        }),
+        () => true,
+      ).kind,
+    ).toBe("nothing");
+  });
+
   it("is set to Karl's dates, posting days, 14 inclusive", () => {
+    const QOTD_BREAKDOWN_PILOT = QOTD_BREAKDOWN_PILOT_RULED;
     expect(QOTD_BREAKDOWN_PILOT).toEqual({
       start: "2026-11-09",
       end: "2026-11-22",
