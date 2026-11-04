@@ -5,6 +5,14 @@
 Three posts a week (Monday, Wednesday and Friday at 07:00 Central), planned a month ahead around
 the SAT calendar. Claude writes, Codex audits, Karl merges. Nothing publishes without Karl's merge.
 
+Doc 10B is superseded in part by Karl's content rulings of 2026-11-02 (SCL-264; full rewrite
+pending). They change the social side, not this blog pipeline: social channels and cadence (QOTD
+daily, worked examples Mon/Wed/Fri plus a daily rotation), calls to action and the use of "free",
+Reddit (manual only, no QOTD) and no social scheduler for now replace Doc 10B §3's short-video and
+Reddit rows and §9/§12's automated posting. Their record is `.claude/skills/cmo/references/02-rulings.md`
+§10a. Blog posts follow the same "free" rule: only the diagnostic, daily practice (40 questions a
+day) and the Question of the Day are called free.
+
 ## 1. The week and the month
 
 | When (Central)          | Who                                         | What                                                                                                       |

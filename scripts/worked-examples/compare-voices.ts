@@ -3,19 +3,21 @@
  *
  * @spec [OpenVoice addendum (Karl, 2026-10-27): "Comparison first: render the Percentages example
  *       twice (the clone and the current voice) for Karl to compare. The clone only becomes the
- *       default after Karl picks it."] | @implemented [2026-10-27]
+ *       default after Karl picks it."]; SCL-270 (Karl's ruling 2026-11-02): the final-mix
+ *       true-peak limiter in every pipeline] | @implemented [2026-10-27, limiter 2026-11-02]
  *
  * plain English, on the batch writer's machine:
  *   pnpm exec tsx scripts/worked-examples/compare-voices.ts --content <checkout of social> \
  *     --dir content/worked-examples/2026-W45/SATM2CZS1BE --out <folder> \
- *     [--voices af_heart,clone,clone@1.1]
+ *     [--voices am_michael,clone,clone@1.1]
  * A voice is a profile id, or `<profile>@<rate>` to render it at another speaking_rate (Karl,
  * 2026-10-27: the clone at its natural rate and about 10% faster, so he can pick one). The rate
  * he picks then goes into voice.json; the comparison never changes it.
  * For each voice it builds a private copy of the content tree (style table, the month's plan and
  * this example), voices the example in that profile (scripts/worked-examples/voice.ts: the clone
  * falls back line by line where it fails the checks), generates the composition from the kit,
- * runs `hyperframes check` and renders <folder>/<id>-<voice>.mp4. It writes <folder>/comparison.md:
+ * runs `hyperframes check`, renders it and limits the finished mix to -1 dBTP true peak
+ * (final-mix.ts, SCL-270) into <folder>/<id>-<voice>.mp4. It writes <folder>/comparison.md:
  * each video's length, its pace in words per minute and which lines, if any, fell back. Nothing is
  * committed and nothing in the content checkout changes; the reference recording stays where
  * WE_VOICE_REFERENCE points.
@@ -27,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { workedExampleId } from "../../packages/shared/src/worked-example-schema";
 import { CONTENT_DIR, loadExamples } from "./content";
 import type { VoiceManifest } from "../../packages/shared/src/worked-example-schema";
+import { limitFinishedMix } from "./final-mix";
 import { generate } from "./generate";
 import { loadKit, type Kit } from "./kit";
 import { voiceExample } from "./voice";
@@ -164,15 +167,17 @@ function main(): void {
       stdio: "inherit",
       env,
     });
+    const rendered = join(out, `composition-${voice}`, "render.mp4");
     execFileSync(
       "pnpm",
-      [...hf, "render", "--quality", "delivery", "--output", join(out, video)],
+      [...hf, "render", "--quality", "delivery", "--output", rendered],
       {
         cwd: join(out, `composition-${voice}`),
         stdio: "inherit",
         env,
       },
     );
+    limitFinishedMix(rendered, join(out, video), kit);
     rows.push({
       voice,
       video,

@@ -11,7 +11,8 @@
  *     symbols spelled out, "25%" → "twenty five percent", "$64" → "sixty four dollar", plural "s"
  *     dropped, punctuation and spaces removed) and compared character by character. The character
  *     error rate (edits over the script's length) must not exceed the kit's limit.
- *     Known mishearings of names (Whisper hears "Lyceon" as "Lycian") are listed in voice.json.
+ *     Known mishearings of names (Whisper hears "Lyceon" as "Lycian", its respelling as "Lycion")
+ *     are listed in voice.json.
  *   * Clipping: no sample at full scale (peak above the kit's max_peak_dbfs).
  *   * Silence: the line must actually speak (peak above the silence threshold), start within
  *     max_lead_silence_seconds, end within max_tail_silence_seconds, and never pause longer than

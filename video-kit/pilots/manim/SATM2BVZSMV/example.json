@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM2BVZSMV",
+  "skill_code": "Circles",
+  "post_on": "2026-11-16",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "A radius-13 circle crosses the x-axis twice. Are the two points 26 apart?",
+    "voice": "Think you can get this circle in ten seconds? Go."
+  },
+  "question_voice": "Okay. We want the gap between the two spots where this circle hits the x-axis.",
+  "signature_move": "Drop a line from the center to the chord: it makes a right triangle with the radius.",
+  "steps": [
+    {
+      "notepad": "center (2, 5), r = 13",
+      "voice": "Sketch it. The center's five up from the axis, and the radius is thirteen."
+    },
+    {
+      "notepad": "center to x-axis: 5",
+      "voice": "Now drop straight down from the center. That hits the chord dead in the middle."
+    },
+    {
+      "notepad": "5² + h² = 13²  →  h = 12",
+      "voice": "So you've got a right triangle, five and thirteen. That's the five, twelve, thirteen one."
+    },
+    {
+      "notepad": "x = 2 ± 12:  14 and −10",
+      "voice": "Go twelve each way from two, and you land on fourteen and negative ten."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "chord = 2 × 12 → A) 24",
+    "voice": "Two halves of twelve. That's twenty-four, choice A. Quick check: twenty-five plus one forty-four is one sixty-nine. Did you get it?"
+  },
+  "trap": {
+    "summary": "Doubling the radius and taking the diameter, 26, as the distance between the x-axis points.",
+    "notepad": [
+      "2 × 13 = 26   ✗ diameter",
+      "the axis is 5 below the center",
+      "this chord misses the center"
+    ],
+    "voice": "Now here's where people slip: they double the radius and grab twenty-six. That's the diameter, and this chord never goes through the center."
+  },
+  "check": "Both points satisfy the equation: 12² + 5² = 144 + 25 = 169 = 13².",
+  "takeaway": "A chord that misses the center is shorter than the diameter; find half of it with a right triangle."
+}
