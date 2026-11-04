@@ -14,9 +14,29 @@
  * computes to a transparent border — the same defect `--primary` had app-wide (#1433). A
  * fallback chain ending in `currentColor` cannot be invisible anywhere.
  */
+/*
+ * A wide table scrolls INSIDE this box; it never widens the page.
+ *
+ * `overflow-x: auto` is what actually does that here, and the two properties under it are
+ * defensive rather than load-bearing — measured, not assumed: removing both leaves the page at
+ * exactly 375px with the wide table still scrolling in its own box (planted and checked,
+ * 2026-11-04). The reason is that the stem's root is a COLUMN flex container, where a flex
+ * item's automatic minimum size applies along the vertical main axis and the item is stretched
+ * to the container's width horizontally.
+ *
+ * They stay because that is a property of today's layout, not of this component: drop the wrap
+ * into a row-flex or grid parent — a two-column review surface, say — and `min-width: auto`
+ * would size it to the table and push the page wide, which `overflow-x` could not undo. The
+ * measurement is re-run by `scripts/shots-tables.mts`, which fails if the page ever gains
+ * horizontal scroll at 375px.
+ */
 .question-table-wrap {
   overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
   margin: 1em 0;
+  /* Momentum scrolling on iOS, and a scrollbar that does not sit over the last row. */
+  -webkit-overflow-scrolling: touch;
 }
 
 .question-table {
