@@ -10,11 +10,11 @@
 | Metric | Value |
 |---|---|
 | Total questions | 992 |
-| Total sub-skill tags | 1,112 |
-| Avg tags/question | 1.12 |
-| Multi-skill questions | 117 (11.8%) |
-| Cross-family questions | 21 (2.1%) |
-| Distractor tags | 1,994 |
+| Total sub-skill tags | 1,135 |
+| Avg tags/question | 1.14 |
+| Multi-skill questions | 140 (14.1%) |
+| Cross-family questions | 24 (2.4%) |
+| Distractor tags | 1,924 |
 | Zero-coverage sub-skills | 2 |
 
 ## Sub-Skill Distribution
@@ -22,37 +22,37 @@
 | Sub-Skill | Count | % of 992 |
 |---|---|---|
 | RAT.1 Unit conversion (linear) | 9 | 0.9% |
-| RAT.2 Ratios and proportional scaling | 98 | 9.9% |
-| RAT.3 Rates between different quantities | 166 | 16.7% |
+| RAT.2 Ratios and proportional scaling | 102 | 10.3% |
+| RAT.3 Rates between different quantities | 170 | 17.1% |
 | RAT.4 Density and per-area/per-volume rates | 2 | 0.2% |
 | RAT.5 Converting squared/cubed units | 0 | 0.0% |
-| PCT.1 Percent of a quantity | 32 | 3.2% |
+| PCT.1 Percent of a quantity | 30 | 3.0% |
 | PCT.2 Unknown percent or unknown whole | 16 | 1.6% |
-| PCT.3 Apply/undo single percent change | 88 | 8.9% |
+| PCT.3 Apply/undo single percent change | 94 | 9.5% |
 | PCT.4 Percent change between two values | 43 | 4.3% |
-| PCT.5 Chained percents | 110 | 11.1% |
-| PRB.1 Probability in whole group | 95 | 9.6% |
-| PRB.2 Conditional probability | 140 | 14.1% |
-| PRB.3 Find count from probability | 8 | 0.8% |
-| PRB.4 Complement and exclusion | 18 | 1.8% |
+| PCT.5 Chained percents | 117 | 11.8% |
+| PRB.1 Probability in whole group | 97 | 9.8% |
+| PRB.2 Conditional probability | 142 | 14.3% |
+| PRB.3 Find count from probability | 4 | 0.4% |
+| PRB.4 Complement and exclusion | 17 | 1.7% |
 | OVD.1 Read/interpret data display | 0 | 0.0% |
-| OVD.2 Measure of center | 109 | 11.0% |
-| OVD.3 Measures of spread | 30 | 3.0% |
-| OVD.4 Mean-total relationship | 64 | 6.5% |
-| OVD.5 Compare measures across sets | 84 | 8.5% |
+| OVD.2 Measure of center | 112 | 11.3% |
+| OVD.3 Measures of spread | 32 | 3.2% |
+| OVD.4 Mean-total relationship | 70 | 7.1% |
+| OVD.5 Compare measures across sets | 78 | 7.9% |
 
 ## Family Totals
 
 | Family | Tags |
 |---|---|
-| RAT (Ratios & Rates) | 275 |
-| PCT (Percentages) | 289 |
-| PRB (Probability) | 261 |
-| OVD (One-Variable Data) | 287 |
+| RAT (Ratios & Rates) | 283 |
+| PCT (Percentages) | 300 |
+| PRB (Probability) | 260 |
+| OVD (One-Variable Data) | 292 |
 
 ## PRB.3 (Special Watch)
 
-**PRB.3 count: 8** -- low coverage. The backward-count-from-table-or-fraction pattern appears frequently in two-way table questions that ask "how many students..." given totals and fractions/probabilities.
+**PRB.3 count: 4** — low coverage. The backward-count-from-probability pattern (given a probability or fraction and a total, find the count) is rare in the computational bank. Most two-way table questions that ask "how many students..." present enough information to solve directly without requiring the PRB.3 reversal step.
 
 ## Low Coverage Sub-Skills
 
@@ -61,41 +61,45 @@
 | RAT.5 (Converting squared/cubed units) | 0 | Expected ~zero per instructions; found 0 |
 | OVD.1 (Read/interpret data display) | 0 | Expected: text-only bank has no visual charts/graphs |
 | RAT.4 (Density and per-area/per-volume rates) | 2 | Few questions with area/volume denominators |
-| PRB.3 (Find count from probability) | 8 |  |
-| RAT.1 (Unit conversion (linear)) | 9 |  |
+| PRB.3 (Find count from probability) | 4 | |
+| RAT.1 (Unit conversion (linear)) | 9 | |
 
 ## Quality Metrics
 
 | Metric | Value |
 |---|---|
-| Avg clusters/question | 2.12 |
-| Avg distractors/question | 2.01 |
-| Avg why length (chars) | 99 |
+| Avg clusters/question | 2.17 |
+| Avg distractors/question (MCQ only, N=760) | 2.53 |
+| Avg why length (chars) | 108.2 |
+| MCQ questions | 760 |
+| Grid-in questions | 232 |
 
 ## Per-Chunk Quality
 
-| Chunk | Lines | Avg Clusters | Avg Distractors | Avg Why Len |
-|---|---|---|---|---|
-| 00 | 124 | 1.98 | 2.99 | 91 |
-| 01 | 124 | 2.46 | 3.00 | 128 |
-| 02 | 124 | 2.00 | 2.00 | 114 |
-| 03 | 124 | 1.70 | 3.01 | 93 |
-| 04 | 124 | 2.19 | 3.00 | 86 |
-| 05 | 124 | 2.19 | 3.00 | 84 |
-| 06 | 124 | 1.95 | 2.00 | 121 |
-| 07 | 124 | 2.48 | 2.00 | 75 |
+| Chunk | Lines | Avg Clusters | Avg Distractors (MCQ) | MCQ | Grid-in | Avg Why Len |
+|---|---|---|---|---|---|---|
+| 00 | 124 | 2.18 | 2.97 | 96 | 28 | 79.4 |
+| 01 | 124 | 2.46 | 3.00 | 90 | 34 | 128.0 |
+| 02 | 124 | 2.00 | 2.00 | 96 | 28 | 114.0 |
+| 03 | 124 | 1.91 | 2.30 | 89 | 35 | 87.2 |
+| 04 | 124 | 2.33 | 3.00 | 95 | 29 | 147.7 |
+| 05 | 124 | 2.40 | 2.00 | 104 | 20 | 92.4 |
+| 06 | 124 | 1.95 | 2.00 | 91 | 33 | 121.1 |
+| 07 | 124 | 2.10 | 3.00 | 99 | 25 | 95.3 |
 
 ## Taxonomy Observations
 
-1. **RAT.3 is the most-tagged sub-skill (166):** Rate problems dominate the computational bank. Many questions present a "per" relationship as the core ask.
+1. **RAT.3 is the most-tagged sub-skill (170):** Rate problems dominate the computational bank. Many questions present a "per" relationship as the core ask.
 
-2. **OVD.4 (64):** The mean-total relationship pattern (sum = mean x count, find missing value) is the most common OVD pattern.
+2. **PRB.2 is the dominant probability pattern (142):** Conditional probability via two-way tables and restricted sample spaces is the most common probability ask.
 
-3. **PCT.5 (110):** Chained percent problems (sequential operations on different bases) are well-represented.
+3. **PCT.5 (117):** Chained percent problems (sequential operations on different bases) are well-represented.
 
-4. **PRB.2 is the dominant probability pattern (140):** Conditional probability via two-way tables and restricted sample spaces is the most common probability ask.
+4. **OVD.2 (112):** Measure of center (mean, median, mode) is the most common OVD pattern.
 
-5. **Cross-family tagging (21 questions):** 2.1% of questions require skills from multiple families.
+5. **OVD.4 (70):** The mean-total relationship pattern (sum = mean x count, find missing value) is common.
+
+6. **Cross-family tagging (24 questions):** 2.4% of questions require skills from multiple families.
 
 ## Boundary Ambiguities
 
@@ -107,6 +111,8 @@
 
 ## Process Notes
 
-- All 8 chunks (00-07) processed by dedicated fork workers with full question-by-question analysis
+- All 8 chunks (00-07) processed by dedicated fresh agents with full question-by-question analysis
 - All chunks blind to write-pass output per protocol
-- Assembly: one merge pass, canonical field order (id, sub_skills, clusters, distractors, why), no re-sorting
+- Each worker solved its slice and wrote its part file once; no worker assembled, merged, or committed the full audit file
+- Assembly: one concatenation pass by the orchestrator, canonical field order (id, sub_skills, clusters, distractors, why), no re-sorting
+- 992 unique IDs validated at assembly time
