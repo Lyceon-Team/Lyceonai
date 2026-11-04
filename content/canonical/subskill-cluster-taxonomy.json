@@ -1226,1013 +1226,6 @@
       ]
     },
     {
-      "id": "RAT.1",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Single-Step Unit Conversion",
-      "definition": "Multiply or divide a given quantity by one provided conversion factor to convert from one unit to another.",
-      "inclusion_test": "The problem provides exactly one conversion factor (e.g., '1 kilogram = 1,000 grams') and asks the student to convert a stated quantity to the target unit using that single factor. No chaining or additional operations required.",
-      "evidence_ids": [
-        "0700a2d5",
-        "2cdefcb1",
-        "2d16d62c",
-        "4347a032",
-        "4e375d1f",
-        "551c52b9",
-        "674a4084",
-        "73ddfdac",
-        "763e6769",
-        "808f7d6c",
-        "85b33aa8",
-        "8bf3f67a",
-        "99550621",
-        "aeeaec96",
-        "ba62b0b0",
-        "c47256ca",
-        "c81499e1",
-        "d0d9ede4",
-        "d7a3179d",
-        "eb672707",
-        "ec787383"
-      ]
-    },
-    {
-      "id": "RAT.2",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Multi-Step Unit Conversion",
-      "definition": "Chain two or more conversion factors in sequence to convert a measurement or rate between units that require intermediate steps (e.g., per-minute to per-hour via seconds, or quarts to fluid ounces via cups).",
-      "inclusion_test": "The problem requires applying two or more conversion factors sequentially to arrive at the answer. This includes converting a rate's denominator unit (e.g., miles per second to miles per hour) when the conversion itself requires multiplying by a compound factor derived from two unit relationships.",
-      "evidence_ids": [
-        "06a152cd",
-        "1b403590",
-        "20b69297",
-        "3310c2ab",
-        "3c8fdc40",
-        "50b99b2d",
-        "51c9d65f",
-        "568bc2a4",
-        "7d721177",
-        "8917ce38",
-        "89c39d77",
-        "939c46d1",
-        "94660ba8",
-        "cb4894f9",
-        "d28c29e1",
-        "f6cbb04a",
-        "fea831fc"
-      ]
-    },
-    {
-      "id": "RAT.3",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Squared and Cubed Unit Conversion",
-      "definition": "Convert area or volume units by squaring or cubing the linear conversion factor, rather than simply multiplying by it.",
-      "inclusion_test": "The problem involves converting between area units (e.g., square feet to square yards) or volume units, requiring the student to recognize that the linear conversion factor must be squared (for area) or cubed (for volume).",
-      "evidence_ids": [
-        "1180401d",
-        "11b06e35",
-        "15617f62",
-        "1b403590",
-        "3638f413",
-        "5154615f",
-        "61f61789",
-        "69f6717f",
-        "7d721177",
-        "873d2838",
-        "8e528129",
-        "99550621",
-        "b4912cc5",
-        "d6456c7a",
-        "e3d49511"
-      ]
-    },
-    {
-      "id": "RAT.4",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Rate Application",
-      "definition": "Given a rate (quantity per unit) and a total or count, multiply to find a total output, or divide to find the missing quantity. Single-step rate reasoning with no additional unit conversion.",
-      "inclusion_test": "The problem states a rate (e.g., items per hour, cost per pound, miles per day, revolutions per minute) and asks the student to compute a total by multiplying rate times quantity, compute a unit rate by dividing total by count, or find an unknown count by dividing total by rate. Only one arithmetic operation is needed beyond identifying the rate.",
-      "evidence_ids": [
-        "000259aa",
-        "0700a2d5",
-        "2cdefcb1",
-        "2d16d62c",
-        "3318d37b",
-        "4347a032",
-        "4e375d1f",
-        "674a4084",
-        "7270d642",
-        "73ddfdac",
-        "85b33aa8",
-        "86636d8f",
-        "8bf3f67a",
-        "94660ba8",
-        "aeeaec96",
-        "ba62b0b0",
-        "be35c117",
-        "c47256ca",
-        "c81499e1",
-        "d0d9ede4",
-        "d7a3179d",
-        "eb672707",
-        "ec787383",
-        "fe1ec415",
-        "fe4c1c9e"
-      ]
-    },
-    {
-      "id": "RAT.5",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Proportion Setup and Solve",
-      "definition": "Set up an equation of two equivalent ratios (a/b = c/d) with one unknown and solve by cross-multiplication or algebraic manipulation.",
-      "inclusion_test": "The problem states that two ratios are equivalent, or gives a fixed ratio and asks for an unknown value when one of the four quantities changes. The student must set up a proportion equation and solve algebraically.",
-      "evidence_ids": [
-        "0700a2d5",
-        "11b06e35",
-        "181cc4d6",
-        "24ad9dcb",
-        "2cdefcb1",
-        "2d16d62c",
-        "3ac09984",
-        "3f5398a6",
-        "4347a032",
-        "445dd032",
-        "4837406c",
-        "4e375d1f",
-        "568bc2a4",
-        "6310adbc",
-        "674a4084",
-        "73ddfdac",
-        "825b7490",
-        "85b33aa8",
-        "8637294f",
-        "8bf3f67a",
-        "9fa781f8",
-        "aeeaec96",
-        "ba62b0b0",
-        "c47256ca",
-        "c81499e1",
-        "d0d9ede4",
-        "d7a3179d",
-        "da9ffcf6",
-        "eb672707",
-        "ec787383"
-      ]
-    },
-    {
-      "id": "RAT.6",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Proportional Expression Construction",
-      "definition": "Given a ratio between two quantities and a variable representing one of them, identify or construct the correct algebraic expression that represents the other quantity.",
-      "inclusion_test": "The problem gives a fixed ratio (e.g., coaches to athletes is 1 to 26) and a variable for one quantity (e.g., x coaches), then asks the student to select the algebraic expression for the other quantity from multiple choices. The solving step is ratio-to-expression translation, not numeric computation.",
-      "evidence_ids": [
-        "0700a2d5",
-        "1180401d",
-        "1d945139",
-        "2cdefcb1",
-        "2d16d62c",
-        "4347a032",
-        "4e375d1f",
-        "5154615f",
-        "674a4084",
-        "73ddfdac",
-        "7e6c745f",
-        "85b33aa8",
-        "8bf3f67a",
-        "aeeaec96",
-        "ba62b0b0",
-        "c3d78831",
-        "c47256ca",
-        "c81499e1",
-        "d0d9ede4",
-        "d7a3179d",
-        "eb672707",
-        "ec787383"
-      ]
-    },
-    {
-      "id": "RAT.7",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Ratio Interpretation and Simplification",
-      "definition": "Determine, simplify, or apply a ratio from given quantities; find a missing value in a table where the ratio between columns is constant; or compute and compare unit rates from tabular data.",
-      "inclusion_test": "The problem asks the student to: express a ratio in simplest form given two counts; identify a constant ratio across rows of a table and solve for a missing entry; use a given part-to-part ratio to find one part from the other; or compute unit rates from tabular data.",
-      "evidence_ids": [
-        "0700a2d5",
-        "2cdefcb1",
-        "2d16d62c",
-        "312ba47c",
-        "3f236a64",
-        "4347a032",
-        "4e375d1f",
-        "674a4084",
-        "73ddfdac",
-        "7cd1c6db",
-        "85b33aa8",
-        "8bf3f67a",
-        "aeeaec96",
-        "ba62b0b0",
-        "c47256ca",
-        "c81499e1",
-        "d0d9ede4",
-        "d7a3179d",
-        "e9841407",
-        "eb672707",
-        "ec787383"
-      ]
-    },
-    {
-      "id": "RAT.8",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Density and Derived-Rate Calculations",
-      "definition": "Compute density (population density, material density) from a total and an area or volume, or use a given density to find a derived quantity. May require computing volume from dimensions (V = s^3 for a cube).",
-      "inclusion_test": "The problem involves a density quantity (people per square mile, grams per cubic centimeter, ounces per cubic inch) and asks the student to compute the density from a total and area/volume, use density to find the total or the area/volume, or chain density with a unit price. Problems involving cube geometry (V = s^3) to determine volume before applying density belong here.",
-      "evidence_ids": [
-        "15617f62",
-        "7d093333",
-        "8e528129",
-        "96c3e32d",
-        "c7c6445f",
-        "d6456c7a",
-        "e21d10a7",
-        "e3d49511",
-        "e7133228"
-      ]
-    },
-    {
-      "id": "RAT.9",
-      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Multi-Step Rate and Proportion Problems",
-      "definition": "Combine rate or proportion reasoning with one or more additional arithmetic operations such as percentage adjustments, differences between derived values, algebraic substitution, scale-factor application, or currency conversion with surcharges.",
-      "inclusion_test": "The problem requires proportional or rate reasoning PLUS at least one additional step: applying a percentage surcharge or fee, computing a difference between two density-derived values, performing algebraic substitution into a ratio equation, converting currencies with a percentage adjustment, or applying a scale factor to a real-world measurement.",
-      "evidence_ids": [
-        "06a152cd",
-        "21e539a0",
-        "3310c2ab",
-        "3726e079",
-        "3c8fdc40",
-        "568bc2a4",
-        "61b87506",
-        "69f6717f",
-        "8917ce38",
-        "89c39d77",
-        "939c46d1",
-        "94660ba8",
-        "b4912cc5",
-        "c2e7fa6d",
-        "cb4894f9",
-        "d28c29e1",
-        "e7133228",
-        "fea831fc"
-      ]
-    },
-    {
-      "id": "PCT.1",
-      "skill_code": "Percentages",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Percent of a quantity",
-      "definition": "Compute p% of a given quantity N, yielding a numeric result or an algebraic expression. The percent and the whole are both given; the student multiplies (p/100) * N.",
-      "inclusion_test": "Both the percent p and the whole N are stated or directly readable. The ask is to compute the part. No unknown to solve for; a single multiplication (or its algebraic equivalent) produces the answer.",
-      "evidence_ids": [
-        "048811bd",
-        "273b7f37",
-        "284303f1",
-        "28c6bd8c",
-        "29c177e6",
-        "34e18ce4",
-        "6e4a60dd",
-        "771ee744",
-        "77cf4fa6",
-        "7ed0d098",
-        "8213b1b3",
-        "8784bc84",
-        "954943a4",
-        "9c44f828",
-        "a8fabad0",
-        "bb7c8186",
-        "dccdb20c",
-        "eaab8bc1"
-      ]
-    },
-    {
-      "id": "PCT.2",
-      "skill_code": "Percentages",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Unknown percent or unknown whole",
-      "definition": "Given two of the three quantities in p% * W = P, solve for the missing one, where the missing quantity is either the percent p or the whole W. (When the missing quantity is the part P, the question is PCT.1 instead.)",
-      "inclusion_test": "The part P and one of {p, W} are given. The ask is to find the other of {p, W}. The student sets up the equation (p/100) * W = P and solves by division. No increase/decrease framing; the percent relates a part to its whole, not a before to an after.",
-      "evidence_ids": [
-        "05195d8a",
-        "2d31caae",
-        "3a6ed720",
-        "40e7a1a9",
-        "54cb53cf",
-        "65c49824",
-        "7f84b136",
-        "93724cc6",
-        "94c65646",
-        "ba0e23b0",
-        "d72a2b4d",
-        "e9f4521a",
-        "e9fb7774"
-      ]
-    },
-    {
-      "id": "PCT.3",
-      "skill_code": "Percentages",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Apply or undo a single percent increase/decrease",
-      "definition": "A single quantity changes by p% (increase or decrease). The student applies the multiplier (1 +/- p/100) in the forward direction, or inverts it to recover the original. Includes interpreting a decimal multiplier as a percent change.",
-      "inclusion_test": "The question frames a percent as an increase or decrease relative to a base (before/after, markup/discount, tax, growth, reduction). Exactly one percent change is applied to one base. The student either (a) multiplies to find the result, (b) divides to find the original, or (c) interprets a given multiplier (e.g. 0.35x) as a percent change.",
-      "evidence_ids": [
-        "121dc44f",
-        "191d167b",
-        "194ae3b1",
-        "1baffbcf",
-        "1c2f50a6",
-        "2afd3cec",
-        "41b71b4e",
-        "5267c3c7",
-        "7b731fc3",
-        "7cab9fe1",
-        "86684ce9",
-        "8705ecba",
-        "8a714fa1",
-        "8e2e424e",
-        "949cd96b",
-        "96a45430",
-        "a0b165f8",
-        "ba61d95f",
-        "d693f563"
-      ]
-    },
-    {
-      "id": "PCT.4",
-      "skill_code": "Percentages",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Percent change between two values",
-      "definition": "Given two values (old and new), compute the percent increase or decrease using the formula ((new - old) / old) * 100. The percent itself is the unknown.",
-      "inclusion_test": "Two concrete values representing a before and an after are given (directly or read from a table/graph). The ask is the percent change (increase or decrease). The student applies the percent-change formula with the original value as the denominator.",
-      "evidence_ids": [
-        "0231050d",
-        "63573fea",
-        "709e04de",
-        "ad1d6adb",
-        "b2f6f17d",
-        "bd90f87e"
-      ]
-    },
-    {
-      "id": "PCT.5",
-      "skill_code": "Percentages",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Chained percents (two or more percent operations with different bases)",
-      "definition": "Two or more percent operations are applied in sequence, where each operation's base differs from the previous one's. The student must track which quantity each percent applies to and chain the computations or set up a system of equations.",
-      "inclusion_test": "The question involves at least two percent relationships or operations, and the base (denominator or 'whole') changes between them. This includes: (a) sequential 'percent of a percent-of' computations, (b) algebraic systems where quantities are defined as percents of each other with different bases, (c) computing a percent change and then applying a derived percent to a different base. A single percent applied to a single base is never PCT.5, regardless of how many arithmetic steps the problem requires.",
-      "evidence_ids": [
-        "022e9894",
-        "040f2a84",
-        "0ea56bb2",
-        "1fbd3b67",
-        "20845d36",
-        "25faa756",
-        "2e92cc21",
-        "34f8cd89",
-        "3d73a58b",
-        "4aaa9c42",
-        "566759ef",
-        "623dbebb",
-        "67c0200a",
-        "8c5dbd3e",
-        "8cbf1415",
-        "993000da",
-        "ad911622",
-        "c256b723",
-        "e635aede"
-      ]
-    },
-    {
-      "id": "PRB.1",
-      "skill_code": "Probability and Conditional Probability",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Whole-Group Probability",
-      "definition": "Compute the probability of an event by dividing the number of favorable outcomes by the total number of outcomes, where the sample space is the entire population (no restricting condition). Includes reading counts from lists, frequency tables, two-way tables (using row/column totals), or word problems. The unknown is the probability; the counts are given or directly readable.",
-      "inclusion_test": "Two independent taggers agree: (1) the question asks for a probability, proportion, or fraction; (2) the sample space is the entire group (no 'given that', 'of those', 'among [subset]' restriction); (3) the favorable and total counts are given or directly computable from the data without algebraic rearrangement of a probability equation.",
-      "evidence_ids": [
-        "0301c5dc",
-        "0a99e5bb",
-        "0ae37ff3",
-        "12dbe3de",
-        "1353b86e",
-        "16cea46c",
-        "1b8e412e",
-        "2905ded0",
-        "2a08d878",
-        "2df8f293",
-        "38a9ac45",
-        "46b2e169",
-        "47624288",
-        "4e527894",
-        "60caadfd",
-        "79201024",
-        "a478f9f5",
-        "b1b5300b",
-        "b8150b17",
-        "c943acba",
-        "d89c1513",
-        "dae79de4",
-        "e5b5fbdd",
-        "e9ed719f",
-        "ec7b0eb8"
-      ]
-    },
-    {
-      "id": "PRB.2",
-      "skill_code": "Probability and Conditional Probability",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Conditional Probability",
-      "definition": "Compute the probability of an event within a restricted sample space. The question restricts to a subset of the population using language like 'given that', 'of those', 'among', 'if [condition]', or 'of the [subset]', then asks for the probability within that subset. The student must identify the restricted total (denominator) and the favorable count within the restriction (numerator).",
-      "inclusion_test": "Two independent taggers agree: (1) the question explicitly restricts the sample space to a named subset before asking for a probability or fraction; (2) the denominator is not the whole-group total but a row total, column total, or sum of a defined subset; (3) the favorable count is read from within the restricted subset.",
-      "evidence_ids": [
-        "014c47ab",
-        "1353b86e",
-        "16cea46c",
-        "46545dd6",
-        "5dc386fb",
-        "60caadfd",
-        "6a715bed",
-        "89f20d9e",
-        "912cd125",
-        "a478f9f5",
-        "b6569d0e",
-        "e1ad3d41",
-        "e438ec3f",
-        "f8696cd8"
-      ]
-    },
-    {
-      "id": "PRB.3",
-      "skill_code": "Probability and Conditional Probability",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Find Count from Probability",
-      "definition": "Given a probability (or proportion/fraction) and a total (or enough information to determine the total), solve algebraically for an unknown count. The solving direction is reversed compared to PRB.1: the probability is given, the count is unknown. The student sets up P = count / total and solves for count, or uses equivalent algebraic reasoning.",
-      "inclusion_test": "Two independent taggers agree: (1) the question provides a probability, proportion, or fraction as a given value; (2) the unknown being solved for is a count (number of items, people, etc.), not a probability; (3) the student must algebraically rearrange a probability equation or multiply a fraction by a total to find the count.",
-      "evidence_ids": [
-        "1dcea480",
-        "1fc4f47b",
-        "2905ded0",
-        "30db8f77",
-        "47624288",
-        "585de39a",
-        "a3384df0",
-        "d4413871",
-        "d89c1513",
-        "dae79de4",
-        "e9ed719f",
-        "ec7b0eb8"
-      ]
-    },
-    {
-      "id": "OVD.1",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Read or Interpret a Data Display",
-      "definition": "Read a single value, count, frequency, difference, or structural feature directly from a bar graph, dot plot, box plot, histogram, frequency table, or data table. No computation of a summary statistic (mean, median, mode, range, SD) from raw data is required -- the answer comes from reading the display.",
-      "inclusion_test": "The question is answered entirely by locating and reading one or more values on a graphical display or table, possibly subtracting two read values or summing displayed frequencies. The student does NOT need to apply the mean formula, order-and-locate for median, or compute range/SD.",
-      "evidence_ids": [
-        "15d87c0f",
-        "29fa7970",
-        "374b18f9",
-        "52f9a246",
-        "560fab82",
-        "57481175",
-        "57f45509",
-        "6e3ab4bf",
-        "79340403",
-        "80f1f3a9",
-        "820d7a73",
-        "93779b53",
-        "a067c926",
-        "a456cfd2",
-        "d1db8def",
-        "ea95087d",
-        "fe6a49d6"
-      ]
-    },
-    {
-      "id": "OVD.2",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Compute the Mean",
-      "definition": "Calculate the arithmetic mean of a data set by summing all values (or using frequency-weighted sums) and dividing by the number of data points. Includes computing mean from a list, a table, a bar graph, or a frequency table.",
-      "inclusion_test": "The question explicitly asks for the mean (or average) and the primary solving step is applying sum/count. The student must perform the computation rather than just reading a value or reasoning conceptually.",
-      "evidence_ids": [
-        "07f2829b",
-        "1142af44",
-        "12dae628",
-        "35bec412",
-        "374b18f9",
-        "4b09f783",
-        "4bb25495",
-        "66f03086",
-        "7760c516",
-        "7b65bb28",
-        "881ef5f5",
-        "94237701",
-        "9d935bd8",
-        "9e2bf782",
-        "a29e89fc",
-        "a9647302",
-        "be00d896",
-        "bf47ad54",
-        "bfa8a85c",
-        "c178d4da",
-        "ecbdbe84",
-        "fa7a0164"
-      ]
-    },
-    {
-      "id": "OVD.3",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Find the Median",
-      "definition": "Determine the median of a data set by ordering values and locating the middle value (odd count) or the average of the two middle values (even count). Includes finding the median from a list, a frequency table, or a grouped frequency table using cumulative counts.",
-      "inclusion_test": "The question asks for the median or requires finding the median as the main step. The student must order data and locate the positional middle, possibly using cumulative frequency.",
-      "evidence_ids": [
-        "07f2829b",
-        "1142af44",
-        "12dae628",
-        "35bec412",
-        "374b18f9",
-        "4b09f783",
-        "4bb25495",
-        "66f03086",
-        "7760c516",
-        "7b65bb28",
-        "881ef5f5",
-        "94237701",
-        "9d935bd8",
-        "9e2bf782",
-        "a29e89fc",
-        "a5b069b4",
-        "a9647302",
-        "be00d896",
-        "bf47ad54",
-        "bfa8a85c",
-        "ecbdbe84",
-        "f890dc20",
-        "fa7a0164"
-      ]
-    },
-    {
-      "id": "OVD.4",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Compute the Range",
-      "definition": "Find the range of a data set by identifying the maximum and minimum values and subtracting. Includes reading range from box plots or tables.",
-      "inclusion_test": "The question asks for the range, or the primary computation is max minus min. May require reading max/min from a display first.",
-      "evidence_ids": [
-        "25fc031a",
-        "3f2ee20a",
-        "6c9444cd",
-        "869a32f1",
-        "c54b92a2",
-        "d94018fd",
-        "f52123e0"
-      ]
-    },
-    {
-      "id": "OVD.5",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Compare or Relate Measures of Center and Spread",
-      "definition": "Compare mean vs. median, determine their relative order given distribution shape or outliers, identify which statistic is or is not a given value, determine what can or cannot be computed from given information, or compare measures across two data sets conceptually.",
-      "inclusion_test": "The question requires reasoning about the relationship between two or more statistical measures (mean, median, mode, range) rather than just computing one of them. Includes identifying a statistic by its properties, comparing statistics between groups, and understanding how skewness or outliers affect mean vs. median.",
-      "evidence_ids": [
-        "07f2829b",
-        "1142af44",
-        "12dae628",
-        "35bec412",
-        "374b18f9",
-        "3f2ee20a",
-        "4b09f783",
-        "4bb25495",
-        "4c774b00",
-        "55cfaf22",
-        "6670e407",
-        "66f03086",
-        "708590d7",
-        "7760c516",
-        "7b65bb28",
-        "869a32f1",
-        "881ef5f5",
-        "9110c120",
-        "94237701",
-        "9d935bd8",
-        "9e2bf782",
-        "a29e89fc",
-        "a9647302",
-        "be00d896",
-        "bf47ad54",
-        "bfa8a85c",
-        "c3d65f93",
-        "c88e0663",
-        "d3b9c8d8",
-        "ecbdbe84",
-        "fa7a0164"
-      ]
-    },
-    {
-      "id": "OVD.6",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Effect of Data Changes on Statistics",
-      "definition": "Determine how adding, removing, or modifying values in a data set -- or adding a constant to all values -- affects measures of center (mean, median) and/or spread (range, standard deviation). Includes reasoning about whether a statistic stays the same, increases, or decreases.",
-      "inclusion_test": "The question describes a modification to a data set (add a value, remove a value, change a value, add a constant to all values, split values around median) and asks which statistics change or stay the same, or how specific statistics are affected.",
-      "evidence_ids": [
-        "241f1db7",
-        "391ae4b2",
-        "457d2f2c",
-        "4626102e",
-        "55cfaf22",
-        "578e26ae",
-        "5c3c2e3c",
-        "6670e407",
-        "708590d7",
-        "9110c120",
-        "c3d65f93",
-        "e7d48c8a",
-        "f8a322d9"
-      ]
-    },
-    {
-      "id": "OVD.7",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Solve for an Unknown Using the Mean",
-      "definition": "Use the mean formula algebraically to find an unknown data value, a removed value, or a missing entry. Given that the mean equals a specific value (or equals another data set's mean), set up the equation sum/count = mean and solve for the unknown.",
-      "inclusion_test": "The question gives a mean value (or a relationship involving the mean) and at least one unknown data value, and the student must use the mean formula in reverse to solve for that unknown. Includes 'reverse mean' problems where a value is removed and the new mean is given.",
-      "evidence_ids": [
-        "190be2fc",
-        "1e8ccffd",
-        "2a59eb45",
-        "4ff597db",
-        "54d93874",
-        "8193e8cd",
-        "8736334b",
-        "98958ae8",
-        "d0efc1dd"
-      ]
-    },
-    {
-      "id": "OVD.8",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Combined (Weighted) Mean of Merged Data Sets",
-      "definition": "Compute the overall mean when two or more data sets with known sizes and means are combined. Requires using the weighted-average formula: (n1*mean1 + n2*mean2) / (n1 + n2).",
-      "inclusion_test": "The question gives two or more groups with their respective sizes and means (or enough info to determine them) and asks for the combined mean of the merged data set.",
-      "evidence_ids": [
-        "1e8ccffd",
-        "2a59eb45",
-        "4ff597db",
-        "54d93874",
-        "8193e8cd",
-        "98958ae8",
-        "d0efc1dd"
-      ]
-    },
-    {
-      "id": "OVD.9",
-      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Compare Standard Deviations from Distributions",
-      "definition": "Compare the standard deviations (spread) of two or more data sets by visually inspecting their distributions in histograms, dot plots, or other displays. Understand that more concentrated distributions have smaller SD and that shifting a distribution does not change SD.",
-      "inclusion_test": "The question shows two or more distributions (as histograms, dot plots, or described data sets) and asks the student to compare their standard deviations or determine which has greater/lesser spread, based on visual reasoning about how concentrated the values are around the mean.",
-      "evidence_ids": [
-        "25fc031a",
-        "3f2ee20a",
-        "869a32f1",
-        "c54b92a2",
-        "d65b9a87",
-        "d94018fd",
-        "f52123e0",
-        "f8a322d9"
-      ]
-    },
-    {
-      "id": "TVD.1",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Read Values from Graphs and Scatterplots",
-      "definition": "Read coordinates of data points, identify maxima or minima, compare plotted values, or compute simple differences between data values shown directly on a graph, scatterplot, or line graph -- without using a model equation or line of best fit.",
-      "inclusion_test": "Does the question ask the student to read, locate, or compare one or more data values directly from a graph or scatterplot? Is the answer obtainable by reading axis values at plotted points (not from a regression line or model equation)?",
-      "evidence_ids": [
-        "13f67ddc",
-        "2e511919",
-        "4a2264b3",
-        "5c24c861",
-        "74dee52b",
-        "8156d446",
-        "8d63b6f1",
-        "9d88a3e3",
-        "ac5b6558",
-        "ae32cc3c",
-        "b58dbf88",
-        "bc59c2d9",
-        "c9dd92b1",
-        "cf0ae57a",
-        "d6121490",
-        "f46139df",
-        "fdfc90e4"
-      ]
-    },
-    {
-      "id": "TVD.2",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Make Predictions Using a Line or Curve of Best Fit",
-      "definition": "Use a drawn line of best fit, a drawn curve, or a given model equation to predict a y-value at a specified x-value, or interpolate/extrapolate a value from the model.",
-      "inclusion_test": "Does the question ask for a predicted, estimated, or modeled value at a specific input using a line or curve of best fit? Does solving require reading from a regression line/curve (not raw data points) or substituting into a model equation to find a predicted value?",
-      "evidence_ids": [
-        "13f67ddc",
-        "2e511919",
-        "4a2264b3",
-        "5c24c861",
-        "74dee52b",
-        "8156d446",
-        "8d63b6f1",
-        "ac5b6558",
-        "ae32cc3c",
-        "b58dbf88",
-        "bc59c2d9",
-        "c9dd92b1",
-        "cf0ae57a",
-        "d6121490",
-        "f46139df",
-        "fdfc90e4"
-      ]
-    },
-    {
-      "id": "TVD.3",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Estimate the Slope of a Line of Best Fit",
-      "definition": "Determine the approximate slope of a line of best fit by selecting two points on the drawn line and computing rise over run ((y2 - y1) / (x2 - x1)).",
-      "inclusion_test": "Does the question ask the student to find or approximate the slope of a line of best fit shown on a scatterplot? Does solving require picking two points on the drawn line and computing the ratio of vertical change to horizontal change?",
-      "evidence_ids": [
-        "03a16790",
-        "24a1e6a7",
-        "2e74e403",
-        "39aa146d",
-        "4cc05491",
-        "90ba8f98"
-      ]
-    },
-    {
-      "id": "TVD.4",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Select or Write the Equation of a Line of Best Fit",
-      "definition": "From a scatterplot (with or without a drawn line), select from multiple-choice options or write the linear equation y = mx + b that best represents the data, by determining the slope and y-intercept.",
-      "inclusion_test": "Does the question ask the student to choose or write a linear equation (y = mx + b) that represents a line of best fit for scatterplot data? Does solving require determining both the slope and y-intercept of a best-fit line and matching to an equation?",
-      "evidence_ids": [
-        "16988f9c",
-        "1e1027a7",
-        "2e8027b0",
-        "3c5b19ef",
-        "3d985614",
-        "50b2807e",
-        "5f3ee607",
-        "79137c1b",
-        "8baf2118",
-        "9296553d",
-        "9eb896c5",
-        "c5ee6ac0",
-        "d230e963"
-      ]
-    },
-    {
-      "id": "TVD.5",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Identify the Appropriate Model Type",
-      "definition": "Given data presented in a table, graph, or verbal description, determine whether the relationship is best modeled by a linear, quadratic, or exponential function, or identify the direction of association (positive, negative, or no association).",
-      "inclusion_test": "Does the question ask the student to classify a relationship as linear, quadratic, or exponential, or to describe the direction/type of association? Does solving require analyzing the pattern of data (constant differences, constant ratios, curvature, or trend direction) to determine the model type?",
-      "evidence_ids": [
-        "15ce8207",
-        "43744269",
-        "58171b5e",
-        "661dfddd",
-        "7ac5d686",
-        "9a144a01",
-        "9b5b23fc",
-        "9d88a3e3",
-        "a03b7e02",
-        "ab7740a8",
-        "af142f8d",
-        "c141366d"
-      ]
-    },
-    {
-      "id": "TVD.6",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Compute Average Rate of Change Between Intervals",
-      "definition": "Calculate the average rate of change (y2 - y1) / (x2 - x1) between two data points or identify the interval with the greatest or least change from a graph or table.",
-      "inclusion_test": "Does the question ask the student to compute an average rate of change or identify the interval with the greatest/least change? Does solving require computing (y2 - y1) / (x2 - x1) for one or more intervals and comparing the results?",
-      "evidence_ids": [
-        "7b52985c",
-        "83272c51",
-        "9bb4107c",
-        "a6b2fcce",
-        "d112bc9d",
-        "e24765e6"
-      ]
-    },
-    {
-      "id": "TVD.7",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Evaluate Residuals and Deviations from a Model",
-      "definition": "Compute a residual (actual value minus predicted value) for a data point, or count the number of data points that lie above or below a line of best fit.",
-      "inclusion_test": "Does the question ask the student to compute a residual or count data points above/below a model? Does solving require comparing actual data values to predicted values from a model (by subtraction or visual comparison to the line)?",
-      "evidence_ids": [
-        "1adb39f0",
-        "7fd284ac",
-        "ad7dbb22",
-        "e17babed"
-      ]
-    },
-    {
-      "id": "TVD.8",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Interpret Slope or Intercept in Real-World Context",
-      "definition": "Explain what the slope or y-intercept of a line of best fit represents in the real-world context of the problem, including unit-rate interpretations and contextual meaning.",
-      "inclusion_test": "Does the question ask the student to interpret the meaning of the slope or y-intercept of a model in a real-world context? Does the correct answer require translating a numerical slope or intercept value into a statement about units, rates, or contextual meaning?",
-      "evidence_ids": [
-        "9d95e7ad",
-        "d0430601",
-        "d6af3572"
-      ]
-    },
-    {
-      "id": "TVD.9",
-      "skill_code": "Two-Variable Data: Models and Scatterplots",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Select or Determine a Nonlinear Model Equation",
-      "definition": "Choose or construct a quadratic or exponential equation that fits given data, determine parameters (such as the base of an exponential), or apply a transformation to a model when data are scaled or shifted.",
-      "inclusion_test": "Does the question ask the student to select, write, or determine parameters for a nonlinear (quadratic or exponential) model equation? Does solving require matching data to a quadratic or exponential form, computing an exponential base, or transforming a model under a data scaling?",
-      "evidence_ids": [
-        "16988f9c",
-        "1e1027a7",
-        "2e8027b0",
-        "3c5b19ef",
-        "3d985614",
-        "50b2807e",
-        "5f3ee607",
-        "79137c1b",
-        "82aaa0a1",
-        "8baf2118",
-        "9296553d",
-        "9eb896c5",
-        "c5ee6ac0",
-        "d230e963",
-        "e821a26d",
-        "fb866265"
-      ]
-    },
-    {
-      "id": "INFS.1",
-      "skill_code": "Inference from Sample Statistics and Margin of Error",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Constructing confidence intervals from margin of error",
-      "definition": "",
-      "inclusion_test": "",
-      "evidence_ids": [
-        "0108ac2d",
-        "1e562f24",
-        "2c76bcce",
-        "308084c5",
-        "4096a482",
-        "6a305cd0",
-        "8173f32b",
-        "85939da5",
-        "9bedc4a0",
-        "a2162ea1",
-        "e03f3477",
-        "f04d40b2",
-        "f8f79e11",
-        "fc46af57"
-      ]
-    },
-    {
-      "id": "INFS.2",
-      "skill_code": "Inference from Sample Statistics and Margin of Error",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Estimating population counts from sample proportions",
-      "definition": "",
-      "inclusion_test": "",
-      "evidence_ids": [
-        "53d97af5",
-        "89f8d08a",
-        "90eed2e5",
-        "916ffe9b",
-        "97631565",
-        "9ba3e283",
-        "9ee22c16",
-        "affb2315",
-        "e7d9649f",
-        "f4b3672a"
-      ]
-    },
-    {
-      "id": "ESC.1",
-      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Identifying sampling bias",
-      "definition": "",
-      "inclusion_test": "",
-      "evidence_ids": [
-        "1ea09200",
-        "4a422e3e",
-        "6fca0144",
-        "7ce2830a",
-        "7d68096f",
-        "82dfb646",
-        "9bf4c545",
-        "aa43b41f",
-        "b4f5a7ca"
-      ]
-    },
-    {
-      "id": "ESC.2",
-      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
-      "section": "M",
-      "domain": "Problem Solving and Data Analysis",
-      "name": "Determining the scope of generalization",
-      "definition": "",
-      "inclusion_test": "",
-      "evidence_ids": [
-        "1ea09200",
-        "37930b2a",
-        "4a422e3e",
-        "642519d7",
-        "6fca0144",
-        "7ce2830a",
-        "7d68096f",
-        "82dfb646",
-        "9bf4c545",
-        "aa43b41f",
-        "b4f5a7ca"
-      ]
-    },
-    {
       "id": "WIC.1",
       "skill_code": "Words in Context",
       "section": "RW",
@@ -3174,6 +2167,861 @@
         "5b8f9cf2",
         "fced396a",
         "9df6da04"
+      ]
+    },
+    {
+      "id": "RAT.1",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Single-Step Unit Conversion",
+      "definition": "Multiply or divide a given quantity by one provided conversion factor to convert from one unit to another.",
+      "inclusion_test": "The problem provides exactly one conversion factor (e.g., '1 kilogram = 1,000 grams') and asks the student to convert a stated quantity to the target unit using that single factor. No chaining or additional operations required.",
+      "evidence_ids": [
+        "4e375d1f",
+        "763e6769",
+        "808f7d6c",
+        "99550621",
+        "551c52b9",
+        "2cdefcb1",
+        "ba62b0b0",
+        "0700a2d5",
+        "c81499e1",
+        "aeeaec96",
+        "2d16d62c"
+      ]
+    },
+    {
+      "id": "RAT.2",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Multi-Step Unit Conversion",
+      "definition": "Chain two or more conversion factors in sequence to convert a measurement or rate between units that require intermediate steps (e.g., per-minute to per-hour via seconds, or quarts to fluid ounces via cups).",
+      "inclusion_test": "The problem requires applying two or more conversion factors sequentially to arrive at the answer. This includes converting a rate's denominator unit (e.g., miles per second to miles per hour) when the conversion itself requires multiplying by a compound factor derived from two unit relationships.",
+      "evidence_ids": [
+        "06a152cd",
+        "3c8fdc40",
+        "51c9d65f",
+        "f6cbb04a",
+        "939c46d1",
+        "1b403590",
+        "fea831fc",
+        "3310c2ab",
+        "d28c29e1",
+        "cb4894f9",
+        "20b69297",
+        "50b99b2d",
+        "7d721177"
+      ]
+    },
+    {
+      "id": "RAT.3",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Squared and Cubed Unit Conversion",
+      "definition": "Convert area or volume units by squaring or cubing the linear conversion factor, rather than simply multiplying by it.",
+      "inclusion_test": "The problem involves converting between area units (e.g., square feet to square yards) or volume units, requiring the student to recognize that the linear conversion factor must be squared (for area) or cubed (for volume).",
+      "evidence_ids": [
+        "873d2838",
+        "d6456c7a",
+        "61f61789",
+        "3638f413"
+      ]
+    },
+    {
+      "id": "RAT.4",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Rate Application",
+      "definition": "Given a rate (quantity per unit) and a total or count, multiply to find a total output, or divide to find the missing quantity. Single-step rate reasoning with no additional unit conversion.",
+      "inclusion_test": "The problem states a rate (e.g., items per hour, cost per pound, miles per day, revolutions per minute) and asks the student to compute a total by multiplying rate times quantity, compute a unit rate by dividing total by count, or find an unknown count by dividing total by rate. Only one arithmetic operation is needed beyond identifying the rate.",
+      "evidence_ids": [
+        "4347a032",
+        "3318d37b",
+        "94660ba8",
+        "8bf3f67a",
+        "7270d642",
+        "d0d9ede4",
+        "fe4c1c9e",
+        "86636d8f",
+        "fe1ec415",
+        "be35c117",
+        "000259aa"
+      ]
+    },
+    {
+      "id": "RAT.5",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Proportion Setup and Solve",
+      "definition": "Set up an equation of two equivalent ratios (a/b = c/d) with one unknown and solve by cross-multiplication or algebraic manipulation.",
+      "inclusion_test": "The problem states that two ratios are equivalent, or gives a fixed ratio and asks for an unknown value when one of the four quantities changes. The student must set up a proportion equation and solve algebraically.",
+      "evidence_ids": [
+        "4837406c",
+        "3ac09984",
+        "24ad9dcb",
+        "6310adbc",
+        "da9ffcf6",
+        "3f5398a6",
+        "568bc2a4",
+        "eb672707",
+        "73ddfdac",
+        "445dd032",
+        "9fa781f8",
+        "825b7490",
+        "181cc4d6",
+        "11b06e35",
+        "8637294f"
+      ]
+    },
+    {
+      "id": "RAT.6",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Proportional Expression Construction",
+      "definition": "Given a ratio between two quantities and a variable representing one of them, identify or construct the correct algebraic expression that represents the other quantity.",
+      "inclusion_test": "The problem gives a fixed ratio (e.g., coaches to athletes is 1 to 26) and a variable for one quantity (e.g., x coaches), then asks the student to select the algebraic expression for the other quantity from multiple choices. The solving step is ratio-to-expression translation, not numeric computation.",
+      "evidence_ids": [
+        "d7a3179d",
+        "85b33aa8",
+        "674a4084",
+        "1180401d",
+        "7e6c745f",
+        "1d945139",
+        "c3d78831",
+        "5154615f"
+      ]
+    },
+    {
+      "id": "RAT.7",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Ratio Interpretation and Simplification",
+      "definition": "Determine, simplify, or apply a ratio from given quantities; find a missing value in a table where the ratio between columns is constant; or compute and compare unit rates from tabular data.",
+      "inclusion_test": "The problem asks the student to: express a ratio in simplest form given two counts; identify a constant ratio across rows of a table and solve for a missing entry; use a given part-to-part ratio to find one part from the other; or compute unit rates from tabular data.",
+      "evidence_ids": [
+        "e9841407",
+        "c47256ca",
+        "3f236a64",
+        "7cd1c6db",
+        "312ba47c",
+        "ec787383"
+      ]
+    },
+    {
+      "id": "RAT.8",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Density and Derived-Rate Calculations",
+      "definition": "Compute density (population density, material density) from a total and an area or volume, or use a given density to find a derived quantity. May require computing volume from dimensions (V = s^3 for a cube).",
+      "inclusion_test": "The problem involves a density quantity (people per square mile, grams per cubic centimeter, ounces per cubic inch) and asks the student to compute the density from a total and area/volume, use density to find the total or the area/volume, or chain density with a unit price. Problems involving cube geometry (V = s^3) to determine volume before applying density belong here.",
+      "evidence_ids": [
+        "e3d49511",
+        "15617f62",
+        "e21d10a7",
+        "96c3e32d",
+        "8e528129",
+        "7d093333",
+        "c7c6445f"
+      ]
+    },
+    {
+      "id": "RAT.9",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Multi-Step Rate and Proportion Problems",
+      "definition": "Combine rate or proportion reasoning with one or more additional arithmetic operations such as percentage adjustments, differences between derived values, algebraic substitution, scale-factor application, or currency conversion with surcharges.",
+      "inclusion_test": "The problem requires proportional or rate reasoning PLUS at least one additional step: applying a percentage surcharge or fee, computing a difference between two density-derived values, performing algebraic substitution into a ratio equation, converting currencies with a percentage adjustment, or applying a scale factor to a real-world measurement.",
+      "evidence_ids": [
+        "89c39d77",
+        "61b87506",
+        "8917ce38",
+        "3726e079",
+        "b4912cc5",
+        "21e539a0",
+        "c2e7fa6d",
+        "e7133228",
+        "69f6717f"
+      ]
+    },
+    {
+      "id": "PCT.1",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Find Part, Percent, or Whole",
+      "definition": "Given two of the three elements in the percent relationship (part, whole, rate), compute the missing one. Part = (rate/100) × whole; rate = (part/whole) × 100; whole = part / (rate/100). The core operation is a single multiplication or division in the percent-proportion framework.",
+      "inclusion_test": "The question provides two of {part, whole, rate} and asks for the third. Both given quantities are stated directly (no intermediate computation needed). The task is a single percent-proportion calculation.",
+      "evidence_ids": [
+        "eaab8bc1",
+        "41b71b4e",
+        "2d31caae",
+        "bb7c8186",
+        "a8fabad0",
+        "77cf4fa6",
+        "284303f1",
+        "8784bc84",
+        "771ee744",
+        "3a6ed720",
+        "e9fb7774",
+        "121dc44f",
+        "34e18ce4",
+        "273b7f37",
+        "93724cc6",
+        "05195d8a"
+      ]
+    },
+    {
+      "id": "PCT.2",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Apply Percent Increase or Decrease",
+      "definition": "Given an original value and a percent increase or decrease, compute the new value. For increase: new = original * (1 + rate/100). For decrease: new = original * (1 - rate/100). Includes applying sales tax, computing a value described as 'p% of' or 'p% more/less than' the original.",
+      "inclusion_test": "The question gives an original value and a single percent change (increase, decrease, tax, markup) and asks for the resulting numerical value -- not an expression, not the percent change itself, and not the original value.",
+      "evidence_ids": [
+        "194ae3b1",
+        "29c177e6",
+        "191d167b",
+        "28c6bd8c",
+        "8705ecba"
+      ]
+    },
+    {
+      "id": "PCT.3",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Percent Change Calculation",
+      "definition": "Given an old value and a new value (or data from which both can be read), compute the percent increase or decrease using the formula: percent change = ((new - old) / old) * 100. May require reading values from a table, chart, or graph before applying the formula.",
+      "inclusion_test": "The question provides (directly or via data) two values representing a before and after state and asks for the percent change, percent increase, or percent decrease between them. The unknown is the rate of change, not a resulting value.",
+      "evidence_ids": [
+        "1c2f50a6",
+        "bd90f87e",
+        "7f84b136",
+        "709e04de",
+        "0231050d",
+        "1fbd3b67"
+      ]
+    },
+    {
+      "id": "PCT.4",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Reverse Percent (Find Original Before Change)",
+      "definition": "Given a final value that resulted from a percent increase or decrease, find the original value by dividing by the appropriate multiplier. For a p% increase: original = final / (1 + p/100). For a p% decrease: original = final / (1 - p/100).",
+      "inclusion_test": "The question states a result after a percent change has already been applied and asks for the original value before the change. The student must undo the percent operation, not apply it forward.",
+      "evidence_ids": [
+        "94c65646",
+        "63573fea",
+        "2afd3cec"
+      ]
+    },
+    {
+      "id": "PCT.5",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Percent as Algebraic Expression",
+      "definition": "Translate a verbal percent relationship into an algebraic expression or select the correct expression from choices. Includes writing expressions of the form (1 + r/100)*x for 'r% greater than x', (1 - r/100)*x for 'r% less than x', or (p/100)*x for 'p% of x'. Also includes constructing linear percent-per-unit expressions (e.g., p = 5x for 5% per serving).",
+      "inclusion_test": "The question describes a percent relationship in words and asks the student to write, select, or identify the corresponding algebraic expression. The answer is a symbolic expression, not a numerical value.",
+      "evidence_ids": [
+        "9c44f828",
+        "d72a2b4d",
+        "e9f4521a",
+        "c256b723",
+        "ba61d95f",
+        "8a714fa1",
+        "7cab9fe1",
+        "ad911622",
+        "8c5dbd3e",
+        "40e7a1a9",
+        "954943a4"
+      ]
+    },
+    {
+      "id": "PCT.6",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Interpret Percent Expression",
+      "definition": "Given an algebraic expression involving a decimal multiplier (e.g., 1.06p, 0.35x, 0.82(1.07)x), identify what percent change or relationship it represents. The student reads the expression and translates the multiplier back into a percent meaning.",
+      "inclusion_test": "The question presents a completed expression or formula and asks the student to interpret its percent meaning -- 'what does this expression represent?' or 'decreased by what percent?' The student decodes rather than constructs.",
+      "evidence_ids": [
+        "ad1d6adb",
+        "20845d36",
+        "1baffbcf"
+      ]
+    },
+    {
+      "id": "PCT.7",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Successive and Exponential Percent Changes",
+      "definition": "Apply two or more sequential percent changes to a quantity by chaining multipliers, or model repeated percent change over a variable number of periods as an exponential expression. For sequential changes: multiply by each successive factor. For exponential: use a(1±r/100)^t where t is a variable. Includes markup-then-discount, repeated growth/decay, and any chain of percent operations.",
+      "inclusion_test": "The question involves two or more percent changes applied in sequence to the same quantity (chaining multipliers), OR a percent rate applied repeatedly over a variable number of periods (exponential expression). The student must either chain operations or construct/evaluate an exponential form.",
+      "evidence_ids": [
+        "dccdb20c",
+        "b2f6f17d",
+        "96a45430",
+        "34f8cd89",
+        "a0b165f8",
+        "3d73a58b",
+        "54cb53cf",
+        "5267c3c7",
+        "0ea56bb2",
+        "8e2e424e",
+        "ba0e23b0"
+      ]
+    },
+    {
+      "id": "PCT.8",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Chained Percent Relationships",
+      "definition": "Given two or more percent-of relationships linking different quantities (e.g., 'a is 230% of b' and 'a is 60% of c'), use transitive substitution to derive a percent relationship between two quantities not directly related. Requires algebraic manipulation of fractional/percent representations.",
+      "inclusion_test": "The question states two or more 'X is p% of Y' relationships involving three or more quantities and asks the student to derive a percent relationship between a pair not directly linked. The relationships form a chain that must be composed algebraically.",
+      "evidence_ids": [
+        "25faa756",
+        "8213b1b3",
+        "2e92cc21",
+        "623dbebb",
+        "e635aede",
+        "993000da",
+        "4aaa9c42"
+      ]
+    },
+    {
+      "id": "PCT.9",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Compound Category Percentages",
+      "definition": "Compute a count or percent within nested or complementary subsets of a population. For example, 'p% of a group has trait A, and q% of those with trait A also have trait B -- how many have both?' Requires applying one percent to get a subtotal, then applying another percent to that subtotal, or using complementary percents (100% - sum of given percents) to find a remainder category.",
+      "inclusion_test": "The question defines a population partitioned into categories by percent (often including a 'remaining' category) and asks for a count or relationship within or across those categories. At least one percent is applied to a subtotal rather than to the original whole.",
+      "evidence_ids": [
+        "040f2a84",
+        "86684ce9",
+        "65c49824",
+        "022e9894"
+      ]
+    },
+    {
+      "id": "PCT.10",
+      "skill_code": "Percentages",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Percent from Data",
+      "definition": "Read numerical values from a table, chart, bar graph, or line graph and then compute a percentage (either 'what percent of the total' or a specific ratio). The percent computation itself is straightforward (PCT.1 or PCT.2 level), but the question embeds it inside a data-reading task.",
+      "inclusion_test": "The question presents data in a table, chart, or graph, and the student must first extract the relevant numerical values before performing a percent calculation. The data-reading step is essential -- without it, the values for the percent computation are not available.",
+      "evidence_ids": [
+        "6e4a60dd",
+        "048811bd",
+        "7ed0d098",
+        "949cd96b",
+        "566759ef",
+        "7b731fc3",
+        "8cbf1415",
+        "d693f563",
+        "67c0200a"
+      ]
+    },
+    {
+      "id": "PRB.1",
+      "skill_code": "Probability and Conditional Probability",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Whole-Group Probability",
+      "definition": "Compute the probability of an event by dividing the number of favorable outcomes by the total number of outcomes, where the sample space is the entire population (no restricting condition). Includes reading counts from lists, frequency tables, two-way tables (using row/column totals), or word problems. The unknown is the probability; the counts are given or directly readable.",
+      "inclusion_test": "Two independent taggers agree: (1) the question asks for a probability, proportion, or fraction; (2) the sample space is the entire group (no 'given that', 'of those', 'among [subset]' restriction); (3) the favorable and total counts are given or directly computable from the data without algebraic rearrangement of a probability equation.",
+      "evidence_ids": [
+        "4e527894",
+        "0a99e5bb",
+        "c943acba",
+        "b8150b17",
+        "1b8e412e",
+        "dae79de4",
+        "a478f9f5",
+        "2a08d878",
+        "12dbe3de",
+        "79201024",
+        "ec7b0eb8",
+        "2905ded0",
+        "e5b5fbdd",
+        "60caadfd",
+        "47624288",
+        "16cea46c",
+        "d89c1513",
+        "1353b86e",
+        "b1b5300b",
+        "0301c5dc",
+        "2df8f293",
+        "38a9ac45",
+        "46b2e169",
+        "e9ed719f",
+        "0ae37ff3"
+      ]
+    },
+    {
+      "id": "PRB.2",
+      "skill_code": "Probability and Conditional Probability",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Conditional Probability",
+      "definition": "Compute the probability of an event within a restricted sample space. The question restricts to a subset of the population using language like 'given that', 'of those', 'among', 'if [condition]', or 'of the [subset]', then asks for the probability within that subset. The student must identify the restricted total (denominator) and the favorable count within the restriction (numerator).",
+      "inclusion_test": "Two independent taggers agree: (1) the question explicitly restricts the sample space to a named subset before asking for a probability or fraction; (2) the denominator is not the whole-group total but a row total, column total, or sum of a defined subset; (3) the favorable count is read from within the restricted subset.",
+      "evidence_ids": [
+        "46545dd6",
+        "e1ad3d41",
+        "912cd125",
+        "b6569d0e",
+        "f8696cd8",
+        "89f20d9e",
+        "014c47ab",
+        "5dc386fb",
+        "6a715bed",
+        "e438ec3f"
+      ]
+    },
+    {
+      "id": "PRB.3",
+      "skill_code": "Probability and Conditional Probability",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Find Count from Probability",
+      "definition": "Given a probability (or proportion/fraction) and a total (or enough information to determine the total), solve algebraically for an unknown count. The solving direction is reversed compared to PRB.1: the probability is given, the count is unknown. The student sets up P = count / total and solves for count, or uses equivalent algebraic reasoning.",
+      "inclusion_test": "Two independent taggers agree: (1) the question provides a probability, proportion, or fraction as a given value; (2) the unknown being solved for is a count (number of items, people, etc.), not a probability; (3) the student must algebraically rearrange a probability equation or multiply a fraction by a total to find the count.",
+      "evidence_ids": [
+        "1dcea480",
+        "1fc4f47b",
+        "30db8f77",
+        "a3384df0",
+        "585de39a",
+        "d4413871"
+      ]
+    },
+    {
+      "id": "OVD.1",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Read or Interpret a Data Display",
+      "definition": "Read a single value, count, frequency, difference, or structural feature directly from a bar graph, dot plot, box plot, histogram, frequency table, or data table. No computation of a summary statistic (mean, median, mode, range, SD) from raw data is required -- the answer comes from reading the display.",
+      "inclusion_test": "The question is answered entirely by locating and reading one or more values on a graphical display or table, possibly subtracting two read values or summing displayed frequencies. The student does NOT need to apply the mean formula, order-and-locate for median, or compute range/SD.",
+      "evidence_ids": [
+        "93779b53",
+        "79340403",
+        "820d7a73",
+        "6e3ab4bf",
+        "80f1f3a9",
+        "29fa7970",
+        "fe6a49d6",
+        "a067c926",
+        "57481175",
+        "15d87c0f",
+        "ea95087d",
+        "d1db8def",
+        "57f45509",
+        "374b18f9",
+        "52f9a246",
+        "560fab82",
+        "a456cfd2"
+      ]
+    },
+    {
+      "id": "OVD.2",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Compute the Mean",
+      "definition": "Calculate the arithmetic mean of a data set by summing all values (or using frequency-weighted sums) and dividing by the number of data points. Includes computing mean from a list, a table, a bar graph, or a frequency table.",
+      "inclusion_test": "The question explicitly asks for the mean (or average) and the primary solving step is applying sum/count. The student must perform the computation rather than just reading a value or reasoning conceptually.",
+      "evidence_ids": [
+        "a9647302",
+        "4bb25495",
+        "7760c516",
+        "fa7a0164",
+        "4b09f783",
+        "12dae628",
+        "a29e89fc",
+        "bf47ad54",
+        "c178d4da"
+      ]
+    },
+    {
+      "id": "OVD.3",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Find the Median",
+      "definition": "Determine the median of a data set by ordering values and locating the middle value (odd count) or the average of the two middle values (even count). Includes finding the median from a list, a frequency table, or a grouped frequency table using cumulative counts.",
+      "inclusion_test": "The question asks for the median or requires finding the median as the main step. The student must order data and locate the positional middle, possibly using cumulative frequency.",
+      "evidence_ids": [
+        "66f03086",
+        "35bec412",
+        "f890dc20",
+        "bfa8a85c",
+        "a5b069b4",
+        "7b65bb28",
+        "9e2bf782",
+        "07f2829b",
+        "94237701",
+        "9d935bd8",
+        "ecbdbe84"
+      ]
+    },
+    {
+      "id": "OVD.4",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Compute the Range",
+      "definition": "Find the range of a data set by identifying the maximum and minimum values and subtracting. Includes reading range from box plots or tables.",
+      "inclusion_test": "The question asks for the range, or the primary computation is max minus min. May require reading max/min from a display first.",
+      "evidence_ids": [
+        "c54b92a2",
+        "f52123e0",
+        "6c9444cd"
+      ]
+    },
+    {
+      "id": "OVD.5",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Compare or Relate Measures of Center and Spread",
+      "definition": "Compare mean vs. median, determine their relative order given distribution shape or outliers, identify which statistic is or is not a given value, determine what can or cannot be computed from given information, or compare measures across two data sets conceptually.",
+      "inclusion_test": "The question requires reasoning about the relationship between two or more statistical measures (mean, median, mode, range) rather than just computing one of them. Includes identifying a statistic by its properties, comparing statistics between groups, and understanding how skewness or outliers affect mean vs. median.",
+      "evidence_ids": [
+        "6670e407",
+        "869a32f1",
+        "55cfaf22",
+        "708590d7",
+        "c88e0663",
+        "9110c120",
+        "be00d896",
+        "4c774b00",
+        "881ef5f5",
+        "c3d65f93",
+        "3f2ee20a",
+        "1142af44",
+        "d3b9c8d8"
+      ]
+    },
+    {
+      "id": "OVD.6",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Effect of Data Changes on Statistics",
+      "definition": "Determine how adding, removing, or modifying values in a data set -- or adding a constant to all values -- affects measures of center (mean, median) and/or spread (range, standard deviation). Includes reasoning about whether a statistic stays the same, increases, or decreases.",
+      "inclusion_test": "The question describes a modification to a data set (add a value, remove a value, change a value, add a constant to all values, split values around median) and asks which statistics change or stay the same, or how specific statistics are affected.",
+      "evidence_ids": [
+        "578e26ae",
+        "5c3c2e3c",
+        "4626102e",
+        "e7d48c8a",
+        "241f1db7",
+        "391ae4b2",
+        "457d2f2c"
+      ]
+    },
+    {
+      "id": "OVD.7",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Solve for an Unknown Using the Mean (Including Weighted Mean)",
+      "definition": "Given the mean (or a target mean) and all but one data value (or group total), set up the mean equation and solve for the unknown. Includes combined/weighted mean problems where two or more data sets with different sizes are merged and the overall mean must be found or an unknown group value recovered.",
+      "inclusion_test": "The question provides a mean (stated or target) and enough data to set up a sum equation with one unknown. The student must solve algebraically for the missing value. Also includes problems requiring the weighted-average formula to combine group means.",
+      "evidence_ids": [
+        "8736334b",
+        "d0efc1dd",
+        "54d93874",
+        "4ff597db",
+        "1e8ccffd",
+        "190be2fc",
+        "8193e8cd",
+        "2a59eb45",
+        "98958ae8"
+      ]
+    },
+    {
+      "id": "OVD.8",
+      "skill_code": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Compare Standard Deviations from Distributions",
+      "definition": "Compare the standard deviations (spread) of two or more data sets by visually inspecting their distributions in histograms, dot plots, or other displays. Understand that more concentrated distributions have smaller SD and that shifting a distribution does not change SD.",
+      "inclusion_test": "The question shows two or more distributions (as histograms, dot plots, or described data sets) and asks the student to compare their standard deviations or determine which has greater/lesser spread, based on visual reasoning about how concentrated the values are around the mean.",
+      "evidence_ids": [
+        "25fc031a",
+        "d94018fd",
+        "d65b9a87",
+        "f8a322d9"
+      ]
+    },
+    {
+      "id": "TVD.1",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Read Values from Graphs and Scatterplots",
+      "definition": "Read coordinates of data points, identify maxima or minima, compare plotted values, or compute simple differences between data values shown directly on a graph, scatterplot, or line graph -- without using a model equation or line of best fit.",
+      "inclusion_test": "Does the question ask the student to read, locate, or compare one or more data values directly from a graph or scatterplot?",
+      "evidence_ids": [
+        "8d63b6f1",
+        "2e511919",
+        "b58dbf88",
+        "13f67ddc",
+        "74dee52b",
+        "4a2264b3",
+        "d6121490",
+        "9d88a3e3"
+      ]
+    },
+    {
+      "id": "TVD.2",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Make Predictions Using a Line or Curve of Best Fit",
+      "definition": "Use a drawn line of best fit, a drawn curve, or a given model equation to predict a y-value at a specified x-value, or interpolate/extrapolate a value from the model.",
+      "inclusion_test": "Does the question ask for a predicted, estimated, or modeled value at a specific input using a line or curve of best fit?",
+      "evidence_ids": [
+        "cf0ae57a",
+        "bc59c2d9",
+        "5c24c861",
+        "ae32cc3c",
+        "c9dd92b1",
+        "ac5b6558",
+        "8156d446",
+        "f46139df",
+        "fdfc90e4"
+      ]
+    },
+    {
+      "id": "TVD.3",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Estimate the Slope of a Line of Best Fit",
+      "definition": "Determine the approximate slope of a line of best fit by selecting two points on the drawn line and computing rise over run ((y2 - y1) / (x2 - x1)).",
+      "inclusion_test": "Does the question ask the student to find or approximate the slope of a line of best fit shown on a scatterplot?",
+      "evidence_ids": [
+        "39aa146d",
+        "2e74e403",
+        "03a16790",
+        "90ba8f98",
+        "4cc05491",
+        "24a1e6a7"
+      ]
+    },
+    {
+      "id": "TVD.4",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Select or Write the Equation of a Line of Best Fit",
+      "definition": "From a scatterplot (with or without a drawn line), select from multiple-choice options or write the linear equation y = mx + b that best represents the data, by determining the slope and y-intercept.",
+      "inclusion_test": "Does the question ask the student to choose or write a linear equation (y = mx + b) that represents a line of best fit for scatterplot data?",
+      "evidence_ids": [
+        "5f3ee607",
+        "9296553d",
+        "c5ee6ac0",
+        "16988f9c",
+        "d230e963",
+        "8baf2118",
+        "3c5b19ef",
+        "3d985614",
+        "9eb896c5",
+        "50b2807e",
+        "1e1027a7",
+        "79137c1b"
+      ]
+    },
+    {
+      "id": "TVD.5",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Identify the Appropriate Model Type",
+      "definition": "Given data presented in a table, graph, or verbal description, determine whether the relationship is best modeled by a linear, quadratic, or exponential function, or identify the direction of association (positive, negative, or no association).",
+      "inclusion_test": "Does the question ask the student to classify a relationship as linear, quadratic, or exponential, or to describe the direction/type of association?",
+      "evidence_ids": [
+        "a03b7e02",
+        "c141366d",
+        "43744269",
+        "15ce8207",
+        "661dfddd",
+        "7ac5d686",
+        "9a144a01",
+        "ab7740a8",
+        "58171b5e",
+        "9b5b23fc",
+        "af142f8d"
+      ]
+    },
+    {
+      "id": "TVD.6",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Compute Average Rate of Change Between Intervals",
+      "definition": "Calculate the average rate of change (y2 - y1) / (x2 - x1) between two data points or identify the interval with the greatest or least change from a graph or table.",
+      "inclusion_test": "Does the question ask the student to compute an average rate of change or identify the interval with the greatest/least change?",
+      "evidence_ids": [
+        "d112bc9d",
+        "a6b2fcce",
+        "83272c51",
+        "9bb4107c",
+        "e24765e6",
+        "7b52985c"
+      ]
+    },
+    {
+      "id": "TVD.7",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Evaluate Residuals and Deviations from a Model",
+      "definition": "Compute a residual (actual value minus predicted value) for a data point, or count the number of data points that lie above or below a line of best fit.",
+      "inclusion_test": "Does the question ask the student to compute a residual or count data points above/below a model?",
+      "evidence_ids": [
+        "1adb39f0",
+        "7fd284ac",
+        "e17babed",
+        "ad7dbb22"
+      ]
+    },
+    {
+      "id": "TVD.8",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Interpret Slope or Intercept in Real-World Context",
+      "definition": "Explain what the slope or y-intercept of a line of best fit represents in the real-world context of the problem, including unit-rate interpretations and contextual meaning.",
+      "inclusion_test": "Does the question ask the student to interpret the meaning of the slope or y-intercept of a model in a real-world context?",
+      "evidence_ids": [
+        "d6af3572",
+        "d0430601",
+        "9d95e7ad"
+      ]
+    },
+    {
+      "id": "TVD.9",
+      "skill_code": "Two-Variable Data: Models and Scatterplots",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Select or Determine a Nonlinear Model Equation",
+      "definition": "Choose or construct a quadratic or exponential equation that fits given data, determine parameters (such as the base of an exponential), or apply a transformation to a model when data are scaled or shifted.",
+      "inclusion_test": "Does the question ask the student to select, write, or determine parameters for a nonlinear (quadratic or exponential) model equation?",
+      "evidence_ids": [
+        "82aaa0a1",
+        "e821a26d",
+        "fb866265",
+        "2e8027b0"
+      ]
+    },
+    {
+      "id": "INFS.1",
+      "skill_code": "Inference from Sample Statistics and Margin of Error",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Interpreting Margin of Error",
+      "definition": "Given a point estimate (sample mean or proportion) and an associated margin of error, construct and interpret the interval of plausible values for the population parameter, including evaluating whether specific values fall within or outside that interval and understanding factors that affect margin of error size.",
+      "inclusion_test": "Does the question provide (or require the student to use) both a point estimate AND a stated margin of error to reason about what the population parameter plausibly is? If yes, INFS.1. If the question gives only a sample statistic and asks the student to scale it to a population count without any margin of error, it is INFS.2.",
+      "evidence_ids": [
+        "8173f32b",
+        "6a305cd0",
+        "0108ac2d",
+        "2c76bcce",
+        "1e562f24",
+        "4096a482",
+        "9bedc4a0",
+        "a2162ea1",
+        "e03f3477",
+        "f8f79e11",
+        "f04d40b2",
+        "fc46af57",
+        "85939da5",
+        "308084c5"
+      ]
+    },
+    {
+      "id": "INFS.2",
+      "skill_code": "Inference from Sample Statistics and Margin of Error",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Estimating Population Values from Samples",
+      "definition": "Use a sample proportion or sample mean to estimate a population total or count, by scaling the sample statistic to the full population size, including identifying the correct population to which the sample result applies.",
+      "inclusion_test": "Does the question give a sample statistic (count, proportion, or mean) WITHOUT a margin of error and ask the student to estimate a population total or count by scaling? If yes, INFS.2. If the question involves a stated margin of error to construct an interval, it is INFS.1 (even if it also requires scaling).",
+      "evidence_ids": [
+        "97631565",
+        "e7d9649f",
+        "90eed2e5",
+        "affb2315",
+        "9ee22c16",
+        "89f8d08a",
+        "f4b3672a",
+        "53d97af5",
+        "9ba3e283",
+        "916ffe9b"
+      ]
+    },
+    {
+      "id": "ESC.1",
+      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Determining Generalization Scope",
+      "definition": "Given a study with a random sample drawn from a specific population, identify the largest group to which the results can be generalized -- the population from which the sample was selected, no broader.",
+      "inclusion_test": "Does the question describe a random sample from a defined population and ask which group the results apply to, or ask the student to select the correct scope of the conclusion? If yes, ESC.1. If the question instead asks the student to detect a flaw in the sampling method, it is ESC.2.",
+      "evidence_ids": [
+        "82dfb646",
+        "b4f5a7ca",
+        "6fca0144",
+        "7ce2830a",
+        "7d68096f",
+        "1ea09200"
+      ]
+    },
+    {
+      "id": "ESC.2",
+      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Identifying Sampling Bias",
+      "definition": "Recognize when a sampling method is flawed because the sample is not representative of the target population, due to convenience sampling, voluntary response, or selection from a non-representative subgroup.",
+      "inclusion_test": "Does the question describe a sampling method that is NOT random from the target population and ask the student to identify the flaw, explain why results are unreliable, or select the correct criticism? If yes, ESC.2. If the sample IS random and the question is about scope, it is ESC.1.",
+      "evidence_ids": [
+        "9bf4c545",
+        "4a422e3e",
+        "aa43b41f"
+      ]
+    },
+    {
+      "id": "ESC.3",
+      "skill_code": "Evaluating Statistical Claims: Observational Studies and Experiments",
+      "section": "M",
+      "domain": "Problem Solving and Data Analysis",
+      "name": "Understanding Sample Variability",
+      "definition": "Recognize that a sample statistic is an estimate of the population parameter, not an exact value, and that different random samples from the same population can yield different results.",
+      "inclusion_test": "Does the question present a sample result and ask whether specific statements about the exact population value or future sample results MUST be true? If the correct answer is that such statements are NOT guaranteed, it is ESC.3. If the question is about who the results apply to, it is ESC.1; if about a flawed method, ESC.2.",
+      "evidence_ids": [
+        "37930b2a",
+        "642519d7"
       ]
     }
   ],
@@ -9498,36 +9346,36 @@
     {
       "id": "CL.0231",
       "display_name": "Direct Factor Application",
-      "family": "RAT",
+      "family": "by_hand_doing",
       "definition": "Problems solved by a single multiplication or division using a given conversion factor or rate. The student identifies whether to multiply or divide and applies the factor once.",
       "evidence_ids": [
-        "000259aa",
-        "0700a2d5",
-        "2cdefcb1",
-        "2d16d62c",
-        "3318d37b",
-        "4347a032",
         "4e375d1f",
-        "551c52b9",
-        "7270d642",
         "763e6769",
         "808f7d6c",
-        "86636d8f",
-        "8bf3f67a",
-        "94660ba8",
         "99550621",
-        "aeeaec96",
+        "551c52b9",
+        "2cdefcb1",
         "ba62b0b0",
-        "be35c117",
+        "0700a2d5",
         "c81499e1",
+        "aeeaec96",
+        "2d16d62c",
+        "4347a032",
+        "3318d37b",
+        "94660ba8",
+        "8bf3f67a",
+        "7270d642",
         "d0d9ede4",
+        "fe4c1c9e",
+        "86636d8f",
         "fe1ec415",
-        "fe4c1c9e"
+        "be35c117",
+        "000259aa"
       ],
       "evidence_count": 22,
       "core": true,
       "skills_seen_in": [
-        "RAT"
+        "Ratios, Rates, Proportional Relationships, and Units"
       ],
       "method_in": [],
       "aliases": []
@@ -9535,35 +9383,35 @@
     {
       "id": "CL.0232",
       "display_name": "Cross-Multiplication",
-      "family": "RAT",
+      "family": "by_hand_doing",
       "definition": "Problems solved by setting up two equivalent ratios as a proportion (a/b = c/d), cross-multiplying, and solving the resulting linear equation for the unknown. Includes finding missing table entries via constant-ratio reasoning.",
       "evidence_ids": [
-        "11b06e35",
-        "181cc4d6",
-        "24ad9dcb",
-        "312ba47c",
-        "3ac09984",
-        "3f236a64",
-        "3f5398a6",
-        "445dd032",
         "4837406c",
-        "568bc2a4",
+        "3ac09984",
+        "24ad9dcb",
         "6310adbc",
-        "73ddfdac",
-        "7cd1c6db",
-        "825b7490",
-        "8637294f",
-        "9fa781f8",
-        "c47256ca",
         "da9ffcf6",
-        "e9841407",
+        "3f5398a6",
+        "568bc2a4",
         "eb672707",
+        "73ddfdac",
+        "445dd032",
+        "9fa781f8",
+        "825b7490",
+        "181cc4d6",
+        "11b06e35",
+        "8637294f",
+        "e9841407",
+        "c47256ca",
+        "3f236a64",
+        "312ba47c",
+        "7cd1c6db",
         "ec787383"
       ],
       "evidence_count": 21,
       "core": true,
       "skills_seen_in": [
-        "RAT"
+        "Ratios, Rates, Proportional Relationships, and Units"
       ],
       "method_in": [],
       "aliases": []
@@ -9571,22 +9419,22 @@
     {
       "id": "CL.0233",
       "display_name": "Ratio-to-Expression Translation",
-      "family": "RAT",
+      "family": "by_hand_doing",
       "definition": "Problems solved by interpreting a stated ratio and translating it into an algebraic expression involving a variable. The student must understand that scaling both parts of a ratio by the same factor preserves the ratio.",
       "evidence_ids": [
-        "1180401d",
-        "1d945139",
-        "5154615f",
-        "674a4084",
-        "7e6c745f",
+        "d7a3179d",
         "85b33aa8",
+        "674a4084",
+        "1180401d",
+        "7e6c745f",
+        "1d945139",
         "c3d78831",
-        "d7a3179d"
+        "5154615f"
       ],
       "evidence_count": 8,
       "core": true,
       "skills_seen_in": [
-        "RAT"
+        "Ratios, Rates, Proportional Relationships, and Units"
       ],
       "method_in": [],
       "aliases": []
@@ -9594,31 +9442,31 @@
     {
       "id": "CL.0234",
       "display_name": "Conversion-Factor Chaining",
-      "family": "RAT",
+      "family": "by_hand_doing",
       "definition": "Problems solved by multiplying or dividing by two or more conversion factors in sequence, including squaring or cubing a linear factor for area/volume unit conversions.",
       "evidence_ids": [
         "06a152cd",
-        "1b403590",
-        "20b69297",
-        "3310c2ab",
-        "3638f413",
         "3c8fdc40",
-        "50b99b2d",
         "51c9d65f",
-        "61f61789",
+        "f6cbb04a",
+        "939c46d1",
+        "1b403590",
+        "fea831fc",
+        "3310c2ab",
+        "d28c29e1",
+        "cb4894f9",
+        "20b69297",
+        "50b99b2d",
         "7d721177",
         "873d2838",
-        "939c46d1",
-        "cb4894f9",
-        "d28c29e1",
         "d6456c7a",
-        "f6cbb04a",
-        "fea831fc"
+        "61f61789",
+        "3638f413"
       ],
       "evidence_count": 17,
       "core": true,
       "skills_seen_in": [
-        "RAT"
+        "Ratios, Rates, Proportional Relationships, and Units"
       ],
       "method_in": [],
       "aliases": []
@@ -9626,21 +9474,21 @@
     {
       "id": "CL.0235",
       "display_name": "Density Formula Application",
-      "family": "RAT",
+      "family": "by_hand_doing",
       "definition": "Problems solved by applying the density formula (density = total / area-or-volume), rearranging to solve for the unknown quantity, and in some cases first computing volume from a side length using V = s^3.",
       "evidence_ids": [
+        "e3d49511",
         "15617f62",
-        "7d093333",
-        "8e528129",
-        "96c3e32d",
-        "c7c6445f",
         "e21d10a7",
-        "e3d49511"
+        "96c3e32d",
+        "8e528129",
+        "7d093333",
+        "c7c6445f"
       ],
       "evidence_count": 7,
       "core": true,
       "skills_seen_in": [
-        "RAT"
+        "Ratios, Rates, Proportional Relationships, and Units"
       ],
       "method_in": [],
       "aliases": []
@@ -9648,309 +9496,231 @@
     {
       "id": "CL.0236",
       "display_name": "Multi-Operation Rate-Proportion Composition",
-      "family": "RAT",
+      "family": "by_hand_doing",
       "definition": "Problems requiring a primary rate or proportion step followed by one or more additional arithmetic operations: percentage calculation, subtraction of two derived quantities, algebraic substitution, scale-factor geometry, or currency conversion with surcharge.",
       "evidence_ids": [
-        "21e539a0",
-        "3726e079",
-        "61b87506",
-        "69f6717f",
-        "8917ce38",
         "89c39d77",
+        "61b87506",
+        "8917ce38",
+        "3726e079",
         "b4912cc5",
+        "21e539a0",
         "c2e7fa6d",
-        "e7133228"
+        "e7133228",
+        "69f6717f"
       ],
       "evidence_count": 9,
       "core": true,
       "skills_seen_in": [
-        "RAT"
+        "Ratios, Rates, Proportional Relationships, and Units"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0237",
-      "display_name": "Direct numeric computation",
-      "family": "PCT",
-      "definition": "Compute p% of N to get a number. Straightforward multiplication with concrete values.",
+      "display_name": "Proportion Setup and Solve",
+      "family": "by_hand_doing",
+      "definition": "The student sets up the proportion part/whole = rate/100 (or its equivalent: part = rate/100 * whole) and solves for the single unknown by one multiplication or one division. This is the foundational solving pattern for PCT.1, PCT.2, and PCT.3.",
       "evidence_ids": [
-        "048811bd",
-        "273b7f37",
-        "284303f1",
-        "28c6bd8c",
-        "29c177e6",
-        "34e18ce4",
-        "6e4a60dd",
+        "eaab8bc1",
         "771ee744",
-        "77cf4fa6",
-        "7ed0d098",
-        "8213b1b3",
-        "8784bc84",
-        "9c44f828",
-        "a8fabad0",
+        "34e18ce4",
+        "93724cc6",
         "bb7c8186",
-        "dccdb20c",
-        "eaab8bc1"
+        "e9fb7774"
       ],
-      "evidence_count": 17,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0238",
-      "display_name": "Algebraic percent-of expression",
-      "family": "PCT",
-      "definition": "Express p% of N (or of x servings, etc.) as a formula in a variable. Same multiplication, but the answer is an expression rather than a number.",
+      "display_name": "Percent-Change Formula Application",
+      "family": "by_hand_doing",
+      "definition": "The student identifies old and new values, computes their difference, divides by the old value, and multiplies by 100. May include a preliminary step of reading values from data. This is the solving pattern for PCT.5.",
       "evidence_ids": [
-        "954943a4"
+        "1c2f50a6",
+        "bd90f87e",
+        "709e04de",
+        "0231050d"
       ],
-      "evidence_count": 1,
+      "evidence_count": 4,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0239",
-      "display_name": "Find the percent",
-      "family": "PCT",
-      "definition": "Given the part P and the whole W, compute p = (P/W) * 100. Student divides part by whole and converts to percent.",
+      "display_name": "Single-Multiplier Construction or Interpretation",
+      "family": "by_hand_doing",
+      "definition": "The student converts a verbal percent relationship into a single decimal multiplier ((1+r/100) or (1-r/100)) and either applies it to compute a value (PCT.4), writes it as an expression (PCT.7), or reads it from a given expression (PCT.8). The key step is recognizing the equivalence between 'p% more than x' and '(1 + p/100) * x'.",
       "evidence_ids": [
-        "2d31caae",
-        "3a6ed720",
-        "40e7a1a9",
-        "54cb53cf",
-        "7f84b136",
-        "94c65646",
-        "ba0e23b0",
-        "e9f4521a",
-        "e9fb7774"
+        "d72a2b4d",
+        "9c44f828",
+        "ad1d6adb",
+        "c256b723",
+        "1baffbcf",
+        "194ae3b1"
       ],
-      "evidence_count": 9,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0240",
-      "display_name": "Find the whole",
-      "family": "PCT",
-      "definition": "Given the part P and the percent p, compute W = P / (p/100). Student divides part by decimal percent to find the total.",
+      "display_name": "Multiplier Chaining",
+      "family": "by_hand_doing",
+      "definition": "The student constructs and composes two or more multipliers in sequence: multiply the quantity by the first multiplier, then by the second. For markup-then-discount: final = original * (1 + markup/100) * (1 - discount/100). The key insight is that the second percent acts on the intermediate result, not the original.",
       "evidence_ids": [
-        "05195d8a",
-        "65c49824",
-        "93724cc6",
-        "d72a2b4d"
+        "34f8cd89",
+        "54cb53cf",
+        "b2f6f17d",
+        "5267c3c7",
+        "a0b165f8",
+        "3d73a58b"
       ],
-      "evidence_count": 4,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0241",
-      "display_name": "Apply forward (compute result after increase/decrease)",
-      "family": "PCT",
-      "definition": "Given the original value and the percent change, compute the new value: original * (1 +/- p/100). Includes sales tax additions, markups, discounts, and growth.",
+      "display_name": "Reverse Division (Undo a Percent)",
+      "family": "by_hand_doing",
+      "definition": "The student divides a known result by the multiplier that produced it to recover the original value. For example, if the final price after a 20% discount is $80, divide by 0.80 to get the original $100. The key step is recognizing that undoing a percent requires division, not subtraction.",
       "evidence_ids": [
-        "121dc44f",
-        "191d167b",
-        "194ae3b1",
-        "1c2f50a6",
+        "94c65646",
+        "63573fea",
         "2afd3cec",
-        "41b71b4e",
-        "5267c3c7",
-        "7b731fc3",
-        "86684ce9",
-        "8705ecba",
-        "949cd96b",
-        "96a45430",
-        "a0b165f8",
-        "ba61d95f",
-        "d693f563"
+        "05195d8a"
       ],
-      "evidence_count": 15,
+      "evidence_count": 4,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0242",
-      "display_name": "Undo/reverse (find original from result)",
-      "family": "PCT",
-      "definition": "Given the result after a percent increase/decrease, work backward to find the original value: result / (1 +/- p/100). The student must recognize that the base for the percent is the unknown original, not the given result.",
+      "display_name": "Transitive Substitution Across Percent Links",
+      "family": "by_hand_doing",
+      "definition": "The student expresses each quantity in terms of another using a = (p/100)*b notation, substitutes one equation into another to eliminate the intermediate variable, and simplifies to find the target percent. For example: a = 2.30b and a = 0.60c yields c = 2.30b/0.60 = 3.833b, so c is approximately 383% of b.",
       "evidence_ids": [
-        "7cab9fe1",
-        "8a714fa1",
-        "8e2e424e"
+        "8213b1b3",
+        "993000da",
+        "2e92cc21",
+        "4aaa9c42",
+        "623dbebb",
+        "e635aede"
       ],
-      "evidence_count": 3,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0243",
-      "display_name": "Interpret multiplier as percent change",
-      "family": "PCT",
-      "definition": "Given an algebraic expression like 0.35x or 1.09x, determine what percent increase or decrease it represents. The student works backward from the multiplier to the percent.",
+      "display_name": "Data Extraction Then Percent Computation",
+      "family": "by_hand_doing",
+      "definition": "The student reads one or more numerical values from a table, bar chart, or line graph, then performs a percent calculation (find part, find percent, or percent change) on the extracted values. The data-reading step precedes and is prerequisite to the percent step.",
       "evidence_ids": [
-        "1baffbcf"
+        "6e4a60dd",
+        "566759ef",
+        "7b731fc3",
+        "d693f563",
+        "67c0200a",
+        "0ea56bb2"
       ],
-      "evidence_count": 1,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0244",
-      "display_name": "Direct percent change computation",
-      "family": "PCT",
-      "definition": "Apply the percent-change formula to two given or table/graph-read values. This is the only solving pattern for PCT.4; complexity comes from the context (tables, graphs, word problems), not from variation in the mathematical procedure.",
+      "display_name": "Nested Subset Computation",
+      "family": "by_hand_doing",
+      "definition": "The student applies a first percent to a total to get a subtotal, then applies a second percent to that subtotal (not to the original total). Alternatively, the student uses complementary percents (100% minus the sum of stated percents) to find a remainder category, then works with that remainder. The key step is recognizing which quantity each percent applies to.",
       "evidence_ids": [
-        "0231050d",
-        "63573fea",
-        "709e04de",
-        "ad1d6adb",
-        "b2f6f17d",
-        "bd90f87e"
+        "022e9894",
+        "040f2a84",
+        "65c49824",
+        "86684ce9"
       ],
-      "evidence_count": 6,
+      "evidence_count": 4,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Percentages"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0245",
-      "display_name": "Sequential percent-of computation",
-      "family": "PCT",
-      "definition": "Compute p1% of N, then p2% of that result. Concrete values at each step; the student chains two or more multiplications. Includes 'percent of the people who... percent of those...' patterns.",
+      "display_name": "Direct Ratio from Counts",
+      "family": "by_hand_doing",
       "evidence_ids": [
-        "022e9894",
-        "040f2a84",
-        "1fbd3b67",
-        "20845d36",
-        "25faa756",
-        "2e92cc21",
-        "34f8cd89",
-        "3d73a58b",
-        "566759ef",
-        "623dbebb",
-        "67c0200a",
-        "8c5dbd3e",
-        "8cbf1415",
-        "ad911622",
-        "c256b723",
-        "e635aede"
+        "4e527894",
+        "0a99e5bb",
+        "c943acba",
+        "b8150b17",
+        "1b8e412e",
+        "dae79de4",
+        "a478f9f5",
+        "12dbe3de",
+        "79201024",
+        "ec7b0eb8",
+        "2905ded0",
+        "e5b5fbdd",
+        "60caadfd",
+        "47624288",
+        "16cea46c",
+        "d89c1513",
+        "1353b86e",
+        "b1b5300b",
+        "0301c5dc",
+        "2df8f293",
+        "46b2e169",
+        "e9ed719f",
+        "38a9ac45"
       ],
-      "evidence_count": 16,
+      "evidence_count": 23,
       "core": true,
       "skills_seen_in": [
-        "PCT"
+        "Probability and Conditional Probability"
       ],
       "method_in": [],
-      "aliases": []
+      "aliases": [],
+      "definition": "Compute the probability of an event by counting the favorable outcomes and dividing by the total number of equally likely outcomes. The favorable and total counts are given directly or can be read from a single description."
     },
     {
       "id": "CL.0246",
-      "display_name": "Algebraic chaining (percent-of-percent via equations)",
-      "family": "PCT",
-      "definition": "Quantities are defined as percents of each other through two or more relationships (e.g., a = 230% of b, a = 60% of c, find c as p% of b). The student sets up and solves a system of equations, substituting one relationship into another.",
-      "evidence_ids": [
-        "4aaa9c42",
-        "993000da"
-      ],
-      "evidence_count": 2,
-      "core": true,
-      "skills_seen_in": [
-        "PCT"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0247",
-      "display_name": "Percent change then apply",
-      "family": "PCT",
-      "definition": "Compute a percent change between two values, then apply that percent (or a fraction/multiple of it) to a different base. Combines PCT.4-style computation with PCT.3-style application across different bases.",
-      "evidence_ids": [
-        "0ea56bb2"
-      ],
-      "evidence_count": 1,
-      "core": true,
-      "skills_seen_in": [
-        "PCT"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0248",
-      "display_name": "Direct Ratio from Counts",
-      "family": "PRB",
-      "definition": "",
-      "evidence_ids": [
-        "0301c5dc",
-        "0a99e5bb",
-        "12dbe3de",
-        "1353b86e",
-        "16cea46c",
-        "1b8e412e",
-        "2905ded0",
-        "2df8f293",
-        "46b2e169",
-        "47624288",
-        "4e527894",
-        "60caadfd",
-        "79201024",
-        "a478f9f5",
-        "b1b5300b",
-        "b8150b17",
-        "c943acba",
-        "d89c1513",
-        "dae79de4",
-        "e5b5fbdd",
-        "e9ed719f",
-        "ec7b0eb8"
-      ],
-      "evidence_count": 22,
-      "core": true,
-      "skills_seen_in": [
-        "PRB"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0249",
       "display_name": "Probability via Complement or Multi-Step Counting",
-      "family": "PRB",
-      "definition": "",
+      "family": "by_hand_doing",
       "evidence_ids": [
         "0ae37ff3",
         "2a08d878",
@@ -9959,334 +9729,277 @@
       "evidence_count": 3,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "Probability and Conditional Probability"
       ],
       "method_in": [],
-      "aliases": []
+      "aliases": [],
+      "definition": "Compute a probability that requires either complement reasoning (P = 1 - P(not event)) or combining counts from multiple groups before forming the ratio. The favorable count is not directly stated but must be derived."
     },
     {
-      "id": "CL.0250",
-      "display_name": "Restrict Sample Space for Conditional Probability",
-      "family": "PRB",
-      "definition": "Identify the conditioning event, restrict the denominator to the subgroup satisfying that condition, then find the count of the target event within that subgroup and divide.",
+      "id": "CL.0247",
+      "display_name": "Restricted Sample Space Ratio",
+      "family": "by_hand_doing",
       "evidence_ids": [
-        "014c47ab",
         "46545dd6",
-        "5dc386fb",
-        "6a715bed",
-        "89f20d9e",
+        "e1ad3d41",
         "912cd125",
         "b6569d0e",
-        "e1ad3d41",
-        "e438ec3f",
-        "f8696cd8"
+        "f8696cd8",
+        "89f20d9e",
+        "014c47ab",
+        "5dc386fb",
+        "6a715bed",
+        "e438ec3f"
       ],
       "evidence_count": 10,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "Probability and Conditional Probability"
       ],
       "method_in": [],
-      "aliases": []
+      "aliases": [],
+      "definition": "Compute a conditional probability by restricting the sample space to a given condition, then finding the ratio of favorable outcomes within that restricted space. Often involves reading a row, column, or subset from a table."
     },
     {
-      "id": "CL.0251",
-      "display_name": "Direct Count from Probability (Multiply)",
-      "family": "PRB",
-      "definition": "",
+      "id": "CL.0248",
+      "display_name": "Count Recovery from Probability",
+      "family": "by_hand_doing",
       "evidence_ids": [
         "1dcea480",
         "585de39a",
-        "a3384df0"
+        "a3384df0",
+        "b680e76d",
+        "1fc4f47b",
+        "30db8f77"
       ],
-      "evidence_count": 3,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "Probability and Conditional Probability"
+      ],
+      "method_in": [],
+      "aliases": [],
+      "definition": "Reverse the probability formula: given P(event) and the total (or the count and P), solve for the missing count. May require complement reasoning or subtracting known counts first."
+    },
+    {
+      "id": "CL.0249",
+      "display_name": "Complement and Multi-Step Counting",
+      "family": "by_hand_doing",
+      "evidence_ids": [
+        "1fc4f47b",
+        "30db8f77",
+        "0ae37ff3",
+        "a3384df0"
+      ],
+      "evidence_count": 4,
+      "core": true,
+      "skills_seen_in": [
+        "Probability and Conditional Probability"
+      ],
+      "method_in": [],
+      "aliases": [],
+      "definition": "Compute a count or probability by using complement reasoning (total minus known) or by combining multiple probability statements to recover a missing count before forming the final ratio."
+    },
+    {
+      "id": "CL.0250",
+      "display_name": "Algebraic Probability Equation",
+      "family": "by_hand_doing",
+      "evidence_ids": [
+        "d4413871",
+        "2a08d878"
+      ],
+      "evidence_count": 2,
+      "core": true,
+      "skills_seen_in": [
+        "Probability and Conditional Probability"
+      ],
+      "method_in": [],
+      "aliases": [],
+      "definition": "Set up and solve an algebraic equation where the unknown is a count or a total, given one or more probability values. The probability formula P = favorable/total is rearranged to isolate the unknown."
+    },
+    {
+      "id": "CL.0251",
+      "display_name": "Read One-Way Table and Compute Ratio",
+      "family": "by_hand_doing",
+      "definition": "Read a single-variable frequency table, locate the target category count, compute the total by summing if not provided, and divide.",
+      "evidence_ids": [
+        "a478f9f5",
+        "60caadfd",
+        "16cea46c",
+        "1353b86e"
+      ],
+      "evidence_count": 4,
+      "core": true,
+      "skills_seen_in": [
+        "Probability and Conditional Probability"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0252",
-      "display_name": "Count from Multiple Probabilities (Subtract then Multiply)",
-      "family": "PRB",
-      "definition": "",
+      "display_name": "Read Two-Way Table Marginals",
+      "family": "by_hand_doing",
+      "definition": "Locate the appropriate row or column total in a two-way table, read the grand total, and compute the marginal probability.",
       "evidence_ids": [
-        "1fc4f47b",
-        "30db8f77"
+        "dae79de4",
+        "ec7b0eb8",
+        "2905ded0",
+        "47624288",
+        "d89c1513",
+        "e9ed719f"
       ],
-      "evidence_count": 2,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "Probability and Conditional Probability"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0253",
-      "display_name": "Solve Equation for Missing Count (Algebraic)",
-      "family": "PRB",
-      "definition": "Set up a probability expression or equation containing a variable, then simplify or solve algebraically.",
+      "display_name": "Read Two-Way Table Cell for Joint Probability",
+      "family": "by_hand_doing",
+      "definition": "Locate the intersection cell representing two simultaneous conditions in a two-way table, read the grand total, and divide.",
       "evidence_ids": [
-        "2a08d878",
-        "d4413871"
+        "b1b5300b",
+        "0301c5dc"
       ],
       "evidence_count": 2,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "Probability and Conditional Probability"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0254",
-      "display_name": "Identify Favorable and Total from Description",
-      "family": "PRB",
-      "definition": "Read the problem text to identify the count of favorable outcomes and the total number of outcomes, then compute their ratio.",
+      "display_name": "Graph/Table Value Extraction",
+      "family": "by_hand_doing",
+      "definition": "Locate and read numerical values (bar heights, dot counts, box-plot features, table cells) from a data display. The core step is visual-to-numeric translation.",
       "evidence_ids": [
-        "0a99e5bb",
-        "12dbe3de",
-        "1b8e412e",
-        "2df8f293",
-        "38a9ac45",
-        "46b2e169",
-        "4e527894",
-        "79201024",
-        "b8150b17",
-        "c943acba",
-        "e5b5fbdd"
+        "93779b53",
+        "79340403",
+        "820d7a73",
+        "6e3ab4bf",
+        "80f1f3a9",
+        "29fa7970",
+        "fe6a49d6",
+        "57f45509",
+        "374b18f9",
+        "a067c926",
+        "57481175",
+        "15d87c0f",
+        "ea95087d",
+        "d1db8def",
+        "52f9a246",
+        "560fab82",
+        "a456cfd2"
       ],
-      "evidence_count": 11,
+      "evidence_count": 17,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "One-Variable Data: Distributions and Measures of Center and Spread"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0255",
-      "display_name": "Read One-Way Table and Compute Ratio",
-      "family": "PRB",
-      "definition": "Read a single-variable frequency table, locate the target category count, compute the total by summing if not provided, and divide.",
+      "display_name": "Sum-and-Divide (Mean Computation)",
+      "family": "by_hand_doing",
+      "definition": "Add all data values (or compute frequency-weighted sums) and divide by the total count to produce the arithmetic mean. This is the procedural core of any question that asks for a mean.",
       "evidence_ids": [
-        "1353b86e",
-        "16cea46c",
-        "60caadfd",
-        "a478f9f5"
+        "a9647302",
+        "4bb25495",
+        "7760c516",
+        "fa7a0164",
+        "4b09f783",
+        "12dae628",
+        "a29e89fc",
+        "bf47ad54",
+        "c178d4da",
+        "8193e8cd"
       ],
-      "evidence_count": 4,
+      "evidence_count": 10,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "One-Variable Data: Distributions and Measures of Center and Spread"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0256",
-      "display_name": "Read Two-Way Table Marginals",
-      "family": "PRB",
-      "definition": "Locate the appropriate row or column total in a two-way table, read the grand total, and compute the marginal probability.",
+      "display_name": "Order-and-Locate (Median Finding)",
+      "family": "by_hand_doing",
+      "definition": "Sort data values (or use cumulative frequencies) and identify the middle position(s) to determine the median. For n values, locate position (n+1)/2 (odd) or average positions n/2 and n/2+1 (even).",
       "evidence_ids": [
-        "2905ded0",
-        "47624288",
-        "d89c1513",
-        "dae79de4",
-        "e9ed719f",
-        "ec7b0eb8"
+        "66f03086",
+        "35bec412",
+        "f890dc20",
+        "bfa8a85c",
+        "a5b069b4",
+        "7b65bb28",
+        "9e2bf782",
+        "07f2829b",
+        "94237701",
+        "9d935bd8",
+        "ecbdbe84"
       ],
-      "evidence_count": 6,
+      "evidence_count": 11,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "One-Variable Data: Distributions and Measures of Center and Spread"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0257",
-      "display_name": "Read Two-Way Table Cell for Joint Probability",
-      "family": "PRB",
-      "definition": "Locate the intersection cell representing two simultaneous conditions in a two-way table, read the grand total, and divide.",
+      "display_name": "Max-Minus-Min (Range Computation)",
+      "family": "by_hand_doing",
+      "definition": "Identify the greatest and least data values and subtract to find the range. May involve reading extremes from a display first.",
       "evidence_ids": [
-        "0301c5dc",
-        "b1b5300b"
+        "c54b92a2",
+        "f52123e0",
+        "6c9444cd"
       ],
-      "evidence_count": 2,
+      "evidence_count": 3,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "One-Variable Data: Distributions and Measures of Center and Spread"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0258",
-      "display_name": "Reverse the Probability Formula to Find Count",
-      "family": "PRB",
-      "definition": "Given a probability and total (or partial counts), solve for the unknown count by reversing P = x/N, using multiplication, or subtracting known parts from the total.",
+      "display_name": "Algebraic Mean Inversion",
+      "family": "by_hand_doing",
+      "definition": "Set up the mean equation (sum / count = known mean), substitute known values, and solve algebraically for the unknown quantity. Includes forward (find x given mean) and reverse (find removed value given old and new mean) variants.",
       "evidence_ids": [
-        "1dcea480",
-        "1fc4f47b",
-        "30db8f77",
-        "585de39a",
-        "b680e76d"
+        "8736334b",
+        "d0efc1dd",
+        "54d93874",
+        "4ff597db",
+        "1e8ccffd",
+        "190be2fc"
       ],
-      "evidence_count": 5,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "PRB"
+        "One-Variable Data: Distributions and Measures of Center and Spread"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0259",
-      "display_name": "Complement or Exclusion Reasoning",
-      "family": "PRB",
-      "definition": "Determine the probability of an event defined by what it is NOT, either by subtracting included events from 1 or by summing the non-matching categories.",
-      "evidence_ids": [
-        "0ae37ff3",
-        "a3384df0"
-      ],
-      "evidence_count": 2,
-      "core": true,
-      "skills_seen_in": [
-        "PRB"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0260",
-      "display_name": "Graph/Table Value Extraction",
-      "family": "OVD",
-      "definition": "Locate and read numerical values (bar heights, dot counts, box-plot features, table cells) from a data display. The core step is visual-to-numeric translation.",
-      "evidence_ids": [
-        "15d87c0f",
-        "29fa7970",
-        "374b18f9",
-        "52f9a246",
-        "560fab82",
-        "57481175",
-        "57f45509",
-        "6e3ab4bf",
-        "79340403",
-        "80f1f3a9",
-        "820d7a73",
-        "93779b53",
-        "a067c926",
-        "a456cfd2",
-        "d1db8def",
-        "ea95087d",
-        "fe6a49d6"
-      ],
-      "evidence_count": 17,
-      "core": true,
-      "skills_seen_in": [
-        "OVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0261",
-      "display_name": "Sum-and-Divide (Mean Computation)",
-      "family": "OVD",
-      "definition": "Add all data values (or compute frequency-weighted sums) and divide by the total count to produce the arithmetic mean. This is the procedural core of any question that asks for a mean.",
-      "evidence_ids": [
-        "12dae628",
-        "4b09f783",
-        "4bb25495",
-        "7760c516",
-        "8193e8cd",
-        "a29e89fc",
-        "a9647302",
-        "bf47ad54",
-        "c178d4da",
-        "fa7a0164"
-      ],
-      "evidence_count": 10,
-      "core": true,
-      "skills_seen_in": [
-        "OVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0262",
-      "display_name": "Order-and-Locate (Median Finding)",
-      "family": "OVD",
-      "definition": "Sort data values (or use cumulative frequencies) and identify the middle position(s) to determine the median. For n values, locate position (n+1)/2 (odd) or average positions n/2 and n/2+1 (even).",
-      "evidence_ids": [
-        "07f2829b",
-        "35bec412",
-        "66f03086",
-        "7b65bb28",
-        "94237701",
-        "9d935bd8",
-        "9e2bf782",
-        "a5b069b4",
-        "bfa8a85c",
-        "ecbdbe84",
-        "f890dc20"
-      ],
-      "evidence_count": 11,
-      "core": true,
-      "skills_seen_in": [
-        "OVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0263",
-      "display_name": "Max-Minus-Min (Range Computation)",
-      "family": "OVD",
-      "definition": "Identify the greatest and least data values and subtract to find the range. May involve reading extremes from a display first.",
-      "evidence_ids": [
-        "6c9444cd",
-        "c54b92a2",
-        "f52123e0"
-      ],
-      "evidence_count": 3,
-      "core": true,
-      "skills_seen_in": [
-        "OVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0264",
-      "display_name": "Algebraic Mean Inversion",
-      "family": "OVD",
-      "definition": "Set up the mean equation (sum / count = known mean), substitute known values, and solve algebraically for the unknown quantity. Includes forward (find x given mean) and reverse (find removed value given old and new mean) variants.",
-      "evidence_ids": [
-        "190be2fc",
-        "1e8ccffd",
-        "4ff597db",
-        "54d93874",
-        "8736334b",
-        "d0efc1dd"
-      ],
-      "evidence_count": 6,
-      "core": true,
-      "skills_seen_in": [
-        "OVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0265",
       "display_name": "Weighted-Average Combination",
-      "family": "OVD",
+      "family": "by_hand_doing",
       "definition": "Combine two or more group means into an overall mean using the weighted-average formula: total sum = n1*mean1 + n2*mean2; combined mean = total sum / (n1 + n2).",
       "evidence_ids": [
         "2a59eb45",
@@ -10295,350 +10008,367 @@
       "evidence_count": 2,
       "core": true,
       "skills_seen_in": [
-        "OVD"
+        "One-Variable Data: Distributions and Measures of Center and Spread"
+      ],
+      "method_in": [],
+      "aliases": []
+    },
+    {
+      "id": "CL.0260",
+      "display_name": "Distribution-Shape Reasoning",
+      "family": "by_hand_doing",
+      "definition": "Use visual or conceptual properties of a distribution's shape (symmetry, skewness, concentration near the mean, outlier presence) to infer relationships between statistics. Includes comparing SDs by eyeballing spread, determining mean vs. median order from skew, and recognizing that shifting does not change SD.",
+      "evidence_ids": [
+        "25fc031a",
+        "d94018fd",
+        "d65b9a87",
+        "9110c120",
+        "be00d896",
+        "4c774b00",
+        "1142af44",
+        "3f2ee20a",
+        "f8a322d9"
+      ],
+      "evidence_count": 9,
+      "core": true,
+      "skills_seen_in": [
+        "One-Variable Data: Distributions and Measures of Center and Spread"
+      ],
+      "method_in": [],
+      "aliases": []
+    },
+    {
+      "id": "CL.0261",
+      "display_name": "Data-Modification Effect Analysis",
+      "family": "by_hand_doing",
+      "definition": "Reason about how a specific change to a data set (adding/removing a value, adding a constant to all values, replacing a value) propagates to each summary statistic. Requires understanding which stats are affected by the specific type of change.",
+      "evidence_ids": [
+        "578e26ae",
+        "5c3c2e3c",
+        "4626102e",
+        "e7d48c8a",
+        "241f1db7",
+        "391ae4b2",
+        "457d2f2c",
+        "c3d65f93"
+      ],
+      "evidence_count": 8,
+      "core": true,
+      "skills_seen_in": [
+        "One-Variable Data: Distributions and Measures of Center and Spread"
+      ],
+      "method_in": [],
+      "aliases": []
+    },
+    {
+      "id": "CL.0262",
+      "display_name": "Statistic Identification and Selection",
+      "family": "by_hand_doing",
+      "definition": "Given a described property or a set of answer choices, identify which statistical measure (mean, median, mode, range, SD) matches the description, or determine which measure can or cannot be computed from the given information.",
+      "evidence_ids": [
+        "869a32f1",
+        "c88e0663",
+        "6670e407",
+        "55cfaf22",
+        "708590d7",
+        "881ef5f5",
+        "d3b9c8d8"
+      ],
+      "evidence_count": 7,
+      "core": true,
+      "skills_seen_in": [
+        "One-Variable Data: Distributions and Measures of Center and Spread"
+      ],
+      "method_in": [],
+      "aliases": []
+    },
+    {
+      "id": "CL.0263",
+      "display_name": "Direct Graph Reading",
+      "family": "by_hand_doing",
+      "definition": "Locate a value on one axis, trace horizontally or vertically to the graph/data point, and read the corresponding value on the other axis.",
+      "evidence_ids": [
+        "8d63b6f1",
+        "2e511919",
+        "b58dbf88",
+        "13f67ddc",
+        "74dee52b",
+        "4a2264b3",
+        "cf0ae57a",
+        "bc59c2d9",
+        "ae32cc3c",
+        "ac5b6558",
+        "f46139df",
+        "fdfc90e4",
+        "e17babed",
+        "ad7dbb22"
+      ],
+      "evidence_count": 14,
+      "core": true,
+      "skills_seen_in": [
+        "Two-Variable Data: Models and Scatterplots"
+      ],
+      "method_in": [],
+      "aliases": []
+    },
+    {
+      "id": "CL.0264",
+      "display_name": "Slope Computation (Rise over Run)",
+      "family": "by_hand_doing",
+      "definition": "Select two points (on a line or from data), compute (y2 - y1) / (x2 - x1), and express the result as a decimal or fraction.",
+      "evidence_ids": [
+        "39aa146d",
+        "2e74e403",
+        "03a16790",
+        "90ba8f98",
+        "4cc05491",
+        "24a1e6a7",
+        "16988f9c",
+        "9eb896c5",
+        "3c5b19ef",
+        "9bb4107c",
+        "e24765e6",
+        "7b52985c",
+        "d112bc9d",
+        "a6b2fcce",
+        "83272c51"
+      ],
+      "evidence_count": 15,
+      "core": true,
+      "skills_seen_in": [
+        "Two-Variable Data: Models and Scatterplots"
+      ],
+      "method_in": [],
+      "aliases": []
+    },
+    {
+      "id": "CL.0265",
+      "display_name": "Sign and Intercept Reasoning",
+      "family": "by_hand_doing",
+      "definition": "Determine the sign of the slope (positive or negative) and the approximate y-intercept from a graph to eliminate answer choices or classify the relationship.",
+      "evidence_ids": [
+        "5f3ee607",
+        "9296553d",
+        "c5ee6ac0",
+        "d230e963",
+        "8baf2118",
+        "50b2807e",
+        "661dfddd",
+        "43744269"
+      ],
+      "evidence_count": 8,
+      "core": true,
+      "skills_seen_in": [
+        "Two-Variable Data: Models and Scatterplots"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0266",
-      "display_name": "Distribution-Shape Reasoning",
-      "family": "OVD",
-      "definition": "Use visual or conceptual properties of a distribution's shape (symmetry, skewness, concentration near the mean, outlier presence) to infer relationships between statistics. Includes comparing SDs by eyeballing spread, determining mean vs. median order from skew, and recognizing that shifting does not change SD.",
+      "display_name": "Pattern Recognition in Data (Differences vs. Ratios)",
+      "family": "by_hand_doing",
+      "definition": "Examine successive differences or successive ratios in a table, or the curvature of a graph, to distinguish linear growth (constant differences) from exponential growth (constant ratios) or quadratic behavior.",
       "evidence_ids": [
-        "1142af44",
-        "25fc031a",
-        "3f2ee20a",
-        "4c774b00",
-        "9110c120",
-        "be00d896",
-        "d65b9a87",
-        "d94018fd",
-        "f8a322d9"
+        "a03b7e02",
+        "ab7740a8",
+        "9a144a01",
+        "af142f8d",
+        "c141366d",
+        "15ce8207",
+        "fb866265",
+        "9b5b23fc",
+        "58171b5e",
+        "43744269",
+        "7ac5d686"
       ],
-      "evidence_count": 9,
+      "evidence_count": 11,
       "core": true,
       "skills_seen_in": [
-        "OVD"
+        "Two-Variable Data: Models and Scatterplots"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0267",
-      "display_name": "Data-Modification Effect Analysis",
-      "family": "OVD",
-      "definition": "Reason about how a specific change to a data set (adding/removing a value, adding a constant to all values, replacing a value) propagates to each summary statistic. Requires understanding which stats are affected by the specific type of change.",
+      "display_name": "Residual and Deviation Analysis",
+      "family": "by_hand_doing",
+      "definition": "Compute actual value minus predicted value for a specific data point, using the model line/curve to find the predicted value.",
       "evidence_ids": [
-        "241f1db7",
-        "391ae4b2",
-        "457d2f2c",
-        "4626102e",
-        "578e26ae",
-        "5c3c2e3c",
-        "c3d65f93",
-        "e7d48c8a"
+        "1adb39f0",
+        "7fd284ac",
+        "e17babed",
+        "ad7dbb22"
       ],
-      "evidence_count": 8,
+      "evidence_count": 4,
       "core": true,
       "skills_seen_in": [
-        "OVD"
+        "Two-Variable Data: Models and Scatterplots"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0268",
-      "display_name": "Statistic Identification and Selection",
-      "family": "OVD",
-      "definition": "Given a described property or a set of answer choices, identify which statistical measure (mean, median, mode, range, SD) matches the description, or determine which measure can or cannot be computed from the given information.",
+      "display_name": "Contextual Slope and Rate Interpretation",
+      "family": "by_hand_doing",
+      "definition": "Translate the numerical slope into a per-unit statement (e.g., 'for each additional unit of x, y increases by m') and connect the y-intercept to the starting value in context.",
       "evidence_ids": [
-        "55cfaf22",
-        "6670e407",
-        "708590d7",
-        "869a32f1",
-        "881ef5f5",
-        "c88e0663",
-        "d3b9c8d8"
+        "d6af3572",
+        "d0430601",
+        "9d95e7ad"
       ],
-      "evidence_count": 7,
+      "evidence_count": 3,
       "core": true,
       "skills_seen_in": [
-        "OVD"
+        "Two-Variable Data: Models and Scatterplots"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0269",
-      "display_name": "Visual data extraction",
-      "family": "TVD",
-      "definition": "Locating and reading a numeric value (a data point, a predicted value on a model line, a maximum, a minimum, an intercept) directly from a graph.",
+      "display_name": "Substitution and Evaluation",
+      "family": "by_hand_doing",
+      "definition": "Plug a given x-value into a model equation and evaluate to find the predicted y, or test candidate equations by substituting known data points.",
       "evidence_ids": [
-        "13f67ddc",
-        "2e511919",
-        "4a2264b3",
-        "74dee52b",
-        "8d63b6f1",
-        "ac5b6558",
-        "ad7dbb22",
-        "ae32cc3c",
-        "b58dbf88",
-        "bc59c2d9",
-        "cf0ae57a",
-        "e17babed",
-        "f46139df",
-        "fdfc90e4"
+        "5c24c861",
+        "8156d446",
+        "c9dd92b1",
+        "16988f9c",
+        "1e1027a7",
+        "79137c1b",
+        "82aaa0a1",
+        "e821a26d",
+        "2e8027b0"
       ],
-      "evidence_count": 14,
+      "evidence_count": 9,
       "core": true,
       "skills_seen_in": [
-        "TVD"
+        "Two-Variable Data: Models and Scatterplots"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0270",
-      "display_name": "Slope Computation (Rise over Run)",
-      "family": "TVD",
-      "definition": "Select two points (on a line or from data), compute (y2 - y1) / (x2 - x1), and express the result as a decimal or fraction.",
+      "display_name": "Interval rate-of-change computation",
+      "family": "by_hand_doing",
+      "definition": "Computing (y2 - y1) / (x2 - x1) across one or more intervals from a graph or table to find average rate of change, or comparing rates across intervals to identify the steepest segment.",
       "evidence_ids": [
-        "03a16790",
-        "16988f9c",
-        "24a1e6a7",
-        "2e74e403",
-        "39aa146d",
-        "3c5b19ef",
-        "4cc05491",
-        "7b52985c",
-        "83272c51",
-        "90ba8f98",
-        "9bb4107c",
-        "9eb896c5",
-        "a6b2fcce",
         "d112bc9d",
-        "e24765e6"
+        "a6b2fcce",
+        "83272c51",
+        "9bb4107c",
+        "e24765e6",
+        "7b52985c"
       ],
-      "evidence_count": 15,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "TVD"
+        "Two-Variable Data: Models and Scatterplots"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0271",
-      "display_name": "Sign and Intercept Reasoning",
-      "family": "TVD",
-      "definition": "Determining the correct linear equation by reasoning about slope sign (positive or negative) and y-intercept sign and approximate value from visual inspection of the scatterplot and LOBF, without precise computation.",
+      "display_name": "Nonlinear model fitting by key features",
+      "family": "by_hand_doing",
+      "definition": "Matching a scatterplot's curved pattern to a specific quadratic or exponential equation by testing key features such as vertex, y-intercept, direction of opening, or exponential base.",
       "evidence_ids": [
-        "3d985614",
-        "43744269",
-        "50b2807e",
-        "5f3ee607",
-        "661dfddd",
-        "8baf2118",
-        "9296553d",
-        "9eb896c5",
-        "c5ee6ac0",
-        "d230e963"
+        "82aaa0a1",
+        "e821a26d",
+        "fb866265",
+        "5c24c861"
       ],
-      "evidence_count": 10,
+      "evidence_count": 4,
       "core": true,
       "skills_seen_in": [
-        "TVD"
+        "Two-Variable Data: Models and Scatterplots"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0272",
-      "display_name": "Pattern Recognition in Data (Differences vs. Ratios)",
-      "family": "TVD",
-      "definition": "Examining how values change across a table, verbal description, or graph to determine whether the pattern is linear (constant additive change), exponential (constant multiplicative change), quadratic (accelerating change), or another type.",
+      "display_name": "Compute sample statistic from raw data",
+      "family": "by_hand_doing",
+      "definition": "Calculate a sample proportion or sample mean from counts or individual values provided in the question stem, before using it for inference.",
       "evidence_ids": [
-        "15ce8207",
-        "43744269",
-        "58171b5e",
-        "7ac5d686",
-        "9a144a01",
-        "9b5b23fc",
-        "a03b7e02",
-        "ab7740a8",
-        "af142f8d",
-        "c141366d",
-        "fb866265"
+        "97631565",
+        "f4b3672a",
+        "9ee22c16",
+        "9ba3e283",
+        "916ffe9b",
+        "e7d9649f",
+        "90eed2e5"
       ],
-      "evidence_count": 11,
+      "evidence_count": 7,
       "core": true,
       "skills_seen_in": [
-        "TVD"
+        "Inference from Sample Statistics and Margin of Error"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0273",
-      "display_name": "Residual and deviation analysis",
-      "family": "TVD",
-      "definition": "Computing observed minus predicted for a single data point, or scanning data points in a scatterplot to count how many lie above or below the model line.",
+      "display_name": "Construct confidence interval from estimate and MOE",
+      "family": "by_hand_doing",
+      "definition": "Apply the formula estimate +/- margin of error to determine the interval of plausible values for the population parameter.",
       "evidence_ids": [
-        "1adb39f0",
-        "7fd284ac",
-        "ad7dbb22",
-        "e17babed"
+        "8173f32b",
+        "6a305cd0",
+        "0108ac2d",
+        "1e562f24",
+        "4096a482",
+        "9bedc4a0",
+        "a2162ea1",
+        "e03f3477",
+        "f8f79e11",
+        "85939da5",
+        "f04d40b2",
+        "fc46af57"
       ],
-      "evidence_count": 4,
+      "evidence_count": 12,
       "core": true,
       "skills_seen_in": [
-        "TVD"
+        "Inference from Sample Statistics and Margin of Error"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0274",
-      "display_name": "Contextual Unit-Rate Interpretation",
-      "family": "TVD",
-      "definition": "Translate the numerical slope into a per-unit statement (e.g., 'for each additional unit of x, y increases by m') and connect the y-intercept to the starting value in context.",
+      "display_name": "Scale sample proportion to population count",
+      "family": "by_hand_doing",
+      "definition": "Multiply the sample proportion (or its complement) by the total population size to estimate the number of individuals in the population with a given characteristic.",
       "evidence_ids": [
-        "9d95e7ad",
-        "d0430601",
-        "d6af3572"
+        "97631565",
+        "e7d9649f",
+        "90eed2e5",
+        "affb2315",
+        "89f8d08a",
+        "9ee22c16",
+        "9ba3e283",
+        "916ffe9b",
+        "f04d40b2",
+        "fc46af57"
       ],
-      "evidence_count": 3,
+      "evidence_count": 10,
       "core": true,
       "skills_seen_in": [
-        "TVD"
+        "Inference from Sample Statistics and Margin of Error"
       ],
       "method_in": [],
       "aliases": []
     },
     {
       "id": "CL.0275",
-      "display_name": "Substitution and Evaluation",
-      "family": "TVD",
-      "definition": "Plug a given x-value into a model equation and evaluate to find the predicted y, or test candidate equations by substituting known data points.",
-      "evidence_ids": [
-        "16988f9c",
-        "1e1027a7",
-        "2e8027b0",
-        "5c24c861",
-        "79137c1b",
-        "8156d446",
-        "82aaa0a1",
-        "c9dd92b1",
-        "e821a26d"
-      ],
-      "evidence_count": 9,
-      "core": true,
-      "skills_seen_in": [
-        "TVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0276",
-      "display_name": "Interval rate-of-change computation",
-      "family": "TVD",
-      "definition": "Computing (y2 - y1) / (x2 - x1) across one or more intervals from a graph or table to find average rate of change, or comparing rates across intervals to identify the steepest segment.",
-      "evidence_ids": [
-        "7b52985c",
-        "83272c51",
-        "9bb4107c",
-        "a6b2fcce",
-        "d112bc9d",
-        "e24765e6"
-      ],
-      "evidence_count": 6,
-      "core": true,
-      "skills_seen_in": [
-        "TVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0277",
-      "display_name": "Nonlinear model fitting by key features",
-      "family": "TVD",
-      "definition": "Matching a scatterplot's curved pattern to a specific quadratic or exponential equation by testing key features such as vertex, y-intercept, direction of opening, or exponential base.",
-      "evidence_ids": [
-        "5c24c861",
-        "82aaa0a1",
-        "e821a26d",
-        "fb866265"
-      ],
-      "evidence_count": 4,
-      "core": true,
-      "skills_seen_in": [
-        "TVD"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0278",
-      "display_name": "Scale sample proportion to population count",
-      "family": "INFS",
-      "definition": "Using sample statistics (proportions or means) to estimate quantities in the full population, including simple scaling, multi-step scaling with MOE, and comparative estimates.",
-      "evidence_ids": [
-        "89f8d08a",
-        "90eed2e5",
-        "916ffe9b",
-        "97631565",
-        "9ba3e283",
-        "9ee22c16",
-        "affb2315",
-        "e7d9649f",
-        "f04d40b2",
-        "f4b3672a",
-        "fc46af57"
-      ],
-      "evidence_count": 11,
-      "core": true,
-      "skills_seen_in": [
-        "INFS"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0279",
-      "display_name": "Construct confidence interval from estimate and MOE",
-      "family": "INFS",
-      "definition": "Understanding what margin of error means and how to use it: constructing confidence intervals, evaluating claims against them, and understanding what affects MOE size.",
-      "evidence_ids": [
-        "0108ac2d",
-        "1e562f24",
-        "2c76bcce",
-        "308084c5",
-        "4096a482",
-        "6a305cd0",
-        "8173f32b",
-        "85939da5",
-        "9bedc4a0",
-        "a2162ea1",
-        "e03f3477",
-        "f04d40b2",
-        "f8f79e11",
-        "fc46af57"
-      ],
-      "evidence_count": 14,
-      "core": true,
-      "skills_seen_in": [
-        "INFS"
-      ],
-      "method_in": [],
-      "aliases": []
-    },
-    {
-      "id": "CL.0280",
       "display_name": "Distinguish population parameter from individual values",
-      "family": "INFS",
+      "family": "by_hand_doing",
       "definition": "Recognize that the margin of error describes uncertainty about the population mean or proportion, NOT the range of individual values in the population or sample.",
       "evidence_ids": [
         "2c76bcce",
@@ -10648,34 +10378,34 @@
       "evidence_count": 3,
       "core": true,
       "skills_seen_in": [
-        "INFS"
+        "Inference from Sample Statistics and Margin of Error"
       ],
       "method_in": [],
       "aliases": []
     },
     {
-      "id": "CL.0281",
+      "id": "CL.0276",
       "display_name": "Evaluate whether a specific value is plausible",
-      "family": "INFS",
+      "family": "by_hand_doing",
       "definition": "Determine whether a particular value falls inside or outside the confidence interval, using language like 'plausible', 'doubtful', or 'not possible' appropriately.",
       "evidence_ids": [
-        "1e562f24",
         "85939da5",
+        "1e562f24",
         "9bedc4a0",
         "e03f3477"
       ],
       "evidence_count": 4,
       "core": true,
       "skills_seen_in": [
-        "INFS"
+        "Inference from Sample Statistics and Margin of Error"
       ],
       "method_in": [],
       "aliases": []
     },
     {
-      "id": "CL.0282",
+      "id": "CL.0277",
       "display_name": "Relate sample size to margin of error",
-      "family": "INFS",
+      "family": "by_hand_doing",
       "definition": "Understand that a smaller sample size generally produces a larger margin of error, and vice versa, because smaller samples are less representative.",
       "evidence_ids": [
         "308084c5"
@@ -10683,15 +10413,15 @@
       "evidence_count": 1,
       "core": true,
       "skills_seen_in": [
-        "INFS"
+        "Inference from Sample Statistics and Margin of Error"
       ],
       "method_in": [],
       "aliases": []
     },
     {
-      "id": "CL.0283",
+      "id": "CL.0278",
       "display_name": "Identify correct population for generalization",
-      "family": "INFS",
+      "family": "by_hand_doing",
       "definition": "Determine which population a sample statistic can be generalized to, based on how the sample was selected (e.g., largemouth bass vs all fish; adults who own TVs vs all adults).",
       "evidence_ids": [
         "53d97af5",
@@ -10700,58 +10430,55 @@
       "evidence_count": 2,
       "core": true,
       "skills_seen_in": [
-        "INFS"
+        "Inference from Sample Statistics and Margin of Error"
       ],
       "method_in": [],
       "aliases": []
     },
     {
-      "id": "CL.0284",
+      "id": "CL.0279",
       "display_name": "Identify the sampled population",
-      "family": "ESC",
-      "definition": "Assessing whether a sampling method is appropriate for the intended inference. Includes detecting bias from non-random or non-representative sampling and understanding what population a random sample represents.",
+      "family": "by_hand_doing",
+      "definition": "Determine the specific group from which the sample was actually drawn, distinguishing it from broader or narrower groups mentioned in the question.",
       "evidence_ids": [
-        "1ea09200",
-        "4a422e3e",
+        "b4f5a7ca",
         "6fca0144",
         "7ce2830a",
+        "1ea09200",
         "7d68096f",
-        "82dfb646",
-        "9bf4c545",
-        "aa43b41f",
-        "b4f5a7ca"
+        "82dfb646"
       ],
-      "evidence_count": 9,
+      "evidence_count": 6,
       "core": true,
       "skills_seen_in": [
-        "ESC"
+        "Evaluating Statistical Claims: Observational Studies and Experiments"
       ],
       "method_in": [],
       "aliases": []
     },
     {
-      "id": "CL.0285",
+      "id": "CL.0280",
       "display_name": "Detect non-representative sampling",
-      "family": "ESC",
+      "family": "by_hand_doing",
       "definition": "Recognize that a sample drawn from a convenience location, voluntary response, or non-random subgroup is not representative of the target population and will produce biased estimates.",
       "evidence_ids": [
-        "4a422e3e",
         "9bf4c545",
+        "4a422e3e",
         "aa43b41f"
       ],
       "evidence_count": 3,
       "core": true,
       "skills_seen_in": [
-        "ESC"
+        "Evaluating Statistical Claims: Observational Studies and Experiments"
       ],
       "method_in": [],
       "aliases": []
     },
     {
-      "id": "CL.0286",
+      "id": "CL.0281",
       "display_name": "Recognize inherent uncertainty in sampling",
-      "family": "ESC",
-      "definition": "Understanding the inherent uncertainty in sample-based conclusions: sample statistics are estimates, not exact values, and sampling variability means different samples yield different results.",
+      "family": "by_hand_doing",
+      "definition": "Understand that even a valid random sample gives an estimate, not an exact value, and that repeating the sampling process can yield different results.",
       "evidence_ids": [
         "37930b2a",
         "642519d7"
@@ -10759,7 +10486,28 @@
       "evidence_count": 2,
       "core": true,
       "skills_seen_in": [
-        "ESC"
+        "Evaluating Statistical Claims: Observational Studies and Experiments"
+      ],
+      "method_in": [],
+      "aliases": []
+    },
+    {
+      "id": "CL.0282",
+      "display_name": "Resist over-generalization",
+      "family": "by_hand_doing",
+      "definition": "Reject conclusions that extend beyond the population from which the sample was selected -- e.g., from one school to all schools, from dog owners to all residents, or from book-likers to all moviegoers.",
+      "evidence_ids": [
+        "82dfb646",
+        "9bf4c545",
+        "7ce2830a",
+        "6fca0144",
+        "b4f5a7ca",
+        "1ea09200"
+      ],
+      "evidence_count": 6,
+      "core": true,
+      "skills_seen_in": [
+        "Evaluating Statistical Claims: Observational Studies and Experiments"
       ],
       "method_in": [],
       "aliases": []

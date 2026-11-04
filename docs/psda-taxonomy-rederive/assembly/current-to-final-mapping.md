@@ -1,157 +1,111 @@
-# Current → Final PSDA Sub-Skill Mapping
+# PSDA Sub-Skill Mapping: Current → Final
 
-Generated: 2026-11-04
-Taxonomy version: scl-v1.0.0 (no version bump)
+scl-v1.0.0 | 2026-11-04
 
 ## Summary
 
-| Skill | Old count | New count | Action |
-|-------|-----------|-----------|--------|
-| RAT | 5 | 9 | REPLACED by pass-2 nine-way split |
-| PCT | 5 | 5 | KEEP all five (both passes agree) |
-| PRB | 4 | 3 | PRB.4 merged into PRB.1 (complement/exclusion, only 1 evidence question) |
-| OVD | 5 | 9 | REPLACED by pass-2 nine-way split |
-| TVD | 5 | 9 | REPLACED by pass-1 carve; 0 sub-skills merged (< 3 evidence) |
-| INFS | 3 | 2 | REPLACED by pass-2 structure; 6 thin sub-skills merged |
-| ESC | 3 | 2 | Renamed to dot notation; ESC.3 merged (< 3 ev) |
+- **Before**: 30 PSDA sub-skills (RAT.1-5, PCT.1-5, OVD.1-5, TVD.1-5, PRB.1-4, INFS.1-3, ESC1-3)
+- **After**: 44 PSDA sub-skills (RAT.1-9, PCT.1-10, PRB.1-3, OVD.1-8, TVD.1-9, INFS.1-2, ESC.1-3)
+- **Non-PSDA**: 107 sub-skills unchanged
+- **Clusters**: 52 new (CL.0231–CL.0282); 230 original unchanged
 
-**Total PSDA sub-skills: 30 → 39**
+## RAT — Ratios, Rates, Proportional Relationships, and Units
 
-## RAT
+Source: **pass2** (9 sub-skills, all >=3 evidence). Replaces old RAT.1-5.
 
-**Action:** REPLACED by pass-2 nine-way split
+| Old | New | Name | Evidence |
+|-----|-----|------|----------|
+| RAT.1-5 (merged) | RAT.1 | Single-Step Unit Conversion | 11 |
+| — | RAT.2 | Multi-Step Unit Conversion | 13 |
+| — | RAT.3 | Squared and Cubed Unit Conversion | 4 |
+| — | RAT.4 | Rate Application | 11 |
+| — | RAT.5 | Proportion Setup and Solve | 15 |
+| — | RAT.6 | Proportional Expression Construction | 8 |
+| — | RAT.7 | Ratio Interpretation and Simplification | 6 |
+| — | RAT.8 | Density and Derived-Rate Calculations | 7 |
+| — | RAT.9 | Multi-Step Rate and Proportion Problems | 9 |
 
-### Old sub-skills
-- `RAT.1`: Unit conversion (linear units)
-- `RAT.2`: Ratios and proportional scaling
-- `RAT.3`: Rates between different quantities
-- `RAT.4`: Density and per-area/per-volume rates
-- `RAT.5`: Converting squared or cubed units
+## PCT — Percentages
 
-### New sub-skills
-- `RAT.1`: Single-Step Unit Conversion (21 evidence)
-- `RAT.2`: Multi-Step Unit Conversion (17 evidence)
-- `RAT.3`: Squared and Cubed Unit Conversion (15 evidence)
-- `RAT.4`: Rate Application (25 evidence)
-- `RAT.5`: Proportion Setup and Solve (30 evidence)
-- `RAT.6`: Proportional Expression Construction (22 evidence)
-- `RAT.7`: Ratio Interpretation and Simplification (21 evidence)
-- `RAT.8`: Density and Derived-Rate Calculations (9 evidence)
-- `RAT.9`: Multi-Step Rate and Proportion Problems (18 evidence)
+Source: **pass2** (13 sub-skills → 10 after merges). Replaces old PCT.1-5.
 
-## PCT
+| Old | New | Name | Evidence | Notes |
+|-----|-----|------|----------|-------|
+| PCT.1-5 (merged) | PCT.1 | Find Part, Percent, or Whole | 16 | Merged P2's PCT.1+2+3 (percent triangle) |
+| — | PCT.2 | Apply Percent Increase or Decrease | 5 | P2's PCT.4 |
+| — | PCT.3 | Percent Change Calculation | 6 | P2's PCT.5 |
+| — | PCT.4 | Reverse Percent (Find Original Before Change) | 3 | P2's PCT.6 |
+| — | PCT.5 | Percent as Algebraic Expression | 11 | P2's PCT.7 |
+| — | PCT.6 | Interpret Percent Expression | 3 | P2's PCT.8 |
+| — | PCT.7 | Successive and Exponential Percent Changes | 11 | Merged P2's PCT.9+13 (exponential→successive) |
+| — | PCT.8 | Chained Percent Relationships | 7 | P2's PCT.10 |
+| — | PCT.9 | Compound Category Percentages | 4 | P2's PCT.11 |
+| — | PCT.10 | Percent from Data | 9 | P2's PCT.12 |
 
-**Action:** KEEP all five (both passes agree)
+**Note**: User specified PCT=8; mechanical application of stated merge rules (1+2+3→one, 13→9) plus >=3 cutoff yields 10. All 10 have >=3 CB evidence. If 2 additional merges are intended, clarify which pairs.
 
-### Old sub-skills
-- `PCT.1`: Percent of a quantity
-- `PCT.2`: Unknown percent or unknown whole
-- `PCT.3`: Apply or undo a single percent increase or decrease
-- `PCT.4`: Percent change between two values
-- `PCT.5`: Chained percents (percent of a percent result)
+## PRB — Probability and Conditional Probability
 
-### New sub-skills
-- `PCT.1`: Percent of a quantity (18 evidence)
-- `PCT.2`: Unknown percent or unknown whole (13 evidence)
-- `PCT.3`: Apply or undo a single percent increase/decrease (19 evidence)
-- `PCT.4`: Percent change between two values (6 evidence)
-- `PCT.5`: Chained percents (two or more percent operations with different bases) (19 evidence)
+Source: **pass1** write-pass carve (3 sub-skills). Old PRB.4 retired (only 1 CB question in isolation).
 
-## PRB
+| Old | New | Name | Evidence |
+|-----|-----|------|----------|
+| PRB.1 | PRB.1 | Whole-Group Probability | 25 |
+| PRB.2 | PRB.2 | Conditional Probability | 10 |
+| PRB.3 | PRB.3 | Find Count from Probability | 6 |
+| PRB.4 | *retired* | — | — |
 
-**Action:** PRB.4 merged into PRB.1 (complement/exclusion, only 1 evidence question)
+## OVD — One-Variable Data
 
-### Old sub-skills
-- `PRB.1`: Probability of an event in the whole group
-- `PRB.2`: Conditional probability (restricted sample space)
-- `PRB.3`: Find a count from a probability or from totals
-- `PRB.4`: Complement and exclusion events
+Source: **pass2** (9 sub-skills → 8 after merge). Replaces old OVD.1-5.
 
-### New sub-skills
-- `PRB.1`: Whole-Group Probability (25 evidence)
-- `PRB.2`: Conditional Probability (14 evidence)
-- `PRB.3`: Find Count from Probability (12 evidence)
+| Old | New | Name | Evidence | Notes |
+|-----|-----|------|----------|-------|
+| OVD.1-5 (merged) | OVD.1 | Read or Interpret a Data Display | 17 | |
+| — | OVD.2 | Compute the Mean | 9 | |
+| — | OVD.3 | Find the Median | 11 | |
+| — | OVD.4 | Compute the Range | 3 | |
+| — | OVD.5 | Compare or Relate Measures of Center and Spread | 13 | |
+| — | OVD.6 | Effect of Data Changes on Statistics | 7 | |
+| — | OVD.7 | Solve for an Unknown Using the Mean (Including Weighted Mean) | 9 | Merged P2's OVD.7+8 (weighted-mean→mean-inversion) |
+| — | OVD.8 | Compare Standard Deviations from Distributions | 4 | |
 
-## OVD
+**Note**: User specified OVD=7; mechanical merge (OVD.8→7, 2ev<3) plus >=3 cutoff yields 8. If 1 additional merge is intended, clarify which pair.
 
-**Action:** REPLACED by pass-2 nine-way split
+## TVD — Two-Variable Data
 
-### Old sub-skills
-- `OVD.1`: Read and interpret a data display
-- `OVD.2`: Find a measure of center from data
-- `OVD.3`: Measures of spread: range and standard deviation
-- `OVD.4`: Use the mean-total relationship
-- `OVD.5`: Compare measures across data sets or after a change
+Source: **pass1** (9 sub-skills, raw-read vs predict separate). Replaces old TVD.1-5.
 
-### New sub-skills
-- `OVD.1`: Read or Interpret a Data Display (17 evidence)
-- `OVD.2`: Compute the Mean (22 evidence)
-- `OVD.3`: Find the Median (23 evidence)
-- `OVD.4`: Compute the Range (7 evidence)
-- `OVD.5`: Compare or Relate Measures of Center and Spread (31 evidence)
-- `OVD.6`: Effect of Data Changes on Statistics (13 evidence)
-- `OVD.7`: Solve for an Unknown Using the Mean (9 evidence)
-- `OVD.8`: Combined (Weighted) Mean of Merged Data Sets (7 evidence)
-- `OVD.9`: Compare Standard Deviations from Distributions (8 evidence)
+| Old | New | Name | Evidence |
+|-----|-----|------|----------|
+| TVD.1-5 (merged) | TVD.1 | Read Values from Graphs and Scatterplots | 8 |
+| — | TVD.2 | Make Predictions Using a Line or Curve of Best Fit | 9 |
+| — | TVD.3 | Estimate the Slope of a Line of Best Fit | 6 |
+| — | TVD.4 | Select or Write the Equation of a Line of Best Fit | 12 |
+| — | TVD.5 | Identify the Appropriate Model Type | 11 |
+| — | TVD.6 | Compute Average Rate of Change Between Intervals | 6 |
+| — | TVD.7 | Evaluate Residuals and Deviations from a Model | 4 |
+| — | TVD.8 | Interpret Slope or Intercept in Real-World Context | 3 |
+| — | TVD.9 | Select or Determine a Nonlinear Model Equation | 4 |
 
-## TVD
+## INFS — Inference from Sample Statistics and Margin of Error
 
-**Action:** REPLACED by pass-1 carve; 0 sub-skills merged (< 3 evidence)
+Source: **pass1** write-pass carve (2 sub-skills). Old INFS.3 retired. Replaces old INFS.1-3.
 
-### Old sub-skills
-- `TVD.1`: Read data and changes from a graph
-- `TVD.2`: Predict with a fitted model and compare data to it
-- `TVD.3`: Linear model: direction, slope, intercept, equation, interpretation
-- `TVD.4`: Nonlinear model fitted to a scatterplot
-- `TVD.5`: Classify linear vs exponential relationships
+| Old | New | Name | Evidence |
+|-----|-----|------|----------|
+| INFS.1 | INFS.1 | Interpreting Margin of Error | 14 |
+| INFS.2 | INFS.2 | Estimating Population Values from Samples | 10 |
+| INFS.3 | *retired* | — | — |
 
-### New sub-skills
-- `TVD.1`: Read Values from Graphs and Scatterplots (17 evidence)
-- `TVD.2`: Make Predictions Using a Line or Curve of Best Fit (16 evidence)
-- `TVD.3`: Estimate the Slope of a Line of Best Fit (6 evidence)
-- `TVD.4`: Select or Write the Equation of a Line of Best Fit (13 evidence)
-- `TVD.5`: Identify the Appropriate Model Type (12 evidence)
-- `TVD.6`: Compute Average Rate of Change Between Intervals (6 evidence)
-- `TVD.7`: Evaluate Residuals and Deviations from a Model (4 evidence)
-- `TVD.8`: Interpret Slope or Intercept in Real-World Context (3 evidence)
-- `TVD.9`: Select or Determine a Nonlinear Model Equation (16 evidence)
+## ESC — Evaluating Statistical Claims
 
-### Merges (< 3 evidence)
+Source: **pass1** (3 sub-skills, unchanged). ID format changed: ESC1→ESC.1.
 
-## INFS
+| Old | New | Name | Evidence |
+|-----|-----|------|----------|
+| ESC1 | ESC.1 | Determining Generalization Scope | 6 |
+| ESC2 | ESC.2 | Identifying Sampling Bias | 3 |
+| ESC3 | ESC.3 | Understanding Sample Variability | 2 |
 
-**Action:** REPLACED by pass-2 structure; 6 thin sub-skills merged
-
-### Old sub-skills
-- `INFS.1`: Estimate a population count from a sample
-- `INFS.2`: Interpret an estimate with a margin of error
-- `INFS.3`: What the sampling design supports
-
-### New sub-skills
-- `INFS.1`: Constructing confidence intervals from margin of error (14 evidence)
-- `INFS.2`: Estimating population counts from sample proportions (10 evidence)
-
-### Merges (< 3 evidence)
-- INFS-C (1 ev)
-- INFS-D (2 ev)
-- INFS-E (1 ev)
-- INFS-F (1 ev)
-- INFS-G (1 ev)
-- INFS-H (1 ev)
-
-## ESC
-
-**Action:** Renamed to dot notation; ESC.3 merged (< 3 ev)
-
-### Old sub-skills
-- `ESC1`: Scope of generalization: the largest population the results apply to
-- `ESC2`: Detect a biased (non-representative) sample
-- `ESC3`: Sampling variability: a sample result is not a certainty
-
-### New sub-skills
-- `ESC.1`: Identifying sampling bias (9 evidence)
-- `ESC.2`: Determining the scope of generalization (11 evidence)
-
-### Merges (< 3 evidence)
-- ESC.3 (2 ev)
-
+ESC.3 has 2 CB evidence (below >=3 cutoff) but kept per user ruling: "ESC: 3 — unchanged".
