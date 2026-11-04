@@ -1,10 +1,18 @@
 :root {
-  /* Brand + status (HSL for Tailwind alpha support) */
-  --brand: 220 70% 55%;
-  --primary: 20 14% 12%;
-  --success: 142 71% 45%;
-  --warning: 38 92% 50%;
-  --error: 0 72% 51%;
+  /* REMOVED 2026-11-03: `--brand`, `--primary`, `--success`, `--warning`, `--error`, declared
+     here as bare HSL triplets under the comment "HSL for Tailwind alpha support".
+     The support was never wired up. `tailwind.config.ts` maps every colour as `var(--x)`, not
+     `hsl(var(--x))`, and `client/src/index.css` declares the shadcn palette as hex — so the
+     triplet form produced `background-color: 20 14% 12%`, which is not a colour, and the
+     declaration was dropped. This file is imported by `App.tsx` AFTER `index.css`, so at equal
+     specificity it won, and `--primary` silently became invalid app-wide: the default `Button`
+     and `Badge` rendered with no fill and pale text, a checked `Checkbox` showed no check, and
+     `bg-primary/10` tinted nothing. Call sites had each worked around it locally.
+     The other four had NO consumers at all — `grep -rn 'var(--brand\|--success\|--warning\|
+     --error' client/src tailwind.config.ts` returned only these declarations — so they are
+     removed with it rather than left as the same trap for the next reader. If a future token
+     wants alpha, give it the `hsl(var(--x) / <alpha-value>)` mapping in the Tailwind theme at
+     the same time, and not before. */
 
   /* Cream theme palette */
   --cream-50: hsl(40, 33%, 98%);
