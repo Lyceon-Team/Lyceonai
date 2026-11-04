@@ -7,7 +7,7 @@ scl-v1.0.0 | 2026-11-04
 - **Before**: 30 PSDA sub-skills (RAT.1-5, PCT.1-5, OVD.1-5, TVD.1-5, PRB.1-4, INFS.1-3, ESC1-3)
 - **After**: 44 PSDA sub-skills (RAT.1-9, PCT.1-10, PRB.1-3, OVD.1-8, TVD.1-9, INFS.1-2, ESC.1-3)
 - **Non-PSDA**: 107 sub-skills unchanged
-- **Clusters**: 52 new (CL.0231–CL.0282); 230 original unchanged
+- **Clusters**: 52 new (CL.0232–CL.0283); 230 original unchanged; CL.0231 reserved (retired)
 
 ## RAT — Ratios, Rates, Proportional Relationships, and Units
 

@@ -112,7 +112,7 @@
       "domain": "Advanced Math",
       "name": "Rearrange a formula to isolate a variable",
       "definition": "Solve a literal equation or formula (two or more letters) for a named variable or expression, possibly through fractions, reciprocals or a square root.",
-      "inclusion_test": "The stem asks to express a variable or expression 'in terms of' other letters, or to rewrite a formula in a stated form ('Which equation correctly expresses…', 'Which of the following is equivalent to n', 'rewritten in the form v_f = xa + y'). This test wins over NLE.2/NLE.3 even when the formula contains a square root or a variable denominator.",
+      "inclusion_test": "The stem asks to express a variable or expression 'in terms of' other letters, or to rewrite a formula in a stated form ('Which equation correctly expresses\u2026', 'Which of the following is equivalent to n', 'rewritten in the form v_f = xa + y'). This test wins over NLE.2/NLE.3 even when the formula contains a square root or a variable denominator.",
       "evidence_ids": [
         "bf704c34",
         "4e18fc5d",
@@ -132,7 +132,7 @@
       "domain": "Advanced Math",
       "name": "Solve a quadratic or polynomial equation in one variable",
       "definition": "Find the solutions (or the sum, product, or a stated form of the solutions) of a one-variable equation whose unknown is squared or appears in a product of linear factors, by square roots, factoring and the zero-product property, completing the square, or the quadratic formula.",
-      "inclusion_test": "One unknown; the unknown is squared or multiplied by itself (x^2, (x+a)^2, (x-a)(x-b)…), with no absolute value, no radical over the unknown, no unknown in a denominator; and the stem asks for a solution or a quantity built from the solutions, NOT for how many solutions exist (that is NLE.4) and NOT 'in terms of' (NLE.1).",
+      "inclusion_test": "One unknown; the unknown is squared or multiplied by itself (x^2, (x+a)^2, (x-a)(x-b)\u2026), with no absolute value, no radical over the unknown, no unknown in a denominator; and the stem asks for a solution or a quantity built from the solutions, NOT for how many solutions exist (that is NLE.4) and NOT 'in terms of' (NLE.1).",
       "evidence_ids": [
         "4236c5a3",
         "7f81d0c3",
@@ -172,7 +172,7 @@
       "domain": "Advanced Math",
       "name": "Determine the number of real solutions",
       "definition": "Decide how many real solutions an equation or system has, or find the constant that forces a stated number of solutions (exactly one / none / more than one), using the discriminant, the sign of a square, or the position of a line relative to a parabola.",
-      "inclusion_test": "The stem asks 'how many (distinct real) solutions / points of intersection', asks which equation has no real solutions, OR states a solution count as a condition ('has exactly one solution', 'no real solutions', 'intersects … at exactly one point', 'more than one real solution'). Co-tags with NLE.5 when the object is a system.",
+      "inclusion_test": "The stem asks 'how many (distinct real) solutions / points of intersection', asks which equation has no real solutions, OR states a solution count as a condition ('has exactly one solution', 'no real solutions', 'intersects \u2026 at exactly one point', 'more than one real solution'). Co-tags with NLE.5 when the object is a system.",
       "evidence_ids": [
         "332cd67b",
         "a5663025",
@@ -296,7 +296,7 @@
       "domain": "Advanced Math",
       "name": "Transformations of functions",
       "definition": "Relate a function to its translation or input-shift: g(x)=f(x)+k, f(x-h), f(x+h), or a shifted graph/table.",
-      "inclusion_test": "Tag if the stem defines one function as a translation/input shift of another (words 'shifted/translated up/down/left/right', or g(x)=f(x±h), y=f(x)±k), or a context change that adds/subtracts a constant to every output (7fe7cf26: platform 2 ft shorter), and the answer depends on applying that shift.",
+      "inclusion_test": "Tag if the stem defines one function as a translation/input shift of another (words 'shifted/translated up/down/left/right', or g(x)=f(x\u00b1h), y=f(x)\u00b1k), or a context change that adds/subtracts a constant to every output (7fe7cf26: platform 2 ft shorter), and the answer depends on applying that shift.",
       "evidence_ids": [
         "e9aed539",
         "7fe7cf26",
@@ -788,7 +788,7 @@
       "domain": "Algebra",
       "name": "Test solutions of a given inequality or system",
       "definition": "Decide which points, tables of (x, y) pairs, coordinate values or y-ranges satisfy a two-variable inequality or system that is printed symbolically in the stem or choices.",
-      "inclusion_test": "Tag when the stem or choices print an inequality or system in x and y (or in context letters) symbolically AND the question asks which point(s), table, coordinate value, or set of y-values SATISFIES it, or which system a given point satisfies. LI.4 and LI.2 are MUTUALLY EXCLUSIVE: LI.4 = the stem asks WHICH point/value satisfies a printed inequality (solve by testing/substituting candidates); LI.2 = the stem asks for THE boundary value itself (solve by isolating). If the stem asks 'what is the maximum/minimum value?' → LI.2, not LI.4.",
+      "inclusion_test": "Tag when the stem or choices print an inequality or system in x and y (or in context letters) symbolically AND the question asks which point(s), table, coordinate value, or set of y-values SATISFIES it, or which system a given point satisfies. LI.4 and LI.2 are MUTUALLY EXCLUSIVE: LI.4 = the stem asks WHICH point/value satisfies a printed inequality (solve by testing/substituting candidates); LI.2 = the stem asks for THE boundary value itself (solve by isolating). If the stem asks 'what is the maximum/minimum value?' \u2192 LI.2, not LI.4.",
       "evidence_ids": [
         "89541f9b",
         "cfe67646",
@@ -837,7 +837,7 @@
       "domain": "Geometry and Trigonometry",
       "name": "Polygon perimeter and area",
       "definition": "Find the perimeter or area of a 2D polygon (rectangle, square, triangle, or a figure built from them), or work back from it to a side length.",
-      "inclusion_test": "Tag if the solution computes a perimeter (sum of sides) or area (lw, s², ½bh) of a polygon from numeric lengths, or inverts one to a side length. Do NOT tag when two similar figures are compared and no polygon formula is evaluated with numbers (those are AV.5 only).",
+      "inclusion_test": "Tag if the solution computes a perimeter (sum of sides) or area (lw, s\u00b2, \u00bdbh) of a polygon from numeric lengths, or inverts one to a side length. Do NOT tag when two similar figures are compared and no polygon formula is evaluated with numbers (those are AV.5 only).",
       "evidence_ids": [
         "93f48423",
         "d0b6d927",
@@ -857,8 +857,8 @@
       "section": "M",
       "domain": "Geometry and Trigonometry",
       "name": "Circle area and circumference",
-      "definition": "Use A = πr² or C = 2πr for a circle, including radius/diameter from a given circumference or area.",
-      "inclusion_test": "Tag if the stem gives or asks a plane circle's area, circumference, radius or diameter, OR gives a solid's circular base as a circumference or as an area in π that must be turned back into r. Do NOT tag a cylinder/cone volume where r or d is given and simply substituted into the volume formula.",
+      "definition": "Use A = \u03c0r\u00b2 or C = 2\u03c0r for a circle, including radius/diameter from a given circumference or area.",
+      "inclusion_test": "Tag if the stem gives or asks a plane circle's area, circumference, radius or diameter, OR gives a solid's circular base as a circumference or as an area in \u03c0 that must be turned back into r. Do NOT tag a cylinder/cone volume where r or d is given and simply substituted into the volume formula.",
       "evidence_ids": [
         "e86f0651",
         "6ae1360d",
@@ -879,7 +879,7 @@
       "domain": "Geometry and Trigonometry",
       "name": "Volume of solids",
       "definition": "Compute a volume of a prism, cube, cylinder, cone, sphere/hemisphere (or a stem-given volume formula), or work back from a volume to a dimension.",
-      "inclusion_test": "Tag if the solution evaluates or inverts a volume formula (lwh, s³, s²h, Bh, πr²h, ⅓πr²h, ⁴⁄₃πr³, or a formula printed in the stem). A volume that is only given and scaled by k³ without evaluating a formula does not count.",
+      "inclusion_test": "Tag if the solution evaluates or inverts a volume formula (lwh, s\u00b3, s\u00b2h, Bh, \u03c0r\u00b2h, \u2153\u03c0r\u00b2h, \u2074\u2044\u2083\u03c0r\u00b3, or a formula printed in the stem). A volume that is only given and scaled by k\u00b3 without evaluating a formula does not count.",
       "evidence_ids": [
         "2b41a4c4",
         "50774285",
@@ -900,7 +900,7 @@
       "domain": "Geometry and Trigonometry",
       "name": "Surface area of solids",
       "definition": "Find the total or exterior surface area of a prism/cube as the sum of its face areas, or work back from it.",
-      "inclusion_test": "Tag if the solution adds (or removes) face areas of a solid, or inverts a surface-area expression (6s², 2lw+2lh+2wh). A surface area that is only given and scaled by k² does not count.",
+      "inclusion_test": "Tag if the solution adds (or removes) face areas of a solid, or inverts a surface-area expression (6s\u00b2, 2lw+2lh+2wh). A surface area that is only given and scaled by k\u00b2 does not count.",
       "evidence_ids": [
         "4b7bb316",
         "f7e626b2",
@@ -916,7 +916,7 @@
       "section": "M",
       "domain": "Geometry and Trigonometry",
       "name": "Similarity and scaling between figures",
-      "definition": "Carry a stated length factor between two figures to a side, perimeter (×k), area (×k²) or volume (×k³).",
+      "definition": "Carry a stated length factor between two figures to a side, perimeter (\u00d7k), area (\u00d7k\u00b2) or volume (\u00d7k\u00b3).",
       "inclusion_test": "Tag if the stem relates corresponding measures of TWO figures multiplicatively (\"similar\", \"k times\", \"twice the radius\", \"x% longer/increased\", \"scale model\", \"how many times\") and the answer requires applying that factor. An additive relation inside one figure (\"40 cm longer than the width\") does not count.",
       "evidence_ids": [
         "babd7461",
@@ -1646,7 +1646,7 @@
       "domain": "Expression of Ideas",
       "name": "Addition and similarity",
       "definition": "The sentence after the blank adds a separate new point, or a parallel point that is like the one before it.",
-      "inclusion_test": "Keyed transition is in the TRN.3 lexicon (in addition, additionally, moreover, furthermore, what’s more, similarly, likewise; also \"second\" when CB calls it a second supporting point (82ec9628)), and CB rationale for the key uses additional / separate / adds new information / similar / second supporting point.",
+      "inclusion_test": "Keyed transition is in the TRN.3 lexicon (in addition, additionally, moreover, furthermore, what\u2019s more, similarly, likewise; also \"second\" when CB calls it a second supporting point (82ec9628)), and CB rationale for the key uses additional / separate / adds new information / similar / second supporting point.",
       "evidence_ids": [
         "290a5d77",
         "1b219d14",
@@ -2358,7 +2358,7 @@
       "section": "M",
       "domain": "Problem Solving and Data Analysis",
       "name": "Find Part, Percent, or Whole",
-      "definition": "Given two of the three elements in the percent relationship (part, whole, rate), compute the missing one. Part = (rate/100) × whole; rate = (part/whole) × 100; whole = part / (rate/100). The core operation is a single multiplication or division in the percent-proportion framework.",
+      "definition": "Given two of the three elements in the percent relationship (part, whole, rate), compute the missing one. Part = (rate/100) \u00d7 whole; rate = (part/whole) \u00d7 100; whole = part / (rate/100). The core operation is a single multiplication or division in the percent-proportion framework.",
       "inclusion_test": "The question provides two of {part, whole, rate} and asks for the third. Both given quantities are stated directly (no intermediate computation needed). The task is a single percent-proportion calculation.",
       "evidence_ids": [
         "eaab8bc1",
@@ -2468,7 +2468,7 @@
       "section": "M",
       "domain": "Problem Solving and Data Analysis",
       "name": "Successive and Exponential Percent Changes",
-      "definition": "Apply two or more sequential percent changes to a quantity by chaining multipliers, or model repeated percent change over a variable number of periods as an exponential expression. For sequential changes: multiply by each successive factor. For exponential: use a(1±r/100)^t where t is a variable. Includes markup-then-discount, repeated growth/decay, and any chain of percent operations.",
+      "definition": "Apply two or more sequential percent changes to a quantity by chaining multipliers, or model repeated percent change over a variable number of periods as an exponential expression. For sequential changes: multiply by each successive factor. For exponential: use a(1\u00b1r/100)^t where t is a variable. Includes markup-then-discount, repeated growth/decay, and any chain of percent operations.",
       "inclusion_test": "The question involves two or more percent changes applied in sequence to the same quantity (chaining multipliers), OR a percent rate applied repeatedly over a variable number of periods (exponential expression). The student must either chain operations or construct/evaluate an exponential form.",
       "evidence_ids": [
         "dccdb20c",
@@ -9344,7 +9344,7 @@
       "playbook_move": "Zeros / x-intercepts"
     },
     {
-      "id": "CL.0231",
+      "id": "CL.0232",
       "display_name": "Direct Factor Application",
       "family": "by_hand_doing",
       "definition": "Problems solved by a single multiplication or division using a given conversion factor or rate. The student identifies whether to multiply or divide and applies the factor once.",
@@ -9381,7 +9381,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0232",
+      "id": "CL.0233",
       "display_name": "Cross-Multiplication",
       "family": "by_hand_doing",
       "definition": "Problems solved by setting up two equivalent ratios as a proportion (a/b = c/d), cross-multiplying, and solving the resulting linear equation for the unknown. Includes finding missing table entries via constant-ratio reasoning.",
@@ -9417,7 +9417,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0233",
+      "id": "CL.0234",
       "display_name": "Ratio-to-Expression Translation",
       "family": "by_hand_doing",
       "definition": "Problems solved by interpreting a stated ratio and translating it into an algebraic expression involving a variable. The student must understand that scaling both parts of a ratio by the same factor preserves the ratio.",
@@ -9440,7 +9440,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0234",
+      "id": "CL.0235",
       "display_name": "Conversion-Factor Chaining",
       "family": "by_hand_doing",
       "definition": "Problems solved by multiplying or dividing by two or more conversion factors in sequence, including squaring or cubing a linear factor for area/volume unit conversions.",
@@ -9472,7 +9472,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0235",
+      "id": "CL.0236",
       "display_name": "Density Formula Application",
       "family": "by_hand_doing",
       "definition": "Problems solved by applying the density formula (density = total / area-or-volume), rearranging to solve for the unknown quantity, and in some cases first computing volume from a side length using V = s^3.",
@@ -9494,7 +9494,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0236",
+      "id": "CL.0237",
       "display_name": "Multi-Operation Rate-Proportion Composition",
       "family": "by_hand_doing",
       "definition": "Problems requiring a primary rate or proportion step followed by one or more additional arithmetic operations: percentage calculation, subtraction of two derived quantities, algebraic substitution, scale-factor geometry, or currency conversion with surcharge.",
@@ -9518,7 +9518,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0237",
+      "id": "CL.0238",
       "display_name": "Proportion Setup and Solve",
       "family": "by_hand_doing",
       "definition": "The student sets up the proportion part/whole = rate/100 (or its equivalent: part = rate/100 * whole) and solves for the single unknown by one multiplication or one division. This is the foundational solving pattern for PCT.1, PCT.2, and PCT.3.",
@@ -9539,7 +9539,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0238",
+      "id": "CL.0239",
       "display_name": "Percent-Change Formula Application",
       "family": "by_hand_doing",
       "definition": "The student identifies old and new values, computes their difference, divides by the old value, and multiplies by 100. May include a preliminary step of reading values from data. This is the solving pattern for PCT.5.",
@@ -9558,7 +9558,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0239",
+      "id": "CL.0240",
       "display_name": "Single-Multiplier Construction or Interpretation",
       "family": "by_hand_doing",
       "definition": "The student converts a verbal percent relationship into a single decimal multiplier ((1+r/100) or (1-r/100)) and either applies it to compute a value (PCT.4), writes it as an expression (PCT.7), or reads it from a given expression (PCT.8). The key step is recognizing the equivalence between 'p% more than x' and '(1 + p/100) * x'.",
@@ -9579,7 +9579,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0240",
+      "id": "CL.0241",
       "display_name": "Multiplier Chaining",
       "family": "by_hand_doing",
       "definition": "The student constructs and composes two or more multipliers in sequence: multiply the quantity by the first multiplier, then by the second. For markup-then-discount: final = original * (1 + markup/100) * (1 - discount/100). The key insight is that the second percent acts on the intermediate result, not the original.",
@@ -9600,7 +9600,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0241",
+      "id": "CL.0242",
       "display_name": "Reverse Division (Undo a Percent)",
       "family": "by_hand_doing",
       "definition": "The student divides a known result by the multiplier that produced it to recover the original value. For example, if the final price after a 20% discount is $80, divide by 0.80 to get the original $100. The key step is recognizing that undoing a percent requires division, not subtraction.",
@@ -9619,7 +9619,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0242",
+      "id": "CL.0243",
       "display_name": "Transitive Substitution Across Percent Links",
       "family": "by_hand_doing",
       "definition": "The student expresses each quantity in terms of another using a = (p/100)*b notation, substitutes one equation into another to eliminate the intermediate variable, and simplifies to find the target percent. For example: a = 2.30b and a = 0.60c yields c = 2.30b/0.60 = 3.833b, so c is approximately 383% of b.",
@@ -9640,7 +9640,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0243",
+      "id": "CL.0244",
       "display_name": "Data Extraction Then Percent Computation",
       "family": "by_hand_doing",
       "definition": "The student reads one or more numerical values from a table, bar chart, or line graph, then performs a percent calculation (find part, find percent, or percent change) on the extracted values. The data-reading step precedes and is prerequisite to the percent step.",
@@ -9661,7 +9661,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0244",
+      "id": "CL.0245",
       "display_name": "Nested Subset Computation",
       "family": "by_hand_doing",
       "definition": "The student applies a first percent to a total to get a subtotal, then applies a second percent to that subtotal (not to the original total). Alternatively, the student uses complementary percents (100% minus the sum of stated percents) to find a remainder category, then works with that remainder. The key step is recognizing which quantity each percent applies to.",
@@ -9680,7 +9680,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0245",
+      "id": "CL.0246",
       "display_name": "Direct Ratio from Counts",
       "family": "by_hand_doing",
       "evidence_ids": [
@@ -9718,7 +9718,7 @@
       "definition": "Compute the probability of an event by counting the favorable outcomes and dividing by the total number of equally likely outcomes. The favorable and total counts are given directly or can be read from a single description."
     },
     {
-      "id": "CL.0246",
+      "id": "CL.0247",
       "display_name": "Probability via Complement or Multi-Step Counting",
       "family": "by_hand_doing",
       "evidence_ids": [
@@ -9736,7 +9736,7 @@
       "definition": "Compute a probability that requires either complement reasoning (P = 1 - P(not event)) or combining counts from multiple groups before forming the ratio. The favorable count is not directly stated but must be derived."
     },
     {
-      "id": "CL.0247",
+      "id": "CL.0248",
       "display_name": "Restricted Sample Space Ratio",
       "family": "by_hand_doing",
       "evidence_ids": [
@@ -9761,7 +9761,7 @@
       "definition": "Compute a conditional probability by restricting the sample space to a given condition, then finding the ratio of favorable outcomes within that restricted space. Often involves reading a row, column, or subset from a table."
     },
     {
-      "id": "CL.0248",
+      "id": "CL.0249",
       "display_name": "Count Recovery from Probability",
       "family": "by_hand_doing",
       "evidence_ids": [
@@ -9782,7 +9782,7 @@
       "definition": "Reverse the probability formula: given P(event) and the total (or the count and P), solve for the missing count. May require complement reasoning or subtracting known counts first."
     },
     {
-      "id": "CL.0249",
+      "id": "CL.0250",
       "display_name": "Complement and Multi-Step Counting",
       "family": "by_hand_doing",
       "evidence_ids": [
@@ -9801,7 +9801,7 @@
       "definition": "Compute a count or probability by using complement reasoning (total minus known) or by combining multiple probability statements to recover a missing count before forming the final ratio."
     },
     {
-      "id": "CL.0250",
+      "id": "CL.0251",
       "display_name": "Algebraic Probability Equation",
       "family": "by_hand_doing",
       "evidence_ids": [
@@ -9818,7 +9818,7 @@
       "definition": "Set up and solve an algebraic equation where the unknown is a count or a total, given one or more probability values. The probability formula P = favorable/total is rearranged to isolate the unknown."
     },
     {
-      "id": "CL.0251",
+      "id": "CL.0252",
       "display_name": "Read One-Way Table and Compute Ratio",
       "family": "by_hand_doing",
       "definition": "Read a single-variable frequency table, locate the target category count, compute the total by summing if not provided, and divide.",
@@ -9837,7 +9837,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0252",
+      "id": "CL.0253",
       "display_name": "Read Two-Way Table Marginals",
       "family": "by_hand_doing",
       "definition": "Locate the appropriate row or column total in a two-way table, read the grand total, and compute the marginal probability.",
@@ -9858,7 +9858,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0253",
+      "id": "CL.0254",
       "display_name": "Read Two-Way Table Cell for Joint Probability",
       "family": "by_hand_doing",
       "definition": "Locate the intersection cell representing two simultaneous conditions in a two-way table, read the grand total, and divide.",
@@ -9875,7 +9875,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0254",
+      "id": "CL.0255",
       "display_name": "Graph/Table Value Extraction",
       "family": "by_hand_doing",
       "definition": "Locate and read numerical values (bar heights, dot counts, box-plot features, table cells) from a data display. The core step is visual-to-numeric translation.",
@@ -9907,7 +9907,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0255",
+      "id": "CL.0256",
       "display_name": "Sum-and-Divide (Mean Computation)",
       "family": "by_hand_doing",
       "definition": "Add all data values (or compute frequency-weighted sums) and divide by the total count to produce the arithmetic mean. This is the procedural core of any question that asks for a mean.",
@@ -9932,7 +9932,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0256",
+      "id": "CL.0257",
       "display_name": "Order-and-Locate (Median Finding)",
       "family": "by_hand_doing",
       "definition": "Sort data values (or use cumulative frequencies) and identify the middle position(s) to determine the median. For n values, locate position (n+1)/2 (odd) or average positions n/2 and n/2+1 (even).",
@@ -9958,7 +9958,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0257",
+      "id": "CL.0258",
       "display_name": "Max-Minus-Min (Range Computation)",
       "family": "by_hand_doing",
       "definition": "Identify the greatest and least data values and subtract to find the range. May involve reading extremes from a display first.",
@@ -9976,7 +9976,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0258",
+      "id": "CL.0259",
       "display_name": "Algebraic Mean Inversion",
       "family": "by_hand_doing",
       "definition": "Set up the mean equation (sum / count = known mean), substitute known values, and solve algebraically for the unknown quantity. Includes forward (find x given mean) and reverse (find removed value given old and new mean) variants.",
@@ -9997,7 +9997,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0259",
+      "id": "CL.0260",
       "display_name": "Weighted-Average Combination",
       "family": "by_hand_doing",
       "definition": "Combine two or more group means into an overall mean using the weighted-average formula: total sum = n1*mean1 + n2*mean2; combined mean = total sum / (n1 + n2).",
@@ -10014,7 +10014,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0260",
+      "id": "CL.0261",
       "display_name": "Distribution-Shape Reasoning",
       "family": "by_hand_doing",
       "definition": "Use visual or conceptual properties of a distribution's shape (symmetry, skewness, concentration near the mean, outlier presence) to infer relationships between statistics. Includes comparing SDs by eyeballing spread, determining mean vs. median order from skew, and recognizing that shifting does not change SD.",
@@ -10038,7 +10038,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0261",
+      "id": "CL.0262",
       "display_name": "Data-Modification Effect Analysis",
       "family": "by_hand_doing",
       "definition": "Reason about how a specific change to a data set (adding/removing a value, adding a constant to all values, replacing a value) propagates to each summary statistic. Requires understanding which stats are affected by the specific type of change.",
@@ -10061,7 +10061,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0262",
+      "id": "CL.0263",
       "display_name": "Statistic Identification and Selection",
       "family": "by_hand_doing",
       "definition": "Given a described property or a set of answer choices, identify which statistical measure (mean, median, mode, range, SD) matches the description, or determine which measure can or cannot be computed from the given information.",
@@ -10083,7 +10083,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0263",
+      "id": "CL.0264",
       "display_name": "Direct Graph Reading",
       "family": "by_hand_doing",
       "definition": "Locate a value on one axis, trace horizontally or vertically to the graph/data point, and read the corresponding value on the other axis.",
@@ -10112,7 +10112,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0264",
+      "id": "CL.0265",
       "display_name": "Slope Computation (Rise over Run)",
       "family": "by_hand_doing",
       "definition": "Select two points (on a line or from data), compute (y2 - y1) / (x2 - x1), and express the result as a decimal or fraction.",
@@ -10142,7 +10142,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0265",
+      "id": "CL.0266",
       "display_name": "Sign and Intercept Reasoning",
       "family": "by_hand_doing",
       "definition": "Determine the sign of the slope (positive or negative) and the approximate y-intercept from a graph to eliminate answer choices or classify the relationship.",
@@ -10165,7 +10165,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0266",
+      "id": "CL.0267",
       "display_name": "Pattern Recognition in Data (Differences vs. Ratios)",
       "family": "by_hand_doing",
       "definition": "Examine successive differences or successive ratios in a table, or the curvature of a graph, to distinguish linear growth (constant differences) from exponential growth (constant ratios) or quadratic behavior.",
@@ -10191,7 +10191,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0267",
+      "id": "CL.0268",
       "display_name": "Residual and Deviation Analysis",
       "family": "by_hand_doing",
       "definition": "Compute actual value minus predicted value for a specific data point, using the model line/curve to find the predicted value.",
@@ -10210,7 +10210,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0268",
+      "id": "CL.0269",
       "display_name": "Contextual Slope and Rate Interpretation",
       "family": "by_hand_doing",
       "definition": "Translate the numerical slope into a per-unit statement (e.g., 'for each additional unit of x, y increases by m') and connect the y-intercept to the starting value in context.",
@@ -10228,7 +10228,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0269",
+      "id": "CL.0270",
       "display_name": "Substitution and Evaluation",
       "family": "by_hand_doing",
       "definition": "Plug a given x-value into a model equation and evaluate to find the predicted y, or test candidate equations by substituting known data points.",
@@ -10252,7 +10252,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0270",
+      "id": "CL.0271",
       "display_name": "Interval rate-of-change computation",
       "family": "by_hand_doing",
       "definition": "Computing (y2 - y1) / (x2 - x1) across one or more intervals from a graph or table to find average rate of change, or comparing rates across intervals to identify the steepest segment.",
@@ -10273,7 +10273,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0271",
+      "id": "CL.0272",
       "display_name": "Nonlinear model fitting by key features",
       "family": "by_hand_doing",
       "definition": "Matching a scatterplot's curved pattern to a specific quadratic or exponential equation by testing key features such as vertex, y-intercept, direction of opening, or exponential base.",
@@ -10292,7 +10292,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0272",
+      "id": "CL.0273",
       "display_name": "Compute sample statistic from raw data",
       "family": "by_hand_doing",
       "definition": "Calculate a sample proportion or sample mean from counts or individual values provided in the question stem, before using it for inference.",
@@ -10314,7 +10314,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0273",
+      "id": "CL.0274",
       "display_name": "Construct confidence interval from estimate and MOE",
       "family": "by_hand_doing",
       "definition": "Apply the formula estimate +/- margin of error to determine the interval of plausible values for the population parameter.",
@@ -10341,7 +10341,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0274",
+      "id": "CL.0275",
       "display_name": "Scale sample proportion to population count",
       "family": "by_hand_doing",
       "definition": "Multiply the sample proportion (or its complement) by the total population size to estimate the number of individuals in the population with a given characteristic.",
@@ -10366,7 +10366,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0275",
+      "id": "CL.0276",
       "display_name": "Distinguish population parameter from individual values",
       "family": "by_hand_doing",
       "definition": "Recognize that the margin of error describes uncertainty about the population mean or proportion, NOT the range of individual values in the population or sample.",
@@ -10384,7 +10384,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0276",
+      "id": "CL.0277",
       "display_name": "Evaluate whether a specific value is plausible",
       "family": "by_hand_doing",
       "definition": "Determine whether a particular value falls inside or outside the confidence interval, using language like 'plausible', 'doubtful', or 'not possible' appropriately.",
@@ -10403,7 +10403,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0277",
+      "id": "CL.0278",
       "display_name": "Relate sample size to margin of error",
       "family": "by_hand_doing",
       "definition": "Understand that a smaller sample size generally produces a larger margin of error, and vice versa, because smaller samples are less representative.",
@@ -10419,7 +10419,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0278",
+      "id": "CL.0279",
       "display_name": "Identify correct population for generalization",
       "family": "by_hand_doing",
       "definition": "Determine which population a sample statistic can be generalized to, based on how the sample was selected (e.g., largemouth bass vs all fish; adults who own TVs vs all adults).",
@@ -10436,7 +10436,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0279",
+      "id": "CL.0280",
       "display_name": "Identify the sampled population",
       "family": "by_hand_doing",
       "definition": "Determine the specific group from which the sample was actually drawn, distinguishing it from broader or narrower groups mentioned in the question.",
@@ -10457,7 +10457,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0280",
+      "id": "CL.0281",
       "display_name": "Detect non-representative sampling",
       "family": "by_hand_doing",
       "definition": "Recognize that a sample drawn from a convenience location, voluntary response, or non-random subgroup is not representative of the target population and will produce biased estimates.",
@@ -10475,7 +10475,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0281",
+      "id": "CL.0282",
       "display_name": "Recognize inherent uncertainty in sampling",
       "family": "by_hand_doing",
       "definition": "Understand that even a valid random sample gives an estimate, not an exact value, and that repeating the sampling process can yield different results.",
@@ -10492,7 +10492,7 @@
       "aliases": []
     },
     {
-      "id": "CL.0282",
+      "id": "CL.0283",
       "display_name": "Resist over-generalization",
       "family": "by_hand_doing",
       "definition": "Reject conclusions that extend beyond the population from which the sample was selected -- e.g., from one school to all schools, from dog owners to all residents, or from book-likers to all moviegoers.",
