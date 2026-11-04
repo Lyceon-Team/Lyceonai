@@ -49,10 +49,15 @@ rt_check_for() {
   rt_check_fast
 }
 
+# vitest colours its summary in CI ("\e[2m | \e[22m\e[33m1 skipped\e[39m..."), which no plain
+# pattern matches; the summary is read with its colour codes removed.
+rt_strip_ansi() { sed -e 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
+
 # rt_baseline <ok-fn> <bad-fn>: the filtered run is green and skips exactly the round trips.
 rt_baseline() {
   local out rc n="${#RT_TITLES[@]}"
   out="$(rt_check_fast)"; rc=$?
+  out="$(printf '%s\n' "$out" | rt_strip_ansi)"
   if [ "$rc" != 0 ]; then "$2" "filtered run (round trips excluded) not green"; echo "$out" | tail -30; return; fi
   # vitest prints e.g. "Tests  91 passed | 1 skipped (92)".
   case "$out" in
