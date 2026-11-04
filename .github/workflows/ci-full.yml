@@ -70,6 +70,53 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: bash scripts/ci/ci-full-scope.sh
 
+  # Which pg-mutations groups this change needs (CI scope ruling, Karl 2026-11-04: the media and
+  # marketing checks run only when a change can affect them, scoped to the right files). The
+  # groups in SCOPED_GROUPS (scripts/ci/pg-mutation-scope.mjs) run only when the pull request
+  # changes one of their dependencies, computed from this tree's imports and path strings and
+  # re-proved by each group's scope trace; every other group always runs. Fails open: on a push,
+  # a manual run, or any error reading the change, every group runs.
+  pg-scope:
+    runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      groups: ${{ steps.groups.outputs.groups }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # a pull request checks out its merge commit; HEAD^1 is the base
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Decide the groups
+        id: groups
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          CHANGED="$(mktemp)"
+          if [ "$EVENT_NAME" = pull_request ] && git diff --name-only HEAD^1 HEAD >"$CHANGED"; then
+            echo "changed files: $(wc -l <"$CHANGED")"
+            node scripts/ci/pg-mutation-scope.mjs groups "$CHANGED" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "not a pull request, or the change could not be read: every group runs"
+            ALL=true node scripts/ci/pg-mutation-scope.mjs groups | tee -a "$GITHUB_OUTPUT"
+          fi
+
   # The review UI mutation gate, every plant, split across REVIEW_UI_GATE_JOBS jobs of 4 worktrees
   # (CI wall-time brief, Karl 2026-10-11: ~21 minutes in one job was the full tier's critical path).
   # Same plants, same proof per plant: each job runs its global shards through
@@ -211,7 +258,7 @@ jobs:
   # on its server. Each job has both servers, so every step keeps its port.
   pg-mutations:
     runs-on: ubuntu-latest
-    needs: scope
+    needs: [scope, pg-scope]
     if: ${{ needs.scope.outputs.run == 'true' }}
     timeout-minutes: 30
     permissions:
@@ -219,7 +266,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [deletion, qotd, review-marketing, calendar-migrations, worked-examples, qotd-breakdown]
+        # Every group in ALL_GROUPS (scripts/ci/pg-mutation-scope.mjs), less the scoped groups
+        # this change cannot affect.
+        group: ${{ fromJSON(needs.pg-scope.outputs.groups) }}
     services:
       # Two servers, one job (owner decision 2026-10-07, CI audit item 2: "Postgres jobs
       # consolidated"). Every script and test creates its own database, so the eleven jobs that
@@ -505,11 +554,17 @@ jobs:
       # alone is ~30 s, so the harness grew from 98 s (2026-10-29) to 1,270-1,355 s and pushed
       # `qotd` past the job's 30-minute timeout (#1431, #1436). Same plants, same checks; only
       # the job they run in changed.
-      - name: Install FFmpeg (the worked-example final-mix plants)
+      - name: Install FFmpeg (the worked-example final-mix plants) and strace (the scope trace)
         if: matrix.group == 'worked-examples'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q ffmpeg
+          sudo apt-get install -y -q ffmpeg strace
+
+      # The scope this group was selected by: its tests read no repository file outside the
+      # dependencies scripts/ci/pg-mutation-scope.mjs computed (CI scope ruling, Karl 2026-11-04).
+      - name: Scope trace — worked-examples reads only its computed dependencies
+        if: matrix.group == 'worked-examples'
+        run: bash scripts/ci/pg-mutation-scope-trace.sh worked-examples
 
       - name: Worked-example mutations (planted defects must fail)
         if: matrix.group == 'worked-examples'
@@ -558,11 +613,15 @@ jobs:
       # B23 and B24 run a real ffmpeg round trip and the harness fails its baseline without ffmpeg.
       # Its own group (2026-11-04) for the reason the worked-example harness has one: each of its
       # 28 plants re-runs a ~20 s test file, too long to share `qotd`'s 30 minutes.
-      - name: Install FFmpeg (the QOTD breakdown round-trip plants)
+      - name: Install FFmpeg (the QOTD breakdown round-trip plants) and strace (the scope trace)
         if: matrix.group == 'qotd-breakdown'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q ffmpeg
+          sudo apt-get install -y -q ffmpeg strace
+
+      - name: Scope trace — qotd-breakdown reads only its computed dependencies
+        if: matrix.group == 'qotd-breakdown'
+        run: bash scripts/ci/pg-mutation-scope-trace.sh qotd-breakdown
 
       - name: QOTD breakdown mutations (planted defects must fail)
         if: matrix.group == 'qotd-breakdown'
