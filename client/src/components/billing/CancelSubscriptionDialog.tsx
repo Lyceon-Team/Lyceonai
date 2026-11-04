@@ -45,17 +45,19 @@
  * rule: Radix portals it to <body>, outside `.lyc`, where the student tokens do
  * not resolve.
  *
- * THE CONFIRM BUTTON NAMES ITS OWN FILL, AND HAS TO. `AlertDialogAction`'s default
- * is `buttonVariants()` — `bg-primary` — and `--primary` is declared as a bare HSL
- * triplet (`client/src/styles/tokens.css:4`, `20 14% 12%`) while the Tailwind theme
- * maps `primary` to `var(--primary)` rather than `hsl(var(--primary))`. The
- * declaration is invalid, so the fill computes to `rgba(0, 0, 0, 0)` and
- * `text-primary-foreground` cream lands on a cream sheet: a primary action nobody
- * can see. Every other `AlertDialogAction` in this codebase overrides the
- * background for the same reason (`GuardianStudentsPage.tsx:317`,
- * `DeleteAccountCard.tsx:252`, `SubmitModuleDialog.tsx:83`); this one matches its
- * nearest neighbour, the guardian Remove dialog. The token itself is a
- * pre-existing app-wide defect and is reported, not fixed here.
+ * THE CONFIRM BUTTON IS `destructive`, AND SAYS SO RATHER THAN DRAWING IT. Ending a
+ * subscription is the destructive action on this screen, so it takes the variant the
+ * design system already has — one filled primary action, DESIGN.md §5.
+ *
+ * It was written as a hand-rolled `bg-destructive …` className when this file was
+ * first added, because `AlertDialogAction`'s default is `buttonVariants()`
+ * (`bg-primary`) and `--primary` was then shadowed by an invalid declaration in
+ * `styles/tokens.css`, so that fill computed to transparent and the label vanished
+ * into the sheet. That token was fixed app-wide in #1433 (merged 2026-11-04, owner
+ * decision 2026-11-03), which also gave `AlertDialogAction` the `variant` prop used
+ * here, so the override is gone with the defect that caused it. Recorded rather than
+ * deleted because the next reader will otherwise wonder why a cancel confirmation
+ * is red: it is a deliberate choice, not a leftover.
  */
 import { useState } from "react";
 import type { CancellableSubscription } from "@lyceon/shared/billing-schema";
@@ -256,7 +258,8 @@ export function CancelSubscriptionDialog({
               Keep my subscription
             </AlertDialogCancel>
             <AlertDialogAction
-              className="min-h-[44px] bg-destructive text-base text-destructive-foreground hover:bg-destructive/90"
+              variant="destructive"
+              className="min-h-[44px] text-base"
               onClick={(event) => {
                 // The dialog must not close on click: the result screen renders
                 // in its place, and closing first would discard it.
