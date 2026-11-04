@@ -9,6 +9,7 @@
 # never reads the screen, spoken order hook → setup → steps → trap → answer → CTA, the end card
 # "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation; W24 per the
 # owner brief "Video tools pilot" D3, Karl, 2026-11-02: Chatterbox's own respelling, same table;
+# T23/T24/T26 re-pointed and T27-T31 added per Karl's #social copy-paste cleanup, 2026-11-04;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -279,21 +280,40 @@ ts_plant "T20 the Slack set out of order" scripts/worked-examples/post-to-slack.
   "posts the video first"
 
 echo "=== TS: the SCL-262 set (SCL-265) ==="
-ts_plant "T23 the music credit dropped from the TikTok caption (CC BY 4.0 attribution)" shared/worked-examples/rules.ts \
-  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
-  "return socialTiktokCaption(c.headline, c.test, c.section, []);" \
-  "the real title and caption pass, with the music credited"
+# T23, T24, T26 re-pointed and T27-T31 added 2026-11-04 (Karl, the #social copy-paste cleanup):
+# the music credit moved from every caption onto the end card, small at the right, at most a
+# quarter of the outro font, never spoken; outside the copy blocks only the platform headers.
+ts_plant "T23 the music credit planted back into the TikTok caption" shared/worked-examples/rules.ts \
+  "  return socialTiktokCaption(c.headline, c.test, c.section);" \
+  '  return `${socialTiktokCaption(c.headline, c.test, c.section)}\n\nMusic: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.`;' \
+  "the real title and caption pass, with no music credit in any caption"
 ts_plant "T24 a link in the TikTok caption" shared/worked-examples/rules.ts \
-  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
-  'return socialTiktokCaption(c.headline, c.test, c.section, ["lyceon.ai/start", musicCredit]);' \
+  "  return socialTiktokCaption(c.headline, c.test, c.section);" \
+  '  return `${socialTiktokCaption(c.headline, c.test, c.section)}\n\nlyceon.ai/start`;' \
   "no link, bio line or promo in any caption"
 ts_plant "T25 the caption link check removed" shared/worked-examples/rules.ts \
   "if (link) out.push(" "if (false) out.push(" \
   "no link, bio line or promo in any caption"
 ts_plant "T26 the link to send back in the Instagram message" scripts/worked-examples/post-to-slack.ts \
-  "        copyBlock(set.instagram_caption),"$'\n' \
-  "        copyBlock(set.instagram_caption),"$'\n'"        \"lyceon.ai/start?utm_campaign=worked_example\","$'\n' \
-  "no link, bio line, title or label block in any message"
+  'text: [platformLine("Instagram"), copyBlock(set.instagram_caption)].join(' \
+  'text: [platformLine("Instagram"), copyBlock(set.instagram_caption), "lyceon.ai/start?utm_campaign=worked_example"].join(' \
+  "outside the blocks only the platform headers"
+ts_plant "T27 the copy-block check removed (a credit, URL or label passes)" shared/worked-examples/rules.ts \
+  "  out.push(...copyBlockProblems(caption));" "" \
+  "no copy block carries a music credit"
+ts_plant "T28 a label back on the video comment" scripts/worked-examples/post-to-slack.ts \
+  '      comment: platformLine("TikTok"),' \
+  '      comment: `${platformLine("TikTok")}\nWorked example · SATM2CZS1BE`,' \
+  "posts the video first"
+ts_plant "T29 the credit dropped from the end card" scripts/worked-examples/composition.ts \
+  "{ credit: endCardCreditHtml(kit) }" '{ credit: "" }' \
+  "the end card shows the track's credit"
+ts_plant "T30 the credit at half the outro font, not a quarter" scripts/worked-examples/composition.ts \
+  "  Math.min(OUTRO_FOLLOW_PX, OUTRO_BRAND_PX) / 4," "  Math.min(OUTRO_FOLLOW_PX, OUTRO_BRAND_PX) / 2," \
+  "small at the right"
+ts_plant "T31 the layout check lets an oversized credit through" scripts/worked-examples/layout-check.ts \
+  "  if (c.fontPx > limit)" "  if (false)" \
+  "the layout check refuses"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \
@@ -374,10 +394,15 @@ ts_plant "W9 committed lines matched by position, not key" scripts/worked-exampl
   "    const line = manifest.lines.find((l) => l.key === s.key);" \
   "    const line = manifest.lines[script.indexOf(s)];" \
   "a manifest voiced before the ruling (answer before trap) places every line in the new order"
+# W10 re-pointed 2026-11-04 (SCL-273): the end-card scene now fills the credit, over several lines.
 ts_plant "W10 a caption track back in the composition" scripts/worked-examples/composition.ts \
-  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),' \
-  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),
-    `<section id="cap-hook-0" class="clip cap" data-start="0" data-duration="1" data-track-index="5"><div class="cap-box">Up</div></section>`,' \
+  '      " end",
+    ),
+  ].join("\n");' \
+  '      " end",
+    ),
+    `<section id="cap-hook-0" class="clip cap" data-start="0" data-duration="1" data-track-index="5"><div class="cap-box">Up</div></section>`,
+  ].join("\n");' \
   "no caption track"
 ts_plant "W11 the end card shows lyceon.ai" video-kit/worked-examples/templates/end-card.html \
   '<div class="brand-name">Lyceon SAT Prep</div>' '<div class="brand-name">lyceon.ai</div>' \

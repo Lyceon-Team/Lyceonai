@@ -213,10 +213,12 @@ ts_plant "B14 a grid-in let through (rule c)" shared/qotd/breakdown.ts \
   "a grid-in, a long passage, a paired passage"
 
 echo "=== captions, window, workflow ==="
-ts_plant "B15 the music credit dropped from the TikTok caption (CC BY 4.0)" shared/qotd/breakdown.ts \
-  "  const caption = socialTiktokCaption(headline, test, section, [musicCredit]);" \
-  "  const caption = socialTiktokCaption(headline, test, section, []);" \
-  "each caption is the canonical builder's output with the credit last"
+# B15 re-pointed 2026-11-04 (Karl, the #social copy-paste cleanup): the credit is on the end card,
+# so the plant now puts it back into the caption.
+ts_plant "B15 the music credit planted back into the TikTok caption" shared/qotd/breakdown.ts \
+  "  const caption = socialTiktokCaption(headline, test, section);" \
+  '  const caption = `${socialTiktokCaption(headline, test, section)}\n\nMusic: "Happy Beats" by ende.app (CC BY 4.0)`;' \
+  "each caption is the canonical builder's output, with no music credit"
 ts_plant "B18 the pilot dates moved off Karl's ruling" shared/qotd/breakdown.ts \
   '  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });' \
   '  qotdBreakdownPilotSchema.parse({ start: "2026-11-08", end: "2026-11-21" });' \
@@ -224,6 +226,10 @@ ts_plant "B18 the pilot dates moved off Karl's ruling" shared/qotd/breakdown.ts 
 ts_plant "B19 the pilot never ends" shared/qotd/breakdown.ts \
   '  if (postedOn > pilot.end) return "ended";' "" \
   "is set to Karl's dates, posting days, 14 inclusive"
+ts_plant "B29 the hold lifted (the live window set while Karl holds the pilot, 2026-11-03)" shared/qotd/breakdown.ts \
+  '  qotdBreakdownPilotSchema.parse({ start: null, end: null });' \
+  '  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });' \
+  "held: the live window is off"
 ts_plant "B20 the breakdown blocks the QOTD (inside its job)" .github/workflows/qotd-social.yml \
   "    needs: assets"$'\n'"    if: always()" "    needs: assets" \
   "runs after the QOTD job, whatever its result"
