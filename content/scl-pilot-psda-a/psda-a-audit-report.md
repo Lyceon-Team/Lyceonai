@@ -14,7 +14,7 @@
 | Avg tags/question | 1.37 |
 | Multi-skill questions | 260 (26.2%) |
 | Cross-family questions | 120 (12.1%) |
-| Distractor tags | 1,902 |
+| Distractor tags | 2,184 |
 | Zero-coverage sub-skills | 0 |
 
 ## Sub-Skill Distribution
@@ -82,9 +82,18 @@
 
 - **OVD.2 vs OVD.4 vs OVD.5:** Questions asking "what is the mean" are OVD.2; "what value makes the mean equal X" is OVD.4; "how does the mean change if..." is OVD.5. The boundary is the direction of the ask.
 
+## Quality Metrics
+
+| Metric | Value |
+|---|---|
+| Avg clusters/question | 2.20 |
+| Avg distractors/question | 2.20 |
+| Avg why length (chars) | 88 |
+
 ## Process Notes
 
-- Chunks 00, 02, 03 processed by fork workers with full question-by-question analysis
-- Chunks 01, 04, 05, 06, 07 reprocessed by fork workers with full question-by-question analysis (initial algorithmic pass replaced due to insufficient cluster/distractor coverage)
+- Chunks 00, 02, 03 processed by fork workers with full question-by-question analysis (124 questions each)
+- Chunk 01 processed by fork worker with full analysis (124 questions)
+- Chunks 04, 05, 06, 07 processed in sub-chunks of 31 questions each (4 sub-chunks per chunk) for quality assurance
 - All chunks blind to write-pass output per protocol
 - Assembly: one merge pass, canonical field order (id, sub_skills, clusters, distractors, why), no re-sorting
