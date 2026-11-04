@@ -1,0 +1,54 @@
+/*
+ * A markdown table in a question stem or passage.
+ *
+ * @spec [owner brief 2026-11-04, approach A] | @implemented [2026-11-04]
+ *
+ * plain English: one look for every surface the question renderer serves. Expected outcome: a
+ * table reads as a table in practice, in the exam and on the prerendered public pages, without
+ * any of them having to know about the others.
+ *
+ * WHY PLAIN CSS AND NOT TAILWIND TOKEN CLASSES. The renderer is shared by three token systems:
+ * the student surfaces define `--rule` under `.lyc`, the exam defines `--exam-line` under
+ * `.exam-root`, and the prerendered public pages define neither. A Tailwind class keyed to one
+ * of them (`border-lyc-rule`) resolves to an undefined custom property on the other two, which
+ * computes to a transparent border — the same defect `--primary` had app-wide (#1433). A
+ * fallback chain ending in `currentColor` cannot be invisible anywhere.
+ */
+.question-table-wrap {
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.question-table {
+  border-collapse: collapse;
+  /* Hugs its content rather than stretching: SAT value tables are two or three narrow columns. */
+  width: auto;
+  min-width: min(100%, 18rem);
+  font-size: 0.95em;
+  /* The stem is set in a serif display face; a data table reads better in the body face. */
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.question-table th,
+.question-table td {
+  border: 1px solid var(--rule, var(--exam-line, currentColor));
+  padding: 0.45em 0.8em;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.question-table thead th {
+  font-weight: 600;
+  background: var(--margin, var(--exam-subtle, transparent));
+}
+
+.question-table td[data-align="center"],
+.question-table th[data-align="center"] {
+  text-align: center;
+}
+.question-table td[data-align="right"],
+.question-table th[data-align="right"] {
+  text-align: right;
+}

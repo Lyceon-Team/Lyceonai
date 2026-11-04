@@ -1,37 +1,47 @@
 /**
- * How a question with a markdown table renders TODAY — NOT shipped.
+ * Every question with a markdown table, in every renderer — NOT shipped.
  *
- * plain English: mounts the real renderers with SATM2K9CGMN's real stem, taken verbatim from
- * `infra/supabase/seed/proving_batch_004.sql`, so the screenshots are of the shipped components
- * rather than of a mock.
+ * @spec [owner brief 2026-11-04: "Before-and-after screenshots of all 23 table questions on
+ *        practice, diagnostic, Review, QOTD (dashboard and /qotd), full-length, and the
+ *        prerendered public pages", and "before-and-after screenshots of at least 10 non-table
+ *        stems as well"] | @implemented [2026-11-04]
  *
- * THREE RENDERERS COVER THE SIX SURFACES. `QuestionRenderer` is the body of practice, diagnostic,
- * Review (`/review/session/:id` runs the SAME component, route registry line 17) and both signed-in
- * QOTD surfaces; the exam draws its stem with `MathRenderer` directly; the public QOTD pages are
- * prerendered and use `StaticMath`, which cannot run MathRenderer's effect. `?eol=crlf` swaps every
- * newline for CRLF, to show whether the line ending changes anything.
+ * plain English: mounts a real stem or passage, taken verbatim from the seed corpus, in the
+ * three renderers that serve the seven surfaces. `?set=tables|plain` picks the corpus, `?i=`
+ * the question, `?eol=crlf|lf` the line endings. Expected outcome: a before/after pair per
+ * question, of the shipped components rather than of a mock.
+ *
+ * THREE RENDERERS COVER THE SEVEN SURFACES, and the labels say which. `QuestionRenderer` is the
+ * body of practice, diagnostic, Review (`/review/session/:id` runs the SAME component, route
+ * registry line 17) and both signed-in QOTD surfaces; the exam draws its stem with
+ * `MathRenderer`, the exact call `ExamQuestionView` makes; the public pages are prerendered and
+ * use `StaticMath`. Driving the six live pages would need Supabase auth and a live API, and a
+ * screenshot of a login wall would prove nothing — so the renderers are mounted directly and
+ * each panel names the surfaces it stands for.
+ *
+ * CRLF IS THE DEFAULT, because every published table row carries it (owner's read-only
+ * production query, 2026-11-04) while the seed corpus is LF.
  */
 import { createRoot } from "react-dom/client";
 import QuestionRenderer from "@/components/question-renderer";
 import MathRenderer from "@/components/MathRenderer";
 import { StaticMath } from "@/components/qotd/StaticMath";
+import CORPUS from "./questions.json";
 import "@/index.css";
 import "@/styles/tokens.css";
 import "@/styles/student-tokens.css";
 import "@/styles/accessibility.css";
 
-/** SATM2K9CGMN, verbatim from the seed. */
-const STEM_LF = [
-  "The linear function $g$ is defined for all real numbers. The table below shows selected values of $g$.",
-  "",
-  "| $x$ | $g(x)$ |",
-  "|---|---|",
-  "| $-2$ | $11$ |",
-  "| $1$ | $5$ |",
-  "| $4$ | $-1$ |",
-  "",
-  "For what value of $x$ does $g(x) = 0$?",
-].join("\n");
+type Question = {
+  id: string;
+  section: string;
+  field: string;
+  text: string;
+};
+const SETS: Record<string, Question[]> = {
+  tables: CORPUS.tables as Question[],
+  plain: CORPUS.plain as Question[],
+};
 
 const OPTIONS = [
   { id: "opt_a", text: "$\\frac{5}{2}$" },
@@ -41,9 +51,13 @@ const OPTIONS = [
 ];
 
 const params = new URLSearchParams(window.location.search);
-const stem =
-  params.get("eol") === "crlf" ? STEM_LF.replace(/\n/g, "\r\n") : STEM_LF;
-const eolLabel = params.get("eol") === "crlf" ? "CRLF (\\r\\n)" : "LF (\\n)";
+const set = params.get("set") === "plain" ? "plain" : "tables";
+const index = Number(params.get("i") ?? "0");
+const question = SETS[set]![index]!;
+const crlf = params.get("eol") !== "lf";
+const text = crlf
+  ? question.text.replace(/\r?\n/g, "\r\n")
+  : question.text.replace(/\r\n/g, "\n");
 
 function Panel({
   title,
@@ -60,12 +74,12 @@ function Panel({
         border: "1px solid var(--rule)",
         borderRadius: 12,
         background: "var(--sheet)",
-        padding: 24,
-        marginBottom: 24,
+        padding: 20,
+        marginBottom: 18,
       }}
     >
-      <h2 style={{ margin: "0 0 2px", fontSize: 17, fontWeight: 700 }}>{title}</h2>
-      <p style={{ margin: "0 0 16px", fontSize: 13, opacity: 0.7 }}>{where}</p>
+      <h2 style={{ margin: "0 0 2px", fontSize: 15, fontWeight: 700 }}>{title}</h2>
+      <p style={{ margin: "0 0 14px", fontSize: 12, opacity: 0.65 }}>{where}</p>
       {children}
     </section>
   );
@@ -74,13 +88,19 @@ function Panel({
 const mount = document.getElementById("root");
 if (mount === null) throw new Error("no #root");
 
+/** A passage goes in the passage slot; a stem in the stem slot. */
+const asPassage = question.field === "passage";
+
 createRoot(mount).render(
-  <div className="lyc" style={{ minHeight: "100vh", padding: 32 }}>
-    <h1 style={{ fontSize: 22, margin: "0 0 2px" }}>
-      SATM2K9CGMN — as it renders today
+  <div className="lyc" style={{ minHeight: "100vh", padding: 28 }}>
+    <h1 style={{ fontSize: 19, margin: "0 0 2px" }}>
+      {question.id} · {question.section} · {question.field} ·{" "}
+      {crlf ? "CRLF" : "LF"}
     </h1>
-    <p style={{ margin: "0 0 20px", fontSize: 13, opacity: 0.7 }}>
-      Line endings in this render: {eolLabel}
+    <p style={{ margin: "0 0 18px", fontSize: 12, opacity: 0.65 }}>
+      {set === "tables"
+        ? "table question"
+        : "control: a stem with no table — must not change"}
     </p>
 
     <Panel
@@ -90,7 +110,8 @@ createRoot(mount).render(
       <QuestionRenderer
         question={{
           questionType: "multiple_choice",
-          stem,
+          stem: asPassage ? "Which choice best describes the table?" : text,
+          passage: asPassage ? text : null,
           options: OPTIONS,
         }}
         selectedAnswer={null}
@@ -100,19 +121,19 @@ createRoot(mount).render(
     </Panel>
 
     <Panel
-      title="MathRenderer (the exam stem)"
+      title="MathRenderer (the exam)"
       where="full-length: ExamQuestionView renders the stem with exactly this call"
     >
-      <div className="text-base font-semibold leading-relaxed" data-testid="exam-stem">
-        <MathRenderer content={stem} />
+      <div className="text-base font-semibold leading-relaxed">
+        <MathRenderer content={text} />
       </div>
     </Panel>
 
     <Panel
       title="StaticMath (prerendered)"
-      where="public QOTD: /sat-question-of-the-day/:date and the /sat-practice-questions pages"
+      where="public: /sat-question-of-the-day/:date and the /sat-practice-questions pages"
     >
-      <StaticMath content={stem} />
+      <StaticMath content={text} />
     </Panel>
   </div>,
 );

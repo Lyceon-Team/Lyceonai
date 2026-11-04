@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import '@/styles/question-table.css';
 import {
   tokenizeContent,
   tokenizeMathContent,
@@ -11,6 +12,12 @@ import {
   isUnderlined,
   splitByUnderlineMarkup,
 } from '@shared/question-markup';
+import {
+  normalizeLineEndings,
+  splitTableBlocks,
+  trimAtTableBoundary,
+  type TableAlignment,
+} from '@shared/question-tables';
 
 // Re-exported so existing importers keep one path; the tokenizer itself lives in shared/math.
 export { tokenizeMathContent };
@@ -63,7 +70,7 @@ export function MathRenderer({
     }
 
     try {
-      const fragment = processMixedContentSafely(content, displayMode);
+      const fragment = renderContentSafely(content, displayMode);
       el.replaceChildren(fragment);
       setIsLoading(false);
     } catch {
@@ -80,6 +87,101 @@ export function MathRenderer({
       <div ref={containerRef} style={{ display: isLoading ? 'none' : 'block' }} />
     </div>
   );
+}
+
+/**
+ * Content with its markdown tables drawn as real tables, everything else unchanged.
+ *
+ * @spec [owner brief 2026-11-04, approach A ("render the text exactly as today, and build a real
+ *        <table> with createElement, running each cell through the existing math tokenizer")]
+ * | @implemented [2026-11-04]
+ *
+ * plain English: `splitTableBlocks` says where the tables are; each run of ordinary content goes
+ * through `processMixedContentSafely` exactly as the whole string did before, and each cell goes
+ * through the SAME function. Expected outcome: a question without a table renders byte for byte
+ * as it did, because for that content this function calls the old one once on the whole string
+ * and returns its fragment.
+ *
+ * STILL NO HTML IS PARSED. Every node here is `createElement` or `createTextNode`, as the rest
+ * of this file is; a cell's text reaches the DOM through the tokenizer and `textContent`, never
+ * through `innerHTML`.
+ */
+function renderContentSafely(
+  source: string,
+  defaultDisplayMode: boolean,
+): DocumentFragment {
+  // Normalised ONCE, here, so every offset below indexes the same string and no carriage
+  // return reaches a `white-space: pre-wrap` container as a segment break of its own.
+  const content = normalizeLineEndings(source);
+  const segments = splitTableBlocks(content);
+  if (segments.length === 1 && segments[0]!.kind === 'text') {
+    // The overwhelmingly common case, and the one that must not change: one call, one fragment.
+    return processMixedContentSafely(content, defaultDisplayMode);
+  }
+
+  const fragment = document.createDocumentFragment();
+  segments.forEach((segment, i) => {
+    if (segment.kind === 'text') {
+      const slice = trimAtTableBoundary(
+        content.slice(segment.start, segment.end),
+        {
+          tableBefore: segments[i - 1]?.kind === 'table',
+          tableAfter: segments[i + 1]?.kind === 'table',
+        },
+      );
+      if (slice === '') return;
+      fragment.appendChild(
+        processMixedContentSafely(slice, defaultDisplayMode),
+      );
+      return;
+    }
+    fragment.appendChild(buildTable(segment.header, segment.align, segment.rows));
+  });
+  return fragment;
+}
+
+/** One cell: the same tokenizer path the surrounding prose takes. */
+function buildCell(
+  tag: 'th' | 'td',
+  text: string,
+  align: TableAlignment,
+): HTMLTableCellElement {
+  const cell = document.createElement(tag);
+  if (align !== null) cell.dataset.align = align;
+  cell.appendChild(processMixedContentSafely(text, false));
+  return cell;
+}
+
+function buildTable(
+  header: readonly string[],
+  align: readonly TableAlignment[],
+  rows: readonly (readonly string[])[],
+): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'question-table-wrap';
+  const table = document.createElement('table');
+  table.className = 'question-table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  header.forEach((cell, i) => {
+    headRow.appendChild(buildCell('th', cell, align[i] ?? null));
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+    row.forEach((cell, i) => {
+      tr.appendChild(buildCell('td', cell, align[i] ?? null));
+    });
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+
+  wrap.appendChild(table);
+  return wrap;
 }
 
 function processMixedContentSafely(content: string, defaultDisplayMode: boolean): DocumentFragment {

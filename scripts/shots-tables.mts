@@ -1,9 +1,11 @@
 /**
- * Screenshots of how a table question renders in each renderer, LF and CRLF.
+ * Before/after screenshots of every table question and the non-table controls.
+ *
  *   pnpm exec vite build --config vite.shots-tables.config.ts
  *   pnpm exec tsx scripts/shots-tables.mts <outDir>
- * The build is read once into a map and served from it, so no request-derived value reaches
- * the filesystem (CodeQL js/path-injection).
+ *
+ * The build is read once into a map and served from it, so no request-derived value reaches the
+ * filesystem (CodeQL js/path-injection).
  */
 import { chromium } from "@playwright/test";
 import { createServer } from "node:http";
@@ -12,6 +14,13 @@ import path from "node:path";
 
 const DIR = path.resolve(import.meta.dirname, "../dist/shots-tables");
 const OUT = process.argv[2] ?? "/tmp/shots-tables";
+const CORPUS = JSON.parse(
+  await readFile(
+    path.resolve(import.meta.dirname, "../client/shots-tables/questions.json"),
+    "utf8",
+  ),
+) as { tables: Array<{ id: string }>; plain: Array<{ id: string }> };
+
 const TYPES: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -19,6 +28,7 @@ const TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
   ".woff": "font/woff",
   ".ttf": "font/ttf",
+  ".json": "application/json",
 };
 
 async function loadBuild(dir: string): Promise<Map<string, Buffer>> {
@@ -61,16 +71,22 @@ const browser = await chromium.launch({
   executablePath: process.env.PW_CHROMIUM ?? "/opt/pw-browsers/chromium",
   args: ["--no-sandbox", "--headless"],
 });
-for (const eol of ["lf", "crlf"] as const) {
-  const page = await browser.newPage({
-    viewport: { width: 980, height: 900 },
-    deviceScaleFactor: 2,
-  });
-  await page.goto(`http://127.0.0.1:4604/?eol=${eol}`, { waitUntil: "networkidle" });
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: path.join(OUT, `${eol}.png`), fullPage: true });
-  await page.close();
-  process.stdout.write(`shot ${eol}\n`);
+for (const set of ["tables", "plain"] as const) {
+  const list = CORPUS[set];
+  for (let i = 0; i < list.length; i += 1) {
+    const page = await browser.newPage({
+      viewport: { width: 940, height: 900 },
+      deviceScaleFactor: 2,
+    });
+    await page.goto(`http://127.0.0.1:4604/?set=${set}&i=${i}`, {
+      waitUntil: "networkidle",
+    });
+    await page.waitForTimeout(350);
+    const name = `${set}-${String(i + 1).padStart(2, "0")}-${list[i]!.id}.png`;
+    await page.screenshot({ path: path.join(OUT, name), fullPage: true });
+    await page.close();
+    process.stdout.write(`${name}\n`);
+  }
 }
 await browser.close();
 server.close();
