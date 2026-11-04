@@ -50,6 +50,25 @@
  * edge cases: the player is rendered inside the card, so it closes with it: LISA's Close (which
  * unmounts the panel) or moving to another question's thread closes the video; LISA's Minimize
  * keeps the panel mounted, so a shrunk video keeps playing.
+ *
+ * @spec [owner brief "Phase C follow-up: show the segment, not the whole video", Karl
+ *       2026-11-04: "the student saw the whole 6:38 video" because the action carried only the
+ *       start, `start` went in only above 0, and nothing set an end] | @implemented [2026-11-04]
+ *
+ * plain English, a served segment (the action carries `end_seconds`):
+ *  - The embed gets `start` at the segment start, 0 included, and YouTube's `end` at the segment
+ *    end, so playback stops there. A whole video (the skill path, `end_seconds` null) gets
+ *    exactly the URL it always did.
+ *  - Under the header, one line: "Showing 0:00–2:39 of 6:38" and a "Watch full video" control.
+ *    It is the student's choice, never automatic. Pressing it reloads the same frame (the same
+ *    iframe element, never remounted) with no `end`, from where the student is, and playing;
+ *    `onWatchFull` records the press (the segment id only). Shrink and expand still never
+ *    reload it: they do not touch the source.
+ *  - "Where the student is" is read from the player itself: a segment embed has
+ *    `enablejsapi=1`, and the frame's own `infoDelivery` messages (accepted only from the
+ *    youtube-nocookie.com origin and this frame's window) carry `currentTime`. With no reading
+ *    yet, it resumes at the segment start, which never skips anything.
+ *  - A segment that spans the whole video shows no line: there is nothing more to watch.
  */
 import {
   useContext,
@@ -78,6 +97,8 @@ const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 export const PLAYER_VIEWPORT_SHARE = 0.94;
 /** The header's height: one line. */
 export const PLAYER_HEADER_PX = 48;
+/** The segment line's height (one line, its control 44px), under the header when shown. */
+export const SEGMENT_LINE_PX = 44;
 /** The shrunk player's width (at most the screen less its margins). */
 export const MINI_PLAYER_WIDTH_PX = 360;
 /** The shrunk player's distance from the screen edge and from the bottom chrome. */
@@ -91,31 +112,117 @@ const DOCK_BUBBLE: readonly BottomChromeLayer[] = ["dock-bubble"];
 
 export type PlayerSize = "expanded" | "shrunk";
 
-/** The embed URL, or null for an id that isn't a YouTube video id. */
-export function videoEmbedUrl(video: TutorVideo): string | null {
+/** The embed's origin: the only origin whose player messages are read. */
+export const EMBED_ORIGIN = "https://www.youtube-nocookie.com";
+
+/** "m:ss", or "h:mm:ss" past an hour. */
+export function formatDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
+}
+
+/** A served segment: the action carries its end. The skill path (a whole video) has none. */
+export function isSegment(video: TutorVideo): boolean {
+  return video.end_seconds !== null;
+}
+
+/** The segment's window, or null for a whole video or a segment that spans all of it. */
+export function segmentLabel(video: TutorVideo): string | null {
+  if (video.end_seconds === null) return null;
+  const start = video.start_seconds ?? 0;
+  if (start <= 0 && video.end_seconds >= video.duration_seconds) return null;
+  return `Showing ${formatDuration(start)}–${formatDuration(video.end_seconds)} of ${formatDuration(video.duration_seconds)}`;
+}
+
+/**
+ * The embed URL, or null for an id that isn't a YouTube video id.
+ *  - Whole video: `start` only when above 0, as before.
+ *  - Segment: `start` always (0 included) and `end`, plus `enablejsapi` so the frame reports
+ *    its position.
+ *  - Segment widened (`full`): no `end`, from `resumeAt` (where the student was), playing.
+ */
+export function videoEmbedUrl(
+  video: TutorVideo,
+  opts: { full?: boolean; resumeAt?: number | null } = {},
+): string | null {
   if (!VIDEO_ID.test(video.video_id)) return null;
   const params = new URLSearchParams({ rel: "0" });
-  if (video.start_seconds !== null && video.start_seconds > 0) {
-    params.set("start", String(Math.floor(video.start_seconds)));
+  if (video.end_seconds === null) {
+    if (video.start_seconds !== null && video.start_seconds > 0) {
+      params.set("start", String(Math.floor(video.start_seconds)));
+    }
+  } else if (opts.full === true) {
+    const at = opts.resumeAt ?? video.start_seconds ?? 0;
+    params.set("start", String(Math.max(0, Math.floor(at))));
+    params.set("autoplay", "1");
+    params.set("enablejsapi", "1");
+  } else {
+    params.set("start", String(Math.floor(video.start_seconds ?? 0)));
+    params.set("end", String(Math.ceil(video.end_seconds)));
+    params.set("enablejsapi", "1");
   }
-  return `https://www.youtube-nocookie.com/embed/${video.video_id}?${params.toString()}`;
+  return `${EMBED_ORIGIN}/embed/${video.video_id}?${params.toString()}`;
+}
+
+const DELIVERY = /"event"\s*:\s*"(?:info|initial)Delivery"/;
+const CURRENT_TIME = /"currentTime"\s*:\s*(\d+(?:\.\d+)?)/;
+
+/**
+ * The position a player message reports, or null. Read by pattern, not JSON.parse, so a string
+ * that is not a player message is simply not one: nothing to catch.
+ */
+export function playerTime(data: unknown): number | null {
+  if (typeof data !== "string" || !DELIVERY.test(data)) return null;
+  const m = CURRENT_TIME.exec(data);
+  return m?.[1] === undefined ? null : Number(m[1]);
+}
+
+/** The frame's position, from its own `infoDelivery` messages; null until the first one. */
+function usePlayerPosition(
+  frame: RefObject<HTMLIFrameElement>,
+  active: boolean,
+): RefObject<number | null> {
+  const position = useRef<number | null>(null);
+  useEffect(() => {
+    if (!active) return undefined;
+    const onMessage = (event: MessageEvent): void => {
+      if (event.origin !== EMBED_ORIGIN) return;
+      if (event.source !== frame.current?.contentWindow) return;
+      const time = playerTime(event.data);
+      if (time !== null) position.current = time;
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [frame, active]);
+  return position;
 }
 
 const SHARE = String(Math.round(PLAYER_VIEWPORT_SHARE * 100));
-/** Expanded, 768px and up: the binding side at SHARE% of the viewport, the frame 16:9. */
-const EXPANDED_WIDTH = `min(${SHARE}vw, calc((${SHARE}dvh - ${PLAYER_HEADER_PX}px) * 16 / 9))`;
+/**
+ * Expanded, 768px and up: the binding side at SHARE% of the viewport, the frame 16:9 under
+ * `chromePx` of header (and segment line, when one shows).
+ */
+function expandedWidth(chromePx: number): string {
+  return `min(${SHARE}vw, calc((${SHARE}dvh - ${chromePx}px) * 16 / 9))`;
+}
 
 export function TutorVideoModal({
   video,
   open,
   onOpenChange,
   returnFocusTo,
+  onWatchFull,
 }: {
   video: TutorVideo;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Focused again when the player closes: the control that opened it. */
   returnFocusTo?: RefObject<HTMLElement>;
+  /** "Watch full video" was pressed on a served segment (its id). */
+  onWatchFull?: (segmentId: string) => void;
 }): JSX.Element | null {
   const src = videoEmbedUrl(video);
   if (src === null) return null;
@@ -124,29 +231,42 @@ export function TutorVideoModal({
       {open ? (
         <VideoPlayer
           video={video}
-          src={src}
           onClose={() => onOpenChange(false)}
           returnFocusTo={returnFocusTo}
+          onWatchFull={onWatchFull}
         />
       ) : null}
     </DialogPrimitive.Root>
   );
 }
 
-/** Mounted per open, so every open starts expanded. */
+/** Mounted per open, so every open starts expanded, and a segment starts as the segment. */
 function VideoPlayer({
   video,
-  src,
   onClose,
   returnFocusTo,
+  onWatchFull,
 }: {
   video: TutorVideo;
-  src: string;
   onClose: () => void;
   returnFocusTo: RefObject<HTMLElement> | undefined;
+  onWatchFull: ((segmentId: string) => void) | undefined;
 }): JSX.Element {
   const [size, setSize] = useState<PlayerSize>("expanded");
   const expanded = size === "expanded";
+  // Null while the segment plays; the resume point once the student widens it.
+  const [widenedAt, setWidenedAt] = useState<number | null>(null);
+  const full = widenedAt !== null;
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const segment = isSegment(video);
+  const position = usePlayerPosition(frameRef, segment);
+  const src =
+    videoEmbedUrl(video, full ? { full: true, resumeAt: widenedAt } : {}) ?? "";
+  const label = full ? null : segmentLabel(video);
+  const watchFull = (): void => {
+    setWidenedAt(position.current ?? video.start_seconds ?? 0);
+    if (video.segment_id !== null) onWatchFull?.(video.segment_id);
+  };
   // The portal's wrapper, once Radix has mounted it on <body>.
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -205,7 +325,13 @@ function VideoPlayer({
               : "fixed z-50 flex flex-col overflow-hidden rounded-lg border border-lyc-rule-strong bg-lyc-paper text-lyc-ink"
           }
           style={
-            expanded ? { width: EXPANDED_WIDTH } : shrunkStyle(lift, column)
+            expanded
+              ? {
+                  width: expandedWidth(
+                    PLAYER_HEADER_PX + (label !== null ? SEGMENT_LINE_PX : 0),
+                  ),
+                }
+              : shrunkStyle(lift, column)
           }
         >
           <PlayerHeader
@@ -215,13 +341,29 @@ function VideoPlayer({
             onToggleSize={() => setSize(expanded ? "shrunk" : "expanded")}
             onClose={onClose}
           />
+          {label !== null ? (
+            <SegmentLine label={label} onWatchFull={watchFull} />
+          ) : null}
           <div className="flex min-h-0 flex-1 items-center bg-black">
             <div
               className="relative aspect-video w-full"
               data-testid="tutor-video-frame"
             >
               <iframe
+                ref={frameRef}
                 src={src}
+                onLoad={() => {
+                  // Ask a segment's player to report its position (YouTube's widget protocol).
+                  if (!segment) return;
+                  frameRef.current?.contentWindow?.postMessage(
+                    JSON.stringify({
+                      event: "listening",
+                      id: 1,
+                      channel: "widget",
+                    }),
+                    EMBED_ORIGIN,
+                  );
+                }}
                 title={video.title}
                 className="absolute inset-0 h-full w-full"
                 allow="encrypted-media; picture-in-picture; fullscreen"
@@ -305,6 +447,38 @@ function useDockedPanelBox(
     };
   }, [panel, active]);
   return box;
+}
+
+/** Under the header: the segment's window, and the student's choice to watch the rest. */
+function SegmentLine({
+  label,
+  onWatchFull,
+}: {
+  label: string;
+  onWatchFull: () => void;
+}): JSX.Element {
+  return (
+    <div
+      className="flex shrink-0 items-center justify-between gap-3 border-b border-lyc-rule bg-lyc-paper pl-4 pr-2"
+      style={{ height: SEGMENT_LINE_PX }}
+      data-testid="tutor-video-segment"
+    >
+      <span
+        className="min-w-0 truncate text-lyc-meta text-lyc-muted"
+        data-testid="tutor-video-segment-label"
+      >
+        {label}
+      </span>
+      <button
+        type="button"
+        onClick={onWatchFull}
+        className={`${LYC_FOCUS} h-11 shrink-0 whitespace-nowrap rounded-md px-2 text-lyc-meta font-semibold text-lyc-ink-strong underline hover:bg-lyc-hover`}
+        data-testid="tutor-video-watch-full"
+      >
+        Watch full video
+      </button>
+    </div>
+  );
 }
 
 const CONTROL_CLASS = `${LYC_FOCUS} flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-lyc-ink-strong hover:bg-lyc-hover [&_svg]:h-5 [&_svg]:w-5`;

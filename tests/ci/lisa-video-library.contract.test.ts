@@ -96,6 +96,8 @@ const LIBRARY: LibraryVideo[] = [
     start_seconds: null,
     methods: ["algebraic"],
     format: "formula",
+    end_seconds: null,
+    segment_id: null,
   },
   {
     video_id: "f9DxgfyvRKg",
@@ -105,6 +107,8 @@ const LIBRARY: LibraryVideo[] = [
     start_seconds: 5,
     methods: ["desmos"],
     format: "lesson",
+    end_seconds: null,
+    segment_id: null,
   },
 ];
 
@@ -310,12 +314,14 @@ describe("the BFF resolves the index", () => {
         channel_name: "Scalar Learning",
         duration_seconds: 26,
         start_seconds: 5,
+        end_seconds: null,
+        segment_id: null,
       },
     });
   });
 
   // Anti-leak chokepoint (spec audit, 2026-10-27): the client gets a projection, never the row.
-  it("the client's video carries exactly the five client fields, not methods or format", () => {
+  it("the client's video carries exactly the seven client fields, not methods or format", () => {
     const action = resolveVideoAction(
       { type: "recommend_video", label: "Watch", video_index: 1 },
       LIBRARY,
@@ -324,6 +330,8 @@ describe("the BFF resolves the index", () => {
     expect("video" in action && Object.keys(action.video).sort()).toEqual([
       "channel_name",
       "duration_seconds",
+      "end_seconds",
+      "segment_id",
       "start_seconds",
       "title",
       "video_id",

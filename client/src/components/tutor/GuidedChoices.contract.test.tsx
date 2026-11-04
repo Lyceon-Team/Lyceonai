@@ -150,6 +150,8 @@ const DESMOS_VIDEO = {
   start_seconds: 30,
   methods: ["desmos"],
   format: "lesson",
+  end_seconds: null,
+  segment_id: null,
 };
 
 function seedQuestions(): void {
