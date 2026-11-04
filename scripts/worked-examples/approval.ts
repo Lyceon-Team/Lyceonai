@@ -39,11 +39,14 @@ export type ExampleApproval = {
 /**
  * The approval of an example whose folder was last changed by `folderCommit` on `social`, from
  * GitHub's record of the pull request that commit belongs to (null when it belongs to none).
+ * `branch` is the branch whose merge approves: `social` for the worked examples; the QOTD
+ * breakdowns pass their private repo's `main` (Karl, 2026-11-03).
  */
 export function approvalFromRecord(
   pull: unknown,
   folderCommit: string,
   approverLogin: string | undefined,
+  branch: string = CONTENT_BRANCH,
 ): { ok: true; approval: ExampleApproval } | { ok: false; reason: string } {
   if (!approverLogin)
     return { ok: false, reason: "CONTENT_APPROVER_LOGIN is not set" };
@@ -59,10 +62,10 @@ export function approvalFromRecord(
   );
   if (!merge.ok) return { ok: false, reason: merge.reason };
   const { event } = merge;
-  if (event.base !== CONTENT_BRANCH)
+  if (event.base !== branch)
     return {
       ok: false,
-      reason: `pull request #${event.pr} was merged into ${event.base}, not ${CONTENT_BRANCH}`,
+      reason: `pull request #${event.pr} was merged into ${event.base}, not ${branch}`,
     };
   if (event.mergedBy !== approverLogin)
     return {

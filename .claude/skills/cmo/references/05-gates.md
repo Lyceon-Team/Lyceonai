@@ -170,7 +170,7 @@ Every gate also inherits the universal prerequisites: the legal rules in SKILL.m
 ## G15 Launching a new channel
 
 **Prerequisites:** a reason (where the target audience actually is, with evidence); an owner and weekly time cost (Karl's time counts); a content plan for the minimum run; tracking (UTM, survey option); a kill criterion. Hormozi's rule: one channel working before adding the next; but building the second channel while the first works is the hedge against a single point of failure (Reddit).
-**Status:** organic social channels exist; judge each by its own numbers, separately from Reddit.
+**Status:** the organic social channels are TikTok, Instagram Reels, YouTube Shorts and a Facebook Page (parent-leaning); X is founder/build-in-public only and not tracked against targets (Karl, 2026-11-02; `02` §10a). Judge each by its own numbers, separately from Reddit. A channel beyond these still needs this gate.
 
 ## G16 Email broadcasts and new sequences
 

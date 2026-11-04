@@ -3,7 +3,14 @@
 # Mutation harness for worked examples (owner brief "Worked examples: production system",
 # Karl, 2026-10-27: "Plants: one per rule."; S9 per Karl's decision 1 on #1336, 2026-10-27;
 # V1-V10 per the OpenVoice addendum, Karl, 2026-10-27; V11-V12 per Karl's speaking-rate ask,
-# 2026-10-27)
+# 2026-10-27; T2, T18 re-pointed and T21-T26 added per Karl's rulings of 2026-11-02, SCL-265:
+# "Most people…" hooks allowed, and the #social set in the SCL-262 format; T8 and V9 re-pointed and
+# W1-W19 added per Karl's rulings of 2026-11-02 (later the same day), SCL-267: no captions, the voice
+# never reads the screen, spoken order hook → setup → steps → trap → answer → CTA, the end card
+# "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation; W24 per the
+# owner brief "Video tools pilot" D3, Karl, 2026-11-02: Chatterbox's own respelling, same table;
+# F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
+# the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
 # @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27), acceptance]
 #   | @implemented [2026-10-27]
@@ -29,6 +36,8 @@ FILES=(
   "$MIG"
   "shared/worked-examples/rules.ts"
   "scripts/worked-examples/approval.ts"
+  "scripts/worked-examples/composition.ts"
+  "video-kit/worked-examples/templates/end-card.html"
   "scripts/worked-examples/audio.ts"
   "scripts/worked-examples/content.ts"
   "scripts/worked-examples/generate.ts"
@@ -38,9 +47,14 @@ FILES=(
   "video-kit/worked-examples/music/tracks.json"
   "scripts/worked-examples/quality.ts"
   "scripts/worked-examples/voice.ts"
+  "scripts/worked-examples/final-mix.ts"
+  "scripts/worked-examples/daily.ts"
+  "scripts/worked-examples/kit.ts"
   "video-kit/worked-examples/voice.json"
   ".gitignore"
   ".github/workflows/worked-example-daily.yml"
+  "scripts/video-pilots/manim/check.ts"
+  "scripts/video-pilots/manim/render.py"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -85,7 +99,12 @@ SQL
 
 TEST=tests/ci/worked-examples.test.ts
 VOICE_TEST=tests/ci/worked-examples-voice.test.ts
-ts_check() { pnpm exec vitest run "$TEST" "$VOICE_TEST" 2>&1; }
+# Only the plants aimed at the ffmpeg round trip run it (~30 s of a ~35 s run); every other plant
+# runs both files without it, and the baseline proves the filter skips exactly that one test
+# (scripts/ci/lib/vitest-round-trips.sh; CI wall-time ruling, Karl 2026-11-04).
+source "$ROOT/scripts/ci/lib/vitest-round-trips.sh"
+RT_FILES=("$TEST" "$VOICE_TEST")
+RT_TITLES=("verify refuses an unlimited intersample-peak mix; after final-mix.ts it is at most -1 dBTP and passes")
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -112,7 +131,7 @@ sql_plant() {
 # ts_plant <name> <file> <old> <new> <expected>
 ts_plant() {
   plant "$2" "$3" "$4" || { bad "$1 STALE"; restore; return; }
-  OUT="$(ts_check)"; RC=$?
+  OUT="$(rt_check_for "$5")"; RC=$?
   expect_red "$1" "$5" "$OUT" "$RC"
   restore
 }
@@ -124,8 +143,14 @@ if [ "$HAVE_PG" = 1 ]; then
 else
   echo "  SKIP  SQL plants — no Postgres at $PGHOST:$PGPORT (a skip, not a pass)"
 fi
-OUT="$(ts_check)"; RC=$?
+# The F plants' round trip runs real ffmpeg; without it that test skips and its plants could not
+# bite, so a missing ffmpeg fails the baseline (a skip is not a pass).
+if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then ok "ffmpeg present"; else bad "ffmpeg/ffprobe not installed (the F plants need them)"; fi
+OUT="$(rt_check_full)"; RC=$?
 [ "$RC" = 0 ] && ok "worked-example tests green" || { bad "worked-example tests not green"; echo "$OUT" | tail -30; }
+rt_baseline ok bad
+OUT="$(pnpm exec vitest run tests/ci/video-pilots.test.ts 2>&1)"; RC=$?
+[ "$RC" = 0 ] && ok "video-pilot tests green" || { bad "video-pilot tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "WORKED EXAMPLE MUTATIONS: BASELINE NOT GREEN"; exit 1; fi
 
 if [ "$HAVE_PG" = 1 ]; then
@@ -173,9 +198,16 @@ echo "=== TS: hook rules ==="
 ts_plant "T1 H1 statistics let through" shared/worked-examples/rules.ts \
   "const hit = STATISTICS.find((re) => re.test(text));" "const hit = STATISTICS.find(() => false);" \
   "H1 refuses statistics"
+# T2 re-pointed 2026-11-02 (SCL-265): H2 now tests the hook with a "Most people" opening taken off.
 ts_plant "T2 H2 claims about people let through" shared/worked-examples/rules.ts \
-  "const hit = PEOPLE.find((re) => re.test(text));" "const hit = PEOPLE.find(() => false);" \
+  "const hit = PEOPLE.find((re) => re.test(rest));" "const hit = PEOPLE.find(() => false);" \
   "H2 refuses claims about students or people"
+ts_plant "T21 H2 the Most people allowance reverted (the 2026-11-02 ruling undone)" shared/worked-examples/rules.ts \
+  'const rest = text.replace(MOST_PEOPLE_OPENING, "");' "const rest = text;" \
+  "H2 allows a hook that opens with Most people"
+ts_plant "T22 H2 allowance over-wide: any opening \"most <word>\" exempt" shared/worked-examples/rules.ts \
+  "const MOST_PEOPLE_OPENING = /^\s*most people\b/i;" "const MOST_PEOPLE_OPENING = /^\s*most \w+\b/i;" \
+  "H2 still refuses every other claim about people, including after a Most people opening"
 ts_plant "T3 H3 a hook that is not the puzzle let through" shared/worked-examples/rules.ts \
   "for (const t of tokens(hookLine)) if (question.has(t)) return null;" "return null;" \
   "H3 requires the hook to state the puzzle"
@@ -194,10 +226,11 @@ ts_plant "T6 30-60 s bound broken (|| for &&)" scripts/worked-examples/generate.
 ts_plant "T7 safe area: the right edge unchecked" scripts/worked-examples/layout-check.ts \
   "b.right > safe.right + 1 ||" "" \
   "the safe area is x 71..912"
+# T8 re-pointed 2026-11-02 (SCL-267): the end card's ".url" rule is now ".brand-name".
 ts_plant "T8 ruled lines on the paper" video-kit/worked-examples/templates/kit.css \
-  ".url { display: block;" \
+  ".brand-name { display: block;" \
   "#root { background-image: repeating-linear-gradient(#FFFDF6 0 40px, #C8D8E8 40px 42px); }
-.url { display: block;" \
+.brand-name { display: block;" \
   "the paper is one flat colour"
 ts_plant "T9 the pixel check counts nothing" scripts/worked-examples/layout-check.ts \
   "      n++;" "      n += 0;" \
@@ -231,15 +264,36 @@ echo "=== TS: title, caption, plan, Slack ==="
 ts_plant "T17 a title not starting SAT" shared/worked-examples/rules.ts \
   'if (!title.startsWith("SAT")) out.push(' 'if (false) out.push(' \
   "a title over 90 characters or not starting with SAT is refused"
-ts_plant "T18 a caption without the follow line first" shared/worked-examples/rules.ts \
-  "if (first !== WORKED_EXAMPLE_CAPTION_FIRST_LINE)" "if (false)" \
-  "a caption without the follow line first"
+# T18 re-pointed 2026-11-02 (SCL-265): the captions open with the headline (the title), not the
+# follow line.
+ts_plant "T18 a caption without the headline first" shared/worked-examples/rules.ts \
+  "if (first !== headline)" "if (false)" \
+  "a caption without the headline first"
 ts_plant "T19 the plan repeats a hook type" shared/worked-examples/rules.ts \
   "if (prev && prev.hook_type === s.hook_type)" "if (false)" \
   "two consecutive slots with one hook type are refused"
+# T20, T26 re-pointed 2026-11-02 (SCL-266): the steps and the poster moved into videoSetSlackSteps
+# and postVideoSet, which the worked examples and the QOTD breakdown share.
 ts_plant "T20 the Slack set out of order" scripts/worked-examples/post-to-slack.ts \
-  "for (const step of workedExampleSlackSteps(post)) {" "for (const step of workedExampleSlackSteps(post).reverse()) {" \
+  "  for (const step of steps) {" "  for (const step of [...steps].reverse()) {" \
   "posts the video first"
+
+echo "=== TS: the SCL-262 set (SCL-265) ==="
+ts_plant "T23 the music credit dropped from the TikTok caption (CC BY 4.0 attribution)" shared/worked-examples/rules.ts \
+  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
+  "return socialTiktokCaption(c.headline, c.test, c.section, []);" \
+  "the real title and caption pass, with the music credited"
+ts_plant "T24 a link in the TikTok caption" shared/worked-examples/rules.ts \
+  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
+  'return socialTiktokCaption(c.headline, c.test, c.section, ["lyceon.ai/start", musicCredit]);' \
+  "no link, bio line or promo in any caption"
+ts_plant "T25 the caption link check removed" shared/worked-examples/rules.ts \
+  "if (link) out.push(" "if (false) out.push(" \
+  "no link, bio line or promo in any caption"
+ts_plant "T26 the link to send back in the Instagram message" scripts/worked-examples/post-to-slack.ts \
+  "        copyBlock(set.instagram_caption),"$'\n' \
+  "        copyBlock(set.instagram_caption),"$'\n'"        \"lyceon.ai/start?utm_campaign=worked_example\","$'\n' \
+  "no link, bio line, title or label block in any message"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \
@@ -266,9 +320,10 @@ ts_plant "V7 a reference inside the repository is accepted" scripts/worked-examp
 ts_plant "V8 reference recordings no longer ignored by git" .gitignore \
   "*.reference.wav" "# reference.wav" \
   "git ignores reference recordings and none is tracked"
+# V9 re-pointed 2026-11-02 (SCL-267): the default is am_michael, no longer af_heart.
 ts_plant "V9 the clone made the default before Karl picks it" video-kit/worked-examples/voice.json \
-  '"default_profile": "af_heart",' '"default_profile": "clone",' \
-  "default and fallback are the /brag voice"
+  '"default_profile": "am_michael",' '"default_profile": "clone",' \
+  "default and fallback are am_michael"
 ts_plant "V10 CI installs the clone's Python stack" .github/workflows/worked-example-daily.yml \
   "      - name: Install dependencies" "      - name: Clone stack
         run: pip install -r scripts/worked-examples/openvoice/requirements.txt
@@ -281,6 +336,146 @@ ts_plant "V11 the speaking rate never reaches the /brag voice" scripts/worked-ex
 ts_plant "V12 a rate change keeps the old voicing" scripts/worked-examples/voice.ts \
   "    (previous.speaking_rate ?? 1) === speakingRate" "    true" \
   "a rate change re-voices the batch"
+
+echo "=== TS: script and voice (SCL-267, Karl's rulings 2026-11-02) ==="
+# 2026-11-02 (SCL-266, Karl's rulings on #1398): W3, W5, W22 and W23 keep their anchors, which now
+# sit in scriptProblems (shared/worked-examples/rules.ts), the script rules contentProblems calls and
+# the QOTD breakdown shares; observed red there at rules.ts:350 (W3), :352 (W5), :361 (W22, W23).
+ts_plant "W1 S1 the verbatim rule finds nothing" shared/worked-examples/rules.ts \
+  "      if (run !== null)" "      if (false)" \
+  "a setup that reads the question stem is refused"
+ts_plant "W2 S1 a run of six shared words let through (seven needed)" shared/worked-examples/rules.ts \
+  "export const VERBATIM_RUN_WORDS = 6;" "export const VERBATIM_RUN_WORDS = 7;" \
+  "S1 finds a run of six shared words, and not five"
+ts_plant "W3 S1 not run by the content check" shared/worked-examples/rules.ts \
+  "  out.push(...verbatimProblems(example, q));" "" \
+  "a setup that reads the question stem is refused"
+ts_plant "W4 S1 the trap notepad left out of the on-screen text" shared/worked-examples/rules.ts \
+  '    ...example.trap.notepad.map((text, k) => ({' '    ...[].map((text: string, k: number) => ({' \
+  "S1 checks every spoken line against every on-screen text"
+ts_plant "W5 S2 the spoken hook may read the hook line" shared/worked-examples/rules.ts \
+  "  if (echo) out.push(echo);" "" \
+  "S2 refuses a spoken hook that is the on-screen hook line read aloud"
+ts_plant "W6 the old order: answer spoken before the trap" scripts/worked-examples/composition.ts \
+  '    { key: "trap", text: example.trap.voice },
+    { key: "answer", text: example.answer.voice },
+    { key: "outro", text: outroText },' \
+  '    { key: "answer", text: example.answer.voice },
+    { key: "trap", text: example.trap.voice },
+    { key: "outro", text: outroText },' \
+  "the spoken order is hook → setup → steps → trap → answer → call to action"
+ts_plant "W7 the trap scene runs over the answer" scripts/worked-examples/composition.ts \
+  '    { key: "trap", start: tTrap, end: tAnswer },' '    { key: "trap", start: tTrap, end: tEnd },' \
+  "the spoken order is hook → setup → steps → trap → answer → call to action"
+ts_plant "W8 voice lines placed by position, not key (the W45 manifests misplaced)" scripts/worked-examples/composition.ts \
+  "  const lines = script.map((s) => byKey.get(s.key));" "  const lines = given;" \
+  "a manifest voiced before the ruling (answer before trap) places every line in the new order"
+ts_plant "W9 committed lines matched by position, not key" scripts/worked-examples/content.ts \
+  "    const line = manifest.lines.find((l) => l.key === s.key);" \
+  "    const line = manifest.lines[script.indexOf(s)];" \
+  "a manifest voiced before the ruling (answer before trap) places every line in the new order"
+ts_plant "W10 a caption track back in the composition" scripts/worked-examples/composition.ts \
+  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),' \
+  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),
+    `<section id="cap-hook-0" class="clip cap" data-start="0" data-duration="1" data-track-index="5"><div class="cap-box">Up</div></section>`,' \
+  "no caption track"
+ts_plant "W11 the end card shows lyceon.ai" video-kit/worked-examples/templates/end-card.html \
+  '<div class="brand-name">Lyceon SAT Prep</div>' '<div class="brand-name">lyceon.ai</div>' \
+  "the end card reads Lyceon SAT Prep"
+ts_plant "W12 the call to action says lyceon dot A.I." video-kit/worked-examples/voice.json \
+  "\"outro_text\": \"Follow, there's one of these every day.\"," \
+  "\"outro_text\": \"Follow, there's one of these every day. Lyceon dot A.I.\"," \
+  "the end card reads Lyceon SAT Prep and the call to action never says lyceon.ai"
+ts_plant "W13 the default voice back to af_heart" video-kit/worked-examples/voice.json \
+  '"default_profile": "am_michael",' '"default_profile": "af_heart",' \
+  "default and fallback are am_michael"
+ts_plant "W14 the engine given Lyceon unrespelled" scripts/worked-examples/voice.ts \
+  "    spokenBrandName(text)," "    text," \
+  "authors write Lyceon; the engine is given the respelling"
+ts_plant "W15 the limiter dropped from the loudness step" scripts/worked-examples/voice.ts \
+  ',alimiter=limit=${limiterCeiling(target)}:level=disabled`,' '`,' \
+  "pass 2 pads, applies the measured loudnorm, trims back, then limits"
+ts_plant "W16 pass 2 ignores pass 1's measurement (one pass)" scripts/worked-examples/voice.ts \
+  '${loudnormFilter(target, measured, "summary")}' '${loudnormFilter(target, null, "summary")}' \
+  "pass 2 pads, applies the measured loudnorm, trims back, then limits"
+ts_plant "W17 short lines not padded (the dynamic fallback lost)" scripts/worked-examples/voice.ts \
+  '`apad=whole_dur=${pad},' '`' \
+  "pass 2 pads, applies the measured loudnorm, trims back, then limits"
+ts_plant "W18 the limiter at the true-peak ceiling (no headroom for overshoot)" scripts/worked-examples/voice.ts \
+  "export const LIMITER_HEADROOM_DB = 0.5;" "export const LIMITER_HEADROOM_DB = 0;" \
+  "the limiter sits 0.5 dB under the ceiling"
+ts_plant "W19 loudnorm's measurement misread" scripts/worked-examples/voice.ts \
+  "  const start = stderr.lastIndexOf(\"{\");" "  const start = stderr.indexOf(\"[\");" \
+  "reads loudnorm's measurement, and none from a silent line"
+
+ts_plant "W20 trap opening narrowed back to The trap only" shared/worked-examples/rules.ts \
+  "  /^(?:the trap\\b|(?:now,?\\s+)?here[’']?s where (?:people|you) slip\\b)/i;" "  /^(?:the trap\\b)/i;" \
+  "accepts the trap opening and the people-slip opening"
+ts_plant "W21 trap opening accepts anything" shared/worked-examples/rules.ts \
+  "  /^(?:the trap\\b|(?:now,?\\s+)?here[’']?s where (?:people|you) slip\\b)/i;" "  /^/i;" \
+  "refuses a trap line that opens any other way"
+
+ts_plant "W22 trap opener exemption dropped" shared/worked-examples/rules.ts \
+  '    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),' '    example.trap.voice,' \
+  "the people-slip opener is not a claim about people; anything after it still is"
+ts_plant "W23 whole trap line exempted" shared/worked-examples/rules.ts \
+  '    example.trap.voice.replace(TRAP_VOICE_OPENING, ""),' '    "",' \
+  "the people-slip opener is not a claim about people; anything after it still is"
+
+# The video pilots' Chatterbox engine (owner brief "Video tools pilot" D3, Karl, 2026-11-02) takes
+# its "Lyceon" respelling from voice.ts's one table.
+ts_plant "W24 chatterbox given the kokoro respelling" scripts/worked-examples/voice.ts \
+  '  chatterbox: "Lie-see-on",' '  chatterbox: "Lysee-ahn",' \
+  "each engine gets its own respelling from the one table"
+
+echo "=== TS: the final-mix true-peak limiter (SCL-270, Karl's ruling 2026-11-02) ==="
+ts_plant "F1 the daily job skips the limiter (the render copied as the finished video)" .github/workflows/worked-example-daily.yml \
+  '          pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
+  '          cp "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
+  "the daily job renders, limits, then checks, uploads and posts only the limited video"
+ts_plant "F2 the limiter dropped from the final-mix pass" scripts/worked-examples/final-mix.ts \
+  ',alimiter=limit=${limit}:level=disabled:latency=1,' ',' \
+  "after final-mix.ts it is at most -1 dBTP and passes"
+ts_plant "F3 limited at the sample rate, not 4x (a sample limiter misses intersample peaks)" scripts/worked-examples/final-mix.ts \
+  'export const TRUE_PEAK_OVERSAMPLE = 4;' 'export const TRUE_PEAK_OVERSAMPLE = 1;' \
+  "after final-mix.ts it is at most -1 dBTP and passes"
+ts_plant "F4 the ceiling raised in voice.json" video-kit/worked-examples/voice.json \
+  '"max_true_peak_dbtp": -1,' '"max_true_peak_dbtp": -0.5,' \
+  "max_true_peak_dbtp"
+ts_plant "F5 the schema lets the ceiling rise above -1 dBTP" scripts/worked-examples/kit.ts \
+  "max_true_peak_dbtp: z.number().min(-9).max(-1)," "max_true_peak_dbtp: z.number().min(-9).max(0)," \
+  "voice.json may not raise the ceiling above -1 dBTP"
+ts_plant "F6 the check compares against a raised ceiling" scripts/worked-examples/final-mix.ts \
+  "  return measured.truePeakDbtp <= settings.max_true_peak_dbtp" "  return measured.truePeakDbtp <= settings.max_true_peak_dbtp + 0.5" \
+  "refuses a finished mix over -1 dBTP or with no measurable audio"
+ts_plant "F7 verify does not measure the finished mix" scripts/worked-examples/daily.ts \
+  "  problems.push(...finishedMixProblems(join(out, post.video), kit));" "" \
+  "verify refuses an unlimited intersample-peak mix"
+ts_plant "F8 an encoder overshoot retried at the same headroom" scripts/worked-examples/final-mix.ts \
+  "      Math.round((headroomDb + overshoot + FINAL_MIX_STEP_DB) * 100) / 100," "      headroomDb," \
+  "an encoder overshoot is limited again with that much more headroom"
+
+# The D pilots call the same limiter (SCL-270: "on the finished mix in every pipeline ... the D
+# pilots"); their tests live in tests/ci/video-pilots.test.ts.
+PILOT_TEST=tests/ci/video-pilots.test.ts
+pilot_plant() {
+  plant "$2" "$3" "$4" || { bad "$1 STALE"; restore; return; }
+  OUT="$(pnpm exec vitest run "$PILOT_TEST" 2>&1)"; RC=$?
+  expect_red "$1" "$5" "$OUT" "$RC"
+  restore
+}
+echo "=== TS: the D pilots' finished mix (SCL-270) ==="
+pilot_plant "F9 the pilot check reports true peak but does not fail on it" scripts/video-pilots/manim/check.ts \
+  "  failures.push(...finishedMixProblems(video, kit));" "" \
+  "fails a video over -1 dBTP true peak"
+pilot_plant "F10 render.py writes the unlimited mix as the finished video" scripts/video-pilots/manim/render.py \
+  '"-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(mixed),' \
+  '"-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(out),' \
+  "render.py limits the finished mix through final-mix.ts"
+pilot_plant "F11 render.py skips the limiter" scripts/video-pilots/manim/render.py \
+  '    run(["pnpm", "exec", "tsx", "scripts/worked-examples/final-mix.ts", str(mixed), str(out)], cwd=ROOT)' \
+  '    shutil.copyfile(mixed, out)' \
+  "render.py limits the finished mix through final-mix.ts"
 
 echo
 echo "worked-example mutations: $PASS passed, $FAIL failed"
