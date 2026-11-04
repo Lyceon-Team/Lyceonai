@@ -725,7 +725,7 @@
       "domain": "Algebra",
       "name": "Model a situation with a one-sided inequality or system",
       "definition": "Translate a context or verbal statement into a linear inequality (or a system of them) in one or two variables, or interpret a term or point of such a contextual inequality.",
-      "inclusion_test": "Tag when the stem describes a situation in words AND either (a) asks which inequality/system represents it, (b) asks for a value that can only be reached by first writing an inequality that is NOT printed in the stem, or (c) prints a contextual inequality and asks what a term, coefficient or point means. Exclusion: if the only constraint in the stem is a two-sided bound on one quantity (between / minimum and maximum), tag LI.3 instead.",
+      "inclusion_test": "Tag when the stem describes a situation in words AND either (a) asks which inequality/system represents it, (b) asks for a value that can only be reached by first writing an inequality that is NOT printed in the stem, or (c) prints a contextual inequality and asks what a term, coefficient or point means. LI.1 and LI.2 are INCLUSIVE co-tags: when the stem describes a situation in words AND asks for a maximum/minimum/greatest/least value, tag BOTH LI.1 and LI.2. Exclusion: if the only constraint in the stem is a two-sided bound on one quantity (between / minimum and maximum), tag LI.3 instead.",
       "evidence_ids": [
         "7d6928bd",
         "e744499e",
@@ -746,7 +746,7 @@
       "domain": "Algebra",
       "name": "Solve for a boundary value (maximum / minimum)",
       "definition": "Isolate the variable in a one-sided linear inequality and turn the result into the extreme value asked for, including whole-number rounding when the context counts objects.",
-      "inclusion_test": "Tag when the stem asks for a maximum, minimum, greatest, least, or 'closest to the maximum possible' value (or a one-sided allowable range whose only other bound is positivity, e.g. 0 < x <= c) AND CB's rationale reaches it by isolating a variable in an inequality. Not tagged when the answer is chosen only by testing membership of given candidates.",
+      "inclusion_test": "Tag when the stem asks for THE maximum, minimum, greatest, least, or 'closest to the maximum possible' VALUE itself (or a one-sided allowable range whose only other bound is positivity, e.g. 0 < x <= c) AND solving requires isolating a variable in an inequality. LI.1 and LI.2 are INCLUSIVE co-tags: when the stem describes a situation in words AND asks for the max/min value, tag BOTH LI.1 and LI.2. LI.2 and LI.4 are MUTUALLY EXCLUSIVE: LI.2 = the stem asks for THE boundary value (solve by isolating); LI.4 = the stem asks WHICH point/value SATISFIES a printed inequality (solve by testing/substituting). Not tagged when the answer is chosen only by testing membership of given candidates (that is LI.4).",
       "evidence_ids": [
         "b75f7812",
         "72a5fd28",
@@ -788,7 +788,7 @@
       "domain": "Algebra",
       "name": "Test solutions of a given inequality or system",
       "definition": "Decide which points, tables of (x, y) pairs, coordinate values or y-ranges satisfy a two-variable inequality or system that is printed symbolically in the stem or choices.",
-      "inclusion_test": "Tag when the stem or choices print an inequality or system in x and y (or in context letters) symbolically AND the question asks which point(s), table, coordinate value, or set of y-values satisfies it, or which system a given point satisfies.",
+      "inclusion_test": "Tag when the stem or choices print an inequality or system in x and y (or in context letters) symbolically AND the question asks which point(s), table, coordinate value, or set of y-values SATISFIES it, or which system a given point satisfies. LI.4 and LI.2 are MUTUALLY EXCLUSIVE: LI.4 = the stem asks WHICH point/value satisfies a printed inequality (solve by testing/substituting candidates); LI.2 = the stem asks for THE boundary value itself (solve by isolating). If the stem asks 'what is the maximum/minimum value?' → LI.2, not LI.4.",
       "evidence_ids": [
         "89541f9b",
         "cfe67646",
