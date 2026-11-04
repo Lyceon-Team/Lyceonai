@@ -23,6 +23,10 @@
  *  The one-repair loop mirrors ingest-book.ts lines 548-660 (the build extracts it so both
  *  call one function; it is mirrored here only because this is a pilot).
  *
+ * FROZEN as the Step 0 measurement: its WRITEUP_RULES and write-up schema are the pilot's,
+ * without the `delivery` block Karl added on 2026-11-04. The canonical rules and schema are
+ * `segment-videos.ts` WRITEUP_RULES / writeupSchema; build on those, never on this copy.
+ *
  * Writes nothing to any database. Output under scripts/rag/.cache/watch-writeup-pilot/
  * (gitignored). Prints ids, counts and cost only.
  *

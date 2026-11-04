@@ -271,3 +271,29 @@ pass 1's vocabulary cost (`content-gaps-step0.md` §5) and nothing here.
    inherited tags (SCL-275).
 3. §4: the bank-match check, and whether it is built now or with G1-2.
 4. §6: the new-source run (about $26.86) and the backfill (about $33.67), each with retries.
+
+## 8. Rulings (Karl, 2026-11-04)
+
+1. **The new-sources run is approved:** A + B + C, about $27 with retries. The run is recorded in
+   `content-gaps-run-2026-11-04.md`.
+2. **The backfill of the existing segments stays deferred.**
+3. **Each teaching segment's write-up also records how the instructor explains, not just what:**
+   - the order of the steps;
+   - the phrases that make it click, paraphrased in our own words;
+   - any analogy;
+   - how the instructor checks the student is following.
+
+   These feed LISA's gold responses and voice examples, so they matter as much as the facts. The
+   rules are the same as for the facts: our own words, no transcript copy, the maths exact.
+
+**Built.**
+
+- **Pass 1 (`segment-tags-v5`).** `segment-videos.ts` adds `WRITEUP_RULES` and the `writeup`
+  field to pass 1, in both the cut and the fixed (chaptered) modes. A teaching segment without a
+  write-up fails its clip. Inside the write-up, `delivery` holds four fields: `step_order`,
+  `click_phrases`, `analogies` and `understanding_checks`.
+- **Pass 2.** Its prompt and schema are unchanged.
+- **Where `delivery` goes.** It stays out of the chunk text, because the corpus chunk is the
+  facts. It is kept with the segment, for the gold-response and voice work.
+- **The pilot.** `watch-writeup-pilot.ts` stays as the Step 0 measurement, with its own earlier
+  copy of the rules. The canonical rules are now in `segment-videos.ts`.
