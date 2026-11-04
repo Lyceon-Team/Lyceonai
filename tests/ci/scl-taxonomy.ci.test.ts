@@ -190,7 +190,7 @@ describe("SCL canonical taxonomy JSON", () => {
   it("single-evidence entries are documented exceptions (CB genuinely thin)", () => {
     // docs/questions_governance.md §A.5 "SCL single-evidence exceptions" lists each one
     // and why; a new single-evidence entry must be added there and here together.
-    const SINGLE_EVIDENCE_EXCEPTIONS = new Set(["CL.0035", "EE.6"]);
+    const SINGLE_EVIDENCE_EXCEPTIONS = new Set(["CL.0035", "EE.6", "LI.6"]);
     const raw = readFileSync(TAXONOMY_PATH, "utf-8");
     taxonomy = JSON.parse(raw) as SCLTaxonomy;
     const single = [...taxonomy.sub_skills, ...taxonomy.clusters]

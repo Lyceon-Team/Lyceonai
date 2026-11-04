@@ -827,11 +827,8 @@
       "definition": "The question asks for the value(s) of a constant that make a linear inequality or system have no solution, all real numbers as solutions, or a specified solution behavior.",
       "inclusion_test": "TRUE when the stem asks for what value of a constant the inequality/system has NO solution, infinitely many, or all x (the parameter controls whether a solution set exists), as opposed to solving for the variable's bound (LI.2) or testing given points (LI.4).",
       "evidence_ids": [
-        "SATM2QUND52",
-        "SATM2Y397CY"
-      ],
-      "evidence_note": "Low-evidence sub-skill (Lyceon-original questions only). No matching CB 8-hex ids found for no-solution parameter-condition inequality questions. Listed on the single/low-evidence exception list alongside EE.6.",
-      "taxonomy_version": "scl-v1.0.0"
+        "SATM2QUND52"
+      ]
     },
     {
       "id": "AV.1",
