@@ -100,7 +100,12 @@ SQL
 
 TEST=tests/ci/worked-examples.test.ts
 VOICE_TEST=tests/ci/worked-examples-voice.test.ts
-ts_check() { pnpm exec vitest run "$TEST" "$VOICE_TEST" 2>&1; }
+# Only the plants aimed at the ffmpeg round trip run it (~30 s of a ~35 s run); every other plant
+# runs both files without it, and the baseline proves the filter skips exactly that one test
+# (scripts/ci/lib/vitest-round-trips.sh; CI wall-time ruling, Karl 2026-11-04).
+source "$ROOT/scripts/ci/lib/vitest-round-trips.sh"
+RT_FILES=("$TEST" "$VOICE_TEST")
+RT_TITLES=("verify refuses an unlimited intersample-peak mix; after final-mix.ts it is at most -1 dBTP and passes")
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -127,7 +132,7 @@ sql_plant() {
 # ts_plant <name> <file> <old> <new> <expected>
 ts_plant() {
   plant "$2" "$3" "$4" || { bad "$1 STALE"; restore; return; }
-  OUT="$(ts_check)"; RC=$?
+  OUT="$(rt_check_for "$5")"; RC=$?
   expect_red "$1" "$5" "$OUT" "$RC"
   restore
 }
@@ -142,8 +147,9 @@ fi
 # The F plants' round trip runs real ffmpeg; without it that test skips and its plants could not
 # bite, so a missing ffmpeg fails the baseline (a skip is not a pass).
 if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then ok "ffmpeg present"; else bad "ffmpeg/ffprobe not installed (the F plants need them)"; fi
-OUT="$(ts_check)"; RC=$?
+OUT="$(rt_check_full)"; RC=$?
 [ "$RC" = 0 ] && ok "worked-example tests green" || { bad "worked-example tests not green"; echo "$OUT" | tail -30; }
+rt_baseline ok bad
 OUT="$(pnpm exec vitest run tests/ci/video-pilots.test.ts 2>&1)"; RC=$?
 [ "$RC" = 0 ] && ok "video-pilot tests green" || { bad "video-pilot tests not green"; echo "$OUT" | tail -30; }
 if [ "$FAIL" -gt 0 ]; then echo "WORKED EXAMPLE MUTATIONS: BASELINE NOT GREEN"; exit 1; fi

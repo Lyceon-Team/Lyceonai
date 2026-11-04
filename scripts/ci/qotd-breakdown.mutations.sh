@@ -62,7 +62,15 @@ PY
 }
 
 TEST=tests/ci/qotd-breakdown.test.ts
-ts_check() { pnpm exec vitest run "$TEST" 2>&1; }
+# Only the plants aimed at the two ffmpeg round trips (B23, B24) run them (~19 s of a ~21 s run);
+# every other plant runs the file without them, and the baseline proves the filter skips exactly
+# those two (scripts/ci/lib/vitest-round-trips.sh; CI wall-time ruling, Karl 2026-11-04).
+source "$ROOT/scripts/ci/lib/vitest-round-trips.sh"
+RT_FILES=("$TEST")
+RT_TITLES=(
+  "the video is the limited mix: at most -1 dBTP, and the MP4 check passes"
+  "a mix the limiter did not bring down is refused by the finished-mix check"
+)
 
 # expect_red <name> <expected substring> <output> <rc>
 expect_red() {
@@ -76,7 +84,7 @@ expect_red() {
 # ts_plant <name> <file> <old> <new> <expected>
 ts_plant() {
   plant "$2" "$3" "$4" || { bad "$1 STALE"; restore; return; }
-  OUT="$(ts_check)"; RC=$?
+  OUT="$(rt_check_for "$5")"; RC=$?
   expect_red "$1" "$5" "$OUT" "$RC"
   restore
 }
@@ -118,8 +126,9 @@ sql_plant() {
 }
 
 echo "=== (0) GREEN BASELINE ==="
-OUT="$(ts_check)"; RC=$?
+OUT="$(rt_check_full)"; RC=$?
 [ "$RC" = 0 ] && ok "breakdown tests green" || { bad "breakdown tests not green"; echo "$OUT" | tail -30; }
+rt_baseline ok bad
 # B23 and B24 run a real ffmpeg round trip; without ffmpeg those tests skip and the plants could
 # not bite, so a missing ffmpeg fails the baseline (a skip is not a pass), as in
 # worked-examples.mutations.sh.
