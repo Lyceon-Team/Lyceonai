@@ -30,6 +30,14 @@
 
 Percentages exceed 100% per skill due to co-tags (86 multi-sub-skill questions).
 
+## Co-tagging and cluster coverage
+
+- 86 multi-sub-skill questions (12.5%)
+- 48 distinct clusters used (of 230 available)
+- Average 1.8 clusters per question
+- Zero-cluster questions: 0 (0.0%)
+- Distractor entries: 924
+
 ## Findings
 
 ### 1. Zero-coverage: NLE.1
@@ -38,7 +46,7 @@ NLE.1 ("Rearrange a formula to isolate a variable") has zero questions in this p
 
 ### 2. Distractor coverage
 
-382 of ~495 expected MCQ questions have distractor annotations (77%). Some workers produced fewer distractor mappings for questions where the wrong-answer cluster was ambiguous or where the error pattern didn't map cleanly to a single cluster.
+924 distractor entries across 688 questions. Distractor mappings were generated where the explanation text clearly names a wrong-answer cluster.
 
 ### 3. Cross-skill co-tags
 
@@ -46,9 +54,10 @@ Zero NLE↔NLF cross-skill co-tags. The two skill codes have distinct question s
 
 ### 4. Cluster usage
 
-- 49 unique clusters used (of 230 available)
-- Average 1.79 clusters per question
-- Top clusters: CL.0047 (254), CL.0037 (166), CL.0094 (120), CL.0162 (106), CL.0025 (78)
+- 48 distinct clusters used (of 230 available)
+- Average 1.8 clusters per question
+- Zero-cluster questions: 0
+- Top clusters: CL.0047 (254), CL.0037 (168), CL.0094 (121), CL.0162 (106), CL.0025 (78)
 
 ### 5. Multi-sub-skill questions
 
@@ -57,9 +66,9 @@ Zero NLE↔NLF cross-skill co-tags. The two skill codes have distinct question s
 ## Process
 
 - 688 questions pulled from Supabase via `skill_codes` array filter
-- 12 parallel tagging workers (6 NLE × 58 + 5 NLF × 57 + 1 NLF × 55)
-- Output normalized to canonical schema: `{question_id, sub_skills[], clusters[], distractors[{option_key, cluster_id}], why}`
-- All sub-skill and cluster IDs validated against `valid-subskill-ids.json` / `valid-cluster-ids.json`
+- Rule-based keyword tagging (deterministic, no LLM) using stem and explanation text
+- Output normalized to canonical schema: `{question_id, sub_skill_ids[], cluster_ids[], distractor_clusters{}, why}`
+- All sub-skill and cluster IDs validated against canonical taxonomy (scl-v1.0.0)
 - Zero invalid IDs, zero duplicate question IDs
 
 ## Next step

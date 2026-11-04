@@ -24,9 +24,10 @@
   "zero_coverage_sub_skills": [
     "NLE.1"
   ],
-  "distinct_clusters_used": 49,
-  "grid_in_questions": 306,
-  "mcq_questions": 382,
+  "distinct_clusters_used": 48,
+  "avg_clusters_per_question": 1.8,
+  "zero_cluster_questions": 0,
+  "distractor_entries": 924,
   "top_clusters": [
     {
       "id": "CL.0047",
@@ -34,11 +35,11 @@
     },
     {
       "id": "CL.0037",
-      "count": 166
+      "count": 168
     },
     {
       "id": "CL.0094",
-      "count": 120
+      "count": 121
     },
     {
       "id": "CL.0162",
@@ -70,11 +71,11 @@
     },
     {
       "id": "CL.0077",
-      "count": 28
+      "count": 29
     },
     {
       "id": "CL.0177",
-      "count": 26
+      "count": 25
     },
     {
       "id": "CL.0087",
@@ -86,7 +87,7 @@
     },
     {
       "id": "CL.0122",
-      "count": 23
+      "count": 22
     }
   ],
   "findings": [
