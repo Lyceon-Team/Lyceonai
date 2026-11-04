@@ -201,6 +201,23 @@ describe("SCL canonical taxonomy JSON", () => {
     }
   });
 
+  it("evidence_ids are CB 8-hex unless entry is on the documented exception list", () => {
+    const CB_HEX_RE = /^[0-9a-fA-F]{8}$/;
+    const EVIDENCE_FORMAT_EXCEPTIONS = new Set(["CL.0035", "EE.6", "LI.6"]);
+    const raw = readFileSync(TAXONOMY_PATH, "utf-8");
+    taxonomy = JSON.parse(raw) as SCLTaxonomy;
+    for (const x of [...taxonomy.sub_skills, ...taxonomy.clusters]) {
+      for (const e of x.evidence_ids) {
+        if (!CB_HEX_RE.test(e)) {
+          expect(
+            EVIDENCE_FORMAT_EXCEPTIONS.has(x.id),
+            `${x.id} has non-CB evidence_id "${e}" but is not on the exception list`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
   it("evidence_count >= evidence_ids length (count is total tagged, ids are sample)", () => {
     const raw = readFileSync(TAXONOMY_PATH, "utf-8");
     taxonomy = JSON.parse(raw) as SCLTaxonomy;
