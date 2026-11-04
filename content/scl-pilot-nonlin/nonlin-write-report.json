@@ -1,0 +1,114 @@
+{
+  "write_pass": "nonlin-write",
+  "taxonomy_version": "scl-v1.0.0",
+  "total_questions": 688,
+  "nle_questions": 348,
+  "nlf_questions": 340,
+  "per_skill_sub_skill_counts": {
+    "NLE": {
+      "NLE.2": 223,
+      "NLE.3": 52,
+      "NLE.4": 86,
+      "NLE.5": 40
+    },
+    "NLF": {
+      "NLF.1": 115,
+      "NLF.2": 12,
+      "NLF.3": 56,
+      "NLF.4": 166,
+      "NLF.5": 24
+    }
+  },
+  "boundary_multi_tag_count": 86,
+  "cross_skill_boundary_count": 0,
+  "zero_coverage_sub_skills": [
+    "NLE.1"
+  ],
+  "distinct_clusters_used": 49,
+  "grid_in_questions": 306,
+  "mcq_questions": 382,
+  "top_clusters": [
+    {
+      "id": "CL.0047",
+      "count": 254
+    },
+    {
+      "id": "CL.0037",
+      "count": 166
+    },
+    {
+      "id": "CL.0094",
+      "count": 120
+    },
+    {
+      "id": "CL.0162",
+      "count": 106
+    },
+    {
+      "id": "CL.0025",
+      "count": 78
+    },
+    {
+      "id": "CL.0095",
+      "count": 44
+    },
+    {
+      "id": "CL.0016",
+      "count": 40
+    },
+    {
+      "id": "CL.0006",
+      "count": 39
+    },
+    {
+      "id": "CL.0120",
+      "count": 30
+    },
+    {
+      "id": "CL.0091",
+      "count": 30
+    },
+    {
+      "id": "CL.0077",
+      "count": 28
+    },
+    {
+      "id": "CL.0177",
+      "count": 26
+    },
+    {
+      "id": "CL.0087",
+      "count": 24
+    },
+    {
+      "id": "CL.0020",
+      "count": 23
+    },
+    {
+      "id": "CL.0122",
+      "count": 23
+    }
+  ],
+  "findings": [
+    {
+      "type": "zero_coverage",
+      "severity": "high",
+      "detail": "Sub-skill(s) with zero assignments: NLE.1. NLE.1 (formula rearrangement / literal equations) was never assigned. Likely: NLE workers tagged literal-equation questions as NLE.2 or NLE.3 instead. Blind audit should check NLE.2/NLE.3 questions for NLE.1 inclusion_test match."
+    },
+    {
+      "type": "concentration",
+      "severity": "medium",
+      "detail": "NLE.2 accounts for 64.1% of NLE tags (223/348). Some may be NLE.1 (literal equations) or NLE.3 (abs/radical/rational)."
+    },
+    {
+      "type": "concentration",
+      "severity": "medium",
+      "detail": "NLF.4 accounts for 48.8% of NLF tags (166/340). Expected for quadratic-heavy pool but audit should verify NLF.1/NLF.5 aren't under-tagged."
+    },
+    {
+      "type": "low_coverage",
+      "severity": "info",
+      "detail": "NLF.2 (interpret in context) has only 12 assignments. This sub-skill requires word-problem context; if the pool has few context-heavy questions, this is expected."
+    }
+  ]
+}
