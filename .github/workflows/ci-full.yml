@@ -251,7 +251,9 @@ jobs:
       - name: Question-authoring gate tests (tests/assemble-batch.test.ts)
         run: pnpm exec vitest run tests/assemble-batch.test.ts
 
-  # Six jobs, one per group (CI wall-time brief, Karl 2026-10-11: ~15 minutes in one job). Every
+  # One job per group (CI wall-time brief, Karl 2026-10-11: ~15 minutes in one job; rebalanced
+  # 2026-11-04 to about 10 minutes a job, CI scope ruling: the list is ALL_GROUPS in
+  # scripts/ci/pg-mutation-scope.mjs, less the scoped groups a change cannot affect). Every
   # step still runs, each in exactly one group (tests/ci/ci-full-workflow-shape.test.ts holds that:
   # a new step without a group is red). Groups keep their dependencies together: the calendar
   # parity steps read the database the pipeline step builds, and the PostgREST harness stays last
@@ -350,7 +352,7 @@ jobs:
       # the gate ON GATE 0. The target migration is resolved as the LAST definer, so a
       # newer CREATE OR REPLACE can never leave this mutation aimed at a dead body.
       - name: guardian_view_decision gate — body-pin mutations
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'review-email'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -366,7 +368,7 @@ jobs:
       # reaching a paying guardian; G2-06: the known-age check removed), each required to turn
       # its assertion red, each reverted byte-identically in a trap.
       - name: Under-13 link gate and known-age check proven by planted violations (G2-04 P1-P6, G2-06 P7, Brief 8 P8)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'review-email'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -414,7 +416,7 @@ jobs:
       # assertion and fails the build unless that assertion goes red. It patches the working
       # tree and restores it in a trap.
       - name: Review route assertions proven by planted violations (A1-A14)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'review-email'
         env:
           PGHOST: localhost
           PGPORT: "5432"
@@ -582,7 +584,7 @@ jobs:
       # their link or posting a hand-edited caption (G1-G9). Sign-up attribution's plants are
       # #1359's. Each must turn its named check red.
       - name: Social funnel mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -597,7 +599,7 @@ jobs:
       # notice that does not name the domain, the warning not posted, and the alt text or the
       # link to send back in a message (P1-P14). Each must turn its named check red.
       - name: Social posts mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         run: bash scripts/ci/social-posts.mutations.sh
 
       # QOTD breakdown pilot (Karl's brief 2026-11-02, Part C; SCL-266, as ruled on #1398 the same
@@ -634,7 +636,7 @@ jobs:
       # failed post keeping its claim, a percentage of zero, the route open without the secret.
       # Each must turn its named check red.
       - name: Growth report mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -647,7 +649,7 @@ jobs:
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest
       # that keeps a stale approval. Each must turn its named gate red.
       - name: LISA curriculum_chunks mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -660,7 +662,7 @@ jobs:
       # dropped segment surviving, an untagged segment approved and a CASCADE on the vocabulary.
       # Each must turn its named gate red.
       - name: LISA video segment mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -672,7 +674,7 @@ jobs:
       # the Desmos requirement dropped, the method_in default dropped, a segment served without a
       # shared sub-skill, and the ranking's sub-skill key removed. Each must turn its named gate red.
       - name: LISA segment retrieval mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -686,7 +688,7 @@ jobs:
       # or without its URL, a prompt on the practice runner, feedback text in a log and the
       # onboarding checkbox for an under-13. Each must turn its guarding test red on a name.
       - name: Marketing opt-in + reviews mutations (planted defects must fail)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'marketing'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -701,7 +703,7 @@ jobs:
       # kept after a refused send; open to authenticated; missing from the sweep; or logging an
       # address. Each must turn its guarding test red on a name.
       - name: Lifecycle email mutations (planted defects must fail)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'review-email'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -719,7 +721,7 @@ jobs:
       # the tracked sender, the score form window and the day-18 renewal-only email. Each must
       # turn its guarding test red on a name.
       - name: Email send gate mutations (planted defects must fail)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'review-email'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -738,7 +740,7 @@ jobs:
       # authenticated grants, and a landing runner's back link not reaching Home. Each must turn
       # its guarding test red on a name.
       - name: Smart landing mutations (planted defects must fail)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'marketing'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -752,7 +754,7 @@ jobs:
       # set-once and the under-13 clear removed in the database, and free text in the campaign.
       # Each must turn its guarding test red by name.
       - name: Sign-up attribution mutations (planted defects must fail)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'marketing'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -764,7 +766,7 @@ jobs:
       # new-account test ignoring the account's age, email signup recording only on a client
       # consent claim, and a disabled Continue with Google. Each must turn its test red by name.
       - name: Sign-in notice mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         run: bash scripts/ci/signin-notice.mutations.sh
 
       # Live bug 2026-10-11 (passages printed their <u> tags): plants the tags printed again
@@ -772,7 +774,7 @@ jobs:
       # allowlist widened to <U>, the missing-target and raw-HTML rules switched off, the
       # baseline ratchet loosened, and the assembly gate unwired. Each must turn its test red.
       - name: Question underline mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         run: bash scripts/ci/question-underline.mutations.sh
 
       # Sender name per email type and the QOTD subject/preview (Karl, 2026-10-14): plants the bare
@@ -790,11 +792,11 @@ jobs:
       # internal labels, the practice/score link, Vale's ai-tells, lychee's 404). Each must turn
       # its named test red.
       - name: Install content tools (Vale, lychee — pinned, sha256-checked)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'marketing'
         uses: ./.github/actions/content-tools
 
       - name: Content pipeline mutations (planted defects must fail)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'marketing'
         run: bash scripts/ci/content-ops.mutations.sh
 
       # Marketing email lane (contract §14): plants the age rule and the pending-deletion
@@ -804,7 +806,7 @@ jobs:
       # on a partial read, an address in a log and account deletion keeping the contact. Each
       # must turn its test red by name.
       - name: Marketing email lane mutations (planted defects must fail)
-        if: matrix.group == 'review-marketing'
+        if: matrix.group == 'marketing'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -829,7 +831,7 @@ jobs:
       # students only, Home order, Practice row, onboarding and Settings score, the rename) is
       # planted and must turn its named test red.
       - name: Getting started checklist mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -843,7 +845,7 @@ jobs:
       # service_role grants, the backfill, and each route hook) is planted and must turn its named
       # test red.
       - name: Server-side funnel events mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'social-lisa'
         env:
           PGHOST: localhost
           PGPORT: "5433"

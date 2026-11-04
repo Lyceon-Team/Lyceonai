@@ -46,7 +46,9 @@ const WORKFLOW = ".github/workflows/ci-full.yml";
 export const ALL_GROUPS = [
   "deletion",
   "qotd",
-  "review-marketing",
+  "social-lisa",
+  "review-email",
+  "marketing",
   "calendar-migrations",
   "worked-examples",
   "qotd-breakdown",
@@ -122,6 +124,11 @@ function compilerOptions(root) {
  * whose whole subtree counts.
  */
 export function closure(group, root = ROOT) {
+  return closureFrom(groupEntries(group, root), root);
+}
+
+/** The dependencies reached from these entry scripts (closure() for a group's own). */
+export function closureFrom(entryScripts, root = ROOT) {
   const files = new Set();
   const dirs = new Set();
   const queue = [];
@@ -146,7 +153,7 @@ export function closure(group, root = ROOT) {
     if (a.endsWith("/")) dirs.add(a);
     else add(a);
   }
-  for (const e of groupEntries(group, root)) {
+  for (const e of entryScripts) {
     entries.add(normalize(e));
     add(e);
   }
