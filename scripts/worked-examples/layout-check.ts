@@ -185,24 +185,18 @@ export async function layoutCheck(folder: string): Promise<string[]> {
       return out;
     }, DRAWN_SELECTORS);
     const problems = boxProblems(boxes, safeArea());
-    const endCard: EndCardMeasure = await page.evaluate(() => {
-      const px = (el: Element): number =>
-        parseFloat(getComputedStyle(el).fontSize);
-      return {
-        credits: [...document.querySelectorAll("#endcard .credit")].map(
-          (el) => ({
-            text: (el.textContent ?? "").trim(),
-            fontPx: px(el),
-            right: el.getBoundingClientRect().right,
-          }),
-        ),
-        outroPx: [
-          ...document.querySelectorAll(
-            "#endcard .follow, #endcard .brand-name",
-          ),
-        ].map(px),
-      };
-    });
+    // No named helper inside the callback: tsx (esbuild keepNames) wraps a named function in
+    // __name(), which does not exist in the page, and evaluate fails with "__name is not defined".
+    const endCard: EndCardMeasure = await page.evaluate(() => ({
+      credits: [...document.querySelectorAll("#endcard .credit")].map((el) => ({
+        text: (el.textContent ?? "").trim(),
+        fontPx: parseFloat(getComputedStyle(el).fontSize),
+        right: el.getBoundingClientRect().right,
+      })),
+      outroPx: [
+        ...document.querySelectorAll("#endcard .follow, #endcard .brand-name"),
+      ].map((el) => parseFloat(getComputedStyle(el).fontSize)),
+    }));
     problems.push(...creditProblems(endCard, kit.track, safeArea()));
     await page.addStyleTag({
       content: "#root > * { visibility: hidden !important; }",
