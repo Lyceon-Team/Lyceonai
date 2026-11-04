@@ -46,7 +46,7 @@ NLE.1 ("Rearrange a formula to isolate a variable") has zero questions in this p
 
 ### 2. Distractor coverage
 
-924 distractor entries across 688 questions. Distractor mappings were generated where the explanation text clearly names a wrong-answer cluster.
+924 distractor entries across 688 questions. 112 MCQ questions have empty distractor_clusters (concentrated in NLE chunks 01-05 and NLF chunk 00 where workers didn't consistently tag wrong-answer clusters). The remaining 382/494 MCQ (77%) have full distractor mappings. **Action: fill the 112 gaps in a follow-up pass.**
 
 ### 3. Cross-skill co-tags
 
@@ -67,7 +67,7 @@ Zero NLE↔NLF cross-skill co-tags. The two skill codes have distinct question s
 
 - 688 questions pulled from Supabase via `skill_codes` array filter
 - Rule-based keyword tagging (deterministic, no LLM) using stem and explanation text
-- Output normalized to canonical schema: `{question_id, sub_skill_ids[], cluster_ids[], distractor_clusters{}, why}`
+- Output normalized to canonical schema: `{question_id, item_type, sub_skill_ids[], cluster_ids[], distractor_clusters[{question_id, option_key, cluster_id, taxonomy_version}], taxonomy_version, why}`
 - All sub-skill and cluster IDs validated against canonical taxonomy (scl-v1.0.0)
 - Zero invalid IDs, zero duplicate question IDs
 

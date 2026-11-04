@@ -1,115 +1,59 @@
 {
-  "write_pass": "nonlin-write",
-  "taxonomy_version": "scl-v1.0.0",
   "total_questions": 688,
-  "nle_questions": 348,
-  "nlf_questions": 340,
-  "per_skill_sub_skill_counts": {
-    "NLE": {
-      "NLE.2": 223,
-      "NLE.3": 52,
-      "NLE.4": 86,
-      "NLE.5": 40
-    },
-    "NLF": {
-      "NLF.1": 115,
-      "NLF.2": 12,
-      "NLF.3": 56,
-      "NLF.4": 166,
-      "NLF.5": 24
-    }
+  "nle_count": 348,
+  "nlf_count": 340,
+  "mcq": 494,
+  "grid_in": 194,
+  "co_tagged": 86,
+  "unique_clusters": 48,
+  "distractor_rows": 924,
+  "mcq_without_distractors": 112,
+  "sub_skill_distribution": {
+    "NLE.2": 223,
+    "NLE.3": 52,
+    "NLE.4": 86,
+    "NLE.5": 40,
+    "NLF.1": 115,
+    "NLF.2": 12,
+    "NLF.3": 56,
+    "NLF.4": 166,
+    "NLF.5": 24
   },
-  "boundary_multi_tag_count": 86,
-  "cross_skill_boundary_count": 0,
-  "zero_coverage_sub_skills": [
+  "top_clusters": {
+    "CL.0047": 254,
+    "CL.0037": 168,
+    "CL.0094": 121,
+    "CL.0162": 106,
+    "CL.0025": 78,
+    "CL.0095": 44,
+    "CL.0016": 40,
+    "CL.0006": 39,
+    "CL.0120": 30,
+    "CL.0091": 30,
+    "CL.0077": 29,
+    "CL.0177": 25,
+    "CL.0087": 24,
+    "CL.0020": 23,
+    "CL.0122": 22,
+    "CL.0156": 21,
+    "CL.0007": 20,
+    "CL.0198": 17,
+    "CL.0099": 15,
+    "CL.0168": 14,
+    "CL.0089": 12,
+    "CL.0154": 12,
+    "CL.0043": 12,
+    "CL.0039": 9,
+    "CL.0106": 8,
+    "CL.0084": 7,
+    "CL.0078": 6,
+    "CL.0210": 6,
+    "CL.0034": 6,
+    "CL.0008": 5
+  },
+  "zero_coverage": [
     "NLE.1"
   ],
-  "distinct_clusters_used": 48,
-  "avg_clusters_per_question": 1.8,
-  "zero_cluster_questions": 0,
-  "distractor_entries": 924,
-  "top_clusters": [
-    {
-      "id": "CL.0047",
-      "count": 254
-    },
-    {
-      "id": "CL.0037",
-      "count": 168
-    },
-    {
-      "id": "CL.0094",
-      "count": 121
-    },
-    {
-      "id": "CL.0162",
-      "count": 106
-    },
-    {
-      "id": "CL.0025",
-      "count": 78
-    },
-    {
-      "id": "CL.0095",
-      "count": 44
-    },
-    {
-      "id": "CL.0016",
-      "count": 40
-    },
-    {
-      "id": "CL.0006",
-      "count": 39
-    },
-    {
-      "id": "CL.0120",
-      "count": 30
-    },
-    {
-      "id": "CL.0091",
-      "count": 30
-    },
-    {
-      "id": "CL.0077",
-      "count": 29
-    },
-    {
-      "id": "CL.0177",
-      "count": 25
-    },
-    {
-      "id": "CL.0087",
-      "count": 24
-    },
-    {
-      "id": "CL.0020",
-      "count": 23
-    },
-    {
-      "id": "CL.0122",
-      "count": 22
-    }
-  ],
-  "findings": [
-    {
-      "type": "zero_coverage",
-      "severity": "high",
-      "detail": "Sub-skill(s) with zero assignments: NLE.1. NLE.1 (formula rearrangement / literal equations) was never assigned. Likely: NLE workers tagged literal-equation questions as NLE.2 or NLE.3 instead. Blind audit should check NLE.2/NLE.3 questions for NLE.1 inclusion_test match."
-    },
-    {
-      "type": "concentration",
-      "severity": "medium",
-      "detail": "NLE.2 accounts for 64.1% of NLE tags (223/348). Some may be NLE.1 (literal equations) or NLE.3 (abs/radical/rational)."
-    },
-    {
-      "type": "concentration",
-      "severity": "medium",
-      "detail": "NLF.4 accounts for 48.8% of NLF tags (166/340). Expected for quadratic-heavy pool but audit should verify NLF.1/NLF.5 aren't under-tagged."
-    },
-    {
-      "type": "low_coverage",
-      "severity": "info",
-      "detail": "NLF.2 (interpret in context) has only 12 assignments. This sub-skill requires word-problem context; if the pool has few context-heavy questions, this is expected."
-    }
-  ]
+  "validation_errors": 0,
+  "taxonomy_version": "scl-v1.0.0"
 }
