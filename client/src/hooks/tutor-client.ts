@@ -38,6 +38,10 @@ import {
   type TutorTurnTiming,
 } from "@lyceon/shared/tutor-turn-timing-schema";
 import {
+  videoFullWatchSchema,
+  type VideoFullWatch,
+} from "@lyceon/shared/video-full-watch-schema";
+import {
   guidedChoicesResponseSchema,
   type ReviewIntent,
 } from "@lyceon/shared/tutor-guided-choices";
@@ -119,6 +123,10 @@ export type TutorVideo = {
   channel_name: string;
   duration_seconds: number;
   start_seconds: number | null;
+  /** A served segment's end: the player stops there. Null on the skill path (whole video). */
+  end_seconds: number | null;
+  /** The served segment, for the "Watch full video" record. Null on the skill path. */
+  segment_id: string | null;
 };
 
 export type TutorSuggestedAction =
@@ -290,6 +298,28 @@ export function useTurnTimingReport(): UseMutationResult<
       await apiRequest("/api/perf/tutor-turn", {
         method: "POST",
         body: JSON.stringify(tutorTurnTimingSchema.parse(timing)),
+      });
+    },
+  });
+}
+
+/**
+ * @spec [owner brief "Phase C follow-up: show the segment, not the whole video", Karl
+ * 2026-11-04, build 4] | @implemented [2026-11-04]
+ * plain English: posts "Watch full video was used" for one served segment (packages/shared
+ * video-full-watch-schema) to /api/perf/video-full-watch: the segment id, nothing else. Fire and
+ * forget: a failed report changes nothing the student sees.
+ */
+export function useVideoFullWatchReport(): UseMutationResult<
+  void,
+  HttpApiError,
+  VideoFullWatch
+> {
+  return useMutation({
+    mutationFn: async (report: VideoFullWatch) => {
+      await apiRequest("/api/perf/video-full-watch", {
+        method: "POST",
+        body: JSON.stringify(videoFullWatchSchema.parse(report)),
       });
     },
   });
