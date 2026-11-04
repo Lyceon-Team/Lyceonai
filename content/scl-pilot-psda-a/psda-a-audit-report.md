@@ -10,69 +10,69 @@
 | Metric | Value |
 |---|---|
 | Total questions | 992 |
-| Total sub-skill tags | 1,431 |
-| Avg tags/question | 1.44 |
-| Multi-skill questions | 307 (30.9%) |
-| Cross-family questions | 144 (14.5%) |
-| Distractor tags | 747 |
+| Total sub-skill tags | 1,363 |
+| Avg tags/question | 1.37 |
+| Multi-skill questions | 260 (26.2%) |
+| Cross-family questions | 120 (12.1%) |
+| Distractor tags | 1,902 |
 | Zero-coverage sub-skills | 0 |
 
 ## Sub-Skill Distribution
 
 | Sub-Skill | Count | % of 992 |
 |---|---|---|
-| RAT.1 Unit conversion (linear) | 39 | 3.9% |
-| RAT.2 Ratios and proportional scaling | 163 | 16.4% |
-| RAT.3 Rates between different quantities | 209 | 21.1% |
+| RAT.1 Unit conversion (linear) | 33 | 3.3% |
+| RAT.2 Ratios and proportional scaling | 154 | 15.5% |
+| RAT.3 Rates between different quantities | 205 | 20.7% |
 | RAT.4 Density and per-area/per-volume rates | 4 | 0.4% |
-| RAT.5 Converting squared/cubed units | 5 | 0.5% |
+| RAT.5 Converting squared/cubed units | 3 | 0.3% |
 | PCT.1 Percent of a quantity | 24 | 2.4% |
-| PCT.2 Unknown percent or unknown whole | 14 | 1.4% |
-| PCT.3 Apply/undo single percent change | 84 | 8.5% |
-| PCT.4 Percent change between two values | 56 | 5.6% |
+| PCT.2 Unknown percent or unknown whole | 15 | 1.5% |
+| PCT.3 Apply/undo single percent change | 86 | 8.7% |
+| PCT.4 Percent change between two values | 53 | 5.3% |
 | PCT.5 Chained percents | 110 | 11.1% |
-| PRB.1 Probability in whole group | 71 | 7.2% |
-| PRB.2 Conditional probability | 149 | 15.0% |
-| PRB.3 Find count from probability | 115 | 11.6% |
-| PRB.4 Complement and exclusion | 79 | 8.0% |
-| OVD.1 Read/interpret data display | 4 | 0.4% |
-| OVD.2 Measure of center | 75 | 7.6% |
-| OVD.3 Measures of spread | 36 | 3.6% |
-| OVD.4 Mean-total relationship | 150 | 15.1% |
+| PRB.1 Probability in whole group | 72 | 7.3% |
+| PRB.2 Conditional probability | 148 | 14.9% |
+| PRB.3 Find count from probability | 99 | 10.0% |
+| PRB.4 Complement and exclusion | 63 | 6.4% |
+| OVD.1 Read/interpret data display | 2 | 0.2% |
+| OVD.2 Measure of center | 73 | 7.4% |
+| OVD.3 Measures of spread | 34 | 3.4% |
+| OVD.4 Mean-total relationship | 141 | 14.2% |
 | OVD.5 Compare measures across sets | 44 | 4.4% |
 
 ## Family Totals
 
 | Family | Tags |
 |---|---|
-| RAT (Ratios & Rates) | 420 |
+| RAT (Ratios & Rates) | 399 |
 | PCT (Percentages) | 288 |
-| PRB (Probability) | 414 |
-| OVD (One-Variable Data) | 309 |
+| PRB (Probability) | 382 |
+| OVD (One-Variable Data) | 294 |
 
 ## PRB.3 (Special Watch)
 
-**PRB.3 count: 115** -- well-represented. The backward-count-from-table-or-fraction pattern appears frequently in two-way table questions that ask "how many students..." given totals and fractions/probabilities.
+**PRB.3 count: 99** -- well-represented. The backward-count-from-table-or-fraction pattern appears frequently in two-way table questions that ask "how many students..." given totals and fractions/probabilities.
 
 ## Low Coverage Sub-Skills
 
 | Sub-Skill | Count | Notes |
 |---|---|---|
-| OVD.1 (read data display) | 4 | Expected: text-only bank has no visual charts/graphs |
+| OVD.1 (read data display) | 2 | Expected: text-only bank has no visual charts/graphs |
 | RAT.4 (density/per-area rates) | 4 | Few questions with area/volume denominators |
-| RAT.5 (squared/cubed units) | 5 | Expected ~zero per instructions; 5 found |
+| RAT.5 (squared/cubed units) | 3 | Expected ~zero per instructions; 3 found |
 
 ## Taxonomy Observations
 
-1. **OVD.4 dominance (150):** The mean-total relationship pattern (sum = mean x count, find missing value) is the most common OVD pattern, substantially more than direct center computation (OVD.2: 75).
+1. **RAT.3 is the most-tagged sub-skill (205):** Rate problems dominate the computational bank. Many questions present a "per" relationship as the core ask.
 
-2. **RAT.3 is the most-tagged sub-skill (209):** Rate problems dominate the computational bank. Many questions present a "per" relationship as the core ask.
+2. **OVD.4 dominance (141):** The mean-total relationship pattern (sum = mean x count, find missing value) is the most common OVD pattern, substantially more than direct center computation (OVD.2: 73).
 
-3. **PCT.5 is substantial (110):** Chained percent problems (sequential operations on different bases) are well-represented, more than single percent changes (PCT.3: 84).
+3. **PCT.5 is substantial (110):** Chained percent problems (sequential operations on different bases) are well-represented, more than single percent changes (PCT.3: 86).
 
-4. **PRB.2 is the dominant probability pattern (149):** Conditional probability via two-way tables and restricted sample spaces is the most common probability ask.
+4. **PRB.2 is the dominant probability pattern (148):** Conditional probability via two-way tables and restricted sample spaces is the most common probability ask.
 
-5. **Cross-family tagging (144 questions):** 14.5% of questions require skills from multiple families -- e.g., a rate problem (RAT.3) that also involves percentages (PCT.1), or a probability question (PRB.2) that requires computing a mean (OVD.2).
+5. **Cross-family tagging (120 questions):** 12.1% of questions require skills from multiple families -- e.g., a rate problem (RAT.3) that also involves percentages (PCT.1), or a probability question (PRB.2) that requires computing a mean (OVD.2).
 
 ## Boundary Ambiguities
 
@@ -85,6 +85,6 @@
 ## Process Notes
 
 - Chunks 00, 02, 03 processed by fork workers with full question-by-question analysis
-- Chunks 01, 04, 05, 06, 07 processed by algorithmic pattern matching against sub-skill inclusion tests and cluster definitions
+- Chunks 01, 04, 05, 06, 07 reprocessed by fork workers with full question-by-question analysis (initial algorithmic pass replaced due to insufficient cluster/distractor coverage)
 - All chunks blind to write-pass output per protocol
 - Assembly: one merge pass, canonical field order (id, sub_skills, clusters, distractors, why), no re-sorting
