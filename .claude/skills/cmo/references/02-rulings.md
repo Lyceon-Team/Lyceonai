@@ -1,6 +1,6 @@
 # 02: Rulings (the decision log, baseline copy)
 
-Karl's standing decisions as of 2026-10-15. The living log is `docs/marketing/cmo/decisions.md`; new rulings are appended there with a date, and the newest dated ruling on a topic wins. Never re-argue a ruling unless new evidence changes the case; if it does, bring the evidence in a memo, once.
+Karl's standing decisions as of 2026-10-15, with the content-session rulings of 2026-11-02 (§10a). The living log is `docs/marketing/cmo/decisions.md`; new rulings are appended there with a date, and the newest dated ruling on a topic wins. Never re-argue a ruling unless new evidence changes the case; if it does, bring the evidence in a memo, once.
 
 Format: **topic** — ruling (date). Why, where it matters.
 
@@ -15,6 +15,7 @@ Format: **topic** — ruling (date). Why, where it matters.
 8. Email
 9. Reviews and testimonials
 10. Content production
+10a. Content session rulings (2026-11-02)
 11. Data, privacy and attribution
 12. Founding cohort
 13. Open decisions (not yet ruled)
@@ -77,9 +78,9 @@ These are not Karl's to waive; see SKILL.md rules 1–11 for the reasons. No und
 
 ## 7. Channels
 
-- **Reddit** — Karl stays personally present; posting stays manual; Lyceon/LISA accounts on Reddit are post-launch work (2026-10-02, 2026-10-10, 2026-10-11).
-- **Organic social first** — faceless AI-made videos on TikTok, Instagram, X; paid Meta/Google later, once organic shows what lands (2026-10-08). Short videos 2/week; on-camera content later.
-- **Automated social posting tool** — planned, not deferred: today the QOTD goes to Reddit and TikTok by hand each night; when the content schedule expands across platforms, Buffer's free plan (3 channels, 10 queued posts per channel, API), fed from the `#social` asset pipeline with Karl's approval as the gate; Blotato only if Buffer's queue or channel limits bind. Reddit always stays manual (2026-10-11, amended 2026-10-21; SCL-243, replaces "Blotato preferred, adopted later").
+- **Reddit** — Karl stays personally present; posting stays manual (2026-10-02, 2026-10-10, 2026-10-11). Narrowed 2026-11-02: founder-led and manual only, no new subreddits or accounts, Reddit QOTD discontinued (§10a, ruling 2).
+- **Organic social first** — faceless AI-made videos; paid Meta/Google later, once organic shows what lands (2026-10-08). On-camera content later. Channels and cadence superseded 2026-11-02: TikTok, Instagram Reels, YouTube Shorts and a Facebook Page; X is founder/build-in-public only; QOTD daily, worked examples Mon/Wed/Fri plus a daily rotation (§10a, rulings 3 and 4; replaces "2/week").
+- **Automated social posting tool** — no schedulers for now (2026-11-02, §10a ruling 8; SCL-264). Everything is posted by hand from `#social`. This replaces the 2026-10-11 / 2026-10-21 plan to post through Buffer's free plan with Blotato as the upgrade path (SCL-243). Reddit always stays manual.
 - **Content volume** — mostly volume, with a few flagship pieces (2026-10-15, #18).
 - **Referrals** — simple share link, no reward, for now; an ambassador program with rewards is wanted later (to build Reddit presence through users) (2026-10-15, #19; 2026-10-07).
 - **Creators/influencers** — allowed including student creators, when the need arises (2026-10-15, #20). Gate G10.
@@ -111,6 +112,31 @@ These are not Karl's to waive; see SKILL.md rules 1–11 for the reasons. No und
 - **Downloadable resources** — yes, but no static study plans (personalization is Lyceon's point) (2026-10-10).
 - **Slack delivery** — content assets go to #social via the "Lyceon Social" app; Karl approves by merging the PR (2026-10-11). One standard Slack pattern across pipelines (2026-10-10).
 
+## 10a. Content session rulings (2026-11-02)
+
+Karl's rulings from the content session of 2026-10-28 → 2026-11-02. They supersede Doc 10B (`docs/Spec/Lyceon_Doc_10B.md`) and earlier rulings in this file where they conflict; Doc 10B's full rewrite is pending (SCL-264, log only). Where anything below conflicts with an older line, this section wins.
+
+1. **"Most people…" hooks** — allowed; this replaces the earlier ban (2026-11-02). Only the opening words are exempt; the fear-and-pressure ban for student-facing copy stands (`08` §2). The worked-example rule change is PR #1395 (`shared/worked-examples/rules.ts`, H2; SCL-265).
+2. **Reddit** — the subreddit that carried the QOTD was banned by Reddit, so the Reddit QOTD is discontinued (2026-10-30). Reddit is founder-led and manual only: replies, DMs to people who ask, at most one promo post per subreddit per week, following each subreddit's rules. No links in public comments, no cross-posting Lyceon's own content, no new subreddits or accounts (2026-11-02).
+3. **Channels** — TikTok, Instagram Reels, YouTube Shorts and a Facebook Page (parent-leaning). X is founder / build-in-public only and not tracked against targets (2026-11-02).
+4. **Cadence** — QOTD daily. Worked examples Mon/Wed/Fri, plus more if quality holds. Other days rotate graphing-calculator/trap, product moments, test-date/myth and parent posts. A starting shape that changes with the data (2026-11-02). **Desmos constraint (same day):** until Desmos replies to the permission request, nothing public shows the Desmos interface or logo or uses the word "Desmos" in on-screen text or captions; "graphing method vs by hand" content draws its graphs in Lyceon's own rendering (Manim).
+5. **Calls to action and "free"** — TikTok: no links or promo lines in posts; the follow line "Follow for daily SAT questions 👆" is allowed (a follow ask, not promo; Karl, 2026-11-02). Instagram: "Comment SAT and I'll send you the link". Facebook: a genuine question; no link, no "comment a word". "Free" only ever refers to the diagnostic, daily practice (40 questions a day) or the QOTD. The study calendar, parent view, tutor and full-length tests are always presented as Pro; LISA is never promoted as free (2026-11-02).
+6. **Targets** (owner-set goals) — 100K followers across platforms in 6 months, 1M in 12 months. Checkpoints: 1K by Nov 30, 5K Dec, 15K Jan, 35K Feb, 65K Mar, 100K Apr. **Activated** = a signed-up student who answers at least one question. Goals: 10% of engagers (likes + comments) to activated; 2–3% of accounts to paid (2026-11-02).
+7. **Measurement** — a Monday analytics pull via Claude in Chrome (read-only). Numbers go in a private Drive tracker, never in the repo; the Drive tracker is the record, and `worked_example_metrics` stays in the database but is not the record (no readings are entered into it). Every test gets an experiment ID. Lessons move hunch → likely (2 independent confirmations) → settled (3). Judge videos at 72 hours. Key metrics: retention, saves per 1,000 views, share of views from search (2026-11-02).
+8. **Video tools** — Hyperframes stays the core. Pilots: Manim with manim-voiceover (math visuals), Kokoro-82M (voice, `am_michael`), and Chatterbox (D3, piloted for naturalness against `am_michael`). Screen demos are scripted Playwright recordings, not OpenScreen (archived), and never of the Desmos interface for now. Rejected: Remotion (licence), stock-footage generators, AI video/avatar models, and schedulers for now (2026-11-02).
+9. **TikTok keywords** — Karl adds them via TikTok's Manage keywords, from the `#social` keyword block (SCL-262) (2026-11-02).
+10. **SCL-243 superseded** — SCL-243's Buffer/Blotato posting plan is closed as superseded by SCL-264 ("no schedulers for now", ruling 8) (2026-11-02).
+11. **Video scripts and voice** (2026-11-02; detail in `08` §1a):
+    - No burned-in word-by-word captions; the on-screen handwriting and graphs carry the content. Karl may switch on TikTok's own auto-captions when posting.
+    - The voice never reads the on-screen text verbatim: the screen shows the question; the voice talks about it.
+    - Script flow: (1) a spoken hook as a question or challenge to the viewer ("Think you can solve this in ten seconds?", never the label "Solve this in 10 seconds"), (2) a one-sentence setup in plain talk, (3) the key move and why, (4) the trap ("here's where people slip"), (5) the answer and a quick check, (6) the call to action.
+    - Tone: contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Go."); no textbook phrasing.
+    - Voice: `am_michael` (Kokoro-82M) everywhere, replacing `af_heart`.
+    - Pronunciation: "Lyceon" is said "lye-see-on" (/ˈlaɪsiɑn/: LYE, see, ON; stress on the first syllable).
+    - Outro and end card: no "lyceon.ai" spoken or shown; the end card reads "Lyceon SAT Prep".
+    - Loudness: voice lines are normalised (around −14 LUFS, true peak ≤ −1 dB) so nothing clips.
+    - QOTD breakdowns use authored scripts, not the question read aloud.
+
 ## 11. Data, privacy and attribution
 
 - **Analytics** — PostHog product analytics plus session replay on industry-standard, privacy-respecting defaults (rudimentary data only; masking on sensitive areas) (2026-10-02).
@@ -128,8 +154,7 @@ These are not Karl's to waive; see SKILL.md rules 1–11 for the reasons. No und
 
 ## 13. Open decisions (not yet ruled)
 
-Bring these to Karl with a memo when they become relevant; don't assume an answer.
-- **Definition of "activated"** — which first action counts (completing the diagnostic, setting up the calendar, a first LISA conversation, a number of questions in week one). Every funnel depends on it.
+Bring these to Karl with a memo when they become relevant; don't assume an answer. ("Definition of activated" was ruled 2026-11-02: see §10a, ruling 6.)
 - **CMO Slack channel and posting method** — a dedicated #cmo channel vs #social; posting via the Claude Slack connector vs the existing bot-token pattern (Karl's "one standard pattern" rule applies).
 - **Report delivery** — Slack, email, or both.
 - **Founding-code conversion plan** — what happens at lapse: reminder sequence, offer, or extension. Needs a memo before the first lapse.

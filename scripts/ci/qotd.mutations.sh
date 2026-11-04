@@ -498,13 +498,14 @@ expect_red "M44 Why not at a sentence boundary" "the Why line is at most 300 cha
 restore
 
 # Re-pointed 2026-11-02: the TikTok caption moved to shared/social/posts.ts, and its follow and
-# comment lines are one line (Karl's rulings). The plant swaps it for the comment line alone.
+# comment lines are one line (Karl's rulings). Re-pointed again (SCL-265): the builder now takes
+# `headline`, so the anchor is socialTiktokCaption's body (posts.ts:221-223, its only occurrence). The plant swaps it for the comment line alone.
 echo "=== (45) the caption loses its follow line ==="
 plant shared/social/posts.ts \
-  '    qotdHeadline(test, section),
+  '    headline,
     SOCIAL_FOLLOW_AND_COMMENT_LINE,
     socialHashtags(test, section),' \
-  '    qotdHeadline(test, section),
+  '    headline,
     SOCIAL_COMMENT_LINE,
     socialHashtags(test, section),' || { bad "M45 STALE"; exit 1; }
 OUT="$(ts_check "$SOCIAL")"; RC=$?
