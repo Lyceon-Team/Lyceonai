@@ -1,0 +1,147 @@
+{"id":"SATM2GA60Z2","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0201","CL.0047","CL.0081"],"distractors":[],"why":"gym max months grid_in; model budget inequality then find max integer"}
+{"id":"SATM2GB2C5I","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 5x+3>28; test choices in one-sided inequality"}
+{"id":"SATM2GGKXQE","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"compare delivery costs, range of miles; model and solve cost comparison inequality"}
+{"id":"SATM2GNVJUG","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 8x+16≤56; isolate variable in one-step inequality"}
+{"id":"SATM2GOD427","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"truck max type Q crates grid_in; model weight constraint then find max integer"}
+{"id":"SATM2GQBRIT","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality delivery+budget; translate word problem to inequality with at-least/at-most"}
+{"id":"SATM2GW3WMN","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 3x-7>14; test choices"}
+{"id":"SATM2GWGLS3","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 9x-31≥41; isolate variable"}
+{"id":"SATM2GX8BU8","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model system books+budget; translate context to inequality system"}
+{"id":"SATM2H3W36Y","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality seed bags; translate word problem to inequality"}
+{"id":"SATM2H6QPP5","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"greatest number items; model budget then find max integer"}
+{"id":"SATM2H9LV83","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 9x-36≥45; isolate variable"}
+{"id":"SATM2HI1DQW","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-13≥8; test choices"}
+{"id":"SATM2HK6QER","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0201","CL.0047"],"distractors":[],"why":"model+solve max packages; model constraint then find max"}
+{"id":"SATM2HR0E6S","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max muffins dual constraint grid_in; model two constraints then find max integer"}
+{"id":"SATM2I3G9NH","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point 3x-5y<-17; substitute ordered pair into two-variable inequality"}
+{"id":"SATM2I4IMOB","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max cupcakes triple constraint grid_in; model constraints then find max integer"}
+{"id":"SATM2I65QIW","sub_skills":["LI.2"],"clusters":["CL.0016","CL.0034","CL.0047","CL.0081"],"distractors":[],"why":"greatest integer from fractional inequality; clear fractions, distribute, isolate, round"}
+{"id":"SATM2IF0OE0","sub_skills":["LI.1"],"clusters":["CL.0016","CL.0034","CL.0047","CL.0033"],"distractors":[],"why":"solve fractional inequality; clear fractions, distribute, divide by negative"}
+{"id":"SATM2IG8NUT","sub_skills":["LI.2"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047","CL.0081"],"distractors":[],"why":"least integer with distribution grid_in; distribute negative, combine like terms, find boundary"}
+{"id":"SATM2IL58Z1","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 9x-13≥59; isolate variable"}
+{"id":"SATM2IMNFHK","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0201","CL.0047","CL.0081"],"distractors":[],"why":"max sessions workshop grid_in; model budget with at-most then find max integer"}
+{"id":"SATM2INN76C","sub_skills":["LI.3"],"clusters":["CL.0005","CL.0047"],"distractors":[],"why":"count integers in compound inequality range grid_in; two-sided range then count"}
+{"id":"SATM2IRA60X","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 4x+3≤15; test choices"}
+{"id":"SATM2IV8DTB","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 9x+17≤71; isolate variable"}
+{"id":"SATM2IXQZA4","sub_skills":["LI.2"],"clusters":["CL.0095","CL.0094","CL.0047"],"distractors":[],"why":"system with b=2a-1, greatest a+b grid_in; substitute expression, solve, find boundary value"}
+{"id":"SATM2J7SYZ0","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 7x+11≤67; isolate variable"}
+{"id":"SATM2JA1I4K","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-11<38; test choices"}
+{"id":"SATM2JEXYS0","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point in system y≤3x-5, y>-2x+7; substitute into two-inequality system"}
+{"id":"SATM2K2C5RN","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max journals grid_in; model budget then find max integer"}
+{"id":"SATM2K3CPUX","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max muffins dual constraint; model two constraints then find max integer"}
+{"id":"SATM2K3G065","sub_skills":["LI.3"],"clusters":["CL.0034","CL.0017","CL.0005","CL.0047"],"distractors":[],"why":"greatest integer compound inequality grid_in; distribute, combine, solve compound"}
+{"id":"SATM2K89KSA","sub_skills":["LI.3"],"clusters":["CL.0016","CL.0047","CL.0033"],"distractors":[],"why":"count integers two inequalities grid_in; clear fractions, divide by negative, count in range"}
+{"id":"SATM2K9GOE8","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max stickers grid_in; model budget then find max integer"}
+{"id":"SATM2KC9221","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 3x-7>14 must be true; isolate variable"}
+{"id":"SATM2KCY7KV","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max revenue optimization; model and solve for max integer"}
+{"id":"SATM2KJOYU2","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"min pages for cost comparison grid_in; compare two cost functions, solve inequality"}
+{"id":"SATM2KO8W14","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 4x+9≤37; isolate variable"}
+{"id":"SATM2KXNKTJ","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"express vs standard cost comparison; model and solve comparison inequality"}
+{"id":"SATM2KYRY01","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point in system; substitute ordered pair into system of inequalities"}
+{"id":"SATM2KZ1DY8","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 15-2x<7; test choices"}
+{"id":"SATM2L8KJZY","sub_skills":["LI.1"],"clusters":["CL.0089","CL.0034","CL.0047"],"distractors":[],"why":"solve for parameter a grid_in; rearrange parametric inequality"}
+{"id":"SATM2LGB89B","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 9x+4≤67; isolate variable"}
+{"id":"SATM2LNT0Y7","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"min gadgets break-even grid_in; model cost comparison, solve and round"}
+{"id":"SATM2M2PXV1","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 9x-17>46; test choices"}
+{"id":"SATM2M2UHBE","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality workshop; translate word problem to inequality"}
+{"id":"SATM2M43UKQ","sub_skills":["LI.2"],"clusters":["CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"max y when x=7 in system grid_in; substitute then find boundary value"}
+{"id":"SATM2MDML1U","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max standard candles; model budget then find max integer"}
+{"id":"SATM2MI97S7","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 13x-5>60; isolate variable"}
+{"id":"SATM2MN8YKT","sub_skills":["LI.4"],"clusters":["CL.0080","CL.0094","CL.0009"],"distractors":[],"why":"boundary line y<ax+b, find slope, test point; read slope-intercept then check point"}
+{"id":"SATM2N0J5YC","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"two centers cost comparison, complete hours; compare costs and solve"}
+{"id":"SATM2N63ICY","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model system tickets; translate word problem to inequality system"}
+{"id":"SATM2N7PF7U","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality garden plots; translate word problem to inequality"}
+{"id":"SATM2NE6FGS","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max booklets grid_in; model budget then find max integer"}
+{"id":"SATM2NK197R","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality delivery; translate word problem to inequality"}
+{"id":"SATM2NKV6D1","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 5x-11>24; test choices"}
+{"id":"SATM2NREXXR","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality beads+string; translate word problem to inequality"}
+{"id":"SATM2NSKYG5","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 5x-11>24; test choices"}
+{"id":"SATM2O2RJBZ","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max posters; model budget then find max integer"}
+{"id":"SATM2O45P4V","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality shipping weight; translate word problem to inequality"}
+{"id":"SATM2OAPE6Q","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max sourdough dual constraint grid_in; model two constraints then find max integer"}
+{"id":"SATM2OCSGKH","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 3x+7>34; test choices"}
+{"id":"SATM2OCUCEE","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality parking; translate word problem to inequality"}
+{"id":"SATM2OGTMWG","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max centerpieces grid_in; model budget then find max integer"}
+{"id":"SATM2OIXJMF","sub_skills":["LI.2"],"clusters":["CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"greatest integer a in system grid_in; substitute then find boundary integer"}
+{"id":"SATM2ON51AK","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0081"],"distractors":[],"why":"greatest integer 6x-5≤37; solve then find boundary integer"}
+{"id":"SATM2OZ9QS6","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max small crates; model constraint then find max integer"}
+{"id":"SATM2P6HIQU","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 9x-17<64; isolate variable"}
+{"id":"SATM2PKKADN","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max packages; model budget then find max integer"}
+{"id":"SATM2PLJLUA","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point in system; substitute ordered pair"}
+{"id":"SATM2PTPPSW","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max classes; model budget then find max integer"}
+{"id":"SATM2PX77AP","sub_skills":["LI.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"solve 3(2x-9)+4≥5x-14; distribute, combine like terms, isolate"}
+{"id":"SATM2Q6JDJN","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality books; translate word problem to inequality"}
+{"id":"SATM2QC8HWQ","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 7x-19>23; isolate variable"}
+{"id":"SATM2QMK4UP","sub_skills":["LI.3"],"clusters":["CL.0016","CL.0005","CL.0047"],"distractors":[],"why":"compound inequality fractions, b-a; clear fractions, solve compound, compute range"}
+{"id":"SATM2QOGIT0","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality shipping container; translate word problem to inequality"}
+{"id":"SATM2QRN57O","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 4x-9>19; test choices"}
+{"id":"SATM2QUND52","sub_skills":["LI.1"],"clusters":["CL.0089","CL.0034","CL.0047"],"distractors":[],"why":"no-solution parameter k; solve for constant that zeroes variable coefficient"}
+{"id":"SATM2QW70JA","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model system croissants+muffins; translate word problem to inequality system"}
+{"id":"SATM2QY9HDH","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point in 3-inequality system; substitute and check all three"}
+{"id":"SATM2QYLXZQ","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-13>22; test choices"}
+{"id":"SATM2R32VCU","sub_skills":["LI.3"],"clusters":["CL.0005","CL.0047"],"distractors":[],"why":"absolute value |4x-9|<7 splits to compound, a+b; solve compound then compute sum"}
+{"id":"SATM2R32XX6","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0201","CL.0047"],"distractors":[],"why":"carpenter hours max; model budget with at-most then find max"}
+{"id":"SATM2R9COSK","sub_skills":["LI.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"solve distribution both sides grid_in; distribute, combine like terms, isolate"}
+{"id":"SATM2RCQ4WR","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 11x-19>47; test choices"}
+{"id":"SATM2REVWPL","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point in system; substitute ordered pair"}
+{"id":"SATM2RV5VPN","sub_skills":["LI.3"],"clusters":["CL.0016","CL.0005","CL.0047"],"distractors":[],"why":"compound inequality fraction simplification; clear fractions, solve compound"}
+{"id":"SATM2S7Q0RJ","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max chairs dual constraint grid_in; model two constraints then find max integer"}
+{"id":"SATM2S8Y0GB","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0201","CL.0047"],"distractors":[],"why":"max hours carpenter; model budget then find max"}
+{"id":"SATM2SCS5M0","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 9x+4<67; test choices"}
+{"id":"SATM2SCUTIG","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max loaves dual constraint; model two constraints then find max integer"}
+{"id":"SATM2SLB1B1","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model system tutoring+bookstore; translate word problem to inequality system"}
+{"id":"SATM2SLM2EQ","sub_skills":["LI.2"],"clusters":["CL.0016","CL.0047","CL.0033","CL.0081"],"distractors":[],"why":"greatest integer (-2/5)x+13≥7 grid_in; clear fraction, divide by negative, find boundary"}
+{"id":"SATM2SSOSC4","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max posters; model budget then find max integer"}
+{"id":"SATM2SSZBZT","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-13>22; test choices"}
+{"id":"SATM2ST4M5J","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max participants grid_in; model budget then find max integer"}
+{"id":"SATM2T55WYD","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 5x+8>33; test choices"}
+{"id":"SATM2T908HG","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"model inequality carpenter profit; translate word problem to inequality"}
+{"id":"SATM2TDSBU7","sub_skills":["LI.3"],"clusters":["CL.0016","CL.0047","CL.0033"],"distractors":[],"why":"count integers two inequalities grid_in; clear fractions, divide by negative, count in range"}
+{"id":"SATM2TFWELY","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 9p-17>56; test choices"}
+{"id":"SATM2TGD8UZ","sub_skills":["LI.2"],"clusters":["CL.0017","CL.0047","CL.0033","CL.0081"],"distractors":[],"why":"least integer -4x+9≤2x-15 grid_in; combine like terms, divide by negative, find boundary"}
+{"id":"SATM2TK6PNM","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model inequality pottery clay; translate word problem to inequality"}
+{"id":"SATM2TVT759","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 9x+17≤80; test choices"}
+{"id":"SATM2TWW2G6","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"min books for free shipping; model shipping threshold then solve and round"}
+{"id":"SATM2U3KELD","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max packages; model budget then find max integer"}
+{"id":"SATM2U8HKZP","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 3x-7>14; test choices"}
+{"id":"SATM2UIG04Z","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max small crates optimization grid_in; model constraints then find max integer"}
+{"id":"SATM2UNRW05","sub_skills":["LI.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"solve -3(2x-7)>5x+4; distribute negative, combine like terms, isolate"}
+{"id":"SATM2UPC9YR","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point in system; substitute ordered pair"}
+{"id":"SATM2UPL3ZY","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-19>2; test choices"}
+{"id":"SATM2UTCIXN","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"test point in system; substitute ordered pair"}
+{"id":"SATM2UYD3T3","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-13>8; test choices"}
+{"id":"SATM2UYJTTK","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 9x-17<28; test choices"}
+{"id":"SATM2V93M2Y","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"model inequality food truck profit; translate word problem to inequality"}
+{"id":"SATM2VAF4KB","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-19>2; test choices"}
+{"id":"SATM2VAMN74","sub_skills":["LI.2"],"clusters":["CL.0034","CL.0017","CL.0047","CL.0081"],"distractors":[],"why":"least integer 3(2x-5)≥4x+7; distribute, combine, isolate, find boundary integer"}
+{"id":"SATM2VKYCSH","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 5x+2>17; isolate variable"}
+{"id":"SATM2VMOE65","sub_skills":["LI.3"],"clusters":["CL.0047","CL.0005"],"distractors":[],"why":"count integers satisfying two separate inequalities; solve each, combine, count in range"}
+{"id":"SATM2VNAXZP","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"model inequality free shipping additional amount; translate word problem then simplify"}
+{"id":"SATM2VW1RKT","sub_skills":["LI.1"],"clusters":["CL.0047","CL.0033"],"distractors":[],"why":"solve -11x≤77; divide by negative, flip inequality sign"}
+{"id":"SATM2W0IGZX","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"minimum candles to exceed production cost; model then find min integer"}
+{"id":"SATM2W6KRAH","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"which ordered pair satisfies system of two inequalities; substitute and check both"}
+{"id":"SATM2WCU5L6","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"maximum items with flat fee + per-item cost grid_in; model budget then find max integer"}
+{"id":"SATM2WD43TR","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0033","CL.0081"],"distractors":[],"why":"greatest integer -3x+19≥4 grid_in; isolate with negative coefficient, find boundary integer"}
+{"id":"SATM2WINHMY","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"minimum candles for profit>250; model profit inequality then find min integer"}
+{"id":"SATM2WOXE5G","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0047","CL.0081"],"distractors":[],"why":"max large candles with two constraints grid_in; substitute to eliminate variable, solve, round"}
+{"id":"SATM2XNWDAP","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"which ordered pair satisfies 5x-3y>19; substitute and check"}
+{"id":"SATM2XR8HN2","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 3x+11>38; test choices"}
+{"id":"SATM2XYXPN7","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max rehearsal sessions with registration fee + per-session; model then find max integer"}
+{"id":"SATM2Y397CY","sub_skills":["LI.1"],"clusters":["CL.0089","CL.0133","CL.0047"],"distractors":[],"why":"no-solution parameter a; rearrange to (a-3)x>12, set coefficient to zero"}
+{"id":"SATM2Y3XXD8","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"minimum total points for average>18 grid_in; model average inequality then find min integer"}
+{"id":"SATM2Y69CRF","sub_skills":["LI.3"],"clusters":["CL.0016","CL.0033","CL.0047","CL.0005"],"distractors":[],"why":"count integers satisfying two inequalities; clear fractions, divide by negative, combine, count"}
+{"id":"SATM2Y92GMJ","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"max text messages with base fee + per-message grid_in; model budget then find max integer"}
+{"id":"SATM2YF5MO1","sub_skills":["LI.2"],"clusters":["CL.0094","CL.0047","CL.0081"],"distractors":[],"why":"greatest integer b when a=5 in system grid_in; substitute, solve two bounds, find max integer"}
+{"id":"SATM2YFZIE3","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model system notebooks+pens; translate at-least and at-most to inequality system"}
+{"id":"SATM2YJ96LN","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047","CL.0081"],"distractors":[],"why":"compare shipping costs grid_in; model two cost functions, solve comparison, round up"}
+{"id":"SATM2YLVSIO","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model system machines A+B; translate capacity and profit constraints to inequality system"}
+{"id":"SATM2YOLRDT","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 3x-7>14; test choices"}
+{"id":"SATM2YPGIN5","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"model inequality carpenter earnings; translate flat fee + hourly to inequality"}
+{"id":"SATM2YRBTEV","sub_skills":["LI.4"],"clusters":["CL.0101","CL.0009"],"distractors":[],"why":"which value satisfies 7x-19>30; test choices"}
+{"id":"SATM2YSZC3K","sub_skills":["LI.2"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047","CL.0081"],"distractors":[],"why":"max positive integer from distribution both sides grid_in; expand, combine, find boundary"}
+{"id":"SATM2Z5S4KO","sub_skills":["LI.3"],"clusters":["CL.0005","CL.0047"],"distractors":[],"why":"compound inequality count integers; solve three-part compound, count in range"}
+{"id":"SATM2Z94RTO","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 3x-7<14; isolate variable"}
+{"id":"SATM2ZHSWEA","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 3x-7>14; isolate variable"}
+{"id":"SATM2ZLNBXM","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0060","CL.0095","CL.0047","CL.0081"],"distractors":[],"why":"min large packages shipping; substitute to eliminate variable, solve, round up"}
+{"id":"SATM2ZTASXU","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060","CL.0201"],"distractors":[],"why":"model system factory widgets; translate capacity and contract constraints to inequality system"}
+{"id":"SATM2ZYCQ7R","sub_skills":["LI.1"],"clusters":["CL.0047"],"distractors":[],"why":"solve 7x-13>22; isolate variable"}

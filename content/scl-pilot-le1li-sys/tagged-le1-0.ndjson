@@ -1,0 +1,75 @@
+{"id":"SATM200CDWP","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"},{"option":"B","cluster_id":"CL.0047"}],"why":"context word problem: translate tiered accumulation into equation, isolate variable"}
+{"id":"SATM203AATV","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"context: flat fee plus hourly rate, solve for hours"}
+{"id":"SATM203DJ80","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0016"}],"why":"no-context equation with fraction, clear denominator then isolate"}
+{"id":"SATM203K97B","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0017"},{"option":"D","cluster_id":"CL.0047"}],"why":"context: set two cost expressions equal, combine like terms, isolate"}
+{"id":"SATM20BPTT3","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"no-context: distribute, combine like terms, isolate variable"}
+{"id":"SATM20GZA0V","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133","CL.0089"],"distractors":[{"option":"A","cluster_id":"CL.0089"}],"why":"find constant for infinitely many solutions via coefficient comparison"}
+{"id":"SATM20IVM2D","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0004","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0060"},{"option":"D","cluster_id":"CL.0060"}],"why":"context: tiered pricing, compute cost for first 500, solve remainder at second rate"}
+{"id":"SATM20IWQPZ","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"no-context: clear two fractions, distribute including negative, combine, isolate"}
+{"id":"SATM20KH17U","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"context: flat fee plus hourly rate, solve for hours"}
+{"id":"SATM20O2ZQV","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"}],"why":"no-context: multiple distributions including negative, combine, isolate"}
+{"id":"SATM20PQF10","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"simple one-step linear equation, isolate variable"}
+{"id":"SATM20ROM6V","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"two-step equation, isolate variable"}
+{"id":"SATM20V5O3N","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM20XT4KY","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM20Y0JSO","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0017","CL.0047"],"distractors":[],"why":"context: two cost expressions set equal, combine like terms, isolate"}
+{"id":"SATM2137FFF","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM216BBH2","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0034"}],"why":"no-context: clear fractions, distribute, combine, isolate"}
+{"id":"SATM21F2QYO","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM21G4R0U","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM21GJWDI","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute, combine like terms, isolate"}
+{"id":"SATM21HIXE4","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM21JBPW3","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: cross-multiply to clear fractions, distribute, combine, isolate"}
+{"id":"SATM21THYAI","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"no-context: clear fraction after isolating fraction term, distribute, isolate"}
+{"id":"SATM225X5BH","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133","CL.0053","CL.0089"],"distractors":[{"option":"A","cluster_id":"CL.0089"}],"why":"find constants for infinitely many solutions: expand, match coefficients, solve for constant"}
+{"id":"SATM2298068","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM229WHEY","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM22D53R1","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM22FU2YO","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0033"}],"why":"no-context: clear two fractions, distribute negative, combine, isolate"}
+{"id":"SATM22K8BJX","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute on both sides, combine like terms, isolate"}
+{"id":"SATM22LV3KI","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"context: flat fee plus hourly rate, solve for hours"}
+{"id":"SATM22MXUGZ","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM22NJCYU","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: cross-multiply to clear fractions, distribute, combine, isolate"}
+{"id":"SATM22VB2PL","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM22Z3O85","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"no-context: isolate fraction term, clear fraction, distribute, isolate"}
+{"id":"SATM23GU667","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0017"}],"why":"context: set two cost expressions equal, combine like terms, isolate"}
+{"id":"SATM23PF60V","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM23SZXX7","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM23VJJLJ","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM23W2GPK","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM23YIMCC","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"no-context: clear three fractions with LCD, distribute negative, combine, isolate"}
+{"id":"SATM241FAK9","sub_skills":["LE1.2"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047","CL.0094"],"distractors":[{"option":"A","cluster_id":"CL.0094"}],"why":"no-context: solve equation then evaluate expression 6x-1; asks for expression not bare variable"}
+{"id":"SATM245SQI6","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute including negative, combine like terms, isolate"}
+{"id":"SATM249OODI","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM24CQOQ4","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: clear fraction, distribute, combine, isolate"}
+{"id":"SATM24H9GGU","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"one-step linear equation, divide to isolate"}
+{"id":"SATM24JU5O4","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0016","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"}],"why":"context: two freight companies with fractional rates, set equal, isolate"}
+{"id":"SATM24RSBEK","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute, combine like terms, isolate"}
+{"id":"SATM24VNAX1","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: cross-multiply to clear fractions, distribute, combine, isolate"}
+{"id":"SATM24ZC3QB","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0017","CL.0047"],"distractors":[],"why":"no-context: clear fraction, combine like terms, isolate"}
+{"id":"SATM250RRRQ","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute including negative, combine, isolate"}
+{"id":"SATM252PI7B","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM254AOLM","sub_skills":["LE1.2"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047","CL.0094"],"distractors":[{"option":"D","cluster_id":"CL.0094"}],"why":"no-context: solve equation then evaluate expression 6x-1; asks for expression not bare variable"}
+{"id":"SATM25C22SN","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"context: flat fee plus hourly rate, solve for hours"}
+{"id":"SATM25GSX9K","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: clear fractions, distribute, combine, isolate"}
+{"id":"SATM25HITJ7","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0033"}],"why":"no-context: clear two fractions with LCD, distribute negative, combine, isolate"}
+{"id":"SATM25HL6Y8","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM25SP39Q","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0033"}],"why":"no-context: distribute including negative, combine, isolate"}
+{"id":"SATM25TZV13","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"no-context: clear two fractions with LCD, distribute negative, combine, isolate"}
+{"id":"SATM25UWJR3","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute on both sides, combine like terms, isolate"}
+{"id":"SATM25UXU7K","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0016"}],"why":"no-context: cross-multiply to clear fractions, distribute, combine, isolate"}
+{"id":"SATM2653IWD","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"no-context: isolate fraction term, clear fraction, distribute, isolate"}
+{"id":"SATM26CRLT1","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute, combine like terms, isolate"}
+{"id":"SATM26DQWW4","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute, combine like terms, isolate"}
+{"id":"SATM26K68PA","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"no-context: clear fraction, distribute, isolate variable"}
+{"id":"SATM26MTNF3","sub_skills":["LE1.5"],"clusters":["CL.0016","CL.0034","CL.0133","CL.0053","CL.0089"],"distractors":[{"option":"A","cluster_id":"CL.0133"}],"why":"find constant for no solution: clear fraction, expand, match x-coefficients equal with constants unequal"}
+{"id":"SATM26WNQA5","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0033"}],"why":"no-context: clear two fractions with LCD, distribute negative, combine, isolate"}
+{"id":"SATM26ZNWEE","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"no-context: common denominator, distribute subtraction, combine, isolate"}
+{"id":"SATM274HRPN","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: clear fractions with LCD, distribute, combine, isolate"}
+{"id":"SATM279ZWFL","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"B","cluster_id":"CL.0047"},{"option":"C","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM27AW3IA","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[{"option":"D","cluster_id":"CL.0047"}],"why":"two-step linear equation, isolate variable"}
+{"id":"SATM27EE4CF","sub_skills":["LE1.1"],"clusters":["CL.0017","CL.0047"],"distractors":[{"option":"C","cluster_id":"CL.0047"}],"why":"no-context: collect variable terms, isolate variable"}
+{"id":"SATM27GIX61","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"context: flat fee plus hourly rate, solve for hours"}
+{"id":"SATM27UL7YE","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"no-context: distribute, combine like terms on both sides, isolate"}
+{"id":"SATM27V77EF","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[{"option":"A","cluster_id":"CL.0047"},{"option":"D","cluster_id":"CL.0047"}],"why":"no-context: distribute including negative, combine, isolate"}
+{"id":"SATM27ZOXR7","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"find constant for no solution: expand, combine, match x-coefficients equal with constants unequal"}

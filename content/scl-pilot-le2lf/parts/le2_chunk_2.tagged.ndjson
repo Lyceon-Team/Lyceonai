@@ -1,0 +1,75 @@
+{"id":"SATM2GLVP9P","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0128","B":"CL.0116","C":"CL.0024"},"why":"Perp line through point: rewrite to slope-intercept, take neg-reciprocal slope, use point-slope to find y-int"}
+{"id":"SATM2GLWY3A","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{},"why":"Find y-intercept from two points: compute slope, then write y=mx+b using one point"}
+{"id":"SATM2GM4BHC","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0128","B":"CL.0116","D":"CL.0128"},"why":"Perp line through point: rewrite to slope-intercept, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2H0MDOU","sub_skills":["LE2.4"],"clusters":["CL.0094","CL.0047"],"distractors":{},"why":"Substitute y=9 into standard form, isolate x"}
+{"id":"SATM2H7W9WV","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128","CL.0084"],"distractors":{},"why":"Find x-intercept from two points: compute slope, write equation, set y=0 and solve"}
+{"id":"SATM2HAAUI7","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0084","D":"CL.0084"},"why":"y-intercept of standard form: set x=0, solve for y"}
+{"id":"SATM2HCYWNQ","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{"B":"CL.0024","C":"CL.0128","D":"CL.0024"},"why":"Equation from two points: compute slope, use point-slope form"}
+{"id":"SATM2HOBEPR","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128","CL.0094"],"distractors":{"B":"CL.0116","C":"CL.0094","D":"CL.0128"},"why":"Perp line through point, then evaluate at x=2 to find k"}
+{"id":"SATM2HPUR1J","sub_skills":["LE2.5"],"clusters":["CL.0024","CL.0116","CL.0128"],"distractors":{"A":"CL.0128","B":"CL.0128","D":"CL.0160"},"why":"Perp line: compute slope from two points, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2HQF8D9","sub_skills":["LE2.4"],"clusters":["CL.0094","CL.0047"],"distractors":{},"why":"Substitute y=5 into linear equation, isolate x"}
+{"id":"SATM2HQHS40","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0160","D":"CL.0084"},"why":"y-intercept: set x=0, solve -4y=44 for y"}
+{"id":"SATM2HWJJT1","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"A":"CL.0160","C":"CL.0084","D":"CL.0084"},"why":"y-intercept: set x=0, solve 4y=20"}
+{"id":"SATM2I8KLTP","sub_skills":["LE2.4"],"clusters":["CL.0047","CL.0095","CL.0094"],"distractors":{},"why":"Solve 2-equation system for intersection, then substitute into third equation to find k"}
+{"id":"SATM2IF8DYF","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0116","C":"CL.0160","D":"CL.0128"},"why":"Perp line through point: rewrite to slope-intercept, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2II6RRS","sub_skills":["LE2.4"],"clusters":["CL.0009"],"distractors":{"A":"CL.0009","B":"CL.0009","D":"CL.0009"},"why":"Check which point satisfies 4x-3y=17 by substitution"}
+{"id":"SATM2IJ6EQT","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0160","B":"CL.0116","D":"CL.0116"},"why":"Perp line through point: rewrite, neg-reciprocal slope, point-slope for y-int"}
+{"id":"SATM2INEOBV","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0024","D":"CL.0024"},"why":"Equation from two points: compute slope, write y=mx+b"}
+{"id":"SATM2INIMLG","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0116","B":"CL.0116","D":"CL.0128"},"why":"Perp line with same y-intercept: rewrite, neg-reciprocal, write equation with shared intercept"}
+{"id":"SATM2IR4DXN","sub_skills":["LE2.5"],"clusters":["CL.0172","CL.0094"],"distractors":{"B":"CL.0172","C":"CL.0172","D":"CL.0172"},"why":"Parallel line through point: same slope, substitute point to find constant"}
+{"id":"SATM2IXLVW1","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0128","D":"CL.0160"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2JDBEWZ","sub_skills":["LE2.4"],"clusters":["CL.0009"],"distractors":{"B":"CL.0009","C":"CL.0009","D":"CL.0009"},"why":"Check which ordered pair satisfies 5x-3y=19 by substitution"}
+{"id":"SATM2JFTUTY","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0084","D":"CL.0160"},"why":"y-intercept: set x=0, solve 3y=39"}
+{"id":"SATM2JGM2AU","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0172","D":"CL.0128"},"why":"Perp line through point: rewrite to slope-intercept, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2JLWVCD","sub_skills":["LE2.4"],"clusters":["CL.0128","CL.0166"],"distractors":{"B":"CL.0160","C":"CL.0128","D":"CL.0128"},"why":"Line through origin with given slope: y=mx with b=0"}
+{"id":"SATM2JOU8BU","sub_skills":["LE2.4"],"clusters":["CL.0009"],"distractors":{"B":"CL.0009","C":"CL.0009","D":"CL.0009"},"why":"Check which ordered pair satisfies 3x+2y=26 by substitution"}
+{"id":"SATM2JQ09IF","sub_skills":["LE2.4"],"clusters":["CL.0080","CL.0160"],"distractors":{"B":"CL.0080","C":"CL.0080","D":"CL.0160"},"why":"Find slope: rewrite standard form to slope-intercept, read slope coefficient"}
+{"id":"SATM2JUQQJ2","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"A":"CL.0160","C":"CL.0084","D":"CL.0084"},"why":"y-intercept: set x=0, solve 4y=36"}
+{"id":"SATM2JWD7AX","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"A":"CL.0084","B":"CL.0084","D":"CL.0084"},"why":"x-intercept: set y=0, solve 3x=21"}
+{"id":"SATM2JZPZVE","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{},"why":"Perp line through point: rewrite, neg-reciprocal slope, point-slope for y-int"}
+{"id":"SATM2K2WUZZ","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{"A":"CL.0024","B":"CL.0160","D":"CL.0128"},"why":"y-intercept from two points: compute slope, write y=mx+b"}
+{"id":"SATM2K6E8IQ","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0084","D":"CL.0084"},"why":"y-intercept: set x=0, solve -4y=52"}
+{"id":"SATM2KBJGM9","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0160","B":"CL.0172","C":"CL.0116"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2KRXBJQ","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0172","C":"CL.0116","D":"CL.0116"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope, convert to standard form"}
+{"id":"SATM2KSRZFR","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0116","C":"CL.0172","D":"CL.0128"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope, standard form"}
+{"id":"SATM2KTBMQG","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0084","D":"CL.0160"},"why":"y-intercept: set x=0, solve -7y=42"}
+{"id":"SATM2L6TC5Y","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2LE7VX1","sub_skills":["LE2.4"],"clusters":["CL.0024"],"distractors":{"A":"CL.0024","C":"CL.0024","D":"CL.0024"},"why":"Slope from two points using (y2-y1)/(x2-x1)"}
+{"id":"SATM2LFY1WK","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0024","D":"CL.0024"},"why":"y-intercept from two points: compute slope, write y=mx+b"}
+{"id":"SATM2LJW67X","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0160","D":"CL.0084"},"why":"y-intercept: set x=0, solve -4y=36"}
+{"id":"SATM2LQYT79","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0128","D":"CL.0116"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2LS7HH4","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0160","C":"CL.0128","D":"CL.0128"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2LTH57W","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0172","CL.0128"],"distractors":{"B":"CL.0160","C":"CL.0128","D":"CL.0128"},"why":"Parallel line through point: rewrite for slope, same slope, point-slope for y-int"}
+{"id":"SATM2M0Y3N4","sub_skills":["LE2.4"],"clusters":["CL.0009"],"distractors":{"A":"CL.0009","C":"CL.0009","D":"CL.0009"},"why":"Check which ordered pair satisfies 5x-4y=31 by substitution"}
+{"id":"SATM2M28KJ8","sub_skills":["LE2.5"],"clusters":["CL.0024","CL.0172","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0024","D":"CL.0128"},"why":"Parallel line through point: compute slope from two points, same slope, point-slope for y-int"}
+{"id":"SATM2MF7YCI","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116"],"distractors":{"B":"CL.0116","C":"CL.0160","D":"CL.0116"},"why":"Find perpendicular slope: rewrite intercept-form to slope-intercept, take neg-reciprocal"}
+{"id":"SATM2MIYKNZ","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0128","D":"CL.0172"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2MUSA72","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"A":"CL.0084","B":"CL.0084","C":"CL.0084"},"why":"x-intercept: set y=0, solve 5x=30"}
+{"id":"SATM2MYTGWE","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"A":"CL.0084","C":"CL.0084","D":"CL.0160"},"why":"y-intercept: set x=0, solve -3y=21"}
+{"id":"SATM2MZGDCW","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0024","D":"CL.0024"},"why":"Equation from two points: compute slope, write y=mx+b"}
+{"id":"SATM2N6105H","sub_skills":["LE2.4"],"clusters":["CL.0009"],"distractors":{"A":"CL.0009","C":"CL.0009","D":"CL.0009"},"why":"Check which ordered pair satisfies 5x+3y=41 by substitution"}
+{"id":"SATM2N68Q60","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0128","B":"CL.0128","C":"CL.0172"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2N79EU2","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0084","D":"CL.0160"},"why":"x-intercept: set y=0, solve 5x=45"}
+{"id":"SATM2N7SPMF","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0172","D":"CL.0116"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2N7VH8W","sub_skills":["LE2.4"],"clusters":["CL.0094","CL.0047"],"distractors":{"A":"CL.0047","B":"CL.0047","D":"CL.0094"},"why":"Substitute x=7 into equation, isolate y"}
+{"id":"SATM2NG0B7R","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"A":"CL.0160","B":"CL.0084","D":"CL.0084"},"why":"y-intercept: set x=0, solve 3y=21"}
+{"id":"SATM2NTB98M","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0172","B":"CL.0116","D":"CL.0128"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2NY03WS","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{},"why":"y-intercept from two points: compute slope, write y=mx+b"}
+{"id":"SATM2O0XZ4J","sub_skills":["LE2.4"],"clusters":["CL.0024"],"distractors":{"B":"CL.0024","C":"CL.0024","D":"CL.0024"},"why":"Slope from two points: (y2-y1)/(x2-x1)"}
+{"id":"SATM2O20L27","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0024","D":"CL.0024"},"why":"Equation from two points: compute slope, write y=mx+b"}
+{"id":"SATM2O3UN7X","sub_skills":["LE2.4"],"clusters":["CL.0094","CL.0047"],"distractors":{},"why":"Substitute y=7 into 5x+2y=34, isolate x"}
+{"id":"SATM2OD610E","sub_skills":["LE2.4"],"clusters":["CL.0128"],"distractors":{"A":"CL.0128","C":"CL.0128","D":"CL.0128"},"why":"y-intercept from slope and point: write y=mx+b, substitute point, solve for b"}
+{"id":"SATM2OE48M8","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128","CL.0094"],"distractors":{},"why":"Find k: compute slope from two points, write equation, substitute y=-19 to find x=k"}
+{"id":"SATM2OFDFM4","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0172","C":"CL.0116","D":"CL.0116"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for equation"}
+{"id":"SATM2ONMQ4N","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{"A":"CL.0024","B":"CL.0128","D":"CL.0024"},"why":"Equation from two points: compute slope, write y=mx+b"}
+{"id":"SATM2OQGBVE","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0116","B":"CL.0160","D":"CL.0128"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2OWTF4U","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0116","B":"CL.0172","C":"CL.0116"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2P7VN2K","sub_skills":["LE2.4"],"clusters":["CL.0024","CL.0128"],"distractors":{},"why":"y-intercept from two points: compute slope, write y=mx+b"}
+{"id":"SATM2PBGXGL","sub_skills":["LE2.4"],"clusters":["CL.0084"],"distractors":{"B":"CL.0084","C":"CL.0084","D":"CL.0084"},"why":"y-intercept: set x=0, solve -9y=63"}
+{"id":"SATM2PGSBD9","sub_skills":["LE2.4"],"clusters":["CL.0080","CL.0160"],"distractors":{"A":"CL.0080","B":"CL.0080","D":"CL.0160"},"why":"Find slope: rewrite standard form to slope-intercept, read coefficient of x"}
+{"id":"SATM2PIEHIF","sub_skills":["LE2.4"],"clusters":["CL.0024"],"distractors":{"B":"CL.0024","C":"CL.0024","D":"CL.0024"},"why":"Slope from two points: (y2-y1)/(x2-x1)"}
+{"id":"SATM2PNOQ0O","sub_skills":["LE2.4"],"clusters":["CL.0094","CL.0047"],"distractors":{"A":"CL.0094","C":"CL.0047","D":"CL.0094"},"why":"Substitute point (6,1) into ax+3y=21, isolate a"}
+{"id":"SATM2PSY73E","sub_skills":["LE2.4"],"clusters":["CL.0024"],"distractors":{"A":"CL.0024","C":"CL.0024","D":"CL.0024"},"why":"Slope from two points: (31-11)/(6-2)=5"}
+{"id":"SATM2PT9HCN","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"B":"CL.0128","C":"CL.0128","D":"CL.0160"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2Q03CD3","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0116","CL.0128"],"distractors":{"A":"CL.0116","B":"CL.0160","D":"CL.0128"},"why":"Perp line through point: rewrite, neg-reciprocal, point-slope for y-int"}
+{"id":"SATM2Q4B0VP","sub_skills":["LE2.5"],"clusters":["CL.0080","CL.0053"],"distractors":{"A":"CL.0053","B":"CL.0047","D":"CL.0172"},"why":"Perpendicularity via slope product=-1: rewrite both lines, set slope product to -1, solve for k"}
