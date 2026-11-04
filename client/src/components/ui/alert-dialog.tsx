@@ -2,6 +2,7 @@ import * as React from "react"
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
 import { cn } from "@/lib/utils"
+import { type VariantProps } from "class-variance-authority"
 import { buttonVariants } from "@/components/ui/button"
 
 const AlertDialog = AlertDialogPrimitive.Root
@@ -96,13 +97,29 @@ const AlertDialogDescription = React.forwardRef<
 AlertDialogDescription.displayName =
   AlertDialogPrimitive.Description.displayName
 
+/**
+ * @spec [owner decision 2026-11-03 ("remove the per-component workarounds")]
+ * | @implemented [2026-11-03]
+ *
+ * plain English: the confirm button takes the same `variant` the real `Button` does, defaulting
+ * to `default` so nothing that does not pass one changes. Expected outcome: a destructive
+ * confirmation says `variant="destructive"` rather than hand-writing the fill.
+ *
+ * WHY IT NEEDED A PROP. Every `AlertDialogAction` in this codebase overrode the background in
+ * its className, and the reason was not taste: `buttonVariants()` is the `default` variant,
+ * `bg-primary`, and `--primary` was shadowed by an invalid declaration so the fill computed to
+ * transparent. With the token repaired the overrides are no longer load-bearing, and a variant
+ * is how the design system already spells this.
+ */
 const AlertDialogAction = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Action>,
-  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action> & {
+    variant?: VariantProps<typeof buttonVariants>["variant"];
+  }
+>(({ className, variant, ...props }, ref) => (
   <AlertDialogPrimitive.Action
     ref={ref}
-    className={cn(buttonVariants(), className)}
+    className={cn(buttonVariants({ variant }), className)}
     {...props}
   />
 ))
