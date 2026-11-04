@@ -34,6 +34,9 @@ const db = vi.hoisted(() => ({
   rows: [] as unknown[],
   segmentRows: [] as unknown[],
   subSkills: [] as Array<{ sub_skill_id: string }>,
+  // video_segments rows for the end lookup: production Desmos Lesson #10's 159–257 (EE.5).
+  segmentEnds: [] as Array<{ segment_id: string; end_seconds: number }>,
+  endLookups: [] as string[][],
 }));
 const logged = vi.hoisted(() => ({ info: [] as unknown[][] }));
 const config = vi.hoisted(() => ({ value: null as unknown }));
@@ -42,6 +45,16 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: (table: string) => ({
       select: () => ({
+        in: (_column: string, ids: string[]) => {
+          db.endLookups.push(ids);
+          return Promise.resolve({
+            data:
+              table === "video_segments"
+                ? db.segmentEnds.filter((r) => ids.includes(r.segment_id))
+                : [],
+            error: null,
+          });
+        },
         eq: () =>
           table === "question_sub_skills"
             ? Promise.resolve({ data: db.subSkills, error: null })
@@ -191,6 +204,11 @@ beforeEach(() => {
   db.rows = ROWS;
   db.segmentRows = [];
   db.subSkills = [];
+  db.segmentEnds = [
+    { segment_id: "5e9a0000-0000-4000-8000-000000000159", end_seconds: 257 },
+    { segment_id: "5e9a0000-0000-4000-8000-000000000002", end_seconds: 120 },
+  ];
+  db.endLookups.length = 0;
   logged.info.length = 0;
   config.value = MAP;
 });
@@ -256,8 +274,12 @@ describe("Phase C: the switch point and the segment path", () => {
     expect(db.rpcArgs).toEqual([
       { p_skill_codes: ["Equivalent Expressions"], p_limit: 3, p_method: null },
     ]);
-    // Snapshot of today's output for these rows: unchanged, in order.
-    expect(retrieval.videos).toEqual(ROWS);
+    // Snapshot of today's output for these rows: unchanged, in order; the skill path has no
+    // segment, so no end and no segment id, and no end lookup runs.
+    expect(retrieval.videos).toEqual(
+      ROWS.map((r) => ({ ...r, end_seconds: null, segment_id: null })),
+    );
+    expect(db.endLookups).toEqual([]);
     expect(retrieval).toMatchObject({ path: "skill", miss: false });
   });
 
@@ -292,17 +314,27 @@ describe("Phase C: the switch point and the segment path", () => {
     });
   });
 
-  it("the served row is the library row with the segment's start; the segment fields stay server-side", async () => {
+  it("the served row is the library row with the segment's start, end and id; matched sub-skills and clusters stay server-side", async () => {
     db.subSkills = [{ sub_skill_id: "EE.5" }];
     db.segmentRows = EE5_ROWS;
     const r = await retrieveOfferedVideos("q-1", "review", "c-1", null);
-    expect(r.videos).toEqual([{ ...LESSON_10, start_seconds: 159 }]);
+    expect(r.videos).toEqual([
+      {
+        ...LESSON_10,
+        start_seconds: 159,
+        end_seconds: 257,
+        segment_id: "5e9a0000-0000-4000-8000-000000000159",
+      },
+    ]);
+    expect(db.endLookups).toEqual([["5e9a0000-0000-4000-8000-000000000159"]]);
     expect(Object.keys(r.videos[0]!).sort()).toEqual(
       [
         "channel_name",
         "duration_seconds",
+        "end_seconds",
         "format",
         "methods",
+        "segment_id",
         "start_seconds",
         "title",
         "video_id",
@@ -310,13 +342,30 @@ describe("Phase C: the switch point and the segment path", () => {
     );
   });
 
+  it("a segment whose end is missing, or not after its start, plays as before (end null)", async () => {
+    db.subSkills = [{ sub_skill_id: "EE.5" }];
+    db.segmentRows = EE5_ROWS;
+    db.segmentEnds = [];
+    const missing = await retrieveOfferedVideos("q-1", "review", "c-1", null);
+    expect(missing.videos[0]).toMatchObject({
+      start_seconds: 159,
+      end_seconds: null,
+    });
+    db.segmentEnds = [
+      { segment_id: "5e9a0000-0000-4000-8000-000000000159", end_seconds: 159 },
+    ];
+    const notAfter = await retrieveOfferedVideos("q-1", "review", "c-1", null);
+    expect(notAfter.videos[0]).toMatchObject({ end_seconds: null });
+  });
+
   it("an EE.2-tagged item: the expand-and-multiply segment", async () => {
     db.subSkills = [{ sub_skill_id: "EE.2" }];
     db.segmentRows = EE2_ROWS;
     const r = await retrieveOfferedVideos("q-1", "review", "c-1", null);
-    expect(r.videos.map((v) => [v.video_id, v.start_seconds])).toEqual([
-      ["Expand00001", 0],
-    ]);
+    // A segment starting at 0 still carries its end.
+    expect(
+      r.videos.map((v) => [v.video_id, v.start_seconds, v.end_seconds]),
+    ).toEqual([["Expand00001", 0, 120]]);
     expect(r).toMatchObject({
       path: "segment",
       matchedSubSkillIds: ["EE.2"],
