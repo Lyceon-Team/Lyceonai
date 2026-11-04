@@ -49,6 +49,38 @@ import type {
 import { TRAP_HEADING } from "../../shared/worked-examples/rules";
 import { escapeHtml, fill, type Kit } from "./kit";
 
+/** The end card's outro text sizes: "Follow for daily SAT questions" and "Lyceon SAT Prep". */
+export const OUTRO_FOLLOW_PX = 80;
+export const OUTRO_BRAND_PX = 76;
+
+/**
+ * The music credit on the end card.
+ *
+ * @spec [Karl's ruling 2026-11-04, "Copy-paste cleanup for all #social outputs", 3: the credit the
+ *       track's licence requires moves from every caption to the video's end card, "small,
+ *       legible on-screen text ... visible for the whole end card", inside the safe area (the
+ *       layout check confirms it); "the credit line should be small at the right at at most 1/4
+ *       of the outro font and should not be said in the video"; a track that needs no
+ *       attribution shows no credit] | @implemented [2026-11-04]
+ *
+ * plain English: a quarter of the smaller outro size, rounded down (19 px), right-aligned at the
+ * bottom right of the safe area, static for the whole end card. It is text on screen only: no
+ * voice line reads it (the outro voice is fixed in voice.json).
+ */
+export const END_CARD_CREDIT_PX = Math.floor(
+  Math.min(OUTRO_FOLLOW_PX, OUTRO_BRAND_PX) / 4,
+);
+/** The gap between the credit's baseline box and the safe area's bottom edge. */
+export const END_CARD_CREDIT_MARGIN_PX = 12;
+
+/** The end card's credit element, or nothing for a track whose licence needs no credit. */
+export function endCardCreditHtml(kit: Kit): string {
+  const credit = kit.track.on_screen_credit;
+  return credit === null
+    ? ""
+    : `<div class="credit">${escapeHtml(credit)}</div>`;
+}
+
 /** The safe area in pixels: x 71..912, y 154..1555 on 1080×1920. */
 export function safeArea(): {
   left: number;
@@ -329,7 +361,13 @@ export function buildScriptComposition(
     scene("work", sWork, 1, `${recap}\n${steps}`),
     scene("trap", sTrap, 0, trap),
     scene("answer", sAnswer, 1, `${recap}\n${doneSteps}\n${answer}`),
-    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),
+    scene(
+      "endcard",
+      sEnd,
+      0,
+      fill(t["end-card"].trim(), { credit: endCardCreditHtml(kit) }),
+      " end",
+    ),
   ].join("\n");
 
   const fonts: Record<string, string> = {};
@@ -398,6 +436,12 @@ ${wipes}
     safeLeft: String(safe.left),
     safeWidth: String(safe.right - safe.left),
     safeRightInset: String(QOTD_TIKTOK_SIZE.width - safe.right),
+    outroFollowSize: String(OUTRO_FOLLOW_PX),
+    outroBrandSize: String(OUTRO_BRAND_PX),
+    creditSize: String(END_CARD_CREDIT_PX),
+    creditBottom: String(
+      QOTD_TIKTOK_SIZE.height - safe.bottom + END_CARD_CREDIT_MARGIN_PX,
+    ),
   });
   const html = fill(t.frame, {
     title: escapeHtml(input.title),

@@ -52,6 +52,7 @@ import {
   socialFacebookCaption,
   socialInstagramCaption,
   socialKeywords,
+  copyBlockProblems,
   socialTiktokCaption,
   type SocialSection,
 } from "../social/posts";
@@ -313,36 +314,31 @@ export type BreakdownCopy = {
 
 /**
  * The SCL-262 captions and TikTok keywords, through the one caption builder: the QOTD headline
- * (the test month is the posting day's, as the carousel's), the music credit as the trailing line
- * of each caption (its CC BY 4.0 licence). Refused with problems on any caption rule.
+ * (the test month is the posting day's, as the carousel's). No music credit in any caption: it is
+ * on the video's end card (Karl, 2026-11-04). Refused with problems on any caption rule, and on
+ * a keywords block that carries anything but keywords (copyBlockProblems).
  */
 export function breakdownCopy(
   day: QotdArchiveResponse,
   postedOn: string,
-  musicCredit: string,
 ): { ok: true; copy: BreakdownCopy } | { ok: false; problems: string[] } {
   const section: SocialSection = QOTD_SECTION_NAME[day.question.section_code];
   const test = nextSatTest(postedOn);
   const headline = qotdHeadline(test, section);
-  const caption = socialTiktokCaption(headline, test, section, [musicCredit]);
-  const instagram = socialInstagramCaption(headline, test, section, [
-    musicCredit,
-  ]);
-  const facebook = socialFacebookCaption(headline, test, section, [
-    musicCredit,
-  ]);
+  const caption = socialTiktokCaption(headline, test, section);
+  const instagram = socialInstagramCaption(headline, test, section);
+  const facebook = socialFacebookCaption(headline, test, section);
   const keywords = socialKeywords(postedOn, section, day.question.domain);
   const problems = [
-    ...captionProblems(caption, musicCredit, headline).map(
-      (p) => `tiktok ${p}`,
-    ),
-    ...captionProblems(instagram, musicCredit, headline).map(
-      (p) => `instagram ${p}`,
-    ),
-    ...captionProblems(facebook, musicCredit, headline).map(
-      (p) => `facebook ${p}`,
-    ),
+    ...captionProblems(caption, headline).map((p) => `tiktok ${p}`),
+    ...captionProblems(instagram, headline).map((p) => `instagram ${p}`),
+    ...captionProblems(facebook, headline).map((p) => `facebook ${p}`),
     ...(keywords.ok ? [] : [`tiktok ${keywords.error}`]),
+    ...(keywords.ok
+      ? copyBlockProblems(keywords.keywords.join("\n")).map(
+          (p) => `tiktok keywords ${p}`,
+        )
+      : []),
   ];
   if (problems.length > 0 || !keywords.ok) return { ok: false, problems };
   return {
