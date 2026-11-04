@@ -77,13 +77,35 @@ async function shoot(name: string, ctxOptions: object, mobile: boolean) {
     ).length,
     errors: document.querySelectorAll('[data-testid^="error-birth-"]').length,
     nativeDateInputs: document.querySelectorAll('input[type="date"]').length,
+    // ONE LINE AT EVERY WIDTH (owner, 2026-11-04): every field row must have all three
+    // controls on the same visual line. Measured by their top offsets, not assumed.
+    rowsOnOneLine: Array.from(
+      document.querySelectorAll('[data-testid="birthday-row"]'),
+    ).map((row) => {
+      const tops = Array.from(row.children).map(
+        (c) => Math.round((c as HTMLElement).getBoundingClientRect().top),
+      );
+      return new Set(tops).size === 1 && tops.length === 3;
+    }),
+    // The Month <select> must not be narrower than its longest option needs.
+    monthClipped: Array.from(
+      document.querySelectorAll('[data-testid="select-birth-month"]'),
+    ).some((el) => (el as HTMLSelectElement).scrollWidth > (el as HTMLSelectElement).clientWidth + 1),
   }));
   console.log(
     `${name}: page ${m.page}px / viewport ${m.viewport}px` +
       `${m.page > m.viewport ? "  *** PAGE SCROLLS HORIZONTALLY ***" : " — no page scroll"}` +
       `; ${m.confirmations} confirmation line(s), ${m.errors} field error(s), ` +
-      `${m.nativeDateInputs} native date input(s)`,
+      `${m.nativeDateInputs} native date input(s); ` +
+      `${m.rowsOnOneLine.filter(Boolean).length}/${m.rowsOnOneLine.length} rows on ONE line` +
+      `${m.monthClipped ? "  *** MONTH SELECT CLIPPED ***" : ""}`,
   );
+  if (m.rowsOnOneLine.length === 0 || m.rowsOnOneLine.some((ok) => !ok)) {
+    throw new Error(`${name}: a field row wrapped instead of staying on one line`);
+  }
+  if (m.monthClipped) {
+    throw new Error(`${name}: the Month select is too narrow for its options`);
+  }
   if (mobile && m.page > m.viewport) {
     throw new Error(`${name}: the page gained horizontal scroll at 375px`);
   }

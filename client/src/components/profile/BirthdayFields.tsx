@@ -24,10 +24,14 @@
  * a valid birthday is; that disagreement is what let age 0 through before.
  *
  * trade-offs:
- *  - Month is a NATIVE `<select>` styled with `LYC_INPUT`, the pattern `TargetScorePicker` and
- *    `FullLengthFields` already use — not the Radix `Select`. Radix renders a button and portals
- *    its listbox, so `autocomplete="bday-month"` would be inert on it; the brief asks for that
- *    token to work, and only a real `<select>` carries it. Still a dropdown, so §5 holds.
+ *  - Month is a NATIVE `<select>` wearing the same `inputVariants[variant]` class as the Input
+ *    beside it, the pattern `TargetScorePicker` and `FullLengthFields` already use — not the
+ *    Radix `Select`. Radix renders a button and portals its listbox, so `autocomplete="bday-month"`
+ *    would be inert on it; the brief asks for that token to work, and only a real `<select>`
+ *    carries it. Still a dropdown, so §5 holds.
+ *  - It serves two surfaces, so it carries a `variant` rather than one palette: the onboarding
+ *    card under `.lyc`, and the guardian "Add student" dialog, which portals onto <body> with no
+ *    `.lyc` root at all.
  *  - Day and Year are text inputs with `inputMode="numeric"`, not `type="number"`: a number input
  *    brings its own spinner and scroll-to-change behaviour on touch, which is the class of hidden
  *    widget state this change exists to remove.
@@ -39,8 +43,7 @@
  * leap year; a 2-digit year is refused rather than widened to a century.
  */
 import { useId, useMemo, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { LYC_INPUT } from "@/components/ui/input";
+import { Input, inputVariants, type InputVariant } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   BIRTH_MONTHS,
@@ -59,6 +62,15 @@ export type BirthdayFieldsProps = {
   /** Injected in tests; `new Date()` in the app. Keeps the rules deterministic. */
   readonly today?: Date;
   readonly disabled?: boolean;
+  /**
+   * Which design system this instance wears. `lyc` is the student surface (the onboarding
+   * card, under a `.lyc` root). `default` is every other surface — the guardian "Add student"
+   * dialog portals onto <body> with NO `.lyc` root, so the student tokens would resolve to
+   * undefined custom properties there and the errors would render as inherited ink rather than
+   * danger red. That is the defect `--primary` had app-wide (#1433), and it is why this is a
+   * variant rather than one hard-coded palette.
+   */
+  readonly variant?: InputVariant;
 };
 
 /** Digits only, capped, so a paste cannot carry letters or a separator into the field. */
@@ -66,7 +78,20 @@ function digitsOnly(raw: string, maxLength: number): string {
   return raw.replace(/\D/g, "").slice(0, maxLength);
 }
 
-const ERROR_TEXT = "m-0 text-lyc-meta-lg text-lyc-danger";
+const TEXT = {
+  lyc: {
+    legend: "mb-1 p-0 text-[17px] font-semibold text-lyc-ink",
+    sub: "text-lyc-meta-lg",
+    error: "m-0 text-lyc-meta-lg text-lyc-danger",
+    confirm: "m-0 text-lyc-meta-lg text-lyc-muted",
+  },
+  default: {
+    legend: "mb-1 p-0 text-base font-semibold text-foreground",
+    sub: "text-base",
+    error: "m-0 text-base text-destructive",
+    confirm: "m-0 text-base text-muted-foreground",
+  },
+} as const;
 
 export function BirthdayFields({
   value,
@@ -74,7 +99,9 @@ export function BirthdayFields({
   showAllErrors,
   today,
   disabled = false,
+  variant = "lyc",
 }: BirthdayFieldsProps): JSX.Element {
+  const t = TEXT[variant];
   const baseId = useId();
   const monthId = `${baseId}-month`;
   const dayId = `${baseId}-day`;
@@ -104,24 +131,27 @@ export function BirthdayFields({
 
   return (
     <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-      <legend className="mb-1 p-0 text-[17px] font-semibold text-lyc-ink">
-        Date Of Birth
-      </legend>
+      <legend className={t.legend}>Date Of Birth</legend>
 
       {/*
-       * One row on desktop; on a phone Month takes its own row and Day and Year share the next,
-       * because three full-width boxes read as three separate questions and "September" clips in
-       * a third of 327px. The breakpoint is the viewport, not the card, which is fine here: this
-       * component only ever renders inside the 480px onboarding card.
+       * ONE LINE AT EVERY WIDTH, 375px included (owner, 2026-11-04). Month takes the remaining
+       * space; Day and Year are fixed and narrow, because a two-digit and a four-digit box need
+       * no more. `min-w-0` on the Month column is what lets it actually shrink — a flex item's
+       * automatic minimum size is its content, so without it the <select> would refuse to go
+       * below its longest option ("September") and push the row wider than the card.
+       * `flex-nowrap` states the intent outright rather than relying on the widths adding up.
        */}
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="flex min-w-[8rem] basis-full flex-col gap-1 sm:flex-1 sm:basis-auto">
-          <Label variant="lyc" htmlFor={monthId} className="text-lyc-meta-lg">
+      <div
+        className="flex flex-nowrap items-start gap-2"
+        data-testid="birthday-row"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Label variant={variant} htmlFor={monthId} className={t.sub}>
             Month
           </Label>
           <select
             id={monthId}
-            className={LYC_INPUT}
+            className={inputVariants[variant]}
             data-testid="select-birth-month"
             autoComplete="bday-month"
             disabled={disabled}
@@ -146,13 +176,13 @@ export function BirthdayFields({
           </select>
         </div>
 
-        <div className="flex min-w-[4.5rem] flex-1 flex-col gap-1 sm:max-w-[6rem] sm:flex-none">
-          <Label variant="lyc" htmlFor={dayId} className="text-lyc-meta-lg">
+        <div className="flex w-[4.5rem] shrink-0 flex-col gap-1">
+          <Label variant={variant} htmlFor={dayId} className={t.sub}>
             Day
           </Label>
           <Input
             id={dayId}
-            variant="lyc"
+            variant={variant}
             data-testid="input-birth-day"
             type="text"
             inputMode="numeric"
@@ -170,13 +200,13 @@ export function BirthdayFields({
           />
         </div>
 
-        <div className="flex min-w-[6rem] flex-1 flex-col gap-1 sm:max-w-[7.5rem] sm:flex-none">
-          <Label variant="lyc" htmlFor={yearId} className="text-lyc-meta-lg">
+        <div className="flex w-[6rem] shrink-0 flex-col gap-1">
+          <Label variant={variant} htmlFor={yearId} className={t.sub}>
             Year
           </Label>
           <Input
             id={yearId}
-            variant="lyc"
+            variant={variant}
             data-testid="input-birth-year"
             type="text"
             inputMode="numeric"
@@ -209,7 +239,7 @@ export function BirthdayFields({
           {monthError && (
             <p
               id={`${monthId}-error`}
-              className={ERROR_TEXT}
+              className={t.error}
               data-testid="error-birth-month"
             >
               {monthError}
@@ -218,7 +248,7 @@ export function BirthdayFields({
           {dayError && (
             <p
               id={`${dayId}-error`}
-              className={ERROR_TEXT}
+              className={t.error}
               data-testid="error-birth-day"
             >
               {dayError}
@@ -227,14 +257,14 @@ export function BirthdayFields({
           {yearError && (
             <p
               id={`${yearId}-error`}
-              className={ERROR_TEXT}
+              className={t.error}
               data-testid="error-birth-year"
             >
               {yearError}
             </p>
           )}
           {formError && (
-            <p className={ERROR_TEXT} data-testid="error-birth-form">
+            <p className={t.error} data-testid="error-birth-form">
               {formError}
             </p>
           )}
@@ -243,10 +273,7 @@ export function BirthdayFields({
 
       {/* Read back in words, so a wrong year is visible before it is submitted. */}
       {resolution.ok && (
-        <p
-          className="m-0 text-lyc-meta-lg text-lyc-muted"
-          data-testid="text-birthday-confirmation"
-        >
+        <p className={t.confirm} data-testid="text-birthday-confirmation">
           {formatBirthdayConfirmation(
             resolution.month,
             resolution.day,

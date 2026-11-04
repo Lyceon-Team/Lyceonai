@@ -11,13 +11,8 @@
  */
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  BirthdayFields,
-} from "@/components/profile/BirthdayFields";
-import {
-  EMPTY_BIRTHDAY,
-  type BirthdayParts,
-} from "@lyceon/shared/birthday";
+import { BirthdayFields } from "@/components/profile/BirthdayFields";
+import { EMPTY_BIRTHDAY, type BirthdayParts } from "@lyceon/shared/birthday";
 import "@/index.css";
 // student-tokens.css is imported by App.tsx in the real app, NOT by index.css. Without it the
 // `.lyc` tokens are absent, `--muted` falls through to shadcn's muted BACKGROUND (#F0EAE0) and
@@ -32,10 +27,12 @@ function Case({
   title,
   initial,
   showAllErrors,
+  variant = "lyc",
 }: {
   title: string;
   initial: BirthdayParts;
   showAllErrors: boolean;
+  variant?: "lyc" | "default";
 }): JSX.Element {
   const [value, setValue] = useState<BirthdayParts>(initial);
   return (
@@ -55,6 +52,7 @@ function Case({
         value={value}
         onChange={setValue}
         showAllErrors={showAllErrors}
+        variant={variant}
         today={TODAY}
       />
     </section>
@@ -64,7 +62,10 @@ function Case({
 function App(): JSX.Element {
   return (
     // The same root the onboarding page renders under (BareCardShell), so the tokens resolve.
-    <div className="lyc" style={{ background: "var(--paper)", minHeight: "100vh" }}>
+    <div
+      className="lyc"
+      style={{ background: "var(--paper)", minHeight: "100vh" }}
+    >
       <div
         style={{
           maxWidth: 480,
@@ -73,7 +74,11 @@ function App(): JSX.Element {
           background: "var(--sheet)",
         }}
       >
-        <Case title="Empty — all three fields, placeholders only" initial={EMPTY_BIRTHDAY} showAllErrors={false} />
+        <Case
+          title="Empty — all three fields, placeholders only"
+          initial={EMPTY_BIRTHDAY}
+          showAllErrors={false}
+        />
         <Case
           title="Filled — the confirmation line"
           initial={{ month: "4", day: "4", year: "2006" }}
@@ -93,6 +98,31 @@ function App(): JSX.Element {
           title="Error — a day that does not exist"
           initial={{ month: "2", day: "30", year: "2006" }}
           showAllErrors
+        />
+      </div>
+      {/*
+       * The guardian "Add student" dialog: OUTSIDE the `.lyc` root, on the default variant —
+       * the surface where the student tokens would not resolve.
+       */}
+      <div
+        style={{
+          maxWidth: 480,
+          margin: "0 auto",
+          padding: 24,
+          background: "var(--card, #fff)",
+        }}
+      >
+        <Case
+          title="Guardian dialog (default variant) — filled"
+          initial={{ month: "1", day: "1", year: "1980" }}
+          showAllErrors={false}
+          variant="default"
+        />
+        <Case
+          title="Guardian dialog (default variant) — errors"
+          initial={EMPTY_BIRTHDAY}
+          showAllErrors
+          variant="default"
         />
       </div>
     </div>
