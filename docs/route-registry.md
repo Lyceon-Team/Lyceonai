@@ -88,7 +88,7 @@ This document records, for those routes:
 | `/upgrade` | student, admin | free | UpgradePage | Canonical Premium plan-selection page (Monthly/Quarterly/Yearly); `/api/billing/plans`; `/api/billing/checkout` (server-created Stripe Checkout only, no client-side entitlement grant) | ACTIVE |
 | `/flow-cards` | student, admin | entitled† | FlowCards | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
 | `/structured-practice` | student, admin | entitled† | StructuredPractice | `/api/practice/next`, `/api/practice/answer` (with usage limits) | RETIRED |
-| `/profile` | student, guardian, admin | free | Settings for a student or admin (UI-58: Profile, Account, Guardian, Billing, Appearance; `?tab=` selects the section); UserProfile in GuardianShell for a guardian (G4-08) | `/api/profile`, `PATCH /api/profile/name`, `/api/calendar/profile` (GET, PUT), `POST /api/auth/change-password`, `/api/account/email-suppression`, `POST /api/account/delete`, `/api/students/:studentId/links`, `/api/students/:studentId/link-code` (+`/regenerate`, `/invite`), `/api/billing/status`, `POST /api/billing/portal` | ACTIVE |
+| `/profile` | student, guardian, admin | free | Settings for a student or admin (UI-58: Profile, Account, Guardian, Billing, Appearance; `?tab=` selects the section); UserProfile in GuardianShell for a guardian (G4-08) | `/api/profile`, `PATCH /api/profile/name`, `/api/calendar/profile` (GET, PUT), `POST /api/auth/change-password`, `/api/account/email-suppression`, `POST /api/account/delete`, `/api/students/:studentId/links`, `/api/students/:studentId/link-code` (+`/regenerate`, `/invite`), `/api/billing/status`, `POST /api/billing/portal`, `/api/billing/cancel-state`, `POST /api/billing/cancel`, `POST /api/billing/cancel/undo` | ACTIVE |
 | `/help` | student, admin | free | HelpPage (UI-58; OQ-46: the rail's Help, the avatar menu's Help and the footer's "Help and FAQs") | N/A (static; Contact support is `mailto:`) | ACTIVE |
 | `/settings` | public | free | Redirect→`/profile` (client, history replace; query and hash kept; production re-test 2026-10-08 item E) | N/A | ACTIVE |
 | `/profile/complete` | student, guardian, admin | free | ProfileComplete | `/api/profile`, `/api/legal/accept` | ACTIVE |
@@ -98,7 +98,7 @@ This document records, for those routes:
 | `/admin/crisis-review` | admin | admin-only | CrisisReviewList | `/api/admin/crisis-review/cases` | ACTIVE |
 | `/admin/crisis-review/:id` | admin | admin-only | CrisisReviewDetail | `/api/admin/crisis-review/cases/:id`, `/api/admin/crisis-review/cases/:id/claim`, `/api/admin/crisis-review/cases/:id/disposition` | ACTIVE |
 | `/guardian` | guardian | free | GuardianHome (redirects to the first linked student's Dashboard, or the no-student state; G4-01) | `/api/guardian/students` | ACTIVE |
-| `/guardian/students` | guardian | free | GuardianStudentsPage — Linked students & billing: per-student status, one Manage billing (the existing portal), Remove with confirmation (G4-10) | `/api/guardian/students`, `/api/billing/status`, `/api/billing/plans`, `POST /api/billing/portal`, `POST /api/billing/checkout`, `DELETE /api/guardian/link/:studentId` | ACTIVE |
+| `/guardian/students` | guardian | free | GuardianStudentsPage — Linked students & billing: per-student status, one Manage billing (the existing portal), Remove with confirmation (G4-10) | `/api/guardian/students`, `/api/billing/status`, `/api/billing/plans`, `POST /api/billing/portal`, `POST /api/billing/checkout`, `DELETE /api/guardian/link/:studentId`, `/api/billing/cancel-state`, `POST /api/billing/cancel`, `POST /api/billing/cancel/undo` | ACTIVE |
 | `/guardian/:studentId` | guardian | entitled (the STUDENT's) | GuardianDashboardTab, in GuardianShell (G4-01/G4-03) | `/api/guardian/students`, `/api/students/:studentId/calendar`, `/api/students/:studentId/mastery/domains`, `/api/students/:studentId/tests`, `/api/students/:studentId/tests/:sessionId/report` | ACTIVE |
 | `/guardian/:studentId/calendar` | guardian | entitled† (the STUDENT's) | GuardianCalendarTab (GuardianStudentCalendarPage in GuardianShell; G4-01/G4-04) | `/api/students/:studentId/calendar` | ACTIVE |
 | `/guardian/:studentId/exams` | guardian | entitled (the STUDENT's exam_full_length) | GuardianExamsPage (list; G4-01/G4-05) | `/api/students/:studentId/tests` | ACTIVE |
@@ -261,6 +261,9 @@ Guardian access to `/api/students/:studentId/*` is decided by `resolveSubject` (
 | `/api/billing/checkout` | POST | Yes | any | Create Stripe checkout |
 | `/api/billing/status` | GET | Yes | any | Get billing status |
 | `/api/billing/portal` | POST | Yes | any | Access customer portal |
+| `/api/billing/cancel-state` | GET | Yes | student, guardian | What the caller (as payer) may cancel, and exactly when access would end (SCL-271/272) |
+| `/api/billing/cancel` | POST | Yes | student, guardian | Cancel one subscription the caller pays for; branches on Stripe status (SCL-271) |
+| `/api/billing/cancel/undo` | POST | Yes | student, guardian | Undo a cancellation that has not taken effect yet (SCL-271) |
 
 ### Legal & Public Endpoints
 | Endpoint | Method | Auth Required | Purpose |

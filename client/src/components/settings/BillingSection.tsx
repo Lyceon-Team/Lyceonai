@@ -34,6 +34,8 @@ import { Notice } from "@/components/student-ui";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
+import { CancelSubscriptionDialog } from "@/components/billing/CancelSubscriptionDialog";
+import { useCancelState } from "@/hooks/useCancelSubscription";
 import {
   billingStatusLabel,
   useBillingStatusQuery,
@@ -129,8 +131,9 @@ function BillingState({ status }: { status: BillingStatus }): JSX.Element {
           Manage billing
         </Button>
         <p className={FIELD_HELP}>
-          Opens Stripe, where you can update your card, see invoices or cancel.
+          Opens Stripe, where you can update your card or see invoices.
         </p>
+        <CancelOwnSubscription />
       </SheetBox>
     );
   }
@@ -165,5 +168,54 @@ function FreePlanBox({ onSeePlans }: { onSeePlans: () => void }): JSX.Element {
         See plans
       </Button>
     </SheetBox>
+  );
+}
+
+/**
+ * The student's own cancel control.
+ *
+ * @spec [SCL-271; SCL-272 clause 2 (payer-only, decided by the server);
+ *        owner ruling Karl 2026-11-03 clause 4] | @implemented [2026-11-03]
+ *
+ * plain English: renders a Cancel control for each subscription this student is
+ * the PAYER of. Expected outcome: a student whose guardian pays sees nothing
+ * here, because the server answers them with an empty list — the "guardian"
+ * branch above already tells them who manages it.
+ *
+ * NOTHING IS GATED ON ROLE IN THIS FILE. The absence of a button is the
+ * server's answer, not a client rule. The copy above ("Opens Stripe, where you
+ * can update your card or see invoices") lost the words "or cancel" in the same
+ * change, because cancelling is no longer what the portal is for (SCL-272).
+ *
+ * edge cases: the query is allowed to fail quietly — a billing section that
+ * renders its plan and its Manage button is still useful without the cancel
+ * control, and a loud error here would be the second error on one card. A
+ * subscription whose status the server could not name is absent from the list
+ * and so renders nothing, rather than a control with no stated outcome.
+ */
+function CancelOwnSubscription(): JSX.Element | null {
+  const cancelState = useCancelState();
+  const rows = cancelState.data?.subscriptions ?? [];
+
+  if (cancelState.isLoading) {
+    return (
+      <Skeleton className="h-9 w-44" data-testid="settings-cancel-loading" />
+    );
+  }
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="space-y-3 pt-2" data-testid="settings-cancel">
+      {rows.map((subscription, index) => (
+        <CancelSubscriptionDialog
+          key={subscription.subscriptionId}
+          subscription={subscription}
+          testIdSuffix={index === 0 ? "" : `-${index}`}
+          /* Inside the `.lyc` root, so the control takes the student variants
+             and sits beside "Manage billing" as one of a pair. */
+          surface="lyc"
+        />
+      ))}
+    </div>
   );
 }

@@ -85,6 +85,7 @@ import {
 import { getTier1Countries } from "../lib/entitlement-runtime-config";
 import {
   billingCheckoutRequestSchema,
+  cancelRequestSchema,
   deriveBillingManagedBy,
 } from "../../packages/shared/src/billing-schema";
 
@@ -94,6 +95,18 @@ import { digestId } from "../lib/stripe/redact";
 import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
 import { parseRuntimeRole } from "../lib/auth-role";
+import {
+  authorizeSubscriptionForPayer,
+  describeCancellable,
+  planFor,
+  resolvePayerSubscriptions,
+  wireDecisionOf,
+} from "../lib/stripe/cancellation-subject";
+import {
+  applyCancellation,
+  undoScheduledCancellation,
+} from "../lib/stripe/cancellation-execute";
+import { sendSubscriptionCanceledEmail } from "../lib/notifications/direct-sends";
 
 const router = Router();
 
@@ -995,9 +1008,18 @@ router.get(
 /**
  * POST /api/billing/portal — Stripe Billing Portal session.
  *
- * Stripe supplies the cancellation surface the Subscription and Auto-Renewal
- * Notice §6.4 requires ("click to cancel" through the customer portal). No
- * bespoke cancellation surface is built.
+ * NO LONGER THE CANCELLATION SURFACE (SCL-272, owner ruling 2026-11-03). This
+ * comment used to read "Stripe supplies the cancellation surface the
+ * Subscription and Auto-Renewal Notice §6.4 requires… No bespoke cancellation
+ * surface is built." That stopped being true the moment `POST /cancel` landed
+ * below: the portal's `subscription_cancel.mode` is ONE global value and cannot
+ * be at-period-end for `active` and immediate for `past_due`, so cancellation
+ * moved to our own endpoint and the portal keeps card updates and invoice
+ * history. The portal's own `subscription_cancel` is still ENABLED in the live
+ * configuration and is deliberately left alone here: owner ruling 2026-11-03
+ * clause 5 sequences that change after the amended Notice is published, because
+ * §6.4 names the portal as the compliant mechanism and the text must name the
+ * mechanism that exists.
  * https://docs.stripe.com/customer-management/configure-portal
  */
 router.post(
@@ -1184,6 +1206,351 @@ router.get(
       return res
         .status(502)
         .json({ error: "Failed to load billing plans", requestId });
+    }
+  },
+);
+
+/**
+ * Cancellation — the single self-service path.
+ *
+ * @spec [SCL-271 (cancellation at every status, never gated on a balance;
+ *        `past_due` ends billing now and holds access to the grace deadline);
+ *        SCL-272 (our endpoint, payer-only); Doc-01_V8 §21 `:950-959`;
+ *        owner rulings Karl 2026-11-03] | @implemented [2026-11-03]
+ *
+ * plain English: three thin handlers over one decision. `GET /cancel-state`
+ * says what the caller may cancel and exactly when access would end;
+ * `POST /cancel` does it; `POST /cancel/undo` reverses one that has not taken
+ * effect yet. Expected outcome: a `past_due` customer can cancel without
+ * settling anything, and every date the customer reads was computed by the
+ * server from Stripe's own facts.
+ *
+ * NO ENTITLEMENT IS WRITTEN BY ANY OF THEM. The webhook remains the one writer
+ * (owner ruling 2026-11-03 clause 1). These routes change Stripe; the row
+ * catches up when `customer.subscription.updated` or `.deleted` arrives.
+ *
+ * `requireGuardianLinkForUnder13` IS DELIBERATELY ABSENT, unlike `/checkout`
+ * and `/portal`. That gate stops an unlinked under-13 STARTING a purchase. Using
+ * it here would stop someone CANCELLING one, which is the exact failure SCL-271
+ * exists to remove — and it would fall hardest on the account least able to
+ * resolve it.
+ */
+
+/** Seconds since epoch, read once per request so a handler cannot disagree with itself. */
+function nowEpoch(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+router.get(
+  "/cancel-state",
+  requireSupabaseAuth,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const userId = req.user?.id;
+    const role = parseRuntimeRole(req.user?.role);
+
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
+    if (role === "admin") {
+      return res
+        .status(403)
+        .json({ error: "Admins cannot cancel subscriptions", requestId });
+    }
+
+    try {
+      const stripe = getStripeClient();
+      const payer = await resolvePayerSubscriptions(stripe, userId);
+
+      if (!payer.ok) {
+        if (payer.code === "NO_STRIPE_CUSTOMER") {
+          // NOT an error. A student whose guardian pays, and a student who has
+          // never paid, are both the payer of nothing — and the surface shows no
+          // button, which is the correct answer rather than a failure.
+          return res.json({ subscriptions: [], requestId });
+        }
+        logger.error(
+          "BILLING",
+          "cancel_state",
+          "Subscription scan incomplete; refusing to answer from a partial list",
+          { requestId, profileRef: digestId(userId) },
+        );
+        return res.status(502).json({
+          error: "Could not read your subscriptions",
+          code: payer.code,
+          requestId,
+        });
+      }
+
+      const at = nowEpoch();
+      const described = await Promise.all(
+        payer.subscriptions.map((sub) => describeCancellable(stripe, sub, at)),
+      );
+      return res.json({
+        subscriptions: described.filter((row) => row !== null),
+        requestId,
+      });
+    } catch (err: unknown) {
+      logger.error("BILLING", "cancel_state", "Failed to read cancel state", {
+        requestId,
+        profileRef: digestId(userId),
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+      return res
+        .status(502)
+        .json({ error: "Could not read your subscriptions", requestId });
+    }
+  },
+);
+
+router.post(
+  "/cancel",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const userId = req.user?.id;
+    const email = req.user?.email;
+    const role = parseRuntimeRole(req.user?.role);
+
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
+    if (role === "admin") {
+      return res
+        .status(403)
+        .json({ error: "Admins cannot cancel subscriptions", requestId });
+    }
+
+    const parsed = cancelRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: {
+          message: "Invalid input",
+          details: parsed.error.flatten(),
+        },
+        requestId,
+      });
+    }
+
+    try {
+      const stripe = getStripeClient();
+      // THE PAYER CHECK. The id in the body is a selection; this is the server
+      // read that decides whether it may be acted on (Charter §6).
+      const authorized = await authorizeSubscriptionForPayer(
+        stripe,
+        userId,
+        parsed.data.subscriptionId,
+      );
+      if (!authorized.ok) {
+        if (authorized.code === "SUBSCRIPTION_NOT_FOUND") {
+          return res.status(404).json({
+            error: "No such subscription",
+            code: authorized.code,
+            requestId,
+          });
+        }
+        logger.warn(
+          "BILLING",
+          "cancel_denied",
+          "Cancellation refused: caller is not the payer",
+          {
+            requestId,
+            profileRef: digestId(userId),
+            code: authorized.code,
+          },
+        );
+        return res.status(403).json({
+          error: "Only the person who pays for this subscription can cancel it",
+          code: authorized.code,
+          requestId,
+        });
+      }
+
+      const subscription = authorized.subscription;
+      const plan = await planFor(stripe, subscription, nowEpoch());
+      const decision = wireDecisionOf(plan);
+      if (decision === null) {
+        logger.error(
+          "BILLING",
+          "cancel_unsupported_status",
+          "Refusing to cancel a subscription whose status this server has not been taught",
+          {
+            requestId,
+            subscriptionRef: digestId(subscription.id),
+            stripeStatus: subscription.status,
+          },
+        );
+        return res.status(409).json({
+          error: "This subscription cannot be cancelled automatically",
+          code: "UNSUPPORTED_SUBSCRIPTION_STATUS",
+          requestId,
+        });
+      }
+
+      const execution = await applyCancellation(
+        stripe,
+        subscription.id,
+        plan,
+        requestId === undefined ? {} : { requestId },
+      );
+      if (execution.kind === "failed") {
+        logger.error(
+          "BILLING",
+          "cancel_failed",
+          "Stripe refused the cancellation",
+          {
+            requestId,
+            subscriptionRef: digestId(subscription.id),
+            message: execution.reason,
+          },
+        );
+        return res
+          .status(502)
+          .json({ error: "Could not cancel the subscription", requestId });
+      }
+
+      const accessEndsAt =
+        plan.kind === "unsupported" ? null : plan.accessEndsAt;
+
+      // ONE EMAIL PER DECISION. `noop` means the subscription was already
+      // stopping, so there is no second email — owner ruling 2026-11-03.
+      if (execution.kind === "applied" && email) {
+        const kind =
+          plan.kind === "at_period_end"
+            ? "at_period_end"
+            : plan.kind === "past_due_scheduled"
+              ? "past_due_scheduled"
+              : "immediate";
+        // Best-effort: Stripe has already been told, so a mail failure must not
+        // turn a cancellation that happened into a request that failed.
+        await sendSubscriptionCanceledEmail({
+          subscriptionId: subscription.id,
+          kind,
+          accessEndsAt,
+          email,
+          recipientProfileId: userId,
+          ...(requestId === undefined ? {} : { requestId }),
+        });
+      }
+
+      if (execution.kind === "applied" && execution.openInvoicesRemaining > 0) {
+        logger.error(
+          "BILLING",
+          "cancel_invoices_remaining",
+          "Cancellation applied but open invoices remain; collection is paused so nothing is retried",
+          {
+            requestId,
+            subscriptionRef: digestId(subscription.id),
+            openInvoicesRemaining: execution.openInvoicesRemaining,
+          },
+        );
+      }
+
+      return res.json({
+        subscriptionId: subscription.id,
+        decision,
+        accessEndsAt,
+        alreadyStopping: execution.kind === "noop",
+        requestId,
+      });
+    } catch (err: unknown) {
+      logger.error("BILLING", "cancel", "Failed to cancel subscription", {
+        requestId,
+        profileRef: digestId(userId),
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+      return res
+        .status(502)
+        .json({ error: "Could not cancel the subscription", requestId });
+    }
+  },
+);
+
+router.post(
+  "/cancel/undo",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  async (req: Request, res: Response) => {
+    const requestId = req.requestId;
+    const userId = req.user?.id;
+    const role = parseRuntimeRole(req.user?.role);
+
+    if (!userId) return sendNoUser(req, res);
+    if (!role) return sendRoleUnrecognized(res, requestId);
+    if (role === "admin") {
+      return res
+        .status(403)
+        .json({ error: "Admins cannot change subscriptions", requestId });
+    }
+
+    const parsed = cancelRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: { message: "Invalid input", details: parsed.error.flatten() },
+        requestId,
+      });
+    }
+
+    try {
+      const stripe = getStripeClient();
+      const authorized = await authorizeSubscriptionForPayer(
+        stripe,
+        userId,
+        parsed.data.subscriptionId,
+      );
+      if (!authorized.ok) {
+        if (authorized.code === "SUBSCRIPTION_NOT_FOUND") {
+          return res.status(404).json({
+            error: "No such subscription",
+            code: authorized.code,
+            requestId,
+          });
+        }
+        return res.status(403).json({
+          error: "Only the person who pays for this subscription can change it",
+          code: authorized.code,
+          requestId,
+        });
+      }
+
+      const outcome = await undoScheduledCancellation(
+        stripe,
+        authorized.subscription,
+        requestId === undefined ? {} : { requestId },
+      );
+
+      if (outcome.kind === "failed") {
+        logger.error("BILLING", "cancel_undo", "Stripe refused the undo", {
+          requestId,
+          subscriptionRef: digestId(authorized.subscription.id),
+          message: outcome.reason,
+        });
+        return res
+          .status(502)
+          .json({ error: "Could not restore the subscription", requestId });
+      }
+      if (outcome.kind === "too_late") {
+        // Terminal in Stripe: a cancelled subscription is replaced, not revived.
+        return res.status(409).json({
+          error: "This subscription has already ended and cannot be restored",
+          code: "ALREADY_CANCELED",
+          requestId,
+        });
+      }
+
+      return res.json({
+        subscriptionId: authorized.subscription.id,
+        restored: outcome.kind === "restored",
+        requestId,
+      });
+    } catch (err: unknown) {
+      logger.error("BILLING", "cancel_undo", "Failed to undo cancellation", {
+        requestId,
+        profileRef: digestId(userId),
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+      return res
+        .status(502)
+        .json({ error: "Could not restore the subscription", requestId });
     }
   },
 );
