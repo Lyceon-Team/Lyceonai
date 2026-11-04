@@ -388,10 +388,15 @@ ts_plant "W9 committed lines matched by position, not key" scripts/worked-exampl
   "    const line = manifest.lines.find((l) => l.key === s.key);" \
   "    const line = manifest.lines[script.indexOf(s)];" \
   "a manifest voiced before the ruling (answer before trap) places every line in the new order"
+# W10 re-pointed 2026-11-04 (SCL-273): the end-card scene now fills the credit, over several lines.
 ts_plant "W10 a caption track back in the composition" scripts/worked-examples/composition.ts \
-  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),' \
-  '    scene("endcard", sEnd, 0, t["end-card"].trim(), " end"),
-    `<section id="cap-hook-0" class="clip cap" data-start="0" data-duration="1" data-track-index="5"><div class="cap-box">Up</div></section>`,' \
+  '      " end",
+    ),
+  ].join("\n");' \
+  '      " end",
+    ),
+    `<section id="cap-hook-0" class="clip cap" data-start="0" data-duration="1" data-track-index="5"><div class="cap-box">Up</div></section>`,
+  ].join("\n");' \
   "no caption track"
 ts_plant "W11 the end card shows lyceon.ai" video-kit/worked-examples/templates/end-card.html \
   '<div class="brand-name">Lyceon SAT Prep</div>' '<div class="brand-name">lyceon.ai</div>' \
