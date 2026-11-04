@@ -36,6 +36,12 @@ import {
   marketingOptInEligible,
 } from "../../../packages/shared/src/marketing-consent-schema";
 import {
+  type BirthdayParts,
+  EMPTY_BIRTHDAY,
+  resolveBirthday,
+} from "@lyceon/shared/birthday";
+import { BirthdayFields } from "@/components/profile/BirthdayFields";
+import {
   SatDatePicker,
   type SatDateChoice,
 } from "@/components/sat-dates/SatDatePicker";
@@ -130,7 +136,14 @@ export default function ProfileComplete() {
 
   const [displayName, setDisplayName] = useState("");
   const [role, setRole] = useState<"student" | "guardian">("student");
-  const [dateOfBirth, setDateOfBirth] = useState("");
+  // @spec [owner brief "birthday input" (Karl, 2026-11-04)] | @implemented [2026-11-04] |
+  // plain English: the date of birth is now THREE fields, held as the three raw strings the
+  // person typed, and resolved to `YYYY-MM-DD` only once all three make a real, plausible date.
+  // Before this it was one `<input type="date">`, whose iOS wheel opens on today — which is how
+  // four profiles saved the current year. `dateOfBirth` below stays the single ISO value every
+  // other rule on this page keys on, so nothing downstream changed.
+  const [birthday, setBirthday] = useState<BirthdayParts>(EMPTY_BIRTHDAY);
+  const [birthdaySubmitAttempted, setBirthdaySubmitAttempted] = useState(false);
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [satDates, setSatDates] = useState<SatDateChoice>({
     dates: [],
@@ -180,6 +193,15 @@ export default function ProfileComplete() {
 
     setIsInitialized(true);
   }, [profile, isInitialized]);
+
+  // The ONE ISO value the rest of this page keys on, and the only value ever submitted. Empty
+  // until the three fields make a real, plausible, past date — so the age line, the under-13
+  // notice, the SAT question and the marketing box still appear only once a date is entered.
+  const birthdayResolution = useMemo(
+    () => resolveBirthday(birthday, new Date()),
+    [birthday],
+  );
+  const dateOfBirth = birthdayResolution.ok ? birthdayResolution.iso : "";
 
   const age = useMemo(() => calculateAge(dateOfBirth), [dateOfBirth]);
   const isUnder13 = role === "student" && age !== null && age < 13;
@@ -302,8 +324,14 @@ export default function ProfileComplete() {
       return;
     }
 
-    if (!dateOfBirth) {
-      setErrorMessage("Please enter your date of birth to continue.");
+    // @spec [owner brief "birthday input" (Karl, 2026-11-04)] | @implemented [2026-11-04] |
+    // plain English: a bare submit — nothing touched, which is exactly the iOS case that caused
+    // the bug — reveals the per-field errors and sends NOTHING. `dateOfBirth` is empty unless
+    // all three fields resolve, so this one check covers every invalid combination, and the
+    // field-level messages under the boxes say which box is wrong.
+    if (!birthdayResolution.ok) {
+      setBirthdaySubmitAttempted(true);
+      setErrorMessage("Please check your date of birth to continue.");
       return;
     }
 
@@ -451,18 +479,10 @@ export default function ProfileComplete() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label variant="lyc" htmlFor="date-of-birth">
-              Date Of Birth
-            </Label>
-            <Input
-              id="date-of-birth"
-              variant="lyc"
-              data-testid="input-date-of-birth"
-              type="date"
-              autoComplete="bday"
-              value={dateOfBirth}
-              onChange={(event) => setDateOfBirth(event.target.value)}
-              required
+            <BirthdayFields
+              value={birthday}
+              onChange={setBirthday}
+              showAllErrors={birthdaySubmitAttempted}
             />
             {age !== null && (
               <p className="m-0 text-lyc-meta-lg text-lyc-muted">
