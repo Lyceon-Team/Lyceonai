@@ -19,6 +19,7 @@
 import { Router, type Request, type Response } from "express";
 import { tutorTurnTimingSchema } from "../../packages/shared/src/tutor-turn-timing-schema";
 import { logger } from "../logger";
+import { postVideoFullWatch } from "./video-full-watch";
 
 export function postTutorTurnTiming(req: Request, res: Response): void {
   if (!req.user) {
@@ -43,5 +44,7 @@ export function postTutorTurnTiming(req: Request, res: Response): void {
 
 const router = Router();
 router.post("/tutor-turn", postTutorTurnTiming);
+// The "Watch full video" beacon (server/routes/video-full-watch.ts): same gates, same limiter.
+router.post("/video-full-watch", postVideoFullWatch);
 
 export default router;
