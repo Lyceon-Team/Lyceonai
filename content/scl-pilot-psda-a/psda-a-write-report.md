@@ -1,101 +1,73 @@
 # PSDA-A Write Pass Report
-**Date:** 2026-11-04
-**Taxonomy:** scl-v1.0.0
-**Total questions:** 992
-**Multi-sub-skill tags:** 34
-**Cross-skill co-tags:** 3
-**Grid-in (no distractors):** 232
 
-## Ratios, Rates, Proportional Relationships, and Units (RAT)
-**Total sub-skill tags:** 278
+**Taxonomy:** scl-v1.0.0  
+**Date:** 2026-11-04  
+**Pass:** Write (1 of 2 — blind audit follows separately)  
+**Questions:** 992  
+**Skills:** 4 (PSDA-A computational)
 
-| Sub-skill | Count |
-|-----------|-------|
-| RAT.1 | 22 |
-| RAT.2 | 111 |
-| RAT.3 | 134 |
-| RAT.4 | 11 |
+## Scope
 
-## Percentages (PCT)
-**Total sub-skill tags:** 260
+| Skill | Questions | Sub-skills |
+|---|---|---|
+| Ratios, Rates, Proportional Relationships, and Units | 255 | RAT.1–RAT.5 |
+| Percentages | 255 | PCT.1–PCT.5 |
+| Probability and Conditional Probability | 241 | PRB.1–PRB.4 |
+| One-Variable Data | 241 | OVD.1–OVD.5 |
 
-| Sub-skill | Count |
-|-----------|-------|
-| PCT.1 | 118 |
-| PCT.2 | 29 |
-| PCT.3 | 32 |
-| PCT.4 | 40 |
-| PCT.5 | 41 |
+## Validation
 
-## Probability and Conditional Probability (PRB)
-**Total sub-skill tags:** 248
+- **992 rows**, 992 unique question IDs — matches source count exactly
+- **0 validation errors** — every sub-skill and cluster ID is in the scl-v1.0.0 taxonomy
+- **No CL.0231** or retired IDs used
+- **CL.0222 (Desmos)** excluded from PCT questions per ruling (method_in Percentages 0.934)
 
-| Sub-skill | Count |
-|-----------|-------|
-| PRB.1 | 173 |
-| PRB.2 | 52 |
-| PRB.4 | 23 |
+## Sub-skill Distribution
 
-## One-Variable Data: Distributions and Measures of Center and Spread (OVD)
-**Total sub-skill tags:** 241
+| Sub-skill | Count | % of pool |
+|---|---|---|
+| PRB.1 | 173 | 71.8% of PRB |
+| OVD.2 | 165 | 68.5% of OVD |
+| RAT.3 | 134 | 52.5% of RAT |
+| PCT.1 | 118 | 46.3% of PCT |
+| RAT.2 | 111 | 43.5% of RAT |
+| PRB.2 | 52 | 21.6% of PRB |
+| PCT.5 | 41 | 16.1% of PCT |
+| PCT.4 | 40 | 15.7% of PCT |
+| PCT.3 | 32 | 12.5% of PCT |
+| PCT.2 | 29 | 11.4% of PCT |
+| OVD.3 | 27 | 11.2% of OVD |
+| PRB.4 | 23 | 9.5% of PRB |
+| OVD.1 | 23 | 9.5% of OVD |
+| RAT.1 | 22 | 8.6% of RAT |
+| OVD.5 | 19 | 7.9% of OVD |
+| RAT.4 | 11 | 4.3% of RAT |
+| OVD.4 | 7 | 2.9% of OVD |
+| **PRB.3** | **0** | **0% — zero coverage** |
+| **RAT.5** | **0** | **0% — zero coverage** |
 
-| Sub-skill | Count |
-|-----------|-------|
-| OVD.1 | 23 |
-| OVD.2 | 165 |
-| OVD.3 | 27 |
-| OVD.4 | 7 |
-| OVD.5 | 19 |
+### Zero-coverage sub-skills
 
-## Zero-coverage sub-skills
-- **PRB.3** — no questions tagged
-- **RAT.5** — no questions tagged
+- **PRB.3** (Find a count from a probability or from totals): No questions in the PRB pool had a stem that gives a probability and asks for a count. The bank may lack this pattern for these skill codes.
+- **RAT.5** (Converting squared or cubed units): No questions required converting a unit with an exponent (e.g. ft² → m²). The RAT pool's unit conversions were all linear (RAT.1).
 
-## Cluster usage
-**Distinct clusters used (correct answers):** 30
-**Distinct clusters used (distractors):** 30
-**Total distinct clusters referenced:** 34
+## Cluster Usage
 
-### Top 10 clusters by question count
-| Cluster | Questions |
-|---------|-----------|
-| CL.0153 | 173 |
-| CL.0050 | 165 |
-| CL.0060 | 158 |
-| CL.0029 | 133 |
-| CL.0004 | 72 |
-| CL.0083 | 71 |
-| CL.0158 | 54 |
-| CL.0021 | 40 |
-| CL.0106 | 40 |
-| CL.0061 | 37 |
+- **30 distinct clusters** used across 992 questions
+- Top 5: CL.0153 (173), CL.0050 (165), CL.0060 (158), CL.0029 (133), CL.0004 (72)
 
-## Boundary ambiguous cases
-Flagged in worker `why` fields. Common boundaries:
-- RAT.3 vs RAT.4 (rate vs density/per-area rate)
-- PCT.3 vs PCT.5 (single vs chained percent)
-- PRB.1 vs PRB.2 (whole group vs conditional)
-- OVD.2 vs OVD.4 (find center vs use mean-total relationship)
+## Co-tagging
 
-## Suspected mis-skills
-Questions tagged with sub-skills outside their nominal skill_code grouping (cross-skill co-tags):
-- 3 questions have sub-skills from multiple skill families
-These are legitimate co-tags where the question genuinely tests content from multiple sub-skill families.
+- **34 multi-sub-skill questions** (3.4%) — questions testing more than one sub-skill
+- **3 cross-skill questions** — tagged with sub-skills from different skill families
+- PCT pool has 258 sub-skill assignments across 255 questions (co-tag overlap)
 
-## Taxonomy gaps
-No taxonomy gaps identified. All questions fit within the 19 defined sub-skills.
+## Format
 
-## Off-spec findings
-None. All output conforms to the NDJSON schema with fields: id, sub_skills, clusters, distractors, why.
+- **760 MCQ** questions with distractor tags (2,280 distractor entries total)
+- **232 grid-in** questions (distractors = [], as required)
 
-## Summary statistics
-| Metric | Value |
-|--------|-------|
-| Total questions | 992 |
-| MCQ (with distractors) | 760 |
-| Grid-in (no distractors) | 232 |
-| Multi-sub-skill | 34 |
-| Cross-skill co-tags | 3 |
-| Distinct sub-skills used | 17 |
-| Distinct clusters (correct) | 30 |
-| Distinct clusters (distractors) | 30 |
+## Output
+
+- `psda-a-write.ndjson` — 992 lines, one JSON object per line
+- Fields: `id`, `sub_skills`, `clusters`, `distractors`, `why`
