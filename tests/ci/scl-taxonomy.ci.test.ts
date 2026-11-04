@@ -190,7 +190,7 @@ describe("SCL canonical taxonomy JSON", () => {
   it("single-evidence entries are documented exceptions (CB genuinely thin)", () => {
     // docs/questions_governance.md §A.5 "SCL single-evidence exceptions" lists each one
     // and why; a new single-evidence entry must be added there and here together.
-    const SINGLE_EVIDENCE_EXCEPTIONS = new Set(["CL.0035", "EE.6"]);
+    const SINGLE_EVIDENCE_EXCEPTIONS = new Set(["CL.0035", "EE.6", "LI.6"]);
     const raw = readFileSync(TAXONOMY_PATH, "utf-8");
     taxonomy = JSON.parse(raw) as SCLTaxonomy;
     const single = [...taxonomy.sub_skills, ...taxonomy.clusters]
@@ -198,6 +198,23 @@ describe("SCL canonical taxonomy JSON", () => {
       .map((x) => x.id);
     for (const id of single) {
       expect(SINGLE_EVIDENCE_EXCEPTIONS.has(id), id).toBe(true);
+    }
+  });
+
+  it("evidence_ids are CB 8-hex unless entry is on the documented exception list", () => {
+    const CB_HEX_RE = /^[0-9a-fA-F]{8}$/;
+    const EVIDENCE_FORMAT_EXCEPTIONS = new Set(["CL.0035", "EE.6", "LI.6"]);
+    const raw = readFileSync(TAXONOMY_PATH, "utf-8");
+    taxonomy = JSON.parse(raw) as SCLTaxonomy;
+    for (const x of [...taxonomy.sub_skills, ...taxonomy.clusters]) {
+      for (const e of x.evidence_ids) {
+        if (!CB_HEX_RE.test(e)) {
+          expect(
+            EVIDENCE_FORMAT_EXCEPTIONS.has(x.id),
+            `${x.id} has non-CB evidence_id "${e}" but is not on the exception list`,
+          ).toBe(true);
+        }
+      }
     }
   });
 

@@ -1,0 +1,1382 @@
+[
+  {
+    "id": "CL.0001",
+    "display_name": "account for a negation that reverses the meaning",
+    "family": "by_hand_doing",
+    "definition": "When not, hardly, no, less, unlikely, fail to, need not, by no means, declines to sits in front of the blank or claim, reverse the predicted meaning before choosing (and reverse twice for a double negative)."
+  },
+  {
+    "id": "CL.0002",
+    "display_name": "add and subtract the margin of error",
+    "family": "by_hand_doing",
+    "definition": "Form the plausible interval estimate - margin of error to estimate + margin of error."
+  },
+  {
+    "id": "CL.0003",
+    "display_name": "add or subtract equations to eliminate a variable",
+    "family": "by_hand_doing",
+    "definition": "Add or subtract the two equations so one variable cancels."
+  },
+  {
+    "id": "CL.0004",
+    "display_name": "add the parts to get the whole, or subtract to find a part",
+    "family": "by_hand_doing",
+    "definition": "Whole = sum of the parts: add pieces (lengths, areas, volumes, counts, cells) to get an unprinted total, or take the total minus the known parts to get a missing or leftover part (5 - x, t - 2)."
+  },
+  {
+    "id": "CL.0005",
+    "display_name": "apply an operation to every part of a compound inequality",
+    "family": "by_hand_doing",
+    "definition": "Multiply/add the lower and upper bounds of a range (a < x < b) to get the range of a derived quantity."
+  },
+  {
+    "id": "CL.0006",
+    "display_name": "apply exponent rules",
+    "family": "by_hand_doing",
+    "definition": "Add exponents when multiplying like bases, subtract when dividing, multiply for a power of a power."
+  },
+  {
+    "id": "CL.0007",
+    "display_name": "apply the quadratic formula",
+    "family": "by_hand_doing",
+    "definition": "Substitute a, b, c into x = (-b +/- sqrt(b^2-4ac))/(2a) and simplify the radical."
+  },
+  {
+    "id": "CL.0008",
+    "display_name": "cancel a common factor (noting the excluded value)",
+    "family": "by_hand_doing",
+    "definition": "Divide numerator and denominator by the same nonzero factor, using the given domain restriction to justify it."
+  },
+  {
+    "id": "CL.0009",
+    "display_name": "check a point in the equation or inequality",
+    "family": "by_hand_doing",
+    "definition": "Substitute an ordered pair (or each table row) and test whether the equation/inequality (each one in a system) is true."
+  },
+  {
+    "id": "CL.0010",
+    "display_name": "check every part of the choice against the text",
+    "family": "by_hand_doing",
+    "definition": "Split a choice with two or three parts (or 'X because Y') and confirm each part against the text; one false part makes the whole choice wrong."
+  },
+  {
+    "id": "CL.0011",
+    "display_name": "check that the second idea really follows from the first",
+    "family": "by_hand_doing",
+    "definition": "Test a cause/result option by asking whether the second idea is actually produced by or follows from the first (and not the reverse or merely next in time)."
+  },
+  {
+    "id": "CL.0012",
+    "display_name": "check that the subject can logically do the action",
+    "family": "by_hand_doing",
+    "definition": "Check that the subject of the word can actually do or be what the choice says (an inanimate delay cannot 'dispute'; a price rise cannot 'exploit')."
+  },
+  {
+    "id": "CL.0013",
+    "display_name": "check whether the specific case fits the general rule",
+    "family": "by_hand_doing",
+    "definition": "When one text states a general rule, problem or caution and another gives a particular case, check whether the case fits, breaks or solves the general statement."
+  },
+  {
+    "id": "CL.0014",
+    "display_name": "check with a test value",
+    "family": "by_hand_doing",
+    "definition": "Substitute a convenient number (often 0 or 1) into the given expression and a choice to rule choices in or out."
+  },
+  {
+    "id": "CL.0015",
+    "display_name": "classify the relationship between two views as agree, disagree, or qualify",
+    "family": "by_hand_doing",
+    "definition": "Decide whether one view fully agrees with, rejects, or partly accepts and limits the other before reading the choices."
+  },
+  {
+    "id": "CL.0016",
+    "display_name": "clear fractions by multiplying by the common denominator",
+    "family": "by_hand_doing",
+    "definition": "Multiply both sides by the expression in the denominator (noting it cannot be zero)."
+  },
+  {
+    "id": "CL.0017",
+    "display_name": "combine like terms",
+    "family": "by_hand_doing",
+    "definition": "Add or subtract coefficients of terms with the same variable and the same exponent."
+  },
+  {
+    "id": "CL.0018",
+    "display_name": "combine two facts to reach a conclusion",
+    "family": "by_hand_doing",
+    "definition": "Join two separately stated facts into the conclusion that follows from both together."
+  },
+  {
+    "id": "CL.0019",
+    "display_name": "compare the values for the groups or conditions",
+    "family": "by_hand_doing",
+    "definition": "Compare the quantities in the notes (larger/smaller, highest, percentage vs. total) to see which choice states the comparison correctly."
+  },
+  {
+    "id": "CL.0020",
+    "display_name": "complete the square",
+    "family": "by_hand_doing",
+    "definition": "Add and subtract (b/2)^2 to rewrite x^2+bx+c as (x+b/2)^2 plus a constant."
+  },
+  {
+    "id": "CL.0021",
+    "display_name": "compute a frequency-weighted mean",
+    "family": "by_hand_doing",
+    "definition": "Sum value x frequency over all rows (or dot-plot columns) and divide by the total frequency."
+  },
+  {
+    "id": "CL.0022",
+    "display_name": "compute a residual",
+    "family": "by_hand_doing",
+    "definition": "Find actual y minus the model's predicted y at the same x; its sign is decided by whether the point is above or below the model."
+  },
+  {
+    "id": "CL.0023",
+    "display_name": "compute percent change from two values",
+    "family": "by_hand_doing",
+    "definition": "Compute (new - original) / original x 100 for a percent increase or decrease."
+  },
+  {
+    "id": "CL.0024",
+    "display_name": "compute slope from two points",
+    "family": "by_hand_doing",
+    "definition": "Find (y2 - y1)/(x2 - x1) from two points, two table rows, or two graph points."
+  },
+  {
+    "id": "CL.0025",
+    "display_name": "compute the discriminant",
+    "family": "by_hand_doing",
+    "definition": "Evaluate b^2-4ac and read its sign: positive two, zero one, negative no real solutions."
+  },
+  {
+    "id": "CL.0026",
+    "display_name": "compute the mean",
+    "family": "by_hand_doing",
+    "definition": "Sum the values and divide by the number of values."
+  },
+  {
+    "id": "CL.0027",
+    "display_name": "compute the range",
+    "family": "by_hand_doing",
+    "definition": "Subtract the minimum value from the maximum value."
+  },
+  {
+    "id": "CL.0028",
+    "display_name": "convert between degrees and radians",
+    "family": "by_hand_doing",
+    "definition": "Multiply by pi/180 or 180/pi (or use 180 deg = pi)."
+  },
+  {
+    "id": "CL.0029",
+    "display_name": "convert between fraction, decimal, and percent",
+    "family": "by_hand_doing",
+    "definition": "Write p% of a quantity as (p/100) times the quantity, e.g., 60% of x as 0.6x, 7% tax as 1.07."
+  },
+  {
+    "id": "CL.0030",
+    "display_name": "convert between radical and rational exponent",
+    "family": "by_hand_doing",
+    "definition": "Rewrite the n-th root of x^m as x^(m/n) and back."
+  },
+  {
+    "id": "CL.0031",
+    "display_name": "convert diameter or circumference to radius",
+    "family": "by_hand_doing",
+    "definition": "Halve a diameter, or divide a circumference by 2pi, before using a radius-based formula."
+  },
+  {
+    "id": "CL.0032",
+    "display_name": "convert units with a conversion factor",
+    "family": "by_hand_doing",
+    "definition": "Multiply by one or more unit fractions (e.g. 1 yard / 36 inches) arranged so unwanted units cancel; chained factors are the same action repeated."
+  },
+  {
+    "id": "CL.0033",
+    "display_name": "distribute a negative sign",
+    "family": "by_hand_doing",
+    "definition": "When a parenthesized group is subtracted, change the sign of every term in it."
+  },
+  {
+    "id": "CL.0034",
+    "display_name": "distribute over every term",
+    "family": "by_hand_doing",
+    "definition": "Multiply the outside factor by every term inside the parentheses."
+  },
+  {
+    "id": "CL.0035",
+    "display_name": "divide polynomials",
+    "family": "by_hand_doing",
+    "definition": "Divide one polynomial by another (long division or rewriting the numerator in terms of the denominator) to get quotient plus remainder over divisor. Single EE instance."
+  },
+  {
+    "id": "CL.0036",
+    "display_name": "eliminate choices that go beyond the text",
+    "family": "by_hand_doing",
+    "definition": "Cross out choices that bring in topics, comparisons, or claims the text (or neither text) mentions."
+  },
+  {
+    "id": "CL.0037",
+    "display_name": "factor a trinomial",
+    "family": "by_hand_doing",
+    "definition": "Write ax^2+bx+c as a product of two binomials (find two numbers with the right sum and product)."
+  },
+  {
+    "id": "CL.0038",
+    "display_name": "factor by grouping",
+    "family": "by_hand_doing",
+    "definition": "Split the middle term, factor each pair, then pull out the shared binomial."
+  },
+  {
+    "id": "CL.0039",
+    "display_name": "factor out the greatest common factor",
+    "family": "by_hand_doing",
+    "definition": "Pull the largest factor shared by every term (a number, a power of a variable, or a shared binomial) outside parentheses."
+  },
+  {
+    "id": "CL.0040",
+    "display_name": "find a common denominator",
+    "family": "by_hand_doing",
+    "definition": "Rewrite fractions over one shared denominator before adding or subtracting them."
+  },
+  {
+    "id": "CL.0041",
+    "display_name": "find a trig value on the unit circle",
+    "family": "by_hand_doing",
+    "definition": "Read cos/sin/tan from the coordinates of the unit-circle point, using the reference angle and the quadrant's signs."
+  },
+  {
+    "id": "CL.0042",
+    "display_name": "find the sentence that answers the question",
+    "family": "by_hand_doing",
+    "definition": "Locate the sentence(s) that the question's named subject points to and answer from them, not from memory."
+  },
+  {
+    "id": "CL.0043",
+    "display_name": "find the vertex with x = -b/(2a)",
+    "family": "by_hand_doing",
+    "definition": "Compute the axis of symmetry from standard form."
+  },
+  {
+    "id": "CL.0044",
+    "display_name": "find what both sides accept beneath their disagreement",
+    "family": "by_hand_doing",
+    "definition": "When two texts disagree about a cause or meaning, find the fact or phenomenon both still take for granted."
+  },
+  {
+    "id": "CL.0045",
+    "display_name": "generalize the listed examples into one idea",
+    "family": "by_hand_doing",
+    "definition": "When the text lists several details or examples, name the single quality or point they all share."
+  },
+  {
+    "id": "CL.0046",
+    "display_name": "infer a feeling from a character's words and actions",
+    "family": "by_hand_doing",
+    "definition": "Work out a character's or speaker's feeling or attitude from what they do and say rather than from a stated label."
+  },
+  {
+    "id": "CL.0047",
+    "display_name": "isolate the variable",
+    "family": "by_hand_doing",
+    "definition": "Undo operations in reverse order on both sides until the wanted variable stands alone."
+  },
+  {
+    "id": "CL.0048",
+    "display_name": "join two complete sentences with a period, semicolon, or comma plus and/but/so",
+    "family": "by_hand_doing",
+    "definition": "Once both sides are complete sentences, pick a legal joiner and reject the comma splice and the run-on."
+  },
+  {
+    "id": "CL.0049",
+    "display_name": "label what each sentence does",
+    "family": "by_hand_doing",
+    "definition": "Give each sentence a short role label (claim, example, prior view, method, finding, problem, solution, definition) and read the labels in order."
+  },
+  {
+    "id": "CL.0050",
+    "display_name": "locate the median position in a frequency table",
+    "family": "by_hand_doing",
+    "definition": "Find the ((n+1)/2)th position, then accumulate frequencies (or plot dots/grouped rows) to find which value or interval holds it."
+  },
+  {
+    "id": "CL.0051",
+    "display_name": "match a pronoun or determiner's number to the noun it refers to",
+    "family": "by_hand_doing",
+    "definition": "Choose singular (it, its, this) or plural (they, their, these, them) to agree with the antecedent."
+  },
+  {
+    "id": "CL.0052",
+    "display_name": "match a verb to the parallel verb it pairs with",
+    "family": "by_hand_doing",
+    "definition": "When two verbs share a subject and are joined by and, put the blank in the same form and tense as its partner."
+  },
+  {
+    "id": "CL.0053",
+    "display_name": "match coefficients",
+    "family": "by_hand_doing",
+    "definition": "Set coefficients of the same power equal on both sides of an identity."
+  },
+  {
+    "id": "CL.0054",
+    "display_name": "match the data to the claim's groups and measure",
+    "family": "by_hand_doing",
+    "definition": "Check that an accurate data statement is about the same groups, measure and relationship the claim is about; reject accurate-but-irrelevant data."
+  },
+  {
+    "id": "CL.0055",
+    "display_name": "match the function input to the given argument",
+    "family": "by_hand_doing",
+    "definition": "When f is defined on an expression such as f(3x), solve inner expression = given input first, then substitute."
+  },
+  {
+    "id": "CL.0056",
+    "display_name": "match the positive or negative charge of the context",
+    "family": "by_hand_doing",
+    "definition": "Decide whether the context calls for a positive or negative word (or a mild versus harsh one) and drop choices with the wrong charge."
+  },
+  {
+    "id": "CL.0057",
+    "display_name": "match the scope of the choice to the text",
+    "family": "by_hand_doing",
+    "definition": "Reject choices that cover only one detail when the question asks about the whole, or that widen the text's claim (all plants vs. one group)."
+  },
+  {
+    "id": "CL.0058",
+    "display_name": "match the strength of the claim",
+    "family": "by_hand_doing",
+    "definition": "Match how certain, strong, broad or hedged the answer is to what the text supports, using its qualifiers (some, may, only, all, not always; speculates vs proves)."
+  },
+  {
+    "id": "CL.0059",
+    "display_name": "match the verb's number to its subject",
+    "family": "by_hand_doing",
+    "definition": "Pick the singular or plural verb that agrees with the identified subject."
+  },
+  {
+    "id": "CL.0060",
+    "display_name": "multiply a rate by the amount",
+    "family": "by_hand_doing",
+    "definition": "Total = rate x amount (distance = speed x time, cost = price x quantity, change in output = slope x change in input); divide to solve for the missing one."
+  },
+  {
+    "id": "CL.0061",
+    "display_name": "multiply successive multipliers",
+    "family": "by_hand_doing",
+    "definition": "Chain two or more percent changes (or a percent of a percent) by multiplying their multipliers, not adding or subtracting the percents."
+  },
+  {
+    "id": "CL.0062",
+    "display_name": "order the data and find the middle value",
+    "family": "by_hand_doing",
+    "definition": "Sort the list; take the middle value (odd n) or the average of the two middle values (even n)."
+  },
+  {
+    "id": "CL.0063",
+    "display_name": "pin down the exact claim in your own words",
+    "family": "by_hand_doing",
+    "definition": "Find the specific underlined or named claim (the 'conventional wisdom', 'what some researchers contend', a conclusion) and respond to that claim, not to the text in general."
+  },
+  {
+    "id": "CL.0064",
+    "display_name": "predict the answer in your own words before reading the choices",
+    "family": "by_hand_doing",
+    "definition": "Before reading the choices, say what the blank or answer must mean, or how the two sentences relate (contrast, result, example, time), using the text's own clue."
+  },
+  {
+    "id": "CL.0065",
+    "display_name": "punctuate a list: commas for three or more items, semicolons when items contain commas",
+    "family": "by_hand_doing",
+    "definition": "Separate items in a series with commas, upgrade to semicolons when any item has internal commas, and use no comma between just two coordinated items."
+  },
+  {
+    "id": "CL.0066",
+    "display_name": "put a comma between an introductory or trailing phrase and the main clause",
+    "family": "by_hand_doing",
+    "definition": "Separate a leading subordinate clause or phrase, or a trailing participial or appositive phrase, from the main clause with a single comma."
+  },
+  {
+    "id": "CL.0067",
+    "display_name": "put the noun the opening modifier describes right after it",
+    "family": "by_hand_doing",
+    "definition": "Identify who or what the introductory phrase describes and choose the version where that noun immediately follows the comma."
+  },
+  {
+    "id": "CL.0068",
+    "display_name": "put the part over the whole",
+    "family": "by_hand_doing",
+    "definition": "Write the count or amount asked about over the count or amount of the whole reference group (a probability, a fraction, or x100 for 'what percent of')."
+  },
+  {
+    "id": "CL.0069",
+    "display_name": "rationalize the denominator",
+    "family": "by_hand_doing",
+    "definition": "Multiply by a conjugate (e.g., (2 - sqrt2)/(2 - sqrt2)) to clear a radical from a denominator."
+  },
+  {
+    "id": "CL.0070",
+    "display_name": "read a box plot's five-number summary",
+    "family": "by_hand_doing",
+    "definition": "Read minimum, Q1, median, Q3 and maximum from the whiskers and box lines of a box plot."
+  },
+  {
+    "id": "CL.0071",
+    "display_name": "read a prediction off the model at a given x",
+    "family": "by_hand_doing",
+    "definition": "Go to the given x on the line/curve of best fit (not a data point) and read the model's y-value."
+  },
+  {
+    "id": "CL.0072",
+    "display_name": "read a value from a table or graph",
+    "family": "by_hand_doing",
+    "definition": "Read the y-value at a given x (or an intercept, vertex, or maximum) off a graph."
+  },
+  {
+    "id": "CL.0073",
+    "display_name": "read center and radius from standard form",
+    "family": "by_hand_doing",
+    "definition": "Read (h, k) with sign changes and r = sqrt(right side) from (x-h)^2 + (y-k)^2 = r^2, or write the equation from a center and radius."
+  },
+  {
+    "id": "CL.0074",
+    "display_name": "read the whole sentence after the blank before deciding",
+    "family": "by_hand_doing",
+    "definition": "Read to the end of the sentence containing the blank, because a later clause (a 'but', 'even in', 'yet') determines the relationship."
+  },
+  {
+    "id": "CL.0075",
+    "display_name": "reduce a fraction or ratio to lowest terms",
+    "family": "by_hand_doing",
+    "definition": "Divide both parts of a fraction or ratio by their greatest common factor (7:28 -> 1:4, 12/48 -> 1/4)."
+  },
+  {
+    "id": "CL.0076",
+    "display_name": "reduce an angle by full rotations",
+    "family": "by_hand_doing",
+    "definition": "Subtract multiples of 2pi (360 deg) to get a coterminal angle between 0 and 2pi."
+  },
+  {
+    "id": "CL.0077",
+    "display_name": "reject extraneous solutions",
+    "family": "by_hand_doing",
+    "definition": "Substitute candidate solutions back into the original equation and discard any that fail or make a denominator zero."
+  },
+  {
+    "id": "CL.0078",
+    "display_name": "rescale the exponent for a different time unit",
+    "family": "by_hand_doing",
+    "definition": "Rewrite the exponent when the change happens every k units or the input unit changes (t/k, 12t months, q/4 quarters)."
+  },
+  {
+    "id": "CL.0079",
+    "display_name": "rewrite a negative exponent as a reciprocal",
+    "family": "by_hand_doing",
+    "definition": "Rewrite x^-n as 1/x^n (and 1/x^n as x^-n)."
+  },
+  {
+    "id": "CL.0080",
+    "display_name": "rewrite in slope-intercept form",
+    "family": "by_hand_doing",
+    "definition": "Solve a standard-form (Ax + By = C) or rearranged linear equation for y to expose slope and intercept."
+  },
+  {
+    "id": "CL.0081",
+    "display_name": "round to the whole number the context allows",
+    "family": "by_hand_doing",
+    "definition": "After solving an inequality, take the greatest/least whole number that still satisfies it (round down for 'at most', up for 'at least')."
+  },
+  {
+    "id": "CL.0082",
+    "display_name": "rule out an alternative explanation",
+    "family": "by_hand_doing",
+    "definition": "Use a stated fact to eliminate a competing explanation, leaving the conclusion the text supports."
+  },
+  {
+    "id": "CL.0083",
+    "display_name": "scale both quantities by the same factor",
+    "family": "by_hand_doing",
+    "definition": "When one quantity in a proportional relationship is multiplied by k, multiply the other by k (multiplicatively, not additively), without solving for individual values."
+  },
+  {
+    "id": "CL.0084",
+    "display_name": "set a variable to zero to find an intercept or initial value",
+    "family": "by_hand_doing",
+    "definition": "Evaluate at x = 0 to get the y-intercept or starting amount."
+  },
+  {
+    "id": "CL.0085",
+    "display_name": "set off removable information with a matching pair of commas, dashes, or parentheses",
+    "family": "by_hand_doing",
+    "definition": "Find the opening mark of an interruption already in the text (or supply both) and close it with the same mark."
+  },
+  {
+    "id": "CL.0086",
+    "display_name": "set up and solve a proportion",
+    "family": "by_hand_doing",
+    "definition": "Write two equal ratios of corresponding quantities (similar-figure sides, arc to circumference, part angle to 360 deg or 2pi) and cross-multiply."
+  },
+  {
+    "id": "CL.0087",
+    "display_name": "shift a graph by adjusting its equation",
+    "family": "by_hand_doing",
+    "definition": "Replace x with x-h to shift right h, add k to shift up k, and simplify."
+  },
+  {
+    "id": "CL.0088",
+    "display_name": "simplify a radical",
+    "family": "by_hand_doing",
+    "definition": "Pull perfect-square factors out of a square root (sqrt(1,184) = 4sqrt(74)) or multiply radicals."
+  },
+  {
+    "id": "CL.0089",
+    "display_name": "solve for the constant",
+    "family": "by_hand_doing",
+    "definition": "Solve the equation that the matched coefficients produce for the unknown constant."
+  },
+  {
+    "id": "CL.0090",
+    "display_name": "split an absolute value equation into two cases",
+    "family": "by_hand_doing",
+    "definition": "From |A| = k (k >= 0), solve A = k and A = -k."
+  },
+  {
+    "id": "CL.0091",
+    "display_name": "square both sides",
+    "family": "by_hand_doing",
+    "definition": "Isolate the radical, then square both sides to remove it."
+  },
+  {
+    "id": "CL.0092",
+    "display_name": "square or cube a conversion factor for area or volume units",
+    "family": "by_hand_doing",
+    "definition": "Convert squared/cubed units (sq yd, m^3, s^2) by squaring or cubing the linear factor before applying it."
+  },
+  {
+    "id": "CL.0093",
+    "display_name": "state what must be true for both facts to hold",
+    "family": "by_hand_doing",
+    "definition": "When two pieces of information are in tension, state the condition that lets both be true."
+  },
+  {
+    "id": "CL.0094",
+    "display_name": "substitute a value and evaluate",
+    "family": "by_hand_doing",
+    "definition": "Substitute the input for x in the rule and simplify using order of operations."
+  },
+  {
+    "id": "CL.0095",
+    "display_name": "substitute an expression",
+    "family": "by_hand_doing",
+    "definition": "Replace a variable or a group with the expression it is given to equal."
+  },
+  {
+    "id": "CL.0096",
+    "display_name": "sum the face areas",
+    "family": "by_hand_doing",
+    "definition": "Find surface area by adding the areas of every face (pairs of congruent faces on a prism; 5 faces for an open box; overlap removed when solids are glued)."
+  },
+  {
+    "id": "CL.0097",
+    "display_name": "sum up the text's main point in one sentence",
+    "family": "by_hand_doing",
+    "definition": "State in one sentence what the whole text (or each text) is mainly saying before judging purpose or comparing texts."
+  },
+  {
+    "id": "CL.0098",
+    "display_name": "take a percent of a quantity",
+    "family": "by_hand_doing",
+    "definition": "Compute p% of a whole as (p/100) x whole."
+  },
+  {
+    "id": "CL.0099",
+    "display_name": "take the square root of both sides",
+    "family": "by_hand_doing",
+    "definition": "From (expression)^2 = k (or ^3), take the root of both sides: keep both + and - for an equation; keep only the positive root when the quantity is a length."
+  },
+  {
+    "id": "CL.0100",
+    "display_name": "tell a possessive pronoun from a contraction (its/it's, their/they're)",
+    "family": "by_hand_doing",
+    "definition": "Use its or their for possession and it's or they're only where \"it is\" or \"they are\" fits."
+  },
+  {
+    "id": "CL.0101",
+    "display_name": "test each answer choice",
+    "family": "by_hand_doing",
+    "definition": "Plug each choice into the condition and keep the one that satisfies it."
+  },
+  {
+    "id": "CL.0102",
+    "display_name": "translate a circle by moving its center",
+    "family": "by_hand_doing",
+    "definition": "Shift a circle by adding the shift to its center's coordinates (radius unchanged), then rewrite its equation."
+  },
+  {
+    "id": "CL.0103",
+    "display_name": "translate figurative language into plain meaning",
+    "family": "by_hand_doing",
+    "definition": "Turn a metaphor, simile, or personification into a plain statement of what it shows about a character, feeling, or scene."
+  },
+  {
+    "id": "CL.0104",
+    "display_name": "translate words into an equation or inequality",
+    "family": "by_hand_doing",
+    "definition": "Name the unknown and write the relationship described in words as an equation or function."
+  },
+  {
+    "id": "CL.0105",
+    "display_name": "treat a ratio as side lengths with a common multiplier",
+    "family": "by_hand_doing",
+    "definition": "Turn a given trig ratio such as cos A = 3/5 into sides 3n and 5n, find the third side, then scale to the given length."
+  },
+  {
+    "id": "CL.0106",
+    "display_name": "turn a percent change into a multiplier",
+    "family": "by_hand_doing",
+    "definition": "Turn 'p% longer/increased' into multiplication by (1 + p/100) before substituting."
+  },
+  {
+    "id": "CL.0107",
+    "display_name": "undo a percent change by dividing by the multiplier",
+    "family": "by_hand_doing",
+    "definition": "Recover the original value from a changed value by dividing by (1 +/- p/100)."
+  },
+  {
+    "id": "CL.0108",
+    "display_name": "use a colon only after a complete sentence to introduce an explanation, example, or list",
+    "family": "by_hand_doing",
+    "definition": "Place a colon only where the words before it form a complete sentence and the words after it explain, specify, or list."
+  },
+  {
+    "id": "CL.0109",
+    "display_name": "use an apostrophe only to show possession, placed for a singular or plural owner",
+    "family": "by_hand_doing",
+    "definition": "Ask \"does something belong to it?\" and \"is there more than one?\"; add 's for one owner, s' for plural owners, and no apostrophe for a plain plural."
+  },
+  {
+    "id": "CL.0110",
+    "display_name": "use dates or time words to set the order of events",
+    "family": "by_hand_doing",
+    "definition": "Line up dates and time words (already, in 1928, as decades passed) to decide whether the new event is earlier, later, repeated, or final."
+  },
+  {
+    "id": "CL.0111",
+    "display_name": "use interval endpoints to bound a statistic",
+    "family": "by_hand_doing",
+    "definition": "With grouped data (histogram bins, table ranges, tanks), use each interval's least/greatest possible value to bound a mean or to place the median."
+  },
+  {
+    "id": "CL.0112",
+    "display_name": "use supplementary angles",
+    "family": "by_hand_doing",
+    "definition": "Use that angles forming a straight line (linear pair, angles on a line) sum to 180 deg."
+  },
+  {
+    "id": "CL.0113",
+    "display_name": "use the distance formula",
+    "family": "by_hand_doing",
+    "definition": "Compute the length between two coordinate points with sqrt((x2-x1)^2 + (y2-y1)^2)."
+  },
+  {
+    "id": "CL.0114",
+    "display_name": "use the exterior angle theorem",
+    "family": "by_hand_doing",
+    "definition": "Set an exterior angle of a triangle equal to the sum of the two remote interior angles."
+  },
+  {
+    "id": "CL.0115",
+    "display_name": "use the midpoint formula",
+    "family": "by_hand_doing",
+    "definition": "Use that a center/midpoint is the average of the endpoint coordinates (or that equal distances locate the center) to find a missing point."
+  },
+  {
+    "id": "CL.0116",
+    "display_name": "use the negative-reciprocal slope for a perpendicular line",
+    "family": "by_hand_doing",
+    "definition": "The slope of a perpendicular line is -1/m (horizontal vs vertical when m is 0 or undefined)."
+  },
+  {
+    "id": "CL.0117",
+    "display_name": "use the past perfect (had + verb) for the earlier of two past events",
+    "family": "by_hand_doing",
+    "definition": "When one past action finishes before another past action, put the earlier one in had + past participle."
+  },
+  {
+    "id": "CL.0118",
+    "display_name": "use the Pythagorean theorem",
+    "family": "by_hand_doing",
+    "definition": "Write a^2 + b^2 = c^2 with the hypotenuse as c and solve for the missing side."
+  },
+  {
+    "id": "CL.0119",
+    "display_name": "use the reference-sheet formula",
+    "family": "by_hand_doing",
+    "definition": "Substitute the given dimensions into the standard area, perimeter, circumference, or volume formula and evaluate."
+  },
+  {
+    "id": "CL.0120",
+    "display_name": "use the sum and product of the solutions",
+    "family": "by_hand_doing",
+    "definition": "For ax^2+bx+c=0 use sum = -b/a and product = c/a (or build the equation from its roots) without finding each root."
+  },
+  {
+    "id": "CL.0121",
+    "display_name": "use the triangle angle sum",
+    "family": "by_hand_doing",
+    "definition": "Use that the interior angles of a triangle sum to 180 deg (the two acute angles of a right triangle sum to 90 deg)."
+  },
+  {
+    "id": "CL.0122",
+    "display_name": "use the zero product property",
+    "family": "by_hand_doing",
+    "definition": "Set each factor of a product equal to zero and solve each."
+  },
+  {
+    "id": "CL.0123",
+    "display_name": "use total = mean x count",
+    "family": "by_hand_doing",
+    "definition": "Convert a mean into a sum (sum = mean x n) to find a missing/removed value, a combined mean, or an unknown in a list."
+  },
+  {
+    "id": "CL.0124",
+    "display_name": "work backward from a part to the whole",
+    "family": "by_hand_doing",
+    "definition": "Given a part and the percent it represents, solve (p/100) x whole = part for the whole."
+  },
+  {
+    "id": "CL.0125",
+    "display_name": "work out what result the claim predicts",
+    "family": "by_hand_doing",
+    "definition": "Ask 'if this claim were true, what would we observe?' and pick the evidence that shows that (or its opposite, for weaken)."
+  },
+  {
+    "id": "CL.0126",
+    "display_name": "write a trig ratio as opposite, adjacent, hypotenuse",
+    "family": "by_hand_doing",
+    "definition": "Read sin = opp/hyp, cos = adj/hyp, tan = opp/adj for a named acute angle, or use one to find a side."
+  },
+  {
+    "id": "CL.0127",
+    "display_name": "write an exponential model a(1 +/- r)^t",
+    "family": "by_hand_doing",
+    "definition": "Use the initial amount as a and 1 + r (growth) or 1 - r (decay) as the base."
+  },
+  {
+    "id": "CL.0128",
+    "display_name": "write y = mx + b from slope and a point",
+    "family": "by_hand_doing",
+    "definition": "Put the slope in for m, then use the y-intercept or substitute a known point to find b."
+  },
+  {
+    "id": "CL.0129",
+    "display_name": "check whether each side of the punctuation is a complete sentence",
+    "family": "by_hand_recognizing",
+    "definition": "Test the words before and after the blank for a subject and a finite verb (and no subordinator) to decide whether it is a clause seam."
+  },
+  {
+    "id": "CL.0130",
+    "display_name": "check whether the clause still needs its main verb",
+    "family": "by_hand_recognizing",
+    "definition": "Decide whether the clause already has a finite verb: if not, the blank must be conjugated; if so, the blank is a to-verb or -ing/past-participle phrase."
+  },
+  {
+    "id": "CL.0131",
+    "display_name": "check whether the sample was random",
+    "family": "by_hand_recognizing",
+    "definition": "Ask whether the sample was randomly drawn from the whole target population; a convenience, self-selected, or one-subgroup sample is biased, whatever its size."
+  },
+  {
+    "id": "CL.0132",
+    "display_name": "classify growth as linear or exponential",
+    "family": "by_hand_recognizing",
+    "definition": "Constant amount of change per unit -> linear; constant percent/factor of change per unit -> exponential; direction gives increasing vs decreasing."
+  },
+  {
+    "id": "CL.0133",
+    "display_name": "compare coefficients and constants to count solutions",
+    "family": "by_hand_recognizing",
+    "definition": "Equal x-coefficients (proportional coefficients for a system) with unequal constants give no solution; fully equivalent sides/equations give infinitely many; otherwise exactly one."
+  },
+  {
+    "id": "CL.0134",
+    "display_name": "compare spread visually",
+    "family": "by_hand_recognizing",
+    "definition": "Judge standard deviation from how many values sit far from vs. close to the center (shape of histogram/dot plot, or a reported SD)."
+  },
+  {
+    "id": "CL.0135",
+    "display_name": "decide whether the added information is essential or removable",
+    "family": "by_hand_recognizing",
+    "definition": "Delete the phrase and reread: if the sentence still identifies the same thing and stays grammatical, the phrase is removable (punctuate it); if not, it is essential (no punctuation)."
+  },
+  {
+    "id": "CL.0136",
+    "display_name": "decompose a figure into simpler shapes",
+    "family": "by_hand_recognizing",
+    "definition": "See that a figure splits into (or is boxed by) triangles/rectangles whose measures are easy, e.g., a square cut by its diagonals, a triangle enclosed in a rectangle, an extra segment drawn to create a triangle."
+  },
+  {
+    "id": "CL.0137",
+    "display_name": "describe the trend of a scatterplot",
+    "family": "by_hand_recognizing",
+    "definition": "Identify whether the data increase or decrease and whether the trend is straight or curved."
+  },
+  {
+    "id": "CL.0138",
+    "display_name": "distinguish 'p% of' from 'p% more/less than'",
+    "family": "by_hand_recognizing",
+    "definition": "Recognize that 'p% of x' is (p/100)x while 'p% greater than x' is (1 + p/100)x and 'p% less than x' is (1 - p/100)x."
+  },
+  {
+    "id": "CL.0139",
+    "display_name": "distinguish a data value from its frequency",
+    "family": "by_hand_recognizing",
+    "definition": "In a frequency table/bar graph/dot plot, keep apart the value (horizontal axis or 'Value' column) and how many times it occurs (bar height or 'Frequency')."
+  },
+  {
+    "id": "CL.0140",
+    "display_name": "find the cause-and-effect signal word",
+    "family": "by_hand_recognizing",
+    "definition": "Spot because, since, so, thus, therefore, consequently, due to, as a result (including the connector right before the blank) and use it to know whether a cause, effect or conclusion is needed."
+  },
+  {
+    "id": "CL.0141",
+    "display_name": "find the claim the new sentence actually connects to",
+    "family": "by_hand_recognizing",
+    "definition": "Identify which earlier sentence or clause the new one responds to; it may be the second sentence, a clause after a semicolon, or a claim rather than the most recent fact."
+  },
+  {
+    "id": "CL.0142",
+    "display_name": "find the clue that restates the blank",
+    "family": "by_hand_recognizing",
+    "definition": "Locate the phrase (often after a colon, dash, 'that is', or in the next sentence) that says the same thing as the blank in other words."
+  },
+  {
+    "id": "CL.0143",
+    "display_name": "find the contrast signal word",
+    "family": "by_hand_recognizing",
+    "definition": "Spot a word or phrase such as but, however, although, unlike, instead, rather, on the other hand, despite, whereas that tells you the two parts point in opposite directions."
+  },
+  {
+    "id": "CL.0144",
+    "display_name": "find the true subject by skipping the interrupting phrase",
+    "family": "by_hand_recognizing",
+    "definition": "Bracket off modifiers or interrupting phrases to find the head noun of the subject (and where it ends), including inverted or delayed subjects."
+  },
+  {
+    "id": "CL.0145",
+    "display_name": "follow a comparison word to the term being compared",
+    "family": "by_hand_recognizing",
+    "definition": "Use comparatively, less, more, as ... as to find the other thing being compared and make the answer its opposite or match."
+  },
+  {
+    "id": "CL.0146",
+    "display_name": "identify the base quantity (the 'of' or 'per' denominator)",
+    "family": "by_hand_recognizing",
+    "definition": "Decide which quantity is the whole/original/'per' unit a percent or rate refers to (original vs new value, row total vs grand total, land area vs total area)."
+  },
+  {
+    "id": "CL.0147",
+    "display_name": "identify the hypotenuse",
+    "family": "by_hand_recognizing",
+    "definition": "Take the side opposite the right angle (equivalently the longest side) as the hypotenuse, and so locate the right angle."
+  },
+  {
+    "id": "CL.0148",
+    "display_name": "identify the transversal angle pair",
+    "family": "by_hand_recognizing",
+    "definition": "Name the pair formed by a transversal across parallel lines (corresponding / alternate interior equal; same-side interior or exterior supplementary); every angle is one of only two measures, acute or obtuse."
+  },
+  {
+    "id": "CL.0149",
+    "display_name": "identify which clause a transition word belongs to",
+    "family": "by_hand_recognizing",
+    "definition": "Decide from the logic of the passage whether a conjunctive adverb (however, though, rather, for example) ends the first clause or opens the second, and put the semicolon or period on the correct side of it."
+  },
+  {
+    "id": "CL.0150",
+    "display_name": "interpret a function statement f(a) = b",
+    "family": "by_hand_recognizing",
+    "definition": "Read f(a) = b as \"at input a, the output is b\", in the units of the context."
+  },
+  {
+    "id": "CL.0151",
+    "display_name": "judge what the audience already knows",
+    "family": "by_hand_recognizing",
+    "definition": "Decide whether the audience needs a term or background explained (unfamiliar) or would find it redundant (already familiar), and keep or cut it accordingly."
+  },
+  {
+    "id": "CL.0152",
+    "display_name": "keep subject, verb, object, and preposition together with no punctuation",
+    "family": "by_hand_recognizing",
+    "definition": "Recognize that the blank splits two core sentence parts that are never separated by punctuation."
+  },
+  {
+    "id": "CL.0153",
+    "display_name": "locate the matching cell or total in a table",
+    "family": "by_hand_recognizing",
+    "definition": "Find the row/column (or total) whose labels match the wording of the question."
+  },
+  {
+    "id": "CL.0154",
+    "display_name": "match a number in the model to its meaning in context",
+    "family": "by_hand_recognizing",
+    "definition": "Match a constant, coefficient, base, intercept or vertex of a model to what it means (initial value, rate, time, maximum) in the context's units."
+  },
+  {
+    "id": "CL.0155",
+    "display_name": "match corresponding parts from the vertex order",
+    "family": "by_hand_recognizing",
+    "definition": "Use the stated correspondence (A to D, B to E...) to pair angles and sides of congruent/similar figures."
+  },
+  {
+    "id": "CL.0156",
+    "display_name": "match equation parameters to graph features",
+    "family": "by_hand_recognizing",
+    "definition": "Use the sign/size of slope and y-intercept (or the sign of the leading coefficient and the intercept/vertex of a quadratic, or b < 1 vs b > 1 for an exponential) to pick the model equation that fits the graph."
+  },
+  {
+    "id": "CL.0157",
+    "display_name": "match the conclusion to the population sampled",
+    "family": "by_hand_recognizing",
+    "definition": "Generalize only to the group the random sample was drawn from - not a larger group, not just the sample itself, not a subset of it."
+  },
+  {
+    "id": "CL.0158",
+    "display_name": "merge categories that together meet the condition",
+    "family": "by_hand_recognizing",
+    "definition": "Notice that the condition (e.g. 'at least 10', 'neither blue nor yellow') covers several rows/columns/categories and combine them."
+  },
+  {
+    "id": "CL.0159",
+    "display_name": "pick the equivalent form that displays a value",
+    "family": "by_hand_recognizing",
+    "definition": "Choose the rewritten form whose coefficient, constant, or base equals the asked value (f(0), f(1), maximum, y-intercept)."
+  },
+  {
+    "id": "CL.0160",
+    "display_name": "read slope and intercept from the equation",
+    "family": "by_hand_recognizing",
+    "definition": "In y = mx + b (or f(x) = b + mx) see m as the slope/rate and b as the y-intercept without computation."
+  },
+  {
+    "id": "CL.0161",
+    "display_name": "read the title, axes, key, and scale before the data",
+    "family": "by_hand_recognizing",
+    "definition": "Notice that an axis does not start at 0, has non-unit gridlines, or is labeled in a shifted unit (years since 1940, days after Jan 11) before reading values or slope."
+  },
+  {
+    "id": "CL.0162",
+    "display_name": "read the vertex from vertex form",
+    "family": "by_hand_recognizing",
+    "definition": "From a(x-h)^2+k, the vertex is (h, k) and k is the max (a<0) or min (a>0)."
+  },
+  {
+    "id": "CL.0163",
+    "display_name": "read the zeros from factored form",
+    "family": "by_hand_recognizing",
+    "definition": "From a(x-p)(x-q)..., the zeros are p, q, ... (repeated factors count once as x-intercepts)."
+  },
+  {
+    "id": "CL.0164",
+    "display_name": "recognize a difference of squares",
+    "family": "by_hand_recognizing",
+    "definition": "See that a^2 - b^2 (including radicals or squared groups) factors as (a-b)(a+b)."
+  },
+  {
+    "id": "CL.0165",
+    "display_name": "recognize a perfect-square trinomial",
+    "family": "by_hand_recognizing",
+    "definition": "See that a^2 + 2ab + b^2 is (a+b)^2."
+  },
+  {
+    "id": "CL.0166",
+    "display_name": "recognize a proportional relationship",
+    "family": "by_hand_recognizing",
+    "definition": "A line through the origin (or a table with constant ratio y/x) means y = kx with b = 0."
+  },
+  {
+    "id": "CL.0167",
+    "display_name": "recognize a special right triangle",
+    "family": "by_hand_recognizing",
+    "definition": "Identify a 45-45-90 (legs x, hypotenuse x sqrt2) or 30-60-90 (x, x sqrt3, 2x) triangle from its angles, equal legs, a tangent of sqrt3, or an equilateral triangle's altitude."
+  },
+  {
+    "id": "CL.0168",
+    "display_name": "recognize a square cannot equal a negative",
+    "family": "by_hand_recognizing",
+    "definition": "See that a squared quantity is never negative, so (expression)^2 = negative has no real solution."
+  },
+  {
+    "id": "CL.0169",
+    "display_name": "recognize all radii are equal",
+    "family": "by_hand_recognizing",
+    "definition": "Use that segments from the center to points on a circle are radii and so have the same length."
+  },
+  {
+    "id": "CL.0170",
+    "display_name": "recognize an isosceles triangle",
+    "family": "by_hand_recognizing",
+    "definition": "Use equal sides (stated, or two radii) to conclude equal base angles, or equal angles to conclude equal sides."
+  },
+  {
+    "id": "CL.0171",
+    "display_name": "recognize equal angles have equal trig ratios",
+    "family": "by_hand_recognizing",
+    "definition": "Use that corresponding angles of similar right triangles (or equal angles anywhere) have the same sine, cosine and tangent."
+  },
+  {
+    "id": "CL.0172",
+    "display_name": "recognize parallel lines have equal slopes",
+    "family": "by_hand_recognizing",
+    "definition": "A parallel line shares the slope; only the intercept may change."
+  },
+  {
+    "id": "CL.0173",
+    "display_name": "recognize similar triangles",
+    "family": "by_hand_recognizing",
+    "definition": "Find two pairs of equal angles (shared angle, right angles, vertical angles, parallel-line angles) to conclude triangles are similar (AA), including nested and 'bow-tie' figures and the altitude to a hypotenuse."
+  },
+  {
+    "id": "CL.0174",
+    "display_name": "recognize sin of an angle equals cos of its complement",
+    "family": "by_hand_recognizing",
+    "definition": "Use sin x = cos(90 deg - x): the two acute angles of a right triangle, or two angles with sin of one equal to cos of the other, are complementary."
+  },
+  {
+    "id": "CL.0175",
+    "display_name": "recognize that a constant shift preserves spread",
+    "family": "by_hand_recognizing",
+    "definition": "Adding the same number to every value shifts center measures by that number but leaves range and standard deviation unchanged."
+  },
+  {
+    "id": "CL.0176",
+    "display_name": "recognize the shaded side of a boundary line",
+    "family": "by_hand_recognizing",
+    "definition": "Match a shaded half-plane to the inequality direction (above: y > ..., below: y < ...), with solid vs dashed boundary."
+  },
+  {
+    "id": "CL.0177",
+    "display_name": "recognize the solution as the intersection point",
+    "family": "by_hand_recognizing",
+    "definition": "Read the coordinates (or count) where two given graphs cross."
+  },
+  {
+    "id": "CL.0178",
+    "display_name": "recognize the two acute-angle tangents are reciprocals",
+    "family": "by_hand_recognizing",
+    "definition": "Use tan of one acute angle = 1 / tan of the other acute angle in a right triangle."
+  },
+  {
+    "id": "CL.0179",
+    "display_name": "recognize vertical angles",
+    "family": "by_hand_recognizing",
+    "definition": "See that angles opposite each other at an intersection are equal."
+  },
+  {
+    "id": "CL.0180",
+    "display_name": "recognize when evidence can't settle the question",
+    "family": "by_hand_recognizing",
+    "definition": "Notice that the evidence leaves a question open (alternative reading, undated, no clear evidence) so the right conclusion is a limit, not a verdict."
+  },
+  {
+    "id": "CL.0181",
+    "display_name": "restrict to the given condition's row or column",
+    "family": "by_hand_recognizing",
+    "definition": "Notice a 'given that' / 'of the ...' / 'if the one chosen is ...' condition and use that subgroup's total, not the grand total, as the denominator."
+  },
+  {
+    "id": "CL.0182",
+    "display_name": "scale lengths by k, areas by k^2, volumes by k^3",
+    "family": "by_hand_recognizing",
+    "definition": "Recognize that when every length is multiplied by k (similar figures or a stated dimension change), perimeter scales by k, area by k^2 and volume by k^3; or run it backward (area ratio -> k by square root)."
+  },
+  {
+    "id": "CL.0183",
+    "display_name": "see that extreme values pull the mean, not the median",
+    "family": "by_hand_recognizing",
+    "definition": "An extreme value or a long tail on one side pulls the mean (and range/SD) toward it but leaves the median unchanged or barely changed."
+  },
+  {
+    "id": "CL.0184",
+    "display_name": "see the right triangle inside the figure",
+    "family": "by_hand_recognizing",
+    "definition": "Notice a right triangle hidden in another figure: rectangle diagonal, cone radius/height/slant height, radius and tangent, two radii with a right central angle, equilateral triangle altitude, inscribed polygon."
+  },
+  {
+    "id": "CL.0185",
+    "display_name": "set aside information the question doesn't need",
+    "family": "by_hand_recognizing",
+    "definition": "Notice that a table or number in the stem is not needed for what is asked and ignore it."
+  },
+  {
+    "id": "CL.0186",
+    "display_name": "spot a concession before the main claim",
+    "family": "by_hand_recognizing",
+    "definition": "Notice when a text grants a point (acknowledging, while, although, certainly, nevertheless) before making its real claim, and separate what is granted from what is argued."
+  },
+  {
+    "id": "CL.0187",
+    "display_name": "spot a word used in an uncommon sense",
+    "family": "by_hand_recognizing",
+    "definition": "Notice that a familiar word is used in a less common meaning here and reject choices that give its everyday meaning."
+  },
+  {
+    "id": "CL.0188",
+    "display_name": "spot comparison wording (both, whereas, while, unlike)",
+    "family": "by_hand_recognizing",
+    "definition": "Recognize whether a choice's wording expresses similarity ('both', 'like', 'also') or difference ('whereas', 'while', 'unlike', 'even though') and match it to what the goal asks."
+  },
+  {
+    "id": "CL.0189",
+    "display_name": "spot that the target expression can be reached without solving",
+    "family": "by_hand_recognizing",
+    "definition": "Notice the asked-for expression (3x + 8, x - 7, 39x, x + y, 2x - 1) is a multiple, shift, or sum of what the given equation(s) already contain."
+  },
+  {
+    "id": "CL.0190",
+    "display_name": "spot the turn from a common view to the real point",
+    "family": "by_hand_recognizing",
+    "definition": "Notice a text that gives a common/long-held view or background and then turns (often with but, however, yet) to the point the author or new finding makes; the old view is not the answer."
+  },
+  {
+    "id": "CL.0191",
+    "display_name": "take an unusual transition at its literal meaning",
+    "family": "by_hand_recognizing",
+    "definition": "When the keyed-looking word is not a standard logic connector (fittingly, there, increasingly, again and again, in many cases), read its literal meaning and check it against the content."
+  },
+  {
+    "id": "CL.0192",
+    "display_name": "tell a direct question from a reported question",
+    "family": "by_hand_recognizing",
+    "definition": "Check whether the sentence asks the question itself (inverted order plus question mark) or reports it inside a statement (subject-verb order plus period)."
+  },
+  {
+    "id": "CL.0193",
+    "display_name": "tell a general claim from a specific example",
+    "family": "by_hand_recognizing",
+    "definition": "Distinguish a broad statement about a category from a specific instance, so a 'generalization', 'definition' or 'explanation and example' goal gets the right level (or both levels)."
+  },
+  {
+    "id": "CL.0194",
+    "display_name": "tell a population mean apart from individual values",
+    "family": "by_hand_recognizing",
+    "definition": "Recognize that an interval for a mean says nothing about where every (or most) individual value lies."
+  },
+  {
+    "id": "CL.0195",
+    "display_name": "tell an example from a restatement or a specification",
+    "family": "by_hand_recognizing",
+    "definition": "Distinguish an instance of a broader claim (for example) from the same idea in other words (in other words, that is) and from more precise detail of the same thing (specifically, to be exact)."
+  },
+  {
+    "id": "CL.0196",
+    "display_name": "tell describing from arguing",
+    "family": "by_hand_recognizing",
+    "definition": "Decide whether the author is informing/describing or arguing/recommending, and reject purpose verbs (argue, criticize, urge) the text does not do."
+  },
+  {
+    "id": "CL.0197",
+    "display_name": "tell evidence from interpretation",
+    "family": "by_hand_recognizing",
+    "definition": "Separate what was observed or measured from what someone concluded from it, and from models or assumptions, so you can see what a critic is targeting."
+  },
+  {
+    "id": "CL.0198",
+    "display_name": "tell growth from decay by the base",
+    "family": "by_hand_recognizing",
+    "definition": "A base above 1 means growth, between 0 and 1 means decay; a decreasing exponential has no minimum on an open domain."
+  },
+  {
+    "id": "CL.0199",
+    "display_name": "trace a pronoun or 'this' back to what it refers to",
+    "family": "by_hand_recognizing",
+    "definition": "Find the noun or earlier idea a pronoun, determiner or pointing word (it, they, this, such, these) stands for, even with other nouns in between."
+  },
+  {
+    "id": "CL.0200",
+    "display_name": "track whose view each sentence presents",
+    "family": "by_hand_recognizing",
+    "definition": "Keep straight who holds each view (the author, a named researcher, critics, 'some scholars', a common assumption) so an answer does not credit a view to the wrong person."
+  },
+  {
+    "id": "CL.0201",
+    "display_name": "translate 'at least / at most' into an inequality symbol",
+    "family": "by_hand_recognizing",
+    "definition": "Map at least / minimum to >=, at most / no more than / maximum to <=, between to a compound inequality."
+  },
+  {
+    "id": "CL.0202",
+    "display_name": "treat a random sample's rate as the population's rate",
+    "family": "by_hand_recognizing",
+    "definition": "Recognize that a random (representative) sample's proportion or mean is the best estimate for the population, so it can be scaled up."
+  },
+  {
+    "id": "CL.0203",
+    "display_name": "treat a repeated expression as one unit",
+    "family": "by_hand_recognizing",
+    "definition": "Notice a repeated group (x^2-x, x-7, x^2) and treat it as a single variable."
+  },
+  {
+    "id": "CL.0204",
+    "display_name": "treat a sample statistic as an estimate, not an exact value",
+    "family": "by_hand_recognizing",
+    "definition": "Reject statements that the population value (or another sample's value) is exactly, or certainly, the sample value; keep 'best estimate' / 'plausible'."
+  },
+  {
+    "id": "CL.0205",
+    "display_name": "treat an arc as a fraction of the circle",
+    "family": "by_hand_recognizing",
+    "definition": "See arc length / circumference = central angle / 360 deg (or / 2pi); arcs together make the full circle; arc measure equals central angle."
+  },
+  {
+    "id": "CL.0206",
+    "display_name": "turn the goal into a checklist of required parts",
+    "family": "by_hand_recognizing",
+    "definition": "Split the goal into every part it demands (both items, 'study and its findings', 'duration and purpose', 'generalization and support', 'explanation and example', a quotation) and require all of them in the answer."
+  },
+  {
+    "id": "CL.0207",
+    "display_name": "use symmetry to locate the mean",
+    "family": "by_hand_recognizing",
+    "definition": "In a symmetric distribution the mean equals the median, at the center of symmetry."
+  },
+  {
+    "id": "CL.0208",
+    "display_name": "use tangent facts",
+    "family": "by_hand_recognizing",
+    "definition": "Use that a tangent is perpendicular to the radius at the point of tangency (slopes are negative reciprocals; tangent to an axis means r = distance from center to that axis) and that two tangent segments from one outside point are equal."
+  },
+  {
+    "id": "CL.0209",
+    "display_name": "use the complement",
+    "family": "by_hand_recognizing",
+    "definition": "Find the share not in a category as 100% minus the given percent(s)."
+  },
+  {
+    "id": "CL.0210",
+    "display_name": "use the symmetry of a parabola",
+    "family": "by_hand_recognizing",
+    "definition": "The vertex x-value is the average of two inputs with equal outputs (e.g. the two zeros)."
+  },
+  {
+    "id": "CL.0211",
+    "display_name": "use time clues in the text to choose the verb tense",
+    "family": "by_hand_recognizing",
+    "definition": "Locate the date, sequence, or surrounding verb that fixes when the action happens, and choose the tense that fits that time frame."
+  },
+  {
+    "id": "CL.0212",
+    "display_name": "Desmos: graph a circle and read its center and radius",
+    "family": "desmos",
+    "definition": "Type the circle equation in any form; click the top and bottom points and use midpoint(...) for the center and distance(...)/2 for the radius."
+  },
+  {
+    "id": "CL.0213",
+    "display_name": "Desmos: convert a decimal result to a fraction",
+    "family": "desmos",
+    "definition": "Answer-form utility for any Math skill: convert a decimal Desmos result to a fraction with the fraction button; never answers a question alone."
+  },
+  {
+    "id": "CL.0214",
+    "display_name": "Desmos: rename the variable to x before graphing",
+    "family": "desmos",
+    "definition": "Utility move: rename the equation's letter (t, n, p, w) to x before graphing; it never answers a question alone."
+  },
+  {
+    "id": "CL.0215",
+    "display_name": "Desmos: graph and compare equivalent forms",
+    "family": "desmos",
+    "definition": "Graph the original and each choice; the equivalent one overlaps exactly (toggle it to see the overlap)."
+  },
+  {
+    "id": "CL.0216",
+    "display_name": "Desmos: define f(x) and evaluate it",
+    "family": "desmos",
+    "definition": "Define f(x) = ..., then evaluate f(3) or a combination; a table of inputs, or the same test input in the expression and each choice, is the same move."
+  },
+  {
+    "id": "CL.0217",
+    "display_name": "Desmos: graph an inequality and test the shaded region",
+    "family": "desmos",
+    "definition": "Graph the inequality or system; a point is a solution if it is inside the shaded region (the overlap for a system), not on a dashed edge."
+  },
+  {
+    "id": "CL.0218",
+    "display_name": "Desmos: fit a model through points by regression",
+    "family": "desmos",
+    "definition": "Enter the points in a table and fit y_1 ~ m x_1 + b (or a quadratic or exponential) to read the parameters (r^2 = 1 for an exact fit)."
+  },
+  {
+    "id": "CL.0219",
+    "display_name": "Desmos: graph and click the vertex (max or min)",
+    "family": "desmos",
+    "definition": "Graph y = the expression and click the vertex (x or y as asked); on a restricted domain also evaluate the endpoints."
+  },
+  {
+    "id": "CL.0220",
+    "display_name": "Desmos: graph each side and read the crossing x",
+    "family": "desmos",
+    "definition": "Type the equation as written (a vertical line) or each side as y = ..., and read the x of the line or crossing, never its y."
+  },
+  {
+    "id": "CL.0221",
+    "display_name": "Desmos: test choices as parameterized points on a slider",
+    "family": "desmos",
+    "definition": "Enter each choice as a point in a parameter (r) with a slider; the right one stays on the line as r moves."
+  },
+  {
+    "id": "CL.0222",
+    "display_name": "Desmos: compute a percent or multiplier as typed arithmetic",
+    "family": "desmos",
+    "definition": "Type a percent, a multiplier (1 + 27/100) or a percent change ((92 - 45)/45*100) and read the value; the same typed-arithmetic move covers a chained unit-conversion computation."
+  },
+  {
+    "id": "CL.0223",
+    "display_name": "Desmos: test whether a point lies on a graph",
+    "family": "desmos",
+    "definition": "Type the point and see whether it sits on the graphed circle or line."
+  },
+  {
+    "id": "CL.0224",
+    "display_name": "Desmos: compute list statistics (mean, median)",
+    "family": "desmos",
+    "definition": "Type mean(...), median(...) of the data; for a missing value, graph mean or median of a list containing x."
+  },
+  {
+    "id": "CL.0225",
+    "display_name": "Desmos: graph a system and click the intersection",
+    "family": "desmos",
+    "definition": "Graph both equations and click the crossing for (x, y); parallel lines mean no solution, the same line infinitely many."
+  },
+  {
+    "id": "CL.0226",
+    "display_name": "Desmos: define a translated function and read its feature",
+    "family": "desmos",
+    "definition": "Define f, then g(x) = f(x + h) + k, hide f, and read the feature of g asked for."
+  },
+  {
+    "id": "CL.0227",
+    "display_name": "Desmos: evaluate a trig value in degree mode",
+    "family": "desmos",
+    "definition": "Type sin(56) (or cos, tan) after switching the settings to degrees for a degree question; read the value."
+  },
+  {
+    "id": "CL.0228",
+    "display_name": "Desmos: solve for an unknown constant with a slider",
+    "family": "desmos",
+    "definition": "Put the unknown constant on a slider (widen its bounds) or type each choice's value, until the condition holds."
+  },
+  {
+    "id": "CL.0229",
+    "display_name": "Desmos: find exact constants by regression",
+    "family": "desmos",
+    "definition": "Regression between two expressions, [left] ~ [right] with subscripted variables and conditions, to read exact constants."
+  },
+  {
+    "id": "CL.0230",
+    "display_name": "Desmos: graph and click the zeros",
+    "family": "desmos",
+    "definition": "Graph y = the expression (or left side minus right side) and click the gray points on the x-axis."
+  }
+]

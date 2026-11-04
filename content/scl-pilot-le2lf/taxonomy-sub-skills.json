@@ -1,0 +1,72 @@
+[
+  {
+    "id": "LE2.1",
+    "skill_code": "Linear Equations in Two Variables",
+    "name": "Model a situation with a linear equation",
+    "definition": "Build the two-variable (or reduced one-variable) equation that a described real-world situation implies.",
+    "inclusion_test": "Stem is a word context AND either asks which equation represents/models the situation, OR asks for a value while giving no equation, graph or table that relates the quantities (the student must create the relationship)."
+  },
+  {
+    "id": "LE2.2",
+    "skill_code": "Linear Equations in Two Variables",
+    "name": "Interpret parts of a contextual linear equation or graph",
+    "definition": "State what a coefficient, constant, term, variable, ordered pair or difference of coefficients means in context.",
+    "inclusion_test": "Stem gives a contextual equation or graph and the question asks best interpretation / what does N represent / price of each / how many more points per, answerable from structure without solving for an unknown."
+  },
+  {
+    "id": "LE2.3",
+    "skill_code": "Linear Equations in Two Variables",
+    "name": "Find one quantity in context when the other is known",
+    "definition": "Use a contextual linear relationship to get one variables value from the others given value.",
+    "inclusion_test": "Context stem; the value of one variable (or a relation fixing it, e.g. c = 2p, or a point read off a contextual graph) is given and the answer is the value of another quantity in the relationship."
+  },
+  {
+    "id": "LE2.4",
+    "skill_code": "Linear Equations in Two Variables",
+    "name": "Connect a lines equation, graph, table, slope and intercepts",
+    "definition": "For a single line, move between equation, graph, table, slope, intercepts and points (incl. missing coordinates and unknown constants).",
+    "inclusion_test": "Question asks for a lines slope, intercept, equation, matching table/graph, a missing coordinate, or an unknown constant in its equation, from an equation, graph, table, points or slope; includes contextual graphs/tables when the question asks for the equation."
+  },
+  {
+    "id": "LE2.5",
+    "skill_code": "Linear Equations in Two Variables",
+    "name": "Relate a second line: parallel, perpendicular or translated",
+    "definition": "Get a second lines slope or equation from a given line via parallel/perpendicular rules or a vertical shift.",
+    "inclusion_test": "Stem defines one line or graph as parallel to, perpendicular to, or a translation/shift (incl. y = f(x) + k) of another."
+  },
+  {
+    "id": "LF.1",
+    "skill_code": "Linear Functions",
+    "name": "Evaluate or invert a given linear rule",
+    "definition": "Use a fully specified linear rule (equation, function, or plotted line) to get the output for a given input, or the input that gives a given output.",
+    "inclusion_test": "Tag when the answer requires computing f(input) or solving f(x) = output (output not described as an intercept) for a rule whose coefficients are all known numbers or whose graph is shown; also tag when such a computation is the final step after the rule is built (LF.2) or completed (LF.3). Do not tag when the computation is f(0)/f(x)=0 asked as an intercept (LF.5)."
+  },
+  {
+    "id": "LF.2",
+    "skill_code": "Linear Functions",
+    "name": "Build a linear model from a verbal description",
+    "definition": "Translate a context stated in words (a rate per unit plus a fixed/starting amount, including first-unit-then-additional pricing) into a linear expression or equation.",
+    "inclusion_test": "Tag when the stem gives NO equation for the relationship and states a rate in words (per, each, for every, additional) and/or a fixed amount that the student must write as an expression (the target may be the equation itself or a value computed from it). Two data points stated in words without a stated rate are LF.3, not LF.2."
+  },
+  {
+    "id": "LF.3",
+    "skill_code": "Linear Functions",
+    "name": "Determine a linear function from points, a table, values, or slope",
+    "definition": "Find the slope, the intercept, an unknown constant, or the whole equation of a linear function from two or more (x, y) facts: coordinate pairs, table rows, f(a) = b statements, a stated slope plus a point, or gridline points on a graph.",
+    "inclusion_test": "Tag when at least one of the rules constants (slope, intercept, or another named constant) is not given as a numeric coefficient and must be obtained from (x, y) information; includes which equation defines f given slope + intercept in words."
+  },
+  {
+    "id": "LF.4",
+    "skill_code": "Linear Functions",
+    "name": "Interpret slope, intercept, and constants in context",
+    "definition": "State what a coefficient, constant term, intercept, slope, or function-value statement means in the situation (rate per unit vs. starting value vs. zero-output point), or produce the contextual quantity that is one of them.",
+    "inclusion_test": "Tag when the stem asks for the best interpretation/meaning/what X represents, OR asks for a contextual quantity (per-unit amount, initial amount, change in output for a change in input, fixed dimension) that is answered by identifying the slope or constant of a given model rather than by evaluating it."
+  },
+  {
+    "id": "LF.5",
+    "skill_code": "Linear Functions",
+    "name": "Intercepts and graph features of a linear function",
+    "definition": "Find or use the x-intercept, y-intercept, a parallel lines slope, the graph that matches an equation, or a vertical shift y = f(x) + k / sum of functions.",
+    "inclusion_test": "Tag when the stem names an x- or y-intercept, a parallel line, a choice of graphs, or a graph of y = f(x) + k (or h = f + g graphed). Questions that ask for f(0) or an initial amount without naming an intercept are not LF.5."
+  }
+]
