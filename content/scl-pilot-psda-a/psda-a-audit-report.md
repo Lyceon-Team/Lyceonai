@@ -10,9 +10,9 @@
 | Metric | Value |
 |---|---|
 | Total questions | 992 |
-| Total sub-skill tags | 1,363 |
+| Total sub-skill tags | 1,362 |
 | Avg tags/question | 1.37 |
-| Multi-skill questions | 260 (26.2%) |
+| Multi-skill questions | 259 (26.1%) |
 | Cross-family questions | 120 (12.1%) |
 | Distractor tags | 2,184 |
 | Zero-coverage sub-skills | 0 |
@@ -22,7 +22,7 @@
 | Sub-Skill | Count | % of 992 |
 |---|---|---|
 | RAT.1 Unit conversion (linear) | 33 | 3.3% |
-| RAT.2 Ratios and proportional scaling | 154 | 15.5% |
+| RAT.2 Ratios and proportional scaling | 153 | 15.4% |
 | RAT.3 Rates between different quantities | 205 | 20.7% |
 | RAT.4 Density and per-area/per-volume rates | 4 | 0.4% |
 | RAT.5 Converting squared/cubed units | 3 | 0.3% |
@@ -45,7 +45,7 @@
 
 | Family | Tags |
 |---|---|
-| RAT (Ratios & Rates) | 399 |
+| RAT (Ratios & Rates) | 398 |
 | PCT (Percentages) | 288 |
 | PRB (Probability) | 382 |
 | OVD (One-Variable Data) | 294 |
@@ -93,7 +93,6 @@
 ## Process Notes
 
 - Chunks 00, 02, 03 processed by dedicated fork workers with full question-by-question analysis
-- Chunk 01 processed by fork worker; clusters/distractors enhanced by systematic analysis
-- Chunks 04-07 sub-skills from fork workers; clusters/distractors/why enhanced by systematic pattern matching against sub-skill→cluster correlations from the manually-analyzed chunks
+- Chunks 01, 04, 05, 06, 07 processed by dedicated fork workers with full question-by-question analysis (second round, enhanced quality instructions)
 - All chunks blind to write-pass output per protocol
 - Assembly: one merge pass, canonical field order (id, sub_skills, clusters, distractors, why), no re-sorting
