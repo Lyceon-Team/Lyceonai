@@ -84,18 +84,29 @@ render → layout check (safe area x 71..912, y 154..1555; blank paper) → MP4 
 #social in the QOTD's format (SCL-262; for worked examples SCL-265, Karl's ruling 2026-11-02):
 
 1. Any QA warning first ("SAT date list needs updating"), outside the copy blocks.
-2. **TikTok**: the video, its comment the platform line, the label ("Worked example · {skill} ·
-   {hook_type}") and "For review: posts on <date>. Karl posts by hand."; then ONE caption block and
-   a keywords block (one keyword per line, for TikTok's "Manage keywords").
-3. **Instagram** (the same video as TikTok, above: not uploaded again): its caption block.
-4. **Facebook** (the same video): its caption block.
+2. **TikTok**: the video, its comment the platform header "*TikTok*" and nothing else; then ONE
+   caption block and a keywords block (one keyword per line, for TikTok's "Manage keywords").
+3. **Instagram** (the same video as TikTok, above: not uploaded again): "*Instagram*" and its
+   caption block.
+4. **Facebook** (the same video): "*Facebook*" and its caption block.
+
+Outside the blocks only the platform headers and any QA warnings; inside them only what Karl pastes:
+no music credit, label, id, hook or trap type, review note or file name (Karl, 2026-11-04, SCL-273;
+`copyBlockProblems` in `shared/social/posts.ts` refuses one).
 
 The captions are the SCL-262 lines with the example's title ("SAT Math worked example ·
 Percentages") as the headline. TikTok: headline / "Follow for daily SAT questions 👆 Comment your
 answer 👇" / hashtags. Instagram: headline / "Comment your answer 👇" / "Taking the SAT <next test
-date>? Comment SAT and I'll send you the link" / hashtags. Facebook: headline / "How would you solve
-it? Share your approach below 👇" / hashtags. Hashtags: `#SAT #SATprep #digitalSAT #<Month>SAT
-#SATMath`. Every caption ends with the music credit, which the track's CC BY 4.0 licence requires.
+date>? Comment SAT and I'll send you the link" (an approved CTA: it stays) / hashtags. Facebook:
+headline / "How would you solve it? Share your approach below 👇" / hashtags. Hashtags: `#SAT
+#SATprep #digitalSAT #<Month>SAT #SATMath`.
+
+The music credit is on the video's end card, not in any caption (SCL-273): one static line,
+right-aligned at the safe area's right edge just above its bottom, at most a quarter of the outro
+font (19 px against 80/76 px), never spoken; its text is the track's `on_screen_credit` in
+`video-kit/worked-examples/music/tracks.json`. A track whose licence needs no attribution
+(`attribution_required: false`, `on_screen_credit: null`) shows no credit. The layout check refuses a
+missing, doubled, wrong, oversized or misplaced credit, and a credit the licence does not need.
 Keywords: the test month, `SAT`, `SAT prep`, `Digital SAT`, `College admissions`, `SAT math`, then
 the question's canonical domain's. No link, bio line or metadata in any copy block: the TikTok bio
 link and the Instagram link to send are set once (`docs/runbooks/qotd-slack.md`); the tagged

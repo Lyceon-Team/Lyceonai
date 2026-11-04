@@ -19,7 +19,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
 import { safeArea } from "./composition";
-import { loadKit } from "./kit";
+import { loadKit, type Track } from "./kit";
 
 export const DRAWN_SELECTORS = [
   ".hook",
@@ -30,6 +30,7 @@ export const DRAWN_SELECTORS = [
   ".logo",
   ".follow",
   ".brand-name",
+  ".credit",
 ] as const;
 
 export type Box = {
@@ -58,6 +59,58 @@ export function boxProblems(
         `${b.what} at x ${Math.round(b.x)}..${Math.round(b.right)}, y ${Math.round(b.y)}..${Math.round(b.bottom)} leaves the safe area x ${safe.left}..${safe.right}, y ${safe.top}..${safe.bottom}`,
       );
   }
+  return out;
+}
+
+/** The end card's credit and outro text as the page lays them out. */
+export type EndCardMeasure = {
+  credits: { text: string; fontPx: number; right: number }[];
+  /** The outro text sizes (.follow, .brand-name), in px. */
+  outroPx: number[];
+};
+
+/**
+ * The end card's music credit against the track's licence (Karl's ruling 2026-11-04): exactly
+ * one credit with the track's on-screen text when the licence requires attribution, none when it
+ * does not; at most a quarter of the smallest outro size; right-aligned to the safe area's right
+ * edge (the box check above keeps it inside the safe area).
+ */
+export function creditProblems(
+  m: EndCardMeasure,
+  track: Track,
+  safe: { right: number },
+): string[] {
+  const out: string[] = [];
+  if (track.on_screen_credit === null) {
+    if (m.credits.length > 0)
+      out.push(
+        "the end card shows a music credit, but the track needs no attribution",
+      );
+    return out;
+  }
+  if (m.credits.length !== 1) {
+    out.push(
+      `the end card must show the music credit once (the track's ${track.licence} licence requires it), found ${m.credits.length}`,
+    );
+    return out;
+  }
+  const [c] = m.credits;
+  if (!c) return out;
+  if (c.text !== track.on_screen_credit)
+    out.push(
+      `the end card's credit reads "${c.text}", not "${track.on_screen_credit}"`,
+    );
+  if (m.outroPx.length === 0)
+    out.push("the end card's outro text was not measured");
+  const limit = Math.min(...m.outroPx) / 4;
+  if (c.fontPx > limit)
+    out.push(
+      `the credit is ${c.fontPx} px, over a quarter of the outro text (${limit} px)`,
+    );
+  if (Math.abs(c.right - safe.right) > 2)
+    out.push(
+      `the credit's right edge is at x ${Math.round(c.right)}, not at the safe area's right edge (${safe.right})`,
+    );
   return out;
 }
 
@@ -132,6 +185,25 @@ export async function layoutCheck(folder: string): Promise<string[]> {
       return out;
     }, DRAWN_SELECTORS);
     const problems = boxProblems(boxes, safeArea());
+    const endCard: EndCardMeasure = await page.evaluate(() => {
+      const px = (el: Element): number =>
+        parseFloat(getComputedStyle(el).fontSize);
+      return {
+        credits: [...document.querySelectorAll("#endcard .credit")].map(
+          (el) => ({
+            text: (el.textContent ?? "").trim(),
+            fontPx: px(el),
+            right: el.getBoundingClientRect().right,
+          }),
+        ),
+        outroPx: [
+          ...document.querySelectorAll(
+            "#endcard .follow, #endcard .brand-name",
+          ),
+        ].map(px),
+      };
+    });
+    problems.push(...creditProblems(endCard, kit.track, safeArea()));
     await page.addStyleTag({
       content: "#root > * { visibility: hidden !important; }",
     });

@@ -219,8 +219,10 @@ answer is named by the stored `correct_display_letter`, never the question's ori
 letter. The voice is Kokoro `am_michael`, committed with the script; nothing is voiced at render
 time and the job sets up no Python. The finished mix is limited to at most −1 dBTP true peak
 (SCL-270, the worked examples' `final-mix.ts`) before the MP4 check. It goes to the same channel (`SOCIAL_SLACK_CHANNEL_ID`) as the
-TikTok, Instagram and Facebook set: the video with its label and review line, the TikTok caption and
-keywords, then the Instagram and Facebook captions (SCL-262 format, music credit last). **Karl
+TikTok, Instagram and Facebook set: the video with the header "*TikTok*", the TikTok caption and
+keywords, then "*Instagram*" and "*Facebook*" with their captions (SCL-262 format). No label, review
+line or music credit in any copy block; the credit is on the video's end card (Karl, 2026-11-04,
+SCL-273). **Karl
 posts by hand.** Nothing is published automatically, and nothing posts anywhere but #social.
 
 ### 6.0 The private repo (Karl, 2026-11-03: set up by Thu 2026-11-05)
