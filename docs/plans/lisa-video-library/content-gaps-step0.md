@@ -277,3 +277,15 @@ These are not started. The steps follow the expansion precedent (README "Expansi
    the segment review CSV.
 4. Karl approves the segments.
 5. Rerun §2.1 to show each closed gap.
+
+## 7. Rulings (Karl, 2026-11-04, on #1447)
+
+- **Approved:** A (Brain Buffs "SAT Math:"), B (Tutorllini DSAT Math Flashcards), and C's seven
+  proposed singles.
+- **Deferred:** A-RW (Brain Buffs "SAT Reading:"). Its rows in the proposal CSV now read `deferred`.
+- **Brain Buffs is a new channel.** Its rows are flagged for teaching-quality review, tier 5,
+  strict, as with Dr. TestPrep.
+- **New requirement: one watch, two outputs.** Each watch produces segments and tags, plus a
+  teaching write-up per segment for the curriculum corpus. Its Step 0 design is
+  `watch-writeup-step0.md`. The sourcing run waits on that design's rulings, so the watch is paid
+  for once.

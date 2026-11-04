@@ -99,7 +99,7 @@ const OUTPUT_TOKENS_ESTIMATE = 8_000;
 
 // ── The taxonomy (the canonical file; production mirrors it) ────────────────────────────
 
-const taxonomySchema = z.object({
+export const taxonomySchema = z.object({
   taxonomy_version: z.string().min(1),
   sub_skills: z.array(
     z.object({
@@ -239,7 +239,7 @@ const tagsRequired = [
   "not_in_taxonomy",
 ] as const;
 
-const segmentResponseSchema = {
+export const segmentResponseSchema = {
   type: "OBJECT",
   properties: {
     segments: {
