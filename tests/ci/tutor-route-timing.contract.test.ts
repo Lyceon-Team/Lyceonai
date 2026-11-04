@@ -502,6 +502,9 @@ describe("method tags on the real route: a Desmos request", () => {
         channel_name: "Tutorllini Test Prep",
         duration_seconds: 398,
         start_seconds: null,
+        // The skill path: no segment, so the whole video plays as before.
+        end_seconds: null,
+        segment_id: null,
       },
     });
     const [line] = timingLines();

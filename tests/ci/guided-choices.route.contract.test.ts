@@ -394,6 +394,9 @@ describe("video intents are served with no model call", () => {
         channel_name: "Desmos Prep",
         duration_seconds: 1200,
         start_seconds: 30,
+        // An untagged item takes the skill path: the whole video, no segment.
+        end_seconds: null,
+        segment_id: null,
       },
     });
     // The retrieval asked for the Desmos method.
@@ -534,6 +537,20 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
       taxonomy_version: "scl-v1.0.0",
       tagged_by: "test",
     });
+    // The segments' rows, for the end the served video stops at (production Lesson #10's
+    // 159–257; the algebraic segment's end is a test value).
+    db.current.seed("video_segments", {
+      segment_id: SEGMENT_DESMOS.segment_id,
+      video_id: SEGMENT_DESMOS.video_id,
+      start_seconds: 159,
+      end_seconds: 257,
+    });
+    db.current.seed("video_segments", {
+      segment_id: SEGMENT_ALGEBRAIC.segment_id,
+      video_id: SEGMENT_ALGEBRAIC.video_id,
+      start_seconds: 42,
+      end_seconds: 120,
+    });
   });
 
   it("'Desmos video' requires Desmos: the Desmos segment, at its start, even though an algebraic one shares more", async () => {
@@ -553,6 +570,8 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
         channel_name: "Tutorllini Test Prep",
         duration_seconds: 398,
         start_seconds: 159,
+        end_seconds: 257,
+        segment_id: SEGMENT_DESMOS.segment_id,
       },
     });
     const call = db.current.rpcCalls.find(
@@ -587,6 +606,7 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
     expect(res.body.data.response.suggested_action.video).toMatchObject({
       video_id: "AlgebraAAAA",
       start_seconds: 42,
+      end_seconds: 120,
     });
     const call = db.current.rpcCalls.find(
       (c) => c.name === "video_segments_for_question",
