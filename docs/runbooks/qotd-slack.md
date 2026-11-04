@@ -1,9 +1,12 @@
 # Runbook — Question of the Day to Slack
 
-> @spec [Doc 10A §7, §11; owner briefs 2026-10-10 (QOTD social assets to Slack) and 2026-10-15 (add yesterday's reveal, for Reddit); Karl's ruling 2026-10-30 (Reddit QOTD discontinued)] | @implemented [2026-10-10; reveal 2026-10-15; TikTok carousel and canonical choice order, Karl's brief 2026-10-23; Reddit items removed 2026-10-30]
+> @spec [Doc 10A §7, §11; owner briefs 2026-10-10 (QOTD social assets to Slack) and 2026-10-15 (add yesterday's reveal, for Reddit); Karl's ruling 2026-10-30 (Reddit QOTD discontinued); Karl's content rulings 2026-11-02 (SCL-264: Reddit manual only, no scheduler)] | @implemented [2026-10-10; reveal 2026-10-15; TikTok carousel and canonical choice order, Karl's brief 2026-10-23; Reddit items removed 2026-10-30]
 
-**Reddit QOTD is discontinued** (r/SatQuestion was banned by Reddit sitewide; Karl, 2026-10-30).
-The QOTD goes to **TikTok, Instagram and Facebook only**. Nothing Reddit-related is built or
+**Reddit QOTD is discontinued** (Karl, 2026-10-30; the subreddit that carried it was banned by
+Reddit). Reddit is founder-led and manual only, and Lyceon's own content is not cross-posted there
+(Karl, 2026-11-02).
+The QOTD goes to **TikTok, Instagram and the Facebook Page only**, daily, posted by Karl by hand
+from `#social`: no scheduler for now (Karl, 2026-11-02; SCL-264). Nothing Reddit-related is built or
 posted: the run no longer makes a suggested Reddit post or yesterday's reveal (the answer for the
 comment on yesterday's Reddit post), the build's `post.json` carries neither (and is refused if it
 does), and `#social` has no Reddit item.
@@ -183,3 +186,206 @@ by Karl, 2026-10-10: re-runs are only for failed posts.)
 Delete the `SLACK_BOT_TOKEN` secret. The run then turns red every morning, by design. To stop
 the post without red runs, disable the workflow instead (**Actions** → **QOTD social assets** →
 **…** → **Disable workflow**). That also stops the daily download.
+
+## 6. Breakdown pilot (2 weeks)
+
+Karl's brief of 2026-11-02, Part C; SCL-266, as ruled by Karl on #1398 the same day (authored
+scripts, his merge the approval, am_michael, the dates below), and on 2026-11-02/03 (**this
+repository is public**: the scripts and their voice live in the private repo
+`Lyceon-Team/lyceon-content-private`, approved by his merge there; the final-mix limiter). A second
+job in the same workflow,
+`breakdown`, runs **after** the QOTD job, whatever that job's result, so the normal QOTD post always
+goes first and nothing here can block or delay it.
+
+**Re-running posts the breakdown again.** As with the QOTD set (Karl, 2026-10-10), nothing records
+that a day's breakdown was already posted: a re-run of the `breakdown` job sends its Slack set a
+second time. Re-run it only for a failed post.
+
+**Dates.** `QOTD_BREAKDOWN_PILOT` (`shared/qotd/breakdown.ts`): posting days **2026-11-09 to
+2026-11-22**, both inclusive (14 days, the schema's limit). On a posting day the run breaks down the
+QOTD of the day before, so the QOTD dates covered are **2026-11-08 to 2026-11-21**.
+
+**What posts.** Inside the window, yesterday's QOTD as a 30-60 s video, built with the
+worked-example pipeline from the **authored script Karl merged for that date**
+(`scripts/qotd-social/breakdown.ts`). The script speaks in Karl's order: the hook as a challenge to
+the viewer, a one-sentence setup, the key move, the trap ("here's where people slip"), the answer
+and a quick check, then the kit's call to action. The voice talks about the screen and never reads
+it (S1, S2). The choices are shown in the day's stored order (`qotd_schedule.option_order`) and the
+answer is named by the stored `correct_display_letter`, never the question's original order or
+letter. The voice is Kokoro `am_michael`, committed with the script; nothing is voiced at render
+time and the job sets up no Python. The finished mix is limited to at most −1 dBTP true peak
+(SCL-270, the worked examples' `final-mix.ts`) before the MP4 check. It goes to the same channel (`SOCIAL_SLACK_CHANNEL_ID`) as the
+TikTok, Instagram and Facebook set: the video with its label and review line, the TikTok caption and
+keywords, then the Instagram and Facebook captions (SCL-262 format, music credit last). **Karl
+posts by hand.** Nothing is published automatically, and nothing posts anywhere but #social.
+
+### 6.0 The private repo (Karl, 2026-11-03: set up by Thu 2026-11-05)
+
+Nothing breakdown-specific that names an answer may exist in this public repository: no scripts,
+audio, fixtures with real answers, logs or artifacts (Karl, 2026-11-02). The **code** stays here;
+the **content** lives in `Lyceon-Team/lyceon-content-private`. CI enforces it:
+`scripts/ci/breakdown-content-gate.ts` (every pull request, `ci.yml`) fails on any
+`qotd-breakdowns/` path, any `qotd-breakdown-schedule*.json`, or any file holding a breakdown script
+under any name, outside the synthetic fixture (`tests/fixtures/qotd-breakdowns-synthetic`, made-up
+questions with `SAT…SYNTH…` ids); its plants are `scripts/ci/breakdown-content-gate.mutations.sh`.
+
+Karl's one-time setup:
+
+1. Create `Lyceon-Team/lyceon-content-private` as a **private** repository, default branch `main`.
+   Protect `main`: pull request required, and only Karl can merge. Merge with a merge commit or a
+   squash, **not** a rebase merge (the approval is read from the commit that merged the PR).
+2. Org settings → Personal access tokens: allow fine-grained tokens for the org, if not already on.
+3. Your Settings → Developer settings → Fine-grained tokens → **New**. Resource owner
+   **Lyceon-Team**; repository access **only `lyceon-content-private`**; permissions **Contents:
+   Read** and **Pull requests: Read** (Metadata: Read comes with them). Pull requests: Read lets the
+   job read GitHub's merge record of the script (approved by Karl, 2026-11-03). Expiry 90 days, with
+   a calendar reminder to rotate it.
+4. This repository → **Settings** → **Environments** → **New environment** `qotd-breakdown`.
+   Deployment branches: **Selected branches** → `main` only. Add the secret
+   `CONTENT_PRIVATE_TOKEN` (the token from step 3) and the variable `CONTENT_APPROVER_LOGIN` (Karl's
+   GitHub login). Only the scheduled (or hand-started) job on `main` enters this environment; pull
+   requests run with no environment and see no token.
+5. In the private repo, add these four files in one first PR (Karl merges it):
+   - `qotd-breakdowns/.gitkeep` (empty).
+   - `.gitignore`: `qotd-breakdown-schedule*.json` and `*.mp4`.
+   - `README.md`: "QOTD breakdown scripts. Authoring flow: Lyceon-Team/Lyceonai
+     docs/runbooks/qotd-slack.md §6.1. Never commit the schedule export."
+   - `.github/workflows/check.yml`, the pull-request check (the public code, no token needed for it):
+
+     ```yaml
+     name: Breakdown script checks
+     on:
+       pull_request:
+         branches: [main]
+     permissions:
+       contents: read
+     jobs:
+       check:
+         runs-on: ubuntu-latest
+         steps:
+           - uses: actions/checkout@v4
+             with:
+               path: content
+           - uses: actions/checkout@v4
+             with:
+               repository: Lyceon-Team/Lyceonai
+               ref: main
+               path: code
+           - uses: pnpm/action-setup@v4
+             with:
+               package_json_file: code/package.json
+           - uses: actions/setup-node@v4
+             with:
+               node-version-file: code/.nvmrc
+           - run: pnpm install --frozen-lockfile
+             working-directory: code
+           - run: pnpm exec tsx scripts/qotd-social/check-breakdown-scripts.ts --content ../content
+             working-directory: code
+     ```
+
+**How the job reads it.** At 04:05 UTC the `breakdown` job (in environment `qotd-breakdown`) prints
+yesterday's folder (`breakdown.ts target`: `qotd-breakdowns/<ISO week>/<date>`) and checks out the
+private repo with `CONTENT_PRIVATE_TOKEN`: **that folder only** (sparse checkout), commits and trees
+but no other day's file contents (`filter: blob:none`), no credentials kept afterwards. Yesterday's
+QOTD day closed at 04:00 UTC, so its answer is already public. The approval is GitHub's record of
+the merge in the private repo, read with the same token; the job's own `GITHUB_TOKEN` only reads
+this repository. A missing folder, or a folder not last changed by Karl's merge into `main`, is
+`no_approved_script`. The uploaded MP4 artifact is yesterday's video only (approved 2026-11-03);
+logs carry the date, status and code only.
+
+### 6.1 The weekly authoring flow
+
+1. **The schedule export (read-only, weekly; Karl's ruling 2026-11-02).** The CMO session runs
+   `scripts/qotd-social/breakdown-schedule.sql` against production, read-only (or Karl runs it in
+   the Supabase SQL editor), and Karl pastes the result into the authoring session. It returns one
+   JSON array: for each scheduled day after today, up to today + 7, `qotd_date`, `question_id`,
+   `option_order`, `correct_display_letter`, `section`. **It holds the answers of QOTDs not yet
+   published: never commit it, post it to Slack, paste it into a PR or issue, log it, or keep it
+   inside a repository checkout.** The authoring session keeps it in a file outside every checkout
+   (for `--schedule`) and deletes it when the batch is open.
+2. **The authoring session (Claude Code) writes the scripts**, one per date, at
+   `qotd-breakdowns/<YYYY-Www>/<qotd_date>/script.json` on a branch of the **private repo** (the
+   ISO week of the QOTD date). Each names the date, the question id, and the export's `option_order`
+   and `correct_display_letter`, and carries the spoken script in the worked examples' fields
+   (`hook.line`/`hook.voice`, `question_voice` as the one-sentence setup, 3-6 `steps` with notepad
+   and voice, `trap.notepad`/`trap.voice`, `answer.notepad`/`answer.voice`). The question text
+   comes from the seed SQL, never copied. A day that cannot have a breakdown (a grid-in, a paired
+   or long passage) gets no script.
+3. **It voices each script** on its machine, with this repository's code:
+   `pnpm exec tsx scripts/qotd-social/voice-breakdown.ts <private checkout>/qotd-breakdowns/<week>/<date>`
+   (am_michael; writes `voice/*.wav` and `voice/manifest.json`; needs `HYPERFRAMES_PYTHON`).
+4. **It checks them against the export:**
+   `pnpm exec tsx scripts/qotd-social/check-breakdown-scripts.ts --content <private checkout> --schedule <export outside every checkout>`
+   (a mismatch names the date and the field, never a value). Without `--schedule` the same check
+   runs on every pull request in the private repo (its `check.yml`, §6.0): layout, schema, the
+   question from the seed SQL, the order and letter fitting that question, H1-H6, S1, S2, the trap
+   opener, the voice matching its text and passing the audio checks.
+5. **It opens one batch PR into the private repo's `main`** (draft). **Karl's merge is the
+   approval** (read at render time from GitHub's record of the merge in the private repo,
+   `scripts/worked-examples/approval.ts`; the merger must be `CONTENT_APPROVER_LOGIN`). A later push
+   to a script's folder that is not Karl's merge un-approves it. Nothing about the batch (scripts,
+   audio, the export, a summary naming answers) goes into this public repository, a public PR or
+   Slack.
+6. **Timing (Karl, 2026-11-03).** Repo, token and environment by **Thu 2026-11-05**; the export the
+   same day; the first batch (QOTD dates 2026-11-08 to 2026-11-14) as a PR by **Fri 2026-11-06**,
+   merged by **Sat 2026-11-07**; the second (2026-11-15 to 2026-11-21) merged by 2026-11-14. If the
+   repo lands later, the fallback window is 2026-11-12 to 2026-11-25 (a one-line PR moving
+   `QOTD_BREAKDOWN_PILOT`).
+
+### 6.2 At render time
+
+The job checks out yesterday's folder of the private repo (§6.0) and, for yesterday's QOTD:
+
+1. reads the day from the public archive (`/api/public/qotd/<date>`; today is refused);
+2. the QOTD's own suitability rules (grid-in, long or paired passage, stem repeats passage);
+3. finds the date's script; none, or not merged by Karl: `no_approved_script`;
+4. **the hard rule:** the script's `option_order` and `correct_display_letter` must equal the stored
+   row the archive serves, or nothing renders (`order_mismatch`);
+5. the script rules again on the question as served, and the captions;
+6. the committed voice: am_michael, every line voiced from the text it has now (a script edited
+   after voicing is refused), the audio checks;
+7. composition, 30-60 s, `hyperframes check`, the layout check, the render (into `render/`);
+8. the final-mix limiter (at most −1 dBTP true peak), then the MP4 check and the finished-mix check
+   on the limited video, which is the one posted.
+
+**Fallback.** If anything fails, there is no video: the post is yesterday's answer slide (the
+carousel's slide 3 from the QOTD run) with `Breakdown skipped: <reason> (<code>)`, or the notice
+alone when the QOTD run built no carousel. The run page lists the details.
+
+| code | why |
+|---|---|
+| `script_too_long` | (a) the voiced script runs over 60 s |
+| `script_too_short` | (a) under 30 s, which the MP4 check would refuse |
+| `mp4_check_failed` | (a) the MP4 fails the 1080x1920, 30-60 s, audio check, or the finished mix cannot be limited to −1 dBTP |
+| `grid_in` | (c) a grid-in |
+| `too_long_to_read` | (c) over the QOTD's quick-read length (`shared/qotd/readability.ts`) |
+| `paired_passage` | (c) a paired passage |
+| `stem_repeats_passage` | (c) the stem repeats the passage |
+| `content_rules` | (d) a hook rule (H1-H6), the verbatim rule (S1, S2), the trap opener or a caption rule failed |
+| `voice_check_failed` | (d) the committed voice is not am_michael, was voiced from other text, or fails the audio check |
+| `hyperframes_check_failed` | (d) `hyperframes check` failed |
+| `layout_check_failed` | (d) the safe-area or blank-paper check failed |
+| `render_failed` | (d) the render failed |
+| `withheld` | yesterday is withheld or missing on the archive |
+| `no_approved_script` | no script for the date in the private repo, its folder was not last changed by Karl's merge into `main`, or `CONTENT_PRIVATE_TOKEN` is not set |
+| `order_mismatch` | the script's order or letter differs from the stored row (or the stored row is inconsistent): nothing is rendered |
+| `build_failed` | the build did not finish (posted from the post step) |
+
+The templated script's codes (`letter_named`, `no_explanation`, `too_many_steps`) are gone with it
+(2026-11-02).
+
+**Turning it off.** At once: set the repository variable `QOTD_BREAKDOWN_PAUSED` to `true`
+(**Settings** → **Secrets and variables** → **Actions** → **Variables**); the QOTD post is
+untouched. For good: change the dates in a PR (both `null` is off).
+
+**End date.** After 2026-11-22 the job builds nothing, posts nothing and notes **pilot ended** on
+the run page. Outside the window it does not install the browser or FFmpeg either.
+
+**Pull requests** run the job as a dry run on the **synthetic** fixture
+(`tests/fixtures/qotd-breakdowns-synthetic`: made-up questions in the archive's exact row shape, and
+one made-up script for 2026-01-14 voiced in am_michael), with no environment and no token: the
+whole path, the limiter included, the MP4 uploaded as the `qotd-breakdown` artifact, nothing sent.
+No real answer is used.
+
+**A hand-started run** breaks down the day before the run's QOTD day (the `date` input is the
+QOTD job's only).

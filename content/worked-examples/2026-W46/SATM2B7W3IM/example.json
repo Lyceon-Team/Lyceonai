@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM2B7W3IM",
+  "skill_code": "Area and Volume",
+  "post_on": "2026-11-09",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "Took the Nov 7 SAT? Diameter 6, height 11. Volume 396π?",
+    "voice": "Took the SAT on Saturday? Try this one. Is it really three hundred ninety-six pi?"
+  },
+  "question_voice": "We've got a water tank shaped like a cylinder, and we want how much it holds.",
+  "signature_move": "Write the formula first, then substitute before you compute.",
+  "steps": [
+    {
+      "notepad": "V = πr²h",
+      "voice": "Okay. Volume of a cylinder is pi r squared h. Write that first."
+    },
+    {
+      "notepad": "r = 6 ÷ 2 = 3",
+      "voice": "Now, they gave you the diameter, not the radius. Half of six is three."
+    },
+    {
+      "notepad": "V = π · 3² · 11",
+      "voice": "Plug it in. Pi, times three squared, times eleven."
+    },
+    {
+      "notepad": "V = π · 9 · 11 = 99π",
+      "voice": "Three squared's nine. Nine times eleven is ninety-nine. So ninety-nine pi."
+    }
+  ],
+  "answer": {
+    "letter": "C",
+    "notepad": "Answer: C) 99π",
+    "voice": "So it's C, ninety-nine pi cubic feet. Quick check: radius three, not six, and ninety-nine is a quarter of three ninety-six. Makes sense."
+  },
+  "trap": {
+    "summary": "Using the diameter as the radius: π · 6² · 11 gives 396π, four times too big.",
+    "notepad": [
+      "r = 6  →  396π  ✗",
+      "6 is the diameter",
+      "r = 3  →  99π  ✓"
+    ],
+    "voice": "Here's where people slip. They plug in six as the radius, square the wrong number, and land on three hundred ninety-six pi. That's four times too big."
+  },
+  "check": "Units: radius and height are in feet, so the volume is in cubic feet; and r = 3 gives 9 · 11 = 99, while r = 6 would give 36 · 11 = 396, four times as much.",
+  "takeaway": "Diameter given? Halve it before you square it."
+}

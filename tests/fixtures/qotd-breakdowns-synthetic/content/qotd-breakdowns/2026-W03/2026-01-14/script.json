@@ -1,0 +1,37 @@
+{
+  "qotd_date": "2026-01-14",
+  "question_id": "SATM1SYNTH1",
+  "option_order": ["C", "A", "B", "D"],
+  "correct_display_letter": "C",
+  "hook": {
+    "line": "4x − 7 = 21. Can you find x in under ten seconds?",
+    "voice": "Think you can get this one before I do? Go."
+  },
+  "question_voice": "One equation, one unknown. We just need to work out what x is.",
+  "steps": [
+    {
+      "notepad": "4x − 7 = 21",
+      "voice": "Undo things in reverse order. The minus seven came last, so it goes first."
+    },
+    {
+      "notepad": "4x − 7 + 7 = 21 + 7",
+      "voice": "Add seven to both sides, and the left side is just four x."
+    },
+    {
+      "notepad": "4x = 28",
+      "voice": "So four x equals twenty-eight."
+    },
+    {
+      "notepad": "x = 28 ÷ 4",
+      "voice": "Now divide both sides by four to get x by itself."
+    }
+  ],
+  "trap": {
+    "notepad": ["28 is 4x, not x"],
+    "voice": "Here's where people slip: they see twenty-eight in the choices and grab it. But twenty-eight is four x, not x."
+  },
+  "answer": {
+    "notepad": "C) 7",
+    "voice": "So x is seven, and that's C. Quick check: four times seven is twenty-eight, minus seven is twenty-one. It works."
+  }
+}
