@@ -204,7 +204,7 @@ jobs:
       - name: Question-authoring gate tests (tests/assemble-batch.test.ts)
         run: pnpm exec vitest run tests/assemble-batch.test.ts
 
-  # Four jobs, one per group (CI wall-time brief, Karl 2026-10-11: ~15 minutes in one job). Every
+  # Six jobs, one per group (CI wall-time brief, Karl 2026-10-11: ~15 minutes in one job). Every
   # step still runs, each in exactly one group (tests/ci/ci-full-workflow-shape.test.ts holds that:
   # a new step without a group is red). Groups keep their dependencies together: the calendar
   # parity steps read the database the pipeline step builds, and the PostgREST harness stays last
@@ -219,7 +219,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [deletion, qotd, review-marketing, calendar-migrations]
+        group: [deletion, qotd, review-marketing, calendar-migrations, worked-examples, qotd-breakdown]
     services:
       # Two servers, one job (owner decision 2026-10-07, CI audit item 2: "Postgres jobs
       # consolidated"). Every script and test creates its own database, so the eleven jobs that
@@ -501,14 +501,18 @@ jobs:
       # rotation, stale voice, Slack order). Each must turn its named check red.
       # SCL-270 (Karl's ruling 2026-11-02): the final-mix plants (F1-F8) run a real ffmpeg round
       # trip; the harness fails its baseline without ffmpeg rather than letting them skip.
-      - name: Install FFmpeg (the final-mix plants)
-        if: matrix.group == 'qotd'
+      # Its own group (2026-11-04): every plant re-runs both test files, and the ffmpeg round trip
+      # alone is ~30 s, so the harness grew from 98 s (2026-10-29) to 1,270-1,355 s and pushed
+      # `qotd` past the job's 30-minute timeout (#1431, #1436). Same plants, same checks; only
+      # the job they run in changed.
+      - name: Install FFmpeg (the worked-example final-mix plants)
+        if: matrix.group == 'worked-examples'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q ffmpeg
 
       - name: Worked-example mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'worked-examples'
         env:
           PGHOST: localhost
           PGPORT: "5433"
@@ -551,8 +555,17 @@ jobs:
       # Karl's rulings of 2026-11-03, the rendered mix posted or its check dropped, approval by a
       # merge into any branch or read from this repo, the whole private repo checked out, its
       # token's environment entered by pull requests (B23-B28). Each must turn its named check red.
+      # B23 and B24 run a real ffmpeg round trip and the harness fails its baseline without ffmpeg.
+      # Its own group (2026-11-04) for the reason the worked-example harness has one: each of its
+      # 28 plants re-runs a ~20 s test file, too long to share `qotd`'s 30 minutes.
+      - name: Install FFmpeg (the QOTD breakdown round-trip plants)
+        if: matrix.group == 'qotd-breakdown'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg
+
       - name: QOTD breakdown mutations (planted defects must fail)
-        if: matrix.group == 'qotd'
+        if: matrix.group == 'qotd-breakdown'
         run: bash scripts/ci/qotd-breakdown.mutations.sh
 
       # Growth report (Karl, 2026-10-28): under-13, guardian, deleted or internal accounts
