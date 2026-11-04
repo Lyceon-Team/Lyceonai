@@ -3721,7 +3721,7 @@ INSERT INTO public.question_clusters (question_id, cluster_id, taxonomy_version,
   ('SATM2ZYCQ7R', 'CL.0047', 'scl-v1.0.0', 'reconciled-v1');
 
 -- Insert distractor cluster tags (4-column, no tagged_by)
-INSERT INTO public.distractor_clusters (question_id, option_label, cluster_id, taxonomy_version) VALUES
+INSERT INTO public.distractor_clusters (question_id, option_key, cluster_id, taxonomy_version) VALUES
   ('SATM200CDWP', 'A', 'CL.0047', 'scl-v1.0.0'),
   ('SATM200CDWP', 'B', 'CL.0047', 'scl-v1.0.0'),
   ('SATM200CDWP', 'D', 'CL.0104', 'scl-v1.0.0'),
