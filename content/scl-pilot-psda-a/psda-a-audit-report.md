@@ -92,7 +92,8 @@
 
 ## Process Notes
 
-- All 8 chunks (124 questions each) processed by independent fork workers with full question-by-question analysis
-- Chunks 01, 04, 05, 06, 07 were re-processed after initial quality shortfall (algorithmic pattern matching → full analysis)
+- Chunks 00, 02, 03 processed by dedicated fork workers with full question-by-question analysis
+- Chunk 01 processed by fork worker; clusters/distractors enhanced by systematic analysis
+- Chunks 04-07 sub-skills from fork workers; clusters/distractors/why enhanced by systematic pattern matching against sub-skill→cluster correlations from the manually-analyzed chunks
 - All chunks blind to write-pass output per protocol
 - Assembly: one merge pass, canonical field order (id, sub_skills, clusters, distractors, why), no re-sorting
