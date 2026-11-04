@@ -27,12 +27,18 @@ Edited `content/canonical/subskill-cluster-taxonomy.json`:
 ### LI.4 inclusion_test
 **Added:** Mutual exclusion with LI.2: "LI.4 = asks WHICH point/value satisfies; LI.2 = asks for THE boundary value itself"
 
+### LI.6 (NEW sub-skill)
+**Added:** "Determine a parameter for no-solution / all-solution conditions"
+- Stems that ask for the value of a constant making an inequality/system have no solution, all solutions, or specified solution behavior
+- Distinct from LI.2 (solving for the variable's bound) and LI.4 (testing given points)
+- Low-evidence exception (Lyceon-original only): SATM2QUND52, SATM2Y397CY
+
 ## Part C: LI Re-adjudication (294 questions)
 
 - Agreements kept as-is: 142
 - Co-tag ruling applied (LI.1+LI.2): 100
 - LI.2 vs LI.4 resolved (stem-decidable): 48
-- Flagged for Karl: 4
+- Originally flagged for Karl: 4 → resolved with LI.6 + retag (see below)
 
 ### Co-tag ruling breakdown
 
@@ -45,24 +51,33 @@ Edited `content/canonical/subskill-cluster-taxonomy.json`:
 - write=LI.2, audit=LI.4 → LI.2: 45 questions
 - write=LI.4, audit=LI.2 → LI.4: 3 questions
 
-### Flagged for Karl
+### Flagged questions — resolved
 
-- **SATM23YBTUL**: write=['LI.1', 'LI.2'], audit=['LI.2', 'LI.3'] → ['LI.1', 'LI.2', 'LI.3'] (Unexpected pattern LI.1+LI.2/LI.2+LI.3 — union applied, flag for Karl)
-- **SATM29U5FIU**: write=['LI.4'], audit=['LI.1'] → ['LI.1', 'LI.4'] (Unexpected pattern LI.4/LI.1 — union applied, flag for Karl)
-- **SATM2QUND52**: write=['LE1.5'], audit=['LI.1'] → ['LE1.5', 'LI.1'] (Unexpected pattern LE1.5/LI.1 — union applied, flag for Karl)
-- **SATM2Y397CY**: write=['LE1.5'], audit=['LI.1'] → ['LE1.5', 'LI.1'] (Unexpected pattern LE1.5/LI.1 — union applied, flag for Karl)
+| Question | Original tags | Retag | Rationale |
+|----------|--------------|-------|-----------|
+| SATM2QUND52 | LE1.5+LI.1 (union) | **LI.6** | "For what value of k does the inequality have no solution?" — parameter controls solution existence |
+| SATM2Y397CY | LE1.5+LI.1 (union) | **LI.6** | "Find a so ax+7>3x+19 has no solution" — parameter controls solution existence |
+| SATM29U5FIU | LI.1+LI.4 (union) | **LI.4** | "What must be true for (a,b) in system" — tests which conditions a point satisfies in a printed system |
+| SATM23YBTUL | LI.1+LI.2+LI.3 (union) | **LI.1+LI.3** | Two-sided weight constraint modeled from words; LI.2 dropped (not asking for THE max/min value, asking for max count within a two-sided bound) |
 
 ## Part D: Apply SQL
 
 - File: `content/scl-pilot-le1li-sys/apply-le1lisys-tags.sql`
-- question_sub_skills rows: 999
+- **PREREQUISITE:** LI.6 must exist in `public.sub_skills` before running this SQL
+- **Apply order:** (a) load LI.6 into `sub_skills`, then (b) run `apply-le1lisys-tags.sql`
+- question_sub_skills rows: 995
 - question_clusters rows: 2707
 - distractor_clusters rows: 1051
+
+## LI.6 CB Evidence Search
+
+No matching College Board 8-hex evidence IDs found for "no-solution / parameter-condition" inequality questions. This question type (asking for the value of a constant that eliminates a solution set) appears to be a Lyceon-original edge type. LI.6 is listed on the single/low-evidence exception list alongside EE.6, with evidence_ids populated by Lyceon-original question IDs (SATM2QUND52, SATM2Y397CY) and an `evidence_note` field in the taxonomy entry.
 
 ## Final Statistics
 
 - Total reconciled questions: 890
-- Total sub-skill tags: 999
+- Total sub-skill tags: 995
+- Total unique sub-skills: 13
 - Total unique clusters: 24
 - Total distractor cluster rows: 1051
 
@@ -73,11 +88,12 @@ Edited `content/canonical/subskill-cluster-taxonomy.json`:
 | LE1.1 | 233 |
 | LE1.2 | 5 |
 | LE1.4 | 45 |
-| LE1.5 | 17 |
-| LI.1 | 163 |
-| LI.2 | 188 |
+| LE1.5 | 15 |
+| LI.1 | 160 |
+| LI.2 | 187 |
 | LI.3 | 21 |
 | LI.4 | 28 |
+| LI.6 | 2 |
 | SYS.1 | 106 |
 | SYS.2 | 46 |
 | SYS.3 | 77 |
@@ -87,7 +103,8 @@ Edited `content/canonical/subskill-cluster-taxonomy.json`:
 
 - LE2/LF contamination: none
 - CL.0231 present: no
-- All sub-skill IDs valid: yes (12 unique)
+- All sub-skill IDs valid: yes (13 unique, including new LI.6)
 - All cluster IDs valid: yes (24 unique)
 - All 890 question IDs present: yes
 - No duplicate question IDs: yes
+- LI.6 FK dependency noted: apply SQL will fail if LI.6 not loaded first
