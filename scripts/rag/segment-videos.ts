@@ -80,7 +80,12 @@ import {
   type Usage,
 } from "./vertex";
 
-export const SEGMENT_TAG_VERSION = "segment-tags-v4";
+/**
+ * v5 (2026-11-04, "one watch, two outputs"): pass 1 also writes the teaching write-up
+ * (WRITEUP_RULES). Pass 2's prompt is unchanged; the version moves so no v4 answer, which has
+ * no write-up, is ever reused for pass 1.
+ */
+export const SEGMENT_TAG_VERSION = "segment-tags-v5";
 const REVIEW_CSV = resolve(
   "docs/plans/lisa-video-library/video-tags-review.csv",
 );
@@ -172,10 +177,137 @@ export function vocabularyText(v: Vocabulary, reverse: boolean): string {
   ].join("\n");
 }
 
+// ── The teaching write-up (pass 1 only) ──────────────────────────────────────────────────
+
+/**
+ * @spec [owner brief "One watch, two outputs" (Karl, 2026-11-04): Step 0 design
+ *       (docs/plans/lisa-video-library/watch-writeup-step0.md), the new-sources run approved
+ *       2026-11-04, and the "how the instructor explains" addition of the same day]
+ *       | @implemented [2026-11-04]
+ * plain English: pass 1 returns, per teaching segment, what a student learns from it (what is
+ * taught, the method, its steps, what to look at, the pitfalls the instructor names, the worked
+ * examples) and HOW the instructor explains it (`delivery`: the order they take it in, the ways
+ * of putting it that make it click, any analogy, how they check the student is following). The
+ * facts feed the curriculum corpus through LISA 1's chunk steps; `delivery` feeds LISA's gold
+ * responses and voice examples, and is kept out of the chunk text. Rules for both: our own
+ * words, never the instructor's wording or a transcript copy; the mathematics exactly as shown.
+ * Pass 2 never sees or writes any of it, so tag agreement stays blind.
+ */
+export const WRITEUP_RULES = `WRITE-UP. For each teaching segment, also write what a student learns from it and how the instructor teaches it, for a tutor's notes. Write in your own words. Never quote the speaker or follow their wording closely, and never copy on-screen text, except the mathematics itself (expressions, equations, numbers, what is typed into a calculator), which you give exactly as shown.
+What is taught:
+- what_is_taught: one sentence: the kind of question and the idea that solves it.
+- method: the method, in one or two sentences.
+- steps: the method's steps in order, as the segment carries them out, each a short instruction.
+- look_at: what the student should look at or check while doing it (in the question, on the graph or calculator, in the result), as the segment shows it.
+- pitfalls: mistakes or traps the instructor names. Only those the segment names; never add your own. [] when it names none.
+- examples: each worked example: setup (the problem, its mathematics exactly as shown) and steps (as the segment works it).
+How it is taught (delivery), as much as what, and only what the segment shows:
+- step_order: the order the instructor takes the student through it (for example: names the goal, works an example, then states the shortcut and why it works), in one or two sentences.
+- click_phrases: the ways of putting an idea that make it click for a student, each paraphrased in your own words, never the instructor's wording.
+- analogies: any analogy or comparison the instructor uses, in your own words. [] when there is none.
+- understanding_checks: how the instructor checks the student is following (tells them to pause and try, asks them to predict, asks a question, checks the answer a second way). [] when there is none.
+For a segment where teaches_sat_content is false, every field is "" or [].`;
+
+const deliverySchema = z.object({
+  step_order: z.string(),
+  click_phrases: z.array(z.string()),
+  analogies: z.array(z.string()),
+  understanding_checks: z.array(z.string()),
+});
+export const writeupSchema = z.object({
+  what_is_taught: z.string(),
+  method: z.string(),
+  steps: z.array(z.string()),
+  look_at: z.array(z.string()),
+  pitfalls: z.array(z.string()),
+  examples: z.array(
+    z.object({ setup: z.string(), steps: z.array(z.string()) }),
+  ),
+  delivery: deliverySchema,
+});
+export type Writeup = z.infer<typeof writeupSchema>;
+
+const stringArray = { type: "ARRAY", items: { type: "STRING" } } as const;
+export const writeupResponseSchema = {
+  type: "OBJECT",
+  properties: {
+    what_is_taught: { type: "STRING" },
+    method: { type: "STRING" },
+    steps: stringArray,
+    look_at: stringArray,
+    pitfalls: stringArray,
+    examples: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { setup: { type: "STRING" }, steps: stringArray },
+        required: ["setup", "steps"],
+      },
+    },
+    delivery: {
+      type: "OBJECT",
+      properties: {
+        step_order: { type: "STRING" },
+        click_phrases: stringArray,
+        analogies: stringArray,
+        understanding_checks: stringArray,
+      },
+      required: [
+        "step_order",
+        "click_phrases",
+        "analogies",
+        "understanding_checks",
+      ],
+    },
+  },
+  required: [
+    "what_is_taught",
+    "method",
+    "steps",
+    "look_at",
+    "pitfalls",
+    "examples",
+    "delivery",
+  ],
+} as const;
+
+/** Pure. A pass's response schema with the write-up required on every segment (pass 1). */
+export function withWriteup(schema: {
+  type: string;
+  properties: {
+    segments: {
+      type: string;
+      items: {
+        type: string;
+        properties: Record<string, unknown>;
+        required: readonly string[];
+      };
+    };
+  };
+  required: readonly string[];
+}): Record<string, unknown> {
+  const seg = schema.properties.segments.items;
+  return {
+    ...schema,
+    properties: {
+      segments: {
+        ...schema.properties.segments,
+        items: {
+          ...seg,
+          properties: { ...seg.properties, writeup: writeupResponseSchema },
+          required: [...seg.required, "writeup"],
+        },
+      },
+    },
+  };
+}
+
 // ── The model's answer ─────────────────────────────────────────────────────────────────
 
 const tagSchema = z.object({ id: z.string(), evidence: z.string() });
 const tagsFields = {
+  /** Pass 1 only (v5); absent from pass 2's answers, which never ask for it. */
+  writeup: writeupSchema.optional(),
   teaches_sat_content: z.boolean(),
   summary: z.string(),
   sub_skills: z.array(tagSchema),
@@ -259,7 +391,7 @@ export const segmentResponseSchema = {
   required: ["segments"],
 } as const;
 
-const fixedResponseSchema = {
+export const fixedResponseSchema = {
   type: "OBJECT",
   properties: {
     segments: {
@@ -351,6 +483,8 @@ export type TaggedSegment = {
   topic_change_seconds: number[];
   /** Fixed mode only (rule 2): a survey or introduction, not targeted teaching. */
   overview: boolean;
+  /** Pass 1 only (v5): the teaching write-up; null on pass 2, which never asks for it. */
+  writeup: Writeup | null;
 };
 
 type Tags = z.infer<z.ZodObject<typeof tagsFields>>;
@@ -400,6 +534,7 @@ function checkTags(
     method_in_defaults: [...new Set(methodInDefaults)],
     rejected_ids: [...new Set(rejected)],
     not_in_taxonomy: s.not_in_taxonomy.trim(),
+    writeup: s.writeup ?? null,
   };
 }
 
@@ -861,8 +996,11 @@ async function main(): Promise<void> {
       const { start, end } = clip;
       const given = clip.segments;
       const mode = given === null ? "cut" : "fixed";
-      const system =
+      // Pass 1 (v5) also writes the teaching write-up; pass 2's prompt is unchanged.
+      const tagSystem =
         mode === "cut" ? segmentSystem(vocabText) : fixedSystem(vocabText);
+      const system =
+        pass === 1 ? `${tagSystem}\n\n${WRITEUP_RULES}` : tagSystem;
       const givenSpans: Span[] | null =
         given === null
           ? null
@@ -924,7 +1062,10 @@ async function main(): Promise<void> {
                   system,
                   video: { videoId: video.video_id, start, end },
                   user: head.join("\n"),
-                  responseSchema: segmentResponseSchema,
+                  responseSchema:
+                    pass === 1
+                      ? withWriteup(segmentResponseSchema)
+                      : segmentResponseSchema,
                   schema: segmentAnswerSchema,
                   onUsage,
                 })
@@ -944,7 +1085,10 @@ async function main(): Promise<void> {
                           : ` (creator's chapter: ${g.title})`),
                     ),
                   ].join("\n"),
-                  responseSchema: fixedResponseSchema,
+                  responseSchema:
+                    pass === 1
+                      ? withWriteup(fixedResponseSchema)
+                      : fixedResponseSchema,
                   schema: fixedAnswerSchema,
                   onUsage,
                 });
@@ -972,6 +1116,18 @@ async function main(): Promise<void> {
             );
       if (!checked.ok) {
         throw new Error(`${video.video_id} ${clock(start)}: ${checked.error}`);
+      }
+      // v5: every teaching segment of pass 1 carries its write-up; one without it fails the clip.
+      const missing =
+        pass === 1
+          ? checked.segments.find(
+              (s) => s.teaches_sat_content && s.writeup === null,
+            )
+          : undefined;
+      if (missing !== undefined) {
+        throw new Error(
+          `${video.video_id} ${clock(missing.start_seconds)}: pass 1 teaching segment without a write-up`,
+        );
       }
       segments.push(...checked.segments);
     }

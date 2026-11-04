@@ -59,10 +59,12 @@ describe("the reviewed file", () => {
     const rows = parseReviewedCsv(REAL, domainOf);
     expect(rows.length).toBe(LINES.length);
     const approved = rows.filter((r) => r.approve);
-    expect(approved.length).toBe(150);
+    // The committed library (not a taxonomy count): 150 approved through 2026-10-27, plus 70 of
+    // the 75 content-gap videos of 2026-11-04 (5 held until Karl sets their format).
+    expect(approved.length).toBe(220);
     expect(approved.every((r) => r.format !== null)).toBe(true);
     expect(approved.filter((r) => r.methods.includes("desmos")).length).toBe(
-      30,
+      43,
     );
     expect(
       rows.filter((r) => !r.approve).every((r) => r.methods.length === 0),
