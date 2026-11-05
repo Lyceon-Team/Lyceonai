@@ -35,6 +35,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StudentRouteFrame } from "@/components/layout/StudentRouteFrame";
 import type { StudentShellRoute } from "@/lib/route-shells";
 
+import { enterBirthday } from "@/components/profile/__tests__/enter-birthday";
 /** BareCardShell's card class: the 1.55 body leading at bare-`p` specificity, verbatim. */
 const BARE_CARD_PROSE_LEADING = "[:where(&)_p]:leading-[1.55]";
 
@@ -390,9 +391,29 @@ describe("/profile/complete", () => {
     expect(
       screen.getByLabelText("Display Name").getAttribute("autocomplete"),
     ).toBe("name");
-    expect(
-      screen.getByLabelText("Date Of Birth").getAttribute("autocomplete"),
-    ).toBe("bday");
+    // Owner brief 2026-11-04: the one `bday` field became three, each carrying its own
+    // token, so the browser's birthday autofill still reaches all of them. Month is a
+    // native <select> for exactly this reason — the Radix trigger is a button, and
+    // `autocomplete` is inert on a button.
+    expect(screen.getByLabelText("Month").getAttribute("autocomplete")).toBe(
+      "bday-month",
+    );
+    expect(screen.getByLabelText("Day").getAttribute("autocomplete")).toBe(
+      "bday-day",
+    );
+    expect(screen.getByLabelText("Year").getAttribute("autocomplete")).toBe(
+      "bday-year",
+    );
+    // And each is a labelled field, not a stray input.
+    expect(screen.getByLabelText("Month")).toBe(
+      screen.getByTestId("select-birth-month"),
+    );
+    expect(screen.getByLabelText("Day")).toBe(
+      screen.getByTestId("input-birth-day"),
+    );
+    expect(screen.getByLabelText("Year")).toBe(
+      screen.getByTestId("input-birth-year"),
+    );
     expect(screen.getByTestId("select-role")).toBe(
       screen.getByLabelText("Role"),
     );
@@ -424,9 +445,7 @@ describe("/profile/complete", () => {
     renderRoute("/profile/complete", <ProfileComplete />);
     await screen.findByTestId("button-complete-profile");
     expect(screen.queryByTestId("checkbox-marketing-opt-in")).toBeNull();
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: "2000-01-01" },
-    });
+    enterBirthday("2000-01-01");
     const box = await screen.findByTestId("checkbox-marketing-opt-in");
     expect(box.getAttribute("data-variant")).toBe("lyc");
     expect(box.getAttribute("class") ?? "").toContain("border-lyc-ink-strong");
