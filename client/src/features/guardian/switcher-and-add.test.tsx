@@ -26,6 +26,7 @@ import {
   scriptedFetch,
 } from "./test-harness";
 
+import { enterBirthday } from "@/components/profile/__tests__/enter-birthday";
 vi.mock("@/contexts/SupabaseAuthContext", async () => {
   const { GUARDIAN_AUTH: auth } = await import("./test-harness");
   return {
@@ -174,9 +175,9 @@ describe("G4-02 the Add-student modal", () => {
     });
     const { history } = mountApp(Router, `/guardian/${BO}`);
     await submitCode("ABC234");
-    fireEvent.change(await screen.findByTestId("add-student-dob-input"), {
-      target: { value: "1980-01-01" },
-    });
+    // Three fields since 2026-11-04; the shared helper enters them the way a person would.
+    await screen.findByTestId("select-birth-month");
+    enterBirthday("1980-01-01");
     await act(async () => {
       fireEvent.click(screen.getByTestId("add-student-submit"));
     });
