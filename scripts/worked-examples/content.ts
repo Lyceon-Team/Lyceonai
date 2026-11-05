@@ -30,7 +30,9 @@ import {
   type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
 import {
+  HARD_ONLY_FROM,
   contentProblems,
+  hardOnlyProblem,
   planSlotProblem,
 } from "../../shared/worked-examples/rules";
 import {
@@ -257,6 +259,11 @@ export function exampleProblems(
     e.cycle,
     loadStyle(contentRoot),
   );
+  // Karl's ruling 2026-11-05: Hard questions only, from the first post after the ruling.
+  if (e.content.post_on >= HARD_ONLY_FROM) {
+    const hard = hardOnlyProblem(q.question);
+    if (hard) problems.push(hard);
+  }
   const slot = planSlotProblem(
     e.content,
     loadPlan(contentRoot, e.content.post_on.slice(0, 7)),

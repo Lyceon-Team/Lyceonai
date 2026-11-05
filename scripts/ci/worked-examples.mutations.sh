@@ -10,6 +10,7 @@
 # "Lyceon SAT Prep", am_michael, the "lye-see-on" respelling, loudness normalisation; W24 per the
 # owner brief "Video tools pilot" D3, Karl, 2026-11-02: Chatterbox's own respelling, same table;
 # T23/T24/T26 re-pointed and T27-T31 added per Karl's #social copy-paste cleanup, 2026-11-04;
+# T32-T34 per Karl's ruling of 2026-11-05: worked examples use Hard questions only;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -314,6 +315,17 @@ ts_plant "T30 the credit at half the outro font, not a quarter" scripts/worked-e
 ts_plant "T31 the layout check lets an oversized credit through" scripts/worked-examples/layout-check.ts \
   "  if (c.fontPx > limit)" "  if (false)" \
   "the layout check refuses"
+
+echo "=== TS: Hard questions only (Karl, 2026-11-05) ==="
+ts_plant "T32 the Hard-only rule dropped from the posting path" scripts/worked-examples/content.ts \
+  "    if (hard) problems.push(hard);" "" \
+  "a worked example due from Nov 6 on must be difficulty 3"
+ts_plant "T33 a medium question let through as Hard" shared/worked-examples/rules.ts \
+  "  return q.difficulty === HARD_DIFFICULTY" "  return q.difficulty >= 2" \
+  "a worked example due from Nov 6 on must be difficulty 3"
+ts_plant "T34 the rule turned on the posted history (no cutoff date)" scripts/worked-examples/content.ts \
+  "  if (e.content.post_on >= HARD_ONLY_FROM) {" "  if (e.content.post_on >= \"2000-01-01\") {" \
+  "an example posted before the ruling is history"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \

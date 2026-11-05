@@ -133,6 +133,8 @@ const BASE = "https://lyceon.ai";
 const CONTENT = join(SYNTHETIC, "content");
 const SCRIPT_DATE = "2026-01-14";
 const SCRIPT_DIR = breakdownScriptDir(SCRIPT_DATE);
+/** The synthetic question the scripted day asks (made up; never in the bank). */
+const SCRIPT_QUESTION_ID = "SATM1SYNTH1";
 /** A shuffled day with no script. */
 const OTHER_DATE = "2026-01-15";
 /** A Reading and Writing day, and a grid-in day (no scripts). */
@@ -179,6 +181,7 @@ const seedFromRows: SeedLookup = (id) => {
       section: row.section,
       domain: row.domain,
       skill_codes: row.skill_codes,
+      difficulty: row.difficulty,
       item_type: row.item_type,
       stem: row.stem,
       passage: row.passage,
@@ -612,6 +615,24 @@ describe("the authoring check (check-breakdown-scripts.ts)", () => {
         p.includes("voice/question.wav was voiced from different text"),
       ),
     ).toBe(true);
+  });
+
+  it("a script whose question is not Hard is refused (Karl, 2026-11-05: breakdowns use Hard questions only)", () => {
+    const root = treeWith((s) => s);
+    // Presence first: the synthetic scripted day is Hard and passes.
+    const asked = seedFromRows(SCRIPT_QUESTION_ID);
+    if (!asked.ok) throw new Error(asked.problem);
+    expect(asked.question.difficulty).toBe(3);
+    expect(checkBreakdownScripts(root, null, seedFromRows, kit)).toEqual([]);
+    const medium: SeedLookup = (id) => {
+      const r = seedFromRows(id);
+      return r.ok
+        ? { ok: true, question: { ...r.question, difficulty: 2 } }
+        : r;
+    };
+    expect(checkBreakdownScripts(root, null, medium, kit).join("\n")).toContain(
+      `${SCRIPT_QUESTION_ID} is difficulty 2, not Hard (3)`,
+    );
   });
 
   it("anything but script.json and voice/ in a day's folder is refused (an export dropped there, say)", () => {

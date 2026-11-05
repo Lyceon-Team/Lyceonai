@@ -219,6 +219,10 @@ ts_plant "B15 the music credit planted back into the TikTok caption" shared/qotd
   "  const caption = socialTiktokCaption(headline, test, section);" \
   '  const caption = `${socialTiktokCaption(headline, test, section)}\n\nMusic: "Happy Beats" by ende.app (CC BY 4.0)`;' \
   "each caption is the canonical builder's output, with no music credit"
+# B30 per Karl's ruling of 2026-11-05: authored breakdown scripts use Hard questions only.
+ts_plant "B30 an authored script not held to Hard questions" scripts/qotd-social/check-breakdown-scripts.ts \
+  "  if (hard) out.push(hard);" "" \
+  "a script whose question is not Hard is refused"
 ts_plant "B18 the pilot dates moved off Karl's ruling" shared/qotd/breakdown.ts \
   '  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });' \
   '  qotdBreakdownPilotSchema.parse({ start: "2026-11-08", end: "2026-11-21" });' \
