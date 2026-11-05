@@ -130,3 +130,61 @@ Karl's segment review in any case, so the overrun is his to rule on before they 
    - the `delivery` rewrite (§4);
    - the three gate-held skills;
    - the chunk-step spend (§5).
+
+## 7. Rulings (Karl, 2026-11-05) and what was done
+
+1. **Approval waits on Karl's spot check of the 20-row sample.**
+   - Karl is watching two rows in particular: AV.1+RTT3 (`rEfEtStTJiA` 0:00–1:43) and CIR1+NLE.2
+     (`lWth7s-y1mY` 0:00–2:24).
+   - The sample file is unchanged.
+   - The apply SQL is generated only after Karl approves.
+2. **The 5 held videos take their series' format.**
+   - The Tutorllini flashcards' majority format is `lesson` (19 of 28 decided rows).
+   - The Brain Buffs "SAT Math:" majority is `lesson` (35 of 36).
+   - `P6fkZwGTAhA` is `lesson` by name.
+   - All 5 rows are now `approve = yes`, `format = lesson`, `method_source = ruled`. Their
+     methods are blank, because the ruling set the format only.
+   - Their segment passes ran: $1.05.
+   - The review file gained 13 rows: 9 approve, 3 retag, 1 drop. The 217 earlier rows are
+     byte-identical.
+   - The gate result is unchanged.
+   - It now proposes 136 approvals, of which 93 are focused (9,051 s).
+3. **Every "how it's explained" field goes through the same rewrite into our words, and the
+   same drop-only check, as the facts.**
+   - **Built:** `chunk-unit.ts` holds LISA 1's loop, lifted out of `ingest-book.ts` with
+     identical cache keys, stages and repair rule. `book-prompts.ts` holds the video and
+     delivery wording; `BOOK_PROMPT_VERSION` is unchanged and pinned (`b9677deab859`).
+   - **The runner:** `chunk-segments.ts` takes Karl's approved focused segments and runs each
+     through the steps below.
+
+| Output   | Rewrite          | Audit (watches the segment)     | Example check                           |
+| -------- | ---------------- | ------------------------------- | --------------------------------------- |
+| Facts    | rewrite          | audit, with one repair          | yes                                     |
+| Delivery | delivery rewrite | delivery audit, with one repair | no: the notes have no examples to check |
+
+- The delivery audit also drops any note that keeps the instructor's own wording.
+- **Tests:** `tests/ci/rag-chunk-unit.test.ts`. A plant that made boundary failures
+  repairable turned U1 red.
+
+4. **Lines, Angles, and Triangles; One-Variable Data; and Ratios stay held,** as Inferences and
+   Rhetorical Synthesis are.
+5. **The chunk steps are approved, with a cap of $32 for the round.** The crashed methods
+   attempt's $4.73 counts against it.
+
+|                                 |           |
+| ------------------------------- | --------- |
+| Recorded spend                  | $19.44    |
+| Counted for the crashed attempt | $4.73     |
+| **Left for the chunk steps**    | **$7.83** |
+
+**Projected chunk-step cost, 93 focused segments:**
+
+| Part                       | Estimate                                                       |
+| -------------------------- | -------------------------------------------------------------- |
+| Facts                      | about $6.72                                                    |
+| Delivery rewrite and audit | about $3.7 more (the audit watches each segment a second time) |
+| **Total**                  | **about $10.4, over what is left**                             |
+
+The runner reserves every call against the cap and reports any segment it does not reach.
+`--first` runs the named gaps first (EE.3, EE.5, EE.4, EE.6, NLF.4, NLF.2, NLF.3), so a capped
+run covers them before the rest.
