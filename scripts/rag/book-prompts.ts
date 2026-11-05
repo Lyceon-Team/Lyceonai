@@ -333,3 +333,136 @@ export const BOOK_PROMPT_VERSION = createHash("sha256")
   )
   .digest("hex")
   .slice(0, 12);
+
+// ── Video segments (owner brief "One watch, two outputs", Karl, 2026-11-04) ──────────────
+
+/**
+ * @spec [owner brief "One watch, two outputs" (Karl, 2026-11-04): Step 0 design §1–§2, and the
+ *       ruling of 2026-11-05 (rule 3: every "how it's explained" field goes through the same
+ *       rewrite into our words and drop-only check as the facts)] | @implemented [2026-11-05]
+ * plain English: LISA 1's rewrite and audit, worded for a video segment. The facts use the book
+ * prompts with two exact, asserted substitutions each (the unit is a written account of a video
+ * segment; the audit's SOURCE is the segment it watches). The delivery notes (how the
+ * instructor explains) get their own rewrite and audit with the same response shape and the
+ * same drop rules: the audit drops a note that adds anything the segment does not do, or that
+ * keeps the instructor's own wording. None of this text is part of BOOK_PROMPT_VERSION, so the
+ * book's prompts and cache are untouched; VIDEO_PROMPT_VERSION versions these.
+ */
+function swapOnce(text: string, from: string, to: string): string {
+  if (text.split(from).length !== 2)
+    throw new Error(
+      `book-prompts video wording: anchor not found exactly once: ${from.slice(0, 60)}`,
+    );
+  return text.replace(from, to);
+}
+
+export const VIDEO_REWRITE_SYSTEM = swapOnce(
+  swapOnce(
+    REWRITE_SYSTEM,
+    "You turn one unit of an SAT preparation book into one entry",
+    "You turn one unit, a written account of one segment of an SAT preparation video, into one entry",
+  ),
+  `"turn to page", "the author".`,
+  `"turn to page", "the author", "the instructor", "in this video", "this lesson".`,
+);
+
+export const VIDEO_AUDIT_SYSTEM = swapOnce(
+  swapOnce(
+    AUDIT_SYSTEM,
+    "against the book passage it was written from.",
+    "against the video segment it was written from.",
+  ),
+  "You are given the SOURCE (the passage the entry was written from), the CONTEXT BEFORE and CONTEXT AFTER (the book text around the source), and the ENTRY.",
+  "You are given the SOURCE (the video segment you are watching: what is said and what is shown and typed on screen; the SOURCE line of the message only points to it), the CONTEXT BEFORE and CONTEXT AFTER (one-line summaries of the video's segments around the source), and the ENTRY.",
+);
+
+/** What a video audit's message names as its source: the clip it watches. */
+export const VIDEO_SOURCE_POINTER = "(the video segment you are watching)";
+
+export const DELIVERY_REWRITE_SYSTEM = `You turn notes on HOW an instructor teaches one segment of an SAT preparation video into Lyceon's own notes. They will be used to write a tutor's model replies and voice examples, so how an idea is taught matters as much as what is taught. Rewrite the NOTES in Lyceon's own words.
+
+Write:
+- step_order: the order the instructor takes the student through it, in one or two sentences.
+- click_phrases: each way of putting an idea that makes it click, stated as a tutor would put it fresh, in new words. Never the instructor's wording, and never first-person narration of what the speaker did ("we need to...", "let's...", "I like to..."): say the idea itself.
+- analogies: each analogy or comparison the notes give, described in new words. [] when there is none.
+- understanding_checks: each way the instructor checks the student is following, described. [] when there is none.
+Keep the mathematics exactly as the notes give it. Never add a way of explaining, an analogy or a check the notes do not give.
+
+Drop the notes instead (keep = false) when:
+- not_sat_specific: they describe nothing a student would use on the SAT;
+- cannot_stand_alone: they make no sense without the video;
+- exercise_or_answer_key: they are only an answer key.`;
+
+export const deliveryRewriteSchema = z.object({
+  keep: z.boolean(),
+  drop_reason: z.enum(DROP_REASONS).nullable(),
+  step_order: z.string(),
+  click_phrases: z.array(z.string()),
+  analogies: z.array(z.string()),
+  understanding_checks: z.array(z.string()),
+});
+export type DeliveryRewrite = z.infer<typeof deliveryRewriteSchema>;
+export const deliveryRewriteResponseSchema = {
+  type: "OBJECT",
+  properties: {
+    keep: { type: "BOOLEAN" },
+    drop_reason: { type: "STRING", enum: [...DROP_REASONS], nullable: true },
+    step_order: { type: "STRING" },
+    click_phrases: { type: "ARRAY", items: { type: "STRING" } },
+    analogies: { type: "ARRAY", items: { type: "STRING" } },
+    understanding_checks: { type: "ARRAY", items: { type: "STRING" } },
+  },
+  required: [
+    "keep",
+    "drop_reason",
+    "step_order",
+    "click_phrases",
+    "analogies",
+    "understanding_checks",
+  ],
+} as const;
+
+/** Pure. The delivery notes as the one text the audit reads; null when there is nothing. */
+export function deliveryText(d: {
+  step_order: string;
+  click_phrases: readonly string[];
+  analogies: readonly string[];
+  understanding_checks: readonly string[];
+}): string | null {
+  const list = (xs: readonly string[]): string =>
+    xs.map((x) => `- ${x}`).join("\n");
+  const parts: string[] = [];
+  if (d.step_order.trim() !== "") parts.push(`Order: ${d.step_order.trim()}`);
+  if (d.click_phrases.length > 0)
+    parts.push(`Ways of putting it:\n${list(d.click_phrases)}`);
+  if (d.analogies.length > 0) parts.push(`Analogies:\n${list(d.analogies)}`);
+  if (d.understanding_checks.length > 0)
+    parts.push(`Checks for understanding:\n${list(d.understanding_checks)}`);
+  return parts.length === 0 ? null : parts.join("\n\n");
+}
+
+export const DELIVERY_AUDIT_SYSTEM = `You check notes on HOW an instructor teaches one segment of an SAT preparation video against the segment itself, which you watch: what is said and what is shown and typed on screen. The notes will be used to write a tutor's replies in Lyceon's voice. You are given the SOURCE (the segment you are watching; the SOURCE line of the message only points to it), the CONTEXT BEFORE and CONTEXT AFTER (one-line summaries of the video's segments around it), and the ENTRY (the notes). Answer:
+- complete: true unless the notes misstate the order the segment teaches in, or leave out a way of explaining the segment leans on.
+- starts_mid_idea: false for these notes.
+- faithful: true only if every note describes something the segment actually does. False if a note adds a way of explaining, an analogy or a check the segment does not use. False also if any note reproduces the instructor's own wording instead of saying the idea in new words: a note may describe what the instructor said, never quote it or closely echo it.
+- self_contained: true only if each note makes sense with nothing else, with no reference such as "this example" or "the trick above" that the note does not explain.
+- correct: true only if no note states something wrong about mathematics or the SAT.
+- act_scope_respected: true unless a note states advice the segment ties to the ACT as true of the SAT.
+- issues: one or two short sentences naming any problem, or an empty string.`;
+
+export const VIDEO_PROMPT_VERSION = createHash("sha256")
+  .update(
+    [
+      VIDEO_REWRITE_SYSTEM,
+      JSON.stringify(rewriteResponseSchema(["x"])),
+      VIDEO_AUDIT_SYSTEM,
+      JSON.stringify(auditResponseSchema),
+      EXAMPLE_CHECK_SYSTEM,
+      JSON.stringify(exampleCheckResponseSchema),
+      DELIVERY_REWRITE_SYSTEM,
+      JSON.stringify(deliveryRewriteResponseSchema),
+      DELIVERY_AUDIT_SYSTEM,
+    ].join("\n"),
+  )
+  .digest("hex")
+  .slice(0, 12);
