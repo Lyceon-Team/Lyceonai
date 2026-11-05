@@ -31,6 +31,10 @@ import { err, type Result } from "../../../packages/shared/src/result";
 import { logger } from "../../logger";
 import { deletionCompletedEmail } from "./templates/deletion-completed";
 import { deletionScheduledEmail } from "./templates/deletion-scheduled";
+import {
+  subscriptionCanceledEmail,
+  type SubscriptionCanceledKind,
+} from "./templates/subscription-canceled";
 import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
 import { siteUrlFromEnv } from "./templates";
 import {
@@ -43,6 +47,7 @@ import {
 export const ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX =
   "account-deletion-scheduled";
 export const GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX = "guardian-link-invite";
+export const SUBSCRIPTION_CANCELED_IDEMPOTENCY_PREFIX = "subscription-canceled";
 export const ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX =
   "account-deletion-completed";
 
@@ -311,6 +316,94 @@ export async function sendAccountDeletionCompletedEmail(
       "Deletion-completed email not sent (best-effort, no retry by design)",
       {
         deletionRequestId: input.deletionRequestId,
+        recipientProfileId: input.recipientProfileId,
+        kind: sent.error.kind,
+        requestId: input.requestId,
+      },
+    );
+  }
+  return sent;
+}
+
+/**
+ * The cancellation confirmation, to the PAYER.
+ *
+ * @spec [SCL-271; SCL-272 clause 2 (the payer is who the server resolved);
+ *        Notice §6.3 and billing-terms §6 (billing correspondence goes to the
+ *        Payer's address, which for a guardian-paid subscription is the guardian
+ *        and not the student); contracts/notifications.contract.md §0.4]
+ * | @implemented [2026-11-03]
+ *
+ * plain English: one email per cancellation, carrying the date access ends.
+ *
+ * A DIRECT SEND AND NOT A NOTIFICATION EVENT, which is the one design choice
+ * here worth stating. The workflow rule in CLAUDE.md emits a notifiable event
+ * INSIDE the SQL function performing the mutation — and this mutation has no SQL
+ * function: it happens at Stripe, and our own row is written afterwards by the
+ * webhook in TypeScript. `emit_notification_event` is a contract about an
+ * in-transaction insert there is no transaction for, and the event-type CHECK
+ * carries no cancellation type. §0.4 is the path for exactly this: an email that
+ * is not an event and never will be.
+ *
+ * EXACTLY ONCE, FROM DURABLE STATE. The key is the subscription id plus the
+ * access-end moment, both facts rather than clock readings, so a double-submit
+ * and a duplicate webhook land on the same key and Resend sends one message. The
+ * access-end moment is in the key deliberately: a genuine SECOND cancellation of
+ * a resubscribed plan ends access at a different moment and is a different
+ * email, which a subscription-id-only key would have swallowed.
+ *
+ * `user_triggered`, so it is not held for quiet hours: it is sent inside the
+ * request of the person who just pressed cancel, like the guardian invite.
+ *
+ * BEST-EFFORT, and the call site treats it so. Stripe has already been told by
+ * the time this runs; a mail failure must not turn a successful cancellation
+ * into a failed request, so it is logged and returned, never thrown.
+ */
+export async function sendSubscriptionCanceledEmail(
+  input: {
+    subscriptionId: string;
+    kind: SubscriptionCanceledKind;
+    accessEndsAt: string | null;
+    email: string;
+    /** The payer being emailed. Logged as a digest; never the address. */
+    recipientProfileId: string;
+    requestId?: string;
+  },
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  const rendered = subscriptionCanceledEmail({
+    kind: input.kind,
+    accessEndsAt: input.accessEndsAt,
+  });
+  const transport = deps.transport ?? defaultEmailTransport();
+  const sent = await transport({
+    idempotencyKey: `${SUBSCRIPTION_CANCELED_IDEMPOTENCY_PREFIX}:${input.subscriptionId}:${input.accessEndsAt ?? "none"}`,
+    to: input.email,
+    recipientProfileId: input.recipientProfileId,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    fromCategory: rendered.fromCategory,
+    audience: "user_triggered",
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  if (sent.ok) {
+    logger.info(
+      "NOTIFICATIONS",
+      "subscription_canceled_email_sent",
+      "Cancellation confirmation accepted",
+      {
+        providerMessageId: sent.value.providerMessageId,
+        recipientProfileId: input.recipientProfileId,
+        requestId: input.requestId,
+      },
+    );
+  } else {
+    logger.warn(
+      "NOTIFICATIONS",
+      "subscription_canceled_email_failed",
+      "Cancellation confirmation not sent (best-effort; the cancellation stands)",
+      {
         recipientProfileId: input.recipientProfileId,
         kind: sent.error.kind,
         requestId: input.requestId,
