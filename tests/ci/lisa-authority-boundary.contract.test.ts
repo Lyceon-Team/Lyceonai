@@ -238,6 +238,9 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
     isPostSubmit: false,
     questionSection: "M",
     requestedMethod: null,
+    helpLevel: null,
+    submitState: null,
+    workedStep: null,
   };
 
   it("opens with DATA_BLOCK_RULE, then v4 byte for byte, so the Desmos block ends the rules", () => {
@@ -252,7 +255,7 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
     expect(LISA_DEFAULT_V4.dataBoundary).toBeUndefined();
   });
 
-  it("resolves by exact version only; production stays on v3", () => {
+  it("resolves by exact version only; production is on v7 (SCL-275), not v5", () => {
     expect(resolvePromptArtifact("default", "lisa-default-v5").version).toBe(
       "lisa-default-v5",
     );
@@ -264,7 +267,7 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v3",
+        "lisa-default-v7",
       );
     }
   });

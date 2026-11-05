@@ -303,6 +303,20 @@ export const ORCHESTRATE_INTENTS = [
   "step_stuck",
 ] as const;
 
+/**
+ * The help levels and submit states (packages/shared/src/tutor-help-level.ts `HELP_LEVELS`,
+ * `SUBMIT_STATES`), repeated here because the worker cannot import packages/shared; a CI test
+ * asserts the lists are equal. `MAX_WORKED_STEPS` likewise.
+ */
+export const ORCHESTRATE_HELP_LEVELS = [
+  "ask",
+  "hint",
+  "worked_step",
+  "full_solution",
+] as const;
+export const ORCHESTRATE_SUBMIT_STATES = ["pre_submit", "post_submit"] as const;
+export const ORCHESTRATE_MAX_WORKED_STEPS = 3;
+
 // ── Request schema ───────────────────────────────────────────────────
 
 export const orchestrateRequestSchema = z.object({
@@ -364,6 +378,22 @@ export const orchestrateRequestSchema = z.object({
   // is the student's message). Optional, so a turn without it is unchanged. A VALUE the worker
   // does not know fails its parse, so a new intent ships worker first (deploy order, SCL-268).
   intent: z.enum(ORCHESTRATE_INTENTS).optional(),
+  // ── Help level (owner brief "Help-level engine", Karl 2026-11-05; SCL-275) ──
+  // How much help LISA gives on this turn, decided by the BFF with no model call
+  // (packages/shared/src/tutor-help-level.ts): `ask` 1, `hint` 2, `worked_step` 3, `full_solution`
+  // 4; never above 3 before submission. `worked_step` is which worked step (1–3) at level 3, and
+  // `final` marks the last one allowed before submission. Optional, so the worker deploys first:
+  // an older BFF never sends them, and the prompt then carries no help rule.
+  help_level: z.enum(ORCHESTRATE_HELP_LEVELS).optional(),
+  submit_state: z.enum(ORCHESTRATE_SUBMIT_STATES).optional(),
+  worked_step: z
+    .object({
+      index: z.number().int().min(1).max(ORCHESTRATE_MAX_WORKED_STEPS),
+      final: z.boolean(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
 });
 
 // ── Response sub-schemas ─────────────────────────────────────────────
