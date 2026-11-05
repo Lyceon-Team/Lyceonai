@@ -44,6 +44,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { GuardianShell } from "@/components/layout/GuardianShell";
 import { GuardianPurchaseCard } from "@/components/guardian/GuardianPurchaseCard";
+import { CancelSubscriptionDialog } from "@/components/billing/CancelSubscriptionDialog";
+import { useCancelState } from "@/hooks/useCancelSubscription";
 import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
 import { useBillingPortal } from "@/hooks/useBillingPortal";
@@ -104,8 +106,9 @@ function ManageBilling(): JSX.Element {
       ) : status.data.hasBillingAccount ? (
         <>
           <p className="m-0 text-base" data-testid="billing-manage-copy">
-            Manage billing for every student you pay for — payment method,
-            invoices and cancellations — in one place.
+            Manage billing for every student you pay for — payment method and
+            invoices — in one place. Cancel a subscription from that
+            student&rsquo;s row.
           </p>
           <Button
             className="min-h-[48px] w-fit text-base"
@@ -141,6 +144,26 @@ export default function GuardianStudentsPage(): JSX.Element {
     return choose !== null && choose.length > 0 ? choose : null;
   });
   const [confirming, setConfirming] = useState<LinkedStudent | null>(null);
+
+  /**
+   * The subscriptions THIS GUARDIAN is the payer of, keyed by the student each
+   * funds.
+   *
+   * @spec [SCL-271; SCL-272 clause 2; owner ruling Karl 2026-11-03 clause 4]
+   *
+   * The server answers with the caller's own payer subscriptions and nothing
+   * else, so a guardian sees a Cancel control exactly beside the students they
+   * actually pay for — and a student who self-pays shows no control here even
+   * though the guardian can see their row. That is not a rule this page
+   * enforces; it is the shape of the server's answer (`studentProfileId` comes
+   * from the subscription's own metadata).
+   */
+  const cancelState = useCancelState();
+  const cancellableByStudent = new Map(
+    (cancelState.data?.subscriptions ?? [])
+      .filter((row) => row.studentProfileId !== null)
+      .map((row) => [row.studentProfileId as string, row] as const),
+  );
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   const remove = useMutation({
@@ -230,6 +253,19 @@ export default function GuardianStudentsPage(): JSX.Element {
                         Choose a plan
                       </Button>
                     )}
+                    {(() => {
+                      // Rendered inline rather than hoisted: it is one lookup
+                      // per row and hoisting it would put the roster and the
+                      // payer list in two places that could disagree.
+                      const cancellable = cancellableByStudent.get(s.id);
+                      return cancellable === undefined ? null : (
+                        <CancelSubscriptionDialog
+                          subscription={cancellable}
+                          forLabel={studentLabel(s)}
+                          testIdSuffix={`-${s.id}`}
+                        />
+                      );
+                    })()}
                     <Button
                       variant="ghost"
                       className="min-h-[44px] text-base"
@@ -268,8 +304,9 @@ export default function GuardianStudentsPage(): JSX.Element {
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base">
               You&rsquo;ll stop seeing their progress straight away. This does
-              not cancel a subscription you pay for them — use Manage billing
-              for that. They can give you a new code to link again.
+              not cancel a subscription you pay for them — use Cancel in their
+              row first if you want billing to stop. They can give you a new
+              code to link again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
