@@ -36,6 +36,12 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
    later (the database refuses the approved row). Once an example is approved, its question can
    no longer be added to a full-length form (Karl's decision 1 on #1336, 2026-10-27). The generator reads the question from its seed
    SQL under `infra/supabase/seed/`; a question a seed patch changes is refused.
+   **Hard questions only** (Karl, 2026-11-05, SCL-274): the question must be difficulty 3 in its
+   seed row. The content check refuses any other for an example due on or after 2026-11-06, and the
+   same rule binds authored QOTD breakdown scripts. Prefer one with a real trap among its choices
+   that still fits 30-60 s, and skip one whose explanation needs a figure the notepad cannot draw.
+   List the question ids in the pull request: the CMO session runs the QOTD and full-length check
+   on them before Karl merges.
 2. Write `content/worked-examples/<YYYY-Www>/<QUESTION_ID>/example.json`
    (`packages/shared/src/worked-example-schema.ts`). `post_on` is in that week and matches the
    plan's slot. `signature_move` matches `STYLE.json` for the skill.

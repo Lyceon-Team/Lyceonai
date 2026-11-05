@@ -29,6 +29,9 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import {
   captionProblems,
+  HARD_DIFFICULTY,
+  HARD_ONLY_FROM,
+  hardOnlyProblem,
   hookAnswerProblem,
   hookCuriosityProblem,
   hookPeopleProblem,
@@ -145,6 +148,38 @@ describe("the fixture is real and passes every rule", () => {
   it("check-content passes the fixture tree", () => {
     expect(checkContent(CONTENT)).toEqual([]);
     expect(exampleProblems(CONTENT, fixture, kit).problems).toEqual([]);
+  });
+});
+
+describe("Hard questions only (Karl, 2026-11-05)", () => {
+  it("a worked example due from Nov 6 on must be difficulty 3: a Hard seed question passes, a medium one is refused", () => {
+    expect(HARD_DIFFICULTY).toBe(3);
+    expect(HARD_ONLY_FROM).toBe("2026-11-06");
+    // Presence first: the difficulty is read from the real seed row, and a Hard one passes.
+    const hard = seedQuestion("SATM2HHUDLH");
+    if (!hard.ok) throw new Error(hard.problem);
+    expect(hard.question.difficulty).toBe(3);
+    expect(hardOnlyProblem(hard.question)).toBeNull();
+    // The fixture's question is medium (difficulty 2), as every W45 and W46 example was.
+    expect(question.difficulty).toBe(2);
+    expect(hardOnlyProblem(question)).toBe(
+      "SATM2CZS1BE is difficulty 2, not Hard (3): worked examples and breakdowns use Hard questions only",
+    );
+    // On the posting path (check-content, the daily selection, generate) it is refused.
+    const due = {
+      ...fixture,
+      content: { ...fixture.content, post_on: HARD_ONLY_FROM },
+    };
+    expect(exampleProblems(CONTENT, due, kit).problems.join("\n")).toContain(
+      "SATM2CZS1BE is difficulty 2, not Hard (3)",
+    );
+  });
+
+  it("an example posted before the ruling is history: the Nov 2 fixture is not refused for its difficulty", () => {
+    expect(fixture.content.post_on < HARD_ONLY_FROM).toBe(true);
+    expect(
+      exampleProblems(CONTENT, fixture, kit).problems.join("\n"),
+    ).not.toContain("not Hard");
   });
 });
 

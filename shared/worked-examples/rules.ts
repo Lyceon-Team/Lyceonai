@@ -378,6 +378,39 @@ function lineProblems(lines: readonly string[]): string[] {
   return out;
 }
 
+/** The only difficulty a worked example or an authored breakdown script may use: Hard. */
+export const HARD_DIFFICULTY = 3;
+/**
+ * The first worked example the Hard-only rule binds: the first post after the ruling. The
+ * examples posted before it (W45's Nov 2 and Nov 4, difficulty 2) are history on `social`, and
+ * the content check reads every example there.
+ */
+export const HARD_ONLY_FROM = "2026-11-06";
+
+/**
+ * Hard questions only: the question must be the bank's difficulty 3.
+ *
+ * @spec [Karl's ruling 2026-11-05: "worked examples use Hard questions only
+ *       (questions.difficulty = 3) … The same rule will apply to authored QOTD breakdown
+ *       scripts when that pilot resumes"] | @implemented [2026-11-05]
+ *
+ * plain English: every worked example so far (W45, W46) was difficulty 2, which is too easy for
+ * the audience. A worked example due on or after HARD_ONLY_FROM (exampleProblems in
+ * scripts/worked-examples/content.ts: the content check, the daily selection and generate), and
+ * every authored breakdown script (check-breakdown-scripts.ts), is refused unless its question is
+ * difficulty 3. The video pilots under video-kit/pilots are not posts and are not checked. The difficulty is read from the seed
+ * SQL row the video is rendered from (seedQuestion), so the rule and the render read the same
+ * row. Trade-off: a production edit to a question's difficulty that the seed does not carry is
+ * not seen here; the CMO session's production check before each merge covers it.
+ */
+export function hardOnlyProblem(
+  q: Pick<SeedQuestion, "id" | "difficulty">,
+): string | null {
+  return q.difficulty === HARD_DIFFICULTY
+    ? null
+    : `${q.id} is difficulty ${q.difficulty}, not Hard (${HARD_DIFFICULTY}): worked examples and breakdowns use Hard questions only`;
+}
+
 /** The example against its question, its week, its style row and the public-copy lists. */
 export function contentProblems(
   example: WorkedExampleContent,
