@@ -66,7 +66,7 @@ These are the rules of `LISA_Closure_Plan.md`, applied here unchanged.
 
 | ID | Item | Proof | Owner | Status |
 |---|---|---|---|---|
-| **H** | Client: `TutorVideoModal.tsx`, `VideoRecommendationCard`, `useTutorTurn.ts` | In production, a student in review is offered a video, opens it, and it plays from the segment start on `youtube-nocookie.com` and closes at the segment end. Screenshots, plus the §5 UI-standards checklist | CC | OPEN |
+| **H** | Client: `TutorVideoModal.tsx`, `VideoRecommendationCard`, `useTutorTurn.ts` | In production, a student in review is offered a video, opens it, and it plays from the segment start on `youtube-nocookie.com` and closes at the segment end. Screenshots, plus the §5 UI-standards checklist | CC | **CLOSED — 2026-11-04, production (Karl's report):** the segment path served on EE.3 and NLF.4; playback stopped at the segment end; "Watch full video" recorded one `video_watch_full` line (segment `f2a625c3`). Built in #1382 (retrieval switch-over) and #1439 (segment end, player window, "Watch full video"); #1439 carries the screenshots (`docs/plans/lisa-video-library/evidence/`) and the §5 checklist |
 | **I** | Link rot | A forced run of the scheduled check marks a known-deleted or privated video unavailable, and the next turn's resolver skips it. Paste the log line and the turn | CC | OPEN |
 
 ---

@@ -1,0 +1,107 @@
+[
+  {
+    "id": "LE1.1",
+    "skill_code": "Linear Equations in One Variable",
+    "name": "Solve a linear equation for its variable",
+    "definition": "Find the value of the variable that makes a given one-variable linear equation (no real-world context) true, including equations that need distributing, combining like terms, or clearing fractions first.",
+    "inclusion_test": "The stem gives a symbolic linear equation with no real-world context AND asks for the value of the variable itself (\"what value of x/p/t is the solution\", \"what is the solution\"); not tagged if the requested quantity is any other expression, or if the stem asks how many solutions or for a constant."
+  },
+  {
+    "id": "LE1.2",
+    "skill_code": "Linear Equations in One Variable",
+    "name": "Find the value of an expression or an equivalent equation without stopping at the variable",
+    "definition": "Use a given linear equation to get the value of a requested expression in the variable (e.g., 6x - 1, x - 7, 9x, 2 - 4x) or to pick the equation that has the same solution.",
+    "inclusion_test": "The stem gives a symbolic linear equation (no context) and EITHER asks for the value of an expression that is not the bare variable (\"what is the value of 3x + 8\", \"x - 5 is between which values\") OR asks which equation \"has the same solution as\" / \"is equivalent to\" the given one."
+  },
+  {
+    "id": "LE1.3",
+    "skill_code": "Linear Equations in One Variable",
+    "name": "Translate between a context and a linear equation or expression",
+    "definition": "Write the linear equation or expression that models a described situation, or interpret what a number or term in a given context equation means.",
+    "inclusion_test": "The stem describes a situation in words AND the answer choices are equations/expressions in a variable (\"which equation represents this situation\", \"in terms of n\") OR the choices are verbal interpretations of a number or term in a given equation (\"best interpretation of 2.00x\")."
+  },
+  {
+    "id": "LE1.4",
+    "skill_code": "Linear Equations in One Variable",
+    "name": "Solve a context problem for an unknown quantity",
+    "definition": "Find a numeric quantity in a real-world situation that reduces to one linear equation in one unknown (totals, rates, remaining amounts, perimeters).",
+    "inclusion_test": "The stem describes a situation in words AND the correct answer is a number (MCQ numeric choices or a grid-in), not an equation, expression, or interpretation."
+  },
+  {
+    "id": "LE1.5",
+    "skill_code": "Linear Equations in One Variable",
+    "name": "Determine the number of solutions or the constant that sets it",
+    "definition": "Decide whether a linear equation has zero, one, or infinitely many solutions, or find (or constrain) a constant that makes it have no or infinitely many solutions.",
+    "inclusion_test": "The stem asks \"how many solutions\" OR states that the equation has no solution / infinitely many solutions and asks for a constant's value or what must be true."
+  },
+  {
+    "id": "LI.1",
+    "skill_code": "Linear Inequalities in One or Two Variables",
+    "name": "Model a situation with a one-sided inequality or system",
+    "definition": "Translate a context or verbal statement into a linear inequality (or a system of them) in one or two variables, or interpret a term or point of such a contextual inequality.",
+    "inclusion_test": "Tag when the stem describes a situation in words AND either (a) asks which inequality/system represents it, (b) asks for a value that can only be reached by first writing an inequality that is NOT printed in the stem, or (c) prints a contextual inequality and asks what a term, coefficient or point means. Exclusion: if the only constraint in the stem is a two-sided bound on one quantity (between / minimum and maximum), tag LI.3 instead."
+  },
+  {
+    "id": "LI.2",
+    "skill_code": "Linear Inequalities in One or Two Variables",
+    "name": "Solve for a boundary value (maximum / minimum)",
+    "definition": "Isolate the variable in a one-sided linear inequality and turn the result into the extreme value asked for, including whole-number rounding when the context counts objects.",
+    "inclusion_test": "Tag when the stem asks for a maximum, minimum, greatest, least, or 'closest to the maximum possible' value (or a one-sided allowable range whose only other bound is positivity, e.g. 0 < x <= c) AND CB's rationale reaches it by isolating a variable in an inequality. Not tagged when the answer is chosen only by testing membership of given candidates."
+  },
+  {
+    "id": "LI.3",
+    "skill_code": "Linear Inequalities in One or Two Variables",
+    "name": "Two-sided ranges (compound inequalities)",
+    "definition": "Write, check membership in, or transform a range a <= x <= b: combine a lower and an upper bound, or push both ends of a range through a multiplication, division or addition.",
+    "inclusion_test": "Tag when the stem states both a lower and an upper bound on the same quantity (between, from X to Y, minimum ... maximum, at least ... no more than, more than ... less than) OR the answer choices are two-sided inequalities whose two bounds both come from the problem (a lower bound that is only positivity, as in 0 < x, does not count)."
+  },
+  {
+    "id": "LI.4",
+    "skill_code": "Linear Inequalities in One or Two Variables",
+    "name": "Test solutions of a given inequality or system",
+    "definition": "Decide which points, tables of (x, y) pairs, coordinate values or y-ranges satisfy a two-variable inequality or system that is printed symbolically in the stem or choices.",
+    "inclusion_test": "Tag when the stem or choices print an inequality or system in x and y (or in context letters) symbolically AND the question asks which point(s), table, coordinate value, or set of y-values satisfies it, or which system a given point satisfies."
+  },
+  {
+    "id": "LI.5",
+    "skill_code": "Linear Inequalities in One or Two Variables",
+    "name": "Read an inequality from its graph",
+    "definition": "Connect a graphed boundary line and shaded half-plane to its inequality, or read solutions directly from the shaded region.",
+    "inclusion_test": "Tag when the stem contains a [FIGURE] of a boundary line with a shaded region (solid or dashed) and the question asks which inequality it represents or which point lies in the solution region."
+  },
+  {
+    "id": "SYS.1",
+    "skill_code": "Systems of Two Linear Equations in Two Variables",
+    "name": "Solve a system algebraically",
+    "definition": "Find x, y, or the ordered pair satisfying both equations.",
+    "inclusion_test": "Two equations are given symbolically (or the graphs are said to intersect at (a, b)) and the question asks for x, y, or (x, y)."
+  },
+  {
+    "id": "SYS.2",
+    "skill_code": "Systems of Two Linear Equations in Two Variables",
+    "name": "Value of an expression from a system",
+    "definition": "Find an expression in the solution (x + y, 39x, x - y, xy, 6(x - 2)) from the system.",
+    "inclusion_test": "The question asks for any quantity other than x alone, y alone, or (x, y)."
+  },
+  {
+    "id": "SYS.3",
+    "skill_code": "Systems of Two Linear Equations in Two Variables",
+    "name": "Number of solutions and conditions on constants",
+    "definition": "Decide whether a system has zero, one, or infinitely many solutions, find a constant giving a stated count, or describe the solution set of a dependent system.",
+    "inclusion_test": "The question asks how many solutions/intersection points, which system has no solution, which second equation gives no/infinitely many solutions, a constant for no/infinitely many solutions, or which parametric point lies on both coincident lines."
+  },
+  {
+    "id": "SYS.4",
+    "skill_code": "Systems of Two Linear Equations in Two Variables",
+    "name": "Model a context with a system",
+    "definition": "Write (and, when asked, solve) a system of two linear equations for a situation with two unknowns and two conditions.",
+    "inclusion_test": "A situation with two unknown quantities and two stated conditions (totals, 'times as many', 'more than') is given, and the question asks for the system or a value of one unknown."
+  },
+  {
+    "id": "SYS.5",
+    "skill_code": "Systems of Two Linear Equations in Two Variables",
+    "name": "Solutions shown on a graph",
+    "definition": "Read a system's solution as the intersection of graphed lines, or match a system to its graph.",
+    "inclusion_test": "A graph of the lines is shown (or the answer choices are graphs) and the question asks for the solution, a matching system, or the number of solutions when a further line is added."
+  }
+]
