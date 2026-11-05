@@ -100,6 +100,7 @@ vi.mock("@/lib/queryClient", async () => {
 import ProfileComplete from "./profile-complete";
 import { queryClient as moduleClient } from "@/lib/queryClient";
 
+import { enterBirthday } from "@/components/profile/__tests__/enter-birthday";
 function yearsAgo(years: number): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() - years);
@@ -125,9 +126,7 @@ async function mount(): Promise<void> {
 describe("onboarding marketing checkbox (Q5)", () => {
   it("is shown, unticked, to a student of 15", async () => {
     await mount();
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: yearsAgo(15) },
-    });
+    enterBirthday(yearsAgo(15));
     const box = screen.getByTestId("checkbox-marketing-opt-in");
     expect(box.getAttribute("data-state")).toBe("unchecked");
     expect(
@@ -137,15 +136,11 @@ describe("onboarding marketing checkbox (Q5)", () => {
 
   it("is hidden for an under-13 student, and the PATCH does not carry the field", async () => {
     await mount();
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: yearsAgo(15) },
-    });
+    enterBirthday(yearsAgo(15));
     // Ticked while 15 ...
     fireEvent.click(screen.getByTestId("checkbox-marketing-opt-in"));
     // ... then the date of birth is corrected to an under-13 one.
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: yearsAgo(10) },
-    });
+    enterBirthday(yearsAgo(10));
     expect(screen.queryByTestId("checkbox-marketing-opt-in")).toBeNull();
     fireEvent.click(screen.getByTestId("button-complete-profile"));
     await waitFor(() => expect(calls.patchBody).not.toBeNull());
@@ -154,9 +149,7 @@ describe("onboarding marketing checkbox (Q5)", () => {
 
   it("a tick at 13+ is sent as marketingOptIn: true", async () => {
     await mount();
-    fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-      target: { value: yearsAgo(16) },
-    });
+    enterBirthday(yearsAgo(16));
     fireEvent.click(screen.getByTestId("checkbox-marketing-opt-in"));
     fireEvent.click(screen.getByTestId("button-complete-profile"));
     await waitFor(() => expect(calls.patchBody).not.toBeNull());
