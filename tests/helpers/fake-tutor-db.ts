@@ -90,6 +90,11 @@ class FakeQuery implements PromiseLike<Result> {
     this.filters.push((r) => (r[col] ?? null) === val);
     return this;
   }
+  /** Only `.not(col, "is", null)` (the help-level read): rows where the column is set. */
+  not(col: string, op: "is", val: null): this {
+    this.filters.push((r) => (op === "is" ? (r[col] ?? null) !== val : true));
+    return this;
+  }
   in(col: string, vals: unknown[]): this {
     this.filters.push((r) => vals.includes(r[col]));
     return this;

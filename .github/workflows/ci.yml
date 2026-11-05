@@ -1542,6 +1542,18 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/video-segment-retrieval-gates.sql
 
+      # LISA help-level engine (owner brief "Help-level engine", Karl 2026-11-05; SCL-275): the
+      # help columns on tutor_turn_metrics accept exactly the states the BFF writes, refuse the
+      # rest (including rows a NULL comparison would let through), and the keyword map is seeded.
+      # Same database; one transaction, rolled back.
+      - name: LISA help-level gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/tutor-help-level-gates.sql
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost

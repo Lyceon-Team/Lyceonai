@@ -147,6 +147,16 @@ const DESMOS_LESSON: FakeVideo = {
   format: "lesson",
   skill_codes: ["H.C.1"],
 };
+const RW_LESSON: FakeVideo = {
+  video_id: "RwTransit01",
+  title: "Transitions in 5 minutes",
+  channel_name: "SAT Prep",
+  duration_seconds: 300,
+  start_seconds: null,
+  methods: [],
+  format: "lesson",
+  skill_codes: ["CAS.TRN"],
+};
 const FORMAT_ORDER = ["formula", "worked_example", "lesson", "strategy"];
 
 function serveLibrary(videos: FakeVideo[]): void {
@@ -648,6 +658,213 @@ describe("Phase C: a video tap on a sub-skill-tagged item", () => {
   });
 });
 
+/**
+ * @spec [owner brief "Help-level engine", Karl 2026-11-05 (rules 1–5 and its tests); SCL-275]
+ *       | @implemented [2026-11-05]
+ * plain English: the help level on the real route and the real worker. What the worker is sent
+ * (`help_level`, `submit_state`, `worked_step`), what its prompt says, and what the turn's metrics
+ * row records, tap by tap.
+ */
+describe("help level on the real route", () => {
+  const ITEM_ANSWERED = "aaaaaaaa-0000-4000-8000-0000000000aa";
+
+  const ITEM_SERVED = "aaaaaaaa-0000-4000-8000-0000000000ab";
+
+  /** A review conversation on an answered item: post-submit. */
+  function seedPostSubmitConversation(): string {
+    return seedItemConversation(ITEM_ANSWERED, "answered");
+  }
+
+  /** A review conversation on one of the student's review items, in the given status. */
+  function seedItemConversation(itemId: string, status: string): string {
+    seedReviewItem(itemId, Q_MATH);
+    db.current
+      .rows("review_session_items")
+      .find((r) => r.id === itemId)!.status = status;
+    const id = seedConversation(Q_MATH);
+    const row = db.current
+      .rows("tutor_conversations")
+      .find((r) => r.id === id)!;
+    row.source_session_item_id = itemId;
+    return id;
+  }
+
+  async function seedHelpKeywords(): Promise<void> {
+    db.current.seed("tutor_context_runtime_config", {
+      key: "tutor_help_keywords",
+      value: {
+        version: 1,
+        signals: {
+          stuck: ["idk", "i m stuck"],
+          solve_it: ["just solve it", "show me"],
+        },
+      },
+      value_type: "object",
+      owner: "engineering",
+      description: "test",
+      environment: "test",
+      updated_at: "2026-11-05T00:00:00.000Z",
+    });
+    await TutorConfig.loadAll();
+  }
+
+  /** One turn, then a pause so the next turn's metrics row sorts after this one. */
+  async function turn(
+    conv: string,
+    message: string,
+    intent?: ReviewIntent,
+  ): Promise<Record<string, unknown>> {
+    const before = workerBodies.length;
+    const res =
+      intent === undefined
+        ? await send(conv, message)
+        : await tap(conv, intent);
+    expect(res.status).toBe(200);
+    expect(workerBodies).toHaveLength(before + 1);
+    await new Promise((r) => setTimeout(r, 3));
+    return workerBodies[before]!;
+  }
+
+  const sent = (b: Record<string, unknown>): unknown[] => [
+    b.help_level,
+    b.submit_state,
+    b.worked_step,
+  ];
+
+  it("Student B's taps, replayed post-submit: level 3 by tap 3, the full solution at tap 3, recorded each turn", async () => {
+    const conv = seedPostSubmitConversation();
+    const bodies = [await turn(conv, "", "walkthrough")];
+    for (let i = 0; i < 5; i++)
+      bodies.push(await turn(conv, "", "step_understood"));
+    expect(bodies.map(sent)).toEqual([
+      ["hint", "post_submit", null],
+      ["worked_step", "post_submit", { index: 1, final: false }],
+      ["worked_step", "post_submit", { index: 2, final: false }],
+      ["full_solution", "post_submit", null],
+      ["full_solution", "post_submit", null],
+      ["full_solution", "post_submit", null],
+    ]);
+    const recorded = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv)
+      .map((r) => [r.help_level, r.help_worked_step, r.help_signal]);
+    expect(recorded).toEqual([
+      ["hint", null, "walkthrough"],
+      ["worked_step", 1, "step_understood"],
+      ["worked_step", 2, "step_understood"],
+      ["full_solution", null, "step_understood"],
+      ["full_solution", null, "step_understood"],
+      ["full_solution", null, "step_understood"],
+    ]);
+  });
+
+  it("the pre-submit ceiling holds in review: the taps stop at the final worked step", async () => {
+    const conv = seedConversation(Q_MATH); // no answered item: a re-attempt before its answer
+    const bodies = [await turn(conv, "", "walkthrough")];
+    for (let i = 0; i < 4; i++)
+      bodies.push(await turn(conv, "", "step_understood"));
+    expect(bodies.map(sent)).toEqual([
+      ["hint", "pre_submit", null],
+      ["worked_step", "pre_submit", { index: 1, final: false }],
+      ["worked_step", "pre_submit", { index: 2, final: false }],
+      ["worked_step", "pre_submit", { index: 3, final: true }],
+      ["worked_step", "pre_submit", { index: 3, final: true }],
+    ]);
+    for (const b of bodies) expect(b.is_post_submit).toBe(false);
+  });
+
+  it("the pre-submit ceiling holds in practice: 'just solve it' is the final worked step", async () => {
+    await seedHelpKeywords();
+    const conv = seedConversation(Q_MATH, "practice");
+    const body = await turn(conv, "just solve it");
+    expect(sent(body)).toEqual([
+      "worked_step",
+      "pre_submit",
+      { index: 3, final: true },
+    ]);
+  });
+
+  it("post-submit allows level 4: 'just solve it' is the full solution", async () => {
+    await seedHelpKeywords();
+    const conv = seedPostSubmitConversation();
+    expect(sent(await turn(conv, "just solve it"))).toEqual([
+      "full_solution",
+      "post_submit",
+      null,
+    ]);
+  });
+
+  it("'idk' twice moves up two", async () => {
+    await seedHelpKeywords();
+    const conv = seedPostSubmitConversation();
+    const first = await turn(conv, "idk");
+    const second = await turn(conv, "idk");
+    expect(sent(first)).toEqual(["hint", "post_submit", null]);
+    expect(sent(second)).toEqual([
+      "worked_step",
+      "post_submit",
+      { index: 2, final: false },
+    ]);
+  });
+
+  it("a correct typed step moves down one (after submission)", async () => {
+    const conv = seedPostSubmitConversation(); // the key is B
+    await turn(conv, "", "walkthrough");
+    await turn(conv, "", "step_understood");
+    const atStep2 = await turn(conv, "", "step_understood");
+    expect(sent(atStep2)).toEqual([
+      "worked_step",
+      "post_submit",
+      { index: 2, final: false },
+    ]);
+    const typed = await turn(conv, "it's B");
+    expect(sent(typed)).toEqual(["hint", "post_submit", null]);
+    const rows = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv);
+    expect(rows[rows.length - 1]!.help_signal).toBe("correct_step");
+  });
+
+  it("before submission a correct guess moves nothing: no answer oracle", async () => {
+    // A review re-attempt served but not yet answered: pre-submit; the key (B) stays BFF-local.
+    const conv = seedItemConversation(ITEM_SERVED, "served");
+    await turn(conv, "", "walkthrough");
+    const atStep1 = await turn(conv, "", "step_understood");
+    const right = await turn(conv, "it's B");
+    const wrong = await turn(conv, "it's C");
+    expect(sent(right)).toEqual(sent(atStep1));
+    expect(sent(wrong)).toEqual(sent(atStep1));
+    expect(right.correct_answer).toBeNull(); // the key never reaches the worker pre-submit
+    const signals = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv)
+      .map((r) => r.help_signal);
+    expect(signals).toEqual(["walkthrough", "step_understood", "none", "none"]);
+  });
+
+  it("an unreadable previous level: the turn carries no level, and none is recorded", async () => {
+    const conv = seedPostSubmitConversation();
+    await turn(conv, "", "walkthrough");
+    db.current.failNext("tutor_turn_metrics", "select", {
+      message: "connection reset",
+    });
+    const body = await turn(conv, "", "step_understood");
+    expect(body.help_level).toBeUndefined();
+    expect(body.worked_step).toBeUndefined();
+    const rows = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv);
+    expect(rows.map((r) => r.help_level ?? null)).toEqual(["hint", null]);
+    // The ladder resumes from the last level the student actually received.
+    const next = await turn(conv, "", "step_understood");
+    expect(sent(next)).toEqual([
+      "worked_step",
+      "post_submit",
+      { index: 1, final: false },
+    ]);
+  });
+});
+
 describe("walkthrough is a normal turn", () => {
   // REPLY is what the model returned; the route may serve a substitution of it.
   it("'Walk me through it' reaches the worker with intent walkthrough, and the reply is LISA's", async () => {
@@ -800,6 +1017,7 @@ describe("GET /guided-choices", () => {
   }
 
   it("math and Reading and Writing items, Phase B off", async () => {
+    serveLibrary([FORMULA_SHORT, DESMOS_LESSON, RW_LESSON]);
     seedReviewItem(ITEM_MATH, Q_MATH);
     seedReviewItem(ITEM_RW, Q_RW);
     expect((await choices(ITEM_MATH)).body).toEqual({
@@ -812,6 +1030,7 @@ describe("GET /guided-choices", () => {
 
   it("Phase B on adds 'Show me on Desmos' (math) and 'Explain the rule' (Reading and Writing)", async () => {
     await setPhaseB(true);
+    serveLibrary([FORMULA_SHORT, DESMOS_LESSON, RW_LESSON]);
     seedReviewItem(ITEM_MATH, Q_MATH);
     seedReviewItem(ITEM_RW, Q_RW);
     expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
@@ -824,6 +1043,45 @@ describe("GET /guided-choices", () => {
       "walkthrough",
       "explain_rule",
       "video_explanation",
+    ]);
+  });
+
+  // @spec [owner brief "Help-level engine", Karl 2026-11-05, rule 6; SCL-275]: the choices
+  // endpoint checks availability with the tap's own retrieval.
+  it("no approved video for the item's skill: both video choices are hidden", async () => {
+    serveLibrary([]);
+    seedReviewItem(ITEM_MATH, Q_MATH);
+    seedReviewItem(ITEM_RW, Q_RW);
+    expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
+      "walkthrough",
+    ]);
+    expect((await choices(ITEM_RW)).body.data.intents).toEqual(["walkthrough"]);
+  });
+
+  it("no Desmos video: 'Desmos video' is hidden, 'Explanation video' stays", async () => {
+    serveLibrary([FORMULA_SHORT]);
+    seedReviewItem(ITEM_MATH, Q_MATH);
+    expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
+      "walkthrough",
+      "video_explanation",
+    ]);
+  });
+
+  it("a sub-skill-tagged item with no matching approved segment: both hidden, never the skill-only list", async () => {
+    serveLibrary([FORMULA_SHORT, DESMOS_LESSON]);
+    db.current.onRpc("video_segments_for_question", () => ({
+      data: [],
+      error: null,
+    }));
+    db.current.seed("question_sub_skills", {
+      question_id: Q_MATH,
+      sub_skill_id: "EE.5",
+      taxonomy_version: "scl-v1.0.0",
+      tagged_by: "test",
+    });
+    seedReviewItem(ITEM_MATH, Q_MATH);
+    expect((await choices(ITEM_MATH)).body.data.intents).toEqual([
+      "walkthrough",
     ]);
   });
 
