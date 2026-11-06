@@ -107,6 +107,7 @@ import {
   type OrchestrateRequest,
   type TurnAttribution,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
+import { decideHelpTurn } from "../services/tutor-help-level";
 import {
   requestedVideoMethod,
   resolveVideoAction,
@@ -1287,6 +1288,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisTriggered: false,
         crisisClassifierOutcome: null,
         intent: turnIntent,
+        help: null,
       });
       sendTutorError(res, "idempotency_lookup_failed");
       return;
@@ -1328,6 +1330,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisTriggered: false,
           crisisClassifierOutcome: null,
           intent: turnIntent,
+          help: null,
         });
         sendTutorError(res, "idempotency_conflict");
         return;
@@ -1388,6 +1391,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisTriggered: false,
           crisisClassifierOutcome: null,
           intent: turnIntent,
+          help: null,
         });
 
         res.status(200).json({
@@ -1648,6 +1652,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           ? crisisResult.source
           : null,
         intent: turnIntent,
+        help: null,
       });
       sendTutorError(res, "canonical_write_failed");
       return;
@@ -1876,6 +1881,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisTriggered: true,
           crisisClassifierOutcome: crisisResult.source,
           intent: turnIntent,
+          help: null,
         });
         sendTutorError(res, "canonical_write_failed");
         return;
@@ -1921,6 +1927,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisTriggered: true,
         crisisClassifierOutcome: crisisResult.source,
         intent: turnIntent,
+        help: null,
       });
 
       res.status(200).json({
@@ -2067,6 +2074,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisTriggered: false,
           crisisClassifierOutcome: noCrisisOutcome,
           intent: turnIntent,
+          help: null,
         });
         await supabaseServer
           .from("tutor_messages")
@@ -2097,6 +2105,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisTriggered: false,
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
+        help: null,
       });
       await supabaseServer
         .from("tutor_conversations")
@@ -2177,6 +2186,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisTriggered: false,
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
+        help: null,
       });
       await supabaseServer
         .from("tutor_messages")
@@ -2362,6 +2372,34 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     if (turnIntent !== null) {
       envelope.intent = turnIntent;
     }
+    // Help level (owner brief "Help-level engine", Karl 2026-11-05; SCL-275): how much help this
+    // turn gives, decided here from the last recorded level and this turn's signal, with no model
+    // call, and capped at level 3 before submission. Not decided for an input-blocked turn: the
+    // worker is not called and the level does not move. The answer key stays BFF-local and is
+    // compared with a typed message only after submission (never an answer oracle). An unreadable
+    // previous level gives the turn no level at all (null): sent and recorded without one.
+    const helpTurn =
+      armorInput.kind === "blocked"
+        ? null
+        : await timedStep("help_level", () =>
+            decideHelpTurn({
+              conversationId: conversation.id,
+              intent: turnIntent,
+              message: input.message,
+              isPostSubmit: !preSubmit,
+              itemSkipped:
+                !preSubmit &&
+                envelope.question_content !== null &&
+                envelope.question_content.student_answer === null,
+              correctAnswer: correctAnswerResult.value,
+              itemType: envelope.question_content?.item_type ?? null,
+            }),
+          );
+    if (helpTurn !== null) {
+      envelope.help_level = helpTurn.directive.helpLevel;
+      envelope.submit_state = helpTurn.directive.submitState;
+      envelope.worked_step = helpTurn.directive.workedStep;
+    }
 
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
@@ -2425,6 +2463,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisTriggered: false,
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
+        help: null,
       });
       // Mark student message as failed — orchestration did not produce a reply.
       await supabaseServer
@@ -2550,6 +2589,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisTriggered: false,
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
+        help: null,
       });
       // Tutor reply failed to persist — mark student message as failed.
       await supabaseServer
@@ -2644,6 +2684,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       crisisTriggered: false,
       crisisClassifierOutcome: normalPathOutcome,
       intent: turnIntent,
+      help: helpTurn?.state ?? null,
     });
 
     await supabaseServer
@@ -2718,6 +2759,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisTriggered: false,
         crisisClassifierOutcome: null,
         intent: turnIntent,
+        help: null,
       });
     } catch (metricsErr: unknown) {
       // Metrics logging itself failed — swallow so the error response sends.

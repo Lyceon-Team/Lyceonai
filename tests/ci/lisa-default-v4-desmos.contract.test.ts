@@ -12,7 +12,7 @@
  *      everywhere else, including an unread section and a Desmos request on a Reading and
  *      Writing item.
  *   D3 v4 without the block is v3, byte for byte; with it, v3 then the block.
- *   D4 production stays on v3: v4 resolves by exact version only.
+ *   D4 production is not on v4 (it is on v7 since 2026-11-05, SCL-275): v4 resolves by exact version only.
  *   D5 the worker's own buildSystemInstruction carries the block for a math item and not for
  *      a Reading and Writing one, from the wire fields.
  *   D6 the wire accepts the new fields and an older envelope without them.
@@ -54,6 +54,9 @@ function fields(over: Partial<PromptFields>): PromptFields {
     isPostSubmit: false,
     questionSection: null,
     requestedMethod: null,
+    helpLevel: null,
+    submitState: null,
+    workedStep: null,
     ...over,
   };
 }
@@ -135,7 +138,7 @@ describe("lisa-default-v4 Desmos block", () => {
     );
   });
 
-  it("D4 production stays on v3; v4 resolves by exact version only", () => {
+  it("D4 production is not on v4 (v7, SCL-275); v4 resolves by exact version only", () => {
     for (const variant of [
       "default",
       "scaffolded",
@@ -144,7 +147,7 @@ describe("lisa-default-v4 Desmos block", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v3",
+        "lisa-default-v7",
       );
     }
     expect(resolvePromptArtifact("scaffolded", "lisa-default-v4").version).toBe(
