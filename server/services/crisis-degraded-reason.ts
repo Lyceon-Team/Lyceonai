@@ -25,19 +25,23 @@ export async function recordDegradedReason(
   layer2: Layer2Outcome | undefined,
 ): Promise<void> {
   if (layer2 === undefined || layer2.degradedReason === null) return;
-  const error = await supabaseServer
-    .from("crisis_review_cases")
-    .update({
-      degraded_reason: layer2.degradedReason,
-      classifier_attempts: layer2.attempts,
-    })
-    .eq("id", caseId)
-    .in("source", ["classifier_degraded", "classifier_degraded_no_floor"])
-    .is("degraded_reason", null)
-    .then(
-      (r: { error: unknown }) => r.error,
-      (thrown: unknown) => thrown,
-    );
+  // The whole write, building the query included, is inside the guard: nothing escapes, so the
+  // caller's notification and pause are never skipped by this write.
+  let error: unknown;
+  try {
+    error = await supabaseServer
+      .from("crisis_review_cases")
+      .update({
+        degraded_reason: layer2.degradedReason,
+        classifier_attempts: layer2.attempts,
+      })
+      .eq("id", caseId)
+      .in("source", ["classifier_degraded", "classifier_degraded_no_floor"])
+      .is("degraded_reason", null)
+      .then((r: { error: unknown }) => r.error);
+  } catch (thrown: unknown) {
+    error = thrown;
+  }
   if (error) {
     logger.error(
       "TUTOR_CRISIS",

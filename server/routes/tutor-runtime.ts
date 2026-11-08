@@ -1691,9 +1691,6 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisResult.modelConfidence,
         crisisResult.category,
       );
-      // SCL-276: why Layer 2 could not answer (classifier_degraded_no_floor), on the case. Never
-      // blocking; a no-op for every other source.
-      await recordDegradedReason(flagResult.caseId, crisisResult.layer2);
 
       // Set crisis_paused_at — conversation is now paused for tutoring.
       // The student must explicitly resume before sending more messages.
@@ -1809,6 +1806,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           },
         );
       }
+      // SCL-276: why Layer 2 could not answer (classifier_degraded_no_floor), on the case. After
+      // the pause and the notification, and never throws; a no-op for every other source.
+      await recordDegradedReason(flagResult.caseId, crisisResult.layer2);
 
       // Mark student message as completed — crisis detection is a valid response.
       await supabaseServer
@@ -1979,8 +1979,6 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         null,
         null,
       );
-      // SCL-276: why Layer 2 could not answer, on the case. Never blocking.
-      await recordDegradedReason(degradedResult.caseId, crisisResult.layer2);
       // Degraded path always notifies — it's a force-review enqueue.
       await notifyCrisisEvent({
         caseId: degradedResult.caseId,
@@ -1989,6 +1987,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         slaDeadline: degradedResult.slaDeadline,
         timestamp: new Date().toISOString(),
       });
+      // SCL-276: why Layer 2 could not answer, on the case. After the notification, and never
+      // throws: diagnostics never delay or skip the review path.
+      await recordDegradedReason(degradedResult.caseId, crisisResult.layer2);
     }
 
     // The classifier outcome of a turn that is not a crisis (crisisResult.crisis is false from

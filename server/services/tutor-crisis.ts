@@ -352,11 +352,16 @@ export class CrisisClassifierTimeoutError extends Error {
 /**
  * @spec [owner brief "Crisis classifier: record the failure reason", Karl 2026-11-08; SCL-276]
  *       | @implemented [2026-11-08]
- * Pure. Why a failed attempt failed, from the error alone: our own timeout (or an aborted
- * request) is `timeout`; HTTP 429 or RESOURCE_EXHAUSTED is `rate_limited`; any other 4xx, or a
- * NOT_FOUND / PERMISSION_DENIED / UNAUTHENTICATED / INVALID_ARGUMENT status, is `config_error`
- * (it would fail the same way again); everything else (5xx, network, unreadable output) is
- * `upstream_error`. The SDK's ApiError carries a numeric `status`; the message is the fallback.
+ * Pure. Why a failed attempt failed, from the error alone:
+ *  - `timeout`: OUR per-attempt bound fired (or the request was aborted by it). Only this, so the
+ *    count measures the one value the timeout recommendation tunes;
+ *  - `rate_limited`: HTTP 429 or RESOURCE_EXHAUSTED;
+ *  - `config_error`: a 400/401/403/404, or NOT_FOUND / PERMISSION_DENIED / UNAUTHENTICATED /
+ *    INVALID_ARGUMENT: it would fail the same way again;
+ *  - `upstream_error`: everything else: a 5xx, a timeout the upstream reported (408, 504,
+ *    DEADLINE_EXCEEDED, ETIMEDOUT), a network failure, unreadable output.
+ * The SDK's ApiError carries a numeric `status`; the message is the fallback, matched only on
+ * status-shaped text so a stray number cannot misreport.
  */
 export function classifyClassifierFailure(err: unknown): CrisisDegradedReason {
   if (err instanceof CrisisClassifierTimeoutError) return "timeout";
@@ -370,12 +375,21 @@ export function classifyClassifierFailure(err: unknown): CrisisDegradedReason {
       ? (err as { status: number }).status
       : null;
   const message = err instanceof Error ? err.message : String(err);
-  if (status === 429 || /RESOURCE_EXHAUSTED|\b429\b/i.test(message)) {
+  if (
+    status === 429 ||
+    /RESOURCE_EXHAUSTED|\[429\]|(?:status|code)\W{0,3}429\b|\b429 Too Many Requests/i.test(
+      message,
+    )
+  ) {
     return "rate_limited";
   }
+  const configStatuses: ReadonlySet<number> = new Set([400, 401, 403, 404]);
   if (
-    (status !== null && status >= 400 && status < 500) ||
-    /NOT_FOUND|PERMISSION_DENIED|UNAUTHENTICATED|INVALID_ARGUMENT/.test(message)
+    (status !== null && configStatuses.has(status)) ||
+    (status === null &&
+      /NOT_FOUND|PERMISSION_DENIED|UNAUTHENTICATED|INVALID_ARGUMENT/.test(
+        message,
+      ))
   ) {
     return "config_error";
   }

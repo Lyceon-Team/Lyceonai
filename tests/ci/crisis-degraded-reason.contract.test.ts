@@ -38,11 +38,13 @@ const db = vi.hoisted(() => ({
   updates: [] as Update[],
   updateResult: { error: null } as { error: unknown },
   updateThrows: false,
+  buildThrows: false,
 }));
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   supabaseServer: {
     from: (table: string) => ({
       update: (values: Record<string, unknown>) => {
+        if (db.buildThrows) throw new TypeError("query builder broke");
         const u: Update = { table, values, filters: [] };
         db.updates.push(u);
         const chain = {
@@ -95,6 +97,7 @@ beforeEach(() => {
   db.updates.length = 0;
   db.updateResult = { error: null };
   db.updateThrows = false;
+  db.buildThrows = false;
   process.env.VERTEX_CLASSIFIER_CLASS_MODEL = "test-classifier-model";
   process.env.VERTEX_CLASSIFIER_LOCATION = "global";
 });
@@ -148,6 +151,25 @@ describe("classifyClassifierFailure", () => {
     );
     expect(classifyClassifierFailure(new Error("UNAUTHENTICATED"))).toBe(
       "config_error",
+    );
+    // Only OUR bound is `timeout`; a timeout the upstream reports is upstream_error.
+    expect(classifyClassifierFailure(apiError(408, "Request Timeout"))).toBe(
+      "upstream_error",
+    );
+    expect(classifyClassifierFailure(apiError(504, "DEADLINE_EXCEEDED"))).toBe(
+      "upstream_error",
+    );
+    expect(
+      classifyClassifierFailure(new Error("connect ETIMEDOUT 1.2.3.4:443")),
+    ).toBe("upstream_error");
+    // A stray 429 in a 5xx message is not a rate limit.
+    expect(
+      classifyClassifierFailure(
+        apiError(503, "backend 503, request id 4291337"),
+      ),
+    ).toBe("upstream_error");
+    expect(classifyClassifierFailure(new Error("got status: 429"))).toBe(
+      "rate_limited",
     );
   });
 });
@@ -296,13 +318,23 @@ describe("recordDegradedReason: guarded, never blocking", () => {
         degradedReason: "rate_limited",
       }),
     ).resolves.toBeUndefined();
+    db.updateThrows = false;
+    db.buildThrows = true; // a synchronous throw while building the query
+    await expect(
+      recordDegradedReason(CASE, {
+        ms: 10,
+        attempts: 2,
+        degradedReason: "timeout",
+      }),
+    ).resolves.toBeUndefined();
     const logged = loggerError.mock.calls.filter(
       (c) => c[1] === "crisis_degraded_reason_write_failed",
     );
-    expect(logged).toHaveLength(2);
+    expect(logged).toHaveLength(3);
     expect(logged.map((c) => c[4])).toEqual([
       { caseId: CASE, degradedReason: "config_error", attempts: 0 },
       { caseId: CASE, degradedReason: "rate_limited", attempts: 2 },
+      { caseId: CASE, degradedReason: "timeout", attempts: 2 },
     ]);
   });
 });
