@@ -265,6 +265,7 @@ export function buildSystemInstruction(request: OrchestrateRequest): string {
   // G2-1: an artifact whose rules carry DATA_BLOCK_RULE gets its data as data blocks.
   const stateBlocks = renderStateBlocks(request, {
     dataBoundary: artifact.dataBoundary === true,
+    helpLevel: artifact.helpLevelBlock === true,
   });
   if (stateBlocks) {
     return `${behavioralRules}\n\n--- CONTEXT FOR CURRENT QUESTION ---\n\n${stateBlocks}`;

@@ -22171,6 +22171,12 @@ CREATE TABLE public.tutor_turn_metrics (
     thinking_tokens integer,
     thinking_budget integer,
     intent text,
+    help_level text,
+    help_worked_step smallint,
+    help_signal text,
+    CONSTRAINT tutor_turn_metrics_help_level_check CHECK (((help_level IS NULL) OR (help_level = ANY (ARRAY['ask'::text, 'hint'::text, 'worked_step'::text, 'full_solution'::text])))),
+    CONSTRAINT tutor_turn_metrics_help_signal_check CHECK ((((help_level IS NULL) AND (help_signal IS NULL)) OR ((help_level IS NOT NULL) AND (help_signal IS NOT NULL) AND (help_signal = ANY (ARRAY['walkthrough'::text, 'step_understood'::text, 'stuck'::text, 'skipped'::text, 'solve_it'::text, 'correct_step'::text, 'none'::text]))))),
+    CONSTRAINT tutor_turn_metrics_help_worked_step_check CHECK ((((help_worked_step IS NULL) AND (help_level IS DISTINCT FROM 'worked_step'::text)) OR ((help_level = 'worked_step'::text) AND (help_worked_step IS NOT NULL) AND ((help_worked_step >= 1) AND (help_worked_step <= 3))))),
     CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text]))))
 );
 
@@ -22215,6 +22221,27 @@ COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex think
 --
 
 COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice or walkthrough quick reply the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.help_level; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.help_level IS 'The help level the turn was given (ask, hint, worked_step, full_solution), decided by the BFF; NULL when the turn reached no worker. The next turn starts from the latest non-NULL row.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.help_worked_step; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.help_worked_step IS 'At help_level worked_step, which worked step (1-3; 3 is the last allowed before submission); NULL otherwise.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.help_signal; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.help_signal IS 'What moved the level this turn (HELP_SIGNALS); a code, never message text.';
 
 
 --
