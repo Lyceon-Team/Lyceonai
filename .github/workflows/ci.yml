@@ -1554,6 +1554,17 @@ jobs:
           PGPASSWORD: postgres
         run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/tutor-help-level-gates.sql
 
+      # Crisis classifier failure reason (owner brief 2026-11-08; SCL-276): the review case's and
+      # the turn row's Layer 2 columns accept exactly the states the BFF writes and refuse the rest,
+      # including rows a NULL comparison would let through. Same database; rolled back.
+      - name: Crisis degraded-reason gates
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: psql -v ON_ERROR_STOP=1 -d calendar_parity -f scripts/ci/crisis-degraded-reason-gates.sql
+
       - name: Calendar write-RPC gates
         env:
           PGHOST: localhost

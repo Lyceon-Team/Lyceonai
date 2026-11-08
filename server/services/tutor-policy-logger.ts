@@ -31,6 +31,7 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import type { ReviewIntent } from "../../packages/shared/src/tutor-guided-choices";
 import type { HelpState } from "../../packages/shared/src/tutor-help-level";
+import type { Layer2Outcome } from "./tutor-crisis";
 
 // ---------------------------------------------------------------------------
 // Types — exported for route-handler / orchestrator consumers
@@ -116,6 +117,14 @@ export type TurnMetricsLog = {
    * decides explicitly.
    */
   help: HelpState | null;
+   * @spec [owner brief "Crisis classifier: record the failure reason, and look at the timeout",
+   *        Karl 2026-11-08; SCL-276] | @implemented [2026-11-08]
+   * What Layer 2 did on this turn: wall time across attempts, model attempts, and the failure
+   * reason when it could not answer. The source of the latency percentiles and the degraded-rate
+   * breakdown. Null when Layer 2 did not run or the turn ended before it. Codes and counts only.
+   * Required, so every call site decides explicitly.
+   */
+  crisisLayer2: Layer2Outcome | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -217,6 +226,12 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
             help_level: params.help.level,
             help_worked_step: params.help.workedStep,
             help_signal: params.help.signal,
+      // Written only when Layer 2 ran: every other row's insert is unchanged.
+      ...(params.crisisLayer2 !== null
+        ? {
+            crisis_classifier_ms: params.crisisLayer2.ms,
+            crisis_classifier_attempts: params.crisisLayer2.attempts,
+            crisis_degraded_reason: params.crisisLayer2.degradedReason,
           }
         : {}),
       recorded_at: new Date().toISOString(),

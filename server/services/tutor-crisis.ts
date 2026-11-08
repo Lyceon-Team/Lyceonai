@@ -41,8 +41,10 @@ import {
 } from "./crisis-classifier-prompt";
 import { notifyCrisisEvent } from "./crisis-notification";
 import {
+  CRISIS_CLASSIFIER_MAX_ATTEMPTS,
   crisisFlagResultSchema,
   type CrisisCategory,
+  type CrisisDegradedReason,
   type CrisisSource,
 } from "../../packages/shared/src/crisis-flag-schema";
 
@@ -52,8 +54,25 @@ import {
 // hand-written unions; three copies of one enum drift the moment the database
 // CHECK gains a value. Coding Standards §7.2 / §17.
 
+/**
+ * @spec [owner brief "Crisis classifier: record the failure reason, and look at the timeout",
+ *       Karl 2026-11-08; SCL-276] | @implemented [2026-11-08]
+ * What Layer 2 did on this turn, for the review case and the turn's metrics row: its wall time
+ * across attempts (setup included), how many model attempts it made, and, when it could not
+ * answer, why. Codes and counts only.
+ */
+export type Layer2Outcome = {
+  ms: number;
+  attempts: number;
+  degradedReason: CrisisDegradedReason | null;
+};
+
+/**
+ * `layer2` is absent when Layer 2 did not run (an exact-label tap) or the pipeline itself threw
+ * (the route builds `infrastructure_failure`); readers treat absent as "not measured".
+ */
 type CrisisResult =
-  | { crisis: false; forceReview: boolean }
+  | { crisis: false; forceReview: boolean; layer2?: Layer2Outcome }
   | {
       crisis: true;
       source:
@@ -66,6 +85,7 @@ type CrisisResult =
       signatureId: string | null;
       modelConfidence: number | null;
       forceReview: boolean;
+      layer2?: Layer2Outcome;
     };
 
 type SignatureResult = {
@@ -319,6 +339,49 @@ export async function checkCrisisSignatures(
  */
 export const CRISIS_CLASSIFIER_TIMEOUT_MS = 3000;
 
+/** Thrown when an attempt runs past CRISIS_CLASSIFIER_TIMEOUT_MS; classified as `timeout`. */
+export class CrisisClassifierTimeoutError extends Error {
+  constructor() {
+    super(
+      `crisis classifier timed out after ${CRISIS_CLASSIFIER_TIMEOUT_MS} ms`,
+    );
+    this.name = "CrisisClassifierTimeoutError";
+  }
+}
+
+/**
+ * @spec [owner brief "Crisis classifier: record the failure reason", Karl 2026-11-08; SCL-276]
+ *       | @implemented [2026-11-08]
+ * Pure. Why a failed attempt failed, from the error alone: our own timeout (or an aborted
+ * request) is `timeout`; HTTP 429 or RESOURCE_EXHAUSTED is `rate_limited`; any other 4xx, or a
+ * NOT_FOUND / PERMISSION_DENIED / UNAUTHENTICATED / INVALID_ARGUMENT status, is `config_error`
+ * (it would fail the same way again); everything else (5xx, network, unreadable output) is
+ * `upstream_error`. The SDK's ApiError carries a numeric `status`; the message is the fallback.
+ */
+export function classifyClassifierFailure(err: unknown): CrisisDegradedReason {
+  if (err instanceof CrisisClassifierTimeoutError) return "timeout";
+  const name = err instanceof Error ? err.name : "";
+  if (name === "AbortError" || name === "TimeoutError") return "timeout";
+  const status =
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    typeof (err as { status: unknown }).status === "number"
+      ? (err as { status: number }).status
+      : null;
+  const message = err instanceof Error ? err.message : String(err);
+  if (status === 429 || /RESOURCE_EXHAUSTED|\b429\b/i.test(message)) {
+    return "rate_limited";
+  }
+  if (
+    (status !== null && status >= 400 && status < 500) ||
+    /NOT_FOUND|PERMISSION_DENIED|UNAUTHENTICATED|INVALID_ARGUMENT/.test(message)
+  ) {
+    return "config_error";
+  }
+  return "upstream_error";
+}
+
 type ClassifierModels = {
   generateContent: (params: {
     model: string;
@@ -399,6 +462,22 @@ async function prepareClassifier(): Promise<PreparedClassifier> {
  *    it gets the one retry like any other Vertex failure.
  */
 export async function classifyCrisis(text: string): Promise<ClassifierResult> {
+  return (await classifyCrisisDetailed(text)).result;
+}
+
+/**
+ * @spec [owner brief "Crisis classifier: record the failure reason", Karl 2026-11-08; SCL-276]
+ *       | @implemented [2026-11-08]
+ * `classifyCrisis`, plus what Layer 2 did: its wall time, its model attempts, and on failure the
+ * reason of the last failed attempt. The classification and every failure branch are exactly
+ * `classifyCrisis`'s (the "could not classify" sentinel is unchanged), so the fail-closed
+ * decision downstream is untouched.
+ */
+export async function classifyCrisisDetailed(
+  text: string,
+): Promise<{ result: ClassifierResult; layer2: Layer2Outcome }> {
+  const startedAt = Date.now();
+  const sentinel: ClassifierResult = { isCrisis: false, confidence: 0 };
   let prepared: PreparedClassifier;
   try {
     prepared = await prepareClassifier();
@@ -408,28 +487,47 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
       "classifier_retry_exhausted",
       "Layer 2 crisis classifier cannot run (setup failed; not retried, it would fail the same way); Layer 1 result stands, force-enqueuing to review queue",
       err instanceof Error ? err : { message: String(err) },
-      { retried: false },
+      { retried: false, degradedReason: "config_error", attempts: 0 },
     );
     // Return non-crisis — Layer 1 result stands per SCL-023
     // The caller sets forceReview = true
-    return { isCrisis: false, confidence: 0 };
+    return {
+      result: sentinel,
+      layer2: {
+        ms: Date.now() - startedAt,
+        attempts: 0,
+        degradedReason: "config_error",
+      },
+    };
   }
 
   // Attempt classification with retry-once on failure
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < CRISIS_CLASSIFIER_MAX_ATTEMPTS; attempt++) {
     try {
       // H1 (P2 Revised §2): one `crisis_model` step per attempt (route_timing; no content).
       const result = await timedStep("crisis_model", () =>
         invokeClassifier(text, prepared),
       );
-      return result;
+      return {
+        result,
+        layer2: {
+          ms: Date.now() - startedAt,
+          attempts: attempt + 1,
+          degradedReason: null,
+        },
+      };
     } catch (err: unknown) {
-      if (attempt === 0) {
+      const reason = classifyClassifierFailure(err);
+      if (attempt < CRISIS_CLASSIFIER_MAX_ATTEMPTS - 1) {
         logger.warn(
           "TUTOR_CRISIS",
           "classifier_attempt_failed",
           "Layer 2 crisis classifier failed; retrying once",
-          { attempt, error: err instanceof Error ? err.message : String(err) },
+          {
+            attempt,
+            degradedReason: reason,
+            error: err instanceof Error ? err.message : String(err),
+          },
         );
       } else {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -445,16 +543,31 @@ export async function classifyCrisis(text: string): Promise<ClassifierResult> {
             ? "Layer 2 crisis classifier model not found at configured endpoint — check VERTEX_CLASSIFIER_CLASS_MODEL and VERTEX_CLASSIFIER_LOCATION"
             : "Layer 2 crisis classifier failed after retry; Layer 1 result stands, force-enqueuing to review queue",
           err instanceof Error ? err : undefined,
+          { degradedReason: reason, attempts: attempt + 1 },
         );
         // Return non-crisis — Layer 1 result stands per SCL-023
         // The caller sets forceReview = true
-        return { isCrisis: false, confidence: 0 };
+        return {
+          result: sentinel,
+          layer2: {
+            ms: Date.now() - startedAt,
+            attempts: attempt + 1,
+            degradedReason: reason,
+          },
+        };
       }
     }
   }
 
   // Unreachable, but TypeScript needs the return
-  return { isCrisis: false, confidence: 0 };
+  return {
+    result: sentinel,
+    layer2: {
+      ms: Date.now() - startedAt,
+      attempts: CRISIS_CLASSIFIER_MAX_ATTEMPTS,
+      degradedReason: "upstream_error",
+    },
+  };
 }
 
 /**
@@ -475,11 +588,7 @@ async function invokeClassifier(
   const timedOut = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       controller.abort();
-      reject(
-        new Error(
-          `crisis classifier timed out after ${CRISIS_CLASSIFIER_TIMEOUT_MS} ms`,
-        ),
-      );
+      reject(new CrisisClassifierTimeoutError());
     }, CRISIS_CLASSIFIER_TIMEOUT_MS);
   });
 
@@ -515,6 +624,34 @@ async function invokeClassifier(
 // ── Combined Classifier ────────────────────────────────────────────────
 
 /**
+ * `classifyCrisisDetailed`, made total: if it ever throws (it should not), that is a Layer 2
+ * failure exactly as before (the "could not classify" sentinel), classified by its error.
+ */
+async function classifyWithOutcome(
+  text: string,
+): Promise<{ result: ClassifierResult; layer2: Layer2Outcome }> {
+  const startedAt = Date.now();
+  try {
+    return await classifyCrisisDetailed(text);
+  } catch (err: unknown) {
+    logger.error(
+      "TUTOR_CRISIS",
+      "classifier_unexpected_error",
+      "unexpected error from classifyCrisis; treating as Layer 2 failure",
+      err instanceof Error ? err : undefined,
+    );
+    return {
+      result: { isCrisis: false, confidence: 0 },
+      layer2: {
+        ms: Date.now() - startedAt,
+        attempts: 0,
+        degradedReason: classifyClassifierFailure(err),
+      },
+    };
+  }
+}
+
+/**
  * Which layers a turn's crisis screening runs.
  *  - "both": Layer 1 (signatures) and Layer 2 (the model), every free-text turn.
  *  - "signatures_only_exact_label": Layer 1 alone. ONLY for a guided-choice tap whose message
@@ -543,22 +680,12 @@ export async function runCrisisClassifier(
 ): Promise<CrisisResult> {
   const runModel = screening === "both";
   // Run both layers in parallel per SCL-023
-  const [signatureResult, classifierResult] = await Promise.all([
+  const [signatureResult, classified] = await Promise.all([
     checkCrisisSignatures(text),
-    runModel
-      ? classifyCrisis(text).catch((err: unknown): ClassifierResult => {
-          // If classifyCrisis itself throws (shouldn't, but defensive),
-          // treat as Layer 2 failure
-          logger.error(
-            "TUTOR_CRISIS",
-            "classifier_unexpected_error",
-            "unexpected error from classifyCrisis; treating as Layer 2 failure",
-            err instanceof Error ? err : undefined,
-          );
-          return { isCrisis: false, confidence: 0 };
-        })
-      : null,
+    runModel ? classifyWithOutcome(text) : null,
   ]);
+  const classifierResult = classified?.result ?? null;
+  const layer2 = classified?.layer2;
 
   const layer1Positive = signatureResult.triggered;
   const layer2Positive = classifierResult?.isCrisis ?? false;
@@ -590,6 +717,7 @@ export async function runCrisisClassifier(
         signatureId: null,
         modelConfidence: null,
         forceReview: true,
+        ...(layer2 !== undefined ? { layer2 } : {}),
       };
     }
     if (layer2MayHaveFailed) {
@@ -599,7 +727,11 @@ export async function runCrisisClassifier(
         "Layer 2 crisis classifier failed; Layer 1 stands (has signatures), turn force-enqueued to review queue",
       );
     }
-    return { crisis: false, forceReview: layer2MayHaveFailed };
+    return {
+      crisis: false,
+      forceReview: layer2MayHaveFailed,
+      ...(layer2 !== undefined ? { layer2 } : {}),
+    };
   }
 
   // At least one layer is positive — crisis path triggered.
@@ -638,6 +770,7 @@ export async function runCrisisClassifier(
         ? classifierResult.confidence
         : null,
     forceReview: true,
+    ...(layer2 !== undefined ? { layer2 } : {}),
   };
 }
 
