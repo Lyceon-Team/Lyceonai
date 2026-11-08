@@ -28,8 +28,11 @@
  * Prints ids and counts only, never message text.
  *
  * trade-offs (what a replay cannot reproduce, so read the production reply alongside):
- *  - Learning context, friction, KPI and memory are read as they are NOW, not as they were at
- *    the turn. Mastery has moved since; the baseline report says so.
+ *  - Learning context and KPI are read as they are NOW, not as they were at the turn. Mastery
+ *    has moved since; the baseline report says so.
+ *  - Friction's message signals are read as of the cut-off (W4-15, `frictionAsOf`); its
+ *    practice signals are read now. Memory written after the cut-off, or compacting this
+ *    conversation, is dropped (W4-16, `memoryAsOfCutoff`).
  *  - Offered videos are not replayed (the library post-dates some turns, and retrieval is live).
  *  - The policy assignment is production's deterministic default, as `resolveFullEnvelope`
  *    computes it.
@@ -96,6 +99,35 @@ export function isPostSubmitAtCutoff(
   if (!SUBMITTED_STATUSES.has(item.status) || item.answered_at === null)
     return false;
   return Date.parse(item.answered_at) <= Date.parse(cutoffAt);
+}
+
+/**
+ * @spec [closure plan W4-15, W4-16; owner brief 2026-11-08 (both fixes evaluated before
+ *       deploy)] | @implemented [2026-11-08]
+ * Pure. The memory summaries a replay of this cut-off may carry. Memory is read as it is now,
+ * so a summary written after the cut-off (its window ends later) would hand the replay
+ * knowledge the production turn did not have, and a compaction of this very conversation is
+ * the replay's own future. Both are dropped; a summary with no window end is kept, because it
+ * cannot be dated after the cut-off. Returns the kept list and how many were dropped.
+ */
+export function memoryAsOfCutoff<
+  T extends {
+    source_window_end: string | null;
+    content_json: Record<string, unknown>;
+  },
+>(
+  summaries: readonly T[],
+  cutoffAt: string,
+  conversationId: string,
+): { kept: T[]; dropped: number } {
+  const cutoff = Date.parse(cutoffAt);
+  const kept = summaries.filter(
+    (m) =>
+      m.content_json["conversation_id"] !== conversationId &&
+      (m.source_window_end === null ||
+        Date.parse(m.source_window_end) <= cutoff),
+  );
+  return { kept, dropped: summaries.length - kept.length };
 }
 
 async function main(): Promise<void> {
@@ -204,7 +236,16 @@ async function main(): Promise<void> {
     runtimeLimits: PRODUCTION_RUNTIME_LIMITS,
     correctAnswer: scanKey.value,
     isPostSubmit,
+    // W4-15: message-based friction as of the cut-off, never from later messages.
+    frictionAsOf: cutoff.created_at,
   });
+  // W4-16: only memory the production turn could have had.
+  const memory = memoryAsOfCutoff(
+    envelope.memory_summaries,
+    cutoff.created_at,
+    conversation.id,
+  );
+  envelope.memory_summaries = memory.kept;
   // The method the cut-off message asks for, by the turn path's own detector (Step 13d), so
   // the stored request carries what production sends the worker.
   envelope.requested_method = requestedVideoMethod(cutoff.message).method;
@@ -237,7 +278,8 @@ async function main(): Promise<void> {
 
   process.stdout.write(
     `${args.case}: imported; ${recentMessages.length} message(s) in the window; ` +
-      `${isPostSubmit ? "post" : "pre"}-submit; scan key ${scanKey.value === null ? "none" : "set"}\n`,
+      `${isPostSubmit ? "post" : "pre"}-submit; scan key ${scanKey.value === null ? "none" : "set"}; ` +
+      `memory ${memory.kept.length} kept, ${memory.dropped} dropped as after the cut-off\n`,
   );
 }
 

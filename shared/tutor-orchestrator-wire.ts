@@ -51,6 +51,43 @@ export const memorySummarySchema = z.object({
   source_window_end: z.string().nullable(),
 });
 
+/**
+ * @spec [Doc-03A_V3 §10.2 (chat_compaction content_json); closure plan W4-16]
+ *       | @implemented [2026-11-08]
+ * plain English: what `tutor_memory_summaries.content_json` holds for a `chat_compaction` row.
+ * The server's compaction writes it (server/services/tutor-compaction.ts) and the worker's
+ * memory block reads it (render-state-blocks.ts), so it lives here, once. It was declared in the
+ * server alone, which is how the worker came to read a `text` field no writer produces (W4-16).
+ */
+export const CHAT_COMPACTION_LIMITS = {
+  keyInsights: 5,
+  unresolvedConfusion: 5,
+  topicsDiscussed: 10,
+  entryLength: 200,
+} as const;
+
+const boundedCompactionList = (maxItems: number) =>
+  z.array(z.string().max(CHAT_COMPACTION_LIMITS.entryLength)).max(maxItems);
+
+export const chatCompactionContentSchema = z.object({
+  summary_version: z.literal("1.0"),
+  conversation_id: z.string().uuid(),
+  source_window_start: z.string(),
+  source_window_end: z.string(),
+  turns_compacted: z.number().int().nonnegative(),
+  topics_discussed: boundedCompactionList(
+    CHAT_COMPACTION_LIMITS.topicsDiscussed,
+  ),
+  skills_referenced: z.array(z.string()),
+  key_insights: boundedCompactionList(CHAT_COMPACTION_LIMITS.keyInsights),
+  unresolved_confusion: boundedCompactionList(
+    CHAT_COMPACTION_LIMITS.unresolvedConfusion,
+  ),
+  last_student_direction: z.string().nullable(),
+});
+
+export type ChatCompactionContent = z.infer<typeof chatCompactionContentSchema>;
+
 export const policyAssignmentSchema = z.object({
   policy_family: z.string(),
   policy_variant: z.string(),

@@ -102,6 +102,10 @@ class FakeQuery implements PromiseLike<Result> {
     this.filters.push((r) => String(r[col]) >= val);
     return this;
   }
+  lte(col: string, val: string): this {
+    this.filters.push((r) => String(r[col]) <= val);
+    return this;
+  }
   order(col: string, opts?: { ascending?: boolean }): this {
     this.orderBy.push({ col, ascending: opts?.ascending ?? true });
     return this;

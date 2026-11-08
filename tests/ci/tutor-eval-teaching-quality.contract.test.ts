@@ -38,7 +38,10 @@ import {
   type JudgeFn,
 } from "../eval/teaching-quality/judge";
 import { TEACHING_QUALITY_RUBRICS } from "../eval/teaching-quality/rubrics";
-import { isPostSubmitAtCutoff } from "../eval/teaching-quality/import-case";
+import {
+  isPostSubmitAtCutoff,
+  memoryAsOfCutoff,
+} from "../eval/teaching-quality/import-case";
 import { buildGoldenEnvelope } from "./lisa-golden-set-helpers";
 
 const BAD_REPLY =
@@ -353,12 +356,24 @@ describe("G0-2 teaching-quality harness", () => {
       "G0-2-01",
       "G0-2-02",
       "G0-2-03",
+      // The analysis team's Nov 3-5 cases (Karl, 2026-11-08): no golds yet.
+      "G0-2-04",
+      "G0-2-05",
+      "G0-2-06",
+      "G0-2-07",
     ]);
-    for (const r of TEACHING_QUALITY_RUBRICS) {
+    for (const r of TEACHING_QUALITY_RUBRICS.slice(0, 3)) {
       expect(r.gold_response).toMatch(/^“Using Desmos, /);
       expect(r.must).toHaveLength(3);
       expect(r.must_not).toHaveLength(3);
       expect(completeRubric(r)).not.toBeNull();
+    }
+    for (const r of TEACHING_QUALITY_RUBRICS.slice(3)) {
+      expect(r.gold_response).toBeNull();
+      expect(completeRubric(r)).not.toBeNull();
+      expect(
+        r.must_not?.some((m) => m.startsWith("Restarts the problem")),
+      ).toBe(true);
     }
     const evalCase = makeCase();
     const message = buildJudgeUserMessage({
@@ -423,5 +438,24 @@ describe("G0-2 teaching-quality harness", () => {
       false,
     );
     expect(toolRequestUnanswered("Subtract 3 from both sides.")).toBe(false);
+  });
+});
+
+describe("import: memory a replay may carry (W4-16, 2026-11-08)", () => {
+  const CONV = "77777777-7777-4777-8777-777777777777";
+  const row = (end: string | null, conversation: string) => ({
+    source_window_end: end,
+    content_json: { conversation_id: conversation },
+  });
+  it("drops memory written after the cut-off and any compaction of this conversation", () => {
+    const at = "2026-11-04T10:00:00Z";
+    const before = row("2026-11-03T09:00:00Z", "other");
+    const after = row("2026-11-04T11:00:00Z", "other");
+    const own = row("2026-11-03T09:00:00Z", CONV);
+    const undated = row(null, "other");
+    expect(memoryAsOfCutoff([before, after, own, undated], at, CONV)).toEqual({
+      kept: [before, undated],
+      dropped: 2,
+    });
   });
 });
