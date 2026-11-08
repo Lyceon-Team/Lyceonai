@@ -161,11 +161,20 @@ export const HOME_QOTD_ONBOARDING: PageGroup = {
       route: "/profile/complete",
       // First-run activation (2026-10-13): the date of birth starts empty, and the SAT question
       // appears once a 13+ date is entered.
-      waitFor: both('[data-testid="input-date-of-birth"]'),
+      waitFor: both('[data-testid="select-birth-month"]'),
       steps: [
+        // Three fields since the owner brief of 2026-11-04; Month is a native <select>.
         {
-          fill: both('[data-testid="input-date-of-birth"]'),
-          value: "2009-05-01",
+          select: both('[data-testid="select-birth-month"]'),
+          option: "5",
+        },
+        {
+          fill: both('[data-testid="input-birth-day"]'),
+          value: "1",
+        },
+        {
+          fill: both('[data-testid="input-birth-year"]'),
+          value: "2009",
         },
       ],
       expectVisible: '[data-testid="onboarding-sat-dates"]',
