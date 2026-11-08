@@ -117,6 +117,7 @@ export type TurnMetricsLog = {
    * decides explicitly.
    */
   help: HelpState | null;
+  /**
    * @spec [owner brief "Crisis classifier: record the failure reason, and look at the timeout",
    *        Karl 2026-11-08; SCL-276] | @implemented [2026-11-08]
    * What Layer 2 did on this turn: wall time across attempts, model attempts, and the failure
@@ -226,6 +227,8 @@ export async function logTurnMetrics(params: TurnMetricsLog): Promise<void> {
             help_level: params.help.level,
             help_worked_step: params.help.workedStep,
             help_signal: params.help.signal,
+          }
+        : {}),
       // Written only when Layer 2 ran: every other row's insert is unchanged.
       ...(params.crisisLayer2 !== null
         ? {
