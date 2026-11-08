@@ -1,6 +1,6 @@
 /**
  * @spec [owner brief "Help-level engine", Karl 2026-11-05 (rules 1–5 and the tests it names);
- *       rulings of 2026-11-05 (prompt v7 composing v3; a correct typed step is a typed message
+ *       rulings of 2026-11-05 (a correct typed step is a typed message
  *       stating the keyed answer; the wire carries the worked step; Student B's sequence is
  *       synthesised); SCL-275] | @implemented [2026-11-05]
  *
@@ -14,7 +14,10 @@
  *  - "idk" twice moves up two; a correct typed step moves down one.
  *  - The wire's enums equal the shared ones; the migration's CHECKs list exactly the shared
  *    values; the seeded keyword map parses and detects.
- *  - v7 renders v3 byte for byte when no level is sent, and never tells LISA to give the full
+ *  - Prompt (Karl's ruling on #1456, 2026-11-08: one line, v3 → v4 → v5 → v6): v6 is v5 plus
+ *    the [HELP LEVEL] directive block, by exact version only; the default stays v3. With no level
+ *    sent v6 renders exactly as v5; v3–v5 never render the block; and v6 never tells LISA to give
+ *    the full
  *    solution before submission.
  */
 import { readFileSync, readdirSync } from "node:fs";
@@ -42,14 +45,12 @@ import {
   ORCHESTRATE_MAX_WORKED_STEPS,
   ORCHESTRATE_SUBMIT_STATES,
   orchestrateRequestSchema,
+  type OrchestrateRequest,
 } from "../../shared/tutor-orchestrator-wire";
-import {
-  HELP_LEVEL_RULE,
-  LISA_DEFAULT_V7,
-} from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v7";
-import { LISA_DEFAULT_V3 } from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v3";
+import { buildSystemInstruction } from "../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
+import { renderHelpLevelBlock } from "../../apps/workers/tutor-orchestrator/src/prompts/render-state-blocks";
 import { resolvePromptArtifact } from "../../apps/workers/tutor-orchestrator/src/prompts/prompt-registry";
-import type { PromptFields } from "../../apps/workers/tutor-orchestrator/src/prompts/types";
+import { buildGoldenEnvelope } from "./lisa-golden-set-helpers";
 
 const ROOT = join(__dirname, "../..");
 const MIGRATION = readFileSync(
@@ -352,7 +353,7 @@ describe("wire, migration and registry agree with the one definition", () => {
     expect(later).toEqual([]);
   });
 
-  it("v7 is the latest for every variant", () => {
+  it("v6 resolves by exact version only; the default stays v3", () => {
     for (const variant of [
       "default",
       "scaffolded",
@@ -361,75 +362,120 @@ describe("wire, migration and registry agree with the one definition", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v7",
+        "lisa-default-v3",
       );
     }
-    expect(resolvePromptArtifact("default", "lisa-default-v3").version).toBe(
-      "lisa-default-v3",
+    expect(resolvePromptArtifact("default", "lisa-default-v6").version).toBe(
+      "lisa-default-v6",
     );
   });
 });
 
-describe("prompt v7", () => {
-  const base: PromptFields = {
-    entryMode: "scoped_question",
-    sourceSurface: "review",
-    policyVariant: "default",
-    isPostSubmit: false,
-    questionSection: "M",
-    requestedMethod: null,
-    helpLevel: null,
-    submitState: null,
-    workedStep: null,
+describe("prompt v6: v5 + the help-level directive block", () => {
+  const envelope = (
+    version: string,
+    over: Partial<OrchestrateRequest> = {},
+    isPostSubmit = false,
+  ): OrchestrateRequest => {
+    const e = buildGoldenEnvelope({
+      surface: "review",
+      isPostSubmit,
+      question: {
+        stem: "If 4x - 7 = 13, what is the value of x?",
+        itemType: "grid_in",
+      },
+      correctAnswer: isPostSubmit ? "5" : null,
+      messages: [{ role: "student", text: "Got it, next step" }],
+    });
+    return {
+      ...e,
+      policy_assignment: { ...e.policy_assignment, prompt_version: version },
+      ...over,
+    };
   };
+  const step = (index: number, final: boolean) => ({ index, final });
 
-  it("no level sent: v3's text, byte for byte", () => {
-    expect(LISA_DEFAULT_V7.renderSystemInstruction(base)).toBe(
-      LISA_DEFAULT_V3.renderSystemInstruction(base),
+  it("no level sent: v6 renders exactly as v5", () => {
+    expect(buildSystemInstruction(envelope("lisa-default-v6"))).toBe(
+      buildSystemInstruction(envelope("lisa-default-v5")),
     );
   });
 
-  it("a level sent: v3's text, then the rule for that level", () => {
-    const fields = { ...base, helpLevel: "hint" as const };
-    const rule = HELP_LEVEL_RULE(fields)!;
-    expect(LISA_DEFAULT_V7.renderSystemInstruction(fields)).toBe(
-      `${LISA_DEFAULT_V3.renderSystemInstruction(fields)}\n\n${rule}`,
-    );
-    expect(rule).toContain("Level 2, hint");
+  it("a level sent: v6 is v5 plus the block; v3, v4 and v5 never render it", () => {
+    const over = {
+      help_level: "worked_step" as const,
+      submit_state: "pre_submit" as const,
+      worked_step: step(2, false),
+    };
+    const v6 = buildSystemInstruction(envelope("lisa-default-v6", over));
+    const v5 = buildSystemInstruction(envelope("lisa-default-v5", over));
+    const block = renderHelpLevelBlock(envelope("lisa-default-v6", over))!;
+    expect(v6).toBe(`${v5}\n\n${block}`);
+    expect(block).toContain("[HELP LEVEL]");
+    expect(block).toContain("worked step 2 of 3");
+    for (const v of ["lisa-default-v3", "lisa-default-v4", "lisa-default-v5"]) {
+      expect(buildSystemInstruction(envelope(v, over))).not.toContain(
+        "[HELP LEVEL]",
+      );
+    }
   });
 
-  it("before submission it never asks for the full solution, even if one is sent", () => {
-    const pre = HELP_LEVEL_RULE({ ...base, helpLevel: "full_solution" })!;
-    expect(pre).not.toContain("full solution");
-    expect(pre).toContain("Level 3");
-    const final = HELP_LEVEL_RULE({
-      ...base,
-      helpLevel: "worked_step",
-      workedStep: { index: 3, final: true },
-    })!;
-    expect(final).toContain("Do not state the answer");
-    const post = HELP_LEVEL_RULE({
-      ...base,
-      isPostSubmit: true,
-      helpLevel: "full_solution",
-    })!;
-    expect(post).toContain("Level 4, full solution");
-    // Worked step 3 is the final one before submission whatever its flag says, and either source
-    // saying pre-submit (is_post_submit false, or submit_state pre_submit) is pre-submit.
-    expect(
-      HELP_LEVEL_RULE({
-        ...base,
-        helpLevel: "worked_step",
-        workedStep: { index: 3, final: false },
-      }),
-    ).toContain("Do not state the answer");
-    const mixed = HELP_LEVEL_RULE({
-      ...base,
-      isPostSubmit: true,
-      submitState: "pre_submit",
-      helpLevel: "full_solution",
-    })!;
+  it("before submission the ceiling is a worked step, never the final value, whatever is sent", () => {
+    const cases: Array<Partial<OrchestrateRequest>> = [
+      {
+        help_level: "full_solution",
+        submit_state: "pre_submit",
+        worked_step: null,
+      },
+      {
+        help_level: "worked_step",
+        submit_state: "pre_submit",
+        worked_step: step(3, true),
+      },
+      {
+        help_level: "worked_step",
+        submit_state: "pre_submit",
+        worked_step: step(3, false),
+      },
+      {
+        help_level: "worked_step",
+        submit_state: "pre_submit",
+        worked_step: step(1, false),
+      },
+    ];
+    for (const over of cases) {
+      const block = renderHelpLevelBlock(envelope("lisa-default-v6", over))!;
+      expect(block).not.toContain("full solution");
+      expect(block).toMatch(/never state the answer, the final value/i);
+    }
+    // Either source saying pre-submit is pre-submit.
+    const mixed = renderHelpLevelBlock(
+      envelope(
+        "lisa-default-v6",
+        {
+          help_level: "full_solution",
+          submit_state: "pre_submit",
+          worked_step: null,
+        },
+        true,
+      ),
+    )!;
     expect(mixed).not.toContain("full solution");
-    expect(mixed).toContain("Do not state the answer");
+  });
+
+  it("after submission level 4 is the full solution", () => {
+    const block = renderHelpLevelBlock(
+      envelope(
+        "lisa-default-v6",
+        {
+          help_level: "full_solution",
+          submit_state: "post_submit",
+          worked_step: null,
+        },
+        true,
+      ),
+    )!;
+    expect(block).toContain("level 4 of 4, full solution");
+    expect(block).toContain("ending with the correct answer");
   });
 });

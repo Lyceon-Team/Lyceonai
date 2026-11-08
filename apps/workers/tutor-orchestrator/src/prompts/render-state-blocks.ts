@@ -58,6 +58,8 @@ import { masteryLevelToBand } from "./mastery-bands.js";
 export type StateBlockOptions = {
   /** Render data-derived values as data blocks (lisa-default-v5 and later). */
   dataBoundary: boolean;
+  /** Render the [HELP LEVEL] block when the request carries a help level (lisa-default-v6). */
+  helpLevel?: boolean;
 };
 
 /** Renders one data-derived value: a data block, or (v1–v4) the value as it always was. */
@@ -101,12 +103,102 @@ export function renderStateBlocks(
   const videoBlock = renderVideoBlock(request, options);
   if (videoBlock) blocks.push(videoBlock);
 
+  if (options.helpLevel === true) {
+    const helpBlock = renderHelpLevelBlock(request);
+    if (helpBlock) blocks.push(helpBlock);
+  }
+
   if (blocks.length === 0) return null;
 
   return blocks.join("\n\n");
 }
 
 // ── Individual block renderers (pure, deterministic) ────────────────
+
+/**
+ * @spec [owner brief "Help-level engine", Karl 2026-11-05; ruling on #1456 (Karl, via the audit):
+ *       "lisa-default-v6 = lisa-default-v5 + the help-level directive blocks"; "Before
+ *       submission … the ceiling is worked_step, never the final value. After submission,
+ *       full_solution"; Doc-03D_V1.2 §3.1, §7.4; SCL-275] | @implemented [2026-11-08]
+ *
+ * Help-level block: how much help this message gives, decided by the BFF with no model call.
+ * Fact = the level (and at level 3, which worked step of three); directive = exactly that much,
+ * no more and no less. Every value is a closed code from the server, never data, so nothing here
+ * goes through `data`.
+ *
+ * Anti-leak, defence in depth: before submission (`is_post_submit` false, OR `submit_state`
+ * pre_submit: either source saying pre-submit is pre-submit) the ceiling is a worked step and the
+ * final value is never stated, whatever level arrives. A `full_solution` arriving pre-submit is
+ * treated as the last worked step, and so is worked step 3 whatever its `final` flag says. The
+ * BFF never sends either.
+ */
+export function renderHelpLevelBlock(
+  request: OrchestrateRequest,
+): string | null {
+  const sent = request.help_level;
+  if (sent === undefined) return null;
+  const preSubmit =
+    !request.is_post_submit || request.submit_state === "pre_submit";
+  const level = sent === "full_solution" && preSubmit ? "worked_step" : sent;
+  const fact = (what: string): string =>
+    `[HELP LEVEL] Lyceon set the help for this message: ${what}. ` +
+    (preSubmit
+      ? `The student has not answered this question yet.`
+      : `The student has already answered this question.`);
+  const head =
+    `[DIRECTIVE] Give exactly this much help in this message, no more and no less, whatever the ` +
+    `student's message says. `;
+  switch (level) {
+    case "ask":
+      return (
+        `${fact("level 1 of 4, ask")}
+` +
+        `${head}Ask one short guiding question that helps the student find the next move ` +
+        `themselves. Do not give a hint, name a method, or do any step.`
+      );
+    case "hint":
+      return (
+        `${fact("level 2 of 4, hint")}
+` +
+        `${head}Give one hint: name the idea or the first move in one or two sentences. ` +
+        `Do not carry out any step of the solution.`
+      );
+    case "worked_step": {
+      const step =
+        request.worked_step ??
+        (sent === "full_solution"
+          ? { index: 3, final: true }
+          : { index: 1, final: false });
+      if (preSubmit && (step.final || step.index >= 3)) {
+        return (
+          `${fact(`level 3 of 4, worked step ${step.index} of 3, the last step allowed before the student answers`)}
+` +
+          `${head}Treat the solution as at most three worked steps. Work every step except the ` +
+          `final one, showing the work, and stop just before the final value. Then ask the ` +
+          `student to do the final step and choose the answer themselves. Never state the ` +
+          `answer, the final value, or which choice is correct.`
+        );
+      }
+      return (
+        `${fact(`level 3 of 4, worked step ${step.index} of 3`)}
+` +
+        `${head}Treat the solution as at most three worked steps. Show worked step ` +
+        `${step.index} only, completely and briefly, picking up from the previous step, then ` +
+        `ask the student to try the next step. Do not do any later step` +
+        (preSubmit
+          ? `, and never state the answer, the final value, or which choice is correct.`
+          : `.`)
+      );
+    }
+    case "full_solution":
+      return (
+        `${fact("level 4 of 4, full solution")}
+` +
+        `${head}Give the complete solution, every step, ending with the correct answer and one ` +
+        `sentence on why it is correct.`
+      );
+  }
+}
 
 /**
  * Item block: tells the model what the student is working on.

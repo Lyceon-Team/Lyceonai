@@ -25,7 +25,7 @@ import { LISA_DEFAULT_V2 } from "./lisa-default-v2.js";
 import { LISA_DEFAULT_V3 } from "./lisa-default-v3.js";
 import { LISA_DEFAULT_V4 } from "./lisa-default-v4.js";
 import { LISA_DEFAULT_V5 } from "./lisa-default-v5.js";
-import { LISA_DEFAULT_V7 } from "./lisa-default-v7.js";
+import { LISA_DEFAULT_V6 } from "./lisa-default-v6.js";
 import { logEvent } from "../lib/vertex-client.js";
 
 // ── Artifact registry (loaded at bootstrap per §4.3) ────────────────
@@ -41,27 +41,27 @@ const ARTIFACTS_BY_VERSION: ReadonlyMap<string, PromptArtifact> = new Map([
   // v5 (2026-11-02, G2-1: v4 + the data-block rule, state blocks as data blocks) likewise
   // resolves by exact version only; production stays on v3 until Karl rules on v4 and v5.
   [LISA_DEFAULT_V5.version, LISA_DEFAULT_V5],
-  // v7 (2026-11-05, the help-level engine, SCL-275: v3 + the help-level rule) is the latest for
-  // every variant. It composes v3, not v5, so no unruled v4/v5 text reaches production. v6 is
-  // reserved for the voice workstream (#1449).
-  [LISA_DEFAULT_V7.version, LISA_DEFAULT_V7],
+  // v6 (2026-11-08, SCL-275: v5 + the help-level directive block) likewise resolves by exact
+  // version only (Karl's ruling on #1456): production stays on v3 until he rules after the real
+  // evaluation run.
+  [LISA_DEFAULT_V6.version, LISA_DEFAULT_V6],
 ]);
 
 /** Latest artifact version per policy variant (Doc 03A §11.4). */
 const LATEST_BY_VARIANT: ReadonlyMap<string, PromptArtifact> = new Map([
-  ["default", LISA_DEFAULT_V7],
+  ["default", LISA_DEFAULT_V3],
   // V1 starter set per Doc 03A §11.4 — all four variants resolve to the
   // same artifact. When variant-specific artifacts are authored, each entry
   // points to its own artifact. v3 (2026-10-15, video library: v2 + the video
-  // offer) was the latest until v7 (2026-11-05); v1–v5 stay resolvable by exact version for attribution.
-  ["scaffolded", LISA_DEFAULT_V7],
-  ["socratic", LISA_DEFAULT_V7],
-  ["concise", LISA_DEFAULT_V7],
-  ["strategy_first", LISA_DEFAULT_V7],
+  // offer) is the latest; v1 and v2 stay resolvable by exact version for attribution.
+  ["scaffolded", LISA_DEFAULT_V3],
+  ["socratic", LISA_DEFAULT_V3],
+  ["concise", LISA_DEFAULT_V3],
+  ["strategy_first", LISA_DEFAULT_V3],
 ]);
 
 /** The absolute fallback artifact — used when both variant and version miss. */
-const FALLBACK_ARTIFACT: PromptArtifact = LISA_DEFAULT_V7;
+const FALLBACK_ARTIFACT: PromptArtifact = LISA_DEFAULT_V3;
 
 // ── Public API ──────────────────────────────────────────────────────
 

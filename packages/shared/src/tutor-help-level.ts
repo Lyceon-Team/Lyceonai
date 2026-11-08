@@ -1,7 +1,8 @@
 /**
- * @spec [owner brief "Help-level engine", Karl 2026-11-05 (rules 1–5; rulings of 2026-11-05: a
- *       new prompt v7 composing v3, "a correct typed step" is a typed message that states the
- *       item's keyed answer, and the wire also carries the worked step's position); Doc-03D_V1.2
+ * @spec [owner brief "Help-level engine", Karl 2026-11-05 (rules 1–5; rulings of 2026-11-05: "a
+ *       correct typed step" is a typed message that states the item's keyed answer, and the wire
+ *       also carries the worked step's position; ruling on #1456, 2026-11-08: the prompt is
+ *       lisa-default-v6 = v5 + the help-level directive block, by exact version only); Doc-03D_V1.2
  *       §3.1 (the tutor acts `hint`, `worked_step`, `full_solution`); SCL-275] | @implemented [2026-11-05]
  *
  * plain English: THE one definition of how much help LISA gives on a turn, decided by the server

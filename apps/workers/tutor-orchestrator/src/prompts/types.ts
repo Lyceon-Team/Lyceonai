@@ -42,13 +42,6 @@ export type PromptFields = {
   questionSection: "M" | "RW" | null;
   /** The way of solving the student's current message asks for (`requested_method`); null if none. */
   requestedMethod: "desmos" | "algebraic" | "backsolve" | null;
-  /** The help level the BFF decided for this turn (`help_level`, SCL-275); null if not sent. */
-  helpLevel: NonNullable<OrchestrateRequest["help_level"]> | null;
-  /** The submit state the BFF derived (`submit_state`); null if not sent. A second source for the
-   * prompt's pre-submit test, beside `isPostSubmit`: either one saying pre-submit is pre-submit. */
-  submitState: NonNullable<OrchestrateRequest["submit_state"]> | null;
-  /** The worked step at level 3 (`worked_step`); null below level 3, at the full solution, or not sent. */
-  workedStep: NonNullable<OrchestrateRequest["worked_step"]> | null;
 };
 
 // ── Prompt artifact (the versioned, immutable template) ─────────────
@@ -67,4 +60,7 @@ export type PromptArtifact = {
   /** G2-1: the artifact's rules carry DATA_BLOCK_RULE, so the state blocks render data-derived
    * values as data blocks. Absent (v1–v4): the blocks render exactly as they always did. */
   readonly dataBoundary?: true;
+  /** SCL-275: the state blocks carry the [HELP LEVEL] block when the request carries a help level
+   * (`help_level`, decided by the BFF). Absent (v1–v5): no help block, output unchanged. */
+  readonly helpLevelBlock?: true;
 };

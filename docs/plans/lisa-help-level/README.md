@@ -39,14 +39,16 @@ before submission and level 4 after.
   only**. Before submission, a level that moved because a guess matched the key would tell the
   student the guess was right: an answer oracle, which the anti-leak invariant forbids. So the
   brief's "a correct typed step moves down one" applies after submission (flagged for Karl).
-- **A previous level that can't be read** gives the turn no level: it is sent without one (v7 then
-  renders exactly as v3) and records none, so the ladder's memory is never overwritten.
+- **A previous level that can't be read** gives the turn no level: it is sent without one (v6 then
+  renders exactly as v5) and records none, so the ladder's memory is never overwritten.
 - **Where the level lives:** each turn's `tutor_turn_metrics` row (`help_level`,
   `help_worked_step`, `help_signal`). The next turn starts from the latest row that has one.
 - **What the worker gets:** `help_level`, `submit_state` and `worked_step` on the request, all
   optional.
-- **The prompt:** `lisa-default-v7`, which is v3's rules byte for byte, plus one rule for the
-  level. It is named v7 because PR #1449 claims v6 for the voice work.
+- **The prompt:** `lisa-default-v6` = `lisa-default-v5` + the `[HELP LEVEL]` directive block
+  (`renderHelpLevelBlock`), by exact version only (Karl's ruling on #1456, 2026-11-08: one prompt
+  line, v3 → v4 → v5 → v6). The default stays v3 until Karl rules after the real evaluation run.
+  Before submission the ceiling is a worked step, never the final value; after, the full solution.
 - **Video choices:** `GET /api/tutor/guided-choices` hides a video choice when tapping it would
   serve no video.
 
@@ -65,5 +67,6 @@ It is keyed on `intent`, so the weeks before the engine are the baseline.
 
 1. Karl applies `supabase/migrations/20261201000000_lisa_help_level.sql`. The server writes the new
    columns on every model turn, so they must exist first.
-2. Deploy the worker from `lisa`: it must accept the three fields, and it carries v7.
+2. Deploy the worker from `lisa`: it must accept the three fields. It carries v6, reachable by
+   exact version only; production stays on v3.
 3. Merge to `main`, which deploys the server.
