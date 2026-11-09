@@ -1,0 +1,150 @@
+{"id":"SATM2IYB16J","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic equation 2(3x-5)=4x+18 asks for x; distribute, collect x terms, isolate"}
+{"id":"SATM2J81B4A","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 2x+5=19 asks for x; subtract then divide"}
+{"id":"SATM2J9ZWV5","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Context: plumber vs electrician equal cost; translate, set rate expressions equal, collect h terms, isolate"}
+{"id":"SATM2JFIYUZ","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"Infinitely many solutions: distribute a, recognize identical-sides condition, match coefficients, solve for a and b"}
+{"id":"SATM2JGZIFW","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x-19=23 asks for x; add then divide"}
+{"id":"SATM2JKTAG6","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 13x-29=62 asks for x; add then divide"}
+{"id":"SATM2JO9IO7","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"No solution: distribute a, combine constants, recognize equal-coeff/different-constant condition, match 3a=9, solve a=3"}
+{"id":"SATM2JQCA17","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic fractions (4x+11)/3-(x-5)/2=x+8; LCD 6, distribute, distribute negative, combine, isolate"}
+{"id":"SATM2JROGGR","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: contractor flat fee + hourly rate; translate, rate*hours, isolate h"}
+{"id":"SATM2JS3Z1U","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x+5)=7x-4; distribute, collect x terms, isolate"}
+{"id":"SATM2JT13BZ","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic fractions 3(x+4)/7-(2x-1)/3=2; LCD 21, distribute, distribute negative, combine, isolate"}
+{"id":"SATM2JU30Y9","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"No solution: distribute 5 and 13, combine like terms each side, match coefficients 5a+3=13, solve a=2"}
+{"id":"SATM2JUKFAR","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic (2x+1)/3=5; multiply by 3 to clear fraction, isolate x"}
+{"id":"SATM2JWJPCP","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"No solution: distribute k, match coefficients 3k=12, verify constants differ, solve k=4"}
+{"id":"SATM2JWXXY5","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 11x+37=147; subtract then divide"}
+{"id":"SATM2JXVT7M","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 4x+19=71; subtract then divide"}
+{"id":"SATM2K63DAP","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 5(x-3)+2=4x+7; distribute, combine constants on left, collect x terms, isolate"}
+{"id":"SATM2K98MQZ","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 8x-20=44; add then divide"}
+{"id":"SATM2K9S86B","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 2(3x+7)-5=4x+23; distribute, combine constants on left, collect x terms, isolate"}
+{"id":"SATM2K9V932","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 5(3w+2)/7-4=w+3; multiply by 7, distribute, combine, isolate"}
+{"id":"SATM2KAYKS3","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic fractions (2x+5)/3-(x-1)/4=17/6; LCD 12, distribute, distribute negative on -(x-1), combine, isolate"}
+{"id":"SATM2KLOW9F","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 5(x-3)=40; divide by 5 then add 3 — pure isolation, no distribution required"}
+{"id":"SATM2KMQLTM","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: mechanic flat fee + hourly rate; translate, rate*hours, isolate h"}
+{"id":"SATM2KMWWQS","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 13x-27=64; add then divide"}
+{"id":"SATM2KXW9EO","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 5x-8=17; add then divide"}
+{"id":"SATM2L0IXN0","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"No solution: distribute 3 and -2, combine like terms, match coefficients 12-2c=8, verify constants differ, solve c=2"}
+{"id":"SATM2L7CRCT","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0017","CL.0047"],"distractors":[],"why":"Context: 3/4 of a number decreased by 7 equals 1/2 of it plus 3; translate, combine fraction coefficients, isolate"}
+{"id":"SATM2LMU2D7","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 8(x-5)=3x+5; distribute, collect x terms, isolate"}
+{"id":"SATM2LVHEO3","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x-19=30; add then divide"}
+{"id":"SATM2LZPKOI","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(3x-2)-5(x-3)=3(x+1); distribute, distribute negative -5(x-3), combine, isolate"}
+{"id":"SATM2M02W1Q","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: gym $29/month + $58 enrollment, paid $319; translate, rate*months, isolate m"}
+{"id":"SATM2M51JU7","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(3x-11)=7(2x-5)+3; distribute both sides, combine constants on right, collect x terms, isolate"}
+{"id":"SATM2M6WBPY","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 8x-23=49; add then divide"}
+{"id":"SATM2M8YEGL","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 3x+9=24; subtract then divide"}
+{"id":"SATM2MCUGTV","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x+7)-4=5(x-1)+2; distribute both sides, combine constants, collect x terms, isolate"}
+{"id":"SATM2MFM8FD","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0004","CL.0047"],"distractors":[],"why":"Context: piecewise rate service (26/hr first 5, then 39/hr); translate, compute first-segment cost, subtract from total, divide remainder by overtime rate"}
+{"id":"SATM2MJRWV9","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2/3)(6x-9)-5(x-2)=4x+1; distribute fraction, distribute negative, combine, isolate"}
+{"id":"SATM2MK838V","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic fractions 3(2x-1)/5-(x+4)/3=(7x-23)/15; LCD 15, distribute, distribute negative, combine, isolate"}
+{"id":"SATM2MWNZVG","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 11x+37=158; subtract then divide"}
+{"id":"SATM2MWP77Z","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(3x-5)=2x+30; distribute, collect x terms, isolate"}
+{"id":"SATM2N1NKQB","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic (x-13)/4=7; multiply by 4 to clear fraction, then add 13"}
+{"id":"SATM2N7EDCM","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic 5(x+3)/2=35; multiply by 2, divide by 5, subtract 3"}
+{"id":"SATM2NBY1UI","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0133","CL.0053","CL.0089"],"distractors":[],"why":"No solution: distribute 3c, combine constants, match coefficients 3c=21, verify 3≠-11, solve c=7"}
+{"id":"SATM2NJALHK","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: mechanic $47 diagnostic + $29/hr, total $221; translate, rate*hours, isolate h"}
+{"id":"SATM2NJMS4H","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0029","CL.0047"],"distractors":[],"why":"Context: phone plan $35+$0.10/text with 20% discount; translate, rate*texts, convert percent discount to multiplier, isolate"}
+{"id":"SATM2NMTL26","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 9x+14=77; subtract then divide"}
+{"id":"SATM2NS1IZQ","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic 5(3x+11)/7=20; multiply by 7, distribute 5, isolate x"}
+{"id":"SATM2NU0LYE","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 2(5x-9)/3=4x+2; multiply by 3, distribute, collect x terms, isolate"}
+{"id":"SATM2OB8NEW","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 5(2x-3)-4(x+2)=3(x-7); distribute, distribute negative -4(x+2), combine, isolate"}
+{"id":"SATM2ONNP6M","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 13x+41=158; subtract then divide"}
+{"id":"SATM2OPVX1R","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Word problem: mechanic flat fee $37 + $68/hr = $377. Translate to 37+68h=377, isolate h."}
+{"id":"SATM2OZNLKK","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x+5)-4(x-1)=29. Distribute both terms (negative for -4), combine like terms, isolate x."}
+{"id":"SATM2OZW9NA","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic (3(2x-7))/4+5=11. Clear fraction (mult by 4), distribute 3, isolate x."}
+{"id":"SATM2P2BOTX","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 11x+7=84. Subtract 7, divide by 11."}
+{"id":"SATM2P6RZAS","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 8x-23=41. Add 23, divide by 8."}
+{"id":"SATM2P7VK3N","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 5x+4=29. Subtract 4, divide by 5."}
+{"id":"SATM2PEQ10F","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Word problem: plumber 47+31h vs electrician 83+19h, set equal. Translate, combine like terms on h, isolate."}
+{"id":"SATM2PKOF6O","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 9x-23=58. Add 23, divide by 9."}
+{"id":"SATM2PM04D1","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0053","CL.0133"],"distractors":[],"why":"Find a so a(x+3)-7x=-2x+19 has no solution. Distribute, combine, match x-coefficients (a-7=-2), verify constants differ."}
+{"id":"SATM2Q0OH2E","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Word problem: chemist mixes solutions A (11g/L) and B (3g/L) for 6g/L. Translate concentration equation, cross-multiply (clear fraction), distribute, combine, isolate."}
+{"id":"SATM2Q4FWK4","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2x+7)/3-(x-1)/6=5x/4. LCD=12, distribute multiplied-through coefficients, distribute negative, combine, isolate."}
+{"id":"SATM2Q67MLY","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (4x+23)/5=x+1. Multiply by 5, distribute on right, collect x terms, isolate."}
+{"id":"SATM2Q8EVL6","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 2(3x+7)-5(x-4)=3(x+11)-2. Distribute all products (negative for -5), combine like terms each side, isolate x."}
+{"id":"SATM2QDK5MG","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Word problem: store A charges 13+4n, store B charges 6n, set equal. Translate, combine n terms, isolate."}
+{"id":"SATM2QKVZS3","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-5)+11=5x-3. Distribute 3, combine like terms, isolate x."}
+{"id":"SATM2QLAR92","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Word problem: plumber 83+37h=342. Translate, isolate h."}
+{"id":"SATM2QP8GXL","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 3x+11=47. Subtract 11, divide by 3."}
+{"id":"SATM2QRG9LW","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 13x-29=49. Add 29, divide by 13."}
+{"id":"SATM2QSLM3C","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (7x+3)/2-(x-5)/6=2x+9. LCD=6, distribute, distribute negative, combine, isolate."}
+{"id":"SATM2QTXXG6","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2x+9)/3=(x-1)/2+5. LCD=6, distribute, combine like terms, isolate."}
+{"id":"SATM2R5PSJN","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (3x+1)/4+(x-5)/2=9. LCD=4, distribute, combine like terms, isolate."}
+{"id":"SATM2R9H54X","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2x+5)/3=(4x-1)/7. Cross-multiply (LCD=21), distribute both sides, combine, isolate."}
+{"id":"SATM2RB2RXQ","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Word problem: plumber 47+31h vs electrician 83+22h, set equal. Translate, combine h and constant terms, isolate."}
+{"id":"SATM2RHJU79","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (5x+3)/4=2x-3. Multiply by 4, distribute on right, collect x terms, isolate."}
+{"id":"SATM2RHYCT6","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic x/3+8=15. Subtract 8, multiply by 3. Simple isolation."}
+{"id":"SATM2RIR0ZZ","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (5(2x-3))/4=(x+11)/2. Multiply by 4 to clear, distribute 5 and 2, combine x terms, isolate."}
+{"id":"SATM2RKH4LI","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7w-19=30. Add 19, divide by 7."}
+{"id":"SATM2RKTF9O","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Word problem: Plan X (31+0.07t) exceeds Plan Y (19+0.11t) by $4.80. Translate, distribute subtraction of Plan Y, combine, isolate."}
+{"id":"SATM2RL25D9","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (5x+3)/4-(2x-1)/3=2. LCD=12, distribute coefficients, distribute negative, combine, isolate."}
+{"id":"SATM2RLCWF5","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2x+9)/5-(x-3)/2=7. LCD=10, distribute, distribute negative, combine, isolate."}
+{"id":"SATM2RMILUX","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (4x-9)/5+3=x-2. Multiply by 5, distribute on right, combine constants, isolate."}
+{"id":"SATM2RZ6TBO","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic 3(5x+7)/11=9. Multiply by 11, distribute 3, isolate x."}
+{"id":"SATM2S6C9W3","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Word problem: mechanic 43+67h vs 89h, set equal. Translate, combine h terms, isolate."}
+{"id":"SATM2S7HAO9","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 13x+47=151. Subtract 47, divide by 13."}
+{"id":"SATM2S849GG","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x+28=91. Subtract 28, divide by 7."}
+{"id":"SATM2SEF3TH","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 8x-23=41. Add 23, divide by 8."}
+{"id":"SATM2SF0OT7","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic (3(2x-5))/4+11=29. Clear fraction (mult by 4), distribute 3, isolate x."}
+{"id":"SATM2SHUZ17","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 5x+17=82. Subtract 17, divide by 5."}
+{"id":"SATM2SLURAC","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x-19=30. Add 19, divide by 7."}
+{"id":"SATM2T4GQOH","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (3x+1)/5+3=(x+11)/2. LCD=10, distribute, combine like terms, isolate."}
+{"id":"SATM2TA50Z2","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic (3(2x-7))/4+5=14. Clear fraction, distribute 3, isolate x."}
+{"id":"SATM2TR9A9P","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0017","CL.0053","CL.0133"],"distractors":[],"why":"Find a so a(x-4)+7=3x+2(x-5) has no solution. Distribute, combine, match x-coefficients (a=5), verify constants differ."}
+{"id":"SATM2TS1UOT","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic (3(2x-7))/4=9. Multiply by 4, distribute 3, isolate x."}
+{"id":"SATM2TWOVHH","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic (3x-7)/4=5. Multiply by 4, then isolate x. No distribution needed."}
+{"id":"SATM2UJLDAR","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 5(x+3)/2=3x+11. Multiply by 2, distribute 5, collect x terms, isolate."}
+{"id":"SATM2UJTMSY","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 4x+29=57. Subtract 29, divide by 4."}
+{"id":"SATM2UN5QW5","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 8x+13=69. Subtract 13, divide by 8."}
+{"id":"SATM2UPDVSX","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 5(x-3)/2=x+9. Multiply by 2, distribute 5, collect x terms, isolate."}
+{"id":"SATM2UQ0EDQ","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2x+1)/3-(x-2)/4=1. LCD=12, distribute coefficients, distribute negative, combine, isolate."}
+{"id":"SATM2USLBN0","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x+35=91. Subtract 35, divide by 7."}
+{"id":"SATM2UV4PPP","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic equation 3(2x-7)/4=15; asks for x. Clear fraction (×4), distribute 3 over (2x-7), isolate."}
+{"id":"SATM2UXSBH3","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 3p+17=41; asks for p. Simple two-step isolate."}
+{"id":"SATM2UYH4DB","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x+23=121; asks for x. Simple two-step isolate."}
+{"id":"SATM2UYTDYG","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 13x-29=62; asks for x. Simple two-step isolate."}
+{"id":"SATM2V565VZ","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(3x+5)-11=69; asks for x. Distribute 4, combine constants 20-11, isolate."}
+{"id":"SATM2VCE8R0","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x-19=30; asks for x. Simple two-step isolate."}
+{"id":"SATM2VGQ5BA","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-7)/4=(x+11)/2; asks for x. Clear fractions (×4), distribute both sides, combine variable terms, isolate."}
+{"id":"SATM2VLAICU","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x-13=50; asks for x. Simple two-step isolate."}
+{"id":"SATM2VQRKCM","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x-23=54; asks for x. Simple two-step isolate."}
+{"id":"SATM2W0KBAE","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Context: two mechanics equal cost (47+83h=109h). Translate words, rate×hours, combine like terms, isolate."}
+{"id":"SATM2W2P6E8","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 9x-23=40; asks for x. Simple two-step isolate."}
+{"id":"SATM2W3FQ34","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-7)+11=5x+8; asks for x. Distribute, combine like terms (variable both sides), isolate."}
+{"id":"SATM2W6LNTJ","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Context: electrician vs plumber equal cost (75+45h=50+55h). Translate words, rate×hours, combine, isolate."}
+{"id":"SATM2WA4NR1","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-5)/4+7=16; asks for x. Clear fraction (×4), distribute 3 over (2x-5), isolate."}
+{"id":"SATM2WGM6E5","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 5x+15=40; asks for x. Simple two-step isolate."}
+{"id":"SATM2WLUB4R","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(x-3)/5+2=(x+7)/5; asks for x. LCD (×5), distribute 4(x-3), combine with x term, isolate."}
+{"id":"SATM2WOVJHL","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic 7(x-3)/5=14; asks for x. Clear fraction (×5), divide by 7, isolate."}
+{"id":"SATM2WS441R","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2x+9)/5-(x-3)/4=3; asks for x. LCD (×20), distribute 4(2x+9), distribute negative -5(x-3), combine, isolate."}
+{"id":"SATM2WSIGYA","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (2x+9)/5-(x-3)/2=1; asks for x. LCD (×10), distribute 2(2x+9), distribute negative -5(x-3), combine, isolate."}
+{"id":"SATM2WTGS6T","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x+7)-4x=51; asks for x. Distribute 3, combine 6x-4x, isolate."}
+{"id":"SATM2WUN5ED","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic (5x+3)/2-4=13; asks for x. Isolate fraction term, clear fraction (×2), isolate."}
+{"id":"SATM2WY36VW","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 2(x+9)=52; asks for x. Divide by 2, subtract 9 — simple isolate."}
+{"id":"SATM2WYDEIF","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 5x+17=52; asks for x. Simple two-step isolate."}
+{"id":"SATM2WZ0SH3","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic (2x+11)/3=9; asks for x. Clear fraction (×3), isolate."}
+{"id":"SATM2WZ7R4X","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 8x-23=41; asks for x. Simple two-step isolate."}
+{"id":"SATM2X0CAQ4","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 3x-11=46; asks for x. Simple two-step isolate."}
+{"id":"SATM2X6Y870","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic 5(x-3)/2=20; asks for x. Clear fraction (×2), divide by 5, isolate."}
+{"id":"SATM2XGRW3G","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 9x-23=40; asks for x. Simple two-step isolate."}
+{"id":"SATM2XN0MZG","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-7)/5-(x+11)/3=x-9; asks for x. LCD (×15), distribute 9(2x-7) and 15(x-9), distribute negative -5(x+11), combine, isolate."}
+{"id":"SATM2XQW8GO","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 5(x-3)/2=(3x+7)/4; asks for x. Cross-multiply to clear fractions, distribute, combine, isolate."}
+{"id":"SATM2XYLP38","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (5x-2)/3+(x+4)/6=(3x+1)/2; asks for x. LCD (×6), distribute, combine, isolate."}
+{"id":"SATM2Y0ELHC","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: car rental 26d+52=182. Translate words, rate×days, isolate for d."}
+{"id":"SATM2Y2ZQC4","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(3x-13)-5(2x+1)=x-38; asks for x. Distribute 4, distribute negative -5, combine, isolate."}
+{"id":"SATM2Y6Z7E9","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: mechanic 53+79h=369. Translate words, rate×hours, isolate for h."}
+{"id":"SATM2YCNH6I","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 7x-19=30; asks for x. Simple two-step isolate."}
+{"id":"SATM2YH80I1","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic x/3+7=12; asks for x. Subtract 7, clear fraction (×3)."}
+{"id":"SATM2Z34GAR","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0017","CL.0047"],"distractors":[],"why":"Context: two plumbers equal cost (47+31h=23+37h). Translate, rate×hours, combine, isolate."}
+{"id":"SATM2Z5IP5I","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0060","CL.0047"],"distractors":[],"why":"Context: carpenter 41+13h=119. Translate words, rate×hours, isolate for h."}
+{"id":"SATM2Z7HLQG","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-5)+4=2(x+3)-1; asks for x. Distribute both sides, combine, isolate."}
+{"id":"SATM2ZFB72U","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 11x-34=43; asks for x. Simple two-step isolate."}
+{"id":"SATM2ZGDB5P","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Symbolic (2x-9)/7=5; asks for x. Clear fraction (×7), isolate."}
+{"id":"SATM2ZJAPOB","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-7)/4+5=x/2; asks for x. LCD (×4), distribute 3(2x-7), combine with 2x, isolate."}
+{"id":"SATM2ZJUS8F","sub_skills":["LE1.1"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 6x+13=4x+37; asks for x. Combine like terms (variable both sides), isolate."}
+{"id":"SATM2ZJW913","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Symbolic 9x-37=44; asks for x. Simple two-step isolate."}
+{"id":"SATM2ZKUIHZ","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(3x-7)=2(5x+3)+8; asks for x. Distribute both sides, combine, isolate."}
+{"id":"SATM2ZLOMPR","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0047"],"distractors":[],"why":"Symbolic 4(2x-5)/3+6=18; asks for x. Isolate fraction, clear (×3), distribute 4 over (2x-5), isolate."}
+{"id":"SATM2ZNEX9B","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 4(2x-5)+6=3x+11; asks for x. Distribute 4, combine, isolate (variable both sides)."}
+{"id":"SATM2ZO1S2H","sub_skills":["LE1.2"],"clusters":["CL.0034","CL.0033","CL.0017","CL.0047","CL.0094"],"distractors":[],"why":"Symbolic 3(2x-4)-2(x+5)=6; asks for x-3 (expression, not bare variable). Distribute, distribute negative, combine, isolate x, evaluate x-3."}
+{"id":"SATM2ZQIMT5","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic (4x-3)/5=(2x+9)/3; asks for x. Cross-multiply to clear fractions, distribute, combine, isolate."}
+{"id":"SATM2ZQU200","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Symbolic 3(2x-7)/4+11=5x-2; asks for x. Clear fraction (×4), distribute 3(2x-7), combine with 20x, isolate."}

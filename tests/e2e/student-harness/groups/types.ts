@@ -49,7 +49,20 @@ export type FillStep = { fill: Record<Viewport, string | null>; value: string };
  */
 export type FocusStep = { focus: Record<Viewport, string | null> };
 
-export type Step = ClickStep | PickStep | FillStep | FocusStep;
+/**
+ * Choose an option in a native `<select>`, addressed per viewport like a click. `null` for a
+ * viewport skips it there.
+ *
+ * Added for the three-field birthday input (owner brief 2026-11-04): the Month field is a native
+ * `<select>`, and Playwright's `fill` throws on one — a select needs `selectOption`. The old
+ * single `<input type="date">` took a `fill`, which is why no step like this existed before.
+ */
+export type SelectStep = {
+  select: Record<Viewport, string | null>;
+  option: string;
+};
+
+export type Step = ClickStep | PickStep | FillStep | FocusStep | SelectStep;
 
 /**
  * F-69: one more size to shoot a shot at, beyond desktop and phone (the timed exam module at

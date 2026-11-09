@@ -250,7 +250,7 @@ export const FIRST_RUN_ONBOARDING: PageGroup = {
         "Onboarding: the date of birth starts empty; no SAT question until a date is entered",
       persona: "onboarding",
       route: "/profile/complete",
-      waitFor: both('[data-testid="input-date-of-birth"]'),
+      waitFor: both('[data-testid="select-birth-month"]'),
       expectGone: '[data-testid="onboarding-sat-dates"]',
       fullPage: true,
       prototype: NEW_SCREEN,
@@ -261,11 +261,20 @@ export const FIRST_RUN_ONBOARDING: PageGroup = {
         "Onboarding, a 13+ date entered: 'When's your SAT?' with 'Pick every date you might take', the menu open, Done on screen",
       persona: "onboarding",
       route: "/profile/complete",
-      waitFor: both('[data-testid="input-date-of-birth"]'),
+      waitFor: both('[data-testid="select-birth-month"]'),
       steps: [
+        // Three fields since the owner brief of 2026-11-04; Month is a native <select>.
         {
-          fill: both('[data-testid="input-date-of-birth"]'),
-          value: "2009-05-01",
+          select: both('[data-testid="select-birth-month"]'),
+          option: "5",
+        },
+        {
+          fill: both('[data-testid="input-birth-day"]'),
+          value: "1",
+        },
+        {
+          fill: both('[data-testid="input-birth-year"]'),
+          value: "2009",
         },
         click('[data-testid="onboarding-sat-dates-trigger"]'),
       ],
