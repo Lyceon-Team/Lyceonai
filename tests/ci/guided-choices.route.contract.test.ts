@@ -1006,6 +1006,147 @@ describe("crisis screening (ruling 4)", () => {
   });
 });
 
+/**
+ * @spec [owner brief "Crisis classifier: record the failure reason, and look at the timeout",
+ *       Karl 2026-11-08; SCL-276] | @implemented [2026-11-08]
+ * plain English: the 2026-11-05 incident's shape on the real route and the real classifier, with
+ * Vertex answering 429 to the classifier. The turn fails closed exactly as before (force-reviewed;
+ * with no Layer 1 floor, the crisis path), and now the reason and attempts are on the review case
+ * and the turn's metrics row.
+ */
+describe("Layer 2 failure reason (SCL-276)", () => {
+  const CASE_ID = "cccccccc-0000-4000-8000-0000000000c1";
+
+  function classifierFails(status: number): void {
+    generateContent.mockImplementation(
+      async (params: {
+        config?: { systemInstruction?: { parts?: Array<{ text?: string }> } };
+      }) => {
+        const system = params.config?.systemInstruction?.parts?.[0]?.text;
+        if (system === CRISIS_CLASSIFIER_SYSTEM_PROMPT) {
+          classifierCalls += 1;
+          throw Object.assign(new Error(`[${status}] upstream`), { status });
+        }
+        tutorModelCalls += 1;
+        return {
+          candidates: [
+            {
+              finishReason: "STOP",
+              index: 0,
+              content: { role: "model", parts: [{ text: REPLY }] },
+            },
+          ],
+          text: REPLY,
+          usageMetadata: { promptTokenCount: 900, candidatesTokenCount: 20 },
+        };
+      },
+    );
+  }
+
+  function flagCreatesCase(): void {
+    db.current.onRpc("flag_conversation_for_crisis_review", (args) => {
+      db.current.seed("crisis_review_cases", {
+        id: CASE_ID,
+        conversation_id: args.p_conversation_id,
+        student_id: args.p_student_id,
+        source: args.p_source,
+        status: "open",
+        degraded_reason: null,
+        classifier_attempts: null,
+      });
+      return {
+        data: {
+          case_id: CASE_ID,
+          sla_deadline: "2026-11-10T00:00:00.000Z",
+          already_existed: false,
+          case_status: "open",
+          persisted_source: args.p_source,
+        },
+        error: null,
+      };
+    });
+  }
+
+  function metricsRow(conv: string): Record<string, unknown> {
+    const rows = db.current
+      .rows("tutor_turn_metrics")
+      .filter((r) => r.conversation_id === conv);
+    expect(rows).toHaveLength(1);
+    return rows[0]!;
+  }
+
+  it("Layer 1 has signatures: the turn proceeds force-reviewed, as before; the case and the row carry rate_limited, 2 attempts", async () => {
+    db.current.seed("tutor_injection_signatures", {
+      signature_pattern: "a phrase nobody types",
+      signature_type: "crisis",
+      enabled: true,
+      category: "crisis",
+    });
+    classifierFails(429);
+    flagCreatesCase();
+    const conv = seedConversation(Q_MATH);
+    const res = await send(conv, "answer");
+    expect(res.status).toBe(200);
+    expect(classifierCalls).toBe(2); // the attempt and the one retry
+    const flag = db.current.rpcCalls.find(
+      (c) => c.name === "flag_conversation_for_crisis_review",
+    );
+    expect(flag?.args).toMatchObject({ p_source: "classifier_degraded" });
+    expect(
+      db.current.rows("crisis_review_cases").find((r) => r.id === CASE_ID),
+    ).toMatchObject({
+      degraded_reason: "rate_limited",
+      classifier_attempts: 2,
+    });
+    const row = metricsRow(conv);
+    expect(row).toMatchObject({
+      crisis_classifier_outcome: "classifier_degraded",
+      crisis_degraded_reason: "rate_limited",
+      crisis_classifier_attempts: 2,
+    });
+    expect(typeof row.crisis_classifier_ms).toBe("number");
+  });
+
+  it("no Layer 1 floor: fails closed into the crisis path, as before; the case carries upstream_error", async () => {
+    classifierFails(503);
+    flagCreatesCase();
+    const conv = seedConversation(Q_MATH);
+    const res = await send(conv, "answer");
+    expect(res.status).toBe(200);
+    expect(tutorModelCalls).toBe(0); // never "assume safe": no tutoring reply
+    const flag = db.current.rpcCalls.find(
+      (c) => c.name === "flag_conversation_for_crisis_review",
+    );
+    expect(flag?.args).toMatchObject({
+      p_source: "classifier_degraded_no_floor",
+    });
+    expect(
+      db.current.rows("crisis_review_cases").find((r) => r.id === CASE_ID),
+    ).toMatchObject({
+      degraded_reason: "upstream_error",
+      classifier_attempts: 2,
+    });
+  });
+
+  it("a healthy turn records its Layer 2 time and one attempt, and no reason", async () => {
+    const conv = seedConversation(Q_MATH);
+    const res = await send(conv, "what is a slope?");
+    expect(res.status).toBe(200);
+    const row = metricsRow(conv);
+    expect(row).toMatchObject({
+      crisis_classifier_outcome: "no_crisis",
+      crisis_classifier_attempts: 1,
+      crisis_degraded_reason: null,
+    });
+    expect(typeof row.crisis_classifier_ms).toBe("number");
+    expect(
+      db.current.rpcCalls.some(
+        (c) => c.name === "flag_conversation_for_crisis_review",
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("GET /guided-choices", () => {
   async function choices(
     itemId: string,

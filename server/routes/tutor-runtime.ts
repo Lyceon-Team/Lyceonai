@@ -84,6 +84,7 @@ import {
   runCrisisClassifier,
   getCrisisResponse,
   flagConversationForReview,
+  type Layer2Outcome,
   notifyCrisisEvent,
   evaluateNotificationPolicy,
 } from "../services/tutor-crisis";
@@ -108,6 +109,7 @@ import {
   type TurnAttribution,
 } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { decideHelpTurn } from "../services/tutor-help-level";
+import { recordDegradedReason } from "../services/crisis-degraded-reason";
 import {
   requestedVideoMethod,
   resolveVideoAction,
@@ -1190,6 +1192,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
   // Set once step 11 has persisted (or re-claimed) the student row, so the
   // catch-all can release the turn for retry instead of leaving it 'pending'.
   let persistedStudentMessageId: string | null = null;
+  // SCL-276: what Layer 2 did on this turn, once the classifier has settled; every later metrics
+  // row (the catch-all included) records it. Null until then.
+  let crisisLayer2: Layer2Outcome | null = null;
 
   try {
     // Step 5: Verify conversation ownership (§3.3).
@@ -1289,6 +1294,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: null,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
       sendTutorError(res, "idempotency_lookup_failed");
       return;
@@ -1331,6 +1337,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisClassifierOutcome: null,
           intent: turnIntent,
           help: null,
+          crisisLayer2,
         });
         sendTutorError(res, "idempotency_conflict");
         return;
@@ -1392,6 +1399,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisClassifierOutcome: null,
           intent: turnIntent,
           help: null,
+          crisisLayer2,
         });
 
         res.status(200).json({
@@ -1561,6 +1569,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
     const crisisOutcome = await crisisSettled;
     if (crisisOutcome.ok) {
       crisisResult = crisisOutcome.value;
+      crisisLayer2 = crisisResult.layer2 ?? null;
     } else {
       const crisisErr = crisisOutcome.error;
       // B1.5: Unexpected infrastructure failure in the entire classifier
@@ -1653,6 +1662,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           : null,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
       sendTutorError(res, "canonical_write_failed");
       return;
@@ -1796,6 +1806,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           },
         );
       }
+      // SCL-276: why Layer 2 could not answer (classifier_degraded_no_floor), on the case. After
+      // the pause and the notification, and never throws; a no-op for every other source.
+      await recordDegradedReason(flagResult.caseId, crisisResult.layer2);
 
       // Mark student message as completed — crisis detection is a valid response.
       await supabaseServer
@@ -1882,6 +1895,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisClassifierOutcome: crisisResult.source,
           intent: turnIntent,
           help: null,
+          crisisLayer2,
         });
         sendTutorError(res, "canonical_write_failed");
         return;
@@ -1928,6 +1942,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: crisisResult.source,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
 
       res.status(200).json({
@@ -1972,6 +1987,9 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         slaDeadline: degradedResult.slaDeadline,
         timestamp: new Date().toISOString(),
       });
+      // SCL-276: why Layer 2 could not answer, on the case. After the notification, and never
+      // throws: diagnostics never delay or skip the review path.
+      await recordDegradedReason(degradedResult.caseId, crisisResult.layer2);
     }
 
     // The classifier outcome of a turn that is not a crisis (crisisResult.crisis is false from
@@ -2075,6 +2093,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           crisisClassifierOutcome: noCrisisOutcome,
           intent: turnIntent,
           help: null,
+          crisisLayer2,
         });
         await supabaseServer
           .from("tutor_messages")
@@ -2106,6 +2125,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
       await supabaseServer
         .from("tutor_conversations")
@@ -2187,6 +2207,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
       await supabaseServer
         .from("tutor_messages")
@@ -2464,6 +2485,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
       // Mark student message as failed — orchestration did not produce a reply.
       await supabaseServer
@@ -2590,6 +2612,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: noCrisisOutcome,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
       // Tutor reply failed to persist — mark student message as failed.
       await supabaseServer
@@ -2685,6 +2708,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       crisisClassifierOutcome: normalPathOutcome,
       intent: turnIntent,
       help: helpTurn?.state ?? null,
+      crisisLayer2,
     });
 
     await supabaseServer
@@ -2760,6 +2784,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         crisisClassifierOutcome: null,
         intent: turnIntent,
         help: null,
+        crisisLayer2,
       });
     } catch (metricsErr: unknown) {
       // Metrics logging itself failed — swallow so the error response sends.
