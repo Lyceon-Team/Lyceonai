@@ -1,0 +1,94 @@
+# LE2+LF Write Pass Report
+# Date: 2026-11-03
+# Taxonomy: scl-v1.0.0
+# Questions: 594 (LE2: 300, LF: 294)
+# MCQ: LE2=221, LF=227
+
+## Sub-skill distribution
+
+### LE2 questions (300):
+  LE2.1: 0
+  LE2.2: 0
+  LE2.3: 0
+  LE2.4: 233
+  LE2.5: 93
+  LF.1: 0
+  LF.2: 0
+  LF.3: 0
+  LF.4: 0
+  LF.5: 0
+  Total tags: 326
+
+### LF questions (294):
+  LE2.1: 0
+  LE2.2: 0
+  LE2.3: 0
+  LE2.4: 0
+  LE2.5: 1
+  LF.1: 187
+  LF.2: 37
+  LF.3: 128
+  LF.4: 35
+  LF.5: 8
+  Total tags: 396
+
+## Cluster distribution (top 20 overall)
+  CL.0128: 239
+  CL.0024: 201
+  CL.0047: 175
+  CL.0094: 147
+  CL.0084: 107
+  CL.0080: 101
+  CL.0116: 82
+  CL.0160: 40
+  CL.0104: 36
+  CL.0154: 33
+  CL.0089: 22
+  CL.0009: 11
+  CL.0172: 10
+  CL.0095: 9
+  CL.0004: 9
+  CL.0016: 9
+  CL.0017: 7
+  CL.0034: 6
+  CL.0060: 5
+  CL.0053: 3
+  Distinct clusters used: 26
+
+## Distractor tags
+  LE2: 663 tags across 221 MCQ questions
+  LF: 681 tags across 227 MCQ questions
+
+## FINDINGS
+
+### 1. LE2 sub-skill coverage gap (LE2.1, LE2.2, LE2.3 = 0)
+All 300 LE2 questions are pure-math (abstract lines, slopes, intercepts,
+perpendicular/parallel). NONE have contextual word problems, so:
+  - LE2.1 (model from context): 0 — no questions ask to BUILD an equation from a word scenario
+  - LE2.2 (interpret in context): 0 — no questions ask what a coefficient MEANS in a situation
+  - LE2.3 (find quantity in context): 0 — no questions give one contextual variable to find another
+This is a BANK GAP, not a tagging error. The LE2 bank contains only abstract
+line-equation questions (LE2.4: connect representations, LE2.5: parallel/perp).
+Contextual linear-equation questions may exist under other skill_codes or may be missing entirely.
+
+### 2. LF.5 very low (8 tags)
+LF.5 (intercepts and graph features) has only 8 tags across 294 LF questions.
+Most intercept questions land in LF.3 (determine function from data) instead,
+because they require computing the intercept from given information rather than
+just reading/using it as a graph feature.
+
+### 3. No mis-skills detected
+No question's content clearly belongs to the other skill than its skill_code.
+The notation boundary (y= vs f(x)=) is respected by the bank.
+
+### 4. No taxonomy gaps detected
+Every question found a sub-skill home. No content fell outside the taxonomy.
+
+### 5. No off-spec patterns detected
+No question patterns appear absent from official College Board content.
+
+### 6. Cross-skill tags: 1
+One LF question received an LE2.5 tag (parallel/perpendicular content in function notation).
+
+## Zero-coverage sub-skills (candidates for bank expansion)
+  LE2.1, LE2.2, LE2.3 — see Finding #1 above

@@ -118,7 +118,13 @@ export default tseslint.config(
     // file under these globs is a command-line program whose stdout is its
     // output; none is imported by server/, client/, apps/*/src or packages/.
     files: [
-      "scripts/**/*.{js,mjs,cjs,ts}",
+      // `mts` was missing from this list until 2026-11-04, and the gap was invisible: the two
+      // `.mts` files that already existed (`shots-billing`, `shots-tokens`) happen to print
+      // nothing, so `no-console` never fired on one. `scripts/shots-birthday.mts` prints the
+      // measured page widths that ARE its deliverable, and it reddened `ci`. The block's own
+      // reasoning above — "every operator CLI tree, scripts/** in all its languages" — already
+      // covers `.mts`; only the glob did not.
+      "scripts/**/*.{js,mjs,cjs,mts,cts,ts}",
       "server/scripts/**/*.ts",
       "apps/api/scripts/**/*.ts",
       "tests/legacy/**/*.js",

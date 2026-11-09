@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM2UAVIRM",
+  "skill_code": "Area and Volume",
+  "post_on": "2026-11-09",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "Radius 9, slant 15. Is the obvious pick right?",
+    "voice": "One answer here looks perfect. It's wrong."
+  },
+  "question_voice": "We know how wide this cone is and how long its slanted side is, and we want how much it holds.",
+  "signature_move": "Write the formula first, then substitute before you compute.",
+  "steps": [
+    {
+      "notepad": "V = ⅓ π r² h",
+      "voice": "Write the formula first. A third, pi, r squared, h."
+    },
+    {
+      "notepad": "h² + 9² = 15²",
+      "voice": "But we don't have the height. The slant is the long side of a right triangle, so use Pythagoras."
+    },
+    {
+      "notepad": "h = 12",
+      "voice": "That's a three, four, five triangle, scaled up. The height is twelve."
+    },
+    {
+      "notepad": "V = ⅓ π (81)(12)",
+      "voice": "Now substitute. A third of eighty-one, times twelve."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) 324π",
+    "voice": "Three hundred twenty-four pi. That's A. Quick check: the height has to be shorter than the slant, and twelve is."
+  },
+  "trap": {
+    "summary": "Using the slant height, 15, as the height, which gives 405π.",
+    "notepad": [
+      "h = 15 → 405π  ✗",
+      "15 is the slant, not the height",
+      "h = 12 → 324π  ✓"
+    ],
+    "voice": "Here's where people slip. They plug in fifteen as the height and get four hundred five pi. That's B. But fifteen is the slanted side, not the height."
+  },
+  "check": "12 is shorter than the slant height 15, and the volume is in cubic units.",
+  "takeaway": "The slant height is not the height."
+}

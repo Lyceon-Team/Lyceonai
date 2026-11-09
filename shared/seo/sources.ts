@@ -310,3 +310,19 @@ export const CB_DEVICE_LENDING: Source = {
   label: "College Board: SAT device lending",
   url: "https://satsuite.collegeboard.org/sat/device-lending",
 };
+
+// Content pipeline sources (batch 2026-W46). Each page was fetched on 2026-11-04 and the quoted
+// text found on it; the quotes are in the claim inventory's "Content pipeline sources (batch
+// 2026-W46)" table.
+
+/** Signing in at studentscores.collegeboard.org to see scores and the score report PDF; help if scores are missing. */
+export const CB_GETTING_WEEKEND_SCORES: Source = {
+  label: "College Board: getting your SAT weekend scores",
+  url: "https://satsuite.collegeboard.org/scores/score-release-dates/getting-sat-weekend-scores",
+};
+
+/** The score report PDF: the three scores, the score range and the Knowledge and Skills section. */
+export const CB_WHAT_SCORES_MEAN: Source = {
+  label: "College Board: what do my scores mean?",
+  url: "https://satsuite.collegeboard.org/scores/what-scores-mean",
+};

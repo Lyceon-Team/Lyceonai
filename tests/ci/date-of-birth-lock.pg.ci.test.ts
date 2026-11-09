@@ -300,17 +300,31 @@ describe.skipIf(!PG_AVAILABLE)(
      * F-41 (Brief 8 ruling 6, 2026-10-01): at onboarding a date of birth is accepted only as a real,
      * past, plausible date; and an under-13 student is ACCEPTED, then held by the live link gate and
      * kept out of LISA — SCL-187 as live, per the owner's instruction of 2026-10-01.
+     *
+     * The CURRENT-YEAR rows are the owner's ruling of 2026-11-04. Until then the only lower bound
+     * was `age < 0`, so a birthday earlier this year — age 0 — passed every check here: it is a
+     * real date, it is in the past, and it is well under 120 years ago. Four live profiles stored
+     * one. The 5-year floor refuses that class; the four dates below are the ones actually found.
      */
     describe("F-41: the date of birth at onboarding", () => {
       const tomorrow = new Date(Date.now() + 86_400_000)
         .toISOString()
         .slice(0, 10);
+      const thisYear = new Date().getUTCFullYear();
       it.each([
         ["a slash-separated date", "2010/01/01"],
         ["words", "not a date"],
         ["a date that does not exist", "2010-02-31"],
         ["a date in the future", tomorrow],
         ["a date more than 120 years ago", "1890-01-01"],
+        // The live bug, 2026-11-04. Written against the current year so the cases stay
+        // true next year instead of quietly passing for the wrong reason.
+        ["a birthday in the current year (Jan 1)", `${thisYear}-01-01`],
+        ["a birthday in the current year (Apr 4)", `${thisYear}-04-04`],
+        [
+          "a birthday four years ago, under the 5-year floor",
+          `${thisYear - 4}-01-01`,
+        ],
       ])(
         "refuses %s with 400 DATE_OF_BIRTH_REQUIRED and writes nothing",
         async (_label, dateOfBirth) => {
