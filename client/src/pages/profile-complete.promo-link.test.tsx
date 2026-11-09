@@ -75,6 +75,7 @@ vi.mock("@/lib/queryClient", async () => {
 import ProfileComplete from "./profile-complete";
 import { queryClient as moduleClient } from "@/lib/queryClient";
 
+import { enterBirthday } from "@/components/profile/__tests__/enter-birthday";
 function yearsAgo(years: number): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() - years);
@@ -91,9 +92,7 @@ async function completeOnboardingFrom(url: string): Promise<void> {
   fireEvent.change(await screen.findByTestId("input-display-name"), {
     target: { value: "Ana" },
   });
-  fireEvent.change(screen.getByTestId("input-date-of-birth"), {
-    target: { value: yearsAgo(16) },
-  });
+  enterBirthday(yearsAgo(16));
   fireEvent.click(screen.getByTestId("button-complete-profile"));
   await waitFor(() => expect(nav.to).toHaveLength(1));
 }
