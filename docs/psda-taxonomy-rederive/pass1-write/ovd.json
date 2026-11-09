@@ -1,0 +1,528 @@
+{
+  "skill_code": "OVD",
+  "skill_name": "One-Variable Data: Distributions and Measures of Center and Spread",
+  "cb_domain": "Problem-Solving and Data Analysis",
+  "pass": 1,
+  "pass_type": "write_derivation",
+  "total_questions_analyzed": 56,
+  "source_pdfs": [
+    {
+      "difficulty": "Easy",
+      "file": "Easy - One-variable data, Distributions and measures of center and spread - Problem-Solving and Data Analysis - Math-33.pdf",
+      "pages": 33,
+      "questions_found": 25
+    },
+    {
+      "difficulty": "Medium",
+      "file": "Medium - One-variable data, Distributions and measures of center and spread - Problem-Solving and Data Analysis - Math-19.pdf",
+      "pages": 19,
+      "questions_found": 16
+    },
+    {
+      "difficulty": "Hard",
+      "file": "Hard - One-variable data, Distributions and measures of center and spread - Problem-Solving and Data Analysis - Math-21.pdf",
+      "pages": 21,
+      "questions_found": 15
+    }
+  ],
+
+  "proposed_sub_skills": [
+    {
+      "id": "OVD.1",
+      "name": "Read and Interpret Data Displays",
+      "definition": "Read individual values or simple aggregates (sum of two categories, difference between two bars) directly from a data display — bar graph, table, frequency table, dot plot, or box plot. The student does not compute a statistical measure (mean, median, range, SD); the task is extracting or combining displayed values.",
+      "inclusion_test": "The correct answer can be obtained by reading value(s) off a display and performing at most one add/subtract operation. No statistical formula is required.",
+      "exclusion_test": "If the question asks for mean, median, mode, range, standard deviation, or any named statistical measure, it belongs in OVD.2 or OVD.3 instead — even if the first step is reading a display.",
+      "evidence": [
+        {
+          "cb_id": "a067c926",
+          "difficulty": "Easy",
+          "summary": "Bar graph of students by birth month. How many more in August than July? Read two bars, subtract."
+        },
+        {
+          "cb_id": "93779b53",
+          "difficulty": "Easy",
+          "summary": "Bar graph of students voting on activities. How many chose activity 3? Read single bar (~39)."
+        },
+        {
+          "cb_id": "79340403",
+          "difficulty": "Easy",
+          "summary": "Bar graph of books by 10 groups. How many by group 1? Read single bar (30). SPR."
+        },
+        {
+          "cb_id": "57f45509",
+          "difficulty": "Easy",
+          "summary": "Box plot (2-8 range). What is median? Read vertical line in box (5). Borderline OVD.1/OVD.2 — reading the median mark from a box plot is direct visual extraction, not computation."
+        },
+        {
+          "cb_id": "57481175",
+          "difficulty": "Easy",
+          "summary": "Bar graph of monkeys by type. How many more vervets than mandrills? Read two bars, subtract (11-5=6)."
+        },
+        {
+          "cb_id": "6e3ab4bf",
+          "difficulty": "Easy",
+          "summary": "Bar graph of volunteers choosing gifts. How many chose gift C? Read single bar (18)."
+        },
+        {
+          "cb_id": "820d7a73",
+          "difficulty": "Easy",
+          "summary": "Bar graph of cans by 10 groups. How many by group 6? Read single bar (40). SPR."
+        },
+        {
+          "cb_id": "d1db8def",
+          "difficulty": "Easy",
+          "summary": "Frequency table of movie habits. How many 'never' or 'almost never'? Add two frequencies (29+53=82)."
+        },
+        {
+          "cb_id": "ea95087d",
+          "difficulty": "Easy",
+          "summary": "Table of avg employees by store type. How much greater warehouse vs supermarket? Read and subtract (365-130=235)."
+        },
+        {
+          "cb_id": "560fab82",
+          "difficulty": "Medium",
+          "summary": "Frequency table with values 19,21,23,25. What is minimum value? Read smallest value from table (19). SPR."
+        }
+      ],
+      "count": 10,
+      "difficulty_spread": { "Easy": 9, "Medium": 1, "Hard": 0 },
+      "notes": "Heavily Easy-weighted. These are prerequisite data-literacy questions. Reading a median mark from a box plot (57f45509) is borderline — placed here because the student reads a pre-drawn mark rather than computing from raw data, but could reasonably go in OVD.2."
+    },
+    {
+      "id": "OVD.2",
+      "name": "Compute Measures of Center from Data",
+      "definition": "Calculate the mean (sum / count) or identify the median (order values, pick the middle) from listed data, a table, a frequency table, or a data display. Includes recognizing properties of symmetric distributions (mean = median) and finding the median from grouped frequency data.",
+      "inclusion_test": "The question asks the student to compute or identify the mean or median of a single data set, or to recognize that a symmetric distribution has equal mean and median. The data is given directly (no algebraic unknowns in the mean formula).",
+      "exclusion_test": "If the question requires solving an equation involving the mean (e.g., find x such that mean = k), that is OVD.4. If the question asks about range or standard deviation, that is OVD.3. If the question asks how a measure changes when a value is added/removed, that is OVD.5.",
+      "evidence": [
+        {
+          "cb_id": "a9647302",
+          "difficulty": "Easy",
+          "summary": "Bar graph of 5 quality-control trials. Find mean from bar heights (4+7+1+3+6)/5 = 4.2."
+        },
+        {
+          "cb_id": "4bb25495",
+          "difficulty": "Easy",
+          "summary": "Table of 5 countries' land areas. Find mean (sum/5, round to nearest)."
+        },
+        {
+          "cb_id": "66f03086",
+          "difficulty": "Easy",
+          "summary": "Listed data {71,72,73,76,77,79,83,87,93}. Find median (5th value = 77)."
+        },
+        {
+          "cb_id": "374b18f9",
+          "difficulty": "Easy",
+          "summary": "Box plot of timberland acres. Find median (read line in box, ~7067). Borderline with OVD.1."
+        },
+        {
+          "cb_id": "7760c516",
+          "difficulty": "Easy",
+          "summary": "Listed data {6,10,13,2,15,22,10,4,4,4}. Find mean (90/10 = 9). SPR."
+        },
+        {
+          "cb_id": "fa7a0164",
+          "difficulty": "Easy",
+          "summary": "Table of high/low temperatures over 5 days. Find mean low temp (244/5 = 48.8)."
+        },
+        {
+          "cb_id": "bfa8a85c",
+          "difficulty": "Easy",
+          "summary": "Given {6,6,8,8,8,10,21} with median 8. Which other list has same median? Conceptual median identification."
+        },
+        {
+          "cb_id": "4b09f783",
+          "difficulty": "Easy",
+          "summary": "Listed data {6,8,16,4,17,26,8,5,5,5}. Find mean (100/10 = 10). SPR."
+        },
+        {
+          "cb_id": "12dae628",
+          "difficulty": "Easy",
+          "summary": "Listed data {2,9,14,23,32}. Find mean (80/5 = 16)."
+        },
+        {
+          "cb_id": "35bec412",
+          "difficulty": "Easy",
+          "summary": "Listed data {73,74,75,77,79,82,84,85,91}. Find median (5th value = 79). SPR."
+        },
+        {
+          "cb_id": "9e2bf782",
+          "difficulty": "Medium",
+          "summary": "Fish in 3 tanks with weight ranges (10 < 5oz, 11 in 5-13oz, 12 > 13oz). Which could be median of 33 fish? Median is 17th value, falls in tank B range. Answer: 8."
+        },
+        {
+          "cb_id": "881ef5f5",
+          "difficulty": "Medium",
+          "summary": "Mean a and median b of 9 consecutive integers. Find |a-b|. Consecutive integers are symmetric → mean = median → |a-b| = 0."
+        },
+        {
+          "cb_id": "be00d896",
+          "difficulty": "Medium",
+          "summary": "Four data sets given. Which has mean > median? Right-skewed set {2,4,8,16,32,64,128,256,512} has mean > median. Tests skewness/asymmetry concept."
+        },
+        {
+          "cb_id": "7b65bb28",
+          "difficulty": "Medium",
+          "summary": "Table of gas prices at 5 stations. Find median ($3.699). Order values, pick middle."
+        },
+        {
+          "cb_id": "a29e89fc",
+          "difficulty": "Medium",
+          "summary": "Compute mean or median from data."
+        },
+        {
+          "cb_id": "07f2829b",
+          "difficulty": "Medium",
+          "summary": "Table of tourist arrivals for 9 countries in 2012 and 2013. Find median for each year, compute difference (47.7-46.4 = 1.3). SPR."
+        },
+        {
+          "cb_id": "94237701",
+          "difficulty": "Hard",
+          "summary": "Frequency table of scores for Group A (9 players) and B (11 players). Median of B minus median of A = 6-5 = 1. SPR."
+        },
+        {
+          "cb_id": "9d935bd8",
+          "difficulty": "Hard",
+          "summary": "Table of bachelor's degree percentages for 7 states. Find median, compare to overall median 26.95%. Difference = 0.95%."
+        },
+        {
+          "cb_id": "ecbdbe84",
+          "difficulty": "Hard",
+          "summary": "Grouped frequency table of restaurant employees (ranges: 2-7, 8-13, etc.). 17 restaurants. Find median range — 9th value falls in 20-25 range, so 21 is possible."
+        },
+        {
+          "cb_id": "bf47ad54",
+          "difficulty": "Hard",
+          "summary": "Four frequency tables (values 70,80,90,100). Which has greatest mean? Must compute or reason about weight distribution. Asymmetric table with more weight on higher values wins."
+        },
+        {
+          "cb_id": "1142af44",
+          "difficulty": "Hard",
+          "summary": "Frequency table with symmetric distribution (a, 2a, 3a, 2a, a for values 1-5). Mean minus median = 0 because symmetric distributions have mean = median."
+        }
+      ],
+      "count": 21,
+      "difficulty_spread": { "Easy": 10, "Medium": 5, "Hard": 6 },
+      "notes": "Largest sub-skill by question count. Spans all difficulties. Easy questions involve straightforward mean or median computation from small listed data sets. Medium/Hard questions require: finding median from frequency tables, reasoning about symmetric distributions (mean = median), finding median from grouped/interval data, or comparing mean vs median for skewed distributions. Consider whether 'symmetric distribution reasoning' (881ef5f5, 1142af44, be00d896) should split into its own sub-skill — currently kept here because the core task is still about measures of center, with the symmetric property as the reasoning shortcut."
+    },
+    {
+      "id": "OVD.3",
+      "name": "Measures of Spread",
+      "definition": "Compute the range (max - min) of a data set, or compare the standard deviations / spread of two or more distributions visually (from dot plots, histograms, or box plots). Includes identifying which measure is the range when given multiple measures, and recognizing that more tightly clustered data has a smaller standard deviation.",
+      "inclusion_test": "The question asks about range, standard deviation, or spread — either computing range or visually/conceptually comparing spread across distributions.",
+      "exclusion_test": "If the question asks about how spread changes when a value is added/removed or a constant is added, that is OVD.5. If it only asks about mean or median, that is OVD.2.",
+      "evidence": [
+        {
+          "cb_id": "869a32f1",
+          "difficulty": "Easy",
+          "summary": "Table of 5 temperatures. Which measure is NOT 81? Range = 2 (not 81); median, mean, mode all = 81. Tests knowing the definition of range vs other measures."
+        },
+        {
+          "cb_id": "c54b92a2",
+          "difficulty": "Easy",
+          "summary": "Table of wheels made in 11 periods. Find range (24-19 = 5)."
+        },
+        {
+          "cb_id": "25fc031a",
+          "difficulty": "Medium",
+          "summary": "Two dot plots shown. Compare standard deviations visually — the more spread-out distribution has greater SD."
+        },
+        {
+          "cb_id": "f52123e0",
+          "difficulty": "Medium",
+          "summary": "Compute range from data."
+        },
+        {
+          "cb_id": "d94018fd",
+          "difficulty": "Medium",
+          "summary": "Compare standard deviations of two distributions visually."
+        },
+        {
+          "cb_id": "3f2ee20a",
+          "difficulty": "Medium",
+          "summary": "Compare standard deviations of distributions."
+        }
+      ],
+      "count": 6,
+      "difficulty_spread": { "Easy": 2, "Medium": 4, "Hard": 0 },
+      "notes": "Relatively small sub-skill. No Hard questions test pure spread computation/comparison — Hard questions involving spread tend to ask about the effect of changes (OVD.5). The visual SD comparison questions (25fc031a, d94018fd, 3f2ee20a) form a distinct cluster: they require conceptual understanding of what SD measures (distance from mean) rather than computation."
+    },
+    {
+      "id": "OVD.4",
+      "name": "Mean-Total Relationship (Algebraic)",
+      "definition": "Use the equation mean = sum / count algebraically: given mean and count, find sum; given two group means and counts, find combined mean; given mean before/after removing a value, find the removed value; find a missing value in a data set given the mean. The distinguishing feature is algebraic manipulation of the mean formula, not just plugging in and dividing.",
+      "inclusion_test": "The student must set up and solve an equation using mean = sum / count, or use the relationship sum = mean * count to find a missing quantity.",
+      "exclusion_test": "If the data is fully given and the student just computes sum/count, that is OVD.2. If the question asks how a measure conceptually changes (increases/decreases) without requiring exact computation, that is OVD.5.",
+      "evidence": [
+        {
+          "cb_id": "8193e8cd",
+          "difficulty": "Medium",
+          "summary": "Data set {2,10,3,7,6}. Mean is what fraction of the sum? Answer: 1/5. Tests understanding that mean = sum/n, so mean/sum = 1/n."
+        },
+        {
+          "cb_id": "d0efc1dd",
+          "difficulty": "Medium",
+          "summary": "Data set {15,14,18,17,x}. Mean = median. Which x is NOT possible? Must set up mean equation and test each x value against the median."
+        },
+        {
+          "cb_id": "54d93874",
+          "difficulty": "Hard",
+          "summary": "Table of rock masses for Andrew (6 values) and Maria (6 values, one is x). Maria's mean is 0.1 more than Andrew's. Find x using mean equation."
+        },
+        {
+          "cb_id": "2a59eb45",
+          "difficulty": "Hard",
+          "summary": "Set A: 75 items, mean 32. Set B: 50 items, mean 62. Find combined mean of 125 items. Uses sum = mean * count: (2400+3100)/125 = 44."
+        },
+        {
+          "cb_id": "98958ae8",
+          "difficulty": "Hard",
+          "summary": "Set A: 75 items, mean 25. Set B: 50 items, mean 65. Find combined mean: (1875+3250)/125 = 41."
+        },
+        {
+          "cb_id": "4ff597db",
+          "difficulty": "Hard",
+          "summary": "Mean of 20 employees = 6.7 years. One leaves, remaining 19 mean = 6.25. Find departed value: 134 - 118.75 = 15.25."
+        },
+        {
+          "cb_id": "1e8ccffd",
+          "difficulty": "Hard",
+          "summary": "Mean of 8 players = 14.5. Remove highest, remaining 7 mean = 12. Find highest: 116 - 84 = 32."
+        }
+      ],
+      "count": 7,
+      "difficulty_spread": { "Easy": 0, "Medium": 2, "Hard": 5 },
+      "notes": "Strongly Hard-weighted. This is the algebraic core of the OVD skill. Sub-patterns: (a) find missing value given mean (54d93874, d0efc1dd), (b) weighted/combined mean from two groups (2a59eb45, 98958ae8), (c) find removed value from before/after means (4ff597db, 1e8ccffd), (d) understand mean = sum/n as a fraction (8193e8cd). All share the same algebraic manipulation: sum = mean * count."
+    },
+    {
+      "id": "OVD.5",
+      "name": "Effects of Changes on Measures and Comparing Distributions",
+      "definition": "Determine how adding, removing, or changing a data value affects a measure of center or spread; determine the effect of adding a constant to every value (shifts center, preserves spread); or compare measures of center/spread across two independently described data sets.",
+      "inclusion_test": "The question presents a change scenario (add/remove a value, add a constant to all, compare two data sets) and asks which measure changes, by how much, or which data set has a greater/lesser measure.",
+      "exclusion_test": "If the question requires algebraic mean computation (find the exact new mean using sum = mean * count), it may overlap with OVD.4. The distinguishing criterion: OVD.5 asks 'what happens qualitatively or comparatively,' while OVD.4 asks 'find the exact value.' Questions that require both (e.g., compute exact new mean to compare) are classified by their primary cognitive demand — if the algebra is the hard part, OVD.4; if the reasoning about the effect is the hard part, OVD.5.",
+      "evidence": [
+        {
+          "cb_id": "6670e407",
+          "difficulty": "Easy",
+          "summary": "Table of two schools over 5 years. Compare mean AND median of Foothill vs Valley across two independent data sets."
+        },
+        {
+          "cb_id": "55cfaf22",
+          "difficulty": "Easy",
+          "summary": "Two listed data sets X={5,9,9,13}, Y={5,9,9,13,27}. Compare means. Y has extra large value so mean(X) < mean(Y)."
+        },
+        {
+          "cb_id": "708590d7",
+          "difficulty": "Easy",
+          "summary": "Two listed data sets A={1,2,3,4,5,6,7} B={1,1,2,2,3,3,4}. Compare means (4 vs ~2.29)."
+        },
+        {
+          "cb_id": "c3d65f93",
+          "difficulty": "Easy",
+          "summary": "Table of 5 nests with egg counts (136-149). Adding 6th nest with 121 eggs (below all). Original mean > new mean."
+        },
+        {
+          "cb_id": "9110c120",
+          "difficulty": "Medium",
+          "summary": "Effect of removing a value on the mean."
+        },
+        {
+          "cb_id": "5c3c2e3c",
+          "difficulty": "Medium",
+          "summary": "Effect of adding or removing a value on a measure."
+        },
+        {
+          "cb_id": "578e26ae",
+          "difficulty": "Medium",
+          "summary": "Adding a constant to all values in data set. Center shifts by that constant; spread is unchanged."
+        },
+        {
+          "cb_id": "391ae4b2",
+          "difficulty": "Hard",
+          "summary": "Set F = 55 integers in [170,290]. Set G = F plus integer 10. Which must be less for F than G: mean or median? Adding value far below range pulls mean down; median of 56 values may not change. Conceptual reasoning about effect of extreme value."
+        },
+        {
+          "cb_id": "4626102e",
+          "difficulty": "Hard",
+          "summary": "Dot plot of 15 values (22-26). Data set B = each value + 56. Compare median and range. Median increases (23→79), range stays same (4). Effect of adding constant to all values."
+        },
+        {
+          "cb_id": "e7d48c8a",
+          "difficulty": "Hard",
+          "summary": "Dot plot of 13 eruptions. Adding eruption with 11 bursts (extreme outlier). Mean increases (29/13 → 40/14), median stays at 2. Effect of adding extreme value on mean vs median."
+        },
+        {
+          "cb_id": "241f1db7",
+          "difficulty": "Hard",
+          "summary": "Frequency table of 71 tortoise weights (13-20 lbs). Adding weight of 39 lbs. Mean increases (39 > all values), median unchanged (36th and 37th values both remain 17)."
+        },
+        {
+          "cb_id": "f8a322d9",
+          "difficulty": "Hard",
+          "summary": "Two histograms of same shape but shifted (A: 20-60, B: 10-50). Find smallest possible difference in means. Comparing shifted distributions."
+        }
+      ],
+      "count": 12,
+      "difficulty_spread": { "Easy": 4, "Medium": 3, "Hard": 5 },
+      "notes": "Well-distributed across difficulties. Three distinct sub-patterns emerge: (a) Compare two independent data sets on a measure (6670e407, 55cfaf22, 708590d7, f8a322d9) — 4 questions; (b) Effect of adding/removing a single value on mean and/or median (c3d65f93, 9110c120, 5c3c2e3c, 391ae4b2, e7d48c8a, 241f1db7) — 6 questions; (c) Effect of adding a constant to all values (578e26ae, 4626102e) — 2 questions. Sub-pattern (b) is the largest and most diverse, spanning all difficulties. These sub-patterns are tightly related conceptually (all require reasoning about how changes propagate to statistical measures) and probably do not warrant splitting into separate sub-skills."
+    }
+  ],
+
+  "solving_step_clusters": [
+    {
+      "cluster_id": "SC-1",
+      "name": "Read Values from Display",
+      "definition": "Extract one or more numeric values from a bar graph, table, frequency table, dot plot, histogram, or box plot.",
+      "evidence_ids": ["a067c926", "93779b53", "79340403", "57f45509", "57481175", "6e3ab4bf", "820d7a73", "d1db8def", "ea95087d", "560fab82", "a9647302", "374b18f9"],
+      "notes": "Prerequisite step for many OVD.2 and OVD.3 questions as well. When paired with statistical computation, the reading step is subordinate."
+    },
+    {
+      "cluster_id": "SC-2",
+      "name": "Compute Mean (Sum / Count)",
+      "definition": "Sum all values and divide by the number of values to find the arithmetic mean.",
+      "evidence_ids": ["a9647302", "4bb25495", "7760c516", "fa7a0164", "4b09f783", "12dae628", "bf47ad54"],
+      "notes": "Core arithmetic step. Appears in OVD.2 directly and as a building block in OVD.4."
+    },
+    {
+      "cluster_id": "SC-3",
+      "name": "Find Median (Order and Pick Middle)",
+      "definition": "Order values from least to greatest, then identify the middle value (odd count) or average of two middle values (even count).",
+      "evidence_ids": ["66f03086", "35bec412", "7b65bb28", "bfa8a85c", "9e2bf782", "07f2829b", "94237701", "9d935bd8", "ecbdbe84"],
+      "notes": "Includes finding median from listed data, frequency tables, and grouped frequency tables (where the exact median cannot be determined, only its range)."
+    },
+    {
+      "cluster_id": "SC-4",
+      "name": "Compute Range (Max - Min)",
+      "definition": "Identify the maximum and minimum values in a data set and subtract.",
+      "evidence_ids": ["869a32f1", "c54b92a2", "f52123e0"],
+      "notes": "Simple arithmetic step, but requires knowing the definition of range."
+    },
+    {
+      "cluster_id": "SC-5",
+      "name": "Compare Standard Deviations Visually",
+      "definition": "Look at two distributions (dot plots, histograms) and determine which has greater spread around the mean by examining how tightly or loosely data points cluster.",
+      "evidence_ids": ["25fc031a", "d94018fd", "3f2ee20a"],
+      "notes": "No computation involved — purely visual/conceptual. Requires understanding that SD measures distance from the mean."
+    },
+    {
+      "cluster_id": "SC-6",
+      "name": "Use Mean = Sum / Count as an Equation",
+      "definition": "Set up the algebraic relationship sum = mean * count and solve for an unknown: a missing value, a removed value, or a combined mean from two groups.",
+      "evidence_ids": ["8193e8cd", "54d93874", "4ff597db", "1e8ccffd", "2a59eb45", "98958ae8", "d0efc1dd"],
+      "notes": "The algebraic heart of OVD.4. Sub-variants: (a) find missing x from mean equation, (b) combined mean from two groups via sum_A + sum_B, (c) find removed value from before/after means."
+    },
+    {
+      "cluster_id": "SC-7",
+      "name": "Reason About Effect of Adding/Removing a Value",
+      "definition": "Determine qualitatively whether adding or removing a specific value will increase, decrease, or leave unchanged the mean and/or median, using the relationship between the new value and the existing measures.",
+      "evidence_ids": ["c3d65f93", "9110c120", "5c3c2e3c", "391ae4b2", "e7d48c8a", "241f1db7"],
+      "notes": "Key insight: adding a value above the mean pulls the mean up; adding a value below pulls it down. Median is more resistant to outliers — it changes only if the added value shifts the positional middle."
+    },
+    {
+      "cluster_id": "SC-8",
+      "name": "Apply Constant Shift to All Values",
+      "definition": "Recognize that adding a constant c to every value shifts mean and median by c but leaves range, IQR, and standard deviation unchanged.",
+      "evidence_ids": ["578e26ae", "4626102e"],
+      "notes": "A conceptual property, not a computation. Tested at Medium and Hard levels."
+    },
+    {
+      "cluster_id": "SC-9",
+      "name": "Recognize Symmetric Distribution Properties",
+      "definition": "Identify that a symmetric distribution has mean = median, and use this to shortcut computation or eliminate answer choices.",
+      "evidence_ids": ["881ef5f5", "1142af44", "be00d896", "bf47ad54"],
+      "notes": "Tested at Medium and Hard. Includes both positive use (mean = median for symmetric data) and negative use (mean != median for skewed data)."
+    },
+    {
+      "cluster_id": "SC-10",
+      "name": "Compare Measures Across Two Data Sets",
+      "definition": "Given two independently described data sets (listed, tabled, or displayed), compute or reason about which has a greater/lesser mean, median, or other measure.",
+      "evidence_ids": ["6670e407", "55cfaf22", "708590d7", "f8a322d9", "07f2829b", "94237701"],
+      "notes": "May involve computing measures for both sets (OVD.2 step applied twice) or reasoning about how an additional value affects the comparison."
+    }
+  ],
+
+  "current_to_proposed_mapping": [
+    {
+      "current_id": "OVD.1",
+      "current_name": "Read and Interpret Data Displays",
+      "action": "KEEP",
+      "proposed_id": "OVD.1",
+      "rationale": "Well-supported by 10 Easy/Medium questions. Clear inclusion/exclusion boundary: if no statistical measure is computed, it is OVD.1. The sub-skill is prerequisite to OVD.2 and OVD.3 but distinct in cognitive demand."
+    },
+    {
+      "current_id": "OVD.2",
+      "current_name": "Compute Measures of Center from Data",
+      "action": "KEEP",
+      "proposed_id": "OVD.2",
+      "rationale": "Largest sub-skill with 21 questions across all difficulties. Includes straightforward mean/median computation and also conceptual reasoning about symmetric distributions. The symmetric-distribution cluster (SC-9) could theoretically split out, but the 4 questions are too few to justify a separate sub-skill and they fundamentally test understanding of center measures."
+    },
+    {
+      "current_id": "OVD.3",
+      "current_name": "Measures of Spread",
+      "action": "KEEP",
+      "proposed_id": "OVD.3",
+      "rationale": "6 questions, adequate for a sub-skill. Covers range computation and visual SD comparison. No Hard questions test pure spread — Hard spread questions tend to involve effects of changes (OVD.5). This is an accurate reflection of CB's testing pattern."
+    },
+    {
+      "current_id": "OVD.4",
+      "current_name": "Mean-Total Relationship (Algebraic)",
+      "action": "KEEP",
+      "proposed_id": "OVD.4",
+      "rationale": "7 questions, strongly Hard-weighted (5 Hard, 2 Medium, 0 Easy). Clearly distinct cognitive demand: algebraic manipulation of mean = sum/count rather than direct computation. Three sub-patterns (find missing value, combined mean, find removed value) all share the same algebraic core. This is where the SAT increases difficulty within OVD."
+    },
+    {
+      "current_id": "OVD.5",
+      "current_name": "Effects of Changes on Measures and Comparing Distributions",
+      "action": "KEEP",
+      "proposed_id": "OVD.5",
+      "rationale": "12 questions across all difficulties. Three sub-patterns (compare two sets, effect of add/remove, add constant to all) are conceptually unified: all require reasoning about how statistical measures respond to data changes. Well-distributed across difficulties with clear progression from Easy (compare two listed sets) to Hard (reason about adding extreme value to large data set)."
+    }
+  ],
+
+  "taxonomy_notes": {
+    "total_coverage": "All 56 analyzed CB questions are assigned to exactly one sub-skill. No question was unassignable.",
+    "boundary_cases": [
+      {
+        "cb_id": "57f45509",
+        "boundary": "OVD.1 / OVD.2",
+        "resolution": "Placed in OVD.1. Reading the median mark from a box plot is visual extraction, not computation from raw data. However, if the taxonomy treats 'identify the median' as always OVD.2, this would move.",
+        "recommendation": "Keep in OVD.1 — the student skill exercised is reading a display, not ordering data and finding the middle value."
+      },
+      {
+        "cb_id": "374b18f9",
+        "boundary": "OVD.1 / OVD.2",
+        "resolution": "Placed in OVD.2. Same as 57f45509 (reading median from box plot) but included under OVD.2 because the question asks 'what is the median of the data' rather than just reading a value.",
+        "recommendation": "These two could go either way. Consistency matters more than the specific placement."
+      },
+      {
+        "cb_id": "be00d896",
+        "boundary": "OVD.2 / OVD.5",
+        "resolution": "Placed in OVD.2. The question asks 'which data set has mean > median' — this is about understanding measures of center (specifically, the relationship between mean and median for skewed data), not about the effect of a change.",
+        "recommendation": "Keep in OVD.2 under the symmetric-distribution reasoning cluster."
+      },
+      {
+        "cb_id": "8193e8cd",
+        "boundary": "OVD.2 / OVD.4",
+        "resolution": "Placed in OVD.4. Although simple, the question tests understanding of the algebraic relationship mean = sum/n (answer: 1/n). The student must reason about the formula, not just compute a mean.",
+        "recommendation": "Keep in OVD.4 — it is the easiest entry point into the algebraic mean relationship."
+      }
+    ],
+    "potential_splits_considered_and_rejected": [
+      {
+        "candidate": "Split OVD.2 into 'Compute Mean' and 'Find Median'",
+        "reason_rejected": "Many questions require both or ask the student to compare them. The solving steps differ (SC-2 vs SC-3) but the sub-skill demand is the same cognitive level. Splitting would create two very small Easy-heavy sub-skills and lose the ability to track the harder median-from-grouped-data pattern."
+      },
+      {
+        "candidate": "Split OVD.5 into 'Compare Two Data Sets' and 'Effect of Changes'",
+        "reason_rejected": "Only 4 questions for compare-two-sets, too few for a standalone sub-skill. Conceptually unified: both require reasoning about how data composition relates to statistical measures."
+      },
+      {
+        "candidate": "Split 'Symmetric Distribution Properties' out of OVD.2",
+        "reason_rejected": "Only 4 questions (881ef5f5, 1142af44, be00d896, bf47ad54). The property is about measures of center (mean = median), making it a natural part of OVD.2 rather than a separate sub-skill."
+      }
+    ],
+    "difficulty_progression": "OVD.1 is almost entirely Easy. OVD.2 and OVD.5 span all difficulties. OVD.3 is Easy+Medium only. OVD.4 is Medium+Hard only. This progression reflects how CB increases difficulty: reading displays (Easy) → computing measures (Easy-Medium) → reasoning about spread (Medium) → algebraic mean manipulation (Medium-Hard) → effect of changes on measures (all levels, with Hard requiring conceptual reasoning about outliers and distribution shape).",
+    "question_count_discrepancy": "The task description stated 73 questions total. 56 were found across the three PDFs (25 Easy + 16 Medium + 15 Hard). The PDF file names include page counts (Math-33, Math-19, Math-21 = 73 pages total), suggesting the '73' may have referred to pages rather than questions."
+  }
+}

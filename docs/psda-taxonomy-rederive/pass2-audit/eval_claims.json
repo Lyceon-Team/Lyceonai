@@ -1,0 +1,60 @@
+{
+  "skill_code": "ESC",
+  "skill_name": "Evaluating Statistical Claims: Observational Studies and Experiments",
+  "pass": "blind_audit",
+  "question_ids_read": [
+    "9bf4c545", "82dfb646",
+    "37930b2a", "b4f5a7ca", "642519d7",
+    "6fca0144", "4a422e3e", "aa43b41f", "7ce2830a", "7d68096f", "1ea09200"
+  ],
+  "question_count": 11,
+  "proposed_sub_skills": [
+    {
+      "id": "ESC-A",
+      "name": "Identifying sampling bias",
+      "description": "Recognize when a sampling method is flawed because the sample is not representative of the target population. Includes convenience sampling (e.g., surveying at a playground), voluntary response bias (e.g., online polls), and selection of a non-representative subgroup (e.g., only dog owners when the target is all residents).",
+      "cognitive_demand": "Conceptual judgment: identify why the sample does not represent the intended population. Must understand that the sampling METHOD, not sample size, is the issue.",
+      "question_ids": ["9bf4c545", "4a422e3e", "aa43b41f"],
+      "difficulty_spread": {"easy": 1, "medium": 0, "hard": 2}
+    },
+    {
+      "id": "ESC-B",
+      "name": "Determining the scope of generalization",
+      "description": "Given a study with a randomly selected sample, identify the largest population to which the results can be generalized. The answer is always the population FROM WHICH the random sample was drawn, not any broader group. Must not confuse the sample itself, a subset of the sample, or a larger population with the correct generalization scope.",
+      "cognitive_demand": "Identify the sampling frame from the study description and match it to the correct generalization. Some questions add distractors (e.g., a table showing only a subset of the sample, or the study being an experiment with random assignment).",
+      "question_ids": ["82dfb646", "b4f5a7ca", "6fca0144", "7ce2830a", "7d68096f", "1ea09200"],
+      "difficulty_spread": {"easy": 1, "medium": 1, "hard": 4}
+    },
+    {
+      "id": "ESC-C",
+      "name": "Understanding limitations of sample-based conclusions",
+      "description": "Recognize that a sample statistic is an estimate, not an exact value, for the population parameter. A different random sample of the same size from the same population may yield a different result. Therefore, statements like 'exactly X% of the population...' or 'another sample would give the same result' are NOT guaranteed to be true.",
+      "cognitive_demand": "Conceptual reasoning about sampling variability. Must evaluate multiple statements about what can and cannot be concluded from a single sample result.",
+      "question_ids": ["37930b2a", "642519d7"],
+      "difficulty_spread": {"easy": 0, "medium": 2, "hard": 0}
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "id": "ESC-CL1",
+      "name": "Sampling Method Evaluation",
+      "description": "Assessing whether a sampling method is appropriate for the intended inference. Includes detecting bias from non-random or non-representative sampling and understanding what population a random sample represents.",
+      "sub_skill_ids": ["ESC-A", "ESC-B"],
+      "question_ids": ["9bf4c545", "82dfb646", "4a422e3e", "aa43b41f", "b4f5a7ca", "6fca0144", "7ce2830a", "7d68096f", "1ea09200"]
+    },
+    {
+      "id": "ESC-CL2",
+      "name": "Limitations of Statistical Inference",
+      "description": "Understanding the inherent uncertainty in sample-based conclusions: sample statistics are estimates, not exact values, and sampling variability means different samples yield different results.",
+      "sub_skill_ids": ["ESC-C"],
+      "question_ids": ["37930b2a", "642519d7"]
+    }
+  ],
+  "observations": {
+    "dominant_pattern": "The ESC skill is overwhelmingly about generalization scope (ESC-B, 6 of 11 questions). The core cognitive task is identifying the sampling frame and matching it to the correct population. This is the most common sub-skill and spans all difficulty levels.",
+    "small_question_pool": "With only 11 questions total and 3 sub-skills, the taxonomy is necessarily coarse. ESC-C has only 2 questions; ESC-A has 3. These are genuinely distinct cognitive demands but the small sample limits further subdivision.",
+    "experiment_vs_observational": "Despite the skill name referencing 'observational studies and experiments,' the distinction between observational studies and experiments is barely tested. Only 6fca0144 involves an experiment (random assignment to treatment groups). The rest are surveys or observational. The experiment question still tests generalization scope, not causation vs correlation.",
+    "no_causation_questions": "None of the 11 questions ask students to distinguish causation from correlation or to identify whether random assignment supports a causal conclusion. This is a notable gap if the skill is meant to cover experiment design concepts.",
+    "overlap_with_infs": "ESC-B (generalization scope) overlaps with INFS-G. Both test the same cognitive demand: identifying the population to which sample results apply. The CB separates them by skill label but the underlying task is identical."
+  }
+}
