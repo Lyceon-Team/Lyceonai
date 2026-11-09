@@ -1,17 +1,24 @@
 # G0-2 owner run steps (Windows PowerShell, or Cloud Shell)
 
-For Karl. These steps import the three seed conversations into `tutor_eval_cases`, then run the baseline on `lisa-default-v3` and on `lisa-default-v4`, 5 runs per case. Nothing is deployed.
+For Karl. These steps:
 
-- Student text goes from one production table to another. It never touches git, the terminal or a log: the scripts print ids, counts, verdicts and cost only.
-- Both scripts use the `pathToFileURL` entry check (closure row R-16), so they run on Windows. With the old check they would exit silently there.
-- Steps 1, 2 and 5 are SQL in the Supabase SQL editor and are the same either way. Steps 0, 3 and 4 are shell commands: PowerShell below, and a Cloud Shell (bash) variant at the end.
+1. import the real cases into `tutor_eval_cases`: the three G0-2 seeds, plus the four cases from the analysis team's Nov 3-5 review;
+2. run the baseline on `lisa-default-v3`, `lisa-default-v4` and `lisa-default-v5`, 5 runs per case.
+
+Nothing is deployed. The case list, what each case tests, and its rubric are in `Real_Case_Import_2026-11-08.md`.
+
+- **Student text stays in production.** It goes from one production table to another and never touches git, the terminal or a log. The scripts print ids, counts, verdicts and cost only.
+- **The scripts run on Windows.** Both use the `pathToFileURL` entry check (closure row R-16); with the old check they would exit silently there.
+- **SQL steps against shell steps.** Steps 1, 2 and 5 are SQL in the Supabase SQL editor, the same either way. Steps 0, 3 and 4 are shell commands: PowerShell below, with a Cloud Shell (bash) variant at the end.
+- **Run from `lisa`.** The import must run from a checkout of `lisa` that includes the W4-15 and W4-16 fixes. Those fixes bound friction and memory at each case's cut-off, so a replay never sees what happened after it.
 
 ## 0. Once per machine
 
 ```powershell
-# From a checkout of the PR branch
+# From a checkout of lisa (the eval scripts and both fixes are on lisa)
 git fetch origin
-git checkout claude/lisa-g0-2-teaching-quality-design
+git checkout lisa
+git pull origin lisa
 pnpm install
 
 # Vertex access for the replay and the judge: Application Default Credentials.
@@ -25,9 +32,9 @@ The harness uses ADC whenever no `HTTPS_PROXY` is set. Make sure none is:
 Remove-Item Env:HTTPS_PROXY, Env:HTTP_PROXY -ErrorAction SilentlyContinue
 ```
 
-## 1. Apply the migration
+## 1. Confirm the eval tables exist
 
-Apply `supabase/migrations/20261120000000_tutor_eval_cases.sql` the usual way (owner-run; retention ruled, SCL-251). Then confirm it from the catalog in the SQL editor:
+The migration `supabase/migrations/20261120000000_tutor_eval_cases.sql` is owner-run (retention ruled, SCL-251). Production reported 0 rows in both tables on 2026-11-05, so they exist. Confirm from the catalog in the SQL editor:
 
 ```sql
 SELECT to_regclass('public.tutor_eval_cases')                          AS cases,
@@ -40,26 +47,12 @@ SELECT to_regclass('public.tutor_eval_cases')                          AS cases,
 
 ## 2. Find each case's conversation and cut-off message (SQL editor, read-only)
 
-```sql
--- G0-2-01 / G0-2-02: by student and day (the name stays in the SQL editor).
-SELECT c.id AS conversation_id, c.entry_mode, c.source_surface, c.source_question_canonical_id
-FROM public.tutor_conversations c
-JOIN public.profiles p ON p.id = c.student_id
-WHERE p.display_name = '<student display name>'
-  AND c.created_at >= '<YYYY-MM-DD>' AND c.created_at < '<YYYY-MM-DD +1>';
+Run `docs/eval/lisa/real-case-finders.sql`. It holds one query per case and prints ids, times and counts, never student text. Its last two queries are per conversation:
 
--- G0-2-03: your own test on SATM2UYVX9I.
-SELECT DISTINCT m.conversation_id
-FROM public.tutor_messages m
-WHERE m.source_question_canonical_id = 'SATM2UYVX9I'
-  AND m.created_at BETWEEN '2026-10-27 04:07:00+00' AND '2026-10-27 04:10:59+00';
+- one lists a candidate's messages, so you can confirm it is the one the analysis team reviewed;
+- the other shows whether the student has memory from before the cut-off.
 
--- Then, per conversation: pick the STUDENT message that asks for Desmos (the cut-off).
-SELECT m.id, m.role, m.created_at, left(m.message, 80) AS starts
-FROM public.tutor_messages m
-WHERE m.conversation_id = '<conversation_id>'
-ORDER BY m.created_at;
-```
+Record each case's conversation id and cut-off message id in the table in `Real_Case_Import_2026-11-08.md`. The cut-off must be a **student** message with a tutor reply after it; the import refuses anything else.
 
 ## 3. Import (PowerShell; server environment, service role)
 
@@ -72,11 +65,28 @@ $env:SUPABASE_SERVICE_ROLE_KEY = "<service role key>"
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-01 --conversation <conversation_id> --cutoff <student message id>
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-02 --conversation <conversation_id> --cutoff <student message id>
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-03 --conversation <conversation_id> --cutoff <student message id> --owner-case
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-04 --conversation <conversation_id> --cutoff <student message id>
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-05 --conversation <conversation_id> --cutoff <student message id>
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-06 --conversation <conversation_id> --cutoff <student message id>
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-07 --conversation <conversation_id> --cutoff <student message id>
 ```
 
-Each prints one line: the number of messages in the window, pre- or post-submit, and whether the scan key is set. Anything else is an error, and nothing was written.
+Each prints one line:
 
-## 4. Baseline: v3, then v4 (5 runs each)
+- the number of messages in the window;
+- pre- or post-submit;
+- whether the scan key is set;
+- how many memory summaries were kept, and how many were dropped as written after the cut-off.
+
+Anything else is an error, and nothing was written.
+
+## 4. Baseline: v3, v4 and v5 (5 runs each)
+
+| Version | Role in this run                                                                                                                                |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| v3      | Production today                                                                                                                                |
+| v4      | Adds the Desmos block                                                                                                                           |
+| v5      | Adds the data boundary to v4. It is also the line that renders memory (W4-16), so the memory fix is evaluated here, never as a separate default |
 
 Use the **Session pooler** connection string: Dashboard → Connect → Session pooler. The direct `db.<project-ref>.supabase.co` host is IPv6-only and fails on an IPv4 connection.
 
@@ -89,6 +99,7 @@ $env:DATABASE_URL = "postgresql://postgres.<project-ref>:<db password>@aws-0-<re
 
 pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --prompt-version lisa-default-v3
 pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --prompt-version lisa-default-v4
+pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --prompt-version lisa-default-v5
 ```
 
 Each run prints:
@@ -97,15 +108,15 @@ Each run prints:
 - per-case verdict counts, leak and tool-request flags, and measured cost;
 - judge-vs-Karl agreement.
 
-Expect about $0.25 per prompt version (measured on the synthetic set). Re-running with the same `--batch <id>` fills gaps without duplicating runs.
+The old estimate was about $0.25 per prompt version for 3 cases. With 7 cases, expect about $0.60 per version, about $1.80 for all three. Re-running with the same `--batch <id>` fills gaps without duplicating runs.
 
 ## 5. Read and grade (SQL editor)
 
 ```sql
--- The v4 replies, in full (use the v4 batch id from step 4).
+-- One version's replies, in full (use that version's batch id from step 4).
 SELECT case_id, run_index, verdict, record->>'visible_reply' AS reply
 FROM public.tutor_eval_runs
-WHERE batch_id = '<v4 batch id>'
+WHERE batch_id = '<batch id>'
 ORDER BY case_id, run_index;
 
 -- Your grade for one run (pass / fail / review_needed), before looking at the judge's verdict.
@@ -120,22 +131,25 @@ Then, without replaying anything:
 pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --report
 ```
 
-It prints pass rates per prompt version and case, and judge-vs-Karl agreement over every graded run.
+It prints:
+
+- pass rates per prompt version and case;
+- judge-vs-Karl agreement over every graded run.
 
 ## Retention
 
-Cases are kept 90 days from import (SCL-251); a re-import restarts the clock. The existing 90d retention job deletes them, and their runs, after that.
+- Cases are kept 90 days from import (SCL-251).
+- A re-import restarts the clock.
+- The existing 90d retention job deletes them, and their runs, after that.
 
 ## Cloud Shell variant (bash)
 
-[Cloud Shell](https://shell.cloud.google.com) already has `gcloud` signed in as you, and no proxy, so the harness takes its ADC path. Run from a fresh clone.
-
-**The branch.** The scripts are on `lisa` only once #1332 is merged. Until then, clone the PR branch; after the merge, `--branch lisa` gives the same files.
+[Cloud Shell](https://shell.cloud.google.com) already has `gcloud` signed in as you, and has no proxy, so the harness takes its ADC path. Run it from a fresh clone of `lisa`.
 
 ```bash
 # 0. Once per Cloud Shell session
 gh auth login        # or use an HTTPS token; the repository is private
-git clone --branch lisa https://github.com/Lyceon-Team/Lyceonai.git   # before #1332 merges: --branch claude/lisa-g0-2-teaching-quality-design
+git clone --branch lisa https://github.com/Lyceon-Team/Lyceonai.git
 cd Lyceonai
 nvm install 22 && nvm use 22                 # the repo pins Node 22
 corepack enable                              # pnpm 10.33.0, from package.json's packageManager
@@ -153,12 +167,17 @@ read -rs SUPABASE_SERVICE_ROLE_KEY && export SUPABASE_SERVICE_ROLE_KEY
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-01 --conversation <conversation_id> --cutoff <student message id>
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-02 --conversation <conversation_id> --cutoff <student message id>
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-03 --conversation <conversation_id> --cutoff <student message id> --owner-case
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-04 --conversation <conversation_id> --cutoff <student message id>
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-05 --conversation <conversation_id> --cutoff <student message id>
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-06 --conversation <conversation_id> --cutoff <student message id>
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-07 --conversation <conversation_id> --cutoff <student message id>
 
 # 4. Baseline, Session pooler (the direct db.<project-ref> host fails on IPv4)
 read -rs DB_PASSWORD
 export DATABASE_URL="postgresql://postgres.<project-ref>:${DB_PASSWORD}@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=no-verify"
 pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --prompt-version lisa-default-v3
 pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --prompt-version lisa-default-v4
+pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --prompt-version lisa-default-v5
 
 # After grading in the SQL editor (step 5)
 pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --report

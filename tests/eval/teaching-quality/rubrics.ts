@@ -46,14 +46,69 @@ const CASE_GOLDS: ReadonlyArray<readonly [string, string]> = [
   ["G0-2-03", GOLD_CASES_2_AND_3],
 ];
 
-export const TEACHING_QUALITY_RUBRICS: readonly TutorEvalRubric[] =
-  CASE_GOLDS.map(([case_id, gold_response]) => ({
+/**
+ * @spec [owner brief 2026-11-08 ("Prepare the real-case import": the analysis team's reviewed
+ *       conversations of Nov 3-5, with rubric items "reaches the worked step by tap 3, no
+ *       question smaller than the current step, no restart, frustration acknowledged")]
+ *       | @implemented [2026-11-08]
+ * plain English: the four cases from the analysis team's Nov 3-5 review, each scored on Karl's
+ * items that apply to it. No gold replies yet: the judge reports `no_gold` and the verdict rests
+ * on must / must not (schema note, tutor-eval-schema.ts). Item wording is shared so the four
+ * cases score the same behaviour the same way.
+ */
+const NO_SMALLER_QUESTION =
+  "Asks the student a question smaller than the step the walkthrough has already reached (re-asks an earlier, easier sub-step).";
+const NO_RESTART =
+  "Restarts the problem: goes back to the beginning, or re-explains steps the student has already completed.";
+const REACHES_WORKED_STEP =
+  "Carries out the next step of the solution itself, as a worked step the student can see done, instead of asking the student to do it.";
+const ACKNOWLEDGES_FRUSTRATION =
+  "Acknowledges the student's frustration briefly and kindly before teaching, without dwelling on it or lecturing.";
+
+const NOVEMBER_CASES: readonly TutorEvalRubric[] = [
+  {
+    case_id: "G0-2-04",
+    gold_response: null,
+    judge_note:
+      "The 'Got it' loop. The cut-off is the student's third 'Got it, next step' tap in a row on one problem. By the third tap LISA should have moved on: this reply must do the next step for the student. Score the move, not the wording.",
+    must: [REACHES_WORKED_STEP],
+    must_not: [NO_SMALLER_QUESTION, NO_RESTART],
+  },
+  {
+    case_id: "G0-2-05",
+    gold_response: null,
+    judge_note:
+      "The 'idk' escalation. The cut-off is the second 'idk' / 'I'm stuck' in a row. Two in a row means more help, not another question: this reply must do the next step for the student. Score the move, not the wording.",
+    must: [REACHES_WORKED_STEP],
+    must_not: [NO_SMALLER_QUESTION, NO_RESTART],
+  },
+  {
+    case_id: "G0-2-06",
+    gold_response: null,
+    judge_note: `${DESMOS_REQUEST_RUBRIC.judge_note} This case is from the Nov 3-5 review; it is scored with no gold reply.`,
+    must: [...DESMOS_REQUEST_RUBRIC.must],
+    must_not: [...DESMOS_REQUEST_RUBRIC.must_not, NO_RESTART],
+  },
+  {
+    case_id: "G0-2-07",
+    gold_response: null,
+    judge_note:
+      "Frustration. The cut-off is a student message that says they feel stupid, hopeless or ready to give up. LISA should name the feeling in a line, then keep going from where the student is. Score the move, not the wording.",
+    must: [ACKNOWLEDGES_FRUSTRATION],
+    must_not: [NO_SMALLER_QUESTION, NO_RESTART],
+  },
+];
+
+export const TEACHING_QUALITY_RUBRICS: readonly TutorEvalRubric[] = [
+  ...CASE_GOLDS.map(([case_id, gold_response]) => ({
     case_id,
     gold_response,
     ...DESMOS_REQUEST_RUBRIC,
     must: [...DESMOS_REQUEST_RUBRIC.must],
     must_not: [...DESMOS_REQUEST_RUBRIC.must_not],
-  }));
+  })),
+  ...NOVEMBER_CASES,
+];
 
 export function rubricFor(caseId: string): TutorEvalRubric | null {
   return TEACHING_QUALITY_RUBRICS.find((r) => r.case_id === caseId) ?? null;

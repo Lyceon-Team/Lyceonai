@@ -47,10 +47,12 @@
  *   without `data` fails that test's schema-walked sentinel check.
  */
 
-import type {
-  OFFERED_VIDEO_FORMATS,
-  OFFERED_VIDEO_METHODS,
-  OrchestrateRequest,
+import {
+  type ChatCompactionContent,
+  type OFFERED_VIDEO_FORMATS,
+  type OFFERED_VIDEO_METHODS,
+  type OrchestrateRequest,
+  chatCompactionContentSchema,
 } from "../lib/schema.js";
 import { renderDataBlock } from "../lib/_tutor-safety-constants.generated.js";
 import { masteryLevelToBand } from "./mastery-bands.js";
@@ -472,15 +474,26 @@ function renderMemoryBlock(
   const parts: string[] = [];
 
   for (const summary of request.memory_summaries) {
+    // W4-16 (2026-11-08): on the data-boundary line (v5 and later) a chat_compaction row renders
+    // the fields compaction actually writes (the §10.2 schema, shared/tutor-orchestrator-wire.ts).
+    // v1-v4 keep the old read of a `text` / `summary` field, which no writer produces, so their
+    // output, and production's v3, do not change. A row that does not match the schema falls
+    // back to the old read on every line.
+    const compaction =
+      options.dataBoundary && summary.summary_type === "chat_compaction"
+        ? chatCompactionContentSchema.safeParse(summary.content_json)
+        : null;
     // Extract text from content_json — it's a passthrough object,
     // but memory summaries contain a 'text' or 'summary' field.
     const content = summary.content_json as Record<string, unknown>;
     const text =
-      typeof content["text"] === "string"
-        ? content["text"]
-        : typeof content["summary"] === "string"
-          ? content["summary"]
-          : null;
+      compaction?.success === true
+        ? compactionText(compaction.data)
+        : typeof content["text"] === "string"
+          ? content["text"]
+          : typeof content["summary"] === "string"
+            ? content["summary"]
+            : null;
 
     if (text) {
       const label = summaryTypeLabel(summary.summary_type);
@@ -504,6 +517,31 @@ function renderMemoryBlock(
   );
 
   return parts.join(" ");
+}
+
+/**
+ * @spec [Doc-03A_V3 §10.2; Doc-03D_V1.2 §10.3 (memory is data); closure plan W4-16]
+ *       | @implemented [2026-11-08]
+ * Pure. A chat_compaction row as the one text its data block carries: each non-empty field on
+ * its own line, under a plain label. Null when compaction found nothing worth carrying.
+ * `skills_referenced` is left out: skill names already reach the prompt through the item and
+ * the mastery blocks.
+ */
+export function compactionText(c: ChatCompactionContent): string | null {
+  const lines: string[] = [];
+  const list = (xs: readonly string[]): string => xs.join("; ");
+  if (c.topics_discussed.length > 0)
+    lines.push(`Topics worked on: ${list(c.topics_discussed)}`);
+  if (c.key_insights.length > 0)
+    lines.push(`What clicked: ${list(c.key_insights)}`);
+  if (c.unresolved_confusion.length > 0)
+    lines.push(`Still unsure about: ${list(c.unresolved_confusion)}`);
+  if (
+    c.last_student_direction !== null &&
+    c.last_student_direction.trim() !== ""
+  )
+    lines.push(`Where they were heading: ${c.last_student_direction.trim()}`);
+  return lines.length === 0 ? null : lines.join("\n");
 }
 
 function summaryTypeLabel(

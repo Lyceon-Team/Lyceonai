@@ -68,6 +68,11 @@ type ResolvedScope = z.infer<typeof resolvedScopeSchema>;
 
 type EnvelopeParams = {
   conversationId: string;
+  /**
+   * Eval import only (closure plan W4-15): read message-based friction as of this time, the
+   * cut-off message's created_at. Production leaves it unset.
+   */
+  frictionAsOf?: string;
   studentId: string;
   entryMode: "scoped_question" | "scoped_session" | "general";
   sourceSurface: "practice" | "review" | "test_review" | "dashboard";
@@ -674,10 +679,11 @@ export async function resolveQuestionContent(
 export async function resolveLearningContext(
   studentId: string,
   scope: ResolvedScope,
+  friction: FrictionWindow = { conversationId: null, asOf: null },
 ): Promise<StudentLearningContext> {
   const [masterySnapshot, recentFriction, kpiState] = await Promise.all([
     resolveMasterySnapshot(studentId, scope),
-    resolveRecentFriction(studentId, scope),
+    resolveRecentFriction(studentId, scope, friction),
     resolveKpiState(studentId, scope),
   ]);
 
@@ -1055,13 +1061,51 @@ async function fetchRecentActivitySummary(
 // ── Recent Friction ────────────────────────────────────────────────────
 
 /**
- * @spec [Doc-03A_V3.0 §5.4 recent_friction]
+ * The student's own messages in the friction window, newest first. Pure query builder: the
+ * conversation, the ownership predicate (INV-03-14), and the optional upper bound.
+ */
+function studentMessagesOf(
+  studentId: string,
+  window: FrictionWindow,
+  columns: "message" | "created_at",
+) {
+  const base = supabaseServer
+    .from("tutor_messages")
+    .select(columns)
+    .eq("conversation_id", window.conversationId ?? "")
+    .eq("student_id", studentId)
+    .eq("role", "student");
+  const bounded =
+    window.asOf === null ? base : base.lte("created_at", window.asOf);
+  return bounded.order("created_at", { ascending: false });
+}
+
+/**
+ * Which conversation the message-based friction signals read, and up to when.
+ *
+ * @spec [Doc-03A_V3.0 §5.4 recent_friction; closure plan W4-15] | @implemented [2026-11-08]
+ * plain English: `conversationId` is the tutor conversation of the turn. Production passes no
+ * `asOf` (the conversation's latest messages ARE the turn); the eval import passes the cut-off
+ * message's time so a replayed case never sees messages sent after it.
+ */
+export type FrictionWindow = {
+  conversationId: string | null;
+  asOf: string | null;
+};
+
+/**
+ * @spec [Doc-03A_V3.0 §5.4 recent_friction; closure plan W4-15] | @implemented [2026-11-08]
  * Computes friction signals from recent practice activity and tutor
  * interaction patterns. Returns safe defaults on error.
+ * W4-15 (2026-11-08): the self-deprecating-language and long-pause signals read the turn's
+ * CONVERSATION's student messages. They used to filter `conversation_id` by the practice
+ * session id, which never matches, so both signals were false on every turn. Each read now
+ * carries the student's ownership predicate as well (INV-03-14).
  */
 async function resolveRecentFriction(
   studentId: string,
   scope: ResolvedScope,
+  window: FrictionWindow,
 ): Promise<RecentFriction> {
   const safeFriction: RecentFriction = {
     consecutive_fails_this_session: 0,
@@ -1136,15 +1180,9 @@ async function resolveRecentFriction(
     // ── Self-deprecating language detection ──────────────────────────
     // Scan recent tutor_messages for self-deprecation patterns
     let selfDeprecating = false;
-    if (scope.source_session_id) {
+    if (window.conversationId) {
       const { data: recentStudentMessages, error: msgError } =
-        await supabaseServer
-          .from("tutor_messages")
-          .select("message")
-          .eq("conversation_id", scope.source_session_id)
-          .eq("role", "student")
-          .order("created_at", { ascending: false })
-          .limit(5);
+        await studentMessagesOf(studentId, window, "message").limit(5);
 
       if (!msgError && recentStudentMessages) {
         for (const msg of recentStudentMessages) {
@@ -1157,19 +1195,13 @@ async function resolveRecentFriction(
 
     // ── Long pause detection ─────────────────────────────────────────
     let longPause = false;
-    if (scope.source_session_id) {
+    if (window.conversationId) {
       const longPauseThresholdSeconds = TutorConfig.get(
         "friction_long_pause_seconds",
       );
 
       const { data: lastTwoStudentMessages, error: pauseError } =
-        await supabaseServer
-          .from("tutor_messages")
-          .select("created_at")
-          .eq("conversation_id", scope.source_session_id)
-          .eq("role", "student")
-          .order("created_at", { ascending: false })
-          .limit(2);
+        await studentMessagesOf(studentId, window, "created_at").limit(2);
 
       if (
         !pauseError &&
@@ -1495,7 +1527,10 @@ export async function resolveFullEnvelope(
   // ── Step 2: Parallel resolution of remaining subsections ───────────
   const [learningContext, memorySummaries, structuredFields, questionContent] =
     await Promise.all([
-      resolveLearningContext(params.studentId, resolvedScope),
+      resolveLearningContext(params.studentId, resolvedScope, {
+        conversationId: params.conversationId,
+        asOf: params.frictionAsOf ?? null,
+      }),
       resolveMemorySummariesSafe(params.studentId),
       resolveStructuredFieldsSafe(params.studentId),
       resolveQuestionContent(
