@@ -54,7 +54,10 @@ import {
   breakdownScriptDir,
   scheduledDay,
 } from "../../shared/qotd/breakdown";
-import { scriptProblems } from "../../shared/worked-examples/rules";
+import {
+  hardOnlyProblem,
+  scriptProblems,
+} from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import type { VoiceLine } from "../../packages/shared/src/worked-example-schema";
 import {
@@ -160,6 +163,9 @@ export function breakdownScriptProblems(
   const out: string[] = [];
   const seed = seedFor(script.question_id);
   if (!seed.ok) return [`${dir}: ${seed.problem}`];
+  // Karl's ruling 2026-11-05: authored breakdown scripts use Hard questions only.
+  const hard = hardOnlyProblem(seed.question);
+  if (hard) out.push(hard);
   if (schedule !== null) {
     const row = schedule.find((r) => r.qotd_date === script.qotd_date);
     if (!row)

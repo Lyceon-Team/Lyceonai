@@ -69,6 +69,7 @@ import {
   socialInstagramCaption,
   socialKeywords,
   socialTiktokCaption,
+  copyBlockProblems,
   type SocialSection,
   type SocialTest,
 } from "../social/posts";
@@ -377,6 +378,39 @@ function lineProblems(lines: readonly string[]): string[] {
   return out;
 }
 
+/** The only difficulty a worked example or an authored breakdown script may use: Hard. */
+export const HARD_DIFFICULTY = 3;
+/**
+ * The first worked example the Hard-only rule binds: the first post after the ruling. The
+ * examples posted before it (W45's Nov 2 and Nov 4, difficulty 2) are history on `social`, and
+ * the content check reads every example there.
+ */
+export const HARD_ONLY_FROM = "2026-11-06";
+
+/**
+ * Hard questions only: the question must be the bank's difficulty 3.
+ *
+ * @spec [Karl's ruling 2026-11-05: "worked examples use Hard questions only
+ *       (questions.difficulty = 3) … The same rule will apply to authored QOTD breakdown
+ *       scripts when that pilot resumes"] | @implemented [2026-11-05]
+ *
+ * plain English: every worked example so far (W45, W46) was difficulty 2, which is too easy for
+ * the audience. A worked example due on or after HARD_ONLY_FROM (exampleProblems in
+ * scripts/worked-examples/content.ts: the content check, the daily selection and generate), and
+ * every authored breakdown script (check-breakdown-scripts.ts), is refused unless its question is
+ * difficulty 3. The video pilots under video-kit/pilots are not posts and are not checked. The difficulty is read from the seed
+ * SQL row the video is rendered from (seedQuestion), so the rule and the render read the same
+ * row. Trade-off: a production edit to a question's difficulty that the seed does not carry is
+ * not seen here; the CMO session's production check before each merge covers it.
+ */
+export function hardOnlyProblem(
+  q: Pick<SeedQuestion, "id" | "difficulty">,
+): string | null {
+  return q.difficulty === HARD_DIFFICULTY
+    ? null
+    : `${q.id} is difficulty ${q.difficulty}, not Hard (${HARD_DIFFICULTY}): worked examples and breakdowns use Hard questions only`;
+}
+
 /** The example against its question, its week, its style row and the public-copy lists. */
 export function contentProblems(
   example: WorkedExampleContent,
@@ -484,14 +518,14 @@ export function workedExampleTitle(
  *
  * @spec [SCL-265: Karl's ruling 2026-11-02 "captions and keywords for worked examples use the
  *       SCL-262 format"; SCL-262 items 2-5 (the caption lines, at most five hashtags, keywords
- *       from the test month, the always-set, the section and the canonical domain); the CC BY 4.0
- *       licence of the music (video-kit/worked-examples/music/tracks.json), credited in every
- *       caption] | @implemented [2026-11-02]
+ *       from the test month, the always-set, the section and the canonical domain); Karl's ruling
+ *       2026-11-04 ("Copy-paste cleanup"): no music credit in any caption, the credit is on the
+ *       video's end card] | @implemented [2026-11-02, credit moved 2026-11-04]
  *
  * plain English: the headline is the example's title ("SAT Math worked example · Percentages",
  * at most 90 characters, starting "SAT"). The captions come from the one caption builder
- * (shared/social/posts.ts); the only line a worked example adds is the music credit, last, on all
- * three, because the track's licence requires attribution. Replaces (2026-11-02) the 2026-10-28
+ * (shared/social/posts.ts), unchanged: a worked example adds nothing (the music credit its
+ * licence requires is on the end card, Karl 2026-11-04). Replaces (2026-11-02) the 2026-10-28
  * captions that opened "Follow for daily SAT questions 👆", carried the hook, and carried the
  * link-in-bio line (TikTok) or the comment-SAT line without the SCL-262 headline (Instagram).
  * The hook is no longer in the captions: it is on screen and spoken in the video.
@@ -507,34 +541,31 @@ function captionContext(
   };
 }
 
-/** TikTok: headline / follow and comment / hashtags / the music credit. No promo or link line. */
+/** TikTok: headline / follow and comment / hashtags. No promo or link line. */
 export function workedExampleCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
-  musicCredit: string,
 ): string {
   const c = captionContext(example, q);
-  return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);
+  return socialTiktokCaption(c.headline, c.test, c.section);
 }
 
-/** Instagram: headline / comment / "Taking the SAT <date>? Comment SAT…" / hashtags / credit. */
+/** Instagram: headline / comment / "Taking the SAT <date>? Comment SAT…" / hashtags. */
 export function workedExampleInstagramCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
-  musicCredit: string,
 ): string {
   const c = captionContext(example, q);
-  return socialInstagramCaption(c.headline, c.test, c.section, [musicCredit]);
+  return socialInstagramCaption(c.headline, c.test, c.section);
 }
 
-/** Facebook: headline / the approach prompt / hashtags / credit. No link, no comment word. */
+/** Facebook: headline / the approach prompt / hashtags. No link, no comment word. */
 export function workedExampleFacebookCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
-  musicCredit: string,
 ): string {
   const c = captionContext(example, q);
-  return socialFacebookCaption(c.headline, c.test, c.section, [musicCredit]);
+  return socialFacebookCaption(c.headline, c.test, c.section);
 }
 
 /** TikTok's keywords, keyed on the question's canonical domain (SCL-262 item 4). */
@@ -566,23 +597,19 @@ const CAPTION_LINK =
   /https?:\/\/|\bwww\.|lyceon\.ai|\blink in bio\b|\bbio link\b/i;
 
 /**
- * One caption against its headline: the headline first, the music credit present, no link, and
- * the hook rules that apply to any public line (no claims about people, no statistics, no
- * banned public-copy phrase).
+ * One caption against its headline: the headline first, nothing in it but what Karl pastes (no
+ * music credit, licence, URL, field label, review note, id or file name: copyBlockProblems, Karl
+ * 2026-11-04), no link or bio line, and the hook rules that apply to any public line (no claims
+ * about people, no statistics, no banned public-copy phrase).
  */
-export function captionProblems(
-  caption: string,
-  musicCredit: string,
-  headline: string,
-): string[] {
+export function captionProblems(caption: string, headline: string): string[] {
   const out: string[] = [];
   const [first] = caption.split("\n");
   if (first !== headline)
     out.push(
       `caption's first line must be the headline "${headline}", got "${first ?? ""}"`,
     );
-  if (!caption.split("\n").includes(musicCredit))
-    out.push("caption does not credit the music track");
+  out.push(...copyBlockProblems(caption));
   const link = CAPTION_LINK.exec(caption);
   if (link) out.push(`caption carries a link or bio line ("${link[0]}")`);
   const p =
