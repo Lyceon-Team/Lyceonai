@@ -152,7 +152,7 @@ function main(): void {
     logo: abs(kit.brand.logo),
     music: {
       file: abs(kit.track.file),
-      credit: kit.track.credit,
+      credit: kit.track.on_screen_credit,
       gain: kit.voice.music_gain,
       fade_seconds: kit.voice.music_fade_seconds,
     },

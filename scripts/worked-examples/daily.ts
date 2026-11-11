@@ -16,7 +16,7 @@
  *           than one: refuses (one example a day). One: checks Karl's merge from GitHub's record
  *           (approval.ts), runs every content rule, generates the composition into <dir>/composition
  *           and writes <dir>/post.json (label, title, the TikTok, Instagram and Facebook captions
- *           in the SCL-262 format with the music credit, TikTok's keywords, the run's warnings,
+ *           in the SCL-262 format (no music credit: it is on the end card, Karl 2026-11-04), TikTok's keywords, the run's warnings,
  *           approval; SCL-265).
  *           --dry-run (pull requests only) uses the given date and a placeholder approval so the
  *           whole path is proven on the fixture tree; the workflow never claims or posts then.
@@ -41,7 +41,10 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import { chicagoToday } from "../../shared/sat-test-dates";
 import { campaignLinks } from "../../shared/social/funnel";
-import { socialDateWarnings } from "../../shared/social/posts";
+import {
+  copyBlockProblems,
+  socialDateWarnings,
+} from "../../shared/social/posts";
 import {
   captionProblems,
   titleProblems,
@@ -108,43 +111,42 @@ export type WorkedExampleCopy = {
 export function workedExampleCopy(
   e: ExampleOnBranch,
   question: SeedQuestion,
-  credit: string,
 ): WorkedExampleCopy {
   return {
     title: workedExampleTitle(e.content, question),
-    caption: workedExampleCaption(e.content, question, credit),
-    instagram_caption: workedExampleInstagramCaption(
-      e.content,
-      question,
-      credit,
-    ),
-    facebook_caption: workedExampleFacebookCaption(e.content, question, credit),
+    caption: workedExampleCaption(e.content, question),
+    instagram_caption: workedExampleInstagramCaption(e.content, question),
+    facebook_caption: workedExampleFacebookCaption(e.content, question),
     keywords: workedExampleKeywords(e.content, question),
   };
 }
 
 /**
- * The post for one example: label, title, the three captions (music credited, no link), TikTok's
- * keywords, the run's warnings, approval. Refuses on any rule (SCL-265, in the SCL-262 format).
+ * The post for one example: label, title, the three captions (no music credit, no link: the
+ * credit is on the end card, Karl 2026-11-04), TikTok's keywords, the run's warnings, approval.
+ * Refuses on any rule (SCL-265, in the SCL-262 format), and on any copy block that carries
+ * anything but what Karl pastes (copyBlockProblems).
  */
 export function buildPost(
   e: ExampleOnBranch,
   copy: WorkedExampleCopy,
-  credit: string,
   approval: ExampleApproval,
 ): WorkedExamplePost {
   const problems = [
     ...titleProblems(copy.title),
-    ...captionProblems(copy.caption, credit, copy.title).map(
-      (p) => `tiktok ${p}`,
-    ),
-    ...captionProblems(copy.instagram_caption, credit, copy.title).map(
+    ...captionProblems(copy.caption, copy.title).map((p) => `tiktok ${p}`),
+    ...captionProblems(copy.instagram_caption, copy.title).map(
       (p) => `instagram ${p}`,
     ),
-    ...captionProblems(copy.facebook_caption, credit, copy.title).map(
+    ...captionProblems(copy.facebook_caption, copy.title).map(
       (p) => `facebook ${p}`,
     ),
     ...(copy.keywords.ok ? [] : [`tiktok ${copy.keywords.error}`]),
+    ...(copy.keywords.ok
+      ? copyBlockProblems(copy.keywords.keywords.join("\n")).map(
+          (p) => `tiktok keywords ${p}`,
+        )
+      : []),
   ];
   if (problems.length > 0 || !copy.keywords.ok)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
@@ -210,12 +212,7 @@ async function select(a: Args): Promise<void> {
   const { question } = exampleProblems(content, e, kit);
   if (!question) throw new Error(`${e.dir}: its question cannot be read`);
   generate(content, e.dir, join(out, "composition"));
-  const post = buildPost(
-    e,
-    workedExampleCopy(e, question, kit.track.credit),
-    kit.track.credit,
-    approval,
-  );
+  const post = buildPost(e, workedExampleCopy(e, question), approval);
   writeFileSync(join(out, "post.json"), `${JSON.stringify(post, null, 2)}\n`);
   process.stdout.write(
     `select: ${post.label} (${post.id}) is due on ${today}\n`,

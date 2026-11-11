@@ -25,8 +25,9 @@
  *
  * The caption builders take the headline (socialTiktokCaption, socialInstagramCaption,
  * socialFacebookCaption): the QOTD passes qotdHeadline, and the worked examples pass their title
- * plus the music credit as a trailing line (SCL-265, Karl's ruling 2026-11-02: worked-example
- * captions and keywords use this format). One builder, no second copy.
+ * (SCL-265, Karl's ruling 2026-11-02: worked-example captions and keywords use this format). One
+ * builder, no second copy. Nothing is appended: since Karl's ruling of 2026-11-04 the music
+ * credit is on the video's end card, not in any caption (copyBlockProblems guards every block).
  */
 import { CANONICAL_DOMAINS_BY_SECTION } from "../canonical-domains";
 import { SAT_TEST_DATES } from "../sat-test-dates";
@@ -201,27 +202,25 @@ export function instagramCommentSatLine(test: SocialTest | null): string {
 }
 
 /**
- * TikTok: headline / follow and comment / hashtags, then any `trailing` lines.
+ * TikTok: headline / follow and comment / hashtags.
  *
  * @spec [SCL-262 item 2 (Karl's rulings 2026-11-02); SCL-265 (Karl's ruling 2026-11-02: the
  *       worked-example captions use the SCL-262 format)] | @implemented [2026-11-02]
  *
  * plain English: the one TikTok caption builder. The QOTD passes its headline
- * (qotdTiktokCaption); a worked example passes its title and, as `trailing`, the music credit its
- * CC BY 4.0 licence requires (shared/worked-examples/rules.ts). Nothing else may be appended: no
- * promo or link line on TikTok.
+ * (qotdTiktokCaption); a worked example passes its title (shared/worked-examples/rules.ts).
+ * Nothing may be appended: no promo or link line on TikTok, and no music credit (Karl,
+ * 2026-11-04: it is on the video's end card).
  */
 export function socialTiktokCaption(
   headline: string,
   test: SocialTest | null,
   section: SocialSection,
-  trailing: readonly string[] = [],
 ): string {
   return [
     headline,
     SOCIAL_FOLLOW_AND_COMMENT_LINE,
     socialHashtags(test, section),
-    ...trailing,
   ].join("\n\n");
 }
 
@@ -230,14 +229,12 @@ export function socialInstagramCaption(
   headline: string,
   test: SocialTest | null,
   section: SocialSection,
-  trailing: readonly string[] = [],
 ): string {
   return [
     headline,
     SOCIAL_COMMENT_LINE,
     instagramCommentSatLine(test),
     socialHashtags(test, section),
-    ...trailing,
   ].join("\n\n");
 }
 
@@ -246,13 +243,11 @@ export function socialFacebookCaption(
   headline: string,
   test: SocialTest | null,
   section: SocialSection,
-  trailing: readonly string[] = [],
 ): string {
   return [
     headline,
     SOCIAL_FACEBOOK_PROMPT_LINE,
     socialHashtags(test, section),
-    ...trailing,
   ].join("\n\n");
 }
 
@@ -312,4 +307,51 @@ export function withoutSocialFixedLines(text: string): string {
     .split("\n")
     .filter((line) => !fixed.has(line.trim()))
     .join("\n");
+}
+
+/**
+ * What a #social copy block may never hold: only the text Karl pastes goes inside one.
+ *
+ * @spec [Karl's ruling 2026-11-04, "Copy-paste cleanup for all #social outputs": "Caption blocks
+ *       contain only what Karl pastes. No music credit, labels, IDs, hook or trap type, 'For
+ *       review: posts on...', file names or review notes inside any copy block"; tests: "No caption
+ *       block contains 'Music:', 'CC BY', a URL, or a field label"] | @implemented [2026-11-04]
+ *
+ * plain English: one problem per kind found, naming the kind only (never echoing the block).
+ * Every #social copy block (QOTD, worked example, breakdown, any manual re-render) passes through
+ * this before it is posted: captions, keywords, alt text. "Comment SAT and I'll send you the
+ * link" is the approved Instagram call to action (SCL-262) and is not a URL.
+ */
+const COPY_BLOCK_FORBIDDEN: readonly { what: string; re: RegExp }[] = [
+  { what: "a music credit", re: /\bmusic\s*:/i },
+  {
+    what: "a licence",
+    re: /\bCC[\s-]?BY\b|\bCC0\b|creative\s+commons|\blicen[cs]e\b/i,
+  },
+  {
+    what: "a URL",
+    re: /https?:\/\/|\bwww\.|\b[a-z0-9-]+\.(?:app|ai|com|org|net|io|co)\b/i,
+  },
+  {
+    what: "a field label",
+    re: /^\s*(?:label|title|caption|keywords?|alt(?:\s+text)?|hook|trap|type|id|file|video|review|for review|posts? on|source|link|url|credit|section|date|platform)\s*:/im,
+  },
+  {
+    what: "a review note",
+    re: /\bfor review\b|\bposts on \d{4}-\d{2}-\d{2}\b|\bposts by hand\b|\bsame video as\b/i,
+  },
+  {
+    what: "an internal label or id",
+    re: /^Worked example\s+·|\b[a-z]+(?:_[a-z]+)+\b|\bwe-[a-z0-9]{6,}\b|\bSAT(?:M|RW)[12][A-Z0-9]{6}\b/m,
+  },
+  {
+    what: "a file name",
+    re: /\b[\w-]+\.(?:mp4|mov|png|jpe?g|wav|mp3|json|txt)\b/i,
+  },
+];
+
+export function copyBlockProblems(text: string): string[] {
+  return COPY_BLOCK_FORBIDDEN.filter((f) => f.re.test(text)).map(
+    (f) => `copy block carries ${f.what}`,
+  );
 }
