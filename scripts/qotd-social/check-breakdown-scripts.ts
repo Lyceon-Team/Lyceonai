@@ -56,6 +56,7 @@ import {
 } from "../../shared/qotd/breakdown";
 import {
   hardOnlyProblem,
+  hookGoProblem,
   scriptProblems,
 } from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
@@ -194,6 +195,8 @@ export function breakdownScriptProblems(
       (p) => `${dir}: ${p}`,
     );
   out.push(...scriptProblems(script, asked.question));
+  const go = hookGoProblem(script.hook.voice, script.qotd_date);
+  if (go) out.push(go);
   out.push(...breakdownVoice(contentRoot, entry, kit).problems);
   return out.map((p) => `${dir}: ${p}`);
 }

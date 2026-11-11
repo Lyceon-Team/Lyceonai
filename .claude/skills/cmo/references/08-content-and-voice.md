@@ -33,15 +33,16 @@ Applies to every voiced video: worked examples, QOTD breakdowns, the rotation po
 - **No burned-in word-by-word captions.** The on-screen handwriting and graphs carry the content. Karl may switch on TikTok's own auto-captions when posting.
 - **The voice never reads the on-screen text verbatim.** The screen shows the question; the voice talks about it.
 - **Script flow:**
-  1. A spoken hook, as a question or challenge to the viewer: "Think you can solve this in ten seconds?", never the label "Solve this in 10 seconds".
+  1. A spoken hook, as a question or challenge to the viewer: "Think you can solve this in ten seconds? Let's see.", never the label "Solve this in 10 seconds". **Never say "Go"** (Karl, 2026-11-11): no "Go.", "Go!" or "ready, GO!"; end on the question, "Let's see.", or "Ready?" with a short pause. The content check refuses it (H7).
   2. A one-sentence setup in plain talk.
   3. The key move, and why.
   4. The trap ("here's where people slip").
   5. The answer and a quick check.
   6. The call to action (§4a).
-- **Tone:** contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Go."). No textbook phrasing.
-- **Reference script** (Nov 11): "Think you can do this one in ten seconds? Go. … Okay. Take fourteen off both sides, and you get negative five x is at least twenty-five. Now here's where people slip: you're dividing by a negative, so the sign flips. x is less than or equal to negative five. Did you flip it? Follow, there's one of these every day."
-- **Voice (Karl, 2026-11-11):** worked examples are voiced in Chirp 3 HD **Charon** (Google Cloud Text-to-Speech), the pick from the blind bake-off, voiced and cached by the weekly run. `am_michael` (Kokoro-82M) remains the voice of the local tools and the pilots.
+- **Tone:** contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Ready?"; never "Go"). No textbook phrasing.
+- **Reference script** (Nov 11, hook updated 2026-11-11): "Think you can solve this in ten seconds? Let's see. … Okay. Take fourteen off both sides, and you get negative five x is at least twenty-five. Now here's where people slip: you're dividing by a negative, so the sign flips. x is less than or equal to negative five. Did you flip it? Follow, there's one of these every day."
+- **Voice (Karl, 2026-11-11):** worked examples are voiced in **voice A, Chirp 3 HD Orus** (Google Cloud Text-to-Speech), from the blind bake-off (it replaced Charon, voice C, the same day), voiced and cached by the weekly run; a line that fails the voice checks is voiced again, up to 3 takes. `am_michael` (Kokoro-82M) remains the voice of the local tools and the pilots.
+- **"Lyceon" in voice A:** sent to Orus respelled **"Lye-see-ahn"**, with no IPA (Orus did not honour /ˈlaɪsiɑn/; Karl picked clip 3 of three, 2026-11-11). The on-screen spelling never changes.
 - **Pronunciation:** "Lyceon" is said "lye-see-on" (/ˈlaɪsiɑn/: LYE, see, ON; stress on the first syllable).
 - **Outro and end card:** no "lyceon.ai" spoken or shown; the end card reads "Lyceon SAT Prep".
 - **Loudness:** voice lines are normalised (around −14 LUFS, true peak ≤ −1 dB) so nothing clips.

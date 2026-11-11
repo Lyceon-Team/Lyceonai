@@ -378,6 +378,15 @@ export const workedExampleStyleSchema = z.record(
   z.string().min(1),
   z
     .object({
+      /**
+       * The short topic the captions show ("Linear inequalities", "Percentages"): Karl's ruling
+       * 2026-11-11, titles use a short topic name; the College Board skill name (the row's key,
+       * questions.skill_codes) stays internal. Optional only for the rollout order: the schema is
+       * strict, so code without this field refuses a STYLE that has it; this code accepts both,
+       * reaches main first, and the STYLE rows follow. A row without it falls back to the skill
+       * name (the titles before the ruling).
+       */
+      display_name: line.max(32).optional(),
       signature_move: line,
       check: line,
       trap: line,

@@ -35,6 +35,8 @@ import {
   hookAnswerProblem,
   hookCuriosityProblem,
   hookPeopleProblem,
+  GO_RULE_FROM,
+  hookGoProblem,
   hookProblems,
   hookPuzzleProblem,
   hookStatisticProblem,
@@ -77,6 +79,7 @@ import {
   exampleProblems,
   loadExamples,
   loadPosted,
+  loadStyle,
   loadVoice,
   seedQuestion,
   voiceProblems,
@@ -199,6 +202,48 @@ describe("hook rules", () => {
     expect(hookStatisticProblem("A study says this one is hard?")).toMatch(
       /^H1/,
     );
+  });
+
+  // Karl's ruling 2026-11-11: speed hooks never say "Go" ("Go.", "Go!", "GO").
+  it("H7 refuses a spoken hook with a standalone Go, from the first post after the ruling", () => {
+    expect(GO_RULE_FROM).toBe("2026-11-12");
+    for (const voice of [
+      "Ten seconds. Ready? Go.",
+      "Let's see if you can solve this in ten seconds… ready, GO!",
+      "Bet you can't get this one in under a minute. Go",
+      "Go! Ten seconds.",
+    ])
+      expect(hookGoProblem(voice, "2026-11-16"), voice).toMatch(/^H7 /);
+    for (const voice of [
+      "Think you can solve this in ten seconds? Let's see.",
+      "Think you can solve this in ten seconds? Ready?",
+      "Let's go through it fast. Ready?",
+      "Good luck.",
+    ])
+      expect(hookGoProblem(voice, "2026-11-16"), voice).toBeNull();
+    // Posted history (before the ruling) is not re-checked.
+    expect(hookGoProblem("Ten seconds. Ready? Go.", "2026-11-11")).toBeNull();
+  });
+
+  it("H7 runs in the content check on a worked example due after the ruling", () => {
+    const due = (voice: string) => ({
+      ...fixture,
+      content: {
+        ...fixture.content,
+        post_on: "2026-11-16",
+        hook: { ...fixture.content.hook, voice },
+      },
+    });
+    expect(
+      exampleProblems(CONTENT, due("Ten seconds. Ready? Go."), kit).problems,
+    ).toContainEqual(expect.stringMatching(/H7 the spoken hook says "Go"/));
+    expect(
+      exampleProblems(
+        CONTENT,
+        due("Think you can solve this in ten seconds? Let's see."),
+        kit,
+      ).problems.filter((p) => p.includes("H7")),
+    ).toEqual([]);
   });
 
   it("H2 refuses claims about students or people", () => {
@@ -876,10 +921,20 @@ describe("title and caption", () => {
   // SCL-265 (Karl's ruling 2026-11-02): the worked-example captions use the SCL-262 format. Karl's
   // ruling 2026-11-04: no music credit in any caption (it is on the end card), and nothing but
   // what Karl pastes inside a copy block. Every expectation is on the real builders' output.
-  const title = workedExampleTitle(fixture.content, question);
-  const caption = workedExampleCaption(fixture.content, question);
-  const instagram = workedExampleInstagramCaption(fixture.content, question);
-  const facebook = workedExampleFacebookCaption(fixture.content, question);
+  const topic = loadStyle(CONTENT)[fixture.content.skill_code]?.display_name;
+  if (!topic) throw new Error("the fixture STYLE has no display_name");
+  const title = workedExampleTitle(question, topic);
+  const caption = workedExampleCaption(fixture.content, question, topic);
+  const instagram = workedExampleInstagramCaption(
+    fixture.content,
+    question,
+    topic,
+  );
+  const facebook = workedExampleFacebookCaption(
+    fixture.content,
+    question,
+    topic,
+  );
   const captions = { tiktok: caption, instagram, facebook };
 
   it("the real title and caption pass, with no music credit in any caption", () => {
@@ -893,6 +948,38 @@ describe("title and caption", () => {
     }
     expect(workedExampleLabel(fixture.content)).toBe(
       "Worked example · Percentages · obvious_answer_trap",
+    );
+  });
+
+  it("the title and all three captions show the STYLE display_name, never the skill name", () => {
+    // Karl's ruling 2026-11-11: a short topic per skill in STYLE; the College Board skill name
+    // (skill_code) stays internal. A display name unlike the skill code proves which one is read.
+    const style = loadStyle(CONTENT);
+    const row = style[fixture.content.skill_code];
+    if (!row) throw new Error("the fixture STYLE has no row for its skill");
+    const copy = workedExampleCopy(fixture, question, {
+      ...style,
+      [fixture.content.skill_code]: { ...row, display_name: "Percents" },
+    });
+    expect(copy.title).toBe("SAT Math worked example · Percents");
+    for (const text of [
+      copy.caption,
+      copy.instagram_caption,
+      copy.facebook_caption,
+    ]) {
+      expect(text.split("\n")[0]).toBe("SAT Math worked example · Percents");
+      expect(text).not.toContain(fixture.content.skill_code);
+    }
+    // Until the STYLE rows land (they follow this code to main), a row without display_name
+    // keeps the skill name, the title before the ruling.
+    const { display_name: _omit, ...bare } = row;
+    expect(
+      workedExampleCopy(fixture, question, {
+        [fixture.content.skill_code]: bare,
+      }).title,
+    ).toBe(`SAT Math worked example · ${fixture.content.skill_code}`);
+    expect(() => workedExampleCopy(fixture, question, {})).toThrow(
+      `no style row for "${fixture.content.skill_code}"`,
     );
   });
 
@@ -1109,7 +1196,7 @@ describe("the daily job: approved, post_on today, once", () => {
   });
 
   it("no caption, keyword or message gives away the answer or the explanation (anti-leak)", () => {
-    const copy = workedExampleCopy(fixture, question);
+    const copy = workedExampleCopy(fixture, question, loadStyle(CONTENT));
     const post = buildPost(fixture, copy, {
       pr: 1300,
       mergedBy: "kingk237",
@@ -1161,7 +1248,7 @@ describe("the daily job: approved, post_on today, once", () => {
       mergeSha: sha,
       mergedAt: "2026-10-28T15:00:00Z",
     };
-    const copy = workedExampleCopy(fixture, question);
+    const copy = workedExampleCopy(fixture, question, loadStyle(CONTENT));
     const post = buildPost(fixture, copy, approval);
     const parsed = workedExamplePostSchema.parse(post);
     expect(parsed.video).toBe("we-satm2czs1be.mp4");
@@ -1218,7 +1305,7 @@ describe("the daily job: approved, post_on today, once", () => {
       ...fixture,
       content: { ...fixture.content, post_on: "2099-01-01" },
     };
-    const copy = workedExampleCopy(late, question);
+    const copy = workedExampleCopy(late, question, loadStyle(CONTENT));
     const post = buildPost(late, copy, {
       pr: 1,
       mergedBy: "kingk237",
@@ -1271,7 +1358,11 @@ describe("the Slack set", () => {
   };
   // Built inside each test, so a planted defect in a builder fails that test, not the file.
   const realPost = (): WorkedExamplePost =>
-    buildPost(fixture, workedExampleCopy(fixture, question), approval);
+    buildPost(
+      fixture,
+      workedExampleCopy(fixture, question, loadStyle(CONTENT)),
+      approval,
+    );
   const fence = (text: string): string => ["```", text, "```"].join("\n");
 
   async function sent(

@@ -9,7 +9,8 @@
  *       file in the SCL-262/273 copy-paste format; one message "Week <n> ready" with signed links
  *       that expire after 14 days); the step-3 rulings (the existing SUPABASE_URL /
  *       SUPABASE_SERVICE_ROLE_KEY pair, read only on the scheduled run from main); the 2026-11-11
- *       answers (batch voice Chirp 3 HD Charon voiced and cached by this run; the daily job kept
+ *       answers (batch voice voiced and cached by this run: Chirp 3 HD Orus, voice A, since Karl's voice
+ *       change later the same day, replacing Charon; the daily job kept
  *       until the first weekly batch works)] | @implemented [2026-11-11]
  *
  * plain English, subcommands the workflow runs in order (the render, final mix, layout check and
@@ -67,6 +68,7 @@ import {
   exampleProblems,
   loadExamples,
   loadPosted,
+  loadStyle,
   loadVoice,
   POSTED_PATH,
 } from "./content";
@@ -356,7 +358,11 @@ async function build(f: Flags): Promise<void> {
         out: join(dir, "composition"),
         kit,
       });
-      const post = buildPost(e, workedExampleCopy(e, question), approval);
+      const post = buildPost(
+        e,
+        workedExampleCopy(e, question, loadStyle(content)),
+        approval,
+      );
       writeFileSync(
         join(dir, "post.json"),
         `${JSON.stringify(post, null, 2)}\n`,

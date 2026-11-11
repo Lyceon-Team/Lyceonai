@@ -33,6 +33,7 @@ import {
   HARD_ONLY_FROM,
   contentProblems,
   hardOnlyProblem,
+  hookGoProblem,
   planSlotProblem,
 } from "../../shared/worked-examples/rules";
 import {
@@ -264,6 +265,9 @@ export function exampleProblems(
     const hard = hardOnlyProblem(q.question);
     if (hard) problems.push(hard);
   }
+  // Karl's ruling 2026-11-11: no standalone "Go" in the spoken hook (H7), from GO_RULE_FROM.
+  const go = hookGoProblem(e.content.hook.voice, e.content.post_on);
+  if (go) problems.push(go);
   const slot = planSlotProblem(
     e.content,
     loadPlan(contentRoot, e.content.post_on.slice(0, 7)),

@@ -102,7 +102,7 @@ describe("the bake-off's voices and lines (Karl, 2026-11-11)", () => {
 
 describe("the requests (Cloud Text-to-Speech text:synthesize)", () => {
   it("Chirp 3 HD: the full voice name, LINEAR16 at 24 kHz, and Lyceon as IPA /ˈlaɪsiɑn/", () => {
-    const req = chirpRequest("Charon", "Lyceon SAT Prep.");
+    const req = chirpRequest("Charon", "Lyceon SAT Prep.", 1, "ipa");
     expect(req.voice).toEqual({
       languageCode: "en-US",
       name: "en-US-Chirp3-HD-Charon",
@@ -123,6 +123,12 @@ describe("the requests (Cloud Text-to-Speech text:synthesize)", () => {
     });
     // The text itself is never respelled for Chirp.
     expect(req.input.text).toBe("Lyceon SAT Prep.");
+  });
+
+  it("production Chirp (Karl's pick 2026-11-11, clip 3): Lyceon respelled Lye-see-ahn, no IPA", () => {
+    expect(chirpRequest("Orus", "Lyceon SAT Prep.").input).toEqual({
+      text: "Lye-see-ahn SAT Prep.",
+    });
   });
 
   it("a line that does not say Lyceon carries no custom pronunciation", () => {

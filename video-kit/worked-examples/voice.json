@@ -2,7 +2,7 @@
   "hyperframes": "0.8.143",
   "default_profile": "am_michael",
   "fallback_profile": "am_michael",
-  "batch_profile": "charon",
+  "batch_profile": "orus",
   "profiles": {
     "am_michael": {
       "engine": "kokoro",
@@ -27,7 +27,13 @@
     "charon": {
       "engine": "chirp3-hd",
       "chirp_voice": "Charon",
-      "label": "Chirp 3 HD Charon on Cloud Text-to-Speech, voiced and cached by the weekly run (Karl's pick from the 2026-11-11 blind bake-off, voice C)",
+      "label": "Chirp 3 HD Charon on Cloud Text-to-Speech (Karl's first pick from the 2026-11-11 blind bake-off, voice C; replaced by Orus the same day)",
+      "speaking_rate": 1.0
+    },
+    "orus": {
+      "engine": "chirp3-hd",
+      "chirp_voice": "Orus",
+      "label": "Chirp 3 HD Orus on Cloud Text-to-Speech, voiced and cached by the weekly run; Lyceon respelled Lye-see-ahn, no IPA (Karl's voice change 2026-11-11: voice A from the blind bake-off, pronunciation clip 3)",
       "speaking_rate": 1.0
     }
   },

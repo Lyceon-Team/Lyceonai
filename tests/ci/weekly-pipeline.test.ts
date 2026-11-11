@@ -20,6 +20,7 @@ import { scriptLines } from "../../scripts/worked-examples/composition";
 import {
   loadExamples,
   loadPosted,
+  loadStyle,
 } from "../../scripts/worked-examples/content";
 import {
   buildPost,
@@ -31,6 +32,7 @@ import {
   dirStore,
   voiceBatch,
   voiceCacheKey,
+  VOICE_TAKES,
   type BucketApi,
   type ChirpProfile,
   type Finished,
@@ -114,11 +116,12 @@ function harness(fail: string | null = null) {
 const lines = scriptLines(fixture.content, kit.voice.outro_text);
 
 describe("the voice cache: each line voiced once (Karl, 2026-11-11)", () => {
-  it("the kit's batch voice is Chirp 3 HD Charon; the local tools keep am_michael", () => {
-    expect(kit.voice.batch_profile).toBe("charon");
-    expect(kit.voice.profiles.charon).toMatchObject({
+  it("the kit's batch voice is Chirp 3 HD Orus (voice A); the local tools keep am_michael", () => {
+    // Karl's voice change 2026-11-11: voice A, Chirp 3 HD Orus (was C, Charon).
+    expect(kit.voice.batch_profile).toBe("orus");
+    expect(kit.voice.profiles.orus).toMatchObject({
       engine: "chirp3-hd",
-      chirp_voice: "Charon",
+      chirp_voice: "Orus",
     });
     expect(kit.voice.default_profile).toBe("am_michael");
   });
@@ -216,12 +219,54 @@ describe("the voice cache: each line voiced once (Karl, 2026-11-11)", () => {
         ...h,
       }),
     ).rejects.toThrow(
-      /trap fails the quality checks in charon: says something else/,
+      /trap fails the quality checks in charon on every take: take 1: says something else \| take 2: .* \| take 3: /,
     );
     const trap = lines.find((l) => l.key === "trap");
     if (!trap) throw new Error("no trap");
+    expect(h.calls.filter((t) => t === trap.text)).toHaveLength(VOICE_TAKES);
     const key = voiceCacheKey(CHARON, kit.voice.loudness, trap.text);
     expect(existsSync(join(cache, `${key}.wav`))).toBe(false);
+  });
+
+  it("a bad take is voiced again: the next good take is used and cached, the bad one never is", async () => {
+    // Chirp returns a different take per call (2026-11-11: 3 of 69 voice-A lines had a take
+    // defect the same text did not have on another call). Here the outro's first take fails.
+    expect(VOICE_TAKES).toBe(3);
+    const cache = mkdtempSync(join(tmpdir(), "vc-"));
+    const outro = lines.find((l) => l.key === "outro");
+    if (!outro) throw new Error("no outro");
+    const calls: string[] = [];
+    let outroTakes = 0;
+    const batch = await voiceBatch(lines, mkdtempSync(join(tmpdir(), "r-")), {
+      profileId: "charon",
+      profile: CHARON,
+      loudness: kit.voice.loudness,
+      store: store(cache),
+      synth: async (text) => {
+        calls.push(text);
+        return wav(text === outro.text && outroTakes === 0 ? 3 : 1);
+      },
+      finish: (line, raw) => {
+        const bad = line.key === "outro" && outroTakes++ === 0;
+        return {
+          audio: raw,
+          words: [{ text: "word", start: 0, end: 0.5 }],
+          problems: bad ? ["silence: 0.76 s before the first word"] : [],
+        };
+      },
+    });
+    expect(calls.filter((t) => t === outro.text)).toHaveLength(2);
+    expect(batch.ttsCalls).toBe(lines.length + 1);
+    // The cached outro is the good take (1 s), not the bad one (3 s).
+    expect(batch.outro.duration).toBe(1);
+    const again = await voiceBatch(lines, mkdtempSync(join(tmpdir(), "r2-")), {
+      profileId: "charon",
+      profile: CHARON,
+      loudness: kit.voice.loudness,
+      store: store(cache),
+      ...harness(),
+    });
+    expect(again.ttsCalls).toBe(0);
   });
 
   it("the bucket store: a missing object is a miss, any other error stops the run", async () => {
@@ -290,12 +335,16 @@ describe("the week (Karl, 2026-11-11)", () => {
   it("the captions file is the SCL-262/273 set: platform headers outside, only pasteable copy inside", () => {
     const q = seedQuestion(fixture.content.question_id);
     if (!q.ok) throw new Error(q.problem);
-    const post = buildPost(fixture, workedExampleCopy(fixture, q.question), {
-      pr: 1,
-      mergedBy: "x",
-      mergeSha: "0".repeat(40),
-      mergedAt: "2026-11-01T00:00:00Z",
-    });
+    const post = buildPost(
+      fixture,
+      workedExampleCopy(fixture, q.question, loadStyle(CONTENT)),
+      {
+        pr: 1,
+        mergedBy: "x",
+        mergeSha: "0".repeat(40),
+        mergedAt: "2026-11-01T00:00:00Z",
+      },
+    );
     const md = captionsMarkdown(post);
     const parts = md.split("```");
     const blocks = parts.filter((_, k) => k % 2 === 1).map((b) => b.trim());

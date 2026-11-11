@@ -44,14 +44,16 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
    on them before Karl merges.
 2. Write `content/worked-examples/<YYYY-Www>/<QUESTION_ID>/example.json`
    (`packages/shared/src/worked-example-schema.ts`). `post_on` is in that week and matches the
-   plan's slot. `signature_move` matches `STYLE.json` for the skill.
+   plan's slot. `signature_move` matches `STYLE.json` for the skill. The STYLE row's
+   `display_name` (a short topic, at most 32 characters) is what the title and the captions
+   show; the College Board skill name stays internal (Karl, 2026-11-11).
    The script, in spoken order (Karl's rulings 2026-11-02, SCL-267). The screen shows the
    question; the voice talks about it. Write it the way you'd say it: contractions, short
-   sentences, "you"/"we", beats like "Okay." or "Go.".
+   sentences, "you"/"we", beats like "Okay." or "Let's see." (never "Go", H7).
 
    | spoken | field | what it holds | on screen meanwhile |
    |---|---|---|---|
-   | 1 | `hook.voice` | the hook as a question or a challenge to the viewer ("Think you can do this one in ten seconds? Go.") | `hook.line` (bold, from frame 0) and the question card |
+   | 1 | `hook.voice` | the hook as a question or a challenge to the viewer ("Think you can solve this in ten seconds? Let's see."; never "Go", rule H7 from 2026-11-12) | `hook.line` (bold, from frame 0) and the question card |
    | 2 | `question_voice` | ONE sentence of setup in plain talk: what the question is about. Not a reading of it (the key keeps its old name) | the question card |
    | 3 | `steps[].voice` | the key move and why, one step per line | `steps[].notepad`, written as each line starts |
    | 4 | `trap.voice` | the trap; starts "The trap" | "The trap:" and `trap.notepad` |
@@ -100,12 +102,14 @@ daily job below, which stays only until Karl confirms the first weekly batch.
   and render, the final-mix limiter, the layout check, the MP4 check → `upload` → `claim` (pushed to
   `social` before announcing) → `announce`. An example that fails is named in the message with its
   reason; the others are still delivered.
-- **Voice:** Chirp 3 HD Charon (voice.json `batch_profile`), through `lyceon-ci-eval` by Workload
+- **Voice:** voice A, Chirp 3 HD Orus (voice.json `batch_profile` "orus"; Karl's change 2026-11-11 from Charon), through `lyceon-ci-eval` by Workload
   Identity Federation (no key). Every line is voiced once and cached in
   `social-weekly/voice-cache/<sha256>.wav` + `.json`, keyed by the text, the voice and every
   setting, after the loudness normalisation, limiter and quality checks. A re-render never calls
-  TTS; editing a line re-voices only that line. Authors no longer commit audio for weekly examples.
-  "Lyceon" is sent as IPA /ˈlaɪsiɑn/.
+  TTS; editing a line re-voices only that line. A line that fails the checks is voiced again, up to
+  3 takes (Chirp's audio differs per call), before its example is refused. Authors no longer commit
+  audio for weekly examples. "Lyceon" is sent to Orus respelled "Lye-see-ahn", with no IPA (Karl's
+  pick 2026-11-11; Orus did not honour /ˈlaɪsiɑn/).
 - **Delivery:** the private bucket `social-weekly` (migration `20261203000000_social_weekly_bucket.sql`):
   `<YYYY-Www>/<date>/<id>.mp4` and `captions.md` (the SCL-262/273 copy-paste set: platform headers
   outside, only pasteable copy inside). One #social message, "Week <n> ready", a line per date with
