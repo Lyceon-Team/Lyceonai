@@ -1,0 +1,131 @@
+{
+  "question_id": "SATM2KTSHPW",
+  "skill_code": "Lines, Angles, and Triangles",
+  "post_on": "2026-11-21",
+  "hook": {
+    "type": "puzzle",
+    "line": "Small triangle, big triangle, one side given. What's the big perimeter?",
+    "voice": "Think you can do this one in your head? Try it."
+  },
+  "question_voice": "Two triangles with the same shape, one bigger. We know the small one's sides and one side of the big one.",
+  "signature_move": "Find the scale factor from matching sides, then apply it to every length.",
+  "steps": [
+    {
+      "notepad": "39 ÷ 13 = 3",
+      "voice": "The matching sides are thirteen and thirty-nine. That's a scale factor of three."
+    },
+    {
+      "notepad": "13 + 21 + 17 = 51",
+      "voice": "Add up the small triangle. Thirteen, twenty-one, seventeen. Fifty-one."
+    },
+    {
+      "notepad": "big P = 3 × 51",
+      "voice": "Every side triples, so the perimeter triples too."
+    }
+  ],
+  "answer": {
+    "letter": "D",
+    "notepad": "Answer: D) 153",
+    "voice": "One fifty-three. That's D. Quick check: the big sides are thirty-nine, sixty-three and fifty-one, and they add to one fifty-three."
+  },
+  "trap": {
+    "summary": "Adding the small triangle's sides, 51, and stopping there.",
+    "notepad": [
+      "13 + 21 + 17 = 51 → A ✗",
+      "that's the SMALL triangle",
+      "× 3 → 153 ✓"
+    ],
+    "voice": "Here's where people slip. They add up the sides they can see, get fifty-one, and pick A. But those are the small triangle's sides."
+  },
+  "check": "The big sides 39, 63 and 51 add to 153.",
+  "takeaway": "Similar figures: one scale factor for every length.",
+  "figure": {
+    "box": {
+      "x": [
+        -4,
+        96
+      ],
+      "y": [
+        -5,
+        36
+      ]
+    },
+    "shapes": [
+      {
+        "kind": "polygon",
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            21,
+            0
+          ],
+          [
+            7.64,
+            10.52
+          ]
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "13",
+        "at": [
+          1.0,
+          7.4
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "21",
+        "at": [
+          10.5,
+          -2.8
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "17",
+        "at": [
+          17.2,
+          7.8
+        ]
+      },
+      {
+        "kind": "polygon",
+        "points": [
+          [
+            30,
+            0
+          ],
+          [
+            93,
+            0
+          ],
+          [
+            52.93,
+            31.55
+          ]
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "39",
+        "at": [
+          37.6,
+          18.4
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "× 3",
+        "at": [
+          25.5,
+          14
+        ],
+        "when": "step-1"
+      }
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM2MELBB8",
+  "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+  "post_on": "2026-11-19",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "18% acid and 42% acid, mixed 5 to 3. What comes out?",
+    "voice": "There's one answer here that feels right. It isn't."
+  },
+  "question_voice": "Two acid solutions poured together, with more of the weak one than the strong one.",
+  "signature_move": "Weight each part by its share, then add.",
+  "steps": [
+    {
+      "notepad": "5 + 3 = 8 parts",
+      "voice": "Count the parts. Five and three make eight."
+    },
+    {
+      "notepad": "5 × 18 = 90",
+      "voice": "The weak one: five parts at eighteen percent. Ninety."
+    },
+    {
+      "notepad": "3 × 42 = 126",
+      "voice": "The strong one: three parts at forty-two. One twenty-six."
+    },
+    {
+      "notepad": "(90 + 126) ÷ 8 = 27",
+      "voice": "Add them and share across all eight parts. Two sixteen over eight."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) 27",
+    "voice": "Twenty-seven percent. That's A. Quick check: there's more of the weak solution, so the mix has to sit closer to eighteen than to forty-two."
+  },
+  "trap": {
+    "summary": "Taking the plain average of 18 and 42, which is 30.",
+    "notepad": [
+      "(18 + 42) ÷ 2 = 30 → C ✗",
+      "5 parts weak, only 3 strong",
+      "weighted: 27 ✓"
+    ],
+    "voice": "Here's where people slip. They average eighteen and forty-two, get thirty, and pick C. But there's more of the weak one, so it pulls the mix down."
+  },
+  "check": "27 is between 18 and 42, and closer to 18, the bigger share.",
+  "takeaway": "Unequal amounts mean a weighted average, not a plain one."
+}

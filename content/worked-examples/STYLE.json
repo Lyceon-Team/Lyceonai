@@ -23,5 +23,30 @@
     "signature_move": "Solve it like an equation; flip the sign when you multiply or divide by a negative.",
     "check": "Test one value from your answer in the original inequality.",
     "trap": "Forgetting to flip the inequality sign after dividing by a negative."
+  },
+  "Nonlinear Equations in One Variable and Systems of Equations in Two Variables": {
+    "signature_move": "Set the two equations equal and solve, or graph both and count where they cross.",
+    "check": "Plug each solution into both equations: the y-values must match.",
+    "trap": "Miscounting crossings, or answering with x when the question asks for something else."
+  },
+  "Linear Equations in One Variable": {
+    "signature_move": "Distribute, collect like terms, then answer exactly what's asked.",
+    "check": "Put the value back into the original equation.",
+    "trap": "Dropping a sign when distributing a negative, or stopping at x when the question asks for an expression."
+  },
+  "Ratios, Rates, Proportional Relationships, and Units": {
+    "signature_move": "Weight each part by its share, then add.",
+    "check": "The answer sits between the parts, nearer the bigger share.",
+    "trap": "Taking a plain average when the amounts aren't equal."
+  },
+  "Lines, Angles, and Triangles": {
+    "signature_move": "Find the scale factor from matching sides, then apply it to every length.",
+    "check": "Every side of the big figure is the scale factor times its match.",
+    "trap": "Using the small figure's numbers for the big one, or matching the wrong sides."
+  },
+  "Nonlinear Functions": {
+    "signature_move": "Find the vertex: x = −b ÷ 2a, then plug it back in.",
+    "check": "Expand the vertex form and compare it with the original.",
+    "trap": "Reading the constant term as the vertex."
   }
 }
