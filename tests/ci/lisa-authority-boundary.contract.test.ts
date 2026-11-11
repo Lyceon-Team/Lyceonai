@@ -51,6 +51,7 @@ import type { PromptFields } from "../../apps/workers/tutor-orchestrator/src/pro
 import type { OrchestrateRequest } from "../../shared/tutor-orchestrator-wire";
 import * as injectionDefense from "../../server/services/tutor-injection-defense";
 import { ALL_FIXTURES } from "./lisa-golden-set-fixtures";
+import { DEFAULT_PROMPT_VERSION } from "./lisa-golden-set-helpers";
 import {
   buildSentinelEnvelope,
   sentinelsIn,
@@ -252,7 +253,7 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
     expect(LISA_DEFAULT_V4.dataBoundary).toBeUndefined();
   });
 
-  it("resolves by exact version only; production stays on v3", () => {
+  it("resolves by exact version; every variant resolves a null version to the default", () => {
     expect(resolvePromptArtifact("default", "lisa-default-v5").version).toBe(
       "lisa-default-v5",
     );
@@ -264,7 +265,7 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v3",
+        DEFAULT_PROMPT_VERSION,
       );
     }
   });

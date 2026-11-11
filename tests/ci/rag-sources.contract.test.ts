@@ -37,8 +37,10 @@ describe("scripts/rag/sources.json", () => {
 
   it("keeps every tier 5 source strict, and rejects a standard one", () => {
     const tier5 = sources.filter((s) => s.tier === 5);
-    // 6, plus Penguin SAT Prep (7 entries) and Dr. TestPrep (6) from the 2026-10-27 expansion.
-    expect(tier5.length).toBe(19);
+    // 6, plus Penguin SAT Prep (7 entries) and Dr. TestPrep (6) from the 2026-10-27 expansion,
+    // plus the 2026-11-04 content-gap run: Brain Buffs Tutoring (37, a new channel) and the 7
+    // single-video picks. The Tutorllini flashcard picks are tier 3, not 1 or 5.
+    expect(tier5.length).toBe(63);
     for (const s of tier5) expect(s.review_level).toBe("strict");
     const loosened = tier5.map((s) => ({ ...s, review_level: "standard" }));
     expect(seedSourcesSchema.safeParse(loosened).success).toBe(false);

@@ -25,6 +25,7 @@ import { LISA_DEFAULT_V2 } from "./lisa-default-v2.js";
 import { LISA_DEFAULT_V3 } from "./lisa-default-v3.js";
 import { LISA_DEFAULT_V4 } from "./lisa-default-v4.js";
 import { LISA_DEFAULT_V5 } from "./lisa-default-v5.js";
+import { LISA_DEFAULT_V6 } from "./lisa-default-v6.js";
 import { logEvent } from "../lib/vertex-client.js";
 
 // ── Artifact registry (loaded at bootstrap per §4.3) ────────────────
@@ -34,29 +35,42 @@ const ARTIFACTS_BY_VERSION: ReadonlyMap<string, PromptArtifact> = new Map([
   [LISA_DEFAULT_V1.version, LISA_DEFAULT_V1],
   [LISA_DEFAULT_V2.version, LISA_DEFAULT_V2],
   [LISA_DEFAULT_V3.version, LISA_DEFAULT_V3],
-  // v4 (2026-10-27, the Desmos block) resolves by exact version only and is not the latest for
-  // any variant, so production stays on v3 until Karl rules on the G0-2 replies.
+  // v4 (2026-10-27, the Desmos block) resolves by exact version only.
   [LISA_DEFAULT_V4.version, LISA_DEFAULT_V4],
-  // v5 (2026-11-02, G2-1: v4 + the data-block rule, state blocks as data blocks) likewise
-  // resolves by exact version only; production stays on v3 until Karl rules on v4 and v5.
+  // v5 (2026-11-02, G2-1: v4 + the data-block rule, state blocks as data blocks) resolves by
+  // exact version only. It was the default from Karl's first 2026-11-11 ruling (#1465) until his
+  // second, the same day, which made v6 the default.
   [LISA_DEFAULT_V5.version, LISA_DEFAULT_V5],
+  // v6 (2026-11-08, SCL-275: v5 + the help-level directive block) is the default for every
+  // variant and the fallback (see LATEST_BY_VARIANT).
+  [LISA_DEFAULT_V6.version, LISA_DEFAULT_V6],
 ]);
 
-/** Latest artifact version per policy variant (Doc 03A §11.4). */
+/**
+ * Latest artifact version per policy variant (Doc 03A §11.4).
+ *
+ * @spec [Doc-03A_V3 §11.4, Doc-03C_V3 §4.3; SCL-275; Karl's rulings 2026-11-11 on the real
+ *       G0-2 runs] | @implemented [2026-11-11]
+ * plain English: `lisa-default-v6` is the default for every variant and the fallback. Karl ruled
+ * it on 2026-11-11, replacing v5 (his first ruling that day, #1465), from:
+ *  - G0-2-04, the "Got it" loop (batch c9f89683, help level computed in the replay): v6 did the
+ *    worked step 5/5 (v5 0/5), asked no smaller question, restarted 1/5, leaked 0.
+ *  - The Desmos cases (batches e449d327, 85775569, 20a40389, e6a7752c): v6 16/20, v5 19/20. With
+ *    no help level sent, v6 renders exactly as v5, so the gap is run-to-run variation.
+ * V1 starter set per Doc 03A §11.4: all variants resolve to the same artifact until
+ * variant-specific artifacts are authored. v1–v5 stay resolvable by exact version for
+ * attribution and evaluation. Pinned by tests/ci/lisa-prompt-default.contract.test.ts.
+ */
 const LATEST_BY_VARIANT: ReadonlyMap<string, PromptArtifact> = new Map([
-  ["default", LISA_DEFAULT_V3],
-  // V1 starter set per Doc 03A §11.4 — all four variants resolve to the
-  // same artifact. When variant-specific artifacts are authored, each entry
-  // points to its own artifact. v3 (2026-10-15, video library: v2 + the video
-  // offer) is the latest; v1 and v2 stay resolvable by exact version for attribution.
-  ["scaffolded", LISA_DEFAULT_V3],
-  ["socratic", LISA_DEFAULT_V3],
-  ["concise", LISA_DEFAULT_V3],
-  ["strategy_first", LISA_DEFAULT_V3],
+  ["default", LISA_DEFAULT_V6],
+  ["scaffolded", LISA_DEFAULT_V6],
+  ["socratic", LISA_DEFAULT_V6],
+  ["concise", LISA_DEFAULT_V6],
+  ["strategy_first", LISA_DEFAULT_V6],
 ]);
 
-/** The absolute fallback artifact — used when both variant and version miss. */
-const FALLBACK_ARTIFACT: PromptArtifact = LISA_DEFAULT_V3;
+/** The absolute fallback artifact — used when both variant and version miss (v6, 2026-11-11). */
+const FALLBACK_ARTIFACT: PromptArtifact = LISA_DEFAULT_V6;
 
 // ── Public API ──────────────────────────────────────────────────────
 

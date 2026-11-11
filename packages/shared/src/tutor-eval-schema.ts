@@ -55,9 +55,17 @@ export const tutorEvalOwnerGradeSchema = z.enum([
 ]);
 export type TutorEvalOwnerGrade = z.infer<typeof tutorEvalOwnerGradeSchema>;
 
-/** Karl's rubric for one case. Null fields mean "not written yet" (design §7: held). */
+/**
+ * Karl's rubric for one case. Null fields mean "not written yet" (design §7: held).
+ *
+ * `tool_request` (Karl's ruling 2026-11-11): whether the case's cut-off message asks to use a
+ * tool (Desmos, the calculator). Only then does the judge's `tool_request_addressed`, or the
+ * Class 1 tool-request heuristic, count toward the verdict. On G0-2-04 (batch c9f89683), a case
+ * with no tool request, the judge answered `tool_request_addressed: false` and failed 2 runs.
+ */
 export const tutorEvalRubricSchema = z.object({
   case_id: tutorEvalCaseIdSchema,
+  tool_request: z.boolean(),
   gold_response: z.string().min(1).nullable(),
   judge_note: z.string().min(1).nullable(),
   must: z.array(z.string().min(1)).nullable(),
@@ -68,6 +76,7 @@ export type TutorEvalRubric = z.infer<typeof tutorEvalRubricSchema>;
 /** A rubric the judge can score against: every slot filled. */
 export type CompleteTutorEvalRubric = {
   case_id: string;
+  tool_request: boolean;
   gold_response: string | null;
   judge_note: string;
   must: string[];
@@ -86,6 +95,7 @@ export function completeRubric(
   }
   return {
     case_id: rubric.case_id,
+    tool_request: rubric.tool_request,
     gold_response: rubric.gold_response,
     judge_note: rubric.judge_note,
     must: rubric.must,
@@ -201,7 +211,8 @@ function quoteIsInReply(quote: string, reply: string): boolean {
  * or quotes text the reply does not contain is REVIEW_NEEDED; any must unmet, must_not
  * violated, or tool request unaddressed fails; a pass needs all of those clear, a move that is
  * not `different_move`, and no Class 1 tool-request flag (a judge/heuristic disagreement is
- * for Karl to look at).
+ * for Karl to look at). Both tool-request signals count only on a case whose rubric carries a
+ * tool request (`rubric.tool_request`, Karl 2026-11-11); elsewhere there is nothing to address.
  */
 export function decideTutorEvalVerdict(input: {
   class1: TutorEvalClass1;
@@ -233,11 +244,14 @@ export function decideTutorEvalVerdict(input: {
   if (
     judge.must_not.some((m) => m.violated) ||
     judge.must.some((m) => !m.met) ||
-    !judge.tool_request_addressed
+    (rubric.tool_request && !judge.tool_request_addressed)
   ) {
     return "fail";
   }
-  if (judge.gold_move === "different_move" || class1.tool_request_unanswered) {
+  if (
+    judge.gold_move === "different_move" ||
+    (rubric.tool_request && class1.tool_request_unanswered)
+  ) {
     return "review_needed";
   }
   return "pass";

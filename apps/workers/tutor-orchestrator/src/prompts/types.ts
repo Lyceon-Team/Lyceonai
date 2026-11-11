@@ -60,4 +60,7 @@ export type PromptArtifact = {
   /** G2-1: the artifact's rules carry DATA_BLOCK_RULE, so the state blocks render data-derived
    * values as data blocks. Absent (v1–v4): the blocks render exactly as they always did. */
   readonly dataBoundary?: true;
+  /** SCL-275: the state blocks carry the [HELP LEVEL] block when the request carries a help level
+   * (`help_level`, decided by the BFF). Absent (v1–v5): no help block, output unchanged. */
+  readonly helpLevelBlock?: true;
 };
