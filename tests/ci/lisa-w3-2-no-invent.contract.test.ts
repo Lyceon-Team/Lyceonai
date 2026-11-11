@@ -47,7 +47,7 @@ function vertex(text: string): VertexResponse {
 }
 
 describe("W3-2 — the prompt LISA runs on", () => {
-  it("latest is v3 (v2 + video offer, 2026-10-15) for every variant; v1 and v2 still resolve by exact version", () => {
+  it("latest is v5 for every variant (Karl, 2026-11-11); v1 and v2 still resolve by exact version", () => {
     for (const variant of [
       "default",
       "scaffolded",
@@ -56,7 +56,7 @@ describe("W3-2 — the prompt LISA runs on", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v3",
+        "lisa-default-v5",
       );
     }
     expect(resolvePromptArtifact("default", "lisa-default-v1").version).toBe(
@@ -125,9 +125,10 @@ describe("W3-2 — the prompt LISA runs on", () => {
       isPostSubmit: false,
     } as const;
     const v1 = LISA_DEFAULT_V1.renderSystemInstruction(fields);
-    const v2 = resolvePromptArtifact("default", null).renderSystemInstruction(
-      fields,
-    );
+    const v2 = resolvePromptArtifact(
+      "default",
+      "lisa-default-v2",
+    ).renderSystemInstruction(fields);
     expect(v2.startsWith(v1 + "\n\n")).toBe(true);
     expect(v1).not.toContain("You do not grade.");
   });

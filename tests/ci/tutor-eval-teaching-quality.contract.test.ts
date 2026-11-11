@@ -6,7 +6,7 @@
  *       rubrics held until the golds exist] | @implemented [2026-10-27]
  *
  * plain English:
- *   T1 the replay sends the worker's production config (lisa-default-v3, thinking 1024,
+ *   T1 the replay sends the worker's production config (lisa-default-v5 since 2026-11-11, thinking 1024,
  *      temperature 0.3) and records it.
  *   T2 no rubric: the judge is never called and the run is unscored.
  *   T3 a planted bad reply (ignores the Desmos request, asks an algebra question) fails, and
@@ -136,7 +136,7 @@ describe("G0-2 teaching-quality harness", () => {
     expect(call?.config.maxOutputTokens).toBe(2048);
     expect(call?.model).toBe("gemini-3.5-flash");
     expect(record).toMatchObject({
-      prompt_version: "lisa-default-v3",
+      prompt_version: "lisa-default-v5",
       thinking_budget: 1024,
       temperature: 0.3,
       top_p: 0.95,

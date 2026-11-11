@@ -252,7 +252,7 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
     expect(LISA_DEFAULT_V4.dataBoundary).toBeUndefined();
   });
 
-  it("resolves by exact version only; production stays on v3", () => {
+  it("is the default for every variant since Karl's ruling of 2026-11-11", () => {
     expect(resolvePromptArtifact("default", "lisa-default-v5").version).toBe(
       "lisa-default-v5",
     );
@@ -264,7 +264,7 @@ describe("B4 v5 is v4 plus the one rule, and is not live", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v3",
+        "lisa-default-v5",
       );
     }
   });
