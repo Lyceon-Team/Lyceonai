@@ -24,6 +24,12 @@
  *  - `production_reply`: the first tutor message after the cut-off.
  *  - `requested_method` and `question_content.section`: what the turn path sends the worker for
  *    the Desmos gating (docs/lisa/desmos-playbook.md §8), from the same functions.
+ *  - `help_level`, `submit_state`, `worked_step` (SCL-275; owner brief 2026-11-11): the route
+ *    computes these outside `resolveFullEnvelope`, so before 2026-11-11 no case carried them and
+ *    a v6 replay rendered exactly as v5. Now: the route's own per-turn step
+ *    (`helpTurnForWindow` → `helpTurnFrom`) over the window's student turns, each with its stored
+ *    tap intent and the item's submit state at that message. A case imported before 2026-11-11
+ *    must be re-imported.
  *
  * Prints ids and counts only, never message text.
  *
@@ -40,6 +46,9 @@
  * Usage:
  *   pnpm exec tsx tests/eval/teaching-quality/import-case.ts \
  *     --case G0-2-03 --conversation <uuid> --cutoff <student message uuid> [--owner-case] [--check]
+ *   pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-04 --reimport [--check]
+ *
+ *   --reimport rebuilds an imported case from its stored conversation, cut-off and owner flag.
  *
  *   --check reads and parses everything and builds the request, then stops before the write: it
  *   prints the same line with "checked, not written". Run it for every case before importing.
@@ -53,6 +62,8 @@ import { getRecentMessages } from "../../../server/services/tutor-memory";
 import { getCorrectAnswerForScope } from "../../../server/routes/tutor-runtime";
 import { TutorConfig } from "../../../server/services/tutor-config";
 import { requestedVideoMethod } from "../../../server/services/tutor-video-library";
+import { helpTurnForWindow } from "../../../server/services/tutor-help-level";
+import { reviewIntentSchema } from "../../../packages/shared/src/tutor-guided-choices";
 import {
   TEACHING_QUALITY_SET_VERSION,
   tutorEvalCaseIdSchema,
@@ -105,9 +116,67 @@ export const sessionItemRowSchema = z.object({
   answered_at: z.string().nullable(),
 });
 
+/** tutor_messages.intent (SCL-253/268): the tap's intent on a student row, NULL when typed. */
+export const messageIntentRowSchema = z.object({
+  id: z.string().uuid(),
+  intent: reviewIntentSchema.nullable(),
+});
+
 type ConversationRow = z.infer<typeof conversationRowSchema>;
 type MessageRow = z.infer<typeof messageRowSchema>;
 type SessionItemRow = z.infer<typeof sessionItemRowSchema>;
+
+/** The stored case row `--reimport` rebuilds from: the same conversation, cut-off and owner flag. */
+export const storedCaseRowSchema = z.object({
+  source_conversation_id: z.string().uuid(),
+  source_message_id: z.string().uuid(),
+  is_owner_case: z.boolean(),
+});
+
+/**
+ * `--reimport` (owner brief 2026-11-11): rebuild an existing case from its own stored
+ * conversation and cut-off, keeping its owner flag, so a case imported before a fix to the
+ * import (the help level, 2026-11-11) is brought up to date without re-finding its ids.
+ * `--conversation`, `--cutoff` and `--owner-case` are refused with it.
+ */
+async function storedCaseArgs(values: {
+  case?: string | undefined;
+  conversation?: string | undefined;
+  cutoff?: string | undefined;
+  "owner-case"?: boolean | undefined;
+  check?: boolean | undefined;
+}): Promise<z.input<typeof argsSchema>> {
+  if (
+    values.conversation !== undefined ||
+    values.cutoff !== undefined ||
+    values["owner-case"] === true
+  ) {
+    throw new Error(
+      "--reimport takes the conversation, cut-off and owner flag from the stored case",
+    );
+  }
+  const caseId = tutorEvalCaseIdSchema.parse(values.case);
+  const read = await supabaseServer
+    .from("tutor_eval_cases")
+    .select("source_conversation_id, source_message_id, is_owner_case")
+    .eq("case_id", caseId)
+    .maybeSingle();
+  if (read.error)
+    throw new Error(`tutor_eval_cases read failed: ${read.error.code}`);
+  if (read.data === null) throw new Error(`${caseId} is not imported yet`);
+  const stored = parseOrThrow(
+    "tutor_eval_cases row",
+    storedCaseRowSchema,
+    read.data,
+  );
+  return {
+    case: caseId,
+    conversation: stored.source_conversation_id,
+    cutoff: stored.source_message_id,
+    "owner-case": stored.is_owner_case,
+    check: values.check ?? false,
+  };
+}
 
 /**
  * Pure. Parses one row read from production. On failure the message names the row and each
@@ -189,9 +258,12 @@ export async function runImport(argv: readonly string[]): Promise<string> {
       cutoff: { type: "string" },
       "owner-case": { type: "boolean", default: false },
       check: { type: "boolean", default: false },
+      reimport: { type: "boolean", default: false },
     },
   });
-  const args = argsSchema.parse(values);
+  const args = argsSchema.parse(
+    values.reimport ? await storedCaseArgs(values) : values,
+  );
   // The runtime config the turn path reads (recent-message window, video_method_keywords).
   await TutorConfig.loadAll();
 
@@ -321,6 +393,63 @@ export async function runImport(argv: readonly string[]): Promise<string> {
       "pre-submit envelope carries correct_answer; refusing (INV-03-04)",
     );
   }
+  // Help level (owner brief 2026-11-11; SCL-275): the route decides it outside
+  // resolveFullEnvelope, so the import must too, or a v6 replay gets no level and renders as v5.
+  // Each student turn in the window, oldest first, goes through the route's own per-turn step
+  // with its stored tap intent and the item's submit state at that message's time.
+  const studentTurns = recentMessages.filter((m) => m.role === "student");
+  const intentRead = await supabaseServer
+    .from("tutor_messages")
+    .select("id, intent")
+    .in(
+      "id",
+      studentTurns.map((m) => m.id),
+    );
+  if (intentRead.error)
+    throw new Error(
+      `tutor_messages intent read failed: ${intentRead.error.code}`,
+    );
+  const intents = new Map(
+    (intentRead.data ?? []).map((row: unknown) => {
+      const r = parseOrThrow(
+        "tutor_messages intent row",
+        messageIntentRowSchema,
+        row,
+      );
+      return [r.id, r.intent] as const;
+    }),
+  );
+  const help = helpTurnForWindow(
+    studentTurns.map((m) => {
+      if (!intents.has(m.id))
+        throw new Error("a student message in the window has no intent row");
+      const post = isPostSubmitAtCutoff(
+        conversation.source_surface,
+        item,
+        m.created_at,
+      );
+      return {
+        intent: intents.get(m.id) ?? null,
+        message: m.message,
+        isPostSubmit: post,
+        // The route's rule: a post-submit item with no student answer was skipped.
+        itemSkipped:
+          post &&
+          envelope.question_content !== null &&
+          envelope.question_content.student_answer === null,
+        correctAnswer: scanKey.value,
+        itemType: envelope.question_content?.item_type ?? null,
+      };
+    }),
+  );
+  if (help === null) throw new Error("the window has no student turn");
+  envelope.help_level = help.directive.helpLevel;
+  envelope.submit_state = help.directive.submitState;
+  envelope.worked_step = help.directive.workedStep;
+  if ((help.directive.submitState === "post_submit") !== isPostSubmit) {
+    throw new Error("help submit state disagrees with the cut-off's");
+  }
+
   // The baseline replays the stored request through this same schema; a request that would
   // fail there is refused here, before anything is written.
   parseOrThrow("built request", orchestrateRequestSchema, envelope);
@@ -329,7 +458,12 @@ export async function runImport(argv: readonly string[]): Promise<string> {
     `${recentMessages.length} message(s) in the window; ` +
     `${isPostSubmit ? "post" : "pre"}-submit; ` +
     `item ${item === null ? "none" : item.status}; scan key ${scanKey.value === null ? "none" : "set"}; ` +
-    `memory ${memory.kept.length} kept, ${memory.dropped} dropped as after the cut-off`;
+    `memory ${memory.kept.length} kept, ${memory.dropped} dropped as after the cut-off; ` +
+    `help ${help.directive.helpLevel}` +
+    (help.directive.workedStep === null
+      ? ""
+      : ` step ${help.directive.workedStep.index}${help.directive.workedStep.final ? " (final)" : ""}`) +
+    ` from ${studentTurns.length} student turn(s)`;
   if (args.check) {
     // --check: every read and every parse, nothing written.
     return `${args.case}: checked, not written; ${summary}`;

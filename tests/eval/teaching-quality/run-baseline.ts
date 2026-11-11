@@ -22,7 +22,7 @@
  * Usage:
  *   NODE_USE_ENV_PROXY=1 DATABASE_URL=... pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts \
  *     [--runs 5] [--batch <uuid>] [--case G0-2-03] [--judge-model gemini-3.1-pro-preview]
- *     [--prompt-version lisa-default-v3 | lisa-default-v4] [--report]
+ *     [--prompt-version lisa-default-v3 | … | lisa-default-v6] [--report]
  *
  * Vertex credentials are attached by the egress proxy or ADC; nothing is read from the
  * environment for them.
@@ -261,6 +261,16 @@ async function main(): Promise<void> {
         },
         scanCorrectAnswer: row.scan_correct_answer,
       };
+      // lisa-default-v6 renders its help block only from `help_level`; a case without one
+      // replays as v5 and reads as a v6 result. Refuse it (owner brief 2026-11-11).
+      if (
+        promptVersion === "lisa-default-v6" &&
+        parsed.data.help_level === undefined
+      ) {
+        throw new Error(
+          `${row.case_id}: stored request has no help_level; re-import it with import-case.ts`,
+        );
+      }
       const done = await client.query<{ run_index: number }>(
         `SELECT run_index FROM public.tutor_eval_runs WHERE batch_id = $1 AND case_id = $2`,
         [batchId, row.case_id],
