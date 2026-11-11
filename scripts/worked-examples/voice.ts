@@ -195,10 +195,15 @@ type Spoken = {
  *   * kokoro (hyperframes tts, espeak phonemizer): "Lysee-ahn", see the header.
  *   * chatterbox (the D3 video pilot, scripts/video-pilots/chatterbox/): "Lie-see-on"; its plain
  *     spelling is heard as "Lycian" (owner brief "Video tools pilot" D3, Karl, 2026-11-02).
+ *   * chirp3-hd (Cloud Text-to-Speech Chirp 3 HD, the weekly batch voice A, Orus): "Lye-see-ahn",
+ *     sent as the text with NO IPA custom pronunciation. Karl's pick 2026-11-11 from three clips of
+ *     "Lyceon SAT Prep." in Orus (IPA /ˈlaɪsiɑn/, "Lie-see-on", "Lye-see-ahn"): clip 3. Orus did not
+ *     honour the IPA in the bake-off (SCL-277).
  */
 export const BRAND_RESPELLINGS = {
   kokoro: "Lysee-ahn",
   chatterbox: "Lie-see-on",
+  "chirp3-hd": "Lye-see-ahn",
 } as const;
 export type BrandEngine = keyof typeof BRAND_RESPELLINGS;
 

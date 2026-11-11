@@ -497,7 +497,12 @@ describe("pronunciation of Lyceon", () => {
     expect(BRAND_RESPELLINGS).toEqual({
       kokoro: "Lysee-ahn",
       chatterbox: "Lie-see-on",
+      // Karl's pick 2026-11-11 for voice A (Chirp 3 HD Orus), clip 3; sent with no IPA.
+      "chirp3-hd": "Lye-see-ahn",
     });
+    expect(spokenBrandName("Lyceon SAT Prep.", "chirp3-hd")).toBe(
+      "Lye-see-ahn SAT Prep.",
+    );
     expect(spokenBrandName("Lyceon SAT Prep.", "chatterbox")).toBe(
       "Lie-see-on SAT Prep.",
     );

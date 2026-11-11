@@ -191,6 +191,36 @@ export function publicPhraseProblem(text: string): string | null {
   return hit ? `H6 public-copy phrase in "${text}": ${hit.why}` : null;
 }
 
+/**
+ * H7: the spoken hook never says a standalone "Go".
+ *
+ * @spec [Karl's ruling 2026-11-11: remove "Go!" from speed hooks; "Let's see if you can solve this
+ *       in ten seconds… ready, GO!" must not say "Go"; use "Think you can solve this in ten
+ *       seconds? Let's see." (or end on "Ready?" with a short pause, no "Go"); a content-check rule
+ *       refuses a spoken hook containing a standalone "Go" ("Go.", "Go!", "GO")]
+ *       | @implemented [2026-11-11]
+ *
+ * plain English: the hook is split at sentence and clause marks (. ! ? … , ; :); a piece that is
+ * the single word "go", any case ("…ready, GO!"), is refused. "Go" inside a sentence ("Let's go
+ * through it") is ordinary speech and passes. It binds from GO_RULE_FROM, the first post after the
+ * ruling, as the Hard-only rule does: a posted example (or a breakdown dated before it) is history
+ * and is not re-checked (the W45 Nov 2 example and the synthetic breakdown fixture keep their
+ * committed voice). Called where the Hard-only rule is, so the video pilots (not posts) are not
+ * held to it: with the worked example's post_on (exampleProblems, scripts/worked-examples/
+ * content.ts) and the breakdown script's qotd_date (check-breakdown-scripts.ts, breakdown.ts).
+ */
+export const GO_RULE_FROM = "2026-11-12";
+
+export function hookGoProblem(voice: string, date: string): string | null {
+  if (date < GO_RULE_FROM) return null;
+  const sentences = voice
+    .split(/[.!?…,;:]+/)
+    .map((x) => x.trim().toLowerCase());
+  return sentences.includes("go")
+    ? `H7 the spoken hook says "Go": "${voice}"; end on a question instead ("Think you can solve this in ten seconds? Let's see.")`
+    : null;
+}
+
 /** Every hook rule, on the on-screen line and on the spoken hook. */
 export function hookProblems(
   hook: Pick<WorkedExampleContent["hook"], "line" | "voice">,

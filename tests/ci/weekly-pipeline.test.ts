@@ -115,11 +115,12 @@ function harness(fail: string | null = null) {
 const lines = scriptLines(fixture.content, kit.voice.outro_text);
 
 describe("the voice cache: each line voiced once (Karl, 2026-11-11)", () => {
-  it("the kit's batch voice is Chirp 3 HD Charon; the local tools keep am_michael", () => {
-    expect(kit.voice.batch_profile).toBe("charon");
-    expect(kit.voice.profiles.charon).toMatchObject({
+  it("the kit's batch voice is Chirp 3 HD Orus (voice A); the local tools keep am_michael", () => {
+    // Karl's voice change 2026-11-11: voice A, Chirp 3 HD Orus (was C, Charon).
+    expect(kit.voice.batch_profile).toBe("orus");
+    expect(kit.voice.profiles.orus).toMatchObject({
       engine: "chirp3-hd",
-      chirp_voice: "Charon",
+      chirp_voice: "Orus",
     });
     expect(kit.voice.default_profile).toBe("am_michael");
   });

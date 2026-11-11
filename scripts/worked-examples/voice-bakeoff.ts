@@ -125,7 +125,7 @@ export async function voiceOneLine(
     chars: billedChars(req),
   });
   if (v.engine === "chirp3-hd") {
-    const req = chirpRequest(v.voice, text);
+    const req = chirpRequest(v.voice, text, 1, "ipa");
     try {
       return await send(req, "v1", says ? "ipa" : "none");
     } catch (e: unknown) {

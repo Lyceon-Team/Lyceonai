@@ -35,6 +35,8 @@ import {
   hookAnswerProblem,
   hookCuriosityProblem,
   hookPeopleProblem,
+  GO_RULE_FROM,
+  hookGoProblem,
   hookProblems,
   hookPuzzleProblem,
   hookStatisticProblem,
@@ -199,6 +201,48 @@ describe("hook rules", () => {
     expect(hookStatisticProblem("A study says this one is hard?")).toMatch(
       /^H1/,
     );
+  });
+
+  // Karl's ruling 2026-11-11: speed hooks never say "Go" ("Go.", "Go!", "GO").
+  it("H7 refuses a spoken hook with a standalone Go, from the first post after the ruling", () => {
+    expect(GO_RULE_FROM).toBe("2026-11-12");
+    for (const voice of [
+      "Ten seconds. Ready? Go.",
+      "Let's see if you can solve this in ten seconds… ready, GO!",
+      "Bet you can't get this one in under a minute. Go",
+      "Go! Ten seconds.",
+    ])
+      expect(hookGoProblem(voice, "2026-11-16"), voice).toMatch(/^H7 /);
+    for (const voice of [
+      "Think you can solve this in ten seconds? Let's see.",
+      "Think you can solve this in ten seconds? Ready?",
+      "Let's go through it fast. Ready?",
+      "Good luck.",
+    ])
+      expect(hookGoProblem(voice, "2026-11-16"), voice).toBeNull();
+    // Posted history (before the ruling) is not re-checked.
+    expect(hookGoProblem("Ten seconds. Ready? Go.", "2026-11-11")).toBeNull();
+  });
+
+  it("H7 runs in the content check on a worked example due after the ruling", () => {
+    const due = (voice: string) => ({
+      ...fixture,
+      content: {
+        ...fixture.content,
+        post_on: "2026-11-16",
+        hook: { ...fixture.content.hook, voice },
+      },
+    });
+    expect(
+      exampleProblems(CONTENT, due("Ten seconds. Ready? Go."), kit).problems,
+    ).toContainEqual(expect.stringMatching(/H7 the spoken hook says "Go"/));
+    expect(
+      exampleProblems(
+        CONTENT,
+        due("Think you can solve this in ten seconds? Let's see."),
+        kit,
+      ).problems.filter((p) => p.includes("H7")),
+    ).toEqual([]);
   });
 
   it("H2 refuses claims about students or people", () => {

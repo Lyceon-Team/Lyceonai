@@ -35,8 +35,8 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import { readWav } from "./audio";
 import type { ScriptLine } from "./composition";
-import { LYCEON_IPA, TTS_SAMPLE_RATE } from "./google-tts";
-import type { LoudnessTarget } from "./voice";
+import { TTS_SAMPLE_RATE } from "./google-tts";
+import { BRAND_RESPELLINGS, type LoudnessTarget } from "./voice";
 
 /** Bump to invalidate every cached line (a change to how lines are made). */
 export const VOICE_CACHE_VERSION = 1;
@@ -64,7 +64,7 @@ export function voiceCacheKey(
       engine: profile.engine,
       voice: profile.chirp_voice,
       speaking_rate: profile.speaking_rate,
-      pronunciation: { Lyceon: LYCEON_IPA },
+      pronunciation: { Lyceon: BRAND_RESPELLINGS["chirp3-hd"] },
       sample_rate: TTS_SAMPLE_RATE,
       loudness,
       text,

@@ -24,6 +24,7 @@
  */
 import { GoogleAuth } from "google-auth-library";
 import { z } from "zod";
+import { spokenBrandName } from "./voice";
 
 /** The brand as Karl rules it is said: "lye-see-on". */
 export const LYCEON_IPA = "ˈlaɪsiɑn";
@@ -78,15 +79,25 @@ const AUDIO = {
   sampleRateHertz: TTS_SAMPLE_RATE,
 } as const;
 
-/** One Chirp 3 HD line, e.g. chirpRequest("Charon", "…"); a rate other than 1 is sent as speakingRate. */
+/**
+ * One Chirp 3 HD line, e.g. chirpRequest("Orus", "…"); a rate other than 1 is sent as speakingRate.
+ * "Lyceon" is respelled (BRAND_RESPELLINGS["chirp3-hd"], "Lye-see-ahn", Karl's pick 2026-11-11)
+ * with no IPA: the production path. `brand: "ipa"` sends the plain spelling with the IPA custom
+ * pronunciation instead, as the 2026-11-11 bake-off did (voice-bakeoff.ts keeps that record).
+ */
 export function chirpRequest(
   voice: string,
   text: string,
   speakingRate = 1,
+  brand: "respell" | "ipa" = "respell",
 ): SynthesizeRequest {
-  const custom = brandPronunciations(text);
+  const custom = brand === "ipa" ? brandPronunciations(text) : undefined;
+  const spoken = brand === "ipa" ? text : spokenBrandName(text, "chirp3-hd");
   return {
-    input: { text, ...(custom ? { customPronunciations: custom } : {}) },
+    input: {
+      text: spoken,
+      ...(custom ? { customPronunciations: custom } : {}),
+    },
     voice: { languageCode: "en-US", name: `${CHIRP_VOICE_PREFIX}${voice}` },
     audioConfig: {
       ...AUDIO,

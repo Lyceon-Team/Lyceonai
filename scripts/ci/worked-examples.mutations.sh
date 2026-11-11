@@ -13,6 +13,7 @@
 # T32-T34 per Karl's ruling of 2026-11-05: worked examples use Hard questions only;
 # T35-T39 per Karl's rulings of 2026-11-11 (weekly video pipeline v2, SCL-277); T40-T45 the same
 # rulings' item 7, the drawn figure; T46 Karl's voice change of 2026-11-11 (takes per line);
+# T47-T49 the same day's rulings: no "Go" in the spoken hook (H7), Lyceon respelled for Chirp;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -63,6 +64,7 @@ FILES=(
   "scripts/worked-examples/weekly.ts"
   "scripts/worked-examples/figure.ts"
   "shared/worked-examples/figure-rules.ts"
+  "scripts/worked-examples/google-tts.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -114,7 +116,8 @@ source "$ROOT/scripts/ci/lib/vitest-round-trips.sh"
 WEEKLY_TEST=tests/ci/weekly-pipeline.test.ts
 GUARD_TEST=tests/ci/social-weekly-secret-guard.test.ts
 FIGURE_TEST=tests/ci/worked-example-figure.test.ts
-RT_FILES=("$TEST" "$VOICE_TEST" "$WEEKLY_TEST" "$GUARD_TEST" "$FIGURE_TEST")
+BAKEOFF_TEST=tests/ci/voice-bakeoff.test.ts
+RT_FILES=("$TEST" "$VOICE_TEST" "$WEEKLY_TEST" "$GUARD_TEST" "$FIGURE_TEST" "$BAKEOFF_TEST")
 RT_TITLES=("verify refuses an unlimited intersample-peak mix; after final-mix.ts it is at most -1 dBTP and passes")
 
 # expect_red <name> <expected substring> <output> <rc>
@@ -378,6 +381,17 @@ ts_plant "T44 the notepad runs down into the figure" scripts/worked-examples/com
 ts_plant "T45 the layout check never sees an overlap" scripts/worked-examples/layout-check.ts \
   "  return a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;" "  return false;" \
   "refuses a figure crossing the scenes' text"
+
+echo "=== TS: voice A and the speed hook (Karl, 2026-11-11) ==="
+ts_plant "T47 the content check never reads the Go rule" scripts/worked-examples/content.ts \
+  "  if (go) problems.push(go);" "" \
+  "H7 runs in the content check"
+ts_plant "T48 the Go rule only catches \"go!\"" shared/worked-examples/rules.ts \
+  'return sentences.includes("go")' 'return sentences.includes("go!")' \
+  "H7 refuses a spoken hook with a standalone Go"
+ts_plant "T49 production Chirp sends the IPA again (Orus ignores it)" scripts/worked-examples/google-tts.ts \
+  '  brand: "respell" | "ipa" = "respell",' '  brand: "respell" | "ipa" = "ipa",' \
+  "Lyceon respelled Lye-see-ahn, no IPA"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \

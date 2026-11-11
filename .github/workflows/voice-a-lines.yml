@@ -30,19 +30,14 @@ jobs:
       - name: Checkout (code)
         uses: actions/checkout@v4
 
-      - name: Checkout W47 (content)
+      - name: Checkout W47 and the Nov 11 example (content, with the no-"Go" hooks)
         uses: actions/checkout@v4
         with:
           ref: claude/worked-examples-w47
           path: w47
-          sparse-checkout: content/worked-examples/2026-W47
-
-      - name: Checkout social (today's example)
-        uses: actions/checkout@v4
-        with:
-          ref: social
-          path: social
-          sparse-checkout: content/worked-examples/2026-W46/SATM2IF0OE0
+          sparse-checkout: |
+            content/worked-examples/2026-W47
+            content/worked-examples/2026-W46/SATM2IF0OE0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -70,7 +65,7 @@ jobs:
           args=()
           for d in w47/content/worked-examples/2026-W47/*/; do args+=(--example "$d"); done
           pnpm exec tsx scripts/worked-examples/chirp-lines.ts --voice Orus --out "$OUT" --clips \
-            "${args[@]}" --example social/content/worked-examples/2026-W46/SATM2IF0OE0
+            "${args[@]}" --example w47/content/worked-examples/2026-W46/SATM2IF0OE0
 
       - name: Upload the lines
         if: always()
