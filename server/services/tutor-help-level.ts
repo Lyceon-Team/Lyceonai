@@ -95,21 +95,29 @@ export function answerKeyFor(
 
 export type HelpTurn = { state: HelpState; directive: HelpDirective };
 
-/** One turn's help: the state to record and what the worker is told; null when unreadable. */
-export async function decideHelpTurn(input: {
-  conversationId: string;
+/** What one turn contributes to the ladder: its tap or typed text, and the item's state then. */
+export type HelpTurnInput = {
   intent: ReviewIntent | null;
   message: string;
   isPostSubmit: boolean;
   itemSkipped: boolean;
   correctAnswer: string | null;
   itemType: "mcq" | "grid_in" | null;
-}): Promise<HelpTurn | null> {
+};
+
+/**
+ * Pure apart from the runtime keyword map. THE per-turn step: from the previous state (null: none
+ * recorded), this turn's signal and its submit state, the state to record and what the worker is
+ * told. The live route (`decideHelpTurn`) and the eval import (`helpTurnForWindow`) both call it,
+ * so a replayed case gets the level production computes.
+ */
+export function helpTurnFrom(
+  previous: HelpState | null,
+  input: HelpTurnInput,
+): HelpTurn {
   const submitState: SubmitState = input.isPostSubmit
     ? "post_submit"
     : "pre_submit";
-  const previous = await readPreviousHelpState(input.conversationId);
-  if (!previous.ok) return null;
   const signal = helpSignalFor({
     intent: input.intent,
     message: input.message,
@@ -121,11 +129,38 @@ export async function decideHelpTurn(input: {
     ),
     submitState,
   });
-  const state = helpForTurn(
-    previous.state,
-    signal,
-    submitState,
-    input.itemSkipped,
-  );
+  const state = helpForTurn(previous, signal, submitState, input.itemSkipped);
   return { state, directive: helpDirective(state, submitState) };
+}
+
+/** One turn's help: the state to record and what the worker is told; null when unreadable. */
+export async function decideHelpTurn(
+  input: HelpTurnInput & { conversationId: string },
+): Promise<HelpTurn | null> {
+  const previous = await readPreviousHelpState(input.conversationId);
+  if (!previous.ok) return null;
+  return helpTurnFrom(previous.state, input);
+}
+
+/**
+ * @spec [owner brief 2026-11-11: "Fix the replay so it computes help_level and submit_state from
+ *       the case's own message window, using the same deterministic engine as the live route";
+ *       SCL-275] | @implemented [2026-11-11]
+ * The help at the last of a message window's student turns, oldest first: `helpTurnFrom` applied
+ * turn by turn from no recorded level, exactly as the route would have recorded and read it back.
+ * Null for a window with no student turn.
+ *
+ * trade-off: the route reads the level recorded on the conversation's previous turn, which can
+ * reach back before the window; the fold starts at the window's first student turn. A window
+ * that has dropped earlier taps can only under-count, never over-count, and the ladder reaches
+ * its ceiling within three taps, so a loop long enough to be cut is long enough to reach it.
+ * An input-blocked turn (which does not move the level live) cannot be told apart in the window
+ * and is folded like any other typed message.
+ */
+export function helpTurnForWindow(
+  turns: readonly HelpTurnInput[],
+): HelpTurn | null {
+  let turn: HelpTurn | null = null;
+  for (const t of turns) turn = helpTurnFrom(turn?.state ?? null, t);
+  return turn;
 }

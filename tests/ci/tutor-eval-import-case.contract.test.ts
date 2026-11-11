@@ -15,6 +15,14 @@
  *      the scan-key and envelope readers, prints "checked, not written", and never touches
  *      `tutor_eval_cases`. Without `--check` the same case is written.
  *   C2 an item row that exists but does not parse is refused, not read as pre-submit.
+ *   H1 (owner brief 2026-11-11) G0-2-04's window, "Walk me through it" then three "Got it, next
+ *      step" taps, before submission: the WRITTEN case carries help_level worked_step (the final
+ *      step 3) and submit_state pre_submit, computed by the route's own per-turn step. Before
+ *      this, the import never set them and a v6 replay rendered as v5.
+ *   H2 the same three taps with the opener dropped from the window still reach worked_step.
+ *   H3 a student message in the window with no intent row is refused.
+ *   H4 `--reimport` rebuilds the stored case from its own conversation and cut-off, keeps its
+ *      owner flag, and now carries the help level; it refuses explicit ids alongside it.
  *
  * Fixtures are the shapes PostgREST returns for the columns in the migrations. The two question
  * ids are the ones production reported (2026-11-11); the conversation, student and message ids
@@ -25,7 +33,10 @@ import { FakeTutorDb } from "../helpers/fake-tutor-db";
 import type { OrchestrateRequest } from "../../shared/tutor-orchestrator-wire";
 
 const db = { current: new FakeTutorDb() };
+const captureWrites = { on: false };
 const tablesTouched: string[] = [];
+// The row `tutor_eval_cases` would be written with (the fake has no upsert of its own).
+const written: { row: Record<string, unknown> | null } = { row: null };
 
 vi.mock("../../apps/api/src/lib/supabase-server", () => ({
   get supabaseServer() {
@@ -34,6 +45,15 @@ vi.mock("../../apps/api/src/lib/supabase-server", () => ({
       ...client,
       from: (table: string) => {
         tablesTouched.push(table);
+        if (table === "tutor_eval_cases" && captureWrites.on) {
+          const builder = client.from(table);
+          return Object.assign(builder, {
+            upsert: async (row: Record<string, unknown>) => {
+              written.row = row;
+              return { error: null };
+            },
+          });
+        }
         return client.from(table);
       },
     };
@@ -43,7 +63,11 @@ vi.mock("../../server/logger", () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("../../server/services/tutor-config", () => ({
-  TutorConfig: { loadAll: vi.fn(async () => undefined) },
+  TutorConfig: {
+    loadAll: vi.fn(async () => undefined),
+    // No typed keyword map: only taps move the level, as with an unset map in production.
+    get: vi.fn(() => null),
+  },
 }));
 vi.mock("../../server/services/tutor-video-library", () => ({
   requestedVideoMethod: () => ({ method: null, mapVersion: null }),
@@ -264,6 +288,7 @@ describe("import: --check on a canonical-id conversation (2026-11-11)", () => {
       student_id: STUDENT,
       role: "student",
       message: "synthetic question",
+      intent: null,
       created_at: "2026-11-04T18:20:11.123456+00:00",
     });
     db.current.seed("tutor_messages", {
@@ -289,7 +314,8 @@ describe("import: --check on a canonical-id conversation (2026-11-11)", () => {
     const line = await runImport([...ARGS, "--check"]);
     expect(line).toBe(
       "G0-2-04: checked, not written; 1 message(s) in the window; pre-submit; " +
-        "item served; scan key set; memory 0 kept, 0 dropped as after the cut-off",
+        "item served; scan key set; memory 0 kept, 0 dropped as after the cut-off; " +
+        "help ask from 1 student turn(s)",
     );
     // The canonical id reached both readers that need it.
     expect(scanKeyCalls).toEqual(["SATM2CN39N2"]);
@@ -314,6 +340,184 @@ describe("import: --check on a canonical-id conversation (2026-11-11)", () => {
     item["status"] = "queued";
     await expect(runImport([...ARGS, "--check"])).rejects.toThrow(
       "practice_session_items row does not parse: status: invalid_enum_value",
+    );
+  });
+});
+
+describe("import: help level from the case's own window (owner brief 2026-11-11)", () => {
+  const LABEL = {
+    walkthrough: "Walk me through it",
+    step_understood: "Got it, next step",
+  } as const;
+  /** Ids for a turn: student row, tutor reply. Synthetic. */
+  const ids = (n: number): [string, string] => [
+    `a${n}000000-0000-4000-8000-000000000000`,
+    `b${n}000000-0000-4000-8000-000000000000`,
+  ];
+
+  /** G0-2-04's shape: the walkthrough tap, then `taps` "Got it, next step" taps, each answered. */
+  function seedLoop(withOpener: boolean, taps: number): string {
+    db.current = new FakeTutorDb();
+    tablesTouched.length = 0;
+    written.row = null;
+    db.current.seed("tutor_conversations", {
+      ...practiceConversationRow(),
+      created_at: "2026-11-04T18:15:00.000000+00:00",
+    });
+    db.current.seed("practice_session_items", {
+      id: ITEM,
+      status: "served",
+      answered_at: null,
+    });
+    const intents: Array<"walkthrough" | "step_understood"> = [
+      ...(withOpener ? (["walkthrough"] as const) : []),
+      ...Array.from({ length: taps }, () => "step_understood" as const),
+    ];
+    let cutoff = "";
+    intents.forEach((intent, i) => {
+      const [s, t] = ids(i + 1);
+      db.current.seed("tutor_messages", {
+        id: s,
+        conversation_id: CONVERSATION,
+        student_id: STUDENT,
+        role: "student",
+        message: LABEL[intent],
+        intent,
+        created_at: `2026-11-04T18:2${i}:00.000000+00:00`,
+      });
+      db.current.seed("tutor_messages", {
+        id: t,
+        conversation_id: CONVERSATION,
+        student_id: STUDENT,
+        role: "tutor",
+        message: "synthetic reply",
+        intent: null,
+        created_at: `2026-11-04T18:2${i}:05.000000+00:00`,
+      });
+      cutoff = s;
+    });
+    // The case's cut-off is the last tap; the reply under test is the one after it.
+    return cutoff;
+  }
+
+  async function importAt(cutoff: string): Promise<OrchestrateRequest> {
+    captureWrites.on = true;
+    try {
+      const line = await runImport([
+        "--case",
+        "G0-2-04",
+        "--conversation",
+        CONVERSATION,
+        "--cutoff",
+        cutoff,
+      ]);
+      expect(line).toMatch(/^G0-2-04: imported; /);
+    } finally {
+      captureWrites.on = false;
+    }
+    if (written.row === null) throw new Error("nothing was written");
+    const { orchestrateRequestSchema } =
+      await import("../../shared/tutor-orchestrator-wire");
+    return orchestrateRequestSchema.parse(written.row["request"]);
+  }
+
+  it("H1 walkthrough + three step_understood taps → the written case carries worked_step", async () => {
+    const request = await importAt(seedLoop(true, 3));
+    // Presence first: the window is the loop, and the cut-off is the third tap.
+    const students = request.recent_messages.filter(
+      (m) => m.role === "student",
+    );
+    expect(students.map((m) => m.message)).toEqual([
+      LABEL.walkthrough,
+      LABEL.step_understood,
+      LABEL.step_understood,
+      LABEL.step_understood,
+    ]);
+    expect(request.help_level).toBe("worked_step");
+    expect(request.submit_state).toBe("pre_submit");
+    expect(request.worked_step).toEqual({ index: 3, final: true });
+    // The ceiling: never the full solution before submission, and no key on the wire.
+    expect(request.is_post_submit).toBe(false);
+    expect(request.correct_answer).toBeNull();
+  });
+
+  it("H2 the three taps alone (opener outside the window) still reach worked_step", async () => {
+    const request = await importAt(seedLoop(false, 3));
+    expect(request.help_level).toBe("worked_step");
+    expect(request.submit_state).toBe("pre_submit");
+    expect(request.worked_step).toEqual({ index: 2, final: false });
+  });
+
+  it("H3 a student message with no intent row is refused", async () => {
+    const cutoff = seedLoop(true, 3);
+    const rows = db.current.rows("tutor_messages");
+    const first = rows.find((r) => r["id"] === ids(1)[0]);
+    if (first === undefined) throw new Error("fixture missing");
+    // A row the intent read cannot return: the window reader still sees it.
+    first["id"] = "c1000000-0000-4000-8000-000000000000";
+    const { getRecentMessages } =
+      await import("../../server/services/tutor-memory");
+    vi.mocked(getRecentMessages).mockImplementationOnce(async () => [
+      {
+        id: ids(1)[0],
+        role: "student",
+        content_kind: "message",
+        message: LABEL.walkthrough,
+        created_at: "2026-11-04T18:20:00.000000+00:00",
+      },
+      ...rows
+        .filter(
+          (m) =>
+            m["id"] !== "c1000000-0000-4000-8000-000000000000" &&
+            String(m["created_at"]) <= "2026-11-04T18:23:00.000000+00:00",
+        )
+        .map((m) => ({
+          id: String(m["id"]),
+          role: m["role"] as "student" | "tutor",
+          content_kind: "message" as const,
+          message: String(m["message"]),
+          created_at: String(m["created_at"]),
+        })),
+    ]);
+    await expect(
+      runImport([
+        "--case",
+        "G0-2-04",
+        "--conversation",
+        CONVERSATION,
+        "--cutoff",
+        cutoff,
+        "--check",
+      ]),
+    ).rejects.toThrow("a student message in the window has no intent row");
+  });
+
+  it("H4 --reimport rebuilds from the stored ids, keeps the owner flag, adds the level", async () => {
+    const cutoff = seedLoop(true, 3);
+    db.current.seed("tutor_eval_cases", {
+      case_id: "G0-2-04",
+      source_conversation_id: CONVERSATION,
+      source_message_id: cutoff,
+      is_owner_case: true,
+    });
+    captureWrites.on = true;
+    try {
+      await expect(
+        runImport(["--case", "G0-2-04", "--reimport"]),
+      ).resolves.toMatch(
+        /^G0-2-04: imported; .*help worked_step step 3 \(final\) from 4 student turn\(s\)$/,
+      );
+    } finally {
+      captureWrites.on = false;
+    }
+    expect(written.row?.["source_message_id"]).toBe(cutoff);
+    expect(written.row?.["is_owner_case"]).toBe(true);
+    const request = written.row?.["request"] as OrchestrateRequest;
+    expect(request.help_level).toBe("worked_step");
+    await expect(
+      runImport(["--case", "G0-2-04", "--reimport", "--cutoff", cutoff]),
+    ).rejects.toThrow(
+      "--reimport takes the conversation, cut-off and owner flag",
     );
   });
 });
