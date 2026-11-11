@@ -477,7 +477,8 @@ function renderMemoryBlock(
     // W4-16 (2026-11-08): on the data-boundary line (v5 and later) a chat_compaction row renders
     // the fields compaction actually writes (the §10.2 schema, shared/tutor-orchestrator-wire.ts).
     // v1-v4 keep the old read of a `text` / `summary` field, which no writer produces, so their
-    // output, and production's v3, do not change. A row that does not match the schema falls
+    // output does not change. v5 has been the default since 2026-11-11, so this is the read
+    // production uses. A row that does not match the schema falls
     // back to the old read on every line.
     const compaction =
       options.dataBoundary && summary.summary_type === "chat_compaction"
