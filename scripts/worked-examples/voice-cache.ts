@@ -17,8 +17,9 @@
  * outro), the outro line, and how many TTS calls it made. Two stores: a folder (tests, dry runs)
  * and the private Supabase bucket (the scheduled run only; the service-role key never leaves it).
  *
- * edge cases: a line that fails the checks stops the example (nothing cached, the example is
- * refused for the week, the run continues with the others); a cached entry whose metadata does
+ * edge cases: a take that fails the checks is voiced again, up to VOICE_TAKES takes (Chirp's audio
+ * differs per call); a line that fails on every take stops the example (nothing cached, the
+ * example is refused for the week, the run continues with the others); a cached entry whose metadata does
  * not match its key or text is treated as a miss and re-voiced, never trusted.
  */
 import { createHash } from "node:crypto";
@@ -105,7 +106,18 @@ export type VoiceBatchDeps = {
   synth: (text: string) => Promise<Uint8Array>;
   /** Normalise, transcribe and check a raw line (transcribeAndCheck in production). */
   finish: (line: ScriptLine, raw: Uint8Array) => Finished;
+  /** Takes per line before it is refused (VOICE_TAKES when absent). */
+  takes?: number;
 };
+
+/**
+ * Takes per line. Chirp 3 HD does not return the same audio twice: in the voice-A run of
+ * 2026-11-11, 3 of 69 lines came back with a take defect (an extra syllable in the outro, 0.76 s
+ * of leading silence, a dropped opening sentence) that the same text does not have on another
+ * call. One take per line would refuse about a third of 9-line examples; three keep the same
+ * checks and make a refusal mean the line itself, not one take.
+ */
+export const VOICE_TAKES = 3;
 
 export type VoiceBatch = {
   manifest: VoiceManifest;
@@ -140,11 +152,18 @@ export async function voiceBatch(
     let entry = await deps.store.get(key);
     if (usable(entry, key, line.text)) cacheHits++;
     else {
-      ttsCalls++;
-      const done = deps.finish(line, await deps.synth(line.text));
-      if (done.problems.length > 0)
+      const takes = deps.takes ?? VOICE_TAKES;
+      let done: Finished | null = null;
+      const refusals: string[] = [];
+      for (let take = 1; take <= takes && done === null; take++) {
+        ttsCalls++;
+        const tried = deps.finish(line, await deps.synth(line.text));
+        if (tried.problems.length === 0) done = tried;
+        else refusals.push(`take ${take}: ${tried.problems.join("; ")}`);
+      }
+      if (done === null)
         throw new Error(
-          `${line.key} fails the quality checks in ${deps.profileId}: ${done.problems.join("; ")}`,
+          `${line.key} fails the quality checks in ${deps.profileId} on every take: ${refusals.join(" | ")}`,
         );
       entry = {
         wav: done.audio,

@@ -12,7 +12,7 @@
 # T23/T24/T26 re-pointed and T27-T31 added per Karl's #social copy-paste cleanup, 2026-11-04;
 # T32-T34 per Karl's ruling of 2026-11-05: worked examples use Hard questions only;
 # T35-T39 per Karl's rulings of 2026-11-11 (weekly video pipeline v2, SCL-277); T40-T45 the same
-# rulings' item 7, the drawn figure;
+# rulings' item 7, the drawn figure; T46 Karl's voice change of 2026-11-11 (takes per line);
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -343,9 +343,14 @@ ts_plant "T35 a cache hit ignored (every re-render calls TTS again)" scripts/wor
 ts_plant "T36 the cache key drops the voice (a voice change reuses the old audio)" scripts/worked-examples/voice-cache.ts \
   "      voice: profile.chirp_voice," "" \
   "each one changes it"
+# T37 re-pointed 2026-11-11 (voice A): a line now gets VOICE_TAKES takes; the plant accepts a
+# failing take as if it passed, so a failing line would be cached.
 ts_plant "T37 a line that fails the checks is cached anyway" scripts/worked-examples/voice-cache.ts \
-  "      if (done.problems.length > 0)" "      if (false)" \
+  "        if (tried.problems.length === 0) done = tried;" "        if (true) done = tried;" \
   "nothing is cached"
+ts_plant "T46 one take per line (a single bad take refuses the example)" scripts/worked-examples/voice-cache.ts \
+  "export const VOICE_TAKES = 3;" "export const VOICE_TAKES = 1;" \
+  "a bad take is voiced again"
 ts_plant "T38 the service-role key reachable from a pull request" .github/workflows/worked-example-daily.yml \
   "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'" \
   "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'" \
