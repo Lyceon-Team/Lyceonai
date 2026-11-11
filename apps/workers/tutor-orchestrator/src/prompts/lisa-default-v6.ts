@@ -15,8 +15,8 @@
  *  - v5 is immutable (§4.3). v6 composes it: v5's rules are reproduced byte for byte, and v5's
  *    data boundary carries over (`dataBoundary`). The only difference is `helpLevelBlock`, so a
  *    request with no help level renders exactly as v5.
- *  - NOT the latest for any variant: v6 resolves by exact version only. Production (which sends
- *    prompt_version null) stays on v3 until Karl rules after the real evaluation run.
+ *  - NOT the latest for any variant: v6 resolves by exact version only. Karl ruled after the real
+ *    evaluation run (2026-11-11) and made v5, not v6, the default.
  *  - The help level is a state block, not a rule: it changes per turn, and a fact paired with a
  *    directive is how every per-turn instruction reaches the model (Doc 03D §7.4).
  */

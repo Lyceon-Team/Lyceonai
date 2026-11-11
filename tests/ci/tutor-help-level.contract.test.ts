@@ -15,7 +15,7 @@
  *  - The wire's enums equal the shared ones; the migration's CHECKs list exactly the shared
  *    values; the seeded keyword map parses and detects.
  *  - Prompt (Karl's ruling on #1456, 2026-11-08: one line, v3 → v4 → v5 → v6): v6 is v5 plus
- *    the [HELP LEVEL] directive block, by exact version only; the default stays v3. With no level
+ *    the [HELP LEVEL] directive block, by exact version only; the default is v5 (Karl, 2026-11-11). With no level
  *    sent v6 renders exactly as v5; v3–v5 never render the block; and v6 never tells LISA to give
  *    the full
  *    solution before submission.
@@ -353,7 +353,7 @@ describe("wire, migration and registry agree with the one definition", () => {
     expect(later).toEqual([]);
   });
 
-  it("v6 resolves by exact version only; the default stays v3", () => {
+  it("v6 resolves by exact version only; the default is v5", () => {
     for (const variant of [
       "default",
       "scaffolded",
@@ -362,7 +362,7 @@ describe("wire, migration and registry agree with the one definition", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v3",
+        "lisa-default-v5",
       );
     }
     expect(resolvePromptArtifact("default", "lisa-default-v6").version).toBe(
