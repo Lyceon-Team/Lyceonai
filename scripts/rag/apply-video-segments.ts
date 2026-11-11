@@ -208,20 +208,20 @@ export function parseReviewedSegments(
 }
 
 /** A dollar-quoted literal whose tag is not in the text. */
-function dollar(text: string): string {
+export function dollar(text: string): string {
   let tag = "seg";
   while (text.includes(`$${tag}$`)) tag += "x";
   return `$${tag}$${text}$${tag}$`;
 }
 
 /** Taxonomy and video ids are plain tokens; anything else is refused rather than quoted. */
-const ID_TOKEN = /^[A-Za-z0-9._-]+$/;
+export const ID_TOKEN = /^[A-Za-z0-9._-]+$/;
 
 /**
  * One precondition: every id in `ids` exists in `table`.`column`, or the transaction raises
  * naming the missing ones. An empty list checks nothing (there is nothing to be missing).
  */
-function missingCheck(
+export function missingCheck(
   ids: string[],
   table: string,
   column: string,
@@ -337,6 +337,39 @@ export function buildApplySql(
   return out.join("\n");
 }
 
+/**
+ * Pure. The approved library videos, from the library's reviewed CSV: duration, and the section
+ * (M when any skill is a Math skill). The segment file may only reference these.
+ */
+export function libraryVideosFrom(
+  libraryCsv: string,
+  taxonomy: ApplyTaxonomy,
+): Map<string, LibraryVideo> {
+  const sectionOf = new Map(
+    taxonomy.sub_skills.map((s) => [s.skill_code, s.section]),
+  );
+  const [header, ...rows] = parseCsv(libraryCsv);
+  if (header === undefined) throw new Error("library review CSV is empty");
+  const col = (n: string): number => {
+    const i = header.indexOf(n);
+    if (i < 0) throw new Error(`library review CSV has no ${n} column`);
+    return i;
+  };
+  const videos = new Map<string, LibraryVideo>();
+  for (const r of rows) {
+    if (r[col("approve")]?.trim().toLowerCase() !== "yes") continue;
+    const skills = (r[col("skills")] ?? "").split(";").map((s) => s.trim());
+    videos.set(r[col("video_id")] ?? "", {
+      video_id: r[col("video_id")] ?? "",
+      duration_seconds: Number(r[col("duration_s")]),
+      section: skills.some((s) => sectionOf.get(s) === "M") ? "M" : "RW",
+    });
+  }
+  return videos;
+}
+
+export const applyTaxonomySchema = taxonomySchema;
+
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
@@ -354,26 +387,7 @@ async function main(): Promise<void> {
   const taxonomy = taxonomySchema.parse(
     JSON.parse(readFileSync(values.taxonomy, "utf8")),
   );
-  const sectionOf = new Map(
-    taxonomy.sub_skills.map((s) => [s.skill_code, s.section]),
-  );
-  const [header, ...rows] = parseCsv(readFileSync(REVIEW_CSV, "utf8"));
-  if (header === undefined) throw new Error("library review CSV is empty");
-  const col = (n: string): number => {
-    const i = header.indexOf(n);
-    if (i < 0) throw new Error(`library review CSV has no ${n} column`);
-    return i;
-  };
-  const videos = new Map<string, LibraryVideo>();
-  for (const r of rows) {
-    if (r[col("approve")]?.trim().toLowerCase() !== "yes") continue;
-    const skills = (r[col("skills")] ?? "").split(";").map((s) => s.trim());
-    videos.set(r[col("video_id")] ?? "", {
-      video_id: r[col("video_id")] ?? "",
-      duration_seconds: Number(r[col("duration_s")]),
-      section: skills.some((s) => sectionOf.get(s) === "M") ? "M" : "RW",
-    });
-  }
+  const videos = libraryVideosFrom(readFileSync(REVIEW_CSV, "utf8"), taxonomy);
   const parsed = parseReviewedSegments(
     readFileSync(values.csv, "utf8"),
     taxonomy,
