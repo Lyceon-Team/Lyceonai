@@ -11,7 +11,8 @@
 # owner brief "Video tools pilot" D3, Karl, 2026-11-02: Chatterbox's own respelling, same table;
 # T23/T24/T26 re-pointed and T27-T31 added per Karl's #social copy-paste cleanup, 2026-11-04;
 # T32-T34 per Karl's ruling of 2026-11-05: worked examples use Hard questions only;
-# T35-T39 per Karl's rulings of 2026-11-11 (weekly video pipeline v2, SCL-277);
+# T35-T39 per Karl's rulings of 2026-11-11 (weekly video pipeline v2, SCL-277); T40-T45 the same
+# rulings' item 7, the drawn figure;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -60,6 +61,8 @@ FILES=(
   "scripts/video-pilots/manim/render.py"
   "scripts/worked-examples/voice-cache.ts"
   "scripts/worked-examples/weekly.ts"
+  "scripts/worked-examples/figure.ts"
+  "shared/worked-examples/figure-rules.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -110,7 +113,8 @@ VOICE_TEST=tests/ci/worked-examples-voice.test.ts
 source "$ROOT/scripts/ci/lib/vitest-round-trips.sh"
 WEEKLY_TEST=tests/ci/weekly-pipeline.test.ts
 GUARD_TEST=tests/ci/social-weekly-secret-guard.test.ts
-RT_FILES=("$TEST" "$VOICE_TEST" "$WEEKLY_TEST" "$GUARD_TEST")
+FIGURE_TEST=tests/ci/worked-example-figure.test.ts
+RT_FILES=("$TEST" "$VOICE_TEST" "$WEEKLY_TEST" "$GUARD_TEST" "$FIGURE_TEST")
 RT_TITLES=("verify refuses an unlimited intersample-peak mix; after final-mix.ts it is at most -1 dBTP and passes")
 
 # expect_red <name> <expected substring> <output> <rc>
@@ -349,6 +353,26 @@ ts_plant "T38 the service-role key reachable from a pull request" .github/workfl
 ts_plant "T39 a label inside the captions file" scripts/worked-examples/weekly.ts \
   "  for (const w of post.warnings) parts.push(w);" '  for (const w of post.warnings) parts.push(w);'$'\n''  parts.push(`Worked example · ${post.id}`);' \
   "platform headers outside"
+
+echo "=== TS: the drawn figure (Karl, 2026-11-11, item 7) ==="
+ts_plant "T40 an opening label may show a number the question does not give" shared/worked-examples/figure-rules.ts \
+  "      if (!given.has(n))" "      if (given.has(n) && !given.has(n))" \
+  "the opening shows only numbers the question gives"
+ts_plant "T41 the content check never reads the figure" shared/worked-examples/rules.ts \
+  "  if (example.figure)"$'\n'"    out.push(...figureProblems(example.figure, example.steps.length, q));" "" \
+  "the content check reports a figure's problems"
+ts_plant "T42 an undrawn stroke paints a dot (offset exactly its length)" scripts/worked-examples/figure.ts \
+  "  return round2(length + 1);" "  return round2(length);" \
+  "every stroke hidden until its tween"
+ts_plant "T43 the figure starts drawing before the hook is up" scripts/worked-examples/figure.ts \
+  "export const OPEN_DRAW_START = 0.6;" "export const OPEN_DRAW_START = 0;" \
+  "after the hook is up"
+ts_plant "T44 the notepad runs down into the figure" scripts/worked-examples/composition.ts \
+  "  const notepadBottom = figure ? FIGURE_TOP - FIGURE_GAP : NOTEPAD_BOTTOM;" "  const notepadBottom = NOTEPAD_BOTTOM;" \
+  "the notepad stops above it"
+ts_plant "T45 the layout check never sees an overlap" scripts/worked-examples/layout-check.ts \
+  "  return a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;" "  return false;" \
+  "refuses a figure crossing the scenes' text"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \

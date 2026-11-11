@@ -113,6 +113,19 @@ daily job below, which stays only until Karl confirms the first weekly batch.
 - **Secrets:** `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (repository secrets), read only by the
   weekly job's build and upload steps on the scheduled run from main
   (`tests/ci/social-weekly-secret-guard.test.ts`). Slack: `SLACK_BOT_TOKEN`, `SOCIAL_SLACK_CHANNEL_ID`.
+- **Drawn figures** (geometry and graph slots; Karl's ruling 7, CPU only): add a `figure` to
+  `example.json`: a `box` in the question's own units (y up) and up to 24 `shapes`: `segment`
+  (`dashed` for a hidden edge), `polygon`, `polyline`, `circle`, `right_angle` (corner + a point on
+  each side), `cylinder` / `cone` (base centre, `r`, `h`, `ry` the ellipse's half-height), `axes`,
+  `graph` (y = a·x² + b·x + c over `x`), `label` (at most 16 characters). Each shape's `when` is
+  `open` (the default: drawn during the hook and setup, in the order listed), `step-N` (drawn as
+  step N is written) or `answer`. The figure sits under the notepad (y 1090..1530) from 0:00 to
+  the end card, and the notepad stops above it. The content check refuses a shape outside the box
+  (F1), a step the example lacks (F2), and an opening label with a number the stem or passage does
+  not give (F3: never the answer, never a step's result, before the work). The layout check
+  refuses a figure crossing any text. Example: `tests/fixtures/worked-examples/social/content/
+  worked-examples/2026-W45/SATM2C6PXLX/example.json` (a cylinder with r and h labelled; the cone
+  drawn in at step 2).
 - **Cost:** Chirp 3 HD is free up to 1M characters a month; a week uses about 3.9K (about 554 per
   video), so $0. Re-renders are free (cache).
 - **If a run fails:** before `claim`, re-run the job (the cache makes it cheap). After `claim` and

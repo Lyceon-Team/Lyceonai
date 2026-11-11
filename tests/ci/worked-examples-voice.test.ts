@@ -80,7 +80,9 @@ const CONTENT = join(ROOT, "tests/fixtures/worked-examples/social");
 const kit = loadKit();
 const q = kit.voice.quality;
 const aliases = kit.voice.transcript_aliases;
-const [fixture] = loadExamples(CONTENT);
+const fixture = loadExamples(CONTENT).find(
+  (e) => e.content.question_id === "SATM2CZS1BE",
+);
 if (!fixture) throw new Error("the fixture tree has no example");
 const manifest = loadVoice(CONTENT, fixture.dir);
 const wav = (file: string): Uint8Array =>

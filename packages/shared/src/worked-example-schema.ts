@@ -51,6 +51,150 @@ export const workedExampleStepSchema = z
   .strict();
 export type WorkedExampleStep = z.infer<typeof workedExampleStepSchema>;
 
+/**
+ * A drawn figure for a geometry or graph question: the shapes the opening scene draws stroke by
+ * stroke, and the ones the solution adds to the same drawing.
+ *
+ * @spec [Karl's rulings 2026-11-11, "Weekly video pipeline v2" item 7: "SVG stroke animation in
+ *       HyperFrames, approved. For geometry and graph questions, the opening scene draws the
+ *       figure (triangle, cylinder, cone, circle, graph) stroke by stroke in the notepad style,
+ *       with the question's labels, and the solution builds on that same drawing. CPU only. The
+ *       Manim pilot stays reference only."] | @implemented [2026-11-11]
+ *
+ * plain English: coordinates are the question's own units, y up, inside `box`; the renderer
+ * (scripts/worked-examples/figure.ts) scales them into the figure area under the notepad. Each
+ * shape says WHEN it is drawn: "open" (the default: during the hook and setup, in the order
+ * listed), "step-N" (as step N is written) or "answer". Cylinder and cone are drawn as their
+ * outlines with the hidden back edge dashed; `graph` is y = a·x² + b·x + c over `x`. Labels are
+ * short handwriting. shared/worked-examples/rules.ts F1-F3 check the figure against the
+ * question: every shape inside the box, every "step-N" a real step, and no opening label shows a
+ * number the question does not give (the figure never gives the answer away before the work).
+ */
+const figurePoint = z.tuple([z.number().finite(), z.number().finite()]);
+const figureRange = z
+  .tuple([z.number().finite(), z.number().finite()])
+  .refine(([a, b]) => b > a, { message: "a range must run low to high" });
+export const WORKED_EXAMPLE_FIGURE_WHEN = [
+  "open",
+  "step-1",
+  "step-2",
+  "step-3",
+  "step-4",
+  "step-5",
+  "step-6",
+  "answer",
+] as const;
+const figureWhen = z.enum(WORKED_EXAMPLE_FIGURE_WHEN).optional();
+const positive = z.number().finite().positive();
+export const workedExampleFigureShapeSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("segment"),
+      from: figurePoint,
+      to: figurePoint,
+      dashed: z.boolean().optional(),
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("polygon"),
+      points: z.array(figurePoint).min(3).max(8),
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("polyline"),
+      points: z.array(figurePoint).min(2).max(64),
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("circle"),
+      center: figurePoint,
+      r: positive,
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("right_angle"),
+      /** The corner, and a point along each of its two sides. */
+      vertex: figurePoint,
+      a: figurePoint,
+      b: figurePoint,
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cylinder"),
+      /** The centre of the base. */
+      base: figurePoint,
+      r: positive,
+      h: positive,
+      /** The ellipses' half-height (the perspective), in the box's units. */
+      ry: positive,
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cone"),
+      base: figurePoint,
+      r: positive,
+      h: positive,
+      ry: positive,
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("axes"),
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("graph"),
+      /** y = a·x² + b·x + c, drawn over x[0]..x[1]. */
+      a: z.number().finite(),
+      b: z.number().finite(),
+      c: z.number().finite(),
+      x: figureRange,
+      when: figureWhen,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("label"),
+      text: z
+        .string()
+        .trim()
+        .min(1)
+        .max(16)
+        .regex(/^[^\n]+$/),
+      at: figurePoint,
+      when: figureWhen,
+    })
+    .strict(),
+]);
+export type WorkedExampleFigureShape = z.infer<
+  typeof workedExampleFigureShapeSchema
+>;
+export type WorkedExampleFigureWhen =
+  (typeof WORKED_EXAMPLE_FIGURE_WHEN)[number];
+
+export const workedExampleFigureSchema = z
+  .object({
+    box: z.object({ x: figureRange, y: figureRange }).strict(),
+    shapes: z.array(workedExampleFigureShapeSchema).min(1).max(24),
+  })
+  .strict();
+export type WorkedExampleFigure = z.infer<typeof workedExampleFigureSchema>;
+
 export const workedExampleContentSchema = z
   .object({
     question_id: workedExampleQuestionIdSchema,
@@ -100,6 +244,8 @@ export const workedExampleContentSchema = z
     /** How to confirm the answer (the database's check_step). */
     check: line,
     takeaway: line,
+    /** The drawn figure, for geometry and graph questions (Karl, 2026-11-11). */
+    figure: workedExampleFigureSchema.optional(),
     /** A retired example never posts; its row is seeded as 'retired'. */
     retired: z.literal(true).optional(),
   })
