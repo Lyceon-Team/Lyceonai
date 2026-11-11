@@ -121,10 +121,12 @@ ts_plant "G5 the funnel-line filter drops any line that merely contains one" sha
   "    .filter((line) => ![...fixed].some((f) => line.includes(f)))" \
   "the leak checks leave out only whole lines that ARE a funnel line" "$CONTRACT"
 # G6 inverted 2026-11-02 (SCL-265): the worked-example captions follow SCL-262, so they carry no
-# bio or link line at all. The plant puts the 2026-10-28 bio line back.
+# bio or link line at all. The plant puts the 2026-10-28 bio line back. Re-pointed 2026-11-04:
+# SCL-273 moved the music credit to the end card and socialTiktokCaption lost its extra-lines
+# argument, so the bio line is appended to the caption the builder returns (as T23/T24 do).
 ts_plant "G6 the worked-example TikTok caption carries a bio line again" shared/worked-examples/rules.ts \
-  "return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);" \
-  'return socialTiktokCaption(c.headline, c.test, c.section, ["Free SAT practice: link in bio", musicCredit]);' \
+  "  return socialTiktokCaption(c.headline, c.test, c.section);" \
+  '  return `${socialTiktokCaption(c.headline, c.test, c.section)}\n\nFree SAT practice: link in bio`;' \
   "no link, bio line or promo in any caption" "$WORKED"
 ts_plant "G7 worked-example links tagged as the QOTD campaign" scripts/worked-examples/daily.ts \
   '    links: campaignLinks("worked_example"),' \

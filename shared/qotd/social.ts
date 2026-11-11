@@ -51,6 +51,7 @@ import {
   qotdFacebookCaption,
   qotdInstagramCaption,
   withoutSocialFixedLines,
+  copyBlockProblems,
   type SocialSection,
 } from "../social/posts";
 import {
@@ -462,6 +463,11 @@ export function socialCopyProblems(
       problems.push(`${field}: unapproved outcome claim (${outcome.why})`);
     const reveal = revealWording(text, input);
     if (reveal) problems.push(`${field}: ${reveal}`);
+    // Karl, 2026-11-04: a copy block holds only what Karl pastes (no credit, URL, label or id).
+    // The captions are posted in copy blocks; the alt text is not posted (it describes the card,
+    // whose footer shows the site's address).
+    if (field !== "alt_text")
+      for (const p of copyBlockProblems(text)) problems.push(`${field}: ${p}`);
   }
   return problems;
 }

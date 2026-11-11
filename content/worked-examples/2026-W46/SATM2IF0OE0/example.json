@@ -1,0 +1,42 @@
+{
+  "question_id": "SATM2IF0OE0",
+  "skill_code": "Linear Inequalities in One or Two Variables",
+  "post_on": "2026-11-11",
+  "hook": {
+    "type": "speed",
+    "line": "Ten seconds: which values of x work?",
+    "voice": "Ten seconds. Ready? Go."
+  },
+  "question_voice": "Two fractions, one inequality. We want every x that works.",
+  "signature_move": "Solve it like an equation; flip the sign when you multiply or divide by a negative.",
+  "steps": [
+    {
+      "notepad": "×4: 5x − 13 ≥ 6x + 2",
+      "voice": "Clear the fractions. Multiply both sides by four."
+    },
+    {
+      "notepad": "−x ≥ 15",
+      "voice": "Move the x terms to one side and the numbers to the other."
+    },
+    {
+      "notepad": "÷(−1), flip: x ≤ −15",
+      "voice": "Now divide by negative one. That flips the sign."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "Answer: A) x ≤ −15",
+    "voice": "x is at most negative fifteen. That's A. Quick check: try negative twenty. The left side comes out bigger, so it works."
+  },
+  "trap": {
+    "summary": "Dividing by −1 without flipping the sign, which gives x ≥ −15.",
+    "notepad": [
+      "x ≥ −15  ✗",
+      "dividing by a negative flips it",
+      "x ≤ −15  ✓"
+    ],
+    "voice": "Here's where people slip. They divide by negative one and keep the sign pointing the same way. That's B. Dividing by a negative always flips it."
+  },
+  "check": "Test x = −20: (5(−20) − 13)/4 = −28.25 and (3(−20) + 1)/2 = −29.5, and −28.25 ≥ −29.5 is true.",
+  "takeaway": "Divide by a negative, flip the sign."
+}

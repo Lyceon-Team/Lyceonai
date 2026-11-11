@@ -178,11 +178,24 @@ export const trackSchema = z
     licence: z.string().min(1),
     licence_url: z.string().url(),
     licence_file: z.string().min(1),
-    credit: z.string().startsWith("Music: "),
+    /**
+     * Whether the licence requires a credit (CC BY does; CC0 does not). Karl's ruling
+     * 2026-11-04: the credit is on the video's end card, never in a caption and never spoken.
+     */
+    attribution_required: z.boolean(),
+    /** The end card's credit line, or null for a track that needs none (then none is shown). */
+    on_screen_credit: z.string().startsWith("Music: ").nullable(),
     peak_dbfs: z.number().max(0),
     duration_seconds: z.number().positive(),
   })
-  .strict();
+  .strict()
+  .refine((t) => t.attribution_required === (t.on_screen_credit !== null), {
+    message:
+      "on_screen_credit is set exactly when the licence requires attribution",
+  })
+  .refine((t) => !/^CC BY\b/.test(t.licence) || t.attribution_required, {
+    message: "a CC BY licence requires attribution",
+  });
 export type Track = z.infer<typeof trackSchema>;
 export const tracksSchema = z.record(z.string().min(1), trackSchema);
 
