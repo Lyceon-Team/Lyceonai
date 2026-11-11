@@ -27,6 +27,11 @@
  * only; an earlier turn's request does not carry over.
  */
 import { z } from "zod";
+import {
+  detectKeyword,
+  keywordPhraseSchema,
+  normaliseForMatch,
+} from "./keyword-match";
 
 export const VIDEO_METHODS = ["desmos", "algebraic", "backsolve"] as const;
 export const videoMethodSchema = z.enum(VIDEO_METHODS);
@@ -95,54 +100,24 @@ export const VIDEO_FORMAT_DEFINITIONS: Readonly<
 
 // ── The keyword map (tutor_context_runtime_config.video_method_keywords) ─────
 
-const phraseSchema = z
-  .string()
-  .min(1)
-  .max(60)
-  .refine((p) => normaliseForMatch(p) === ` ${p} `, {
-    message:
-      "a phrase must already be normalised: lowercase words separated by single spaces",
-  });
-
 export const videoMethodKeywordMapSchema = z
   .object({
     version: z.number().int().positive(),
-    methods: z.record(videoMethodSchema, z.array(phraseSchema).min(1).max(40)),
+    methods: z.record(
+      videoMethodSchema,
+      z.array(keywordPhraseSchema).min(1).max(40),
+    ),
   })
   .strict();
 export type VideoMethodKeywordMap = z.infer<typeof videoMethodKeywordMapSchema>;
 
-/**
- * Lowercase (NFKC), every run of non-letters/digits becomes one space, padded with a space at
- * each end so a phrase matches only on whole words (" graph it " is not in " graphite ").
- */
-export function normaliseForMatch(text: string): string {
-  const words = text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-  return words === "" ? " " : ` ${words} `;
-}
+/** Re-exported: the matcher's normaliser lives in keyword-match.ts. */
+export { normaliseForMatch };
 
 /** Pure and deterministic: the same message and map always give the same answer. */
 export function detectRequestedMethod(
   message: string,
   map: VideoMethodKeywordMap,
 ): VideoMethod | null {
-  const haystack = normaliseForMatch(message);
-  let best: { method: VideoMethod; length: number } | null = null;
-  let tied = false;
-  for (const method of VIDEO_METHODS) {
-    for (const phrase of map.methods[method] ?? []) {
-      if (!haystack.includes(` ${phrase} `)) continue;
-      if (best === null || phrase.length > best.length) {
-        best = { method, length: phrase.length };
-        tied = false;
-      } else if (phrase.length === best.length && best.method !== method) {
-        tied = true;
-      }
-    }
-  }
-  return best === null || tied ? null : best.method;
+  return detectKeyword(message, VIDEO_METHODS, map.methods);
 }
