@@ -5,7 +5,7 @@
   "hook": {
     "type": "speed",
     "line": "Ten seconds: which values of x work?",
-    "voice": "Ten seconds. Ready? Go."
+    "voice": "Think you can solve this in ten seconds? Let's see."
   },
   "question_voice": "Two fractions, one inequality. We want every x that works.",
   "signature_move": "Solve it like an equation; flip the sign when you multiply or divide by a negative.",

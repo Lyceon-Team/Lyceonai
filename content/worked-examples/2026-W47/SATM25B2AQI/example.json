@@ -5,7 +5,7 @@
   "hook": {
     "type": "challenge",
     "line": "Legs 4 and 6, and a line dropped to the hypotenuse. How long is it?",
-    "voice": "Bet you can't get this one in under a minute. Go."
+    "voice": "Bet you can't get this one in under a minute. Let's see."
   },
   "question_voice": "A right triangle with a line from the right angle straight down to the long side, and we want that line's length.",
   "signature_move": "Label the sides from the angle: opposite, adjacent, hypotenuse. Then pick the ratio (SOH CAH TOA).",
