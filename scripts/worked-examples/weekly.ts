@@ -68,6 +68,7 @@ import {
   exampleProblems,
   loadExamples,
   loadPosted,
+  loadStyle,
   loadVoice,
   POSTED_PATH,
 } from "./content";
@@ -357,7 +358,11 @@ async function build(f: Flags): Promise<void> {
         out: join(dir, "composition"),
         kit,
       });
-      const post = buildPost(e, workedExampleCopy(e, question), approval);
+      const post = buildPost(
+        e,
+        workedExampleCopy(e, question, loadStyle(content)),
+        approval,
+      );
       writeFileSync(
         join(dir, "post.json"),
         `${JSON.stringify(post, null, 2)}\n`,

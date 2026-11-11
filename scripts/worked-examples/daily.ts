@@ -38,6 +38,7 @@ import {
   workedExamplePostSchema,
   workedExamplePostedLedgerSchema,
   type WorkedExamplePost,
+  type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
 import { chicagoToday } from "../../shared/sat-test-dates";
 import { campaignLinks } from "../../shared/social/funnel";
@@ -67,6 +68,7 @@ import {
   exampleProblems,
   loadExamples,
   loadPosted,
+  loadStyle,
   POSTED_PATH,
 } from "./content";
 import { folderCommit, pullForCommit } from "./github";
@@ -111,12 +113,23 @@ export type WorkedExampleCopy = {
 export function workedExampleCopy(
   e: ExampleOnBranch,
   question: SeedQuestion,
+  style: WorkedExampleStyle,
 ): WorkedExampleCopy {
+  // The captions show the skill's short topic (STYLE display_name, Karl 2026-11-11); the content
+  // check refuses an example with no style row, so a missing row here is a programming error. A
+  // row without display_name (STYLE before the rows land) keeps the skill name, as before.
+  const row = style[e.content.skill_code];
+  if (!row) throw new Error(`no style row for "${e.content.skill_code}"`);
+  const topic = row.display_name ?? e.content.skill_code;
   return {
-    title: workedExampleTitle(e.content, question),
-    caption: workedExampleCaption(e.content, question),
-    instagram_caption: workedExampleInstagramCaption(e.content, question),
-    facebook_caption: workedExampleFacebookCaption(e.content, question),
+    title: workedExampleTitle(question, topic),
+    caption: workedExampleCaption(e.content, question, topic),
+    instagram_caption: workedExampleInstagramCaption(
+      e.content,
+      question,
+      topic,
+    ),
+    facebook_caption: workedExampleFacebookCaption(e.content, question, topic),
     keywords: workedExampleKeywords(e.content, question),
   };
 }
@@ -212,7 +225,11 @@ async function select(a: Args): Promise<void> {
   const { question } = exampleProblems(content, e, kit);
   if (!question) throw new Error(`${e.dir}: its question cannot be read`);
   generate(content, e.dir, join(out, "composition"));
-  const post = buildPost(e, workedExampleCopy(e, question), approval);
+  const post = buildPost(
+    e,
+    workedExampleCopy(e, question, loadStyle(content)),
+    approval,
+  );
   writeFileSync(join(out, "post.json"), `${JSON.stringify(post, null, 2)}\n`);
   process.stdout.write(
     `select: ${post.label} (${post.id}) is due on ${today}\n`,

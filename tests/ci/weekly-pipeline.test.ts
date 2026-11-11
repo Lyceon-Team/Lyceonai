@@ -20,6 +20,7 @@ import { scriptLines } from "../../scripts/worked-examples/composition";
 import {
   loadExamples,
   loadPosted,
+  loadStyle,
 } from "../../scripts/worked-examples/content";
 import {
   buildPost,
@@ -334,12 +335,16 @@ describe("the week (Karl, 2026-11-11)", () => {
   it("the captions file is the SCL-262/273 set: platform headers outside, only pasteable copy inside", () => {
     const q = seedQuestion(fixture.content.question_id);
     if (!q.ok) throw new Error(q.problem);
-    const post = buildPost(fixture, workedExampleCopy(fixture, q.question), {
-      pr: 1,
-      mergedBy: "x",
-      mergeSha: "0".repeat(40),
-      mergedAt: "2026-11-01T00:00:00Z",
-    });
+    const post = buildPost(
+      fixture,
+      workedExampleCopy(fixture, q.question, loadStyle(CONTENT)),
+      {
+        pr: 1,
+        mergedBy: "x",
+        mergeSha: "0".repeat(40),
+        mergedAt: "2026-11-01T00:00:00Z",
+      },
+    );
     const md = captionsMarkdown(post);
     const parts = md.split("```");
     const blocks = parts.filter((_, k) => k % 2 === 1).map((b) => b.trim());

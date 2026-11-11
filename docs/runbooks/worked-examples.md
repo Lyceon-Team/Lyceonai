@@ -44,10 +44,12 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
    on them before Karl merges.
 2. Write `content/worked-examples/<YYYY-Www>/<QUESTION_ID>/example.json`
    (`packages/shared/src/worked-example-schema.ts`). `post_on` is in that week and matches the
-   plan's slot. `signature_move` matches `STYLE.json` for the skill.
+   plan's slot. `signature_move` matches `STYLE.json` for the skill. The STYLE row's
+   `display_name` (a short topic, at most 32 characters) is what the title and the captions
+   show; the College Board skill name stays internal (Karl, 2026-11-11).
    The script, in spoken order (Karl's rulings 2026-11-02, SCL-267). The screen shows the
    question; the voice talks about it. Write it the way you'd say it: contractions, short
-   sentences, "you"/"we", beats like "Okay." or "Go.".
+   sentences, "you"/"we", beats like "Okay." or "Let's see." (never "Go", H7).
 
    | spoken | field | what it holds | on screen meanwhile |
    |---|---|---|---|

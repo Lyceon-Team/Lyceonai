@@ -536,13 +536,14 @@ export function workedExampleLabel(example: WorkedExampleContent): string {
   return `Worked example · ${example.skill_code} · ${example.hook.type}`;
 }
 
-/** "SAT Math worked example · Percentages": section and skill, at most 90 characters. */
-export function workedExampleTitle(
-  example: WorkedExampleContent,
-  q: SeedQuestion,
-): string {
+/**
+ * "SAT Math worked example · Linear inequalities": section and the skill's short topic, at most
+ * 90 characters. `topic` is the STYLE row's display_name (Karl's ruling 2026-11-11: short topic
+ * names in titles; the College Board skill name, example.skill_code, stays internal).
+ */
+export function workedExampleTitle(q: SeedQuestion, topic: string): string {
   return capTiktokTitle(
-    `SAT ${QOTD_SECTION_NAME[q.section]} worked example · ${example.skill_code}`,
+    `SAT ${QOTD_SECTION_NAME[q.section]} worked example · ${topic}`,
   );
 }
 
@@ -566,9 +567,10 @@ export function workedExampleTitle(
 function captionContext(
   example: WorkedExampleContent,
   q: SeedQuestion,
+  topic: string,
 ): { headline: string; test: SocialTest | null; section: SocialSection } {
   return {
-    headline: workedExampleTitle(example, q),
+    headline: workedExampleTitle(q, topic),
     test: nextSatTest(example.post_on),
     section: QOTD_SECTION_NAME[q.section],
   };
@@ -578,8 +580,9 @@ function captionContext(
 export function workedExampleCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
+  topic: string,
 ): string {
-  const c = captionContext(example, q);
+  const c = captionContext(example, q, topic);
   return socialTiktokCaption(c.headline, c.test, c.section);
 }
 
@@ -587,8 +590,9 @@ export function workedExampleCaption(
 export function workedExampleInstagramCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
+  topic: string,
 ): string {
-  const c = captionContext(example, q);
+  const c = captionContext(example, q, topic);
   return socialInstagramCaption(c.headline, c.test, c.section);
 }
 
@@ -596,8 +600,9 @@ export function workedExampleInstagramCaption(
 export function workedExampleFacebookCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
+  topic: string,
 ): string {
-  const c = captionContext(example, q);
+  const c = captionContext(example, q, topic);
   return socialFacebookCaption(c.headline, c.test, c.section);
 }
 

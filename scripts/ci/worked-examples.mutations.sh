@@ -14,6 +14,7 @@
 # T35-T39 per Karl's rulings of 2026-11-11 (weekly video pipeline v2, SCL-277); T40-T45 the same
 # rulings' item 7, the drawn figure; T46 Karl's voice change of 2026-11-11 (takes per line);
 # T47-T49 the same day's rulings: no "Go" in the spoken hook (H7), Lyceon respelled for Chirp;
+# T50 the same day's ruling: the captions show the STYLE display_name, not the skill name;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -392,6 +393,9 @@ ts_plant "T48 the Go rule only catches \"go!\"" shared/worked-examples/rules.ts 
 ts_plant "T49 production Chirp sends the IPA again (Orus ignores it)" scripts/worked-examples/google-tts.ts \
   '  brand: "respell" | "ipa" = "respell",' '  brand: "respell" | "ipa" = "ipa",' \
   "Lyceon respelled Lye-see-ahn, no IPA"
+ts_plant "T50 the captions show the College Board skill name again" scripts/worked-examples/daily.ts \
+  '  const topic = row.display_name ?? e.content.skill_code;' '  const topic = e.content.skill_code;' \
+  "the title and all three captions show the STYLE display_name, never the skill name"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \
