@@ -15,8 +15,10 @@
  *  - v5 is immutable (§4.3). v6 composes it: v5's rules are reproduced byte for byte, and v5's
  *    data boundary carries over (`dataBoundary`). The only difference is `helpLevelBlock`, so a
  *    request with no help level renders exactly as v5.
- *  - NOT the latest for any variant: v6 resolves by exact version only. Karl ruled after the real
- *    evaluation run (2026-11-11) and made v5, not v6, the default.
+ *  - The default since Karl's second ruling of 2026-11-11: the latest for every variant and the
+ *    fallback (prompt-registry.ts; pinned by tests/ci/lisa-prompt-default.contract.test.ts), on
+ *    G0-2-04 (batch c9f89683: worked step 5/5 against v5's 0/5). With no help level sent it
+ *    renders exactly as v5.
  *  - The help level is a state block, not a rule: it changes per turn, and a fact paired with a
  *    directive is how every per-turn instruction reaches the model (Doc 03D §7.4).
  */

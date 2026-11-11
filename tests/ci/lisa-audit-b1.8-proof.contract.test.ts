@@ -41,6 +41,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { renderDataBlock } from "../../shared/tutor-safety-constants";
+import { DEFAULT_PROMPT_VERSION } from "./lisa-golden-set-helpers";
 
 // ── AUDIT-001 + AUDIT-002 imports ──────────────────────────────────────
 
@@ -323,8 +324,8 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
 
     // 3. Prompt registry: scaffolded resolves to a known artifact (not fallback)
     const artifact = resolvePromptArtifact("scaffolded", null);
-    // v5 is the latest artifact for every variant (Karl, 2026-11-11).
-    expect(artifact.version).toBe("lisa-default-v5");
+    // The default artifact for every variant (pinned by lisa-prompt-default.contract.test.ts).
+    expect(artifact.version).toBe(DEFAULT_PROMPT_VERSION);
   });
 
   it("all four spec variants resolve in the prompt registry (no fallback warning)", () => {
@@ -333,8 +334,8 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
     for (const variant of variants) {
       const artifact = resolvePromptArtifact(variant, null);
       // Each variant must resolve without falling back to the unknown-variant path
-      // v5 is the latest artifact for every variant (Karl, 2026-11-11).
-      expect(artifact.version).toBe("lisa-default-v5");
+      // The default artifact for every variant (pinned by lisa-prompt-default.contract.test.ts).
+      expect(artifact.version).toBe(DEFAULT_PROMPT_VERSION);
     }
   });
 

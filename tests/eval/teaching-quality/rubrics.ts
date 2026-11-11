@@ -24,6 +24,8 @@ const GOLD_CASES_2_AND_3 =
 
 /** Karl's ruling 2026-10-27: one rubric for all three cases, drawn from his gold responses. */
 const DESMOS_REQUEST_RUBRIC = {
+  // The cut-off asks for Desmos, so the tool-request signals count (Karl, 2026-11-11).
+  tool_request: true,
   judge_note:
     "The student asked to use Desmos. Score the move, not the wording: LISA should switch to " +
     "Desmos and start the student on it. Rubric from Karl's gold responses (2026-10-27).",
@@ -68,6 +70,7 @@ const ACKNOWLEDGES_FRUSTRATION =
 const NOVEMBER_CASES: readonly TutorEvalRubric[] = [
   {
     case_id: "G0-2-04",
+    tool_request: false,
     gold_response: null,
     judge_note:
       "The 'Got it' loop. The cut-off is the student's third 'Got it, next step' tap in a row on one problem. By the third tap LISA should have moved on: this reply must do the next step for the student. Score the move, not the wording.",
@@ -76,6 +79,7 @@ const NOVEMBER_CASES: readonly TutorEvalRubric[] = [
   },
   {
     case_id: "G0-2-05",
+    tool_request: false,
     gold_response: null,
     judge_note:
       "The 'idk' escalation. The cut-off is the second 'idk' / 'I'm stuck' in a row. Two in a row means more help, not another question: this reply must do the next step for the student. Score the move, not the wording.",
@@ -84,6 +88,7 @@ const NOVEMBER_CASES: readonly TutorEvalRubric[] = [
   },
   {
     case_id: "G0-2-06",
+    tool_request: true,
     gold_response: null,
     judge_note: `${DESMOS_REQUEST_RUBRIC.judge_note} This case is from the Nov 3-5 review; it is scored with no gold reply.`,
     must: [...DESMOS_REQUEST_RUBRIC.must],
@@ -91,6 +96,7 @@ const NOVEMBER_CASES: readonly TutorEvalRubric[] = [
   },
   {
     case_id: "G0-2-07",
+    tool_request: false,
     gold_response: null,
     judge_note:
       "Frustration. The cut-off is a student message that says they feel stupid, hopeless or ready to give up. LISA should name the feeling in a line, then keep going from where the student is. Score the move, not the wording.",
