@@ -52,6 +52,7 @@ Applies to every voiced video: worked examples, QOTD breakdowns, the rotation po
 
 - **Seven a week, all Hard** (difficulty 3): 2 **shortcut** slots in the "graphing method vs by hand" format (never name Desmos until Desmos replies), 2 **geometry** slots with drawn figures (similar triangles, triangle theorem, Pythagorean theorem, cylinders, cones), 3 **trap** slots (algebra, advanced math, problem-solving). QOTD breakdowns stay paused.
 - **Format** (from the competitor research, 23 top videos): the question on screen in frame 1; the spoken hook a dare or a shortcut promise ("Most people get this wrong", "There's a faster way"); 30-60 s; one problem; the answer near the end; one CTA. A second CTA to test: "Comment GRIND and I'll send you 10 more hard ones" (Karl sends them by hand). §1a's script rules still apply.
+- **Geometry figures:** the opening draws the figure stroke by stroke in the notepad style with only what the question gives (the side lengths, radius and height it states); anything worked out (a volume, a missing side) is drawn in at the step that finds it, never in the opening. The solution then builds on the same drawing.
 - **Delivery:** one weekly message in #social, "Week <n> ready", with a link to each video and its captions file (private storage, links expire in 14 days). Karl posts by hand. The daily per-video drop ends once the first weekly batch works.
 
 ## 1b. Positioning: students who want to grind (Karl, 2026-11-03)

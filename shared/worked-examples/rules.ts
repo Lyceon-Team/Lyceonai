@@ -75,6 +75,7 @@ import {
 } from "../social/posts";
 import { firstBannedPhrase, firstPipelinePhrase } from "../seo/banned-phrases";
 import type { SeedQuestion } from "./seed-question";
+import { figureProblems } from "./figure-rules";
 
 const STATISTICS: readonly RegExp[] = [
   /\b\d+(\.\d+)?\s*(%|percent)\s+of\b/i,
@@ -440,6 +441,8 @@ export function contentProblems(
       `signature_move differs from the style table's for "${example.skill_code}"`,
     );
   out.push(...scriptProblems(example, q));
+  if (example.figure)
+    out.push(...figureProblems(example.figure, example.steps.length, q));
   out.push(
     ...lineProblems([
       example.trap.summary,

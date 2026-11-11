@@ -70,6 +70,7 @@ describe("the scoped groups' dependencies (presence first)", () => {
       "tests/ci/social-weekly-secret-guard.test.ts",
       "tests/ci/video-pilots.test.ts",
       "tests/ci/weekly-pipeline.test.ts",
+      "tests/ci/worked-example-figure.test.ts",
       "tests/ci/worked-examples-voice.test.ts",
       "tests/ci/worked-examples.test.ts",
     ]);

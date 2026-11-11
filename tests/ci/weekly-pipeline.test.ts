@@ -50,7 +50,9 @@ import { seedQuestion } from "../../scripts/worked-examples/content";
 const ROOT = join(__dirname, "../..");
 const CONTENT = join(ROOT, "tests/fixtures/worked-examples/social");
 const kit = loadKit();
-const [fixture] = loadExamples(CONTENT);
+const fixture = loadExamples(CONTENT).find(
+  (e) => e.content.question_id === "SATM2CZS1BE",
+);
 if (!fixture) throw new Error("no fixture example");
 
 const CHARON: ChirpProfile = {
@@ -276,12 +278,12 @@ describe("the week (Karl, 2026-11-11)", () => {
       weekExamples(loadExamples(CONTENT), dates, {}).map(
         (e) => e.content.question_id,
       ),
-    ).toEqual(["SATM2CZS1BE"]);
+    ).toEqual(["SATM2CZS1BE", "SATM2C6PXLX"]);
     expect(
       weekExamples(loadExamples(CONTENT), dates, {
         "we-satm2czs1be": { date: "2026-11-02", run: "1" },
-      }),
-    ).toEqual([]);
+      }).map((e) => e.content.question_id),
+    ).toEqual(["SATM2C6PXLX"]);
     expect(loadPosted(CONTENT)).toBeDefined();
   });
 

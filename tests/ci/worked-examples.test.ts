@@ -107,8 +107,12 @@ import type { FetchLike } from "../../shared/slack/client";
 
 const CONTENT = join(ROOT, "tests/fixtures/worked-examples/social");
 const kit = loadKit();
-const [fixture] = loadExamples(CONTENT);
-if (!fixture) throw new Error("the fixture tree has no example");
+// The fixture's percentages example (the tree also holds a geometry example with a drawn figure,
+// tests/ci/worked-example-figure.test.ts), picked by id rather than by folder order.
+const fixture = loadExamples(CONTENT).find(
+  (e) => e.content.question_id === "SATM2CZS1BE",
+);
+if (!fixture) throw new Error("the fixture tree has no SATM2CZS1BE example");
 const seeded = seedQuestion(fixture.content.question_id);
 if (!seeded.ok) throw new Error(seeded.problem);
 const question: SeedQuestion = seeded.question;
