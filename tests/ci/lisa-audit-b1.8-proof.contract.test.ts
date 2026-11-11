@@ -40,6 +40,8 @@
  * existing filteringMockClient pattern from the retention-sweep test suite.
  */
 import { describe, it, expect, vi } from "vitest";
+import { renderDataBlock } from "../../shared/tutor-safety-constants";
+import { DEFAULT_PROMPT_VERSION } from "./lisa-golden-set-helpers";
 
 // ── AUDIT-001 + AUDIT-002 imports ──────────────────────────────────────
 
@@ -181,7 +183,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-
     // W3-10 / SCL-144: the explanation MUST NOT reach the model pre-submit —
     // possession is the control, not a directive.
     expect(systemInstruction).not.toContain("[AUTHORED EXPLANATION");
@@ -229,7 +230,6 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-
     // No authored explanation block when explanation is null
     expect(systemInstruction).not.toContain(
       "[AUTHORED EXPLANATION — INTERNAL USE ONLY]",
@@ -266,9 +266,11 @@ describe("AUDIT-001: explanation reaches production systemInstruction", () => {
 
     const systemInstruction = buildSystemInstruction(envelope);
 
-
     // Correct answer present
-    expect(systemInstruction).toContain("Correct answer: B.");
+    // The default (v5, 2026-11-11) renders the value as a data block.
+    expect(systemInstruction).toContain(
+      `Correct answer: ${renderDataBlock("item.correct_answer", "B")}.`,
+    );
 
     // Post-submit directive present
     expect(systemInstruction).toContain("This question is post-submit");
@@ -305,7 +307,6 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       },
     });
 
-
     // 1. The envelope values match the audit row (the fix)
     expect(envelope.policy_assignment.policy_family).toBe(
       "instructional_tutor",
@@ -323,8 +324,8 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
 
     // 3. Prompt registry: scaffolded resolves to a known artifact (not fallback)
     const artifact = resolvePromptArtifact("scaffolded", null);
-    // v3 (2026-10-15, video library) is the latest artifact for every variant.
-    expect(artifact.version).toBe("lisa-default-v3");
+    // The default artifact for every variant (pinned by lisa-prompt-default.contract.test.ts).
+    expect(artifact.version).toBe(DEFAULT_PROMPT_VERSION);
   });
 
   it("all four spec variants resolve in the prompt registry (no fallback warning)", () => {
@@ -333,8 +334,8 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
     for (const variant of variants) {
       const artifact = resolvePromptArtifact(variant, null);
       // Each variant must resolve without falling back to the unknown-variant path
-      // v3 (2026-10-15, video library) is the latest artifact for every variant.
-      expect(artifact.version).toBe("lisa-default-v3");
+      // The default artifact for every variant (pinned by lisa-prompt-default.contract.test.ts).
+      expect(artifact.version).toBe(DEFAULT_PROMPT_VERSION);
     }
   });
 
@@ -347,7 +348,6 @@ describe("AUDIT-002: policy values match spec — instructional_tutor/scaffolded
       policyVariant: "standard",
       proBudgetCircuitBreakerTripped: false,
     });
-
 
     // 'standard' falls through to flash_class — this was the bug
     expect(modelAlias).toBe("flash_class");
