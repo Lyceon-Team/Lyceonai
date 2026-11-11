@@ -103,6 +103,10 @@ class FakeQuery implements PromiseLike<Result> {
     this.filters.push((r) => String(r[col]) < val);
     return this;
   }
+  gt(col: string, val: string): this {
+    this.filters.push((r) => String(r[col]) > val);
+    return this;
+  }
   gte(col: string, val: string): this {
     this.filters.push((r) => String(r[col]) >= val);
     return this;

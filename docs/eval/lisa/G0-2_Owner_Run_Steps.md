@@ -58,6 +58,14 @@ Record each case's conversation id and cut-off message id in the table in `Real_
 
 The service-role key comes from the Supabase dashboard (Project Settings → API). Paste it into the shell only, never into a chat or a file.
 
+**Check first.** Run each import line below with `--check` added at the end, for example:
+
+```powershell
+pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-01 --conversation <conversation_id> --cutoff <student message id> --check
+```
+
+`--check` does every read, parses every row and builds the request, then stops before the write. It prints the same line as the import, starting `checked, not written`. When every case prints that line, drop `--check` and import. A row that does not parse prints the table and the field that failed, never its value.
+
 ```powershell
 $env:SUPABASE_URL = "https://<project-ref>.supabase.co"
 $env:SUPABASE_SERVICE_ROLE_KEY = "<service role key>"
@@ -164,6 +172,7 @@ unset HTTPS_PROXY HTTP_PROXY                 # normally unset already; ADC needs
 # 3. Import (service-role key from Project Settings → API; type it, do not paste it into chat)
 export SUPABASE_URL="https://<project-ref>.supabase.co"
 read -rs SUPABASE_SERVICE_ROLE_KEY && export SUPABASE_SERVICE_ROLE_KEY
+# Check first: run each line below with --check at the end; import once every case prints "checked, not written".
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-01 --conversation <conversation_id> --cutoff <student message id>
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-02 --conversation <conversation_id> --cutoff <student message id>
 pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-03 --conversation <conversation_id> --cutoff <student message id> --owner-case

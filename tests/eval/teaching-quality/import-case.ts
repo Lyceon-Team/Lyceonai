@@ -39,7 +39,10 @@
  *
  * Usage:
  *   pnpm exec tsx tests/eval/teaching-quality/import-case.ts \
- *     --case G0-2-03 --conversation <uuid> --cutoff <student message uuid> [--owner-case]
+ *     --case G0-2-03 --conversation <uuid> --cutoff <student message uuid> [--owner-case] [--check]
+ *
+ *   --check reads and parses everything and builds the request, then stops before the write: it
+ *   prints the same line with "checked, not written". Run it for every case before importing.
  */
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -54,6 +57,11 @@ import {
   TEACHING_QUALITY_SET_VERSION,
   tutorEvalCaseIdSchema,
 } from "../../../packages/shared/src/tutor-eval-schema";
+import {
+  orchestrateRequestSchema,
+  recentMessageSchema,
+  resolvedScopeSchema,
+} from "../../../shared/tutor-orchestrator-wire";
 
 const PRODUCTION_RUNTIME_LIMITS = { maxOutputTokens: 2048, timeoutMs: 30_000 };
 const SUBMITTED_STATUSES: ReadonlySet<string> = new Set([
@@ -66,32 +74,70 @@ const argsSchema = z.object({
   conversation: z.string().uuid(),
   cutoff: z.string().uuid(),
   "owner-case": z.boolean(),
+  check: z.boolean(),
 });
 
-const conversationSchema = z.object({
-  id: z.string().uuid(),
-  student_id: z.string().uuid(),
-  entry_mode: z.enum(["scoped_question", "scoped_session", "general"]),
-  source_surface: z.enum(["practice", "review", "test_review", "dashboard"]),
-  source_session_id: z.string().uuid().nullable(),
-  source_session_item_id: z.string().uuid().nullable(),
-  source_question_row_id: z.string().uuid().nullable(),
-  source_question_canonical_id: z.string().nullable(),
+/**
+ * @spec [migration 20260805000000 (tutor_conversations, tutor_messages; TA-1), 20260610020000 and
+ *       20260921000000 (practice / review session items)] | @implemented [2026-11-11]
+ * The rows this script reads, parsed as production stores them. Each field is the wire's own
+ * schema where one exists, so the import cannot drift from what the BFF already sends:
+ *  - `source_question_row_id` is TEXT, a foreign key to `questions.id`, which holds the
+ *    canonical question id (`SATM2CN39N2`), never a UUID (TA-1). It was parsed as a UUID until
+ *    2026-11-11, so every real case failed to import; `resolvedScopeSchema` is the wire's
+ *    canonical-id rule.
+ *  - `entry_mode` and `source_surface` are the wire's enums, which match the table's CHECKs.
+ *  - `role` is the table's CHECK (`student`, `tutor`, `system`), as the wire's recent message.
+ *  - Timestamps are strings in whatever offset form PostgREST returns; they are only compared.
+ */
+export const conversationRowSchema = orchestrateRequestSchema
+  .pick({ entry_mode: true, source_surface: true })
+  .extend({ id: z.string().uuid(), student_id: z.string().uuid() })
+  .merge(resolvedScopeSchema);
+
+export const messageRowSchema = recentMessageSchema
+  .pick({ id: true, role: true })
+  .extend({ message: z.string(), created_at: z.string() });
+
+/** Both item tables: status CHECK ('pending','served','answered','skipped'), answered_at timestamptz. */
+export const sessionItemRowSchema = z.object({
+  status: z.enum(["pending", "served", "answered", "skipped"]),
+  answered_at: z.string().nullable(),
 });
 
-const messageSchema = z.object({
-  id: z.string().uuid(),
-  role: z.string(),
-  message: z.string(),
-  created_at: z.string(),
-});
+type ConversationRow = z.infer<typeof conversationRowSchema>;
+type MessageRow = z.infer<typeof messageRowSchema>;
+type SessionItemRow = z.infer<typeof sessionItemRowSchema>;
+
+/**
+ * Pure. Parses one row read from production. On failure the message names the row and each
+ * failing field with Zod's reason, never a value, so no student text reaches the terminal.
+ */
+export function parseRow<T>(
+  label: string,
+  schema: z.ZodType<T>,
+  row: unknown,
+): { ok: true; value: T } | { ok: false; error: string } {
+  const parsed = schema.safeParse(row);
+  if (parsed.success) return { ok: true, value: parsed.data };
+  const fields = parsed.error.issues
+    .map((i) => `${i.path.join(".") || "(row)"}: ${i.code}`)
+    .join("; ");
+  return { ok: false, error: `${label} does not parse: ${fields}` };
+}
+
+function parseOrThrow<T>(label: string, schema: z.ZodType<T>, row: unknown): T {
+  const parsed = parseRow(label, schema, row);
+  if (!parsed.ok) throw new Error(parsed.error);
+  return parsed.value;
+}
 
 /**
  * Pure. Was the item submitted when the cut-off message was sent? Any doubt is pre-submit.
  */
 export function isPostSubmitAtCutoff(
-  surface: z.infer<typeof conversationSchema>["source_surface"],
-  item: { status: string; answered_at: string | null } | null,
+  surface: ConversationRow["source_surface"],
+  item: SessionItemRow | null,
   cutoffAt: string,
 ): boolean {
   if (surface === "test_review") return true;
@@ -130,13 +176,19 @@ export function memoryAsOfCutoff<
   return { kept, dropped: summaries.length - kept.length };
 }
 
-async function main(): Promise<void> {
+/**
+ * The import, from its command-line arguments. Exported so the contract test can run the whole
+ * path, `--check` included, against a fake database. Returns the line it prints.
+ */
+export async function runImport(argv: readonly string[]): Promise<string> {
   const { values } = parseArgs({
+    args: [...argv],
     options: {
       case: { type: "string" },
       conversation: { type: "string" },
       cutoff: { type: "string" },
       "owner-case": { type: "boolean", default: false },
+      check: { type: "boolean", default: false },
     },
   });
   const args = argsSchema.parse(values);
@@ -151,7 +203,11 @@ async function main(): Promise<void> {
     .eq("id", args.conversation)
     .maybeSingle();
   if (conv.error || !conv.data) throw new Error("conversation not found");
-  const conversation = conversationSchema.parse(conv.data);
+  const conversation: ConversationRow = parseOrThrow(
+    "tutor_conversations row",
+    conversationRowSchema,
+    conv.data,
+  );
 
   const cut = await supabaseServer
     .from("tutor_messages")
@@ -161,7 +217,11 @@ async function main(): Promise<void> {
     .maybeSingle();
   if (cut.error || !cut.data)
     throw new Error("cut-off message not in this conversation");
-  const cutoff = messageSchema.parse(cut.data);
+  const cutoff: MessageRow = parseOrThrow(
+    "cut-off tutor_messages row",
+    messageRowSchema,
+    cut.data,
+  );
   if (cutoff.role !== "student")
     throw new Error("the cut-off must be a student message");
 
@@ -176,9 +236,15 @@ async function main(): Promise<void> {
     .maybeSingle();
   if (next.error || !next.data)
     throw new Error("no tutor reply after the cut-off");
-  const productionReply = messageSchema.parse(next.data);
+  const productionReply: MessageRow = parseOrThrow(
+    "reply tutor_messages row",
+    messageRowSchema,
+    next.data,
+  );
 
-  let item: { status: string; answered_at: string | null } | null = null;
+  // No item row is pre-submit (fail closed). A row that exists but does not parse is a shape
+  // mismatch, refused like any other, rather than silently read as pre-submit.
+  let item: SessionItemRow | null = null;
   if (
     (conversation.source_surface === "practice" ||
       conversation.source_surface === "review") &&
@@ -193,10 +259,11 @@ async function main(): Promise<void> {
       .select("status, answered_at")
       .eq("id", conversation.source_session_item_id)
       .maybeSingle();
-    const parsed = z
-      .object({ status: z.string(), answered_at: z.string().nullable() })
-      .safeParse(read.data);
-    item = read.error || !parsed.success ? null : parsed.data;
+    if (read.error) throw new Error(`${table} read failed: ${read.error.code}`);
+    item =
+      read.data === null
+        ? null
+        : parseOrThrow(`${table} row`, sessionItemRowSchema, read.data);
   }
   const isPostSubmit = isPostSubmitAtCutoff(
     conversation.source_surface,
@@ -254,6 +321,19 @@ async function main(): Promise<void> {
       "pre-submit envelope carries correct_answer; refusing (INV-03-04)",
     );
   }
+  // The baseline replays the stored request through this same schema; a request that would
+  // fail there is refused here, before anything is written.
+  parseOrThrow("built request", orchestrateRequestSchema, envelope);
+
+  const summary =
+    `${recentMessages.length} message(s) in the window; ` +
+    `${isPostSubmit ? "post" : "pre"}-submit; ` +
+    `item ${item === null ? "none" : item.status}; scan key ${scanKey.value === null ? "none" : "set"}; ` +
+    `memory ${memory.kept.length} kept, ${memory.dropped} dropped as after the cut-off`;
+  if (args.check) {
+    // --check: every read and every parse, nothing written.
+    return `${args.case}: checked, not written; ${summary}`;
+  }
 
   const write = await supabaseServer.from("tutor_eval_cases").upsert(
     {
@@ -276,11 +356,7 @@ async function main(): Promise<void> {
   if (write.error)
     throw new Error(`tutor_eval_cases write failed: ${write.error.code}`);
 
-  process.stdout.write(
-    `${args.case}: imported; ${recentMessages.length} message(s) in the window; ` +
-      `${isPostSubmit ? "post" : "pre"}-submit; scan key ${scanKey.value === null ? "none" : "set"}; ` +
-      `memory ${memory.kept.length} kept, ${memory.dropped} dropped as after the cut-off\n`,
-  );
+  return `${args.case}: imported; ${summary}`;
 }
 
 // R-16 (LISA_Video_RAG_Closure_Plan.md): the entry check that also matches a Windows path.
@@ -288,10 +364,13 @@ if (
   process.argv[1] !== undefined &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  main().catch((err: unknown) => {
-    process.stderr.write(
-      `${err instanceof Error ? err.message : String(err)}\n`,
-    );
-    process.exit(1);
-  });
+  runImport(process.argv.slice(2)).then(
+    (line) => process.stdout.write(`${line}\n`),
+    (err: unknown) => {
+      process.stderr.write(
+        `${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    },
+  );
 }
