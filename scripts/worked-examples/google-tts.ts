@@ -49,7 +49,11 @@ export type SynthesizeRequest = {
     customPronunciations?: { pronunciations: CustomPronunciation[] };
   };
   voice: { languageCode: "en-US"; name: string; modelName?: string };
-  audioConfig: { audioEncoding: "LINEAR16"; sampleRateHertz: number };
+  audioConfig: {
+    audioEncoding: "LINEAR16";
+    sampleRateHertz: number;
+    speakingRate?: number;
+  };
 };
 
 /** The IPA pronunciation of "Lyceon", when the line says it; otherwise none. */
@@ -74,13 +78,20 @@ const AUDIO = {
   sampleRateHertz: TTS_SAMPLE_RATE,
 } as const;
 
-/** One Chirp 3 HD line, e.g. chirpRequest("Charon", "…"). */
-export function chirpRequest(voice: string, text: string): SynthesizeRequest {
+/** One Chirp 3 HD line, e.g. chirpRequest("Charon", "…"); a rate other than 1 is sent as speakingRate. */
+export function chirpRequest(
+  voice: string,
+  text: string,
+  speakingRate = 1,
+): SynthesizeRequest {
   const custom = brandPronunciations(text);
   return {
     input: { text, ...(custom ? { customPronunciations: custom } : {}) },
     voice: { languageCode: "en-US", name: `${CHIRP_VOICE_PREFIX}${voice}` },
-    audioConfig: { ...AUDIO },
+    audioConfig: {
+      ...AUDIO,
+      ...(speakingRate === 1 ? {} : { speakingRate }),
+    },
   };
 }
 

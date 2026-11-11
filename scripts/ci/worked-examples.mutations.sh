@@ -11,6 +11,7 @@
 # owner brief "Video tools pilot" D3, Karl, 2026-11-02: Chatterbox's own respelling, same table;
 # T23/T24/T26 re-pointed and T27-T31 added per Karl's #social copy-paste cleanup, 2026-11-04;
 # T32-T34 per Karl's ruling of 2026-11-05: worked examples use Hard questions only;
+# T35-T39 per Karl's rulings of 2026-11-11 (weekly video pipeline v2, SCL-277);
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -57,6 +58,8 @@ FILES=(
   ".github/workflows/worked-example-daily.yml"
   "scripts/video-pilots/manim/check.ts"
   "scripts/video-pilots/manim/render.py"
+  "scripts/worked-examples/voice-cache.ts"
+  "scripts/worked-examples/weekly.ts"
 )
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
@@ -105,7 +108,9 @@ VOICE_TEST=tests/ci/worked-examples-voice.test.ts
 # runs both files without it, and the baseline proves the filter skips exactly that one test
 # (scripts/ci/lib/vitest-round-trips.sh; CI wall-time ruling, Karl 2026-11-04).
 source "$ROOT/scripts/ci/lib/vitest-round-trips.sh"
-RT_FILES=("$TEST" "$VOICE_TEST")
+WEEKLY_TEST=tests/ci/weekly-pipeline.test.ts
+GUARD_TEST=tests/ci/social-weekly-secret-guard.test.ts
+RT_FILES=("$TEST" "$VOICE_TEST" "$WEEKLY_TEST" "$GUARD_TEST")
 RT_TITLES=("verify refuses an unlimited intersample-peak mix; after final-mix.ts it is at most -1 dBTP and passes")
 
 # expect_red <name> <expected substring> <output> <rc>
@@ -326,6 +331,24 @@ ts_plant "T33 a medium question let through as Hard" shared/worked-examples/rule
 ts_plant "T34 the rule turned on the posted history (no cutoff date)" scripts/worked-examples/content.ts \
   "  if (e.content.post_on >= HARD_ONLY_FROM) {" "  if (e.content.post_on >= \"2000-01-01\") {" \
   "an example posted before the ruling is history"
+
+echo "=== TS: the weekly batch (Karl, 2026-11-11, SCL-277) ==="
+ts_plant "T35 a cache hit ignored (every re-render calls TTS again)" scripts/worked-examples/voice-cache.ts \
+  "    if (usable(entry, key, line.text)) cacheHits++;" "    if (false) cacheHits++;" \
+  "a re-render makes no TTS call"
+ts_plant "T36 the cache key drops the voice (a voice change reuses the old audio)" scripts/worked-examples/voice-cache.ts \
+  "      voice: profile.chirp_voice," "" \
+  "each one changes it"
+ts_plant "T37 a line that fails the checks is cached anyway" scripts/worked-examples/voice-cache.ts \
+  "      if (done.problems.length > 0)" "      if (false)" \
+  "nothing is cached"
+ts_plant "T38 the service-role key reachable from a pull request" .github/workflows/worked-example-daily.yml \
+  "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'" \
+  "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'" \
+  "only on the scheduled run from main"
+ts_plant "T39 a label inside the captions file" scripts/worked-examples/weekly.ts \
+  "  for (const w of post.warnings) parts.push(w);" '  for (const w of post.warnings) parts.push(w);'$'\n''  parts.push(`Worked example · ${post.id}`);' \
+  "platform headers outside"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
 ts_plant "V1 a line that says something else is kept" scripts/worked-examples/quality.ts \

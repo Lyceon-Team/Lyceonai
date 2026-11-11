@@ -371,7 +371,7 @@ export function normaliseLoudness(
   return measured;
 }
 
-function transcribeAndCheck(
+export function transcribeAndCheck(
   v: VoiceSettings,
   line: ScriptLine,
   rawWav: string,
@@ -508,6 +508,10 @@ export function voiceLine(
   const profile = v.profiles[profileId];
   const fallback = v.profiles[v.fallback_profile];
   if (!profile) throw new Error(`no voice profile ${profileId} in voice.json`);
+  if (profile.engine === "chirp3-hd")
+    throw new Error(
+      `${profileId} is a Chirp 3 HD voice: the weekly run voices and caches it (voice-cache.ts), not this tool`,
+    );
   if (!fallback || fallback.engine !== "kokoro")
     throw new Error("the fallback voice must be a kokoro profile");
   let spoken: Spoken;
