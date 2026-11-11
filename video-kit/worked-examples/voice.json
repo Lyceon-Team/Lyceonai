@@ -2,6 +2,7 @@
   "hyperframes": "0.8.143",
   "default_profile": "am_michael",
   "fallback_profile": "am_michael",
+  "batch_profile": "charon",
   "profiles": {
     "am_michael": {
       "engine": "kokoro",
@@ -21,6 +22,12 @@
       "base_language": "EN",
       "base_speaker": "EN-US",
       "tau": 0.3,
+      "speaking_rate": 1.0
+    },
+    "charon": {
+      "engine": "chirp3-hd",
+      "chirp_voice": "Charon",
+      "label": "Chirp 3 HD Charon on Cloud Text-to-Speech, voiced and cached by the weekly run (Karl's pick from the 2026-11-11 blind bake-off, voice C)",
       "speaking_rate": 1.0
     }
   },

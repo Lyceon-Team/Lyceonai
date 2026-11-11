@@ -716,7 +716,43 @@ describe("the final-mix true-peak limiter", () => {
     expect(limit).toBeLessThan(layout);
     expect(limit).toBeLessThan(verify);
     expect(verify).toBeLessThan(upload);
-    expect(yml.match(/render --quality delivery --output/g)).toHaveLength(1);
+    // The daily job renders once; the weekly job (SCL-277) renders once per date, below.
+    expect(
+      yml.match(
+        /render --quality delivery --output "\$GITHUB_WORKSPACE\/\$OUT\//g,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("the weekly job renders, limits, then checks each date, and uploads only after every check (SCL-277)", () => {
+    const yml = readFileSync(
+      join(ROOT, ".github/workflows/worked-example-daily.yml"),
+      "utf8",
+    );
+    const weekly = yml.slice(yml.indexOf("\n  weekly:"));
+    const at = (s: string): number => weekly.indexOf(s);
+    const render = at(
+      'render --quality delivery --output "$GITHUB_WORKSPACE/$WOUT/$d/render/$id.mp4"',
+    );
+    const limit = at(
+      'final-mix.ts "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"',
+    );
+    const layout = at('layout-check.ts "$WOUT/$d/composition"');
+    const verify = at('daily.ts verify --out "$WOUT/$d"');
+    const upload = at("weekly.ts upload --out");
+    for (const [name, i] of Object.entries({
+      render,
+      limit,
+      layout,
+      verify,
+      upload,
+    }))
+      expect(i, name).toBeGreaterThan(-1);
+    expect(render).toBeLessThan(limit);
+    expect(limit).toBeLessThan(layout);
+    expect(layout).toBeLessThan(verify);
+    expect(verify).toBeLessThan(upload);
+    expect(weekly.match(/render --quality delivery --output/g)).toHaveLength(1);
   });
 
   // A real round trip through ffmpeg: the daily job's own select, verify and final-mix commands

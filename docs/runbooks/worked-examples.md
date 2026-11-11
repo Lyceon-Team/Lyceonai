@@ -81,6 +81,43 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
 7. After the merge, generate the rows and hand them to Karl to apply:
    `GITHUB_TOKEN=… GITHUB_REPOSITORY=Lyceon-Team/Lyceonai CONTENT_APPROVER_LOGIN=… pnpm exec tsx scripts/worked-examples/seed-sql.ts --content <social checkout> --week <YYYY-Www> > seed.sql`
 
+## The weekly run (Karl's rulings 2026-11-11, SCL-277)
+
+One run a week builds every video for next week and delivers them in one message. It replaces the
+daily job below, which stays only until Karl confirms the first weekly batch.
+
+- **When:** Thursday 16:15 UTC, job `weekly` in `.github/workflows/worked-example-daily.yml`,
+  building next Monday-Sunday (ISO week). Pull requests run the same job as a dry run on the
+  fixture tree (committed voice, no secret, no upload, claim or post).
+- **Plan:** 7 Hard worked examples a week: 2 shortcut slots ("graphing method vs by hand"; never
+  name Desmos), 2 geometry slots with drawn figures (similar triangles, triangle theorem,
+  Pythagorean theorem, cylinders, cones), 3 trap slots (algebra, advanced math, problem-solving).
+- **Format:** the question on screen in frame 1; the spoken hook a dare or a shortcut promise; 30-60
+  s; one problem; the answer near the end; one CTA (test variant: "Comment GRIND and I'll send you
+  10 more hard ones", Karl sends by hand). SCL-267's script rules are unchanged.
+- **Stages** (`scripts/worked-examples/weekly.ts`): `build` (select the week's approved, unposted
+  examples that pass every rule; voice; layout/timing; composition) → per date: `hyperframes check`
+  and render, the final-mix limiter, the layout check, the MP4 check → `upload` → `claim` (pushed to
+  `social` before announcing) → `announce`. An example that fails is named in the message with its
+  reason; the others are still delivered.
+- **Voice:** Chirp 3 HD Charon (voice.json `batch_profile`), through `lyceon-ci-eval` by Workload
+  Identity Federation (no key). Every line is voiced once and cached in
+  `social-weekly/voice-cache/<sha256>.wav` + `.json`, keyed by the text, the voice and every
+  setting, after the loudness normalisation, limiter and quality checks. A re-render never calls
+  TTS; editing a line re-voices only that line. Authors no longer commit audio for weekly examples.
+  "Lyceon" is sent as IPA /ˈlaɪsiɑn/.
+- **Delivery:** the private bucket `social-weekly` (migration `20261203000000_social_weekly_bucket.sql`):
+  `<YYYY-Www>/<date>/<id>.mp4` and `captions.md` (the SCL-262/273 copy-paste set: platform headers
+  outside, only pasteable copy inside). One #social message, "Week <n> ready", a line per date with
+  the video and captions links (signed, 14 days). Karl posts by hand.
+- **Secrets:** `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (repository secrets), read only by the
+  weekly job's build and upload steps on the scheduled run from main
+  (`tests/ci/social-weekly-secret-guard.test.ts`). Slack: `SLACK_BOT_TOKEN`, `SOCIAL_SLACK_CHANNEL_ID`.
+- **Cost:** Chirp 3 HD is free up to 1M characters a month; a week uses about 3.9K (about 554 per
+  video), so $0. Re-renders are free (cache).
+- **If a run fails:** before `claim`, re-run the job (the cache makes it cheap). After `claim` and
+  before `announce`, post the links from the run's `links.json` artifact by hand.
+
 ## The daily job
 
 At 17:00 UTC: select the one example with `post_on` = today (America/Chicago), not retired, not in
