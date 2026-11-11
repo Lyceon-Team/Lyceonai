@@ -379,11 +379,19 @@ ts_plant "V8 reference recordings no longer ignored by git" .gitignore \
 ts_plant "V9 the clone made the default before Karl picks it" video-kit/worked-examples/voice.json \
   '"default_profile": "am_michael",' '"default_profile": "clone",' \
   "default and fallback are am_michael"
+# V10 re-pointed 2026-11-11 (SCL-277): the weekly job has its own "Install dependencies" step, so
+# the anchor carries the daily job's next step to stay unique.
 ts_plant "V10 CI installs the clone's Python stack" .github/workflows/worked-example-daily.yml \
-  "      - name: Install dependencies" "      - name: Clone stack
+  "      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Select today's example" "      - name: Clone stack
         run: pip install -r scripts/worked-examples/openvoice/requirements.txt
 
-      - name: Install dependencies" \
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Select today's example" \
   "the worked-example workflows set up no Python at all"
 ts_plant "V11 the speaking rate never reaches the /brag voice" scripts/worked-examples/voice.ts \
   '    "-s",' '    "--silent",' \
