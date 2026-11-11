@@ -9,7 +9,7 @@ monthly plan). Keep the four headings exactly as written; CI reads them
 -->
 
 Cycle: 2026-W47
-Batch PR: #PR
+Batch PR: #1476
 
 ## 1. Claude self-audit
 
