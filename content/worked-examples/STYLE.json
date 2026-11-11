@@ -2,51 +2,61 @@
   "Percentages": {
     "signature_move": "Turn each percent change into a multiplier.",
     "check": "Plug in 100 and follow it through every change.",
-    "trap": "Adding or subtracting percents that apply to different amounts."
+    "trap": "Adding or subtracting percents that apply to different amounts.",
+    "display_name": "Percentages"
   },
   "Right Triangles and Trigonometry": {
     "signature_move": "Label the sides from the angle: opposite, adjacent, hypotenuse. Then pick the ratio (SOH CAH TOA).",
     "check": "Check the sides with the Pythagorean theorem.",
-    "trap": "Using the hypotenuse where the ratio needs another side, or the wrong ratio for the angle."
+    "trap": "Using the hypotenuse where the ratio needs another side, or the wrong ratio for the angle.",
+    "display_name": "Right triangles"
   },
   "Probability and Conditional Probability": {
     "signature_move": "Shrink the sample space to what you're given, then count.",
     "check": "The answer is between 0 and 1, and the counts match what is left.",
-    "trap": "Counting the whole group when the question says \"given that\"."
+    "trap": "Counting the whole group when the question says \"given that\".",
+    "display_name": "Probability"
   },
   "Area and Volume": {
     "signature_move": "Write the formula first, then substitute before you compute.",
     "check": "Check the units: area is squared, volume is cubed.",
-    "trap": "Mixing up radius and diameter, or area and volume."
+    "trap": "Mixing up radius and diameter, or area and volume.",
+    "display_name": "Area and volume"
   },
   "Linear Inequalities in One or Two Variables": {
     "signature_move": "Solve it like an equation; flip the sign when you multiply or divide by a negative.",
     "check": "Test one value from your answer in the original inequality.",
-    "trap": "Forgetting to flip the inequality sign after dividing by a negative."
+    "trap": "Forgetting to flip the inequality sign after dividing by a negative.",
+    "display_name": "Linear inequalities"
   },
   "Nonlinear Equations in One Variable and Systems of Equations in Two Variables": {
     "signature_move": "Set the two equations equal and solve, or graph both and count where they cross.",
     "check": "Plug each solution into both equations: the y-values must match.",
-    "trap": "Miscounting crossings, or answering with x when the question asks for something else."
+    "trap": "Miscounting crossings, or answering with x when the question asks for something else.",
+    "display_name": "Nonlinear systems"
   },
   "Linear Equations in One Variable": {
     "signature_move": "Distribute, collect like terms, then answer exactly what's asked.",
     "check": "Put the value back into the original equation.",
-    "trap": "Dropping a sign when distributing a negative, or stopping at x when the question asks for an expression."
+    "trap": "Dropping a sign when distributing a negative, or stopping at x when the question asks for an expression.",
+    "display_name": "Linear equations"
   },
   "Ratios, Rates, Proportional Relationships, and Units": {
     "signature_move": "Weight each part by its share, then add.",
     "check": "The answer sits between the parts, nearer the bigger share.",
-    "trap": "Taking a plain average when the amounts aren't equal."
+    "trap": "Taking a plain average when the amounts aren't equal.",
+    "display_name": "Ratios and rates"
   },
   "Lines, Angles, and Triangles": {
     "signature_move": "Find the scale factor from matching sides, then apply it to every length.",
     "check": "Every side of the big figure is the scale factor times its match.",
-    "trap": "Using the small figure's numbers for the big one, or matching the wrong sides."
+    "trap": "Using the small figure's numbers for the big one, or matching the wrong sides.",
+    "display_name": "Triangles"
   },
   "Nonlinear Functions": {
     "signature_move": "Find the vertex: x = −b ÷ 2a, then plug it back in.",
     "check": "Expand the vertex form and compare it with the original.",
-    "trap": "Reading the constant term as the vertex."
+    "trap": "Reading the constant term as the vertex.",
+    "display_name": "Nonlinear functions"
   }
 }
