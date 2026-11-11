@@ -12,7 +12,7 @@
  *      everywhere else, including an unread section and a Desmos request on a Reading and
  *      Writing item.
  *   D3 v4 without the block is v3, byte for byte; with it, v3 then the block.
- *   D4 production stays on v3: v4 resolves by exact version only.
+ *   D4 v4 resolves by exact version only; a null version resolves to the default, not v4.
  *   D5 the worker's own buildSystemInstruction carries the block for a math item and not for
  *      a Reading and Writing one, from the wire fields.
  *   D6 the wire accepts the new fields and an older envelope without them.
@@ -44,7 +44,10 @@ import type { PromptFields } from "../../apps/workers/tutor-orchestrator/src/pro
 import { buildSystemInstruction } from "../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
 import { orchestrateRequestSchema } from "../../shared/tutor-orchestrator-wire";
 import { resolveQuestionContent } from "../../server/services/tutor-context";
-import { buildGoldenEnvelope } from "./lisa-golden-set-helpers";
+import {
+  DEFAULT_PROMPT_VERSION,
+  buildGoldenEnvelope,
+} from "./lisa-golden-set-helpers";
 
 function fields(over: Partial<PromptFields>): PromptFields {
   return {
@@ -135,7 +138,7 @@ describe("lisa-default-v4 Desmos block", () => {
     );
   });
 
-  it("D4 production stays on v3; v4 resolves by exact version only", () => {
+  it("D4 v4 resolves by exact version only; a null version resolves to the default", () => {
     for (const variant of [
       "default",
       "scaffolded",
@@ -144,7 +147,7 @@ describe("lisa-default-v4 Desmos block", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v3",
+        DEFAULT_PROMPT_VERSION,
       );
     }
     expect(resolvePromptArtifact("scaffolded", "lisa-default-v4").version).toBe(

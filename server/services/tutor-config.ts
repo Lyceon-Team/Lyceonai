@@ -24,6 +24,7 @@
  */
 import { z } from "zod";
 import { videoMethodKeywordMapSchema } from "../../packages/shared/src/video-methods";
+import { helpKeywordMapSchema } from "../../packages/shared/src/tutor-help-level";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 
@@ -124,6 +125,15 @@ const tutorConfigKeySchemas = {
   // invalid means no method preference, and retrieval ranks as it did before.
   video_method_keywords: {
     schema: videoMethodKeywordMapSchema.nullable(),
+    default: null,
+  },
+  // @spec [owner brief "Help-level engine", Karl 2026-11-05, rule 4; SCL-275] | @implemented
+  // [2026-11-05] | plain English: the versioned keyword map for the help signals in a TYPED message
+  // ("idk", "I'm stuck" → stuck; "just solve it", "show me" → solve it), seeded by
+  // 20261201000000_lisa_help_level.sql. Unset or invalid: no typed message moves the level; taps
+  // still do.
+  tutor_help_keywords: {
+    schema: helpKeywordMapSchema.nullable(),
     default: null,
   },
   // @spec [owner brief "LISA guided choices in review, Phase A" (Karl, 2026-10-27), ruling 2 of

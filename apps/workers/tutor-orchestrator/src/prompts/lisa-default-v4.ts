@@ -13,9 +13,9 @@
  *
  * trade-offs:
  *  - v3 is immutable (§4.3). v4 composes it: v3's rendered text is reproduced byte-for-byte.
- *  - NOT the latest for any variant. v4 resolves by exact version only, so production (which
- *    sends prompt_version null) stays on v3 until Karl rules on the G0-2 replies. The harness
- *    selects v4 explicitly. Promoting it is a one-line registry change.
+ *  - NOT the latest for any variant: v4 resolves by exact version only. Karl ruled on the real
+ *    G0-2 run on 2026-11-11 and made v5 (v4 + the data-block rule) the default, not v4. The
+ *    harness selects v4 explicitly.
  *  - The open conflicts and the answer-box rules (playbook §6a, §7) are deliberately absent
  *    (Karl, 2026-10-27).
  */

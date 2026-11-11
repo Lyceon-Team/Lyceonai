@@ -80,7 +80,9 @@ const CONTENT = join(ROOT, "tests/fixtures/worked-examples/social");
 const kit = loadKit();
 const q = kit.voice.quality;
 const aliases = kit.voice.transcript_aliases;
-const [fixture] = loadExamples(CONTENT);
+const fixture = loadExamples(CONTENT).find(
+  (e) => e.content.question_id === "SATM2CZS1BE",
+);
 if (!fixture) throw new Error("the fixture tree has no example");
 const manifest = loadVoice(CONTENT, fixture.dir);
 const wav = (file: string): Uint8Array =>
@@ -495,7 +497,12 @@ describe("pronunciation of Lyceon", () => {
     expect(BRAND_RESPELLINGS).toEqual({
       kokoro: "Lysee-ahn",
       chatterbox: "Lie-see-on",
+      // Karl's pick 2026-11-11 for voice A (Chirp 3 HD Orus), clip 3; sent with no IPA.
+      "chirp3-hd": "Lye-see-ahn",
     });
+    expect(spokenBrandName("Lyceon SAT Prep.", "chirp3-hd")).toBe(
+      "Lye-see-ahn SAT Prep.",
+    );
     expect(spokenBrandName("Lyceon SAT Prep.", "chatterbox")).toBe(
       "Lie-see-on SAT Prep.",
     );
@@ -716,7 +723,43 @@ describe("the final-mix true-peak limiter", () => {
     expect(limit).toBeLessThan(layout);
     expect(limit).toBeLessThan(verify);
     expect(verify).toBeLessThan(upload);
-    expect(yml.match(/render --quality delivery --output/g)).toHaveLength(1);
+    // The daily job renders once; the weekly job (SCL-277) renders once per date, below.
+    expect(
+      yml.match(
+        /render --quality delivery --output "\$GITHUB_WORKSPACE\/\$OUT\//g,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("the weekly job renders, limits, then checks each date, and uploads only after every check (SCL-277)", () => {
+    const yml = readFileSync(
+      join(ROOT, ".github/workflows/worked-example-daily.yml"),
+      "utf8",
+    );
+    const weekly = yml.slice(yml.indexOf("\n  weekly:"));
+    const at = (s: string): number => weekly.indexOf(s);
+    const render = at(
+      'render --quality delivery --output "$GITHUB_WORKSPACE/$WOUT/$d/render/$id.mp4"',
+    );
+    const limit = at(
+      'final-mix.ts "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"',
+    );
+    const layout = at('layout-check.ts "$WOUT/$d/composition"');
+    const verify = at('daily.ts verify --out "$WOUT/$d"');
+    const upload = at("weekly.ts upload --out");
+    for (const [name, i] of Object.entries({
+      render,
+      limit,
+      layout,
+      verify,
+      upload,
+    }))
+      expect(i, name).toBeGreaterThan(-1);
+    expect(render).toBeLessThan(limit);
+    expect(limit).toBeLessThan(layout);
+    expect(layout).toBeLessThan(verify);
+    expect(verify).toBeLessThan(upload);
+    expect(weekly.match(/render --quality delivery --output/g)).toHaveLength(1);
   });
 
   // A real round trip through ffmpeg: the daily job's own select, verify and final-mix commands

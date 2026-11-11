@@ -36,16 +36,24 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
    later (the database refuses the approved row). Once an example is approved, its question can
    no longer be added to a full-length form (Karl's decision 1 on #1336, 2026-10-27). The generator reads the question from its seed
    SQL under `infra/supabase/seed/`; a question a seed patch changes is refused.
+   **Hard questions only** (Karl, 2026-11-05, SCL-274): the question must be difficulty 3 in its
+   seed row. The content check refuses any other for an example due on or after 2026-11-06, and the
+   same rule binds authored QOTD breakdown scripts. Prefer one with a real trap among its choices
+   that still fits 30-60 s, and skip one whose explanation needs a figure the notepad cannot draw.
+   List the question ids in the pull request: the CMO session runs the QOTD and full-length check
+   on them before Karl merges.
 2. Write `content/worked-examples/<YYYY-Www>/<QUESTION_ID>/example.json`
    (`packages/shared/src/worked-example-schema.ts`). `post_on` is in that week and matches the
-   plan's slot. `signature_move` matches `STYLE.json` for the skill.
+   plan's slot. `signature_move` matches `STYLE.json` for the skill. The STYLE row's
+   `display_name` (a short topic, at most 32 characters) is what the title and the captions
+   show; the College Board skill name stays internal (Karl, 2026-11-11).
    The script, in spoken order (Karl's rulings 2026-11-02, SCL-267). The screen shows the
    question; the voice talks about it. Write it the way you'd say it: contractions, short
-   sentences, "you"/"we", beats like "Okay." or "Go.".
+   sentences, "you"/"we", beats like "Okay." or "Let's see." (never "Go", H7).
 
    | spoken | field | what it holds | on screen meanwhile |
    |---|---|---|---|
-   | 1 | `hook.voice` | the hook as a question or a challenge to the viewer ("Think you can do this one in ten seconds? Go.") | `hook.line` (bold, from frame 0) and the question card |
+   | 1 | `hook.voice` | the hook as a question or a challenge to the viewer ("Think you can solve this in ten seconds? Let's see."; never "Go", rule H7 from 2026-11-12) | `hook.line` (bold, from frame 0) and the question card |
    | 2 | `question_voice` | ONE sentence of setup in plain talk: what the question is about. Not a reading of it (the key keeps its old name) | the question card |
    | 3 | `steps[].voice` | the key move and why, one step per line | `steps[].notepad`, written as each line starts |
    | 4 | `trap.voice` | the trap; starts "The trap" | "The trap:" and `trap.notepad` |
@@ -75,6 +83,58 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
 7. After the merge, generate the rows and hand them to Karl to apply:
    `GITHUB_TOKEN=… GITHUB_REPOSITORY=Lyceon-Team/Lyceonai CONTENT_APPROVER_LOGIN=… pnpm exec tsx scripts/worked-examples/seed-sql.ts --content <social checkout> --week <YYYY-Www> > seed.sql`
 
+## The weekly run (Karl's rulings 2026-11-11, SCL-277)
+
+One run a week builds every video for next week and delivers them in one message. It replaces the
+daily job below, which stays only until Karl confirms the first weekly batch.
+
+- **When:** Thursday 16:15 UTC, job `weekly` in `.github/workflows/worked-example-daily.yml`,
+  building next Monday-Sunday (ISO week). Pull requests run the same job as a dry run on the
+  fixture tree (committed voice, no secret, no upload, claim or post).
+- **Plan:** 7 Hard worked examples a week: 2 shortcut slots ("graphing method vs by hand"; never
+  name Desmos), 2 geometry slots with drawn figures (similar triangles, triangle theorem,
+  Pythagorean theorem, cylinders, cones), 3 trap slots (algebra, advanced math, problem-solving).
+- **Format:** the question on screen in frame 1; the spoken hook a dare or a shortcut promise; 30-60
+  s; one problem; the answer near the end; one CTA (test variant: "Comment GRIND and I'll send you
+  10 more hard ones", Karl sends by hand). SCL-267's script rules are unchanged.
+- **Stages** (`scripts/worked-examples/weekly.ts`): `build` (select the week's approved, unposted
+  examples that pass every rule; voice; layout/timing; composition) → per date: `hyperframes check`
+  and render, the final-mix limiter, the layout check, the MP4 check → `upload` → `claim` (pushed to
+  `social` before announcing) → `announce`. An example that fails is named in the message with its
+  reason; the others are still delivered.
+- **Voice:** voice A, Chirp 3 HD Orus (voice.json `batch_profile` "orus"; Karl's change 2026-11-11 from Charon), through `lyceon-ci-eval` by Workload
+  Identity Federation (no key). Every line is voiced once and cached in
+  `social-weekly/voice-cache/<sha256>.wav` + `.json`, keyed by the text, the voice and every
+  setting, after the loudness normalisation, limiter and quality checks. A re-render never calls
+  TTS; editing a line re-voices only that line. A line that fails the checks is voiced again, up to
+  3 takes (Chirp's audio differs per call), before its example is refused. Authors no longer commit
+  audio for weekly examples. "Lyceon" is sent to Orus respelled "Lye-see-ahn", with no IPA (Karl's
+  pick 2026-11-11; Orus did not honour /ˈlaɪsiɑn/).
+- **Delivery:** the private bucket `social-weekly` (migration `20261203000000_social_weekly_bucket.sql`):
+  `<YYYY-Www>/<date>/<id>.mp4` and `captions.md` (the SCL-262/273 copy-paste set: platform headers
+  outside, only pasteable copy inside). One #social message, "Week <n> ready", a line per date with
+  the video and captions links (signed, 14 days). Karl posts by hand.
+- **Secrets:** `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (repository secrets), read only by the
+  weekly job's build and upload steps on the scheduled run from main
+  (`tests/ci/social-weekly-secret-guard.test.ts`). Slack: `SLACK_BOT_TOKEN`, `SOCIAL_SLACK_CHANNEL_ID`.
+- **Drawn figures** (geometry and graph slots; Karl's ruling 7, CPU only): add a `figure` to
+  `example.json`: a `box` in the question's own units (y up) and up to 24 `shapes`: `segment`
+  (`dashed` for a hidden edge), `polygon`, `polyline`, `circle`, `right_angle` (corner + a point on
+  each side), `cylinder` / `cone` (base centre, `r`, `h`, `ry` the ellipse's half-height), `axes`,
+  `graph` (y = a·x² + b·x + c over `x`), `label` (at most 16 characters). Each shape's `when` is
+  `open` (the default: drawn during the hook and setup, in the order listed), `step-N` (drawn as
+  step N is written) or `answer`. The figure sits under the notepad (y 1090..1530) from 0:00 to
+  the end card, and the notepad stops above it. The content check refuses a shape outside the box
+  (F1), a step the example lacks (F2), and an opening label with a number the stem or passage does
+  not give (F3: never the answer, never a step's result, before the work). The layout check
+  refuses a figure crossing any text. Example: `tests/fixtures/worked-examples/social/content/
+  worked-examples/2026-W45/SATM2C6PXLX/example.json` (a cylinder with r and h labelled; the cone
+  drawn in at step 2).
+- **Cost:** Chirp 3 HD is free up to 1M characters a month; a week uses about 3.9K (about 554 per
+  video), so $0. Re-renders are free (cache).
+- **If a run fails:** before `claim`, re-run the job (the cache makes it cheap). After `claim` and
+  before `announce`, post the links from the run's `links.json` artifact by hand.
+
 ## The daily job
 
 At 17:00 UTC: select the one example with `post_on` = today (America/Chicago), not retired, not in
@@ -84,18 +144,29 @@ render → layout check (safe area x 71..912, y 154..1555; blank paper) → MP4 
 #social in the QOTD's format (SCL-262; for worked examples SCL-265, Karl's ruling 2026-11-02):
 
 1. Any QA warning first ("SAT date list needs updating"), outside the copy blocks.
-2. **TikTok**: the video, its comment the platform line, the label ("Worked example · {skill} ·
-   {hook_type}") and "For review: posts on <date>. Karl posts by hand."; then ONE caption block and
-   a keywords block (one keyword per line, for TikTok's "Manage keywords").
-3. **Instagram** (the same video as TikTok, above: not uploaded again): its caption block.
-4. **Facebook** (the same video): its caption block.
+2. **TikTok**: the video, its comment the platform header "*TikTok*" and nothing else; then ONE
+   caption block and a keywords block (one keyword per line, for TikTok's "Manage keywords").
+3. **Instagram** (the same video as TikTok, above: not uploaded again): "*Instagram*" and its
+   caption block.
+4. **Facebook** (the same video): "*Facebook*" and its caption block.
+
+Outside the blocks only the platform headers and any QA warnings; inside them only what Karl pastes:
+no music credit, label, id, hook or trap type, review note or file name (Karl, 2026-11-04, SCL-273;
+`copyBlockProblems` in `shared/social/posts.ts` refuses one).
 
 The captions are the SCL-262 lines with the example's title ("SAT Math worked example ·
 Percentages") as the headline. TikTok: headline / "Follow for daily SAT questions 👆 Comment your
 answer 👇" / hashtags. Instagram: headline / "Comment your answer 👇" / "Taking the SAT <next test
-date>? Comment SAT and I'll send you the link" / hashtags. Facebook: headline / "How would you solve
-it? Share your approach below 👇" / hashtags. Hashtags: `#SAT #SATprep #digitalSAT #<Month>SAT
-#SATMath`. Every caption ends with the music credit, which the track's CC BY 4.0 licence requires.
+date>? Comment SAT and I'll send you the link" (an approved CTA: it stays) / hashtags. Facebook:
+headline / "How would you solve it? Share your approach below 👇" / hashtags. Hashtags: `#SAT
+#SATprep #digitalSAT #<Month>SAT #SATMath`.
+
+The music credit is on the video's end card, not in any caption (SCL-273): one static line,
+right-aligned at the safe area's right edge just above its bottom, at most a quarter of the outro
+font (19 px against 80/76 px), never spoken; its text is the track's `on_screen_credit` in
+`video-kit/worked-examples/music/tracks.json`. A track whose licence needs no attribution
+(`attribution_required: false`, `on_screen_credit: null`) shows no credit. The layout check refuses a
+missing, doubled, wrong, oversized or misplaced credit, and a credit the licence does not need.
 Keywords: the test month, `SAT`, `SAT prep`, `Digital SAT`, `College admissions`, `SAT math`, then
 the question's canonical domain's. No link, bio line or metadata in any copy block: the TikTok bio
 link and the Instagram link to send are set once (`docs/runbooks/qotd-slack.md`); the tagged
