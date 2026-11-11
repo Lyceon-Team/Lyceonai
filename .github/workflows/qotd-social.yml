@@ -29,7 +29,8 @@
 # Breakdown pilot (Karl's brief 2026-11-02, Part C; SCL-266, as ruled on #1398 2026-11-02): a
 # second job, `breakdown`, runs AFTER this one, whatever its result, so the QOTD always posts first
 # and a breakdown can never block or delay it. Inside the pilot window (shared/qotd/breakdown.ts
-# QOTD_BREAKDOWN_PILOT: posting days 2026-11-09 to 2026-11-22; the variable
+# QOTD_BREAKDOWN_PILOT: HELD by Karl 2026-11-03, off until the private repo exists, ruled as posting
+# days 2026-11-09 to 2026-11-22 in QOTD_BREAKDOWN_PILOT_RULED; the variable
 # QOTD_BREAKDOWN_PAUSED=true stops it at once) it renders yesterday's QOTD as a 30-60 s video with
 # the worked-example pipeline from the AUTHORED script for that date, only if GitHub's record shows
 # Karl merged it and its order and letter are the stored row; it posts the video to the same

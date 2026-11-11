@@ -41,6 +41,9 @@
  *       a disputed sub-skill, a teaching dispute and drop stay; the hold runs after and wins.
  *   S16 the spot-check sample: approved rows with sub-skills only, one skill per turn, the same
  *       draw for the same seed, each row's evidence narrowed to its sub-skills.
+ *   S17 v5 write-up (2026-11-04, "one watch, two outputs"): pass 1's response schema requires a
+ *       write-up with its delivery block on every segment, pass 2's has none (blind), and a
+ *       checked segment carries the write-up through (null when the answer has none).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -51,6 +54,11 @@ import {
   splitSpans,
   vocabularyFor,
   vocabularyText,
+  WRITEUP_RULES,
+  fixedResponseSchema,
+  segmentAnswerSchema,
+  segmentResponseSchema,
+  withWriteup,
   type Taxonomy,
 } from "../../scripts/rag/segment-videos";
 import {
@@ -1135,5 +1143,87 @@ describe("segment tagging: what the code enforces", () => {
       "EE.2: e",
     );
     expect(spotCheckSample(review, 50, skillOf)).toHaveLength(5);
+  });
+});
+
+describe("S17 the v5 write-up: pass 1 writes it, pass 2 stays blind", () => {
+  const WRITEUP = {
+    what_is_taught: "w",
+    method: "m",
+    steps: ["s1", "s2"],
+    look_at: [],
+    pitfalls: [],
+    examples: [{ setup: "x^2 - 4", steps: ["factor"] }],
+    delivery: {
+      step_order: "goal, then an example",
+      click_phrases: ["p"],
+      analogies: [],
+      understanding_checks: ["pause and try"],
+    },
+  };
+  const seg = (writeup: typeof WRITEUP | undefined) => ({
+    start: "0:00",
+    end: "0:48",
+    teaches_sat_content: true,
+    summary: "s",
+    sub_skills: [{ id: "EE.2", evidence: "e" }],
+    clusters: [],
+    not_in_taxonomy: "",
+    overview: false,
+    ...(writeup === undefined ? {} : { writeup }),
+  });
+
+  it("pass 1's schema requires the write-up and its four delivery fields; pass 2's has none", () => {
+    for (const base of [segmentResponseSchema, fixedResponseSchema]) {
+      const items = (
+        withWriteup(base) as {
+          properties: {
+            segments: {
+              items: {
+                required: string[];
+                properties: Record<
+                  string,
+                  {
+                    required?: string[];
+                    properties?: Record<string, { required?: string[] }>;
+                  }
+                >;
+              };
+            };
+          };
+        }
+      ).properties.segments.items;
+      expect(items.required).toContain("writeup");
+      expect(items.properties.writeup?.required).toContain("delivery");
+      expect(items.properties.writeup?.properties?.delivery?.required).toEqual([
+        "step_order",
+        "click_phrases",
+        "analogies",
+        "understanding_checks",
+      ]);
+      // The pass-2 schema is the base itself: no write-up anywhere in it.
+      expect(JSON.stringify(base)).not.toContain("writeup");
+    }
+    expect(WRITEUP_RULES).toContain("never the instructor's wording");
+    expect(WRITEUP_RULES).toContain("mathematics itself");
+  });
+
+  it("a checked segment carries the write-up, and null when the answer has none", () => {
+    const withIt = checkClipAnswer(
+      segmentAnswerSchema.parse({ segments: [seg(WRITEUP)] }),
+      { start: 0, end: 48 },
+      M,
+    );
+    expect(withIt.ok).toBe(true);
+    if (!withIt.ok) return;
+    expect(withIt.segments[0]?.writeup).toEqual(WRITEUP);
+    const without = checkClipAnswer(
+      segmentAnswerSchema.parse({ segments: [seg(undefined)] }),
+      { start: 0, end: 48 },
+      M,
+    );
+    expect(without.ok).toBe(true);
+    if (!without.ok) return;
+    expect(without.segments[0]?.writeup).toBeNull();
   });
 });

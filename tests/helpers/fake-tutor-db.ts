@@ -90,6 +90,11 @@ class FakeQuery implements PromiseLike<Result> {
     this.filters.push((r) => (r[col] ?? null) === val);
     return this;
   }
+  /** Only `.not(col, "is", null)` (the help-level read): rows where the column is set. */
+  not(col: string, op: "is", val: null): this {
+    this.filters.push((r) => (op === "is" ? (r[col] ?? null) !== val : true));
+    return this;
+  }
   in(col: string, vals: unknown[]): this {
     this.filters.push((r) => vals.includes(r[col]));
     return this;
@@ -98,8 +103,16 @@ class FakeQuery implements PromiseLike<Result> {
     this.filters.push((r) => String(r[col]) < val);
     return this;
   }
+  gt(col: string, val: string): this {
+    this.filters.push((r) => String(r[col]) > val);
+    return this;
+  }
   gte(col: string, val: string): this {
     this.filters.push((r) => String(r[col]) >= val);
+    return this;
+  }
+  lte(col: string, val: string): this {
+    this.filters.push((r) => String(r[col]) <= val);
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }): this {

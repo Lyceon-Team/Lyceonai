@@ -82,6 +82,19 @@ export const voiceProfileSchema = z.discriminatedUnion("engine", [
       speaking_rate: speakingRate,
     })
     .strict(),
+  /**
+   * Chirp 3 HD on Cloud Text-to-Speech (Karl's pick from the 2026-11-11 blind bake-off: voice C,
+   * Charon). Voiced only by the weekly run through lyceon-ci-eval and cached per line
+   * (voice-cache.ts); never on an authoring machine.
+   */
+  z
+    .object({
+      engine: z.literal("chirp3-hd"),
+      chirp_voice: z.string().regex(/^[A-Z][a-z]+$/),
+      label: z.string().min(1),
+      speaking_rate: speakingRate,
+    })
+    .strict(),
   z
     .object({
       engine: z.literal("openvoice-v2"),
@@ -102,6 +115,12 @@ export const voiceSettingsSchema = z
     default_profile: z.string().min(1),
     /** The voice a line falls back to when a clone line fails the quality checks. */
     fallback_profile: z.string().min(1),
+    /**
+     * The voice the weekly batch is spoken in (Karl's rulings 2026-11-11, weekly video pipeline
+     * v2: Chirp 3 HD Charon, voiced and cached by the weekly run). default_profile stays the
+     * voice of the local tools (the pilots, the breakdown scripts, compare-voices).
+     */
+    batch_profile: z.string().min(1),
     profiles: z.record(z.string().regex(/^[a-z0-9_-]+$/), voiceProfileSchema),
     quality: z
       .object({
@@ -161,10 +180,12 @@ export const voiceSettingsSchema = z
   .refine(
     (v) =>
       v.profiles[v.default_profile] !== undefined &&
-      v.profiles[v.fallback_profile]?.engine === "kokoro",
+      v.profiles[v.default_profile]?.engine !== "chirp3-hd" &&
+      v.profiles[v.fallback_profile]?.engine === "kokoro" &&
+      v.profiles[v.batch_profile]?.engine === "chirp3-hd",
     {
       message:
-        "default_profile must be a profile, and fallback_profile a kokoro profile",
+        "default_profile must be a local profile (not chirp3-hd), fallback_profile a kokoro profile, and batch_profile a chirp3-hd profile",
     },
   );
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
@@ -178,11 +199,24 @@ export const trackSchema = z
     licence: z.string().min(1),
     licence_url: z.string().url(),
     licence_file: z.string().min(1),
-    credit: z.string().startsWith("Music: "),
+    /**
+     * Whether the licence requires a credit (CC BY does; CC0 does not). Karl's ruling
+     * 2026-11-04: the credit is on the video's end card, never in a caption and never spoken.
+     */
+    attribution_required: z.boolean(),
+    /** The end card's credit line, or null for a track that needs none (then none is shown). */
+    on_screen_credit: z.string().startsWith("Music: ").nullable(),
     peak_dbfs: z.number().max(0),
     duration_seconds: z.number().positive(),
   })
-  .strict();
+  .strict()
+  .refine((t) => t.attribution_required === (t.on_screen_credit !== null), {
+    message:
+      "on_screen_credit is set exactly when the licence requires attribution",
+  })
+  .refine((t) => !/^CC BY\b/.test(t.licence) || t.attribution_required, {
+    message: "a CC BY licence requires attribution",
+  });
 export type Track = z.infer<typeof trackSchema>;
 export const tracksSchema = z.record(z.string().min(1), trackSchema);
 

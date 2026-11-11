@@ -179,6 +179,11 @@ export const seedQuestionSchema = z.object({
    */
   domain: z.string().min(1),
   skill_codes: z.array(z.string().min(1)).min(1),
+  /**
+   * The bank's difficulty (1 easy, 2 medium, 3 hard), read for the Hard-only rule (Karl,
+   * 2026-11-05: worked examples and authored breakdown scripts use difficulty 3 only).
+   */
+  difficulty: z.number().int().min(1).max(3),
   item_type: z.literal("mcq"),
   stem: z.string().min(1),
   passage: z.string().nullable(),

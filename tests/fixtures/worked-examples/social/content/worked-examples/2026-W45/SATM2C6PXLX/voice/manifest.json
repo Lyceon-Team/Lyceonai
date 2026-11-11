@@ -1,0 +1,562 @@
+{
+  "voice": "am_michael",
+  "speaking_rate": 1,
+  "lines": [
+    {
+      "key": "hook",
+      "text_sha256": "8efbb9cb519bd00d3cd1a58a2282bfcc6cf8d23807569255a8b91679ca0859eb",
+      "file": "hook.wav",
+      "duration": 2.432,
+      "words": [
+        {
+          "text": "Bet",
+          "start": 0.07,
+          "end": 0.18
+        },
+        {
+          "text": "you",
+          "start": 0.18,
+          "end": 0.35
+        },
+        {
+          "text": "can't",
+          "start": 0.39,
+          "end": 0.65
+        },
+        {
+          "text": "get",
+          "start": 0.65,
+          "end": 0.77
+        },
+        {
+          "text": "this",
+          "start": 0.87,
+          "end": 1.03
+        },
+        {
+          "text": "one",
+          "start": 1.09,
+          "end": 1.25
+        },
+        {
+          "text": "in",
+          "start": 1.25,
+          "end": 1.37
+        },
+        {
+          "text": "30",
+          "start": 1.37,
+          "end": 1.72
+        },
+        {
+          "text": "seconds.",
+          "start": 1.72,
+          "end": 2.33
+        }
+      ]
+    },
+    {
+      "key": "question",
+      "text_sha256": "e66ad9dda4a4cb893f15a3a515ee1ca6244c44bb3d9d1130c51d6e50aef179ab",
+      "file": "question.wav",
+      "duration": 3.797,
+      "words": [
+        {
+          "text": "A",
+          "start": 0.08,
+          "end": 0.11
+        },
+        {
+          "text": "cylinder",
+          "start": 0.11,
+          "end": 0.72
+        },
+        {
+          "text": "with",
+          "start": 0.72,
+          "end": 1.03
+        },
+        {
+          "text": "a",
+          "start": 1.04,
+          "end": 1.12
+        },
+        {
+          "text": "cone",
+          "start": 1.12,
+          "end": 1.44
+        },
+        {
+          "text": "scooped",
+          "start": 1.44,
+          "end": 2
+        },
+        {
+          "text": "out",
+          "start": 2,
+          "end": 2.22
+        },
+        {
+          "text": "of",
+          "start": 2.22,
+          "end": 2.27
+        },
+        {
+          "text": "it.",
+          "start": 2.6,
+          "end": 2.68
+        },
+        {
+          "text": "We",
+          "start": 2.79,
+          "end": 2.81
+        },
+        {
+          "text": "want",
+          "start": 2.81,
+          "end": 3.07
+        },
+        {
+          "text": "what's",
+          "start": 3.07,
+          "end": 3.45
+        },
+        {
+          "text": "left.",
+          "start": 3.45,
+          "end": 3.72
+        }
+      ]
+    },
+    {
+      "key": "step-1",
+      "text_sha256": "80dfcdde77990219d44d45ba6e76d0c5aeccb88dc535bf696980d806ed28ec59",
+      "file": "step-1.wav",
+      "duration": 6.357,
+      "words": [
+        {
+          "text": "Start",
+          "start": 0.05,
+          "end": 0.37
+        },
+        {
+          "text": "with",
+          "start": 0.37,
+          "end": 0.66
+        },
+        {
+          "text": "the",
+          "start": 0.66,
+          "end": 0.88
+        },
+        {
+          "text": "cylinder,",
+          "start": 0.88,
+          "end": 1.71
+        },
+        {
+          "text": "pi",
+          "start": 1.71,
+          "end": 1.94
+        },
+        {
+          "text": "r",
+          "start": 1.94,
+          "end": 2.05
+        },
+        {
+          "text": "squared",
+          "start": 2.05,
+          "end": 2.87
+        },
+        {
+          "text": "h,",
+          "start": 2.87,
+          "end": 3.24
+        },
+        {
+          "text": "64",
+          "start": 3.29,
+          "end": 3.85
+        },
+        {
+          "text": "times",
+          "start": 3.85,
+          "end": 4.36
+        },
+        {
+          "text": "15,",
+          "start": 4.36,
+          "end": 5
+        },
+        {
+          "text": "960",
+          "start": 5,
+          "end": 5.74
+        },
+        {
+          "text": "pi.",
+          "start": 5.74,
+          "end": 6.25
+        }
+      ]
+    },
+    {
+      "key": "step-2",
+      "text_sha256": "803598bec2311135c8b4c26ccd8d5ef0a07dbd08de73d2d2d4fbe1f59bc1a973",
+      "file": "step-2.wav",
+      "duration": 4.011,
+      "words": [
+        {
+          "text": "The",
+          "start": 0.04,
+          "end": 0.23
+        },
+        {
+          "text": "cone",
+          "start": 0.23,
+          "end": 0.54
+        },
+        {
+          "text": "is",
+          "start": 0.54,
+          "end": 0.69
+        },
+        {
+          "text": "one",
+          "start": 0.69,
+          "end": 0.92
+        },
+        {
+          "text": "third",
+          "start": 0.92,
+          "end": 1.31
+        },
+        {
+          "text": "of",
+          "start": 1.31,
+          "end": 1.46
+        },
+        {
+          "text": "that",
+          "start": 1.46,
+          "end": 1.77
+        },
+        {
+          "text": "same",
+          "start": 1.77,
+          "end": 2.08
+        },
+        {
+          "text": "cylinder,",
+          "start": 2.08,
+          "end": 2.78
+        },
+        {
+          "text": "320",
+          "start": 2.87,
+          "end": 3.77
+        },
+        {
+          "text": "pi.",
+          "start": 3.77,
+          "end": 4.01
+        }
+      ]
+    },
+    {
+      "key": "step-3",
+      "text_sha256": "47e98546adf9cac4016f1dc548b238446898758bc190a4f5c499b5aebd1873a1",
+      "file": "step-3.wav",
+      "duration": 4.757,
+      "words": [
+        {
+          "text": "Now",
+          "start": 0.05,
+          "end": 0.23
+        },
+        {
+          "text": "take",
+          "start": 0.23,
+          "end": 0.49
+        },
+        {
+          "text": "the",
+          "start": 0.6,
+          "end": 0.77
+        },
+        {
+          "text": "cone",
+          "start": 0.77,
+          "end": 1.08
+        },
+        {
+          "text": "away",
+          "start": 1.08,
+          "end": 1.3
+        },
+        {
+          "text": "from",
+          "start": 1.39,
+          "end": 1.69
+        },
+        {
+          "text": "the",
+          "start": 1.71,
+          "end": 1.93
+        },
+        {
+          "text": "cylinder,",
+          "start": 1.93,
+          "end": 2.68
+        },
+        {
+          "text": "what",
+          "start": 2.68,
+          "end": 2.93
+        },
+        {
+          "text": "is",
+          "start": 2.93,
+          "end": 3.05
+        },
+        {
+          "text": "left",
+          "start": 3.05,
+          "end": 3.3
+        },
+        {
+          "text": "is",
+          "start": 3.36,
+          "end": 3.52
+        },
+        {
+          "text": "640",
+          "start": 3.52,
+          "end": 4.43
+        },
+        {
+          "text": "pi.",
+          "start": 4.43,
+          "end": 4.66
+        }
+      ]
+    },
+    {
+      "key": "trap",
+      "text_sha256": "fcbd00784e982f989745b06ed585f97d8cc62777e740431898a3f0b0e1c87997",
+      "file": "trap.wav",
+      "duration": 6.72,
+      "words": [
+        {
+          "text": "Here's",
+          "start": 0.1,
+          "end": 0.47
+        },
+        {
+          "text": "where",
+          "start": 0.47,
+          "end": 0.88
+        },
+        {
+          "text": "people",
+          "start": 0.88,
+          "end": 1.2
+        },
+        {
+          "text": "slip.",
+          "start": 1.2,
+          "end": 1.8
+        },
+        {
+          "text": "They",
+          "start": 1.8,
+          "end": 2.01
+        },
+        {
+          "text": "stop",
+          "start": 2.01,
+          "end": 2.32
+        },
+        {
+          "text": "at",
+          "start": 2.32,
+          "end": 2.46
+        },
+        {
+          "text": "the",
+          "start": 2.47,
+          "end": 2.7
+        },
+        {
+          "text": "cylinder",
+          "start": 2.7,
+          "end": 3.02
+        },
+        {
+          "text": "960",
+          "start": 3.43,
+          "end": 4
+        },
+        {
+          "text": "pi",
+          "start": 4.01,
+          "end": 4.18
+        },
+        {
+          "text": "and",
+          "start": 4.18,
+          "end": 4.6
+        },
+        {
+          "text": "pick",
+          "start": 4.6,
+          "end": 5.14
+        },
+        {
+          "text": "B,",
+          "start": 5.15,
+          "end": 5.34
+        },
+        {
+          "text": "but",
+          "start": 5.44,
+          "end": 5.57
+        },
+        {
+          "text": "the",
+          "start": 5.57,
+          "end": 5.8
+        },
+        {
+          "text": "cone",
+          "start": 5.8,
+          "end": 6.1
+        },
+        {
+          "text": "is",
+          "start": 6.11,
+          "end": 6.26
+        },
+        {
+          "text": "gone.",
+          "start": 6.26,
+          "end": 6.66
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "c77dcc5d05da9f2ea237427b34b599abdae382a235155e9c15601904f2001455",
+      "file": "answer.wav",
+      "duration": 7.339,
+      "words": [
+        {
+          "text": "640",
+          "start": 0.06,
+          "end": 1.11
+        },
+        {
+          "text": "pi.",
+          "start": 1.56,
+          "end": 1.77
+        },
+        {
+          "text": "That's",
+          "start": 1.82,
+          "end": 2.35
+        },
+        {
+          "text": "a",
+          "start": 2.35,
+          "end": 2.44
+        },
+        {
+          "text": "quick",
+          "start": 2.44,
+          "end": 2.86
+        },
+        {
+          "text": "check.",
+          "start": 2.98,
+          "end": 3.51
+        },
+        {
+          "text": "The",
+          "start": 3.55,
+          "end": 3.68
+        },
+        {
+          "text": "cone",
+          "start": 3.68,
+          "end": 3.92
+        },
+        {
+          "text": "takes",
+          "start": 3.92,
+          "end": 4.23
+        },
+        {
+          "text": "a",
+          "start": 4.24,
+          "end": 4.3
+        },
+        {
+          "text": "third",
+          "start": 4.3,
+          "end": 4.64
+        },
+        {
+          "text": "of",
+          "start": 4.64,
+          "end": 4.71
+        },
+        {
+          "text": "the",
+          "start": 4.71,
+          "end": 4.91
+        },
+        {
+          "text": "cylinder",
+          "start": 4.91,
+          "end": 5.43
+        },
+        {
+          "text": "so",
+          "start": 5.44,
+          "end": 5.6
+        },
+        {
+          "text": "you",
+          "start": 5.6,
+          "end": 5.76
+        },
+        {
+          "text": "keep",
+          "start": 5.76,
+          "end": 5.99
+        },
+        {
+          "text": "the",
+          "start": 6.08,
+          "end": 6.15
+        },
+        {
+          "text": "other",
+          "start": 6.15,
+          "end": 6.4
+        },
+        {
+          "text": "two",
+          "start": 6.4,
+          "end": 6.64
+        },
+        {
+          "text": "parts.",
+          "start": 6.64,
+          "end": 7.28
+        }
+      ]
+    }
+  ]
+}

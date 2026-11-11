@@ -26,11 +26,23 @@
 # (tests/fixtures/worked-examples/social) with --dry-run: placeholder approval, no claim, no post,
 # the MP4 uploaded for review.
 # Setup: docs/runbooks/worked-examples.md.
+#
+# The weekly batch (Karl's rulings 2026-11-11, "Weekly video pipeline v2", SCL-277) runs in the
+# same workflow on its own cron (Thursday 16:15 UTC): job `weekly` builds every example due next
+# Monday-Sunday (scripts/worked-examples/weekly.ts: select, voice in Chirp 3 HD Charon through the
+# per-line cache, layout/timing, composition), renders, limits and checks each, uploads them to the
+# private social-weekly bucket with 14-day signed links, claims them in posted.json and posts one
+# "Week <n> ready" message. The Supabase service-role key is read ONLY by the weekly job's steps
+# guarded to the scheduled run from main (tests/ci/social-weekly-secret-guard.test.ts). The daily
+# job below runs only on the daily cron, until Karl confirms the first weekly batch (then a
+# follow-up removes it); a week the weekly run delivered is already claimed, so the daily job finds
+# nothing in it.
 name: Worked example daily
 
 on:
   schedule:
     - cron: "0 17 * * *"
+    - cron: "15 16 * * 4"
   pull_request:
     paths:
       - .github/workflows/worked-example-daily.yml
@@ -61,6 +73,8 @@ env:
 
 jobs:
   daily:
+    # The daily cron, pull requests and manual runs; never the weekly cron.
+    if: github.event_name != 'schedule' || github.event.schedule == '0 17 * * *'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -191,3 +205,134 @@ jobs:
               echo "Nothing due today (or the selection failed: see 'Select today's example')."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  weekly:
+    # The weekly cron (the real batch) and pull requests (the dry run on the fixture tree).
+    if: github.event_name == 'pull_request' || github.event.schedule == '15 16 * * 4'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      WOUT: we-week
+    steps:
+      - name: Checkout (code)
+        uses: actions/checkout@v4
+
+      - name: Checkout social (content, full history)
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: social
+          path: social
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium (the build @playwright/test pins) and FFmpeg
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-noto-color-emoji
+          shell=$(find "$HOME/.cache/ms-playwright" -type f \( -name headless_shell -o -name chrome-headless-shell \) -path '*chromium_headless_shell-*' | head -1)
+          test -x "$shell"
+          echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
+
+      # The voice stage's TTS call goes through the identity LISA's Vertex jobs use (Karl's
+      # step-1 ruling 2026-11-11): lyceon-ci-eval by Workload Identity Federation, no stored key.
+      - name: Authenticate to GCP via Workload Identity Federation
+        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/480325859530/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: lyceon-ci-eval@replit-cop.iam.gserviceaccount.com
+
+      - name: Build next week (dry run on the fixture tree)
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec tsx scripts/worked-examples/weekly.ts build \
+            --content tests/fixtures/worked-examples/social --out "$WOUT" \
+            --dry-run --today 2026-10-29 --voice committed
+
+      - name: Build next week
+        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts build --content social --out "$WOUT"
+
+      # SCL-270: every finished mix is limited to at most -1 dBTP before any check; only the
+      # limited, checked video is uploaded.
+      - name: Render, final mix, layout check and MP4 check (each date)
+        run: |
+          set -euo pipefail
+          for d in $(pnpm exec tsx scripts/worked-examples/weekly.ts dates --out "$WOUT"); do
+            id=$(jq -r .id "$WOUT/$d/post.json")
+            ( cd "$WOUT/$d/composition" && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" check \
+              && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/$WOUT/$d/render/$id.mp4" )
+            pnpm exec tsx scripts/worked-examples/final-mix.ts "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"
+            pnpm exec tsx scripts/worked-examples/layout-check.ts "$WOUT/$d/composition"
+            pnpm exec tsx scripts/worked-examples/daily.ts verify --out "$WOUT/$d"
+          done
+
+      - name: Upload and announce (dry run)
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec tsx scripts/worked-examples/weekly.ts upload --out "$WOUT" --dry-run
+          pnpm exec tsx scripts/worked-examples/weekly.ts announce --out "$WOUT" --dry-run
+
+      - name: Upload to social-weekly (signed links, 14 days)
+        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts upload --out "$WOUT"
+
+      # The claim is pushed BEFORE the announcement: a failed push stops the run with nothing
+      # announced, and a re-run finds the week claimed and builds nothing.
+      - name: Claim the week in posted.json and push to social
+        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/worked-examples/weekly.ts claim --content social --out "$WOUT" --run "$GITHUB_RUN_ID"
+          cd social
+          if git diff --quiet -- content/worked-examples/posted.json; then echo "nothing delivered"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content/worked-examples/posted.json
+          git commit -m "Worked examples delivered: $(jq -r .week "../$WOUT/week.json") (run $GITHUB_RUN_ID)"
+          git push origin HEAD:social
+
+      - name: Announce "Week <n> ready" in #social
+        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts announce --out "$WOUT"
+
+      - name: Keep the run's videos and captions (30 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worked-examples-week
+          path: |
+            ${{ env.WOUT }}/week.json
+            ${{ env.WOUT }}/links.json
+            ${{ env.WOUT }}/*/*.mp4
+            ${{ env.WOUT }}/*/post.json
+            ${{ env.WOUT }}/*/captions.md
+          if-no-files-found: ignore
+          retention-days: 30
