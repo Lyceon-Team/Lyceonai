@@ -22,3 +22,7 @@ body { margin: 0; background: {{paper}}; color: {{ink}}; }
 .end .credit { position: absolute; right: {{safeRightInset}}px; bottom: {{creditBottom}}px; max-width: {{safeWidth}}px; font-family: "Inter", sans-serif; font-weight: 400; font-size: {{creditSize}}px; line-height: 1.3; color: {{inkSoft}}; text-align: right; }
 .logo { display: block; width: 280px; height: 280px; }
 .brand-name { display: block; font-family: "Poppins", sans-serif; font-weight: 700; font-size: {{outroBrandSize}}px; }
+/* The drawn figure (Karl, 2026-11-11): line drawing in the ink colour, labels in the notepad's hand. */
+.figure { position: absolute; left: 0; top: 0; overflow: visible; }
+.fig-stroke { fill: none; stroke: {{ink}}; stroke-linecap: round; stroke-linejoin: round; }
+.fig-label { position: absolute; transform: translate(-50%, -50%); font-family: "Caveat", cursive; font-weight: 700; color: {{ink}}; white-space: nowrap; line-height: 1; }

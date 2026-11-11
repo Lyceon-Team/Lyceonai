@@ -33,6 +33,7 @@ import {
   HARD_ONLY_FROM,
   contentProblems,
   hardOnlyProblem,
+  hookGoProblem,
   planSlotProblem,
 } from "../../shared/worked-examples/rules";
 import {
@@ -264,22 +265,29 @@ export function exampleProblems(
     const hard = hardOnlyProblem(q.question);
     if (hard) problems.push(hard);
   }
+  // Karl's ruling 2026-11-11: no standalone "Go" in the spoken hook (H7), from GO_RULE_FROM.
+  const go = hookGoProblem(e.content.hook.voice, e.content.post_on);
+  if (go) problems.push(go);
   const slot = planSlotProblem(
     e.content,
     loadPlan(contentRoot, e.content.post_on.slice(0, 7)),
   );
   if (slot) problems.push(slot);
-  try {
-    const manifest = loadVoice(contentRoot, e.dir);
-    problems.push(
-      ...voiceProblems(e.content, manifest, kit, (file) =>
-        readFileSync(join(contentRoot, e.dir, "voice", file)),
-      ),
-    );
-  } catch (err: unknown) {
-    if (!(err instanceof Error)) throw err;
-    problems.push(`voice: ${err.message}`);
-  }
+  // The weekly batch voices every example in the batch voice and caches it (voice-cache.ts; Karl's
+  // rulings 2026-11-11), so committed audio is optional: when present (the daily job's examples) it
+  // is checked; when absent the weekly run's checks apply to the cached lines.
+  if (existsSync(join(contentRoot, e.dir, "voice", "manifest.json")))
+    try {
+      const manifest = loadVoice(contentRoot, e.dir);
+      problems.push(
+        ...voiceProblems(e.content, manifest, kit, (file) =>
+          readFileSync(join(contentRoot, e.dir, "voice", file)),
+        ),
+      );
+    } catch (err: unknown) {
+      if (!(err instanceof Error)) throw err;
+      problems.push(`voice: ${err.message}`);
+    }
   return {
     problems: problems.map((p) => `${e.dir}: ${p}`),
     question: q.question,
