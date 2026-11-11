@@ -15,10 +15,9 @@
  * trade-offs:
  *  - v4 is immutable (§4.3). v5 composes it: the sentence, then v4's rendered text
  *    byte-for-byte.
- *  - The default since Karl's ruling of 2026-11-11 on the real G0-2 run: the latest for every
- *    variant and the fallback (prompt-registry.ts; pinned by
- *    tests/ci/lisa-prompt-default.contract.test.ts). Before that ruling it resolved by exact
- *    version only and production ran v3.
+ *  - Resolves by exact version only. It was the default from Karl's first ruling of 2026-11-11
+ *    (#1465) until his second that day, which made v6 (v5 + the help-level block) the default
+ *    (prompt-registry.ts; pinned by tests/ci/lisa-prompt-default.contract.test.ts).
  *  - The boundary is structural, not a filter: nothing is removed from the data, only
  *    delimited and stripped of anything that imitates our markers.
  */

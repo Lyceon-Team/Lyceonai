@@ -1,7 +1,7 @@
 #!/usr/bin/env pnpm exec tsx
 /**
  * G0-2 baseline: replay every teaching-quality case n times on the production default
- * (lisa-default-v5 since Karl's ruling of 2026-11-11; v3 before) at thinking
+ * (lisa-default-v6 since Karl's second ruling of 2026-11-11; v5 then v3 before) at thinking
  * budget 1024, and write each run to `tutor_eval_runs`.
  *
  * @spec [Doc-03D_V1.2 §3.2.1, §5.1, §5.3, §8.1;
@@ -71,7 +71,7 @@ function readOptions(): Options {
       "judge-model": { type: "string", default: JUDGE_MODEL_DEFAULT },
       // The prompt artifact every case is replayed on, by exact version (v4 is not the latest
       // for any variant, so it is only reachable this way).
-      "prompt-version": { type: "string", default: "lisa-default-v5" },
+      "prompt-version": { type: "string", default: "lisa-default-v6" },
       // Print pass rates and judge-vs-Karl agreement from the table; no replay, no model call.
       report: { type: "boolean", default: false },
     },
@@ -308,7 +308,12 @@ async function main(): Promise<void> {
         );
         verdicts[record.verdict] = (verdicts[record.verdict] ?? 0) + 1;
         if (record.class1.answer_leak) leaks += 1;
-        if (record.class1.tool_request_unanswered) toolFlags += 1;
+        // Only a case that asks for a tool can leave a tool request unanswered (2026-11-11).
+        if (
+          rubricFor(row.case_id)?.tool_request === true &&
+          record.class1.tool_request_unanswered
+        )
+          toolFlags += 1;
         caseUsd += record.tutor_usage.usd + (record.judge?.usage.usd ?? 0);
       }
       totalUsd += caseUsd;

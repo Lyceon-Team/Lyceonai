@@ -6,7 +6,7 @@
  *       rubrics held until the golds exist] | @implemented [2026-10-27]
  *
  * plain English:
- *   T1 the replay sends the worker's production config (lisa-default-v5 since 2026-11-11, thinking 1024,
+ *   T1 the replay sends the worker's production config (the default prompt, thinking 1024,
  *      temperature 0.3) and records it.
  *   T2 no rubric: the judge is never called and the run is unscored.
  *   T3 a planted bad reply (ignores the Desmos request, asks an algebra question) fails, and
@@ -42,7 +42,10 @@ import {
   isPostSubmitAtCutoff,
   memoryAsOfCutoff,
 } from "../eval/teaching-quality/import-case";
-import { buildGoldenEnvelope } from "./lisa-golden-set-helpers";
+import {
+  DEFAULT_PROMPT_VERSION,
+  buildGoldenEnvelope,
+} from "./lisa-golden-set-helpers";
 
 const BAD_REPLY =
   "Let's work it out by hand first. What do you get when you subtract 3 from both sides?";
@@ -54,6 +57,7 @@ const MUST = "acts on the Desmos request";
 const MUST_NOT = "asks an unrelated algebra question";
 const COMPLETE: CompleteTutorEvalRubric = {
   case_id: "G0-2-TEST",
+  tool_request: true,
   gold_response: "Open Desmos, graph both sides, and read the intersection.",
   judge_note: "Synthetic test rubric.",
   must: [MUST],
@@ -136,7 +140,7 @@ describe("G0-2 teaching-quality harness", () => {
     expect(call?.config.maxOutputTokens).toBe(2048);
     expect(call?.model).toBe("gemini-3.5-flash");
     expect(record).toMatchObject({
-      prompt_version: "lisa-default-v5",
+      prompt_version: DEFAULT_PROMPT_VERSION,
       thinking_budget: 1024,
       temperature: 0.3,
       top_p: 0.95,
@@ -430,6 +434,66 @@ describe("G0-2 teaching-quality harness", () => {
         visibleReply: reply,
       }),
     ).toBe("review_needed");
+  });
+
+  it("T7f the tool-request signals count only on a case that asks for a tool (Karl, 2026-11-11)", () => {
+    const flagged = {
+      answer_leak: false,
+      scan_blocked: false,
+      scan_classes: [],
+      tool_request_unanswered: true,
+    };
+    // A G0-2-04-shaped report: every item clear, but the judge says no tool request was addressed.
+    const report: TutorEvalJudgeResponse = {
+      must: [{ item: MUST, met: true, quote: "open Desmos" }],
+      must_not: [{ item: MUST_NOT, violated: false, quote: "" }],
+      gold_move: "no_gold",
+      tutor_act: "worked_step",
+      tool_request_addressed: false,
+    };
+    const reply = "Sure, open Desmos and type y = 2x + 3.";
+    const noToolCase: CompleteTutorEvalRubric = {
+      ...COMPLETE,
+      tool_request: false,
+      gold_response: null,
+    };
+    const toolCase: CompleteTutorEvalRubric = {
+      ...noToolCase,
+      tool_request: true,
+    };
+    // No tool request in the case: neither signal moves the verdict.
+    expect(
+      decideTutorEvalVerdict({
+        class1: flagged,
+        judge: report,
+        rubric: noToolCase,
+        visibleReply: reply,
+      }),
+    ).toBe("pass");
+    // The same report on a case that asks for a tool still fails.
+    expect(
+      decideTutorEvalVerdict({
+        class1: flagged,
+        judge: report,
+        rubric: toolCase,
+        visibleReply: reply,
+      }),
+    ).toBe("fail");
+    // And the heuristic alone still sends a tool case to review.
+    expect(
+      decideTutorEvalVerdict({
+        class1: flagged,
+        judge: { ...report, tool_request_addressed: true },
+        rubric: toolCase,
+        visibleReply: reply,
+      }),
+    ).toBe("review_needed");
+    // The shipped rubrics: only the Desmos cases carry a tool request.
+    expect(
+      TEACHING_QUALITY_RUBRICS.filter((r) => r.tool_request).map(
+        (r) => r.case_id,
+      ),
+    ).toEqual(["G0-2-01", "G0-2-02", "G0-2-03", "G0-2-06"]);
   });
 
   it("toolRequestUnanswered: no tool named and ends in a question", () => {

@@ -15,7 +15,7 @@
  *  - The wire's enums equal the shared ones; the migration's CHECKs list exactly the shared
  *    values; the seeded keyword map parses and detects.
  *  - Prompt (Karl's ruling on #1456, 2026-11-08: one line, v3 → v4 → v5 → v6): v6 is v5 plus
- *    the [HELP LEVEL] directive block, by exact version only; the default is v5 (Karl, 2026-11-11). With no level
+ *    the [HELP LEVEL] directive block, and is the default (Karl, 2026-11-11, second ruling; SCL-275 note). With no level
  *    sent v6 renders exactly as v5; v3–v5 never render the block; and v6 never tells LISA to give
  *    the full
  *    solution before submission.
@@ -50,7 +50,10 @@ import {
 import { buildSystemInstruction } from "../../apps/workers/tutor-orchestrator/src/routes/orchestrate";
 import { renderHelpLevelBlock } from "../../apps/workers/tutor-orchestrator/src/prompts/render-state-blocks";
 import { resolvePromptArtifact } from "../../apps/workers/tutor-orchestrator/src/prompts/prompt-registry";
-import { buildGoldenEnvelope } from "./lisa-golden-set-helpers";
+import {
+  DEFAULT_PROMPT_VERSION,
+  buildGoldenEnvelope,
+} from "./lisa-golden-set-helpers";
 
 const ROOT = join(__dirname, "../..");
 const MIGRATION = readFileSync(
@@ -353,7 +356,7 @@ describe("wire, migration and registry agree with the one definition", () => {
     expect(later).toEqual([]);
   });
 
-  it("v6 resolves by exact version only; the default is v5", () => {
+  it("v6 is the default for every variant, and resolves by exact version", () => {
     for (const variant of [
       "default",
       "scaffolded",
@@ -362,7 +365,7 @@ describe("wire, migration and registry agree with the one definition", () => {
       "strategy_first",
     ]) {
       expect(resolvePromptArtifact(variant, null).version).toBe(
-        "lisa-default-v5",
+        DEFAULT_PROMPT_VERSION,
       );
     }
     expect(resolvePromptArtifact("default", "lisa-default-v6").version).toBe(
