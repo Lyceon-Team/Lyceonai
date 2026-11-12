@@ -88,7 +88,7 @@ const post: ScheduledPostSpec = {
           {
             type: "p",
             text: "You send scores by test date, and a whole SAT is sent each time. You can't send your Math score from one day and your Reading and Writing score from another. The college builds the superscore from the full reports it receives.",
-            sources: [CB_SENDING_WEEKEND_SCORES],
+            sources: [CB_SENDING_WEEKEND_SCORES, CB_SUPERSCORE],
           },
           {
             type: "p",
@@ -108,7 +108,7 @@ const post: ScheduledPostSpec = {
           },
           {
             type: "p",
-            text: "November 7 scores come out today, November 20. That's also the registration deadline for the December 5 SAT. The late deadline is November 24.",
+            text: "November 7 scores are scheduled for release to students today, November 20. Today is also the regular registration deadline for the December 5 SAT, which closes at 11:59 PM Eastern time. The late deadline is Tuesday, November 24.",
             sources: [CB_SCORE_RELEASE_DATES, CB_SAT_DATES],
           },
           {

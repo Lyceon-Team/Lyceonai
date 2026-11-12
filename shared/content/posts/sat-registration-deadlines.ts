@@ -4,14 +4,15 @@
  * @spec [docs/Spec/Lyceon_Doc_10B.md §3A, §4, §5, §8; content/batches/2026-11-plan/PLAN.md]
  *       | @implemented [2026-11-11]
  *
- * plain English: four days before the Dec 5 test's regular deadline: every confirmed 2026-27
- * deadline, and what each one still lets you do (register, register late, change or cancel,
+ * plain English: four days before the Dec 5 test's regular deadline: the remaining 2026-27
+ * deadlines (Dec 5 onward), and what each one still lets you do (register, register late, change or cancel,
  * waitlist, photo and name changes). The registration steps themselves are the 2026-W43 post's;
  * this one links to it. Every fact is College Board's; no Lyceon claim.
  */
 import {
   CB_CANCEL_REGISTRATION,
   CB_CHANGE_REGISTRATION,
+  CB_INTERNATIONAL_FEES,
   CB_SAT_DATES,
   CB_TEST_FEES,
   CB_WAITLIST,
@@ -28,7 +29,7 @@ const post: ScheduledPostSpec = {
   page: {
     title: "SAT Registration Deadlines for 2026-27 | Lyceon",
     description:
-      "Every SAT registration deadline for the 2026-27 tests, and what you can still do after each one: register late, change, cancel or join the waitlist.",
+      "SAT registration deadlines for the remaining 2026-27 tests, and what you can still do after each one: register late, change, cancel or join the waitlist.",
     h1: "SAT Registration Deadlines",
     intro: [
       {
@@ -39,12 +40,13 @@ const post: ScheduledPostSpec = {
     ],
     sections: [
       {
-        heading: "Deadlines for every confirmed test",
+        heading: "Deadlines for the remaining 2026-27 tests",
         level: 2,
         blocks: [
           {
             type: "table",
-            caption: "SAT weekend registration deadlines, 2026-27",
+            caption:
+              "SAT weekend registration deadlines, remaining 2026-27 tests",
             head: [
               "Test date",
               "Registration deadline",
@@ -72,8 +74,8 @@ const post: ScheduledPostSpec = {
         blocks: [
           {
             type: "p",
-            text: "Registering by the regular deadline costs $68. Eligible students can register for free with a fee waiver. If you need to borrow a testing device from College Board, register and request it at least 30 days before test day. That's earlier than the registration deadline.",
-            sources: [CB_TEST_FEES, CB_SAT_DATES],
+            text: "In the U.S., registering by the regular deadline costs $68. Outside the U.S., there's also a $43 international fee. Eligible students can register for free with a fee waiver. If you need to borrow a testing device from College Board, register and request it at least 30 days before test day. That's earlier than the registration deadline.",
+            sources: [CB_TEST_FEES, CB_INTERNATIONAL_FEES, CB_SAT_DATES],
           },
           {
             type: "links",
@@ -140,12 +142,12 @@ const post: ScheduledPostSpec = {
         ],
       },
       {
-        heading: "No seats near you?",
+        heading: "No seats near you when you register?",
         level: 2,
         blocks: [
           {
             type: "p",
-            text: "If no test center has seats within your search distance when you register, you can join the waitlist. Students in the U.S. and most U.S. territories can join. To join, you pay the registration fee up front. The waitlist itself doesn't cost extra. You also set how far you'd be willing to travel, up to 25 miles.",
+            text: "The waitlist is offered during registration: if no test center has seats within your search distance, you can join it instead of picking a center. Students in the U.S. and most U.S. territories can join. To join, you pay the registration fee up front. The waitlist itself doesn't cost extra. You also set how far you'd be willing to travel, up to 25 miles.",
             sources: [CB_WAITLIST, CB_TEST_FEES],
           },
           {

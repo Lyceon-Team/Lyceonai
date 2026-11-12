@@ -35,7 +35,7 @@ const post: ScheduledPostSpec = {
     intro: [
       {
         type: "p",
-        text: "Scores from the November 7 SAT come out on Friday, November 20. Beyond the total, the report shows how your score compares with other test takers and which content areas went well.",
+        text: "Scores from the November 7 SAT are scheduled for release to students on Friday, November 20. Schools get them in College Board's score reporting portal on Monday, November 23. Beyond the total, the report shows how your score compares with other test takers and which content areas went well.",
         sources: [CB_SCORE_RELEASE_DATES, CB_WHAT_SCORES_MEAN],
       },
     ],
@@ -64,7 +64,7 @@ const post: ScheduledPostSpec = {
             type: "ul",
             items: [
               "A score range. It shows how much your score would likely vary if you took the test again on another day under the same conditions.",
-              "Your percentile: the share of test takers who scored at or below you. If you're in the 70th percentile, 70% scored at or below your score.",
+              "Your percentile: the share of a comparison group of test takers who scored at or below you. If you're in the 70th percentile, 70% of that group scored at or below your score.",
               "The average score of all SAT test takers over the last three years.",
             ],
             sources: [CB_UNDERSTANDING_SCORES_PDF, CB_WHAT_SCORES_MEAN],
@@ -116,7 +116,7 @@ const post: ScheduledPostSpec = {
           {
             type: "ul",
             items: [
-              "Percentiles for your state and your country, as well as for all test takers.",
+              "Percentiles for your country and for all test takers, plus your state if you test in the U.S. or a U.S. territory.",
               "Your scores next to the average for your school, district and state, where these apply.",
               "Whether you met College Board's college and career readiness benchmark in each section.",
               "Your performance in each domain across seven score bands, with example questions from the band above yours.",

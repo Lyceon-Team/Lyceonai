@@ -337,6 +337,12 @@ export const CB_CANCEL_REGISTRATION: Source = {
   url: "https://satsuite.collegeboard.org/sat/registration/change-cancel/canceling-registration",
 };
 
+/** SAT fees outside the U.S.: the $68 registration fee plus a $43 international fee (read 2026-11-12). */
+export const CB_INTERNATIONAL_FEES: Source = {
+  label: "College Board: SAT international fees",
+  url: "https://satsuite.collegeboard.org/sat/registration/international-testing/fees",
+};
+
 /** The SAT waitlist: who can join, the radius, no extra fee, placement until 3 days before, refunds. */
 export const CB_WAITLIST: Source = {
   label: "College Board: SAT waitlist",
