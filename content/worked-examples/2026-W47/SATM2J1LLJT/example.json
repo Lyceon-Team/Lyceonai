@@ -1,0 +1,42 @@
+{
+  "question_id": "SATM2J1LLJT",
+  "skill_code": "Nonlinear Functions",
+  "post_on": "2026-11-22",
+  "hook": {
+    "type": "contrarian",
+    "line": "Most people say q is −10. Are they right?",
+    "voice": "Most people get this one wrong. Watch closely."
+  },
+  "question_voice": "A parabola that opens down, written the long way, and they want the height of its peak.",
+  "signature_move": "Find the vertex: x = −b ÷ 2a, then plug it back in.",
+  "steps": [
+    {
+      "notepad": "x = −12 ÷ (2 · −2) = 3",
+      "voice": "The vertex is at minus b over two a. Minus twelve over minus four. Three."
+    },
+    {
+      "notepad": "h(3) = −18 + 36 − 10",
+      "voice": "Plug three back in. Minus eighteen, plus thirty-six, minus ten."
+    },
+    {
+      "notepad": "h(3) = 8 → q = 8",
+      "voice": "That's eight. In vertex form, q is the height of the vertex."
+    }
+  ],
+  "answer": {
+    "letter": "B",
+    "notepad": "Answer: B) 8",
+    "voice": "q is eight. That's B. Quick check: the parabola opens down, so its top value, eight, beats h of zero, which is minus ten."
+  },
+  "trap": {
+    "summary": "Reading the constant term, −10, as q.",
+    "notepad": [
+      "q = −10 → A ✗",
+      "−10 is h(0), not the vertex",
+      "q = h(p) = 8 ✓"
+    ],
+    "voice": "Here's where people slip. They see minus ten at the end and call it q. That's A. But minus ten is where the graph crosses the y-axis, not the vertex."
+  },
+  "check": "Expand −2(x − 3)² + 8: −2x² + 12x − 18 + 8 = −2x² + 12x − 10.",
+  "takeaway": "In vertex form, q is the y-value at the vertex."
+}

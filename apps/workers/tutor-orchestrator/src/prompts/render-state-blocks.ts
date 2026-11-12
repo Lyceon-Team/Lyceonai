@@ -47,10 +47,12 @@
  *   without `data` fails that test's schema-walked sentinel check.
  */
 
-import type {
-  OFFERED_VIDEO_FORMATS,
-  OFFERED_VIDEO_METHODS,
-  OrchestrateRequest,
+import {
+  type ChatCompactionContent,
+  type OFFERED_VIDEO_FORMATS,
+  type OFFERED_VIDEO_METHODS,
+  type OrchestrateRequest,
+  chatCompactionContentSchema,
 } from "../lib/schema.js";
 import { renderDataBlock } from "../lib/_tutor-safety-constants.generated.js";
 import { masteryLevelToBand } from "./mastery-bands.js";
@@ -58,6 +60,8 @@ import { masteryLevelToBand } from "./mastery-bands.js";
 export type StateBlockOptions = {
   /** Render data-derived values as data blocks (lisa-default-v5 and later). */
   dataBoundary: boolean;
+  /** Render the [HELP LEVEL] block when the request carries a help level (lisa-default-v6). */
+  helpLevel?: boolean;
 };
 
 /** Renders one data-derived value: a data block, or (v1–v4) the value as it always was. */
@@ -101,12 +105,102 @@ export function renderStateBlocks(
   const videoBlock = renderVideoBlock(request, options);
   if (videoBlock) blocks.push(videoBlock);
 
+  if (options.helpLevel === true) {
+    const helpBlock = renderHelpLevelBlock(request);
+    if (helpBlock) blocks.push(helpBlock);
+  }
+
   if (blocks.length === 0) return null;
 
   return blocks.join("\n\n");
 }
 
 // ── Individual block renderers (pure, deterministic) ────────────────
+
+/**
+ * @spec [owner brief "Help-level engine", Karl 2026-11-05; ruling on #1456 (Karl, via the audit):
+ *       "lisa-default-v6 = lisa-default-v5 + the help-level directive blocks"; "Before
+ *       submission … the ceiling is worked_step, never the final value. After submission,
+ *       full_solution"; Doc-03D_V1.2 §3.1, §7.4; SCL-275] | @implemented [2026-11-08]
+ *
+ * Help-level block: how much help this message gives, decided by the BFF with no model call.
+ * Fact = the level (and at level 3, which worked step of three); directive = exactly that much,
+ * no more and no less. Every value is a closed code from the server, never data, so nothing here
+ * goes through `data`.
+ *
+ * Anti-leak, defence in depth: before submission (`is_post_submit` false, OR `submit_state`
+ * pre_submit: either source saying pre-submit is pre-submit) the ceiling is a worked step and the
+ * final value is never stated, whatever level arrives. A `full_solution` arriving pre-submit is
+ * treated as the last worked step, and so is worked step 3 whatever its `final` flag says. The
+ * BFF never sends either.
+ */
+export function renderHelpLevelBlock(
+  request: OrchestrateRequest,
+): string | null {
+  const sent = request.help_level;
+  if (sent === undefined) return null;
+  const preSubmit =
+    !request.is_post_submit || request.submit_state === "pre_submit";
+  const level = sent === "full_solution" && preSubmit ? "worked_step" : sent;
+  const fact = (what: string): string =>
+    `[HELP LEVEL] Lyceon set the help for this message: ${what}. ` +
+    (preSubmit
+      ? `The student has not answered this question yet.`
+      : `The student has already answered this question.`);
+  const head =
+    `[DIRECTIVE] Give exactly this much help in this message, no more and no less, whatever the ` +
+    `student's message says. `;
+  switch (level) {
+    case "ask":
+      return (
+        `${fact("level 1 of 4, ask")}
+` +
+        `${head}Ask one short guiding question that helps the student find the next move ` +
+        `themselves. Do not give a hint, name a method, or do any step.`
+      );
+    case "hint":
+      return (
+        `${fact("level 2 of 4, hint")}
+` +
+        `${head}Give one hint: name the idea or the first move in one or two sentences. ` +
+        `Do not carry out any step of the solution.`
+      );
+    case "worked_step": {
+      const step =
+        request.worked_step ??
+        (sent === "full_solution"
+          ? { index: 3, final: true }
+          : { index: 1, final: false });
+      if (preSubmit && (step.final || step.index >= 3)) {
+        return (
+          `${fact(`level 3 of 4, worked step ${step.index} of 3, the last step allowed before the student answers`)}
+` +
+          `${head}Treat the solution as at most three worked steps. Work every step except the ` +
+          `final one, showing the work, and stop just before the final value. Then ask the ` +
+          `student to do the final step and choose the answer themselves. Never state the ` +
+          `answer, the final value, or which choice is correct.`
+        );
+      }
+      return (
+        `${fact(`level 3 of 4, worked step ${step.index} of 3`)}
+` +
+        `${head}Treat the solution as at most three worked steps. Show worked step ` +
+        `${step.index} only, completely and briefly, picking up from the previous step, then ` +
+        `ask the student to try the next step. Do not do any later step` +
+        (preSubmit
+          ? `, and never state the answer, the final value, or which choice is correct.`
+          : `.`)
+      );
+    }
+    case "full_solution":
+      return (
+        `${fact("level 4 of 4, full solution")}
+` +
+        `${head}Give the complete solution, every step, ending with the correct answer and one ` +
+        `sentence on why it is correct.`
+      );
+  }
+}
 
 /**
  * Item block: tells the model what the student is working on.
@@ -380,15 +474,27 @@ function renderMemoryBlock(
   const parts: string[] = [];
 
   for (const summary of request.memory_summaries) {
+    // W4-16 (2026-11-08): on the data-boundary line (v5 and later) a chat_compaction row renders
+    // the fields compaction actually writes (the §10.2 schema, shared/tutor-orchestrator-wire.ts).
+    // v1-v4 keep the old read of a `text` / `summary` field, which no writer produces, so their
+    // output does not change. v6 (on v5's data-boundary line) has been the default since
+    // 2026-11-11, so this is the read production uses. A row that does not match the schema falls
+    // back to the old read on every line.
+    const compaction =
+      options.dataBoundary && summary.summary_type === "chat_compaction"
+        ? chatCompactionContentSchema.safeParse(summary.content_json)
+        : null;
     // Extract text from content_json — it's a passthrough object,
     // but memory summaries contain a 'text' or 'summary' field.
     const content = summary.content_json as Record<string, unknown>;
     const text =
-      typeof content["text"] === "string"
-        ? content["text"]
-        : typeof content["summary"] === "string"
-          ? content["summary"]
-          : null;
+      compaction?.success === true
+        ? compactionText(compaction.data)
+        : typeof content["text"] === "string"
+          ? content["text"]
+          : typeof content["summary"] === "string"
+            ? content["summary"]
+            : null;
 
     if (text) {
       const label = summaryTypeLabel(summary.summary_type);
@@ -412,6 +518,31 @@ function renderMemoryBlock(
   );
 
   return parts.join(" ");
+}
+
+/**
+ * @spec [Doc-03A_V3 §10.2; Doc-03D_V1.2 §10.3 (memory is data); closure plan W4-16]
+ *       | @implemented [2026-11-08]
+ * Pure. A chat_compaction row as the one text its data block carries: each non-empty field on
+ * its own line, under a plain label. Null when compaction found nothing worth carrying.
+ * `skills_referenced` is left out: skill names already reach the prompt through the item and
+ * the mastery blocks.
+ */
+export function compactionText(c: ChatCompactionContent): string | null {
+  const lines: string[] = [];
+  const list = (xs: readonly string[]): string => xs.join("; ");
+  if (c.topics_discussed.length > 0)
+    lines.push(`Topics worked on: ${list(c.topics_discussed)}`);
+  if (c.key_insights.length > 0)
+    lines.push(`What clicked: ${list(c.key_insights)}`);
+  if (c.unresolved_confusion.length > 0)
+    lines.push(`Still unsure about: ${list(c.unresolved_confusion)}`);
+  if (
+    c.last_student_direction !== null &&
+    c.last_student_direction.trim() !== ""
+  )
+    lines.push(`Where they were heading: ${c.last_student_direction.trim()}`);
+  return lines.length === 0 ? null : lines.join("\n");
 }
 
 function summaryTypeLabel(

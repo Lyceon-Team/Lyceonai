@@ -1,6 +1,7 @@
 #!/usr/bin/env pnpm exec tsx
 /**
- * G0-2 baseline: replay every teaching-quality case n times on lisa-default-v3 at thinking
+ * G0-2 baseline: replay every teaching-quality case n times on the production default
+ * (lisa-default-v6 since Karl's second ruling of 2026-11-11; v5 then v3 before) at thinking
  * budget 1024, and write each run to `tutor_eval_runs`.
  *
  * @spec [Doc-03D_V1.2 §3.2.1, §5.1, §5.3, §8.1;
@@ -22,7 +23,7 @@
  * Usage:
  *   NODE_USE_ENV_PROXY=1 DATABASE_URL=... pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts \
  *     [--runs 5] [--batch <uuid>] [--case G0-2-03] [--judge-model gemini-3.1-pro-preview]
- *     [--prompt-version lisa-default-v3 | lisa-default-v4] [--report]
+ *     [--prompt-version lisa-default-v3 | … | lisa-default-v6] [--report]
  *
  * Vertex credentials are attached by the egress proxy or ADC; nothing is read from the
  * environment for them.
@@ -70,7 +71,7 @@ function readOptions(): Options {
       "judge-model": { type: "string", default: JUDGE_MODEL_DEFAULT },
       // The prompt artifact every case is replayed on, by exact version (v4 is not the latest
       // for any variant, so it is only reachable this way).
-      "prompt-version": { type: "string", default: "lisa-default-v3" },
+      "prompt-version": { type: "string", default: "lisa-default-v6" },
       // Print pass rates and judge-vs-Karl agreement from the table; no replay, no model call.
       report: { type: "boolean", default: false },
     },
@@ -261,6 +262,16 @@ async function main(): Promise<void> {
         },
         scanCorrectAnswer: row.scan_correct_answer,
       };
+      // lisa-default-v6 renders its help block only from `help_level`; a case without one
+      // replays as v5 and reads as a v6 result. Refuse it (owner brief 2026-11-11).
+      if (
+        promptVersion === "lisa-default-v6" &&
+        parsed.data.help_level === undefined
+      ) {
+        throw new Error(
+          `${row.case_id}: stored request has no help_level; re-import it with import-case.ts`,
+        );
+      }
       const done = await client.query<{ run_index: number }>(
         `SELECT run_index FROM public.tutor_eval_runs WHERE batch_id = $1 AND case_id = $2`,
         [batchId, row.case_id],
@@ -297,7 +308,12 @@ async function main(): Promise<void> {
         );
         verdicts[record.verdict] = (verdicts[record.verdict] ?? 0) + 1;
         if (record.class1.answer_leak) leaks += 1;
-        if (record.class1.tool_request_unanswered) toolFlags += 1;
+        // Only a case that asks for a tool can leave a tool request unanswered (2026-11-11).
+        if (
+          rubricFor(row.case_id)?.tool_request === true &&
+          record.class1.tool_request_unanswered
+        )
+          toolFlags += 1;
         caseUsd += record.tutor_usage.usd + (record.judge?.usage.usd ?? 0);
       }
       totalUsd += caseUsd;

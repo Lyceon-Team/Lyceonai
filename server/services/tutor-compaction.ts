@@ -49,33 +49,25 @@ import { z } from "zod";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import { compactConversation } from "../lib/tutor-orchestrator-client";
-import { recentMessageSchema } from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
+import {
+  CHAT_COMPACTION_LIMITS,
+  type ChatCompactionContent,
+  chatCompactionContentSchema,
+  recentMessageSchema,
+} from "../../apps/workers/tutor-orchestrator/src/lib/_tutor-orchestrator-wire.generated";
 import { TutorConfig } from "./tutor-config";
 
 // ── §10.2 chat_compaction content_json Zod schema ─────────────────────
 
-const MAX_KEY_INSIGHTS = 5;
-const MAX_UNRESOLVED_CONFUSION = 5;
-const MAX_TOPICS_DISCUSSED = 10;
-const MAX_ENTRY_LENGTH = 200;
+// The schema lives in the shared wire (shared/tutor-orchestrator-wire.ts), where the worker's
+// memory block reads it too (closure plan W4-16). Re-exported for this module's callers.
+export { chatCompactionContentSchema };
+export type { ChatCompactionContent };
 
-const boundedStringArray = (maxItems: number) =>
-  z.array(z.string().max(MAX_ENTRY_LENGTH)).max(maxItems);
-
-export const chatCompactionContentSchema = z.object({
-  summary_version: z.literal("1.0"),
-  conversation_id: z.string().uuid(),
-  source_window_start: z.string(),
-  source_window_end: z.string(),
-  turns_compacted: z.number().int().nonnegative(),
-  topics_discussed: boundedStringArray(MAX_TOPICS_DISCUSSED),
-  skills_referenced: z.array(z.string()),
-  key_insights: boundedStringArray(MAX_KEY_INSIGHTS),
-  unresolved_confusion: boundedStringArray(MAX_UNRESOLVED_CONFUSION),
-  last_student_direction: z.string().nullable(),
-});
-
-export type ChatCompactionContent = z.infer<typeof chatCompactionContentSchema>;
+const MAX_KEY_INSIGHTS = CHAT_COMPACTION_LIMITS.keyInsights;
+const MAX_UNRESOLVED_CONFUSION = CHAT_COMPACTION_LIMITS.unresolvedConfusion;
+const MAX_TOPICS_DISCUSSED = CHAT_COMPACTION_LIMITS.topicsDiscussed;
+const MAX_ENTRY_LENGTH = CHAT_COMPACTION_LIMITS.entryLength;
 
 // ── Result type (no throws for expected failures per Coding Standards §13) ──
 
@@ -84,7 +76,6 @@ type CompactionResult =
   | { ok: false; reason: string };
 
 // ── Structured extraction prompt ──────────────────────────────────────
-
 
 // ── Core compaction function ──────────────────────────────────────────
 

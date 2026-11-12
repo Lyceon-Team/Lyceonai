@@ -1,0 +1,104 @@
+{
+  "question_id": "SATM2C6PXLX",
+  "skill_code": "Area and Volume",
+  "post_on": "2026-11-04",
+  "hook": {
+    "type": "puzzle",
+    "line": "A cone carved out of a cylinder. What volume is left?",
+    "voice": "Bet you can't get this one in thirty seconds."
+  },
+  "question_voice": "A cylinder with a cone scooped out of it. We want what's left.",
+  "signature_move": "Write the formula first, then substitute before you compute.",
+  "steps": [
+    {
+      "notepad": "cylinder: πr²h = 960π",
+      "voice": "Start with the cylinder. Pi r squared h: sixty-four times fifteen, nine sixty pi."
+    },
+    {
+      "notepad": "cone: ⅓πr²h = 320π",
+      "voice": "The cone is one third of that same cylinder. Three twenty pi."
+    },
+    {
+      "notepad": "960π − 320π = 640π",
+      "voice": "Now take the cone away from the cylinder. What is left is six forty pi."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "A) 640π",
+    "voice": "Six forty pi. That's A. Quick check: the cone takes a third of the cylinder, so you keep the other two parts."
+  },
+  "trap": {
+    "summary": "Stopping at the cylinder's volume, 960π, or keeping the cone's, 320π.",
+    "notepad": [
+      "960π ✗ the whole cylinder",
+      "320π ✗ that's the cone",
+      "keep what's LEFT ✓"
+    ],
+    "voice": "Here's where people slip. They stop at the cylinder, nine sixty pi, and pick B. But the cone is gone."
+  },
+  "check": "Check the units: area is squared, volume is cubed.",
+  "takeaway": "Removed means subtract: whole minus the part taken out.",
+  "figure": {
+    "box": {
+      "x": [
+        -10,
+        13
+      ],
+      "y": [
+        -5,
+        18
+      ]
+    },
+    "shapes": [
+      {
+        "kind": "cylinder",
+        "base": [
+          0,
+          0
+        ],
+        "r": 8,
+        "h": 15,
+        "ry": 2.5
+      },
+      {
+        "kind": "segment",
+        "from": [
+          0,
+          0
+        ],
+        "to": [
+          8,
+          0
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "8",
+        "at": [
+          4,
+          -4
+        ]
+      },
+      {
+        "kind": "label",
+        "text": "15",
+        "at": [
+          10.6,
+          7.5
+        ]
+      },
+      {
+        "kind": "cone",
+        "base": [
+          0,
+          0
+        ],
+        "r": 8,
+        "h": 15,
+        "ry": 2.5,
+        "when": "step-2"
+      }
+    ]
+  }
+}

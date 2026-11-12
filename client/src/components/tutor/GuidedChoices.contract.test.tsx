@@ -355,10 +355,21 @@ describe("a tap sends the exact label with its intent", () => {
     });
   });
 
-  it("a video choice with no video: the fixed sentence, and the choices open again", async () => {
+  // @spec [owner brief "Help-level engine", Karl 2026-11-05, rule 6; SCL-275]: the choices
+  // endpoint hides a video choice that would serve no video.
+  it("no video for the item: the video choices are not shown", async () => {
     library([]);
     renderPanel(seedReviewItem(MATH_QUESTION));
-    fireEvent.click(await screen.findByTestId("tutor-choice-video_desmos"));
+    await screen.findByTestId("tutor-guided-choices");
+    expect(choiceNames()).toEqual(["Walk me through it"]);
+  });
+
+  it("a video withdrawn after the panel loaded: the fixed sentence, and the choices open again", async () => {
+    library([DESMOS_VIDEO]);
+    renderPanel(seedReviewItem(MATH_QUESTION));
+    const choice = await screen.findByTestId("tutor-choice-video_desmos");
+    library([]);
+    fireEvent.click(choice);
     await screen.findByText(/I don't have a video for this skill yet/);
     await waitFor(() =>
       expect(

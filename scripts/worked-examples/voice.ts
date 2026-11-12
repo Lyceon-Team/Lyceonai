@@ -195,10 +195,15 @@ type Spoken = {
  *   * kokoro (hyperframes tts, espeak phonemizer): "Lysee-ahn", see the header.
  *   * chatterbox (the D3 video pilot, scripts/video-pilots/chatterbox/): "Lie-see-on"; its plain
  *     spelling is heard as "Lycian" (owner brief "Video tools pilot" D3, Karl, 2026-11-02).
+ *   * chirp3-hd (Cloud Text-to-Speech Chirp 3 HD, the weekly batch voice A, Orus): "Lye-see-ahn",
+ *     sent as the text with NO IPA custom pronunciation. Karl's pick 2026-11-11 from three clips of
+ *     "Lyceon SAT Prep." in Orus (IPA /ˈlaɪsiɑn/, "Lie-see-on", "Lye-see-ahn"): clip 3. Orus did not
+ *     honour the IPA in the bake-off (SCL-277).
  */
 export const BRAND_RESPELLINGS = {
   kokoro: "Lysee-ahn",
   chatterbox: "Lie-see-on",
+  "chirp3-hd": "Lye-see-ahn",
 } as const;
 export type BrandEngine = keyof typeof BRAND_RESPELLINGS;
 
@@ -371,7 +376,7 @@ export function normaliseLoudness(
   return measured;
 }
 
-function transcribeAndCheck(
+export function transcribeAndCheck(
   v: VoiceSettings,
   line: ScriptLine,
   rawWav: string,
@@ -508,6 +513,10 @@ export function voiceLine(
   const profile = v.profiles[profileId];
   const fallback = v.profiles[v.fallback_profile];
   if (!profile) throw new Error(`no voice profile ${profileId} in voice.json`);
+  if (profile.engine === "chirp3-hd")
+    throw new Error(
+      `${profileId} is a Chirp 3 HD voice: the weekly run voices and caches it (voice-cache.ts), not this tool`,
+    );
   if (!fallback || fallback.engine !== "kokoro")
     throw new Error("the fallback voice must be a kokoro profile");
   let spoken: Spoken;

@@ -92,7 +92,10 @@ import {
   pilotWindow,
   scriptOrderProblem,
 } from "../../shared/qotd/breakdown";
-import { scriptProblems } from "../../shared/worked-examples/rules";
+import {
+  hookGoProblem,
+  scriptProblems,
+} from "../../shared/worked-examples/rules";
 import { qotdRowSchema, toArchiveResponse } from "../../shared/qotd/projection";
 import {
   escapeMrkdwn,
@@ -266,8 +269,9 @@ export async function buildBreakdown(
   if (order) return skipped(date, postedOn, "order_mismatch", [order]);
 
   const kit = loadKit();
-  const content = scriptProblems(script, question);
-  const copy = breakdownCopy(day, postedOn, kit.track.credit);
+  const go = hookGoProblem(script.hook.voice, script.qotd_date);
+  const content = [...scriptProblems(script, question), ...(go ? [go] : [])];
+  const copy = breakdownCopy(day, postedOn);
   if (content.length > 0 || !copy.ok)
     return skipped(date, postedOn, "content_rules", [
       ...content,
@@ -563,11 +567,6 @@ export type BreakdownPlan =
   | { kind: "video"; file: string; steps: WorkedExampleSlackStep[] }
   | { kind: "fallback"; slide: string | null; text: string };
 
-/** The review line under the label (Karl's ruling: his manual posting is the approval). */
-export function breakdownReviewLine(m: Built): string {
-  return `For review: yesterday's QOTD (${m.qotd_date}) broken down. Karl posts by hand; nothing is published automatically.`;
-}
-
 /**
  * The post for a manifest (or none: the build crashed). `slideExists` says whether the QOTD run
  * left yesterday's answer slide in the assets folder.
@@ -591,10 +590,7 @@ export function breakdownPlan(
     return {
       kind: "video",
       file: manifest.video,
-      steps: videoSetSlackSteps({
-        ...manifest,
-        review: breakdownReviewLine(manifest),
-      }),
+      steps: videoSetSlackSteps(manifest),
     };
   const slide = answerSlideFile(manifest.qotd_date);
   const has = slideExists(slide);
