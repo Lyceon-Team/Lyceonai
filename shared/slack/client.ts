@@ -89,6 +89,18 @@ export function escapeMrkdwn(text: string): string {
     .replace(/`(?=`)/g, "`​");
 }
 
+/**
+ * escapeMrkdwn undone: the text a reader copies out of a Slack message, for a file written from
+ * the same text (the worked examples' captions.md record, whose YouTube link carries "&").
+ */
+export function unescapeMrkdwn(text: string): string {
+  return text
+    .replace(/`\u200b/g, "`")
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
+}
+
 export type FetchLike = (
   input: string,
   init: {

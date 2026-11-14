@@ -76,8 +76,15 @@ import { plainMathText, type PlainMathOptions } from "../qotd/plain-math";
 import { QOTD_SECTION_NAME } from "../qotd/social";
 import { capTiktokTitle } from "../qotd/tiktok";
 import {
+  funnelPhase,
+  youtubeShortsCtaLine,
+  youtubeShortsLink,
+} from "../social/funnel";
+import {
   nextSatTest,
+  SOCIAL_COMMENT_LINE,
   socialFacebookCaption,
+  socialHashtags,
   socialInstagramCaption,
   socialKeywords,
   socialTiktokCaption,
@@ -746,6 +753,107 @@ export function workedExampleKeywords(
     QOTD_SECTION_NAME[q.section],
     q.domain,
   );
+}
+
+/**
+ * The YouTube Shorts block (Karl, 2026-11-14: "add the YouTube Shorts block (title + description,
+ * no answer, utm_source=youtube&utm_medium=shorts) to each day's Slack reply from W48").
+ *
+ * @spec [Karl, 2026-11-14 (above); SCL-262 / SCL-265 (the captions' headline and hashtags, one
+ *       builder); owner brief "One funnel for every social post" (the "Free SAT practice:" line,
+ *       shared/social/funnel.ts); Public Disclosure Doctrine 1 (industry-standard Shorts copy:
+ *       a title with #Shorts, a description with the headline, a comment prompt, a link and
+ *       hashtags)] | @implemented [2026-11-14]
+ *
+ * plain English: from YOUTUBE_SHORTS_FROM (Monday of 2026-W48) every worked example's post
+ * carries a YouTube title (the worked-example title plus " #Shorts", at most 100 characters,
+ * YouTube's limit; without the tag if it would not fit) and a description: the headline, "Comment
+ * your answer 👇", the funnel's call to action with the tagged https link
+ * (lyceon.ai/start?utm_source=youtube&utm_medium=shorts&utm_campaign=worked_example), and the
+ * captions' hashtags. Nothing in it can give the answer (H5), and the link is the only one.
+ * Earlier posts carry no block, so a delivered week re-sent by recaption is unchanged.
+ */
+export const YOUTUBE_SHORTS_FROM = "2026-11-23";
+export const YOUTUBE_TITLE_MAX = 100;
+export const YOUTUBE_SHORTS_TAG = "#Shorts";
+
+/** True when a post on this date carries the YouTube Shorts block. */
+export function hasYoutubeShorts(postOn: string): boolean {
+  return postOn >= YOUTUBE_SHORTS_FROM;
+}
+
+/** "<title> #Shorts", or the title alone when the tag would pass 100 characters. */
+export function workedExampleYoutubeTitle(title: string): string {
+  const tagged = `${title} ${YOUTUBE_SHORTS_TAG}`;
+  return tagged.length <= YOUTUBE_TITLE_MAX ? tagged : title;
+}
+
+/** Headline / comment prompt / the call to action with the tagged link / hashtags. */
+export function workedExampleYoutubeDescription(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+  topic: string,
+): string {
+  const c = captionContext(example, q, topic);
+  return [
+    c.headline,
+    SOCIAL_COMMENT_LINE,
+    youtubeShortsCtaLine(funnelPhase(example.post_on), "worked_example"),
+    socialHashtags(c.test, c.section),
+  ].join("\n\n");
+}
+
+/**
+ * The YouTube block against its headline and question: the title within 100 characters and
+ * opening with the headline; the description opening with the headline and carrying exactly one
+ * link, the tagged Shorts link; with that link taken out, nothing Karl would not paste
+ * (copyBlockProblems) and no other link; no claim about people, statistic or banned phrase; and
+ * no answer (H5) in the title or anywhere in the description outside the fixed call to action.
+ */
+export function youtubeProblems(
+  youtube: { title: string; description: string },
+  headline: string,
+  q: HookQuestion,
+): string[] {
+  const out: string[] = [];
+  const { title, description } = youtube;
+  if (title.length > YOUTUBE_TITLE_MAX)
+    out.push(
+      `youtube title is ${title.length} characters (at most ${YOUTUBE_TITLE_MAX})`,
+    );
+  if (!title.startsWith(headline))
+    out.push(`youtube title must open with the headline "${headline}"`);
+  if (description.split("\n")[0] !== headline)
+    out.push(
+      `youtube description's first line must be the headline "${headline}"`,
+    );
+  const link = youtubeShortsLink("worked_example");
+  const links = description.split(link).length - 1;
+  if (links !== 1)
+    out.push(
+      `youtube description must carry the tagged Shorts link once (${link}), found ${links}`,
+    );
+  const rest = description.split(link).join("");
+  for (const p of copyBlockProblems(rest)) out.push(`youtube description ${p}`);
+  const other = CAPTION_LINK.exec(rest);
+  if (other)
+    out.push(`youtube description carries another link ("${other[0]}")`);
+  for (const text of [title, description]) {
+    const p =
+      hookPeopleProblem(text) ??
+      hookStatisticProblem(text) ??
+      publicPhraseProblem(text);
+    if (p) out.push(`youtube ${p.replace(/^H\d /, "")}`);
+  }
+  const prose = description
+    .split("\n")
+    .filter((l) => !l.includes(link))
+    .join("\n");
+  for (const text of [title, prose]) {
+    const a = hookAnswerProblem(text, q);
+    if (a) out.push(`youtube ${a.replace(/^H5 /, "")}`);
+  }
+  return out;
 }
 
 export function titleProblems(title: string): string[] {
