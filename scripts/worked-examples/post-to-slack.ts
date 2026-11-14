@@ -56,7 +56,9 @@ function copyBlock(text: string): string {
 }
 
 /** The platform line that opens a post, as the QOTD's. */
-function platformLine(name: "TikTok" | "Instagram" | "Facebook"): string {
+function platformLine(
+  name: "TikTok" | "Instagram" | "Facebook" | "YouTube Shorts",
+): string {
   return `*${name}*`;
 }
 
@@ -75,6 +77,9 @@ export type VideoSet = {
   keywords: readonly string[];
   instagram_caption: string;
   facebook_caption: string;
+  /** YouTube Shorts (worked examples from W48, Karl 2026-11-14); a set without one has none. */
+  youtube_title?: string | undefined;
+  youtube_description?: string | undefined;
 };
 
 /** The steps for any video set, in order. Text only: the video's bytes are passed separately. */
@@ -109,6 +114,16 @@ export function videoSetSlackSteps(set: VideoSet): WorkedExampleSlackStep[] {
       ),
     },
   );
+  // YouTube Shorts: the title and the description, each its own copy block (Karl, 2026-11-14).
+  if (set.youtube_title !== undefined && set.youtube_description !== undefined)
+    steps.push({
+      kind: "message",
+      text: [
+        platformLine("YouTube Shorts"),
+        copyBlock(set.youtube_title),
+        copyBlock(set.youtube_description),
+      ].join("\n"),
+    });
   return steps;
 }
 
