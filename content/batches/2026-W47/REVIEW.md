@@ -1,0 +1,67 @@
+# Review record: 2026-W47
+
+<!--
+Doc 10B §8.7: one review record per cycle, written in this order. Karl reads this one file.
+Copy to content/batches/<cycle>/REVIEW.md (cycle: 2026-W43 for a weekly batch, 2026-11-plan for a
+monthly plan). Keep the four headings exactly as written; CI reads them
+(scripts/content/check-batch-pr.ts). One table row per item: the post's slug in backticks, or
+`plan` for a monthly plan.
+-->
+
+Cycle: 2026-W47
+Batch PR: #1476
+
+## 1. Claude self-audit
+
+<!--
+Written by the produce trigger (Claude Code). Claude's self-audit is private (Karl, 2026-10-13;
+SCL-229): Claude audits and fixes everything before opening the pull request, and this section is
+only the structural record of what was produced. Print it, never type it:
+  pnpm exec tsx scripts/content/production-record.ts <cycle>
+One row per item; the last cell is "Passed internal audit.". No findings, reasoning, notes or
+doubts, here or anywhere else in this section; CI refuses any other line.
+-->
+
+| Item | Title | Publishes | Target keyword | Sources | Audit |
+| --- | --- | --- | --- | --- | --- |
+| `sat-registration-deadlines` | SAT Registration Deadlines for 2026-27 \| Lyceon | 2026-11-16 07:00 CT | sat registration deadline | <https://satsuite.collegeboard.org/sat/dates-deadlines> <https://satsuite.collegeboard.org/sat/registration/change-cancel/canceling-registration> <https://satsuite.collegeboard.org/sat/registration/change-cancel/changing-registration-info> <https://satsuite.collegeboard.org/sat/registration/fees-refunds/test-fees> <https://satsuite.collegeboard.org/sat/registration/international-testing/fees> <https://satsuite.collegeboard.org/waitlist> | Passed internal audit. |
+| `sat-score-report-explained` | The SAT Score Report, Explained \| Lyceon | 2026-11-18 07:00 CT | sat score report | <https://satsuite.collegeboard.org/media/pdf/sat-understanding-scores.pdf> <https://satsuite.collegeboard.org/practice/content-domains> <https://satsuite.collegeboard.org/scores/score-release-dates> <https://satsuite.collegeboard.org/scores/score-release-dates/getting-sat-weekend-scores> <https://satsuite.collegeboard.org/scores/what-scores-mean> | Passed internal audit. |
+| `sat-superscore` | What's an SAT Superscore? \| Lyceon | 2026-11-20 07:00 CT | sat superscore | <https://blog.collegeboard.org/what-is-an-sat-superscore> <https://satsuite.collegeboard.org/help-center/which-scores-will-colleges-look-if-my-child-took-sat-more-once> <https://satsuite.collegeboard.org/sat/dates-deadlines> <https://satsuite.collegeboard.org/scores/score-release-dates> <https://satsuite.collegeboard.org/scores/sending-sat-scores/weekend> | Passed internal audit. |
+
+## 2. Codex audit
+
+Source: Codex scheduled task, 2026-11-12
+
+Audited PR #1476 at head `8b09db016579593ee93d5fe39e5580c4be37082f`. [Content batch checks](https://github.com/Lyceon-Team/Lyceonai/actions/runs/43235402826/job/131241300565) failed R11 because this audit's dated Source line and three verdicts were missing. The log names that exact HEAD_SHA. The [general CI run](https://github.com/Lyceon-Team/Lyceonai/actions/runs/43047610846) and Vercel status succeeded on the same SHA.
+
+| Item | Verdict | Reasons | Evidence |
+| --- | --- | --- | --- |
+| `sat-registration-deadlines` | REVISE | R2–R3: Specify that the $68 figure is the U.S. registration price or base fee, since the calendar applies internationally. Label the table as remaining 2026–27 dates; the heading and description promise every confirmed test while the table starts in December. Make clear that Waitlist is offered during registration, so the section order does not imply it remains an option after late registration. | College Board's [international fees](https://satsuite.collegeboard.org/sat/registration/international-testing/fees) says “$68, plus a $43 international fee” ($111 before any additional fees). Its [calendar](https://satsuite.collegeboard.org/sat/dates-deadlines) also lists October 3 and November 7, 2026. Its [Waitlist page](https://satsuite.collegeboard.org/waitlist) says “During SAT registration” and “no additional fee to be on the Waitlist.” See the checked dates, fees and deadlines below. |
+| `sat-score-report-explained` | REVISE | R2–R3: Identify November 20 as the scheduled student release date and distinguish it from November 23, when the school portal receives scores. Define the 70th percentile using the comparison group, and qualify state percentiles as U.S./territories only. | [College Board release calendar](https://satsuite.collegeboard.org/scores/score-release-dates): November 7 test, November 20 student release, November 23 K–12 portal release. The [student guide](https://satsuite.collegeboard.org/media/pdf/sat-student-guide.pdf) says a score “may not be available by the published release date.” [Understanding Scores](https://satsuite.collegeboard.org/media/pdf/sat-understanding-scores.pdf), pp. 5 and 10, specifies a “comparison group” and state percentiles “available for U.S. and U.S. territories only.” |
+| `sat-superscore` | REVISE | R2–R3: The retake paragraph presents the scheduled November 20 score release as certain. Qualify availability and give the 11:59 p.m. ET registration cutoff so readers can plan when the two dates coincide. Cite the Score Choice source directly in the paragraph and FAQ about sending whole scores by date; the weekend sending instructions describe choosing scores and viewing school policies but do not explain the no-section-only restriction. | [Release calendar](https://satsuite.collegeboard.org/scores/score-release-dates), [student guide](https://satsuite.collegeboard.org/media/pdf/sat-student-guide.pdf) and [registration calendar](https://satsuite.collegeboard.org/sat/dates-deadlines) support scheduled November 20 release and regular deadline, with November 24 late registration. The [superscore article](https://blog.collegeboard.org/what-is-an-sat-superscore) says “score reports, by test date.” Worked check: 600 + 620 = 1220, 680 + 610 = 1290, and max(600, 680) + max(620, 610) = 1300. Reading and Writing rose 80 points and Math fell 10. |
+
+**Registration deadlines source checks.** The [calendar](https://satsuite.collegeboard.org/sat/dates-deadlines) says deadlines expire at “11:59 p.m. ET” and device borrowing requires “at least 30 days before test day.” All four included test/regular/late triples match: Dec 5/Nov 20/Nov 24, Mar 6/Feb 19/Feb 23, May 1/Apr 16/Apr 20, and Jun 5/May 21/May 25. August 28, 2027 is the first anticipated date and carries no listed deadline. The December dates fall on Saturday, Friday and Tuesday respectively. [Test Fees](https://satsuite.collegeboard.org/sat/registration/fees-refunds/test-fees) confirms $38 late registration, $34 center change and $34/$44 cancellation, with “unused fee waiver benefits” returned on cancellation. [Changing Your Registration Info](https://satsuite.collegeboard.org/sat/registration/change-cancel/changing-registration-info) confirms “6 p.m. ET on the Monday” for identity details, “5 days before the test date” for the photo, and cancellation/re-registration to change dates. [Canceling a Registration](https://satsuite.collegeboard.org/sat/registration/change-cancel/canceling-registration) confirms “Thursday 11:59 p.m. ET” and the refund less the applicable fee. [Waitlist](https://satsuite.collegeboard.org/waitlist) confirms upfront payment, “up to 25 miles,” territory exclusions, placement cutoff and automatic registration refund when no seat is assigned, and that late fees are nonrefundable. The [registration walkthrough](https://lyceon.ai/blog/how-to-register-for-the-sat), [free practice test](https://lyceon.ai/free-sat-practice-test) and [practice questions](https://lyceon.ai/sat-practice-questions) opened. The walkthrough covers the registration steps; this article adds the remaining-date table and post-deadline options.
+
+**Score report source checks.** [Getting Your SAT Weekend Scores](https://satsuite.collegeboard.org/scores/score-release-dates/getting-sat-weekend-scores) says “students aged 13 or older,” and its [score portal](https://studentscores.collegeboard.org/) resolves to the College Board app. [Understanding Scores](https://satsuite.collegeboard.org/media/pdf/sat-understanding-scores.pdf), pp. 4–5 and 8–11, confirms school access, total and two section scores, score range, three-year averages, eight domains, the official 12–14-question example at about 26%, bar levels and performance bands, online benchmarks and next-band examples, and the held-send condition. Its wording includes “complete set of responses” and “seven defined performance score bands.” [What Do My SAT Suite Scores Mean?](https://satsuite.collegeboard.org/scores/what-scores-mean) confirms “content areas you may want to focus on” and the same-condition interpretation of the range. [What Are Content Domains?](https://satsuite.collegeboard.org/practice/content-domains) corroborates all eight names. [How Digital SAT Scores Work](https://lyceon.ai/blog/digital-sat-scoring-explained), [practice questions](https://lyceon.ai/sat-practice-questions) and [good SAT scores](https://lyceon.ai/what-is-a-good-sat-score) opened. The scoring explainer covers scales and benchmarks; this article adds report navigation, reading the bars and handling the held-send notice.
+
+**Superscore source checks.** The [College Board parent FAQ](https://satsuite.collegeboard.org/help-center/which-scores-will-colleges-look-if-my-child-took-sat-more-once) says “Most colleges consider a student's best section scores” and distinguishes schools requesting all scores or one. The [superscore article](https://blog.collegeboard.org/what-is-an-sat-superscore) confirms single highest sitting, all-score review, variation among test-optional schools, department policies and its position that colleges “don't look unfavorably upon retaking.” [Sending Scores from SAT Weekend](https://satsuite.collegeboard.org/scores/sending-sat-scores/weekend) confirms that students “can view the policy requirements of the schools you selected.” The [retake article](https://lyceon.ai/blog/should-you-retake-the-sat), [good SAT scores](https://lyceon.ai/what-is-a-good-sat-score) and [practice questions](https://lyceon.ai/sat-practice-questions) opened. The retake article covers timing and tradeoffs; this article adds the policy distinctions and recomputed example.
+
+**Shared rubric checks.** The topics, audiences, dates and search intent fit the November plan. The checked neighboring pages cover distinct intents. Each item uses the standard diagnostic CTA approved in claim inventory W15/H43. The registration article links to the free-practice resource described in W4. No new Lyceon product or outcome claim, internal detail, reproduced SAT question, or under-13 targeting was found. The linked blog template renders the SAT trademark notice and the standard CTA links to diagnostic signup.
+
+## 3. Claude response
+
+<!--
+Written by the revise trigger (Claude Code). A row for every REVISE (and every REJECT): what was
+changed, or why not. One revision round: an item still not approved is carried to the next cycle
+("Carried to 2026-W44") and leaves this batch; a REJECTed item is dropped ("Dropped").
+-->
+
+| Item | Finding | Response | Commit |
+| --- | --- | --- | --- |
+| `sat-registration-deadlines` | R2–R3: $68 is the U.S. price; table and heading promise every confirmed test; waitlist placement implies it outlasts late registration. | Fixed: "In the U.S., registering by the regular deadline costs $68. Outside the U.S., there's also a $43 international fee." (new source CB_INTERNATIONAL_FEES, quoted in the claim inventory). Heading, table caption and description now say "remaining 2026-27 tests". The waitlist section is now "No seats near you when you register?" and opens "The waitlist is offered during registration". | eb003d89 |
+| `sat-score-report-explained` | R2–R3: Nov 20 is the scheduled student release, distinct from Nov 23 school portal; percentile needs its comparison group; state percentiles are U.S./territories only. | Fixed: intro now says scores are "scheduled for release to students on Friday, November 20" and schools get them in the score reporting portal on Monday, November 23 (release calendar's K–12 column). Percentile bullet: "the share of a comparison group of test takers… 70% of that group" (Understanding Scores p. 5). Online bullet: state percentiles only "if you test in the U.S. or a U.S. territory" (p. 10). Re-reads quoted in the claim inventory. | eb003d89 |
+| `sat-superscore` | R2–R3: Nov 20 release presented as certain; give the 11:59 p.m. ET cutoff; cite the Score Choice source on the whole-scores-by-date paragraph and FAQ. | Fixed: "November 7 scores are scheduled for release to students today, November 20. Today is also the regular registration deadline for the December 5 SAT, which closes at 11:59 PM Eastern time. The late deadline is Tuesday, November 24." The by-test-date paragraph now cites CB_SUPERSCORE ("score reports, by test date") as well; the FAQ already cited it. Note: the weekend sending page does state the restriction in its FAQ ("No, you can't choose to send your Math section score from one test day and your Reading and Writing section score from another test day… Scores from an entire SAT are sent.", re-read 2026-11-12), so that citation stays too. | eb003d89 |
+
+## 4. Karl decision
+
+<!-- Karl's merge of the batch pull request is the approval (Doc 10B §2.4); a workflow records it. Notes optional. -->
