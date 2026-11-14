@@ -15,6 +15,8 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { isoWeekCycle } from "../../shared/content/schedule";
+import { postMessage, type FetchLike } from "../../shared/slack/client";
 import { copyBlockProblems } from "../../shared/social/posts";
 import { scriptLines } from "../../scripts/worked-examples/composition";
 import {
@@ -44,6 +46,12 @@ import {
   SIGNED_LINK_SECONDS,
   SOCIAL_WEEKLY_BUCKET,
   weekAnnouncement,
+  batchVoiceLabel,
+  COMMITTED_VOICE_LABEL,
+  deliveredExamples,
+  dayReply,
+  weekThread,
+  titleSourceLine,
   weekDates,
   weekExamples,
 } from "../../scripts/worked-examples/weekly";
@@ -364,15 +372,17 @@ describe("the week (Karl, 2026-11-11)", () => {
     ]);
   });
 
-  it("one message: Week <n> ready, every date, the links, then anything refused", () => {
+  it("one header: Week <n> ready, every date, then anything refused", () => {
     const plan = {
       week: "2026-W48",
       dates: weekDates("2026-W48"),
+      voice: batchVoiceLabel(loadKit()),
       built: [
         {
           date: "2026-11-23",
           id: "we-a",
           title: "SAT Math worked example · Percentages",
+          title_source: "display_name" as const,
         },
       ],
       refused: [
@@ -395,8 +405,13 @@ describe("the week (Karl, 2026-11-11)", () => {
     expect(text.split("\n")[0]).toBe(
       "*Week 48 ready* (2026-11-23 to 2026-11-29). Links expire in 14 days.",
     );
+    // The header names each day; the links and captions are in the day's threaded reply.
     expect(text).toContain(
-      "• Mon 2026-11-23: SAT Math worked example · Percentages: <https://x.supabase.co/v|video> · <https://x.supabase.co/c|captions>",
+      "• Mon 2026-11-23: SAT Math worked example · Percentages",
+    );
+    expect(text).not.toContain("https://x.supabase.co");
+    expect(text).toContain(
+      "One reply per day in this thread: the video link and the captions to paste.",
     );
     expect(text).toContain("• Tue 2026-11-24: nothing scheduled");
     expect(text).toContain(
@@ -404,5 +419,148 @@ describe("the week (Karl, 2026-11-11)", () => {
     );
     expect(SIGNED_LINK_SECONDS).toBe(1_209_600);
     expect(SOCIAL_WEEKLY_BUCKET).toBe("social-weekly");
+  });
+
+  it("the Week ready message shows the voice and where the titles came from, at the top (Karl, 2026-11-14)", () => {
+    const built = (source: "display_name" | "skill_name", k: number) => ({
+      date: weekDates("2026-W48")[k] ?? "",
+      id: `we-${k}`,
+      title: `SAT Math worked example · T${k}`,
+      title_source: source,
+    });
+    const base = {
+      week: "2026-W48",
+      dates: weekDates("2026-W48"),
+      voice: batchVoiceLabel(loadKit()),
+      refused: [],
+    };
+    const all = weekAnnouncement(
+      { ...base, built: [built("display_name", 0), built("display_name", 1)] },
+      [],
+    ).split("\n");
+    expect(all[0]).toMatch(/^\*Week 48 ready\*/);
+    // From the kit, not typed here: the batch profile is Orus, Lyceon respelled Lye-see-ahn.
+    expect(all[1]).toBe(
+      'Voice: Chirp 3 HD Orus (orus); "Lyceon" said "Lye-see-ahn"',
+    );
+    expect(all[2]).toBe("Titles: STYLE display names (2 of 2)");
+    const mixed = weekAnnouncement(
+      { ...base, built: [built("display_name", 0), built("skill_name", 1)] },
+      [],
+    ).split("\n");
+    expect(mixed[2]).toBe(
+      "Titles: 1 STYLE display name, 1 shortened skill name (no display_name in STYLE)",
+    );
+    expect(titleSourceLine([])).toBe("Titles: nothing built");
+    // The pull-request dry run says so instead of naming a voice it did not use.
+    expect(
+      weekAnnouncement(
+        { ...base, voice: COMMITTED_VOICE_LABEL, built: [] },
+        [],
+      ).split("\n")[1],
+    ).toBe(`Voice: ${COMMITTED_VOICE_LABEL}`);
+  });
+});
+
+describe("recaption: a delivered week re-delivered with rebuilt captions (Karl, 2026-11-14)", () => {
+  it("only the week's delivered examples are recaptioned; an undelivered one is left alone", () => {
+    const dates = weekDates("2026-W45");
+    const examples = loadExamples(CONTENT);
+    expect(weekExamples(examples, dates, {})).toHaveLength(2);
+    expect(deliveredExamples(examples, dates, {})).toEqual([]);
+    expect(
+      deliveredExamples(examples, dates, {
+        "we-satm2c6pxlx": { date: "2026-11-04", run: "1" },
+      }).map((e) => e.content.question_id),
+    ).toEqual(["SATM2C6PXLX"]);
+    expect(
+      deliveredExamples(examples, weekDates("2026-W46"), {
+        "we-satm2c6pxlx": { date: "2026-11-04", run: "1" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("one reply per day in the header's thread: date, video link, the captions inline (Karl, 2026-11-14)", () => {
+    const q = seedQuestion(fixture.content.question_id);
+    if (!q.ok) throw new Error(q.problem);
+    const post = buildPost(
+      fixture,
+      workedExampleCopy(fixture, q.question, loadStyle(CONTENT)),
+      {
+        pr: 1,
+        mergedBy: "x",
+        mergeSha: "0".repeat(40),
+        mergedAt: "2026-11-01T00:00:00Z",
+      },
+    );
+    const week = isoWeekCycle(post.post_on);
+    const dates = weekDates(week);
+    const link = {
+      date: post.post_on,
+      id: post.id,
+      title: post.title,
+      video_url: "https://x.supabase.co/v",
+      captions_url: "https://x.supabase.co/c",
+    };
+    const plan = {
+      week,
+      dates,
+      voice: batchVoiceLabel(loadKit()),
+      built: [
+        {
+          date: post.post_on,
+          id: post.id,
+          title: post.title,
+          title_source: "display_name" as const,
+        },
+      ],
+      refused: [],
+    };
+    const thread = weekThread(
+      plan,
+      [link],
+      new Map([[post.post_on, post]]),
+      true,
+    );
+    expect(thread.header.split("\n")[0]).toMatch(
+      new RegExp(`^\\*Week ${Number(week.slice(-2))} ready \\(updated\\)\\*`),
+    );
+    expect(thread.replies).toHaveLength(1);
+    const reply = thread.replies[0] ?? "";
+    expect(reply).toBe(dayReply(link, dates, post));
+    const lines = reply.split("\n");
+    expect(lines[0]).toMatch(new RegExp(`^\\*\\w{3} ${post.post_on}\\* · `));
+    expect(lines[1]).toBe(
+      "<https://x.supabase.co/v|Video> · <https://x.supabase.co/c|captions.md (record)>",
+    );
+    // Every copy-paste block is in the reply itself: Karl never opens captions.md.
+    for (const block of [
+      post.caption,
+      post.keywords.join("\n"),
+      post.instagram_caption,
+      post.facebook_caption,
+    ])
+      expect(reply).toContain(`\`\`\`\n${block}\n\`\`\``);
+    expect(reply).toContain("*TikTok*");
+    expect(reply).toContain("*Instagram*");
+    expect(reply).toContain("*Facebook*");
+    // A day with no post cannot be threaded.
+    expect(() => weekThread(plan, [link], new Map())).toThrow(/no post/);
+  });
+
+  it("a reply goes into the header's thread: postMessage sends thread_ts only when given", async () => {
+    const bodies: unknown[] = [];
+    const fake: FetchLike = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ ok: true, ts: "111.222" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const config = { token: "xoxb-test", channel: "C1" };
+    expect(await postMessage(config, "header", fake)).toBe("111.222");
+    await postMessage(config, "reply", fake, "111.222");
+    expect(bodies[0]).not.toHaveProperty("thread_ts");
+    expect(bodies[1]).toMatchObject({ text: "reply", thread_ts: "111.222" });
   });
 });

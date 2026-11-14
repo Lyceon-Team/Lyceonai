@@ -109,6 +109,45 @@ export function safeArea(): {
   };
 }
 
+/**
+ * The cover card: the opening of every worked example (Karl, 2026-11-14, from W48).
+ *
+ * @spec [Karl's cover-card ruling 2026-11-14: "a cover card as the opening ~0.4 s of every worked
+ *       example: 'Lyceon · Daily SAT questions' branding + short topic title + the hook line as
+ *       on-screen text"; "everything on the card sits inside the centered 4:5 zone (~y 285–1635)
+ *       so the Instagram grid/feed crop shows it fully"; "silent or overlaps the start of the
+ *       spoken hook — don't delay the voice by more than ~0.4 s"] | @implemented [2026-11-14]
+ *
+ * plain English: the card is on screen from 0:00 to COVER_SECONDS and the voice is not moved: the
+ * hook starts at 0:00 under the card (the overlap option, so the voice is delayed by 0 s). The
+ * opening scene (hook card and question) follows at COVER_SECONDS, inside the brief's "within
+ * 0.5 s". The figure, when there is one, starts with the opening scene, so nothing covers the card.
+ */
+export const COVER_SECONDS = 0.4;
+/** The cover's brand line. */
+export const COVER_BRAND = "Lyceon · Daily SAT questions";
+
+/**
+ * Where the cover may draw: the centred 4:5 crop of the 1080×1920 frame (1080×1350 at y 285, what
+ * Instagram's grid and feed show), within TikTok's safe area too (x 71..912, bottom 1555).
+ */
+export function coverZone(): {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+} {
+  const safe = safeArea();
+  const h = Math.round((QOTD_TIKTOK_SIZE.width * 5) / 4);
+  const top = Math.round((QOTD_TIKTOK_SIZE.height - h) / 2);
+  return {
+    left: safe.left,
+    right: safe.right,
+    top: Math.max(top, safe.top),
+    bottom: Math.min(top + h, safe.bottom),
+  };
+}
+
 /** Where the notepad may write: below the recap, down to just above the safe area's bottom. */
 const NOTEPAD_TOP = 400;
 const NOTEPAD_BOTTOM = 1530;
@@ -169,7 +208,7 @@ export type Beat = { key: string; start: number; end: number };
 export type Composition = {
   html: string;
   duration: number;
-  /** open, work, trap, answer, endcard: the scene windows, for the checks. */
+  /** cover (worked examples), open, work, trap, answer, endcard: the scene windows. */
   scenes: Beat[];
   /** Voice clips as placed: key, file, start, duration. */
   voice: PlacedLine[];
@@ -188,6 +227,8 @@ export type Composition = {
 
 export type CompositionInput = {
   example: WorkedExampleContent;
+  /** The short topic the title and the cover show (titleTopic: STYLE display_name or fallback). */
+  topic: string;
   question: CompositionQuestion;
   /** The example's voice lines (any order: matched to scriptLines by key), without the outro. */
   voice: readonly VoiceLine[];
@@ -206,6 +247,8 @@ export type ScriptCompositionInput = {
   question: CompositionQuestion;
   /** The page title (not drawn). */
   title: string;
+  /** A worked example's cover card (Karl, 2026-11-14); breakdowns have none. */
+  cover?: { topic: string; hookLine: string } | undefined;
   /** A worked example's drawn figure (Karl, 2026-11-11); breakdowns have none. */
   figure?: WorkedExampleFigure | undefined;
   /** The script's voice lines (any order: matched to scriptLines by key), without the outro. */
@@ -224,6 +267,7 @@ export function buildComposition(input: CompositionInput): Composition {
     script: input.example,
     question: input.question,
     title: `Worked example: ${input.example.skill_code} (${input.example.question_id})`,
+    cover: { topic: input.topic, hookLine: input.example.hook.line },
     figure: input.example.figure,
     voice: input.voice,
     outro: input.outro,
@@ -258,8 +302,11 @@ export function buildScriptComposition(
   const tTrap = at("trap").start;
   const tAnswer = at("answer").start;
   const tEnd = at("outro").start;
+  const tOpen = input.cover ? COVER_SECONDS : 0;
+  const sCover: Beat = { key: "cover", start: 0, end: tOpen };
   const scenes: Beat[] = [
-    { key: "open", start: 0, end: tWork },
+    ...(input.cover ? [sCover] : []),
+    { key: "open", start: tOpen, end: tWork },
     { key: "work", start: tWork, end: tTrap },
     { key: "trap", start: tTrap, end: tAnswer },
     { key: "answer", start: tAnswer, end: tEnd },
@@ -375,13 +422,9 @@ export function buildScriptComposition(
     cls = "",
   ): string =>
     `<section id="${key}" class="clip scene${cls}" data-start="${beat.start}" data-duration="${round(beat.end - beat.start)}" data-track-index="${track}">\n${body}\n</section>`;
-  const [sOpen, sWork, sTrap, sAnswer, sEnd] = scenes as [
-    Beat,
-    Beat,
-    Beat,
-    Beat,
-    Beat,
-  ];
+  const [sOpen, sWork, sTrap, sAnswer, sEnd] = scenes.slice(
+    input.cover ? 1 : 0,
+  ) as [Beat, Beat, Beat, Beat, Beat];
   // The figure: its own clip from 0:00 to the end card, so every scene draws on the same figure.
   let figureBeatList: FigureBeat[] = [];
   let figureSection = "";
@@ -413,12 +456,25 @@ export function buildScriptComposition(
         };
     });
     figureBeatList = figureBeats(layout, windows);
-    figureSection = `\n<section id="figure" class="clip scene" data-start="0" data-duration="${tEnd}" data-track-index="2">\n${figureHtml(layout)}\n</section>`;
+    figureSection = `\n<section id="figure" class="clip scene" data-start="${tOpen}" data-duration="${round(tEnd - tOpen)}" data-track-index="2">\n${figureHtml(layout)}\n</section>`;
     figureJs = `\n${figureTweens(layout, figureBeatList)}`;
   }
 
+  const coverHtml = input.cover
+    ? scene(
+        "cover",
+        sCover,
+        0,
+        fill(t["cover-card"], {
+          brand: escapeHtml(COVER_BRAND),
+          topic: escapeHtml(input.cover.topic),
+          hookLine: escapeHtml(input.cover.hookLine),
+        }),
+      )
+    : "";
   const scenesHtml =
     [
+      ...(coverHtml ? [coverHtml] : []),
       scene("open", sOpen, 0, open),
       scene("work", sWork, 1, `${recap}\n${steps}`),
       scene("trap", sTrap, 0, trap),
@@ -481,6 +537,8 @@ const bottom = (el) => el.offsetTop + el.offsetHeight;
 document.fonts.ready.then(() => {
   document.querySelectorAll(".hand").forEach((el) => fit(el, (e) => right(e) <= SAFE.right));
   fit(document.getElementById("hook-line"), (e) => bottom(e) <= 380);
+  const card = document.getElementById("cover-card");
+  if (card) fit(document.getElementById("cover-hook"), () => card.scrollHeight <= card.clientHeight);
   fit(document.getElementById("question-card"), (e) => bottom(e) <= ${notepadBottom});
   document.querySelectorAll(".recap").forEach((el) => fit(el, (e) => bottom(e) <= ${NOTEPAD_TOP - 15}));
   const tl = gsap.timeline({ paused: true });
@@ -498,6 +556,8 @@ ${wipes}${figureJs}
     safeLeft: String(safe.left),
     safeWidth: String(safe.right - safe.left),
     safeRightInset: String(QOTD_TIKTOK_SIZE.width - safe.right),
+    coverTop: String(coverZone().top),
+    coverHeight: String(coverZone().bottom - coverZone().top),
     outroFollowSize: String(OUTRO_FOLLOW_PX),
     outroBrandSize: String(OUTRO_BRAND_PX),
     creditSize: String(END_CARD_CREDIT_PX),

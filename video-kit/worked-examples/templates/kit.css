@@ -26,3 +26,9 @@ body { margin: 0; background: {{paper}}; color: {{ink}}; }
 .figure { position: absolute; left: 0; top: 0; overflow: visible; }
 .fig-stroke { fill: none; stroke: {{ink}}; stroke-linecap: round; stroke-linejoin: round; }
 .fig-label { position: absolute; transform: translate(-50%, -50%); font-family: "Caveat", cursive; font-weight: 700; color: {{ink}}; white-space: nowrap; line-height: 1; }
+/* The cover card (Karl, 2026-11-14): the opening 0.4 s, everything inside the centred 4:5 zone. */
+.cover-card { position: absolute; left: {{safeLeft}}px; width: {{safeWidth}}px; top: {{coverTop}}px; height: {{coverHeight}}px; box-sizing: border-box; padding: 40px 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 64px; text-align: center; }
+.cover-brand { display: flex; align-items: center; gap: 20px; font-family: "Poppins", sans-serif; font-weight: 700; font-size: 44px; line-height: 1.1; color: {{ink}}; }
+.cover-logo { width: 96px; height: 96px; }
+.cover-topic { font-family: "Poppins", sans-serif; font-weight: 700; font-size: 84px; line-height: 1.1; color: {{red}}; }
+.cover-hook { font-family: "Caveat", cursive; font-weight: 700; font-size: 100px; line-height: 1.1; color: {{ink}}; }

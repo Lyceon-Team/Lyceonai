@@ -31,6 +31,7 @@ export const KIT_TEMPLATES = [
   "answer-reveal",
   "trap-callout",
   "end-card",
+  "cover-card",
 ] as const;
 export type KitTemplate = (typeof KIT_TEMPLATES)[number];
 

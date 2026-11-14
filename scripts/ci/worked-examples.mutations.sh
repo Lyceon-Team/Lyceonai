@@ -15,6 +15,11 @@
 # rulings' item 7, the drawn figure; T46 Karl's voice change of 2026-11-11 (takes per line);
 # T47-T49 the same day's rulings: no "Go" in the spoken hook (H7), Lyceon respelled for Chirp;
 # T50 the same day's ruling: the captions show the STYLE display_name, not the skill name;
+# T51-T54 Karl's pipeline fixes 2026-11-14: no mid-word title, the voice and title source in the
+# Week ready message, recaption touches only a delivered week, the daily job retired; T55 the same
+# day's ruling: the key on the scheduled run or a manual run from main, never any other branch;
+# T56-T57 the same day's ruling: the captions inline, one threaded reply per day;
+# T58-T60 Karl's cover-card ruling (same day): the cover card and its 4:5 zone;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -44,6 +49,7 @@ FILES=(
   "scripts/worked-examples/approval.ts"
   "scripts/worked-examples/composition.ts"
   "video-kit/worked-examples/templates/end-card.html"
+  "video-kit/worked-examples/templates/cover-card.html"
   "scripts/worked-examples/audio.ts"
   "scripts/worked-examples/content.ts"
   "scripts/worked-examples/generate.ts"
@@ -63,6 +69,7 @@ FILES=(
   "scripts/video-pilots/manim/render.py"
   "scripts/worked-examples/voice-cache.ts"
   "scripts/worked-examples/weekly.ts"
+  "shared/slack/client.ts"
   "scripts/worked-examples/figure.ts"
   "shared/worked-examples/figure-rules.ts"
   "scripts/worked-examples/google-tts.ts"
@@ -355,10 +362,16 @@ ts_plant "T37 a line that fails the checks is cached anyway" scripts/worked-exam
 ts_plant "T46 one take per line (a single bad take refuses the example)" scripts/worked-examples/voice-cache.ts \
   "export const VOICE_TAKES = 3;" "export const VOICE_TAKES = 1;" \
   "a bad take is voiced again"
+# T38 re-pointed 2026-11-14 (Karl's ruling: a manual run from main too) and T55 added: a manual
+# run from any branch.
 ts_plant "T38 the service-role key reachable from a pull request" .github/workflows/worked-example-daily.yml \
-  "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'" \
+  "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'" \
   "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'" \
-  "only on the scheduled run from main"
+  "only on the scheduled run or a manual run from main"
+ts_plant "T55 the key on a manual run from any branch" .github/workflows/worked-example-daily.yml \
+  "      - name: Re-deliver a week with rebuilt captions"$'\n'"        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode == 'recaption'" \
+  "      - name: Re-deliver a week with rebuilt captions"$'\n'"        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'recaption'" \
+  "only on the scheduled run or a manual run from main"
 ts_plant "T39 a label inside the captions file" scripts/worked-examples/weekly.ts \
   "  for (const w of post.warnings) parts.push(w);" '  for (const w of post.warnings) parts.push(w);'$'\n''  parts.push(`Worked example · ${post.id}`);' \
   "platform headers outside"
@@ -393,8 +406,39 @@ ts_plant "T48 the Go rule only catches \"go!\"" shared/worked-examples/rules.ts 
 ts_plant "T49 production Chirp sends the IPA again (Orus ignores it)" scripts/worked-examples/google-tts.ts \
   '  brand: "respell" | "ipa" = "respell",' '  brand: "respell" | "ipa" = "ipa",' \
   "Lyceon respelled Lye-see-ahn, no IPA"
+ts_plant "T51 a missing display name cut mid-word (the skill name sliced to the topic length)" shared/worked-examples/rules.ts \
+  '  if (name.length <= WORKED_EXAMPLE_TOPIC_MAX) return name;' \
+  '  return name.slice(0, WORKED_EXAMPLE_TOPIC_MAX);' \
+  "a title is never cut mid-word: a missing display name falls back to the skill name shortened at a word boundary (Karl, 2026-11-14)"
+ts_plant "T52 the Week ready message drops the voice line" scripts/worked-examples/weekly.ts \
+  '    `Voice: ${escapeMrkdwn(plan.voice)}`,' '' \
+  "the Week ready message shows the voice and where the titles came from, at the top (Karl, 2026-11-14)"
+ts_plant "T53 recaption rewrites undelivered examples" scripts/worked-examples/weekly.ts \
+  '        posted[workedExampleId(e.content.question_id)] !== undefined,' \
+  '        posted[workedExampleId(e.content.question_id)] === undefined,' \
+  "only the week's delivered examples are recaptioned; an undelivered one is left alone"
+ts_plant "T54 the daily cron back in the workflow" .github/workflows/worked-example-daily.yml \
+  '    - cron: "15 16 * * 4"' '    - cron: "0 17 * * *"
+    - cron: "15 16 * * 4"' \
+  "the daily job is retired: the workflow runs only the weekly batch, on its Thursday cron (Karl, 2026-11-14)"
+ts_plant "T56 the day reply drops the captions (Karl has to open captions.md)" scripts/worked-examples/weekly.ts \
+  '    captionsMarkdown(post).trimEnd(),' '    "",' \
+  "one reply per day in the header's thread: date, video link, the captions inline (Karl, 2026-11-14)"
+ts_plant "T57 the replies posted to the channel, not into the header's thread" shared/slack/client.ts \
+  '        ...(threadTs ? { thread_ts: threadTs } : {}),' '' \
+  "a reply goes into the header's thread: postMessage sends thread_ts only when given"
+ts_plant "T58 the cover check lets a box above the 4:5 zone through" scripts/worked-examples/layout-check.ts \
+  '        b.y < zone.top - 1 ||' '' \
+  "the cover check: every cover box inside the 4:5 zone; a box above it, below it or a bare cover is refused"
+ts_plant "T59 a worked example without its cover card" scripts/worked-examples/composition.ts \
+  '    cover: { topic: input.topic, hookLine: input.example.hook.line },' '    cover: undefined,' \
+  "the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)"
+ts_plant "T60 the cover zone is TikTok's safe area, not the 4:5 crop" scripts/worked-examples/composition.ts \
+  '    top: Math.max(top, safe.top),' '    top: safe.top,' \
+  "the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)"
+# T50 re-pointed 2026-11-14: workedExampleCopy now takes the topic from titleTopic.
 ts_plant "T50 the captions show the College Board skill name again" scripts/worked-examples/daily.ts \
-  '  const topic = row.display_name ?? e.content.skill_code;' '  const topic = e.content.skill_code;' \
+  '  const { topic } = chosen;' '  const topic = e.content.skill_code;' \
   "the title and all three captions show the STYLE display_name, never the skill name"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
@@ -426,19 +470,19 @@ ts_plant "V8 reference recordings no longer ignored by git" .gitignore \
 ts_plant "V9 the clone made the default before Karl picks it" video-kit/worked-examples/voice.json \
   '"default_profile": "am_michael",' '"default_profile": "clone",' \
   "default and fallback are am_michael"
-# V10 re-pointed 2026-11-11 (SCL-277): the weekly job has its own "Install dependencies" step, so
-# the anchor carries the daily job's next step to stay unique.
+# V10 re-pointed 2026-11-11 (SCL-277), and again 2026-11-14 when the daily job was retired: the
+# weekly job's "Install dependencies" step is now the only one, followed by its Chromium step.
 ts_plant "V10 CI installs the clone's Python stack" .github/workflows/worked-example-daily.yml \
   "      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Select today's example" "      - name: Clone stack
+      - name: Install Chromium" "      - name: Clone stack
         run: pip install -r scripts/worked-examples/openvoice/requirements.txt
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Select today's example" \
+      - name: Install Chromium" \
   "the worked-example workflows set up no Python at all"
 ts_plant "V11 the speaking rate never reaches the /brag voice" scripts/worked-examples/voice.ts \
   '    "-s",' '    "--silent",' \
@@ -545,10 +589,11 @@ ts_plant "W24 chatterbox given the kokoro respelling" scripts/worked-examples/vo
   "each engine gets its own respelling from the one table"
 
 echo "=== TS: the final-mix true-peak limiter (SCL-270, Karl's ruling 2026-11-02) ==="
-ts_plant "F1 the daily job skips the limiter (the render copied as the finished video)" .github/workflows/worked-example-daily.yml \
-  '          pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
-  '          cp "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
-  "the daily job renders, limits, then checks, uploads and posts only the limited video"
+# F1 re-pointed 2026-11-14: the daily job was retired, so the plant is on the weekly job's loop.
+ts_plant "F1 the weekly job skips the limiter (the render copied as the finished video)" .github/workflows/worked-example-daily.yml \
+  '            pnpm exec tsx scripts/worked-examples/final-mix.ts "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"' \
+  '            cp "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"' \
+  "the weekly job renders, limits, then checks each date, and uploads only after every check (SCL-277)"
 ts_plant "F2 the limiter dropped from the final-mix pass" scripts/worked-examples/final-mix.ts \
   ',alimiter=limit=${limit}:level=disabled:latency=1,' ',' \
   "after final-mix.ts it is at most -1 dBTP and passes"
