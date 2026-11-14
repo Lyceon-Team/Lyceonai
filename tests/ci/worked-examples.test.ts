@@ -21,6 +21,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  WORKED_EXAMPLE_TOPIC_MAX,
   WORKED_EXAMPLE_VOICE_LINES,
   workedExamplePostSchema,
   voiceLineSchema,
@@ -53,6 +54,8 @@ import {
   workedExampleKeywords,
   workedExampleLabel,
   workedExampleTitle,
+  shortSkillName,
+  titleTopic,
 } from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import { copyBlockProblems } from "../../shared/social/posts";
@@ -981,6 +984,62 @@ describe("title and caption", () => {
     expect(() => workedExampleCopy(fixture, question, {})).toThrow(
       `no style row for "${fixture.content.skill_code}"`,
     );
+  });
+
+  it("a title is never cut mid-word: a missing display name falls back to the skill name shortened at a word boundary (Karl, 2026-11-14)", () => {
+    // Every College Board skill name the worked examples use or can use (STYLE keys), the longest
+    // first: the W47 title "… Systems of Equations in" came from the first.
+    const skills = [
+      "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "Ratios, Rates, Proportional Relationships, and Units",
+      "Linear Inequalities in One or Two Variables",
+      "Probability and Conditional Probability",
+      "Evaluating statistical claims: Observational studies and experiments",
+      "Systems of two linear equations in two variables",
+      "Linear Equations in One Variable",
+      "Right Triangles and Trigonometry",
+      "Lines, Angles, and Triangles",
+      "Percentages",
+    ];
+    const filler = /(?:^|\s)(?:and|or|in|of|the|a|to)$|[,:]$/i;
+    for (const skill of skills) {
+      const chosen = titleTopic(
+        { [skill]: { signature_move: "m.", check: "c.", trap: "t." } },
+        skill,
+      );
+      if (!chosen) throw new Error("no row");
+      const short = chosen.topic;
+      expect(chosen.source, skill).toBe("skill_name");
+      expect(short.length, skill).toBeLessThanOrEqual(WORKED_EXAMPLE_TOPIC_MAX);
+      expect(short.length, skill).toBeGreaterThan(0);
+      // A prefix of the skill name that ends where a word ends: never inside a word.
+      expect(skill.startsWith(short), skill).toBe(true);
+      expect(skill.slice(short.length), skill).toMatch(/^(?:$|[\s,:])/);
+      expect(short, skill).not.toMatch(filler);
+      const title = workedExampleTitle(question, short);
+      expect(titleProblems(title), skill).toEqual([]);
+      expect(title.endsWith(short), skill).toBe(true);
+    }
+    expect(shortSkillName(skills[0] ?? "")).toBe("Nonlinear Equations");
+    expect(shortSkillName("Linear Inequalities in One or Two Variables")).toBe(
+      "Linear Inequalities",
+    );
+    expect(shortSkillName("Percentages")).toBe("Percentages");
+    // A display name always wins, and says so.
+    expect(
+      titleTopic(
+        {
+          Percentages: {
+            display_name: "Percents",
+            signature_move: "m.",
+            check: "c.",
+            trap: "t.",
+          },
+        },
+        "Percentages",
+      ),
+    ).toEqual({ topic: "Percents", source: "display_name" });
+    expect(titleTopic({}, "Percentages")).toBeNull();
   });
 
   it("the TikTok, Instagram and Facebook captions are the SCL-262 lines and nothing else", () => {

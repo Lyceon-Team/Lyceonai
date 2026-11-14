@@ -15,6 +15,8 @@
 # rulings' item 7, the drawn figure; T46 Karl's voice change of 2026-11-11 (takes per line);
 # T47-T49 the same day's rulings: no "Go" in the spoken hook (H7), Lyceon respelled for Chirp;
 # T50 the same day's ruling: the captions show the STYLE display_name, not the skill name;
+# T51-T54 Karl's pipeline fixes 2026-11-14: no mid-word title, the voice and title source in the
+# Week ready message, recaption touches only a delivered week, the daily job retired;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -393,8 +395,24 @@ ts_plant "T48 the Go rule only catches \"go!\"" shared/worked-examples/rules.ts 
 ts_plant "T49 production Chirp sends the IPA again (Orus ignores it)" scripts/worked-examples/google-tts.ts \
   '  brand: "respell" | "ipa" = "respell",' '  brand: "respell" | "ipa" = "ipa",' \
   "Lyceon respelled Lye-see-ahn, no IPA"
+ts_plant "T51 a missing display name cut mid-word (the skill name sliced to the topic length)" shared/worked-examples/rules.ts \
+  '  if (name.length <= WORKED_EXAMPLE_TOPIC_MAX) return name;' \
+  '  return name.slice(0, WORKED_EXAMPLE_TOPIC_MAX);' \
+  "a title is never cut mid-word: a missing display name falls back to the skill name shortened at a word boundary (Karl, 2026-11-14)"
+ts_plant "T52 the Week ready message drops the voice line" scripts/worked-examples/weekly.ts \
+  '    `Voice: ${escapeMrkdwn(plan.voice)}`,' '' \
+  "the Week ready message shows the voice and where the titles came from, at the top (Karl, 2026-11-14)"
+ts_plant "T53 recaption rewrites undelivered examples" scripts/worked-examples/weekly.ts \
+  '        posted[workedExampleId(e.content.question_id)] !== undefined,' \
+  '        posted[workedExampleId(e.content.question_id)] === undefined,' \
+  "only the week's delivered examples are recaptioned; an undelivered one is left alone"
+ts_plant "T54 the daily cron back in the workflow" .github/workflows/worked-example-daily.yml \
+  '    - cron: "15 16 * * 4"' '    - cron: "0 17 * * *"
+    - cron: "15 16 * * 4"' \
+  "the daily job is retired: the workflow runs only the weekly batch, on its Thursday cron (Karl, 2026-11-14)"
+# T50 re-pointed 2026-11-14: workedExampleCopy now takes the topic from titleTopic.
 ts_plant "T50 the captions show the College Board skill name again" scripts/worked-examples/daily.ts \
-  '  const topic = row.display_name ?? e.content.skill_code;' '  const topic = e.content.skill_code;' \
+  '  const { topic } = chosen;' '  const topic = e.content.skill_code;' \
   "the title and all three captions show the STYLE display_name, never the skill name"
 
 echo "=== TS: the cloned voice (OpenVoice addendum, Karl, 2026-10-27) ==="
@@ -426,19 +444,19 @@ ts_plant "V8 reference recordings no longer ignored by git" .gitignore \
 ts_plant "V9 the clone made the default before Karl picks it" video-kit/worked-examples/voice.json \
   '"default_profile": "am_michael",' '"default_profile": "clone",' \
   "default and fallback are am_michael"
-# V10 re-pointed 2026-11-11 (SCL-277): the weekly job has its own "Install dependencies" step, so
-# the anchor carries the daily job's next step to stay unique.
+# V10 re-pointed 2026-11-11 (SCL-277), and again 2026-11-14 when the daily job was retired: the
+# weekly job's "Install dependencies" step is now the only one, followed by its Chromium step.
 ts_plant "V10 CI installs the clone's Python stack" .github/workflows/worked-example-daily.yml \
   "      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Select today's example" "      - name: Clone stack
+      - name: Install Chromium" "      - name: Clone stack
         run: pip install -r scripts/worked-examples/openvoice/requirements.txt
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Select today's example" \
+      - name: Install Chromium" \
   "the worked-example workflows set up no Python at all"
 ts_plant "V11 the speaking rate never reaches the /brag voice" scripts/worked-examples/voice.ts \
   '    "-s",' '    "--silent",' \
@@ -545,10 +563,11 @@ ts_plant "W24 chatterbox given the kokoro respelling" scripts/worked-examples/vo
   "each engine gets its own respelling from the one table"
 
 echo "=== TS: the final-mix true-peak limiter (SCL-270, Karl's ruling 2026-11-02) ==="
-ts_plant "F1 the daily job skips the limiter (the render copied as the finished video)" .github/workflows/worked-example-daily.yml \
-  '          pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
-  '          cp "$OUT/render/$id.mp4" "$OUT/$id.mp4"' \
-  "the daily job renders, limits, then checks, uploads and posts only the limited video"
+# F1 re-pointed 2026-11-14: the daily job was retired, so the plant is on the weekly job's loop.
+ts_plant "F1 the weekly job skips the limiter (the render copied as the finished video)" .github/workflows/worked-example-daily.yml \
+  '            pnpm exec tsx scripts/worked-examples/final-mix.ts "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"' \
+  '            cp "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"' \
+  "the weekly job renders, limits, then checks each date, and uploads only after every check (SCL-277)"
 ts_plant "F2 the limiter dropped from the final-mix pass" scripts/worked-examples/final-mix.ts \
   ',alimiter=limit=${limit}:level=disabled:latency=1,' ',' \
   "after final-mix.ts it is at most -1 dBTP and passes"

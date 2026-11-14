@@ -10,8 +10,10 @@
  *       that expire after 14 days); the step-3 rulings (the existing SUPABASE_URL /
  *       SUPABASE_SERVICE_ROLE_KEY pair, read only on the scheduled run from main); the 2026-11-11
  *       answers (batch voice voiced and cached by this run: Chirp 3 HD Orus, voice A, since Karl's voice
- *       change later the same day, replacing Charon; the daily job kept
- *       until the first weekly batch works)] | @implemented [2026-11-11]
+ *       change later the same day, replacing Charon); Karl's pipeline fixes 2026-11-14 (item 4:
+ *       the daily job retired, W47 confirmed; item 6: the voice and title source at the top of
+ *       "Week ready"; item 1: recaption)] | @implemented [2026-11-11, recaption and the header
+ *       2026-11-14]
  *
  * plain English, subcommands the workflow runs in order (the render, final mix, layout check and
  * MP4 check run per date between build and upload, with the daily job's own tools):
@@ -30,8 +32,12 @@
  *            social-weekly/<week>/<date>/, then a signed link for each (14 days); <out>/links.json.
  *   claim    --content <social> --out <dir> --run <id>   adds every uploaded example to
  *            posted.json (the workflow pushes it before announcing, so a re-run announces nothing).
- *   announce --out <dir> [--dry-run]   one #social message: "Week <n> ready", a line per date with
- *            the video and captions links, then anything refused.
+ *   announce --out <dir> [--dry-run]   one #social message: "Week <n> ready", the voice and where
+ *            the titles came from (Karl 2026-11-14, item 6), a line per date with the video and
+ *            captions links, then anything refused.
+ *   recaption --content <social> --week YYYY-Www --out <dir> [--dry-run --today YYYY-MM-DD]
+ *            rewrites the captions of a week already delivered (text only, the videos untouched)
+ *            and posts one short "Week <n> captions updated" note (Karl 2026-11-14, item 1).
  *
  * edge cases: a date with no example is listed as such; a refused example is named with its
  * reason (rule text only, never question content); --dry-run never reads a secret, never uploads,
@@ -79,7 +85,7 @@ import { accessToken, chirpRequest, synthesize } from "./google-tts";
 import { KIT_DIR, ROOT, loadKit, type Kit } from "./kit";
 import { nodeFetch, videoSetSlackSteps } from "./post-to-slack";
 import { bucketStore, voiceBatch, type BucketApi } from "./voice-cache";
-import { transcribeAndCheck } from "./voice";
+import { BRAND_RESPELLINGS, transcribeAndCheck } from "./voice";
 
 /** The private bucket (supabase/migrations/…_social_weekly_bucket.sql). */
 export const SOCIAL_WEEKLY_BUCKET = "social-weekly";
@@ -134,6 +140,25 @@ export function weekExamples(
     );
 }
 
+/** The examples a delivered week holds: post_on in it and claimed in posted.json; by date. */
+export function deliveredExamples(
+  examples: readonly ExampleOnBranch[],
+  dates: readonly string[],
+  posted: Readonly<WorkedExamplePostedLedger>,
+): ExampleOnBranch[] {
+  return examples
+    .filter(
+      (e) =>
+        dates.includes(e.content.post_on) &&
+        posted[workedExampleId(e.content.question_id)] !== undefined,
+    )
+    .sort(
+      (a, b) =>
+        a.content.post_on.localeCompare(b.content.post_on) ||
+        a.content.question_id.localeCompare(b.content.question_id),
+    );
+}
+
 /** The captions file for one video: the SCL-262/273 copy-paste set, warnings first. */
 export function captionsMarkdown(post: WorkedExamplePost): string {
   const parts: string[] = [];
@@ -147,9 +172,16 @@ export const weekPlanSchema = z
   .object({
     week: z.string().regex(/^\d{4}-W\d{2}$/),
     dates: z.array(z.string()).length(7),
+    /** The voice every line was voiced in, as the "Week ready" header shows it. */
+    voice: z.string().min(1),
     built: z.array(
       z
-        .object({ date: z.string(), id: z.string(), title: z.string() })
+        .object({
+          date: z.string(),
+          id: z.string(),
+          title: z.string(),
+          title_source: z.enum(["display_name", "skill_name"]),
+        })
         .strict(),
     ),
     refused: z.array(
@@ -176,11 +208,43 @@ export type WeekLinks = z.infer<typeof weekLinksSchema>;
 
 const WEEKDAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
-/** The one #social message: "Week <n> ready", a line per date, then anything refused. */
+/** The voice line for a batch: "Chirp 3 HD Orus (orus); "Lyceon" said "Lye-see-ahn"". */
+export function batchVoiceLabel(kit: Kit): string {
+  const id = kit.voice.batch_profile;
+  const profile = kit.voice.profiles[id];
+  if (!profile || profile.engine !== "chirp3-hd")
+    throw new Error(`batch_profile ${id} is not a Chirp 3 HD profile`);
+  return `Chirp 3 HD ${profile.chirp_voice} (${id}); "Lyceon" said "${BRAND_RESPELLINGS["chirp3-hd"]}"`;
+}
+
+/** The voice line for the pull-request dry run, which uses each example's committed audio. */
+export const COMMITTED_VOICE_LABEL = "the examples' committed audio (dry run)";
+
+/**
+ * Where the week's titles came from: "STYLE display names (7 of 7)", or how many fell back to a
+ * shortened skill name because their STYLE row has no display_name (Karl 2026-11-14, item 6).
+ */
+export function titleSourceLine(
+  built: readonly { title_source: "display_name" | "skill_name" }[],
+): string {
+  if (built.length === 0) return "Titles: nothing built";
+  const named = built.filter((b) => b.title_source === "display_name").length;
+  const short = built.length - named;
+  if (short === 0)
+    return `Titles: STYLE display names (${named} of ${built.length})`;
+  return `Titles: ${named} STYLE display name${named === 1 ? "" : "s"}, ${short} shortened skill name${short === 1 ? "" : "s"} (no display_name in STYLE)`;
+}
+
+/**
+ * The one #social message: "Week <n> ready", then the voice and where the titles came from (Karl
+ * 2026-11-14, item 6: at the top, at a glance), a line per date, then anything refused.
+ */
 export function weekAnnouncement(plan: WeekPlan, links: WeekLinks): string {
   const n = Number(plan.week.slice(-2));
   const lines = [
     `*Week ${n} ready* (${plan.dates[0]} to ${plan.dates[6]}). Links expire in 14 days.`,
+    `Voice: ${escapeMrkdwn(plan.voice)}`,
+    titleSourceLine(plan.built),
   ];
   plan.dates.forEach((date, k) => {
     const day = `${WEEKDAY[k]} ${date}`;
@@ -195,6 +259,39 @@ export function weekAnnouncement(plan: WeekPlan, links: WeekLinks): string {
     lines.push("", "*Not built this week:*");
     for (const r of plan.refused)
       lines.push(`• ${r.date} ${r.dir}: ${escapeMrkdwn(r.reason)}`);
+  }
+  return lines.join("\n");
+}
+
+export const recaptionLinksSchema = z.array(
+  z
+    .object({
+      date: z.string(),
+      id: z.string(),
+      title: z.string(),
+      title_source: z.enum(["display_name", "skill_name"]),
+      captions_url: z.string().url(),
+    })
+    .strict(),
+);
+export type RecaptionLinks = z.infer<typeof recaptionLinksSchema>;
+
+/** The short note after a week's captions are rewritten: the videos are not touched. */
+export function recaptionAnnouncement(
+  week: string,
+  dates: readonly string[],
+  links: RecaptionLinks,
+): string {
+  const n = Number(week.slice(-2));
+  const lines = [
+    `*Week ${n} captions updated* (${dates[0]} to ${dates[6]}). Same videos; new captions links expire in 14 days.`,
+    titleSourceLine(links),
+  ];
+  for (const l of links) {
+    const day = WEEKDAY[dates.indexOf(l.date)] ?? "";
+    lines.push(
+      `• ${day} ${l.date}: ${escapeMrkdwn(l.title)}: <${l.captions_url}|captions>`,
+    );
   }
   return lines.join("\n");
 }
@@ -314,7 +411,14 @@ async function build(f: Flags): Promise<void> {
   const kit = loadKit();
   const due = weekExamples(loadExamples(content), dates, loadPosted(content));
   const store = voiceMode === "batch" && !dryRun ? bucket() : null;
-  const plan: WeekPlan = { week, dates, built: [], refused: [] };
+  const plan: WeekPlan = {
+    week,
+    dates,
+    voice:
+      voiceMode === "committed" ? COMMITTED_VOICE_LABEL : batchVoiceLabel(kit),
+    built: [],
+    refused: [],
+  };
   for (const e of due) {
     const date = e.content.post_on;
     const dir = join(out, date);
@@ -358,16 +462,18 @@ async function build(f: Flags): Promise<void> {
         out: join(dir, "composition"),
         kit,
       });
-      const post = buildPost(
-        e,
-        workedExampleCopy(e, question, loadStyle(content)),
-        approval,
-      );
+      const copy = workedExampleCopy(e, question, loadStyle(content));
+      const post = buildPost(e, copy, approval);
       writeFileSync(
         join(dir, "post.json"),
         `${JSON.stringify(post, null, 2)}\n`,
       );
-      plan.built.push({ date, id: post.id, title: post.title });
+      plan.built.push({
+        date,
+        id: post.id,
+        title: post.title,
+        title_source: copy.title_source,
+      });
       process.stdout.write(`build: ${date} ${post.id} built\n`);
     } catch (err: unknown) {
       if (!(err instanceof Error)) throw err;
@@ -500,6 +606,87 @@ async function announce(f: Flags): Promise<void> {
   process.stdout.write(`announce: Week ${plan.week} posted to Slack\n`);
 }
 
+/**
+ * Rewrites the captions of a week already delivered, from today's STYLE and caption rules
+ * (Karl's pipeline fixes 2026-11-14, item 1: W47's captions with the short topic names, text
+ * only, no re-render). Each delivered example's post is rebuilt (approval from GitHub's record,
+ * every content rule), its captions.md overwritten at social-weekly/<week>/<date>/captions.md and
+ * signed again; the video is not touched, posted.json not changed. Then the one short note.
+ * --dry-run reads no secret, uploads and posts nothing, and writes the files and the note.
+ */
+async function recaption(f: Flags): Promise<void> {
+  const content = resolve(need(f, "--content"));
+  const out = resolve(need(f, "--out"));
+  const week = need(f, "--week");
+  const dryRun = f.has("--dry-run");
+  const today = dryRun ? need(f, "--today") : chicagoToday();
+  const dates = weekDates(week);
+  const kit = loadKit();
+  const style = loadStyle(content);
+  const due = deliveredExamples(
+    loadExamples(content),
+    dates,
+    loadPosted(content),
+  );
+  if (due.length === 0)
+    throw new Error(`${week}: nothing delivered to recaption`);
+  const store = dryRun ? null : bucket();
+  const links: RecaptionLinks = [];
+  for (const e of due) {
+    const date = e.content.post_on;
+    const approval: ExampleApproval = dryRun
+      ? {
+          pr: 1,
+          mergedBy: "dry-run",
+          mergeSha: "0".repeat(40),
+          mergedAt: `${today}T00:00:00Z`,
+        }
+      : await approvalFor(content, e);
+    const { question } = exampleProblems(content, e, kit);
+    if (!question) throw new Error(`${e.dir}: its question cannot be read`);
+    const copy = workedExampleCopy(e, question, style);
+    const post = buildPost(e, copy, approval);
+    const captions = captionsMarkdown(post);
+    const dir = join(out, date);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "captions.md"), captions);
+    const path = `${week}/${date}/captions.md`;
+    let url = `https://dry-run.invalid/${path}`;
+    if (store) {
+      const { error } = await store.upload(path, captions, {
+        contentType: "text/markdown",
+        upsert: true,
+      });
+      if (error) throw new Error(`upload ${path} failed: ${error.message}`);
+      const signed = await store.createSignedUrl(path, SIGNED_LINK_SECONDS);
+      if (signed.error || !signed.data)
+        throw new Error(`signing ${path} failed`);
+      url = signed.data.signedUrl;
+    }
+    links.push({
+      date,
+      id: post.id,
+      title: post.title,
+      title_source: copy.title_source,
+      captions_url: url,
+    });
+    process.stdout.write(`recaption: ${date} ${post.id}: ${post.title}\n`);
+  }
+  writeFileSync(
+    join(out, "recaption.json"),
+    `${JSON.stringify(recaptionLinksSchema.parse(links), null, 2)}\n`,
+  );
+  const text = recaptionAnnouncement(week, dates, links);
+  if (dryRun) {
+    process.stdout.write(`[dry run] message:\n${text}\n`);
+    return;
+  }
+  const config = slackConfig(process.env);
+  if (!config.ok) throw new Error(config.error);
+  await postMessage(config.value, text, nodeFetch);
+  process.stdout.write(`recaption: Week ${week} note posted to Slack\n`);
+}
+
 /** The dates built this week, for the workflow's render loop. */
 function dates(f: Flags): void {
   const out = resolve(need(f, "--out"));
@@ -515,7 +702,10 @@ async function main(): Promise<void> {
   if (cmd === "claim") return claim(f);
   if (cmd === "announce") return announce(f);
   if (cmd === "dates") return dates(f);
-  throw new Error("usage: weekly.ts build|upload|claim|announce|dates …");
+  if (cmd === "recaption") return recaption(f);
+  throw new Error(
+    "usage: weekly.ts build|upload|claim|announce|dates|recaption …",
+  );
 }
 
 if (

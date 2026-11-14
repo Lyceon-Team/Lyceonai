@@ -54,7 +54,9 @@ import {
   workedExampleInstagramCaption,
   workedExampleKeywords,
   workedExampleLabel,
+  titleTopic,
   workedExampleTitle,
+  type TitleSource,
 } from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import {
@@ -107,6 +109,8 @@ export type WorkedExampleCopy = {
   instagram_caption: string;
   facebook_caption: string;
   keywords: ReturnType<typeof workedExampleKeywords>;
+  /** Where the title's topic came from (the "Week ready" header shows it). */
+  title_source: TitleSource;
 };
 
 /** The real copy for one example, from the one caption builder (SCL-265). */
@@ -117,10 +121,11 @@ export function workedExampleCopy(
 ): WorkedExampleCopy {
   // The captions show the skill's short topic (STYLE display_name, Karl 2026-11-11); the content
   // check refuses an example with no style row, so a missing row here is a programming error. A
-  // row without display_name (STYLE before the rows land) keeps the skill name, as before.
-  const row = style[e.content.skill_code];
-  if (!row) throw new Error(`no style row for "${e.content.skill_code}"`);
-  const topic = row.display_name ?? e.content.skill_code;
+  // row without display_name falls back to the skill name shortened at a word boundary (Karl's
+  // pipeline fixes 2026-11-14, item 5), never cut inside a word.
+  const chosen = titleTopic(style, e.content.skill_code);
+  if (!chosen) throw new Error(`no style row for "${e.content.skill_code}"`);
+  const { topic } = chosen;
   return {
     title: workedExampleTitle(question, topic),
     caption: workedExampleCaption(e.content, question, topic),
@@ -131,6 +136,7 @@ export function workedExampleCopy(
     ),
     facebook_caption: workedExampleFacebookCaption(e.content, question, topic),
     keywords: workedExampleKeywords(e.content, question),
+    title_source: chosen.source,
   };
 }
 

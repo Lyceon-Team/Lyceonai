@@ -21,7 +21,7 @@ method is drawn in our own rendering (Manim). Posting stays by hand from `#socia
 | Content | `social`: `content/worked-examples/` | `STYLE.json`, `<YYYY-MM>-plan/plan.json`, `<YYYY-Www>/<QUESTION_ID>/example.json` + `voice/`, `posted.json` |
 | Asset kit | `video-kit/worked-examples/` | blank paper, Caveat + OFL, brand colours and fonts, the six templates, voice settings, music + licence |
 | PR check | `.github/workflows/worked-example-checks.yml` | every content rule on a pull request into `social` |
-| Daily job | `.github/workflows/worked-example-daily.yml`, 17:00 UTC | renders today's approved example and posts the labelled set to #social |
+| Weekly job | `.github/workflows/worked-example-daily.yml`, Thursday 16:15 UTC | builds next week's examples, uploads them to `social-weekly`, posts "Week <n> ready" (the daily 17:00 UTC job was retired 2026-11-14) |
 | Database | `supabase/migrations/20261118000000_worked_examples.sql` | `worked_examples`, `worked_example_metrics`, `questions_with_usage`, the leak rule both ways |
 
 ## The monthly plan (a pull request into `social`)
@@ -85,8 +85,9 @@ five or more slots uses all five (puzzle, obvious_answer_trap, speed, challenge,
 
 ## The weekly run (Karl's rulings 2026-11-11, SCL-277)
 
-One run a week builds every video for next week and delivers them in one message. It replaces the
-daily job below, which stays only until Karl confirms the first weekly batch.
+One run a week builds every video for next week and delivers them in one message. It replaced the
+daily job, retired on Karl's word of 2026-11-14 once the first weekly batch (W47) was confirmed;
+the QOTD job (`qotd-social.yml`) is separate and stays.
 
 - **When:** Thursday 16:15 UTC, job `weekly` in `.github/workflows/worked-example-daily.yml`,
   building next Monday-Sunday (ISO week). Pull requests run the same job as a dry run on the
@@ -112,8 +113,19 @@ daily job below, which stays only until Karl confirms the first weekly batch.
   pick 2026-11-11; Orus did not honour /ˈlaɪsiɑn/).
 - **Delivery:** the private bucket `social-weekly` (migration `20261203000000_social_weekly_bucket.sql`):
   `<YYYY-Www>/<date>/<id>.mp4` and `captions.md` (the SCL-262/273 copy-paste set: platform headers
-  outside, only pasteable copy inside). One #social message, "Week <n> ready", a line per date with
-  the video and captions links (signed, 14 days). Karl posts by hand.
+  outside, only pasteable copy inside). One #social message, "Week <n> ready", then the voice
+  ("Voice: Chirp 3 HD Orus (orus); "Lyceon" said "Lye-see-ahn"") and where the titles came from
+  ("Titles: STYLE display names (7 of 7)", or how many fell back to a shortened skill name), then a
+  line per date with the video and captions links (signed, 14 days). Karl posts by hand.
+- **Titles:** "SAT <section> worked example · <topic>", the topic being the STYLE row's
+  `display_name` (at most 32 characters). A row without one falls back to the skill name shortened
+  at a word boundary: the first phrase of two or more words before a comma, colon, "and", "or",
+  "in" or "of" ("Nonlinear Equations", "Linear Inequalities"); a title is never cut inside a word
+  (Karl, 2026-11-14).
+- **Captions only, for a week already delivered:** `weekly.ts recaption --content <social> --week
+  <YYYY-Www> --out <dir>` rebuilds each delivered example's captions from today's STYLE and rules,
+  overwrites `<week>/<date>/captions.md` in the bucket (the videos are not touched, `posted.json` is
+  not changed) and posts one "Week <n> captions updated" note with fresh captions links.
 - **Secrets:** `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (repository secrets), read only by the
   weekly job's build and upload steps on the scheduled run from main
   (`tests/ci/social-weekly-secret-guard.test.ts`). Slack: `SLACK_BOT_TOKEN`, `SOCIAL_SLACK_CHANNEL_ID`.
@@ -135,19 +147,15 @@ daily job below, which stays only until Karl confirms the first weekly batch.
 - **If a run fails:** before `claim`, re-run the job (the cache makes it cheap). After `claim` and
   before `announce`, post the links from the run's `links.json` artifact by hand.
 
-## The daily job
+## What each video's set is
 
-At 17:00 UTC: select the one example with `post_on` = today (America/Chicago), not retired, not in
-`posted.json`, approved by Karl's merge → all content rules → generate → `hyperframes check` →
-render → layout check (safe area x 71..912, y 154..1555; blank paper) → MP4 check (1080×1920,
-30-60 s, audio, music peak on record) → claim in `posted.json`, pushed to `social` → post to
-#social in the QOTD's format (SCL-262; for worked examples SCL-265, Karl's ruling 2026-11-02):
+Each video's copy-paste set (`captions.md` in the bucket; the format the daily job used to post,
+SCL-262; for worked examples SCL-265, Karl's ruling 2026-11-02):
 
 1. Any QA warning first ("SAT date list needs updating"), outside the copy blocks.
-2. **TikTok**: the video, its comment the platform header "*TikTok*" and nothing else; then ONE
-   caption block and a keywords block (one keyword per line, for TikTok's "Manage keywords").
-3. **Instagram** (the same video as TikTok, above: not uploaded again): "*Instagram*" and its
-   caption block.
+2. **TikTok**: the platform header "*TikTok*"; then ONE caption block and a keywords block (one
+   keyword per line, for TikTok's "Manage keywords").
+3. **Instagram** (the same video as TikTok): "*Instagram*" and its caption block.
 4. **Facebook** (the same video): "*Facebook*" and its caption block.
 
 Outside the blocks only the platform headers and any QA warnings; inside them only what Karl pastes:
@@ -230,8 +238,9 @@ runs the rendered MP4 through `scripts/worked-examples/final-mix.ts` before its 
 copied; the audio is limited at 4x oversampling (so the limit holds for true peak, not just
 samples) 0.5 dB under `final_mix.max_true_peak_dbtp` (-1 dBTP), re-encoded as AAC, measured, and
 limited again with more headroom if the encoder overshot (at most three passes, then it refuses).
-`daily.ts verify` measures the finished MP4 and refuses it above -1 dBTP. The daily job renders to
-`we-out/render/` and only the limited video in `we-out/` is checked, uploaded and posted; the
+`daily.ts verify` measures the finished MP4 and refuses it above -1 dBTP. The weekly job renders
+each date to `we-week/<date>/render/` and only the limited video in `we-week/<date>/` is checked
+and uploaded; the
 comparison render (`compare-voices.ts`) limits each video the same way.
 
 ## The cloned voice (OpenVoice addendum, Karl, 2026-10-27)

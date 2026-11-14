@@ -19,6 +19,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import {
   voiceLineSchema,
   voiceManifestSchema,
@@ -697,37 +698,23 @@ describe("the final-mix true-peak limiter", () => {
     expect(afterLimiting(null, fm, 0.5, 1).kind).toBe("refused");
   });
 
-  it("the daily job renders, limits, then checks, uploads and posts only the limited video", () => {
+  it("the daily job is retired: the workflow runs only the weekly batch, on its Thursday cron (Karl, 2026-11-14)", () => {
     const yml = readFileSync(
       join(ROOT, ".github/workflows/worked-example-daily.yml"),
       "utf8",
     );
-    const render = yml.indexOf(
-      'render --quality delivery --output "$GITHUB_WORKSPACE/$OUT/render/$id.mp4"',
-    );
-    const limit = yml.indexOf(
-      'pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"',
-    );
-    const layout = yml.indexOf("scripts/worked-examples/layout-check.ts");
-    const verify = yml.indexOf("scripts/worked-examples/daily.ts verify");
-    const upload = yml.indexOf("${{ env.OUT }}/*.mp4");
-    for (const [name, at] of Object.entries({
-      render,
-      limit,
-      layout,
-      verify,
-      upload,
-    }))
-      expect(at, name).toBeGreaterThan(-1);
-    expect(render).toBeLessThan(limit);
-    expect(limit).toBeLessThan(layout);
-    expect(limit).toBeLessThan(verify);
-    expect(verify).toBeLessThan(upload);
-    // The daily job renders once; the weekly job (SCL-277) renders once per date, below.
+    const doc = parse(yml) as {
+      on: { schedule: { cron: string }[] };
+      jobs: Record<string, unknown>;
+    };
+    expect(doc.on.schedule.map((c) => c.cron)).toEqual(["15 16 * * 4"]);
+    expect(Object.keys(doc.jobs)).not.toContain("daily");
+    expect(Object.keys(doc.jobs)).toContain("weekly");
+    // No step selects or posts a single day's example any more.
+    expect(yml).not.toMatch(/daily\.ts (select|claim)|post-to-slack\.ts/);
+    // The weekly job renders once per date, inside its loop.
     expect(
-      yml.match(
-        /render --quality delivery --output "\$GITHUB_WORKSPACE\/\$OUT\//g,
-      ),
+      yml.match(/render --quality delivery --output "\$GITHUB_WORKSPACE\//g),
     ).toHaveLength(1);
   });
 
