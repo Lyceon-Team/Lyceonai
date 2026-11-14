@@ -541,7 +541,8 @@ export function workedExampleLabel(example: WorkedExampleContent): string {
 export type TitleSource = "display_name" | "skill_name";
 
 const PHRASE_BREAK = /[,:]\s+|\s+(?:and|or|in|of)\s+/g;
-const TRAILING_FILLER = /(?:[\s,:·]+|\s+(?:and|or|in|of|the|a|to))+$/i;
+const TRAILING_FILLER =
+  /(?:[\s,:·]+)?(?:\s+(?:and|or|in|of|the|a|to)(?:[\s,:·]+)*)*$/i;
 
 /**
  * A College Board skill name shortened for a title, never cut inside a word: the whole name if
