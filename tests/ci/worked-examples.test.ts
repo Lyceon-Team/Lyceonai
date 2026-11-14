@@ -70,10 +70,13 @@ import {
   checkContent,
 } from "../../scripts/worked-examples/check-content";
 import {
+  COVER_BRAND,
+  COVER_SECONDS,
   END_CARD_CREDIT_PX,
   OUTRO_BRAND_PX,
   OUTRO_FOLLOW_PX,
   buildComposition,
+  coverZone,
   safeArea,
   scriptLines,
   type Composition,
@@ -101,6 +104,7 @@ import {
 } from "../../scripts/worked-examples/kit";
 import {
   boxProblems,
+  coverZoneProblems,
   creditProblems,
   nonPaperPixels,
 } from "../../scripts/worked-examples/layout-check";
@@ -128,6 +132,7 @@ const outro = voiceLineSchema.parse(
 );
 const comp: Composition = buildComposition({
   example: fixture.content,
+  topic: fixture.content.skill_code,
   question,
   voice: voice.lines,
   outro,
@@ -547,10 +552,63 @@ describe("30-60 s, order and the safe area", () => {
     expect(durationProblem(61, kit)).toMatch(/must be 30-60 s/);
   });
 
-  it("voice starts at 0:00; hook and question are on screen from frame 0 while the setup is spoken", () => {
+  it("the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)", () => {
+    expect(comp.scenes[0]).toEqual({
+      key: "cover",
+      start: 0,
+      end: COVER_SECONDS,
+    });
+    expect(COVER_SECONDS).toBeLessThanOrEqual(0.4);
+    // The hook is spoken from 0:00 under the card: the voice is delayed by nothing.
+    expect(comp.voice[0]).toMatchObject({ key: "hook", start: 0 });
+    const cover =
+      /<section id="cover"[^>]*>([\s\S]*?)<\/section>/.exec(comp.html)?.[1] ??
+      "";
+    expect(cover).toContain(COVER_BRAND);
+    expect(cover).toContain(
+      `<div class="cover-topic">${fixture.content.skill_code}</div>`,
+    );
+    expect(cover).toContain(`>${fixture.content.hook.line}</div>`);
+    // The card sits in the centred 4:5 crop of the frame (and TikTok's safe area).
+    expect(coverZone()).toEqual({
+      left: 71,
+      right: 912,
+      top: 285,
+      bottom: 1555,
+    });
+    // The figure (if any) starts with the opening scene, never over the card.
+    expect(comp.html).not.toMatch(/<section id="figure"[^>]*data-start="0"/);
+  });
+
+  it("the cover check: every cover box inside the 4:5 zone; a box above it, below it or a bare cover is refused", () => {
+    const zone = coverZone();
+    const box = (y: number, bottom: number) => ({
+      what: "cover",
+      x: 100,
+      y,
+      right: 800,
+      bottom,
+    });
+    expect(coverZoneProblems([box(600, 700)], true, zone)).toEqual([]);
+    expect(coverZoneProblems([box(200, 300)], true, zone).join()).toMatch(
+      /leaves the cover's 4:5 zone/,
+    );
+    expect(coverZoneProblems([box(1500, 1600)], true, zone).join()).toMatch(
+      /leaves the cover's 4:5 zone/,
+    );
+    expect(coverZoneProblems([], true, zone)).toEqual([
+      "the cover card drew nothing",
+    ]);
+    // A composition without a cover (a QOTD breakdown) is not checked.
+    expect(coverZoneProblems([], false, zone)).toEqual([]);
+  });
+
+  it("voice starts at 0:00; hook and question are on screen by 0.4 s while the setup is spoken", () => {
     expect(comp.voice[0]?.key).toBe("hook");
     expect(comp.voice[0]?.start).toBe(0);
-    expect(comp.scenes[0]).toMatchObject({ key: "open", start: 0 });
+    // The brief: hook and question visible within 0.5 s (after the 0.4 s cover card).
+    expect(comp.scenes[1]).toMatchObject({ key: "open", start: COVER_SECONDS });
+    expect(COVER_SECONDS).toBeLessThan(0.5);
     const open =
       /<section id="open"[^>]*>([\s\S]*?)<\/section>/.exec(comp.html)?.[1] ??
       "";
@@ -560,7 +618,7 @@ describe("30-60 s, order and the safe area", () => {
     expect(comp.html).not.toMatch(/"#(hook-line|question-card)"/);
     const setup = comp.voice.find((v) => v.key === "question");
     expect(setup && setup.start + setup.duration).toBeLessThanOrEqual(
-      comp.scenes[0]?.end ?? 0,
+      comp.scenes[1]?.end ?? 0,
     );
   });
 
@@ -586,6 +644,7 @@ describe("30-60 s, order and the safe area", () => {
       "outro",
     ]);
     expect(comp.scenes.map((s) => s.key)).toEqual([
+      "cover",
       "open",
       "work",
       "trap",
@@ -624,6 +683,7 @@ describe("30-60 s, order and the safe area", () => {
     ).toEqual([]);
     const rebuilt = buildComposition({
       example: fixture.content,
+      topic: fixture.content.skill_code,
       question,
       voice: oldOrder,
       outro,
@@ -633,6 +693,7 @@ describe("30-60 s, order and the safe area", () => {
     expect(() =>
       buildComposition({
         example: fixture.content,
+        topic: fixture.content.skill_code,
         question,
         voice: oldOrder.slice(1),
         outro,
@@ -768,6 +829,7 @@ describe("the music credit is on the end card, not in any caption", () => {
     };
     const bare = buildComposition({
       example: fixture.content,
+      topic: fixture.content.skill_code,
       question,
       voice: voice.lines,
       outro,
