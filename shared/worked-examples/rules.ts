@@ -53,6 +53,7 @@
 import {
   WORKED_EXAMPLE_HOOK_TYPES,
   WORKED_EXAMPLE_TITLE_MAX,
+  WORKED_EXAMPLE_TOPIC_MAX,
   type WorkedExampleContent,
   type WorkedExampleHookType,
   type WorkedExampleScript,
@@ -534,6 +535,55 @@ export function planSlotProblem(
 /** "Worked example · Percentages · obvious_answer_trap" (the brief's label, verbatim). */
 export function workedExampleLabel(example: WorkedExampleContent): string {
   return `Worked example · ${example.skill_code} · ${example.hook.type}`;
+}
+
+/** Where a title's topic came from, shown at the top of the "Week ready" message. */
+export type TitleSource = "display_name" | "skill_name";
+
+const PHRASE_BREAK = /[,:]\s+|\s+(?:and|or|in|of)\s+/g;
+const TRAILING_FILLER = /(?:[\s,:·]+|\s+(?:and|or|in|of|the|a|to))+$/i;
+
+/**
+ * A College Board skill name shortened for a title, never cut inside a word: the whole name if
+ * it fits WORKED_EXAMPLE_TOPIC_MAX, else the first prefix of two or more words ending at a phrase
+ * break (a comma or colon, or before "and", "or", "in", "of") that fits, else a one-word prefix
+ * there ("Probability"), else the longest run of whole words that fits; a trailing comma, colon
+ * or filler word ("in", "and", "the") is dropped. "Nonlinear Equations in One Variable and
+ * Systems of Equations in Two Variables" becomes "Nonlinear Equations".
+ *
+ * @spec [Karl's pipeline fixes 2026-11-14, item 5: "a caption title is never cut mid-word; a
+ *       missing display name falls back to a shortened skill name at a word boundary"]
+ *       | @implemented [2026-11-14]
+ */
+export function shortSkillName(skill: string): string {
+  const name = skill.replace(/\s+/g, " ").trim();
+  if (name.length <= WORKED_EXAMPLE_TOPIC_MAX) return name;
+  let single = "";
+  for (const m of name.matchAll(PHRASE_BREAK)) {
+    const head = name.slice(0, m.index).replace(TRAILING_FILLER, "");
+    if (head === "" || head.length > WORKED_EXAMPLE_TOPIC_MAX) continue;
+    if (head.includes(" ")) return head;
+    single ||= head;
+  }
+  if (single) return single;
+  const words: string[] = [];
+  for (const w of name.split(" ")) {
+    if ([...words, w].join(" ").length > WORKED_EXAMPLE_TOPIC_MAX) break;
+    words.push(w);
+  }
+  return (words.join(" ").replace(TRAILING_FILLER, "") || words[0]) ?? name;
+}
+
+/** The title's topic: the STYLE row's display_name, else the shortened skill name. */
+export function titleTopic(
+  style: WorkedExampleStyle,
+  skill: string,
+): { topic: string; source: TitleSource } | null {
+  const row = style[skill];
+  if (!row) return null;
+  return row.display_name
+    ? { topic: row.display_name, source: "display_name" }
+    : { topic: shortSkillName(skill), source: "skill_name" };
 }
 
 /**

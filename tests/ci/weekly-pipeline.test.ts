@@ -44,6 +44,11 @@ import {
   SIGNED_LINK_SECONDS,
   SOCIAL_WEEKLY_BUCKET,
   weekAnnouncement,
+  batchVoiceLabel,
+  COMMITTED_VOICE_LABEL,
+  deliveredExamples,
+  recaptionAnnouncement,
+  titleSourceLine,
   weekDates,
   weekExamples,
 } from "../../scripts/worked-examples/weekly";
@@ -368,11 +373,13 @@ describe("the week (Karl, 2026-11-11)", () => {
     const plan = {
       week: "2026-W48",
       dates: weekDates("2026-W48"),
+      voice: batchVoiceLabel(loadKit()),
       built: [
         {
           date: "2026-11-23",
           id: "we-a",
           title: "SAT Math worked example · Percentages",
+          title_source: "display_name" as const,
         },
       ],
       refused: [
@@ -404,5 +411,84 @@ describe("the week (Karl, 2026-11-11)", () => {
     );
     expect(SIGNED_LINK_SECONDS).toBe(1_209_600);
     expect(SOCIAL_WEEKLY_BUCKET).toBe("social-weekly");
+  });
+
+  it("the Week ready message shows the voice and where the titles came from, at the top (Karl, 2026-11-14)", () => {
+    const built = (source: "display_name" | "skill_name", k: number) => ({
+      date: weekDates("2026-W48")[k] ?? "",
+      id: `we-${k}`,
+      title: `SAT Math worked example · T${k}`,
+      title_source: source,
+    });
+    const base = {
+      week: "2026-W48",
+      dates: weekDates("2026-W48"),
+      voice: batchVoiceLabel(loadKit()),
+      refused: [],
+    };
+    const all = weekAnnouncement(
+      { ...base, built: [built("display_name", 0), built("display_name", 1)] },
+      [],
+    ).split("\n");
+    expect(all[0]).toMatch(/^\*Week 48 ready\*/);
+    // From the kit, not typed here: the batch profile is Orus, Lyceon respelled Lye-see-ahn.
+    expect(all[1]).toBe(
+      'Voice: Chirp 3 HD Orus (orus); "Lyceon" said "Lye-see-ahn"',
+    );
+    expect(all[2]).toBe("Titles: STYLE display names (2 of 2)");
+    const mixed = weekAnnouncement(
+      { ...base, built: [built("display_name", 0), built("skill_name", 1)] },
+      [],
+    ).split("\n");
+    expect(mixed[2]).toBe(
+      "Titles: 1 STYLE display name, 1 shortened skill name (no display_name in STYLE)",
+    );
+    expect(titleSourceLine([])).toBe("Titles: nothing built");
+    // The pull-request dry run says so instead of naming a voice it did not use.
+    expect(
+      weekAnnouncement(
+        { ...base, voice: COMMITTED_VOICE_LABEL, built: [] },
+        [],
+      ).split("\n")[1],
+    ).toBe(`Voice: ${COMMITTED_VOICE_LABEL}`);
+  });
+});
+
+describe("recaption: a delivered week's captions rewritten, text only (Karl, 2026-11-14)", () => {
+  it("only the week's delivered examples are recaptioned; an undelivered one is left alone", () => {
+    const dates = weekDates("2026-W45");
+    const examples = loadExamples(CONTENT);
+    expect(weekExamples(examples, dates, {})).toHaveLength(2);
+    expect(deliveredExamples(examples, dates, {})).toEqual([]);
+    expect(
+      deliveredExamples(examples, dates, {
+        "we-satm2c6pxlx": { date: "2026-11-04", run: "1" },
+      }).map((e) => e.content.question_id),
+    ).toEqual(["SATM2C6PXLX"]);
+    expect(
+      deliveredExamples(examples, weekDates("2026-W46"), {
+        "we-satm2c6pxlx": { date: "2026-11-04", run: "1" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("the note: Week <n> captions updated, the title source, a captions link per date", () => {
+    const text = recaptionAnnouncement("2026-W47", weekDates("2026-W47"), [
+      {
+        date: "2026-11-16",
+        id: "we-satm2gl735m",
+        title: "SAT Math worked example · Nonlinear systems",
+        title_source: "display_name",
+        captions_url: "https://x.supabase.co/c",
+      },
+    ]).split("\n");
+    expect(text[0]).toBe(
+      "*Week 47 captions updated* (2026-11-16 to 2026-11-22). Same videos; new captions links expire in 14 days.",
+    );
+    expect(text[1]).toBe("Titles: STYLE display names (1 of 1)");
+    expect(text[2]).toBe(
+      "• Mon 2026-11-16: SAT Math worked example · Nonlinear systems: <https://x.supabase.co/c|captions>",
+    );
+    expect(text).toHaveLength(3);
   });
 });
