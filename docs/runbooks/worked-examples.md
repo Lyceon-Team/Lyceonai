@@ -125,6 +125,13 @@ the QOTD job (`qotd-social.yml`) is separate and stays.
   Instagram's grid and feed crop show; the layout check refuses any of it outside. The voice is
   not moved: the hook is spoken from 0:00 under the card, and the hook card and question follow
   at 0.4 s (still within the brief's 0.5 s). A drawn figure starts with them, never over the card.
+- **Equations on their own lines (Karl 2026-11-14):** the card writes each display equation
+  (`$$...$$` in the seed) on a line of its own, as the app shows it; W47 Monday (SATM2GL735M) had
+  read "…have?y = x^2 − 4x + 5y = 2x − 3" because the card flattened two back-to-back display
+  blocks. The content check refuses a stem or passage where a display equation would not get its
+  own line (E1), or an inline equation runs into the words around it or straight into another
+  equation with only a space between (E2). A seed stem holding the two characters `\n` beside an
+  equation is refused by E2 too: fix the seed, or pick another question.
 - **Titles:** "SAT <section> worked example · <topic>", the topic being the STYLE row's
   `display_name` (at most 32 characters). A row without one falls back to the skill name shortened
   at a word boundary: the first phrase of two or more words before a comma, colon, "and", "or",

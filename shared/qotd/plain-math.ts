@@ -164,8 +164,28 @@ function latexToPlain(latex: string): string {
     .trim();
 }
 
-/** Mixed text and $...$ maths as plain text; `<u>` tags and blanks written for a reader. */
-export function plainMathText(content: string): string {
+export type PlainMathOptions = {
+  /**
+   * Each display equation ($$...$$ or \[...\]) on a line of its own, as the app's MathRenderer
+   * draws it (a KaTeX display block). Off by default, so the QOTD post, caption and leak check
+   * read as before; the worked-example card turns it on, where two display equations written
+   * back to back ("...have?$$y = x^2 - 4x + 5$$$$y = 2x - 3$$") otherwise ran into one line
+   * (Karl, 2026-11-14, W47 SATM2GL735M).
+   */
+  displayOnOwnLine?: boolean;
+};
+
+/**
+ * Mixed text and $...$ maths as plain text; `<u>` tags and blanks written for a reader.
+ *
+ * @spec [Karl's fix 2026-11-14 ("separate equations show on separate lines")] (displayOnOwnLine)
+ *       | @implemented [2026-10-15, displayOnOwnLine 2026-11-14]
+ */
+export function plainMathText(
+  content: string,
+  options: PlainMathOptions = {},
+): string {
+  const ownLine = options.displayOnOwnLine === true;
   let out = "";
   for (const token of tokenizeMathContent(content)) {
     if (token.type === "text") {
@@ -173,12 +193,20 @@ export function plainMathText(content: string): string {
         .replace(/\\\$/g, "$")
         .replace(/<\/?u>/g, "")
         .replace(/_{2,}/g, "____");
+    } else if (ownLine && token.displayMode) {
+      out += `\n${latexToPlain(token.content)}\n`;
     } else {
       out += latexToPlain(token.content);
     }
   }
-  return out
+  const flat = out
     .replace(/[ \t]+/g, " ")
     .replace(/ +([,.;:?!])/g, "$1")
     .trim();
+  return ownLine
+    ? flat
+        .replace(/ *\n\s*/g, "\n")
+        .replace(/\n([,.;:?!])/g, "$1")
+        .replace(/^\n+|\n+$/g, "")
+    : flat;
 }
