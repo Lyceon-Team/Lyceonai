@@ -119,6 +119,12 @@ the QOTD job (`qotd-social.yml`) is separate and stays.
   shortened skill name), then a title per date; and in its thread one reply per day: the date, the
   video link (signed, 14 days) and the copy-paste blocks themselves (TikTok caption and keywords,
   Instagram, Facebook), so captions.md never needs opening (Karl, 2026-11-14). Karl posts by hand.
+- **Cover card (from W48, Karl 2026-11-14):** the first 0.4 s of every worked example is a card:
+  the Lyceon logo and "Lyceon · Daily SAT questions", the short topic (the title's topic) and the
+  hook line. Everything on it sits in the centred 4:5 zone (y 285..1555, x 71..912), which is what
+  Instagram's grid and feed crop show; the layout check refuses any of it outside. The voice is
+  not moved: the hook is spoken from 0:00 under the card, and the hook card and question follow
+  at 0.4 s (still within the brief's 0.5 s). A drawn figure starts with them, never over the card.
 - **Titles:** "SAT <section> worked example · <topic>", the topic being the STYLE row's
   `display_name` (at most 32 characters). A row without one falls back to the skill name shortened
   at a word boundary: the first phrase of two or more words before a comma, colon, "and", "or",

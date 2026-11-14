@@ -79,6 +79,7 @@ import {
   loadVoice,
   POSTED_PATH,
 } from "./content";
+import { titleTopic } from "../../shared/worked-examples/rules";
 import { buildPost, workedExampleCopy } from "./daily";
 import { composeExample } from "./generate";
 import { folderCommit, pullForCommit } from "./github";
@@ -486,14 +487,18 @@ async function build(f: Flags): Promise<void> {
           );
         voice = await batchVoice(kit, e, dir, store);
       }
+      const style = loadStyle(content);
+      const copy = workedExampleCopy(e, question, style);
       composeExample({
         example: e.content,
+        topic:
+          titleTopic(style, e.content.skill_code)?.topic ??
+          e.content.skill_code,
         question,
         ...voice,
         out: join(dir, "composition"),
         kit,
       });
-      const copy = workedExampleCopy(e, question, loadStyle(content));
       const post = buildPost(e, copy, approval);
       writeFileSync(
         join(dir, "post.json"),

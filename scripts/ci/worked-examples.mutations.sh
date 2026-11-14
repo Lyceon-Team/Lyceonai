@@ -19,6 +19,7 @@
 # Week ready message, recaption touches only a delivered week, the daily job retired; T55 the same
 # day's ruling: the key on the scheduled run or a manual run from main, never any other branch;
 # T56-T57 the same day's ruling: the captions inline, one threaded reply per day;
+# T58-T60 Karl's cover-card ruling (same day): the cover card and its 4:5 zone;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -48,6 +49,7 @@ FILES=(
   "scripts/worked-examples/approval.ts"
   "scripts/worked-examples/composition.ts"
   "video-kit/worked-examples/templates/end-card.html"
+  "video-kit/worked-examples/templates/cover-card.html"
   "scripts/worked-examples/audio.ts"
   "scripts/worked-examples/content.ts"
   "scripts/worked-examples/generate.ts"
@@ -425,6 +427,15 @@ ts_plant "T56 the day reply drops the captions (Karl has to open captions.md)" s
 ts_plant "T57 the replies posted to the channel, not into the header's thread" shared/slack/client.ts \
   '        ...(threadTs ? { thread_ts: threadTs } : {}),' '' \
   "a reply goes into the header's thread: postMessage sends thread_ts only when given"
+ts_plant "T58 the cover check lets a box above the 4:5 zone through" scripts/worked-examples/layout-check.ts \
+  '        b.y < zone.top - 1 ||' '' \
+  "the cover check: every cover box inside the 4:5 zone; a box above it, below it or a bare cover is refused"
+ts_plant "T59 a worked example without its cover card" scripts/worked-examples/composition.ts \
+  '    cover: { topic: input.topic, hookLine: input.example.hook.line },' '    cover: undefined,' \
+  "the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)"
+ts_plant "T60 the cover zone is TikTok's safe area, not the 4:5 crop" scripts/worked-examples/composition.ts \
+  '    top: Math.max(top, safe.top),' '    top: safe.top,' \
+  "the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)"
 # T50 re-pointed 2026-11-14: workedExampleCopy now takes the topic from titleTopic.
 ts_plant "T50 the captions show the College Board skill name again" scripts/worked-examples/daily.ts \
   '  const { topic } = chosen;' '  const topic = e.content.skill_code;' \

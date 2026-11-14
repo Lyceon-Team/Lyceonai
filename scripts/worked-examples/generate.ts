@@ -24,7 +24,8 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import { buildComposition, type Composition } from "./composition";
-import { exampleProblems, loadExamples, loadVoice } from "./content";
+import { titleTopic } from "../../shared/worked-examples/rules";
+import { exampleProblems, loadExamples, loadStyle, loadVoice } from "./content";
 import { KIT_DIR, ROOT, loadKit, type Kit } from "./kit";
 
 /** The 30-60 s rule (voice.json's bounds), or null. */
@@ -45,6 +46,9 @@ export function generate(
   const { problems, question } = exampleProblems(contentRoot, example, kit);
   if (problems.length > 0 || !question)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
+  const chosen = titleTopic(loadStyle(contentRoot), example.content.skill_code);
+  if (!chosen)
+    throw new Error(`no style row for "${example.content.skill_code}"`);
   const manifest = loadVoice(contentRoot, dir);
   const outro = voiceLineSchema.parse(
     JSON.parse(
@@ -53,6 +57,7 @@ export function generate(
   );
   return composeExample({
     example: example.content,
+    topic: chosen.topic,
     question,
     lines: manifest.lines,
     voiceDir: join(contentRoot, dir, "voice"),
@@ -71,6 +76,8 @@ export function generate(
  */
 export function composeExample(input: {
   example: WorkedExampleContent;
+  /** The short topic the title and the cover card show (titleTopic). */
+  topic: string;
   question: SeedQuestion;
   lines: readonly VoiceLine[];
   voiceDir: string;
@@ -81,6 +88,7 @@ export function composeExample(input: {
 }): Composition {
   const comp = buildComposition({
     example: input.example,
+    topic: input.topic,
     question: input.question,
     voice: [...input.lines],
     outro: input.outro,

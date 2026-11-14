@@ -22,6 +22,7 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import { figureProblems } from "../../shared/worked-examples/figure-rules";
 import {
+  COVER_SECONDS,
   buildComposition,
   safeArea,
 } from "../../scripts/worked-examples/composition";
@@ -64,6 +65,7 @@ const outro = voiceLineSchema.parse(
 const voice = loadVoice(CONTENT, geo.dir);
 const comp = buildComposition({
   example: geo.content,
+  topic: geo.content.skill_code,
   question,
   voice: voice.lines,
   outro,
@@ -228,10 +230,13 @@ describe("the drawn figure (Karl, 2026-11-11)", () => {
     expect(cone.at(-1)?.end ?? 99).toBeLessThanOrEqual(start("step-3"));
   });
 
-  it("the figure stays from 0:00 to the end card, every stroke hidden until its tween, one tween each", () => {
+  it("the figure stays from the opening scene (after the 0.4 s cover card) to the end card, every stroke hidden until its tween, one tween each", () => {
     const section = /<section id="figure"[^>]*>/.exec(comp.html)?.[0] ?? "";
-    expect(section).toContain('data-start="0"');
-    expect(section).toContain(`data-duration="${start("outro")}"`);
+    // Karl's cover card (2026-11-14) owns 0..COVER_SECONDS; the figure starts with the opening.
+    expect(section).toContain(`data-start="${COVER_SECONDS}"`);
+    expect(section).toContain(
+      `data-duration="${Math.round((start("outro") - COVER_SECONDS) * 1000) / 1000}"`,
+    );
     for (const item of layout.items) {
       const tweens = comp.html.match(
         new RegExp(`tl\\.fromTo\\("#${item.id}"`, "g"),
@@ -264,6 +269,7 @@ describe("the drawn figure (Karl, 2026-11-11)", () => {
     expect(comp.html).toContain(`bottom(e) <= ${FIGURE_TOP - FIGURE_GAP});`);
     const bare = buildComposition({
       example: plain.content,
+      topic: plain.content.skill_code,
       question: (() => {
         const q = seedQuestion(plain.content.question_id);
         if (!q.ok) throw new Error(q.problem);
