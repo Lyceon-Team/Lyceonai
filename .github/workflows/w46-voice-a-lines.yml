@@ -1,0 +1,76 @@
+# W46 in voice A (Karl's pipeline fixes, 2026-11-14, item 3): a single run, as a job on its own
+# pull request (the bake-off / voice-A pattern). Through lyceon-ci-eval (Workload Identity
+# Federation, no stored key) it voices the Nov 9 and Nov 13 examples in Chirp 3 HD Orus, "Lyceon"
+# respelled "Lye-see-ahn", and uploads the raw audio as an artifact. Nothing is normalised,
+# committed or posted here: the checks and renders run locally. No schedule. This pull request is
+# closed, never merged, once the artifact is downloaded.
+name: W46 voice A lines
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/w46-voice-a-lines.yml
+      - scripts/worked-examples/chirp-lines.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: w46-voice-a-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout (code)
+        uses: actions/checkout@v4
+
+      - name: Checkout the two W46 examples (content)
+        uses: actions/checkout@v4
+        with:
+          ref: social
+          path: social
+          sparse-checkout: |
+            content/worked-examples/2026-W46/SATM2UAVIRM
+            content/worked-examples/2026-W46/SATM2EFN4GL
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/480325859530/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: lyceon-ci-eval@replit-cop.iam.gserviceaccount.com
+
+      - name: Voice the Nov 9 and Nov 13 examples in voice A
+        env:
+          OUT: ${{ runner.temp }}/voice-a
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/worked-examples/chirp-lines.ts --voice Orus --out "$OUT" \
+            --example social/content/worked-examples/2026-W46/SATM2UAVIRM \
+            --example social/content/worked-examples/2026-W46/SATM2EFN4GL
+
+      - name: Upload the lines
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: w46-voice-a-lines
+          path: ${{ runner.temp }}/voice-a
+          if-no-files-found: ignore
+          retention-days: 7
