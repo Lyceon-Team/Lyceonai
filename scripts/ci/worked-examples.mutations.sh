@@ -16,7 +16,9 @@
 # T47-T49 the same day's rulings: no "Go" in the spoken hook (H7), Lyceon respelled for Chirp;
 # T50 the same day's ruling: the captions show the STYLE display_name, not the skill name;
 # T51-T54 Karl's pipeline fixes 2026-11-14: no mid-word title, the voice and title source in the
-# Week ready message, recaption touches only a delivered week, the daily job retired;
+# Week ready message, recaption touches only a delivered week, the daily job retired; T55 the same
+# day's ruling: the key on the scheduled run or a manual run from main, never any other branch;
+# T56-T57 the same day's ruling: the captions inline, one threaded reply per day;
 # F1-F8 added per Karl's ruling of 2026-11-02, SCL-270: a true-peak limiter (at most -1 dBTP) on
 # the finished mix in every pipeline; F9-F11 the same ruling on the D pilots' render.py and check.ts)
 # ============================================================================
@@ -65,6 +67,7 @@ FILES=(
   "scripts/video-pilots/manim/render.py"
   "scripts/worked-examples/voice-cache.ts"
   "scripts/worked-examples/weekly.ts"
+  "shared/slack/client.ts"
   "scripts/worked-examples/figure.ts"
   "shared/worked-examples/figure-rules.ts"
   "scripts/worked-examples/google-tts.ts"
@@ -357,10 +360,16 @@ ts_plant "T37 a line that fails the checks is cached anyway" scripts/worked-exam
 ts_plant "T46 one take per line (a single bad take refuses the example)" scripts/worked-examples/voice-cache.ts \
   "export const VOICE_TAKES = 3;" "export const VOICE_TAKES = 1;" \
   "a bad take is voiced again"
+# T38 re-pointed 2026-11-14 (Karl's ruling: a manual run from main too) and T55 added: a manual
+# run from any branch.
 ts_plant "T38 the service-role key reachable from a pull request" .github/workflows/worked-example-daily.yml \
-  "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'" \
+  "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'" \
   "      - name: Upload to social-weekly (signed links, 14 days)"$'\n'"        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'" \
-  "only on the scheduled run from main"
+  "only on the scheduled run or a manual run from main"
+ts_plant "T55 the key on a manual run from any branch" .github/workflows/worked-example-daily.yml \
+  "      - name: Re-deliver a week with rebuilt captions"$'\n'"        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode == 'recaption'" \
+  "      - name: Re-deliver a week with rebuilt captions"$'\n'"        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'recaption'" \
+  "only on the scheduled run or a manual run from main"
 ts_plant "T39 a label inside the captions file" scripts/worked-examples/weekly.ts \
   "  for (const w of post.warnings) parts.push(w);" '  for (const w of post.warnings) parts.push(w);'$'\n''  parts.push(`Worked example · ${post.id}`);' \
   "platform headers outside"
@@ -410,6 +419,12 @@ ts_plant "T54 the daily cron back in the workflow" .github/workflows/worked-exam
   '    - cron: "15 16 * * 4"' '    - cron: "0 17 * * *"
     - cron: "15 16 * * 4"' \
   "the daily job is retired: the workflow runs only the weekly batch, on its Thursday cron (Karl, 2026-11-14)"
+ts_plant "T56 the day reply drops the captions (Karl has to open captions.md)" scripts/worked-examples/weekly.ts \
+  '    captionsMarkdown(post).trimEnd(),' '    "",' \
+  "one reply per day in the header's thread: date, video link, the captions inline (Karl, 2026-11-14)"
+ts_plant "T57 the replies posted to the channel, not into the header's thread" shared/slack/client.ts \
+  '        ...(threadTs ? { thread_ts: threadTs } : {}),' '' \
+  "a reply goes into the header's thread: postMessage sends thread_ts only when given"
 # T50 re-pointed 2026-11-14: workedExampleCopy now takes the topic from titleTopic.
 ts_plant "T50 the captions show the College Board skill name again" scripts/worked-examples/daily.ts \
   '  const { topic } = chosen;' '  const topic = e.content.skill_code;' \

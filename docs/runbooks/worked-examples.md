@@ -113,21 +113,26 @@ the QOTD job (`qotd-social.yml`) is separate and stays.
   pick 2026-11-11; Orus did not honour /ˈlaɪsiɑn/).
 - **Delivery:** the private bucket `social-weekly` (migration `20261203000000_social_weekly_bucket.sql`):
   `<YYYY-Www>/<date>/<id>.mp4` and `captions.md` (the SCL-262/273 copy-paste set: platform headers
-  outside, only pasteable copy inside). One #social message, "Week <n> ready", then the voice
-  ("Voice: Chirp 3 HD Orus (orus); "Lyceon" said "Lye-see-ahn"") and where the titles came from
-  ("Titles: STYLE display names (7 of 7)", or how many fell back to a shortened skill name), then a
-  line per date with the video and captions links (signed, 14 days). Karl posts by hand.
+  outside, only pasteable copy inside), kept as the record. In #social: one header, "Week <n>
+  ready", then the voice ("Voice: Chirp 3 HD Orus (orus); "Lyceon" said "Lye-see-ahn"") and where
+  the titles came from ("Titles: STYLE display names (7 of 7)", or how many fell back to a
+  shortened skill name), then a title per date; and in its thread one reply per day: the date, the
+  video link (signed, 14 days) and the copy-paste blocks themselves (TikTok caption and keywords,
+  Instagram, Facebook), so captions.md never needs opening (Karl, 2026-11-14). Karl posts by hand.
 - **Titles:** "SAT <section> worked example · <topic>", the topic being the STYLE row's
   `display_name` (at most 32 characters). A row without one falls back to the skill name shortened
   at a word boundary: the first phrase of two or more words before a comma, colon, "and", "or",
   "in" or "of" ("Nonlinear Equations", "Linear Inequalities"); a title is never cut inside a word
   (Karl, 2026-11-14).
-- **Captions only, for a week already delivered:** `weekly.ts recaption --content <social> --week
-  <YYYY-Www> --out <dir>` rebuilds each delivered example's captions from today's STYLE and rules,
-  overwrites `<week>/<date>/captions.md` in the bucket (the videos are not touched, `posted.json` is
-  not changed) and posts one "Week <n> captions updated" note with fresh captions links.
+- **Manual runs (from main only, Karl 2026-11-14):** Actions → "Worked example daily" → Run
+  workflow on `main`. Mode `week` builds and delivers a week now (empty week: next week).
+  Mode `recaption` with a week (e.g. `2026-W47`) re-delivers a week already delivered: the videos
+  stay as they are, each captions.md is rebuilt from today's STYLE and rules and overwritten, the
+  video and captions are signed again, and a fresh "Week <n> ready (updated)" header goes up with
+  one reply per day; `posted.json` is not changed. A run from any other branch does nothing.
 - **Secrets:** `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` (repository secrets), read only by the
-  weekly job's build and upload steps on the scheduled run from main
+  weekly job's build, upload and recaption steps on the scheduled run or a manual run from main
+  (never on a pull request; Karl, 2026-11-14)
   (`tests/ci/social-weekly-secret-guard.test.ts`). Slack: `SLACK_BOT_TOKEN`, `SOCIAL_SLACK_CHANNEL_ID`.
 - **Drawn figures** (geometry and graph slots; Karl's ruling 7, CPU only): add a `figure` to
   `example.json`: a `box` in the question's own units (y up) and up to 24 `shapes`: `segment`

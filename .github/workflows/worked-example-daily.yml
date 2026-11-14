@@ -13,9 +13,12 @@
 # check, uploads them to the private social-weekly bucket with 14-day signed links, claims them in
 # posted.json (pushed to `social` before anything is announced, so a re-run announces nothing)
 # and posts one "Week <n> ready" message. The code comes from the default branch (a schedule only
-# runs there); the content from `social`, checked out beside it with full history. The Supabase
-# service-role key is read ONLY by the weekly job's steps guarded to the scheduled run from main
-# (tests/ci/social-weekly-secret-guard.test.ts). The daily 17:00 UTC job that rendered and posted
+# runs there); the content from `social`, checked out beside it with full history. In #social the
+# header carries the voice and the title source, and each day is one threaded reply with the video
+# link and the captions inline. A manual run from main (Karl's ruling 2026-11-14) builds a week
+# now (mode week) or re-delivers a delivered week with rebuilt captions (mode recaption). The
+# Supabase service-role key is read ONLY by the weekly job's steps guarded to the scheduled run or
+# a manual run from main, never on a pull request (tests/ci/social-weekly-secret-guard.test.ts). The daily 17:00 UTC job that rendered and posted
 # one example a day was retired on Karl's word of 2026-11-14; the file keeps its name so the
 # guards, harness and runbook that point at it stay put. The QOTD job is qotd-social.yml.
 #
@@ -28,6 +31,19 @@ name: Worked example daily
 on:
   schedule:
     - cron: "15 16 * * 4"
+  # A manual run from main (Karl's ruling 2026-11-14): "week" builds and delivers a week now;
+  # "recaption" re-delivers a week already delivered with rebuilt captions (the videos as they are).
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "week: build and deliver; recaption: rebuild a delivered week's captions and post it again"
+        type: choice
+        options: [week, recaption]
+        default: week
+      week:
+        description: "ISO week, e.g. 2026-W47 (empty: next week; recaption needs one)"
+        required: false
+        default: ""
   pull_request:
     paths:
       - .github/workflows/worked-example-daily.yml
@@ -52,8 +68,9 @@ env:
 
 jobs:
   weekly:
-    # The weekly cron (the real batch) and pull requests (the dry run on the fixture tree).
-    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    # The weekly cron and a manual run from main (the real batch), and pull requests (the dry run
+    # on the fixture tree). A manual run from any other branch does nothing.
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -97,7 +114,7 @@ jobs:
       # The voice stage's TTS call goes through the identity LISA's Vertex jobs use (Karl's
       # step-1 ruling 2026-11-11): lyceon-ci-eval by Workload Identity Federation, no stored key.
       - name: Authenticate to GCP via Workload Identity Federation
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: projects/480325859530/locations/global/workloadIdentityPools/github-pool/providers/github-provider
@@ -111,17 +128,19 @@ jobs:
             --dry-run --today 2026-10-29 --voice committed
 
       - name: Build next week
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
         env:
+          WEEK: ${{ inputs.week }}
           GITHUB_TOKEN: ${{ github.token }}
           CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: pnpm exec tsx scripts/worked-examples/weekly.ts build --content social --out "$WOUT"
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts build --content social --out "$WOUT" ${WEEK:+--week "$WEEK"}
 
       # SCL-270: every finished mix is limited to at most -1 dBTP before any check; only the
       # limited, checked video is uploaded.
       - name: Render, final mix, layout check and MP4 check (each date)
+        if: inputs.mode != 'recaption'
         run: |
           set -euo pipefail
           for d in $(pnpm exec tsx scripts/worked-examples/weekly.ts dates --out "$WOUT"); do
@@ -140,7 +159,7 @@ jobs:
           pnpm exec tsx scripts/worked-examples/weekly.ts announce --out "$WOUT" --dry-run
 
       - name: Upload to social-weekly (signed links, 14 days)
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -149,7 +168,7 @@ jobs:
       # The claim is pushed BEFORE the announcement: a failed push stops the run with nothing
       # announced, and a re-run finds the week claimed and builds nothing.
       - name: Claim the week in posted.json and push to social
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
         run: |
           set -euo pipefail
           pnpm exec tsx scripts/worked-examples/weekly.ts claim --content social --out "$WOUT" --run "$GITHUB_RUN_ID"
@@ -161,12 +180,26 @@ jobs:
           git commit -m "Worked examples delivered: $(jq -r .week "../$WOUT/week.json") (run $GITHUB_RUN_ID)"
           git push origin HEAD:social
 
-      - name: Announce "Week <n> ready" in #social
-        if: github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+      - name: Announce "Week <n> ready" in #social (header, one reply per day)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
         run: pnpm exec tsx scripts/worked-examples/weekly.ts announce --out "$WOUT"
+
+      # A delivered week, corrected: the videos stay, the captions are rebuilt and overwritten, and
+      # a fresh "Week <n> ready (updated)" header goes up with one reply per day.
+      - name: Re-deliver a week with rebuilt captions
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode == 'recaption'
+        env:
+          WEEK: ${{ inputs.week }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts recaption --content social --week "$WEEK" --out "$WOUT"
 
       - name: Keep the run's videos and captions (30 days)
         if: always()
