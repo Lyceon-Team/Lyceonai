@@ -155,11 +155,15 @@ export async function slackCall<T>(
   throw new SlackCallError(`${method}: ${code}`, code);
 }
 
-/** chat.postMessage, link previews off. Returns the message timestamp. */
+/**
+ * chat.postMessage, link previews off. Returns the message timestamp. With `threadTs` the message
+ * is a reply in that message's thread (the weekly worked-example set, Karl 2026-11-14).
+ */
 export async function postMessage(
   config: SlackConfig,
   text: string,
   fetchImpl: FetchLike,
+  threadTs?: string,
 ): Promise<string> {
   const message = await slackCall(
     fetchImpl,
@@ -171,6 +175,7 @@ export async function postMessage(
         text,
         unfurl_links: false,
         unfurl_media: false,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
       },
     },
     postMessageOk,
