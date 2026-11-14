@@ -326,3 +326,43 @@ export const CB_WHAT_SCORES_MEAN: Source = {
   label: "College Board: what do my scores mean?",
   url: "https://satsuite.collegeboard.org/scores/what-scores-mean",
 };
+
+// Content pipeline sources (batch 2026-W47). Each page was fetched on 2026-11-11 and the quoted
+// text found on it; the quotes are in the claim inventory's "Content pipeline sources (batch
+// 2026-W47)" table.
+
+/** Canceling a registration: refund minus $34 by the change deadline, $44 after, by Thursday 11:59 p.m. ET. */
+export const CB_CANCEL_REGISTRATION: Source = {
+  label: "College Board: canceling a registration",
+  url: "https://satsuite.collegeboard.org/sat/registration/change-cancel/canceling-registration",
+};
+
+/** SAT fees outside the U.S.: the $68 registration fee plus a $43 international fee (read 2026-11-12). */
+export const CB_INTERNATIONAL_FEES: Source = {
+  label: "College Board: SAT international fees",
+  url: "https://satsuite.collegeboard.org/sat/registration/international-testing/fees",
+};
+
+/** The SAT waitlist: who can join, the radius, no extra fee, placement until 3 days before, refunds. */
+export const CB_WAITLIST: Source = {
+  label: "College Board: SAT waitlist",
+  url: "https://satsuite.collegeboard.org/waitlist",
+};
+
+/** What a superscore is, the worked example, the other score-use policies and Score Choice. */
+export const CB_SUPERSCORE: Source = {
+  label: "College Board: what's an SAT superscore?",
+  url: "https://blog.collegeboard.org/what-is-an-sat-superscore",
+};
+
+/** Most colleges superscore; some want all scores, others one; check each college's policy. */
+export const CB_WHICH_SCORES_COLLEGES_USE: Source = {
+  label: "College Board: which scores colleges look at",
+  url: "https://satsuite.collegeboard.org/help-center/which-scores-will-colleges-look-if-my-child-took-sat-more-once",
+};
+
+/** Sending weekend scores: whole tests by test date, no mixing sections, college policies shown. */
+export const CB_SENDING_WEEKEND_SCORES: Source = {
+  label: "College Board: sending scores from SAT Weekend",
+  url: "https://satsuite.collegeboard.org/scores/sending-sat-scores/weekend",
+};

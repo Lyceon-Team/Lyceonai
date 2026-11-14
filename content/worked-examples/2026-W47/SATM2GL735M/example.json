@@ -1,0 +1,86 @@
+{
+  "question_id": "SATM2GL735M",
+  "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+  "post_on": "2026-11-16",
+  "hook": {
+    "type": "speed",
+    "line": "A parabola and a line. How many solutions? There's a faster way…",
+    "voice": "Think you can do this one without grinding through the algebra? There's a shortcut."
+  },
+  "question_voice": "Two curves on the same grid, and we want to know how many times they cross.",
+  "signature_move": "Set the two equations equal and solve, or graph both and count where they cross.",
+  "steps": [
+    {
+      "notepad": "x² − 4x + 5 = 2x − 3",
+      "voice": "By hand, both equal y, so set them equal."
+    },
+    {
+      "notepad": "x² − 6x + 8 = 0",
+      "voice": "Move everything to one side. x squared, minus six x, plus eight."
+    },
+    {
+      "notepad": "(x − 2)(x − 4) = 0",
+      "voice": "It factors. x is two or four. Two different values."
+    },
+    {
+      "notepad": "or graph both: 2 crossings",
+      "voice": "Or skip the algebra and graph both. The line cuts the parabola in two places."
+    }
+  ],
+  "answer": {
+    "letter": "C",
+    "notepad": "Answer: C) 2",
+    "voice": "Two solutions. That's C. Quick check: at x equals two, both give one. At x equals four, both give five."
+  },
+  "trap": {
+    "summary": "Thinking the line only touches the parabola because it passes through the vertex, and choosing 1.",
+    "notepad": [
+      "through the vertex → 1? ✗",
+      "slope 2, not flat: it crosses",
+      "2 roots → 2 points ✓"
+    ],
+    "voice": "Here's where people slip. The line goes right through the vertex, so it looks like it just touches. That's B. But it isn't flat there, so it cuts straight through."
+  },
+  "check": "Plug x = 2 and x = 4 into both equations: the y-values match (1 and 5).",
+  "takeaway": "A line through the vertex still crosses unless it's flat.",
+  "figure": {
+    "box": {
+      "x": [
+        -1,
+        6
+      ],
+      "y": [
+        -2,
+        8
+      ]
+    },
+    "shapes": [
+      {
+        "kind": "axes",
+        "when": "step-4"
+      },
+      {
+        "kind": "graph",
+        "a": 1,
+        "b": -4,
+        "c": 5,
+        "x": [
+          0.3,
+          4.3
+        ],
+        "when": "step-4"
+      },
+      {
+        "kind": "graph",
+        "a": 0,
+        "b": 2,
+        "c": -3,
+        "x": [
+          1,
+          4.8
+        ],
+        "when": "step-4"
+      }
+    ]
+  }
+}

@@ -24,6 +24,9 @@ import whatToBringToTheSat from "./what-to-bring-to-the-sat";
 import whenDoSatScoresComeOut from "./when-do-sat-scores-come-out";
 import shouldYouRetakeTheSat from "./should-you-retake-the-sat";
 import bluebookSatPracticeTests from "./bluebook-sat-practice-tests";
+import satRegistrationDeadlines from "./sat-registration-deadlines";
+import satScoreReportExplained from "./sat-score-report-explained";
+import satSuperscore from "./sat-superscore";
 
 export const SCHEDULED_POST_SPECS: ReadonlyArray<ScheduledPostSpec | null> = [
   // 2026-W43
@@ -42,4 +45,8 @@ export const SCHEDULED_POST_SPECS: ReadonlyArray<ScheduledPostSpec | null> = [
   whenDoSatScoresComeOut,
   shouldYouRetakeTheSat,
   bluebookSatPracticeTests,
+  // 2026-W47
+  satRegistrationDeadlines,
+  satScoreReportExplained,
+  satSuperscore,
 ];

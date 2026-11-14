@@ -1,0 +1,46 @@
+{
+  "question_id": "SATM26MTNF3",
+  "skill_code": "Linear Equations in One Variable",
+  "post_on": "2026-11-17",
+  "hook": {
+    "type": "obvious_answer_trap",
+    "line": "No solution at all. Which value of a does that?",
+    "voice": "One choice here looks like the obvious move. It's wrong."
+  },
+  "question_voice": "An equation with a mystery number a in it, and we want the a that makes it impossible to solve.",
+  "signature_move": "Distribute, collect like terms, then answer exactly what's asked.",
+  "steps": [
+    {
+      "notepad": "a(3x − 8) = 20x − 12",
+      "voice": "Clear the fives first. Multiply both sides by five."
+    },
+    {
+      "notepad": "3a·x − 8a = 20x − 12",
+      "voice": "Distribute the a. Now line up the x terms with the x terms."
+    },
+    {
+      "notepad": "no solution: 3a = 20",
+      "voice": "No solution means the x parts match, but the plain numbers don't. So three a is twenty."
+    },
+    {
+      "notepad": "a = 20/3",
+      "voice": "Divide by three. a is twenty over three."
+    }
+  ],
+  "answer": {
+    "letter": "B",
+    "notepad": "Answer: B) 20/3",
+    "voice": "Twenty thirds. That's B. Quick check: then minus eight a is about minus fifty-three, not minus twelve, so the two sides never meet."
+  },
+  "trap": {
+    "summary": "Matching the constants, −8a = −12, which gives a = 3/2.",
+    "notepad": [
+      "−8a = −12 → a = 3/2 ✗",
+      "that gives ONE solution, x = 0",
+      "match the x parts: 3a = 20 ✓"
+    ],
+    "voice": "Here's where people slip. They match the plain numbers, minus eight a equals minus twelve, and pick A. But that leaves one solution, x equals zero."
+  },
+  "check": "With a = 20/3: 20x − 160/3 = 20x − 12 has no solution.",
+  "takeaway": "No solution: same x part, different constant."
+}
