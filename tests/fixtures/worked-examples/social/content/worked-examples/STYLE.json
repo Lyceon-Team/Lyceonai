@@ -1,7 +1,14 @@
 {
   "Percentages": {
+    "display_name": "Percentages",
     "signature_move": "Turn each percent change into a multiplier.",
     "check": "Plug in 100 and follow it through every change.",
     "trap": "Adding or subtracting percents that apply to different amounts."
+  },
+  "Area and Volume": {
+    "display_name": "Area and volume",
+    "signature_move": "Write the formula first, then substitute before you compute.",
+    "check": "Check the units: area is squared, volume is cubed.",
+    "trap": "Mixing up radius and diameter, or area and volume."
   }
 }

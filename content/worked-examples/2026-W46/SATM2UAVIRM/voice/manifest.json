@@ -1,0 +1,670 @@
+{
+  "voice": "am_michael",
+  "speaking_rate": 1,
+  "lines": [
+    {
+      "key": "hook",
+      "text_sha256": "5b61563140c088b2979d0eada4a1bd58f3d9adb89a5320eb95e47c7d57322e50",
+      "file": "hook.wav",
+      "duration": 2.859,
+      "words": [
+        {
+          "text": "One",
+          "start": 0.09,
+          "end": 0.22
+        },
+        {
+          "text": "answer",
+          "start": 0.22,
+          "end": 0.65
+        },
+        {
+          "text": "here",
+          "start": 0.66,
+          "end": 0.95
+        },
+        {
+          "text": "looks",
+          "start": 0.95,
+          "end": 1.31
+        },
+        {
+          "text": "perfect.",
+          "start": 1.31,
+          "end": 1.92
+        },
+        {
+          "text": "It's",
+          "start": 2,
+          "end": 2.26
+        },
+        {
+          "text": "wrong.",
+          "start": 2.26,
+          "end": 2.77
+        }
+      ]
+    },
+    {
+      "key": "question",
+      "text_sha256": "c92aa625aded1e253023634054edc075d5f6d98f4e8cf3df664ac299dceb479e",
+      "file": "question.wav",
+      "duration": 6.037,
+      "words": [
+        {
+          "text": "We",
+          "start": 0.05,
+          "end": 0.17
+        },
+        {
+          "text": "know",
+          "start": 0.17,
+          "end": 0.51
+        },
+        {
+          "text": "how",
+          "start": 0.51,
+          "end": 0.77
+        },
+        {
+          "text": "wide",
+          "start": 0.77,
+          "end": 1.11
+        },
+        {
+          "text": "this",
+          "start": 1.11,
+          "end": 1.45
+        },
+        {
+          "text": "cone",
+          "start": 1.45,
+          "end": 1.76
+        },
+        {
+          "text": "is",
+          "start": 1.78,
+          "end": 1.89
+        },
+        {
+          "text": "and",
+          "start": 2.05,
+          "end": 2.19
+        },
+        {
+          "text": "how",
+          "start": 2.19,
+          "end": 2.38
+        },
+        {
+          "text": "long",
+          "start": 2.38,
+          "end": 2.66
+        },
+        {
+          "text": "its",
+          "start": 2.66,
+          "end": 2.98
+        },
+        {
+          "text": "slanted",
+          "start": 2.98,
+          "end": 3.73
+        },
+        {
+          "text": "side",
+          "start": 3.73,
+          "end": 4.02
+        },
+        {
+          "text": "is,",
+          "start": 4.4,
+          "end": 4.44
+        },
+        {
+          "text": "and",
+          "start": 4.47,
+          "end": 4.6
+        },
+        {
+          "text": "we",
+          "start": 4.6,
+          "end": 4.68
+        },
+        {
+          "text": "want",
+          "start": 4.68,
+          "end": 4.85
+        },
+        {
+          "text": "how",
+          "start": 4.88,
+          "end": 5.02
+        },
+        {
+          "text": "much",
+          "start": 5.02,
+          "end": 5.23
+        },
+        {
+          "text": "it",
+          "start": 5.28,
+          "end": 5.38
+        },
+        {
+          "text": "holds.",
+          "start": 5.43,
+          "end": 6
+        }
+      ]
+    },
+    {
+      "key": "step-1",
+      "text_sha256": "3f86da84f494e74d3e732448ab6c9b2bb75da0a302b699b6d7424f88518a886b",
+      "file": "step-1.wav",
+      "duration": 3.968,
+      "words": [
+        {
+          "text": "Write",
+          "start": 0.05,
+          "end": 0.33
+        },
+        {
+          "text": "the",
+          "start": 0.44,
+          "end": 0.67
+        },
+        {
+          "text": "formula",
+          "start": 0.67,
+          "end": 1.23
+        },
+        {
+          "text": "first.",
+          "start": 1.29,
+          "end": 1.96
+        },
+        {
+          "text": "A",
+          "start": 1.96,
+          "end": 2.05
+        },
+        {
+          "text": "third",
+          "start": 2.05,
+          "end": 2.52
+        },
+        {
+          "text": "pi",
+          "start": 2.52,
+          "end": 2.71
+        },
+        {
+          "text": "r-squared",
+          "start": 2.71,
+          "end": 3.54
+        },
+        {
+          "text": "h.",
+          "start": 3.54,
+          "end": 3.87
+        }
+      ]
+    },
+    {
+      "key": "step-2",
+      "text_sha256": "77d31db7d72d5c77f2da4bc2e99b504efb270140ebaad24b2b24338393a61699",
+      "file": "step-2.wav",
+      "duration": 6.251,
+      "words": [
+        {
+          "text": "but",
+          "start": 0.06,
+          "end": 0.21
+        },
+        {
+          "text": "we",
+          "start": 0.21,
+          "end": 0.35
+        },
+        {
+          "text": "don't",
+          "start": 0.35,
+          "end": 0.66
+        },
+        {
+          "text": "have",
+          "start": 0.69,
+          "end": 0.99
+        },
+        {
+          "text": "the",
+          "start": 0.99,
+          "end": 1.08
+        },
+        {
+          "text": "height.",
+          "start": 1.08,
+          "end": 1.74
+        },
+        {
+          "text": "The",
+          "start": 1.74,
+          "end": 1.91
+        },
+        {
+          "text": "slant",
+          "start": 1.92,
+          "end": 2.3
+        },
+        {
+          "text": "is",
+          "start": 2.31,
+          "end": 2.47
+        },
+        {
+          "text": "the",
+          "start": 2.47,
+          "end": 2.71
+        },
+        {
+          "text": "long",
+          "start": 2.71,
+          "end": 2.79
+        },
+        {
+          "text": "side",
+          "start": 2.79,
+          "end": 3.43
+        },
+        {
+          "text": "of",
+          "start": 3.43,
+          "end": 3.53
+        },
+        {
+          "text": "a",
+          "start": 3.53,
+          "end": 3.6
+        },
+        {
+          "text": "right",
+          "start": 3.64,
+          "end": 4.05
+        },
+        {
+          "text": "triangle,",
+          "start": 4.05,
+          "end": 4.78
+        },
+        {
+          "text": "so",
+          "start": 4.84,
+          "end": 4.95
+        },
+        {
+          "text": "use",
+          "start": 4.95,
+          "end": 5.21
+        },
+        {
+          "text": "Pythagoras.",
+          "start": 5.21,
+          "end": 6.34
+        }
+      ]
+    },
+    {
+      "key": "step-3",
+      "text_sha256": "baf3ef536000a8f64192e7b7001ead651f46d6260a99d5777bd8b4479d8eec22",
+      "file": "step-3.wav",
+      "duration": 4.373,
+      "words": [
+        {
+          "text": "That's",
+          "start": 0.06,
+          "end": 0.46
+        },
+        {
+          "text": "a",
+          "start": 0.46,
+          "end": 0.53
+        },
+        {
+          "text": "3,",
+          "start": 0.53,
+          "end": 0.91
+        },
+        {
+          "text": "4,",
+          "start": 0.91,
+          "end": 1.29
+        },
+        {
+          "text": "5",
+          "start": 1.29,
+          "end": 1.52
+        },
+        {
+          "text": "triangle",
+          "start": 1.52,
+          "end": 2.14
+        },
+        {
+          "text": "scaled",
+          "start": 2.14,
+          "end": 2.56
+        },
+        {
+          "text": "up.",
+          "start": 2.56,
+          "end": 3.04
+        },
+        {
+          "text": "The",
+          "start": 3.1,
+          "end": 3.33
+        },
+        {
+          "text": "height",
+          "start": 3.45,
+          "end": 4.02
+        },
+        {
+          "text": "is",
+          "start": 4.02,
+          "end": 4.13
+        },
+        {
+          "text": "12.",
+          "start": 4.25,
+          "end": 5.18
+        }
+      ]
+    },
+    {
+      "key": "step-4",
+      "text_sha256": "6d6e0deef7e7a6d8077ca9e7398cac20052fe06a23845680d42ba62bd776d76f",
+      "file": "step-4.wav",
+      "duration": 3.499,
+      "words": [
+        {
+          "text": "Now",
+          "start": 0.05,
+          "end": 0.26
+        },
+        {
+          "text": "substitute,",
+          "start": 0.26,
+          "end": 1.34
+        },
+        {
+          "text": "a",
+          "start": 1.38,
+          "end": 1.42
+        },
+        {
+          "text": "third",
+          "start": 1.42,
+          "end": 1.82
+        },
+        {
+          "text": "of",
+          "start": 1.84,
+          "end": 1.99
+        },
+        {
+          "text": "81",
+          "start": 1.99,
+          "end": 2.43
+        },
+        {
+          "text": "times",
+          "start": 2.48,
+          "end": 2.85
+        },
+        {
+          "text": "12.",
+          "start": 2.91,
+          "end": 3.44
+        }
+      ]
+    },
+    {
+      "key": "trap",
+      "text_sha256": "04f131687d8a37c6545fbd85849e8d9c7bb30e9bfd4627a1a60acc2a564d59a9",
+      "file": "trap.wav",
+      "duration": 9.963,
+      "words": [
+        {
+          "text": "Here's",
+          "start": 0.09,
+          "end": 0.48
+        },
+        {
+          "text": "where",
+          "start": 0.48,
+          "end": 0.88
+        },
+        {
+          "text": "people",
+          "start": 0.88,
+          "end": 1.19
+        },
+        {
+          "text": "slip.",
+          "start": 1.19,
+          "end": 1.81
+        },
+        {
+          "text": "They",
+          "start": 1.81,
+          "end": 1.99
+        },
+        {
+          "text": "plug",
+          "start": 1.99,
+          "end": 2.2
+        },
+        {
+          "text": "in",
+          "start": 2.28,
+          "end": 2.39
+        },
+        {
+          "text": "15",
+          "start": 2.39,
+          "end": 2.8
+        },
+        {
+          "text": "as",
+          "start": 2.8,
+          "end": 2.91
+        },
+        {
+          "text": "the",
+          "start": 2.91,
+          "end": 3.5
+        },
+        {
+          "text": "height",
+          "start": 3.5,
+          "end": 3.6
+        },
+        {
+          "text": "and",
+          "start": 3.66,
+          "end": 3.94
+        },
+        {
+          "text": "get",
+          "start": 3.94,
+          "end": 4.26
+        },
+        {
+          "text": "405",
+          "start": 4.4,
+          "end": 5.32
+        },
+        {
+          "text": "pi.",
+          "start": 5.32,
+          "end": 5.92
+        },
+        {
+          "text": "That's",
+          "start": 6.01,
+          "end": 6.58
+        },
+        {
+          "text": "b.",
+          "start": 6.58,
+          "end": 7.04
+        },
+        {
+          "text": "But",
+          "start": 7.13,
+          "end": 7.32
+        },
+        {
+          "text": "15",
+          "start": 7.32,
+          "end": 7.88
+        },
+        {
+          "text": "is",
+          "start": 7.88,
+          "end": 8.03
+        },
+        {
+          "text": "the",
+          "start": 8.07,
+          "end": 8.23
+        },
+        {
+          "text": "slanted",
+          "start": 8.35,
+          "end": 8.99
+        },
+        {
+          "text": "side,",
+          "start": 8.99,
+          "end": 9.54
+        },
+        {
+          "text": "not",
+          "start": 9.54,
+          "end": 9.82
+        },
+        {
+          "text": "the",
+          "start": 9.82,
+          "end": 10.1
+        },
+        {
+          "text": "height.",
+          "start": 10.1,
+          "end": 10.88
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "ea79edda4399a53050cc4431f9dd0e0f6d7d17026d69e5b0f358897cc0f96599",
+      "file": "answer.wav",
+      "duration": 7.083,
+      "words": [
+        {
+          "text": "324",
+          "start": 0.11,
+          "end": 1.68
+        },
+        {
+          "text": "pi.",
+          "start": 2.24,
+          "end": 2.43
+        },
+        {
+          "text": "That's",
+          "start": 2.43,
+          "end": 2.76
+        },
+        {
+          "text": "a",
+          "start": 2.76,
+          "end": 3
+        },
+        {
+          "text": "quick",
+          "start": 3,
+          "end": 3.4
+        },
+        {
+          "text": "check.",
+          "start": 3.4,
+          "end": 4.05
+        },
+        {
+          "text": "The",
+          "start": 4.05,
+          "end": 4.19
+        },
+        {
+          "text": "height",
+          "start": 4.19,
+          "end": 4.46
+        },
+        {
+          "text": "has",
+          "start": 4.49,
+          "end": 4.64
+        },
+        {
+          "text": "to",
+          "start": 4.64,
+          "end": 4.68
+        },
+        {
+          "text": "be",
+          "start": 4.75,
+          "end": 4.88
+        },
+        {
+          "text": "shorter",
+          "start": 4.88,
+          "end": 5.35
+        },
+        {
+          "text": "than",
+          "start": 5.36,
+          "end": 5.63
+        },
+        {
+          "text": "the",
+          "start": 5.63,
+          "end": 5.83
+        },
+        {
+          "text": "slant",
+          "start": 5.83,
+          "end": 6.16
+        },
+        {
+          "text": "in",
+          "start": 6.16,
+          "end": 6.23
+        },
+        {
+          "text": "12",
+          "start": 6.31,
+          "end": 6.7
+        },
+        {
+          "text": "is.",
+          "start": 6.7,
+          "end": 6.88
+        }
+      ]
+    }
+  ]
+}

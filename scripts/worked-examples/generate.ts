@@ -20,9 +20,12 @@ import {
   voiceLineSchema,
   workedExampleId,
   type VoiceLine,
+  type WorkedExampleContent,
 } from "../../packages/shared/src/worked-example-schema";
+import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import { buildComposition, type Composition } from "./composition";
-import { exampleProblems, loadExamples, loadVoice } from "./content";
+import { titleTopic } from "../../shared/worked-examples/rules";
+import { exampleProblems, loadExamples, loadStyle, loadVoice } from "./content";
 import { KIT_DIR, ROOT, loadKit, type Kit } from "./kit";
 
 /** The 30-60 s rule (voice.json's bounds), or null. */
@@ -43,30 +46,65 @@ export function generate(
   const { problems, question } = exampleProblems(contentRoot, example, kit);
   if (problems.length > 0 || !question)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
+  const chosen = titleTopic(loadStyle(contentRoot), example.content.skill_code);
+  if (!chosen)
+    throw new Error(`no style row for "${example.content.skill_code}"`);
   const manifest = loadVoice(contentRoot, dir);
   const outro = voiceLineSchema.parse(
     JSON.parse(
       readFileSync(join(ROOT, KIT_DIR, "voice", "outro.json"), "utf8"),
     ),
   );
-  const comp = buildComposition({
+  return composeExample({
     example: example.content,
+    topic: chosen.topic,
     question,
-    voice: manifest.lines,
+    lines: manifest.lines,
+    voiceDir: join(contentRoot, dir, "voice"),
     outro,
+    outroWav: join(ROOT, kit.voice.outro_file),
+    out,
     kit,
   });
-  const tooLong = durationProblem(comp.duration, kit);
-  if (tooLong) throw new Error(`refused: ${tooLong}`);
+}
 
+/**
+ * The layout/timing and composition stage for one example, from any voice: the committed voice
+ * (the daily job) or the weekly run's cached batch voice (voice-cache.ts), whose lines and outro
+ * sit in one folder. Timing derives from the audio's durations only, so a voice change re-renders
+ * without re-scripting (Karl's rulings 2026-11-11, item 5).
+ */
+export function composeExample(input: {
+  example: WorkedExampleContent;
+  /** The short topic the title and the cover card show (titleTopic). */
+  topic: string;
+  question: SeedQuestion;
+  lines: readonly VoiceLine[];
+  voiceDir: string;
+  outro: VoiceLine;
+  outroWav: string;
+  out: string;
+  kit: Kit;
+}): Composition {
+  const comp = buildComposition({
+    example: input.example,
+    topic: input.topic,
+    question: input.question,
+    voice: [...input.lines],
+    outro: input.outro,
+    kit: input.kit,
+  });
+  const tooLong = durationProblem(comp.duration, input.kit);
+  if (tooLong) throw new Error(`refused: ${tooLong}`);
   writeCompositionFolder(
     comp,
-    out,
-    workedExampleId(example.content.question_id),
-    join(contentRoot, dir, "voice"),
-    manifest.lines,
-    outro,
-    kit,
+    input.out,
+    workedExampleId(input.example.question_id),
+    input.voiceDir,
+    input.lines,
+    input.outro,
+    input.kit,
+    input.outroWav,
   );
   return comp;
 }
@@ -85,6 +123,7 @@ export function writeCompositionFolder(
   lines: readonly VoiceLine[],
   outro: VoiceLine,
   kit: Kit,
+  outroWav: string = join(ROOT, kit.voice.outro_file),
 ): void {
   const put = (from: string, to: string): void => {
     mkdirSync(dirname(join(out, to)), { recursive: true });
@@ -101,7 +140,7 @@ export function writeCompositionFolder(
   );
   put(join(ROOT, comp.assets.gsap), "vendor/gsap.min.js");
   for (const l of lines) put(join(voiceDir, l.file), `assets/voice/${l.file}`);
-  put(join(ROOT, kit.voice.outro_file), `assets/voice/${outro.file}`);
+  put(outroWav, `assets/voice/${outro.file}`);
   writeFileSync(
     join(out, "meta.json"),
     `${JSON.stringify({ id, duration: comp.duration, scenes: comp.scenes, writes: comp.writes, voice: comp.voice.map(({ key, start, duration }) => ({ key, start, duration })) }, null, 2)}\n`,

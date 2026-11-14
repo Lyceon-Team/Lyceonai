@@ -18608,11 +18608,28 @@ CREATE TABLE public.crisis_review_cases (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     category text DEFAULT 'crisis'::text NOT NULL,
+    degraded_reason text,
+    classifier_attempts smallint,
     CONSTRAINT crisis_review_cases_category_check CHECK ((category = ANY (ARRAY['crisis'::text, 'safeguarding'::text]))),
+    CONSTRAINT crisis_review_cases_degraded_reason_check CHECK ((((degraded_reason IS NULL) AND (classifier_attempts IS NULL)) OR ((degraded_reason IS NOT NULL) AND (degraded_reason = ANY (ARRAY['timeout'::text, 'rate_limited'::text, 'upstream_error'::text, 'config_error'::text])) AND (classifier_attempts IS NOT NULL) AND ((classifier_attempts >= 0) AND (classifier_attempts <= 2)) AND (source = ANY (ARRAY['classifier_degraded'::text, 'classifier_degraded_no_floor'::text]))))),
     CONSTRAINT crisis_review_cases_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['true_positive'::text, 'false_positive'::text])))),
     CONSTRAINT crisis_review_cases_source_check CHECK ((source = ANY (ARRAY['signature'::text, 'model'::text, 'both'::text, 'classifier_degraded'::text, 'classifier_degraded_no_floor'::text, 'infrastructure_failure'::text, 'model_armor_dangerous'::text]))),
     CONSTRAINT crisis_review_cases_status_check CHECK ((status = ANY (ARRAY['open'::text, 'in_review'::text, 'resolved'::text])))
 );
+
+
+--
+-- Name: COLUMN crisis_review_cases.degraded_reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.crisis_review_cases.degraded_reason IS 'Why Layer 2 (the model classifier) could not answer on the degraded turn that opened this case: timeout, rate_limited, upstream_error or config_error. Degraded cases only; a code, never message text.';
+
+
+--
+-- Name: COLUMN crisis_review_cases.classifier_attempts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.crisis_review_cases.classifier_attempts IS 'Layer 2 model attempts on that turn: 0 (setup failed, no attempt), 1 or 2 (with the one retry).';
 
 
 --
@@ -22171,6 +22188,16 @@ CREATE TABLE public.tutor_turn_metrics (
     thinking_tokens integer,
     thinking_budget integer,
     intent text,
+    help_level text,
+    help_worked_step smallint,
+    help_signal text,
+    crisis_classifier_ms integer,
+    crisis_classifier_attempts smallint,
+    crisis_degraded_reason text,
+    CONSTRAINT tutor_turn_metrics_crisis_layer2_check CHECK ((((crisis_classifier_ms IS NULL) AND (crisis_classifier_attempts IS NULL) AND (crisis_degraded_reason IS NULL)) OR ((crisis_classifier_ms IS NOT NULL) AND (crisis_classifier_ms >= 0) AND (crisis_classifier_attempts IS NOT NULL) AND ((crisis_classifier_attempts >= 0) AND (crisis_classifier_attempts <= 2)) AND ((crisis_degraded_reason IS NULL) OR (crisis_degraded_reason = ANY (ARRAY['timeout'::text, 'rate_limited'::text, 'upstream_error'::text, 'config_error'::text])))))),
+    CONSTRAINT tutor_turn_metrics_help_level_check CHECK (((help_level IS NULL) OR (help_level = ANY (ARRAY['ask'::text, 'hint'::text, 'worked_step'::text, 'full_solution'::text])))),
+    CONSTRAINT tutor_turn_metrics_help_signal_check CHECK ((((help_level IS NULL) AND (help_signal IS NULL)) OR ((help_level IS NOT NULL) AND (help_signal IS NOT NULL) AND (help_signal = ANY (ARRAY['walkthrough'::text, 'step_understood'::text, 'stuck'::text, 'skipped'::text, 'solve_it'::text, 'correct_step'::text, 'none'::text]))))),
+    CONSTRAINT tutor_turn_metrics_help_worked_step_check CHECK ((((help_worked_step IS NULL) AND (help_level IS DISTINCT FROM 'worked_step'::text)) OR ((help_level = 'worked_step'::text) AND (help_worked_step IS NOT NULL) AND ((help_worked_step >= 1) AND (help_worked_step <= 3))))),
     CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text]))))
 );
 
@@ -22215,6 +22242,48 @@ COMMENT ON COLUMN public.tutor_turn_metrics.thinking_budget IS 'The Vertex think
 --
 
 COMMENT ON COLUMN public.tutor_turn_metrics.intent IS 'The review guided choice or walkthrough quick reply the turn came from (REVIEW_INTENTS); NULL for a typed turn.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.help_level; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.help_level IS 'The help level the turn was given (ask, hint, worked_step, full_solution), decided by the BFF; NULL when the turn reached no worker. The next turn starts from the latest non-NULL row.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.help_worked_step; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.help_worked_step IS 'At help_level worked_step, which worked step (1-3; 3 is the last allowed before submission); NULL otherwise.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.help_signal; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.help_signal IS 'What moved the level this turn (HELP_SIGNALS); a code, never message text.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.crisis_classifier_ms; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.crisis_classifier_ms IS 'Layer 2 wall time on this turn in ms, across attempts and setup; NULL when Layer 2 did not run.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.crisis_classifier_attempts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.crisis_classifier_attempts IS 'Layer 2 model attempts on this turn (0-2); NULL when Layer 2 did not run.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.crisis_degraded_reason; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.crisis_degraded_reason IS 'Why Layer 2 could not answer (timeout, rate_limited, upstream_error, config_error); NULL when it answered or did not run. A code, never message text.';
 
 
 --

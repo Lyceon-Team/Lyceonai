@@ -134,6 +134,7 @@ const REPLY_PATH_STEPS = [
   ...PRE_MODEL_MEMBERS,
   "recent_messages",
   "video_retrieval",
+  "help_level",
   "model",
   "armor_output",
   "serialize",

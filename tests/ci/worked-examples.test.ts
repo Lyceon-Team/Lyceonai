@@ -21,6 +21,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  WORKED_EXAMPLE_TOPIC_MAX,
   WORKED_EXAMPLE_VOICE_LINES,
   workedExamplePostSchema,
   voiceLineSchema,
@@ -29,9 +30,14 @@ import {
 } from "../../packages/shared/src/worked-example-schema";
 import {
   captionProblems,
+  HARD_DIFFICULTY,
+  HARD_ONLY_FROM,
+  hardOnlyProblem,
   hookAnswerProblem,
   hookCuriosityProblem,
   hookPeopleProblem,
+  GO_RULE_FROM,
+  hookGoProblem,
   hookProblems,
   hookPuzzleProblem,
   hookStatisticProblem,
@@ -48,8 +54,11 @@ import {
   workedExampleKeywords,
   workedExampleLabel,
   workedExampleTitle,
+  shortSkillName,
+  titleTopic,
 } from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
+import { copyBlockProblems } from "../../shared/social/posts";
 import {
   approvalFromRecord,
   dueExamples,
@@ -61,7 +70,13 @@ import {
   checkContent,
 } from "../../scripts/worked-examples/check-content";
 import {
+  COVER_BRAND,
+  COVER_SECONDS,
+  END_CARD_CREDIT_PX,
+  OUTRO_BRAND_PX,
+  OUTRO_FOLLOW_PX,
   buildComposition,
+  coverZone,
   safeArea,
   scriptLines,
   type Composition,
@@ -70,6 +85,7 @@ import {
   exampleProblems,
   loadExamples,
   loadPosted,
+  loadStyle,
   loadVoice,
   seedQuestion,
   voiceProblems,
@@ -80,9 +96,16 @@ import {
   workedExampleCopy,
 } from "../../scripts/worked-examples/daily";
 import { durationProblem } from "../../scripts/worked-examples/generate";
-import { KIT_DIR, ROOT, loadKit } from "../../scripts/worked-examples/kit";
+import {
+  KIT_DIR,
+  ROOT,
+  escapeHtml,
+  loadKit,
+} from "../../scripts/worked-examples/kit";
 import {
   boxProblems,
+  coverZoneProblems,
+  creditProblems,
   nonPaperPixels,
 } from "../../scripts/worked-examples/layout-check";
 import {
@@ -94,8 +117,12 @@ import type { FetchLike } from "../../shared/slack/client";
 
 const CONTENT = join(ROOT, "tests/fixtures/worked-examples/social");
 const kit = loadKit();
-const [fixture] = loadExamples(CONTENT);
-if (!fixture) throw new Error("the fixture tree has no example");
+// The fixture's percentages example (the tree also holds a geometry example with a drawn figure,
+// tests/ci/worked-example-figure.test.ts), picked by id rather than by folder order.
+const fixture = loadExamples(CONTENT).find(
+  (e) => e.content.question_id === "SATM2CZS1BE",
+);
+if (!fixture) throw new Error("the fixture tree has no SATM2CZS1BE example");
 const seeded = seedQuestion(fixture.content.question_id);
 if (!seeded.ok) throw new Error(seeded.problem);
 const question: SeedQuestion = seeded.question;
@@ -105,6 +132,7 @@ const outro = voiceLineSchema.parse(
 );
 const comp: Composition = buildComposition({
   example: fixture.content,
+  topic: fixture.content.skill_code,
   question,
   voice: voice.lines,
   outro,
@@ -138,6 +166,38 @@ describe("the fixture is real and passes every rule", () => {
   });
 });
 
+describe("Hard questions only (Karl, 2026-11-05)", () => {
+  it("a worked example due from Nov 6 on must be difficulty 3: a Hard seed question passes, a medium one is refused", () => {
+    expect(HARD_DIFFICULTY).toBe(3);
+    expect(HARD_ONLY_FROM).toBe("2026-11-06");
+    // Presence first: the difficulty is read from the real seed row, and a Hard one passes.
+    const hard = seedQuestion("SATM2HHUDLH");
+    if (!hard.ok) throw new Error(hard.problem);
+    expect(hard.question.difficulty).toBe(3);
+    expect(hardOnlyProblem(hard.question)).toBeNull();
+    // The fixture's question is medium (difficulty 2), as every W45 and W46 example was.
+    expect(question.difficulty).toBe(2);
+    expect(hardOnlyProblem(question)).toBe(
+      "SATM2CZS1BE is difficulty 2, not Hard (3): worked examples and breakdowns use Hard questions only",
+    );
+    // On the posting path (check-content, the daily selection, generate) it is refused.
+    const due = {
+      ...fixture,
+      content: { ...fixture.content, post_on: HARD_ONLY_FROM },
+    };
+    expect(exampleProblems(CONTENT, due, kit).problems.join("\n")).toContain(
+      "SATM2CZS1BE is difficulty 2, not Hard (3)",
+    );
+  });
+
+  it("an example posted before the ruling is history: the Nov 2 fixture is not refused for its difficulty", () => {
+    expect(fixture.content.post_on < HARD_ONLY_FROM).toBe(true);
+    expect(
+      exampleProblems(CONTENT, fixture, kit).problems.join("\n"),
+    ).not.toContain("not Hard");
+  });
+});
+
 describe("hook rules", () => {
   it("H1 refuses statistics, not a percent that is part of the puzzle", () => {
     expect(
@@ -150,6 +210,48 @@ describe("hook rules", () => {
     expect(hookStatisticProblem("A study says this one is hard?")).toMatch(
       /^H1/,
     );
+  });
+
+  // Karl's ruling 2026-11-11: speed hooks never say "Go" ("Go.", "Go!", "GO").
+  it("H7 refuses a spoken hook with a standalone Go, from the first post after the ruling", () => {
+    expect(GO_RULE_FROM).toBe("2026-11-12");
+    for (const voice of [
+      "Ten seconds. Ready? Go.",
+      "Let's see if you can solve this in ten seconds… ready, GO!",
+      "Bet you can't get this one in under a minute. Go",
+      "Go! Ten seconds.",
+    ])
+      expect(hookGoProblem(voice, "2026-11-16"), voice).toMatch(/^H7 /);
+    for (const voice of [
+      "Think you can solve this in ten seconds? Let's see.",
+      "Think you can solve this in ten seconds? Ready?",
+      "Let's go through it fast. Ready?",
+      "Good luck.",
+    ])
+      expect(hookGoProblem(voice, "2026-11-16"), voice).toBeNull();
+    // Posted history (before the ruling) is not re-checked.
+    expect(hookGoProblem("Ten seconds. Ready? Go.", "2026-11-11")).toBeNull();
+  });
+
+  it("H7 runs in the content check on a worked example due after the ruling", () => {
+    const due = (voice: string) => ({
+      ...fixture,
+      content: {
+        ...fixture.content,
+        post_on: "2026-11-16",
+        hook: { ...fixture.content.hook, voice },
+      },
+    });
+    expect(
+      exampleProblems(CONTENT, due("Ten seconds. Ready? Go."), kit).problems,
+    ).toContainEqual(expect.stringMatching(/H7 the spoken hook says "Go"/));
+    expect(
+      exampleProblems(
+        CONTENT,
+        due("Think you can solve this in ten seconds? Let's see."),
+        kit,
+      ).problems.filter((p) => p.includes("H7")),
+    ).toEqual([]);
   });
 
   it("H2 refuses claims about students or people", () => {
@@ -450,10 +552,63 @@ describe("30-60 s, order and the safe area", () => {
     expect(durationProblem(61, kit)).toMatch(/must be 30-60 s/);
   });
 
-  it("voice starts at 0:00; hook and question are on screen from frame 0 while the setup is spoken", () => {
+  it("the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)", () => {
+    expect(comp.scenes[0]).toEqual({
+      key: "cover",
+      start: 0,
+      end: COVER_SECONDS,
+    });
+    expect(COVER_SECONDS).toBeLessThanOrEqual(0.4);
+    // The hook is spoken from 0:00 under the card: the voice is delayed by nothing.
+    expect(comp.voice[0]).toMatchObject({ key: "hook", start: 0 });
+    const cover =
+      /<section id="cover"[^>]*>([\s\S]*?)<\/section>/.exec(comp.html)?.[1] ??
+      "";
+    expect(cover).toContain(COVER_BRAND);
+    expect(cover).toContain(
+      `<div class="cover-topic">${fixture.content.skill_code}</div>`,
+    );
+    expect(cover).toContain(`>${fixture.content.hook.line}</div>`);
+    // The card sits in the centred 4:5 crop of the frame (and TikTok's safe area).
+    expect(coverZone()).toEqual({
+      left: 71,
+      right: 912,
+      top: 285,
+      bottom: 1555,
+    });
+    // The figure (if any) starts with the opening scene, never over the card.
+    expect(comp.html).not.toMatch(/<section id="figure"[^>]*data-start="0"/);
+  });
+
+  it("the cover check: every cover box inside the 4:5 zone; a box above it, below it or a bare cover is refused", () => {
+    const zone = coverZone();
+    const box = (y: number, bottom: number) => ({
+      what: "cover",
+      x: 100,
+      y,
+      right: 800,
+      bottom,
+    });
+    expect(coverZoneProblems([box(600, 700)], true, zone)).toEqual([]);
+    expect(coverZoneProblems([box(200, 300)], true, zone).join()).toMatch(
+      /leaves the cover's 4:5 zone/,
+    );
+    expect(coverZoneProblems([box(1500, 1600)], true, zone).join()).toMatch(
+      /leaves the cover's 4:5 zone/,
+    );
+    expect(coverZoneProblems([], true, zone)).toEqual([
+      "the cover card drew nothing",
+    ]);
+    // A composition without a cover (a QOTD breakdown) is not checked.
+    expect(coverZoneProblems([], false, zone)).toEqual([]);
+  });
+
+  it("voice starts at 0:00; hook and question are on screen by 0.4 s while the setup is spoken", () => {
     expect(comp.voice[0]?.key).toBe("hook");
     expect(comp.voice[0]?.start).toBe(0);
-    expect(comp.scenes[0]).toMatchObject({ key: "open", start: 0 });
+    // The brief: hook and question visible within 0.5 s (after the 0.4 s cover card).
+    expect(comp.scenes[1]).toMatchObject({ key: "open", start: COVER_SECONDS });
+    expect(COVER_SECONDS).toBeLessThan(0.5);
     const open =
       /<section id="open"[^>]*>([\s\S]*?)<\/section>/.exec(comp.html)?.[1] ??
       "";
@@ -463,7 +618,7 @@ describe("30-60 s, order and the safe area", () => {
     expect(comp.html).not.toMatch(/"#(hook-line|question-card)"/);
     const setup = comp.voice.find((v) => v.key === "question");
     expect(setup && setup.start + setup.duration).toBeLessThanOrEqual(
-      comp.scenes[0]?.end ?? 0,
+      comp.scenes[1]?.end ?? 0,
     );
   });
 
@@ -489,6 +644,7 @@ describe("30-60 s, order and the safe area", () => {
       "outro",
     ]);
     expect(comp.scenes.map((s) => s.key)).toEqual([
+      "cover",
       "open",
       "work",
       "trap",
@@ -527,6 +683,7 @@ describe("30-60 s, order and the safe area", () => {
     ).toEqual([]);
     const rebuilt = buildComposition({
       example: fixture.content,
+      topic: fixture.content.skill_code,
       question,
       voice: oldOrder,
       outro,
@@ -536,6 +693,7 @@ describe("30-60 s, order and the safe area", () => {
     expect(() =>
       buildComposition({
         example: fixture.content,
+        topic: fixture.content.skill_code,
         question,
         voice: oldOrder.slice(1),
         outro,
@@ -605,6 +763,138 @@ describe("30-60 s, order and the safe area", () => {
   });
 });
 
+// Karl's ruling 2026-11-04 ("Copy-paste cleanup", 3): the credit the track's licence requires is on
+// the end card, small at the right (at most a quarter of the outro font), for the whole end card,
+// inside the safe area, never spoken; a track needing no attribution shows none.
+describe("the music credit is on the end card, not in any caption", () => {
+  const endcard = (html: string): string =>
+    /<section id="endcard"[^>]*>([\s\S]*?)<\/section>/.exec(html)?.[1] ?? "";
+
+  it("the end card shows the track's credit whenever its licence requires it, and no other scene does", () => {
+    // Presence first: the kit's track is CC BY 4.0, so a credit is required.
+    expect(kit.track.licence).toBe("CC BY 4.0");
+    expect(kit.track.attribution_required).toBe(true);
+    const credit = kit.track.on_screen_credit ?? "";
+    expect(credit).toBe(
+      'Music: "Happy Beats / Business Moves Vol. 12" by ende.app (CC BY 4.0)',
+    );
+    expect(endcard(comp.html)).toContain(
+      `<div class="credit">${escapeHtml(credit)}</div>`,
+    );
+    const others = comp.html.replace(endcard(comp.html), "");
+    expect(others).not.toContain('class="credit"');
+    // The credit is static: nothing in the timeline animates it, so it shows for the whole card.
+    expect(comp.html).not.toMatch(/"[^"]*\.credit[^"]*"\s*,\s*\{/);
+  });
+
+  it("small at the right: at most a quarter of the outro font, right-aligned inside the safe area", () => {
+    expect(END_CARD_CREDIT_PX).toBeLessThanOrEqual(
+      Math.min(OUTRO_FOLLOW_PX, OUTRO_BRAND_PX) / 4,
+    );
+    expect(END_CARD_CREDIT_PX).toBeGreaterThan(0);
+    const css =
+      /\.end \.credit \{[^}]*\}/.exec(comp.html)?.[0] ?? "no .credit rule";
+    expect(css).toContain(`font-size: ${END_CARD_CREDIT_PX}px`);
+    expect(css).toContain(`right: ${1080 - safeArea().right}px`);
+    expect(css).toContain("text-align: right");
+    // Its bottom edge sits above the safe area's bottom edge.
+    const bottom = Number(/bottom: (\d+)px/.exec(css)?.[1]);
+    expect(1920 - bottom).toBeLessThanOrEqual(safeArea().bottom);
+    expect(comp.html).toContain(`font-size: ${OUTRO_FOLLOW_PX}px`);
+    expect(comp.html).toContain(`font-size: ${OUTRO_BRAND_PX}px`);
+  });
+
+  it("the credit is never spoken: no voice line carries it", () => {
+    const spoken = [
+      kit.voice.outro_text,
+      fixture.content.hook.voice,
+      fixture.content.question_voice,
+      ...fixture.content.steps.map((s) => s.voice),
+      fixture.content.trap.voice,
+      fixture.content.answer.voice,
+    ];
+    expect(spoken.every((t) => t.length > 0)).toBe(true);
+    for (const t of spoken) expect(t).not.toMatch(/music|ende|CC BY|licen/i);
+  });
+
+  it("a track whose licence needs no attribution shows no credit", () => {
+    const cc0: typeof kit = {
+      ...kit,
+      track: {
+        ...kit.track,
+        licence: "CC0 1.0",
+        attribution_required: false,
+        on_screen_credit: null,
+      },
+    };
+    const bare = buildComposition({
+      example: fixture.content,
+      topic: fixture.content.skill_code,
+      question,
+      voice: voice.lines,
+      outro,
+      kit: cc0,
+    });
+    expect(endcard(bare.html)).toContain('class="brand-name"');
+    expect(bare.html).not.toContain('class="credit"');
+    expect(bare.html).not.toContain("Music:");
+  });
+
+  it("the layout check refuses a missing, doubled, wrong, oversized or misplaced credit, and a credit no licence needs", () => {
+    const safe = safeArea();
+    const credit = kit.track.on_screen_credit ?? "";
+    const good = {
+      credits: [
+        { text: credit, fontPx: END_CARD_CREDIT_PX, right: safe.right },
+      ],
+      outroPx: [OUTRO_FOLLOW_PX, OUTRO_BRAND_PX],
+    };
+    expect(creditProblems(good, kit.track, safe)).toEqual([]);
+    expect(
+      creditProblems({ ...good, credits: [] }, kit.track, safe).join(),
+    ).toMatch(/must show the music credit once/);
+    expect(
+      creditProblems(
+        { ...good, credits: [...good.credits, ...good.credits] },
+        kit.track,
+        safe,
+      ).join(),
+    ).toMatch(/found 2/);
+    const [c] = good.credits;
+    if (!c) throw new Error("no credit");
+    expect(
+      creditProblems(
+        { ...good, credits: [{ ...c, text: "Music" }] },
+        kit.track,
+        safe,
+      ).join(),
+    ).toMatch(/credit reads/);
+    expect(
+      creditProblems(
+        { ...good, credits: [{ ...c, fontPx: OUTRO_BRAND_PX / 4 + 1 }] },
+        kit.track,
+        safe,
+      ).join(),
+    ).toMatch(/over a quarter of the outro text/);
+    expect(
+      creditProblems(
+        { ...good, credits: [{ ...c, right: 700 }] },
+        kit.track,
+        safe,
+      ).join(),
+    ).toMatch(/right edge/);
+    const cc0 = {
+      ...kit.track,
+      attribution_required: false,
+      on_screen_credit: null,
+    };
+    expect(creditProblems({ ...good, credits: [] }, cc0, safe)).toEqual([]);
+    expect(creditProblems(good, cc0, safe).join()).toMatch(
+      /track needs no attribution/,
+    );
+  });
+});
+
 describe("blank paper", () => {
   it("the paper is one flat colour: no gradient, image, line or margin rule in the kit or the page", () => {
     const css = readFileSync(join(ROOT, KIT_DIR, "templates/kit.css"), "utf8");
@@ -660,7 +950,7 @@ describe("audio mix and licences", () => {
     );
   });
 
-  it("every track used has its licence file, naming the licence, its link, the source and the credit", () => {
+  it("every track used has its licence file, naming the licence, its link, the source, the title and the artist; a CC BY track carries its end-card credit", () => {
     const tracks = JSON.parse(
       readFileSync(join(ROOT, KIT_DIR, "music/tracks.json"), "utf8"),
     ) as Record<string, typeof kit.track>;
@@ -671,7 +961,15 @@ describe("audio mix and licences", () => {
       expect(licence).toContain(t.licence);
       expect(licence).toContain(t.licence_url);
       expect(licence).toContain(t.source);
-      expect(licence).toContain(t.credit);
+      expect(licence).toContain(t.title);
+      expect(licence).toContain(t.artist);
+      // Karl, 2026-11-04: the credit is on the end card, set exactly when the licence needs it.
+      expect(t.attribution_required).toBe(/^CC BY\b/.test(t.licence));
+      if (t.attribution_required) {
+        expect(t.on_screen_credit).toContain(t.title);
+        expect(t.on_screen_credit).toContain(t.artist);
+        expect(t.on_screen_credit).toContain(t.licence);
+      } else expect(t.on_screen_credit).toBeNull();
     }
     expect(
       statSync(join(ROOT, KIT_DIR, "fonts/caveat-latin.woff2")).size,
@@ -685,39 +983,128 @@ describe("audio mix and licences", () => {
 });
 
 describe("title and caption", () => {
-  // SCL-265 (Karl's ruling 2026-11-02): the worked-example captions use the SCL-262 format, with
-  // the music credit (CC BY 4.0) on every one. Every expectation is on the real builders' output.
-  const credit = kit.track.credit;
-  const title = workedExampleTitle(fixture.content, question);
-  const caption = workedExampleCaption(fixture.content, question, credit);
+  // SCL-265 (Karl's ruling 2026-11-02): the worked-example captions use the SCL-262 format. Karl's
+  // ruling 2026-11-04: no music credit in any caption (it is on the end card), and nothing but
+  // what Karl pastes inside a copy block. Every expectation is on the real builders' output.
+  const topic = loadStyle(CONTENT)[fixture.content.skill_code]?.display_name;
+  if (!topic) throw new Error("the fixture STYLE has no display_name");
+  const title = workedExampleTitle(question, topic);
+  const caption = workedExampleCaption(fixture.content, question, topic);
   const instagram = workedExampleInstagramCaption(
     fixture.content,
     question,
-    credit,
+    topic,
   );
   const facebook = workedExampleFacebookCaption(
     fixture.content,
     question,
-    credit,
+    topic,
   );
   const captions = { tiktok: caption, instagram, facebook };
 
-  it("the real title and caption pass, with the music credited", () => {
+  it("the real title and caption pass, with no music credit in any caption", () => {
     expect(title).toBe("SAT Math worked example · Percentages");
     expect(titleProblems(title)).toEqual([]);
     for (const [platform, text] of Object.entries(captions)) {
       expect(text.split("\n")[0], platform).toBe(title);
-      expect(text.split("\n\n").at(-1), platform).toBe(
-        'Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.',
-      );
-      expect(captionProblems(text, credit, title), platform).toEqual([]);
+      expect(text, platform).not.toMatch(/Music:|CC BY|ende\.app/);
+      expect(captionProblems(text, title), platform).toEqual([]);
+      expect(copyBlockProblems(text), platform).toEqual([]);
     }
     expect(workedExampleLabel(fixture.content)).toBe(
       "Worked example · Percentages · obvious_answer_trap",
     );
   });
 
-  it("the TikTok, Instagram and Facebook captions are the SCL-262 lines, then the credit", () => {
+  it("the title and all three captions show the STYLE display_name, never the skill name", () => {
+    // Karl's ruling 2026-11-11: a short topic per skill in STYLE; the College Board skill name
+    // (skill_code) stays internal. A display name unlike the skill code proves which one is read.
+    const style = loadStyle(CONTENT);
+    const row = style[fixture.content.skill_code];
+    if (!row) throw new Error("the fixture STYLE has no row for its skill");
+    const copy = workedExampleCopy(fixture, question, {
+      ...style,
+      [fixture.content.skill_code]: { ...row, display_name: "Percents" },
+    });
+    expect(copy.title).toBe("SAT Math worked example · Percents");
+    for (const text of [
+      copy.caption,
+      copy.instagram_caption,
+      copy.facebook_caption,
+    ]) {
+      expect(text.split("\n")[0]).toBe("SAT Math worked example · Percents");
+      expect(text).not.toContain(fixture.content.skill_code);
+    }
+    // Until the STYLE rows land (they follow this code to main), a row without display_name
+    // keeps the skill name, the title before the ruling.
+    const { display_name: _omit, ...bare } = row;
+    expect(
+      workedExampleCopy(fixture, question, {
+        [fixture.content.skill_code]: bare,
+      }).title,
+    ).toBe(`SAT Math worked example · ${fixture.content.skill_code}`);
+    expect(() => workedExampleCopy(fixture, question, {})).toThrow(
+      `no style row for "${fixture.content.skill_code}"`,
+    );
+  });
+
+  it("a title is never cut mid-word: a missing display name falls back to the skill name shortened at a word boundary (Karl, 2026-11-14)", () => {
+    // Every College Board skill name the worked examples use or can use (STYLE keys), the longest
+    // first: the W47 title "… Systems of Equations in" came from the first.
+    const skills = [
+      "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "Ratios, Rates, Proportional Relationships, and Units",
+      "Linear Inequalities in One or Two Variables",
+      "Probability and Conditional Probability",
+      "Evaluating statistical claims: Observational studies and experiments",
+      "Systems of two linear equations in two variables",
+      "Linear Equations in One Variable",
+      "Right Triangles and Trigonometry",
+      "Lines, Angles, and Triangles",
+      "Percentages",
+    ];
+    const filler = /(?:^|\s)(?:and|or|in|of|the|a|to)$|[,:]$/i;
+    for (const skill of skills) {
+      const chosen = titleTopic(
+        { [skill]: { signature_move: "m.", check: "c.", trap: "t." } },
+        skill,
+      );
+      if (!chosen) throw new Error("no row");
+      const short = chosen.topic;
+      expect(chosen.source, skill).toBe("skill_name");
+      expect(short.length, skill).toBeLessThanOrEqual(WORKED_EXAMPLE_TOPIC_MAX);
+      expect(short.length, skill).toBeGreaterThan(0);
+      // A prefix of the skill name that ends where a word ends: never inside a word.
+      expect(skill.startsWith(short), skill).toBe(true);
+      expect(skill.slice(short.length), skill).toMatch(/^(?:$|[\s,:])/);
+      expect(short, skill).not.toMatch(filler);
+      const title = workedExampleTitle(question, short);
+      expect(titleProblems(title), skill).toEqual([]);
+      expect(title.endsWith(short), skill).toBe(true);
+    }
+    expect(shortSkillName(skills[0] ?? "")).toBe("Nonlinear Equations");
+    expect(shortSkillName("Linear Inequalities in One or Two Variables")).toBe(
+      "Linear Inequalities",
+    );
+    expect(shortSkillName("Percentages")).toBe("Percentages");
+    // A display name always wins, and says so.
+    expect(
+      titleTopic(
+        {
+          Percentages: {
+            display_name: "Percents",
+            signature_move: "m.",
+            check: "c.",
+            trap: "t.",
+          },
+        },
+        "Percentages",
+      ),
+    ).toEqual({ topic: "Percents", source: "display_name" });
+    expect(titleTopic({}, "Percentages")).toBeNull();
+  });
+
+  it("the TikTok, Instagram and Facebook captions are the SCL-262 lines and nothing else", () => {
     // The fixture posts on 2026-11-02: the next confirmed SAT is Nov 7.
     expect(fixture.content.post_on).toBe("2026-11-02");
     const tags = "#SAT #SATprep #digitalSAT #NovemberSAT #SATMath";
@@ -725,20 +1112,18 @@ describe("title and caption", () => {
       title,
       "Follow for daily SAT questions 👆 Comment your answer 👇",
       tags,
-      credit,
     ]);
+    // The comment-SAT line is the approved Instagram call to action (SCL-262; Karl, 2026-11-03).
     expect(instagram.split("\n\n")).toEqual([
       title,
       "Comment your answer 👇",
       "Taking the SAT Nov 7? Comment SAT and I'll send you the link",
       tags,
-      credit,
     ]);
     expect(facebook.split("\n\n")).toEqual([
       title,
       "How would you solve it? Share your approach below 👇",
       tags,
-      credit,
     ]);
     for (const text of Object.values(captions))
       expect(text.match(/#\w+/g)?.length).toBeLessThanOrEqual(5);
@@ -753,12 +1138,39 @@ describe("title and caption", () => {
     }
     expect(facebook).not.toMatch(/\bComment\b/);
     expect(
-      captionProblems(
-        caption.replace(credit, `lyceon.ai/start\n\n${credit}`),
-        credit,
-        title,
-      ).join(),
+      captionProblems(`${caption}\n\nlyceon.ai/start`, title).join(),
     ).toMatch(/carries a link or bio line/);
+  });
+
+  it("no copy block carries a music credit, a licence, a URL, a field label, a review note, an id or a file name (Karl, 2026-11-04)", () => {
+    // Presence first: the real captions are clean, so each refusal below is the planted line's.
+    for (const text of Object.values(captions))
+      expect(copyBlockProblems(text)).toEqual([]);
+    const planted: [string, RegExp][] = [
+      [kit.track.on_screen_credit ?? "", /a music credit/],
+      [
+        'Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.',
+        /a music credit/,
+      ],
+      ["Licensed CC BY 4.0", /a licence/],
+      ["https://ende.app/en", /a URL/],
+      ["lyceon.ai/start", /a URL/],
+      ["Keywords: SAT, SAT prep", /a field label/],
+      ["Alt text: a worked example", /a field label/],
+      ["For review: posts on 2026-11-02. Karl posts by hand.", /a review note/],
+      ["(the same video as TikTok, above)", /a review note/],
+      [workedExampleLabel(fixture.content), /an internal label or id/],
+      ["SATM2CZS1BE", /an internal label or id/],
+      ["we-satm2czs1be.mp4", /a file name/],
+    ];
+    for (const [line, expected] of planted) {
+      expect(line.length, String(expected)).toBeGreaterThan(0);
+      for (const [platform, text] of Object.entries(captions))
+        expect(
+          captionProblems(`${text}\n\n${line}`, title).join(),
+          `${platform}: ${line}`,
+        ).toMatch(expected);
+    }
   });
 
   it("TikTok's keywords: test month, always-set, Math, the canonical domain", () => {
@@ -793,18 +1205,10 @@ describe("title and caption", () => {
     );
   });
 
-  it("a caption without the headline first, or without the credit, is refused", () => {
+  it("a caption without the headline first is refused", () => {
     expect(
-      captionProblems(
-        caption.replace(`${title}\n\n`, ""),
-        credit,
-        title,
-      ).join(),
+      captionProblems(caption.replace(`${title}\n\n`, ""), title).join(),
     ).toMatch(/first line must be the headline/);
-    for (const text of Object.values(captions))
-      expect(
-        captionProblems(text.replace(credit, ""), credit, title).join(),
-      ).toMatch(/does not credit the music/);
   });
 });
 
@@ -913,8 +1317,8 @@ describe("the daily job: approved, post_on today, once", () => {
   });
 
   it("no caption, keyword or message gives away the answer or the explanation (anti-leak)", () => {
-    const copy = workedExampleCopy(fixture, question, kit.track.credit);
-    const post = buildPost(fixture, copy, kit.track.credit, {
+    const copy = workedExampleCopy(fixture, question, loadStyle(CONTENT));
+    const post = buildPost(fixture, copy, {
       pr: 1300,
       mergedBy: "kingk237",
       mergeSha: sha,
@@ -965,8 +1369,8 @@ describe("the daily job: approved, post_on today, once", () => {
       mergeSha: sha,
       mergedAt: "2026-10-28T15:00:00Z",
     };
-    const copy = workedExampleCopy(fixture, question, kit.track.credit);
-    const post = buildPost(fixture, copy, kit.track.credit, approval);
+    const copy = workedExampleCopy(fixture, question, loadStyle(CONTENT));
+    const post = buildPost(fixture, copy, approval);
     const parsed = workedExamplePostSchema.parse(post);
     expect(parsed.video).toBe("we-satm2czs1be.mp4");
     expect(parsed.title).toBe(copy.title);
@@ -983,18 +1387,12 @@ describe("the daily job: approved, post_on today, once", () => {
         "lyceon.ai/start?utm_source=instagram&utm_campaign=worked_example",
     });
     expect(() =>
-      buildPost(
-        fixture,
-        { ...copy, title: "Percentages" },
-        kit.track.credit,
-        approval,
-      ),
+      buildPost(fixture, { ...copy, title: "Percentages" }, approval),
     ).toThrow(/must start "SAT"/);
     expect(() =>
       buildPost(
         fixture,
         { ...copy, instagram_caption: "no headline" },
-        kit.track.credit,
         approval,
       ),
     ).toThrow(/instagram caption's first line must be the headline/);
@@ -1003,12 +1401,11 @@ describe("the daily job: approved, post_on today, once", () => {
         fixture,
         {
           ...copy,
-          facebook_caption: copy.facebook_caption.replace(kit.track.credit, ""),
+          facebook_caption: `${copy.facebook_caption}\n\n${kit.track.on_screen_credit ?? ""}`,
         },
-        kit.track.credit,
         approval,
       ),
-    ).toThrow(/facebook caption does not credit the music/);
+    ).toThrow(/facebook copy block carries a music credit/);
     expect(() =>
       buildPost(
         fixture,
@@ -1019,7 +1416,6 @@ describe("the daily job: approved, post_on today, once", () => {
             domain: "Craft and Structure",
           }),
         },
-        kit.track.credit,
         approval,
       ),
     ).toThrow(/tiktok keywords: "Craft and Structure" is not a Math domain/);
@@ -1030,8 +1426,8 @@ describe("the daily job: approved, post_on today, once", () => {
       ...fixture,
       content: { ...fixture.content, post_on: "2099-01-01" },
     };
-    const copy = workedExampleCopy(late, question, kit.track.credit);
-    const post = buildPost(late, copy, kit.track.credit, {
+    const copy = workedExampleCopy(late, question, loadStyle(CONTENT));
+    const post = buildPost(late, copy, {
       pr: 1,
       mergedBy: "kingk237",
       mergeSha: sha,
@@ -1085,8 +1481,7 @@ describe("the Slack set", () => {
   const realPost = (): WorkedExamplePost =>
     buildPost(
       fixture,
-      workedExampleCopy(fixture, question, kit.track.credit),
-      kit.track.credit,
+      workedExampleCopy(fixture, question, loadStyle(CONTENT)),
       approval,
     );
   const fence = (text: string): string => ["```", text, "```"].join("\n");
@@ -1151,39 +1546,39 @@ describe("the Slack set", () => {
       "chat.postMessage",
       "chat.postMessage",
     ]);
-    // The label and the review line stay outside the copy blocks, on the video.
-    expect(comment).toBe(
-      [
-        "*TikTok*",
-        "Worked example · Percentages · obvious_answer_trap",
-        "For review: posts on 2026-11-02. Karl posts by hand.",
-      ].join("\n"),
-    );
+    // Karl, 2026-11-04: outside the blocks, one platform header per post and nothing else.
+    expect(comment).toBe("*TikTok*");
     expect(texts).toEqual([
       [fence(post.caption), fence(post.keywords.join("\n"))].join("\n"),
-      [
-        "*Instagram* (the same video as TikTok, above)",
-        fence(post.instagram_caption),
-      ].join("\n"),
-      [
-        "*Facebook* (the same video as TikTok, above)",
-        fence(post.facebook_caption),
-      ].join("\n"),
+      ["*Instagram*", fence(post.instagram_caption)].join("\n"),
+      ["*Facebook*", fence(post.facebook_caption)].join("\n"),
     ]);
     expect(post.keywords).toContain("Data analysis");
   });
 
-  it("no link, bio line, title or label block in any message; the music credited in every caption block", async () => {
+  it("outside the blocks only the platform headers; inside them only what Karl pastes (no credit, licence, URL or label)", async () => {
     const { texts, comment } = await sent(realPost());
     expect(texts.length).toBe(3);
-    for (const text of [...texts, comment]) {
-      expect(text).not.toMatch(/lyceon\.ai|https?:\/\/|Bio link|Link to send/i);
-      expect(text).not.toMatch(/TikTok title|· TikTok caption/);
-    }
-    for (const text of texts.slice(0, 3))
-      expect(text).toContain(
-        'Music: "Happy Beats / Business Moves Vol. 12" by ende.app, CC BY 4.0.',
+    const blocks: string[] = [];
+    const outside: string[] = [];
+    for (const text of [comment, ...texts]) {
+      const parts = text.split("```");
+      parts.forEach((part, k) =>
+        (k % 2 === 1 ? blocks : outside).push(part.trim()),
       );
+    }
+    // Presence first: the three captions and the keywords are all there.
+    expect(blocks.length).toBe(4);
+    for (const b of blocks) {
+      expect(b.length).toBeGreaterThan(0);
+      expect(copyBlockProblems(b)).toEqual([]);
+      expect(b).not.toMatch(/Music:|CC BY|https?:\/\/|lyceon\.ai/);
+    }
+    expect(outside.filter((o) => o !== "")).toEqual([
+      "*TikTok*",
+      "*Instagram*",
+      "*Facebook*",
+    ]);
   });
 
   it("a warning (SAT date list needs updating) is posted first, outside the copy blocks", async () => {
@@ -1195,6 +1590,8 @@ describe("the Slack set", () => {
     expect(texts[0]).toBe(":warning: SAT date list needs updating: none left");
     expect(texts[0]).not.toContain("```");
     expect(texts.length).toBe(4);
+    // A QA warning is the one thing besides the headers allowed outside the blocks.
+    expect(texts.slice(1).every((t) => !t.includes(":warning:"))).toBe(true);
   });
 });
 

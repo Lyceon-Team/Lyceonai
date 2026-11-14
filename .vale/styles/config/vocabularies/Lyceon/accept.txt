@@ -6,7 +6,8 @@ PSAT
 PSAT/NMSQT
 NMSQT
 SAT
-superscore
+[Ss]uperscore
 superscoring
 superscored
 untimed
+waitlist

@@ -1,0 +1,42 @@
+{
+  "question_id": "SATM2EFN4GL",
+  "skill_code": "Percentages",
+  "post_on": "2026-11-13",
+  "hook": {
+    "type": "contrarian",
+    "line": "Most people get this wrong. Up 40%, then down 25%?",
+    "voice": "Most people miss this one. Will you?"
+  },
+  "question_voice": "A price jumps up, then drops back down. We want the change overall.",
+  "signature_move": "Turn each percent change into a multiplier.",
+  "steps": [
+    {
+      "notepad": "up 40% → × 1.40",
+      "voice": "Turn each change into a multiplier. Up forty percent means times one point four."
+    },
+    {
+      "notepad": "down 25% → × 0.75",
+      "voice": "Down twenty-five percent means times zero point seven five."
+    },
+    {
+      "notepad": "1.40 × 0.75 = 1.05",
+      "voice": "Multiply them, and you get one point zero five."
+    }
+  ],
+  "answer": {
+    "letter": "A",
+    "notepad": "A) 5% increase",
+    "voice": "One point zero five means a five percent increase. That's A. Quick check: start at a hundred dollars. Up to one hundred forty, then down to one hundred five."
+  },
+  "trap": {
+    "summary": "Subtracting the percents, 40 − 25 = 15%, when the 25% comes off the higher price.",
+    "notepad": [
+      "40% − 25% = 15%  ✗",
+      "the 25% is off the NEW price",
+      "1.40 × 0.75 = 1.05  ✓"
+    ],
+    "voice": "Here's where people slip. They just subtract, forty minus twenty-five, and say fifteen percent. That's C. But the drop comes off the new, higher price."
+  },
+  "check": "Plug in 100: 100 → 140 → 105, a 5% increase.",
+  "takeaway": "Percent changes multiply; they don't add."
+}

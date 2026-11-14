@@ -63,7 +63,7 @@
       "section": "M",
       "domain": "Algebra",
       "skill_codes": ["FX"],
-      "difficulty": 1,
+      "difficulty": 3,
       "item_type": "mcq",
       "stem": "If $4x - 7 = 21$, what is the value of $x$?",
       "passage": null,
