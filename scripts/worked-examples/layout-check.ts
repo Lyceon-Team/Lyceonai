@@ -9,7 +9,9 @@
  * plain English: `pnpm exec tsx scripts/worked-examples/layout-check.ts <composition folder>`
  * opens index.html at 1080×1920, waits for the fit script to register the timeline, and measures
  * every element that draws something (hook, question card, recaps, notepad lines, circle, end
- * card; there are no captions since SCL-267, Karl's ruling 2026-11-02). Without the Hyperframes
+ * card; there are no captions since SCL-267, Karl's ruling 2026-11-02; the drawn figure's strokes
+ * and labels since Karl's rulings 2026-11-11, which must also cross no text of the scenes the
+ * figure stays through). Without the Hyperframes
  * runtime every scene is laid out at once, so every element of every scene is measured. Then it hides everything on the page and screenshots it:
  * every pixel must be the kit's paper colour, so no ruled line, margin or texture can creep into
  * the template. Exits 1 with each problem.
@@ -31,7 +33,47 @@ export const DRAWN_SELECTORS = [
   ".follow",
   ".brand-name",
   ".credit",
+  ".fig-stroke",
+  ".fig-label",
 ] as const;
+
+/** The figure's elements, and the scenes it stays on screen through (open to answer). */
+export const FIGURE_SELECTORS = [
+  "#figure .fig-stroke",
+  "#figure .fig-label",
+] as const;
+export const FIGURE_SCENE_TEXT = [
+  "#open .hook",
+  "#open .question",
+  "#work .recap",
+  "#work .hand",
+  "#trap .hand",
+  "#answer .recap",
+  "#answer .hand",
+  "#answer .circle",
+] as const;
+
+function overlaps(a: Box, b: Box): boolean {
+  return a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
+}
+
+/**
+ * The drawn figure (Karl, 2026-11-11) stays on screen from the opening to the answer, so nothing
+ * those scenes write may cross it: every figure box against every text box of those scenes.
+ */
+export function figureOverlapProblems(
+  figure: readonly Box[],
+  text: readonly Box[],
+): string[] {
+  const out: string[] = [];
+  for (const f of figure)
+    for (const t of text)
+      if (overlaps(f, t))
+        out.push(
+          `${f.what} at y ${Math.round(f.y)}..${Math.round(f.bottom)} overlaps ${t.what} at y ${Math.round(t.y)}..${Math.round(t.bottom)}`,
+        );
+  return out;
+}
 
 export type Box = {
   what: string;
@@ -185,6 +227,29 @@ export async function layoutCheck(folder: string): Promise<string[]> {
       return out;
     }, DRAWN_SELECTORS);
     const problems = boxProblems(boxes, safeArea());
+    const measure = (selectors: readonly string[]): Promise<Box[]> =>
+      page.evaluate(
+        (sels: readonly string[]) =>
+          sels.flatMap((sel) =>
+            [...document.querySelectorAll(sel)].map((el, k) => {
+              const r = el.getBoundingClientRect();
+              return {
+                what: `${sel}[${k}] "${(el.textContent ?? "").trim().slice(0, 30)}"`,
+                x: r.left,
+                y: r.top,
+                right: r.right,
+                bottom: r.bottom,
+              };
+            }),
+          ),
+        selectors,
+      );
+    problems.push(
+      ...figureOverlapProblems(
+        await measure(FIGURE_SELECTORS),
+        await measure(FIGURE_SCENE_TEXT),
+      ),
+    );
     // No named helper inside the callback: tsx (esbuild keepNames) wraps a named function in
     // __name(), which does not exist in the page, and evaluate fails with "__name is not defined".
     const endCard: EndCardMeasure = await page.evaluate(() => ({

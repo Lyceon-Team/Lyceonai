@@ -197,7 +197,7 @@ ts_plant "B10 no approval asked (any script on social renders)" scripts/qotd-soc
   "  if (!approved.ok)" "  if (false)" \
   "a script Karl did not merge is no_approved_script"
 ts_plant "B11 the worked examples' script rules not run at render" scripts/qotd-social/breakdown.ts \
-  "  const content = scriptProblems(script, question);" "  const content: string[] = [];" \
+  "  const content = [...scriptProblems(script, question), ...(go ? [go] : [])];" "  const content: string[] = [];" \
   "a setup that reads the question aloud is content_rules (S1)"
 ts_plant "B12 the committed voice not checked against its text (result discarded)" scripts/qotd-social/check-breakdown-scripts.ts \
   "    problems.push(

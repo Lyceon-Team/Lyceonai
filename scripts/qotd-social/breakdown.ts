@@ -92,7 +92,10 @@ import {
   pilotWindow,
   scriptOrderProblem,
 } from "../../shared/qotd/breakdown";
-import { scriptProblems } from "../../shared/worked-examples/rules";
+import {
+  hookGoProblem,
+  scriptProblems,
+} from "../../shared/worked-examples/rules";
 import { qotdRowSchema, toArchiveResponse } from "../../shared/qotd/projection";
 import {
   escapeMrkdwn,
@@ -266,7 +269,8 @@ export async function buildBreakdown(
   if (order) return skipped(date, postedOn, "order_mismatch", [order]);
 
   const kit = loadKit();
-  const content = scriptProblems(script, question);
+  const go = hookGoProblem(script.hook.voice, script.qotd_date);
+  const content = [...scriptProblems(script, question), ...(go ? [go] : [])];
   const copy = breakdownCopy(day, postedOn);
   if (content.length > 0 || !copy.ok)
     return skipped(date, postedOn, "content_rules", [
