@@ -11,7 +11,7 @@
  * every element that draws something (hook, question card, recaps, notepad lines, circle, end
  * card; there are no captions since SCL-267, Karl's ruling 2026-11-02; the drawn figure's strokes
  * and labels since Karl's rulings 2026-11-11, which must also cross no text of the scenes the
- * figure stays through). Without the Hyperframes
+ * figure stays through; the cover card's text inside the centred 4:5 zone, Karl 2026-11-14). Without the Hyperframes
  * runtime every scene is laid out at once, so every element of every scene is measured. Then it hides everything on the page and screenshots it:
  * every pixel must be the kit's paper colour, so no ruled line, margin or texture can creep into
  * the template. Exits 1 with each problem.
@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
-import { safeArea } from "./composition";
+import { coverZone, safeArea } from "./composition";
 import { loadKit, type Track } from "./kit";
 
 export const DRAWN_SELECTORS = [
@@ -35,7 +35,46 @@ export const DRAWN_SELECTORS = [
   ".credit",
   ".fig-stroke",
   ".fig-label",
+  ".cover-brand",
+  ".cover-topic",
+  ".cover-hook",
 ] as const;
+
+/** The cover card's text (Karl, 2026-11-14): all of it inside the centred 4:5 zone. */
+export const COVER_SELECTORS = [
+  "#cover .cover-brand",
+  "#cover .cover-topic",
+  "#cover .cover-hook",
+] as const;
+
+/**
+ * The cover card's text against the 4:5 zone (coverZone: y 285..1555 within the safe columns), so
+ * the Instagram grid and feed crop shows all of it. A composition with a cover (every worked
+ * example) must draw something on it; one without (a QOTD breakdown) is not checked.
+ *
+ * @spec [Karl's cover-card ruling 2026-11-14: "Layout check: the cover card's text must sit inside
+ *       the 4:5 zone. Test + plant."] | @implemented [2026-11-14]
+ */
+export function coverZoneProblems(
+  boxes: readonly Box[],
+  hasCover: boolean,
+  zone: { left: number; right: number; top: number; bottom: number },
+): string[] {
+  if (!hasCover) return [];
+  if (boxes.length === 0) return ["the cover card drew nothing"];
+  return boxes
+    .filter(
+      (b) =>
+        b.x < zone.left - 1 ||
+        b.right > zone.right + 1 ||
+        b.y < zone.top - 1 ||
+        b.bottom > zone.bottom + 1,
+    )
+    .map(
+      (b) =>
+        `${b.what} at x ${Math.round(b.x)}..${Math.round(b.right)}, y ${Math.round(b.y)}..${Math.round(b.bottom)} leaves the cover's 4:5 zone x ${zone.left}..${zone.right}, y ${zone.top}..${zone.bottom}`,
+    );
+}
 
 /** The figure's elements, and the scenes it stays on screen through (open to answer). */
 export const FIGURE_SELECTORS = [
@@ -248,6 +287,13 @@ export async function layoutCheck(folder: string): Promise<string[]> {
       ...figureOverlapProblems(
         await measure(FIGURE_SELECTORS),
         await measure(FIGURE_SCENE_TEXT),
+      ),
+    );
+    problems.push(
+      ...coverZoneProblems(
+        await measure(COVER_SELECTORS),
+        await page.evaluate(() => document.getElementById("cover") !== null),
+        coverZone(),
       ),
     );
     // No named helper inside the callback: tsx (esbuild keepNames) wraps a named function in

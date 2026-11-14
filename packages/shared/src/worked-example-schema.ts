@@ -373,6 +373,9 @@ export const workedExamplePlanSchema = z
   .strict();
 export type WorkedExamplePlan = z.infer<typeof workedExamplePlanSchema>;
 
+/** A STYLE display_name, and a shortened skill name standing in for one, is at most this long. */
+export const WORKED_EXAMPLE_TOPIC_MAX = 32;
+
 /** content/worked-examples/STYLE.json: the per-skill signature (ruling 6), approved by merge. */
 export const workedExampleStyleSchema = z.record(
   z.string().min(1),
@@ -386,7 +389,7 @@ export const workedExampleStyleSchema = z.record(
        * reaches main first, and the STYLE rows follow. A row without it falls back to the skill
        * name (the titles before the ruling).
        */
-      display_name: line.max(32).optional(),
+      display_name: line.max(WORKED_EXAMPLE_TOPIC_MAX).optional(),
       signature_move: line,
       check: line,
       trap: line,

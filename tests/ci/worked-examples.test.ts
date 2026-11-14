@@ -21,6 +21,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  WORKED_EXAMPLE_TOPIC_MAX,
   WORKED_EXAMPLE_VOICE_LINES,
   workedExamplePostSchema,
   voiceLineSchema,
@@ -53,6 +54,8 @@ import {
   workedExampleKeywords,
   workedExampleLabel,
   workedExampleTitle,
+  shortSkillName,
+  titleTopic,
 } from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
 import { copyBlockProblems } from "../../shared/social/posts";
@@ -67,10 +70,13 @@ import {
   checkContent,
 } from "../../scripts/worked-examples/check-content";
 import {
+  COVER_BRAND,
+  COVER_SECONDS,
   END_CARD_CREDIT_PX,
   OUTRO_BRAND_PX,
   OUTRO_FOLLOW_PX,
   buildComposition,
+  coverZone,
   safeArea,
   scriptLines,
   type Composition,
@@ -98,6 +104,7 @@ import {
 } from "../../scripts/worked-examples/kit";
 import {
   boxProblems,
+  coverZoneProblems,
   creditProblems,
   nonPaperPixels,
 } from "../../scripts/worked-examples/layout-check";
@@ -125,6 +132,7 @@ const outro = voiceLineSchema.parse(
 );
 const comp: Composition = buildComposition({
   example: fixture.content,
+  topic: fixture.content.skill_code,
   question,
   voice: voice.lines,
   outro,
@@ -544,10 +552,63 @@ describe("30-60 s, order and the safe area", () => {
     expect(durationProblem(61, kit)).toMatch(/must be 30-60 s/);
   });
 
-  it("voice starts at 0:00; hook and question are on screen from frame 0 while the setup is spoken", () => {
+  it("the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)", () => {
+    expect(comp.scenes[0]).toEqual({
+      key: "cover",
+      start: 0,
+      end: COVER_SECONDS,
+    });
+    expect(COVER_SECONDS).toBeLessThanOrEqual(0.4);
+    // The hook is spoken from 0:00 under the card: the voice is delayed by nothing.
+    expect(comp.voice[0]).toMatchObject({ key: "hook", start: 0 });
+    const cover =
+      /<section id="cover"[^>]*>([\s\S]*?)<\/section>/.exec(comp.html)?.[1] ??
+      "";
+    expect(cover).toContain(COVER_BRAND);
+    expect(cover).toContain(
+      `<div class="cover-topic">${fixture.content.skill_code}</div>`,
+    );
+    expect(cover).toContain(`>${fixture.content.hook.line}</div>`);
+    // The card sits in the centred 4:5 crop of the frame (and TikTok's safe area).
+    expect(coverZone()).toEqual({
+      left: 71,
+      right: 912,
+      top: 285,
+      bottom: 1555,
+    });
+    // The figure (if any) starts with the opening scene, never over the card.
+    expect(comp.html).not.toMatch(/<section id="figure"[^>]*data-start="0"/);
+  });
+
+  it("the cover check: every cover box inside the 4:5 zone; a box above it, below it or a bare cover is refused", () => {
+    const zone = coverZone();
+    const box = (y: number, bottom: number) => ({
+      what: "cover",
+      x: 100,
+      y,
+      right: 800,
+      bottom,
+    });
+    expect(coverZoneProblems([box(600, 700)], true, zone)).toEqual([]);
+    expect(coverZoneProblems([box(200, 300)], true, zone).join()).toMatch(
+      /leaves the cover's 4:5 zone/,
+    );
+    expect(coverZoneProblems([box(1500, 1600)], true, zone).join()).toMatch(
+      /leaves the cover's 4:5 zone/,
+    );
+    expect(coverZoneProblems([], true, zone)).toEqual([
+      "the cover card drew nothing",
+    ]);
+    // A composition without a cover (a QOTD breakdown) is not checked.
+    expect(coverZoneProblems([], false, zone)).toEqual([]);
+  });
+
+  it("voice starts at 0:00; hook and question are on screen by 0.4 s while the setup is spoken", () => {
     expect(comp.voice[0]?.key).toBe("hook");
     expect(comp.voice[0]?.start).toBe(0);
-    expect(comp.scenes[0]).toMatchObject({ key: "open", start: 0 });
+    // The brief: hook and question visible within 0.5 s (after the 0.4 s cover card).
+    expect(comp.scenes[1]).toMatchObject({ key: "open", start: COVER_SECONDS });
+    expect(COVER_SECONDS).toBeLessThan(0.5);
     const open =
       /<section id="open"[^>]*>([\s\S]*?)<\/section>/.exec(comp.html)?.[1] ??
       "";
@@ -557,7 +618,7 @@ describe("30-60 s, order and the safe area", () => {
     expect(comp.html).not.toMatch(/"#(hook-line|question-card)"/);
     const setup = comp.voice.find((v) => v.key === "question");
     expect(setup && setup.start + setup.duration).toBeLessThanOrEqual(
-      comp.scenes[0]?.end ?? 0,
+      comp.scenes[1]?.end ?? 0,
     );
   });
 
@@ -583,6 +644,7 @@ describe("30-60 s, order and the safe area", () => {
       "outro",
     ]);
     expect(comp.scenes.map((s) => s.key)).toEqual([
+      "cover",
       "open",
       "work",
       "trap",
@@ -621,6 +683,7 @@ describe("30-60 s, order and the safe area", () => {
     ).toEqual([]);
     const rebuilt = buildComposition({
       example: fixture.content,
+      topic: fixture.content.skill_code,
       question,
       voice: oldOrder,
       outro,
@@ -630,6 +693,7 @@ describe("30-60 s, order and the safe area", () => {
     expect(() =>
       buildComposition({
         example: fixture.content,
+        topic: fixture.content.skill_code,
         question,
         voice: oldOrder.slice(1),
         outro,
@@ -765,6 +829,7 @@ describe("the music credit is on the end card, not in any caption", () => {
     };
     const bare = buildComposition({
       example: fixture.content,
+      topic: fixture.content.skill_code,
       question,
       voice: voice.lines,
       outro,
@@ -981,6 +1046,62 @@ describe("title and caption", () => {
     expect(() => workedExampleCopy(fixture, question, {})).toThrow(
       `no style row for "${fixture.content.skill_code}"`,
     );
+  });
+
+  it("a title is never cut mid-word: a missing display name falls back to the skill name shortened at a word boundary (Karl, 2026-11-14)", () => {
+    // Every College Board skill name the worked examples use or can use (STYLE keys), the longest
+    // first: the W47 title "… Systems of Equations in" came from the first.
+    const skills = [
+      "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "Ratios, Rates, Proportional Relationships, and Units",
+      "Linear Inequalities in One or Two Variables",
+      "Probability and Conditional Probability",
+      "Evaluating statistical claims: Observational studies and experiments",
+      "Systems of two linear equations in two variables",
+      "Linear Equations in One Variable",
+      "Right Triangles and Trigonometry",
+      "Lines, Angles, and Triangles",
+      "Percentages",
+    ];
+    const filler = /(?:^|\s)(?:and|or|in|of|the|a|to)$|[,:]$/i;
+    for (const skill of skills) {
+      const chosen = titleTopic(
+        { [skill]: { signature_move: "m.", check: "c.", trap: "t." } },
+        skill,
+      );
+      if (!chosen) throw new Error("no row");
+      const short = chosen.topic;
+      expect(chosen.source, skill).toBe("skill_name");
+      expect(short.length, skill).toBeLessThanOrEqual(WORKED_EXAMPLE_TOPIC_MAX);
+      expect(short.length, skill).toBeGreaterThan(0);
+      // A prefix of the skill name that ends where a word ends: never inside a word.
+      expect(skill.startsWith(short), skill).toBe(true);
+      expect(skill.slice(short.length), skill).toMatch(/^(?:$|[\s,:])/);
+      expect(short, skill).not.toMatch(filler);
+      const title = workedExampleTitle(question, short);
+      expect(titleProblems(title), skill).toEqual([]);
+      expect(title.endsWith(short), skill).toBe(true);
+    }
+    expect(shortSkillName(skills[0] ?? "")).toBe("Nonlinear Equations");
+    expect(shortSkillName("Linear Inequalities in One or Two Variables")).toBe(
+      "Linear Inequalities",
+    );
+    expect(shortSkillName("Percentages")).toBe("Percentages");
+    // A display name always wins, and says so.
+    expect(
+      titleTopic(
+        {
+          Percentages: {
+            display_name: "Percents",
+            signature_move: "m.",
+            check: "c.",
+            trap: "t.",
+          },
+        },
+        "Percentages",
+      ),
+    ).toEqual({ topic: "Percents", source: "display_name" });
+    expect(titleTopic({}, "Percentages")).toBeNull();
   });
 
   it("the TikTok, Instagram and Facebook captions are the SCL-262 lines and nothing else", () => {
