@@ -49,6 +49,16 @@
  *      written, so "$64" is "64" and "sixty-four" is "sixty four"; a spelled-out number never
  *      matches a written one, which is the point: the voice talks about the screen).
  *   S2 the spoken hook is not the on-screen hook line, after the same normalisation.
+ *
+ * The equation layout (Karl's fix 2026-11-14: "separate equations show on separate lines"; W47
+ * SATM2GL735M's card read "…have?y = x^2 − 4x + 5y = 2x − 3"), on the stem and the passage as the
+ * card writes them (CARD_MATH), one function each:
+ *   E1 every display equation ($$...$$, \[...\]) is a line of its own on the card, so two written
+ *      back to back, or one straight after the question mark, never share a line.
+ *   E2 an inline equation ($...$ holding =, <, >, ≤, ≥ or ≠) has a space (or an opening bracket)
+ *      before it and a space, a closing bracket or punctuation after it, so it never runs into
+ *      the words around it or into the next piece of maths; and two inline equations always have
+ *      a word or punctuation between them ("$y = 2x$ and $y = x + 1$"), never only a space.
  */
 import {
   WORKED_EXAMPLE_HOOK_TYPES,
@@ -61,7 +71,8 @@ import {
   type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
 import { isoWeekCycle } from "../content/schedule";
-import { plainMathText } from "../qotd/plain-math";
+import { tokenizeMathContent } from "../math/tokenize";
+import { plainMathText, type PlainMathOptions } from "../qotd/plain-math";
 import { QOTD_SECTION_NAME } from "../qotd/social";
 import { capTiktokTitle } from "../qotd/tiktok";
 import {
@@ -134,7 +145,7 @@ export type HookQuestion = Pick<
 
 function questionText(q: HookQuestion): string {
   return [q.passage ?? "", q.stem, ...q.options.map((o) => o.text)]
-    .map(plainMathText)
+    .map((t) => plainMathText(t))
     .join(" ");
 }
 
@@ -173,7 +184,7 @@ export function hookAnswerProblem(
       q.stem,
       ...q.options.filter((o) => o.key !== q.correct_answer).map((o) => o.text),
     ]
-      .map(plainMathText)
+      .map((t) => plainMathText(t))
       .join(" "),
   );
   const own = [...tokens(correctPlain)].filter(
@@ -316,6 +327,73 @@ export function spokenTexts(
   ];
 }
 
+/** How the card writes the question's maths: each display equation on a line of its own. */
+export const CARD_MATH: PlainMathOptions = { displayOnOwnLine: true };
+
+const RELATION = /[=<>≤≥≠]|\\(?:le|leq|ge|geq|ne|neq|lt|gt)(?![A-Za-z])/;
+const OPENS_EQUATION = /[\s([]/;
+const CLOSES_EQUATION = /[\s)\].,;:?!]/;
+
+/** Text as the card writes it (composition.ts draws the stem and passage with this). */
+export function cardText(text: string): string {
+  return plainMathText(text, CARD_MATH);
+}
+
+/**
+ * E1 (display equation on its own card line) and E2 (inline equation set off), stem and passage.
+ * `render` is the card's rendering; a test passes another to prove E1 refuses a flattened one.
+ */
+export function equationLayoutProblems(
+  q: Pick<HookQuestion, "stem" | "passage">,
+  render: (text: string) => string = cardText,
+): string[] {
+  const out: string[] = [];
+  const texts: { where: string; text: string }[] = [
+    ...(q.passage && q.passage.trim() !== ""
+      ? [{ where: "the passage", text: q.passage }]
+      : []),
+    { where: "the question stem", text: q.stem },
+  ];
+  for (const { where, text } of texts) {
+    const lines = render(text).split("\n");
+    let previous: { shown: string; end: number } | null = null;
+    for (const token of tokenizeMathContent(text)) {
+      if (token.type !== "math") continue;
+      const shown = cardText(text.slice(token.rawStart, token.rawEnd));
+      if (token.displayMode) {
+        if (!lines.some((l) => l === shown || l.slice(0, -1) === shown))
+          out.push(
+            `E1: in ${where}, the equation "${shown}" is not on a line of its own on the card`,
+          );
+        continue;
+      }
+      if (!RELATION.test(token.content)) {
+        previous = null;
+        continue;
+      }
+      if (
+        previous !== null &&
+        text.slice(previous.end, token.rawStart).trim() === ""
+      )
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into the equation before it ("${previous.shown}")`,
+        );
+      previous = { shown, end: token.rawEnd };
+      const before = text[token.rawStart - 1];
+      const after = text[token.rawEnd];
+      if (before !== undefined && !OPENS_EQUATION.test(before))
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into what comes before it ("${before}")`,
+        );
+      if (after !== undefined && !CLOSES_EQUATION.test(after))
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into what comes after it ("${after}")`,
+        );
+    }
+  }
+  return out;
+}
+
 /** S1: no spoken line reads VERBATIM_RUN_WORDS or more consecutive on-screen words aloud. */
 export function verbatimProblems(
   example: WorkedExampleScript,
@@ -380,6 +458,7 @@ export function scriptProblems(
       `trap.voice must open "The trap" or "Here's where people slip": "${example.trap.voice}"`,
     );
   out.push(...hookProblems(example.hook, q));
+  out.push(...equationLayoutProblems(q));
   out.push(...verbatimProblems(example, q));
   const echo = spokenHookEchoProblem(example.hook);
   if (echo) out.push(echo);

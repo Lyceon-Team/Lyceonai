@@ -29,7 +29,10 @@ import {
   type WorkedExamplePost,
 } from "../../packages/shared/src/worked-example-schema";
 import {
+  CARD_MATH,
   captionProblems,
+  equationLayoutProblems,
+  scriptProblems,
   HARD_DIFFICULTY,
   HARD_ONLY_FROM,
   hardOnlyProblem,
@@ -58,6 +61,7 @@ import {
   titleTopic,
 } from "../../shared/worked-examples/rules";
 import type { SeedQuestion } from "../../shared/worked-examples/seed-question";
+import { plainMathText } from "../../shared/qotd/plain-math";
 import { copyBlockProblems } from "../../shared/social/posts";
 import {
   approvalFromRecord,
@@ -505,6 +509,144 @@ describe("the voice never reads the screen (S1, S2)", () => {
         kit,
       ).problems.join("\n"),
     ).toMatch(/S2 the spoken hook reads the on-screen hook line/);
+  });
+});
+
+describe("separate equations on separate lines (E1, E2; Karl, 2026-11-14)", () => {
+  // The real seed row W47 Monday rendered as "…have?y = x^2 − 4x + 5y = 2x − 3": two display
+  // equations written back to back straight after the question mark.
+  const gl = seedQuestion("SATM2GL735M");
+  if (!gl.ok) throw new Error(gl.problem);
+  const system = gl.question;
+  const lines = [
+    "How many distinct real solutions does the following system of equations have?",
+    "y = x^2 - 4x + 5",
+    "y = 2x - 3",
+  ];
+
+  it("the root cause is the card's rendering: the seed keeps the equations as separate display blocks", () => {
+    expect(system.stem).toContain("have?$$y = x^2 - 4x + 5$$$$y = 2x - 3$$");
+    // Flattened (the QOTD post's form, unchanged) they run together; on the card they do not.
+    expect(plainMathText(system.stem)).toContain(
+      "have?y = x^2 - 4x + 5y = 2x - 3",
+    );
+    expect(plainMathText(system.stem, CARD_MATH).split("\n")).toEqual(lines);
+  });
+
+  it("the card draws each equation on a line of its own", () => {
+    const card = buildComposition({
+      example: fixture.content,
+      topic: fixture.content.skill_code,
+      question: system,
+      voice: voice.lines,
+      outro,
+      kit,
+    });
+    const stem = lines.map((l) => escapeHtml(l)).join("\n");
+    // One assertion per element: the question card and the recap each carry a stem.
+    expect(card.html).toContain(
+      `<div class="question" id="question-card"><div class="stem">${stem}</div>`,
+    );
+    expect(card.html).toContain(
+      `<div class="recap"><div class="stem">${stem}</div>`,
+    );
+    const css = readFileSync(join(ROOT, KIT_DIR, "templates/kit.css"), "utf8");
+    expect(css).toMatch(
+      /\.question \.stem, \.question \.passage, \.recap \.stem \{ white-space: pre-line; \}/,
+    );
+  });
+
+  it("E1 passes the real system as the card draws it, and an equation inside a sentence", () => {
+    expect(equationLayoutProblems(system)).toEqual([]);
+    const sentence = seedQuestion("SATM26MTNF3");
+    if (!sentence.ok) throw new Error(sentence.problem);
+    expect(sentence.question.stem).toContain("The equation $$");
+    expect(equationLayoutProblems(sentence.question)).toEqual([]);
+    expect(
+      plainMathText(sentence.question.stem, CARD_MATH).split("\n"),
+    ).toEqual([
+      "The equation",
+      "(a(3x - 8))/5 = 4x - 12/5",
+      "has no solution. What is the value of a?",
+    ]);
+  });
+
+  it("E1 refuses the flattened rendering that ran the equations together", () => {
+    expect(equationLayoutProblems(system, (t) => plainMathText(t))).toEqual([
+      `E1: in the question stem, the equation "y = x^2 - 4x + 5" is not on a line of its own on the card`,
+      `E1: in the question stem, the equation "y = 2x - 3" is not on a line of its own on the card`,
+    ]);
+  });
+
+  it("every script is checked: a run-on stem refuses the example", () => {
+    expect(
+      scriptProblems(fixture.content, {
+        ...question,
+        stem: "Which line is it?$y = 2x - 3$",
+      }),
+    ).toContain(
+      `E2: in the question stem, the equation "y = 2x - 3" runs into what comes before it ("?")`,
+    );
+    expect(scriptProblems(fixture.content, question)).toEqual([]);
+  });
+
+  it("E2 refuses an inline equation run into the words before it, after it, or the next equation", () => {
+    const stem = (s: string) => ({ stem: s, passage: null });
+    expect(
+      equationLayoutProblems(stem("Which system has?$y = 2x - 3$ as a line?")),
+    ).toEqual([
+      `E2: in the question stem, the equation "y = 2x - 3" runs into what comes before it ("?")`,
+    ]);
+    expect(
+      equationLayoutProblems(stem("If $y = 2x$and $x = 3$, what is $y$?")),
+    ).toEqual([
+      `E2: in the question stem, the equation "y = 2x" runs into what comes after it ("a")`,
+    ]);
+    expect(equationLayoutProblems(stem("Solve $y = 2x$ $y = x + 1$."))).toEqual(
+      [
+        `E2: in the question stem, the equation "y = x + 1" runs into the equation before it ("y = 2x")`,
+      ],
+    );
+    expect(
+      equationLayoutProblems(stem("Solve $y = 2x$ and $y = x + 1$.")),
+    ).toEqual([]);
+    expect(
+      equationLayoutProblems(
+        stem("Solve the system $y = 2x$,$y=x+1$ for $x$."),
+      ),
+    ).toEqual([
+      `E2: in the question stem, the equation "y = x + 1" runs into what comes before it (",")`,
+    ]);
+    // Maths that is not an equation may touch words: "$x$-coordinate", "$18\\%$".
+    expect(
+      equationLayoutProblems(
+        stem("What is the $x$-coordinate of the $18\\%$ mix?"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("E2 reads the passage too, and every W47 stem passes", () => {
+    expect(
+      equationLayoutProblems({
+        stem: "What is $x$?",
+        passage: "The line is given by$y = 3x$.",
+      }),
+    ).toEqual([
+      `E2: in the passage, the equation "y = 3x" runs into what comes before it ("y")`,
+    ]);
+    for (const id of [
+      "SATM2GL735M",
+      "SATM2J1LLJT",
+      "SATM26MTNF3",
+      "SATM2KTSHPW",
+      "SATM2MELBB8",
+      "SATM25B2AQI",
+      "SATM2RIV3Z2",
+    ]) {
+      const q = seedQuestion(id);
+      if (!q.ok) throw new Error(q.problem);
+      expect(equationLayoutProblems(q.question), id).toEqual([]);
+    }
   });
 });
 
