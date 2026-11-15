@@ -1,0 +1,215 @@
+{
+  "skill_code": "OVD",
+  "skill_name": "One-Variable Data: Distributions and Measures of Center and Spread",
+  "pass": "blind_audit",
+  "source_question_count": 73,
+  "source_pdfs": [
+    { "difficulty": "Easy", "count": 33 },
+    { "difficulty": "Medium", "count": 19 },
+    { "difficulty": "Hard", "count": 21 }
+  ],
+  "all_question_ids": [
+    "6670e407", "869a32f1", "a9647302", "a067c926", "93779b53", "79340403", "57f45509",
+    "57481175", "4bb25495", "d1db8def", "55cfaf22", "820d7a73", "6e3ab4bf", "66f03086",
+    "c54b92a2", "374b18f9", "7760c516", "708590d7", "fa7a0164", "bfa8a85c", "4b09f783",
+    "ea95087d", "12dae628", "35bec412", "c3d65f93", "80f1f3a9", "fe6a49d6", "c88e0663",
+    "8736334b", "15d87c0f", "52f9a246", "29fa7970", "f890dc20",
+    "25fc031a", "8193e8cd", "9e2bf782", "881ef5f5", "9110c120", "5c3c2e3c", "f52123e0",
+    "d94018fd", "560fab82", "be00d896", "7b65bb28", "a29e89fc", "578e26ae", "07f2829b",
+    "d0efc1dd", "3f2ee20a", "a456cfd2", "a5b069b4", "4c774b00",
+    "94237701", "54d93874", "9d935bd8", "2a59eb45", "391ae4b2", "98958ae8", "4626102e",
+    "4ff597db", "bf47ad54", "e7d48c8a", "1e8ccffd", "1142af44", "f8a322d9", "ecbdbe84",
+    "241f1db7", "d65b9a87", "6c9444cd", "457d2f2c", "c178d4da", "190be2fc", "d3b9c8d8"
+  ],
+  "standalone_read_display_finding": "YES. 'Read/interpret a data display' genuinely exists as a standalone sub-skill. At least 17 questions (out of 73) ask ONLY to read a value, count, frequency, or simple difference from a graph or table, with NO computation of any measure of center or spread. These are concentrated at Easy difficulty but also appear at Medium. Examples: reading a bar height (93779b53), reading a box-plot median (57f45509), finding which bar matches a value (80f1f3a9), reading a frequency table's max/min data value (a456cfd2, 560fab82). None of these require the student to compute mean, median, mode, range, or SD.",
+  "proposed_sub_skills": [
+    {
+      "id": "OVD.1",
+      "name": "Read or Interpret a Data Display",
+      "definition": "Read a single value, count, frequency, difference, or structural feature directly from a bar graph, dot plot, box plot, histogram, frequency table, or data table. No computation of a summary statistic (mean, median, mode, range, SD) from raw data is required -- the answer comes from reading the display.",
+      "inclusion_test": "The question is answered entirely by locating and reading one or more values on a graphical display or table, possibly subtracting two read values or summing displayed frequencies. The student does NOT need to apply the mean formula, order-and-locate for median, or compute range/SD.",
+      "evidence_ids": [
+        "93779b53", "79340403", "820d7a73", "6e3ab4bf", "80f1f3a9", "29fa7970",
+        "fe6a49d6", "a067c926", "57481175", "15d87c0f", "ea95087d", "d1db8def",
+        "57f45509", "374b18f9", "52f9a246", "560fab82", "a456cfd2"
+      ],
+      "count": 17,
+      "difficulty_spread": ["Easy", "Medium"]
+    },
+    {
+      "id": "OVD.2",
+      "name": "Compute the Mean",
+      "definition": "Calculate the arithmetic mean of a data set by summing all values (or using frequency-weighted sums) and dividing by the number of data points. Includes computing mean from a list, a table, a bar graph, or a frequency table.",
+      "inclusion_test": "The question explicitly asks for the mean (or average) and the primary solving step is applying sum/count. The student must perform the computation rather than just reading a value or reasoning conceptually.",
+      "evidence_ids": [
+        "a9647302", "4bb25495", "7760c516", "fa7a0164", "4b09f783", "12dae628",
+        "a29e89fc", "bf47ad54", "c178d4da"
+      ],
+      "count": 9,
+      "difficulty_spread": ["Easy", "Medium", "Hard"]
+    },
+    {
+      "id": "OVD.3",
+      "name": "Find the Median",
+      "definition": "Determine the median of a data set by ordering values and locating the middle value (odd count) or the average of the two middle values (even count). Includes finding the median from a list, a frequency table, or a grouped frequency table using cumulative counts.",
+      "inclusion_test": "The question asks for the median or requires finding the median as the main step. The student must order data and locate the positional middle, possibly using cumulative frequency.",
+      "evidence_ids": [
+        "66f03086", "35bec412", "f890dc20", "bfa8a85c", "a5b069b4", "7b65bb28",
+        "9e2bf782", "07f2829b", "94237701", "9d935bd8", "ecbdbe84"
+      ],
+      "count": 11,
+      "difficulty_spread": ["Easy", "Medium", "Hard"]
+    },
+    {
+      "id": "OVD.4",
+      "name": "Compute the Range",
+      "definition": "Find the range of a data set by identifying the maximum and minimum values and subtracting. Includes reading range from box plots or tables.",
+      "inclusion_test": "The question asks for the range, or the primary computation is max minus min. May require reading max/min from a display first.",
+      "evidence_ids": [
+        "c54b92a2", "f52123e0", "6c9444cd"
+      ],
+      "count": 3,
+      "difficulty_spread": ["Easy", "Medium", "Hard"]
+    },
+    {
+      "id": "OVD.5",
+      "name": "Compare or Relate Measures of Center and Spread",
+      "definition": "Compare mean vs. median, determine their relative order given distribution shape or outliers, identify which statistic is or is not a given value, determine what can or cannot be computed from given information, or compare measures across two data sets conceptually.",
+      "inclusion_test": "The question requires reasoning about the relationship between two or more statistical measures (mean, median, mode, range) rather than just computing one of them. Includes identifying a statistic by its properties, comparing statistics between groups, and understanding how skewness or outliers affect mean vs. median.",
+      "evidence_ids": [
+        "6670e407", "869a32f1", "55cfaf22", "708590d7", "c88e0663", "9110c120",
+        "be00d896", "4c774b00", "881ef5f5", "c3d65f93", "3f2ee20a", "1142af44",
+        "d3b9c8d8"
+      ],
+      "count": 13,
+      "difficulty_spread": ["Easy", "Medium", "Hard"]
+    },
+    {
+      "id": "OVD.6",
+      "name": "Effect of Data Changes on Statistics",
+      "definition": "Determine how adding, removing, or modifying values in a data set -- or adding a constant to all values -- affects measures of center (mean, median) and/or spread (range, standard deviation). Includes reasoning about whether a statistic stays the same, increases, or decreases.",
+      "inclusion_test": "The question describes a modification to a data set (add a value, remove a value, change a value, add a constant to all values, split values around median) and asks which statistics change or stay the same, or how specific statistics are affected.",
+      "evidence_ids": [
+        "578e26ae", "5c3c2e3c", "4626102e", "e7d48c8a", "241f1db7", "391ae4b2",
+        "457d2f2c"
+      ],
+      "count": 7,
+      "difficulty_spread": ["Medium", "Hard"]
+    },
+    {
+      "id": "OVD.7",
+      "name": "Solve for an Unknown Using the Mean",
+      "definition": "Use the mean formula algebraically to find an unknown data value, a removed value, or a missing entry. Given that the mean equals a specific value (or equals another data set's mean), set up the equation sum/count = mean and solve for the unknown.",
+      "inclusion_test": "The question gives a mean value (or a relationship involving the mean) and at least one unknown data value, and the student must use the mean formula in reverse to solve for that unknown. Includes 'reverse mean' problems where a value is removed and the new mean is given.",
+      "evidence_ids": [
+        "8736334b", "d0efc1dd", "54d93874", "4ff597db", "1e8ccffd", "190be2fc",
+        "8193e8cd"
+      ],
+      "count": 7,
+      "difficulty_spread": ["Easy", "Medium", "Hard"]
+    },
+    {
+      "id": "OVD.8",
+      "name": "Combined (Weighted) Mean of Merged Data Sets",
+      "definition": "Compute the overall mean when two or more data sets with known sizes and means are combined. Requires using the weighted-average formula: (n1*mean1 + n2*mean2) / (n1 + n2).",
+      "inclusion_test": "The question gives two or more groups with their respective sizes and means (or enough info to determine them) and asks for the combined mean of the merged data set.",
+      "evidence_ids": [
+        "2a59eb45", "98958ae8"
+      ],
+      "count": 2,
+      "difficulty_spread": ["Hard"]
+    },
+    {
+      "id": "OVD.9",
+      "name": "Compare Standard Deviations from Distributions",
+      "definition": "Compare the standard deviations (spread) of two or more data sets by visually inspecting their distributions in histograms, dot plots, or other displays. Understand that more concentrated distributions have smaller SD and that shifting a distribution does not change SD.",
+      "inclusion_test": "The question shows two or more distributions (as histograms, dot plots, or described data sets) and asks the student to compare their standard deviations or determine which has greater/lesser spread, based on visual reasoning about how concentrated the values are around the mean.",
+      "evidence_ids": [
+        "25fc031a", "d94018fd", "d65b9a87", "f8a322d9"
+      ],
+      "count": 4,
+      "difficulty_spread": ["Medium", "Hard"]
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "id": "CL.1",
+      "name": "Graph/Table Value Extraction",
+      "definition": "Locate and read numerical values (bar heights, dot counts, box-plot features, table cells) from a data display. The core step is visual-to-numeric translation.",
+      "evidence_ids": [
+        "93779b53", "79340403", "820d7a73", "6e3ab4bf", "80f1f3a9", "29fa7970",
+        "fe6a49d6", "57f45509", "374b18f9", "a067c926", "57481175", "15d87c0f",
+        "ea95087d", "d1db8def", "52f9a246", "560fab82", "a456cfd2"
+      ]
+    },
+    {
+      "id": "CL.2",
+      "name": "Sum-and-Divide (Mean Computation)",
+      "definition": "Add all data values (or compute frequency-weighted sums) and divide by the total count to produce the arithmetic mean. This is the procedural core of any question that asks for a mean.",
+      "evidence_ids": [
+        "a9647302", "4bb25495", "7760c516", "fa7a0164", "4b09f783", "12dae628",
+        "a29e89fc", "bf47ad54", "c178d4da", "8193e8cd"
+      ]
+    },
+    {
+      "id": "CL.3",
+      "name": "Order-and-Locate (Median Finding)",
+      "definition": "Sort data values (or use cumulative frequencies) and identify the middle position(s) to determine the median. For n values, locate position (n+1)/2 (odd) or average positions n/2 and n/2+1 (even).",
+      "evidence_ids": [
+        "66f03086", "35bec412", "f890dc20", "bfa8a85c", "a5b069b4", "7b65bb28",
+        "9e2bf782", "07f2829b", "94237701", "9d935bd8", "ecbdbe84"
+      ]
+    },
+    {
+      "id": "CL.4",
+      "name": "Max-Minus-Min (Range Computation)",
+      "definition": "Identify the greatest and least data values and subtract to find the range. May involve reading extremes from a display first.",
+      "evidence_ids": [
+        "c54b92a2", "f52123e0", "6c9444cd"
+      ]
+    },
+    {
+      "id": "CL.5",
+      "name": "Algebraic Mean Inversion",
+      "definition": "Set up the mean equation (sum / count = known mean), substitute known values, and solve algebraically for the unknown quantity. Includes forward (find x given mean) and reverse (find removed value given old and new mean) variants.",
+      "evidence_ids": [
+        "8736334b", "d0efc1dd", "54d93874", "4ff597db", "1e8ccffd", "190be2fc"
+      ]
+    },
+    {
+      "id": "CL.6",
+      "name": "Weighted-Average Combination",
+      "definition": "Combine two or more group means into an overall mean using the weighted-average formula: total sum = n1*mean1 + n2*mean2; combined mean = total sum / (n1 + n2).",
+      "evidence_ids": [
+        "2a59eb45", "98958ae8"
+      ]
+    },
+    {
+      "id": "CL.7",
+      "name": "Distribution-Shape Reasoning",
+      "definition": "Use visual or conceptual properties of a distribution's shape (symmetry, skewness, concentration near the mean, outlier presence) to infer relationships between statistics. Includes comparing SDs by eyeballing spread, determining mean vs. median order from skew, and recognizing that shifting does not change SD.",
+      "evidence_ids": [
+        "25fc031a", "d94018fd", "d65b9a87", "9110c120", "be00d896", "4c774b00",
+        "1142af44", "3f2ee20a", "f8a322d9"
+      ]
+    },
+    {
+      "id": "CL.8",
+      "name": "Data-Modification Effect Analysis",
+      "definition": "Reason about how a specific change to a data set (adding/removing a value, adding a constant to all values, replacing a value) propagates to each summary statistic. Requires understanding which stats are affected by the specific type of change.",
+      "evidence_ids": [
+        "578e26ae", "5c3c2e3c", "4626102e", "e7d48c8a", "241f1db7", "391ae4b2",
+        "457d2f2c", "c3d65f93"
+      ]
+    },
+    {
+      "id": "CL.9",
+      "name": "Statistic Identification and Selection",
+      "definition": "Given a described property or a set of answer choices, identify which statistical measure (mean, median, mode, range, SD) matches the description, or determine which measure can or cannot be computed from the given information.",
+      "evidence_ids": [
+        "869a32f1", "c88e0663", "6670e407", "55cfaf22", "708590d7", "881ef5f5",
+        "d3b9c8d8"
+      ]
+    }
+  ]
+}
