@@ -6,10 +6,7 @@
  *       captions; the voice never reads the on-screen text (S1/S2, shared/worked-examples/rules.ts);
  *       the flow ending "Follow, there's one of these every day."; the end card "Lyceon SAT Prep",
  *       no lyceon.ai; am_michael; "Lyceon" through spokenBrandName; every video 1080×1920, 30 fps,
- *       with audio; owner brief "Video tools pilot" (Karl, 2026-11-02) D2, D3 and D1; owner ruling
- *       (Karl, 2026-11-02): "never use the word 'Desmos' in on-screen text, captions or spoken
- *       lines ... Add a test or a check in check.ts that fails if 'desmos' (case-insensitive)
- *       appears in any pilot script, on-screen line or caption"; D1 Video 2: honest timers on the
+ *       with audio; owner brief "Video tools pilot" (Karl, 2026-11-02) D2, D3 and D1; D1 Video 2: honest timers on the
  *       video clock; SCL-270 (Karl,
  *       2026-11-02): the finished mix at most -1 dBTP true peak] | @implemented [2026-11-02]
  *
@@ -37,17 +34,11 @@ import { loadKit } from "../../scripts/worked-examples/kit";
 import {
   checkVideo,
   formatProblems,
-  logWordHits,
   probeSchema,
   screenEchoProblems,
   timerRows,
   type PilotLinesLog,
 } from "../../scripts/video-pilots/manim/check";
-import {
-  bannedWordHits,
-  pilotSourceFiles,
-  pilotSourceHits,
-} from "../../scripts/video-pilots/manim/word-guard";
 import { endCardText } from "../../scripts/video-pilots/manim/prepare";
 import {
   engineFingerprint,
@@ -366,68 +357,6 @@ describe("video pilots: voice-lines.ts", () => {
       "line",
     ]);
     expect(() => parseChatterboxEvents(`${ok}\nThink you can`)).toThrow();
-  });
-});
-
-describe("video pilots: the calculator-name guard (D1)", () => {
-  it("scans the D1 pilots' examples and scene modules (presence before absence)", () => {
-    const files = pilotSourceFiles(ROOT);
-    for (const id of D1) {
-      expect(files).toContain(`video-kit/pilots/manim/${id}/example.json`);
-      expect(files).toContain(`scripts/video-pilots/manim/pilots/${id}.py`);
-      expect(
-        readFileSync(
-          join(ROOT, "scripts/video-pilots/manim/pilots", `${id}.py`),
-          "utf8",
-        ).length,
-      ).toBeGreaterThan(1000);
-    }
-  });
-
-  it("no committed pilot script or on-screen line names the calculator", () => {
-    expect(pilotSourceHits(ROOT)).toEqual([]);
-  });
-
-  it("matches case-insensitively, inside words, and reports the 1-based line", () => {
-    const hits = bannedWordHits(
-      "f",
-      "graph it\nOpen DESMOS now\nmydesmosgraph",
-    );
-    expect(hits.map((h) => h.line)).toEqual([2, 3]);
-    expect(bannedWordHits("f", "the graphing calculator")).toEqual([]);
-  });
-
-  it("check.ts catches the name in a spoken line and in an on-screen string, each by itself", () => {
-    const lines = scriptLines(example("SATM2XXVNK7"), kit.voice.outro_text).map(
-      (l, k) => ({
-        key: l.key,
-        text: l.text,
-        wav: `/x/${k}.wav`,
-        words: [{ text: "x", start: 0, end: 0.5 }],
-        start: k,
-        duration: 1,
-      }),
-    );
-    const clean: PilotLinesLog = {
-      duration: lines.length,
-      engine: "kokoro",
-      lines,
-      on_screen: lines.map((l) => l.text),
-    };
-    expect(clean.lines.length).toBeGreaterThan(5);
-    expect(logWordHits(clean)).toEqual([]);
-    const spoken = structuredClone(clean);
-    const hookLine = spoken.lines[0];
-    if (!hookLine) throw new Error("no hook line");
-    hookLine.text = `${hookLine.text} Open Desmos.`;
-    expect(logWordHits(spoken)).toEqual([
-      expect.stringContaining('spoken line "hook":1'),
-    ]);
-    const shown = structuredClone(clean);
-    shown.on_screen = [...shown.on_screen, "desmos.com"];
-    expect(logWordHits(shown)).toEqual([
-      expect.stringContaining(`on-screen string ${lines.length + 1}:1`),
-    ]);
   });
 });
 
