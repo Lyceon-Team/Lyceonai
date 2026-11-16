@@ -186,7 +186,8 @@ function AnswerSlide({
           )}
         </div>
         <div className="tt-why">
-          <b>Why:</b> {carousel.why}
+          {/* The Why's maths typeset by KaTeX, as on the site (Karl, 2026-11-16). */}
+          <b>Why:</b> <StaticMath content={carousel.why} />
         </div>
       </div>
       <div className="tt-link">

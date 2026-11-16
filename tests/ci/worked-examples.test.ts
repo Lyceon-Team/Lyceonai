@@ -520,7 +520,7 @@ describe("separate equations on separate lines (E1, E2; Karl, 2026-11-14)", () =
   const system = gl.question;
   const lines = [
     "How many distinct real solutions does the following system of equations have?",
-    "y = x^2 - 4x + 5",
+    "y = x² - 4x + 5",
     "y = 2x - 3",
   ];
 
@@ -528,7 +528,7 @@ describe("separate equations on separate lines (E1, E2; Karl, 2026-11-14)", () =
     expect(system.stem).toContain("have?$$y = x^2 - 4x + 5$$$$y = 2x - 3$$");
     // Flattened (the QOTD post's form, unchanged) they run together; on the card they do not.
     expect(plainMathText(system.stem)).toContain(
-      "have?y = x^2 - 4x + 5y = 2x - 3",
+      "have?y = x² - 4x + 5y = 2x - 3",
     );
     expect(plainMathText(system.stem, CARD_MATH).split("\n")).toEqual(lines);
   });
@@ -573,7 +573,7 @@ describe("separate equations on separate lines (E1, E2; Karl, 2026-11-14)", () =
 
   it("E1 refuses the flattened rendering that ran the equations together", () => {
     expect(equationLayoutProblems(system, (t) => plainMathText(t))).toEqual([
-      `E1: in the question stem, the equation "y = x^2 - 4x + 5" is not on a line of its own on the card`,
+      `E1: in the question stem, the equation "y = x² - 4x + 5" is not on a line of its own on the card`,
       `E1: in the question stem, the equation "y = 2x - 3" is not on a line of its own on the card`,
     ]);
   });
