@@ -131,8 +131,8 @@ Karl's rulings from the content session of 2026-10-28 → 2026-11-02. They super
     - The voice never reads the on-screen text verbatim: the screen shows the question; the voice talks about it.
     - Script flow: (1) a spoken hook as a question or challenge to the viewer ("Think you can solve this in ten seconds?", never the label "Solve this in 10 seconds"), (2) a one-sentence setup in plain talk, (3) the key move and why, (4) the trap ("here's where people slip"), (5) the answer and a quick check, (6) the call to action.
     - Tone: contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Go."); no textbook phrasing.
-    - Voice: `am_michael` (Kokoro-82M) everywhere, replacing `af_heart`.
-    - Pronunciation: "Lyceon" is said "lye-see-on" (/ˈlaɪsiɑn/: LYE, see, ON; stress on the first syllable).
+    - Voice: **Chirp 3 HD Orus** (voice A, Google Cloud Text-to-Speech) for the worked examples (Karl, 2026-11-11; confirmed 2026-11-14, the weekly batch from W48). It replaced `am_michael` (Kokoro-82M) there; `am_michael` remains the voice of the local tools and the pilots. (Originally 2026-11-02: `am_michael` everywhere, replacing `af_heart`.)
+    - Pronunciation: "Lyceon" is said "lye-see-on" (LYE, see, ON; stress on the first syllable). Orus is sent the respelling **"Lye-see-ahn"**, with no IPA, because it did not honour /ˈlaɪsiɑn/ (Karl, 2026-11-11 and 2026-11-14). The on-screen spelling never changes.
     - Outro and end card: no "lyceon.ai" spoken or shown; the end card reads "Lyceon SAT Prep".
     - Loudness: voice lines are normalised (around −14 LUFS, true peak ≤ −1 dB) so nothing clips.
     - QOTD breakdowns use authored scripts, not the question read aloud.

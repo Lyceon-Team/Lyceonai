@@ -13,14 +13,14 @@ Facebook reaches parents and tutors, not students. Parents decide on Pro (parent
 
 ## Reel caption block
 ```
-<Short topic title> · SAT Math
+SAT Math worked example · <short topic>
 
-<a genuine question, e.g. "How would you solve it? Share your approach below 👇">
+How would you solve it? Share your approach below 👇
 
 #SAT #SATprep #digitalSAT #<Month>SAT #SATMath
 ```
 - No link and no "comment a word" bait. Facebook penalises both, and parents read them as spam.
-- The question has to be one an adult would actually answer.
+- The pipeline builds this block with the fixed question line above (`08` §4a). In your own posts, the question has to be one an adult would actually answer.
 
 ## Parent posts (on request)
 - Under 500 characters.

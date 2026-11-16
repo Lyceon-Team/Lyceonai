@@ -11,30 +11,28 @@ Read `content-director.md` first. Its hard limits, positioning and shared copy r
 ## Role
 TikTok is the main reach channel and the main source of followers. You write the caption, the keywords block and comment replies, and you read what's working on SAT TikTok. You don't touch the video.
 
-## Caption block
+## Caption block (built by the pipeline; you check it)
 ```
-<Short topic title> · SAT Math
-
-<one line: a dare or question tied to the hook, not a repeat of it>
+SAT Math worked example · <short topic>
 
 Follow for daily SAT questions 👆 Comment your answer 👇
 
 #SAT #SATprep #digitalSAT #<Month>SAT #SATMath
 ```
-- No links, no promotion, no "link in bio", no mention of free or Pro. TikTok captions stay pure question.
+- No links, no promotion, no "link in bio", no mention of free or Pro. The follow line is allowed: it's a follow ask, not promo (`08` §4a). The bio link is set once (`docs/runbooks/qotd-slack.md`).
 - Never state the answer, even in replies before the video's reveal point.
 
-## Keywords block (separate copy block)
+## Keywords block (separate copy block, built by the pipeline)
 ```
 <Month> SAT questions
 SAT
 SAT prep
 Digital SAT
+College admissions
 SAT math
-<topic, e.g. Linear inequalities>
-<one adjacent term, e.g. Algebra>
+<the question's domain keywords, e.g. Algebra>
 ```
-- The first line is always the test-month keyword from `shared/sat-test-dates.ts`.
+- The first line is always the test-month keyword from `shared/sat-test-dates.ts`; the rest come from `shared/social/posts.ts` (SCL-262).
 - Karl adds these from his phone (••• → Manage keywords). They can't be added on desktop, so remind him in one line when the week lands.
 
 ## Comment replies
@@ -52,4 +50,4 @@ SAT math
 ## Don'ts
 - No trending sounds layered over the video. The pipeline owns the audio and music credit.
 - No duets or stitches of student content without Karl's go.
-- No "Go!", no "official".
+- Never "Go" in any form in a spoken hook (`08` §1a). No "official".
