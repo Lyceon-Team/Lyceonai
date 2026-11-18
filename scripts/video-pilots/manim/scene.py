@@ -33,7 +33,7 @@ with Pango, which cannot fit-to-width the way the HTML kit's fit script does, so
 wrapped or scaled to the safe column here and safe_area_check.py proves the result on sampled
 frames. The open card and the recap fall back to one choice per row only when a choice is too
 wide for the two-column grid. layout.py's ON_SCREEN records every string set on screen, which the
-log carries for check.ts (S1 on what was drawn, and the calculator-name guard).
+log carries for check.ts (S1 on what was drawn).
 """
 
 from __future__ import annotations
