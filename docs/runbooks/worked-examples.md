@@ -10,9 +10,11 @@ test-date/myth and parent posts. A starting shape that changes with the data. Hy
 core; pilots are Manim with manim-voiceover (math visuals) and Chatterbox (a naturalness comparison
 against the Kokoro-82M `am_michael` voice); screen demos are scripted Playwright recordings, not
 OpenScreen, whose repository is archived (Karl, 2026-11-02); Remotion (licence), stock-footage
-generators, AI video/avatar models and schedulers are rejected for now. Until Desmos replies to the permission request, no example shows the Desmos
-interface or logo or says "Desmos" on screen or in a caption (screen recordings included): a graphing
-method is drawn in our own rendering (Manim). Posting stays by hand from `#social`.
+generators, AI video/avatar models and schedulers are rejected for now. Desmos is in scope (Karl,
+2026-11-15; Lyceon has a Desmos licence): an example may name Desmos and show its interface and logo,
+on screen, in captions and in carousels, replacing the 2026-11-02 constraint. The pipeline's code
+still enforces the old rule in places (see the follow-up list in the PR that recorded this).
+Posting stays by hand from `#social`.
 
 ## What runs where
 
@@ -92,8 +94,8 @@ the QOTD job (`qotd-social.yml`) is separate and stays.
 - **When:** Thursday 16:15 UTC, job `weekly` in `.github/workflows/worked-example-daily.yml`,
   building next Monday-Sunday (ISO week). Pull requests run the same job as a dry run on the
   fixture tree (committed voice, no secret, no upload, claim or post).
-- **Plan:** 7 Hard worked examples a week: 2 shortcut slots ("graphing method vs by hand"; never
-  name Desmos), 2 geometry slots with drawn figures (similar triangles, triangle theorem,
+- **Plan:** 7 Hard worked examples a week: 2 shortcut slots ("graphing method vs by hand"; Desmos
+  may be named and shown, Karl 2026-11-15), 2 geometry slots with drawn figures (similar triangles, triangle theorem,
   Pythagorean theorem, cylinders, cones), 3 trap slots (algebra, advanced math, problem-solving).
 - **Format:** the question on screen in frame 1; the spoken hook a dare or a shortcut promise; 30-60
   s; one problem; the answer near the end; one CTA (test variant: "Comment GRIND and I'll send you
