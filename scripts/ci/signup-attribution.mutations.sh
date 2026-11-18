@@ -16,6 +16,8 @@ export PGHOST="${PGHOST:-localhost}" PGPORT="${PGPORT:-5432}" PGUSER="${PGUSER:-
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261121000000_landing_new_students_signup_channel.sql"
+# The channel CHECK's last definer (SCL-278, 2026-11-14): youtube and x added.
+CHANNELS_MIG="supabase/migrations/20261204000000_signup_channel_youtube_x.sql"
 SHARED="packages/shared/src/signup-attribution.ts"
 CLIENT="client/src/lib/signup-attribution.ts"
 WRITER="server/lib/signup-attribution.ts"
@@ -27,7 +29,7 @@ PG=tests/ci/signup-attribution.pg.ci.test.ts
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/sa-mut.XXXX)"
 
-FILES=("$MIG" "$SHARED" "$CLIENT" "$WRITER" "$OAUTH" "$AUTHCTX")
+FILES=("$MIG" "$CHANNELS_MIG" "$SHARED" "$CLIENT" "$WRITER" "$OAUTH" "$AUTHCTX")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -134,6 +136,28 @@ run "SA10 never held for an under-13" "R6 under 13" "$PG"
 echo "=== (11) the campaign accepts free text ==="
 plant "$MIG" "    signup_campaign IS NULL OR signup_campaign ~ '^[a-z0-9_]{1,40}\$');" "    signup_campaign IS NULL OR length(signup_campaign) > 0);" || stale SA11
 run "SA11 no URL or free text" "R5 the database: a stored channel or campaign cannot be changed" "$PG"
+
+# ── SCL-278: youtube and x ──────────────────────────────────────────────────────────────────────
+
+echo "=== (12) youtube is not a known source ==="
+plant "$SHARED" '    youtube: "youtube",
+' '' || stale SA12
+run "SA12 youtube is its channel" "A7 the Shorts link is credited to YouTube" "$UNIT"
+
+echo "=== (13) twitter is not read as x ==="
+plant "$SHARED" '    twitter: "x",
+' '' || stale SA13
+run "SA13 twitter is x" "A1 each known utm_source is its channel" "$UNIT"
+
+echo "=== (14) the database refuses youtube ==="
+plant "$CHANNELS_MIG" "('reddit', 'tiktok', 'instagram', 'facebook', 'youtube', 'x', 'email', 'direct', 'other'));" "('reddit', 'tiktok', 'instagram', 'facebook', 'x', 'email', 'direct', 'other'));" || stale SA14
+run "SA14 the database stores youtube" "R7 youtube and x are stored" "$PG"
+
+echo "=== (15) the database accepts any channel ==="
+plant "$CHANNELS_MIG" "    signup_channel IS NULL OR signup_channel IN
+      ('reddit', 'tiktok', 'instagram', 'facebook', 'youtube'," "    signup_channel IS NULL OR length(signup_channel) > 0 OR signup_channel IN
+      ('reddit', 'tiktok', 'instagram', 'facebook', 'youtube'," || stale SA15
+run "SA15 a channel off the list is refused" "R7 youtube and x are stored" "$PG"
 
 echo
 echo "SIGNUP ATTRIBUTION MUTATIONS: $PASS passed, $FAIL failed"
