@@ -48,7 +48,11 @@ import {
 } from "../../shared/social/posts";
 import {
   captionProblems,
+  hasYoutubeShorts,
   titleProblems,
+  workedExampleYoutubeDescription,
+  workedExampleYoutubeTitle,
+  youtubeProblems,
   workedExampleCaption,
   workedExampleFacebookCaption,
   workedExampleInstagramCaption,
@@ -111,6 +115,10 @@ export type WorkedExampleCopy = {
   keywords: ReturnType<typeof workedExampleKeywords>;
   /** Where the title's topic came from (the "Week ready" header shows it). */
   title_source: TitleSource;
+  /** The YouTube Shorts block, from W48 (Karl, 2026-11-14); null before. */
+  youtube: { title: string; description: string } | null;
+  /** The question the copy was built for: buildPost checks the YouTube block against it (H5). */
+  question: SeedQuestion;
 };
 
 /** The real copy for one example, from the one caption builder (SCL-265). */
@@ -137,6 +145,18 @@ export function workedExampleCopy(
     facebook_caption: workedExampleFacebookCaption(e.content, question, topic),
     keywords: workedExampleKeywords(e.content, question),
     title_source: chosen.source,
+    // YouTube Shorts from W48 (Karl, 2026-11-14); none on earlier posts.
+    youtube: hasYoutubeShorts(e.content.post_on)
+      ? {
+          title: workedExampleYoutubeTitle(workedExampleTitle(question, topic)),
+          description: workedExampleYoutubeDescription(
+            e.content,
+            question,
+            topic,
+          ),
+        }
+      : null,
+    question,
   };
 }
 
@@ -166,6 +186,9 @@ export function buildPost(
           (p) => `tiktok keywords ${p}`,
         )
       : []),
+    ...(copy.youtube === null
+      ? []
+      : youtubeProblems(copy.youtube, copy.title, copy.question)),
   ];
   if (problems.length > 0 || !copy.keywords.ok)
     throw new Error(`refused:\n  ${problems.join("\n  ")}`);
@@ -180,6 +203,12 @@ export function buildPost(
     instagram_caption: copy.instagram_caption,
     facebook_caption: copy.facebook_caption,
     keywords: copy.keywords.keywords,
+    ...(copy.youtube === null
+      ? {}
+      : {
+          youtube_title: copy.youtube.title,
+          youtube_description: copy.youtube.description,
+        }),
     warnings: socialDateWarnings(e.content.post_on),
     links: campaignLinks("worked_example"),
     approval,

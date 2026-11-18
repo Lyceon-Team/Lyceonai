@@ -41,6 +41,7 @@ import {
 } from "../../scripts/worked-examples/voice-cache";
 import { voiceLine } from "../../scripts/worked-examples/voice";
 import {
+  captionsFile,
   captionsMarkdown,
   nextWeek,
   SIGNED_LINK_SECONDS,
@@ -56,6 +57,10 @@ import {
   weekExamples,
 } from "../../scripts/worked-examples/weekly";
 import { seedQuestion } from "../../scripts/worked-examples/content";
+import {
+  YOUTUBE_SHORTS_FROM,
+  youtubeProblems,
+} from "../../shared/worked-examples/rules";
 
 const ROOT = join(__dirname, "../..");
 const CONTENT = join(ROOT, "tests/fixtures/worked-examples/social");
@@ -562,5 +567,135 @@ describe("recaption: a delivered week re-delivered with rebuilt captions (Karl, 
     await postMessage(config, "reply", fake, "111.222");
     expect(bodies[0]).not.toHaveProperty("thread_ts");
     expect(bodies[1]).toMatchObject({ text: "reply", thread_ts: "111.222" });
+  });
+});
+
+describe("YouTube Shorts block from W48 (Karl, 2026-11-14)", () => {
+  const q = seedQuestion(fixture.content.question_id);
+  if (!q.ok) throw new Error(q.problem);
+  const question = q.question;
+  const style = loadStyle(CONTENT);
+  const approval = {
+    pr: 1,
+    mergedBy: "x",
+    mergeSha: "0".repeat(40),
+    mergedAt: "2026-11-20T00:00:00Z",
+  };
+  const on = (post_on: string) => ({
+    ...fixture,
+    content: { ...fixture.content, post_on },
+  });
+  // Built inside each test, so a planted defect fails the test that guards it.
+  const postOn = (date: string) =>
+    buildPost(on(date), workedExampleCopy(on(date), question, style), approval);
+  const LINK =
+    "https://lyceon.ai/start?utm_source=youtube&utm_medium=shorts&utm_campaign=worked_example";
+
+  it("Y1 from Monday of W48 every post carries it; W47 and earlier carry none", () => {
+    expect(YOUTUBE_SHORTS_FROM).toBe(weekDates("2026-W48")[0]);
+    const w48 = postOn("2026-11-23");
+    expect(w48.youtube_title).toBeDefined();
+    expect(w48.youtube_description).toBeDefined();
+    const w47 = postOn("2026-11-22");
+    expect(w47.youtube_title).toBeUndefined();
+    expect(w47.youtube_description).toBeUndefined();
+  });
+
+  it("Y2 the title is the headline plus #Shorts; the description is headline, prompt, the tagged link, hashtags", () => {
+    const post = postOn("2026-11-24");
+    expect(post.youtube_title).toBe(`${post.title} #Shorts`);
+    expect((post.youtube_title ?? "").length).toBeLessThanOrEqual(100);
+    const lines = (post.youtube_description ?? "").split("\n\n");
+    expect(lines).toEqual([
+      post.title,
+      "Comment your answer 👇",
+      `Taking the SAT Dec 5? Free SAT practice: ${LINK}`,
+      expect.stringMatching(/^#SAT /),
+    ]);
+    // The same hashtags as the other captions.
+    expect(lines[3]).toBe(post.facebook_caption.split("\n\n").at(-1));
+    // After the cohort's test day the plain lead, the same link.
+    expect(postOn("2026-12-07").youtube_description?.split("\n\n")[2]).toBe(
+      `Free SAT practice: ${LINK}`,
+    );
+  });
+
+  it("Y3 no answer and no other link: the block is refused when it carries either", () => {
+    const post = postOn("2026-11-24");
+    const block = {
+      title: post.youtube_title ?? "",
+      description: post.youtube_description ?? "",
+    };
+    expect(youtubeProblems(block, post.title, question)).toEqual([]);
+    const correct = question.options.find(
+      (o) => o.key === question.correct_answer,
+    );
+    if (!correct) throw new Error("no correct option");
+    const leaked = youtubeProblems(
+      {
+        ...block,
+        description: block.description.replace(
+          "Comment your answer 👇",
+          "The answer is " + correct.text,
+        ),
+      },
+      post.title,
+      question,
+    );
+    expect(leaked.some((p) => p.includes("gives the answer"))).toBe(true);
+    expect(
+      youtubeProblems(
+        {
+          ...block,
+          description: `${block.description}\n\nMore: https://example.com/x`,
+        },
+        post.title,
+        question,
+      ).some((p) => p.includes("URL") || p.includes("another link")),
+    ).toBe(true);
+    expect(
+      youtubeProblems(
+        {
+          ...block,
+          description: block.description.replace(
+            LINK,
+            "https://lyceon.ai/start",
+          ),
+        },
+        post.title,
+        question,
+      ),
+    ).toContain(
+      `youtube description must carry the tagged Shorts link once (${LINK}), found 0`,
+    );
+  });
+
+  it("Y4 each day's reply carries it as two copy blocks; captions.md copies the link as written", () => {
+    const post = postOn("2026-11-24");
+    const reply = captionsMarkdown(post);
+    const parts = reply.split("```");
+    const outside = parts
+      .filter((_, k) => k % 2 === 0)
+      .map((b) => b.trim())
+      .filter(Boolean);
+    expect(outside).toEqual([
+      ...post.warnings,
+      "*TikTok*",
+      "*Instagram*",
+      "*Facebook*",
+      "*YouTube Shorts*",
+    ]);
+    const blocks = parts.filter((_, k) => k % 2 === 1).map((b) => b.trim());
+    expect(blocks).toHaveLength(6);
+    expect(blocks[4]).toBe(post.youtube_title);
+    // Slack shows "&amp;" as "&"; the record file holds the link itself.
+    expect(blocks[5]).toBe(
+      (post.youtube_description ?? "").replace(/&/g, "&amp;"),
+    );
+    const file = captionsFile(post);
+    expect(file).toContain(LINK);
+    expect(file).not.toContain("&amp;");
+    // A W47 post's reply is unchanged: four blocks, no YouTube.
+    expect(captionsMarkdown(postOn("2026-11-16"))).not.toContain("YouTube");
   });
 });
