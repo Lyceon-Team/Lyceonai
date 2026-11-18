@@ -441,7 +441,7 @@ ts_plant "T60 the cover zone is TikTok's safe area, not the 4:5 crop" scripts/wo
   '    top: Math.max(top, safe.top),' '    top: safe.top,' \
   "the cover card opens the video for 0.4 s with the brand, the topic and the hook line; the voice is not delayed (Karl, 2026-11-14)"
 ts_plant "T61 a display equation is written inline again (the W47 Monday card)" shared/qotd/plain-math.ts \
-  '      out += `\n${latexToPlain(token.content)}\n`;' '      out += latexToPlain(token.content);' \
+  '      out += `\n${latexToPlain(token.content, superscripts)}\n`;' '      out += latexToPlain(token.content, superscripts);' \
   "the card draws each equation on a line of its own"
 ts_plant "T62 the question card draws the stem flattened" scripts/worked-examples/composition.ts \
   '      stem: escapeHtml(cardText(question.stem)),' '      stem: escapeHtml(plainMathText(question.stem)),' \

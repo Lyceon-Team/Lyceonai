@@ -150,9 +150,15 @@ export type HookQuestion = Pick<
   "id" | "stem" | "passage" | "options" | "correct_answer"
 >;
 
+/**
+ * Maths written out for matching words and numbers: powers as ^ (x^2), so an exponent stays a
+ * number of its own; the superscript form (x², Karl 2026-11-16) is what the screen shows.
+ */
+const MATCH_MATH = { superscripts: false } as const;
+
 function questionText(q: HookQuestion): string {
   return [q.passage ?? "", q.stem, ...q.options.map((o) => o.text)]
-    .map((t) => plainMathText(t))
+    .map((t) => plainMathText(t, MATCH_MATH))
     .join(" ");
 }
 
@@ -182,16 +188,23 @@ export function hookAnswerProblem(
     return `H5 gives the answer: "${text}" says what the answer is`;
   const correct = q.options.find((o) => o.key === q.correct_answer);
   if (!correct) return `H5 ${q.id} has no option ${q.correct_answer}`;
-  const correctPlain = plainMathText(correct.text).trim().toLowerCase();
-  if (correctPlain.length >= 2 && text.toLowerCase().includes(correctPlain))
-    return `H5 gives the answer: "${text}" contains the correct choice "${correctPlain}"`;
+  const correctPlain = plainMathText(correct.text, MATCH_MATH)
+    .trim()
+    .toLowerCase();
+  // The correct choice in either plain form: x^2 or x² (Karl, 2026-11-16).
+  for (const form of new Set([
+    correctPlain,
+    plainMathText(correct.text).trim().toLowerCase(),
+  ]))
+    if (form.length >= 2 && text.toLowerCase().includes(form))
+      return `H5 gives the answer: "${text}" contains the correct choice "${form}"`;
   const elsewhere = tokens(
     [
       q.passage ?? "",
       q.stem,
       ...q.options.filter((o) => o.key !== q.correct_answer).map((o) => o.text),
     ]
-      .map((t) => plainMathText(t))
+      .map((t) => plainMathText(t, MATCH_MATH))
       .join(" "),
   );
   const own = [...tokens(correctPlain)].filter(

@@ -6,8 +6,11 @@
  *       explanation (plain text, math readable)"; "today's question as plain text for the post
  *       body"] | @implemented [2026-10-15]
  *
- * plain English: `$\frac{a}{b}$` becomes "(a)/(b)", `x^{2}` becomes "x^2", `\sqrt{x}` becomes
- * "√(x)", `\le` becomes "≤". Total: an unknown command is written as its name, so nothing throws
+ * plain English: `$\frac{a}{b}$` becomes "(a)/(b)", `x^{2}` becomes "x²", `\sqrt{x}` becomes
+ * "√(x)", `\le` becomes "≤". A power is written in Unicode superscripts where every character of
+ * it has one (x², x³, 2ⁿ, x⁻¹, 10⁻³; Karl, 2026-11-16: "I want it to read like maths"), and as
+ * ^(…) otherwise (x^(k+1): there is no superscript k). `{ superscripts: false }` gives the form
+ * before that ruling ("x^2"), which the leak checks still match (social.ts). Total: an unknown command is written as its name, so nothing throws
  * and nothing is silently dropped. Used by the leak check (social.ts), the TikTok carousel
  * (tiktok.ts) and the worked examples, so all read the maths the same way. It was written for the
  * Reddit reveal and post (reveal.ts), which are discontinued (Karl's ruling 2026-10-30: the Reddit
@@ -15,6 +18,46 @@
  * maths aloud for a screen reader.
  */
 import { tokenizeMathContent } from "../math/tokenize";
+
+/**
+ * The characters a power may be written in as Unicode superscripts: the digits, the signs and
+ * brackets, and n and i (the two letters every common font draws). Anything else in a power
+ * falls back to ^(…). Karl, 2026-11-16: "use Unicode superscripts for powers (x², x³, 2ⁿ, x⁻¹);
+ * fall back to ^(…) only where no superscript exists".
+ */
+const SUPERSCRIPT: Readonly<Record<string, string>> = {
+  "0": "⁰",
+  "1": "¹",
+  "2": "²",
+  "3": "³",
+  "4": "⁴",
+  "5": "⁵",
+  "6": "⁶",
+  "7": "⁷",
+  "8": "⁸",
+  "9": "⁹",
+  "+": "⁺",
+  "-": "⁻",
+  "−": "⁻",
+  "=": "⁼",
+  "(": "⁽",
+  ")": "⁾",
+  n: "ⁿ",
+  i: "ⁱ",
+};
+
+/** The power in superscripts, or null when one of its characters has none. */
+function toSuperscript(power: string): string | null {
+  const chars = [...power.replace(/\s+/g, "")];
+  if (chars.length === 0) return null;
+  let out = "";
+  for (const ch of chars) {
+    const sup = SUPERSCRIPT[ch];
+    if (sup === undefined) return null;
+    out += sup;
+  }
+  return out;
+}
 
 const SYMBOLS: Record<string, string> = {
   cdot: "·",
@@ -78,7 +121,7 @@ function grouped(text: string): string {
  * LaTeX (the inside of one $...$) as plain text. Total: an unknown command is written as its
  * name, so nothing throws and nothing is silently dropped.
  */
-function latexToPlain(latex: string): string {
+function latexToPlain(latex: string, superscripts: boolean): string {
   let i = 0;
   const readGroup = (): string => {
     // At "{": the group's plain text; otherwise the next single token.
@@ -145,7 +188,9 @@ function latexToPlain(latex: string): string {
       } else if (ch === "^" || ch === "_") {
         i += 1;
         const arg = readGroup();
-        out += arg === "°" ? "°" : `${ch}${grouped(arg)}`;
+        const sup =
+          ch === "^" && superscripts && arg !== "°" ? toSuperscript(arg) : null;
+        out += arg === "°" ? "°" : (sup ?? `${ch}${grouped(arg)}`);
       } else if (ch === "}") {
         i += 1; // a stray close: dropped, never fatal
       } else {
@@ -173,19 +218,26 @@ export type PlainMathOptions = {
    * (Karl, 2026-11-14, W47 SATM2GL735M).
    */
   displayOnOwnLine?: boolean;
+  /**
+   * Powers in Unicode superscripts (x²). On by default (Karl, 2026-11-16); false gives the
+   * earlier "x^2" form, which the leak checks match alongside the new one.
+   */
+  superscripts?: boolean;
 };
 
 /**
  * Mixed text and $...$ maths as plain text; `<u>` tags and blanks written for a reader.
  *
- * @spec [Karl's fix 2026-11-14 ("separate equations show on separate lines")] (displayOnOwnLine)
- *       | @implemented [2026-10-15, displayOnOwnLine 2026-11-14]
+ * @spec [Karl's fix 2026-11-14 ("separate equations show on separate lines")] (displayOnOwnLine);
+ *       Karl, 2026-11-16 (superscripts: "plain-text places … use Unicode superscripts for powers")
+ *       | @implemented [2026-10-15, displayOnOwnLine 2026-11-14, superscripts 2026-11-16]
  */
 export function plainMathText(
   content: string,
   options: PlainMathOptions = {},
 ): string {
   const ownLine = options.displayOnOwnLine === true;
+  const superscripts = options.superscripts !== false;
   let out = "";
   for (const token of tokenizeMathContent(content)) {
     if (token.type === "text") {
@@ -194,9 +246,9 @@ export function plainMathText(
         .replace(/<\/?u>/g, "")
         .replace(/_{2,}/g, "____");
     } else if (ownLine && token.displayMode) {
-      out += `\n${latexToPlain(token.content)}\n`;
+      out += `\n${latexToPlain(token.content, superscripts)}\n`;
     } else {
-      out += latexToPlain(token.content);
+      out += latexToPlain(token.content, superscripts);
     }
   }
   const flat = out
