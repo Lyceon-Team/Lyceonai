@@ -33,17 +33,37 @@
     },
     {
       "post_on": "2026-11-16",
-      "skill_code": "Right Triangles and Trigonometry",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
       "hook_type": "speed"
     },
     {
+      "post_on": "2026-11-17",
+      "skill_code": "Linear Equations in One Variable",
+      "hook_type": "obvious_answer_trap"
+    },
+    {
       "post_on": "2026-11-18",
-      "skill_code": "Probability and Conditional Probability",
+      "skill_code": "Right Triangles and Trigonometry",
       "hook_type": "challenge"
     },
     {
+      "post_on": "2026-11-19",
+      "skill_code": "Ratios, Rates, Proportional Relationships, and Units",
+      "hook_type": "obvious_answer_trap"
+    },
+    {
       "post_on": "2026-11-20",
-      "skill_code": "Area and Volume",
+      "skill_code": "Nonlinear Equations in One Variable and Systems of Equations in Two Variables",
+      "hook_type": "speed"
+    },
+    {
+      "post_on": "2026-11-21",
+      "skill_code": "Lines, Angles, and Triangles",
+      "hook_type": "puzzle"
+    },
+    {
+      "post_on": "2026-11-22",
+      "skill_code": "Nonlinear Functions",
       "hook_type": "contrarian"
     },
     {

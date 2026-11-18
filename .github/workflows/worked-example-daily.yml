@@ -1,36 +1,49 @@
-# Worked examples: at 17:00 UTC, render today's approved example and post it to #social.
+# Worked examples: the weekly batch (Karl's rulings 2026-11-11, "Weekly video pipeline v2", SCL-277).
 #
-# @spec [owner brief "Worked examples: production system" (Karl, 2026-10-27): "a daily job at
-#   17:00 UTC renders any approved example with post_on = today and posts it to #social as the
-#   labelled set 'Worked example · {skill} · {hook_type}': the video, a TikTok title … and a caption
-#   … This is separate from the QOTD set. Karl posts manually."; acceptance "the daily job posts
-#   only approved, post_on-today examples, once"; Karl's pick (2026-10-27): Hyperframes; SCL-270
+# @spec [Karl's rulings 2026-11-11 item 3 ("the weekly batch replaces the daily render job, one
+#   run a week") and item 6; Karl's pipeline fixes 2026-11-14, item 4 ("Retire the daily
+#   worked-example job now (keep the QOTD job). The weekly batch is confirmed working."); SCL-270
 #   (Karl's ruling 2026-11-02): "a true-peak limiter (≤ −1 dBTP) on the finished mix"]
-#   | @implemented [2026-10-27, the final-mix limiter 2026-11-02]
+#   | @implemented [2026-10-27 (daily), weekly 2026-11-11, daily job retired 2026-11-14]
 #
-# plain English: the code comes from the default branch (a schedule only runs there); the content
-# comes from `social`, checked out beside it with full history (approval is read from the commit
-# that last changed each example). scripts/worked-examples/daily.ts picks the one example due today
-# (America/Chicago) that is not in content/worked-examples/posted.json, refuses it unless GitHub's
-# record shows Karl merged it, runs every content rule, and generates the composition. Then:
-# `hyperframes check`, render, the final-mix true-peak limiter (SCL-270: at most -1 dBTP), the
-# browser layout check (safe area, blank paper), the MP4 check (1080×1920, 30-60 s, audio, the
-# music peak on record, the finished mix's true peak). Only then is the example claimed in
-# posted.json, committed and pushed to `social` with this run's token (covered by Karl's ruling of
-# 2026-10-15 on the approval stamp; confirmed for this ledger, decision 2 on #1336, 2026-10-27),
-# and only after that push succeeds is it posted: a re-run finds the
-# claim and posts nothing, so it is posted once. A post that fails after the claim is re-posted by
-# hand (docs/runbooks/worked-examples.md). Nothing due: the run ends green with a note.
+# plain English: on Thursday 16:15 UTC job `weekly` builds every example due next Monday-Sunday
+# (scripts/worked-examples/weekly.ts: select, approval from GitHub's record, every content rule,
+# voice A (Chirp 3 HD Orus) through the per-line cache, layout/timing, composition), renders each,
+# runs the final-mix true-peak limiter (at most -1 dBTP), the browser layout check and the MP4
+# check, uploads them to the private social-weekly bucket with 14-day signed links, claims them in
+# posted.json (pushed to `social` before anything is announced, so a re-run announces nothing)
+# and posts one "Week <n> ready" message. The code comes from the default branch (a schedule only
+# runs there); the content from `social`, checked out beside it with full history. In #social the
+# header carries the voice and the title source, and each day is one threaded reply with the video
+# link and the captions inline. A manual run from main (Karl's ruling 2026-11-14) builds a week
+# now (mode week) or re-delivers a delivered week with rebuilt captions (mode recaption). The
+# Supabase service-role key is read ONLY by the weekly job's steps guarded to the scheduled run or
+# a manual run from main, never on a pull request (tests/ci/social-weekly-secret-guard.test.ts). The daily 17:00 UTC job that rendered and posted
+# one example a day was retired on Karl's word of 2026-11-14; the file keeps its name so the
+# guards, harness and runbook that point at it stay put. The QOTD job is qotd-social.yml.
 #
 # Pull requests that touch the pipeline run the same path on the fixture tree
-# (tests/fixtures/worked-examples/social) with --dry-run: placeholder approval, no claim, no post,
-# the MP4 uploaded for review.
+# (tests/fixtures/worked-examples/social) with --dry-run and the committed audio: no secret, no
+# upload, no claim, no post.
 # Setup: docs/runbooks/worked-examples.md.
 name: Worked example daily
 
 on:
   schedule:
-    - cron: "0 17 * * *"
+    - cron: "15 16 * * 4"
+  # A manual run from main (Karl's ruling 2026-11-14): "week" builds and delivers a week now;
+  # "recaption" re-delivers a week already delivered with rebuilt captions (the videos as they are).
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "week: build and deliver; recaption: rebuild a delivered week's captions and post it again"
+        type: choice
+        options: [week, recaption]
+        default: week
+      week:
+        description: "ISO week, e.g. 2026-W47 (empty: next week; recaption needs one)"
+        required: false
+        default: ""
   pull_request:
     paths:
       - .github/workflows/worked-example-daily.yml
@@ -39,12 +52,6 @@ on:
       - packages/shared/src/worked-example-schema.ts
       - video-kit/worked-examples/**
       - tests/fixtures/worked-examples/**
-  workflow_dispatch:
-    inputs:
-      slack_channel:
-        description: "Slack channel ID for this run only, e.g. a test channel (empty: SOCIAL_SLACK_CHANNEL_ID)"
-        required: false
-        default: ""
 
 permissions:
   contents: write
@@ -60,9 +67,17 @@ env:
   OUT: we-out
 
 jobs:
-  daily:
+  weekly:
+    # The weekly cron and a manual run from main (the real batch), and pull requests (the dry run
+    # on the fixture tree). A manual run from any other branch does nothing.
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      WOUT: we-week
     steps:
       - name: Checkout (code)
         uses: actions/checkout@v4
@@ -87,23 +102,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Select today's example
-        id: select
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pnpm exec tsx scripts/worked-examples/daily.ts select \
-              --content tests/fixtures/worked-examples/social --out "$OUT" --dry-run --date 2026-11-02
-          else
-            pnpm exec tsx scripts/worked-examples/daily.ts select --content social --out "$OUT"
-          fi
-          if [ -f "$OUT/post.json" ]; then echo "due=true" >> "$GITHUB_OUTPUT"; else echo "due=false" >> "$GITHUB_OUTPUT"; fi
-
       - name: Install Chromium (the build @playwright/test pins) and FFmpeg
-        if: steps.select.outputs.due == 'true'
         run: |
           pnpm exec playwright install --with-deps chromium
           sudo apt-get update -q
@@ -112,82 +111,106 @@ jobs:
           test -x "$shell"
           echo "HYPERFRAMES_BROWSER_PATH=$shell" >> "$GITHUB_ENV"
 
-      - name: Check and render
-        if: steps.select.outputs.due == 'true'
-        run: |
-          set -euo pipefail
-          id=$(jq -r .id "$OUT/post.json")
-          ( cd "$OUT/composition" && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" check \
-            && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/$OUT/render/$id.mp4" )
-
-      # SCL-270 (Karl's ruling 2026-11-02): the finished mix is limited to at most -1 dBTP true
-      # peak before any check; only the limited video is checked, uploaded and posted.
-      - name: Final-mix limiter (true peak at most -1 dBTP)
-        if: steps.select.outputs.due == 'true'
-        run: |
-          set -euo pipefail
-          id=$(jq -r .id "$OUT/post.json")
-          pnpm exec tsx scripts/worked-examples/final-mix.ts "$OUT/render/$id.mp4" "$OUT/$id.mp4"
-
-      - name: Layout check (safe area, blank paper) and MP4 check
-        if: steps.select.outputs.due == 'true'
-        run: |
-          pnpm exec tsx scripts/worked-examples/layout-check.ts "$OUT/composition"
-          pnpm exec tsx scripts/worked-examples/daily.ts verify --out "$OUT"
-
-      - name: Upload the video
-        if: steps.select.outputs.due == 'true'
-        uses: actions/upload-artifact@v4
+      # The voice stage's TTS call goes through the identity LISA's Vertex jobs use (Karl's
+      # step-1 ruling 2026-11-11): lyceon-ci-eval by Workload Identity Federation, no stored key.
+      - name: Authenticate to GCP via Workload Identity Federation
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
+        uses: google-github-actions/auth@v3
         with:
-          name: worked-example
-          path: |
-            ${{ env.OUT }}/*.mp4
-            ${{ env.OUT }}/post.json
-          if-no-files-found: error
-          retention-days: 30
+          workload_identity_provider: projects/480325859530/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: lyceon-ci-eval@replit-cop.iam.gserviceaccount.com
 
-      - name: Slack post (dry run)
-        if: steps.select.outputs.due == 'true' && github.event_name == 'pull_request'
-        run: pnpm exec tsx scripts/worked-examples/post-to-slack.ts --dir "$OUT" --dry-run
+      - name: Build next week (dry run on the fixture tree)
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec tsx scripts/worked-examples/weekly.ts build \
+            --content tests/fixtures/worked-examples/social --out "$WOUT" \
+            --dry-run --today 2026-10-29 --voice committed
 
-      # The claim is pushed BEFORE the post: a push that fails stops the run with nothing posted,
-      # and a re-run finds the claim and posts nothing. Posted once.
-      - name: Claim in posted.json and push to social
-        if: steps.select.outputs.due == 'true' && github.event_name != 'pull_request'
+      - name: Build next week
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
+        env:
+          WEEK: ${{ inputs.week }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts build --content social --out "$WOUT" ${WEEK:+--week "$WEEK"}
+
+      # SCL-270: every finished mix is limited to at most -1 dBTP before any check; only the
+      # limited, checked video is uploaded.
+      - name: Render, final mix, layout check and MP4 check (each date)
+        if: inputs.mode != 'recaption'
         run: |
           set -euo pipefail
-          pnpm exec tsx scripts/worked-examples/daily.ts claim --content social --out "$OUT" --run "$GITHUB_RUN_ID"
+          for d in $(pnpm exec tsx scripts/worked-examples/weekly.ts dates --out "$WOUT"); do
+            id=$(jq -r .id "$WOUT/$d/post.json")
+            ( cd "$WOUT/$d/composition" && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" check \
+              && pnpm dlx "hyperframes@$HYPERFRAMES_VERSION" render --quality delivery --output "$GITHUB_WORKSPACE/$WOUT/$d/render/$id.mp4" )
+            pnpm exec tsx scripts/worked-examples/final-mix.ts "$WOUT/$d/render/$id.mp4" "$WOUT/$d/$id.mp4"
+            pnpm exec tsx scripts/worked-examples/layout-check.ts "$WOUT/$d/composition"
+            pnpm exec tsx scripts/worked-examples/daily.ts verify --out "$WOUT/$d"
+          done
+
+      - name: Upload and announce (dry run)
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec tsx scripts/worked-examples/weekly.ts upload --out "$WOUT" --dry-run
+          pnpm exec tsx scripts/worked-examples/weekly.ts announce --out "$WOUT" --dry-run
+
+      - name: Upload to social-weekly (signed links, 14 days)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts upload --out "$WOUT"
+
+      # The claim is pushed BEFORE the announcement: a failed push stops the run with nothing
+      # announced, and a re-run finds the week claimed and builds nothing.
+      - name: Claim the week in posted.json and push to social
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
+        run: |
+          set -euo pipefail
+          pnpm exec tsx scripts/worked-examples/weekly.ts claim --content social --out "$WOUT" --run "$GITHUB_RUN_ID"
           cd social
+          if git diff --quiet -- content/worked-examples/posted.json; then echo "nothing delivered"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add content/worked-examples/posted.json
-          git commit -m "Worked example posted: $(jq -r .id "../$OUT/post.json") (run $GITHUB_RUN_ID)"
+          git commit -m "Worked examples delivered: $(jq -r .week "../$WOUT/week.json") (run $GITHUB_RUN_ID)"
           git push origin HEAD:social
 
-      - name: Post to Slack
-        if: steps.select.outputs.due == 'true' && github.event_name != 'pull_request'
+      - name: Announce "Week <n> ready" in #social (header, one reply per day)
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode != 'recaption'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_CHANNEL_ID: ${{ inputs.slack_channel || vars.SOCIAL_SLACK_CHANNEL_ID }}
-        run: pnpm exec tsx scripts/worked-examples/post-to-slack.ts --dir "$OUT"
+          SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts announce --out "$WOUT"
 
-      - name: Summary
+      # A delivered week, corrected: the videos stay, the captions are rebuilt and overwritten, and
+      # a fresh "Week <n> ready (updated)" header goes up with one reply per day.
+      - name: Re-deliver a week with rebuilt captions
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.mode == 'recaption'
+        env:
+          WEEK: ${{ inputs.week }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CONTENT_APPROVER_LOGIN: ${{ vars.CONTENT_APPROVER_LOGIN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SOCIAL_SLACK_CHANNEL_ID }}
+        run: pnpm exec tsx scripts/worked-examples/weekly.ts recaption --content social --week "$WEEK" --out "$WOUT"
+
+      - name: Keep the run's videos and captions (30 days)
         if: always()
-        run: |
-          {
-            echo "## Worked example"
-            if [ -f "$OUT/post.json" ]; then
-              echo
-              echo "**$(jq -r .label "$OUT/post.json")** · posts on $(jq -r .post_on "$OUT/post.json")"
-              echo
-              # SCL-265: each caption opens with the title, so the title is not printed twice.
-              for field in caption keywords instagram_caption facebook_caption; do
-                echo "$field"
-                echo '```text'
-                if [ "$field" = keywords ]; then jq -r '.keywords[]' "$OUT/post.json"; else jq -r ".$field" "$OUT/post.json"; fi
-                echo '```'
-              done
-            else
-              echo "Nothing due today (or the selection failed: see 'Select today's example')."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: actions/upload-artifact@v4
+        with:
+          name: worked-examples-week
+          path: |
+            ${{ env.WOUT }}/week.json
+            ${{ env.WOUT }}/links.json
+            ${{ env.WOUT }}/*/*.mp4
+            ${{ env.WOUT }}/*/post.json
+            ${{ env.WOUT }}/*/captions.md
+          if-no-files-found: ignore
+          retention-days: 30

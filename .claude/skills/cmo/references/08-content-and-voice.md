@@ -33,20 +33,28 @@ Applies to every voiced video: worked examples, QOTD breakdowns, the rotation po
 - **No burned-in word-by-word captions.** The on-screen handwriting and graphs carry the content. Karl may switch on TikTok's own auto-captions when posting.
 - **The voice never reads the on-screen text verbatim.** The screen shows the question; the voice talks about it.
 - **Script flow:**
-  1. A spoken hook, as a question or challenge to the viewer: "Think you can solve this in ten seconds?", never the label "Solve this in 10 seconds".
+  1. A spoken hook, as a question or challenge to the viewer: "Think you can solve this in ten seconds? Let's see.", never the label "Solve this in 10 seconds". **Never say "Go"** (Karl, 2026-11-11): no "Go.", "Go!" or "ready, GO!"; end on the question, "Let's see.", or "Ready?" with a short pause. The content check refuses it (H7).
   2. A one-sentence setup in plain talk.
   3. The key move, and why.
   4. The trap ("here's where people slip").
   5. The answer and a quick check.
   6. The call to action (§4a).
-- **Tone:** contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Go."). No textbook phrasing.
-- **Reference script** (Nov 11): "Think you can do this one in ten seconds? Go. … Okay. Take fourteen off both sides, and you get negative five x is at least twenty-five. Now here's where people slip: you're dividing by a negative, so the sign flips. x is less than or equal to negative five. Did you flip it? Follow, there's one of these every day."
-- **Voice:** `am_michael` (Kokoro-82M) everywhere, replacing `af_heart`. Chatterbox is being piloted (D3) for naturalness against `am_michael`.
+- **Tone:** contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Ready?"; never "Go"). No textbook phrasing.
+- **Reference script** (Nov 11, hook updated 2026-11-11): "Think you can solve this in ten seconds? Let's see. … Okay. Take fourteen off both sides, and you get negative five x is at least twenty-five. Now here's where people slip: you're dividing by a negative, so the sign flips. x is less than or equal to negative five. Did you flip it? Follow, there's one of these every day."
+- **Voice (Karl, 2026-11-11):** worked examples are voiced in **voice A, Chirp 3 HD Orus** (Google Cloud Text-to-Speech), from the blind bake-off (it replaced Charon, voice C, the same day), voiced and cached by the weekly run; a line that fails the voice checks is voiced again, up to 3 takes. `am_michael` (Kokoro-82M) remains the voice of the local tools and the pilots.
+- **"Lyceon" in voice A:** sent to Orus respelled **"Lye-see-ahn"**, with no IPA (Orus did not honour /ˈlaɪsiɑn/; Karl picked clip 3 of three, 2026-11-11). The on-screen spelling never changes.
 - **Pronunciation:** "Lyceon" is said "lye-see-on" (/ˈlaɪsiɑn/: LYE, see, ON; stress on the first syllable).
 - **Outro and end card:** no "lyceon.ai" spoken or shown; the end card reads "Lyceon SAT Prep".
 - **Loudness:** voice lines are normalised (around −14 LUFS, true peak ≤ −1 dB) so nothing clips.
 - **QOTD breakdowns** use authored scripts, not the question read aloud.
 - **Screen demos** are scripted Playwright recordings, not OpenScreen (archived).
+
+## 1c. Weekly worked examples (Karl, 2026-11-11, SCL-277)
+
+- **Seven a week, all Hard** (difficulty 3): 2 **shortcut** slots in the "graphing method vs by hand" format (never name Desmos until Desmos replies), 2 **geometry** slots with drawn figures (similar triangles, triangle theorem, Pythagorean theorem, cylinders, cones), 3 **trap** slots (algebra, advanced math, problem-solving). QOTD breakdowns stay paused.
+- **Format** (from the competitor research, 23 top videos): the question on screen in frame 1; the spoken hook a dare or a shortcut promise ("Most people get this wrong", "There's a faster way"); 30-60 s; one problem; the answer near the end; one CTA. A second CTA to test: "Comment GRIND and I'll send you 10 more hard ones" (Karl sends them by hand). §1a's script rules still apply.
+- **Geometry figures:** the opening draws the figure stroke by stroke in the notepad style with only what the question gives (the side lengths, radius and height it states); anything worked out (a volume, a missing side) is drawn in at the step that finds it, never in the opening. The solution then builds on the same drawing.
+- **Delivery:** one weekly message in #social, "Week <n> ready", with a link to each video and its captions file (private storage, links expire in 14 days). Karl posts by hand. The daily per-video drop ends once the first weekly batch works.
 
 ## 1b. Positioning: students who want to grind (Karl, 2026-11-03)
 

@@ -1,0 +1,42 @@
+{
+  "question_id": "SATM2HHUDLH",
+  "skill_code": "Probability and Conditional Probability",
+  "post_on": "2026-11-06",
+  "hook": {
+    "type": "speed",
+    "line": "Fifteen seconds: French AND Spanish?",
+    "voice": "Fifteen seconds on the clock. Can you beat it?"
+  },
+  "question_voice": "This whole class takes at least one language. We only pick from the French group, and we want the odds of Spanish too.",
+  "signature_move": "Shrink the sample space to what you're given, then count.",
+  "steps": [
+    {
+      "notepad": "both = 19 + 23 − 31",
+      "voice": "First, the overlap. Add the two groups, then take away the class."
+    },
+    {
+      "notepad": "both = 11",
+      "voice": "Eleven take both."
+    },
+    {
+      "notepad": "given French: 19",
+      "voice": "Now shrink to what we're given. Only the French group counts. That's nineteen."
+    }
+  ],
+  "answer": {
+    "letter": "C",
+    "notepad": "Answer: C) 11/19",
+    "voice": "Eleven out of nineteen. That's C. Quick check: eleven of nineteen is a bit over half, and it sits between zero and one."
+  },
+  "trap": {
+    "summary": "Dividing the overlap by the whole class, 11/31, instead of by the 19 in the French group.",
+    "notepad": [
+      "11/31  ✗",
+      "only the French group counts",
+      "11/19  ✓"
+    ],
+    "voice": "Here's where people slip. They divide by the whole class of thirty-one and pick A. But we only chose from the French group, so the bottom is nineteen."
+  },
+  "check": "11 of the 19 in the French group also take Spanish, and 11/19 is between 0 and 1.",
+  "takeaway": "\"Selected from those who…\" sets the denominator."
+}

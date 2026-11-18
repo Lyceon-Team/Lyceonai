@@ -40,6 +40,7 @@ import {
   guidedChoicesFor,
   isExactIntentLabel,
   isStepIntent,
+  isVideoIntent,
   isWalkthroughOpen,
   REVIEW_INTENTS,
   reviewIntentSchema,
@@ -103,7 +104,41 @@ export async function guidedChoicesForReviewItem(
     .nullable()
     .parse(data)?.question_id;
   if (questionId === undefined || questionId === null) return null;
-  return guidedChoicesForQuestion(questionId);
+  const choices = await guidedChoicesForQuestion(questionId);
+  return withAvailableVideos(choices, questionId, sessionItemId);
+}
+
+/**
+ * @spec [owner brief "Help-level engine", Karl 2026-11-05, rule 6: "Hide video choices when no
+ *       approved video exists for the question's sub-skills or skill. The choices endpoint checks
+ *       availability."; SCL-275] | @implemented [2026-11-05]
+ *
+ * plain English: a video choice stays only when tapping it would serve a video: the same
+ * retrieval the tap runs (`pickIntentVideo`: the segment path for a sub-skill-tagged item, the
+ * skill path otherwise; Desmos required for "Desmos video"). A retrieval error hides the choice
+ * too, so the panel never offers a dead end. The turn's intent check is unchanged, so a video
+ * withdrawn after the panel loaded still gets the "no video yet" sentence, never a 400.
+ */
+async function withAvailableVideos(
+  choices: ReviewIntent[],
+  questionId: string,
+  sessionItemId: string,
+): Promise<ReviewIntent[]> {
+  const kept: ReviewIntent[] = [];
+  for (const intent of choices) {
+    if (!isVideoIntent(intent)) {
+      kept.push(intent);
+      continue;
+    }
+    // Logged as the review item (the GET has no conversation): ids only.
+    const picked = await pickIntentVideo(
+      intent,
+      questionId,
+      `review_item:${sessionItemId}`,
+    );
+    if (picked.video !== null) kept.push(intent);
+  }
+  return kept;
 }
 
 export type TurnIntentRefusal =

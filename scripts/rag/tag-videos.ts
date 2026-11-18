@@ -603,13 +603,29 @@ async function runMethodsPass(opts: {
           video: { videoId: id, start: clip.start, end: clip.end },
           onUsage,
         });
-      result = combineWatchRuns(await watch(), await watch());
+      const [a, b] = [await watch(), await watch()];
+      // A format the two runs disagree on fails THIS row (the header's rule): it is reported,
+      // written with blank cells and never cached, so a re-run asks again. Only that row.
+      if (a.format !== b.format) {
+        return {
+          id,
+          failed: `the two watch runs disagree on format: ${a.format} / ${b.format}`,
+        };
+      }
+      result = combineWatchRuns(a, b);
     }
     const entry = { video_id: id, prompt: version, ...result };
     return { id, ...entry };
   });
 
-  const done = results.filter((r): r is NonNullable<typeof r> => r !== null);
+  const failed = results.filter(
+    (r): r is { id: string; failed: string } => r !== null && "failed" in r,
+  );
+  const done = results.filter(
+    (r): r is Exclude<typeof r, null | { id: string; failed: string }> =>
+      r !== null && !("failed" in r),
+  );
+  const failedById = new Map(failed.map((r) => [r.id, r.failed]));
   mkdirSync(OUT_DIR, { recursive: true });
   const merged = new Map(cached);
   for (const r of done) {
@@ -625,6 +641,8 @@ async function runMethodsPass(opts: {
   const out = rows.map((cells) => {
     const kept = base.map((h) => cells[header.indexOf(h)] ?? "");
     const r = byId.get(kept[col("video_id")] ?? "");
+    const why = failedById.get(kept[col("video_id")] ?? "");
+    if (why !== undefined) return [...kept, "", "", why, "failed"];
     if (r === undefined) return [...kept, "", "", "", ""];
     return [
       ...kept,
@@ -645,6 +663,7 @@ async function runMethodsPass(opts: {
   process.stdout.write(
     [
       `methods pass: ${done.length} approved rows (${done.filter((r) => r.source === "video").length} needed the video); ${usage.calls} calls, $${usageCostUsd(usage).toFixed(3)}`,
+      `  failed (method cells blank, method_source "failed"): ${failed.map((r) => `${r.id} (${r.failed})`).join("; ") || "none"}`,
       ...methods.map(
         (m) =>
           `  ${m}${vocabulary.has(m) ? "" : " (candidate, not written)"}: ${count(m).length}${vocabulary.has(m) ? "" : ` ${count(m).join(",")}`}`,

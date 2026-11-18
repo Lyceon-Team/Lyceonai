@@ -1,0 +1,617 @@
+{
+  "voice": "am_michael",
+  "speaking_rate": 1,
+  "lines": [
+    {
+      "key": "hook",
+      "text_sha256": "cab63fe2a2094638d09939bb39a78284dae4e7ccc107699294e963f854bf1fa8",
+      "file": "hook.wav",
+      "duration": 2.816,
+      "words": [
+        {
+          "text": "15",
+          "start": 0.1,
+          "end": 0.47
+        },
+        {
+          "text": "seconds",
+          "start": 0.47,
+          "end": 1.02
+        },
+        {
+          "text": "on",
+          "start": 1.02,
+          "end": 1.15
+        },
+        {
+          "text": "the",
+          "start": 1.2,
+          "end": 1.42
+        },
+        {
+          "text": "clock,",
+          "start": 1.42,
+          "end": 1.88
+        },
+        {
+          "text": "can",
+          "start": 1.95,
+          "end": 2.08
+        },
+        {
+          "text": "you",
+          "start": 2.08,
+          "end": 2.28
+        },
+        {
+          "text": "beat",
+          "start": 2.28,
+          "end": 2.55
+        },
+        {
+          "text": "it?",
+          "start": 2.55,
+          "end": 2.81
+        }
+      ]
+    },
+    {
+      "key": "question",
+      "text_sha256": "d870303812e75971bdce6d1d433b14fcd97f73a093d25d145560e53f74e1a0d6",
+      "file": "question.wav",
+      "duration": 7.211,
+      "words": [
+        {
+          "text": "This",
+          "start": 0.06,
+          "end": 0.31
+        },
+        {
+          "text": "whole",
+          "start": 0.31,
+          "end": 0.7
+        },
+        {
+          "text": "class",
+          "start": 0.7,
+          "end": 1.09
+        },
+        {
+          "text": "takes",
+          "start": 1.09,
+          "end": 1.48
+        },
+        {
+          "text": "at",
+          "start": 1.48,
+          "end": 1.61
+        },
+        {
+          "text": "least",
+          "start": 1.69,
+          "end": 2.02
+        },
+        {
+          "text": "one",
+          "start": 2.02,
+          "end": 2.24
+        },
+        {
+          "text": "language.",
+          "start": 2.24,
+          "end": 3
+        },
+        {
+          "text": "We",
+          "start": 3.06,
+          "end": 3.14
+        },
+        {
+          "text": "only",
+          "start": 3.14,
+          "end": 3.42
+        },
+        {
+          "text": "pick",
+          "start": 3.42,
+          "end": 3.7
+        },
+        {
+          "text": "from",
+          "start": 3.7,
+          "end": 3.97
+        },
+        {
+          "text": "the",
+          "start": 4.03,
+          "end": 4.16
+        },
+        {
+          "text": "French",
+          "start": 4.19,
+          "end": 4.61
+        },
+        {
+          "text": "group,",
+          "start": 4.61,
+          "end": 5.08
+        },
+        {
+          "text": "and",
+          "start": 5.08,
+          "end": 5.2
+        },
+        {
+          "text": "we",
+          "start": 5.2,
+          "end": 5.28
+        },
+        {
+          "text": "want",
+          "start": 5.28,
+          "end": 5.36
+        },
+        {
+          "text": "the",
+          "start": 5.44,
+          "end": 5.55
+        },
+        {
+          "text": "odds",
+          "start": 6,
+          "end": 6.08
+        },
+        {
+          "text": "of",
+          "start": 6.08,
+          "end": 6.18
+        },
+        {
+          "text": "Spanish,",
+          "start": 6.18,
+          "end": 6.63
+        },
+        {
+          "text": "too.",
+          "start": 6.79,
+          "end": 6.98
+        }
+      ]
+    },
+    {
+      "key": "step-1",
+      "text_sha256": "98a54100a32579c869301186f986d3ab7cff51366e6c8ba2e97feaf9d5a8c7d0",
+      "file": "step-1.wav",
+      "duration": 4.053,
+      "words": [
+        {
+          "text": "First,",
+          "start": 0.14,
+          "end": 0.54
+        },
+        {
+          "text": "the",
+          "start": 0.55,
+          "end": 0.79
+        },
+        {
+          "text": "overlap.",
+          "start": 0.79,
+          "end": 1.6
+        },
+        {
+          "text": "Add",
+          "start": 1.64,
+          "end": 1.77
+        },
+        {
+          "text": "the",
+          "start": 1.77,
+          "end": 1.94
+        },
+        {
+          "text": "two",
+          "start": 1.94,
+          "end": 2.11
+        },
+        {
+          "text": "groups,",
+          "start": 2.11,
+          "end": 2.56
+        },
+        {
+          "text": "then",
+          "start": 2.62,
+          "end": 2.88
+        },
+        {
+          "text": "take",
+          "start": 2.88,
+          "end": 3.16
+        },
+        {
+          "text": "away",
+          "start": 3.16,
+          "end": 3.4
+        },
+        {
+          "text": "the",
+          "start": 3.45,
+          "end": 3.65
+        },
+        {
+          "text": "class.",
+          "start": 3.65,
+          "end": 4
+        }
+      ]
+    },
+    {
+      "key": "step-2",
+      "text_sha256": "0437bac13b8a1bb4884609d656e0d9bf91761f0a1e737c3cb5f7450c229f6b01",
+      "file": "step-2.wav",
+      "duration": 1.408,
+      "words": [
+        {
+          "text": "11",
+          "start": 0.11,
+          "end": 0.85
+        },
+        {
+          "text": "take",
+          "start": 0.85,
+          "end": 1.26
+        },
+        {
+          "text": "both",
+          "start": 1.26,
+          "end": 1.56
+        }
+      ]
+    },
+    {
+      "key": "step-3",
+      "text_sha256": "f243793770f591293573a9dc6d9ed2cb1171117e8ec32ffbaaaaa0ea89530527",
+      "file": "step-3.wav",
+      "duration": 4.757,
+      "words": [
+        {
+          "text": "Now",
+          "start": 0.05,
+          "end": 0.2
+        },
+        {
+          "text": "shrink",
+          "start": 0.2,
+          "end": 0.6
+        },
+        {
+          "text": "to",
+          "start": 0.61,
+          "end": 0.73
+        },
+        {
+          "text": "what",
+          "start": 0.75,
+          "end": 1
+        },
+        {
+          "text": "we're",
+          "start": 1.01,
+          "end": 1.34
+        },
+        {
+          "text": "given,",
+          "start": 1.34,
+          "end": 1.76
+        },
+        {
+          "text": "only",
+          "start": 1.83,
+          "end": 2.02
+        },
+        {
+          "text": "the",
+          "start": 2.02,
+          "end": 2.21
+        },
+        {
+          "text": "French",
+          "start": 2.21,
+          "end": 2.58
+        },
+        {
+          "text": "group",
+          "start": 2.68,
+          "end": 3.1
+        },
+        {
+          "text": "counts,",
+          "start": 3.1,
+          "end": 3.7
+        },
+        {
+          "text": "that's",
+          "start": 3.75,
+          "end": 4.16
+        },
+        {
+          "text": "19.",
+          "start": 4.16,
+          "end": 4.67
+        }
+      ]
+    },
+    {
+      "key": "trap",
+      "text_sha256": "36c33618016adc5fb663893bdbd1af10b4b43a6b2d036d85dffb7d5f9fcbf88a",
+      "file": "trap.wav",
+      "duration": 9.365,
+      "words": [
+        {
+          "text": "Here's",
+          "start": 0.1,
+          "end": 0.51
+        },
+        {
+          "text": "where",
+          "start": 0.51,
+          "end": 0.93
+        },
+        {
+          "text": "people",
+          "start": 0.93,
+          "end": 1.24
+        },
+        {
+          "text": "slip.",
+          "start": 1.24,
+          "end": 1.9
+        },
+        {
+          "text": "They",
+          "start": 1.9,
+          "end": 2.1
+        },
+        {
+          "text": "divide",
+          "start": 2.1,
+          "end": 2.54
+        },
+        {
+          "text": "by",
+          "start": 2.54,
+          "end": 2.7
+        },
+        {
+          "text": "the",
+          "start": 2.7,
+          "end": 2.92
+        },
+        {
+          "text": "whole",
+          "start": 2.92,
+          "end": 3.05
+        },
+        {
+          "text": "class",
+          "start": 3.65,
+          "end": 3.68
+        },
+        {
+          "text": "of",
+          "start": 3.68,
+          "end": 3.83
+        },
+        {
+          "text": "31",
+          "start": 3.83,
+          "end": 4.32
+        },
+        {
+          "text": "and",
+          "start": 4.32,
+          "end": 4.79
+        },
+        {
+          "text": "pick",
+          "start": 4.79,
+          "end": 5.35
+        },
+        {
+          "text": "A,",
+          "start": 5.47,
+          "end": 5.6
+        },
+        {
+          "text": "but",
+          "start": 5.7,
+          "end": 5.79
+        },
+        {
+          "text": "we",
+          "start": 5.79,
+          "end": 5.91
+        },
+        {
+          "text": "only",
+          "start": 5.91,
+          "end": 6.12
+        },
+        {
+          "text": "chose",
+          "start": 6.21,
+          "end": 6.47
+        },
+        {
+          "text": "from",
+          "start": 6.47,
+          "end": 6.72
+        },
+        {
+          "text": "the",
+          "start": 6.72,
+          "end": 6.84
+        },
+        {
+          "text": "French",
+          "start": 6.96,
+          "end": 6.98
+        },
+        {
+          "text": "group,",
+          "start": 7.45,
+          "end": 7.68
+        },
+        {
+          "text": "so",
+          "start": 7.78,
+          "end": 7.84
+        },
+        {
+          "text": "the",
+          "start": 7.84,
+          "end": 8.04
+        },
+        {
+          "text": "bottom",
+          "start": 8.09,
+          "end": 8.57
+        },
+        {
+          "text": "is",
+          "start": 8.57,
+          "end": 8.73
+        },
+        {
+          "text": "19.",
+          "start": 8.73,
+          "end": 9.48
+        }
+      ]
+    },
+    {
+      "key": "answer",
+      "text_sha256": "6d4174d492100a7935e2a0ba005baf728256d495ebf9f4e00deae74f835c005a",
+      "file": "answer.wav",
+      "duration": 8.213,
+      "words": [
+        {
+          "text": "11",
+          "start": 0.12,
+          "end": 0.54
+        },
+        {
+          "text": "out",
+          "start": 0.56,
+          "end": 0.84
+        },
+        {
+          "text": "of",
+          "start": 0.84,
+          "end": 1.02
+        },
+        {
+          "text": "19,",
+          "start": 1.02,
+          "end": 1.76
+        },
+        {
+          "text": "that's",
+          "start": 1.86,
+          "end": 2.25
+        },
+        {
+          "text": "C.",
+          "start": 2.25,
+          "end": 2.49
+        },
+        {
+          "text": "Quick",
+          "start": 3.02,
+          "end": 3.14
+        },
+        {
+          "text": "check,",
+          "start": 3.26,
+          "end": 3.62
+        },
+        {
+          "text": "11",
+          "start": 3.94,
+          "end": 4.24
+        },
+        {
+          "text": "of",
+          "start": 4.24,
+          "end": 4.4
+        },
+        {
+          "text": "19",
+          "start": 4.4,
+          "end": 4.96
+        },
+        {
+          "text": "is",
+          "start": 4.96,
+          "end": 5.1
+        },
+        {
+          "text": "a",
+          "start": 5.1,
+          "end": 5.17
+        },
+        {
+          "text": "bit",
+          "start": 5.17,
+          "end": 5.39
+        },
+        {
+          "text": "over",
+          "start": 5.39,
+          "end": 5.68
+        },
+        {
+          "text": "half",
+          "start": 5.68,
+          "end": 5.93
+        },
+        {
+          "text": "and",
+          "start": 6.09,
+          "end": 6.24
+        },
+        {
+          "text": "it",
+          "start": 6.24,
+          "end": 6.34
+        },
+        {
+          "text": "sits",
+          "start": 6.34,
+          "end": 6.52
+        },
+        {
+          "text": "between",
+          "start": 6.58,
+          "end": 7.04
+        },
+        {
+          "text": "0",
+          "start": 7.04,
+          "end": 7.36
+        },
+        {
+          "text": "and",
+          "start": 7.36,
+          "end": 7.68
+        },
+        {
+          "text": "1.",
+          "start": 7.68,
+          "end": 8
+        }
+      ]
+    }
+  ]
+}

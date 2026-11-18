@@ -80,21 +80,13 @@ import {
   BOOK_PROMPT_VERSION,
   REWRITE_SYSTEM,
   SEGMENT_SYSTEM,
-  auditFailure,
-  auditResponseSchema,
-  auditUserMessage,
-  EXAMPLE_CHECK_SYSTEM,
-  exampleCheckFailure,
-  exampleCheckResponseSchema,
-  exampleCheckSchema,
-  exampleCheckUserMessage,
   rewriteRuleOpening,
-  auditSchema,
   rewriteResponseSchema,
   rewriteSchemaFor,
   segmentResponseSchema,
   segmentSchema,
 } from "./book-prompts";
+import { type UnitCall, rewriteAuditCheck } from "./chunk-unit";
 import { CACHE_DIR } from "./fetch-transcripts";
 import { pool } from "./generate-descriptions";
 import { loadTaxonomy } from "./tag-videos";
@@ -115,14 +107,6 @@ import {
 export const WINDOW_WORDS = 3_000;
 const MAX_WINDOW_GROWTH = 4;
 const CONTEXT_WORDS = 250;
-// An un-scoped ACT point is repairable: the rewrite can leave it out and the entry is audited
-// again; what it must never do is keep the advice without its scope.
-const REPAIRABLE: ReadonlySet<string> = new Set([
-  "audit_act_generalised",
-  "audit_unfaithful",
-  "audit_incorrect",
-  "audit_not_self_contained",
-]);
 /** text-embedding-005 on Vertex, USD per 1M input characters (unverified list price). */
 const EMBED_PRICE_PER_MCHAR = 0.025;
 
@@ -521,6 +505,22 @@ async function main(): Promise<void> {
     return false;
   });
 
+  // Every model call of the chunk steps, cached on disk exactly as before (cachedCall).
+  const call: UnitCall = async (a) =>
+    (
+      await cachedCall(dir, a.key, a.schema, a.stage, tally, (onUsage) =>
+        generateJson({
+          step: a.step,
+          model,
+          system: a.system,
+          user: a.user,
+          responseSchema: a.responseSchema,
+          schema: a.schema,
+          ...(a.video === undefined ? {} : { video: a.video }),
+          onUsage,
+        }),
+      )
+    ).value;
   const results = await pool(teaching, 4, async (u): Promise<Kept | null> => {
     const source = book.text.slice(u.start, u.end);
     const before = book.text.slice(
@@ -535,125 +535,46 @@ async function main(): Promise<void> {
     // One piece of a cut rule gets the rule's opening as part of its source (ruleOpening).
     const opening = ruleOpening(book.text, u.start, u.end);
     const rewriteUser = `${headings}\n\nCONTEXT BEFORE (reference only):\n${before}\n\n${rewriteRuleOpening(opening)}UNIT:\n${source}\n\nCONTEXT AFTER (reference only):\n${after}`;
-    // One repair: an entry the audit finds unfaithful, incorrect or dependent is rewritten
-    // once with the audit's finding, then audited again. A boundary failure (incomplete, or
-    // started mid-idea) is never repaired: the unit itself is the wrong shape, so it drops.
-    let feedback = "";
-    for (let attempt = 0; ; attempt += 1) {
-      const user = rewriteUser + feedback;
-      const rw = (
-        await cachedCall(
-          dir,
-          `rewrite\u0000${model}\u0000${user}`,
-          rewriteSchema,
-          attempt === 0 ? "rewrite" : "rewrite (repair)",
-          tally,
-          (onUsage) =>
-            generateJson({
-              step: "rewrite",
-              model,
-              system: REWRITE_SYSTEM,
-              user,
-              responseSchema: rewriteResponseSchema(skills),
-              schema: rewriteSchema,
-              onUsage,
-            }),
-        )
-      ).value;
-      if (!rw.keep) {
-        drop(
-          u,
-          rw.drop_reason ?? "dropped_without_reason",
-          rw.taxonomy_gap ?? "",
-        );
-        return null;
-      }
-      const content = (rw.content ?? "").trim();
-      if (content === "") {
-        drop(u, "empty_rewrite");
-        return null;
-      }
-      const codes = [...new Set(rw.skill_codes)];
-      if (codes.length === 0) {
-        drop(u, "no_taxonomy_skill", rw.taxonomy_gap ?? "");
-        return null;
-      }
-      const auditUser = auditUserMessage({
+    // LISA 1's per-unit steps (rewrite, audit with one repair, example check), shared with the
+    // video segments: scripts/rag/chunk-unit.ts. Same prompts, cache keys and stages as before.
+    const out = await rewriteAuditCheck({
+      model,
+      call,
+      rewrite: {
+        system: REWRITE_SYSTEM,
+        user: rewriteUser,
+        responseSchema: rewriteResponseSchema(skills),
+        schema: rewriteSchema,
+        contentOf: (rw) => rw.content,
+        skillsOf: (rw) => rw.skill_codes,
+        detailOf: (rw) => rw.taxonomy_gap ?? "",
+      },
+      audit: {
+        system: AUDIT_SYSTEM,
         source,
         before,
         after,
-        entry: content,
         ruleOpening: opening,
-      });
-      const audit = (
-        await cachedCall(
-          dir,
-          `audit\u0000${model}\u0000${auditUser}`,
-          auditSchema,
-          attempt === 0 ? "audit" : "audit (repair)",
-          tally,
-          (onUsage) =>
-            generateJson({
-              step: "audit",
-              model,
-              system: AUDIT_SYSTEM,
-              user: auditUser,
-              responseSchema: auditResponseSchema,
-              schema: auditSchema,
-              onUsage,
-            }),
-        )
-      ).value;
-      const failed = auditFailure(audit);
-      if (failed !== null) {
-        if (attempt === 0 && REPAIRABLE.has(failed)) {
-          feedback = `\n\nA REVIEWER REJECTED YOUR PREVIOUS ENTRY FOR THIS UNIT: ${audit.issues}\nPREVIOUS ENTRY:\n${content}\n\nWrite the entry again, fixing exactly that, and include nothing the unit does not say.`;
-          continue;
-        }
-        drop(u, failed, audit.issues);
-        return null;
-      }
-      // The example check (book-prompts.ts EXAMPLE_CHECK_SYSTEM), on the entry the audit passed,
-      // against itself only. Any mismatch drops it; never repaired, so it cannot become a
-      // correction (Karl, 2026-10-26).
-      const check = (
-        await cachedCall(
-          dir,
-          `example-check\u0000${model}\u0000${content}`,
-          exampleCheckSchema,
-          "example check",
-          tally,
-          (onUsage) =>
-            generateJson({
-              step: "example-check",
-              model,
-              system: EXAMPLE_CHECK_SYSTEM,
-              user: exampleCheckUserMessage(content),
-              responseSchema: exampleCheckResponseSchema,
-              schema: exampleCheckSchema,
-              onUsage,
-            }),
-        )
-      ).value;
-      const contradiction = exampleCheckFailure(check);
-      if (contradiction !== null) {
-        drop(u, "audit_self_contradictory", contradiction);
-        return null;
-      }
-      return {
-        unit: u,
-        chapter: chapterOf(u),
-        content,
-        skill_codes: codes,
-        content_type: rw.content_type,
-        surface_gate: rw.surface_gate,
-        surface_gate_reason: rw.surface_gate_reason,
-        taxonomy_gap: rw.taxonomy_gap,
-        audit,
-        repaired: attempt > 0,
-        audited: { source, before, after, ruleOpening: opening },
-      };
+      },
+      exampleCheck: true,
+    });
+    if (!out.kept) {
+      drop(u, out.reason, out.detail);
+      return null;
     }
+    return {
+      unit: u,
+      chapter: chapterOf(u),
+      content: out.content,
+      skill_codes: out.skill_codes,
+      content_type: out.rewrite.content_type,
+      surface_gate: out.rewrite.surface_gate,
+      surface_gate_reason: out.rewrite.surface_gate_reason,
+      taxonomy_gap: out.rewrite.taxonomy_gap,
+      audit: out.audit,
+      repaired: out.repaired,
+      audited: { source, before, after, ruleOpening: opening },
+    };
   });
   const kept = results.filter((k): k is Kept => k !== null);
   const provenance = assignProvenance(

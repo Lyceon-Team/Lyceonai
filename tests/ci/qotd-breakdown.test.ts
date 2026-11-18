@@ -53,6 +53,7 @@ import {
   QOTD_BREAKDOWN_CONTENT_BRANCH,
   QOTD_BREAKDOWN_CONTENT_REPO,
   QOTD_BREAKDOWN_PILOT,
+  QOTD_BREAKDOWN_PILOT_RULED,
   QOTD_BREAKDOWN_SKIP_REASON,
   QOTD_BREAKDOWN_VOICE_PROFILE,
   breakdownCopy,
@@ -69,6 +70,7 @@ import {
   socialFacebookCaption,
   socialInstagramCaption,
   socialTiktokCaption,
+  copyBlockProblems,
   nextSatTest,
   qotdHeadline,
 } from "../../shared/social/posts";
@@ -131,6 +133,8 @@ const BASE = "https://lyceon.ai";
 const CONTENT = join(SYNTHETIC, "content");
 const SCRIPT_DATE = "2026-01-14";
 const SCRIPT_DIR = breakdownScriptDir(SCRIPT_DATE);
+/** The synthetic question the scripted day asks (made up; never in the bank). */
+const SCRIPT_QUESTION_ID = "SATM1SYNTH1";
 /** A shuffled day with no script. */
 const OTHER_DATE = "2026-01-15";
 /** A Reading and Writing day, and a grid-in day (no scripts). */
@@ -177,6 +181,7 @@ const seedFromRows: SeedLookup = (id) => {
       section: row.section,
       domain: row.domain,
       skill_codes: row.skill_codes,
+      difficulty: row.difficulty,
       item_type: row.item_type,
       stem: row.stem,
       passage: row.passage,
@@ -612,6 +617,24 @@ describe("the authoring check (check-breakdown-scripts.ts)", () => {
     ).toBe(true);
   });
 
+  it("a script whose question is not Hard is refused (Karl, 2026-11-05: breakdowns use Hard questions only)", () => {
+    const root = treeWith((s) => s);
+    // Presence first: the synthetic scripted day is Hard and passes.
+    const asked = seedFromRows(SCRIPT_QUESTION_ID);
+    if (!asked.ok) throw new Error(asked.problem);
+    expect(asked.question.difficulty).toBe(3);
+    expect(checkBreakdownScripts(root, null, seedFromRows, kit)).toEqual([]);
+    const medium: SeedLookup = (id) => {
+      const r = seedFromRows(id);
+      return r.ok
+        ? { ok: true, question: { ...r.question, difficulty: 2 } }
+        : r;
+    };
+    expect(checkBreakdownScripts(root, null, medium, kit).join("\n")).toContain(
+      `${SCRIPT_QUESTION_ID} is difficulty 2, not Hard (3)`,
+    );
+  });
+
   it("anything but script.json and voice/ in a day's folder is refused (an export dropped there, say)", () => {
     const root = treeWith((s) => s);
     writeFileSync(join(root, SCRIPT_DIR, "schedule.json"), "[]");
@@ -757,44 +780,43 @@ describe("the fallback rule", () => {
 });
 
 describe("captions and keywords: SCL-262 through the canonical builders, music credited", () => {
-  it("each caption is the canonical builder's output with the credit last", async () => {
+  it("each caption is the canonical builder's output, with no music credit (it is on the end card)", async () => {
     const kit = loadKit();
     const day = await archiveDay(RW_DATE);
-    const copy = breakdownCopy(day, nextDay(RW_DATE), kit.track.credit);
+    const copy = breakdownCopy(day, nextDay(RW_DATE));
     expect(copy.ok).toBe(true);
     if (!copy.ok) return;
     const test = nextSatTest(nextDay(RW_DATE));
     const headline = qotdHeadline(test, "Reading and Writing");
     expect(copy.copy.headline).toBe(headline);
     expect(copy.copy.caption).toBe(
-      socialTiktokCaption(headline, test, "Reading and Writing", [
-        kit.track.credit,
-      ]),
+      socialTiktokCaption(headline, test, "Reading and Writing"),
     );
     expect(copy.copy.instagram_caption).toBe(
-      socialInstagramCaption(headline, test, "Reading and Writing", [
-        kit.track.credit,
-      ]),
+      socialInstagramCaption(headline, test, "Reading and Writing"),
     );
     expect(copy.copy.facebook_caption).toBe(
-      socialFacebookCaption(headline, test, "Reading and Writing", [
-        kit.track.credit,
-      ]),
+      socialFacebookCaption(headline, test, "Reading and Writing"),
     );
+    // Karl, 2026-11-04: nothing but what Karl pastes in any block (the credit is on the end card).
+    expect(kit.track.on_screen_credit).not.toBeNull();
     for (const c of [
       copy.copy.caption,
       copy.copy.instagram_caption,
       copy.copy.facebook_caption,
-    ])
-      expect(c.split("\n").at(-1)).toBe(kit.track.credit);
+      copy.copy.keywords.join("\n"),
+    ]) {
+      expect(c.length).toBeGreaterThan(0);
+      expect(copyBlockProblems(c)).toEqual([]);
+      expect(c).not.toMatch(/Music:|CC BY/);
+    }
     expect(copy.copy.keywords).toContain("SAT grammar");
   });
 
   it("no caption names the answer", async () => {
-    const kit = loadKit();
     for (const date of SHUFFLED_DAYS) {
       const day = await archiveDay(date);
-      const copy = breakdownCopy(day, nextDay(date), kit.track.credit);
+      const copy = breakdownCopy(day, nextDay(date));
       if (!copy.ok) throw new Error(copy.problems.join("; "));
       const correct = day.question.options.find(
         (o) => o.id === day.question.correct_option_id,
@@ -816,8 +838,27 @@ describe("captions and keywords: SCL-262 through the canonical builders, music c
   });
 });
 
-describe("the pilot window: 2026-11-09 to 2026-11-22 (Karl, 2026-11-02)", () => {
+describe("the pilot window: 2026-11-09 to 2026-11-22 (Karl, 2026-11-02), held (Karl, 2026-11-03)", () => {
+  it("held: the live window is off, so nothing builds or posts on any of the ruled days", () => {
+    expect(QOTD_BREAKDOWN_PILOT).toEqual({ start: null, end: null });
+    for (const day of ["2026-11-08", "2026-11-09", "2026-11-15", "2026-11-22"])
+      expect(pilotWindow(QOTD_BREAKDOWN_PILOT, day, false)).toBe("off");
+    // An inactive manifest posts nothing (no "no approved script" notice).
+    expect(
+      breakdownPlan(
+        qotdBreakdownManifestSchema.parse({
+          status: "inactive",
+          qotd_date: "2026-11-08",
+          posted_on: "2026-11-09",
+          window: "off",
+        }),
+        () => true,
+      ).kind,
+    ).toBe("nothing");
+  });
+
   it("is set to Karl's dates, posting days, 14 inclusive", () => {
+    const QOTD_BREAKDOWN_PILOT = QOTD_BREAKDOWN_PILOT_RULED;
     expect(QOTD_BREAKDOWN_PILOT).toEqual({
       start: "2026-11-09",
       end: "2026-11-22",
@@ -880,7 +921,7 @@ describe("the post: the video, or the answer slide and the notice; nothing outsi
     },
   });
 
-  it("built: the video first, then the SCL-262 copy blocks; Karl posts by hand", () => {
+  it("built: the video first, then the SCL-262 copy blocks; outside them only the platform headers", () => {
     const plan = breakdownPlan(built, () => false);
     expect(plan.kind).toBe("video");
     if (plan.kind !== "video") return;
@@ -891,9 +932,12 @@ describe("the post: the video, or the answer slide and the notice; nothing outsi
       "message",
     ]);
     const first = plan.steps[0];
-    expect(first?.kind === "video" && first.comment).toContain(
-      "Karl posts by hand",
-    );
+    expect(first?.kind === "video" && first.comment).toBe("*TikTok*");
+    for (const step of plan.steps.slice(1))
+      if (step.kind === "message")
+        expect(step.text.replace(/```[\s\S]*?```/g, "").trim()).toMatch(
+          /^(\*Instagram\*|\*Facebook\*|)$/,
+        );
   });
 
   it("skipped: yesterday's answer slide with 'Breakdown skipped: <reason>', or the notice alone", () => {
