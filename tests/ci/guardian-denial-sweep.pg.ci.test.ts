@@ -140,6 +140,11 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
   "/api/guardian/", // guardian-role gated
   "/api/health",
   "/api/internal/", // server-to-server (CRON_SECRET / OIDC)
+  // Owner brief 2026-11-19 §2 (SCL-280): the seat invite. GET answers {valid} for a token and
+  // carries no student data; POST /claim refuses every non-student with 403 ROLE_NOT_PERMITTED
+  // (an inline role gate, not requireStudentAccount, because that one carries the under-13 link
+  // gate the claim must precede). Guardian denial: CL4 in tests/ci/guardian-seats.pg.ci.test.ts.
+  "/api/join/",
   "/api/legal/", // the caller's own acceptances
   "/api/notifications/", // the caller's own feed
   "/api/profile/", // the caller's own profile

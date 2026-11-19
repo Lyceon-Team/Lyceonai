@@ -10808,7 +10808,8 @@ CREATE FUNCTION public.guardian_seat_claim(p_token_hash text, p_student_id uuid,
     SET search_path TO 'public', 'pg_temp'
     AS $$
 DECLARE
-  v_seat public.guardian_seats;
+  v_seat    public.guardian_seats;
+  v_link_id uuid;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.profiles
                   WHERE id = p_student_id AND role = 'student') THEN
@@ -10825,8 +10826,13 @@ BEGIN
 
   -- The same student retrying after a successful claim: report it again, change nothing.
   IF v_seat.status = 'claimed' AND v_seat.student_profile_id = p_student_id THEN
+    SELECT id INTO v_link_id FROM public.guardian_links
+     WHERE guardian_profile_id = v_seat.guardian_profile_id
+       AND student_profile_id  = p_student_id
+       AND status = 'active';
     RETURN jsonb_build_object(
       'outcome', 'claimed',
+      'link_id', v_link_id,
       'seat_id', v_seat.id,
       'guardian_profile_id', v_seat.guardian_profile_id,
       'stripe_subscription_id', v_seat.stripe_subscription_id,
@@ -10848,15 +10854,15 @@ BEGIN
 
   -- The link, through the one link writer, unless this pair is already linked (a guardian
   -- who also redeemed a code): the seat still attaches to that student.
-  IF NOT EXISTS (
-    SELECT 1 FROM public.guardian_links
-     WHERE guardian_profile_id = v_seat.guardian_profile_id
-       AND student_profile_id  = p_student_id
-       AND status = 'active'
-  ) THEN
-    PERFORM public.guardian_link_create_core(
-      v_seat.guardian_profile_id, p_student_id, p_request_id,
-      'guardian', 'guardian_seat_invite');
+  SELECT id INTO v_link_id FROM public.guardian_links
+   WHERE guardian_profile_id = v_seat.guardian_profile_id
+     AND student_profile_id  = p_student_id
+     AND status = 'active';
+  IF v_link_id IS NULL THEN
+    SELECT (public.guardian_link_create_core(
+              v_seat.guardian_profile_id, p_student_id, p_request_id,
+              'guardian', 'guardian_seat_invite')).id
+      INTO v_link_id;
   END IF;
 
   UPDATE public.guardian_seats
@@ -10872,6 +10878,7 @@ BEGIN
 
   RETURN jsonb_build_object(
     'outcome', 'claimed',
+    'link_id', v_link_id,
     'seat_id', v_seat.id,
     'guardian_profile_id', v_seat.guardian_profile_id,
     'stripe_subscription_id', v_seat.stripe_subscription_id,
@@ -20018,7 +20025,7 @@ CREATE TABLE public.legal_acceptances (
     content_hash text,
     source_reference text,
     CONSTRAINT legal_acceptances_actor_type_check CHECK ((actor_type = ANY (ARRAY['student'::text, 'parent'::text]))),
-    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
+    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'guardian_seat_checkout'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
     CONSTRAINT legal_acceptances_content_hash_shape CHECK (((content_hash IS NULL) OR (content_hash ~ '^sha256:[0-9a-f]{64}$'::text)))
 );
 
@@ -20042,13 +20049,6 @@ COMMENT ON COLUMN public.legal_acceptances.content_hash IS 'sha256:<64 hex> of t
 --
 
 COMMENT ON COLUMN public.legal_acceptances.source_reference IS 'Identifier issued by the surface named in consent_source. A Stripe Checkout Session id (cs_...) for stripe_checkout; NULL for surfaces that issue none.';
-
-
---
--- Name: CONSTRAINT legal_acceptances_consent_source_check ON legal_acceptances; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT legal_acceptances_consent_source_check ON public.legal_acceptances IS 'Where the acceptance was collected. guardian_link_redeem: a guardian accepting Parent / Guardian Terms while redeeming a student link code. stripe_checkout: auto-renewal consent taken in Checkout per Cal. Bus. & Prof. Code § 17602, separate from Terms of Use acceptance at signup. reconsent_prompt: an existing user accepting a newly published version through the blocking modal shown at next sign-in.';
 
 
 --

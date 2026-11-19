@@ -258,6 +258,13 @@ const ALLOWED_EXACT: ReadonlySet<string> = new Set([
   "GET /api/billing/cancel-state",
   "POST /api/billing/cancel",
   "POST /api/billing/cancel/undo",
+  // OWNER BRIEF "Parent paid seat + teen invite + book-a-call — build" (Karl, 2026-11-19) §2:
+  // "an under-13 student must be able to claim before the guardian-required gate redirects
+  // them". Claiming IS how such a student gets linked, so the gate cannot stand in front of it.
+  // The read answers {valid} for a token and nothing else; the claim is student-role only
+  // (inline gate in server/routes/seat-join-routes.ts) and creates the link. SCL-280.
+  "GET /api/join/:token",
+  "POST /api/join/:token/claim",
 ]);
 const ALLOWED_PREFIXES: ReadonlyArray<string> = [
   "/api/auth/",
