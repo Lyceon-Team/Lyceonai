@@ -10657,6 +10657,21 @@ $$;
 
 
 --
+-- Name: guardian_link_active_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_link_active_id(p_guardian_id uuid, p_student_id uuid) RETURNS uuid
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT id FROM public.guardian_links
+   WHERE guardian_profile_id = p_guardian_id
+     AND student_profile_id  = p_student_id
+     AND status = 'active';
+$$;
+
+
+--
 -- Name: guardian_link_audit(text, uuid, uuid, jsonb, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -10826,10 +10841,7 @@ BEGIN
 
   -- The same student retrying after a successful claim: report it again, change nothing.
   IF v_seat.status = 'claimed' AND v_seat.student_profile_id = p_student_id THEN
-    SELECT id INTO v_link_id FROM public.guardian_links
-     WHERE guardian_profile_id = v_seat.guardian_profile_id
-       AND student_profile_id  = p_student_id
-       AND status = 'active';
+    v_link_id := public.guardian_link_active_id(v_seat.guardian_profile_id, p_student_id);
     RETURN jsonb_build_object(
       'outcome', 'claimed',
       'link_id', v_link_id,
@@ -10854,10 +10866,7 @@ BEGIN
 
   -- The link, through the one link writer, unless this pair is already linked (a guardian
   -- who also redeemed a code): the seat still attaches to that student.
-  SELECT id INTO v_link_id FROM public.guardian_links
-   WHERE guardian_profile_id = v_seat.guardian_profile_id
-     AND student_profile_id  = p_student_id
-     AND status = 'active';
+  v_link_id := public.guardian_link_active_id(v_seat.guardian_profile_id, p_student_id);
   IF v_link_id IS NULL THEN
     SELECT (public.guardian_link_create_core(
               v_seat.guardian_profile_id, p_student_id, p_request_id,
@@ -30751,6 +30760,13 @@ GRANT ALL ON FUNCTION public.guardian_daily_digest_email_enabled(p_guardian_id u
 
 REVOKE ALL ON FUNCTION public.guardian_daily_digest_notify(p_now timestamp with time zone, p_limit integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.guardian_daily_digest_notify(p_now timestamp with time zone, p_limit integer) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_link_active_id(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_link_active_id(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
 
 
 --

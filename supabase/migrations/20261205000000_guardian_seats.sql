@@ -50,6 +50,7 @@
 -- rollback (in this order):
 --   re-run the CREATE OR REPLACE FUNCTION block of 20261014000000_guardian_link_party_roles.sql;
 --   DROP FUNCTION IF EXISTS public.guardian_seat_claim(text, uuid, text);
+--   DROP FUNCTION IF EXISTS public.guardian_link_active_id(uuid, uuid);
 --   DROP FUNCTION IF EXISTS public.guardian_seat_invite_valid(text);
 --   DROP FUNCTION IF EXISTS public.guardian_seat_cancel_invite(uuid, uuid);
 --   DROP FUNCTION IF EXISTS public.guardian_seat_issue_invite(uuid, uuid, text, text);
@@ -356,6 +357,29 @@ $fn$;
 --   {"outcome":"invalid"}       unknown, expired, cancelled, or used by another student
 --   {"outcome":"already_paid"}  the student has an active entitlement: nothing claimed,
 --                               the seat stays unassigned and records the refusal
+-- The active link between a guardian and a student, or NULL. A plain lookup, kept out of
+-- guardian_seat_claim's body on purpose: guardian visibility (link AND entitlement) is derived
+-- in exactly one function, guardian_view_decision, and scripts/ci/guardian-view-decision-gate.sql
+-- GATE 10 holds that by counting the bodies that read both guardian_links and
+-- entitlement_active. The claim reads entitlement_active for a different question (has this
+-- student already paid?), and this helper keeps that question from reading as a second
+-- visibility derivation. Not SECURITY DEFINER; callable only from the definer functions.
+CREATE OR REPLACE FUNCTION public.guardian_link_active_id(
+  p_guardian_id uuid,
+  p_student_id  uuid
+) RETURNS uuid
+LANGUAGE sql
+STABLE
+SET search_path = public, pg_temp
+AS $fn$
+  SELECT id FROM public.guardian_links
+   WHERE guardian_profile_id = p_guardian_id
+     AND student_profile_id  = p_student_id
+     AND status = 'active';
+$fn$;
+REVOKE ALL ON FUNCTION public.guardian_link_active_id(uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION public.guardian_seat_claim(
   p_token_hash text,
   p_student_id uuid,
@@ -384,10 +408,7 @@ BEGIN
 
   -- The same student retrying after a successful claim: report it again, change nothing.
   IF v_seat.status = 'claimed' AND v_seat.student_profile_id = p_student_id THEN
-    SELECT id INTO v_link_id FROM public.guardian_links
-     WHERE guardian_profile_id = v_seat.guardian_profile_id
-       AND student_profile_id  = p_student_id
-       AND status = 'active';
+    v_link_id := public.guardian_link_active_id(v_seat.guardian_profile_id, p_student_id);
     RETURN jsonb_build_object(
       'outcome', 'claimed',
       'link_id', v_link_id,
@@ -412,10 +433,7 @@ BEGIN
 
   -- The link, through the one link writer, unless this pair is already linked (a guardian
   -- who also redeemed a code): the seat still attaches to that student.
-  SELECT id INTO v_link_id FROM public.guardian_links
-   WHERE guardian_profile_id = v_seat.guardian_profile_id
-     AND student_profile_id  = p_student_id
-     AND status = 'active';
+  v_link_id := public.guardian_link_active_id(v_seat.guardian_profile_id, p_student_id);
   IF v_link_id IS NULL THEN
     SELECT (public.guardian_link_create_core(
               v_seat.guardian_profile_id, p_student_id, p_request_id,
