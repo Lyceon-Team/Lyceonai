@@ -236,7 +236,9 @@ describe("audit_logs writers put no email into `changes` (C-03, Q15)", () => {
       "create_guardian_link_audited -> guardian_link_audit",
       "accept_guardian_link_audited -> guardian_link_audit",
       "revoke_guardian_link_audited -> guardian_link_audit",
-      "create_active_guardian_link_audited -> guardian_link_audit",
+      // 20261205000000: the link audit call moved into the one link writer both
+      // create_active_guardian_link_audited and guardian_seat_claim call.
+      "guardian_link_create_core -> guardian_link_audit",
       path.join("server", "routes", "guardian-routes.ts"),
       path.join("server", "services", "retention-sweep.ts"),
       path.join("server", "services", "email-reconsent-audit.ts"),

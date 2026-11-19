@@ -23,3 +23,14 @@ export const PRIVACY_EMAIL = "privacy@lyceon.ai";
  */
 export const LYCEON_POSTAL_ADDRESS =
   "Lyceon AI, 5650 Central Ave # E7, Toledo, OH 43615";
+
+/**
+ * @spec [owner brief "Parent paid seat + teen invite + book-a-call" (Karl, 2026-11-19) §4]
+ *       | @implemented [2026-11-19]
+ *
+ * plain English: the parent call booking page. A plain outbound link, opened in a new tab: no
+ * embed and no third-party script. Every placement (the guardian home with no student, the
+ * guardian account menu, and later /parent) reads this one constant.
+ */
+export const PARENT_CALL_URL =
+  "https://calendly.com/amingwa-lyceon/lyceon-for-parents-15-minute-call";

@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Notice } from "@/components/student-ui/Notice";
 import { humanAuthError } from "@/lib/auth-error-messages";
 import {
+  isSeatJoinReturnPath,
   postAuthDestination,
   returnPathFromSearch,
 } from "@lyceon/shared/return-path";
@@ -107,8 +108,10 @@ export default function Login() {
       // request until a guardian connects, so a `next` there would only bounce. Onboarding
       // still comes first, exactly as on `main`.
       const onboardingFirst = user.role !== "admin" && needsOnboarding;
+      // A seat invite (/join/<token>) is how an under-13 student gets linked, so it wins over
+      // the linking page (owner brief 2026-11-19 §2.2).
       const destination =
-        !onboardingFirst && needsGuardianLink
+        !onboardingFirst && needsGuardianLink && !isSeatJoinReturnPath(next)
           ? "/guardian-required"
           : postAuthDestination({
               role: user.role,

@@ -55,10 +55,7 @@ import {
   fireLifecycle,
   sendEntitledEvents,
 } from "../lifecycle-email";
-import {
-  classifyUpgradeVia,
-  fireUpgraded,
-} from "../analytics/funnel-events";
+import { classifyUpgradeVia, fireUpgraded } from "../analytics/funnel-events";
 import type { FunnelUpgradeVia } from "../../../packages/shared/src/funnel-events-schema";
 import { getTier1Countries } from "../entitlement-runtime-config";
 import {
@@ -76,6 +73,11 @@ import { classifyError } from "../redact";
 import { dispositionFor } from "./event-surface";
 import { recordLegalAcceptances } from "../legal-acceptance";
 import { resolveLegalVersion } from "../legal-registry.js";
+import {
+  markGuardianSeatCancelled,
+  recordGuardianSeat,
+} from "../guardian-seats";
+import { GUARDIAN_SEAT_PURCHASE_KIND } from "../../../packages/shared/src/guardian-seat-schema";
 import { CHECKOUT_LEGAL_DOC } from "../../../shared/legal-consent.js";
 import {
   disputeEventSchema,
@@ -444,6 +446,11 @@ const retrievedSubscriptionSchema = z.object({
        * picking a subject would be a guess.
        */
       student_profile_id: z.string().min(1).nullish(),
+      /**
+       * "guardian_seat" on a seat bought before any student is linked (owner brief
+       * 2026-11-19). Set only by the checkout route, server-side.
+       */
+      purchase_kind: z.string().min(1).nullish(),
     })
     .passthrough()
     .nullish(),
@@ -1395,6 +1402,73 @@ async function handleRefundUpdated(event: Stripe.Event): Promise<void> {
  * is unchanged, because individual billing is the one-item case and not a
  * separate shape (SCL-045).
  */
+/** Stripe statuses that end a subscription: its seat is cancelled. */
+const SEAT_ENDING_STATUSES: ReadonlySet<string> = new Set([
+  "canceled",
+  "incomplete_expired",
+]);
+/** Paid statuses: a seat is recorded once the subscription reaches one. */
+const SEAT_PAID_STATUSES: ReadonlySet<string> = new Set([
+  "active",
+  "trialing",
+  "past_due",
+]);
+
+/**
+ * @spec [owner brief "Parent paid seat" (Karl, 2026-11-19) §1; 20261205000000_guardian_seats.sql]
+ *       | @implemented [2026-11-19]
+ *
+ * plain English: keep the seat row in step with its subscription. Paid → the seat is recorded
+ * (once; a replay finds the row). Ended → the seat is cancelled. Nothing else is written here.
+ * Returns whether any item names a student yet (the seat was claimed): until then the caller
+ * writes no entitlement. Billing starts at payment, so an unpaid, incomplete subscription
+ * records nothing.
+ */
+async function syncGuardianSeat(
+  subscription: RetrievedSubscription,
+): Promise<"claimed" | "unclaimed"> {
+  const payerProfileId = subscription.metadata?.payer_profile_id;
+  if (!payerProfileId) {
+    throw new StripePayloadShapeError(
+      "guardian_seat",
+      "seat subscription carries no payer_profile_id",
+    );
+  }
+  const items = subscription.items?.data ?? [];
+  if (SEAT_PAID_STATUSES.has(subscription.status)) {
+    await recordGuardianSeat({
+      guardianProfileId: payerProfileId,
+      subscriptionId: subscription.id,
+      itemId: items[0]?.id ?? null,
+    });
+  }
+  if (SEAT_ENDING_STATUSES.has(subscription.status)) {
+    await markGuardianSeatCancelled(subscription.id);
+  }
+  return items.some((i) => Boolean(i.metadata?.student_profile_id))
+    ? "claimed"
+    : "unclaimed";
+}
+
+/**
+ * The claim's last step (owner brief 2026-11-19 §2.3): once the seat is claimed and its item
+ * names the student, write the entitlement through THE writer every guardian-paid
+ * subscription uses. Idempotent: the entitlement upsert keys on the student, so this and the
+ * `customer.subscription.updated` event the metadata change triggers write one row.
+ */
+export async function writeGuardianSeatEntitlement(
+  subscriptionId: string,
+  seatId: string,
+): Promise<void> {
+  const eventType = "guardian_seat.claim";
+  const retrieved: RetrievedSubscription = parseOrFail(
+    retrievedSubscriptionSchema,
+    await getStripeClient().subscriptions.retrieve(subscriptionId),
+    eventType,
+  );
+  await writeEntitlementsForAllItems(retrieved, eventType, `seat:${seatId}`);
+}
+
 async function writeEntitlementsForAllItems(
   subscription: RetrievedSubscription,
   eventType: string,
@@ -1404,6 +1478,28 @@ async function writeEntitlementsForAllItems(
   const mapped = mapStripeStatusToEntitlement(subscription.status);
   const collectionPaused = subscription.pause_collection != null;
   const tier = collectionPaused ? ("free" as const) : mapped.tier;
+
+  // A SEAT BOUGHT BEFORE ANY STUDENT IS LINKED (owner brief 2026-11-19). Recorded once,
+  // cancelled when the subscription ends, and never an entitlement until a student claims
+  // it: an unclaimed seat stops here, before the writer below would throw for want of a
+  // student. A claimed seat carries the student on its item and continues as any
+  // guardian-paid subscription does.
+  if (subscription.metadata?.purchase_kind === GUARDIAN_SEAT_PURCHASE_KIND) {
+    const seat = await syncGuardianSeat(subscription);
+    if (seat === "unclaimed") {
+      logger.info(
+        "STRIPE_WEBHOOK",
+        eventType,
+        "Guardian seat synced; no student yet",
+        {
+          eventId,
+          subscriptionRef: digestId(subscription.id),
+          status: subscription.status,
+        },
+      );
+      return;
+    }
+  }
 
   // The subject candidates, in item order. An item with no student is skipped
   // here and counted — that is the metadata-propagation failure mode, and it is

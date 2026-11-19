@@ -100,6 +100,7 @@ const outboxPayloadSchema = z.object({
     "google_continue_pre_oauth",
     "google_continue_click",
     "guardian_link_redeem",
+    "guardian_seat_checkout",
     "stripe_checkout",
     "reconsent_prompt",
   ]),

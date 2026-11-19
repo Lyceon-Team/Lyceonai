@@ -5863,68 +5863,11 @@ CREATE FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-DECLARE
-  v_row          public.guardian_links;
-  v_student_name text;
 BEGIN
-  IF p_guardian_id = p_student_id THEN
-    RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
-  END IF;
-
-  -- G2-01: both parties' roles, read here rather than trusted from the caller. The grantee
-  -- must be a guardian and the subject a student; anything else (an admin, a second student,
-  -- a guardian as subject, an id with no profile) is refused BEFORE anything is written.
-  IF NOT EXISTS (SELECT 1 FROM public.profiles
-                  WHERE id = p_guardian_id AND role = 'guardian') THEN
-    RAISE EXCEPTION 'grantee is not a guardian' USING ERRCODE = 'LY006';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.profiles
-                  WHERE id = p_student_id AND role = 'student') THEN
-    RAISE EXCEPTION 'subject is not a student' USING ERRCODE = 'LY006';
-  END IF;
-
-  -- Edge case 2: already linked is a 409, not a duplicate row. Only 'active' is
-  -- checked because SCL-080 leaves no reachable pending status.
-  IF EXISTS (
-    SELECT 1 FROM public.guardian_links
-     WHERE guardian_profile_id = p_guardian_id
-       AND student_profile_id  = p_student_id
-       AND status = 'active'
-  ) THEN
-    RAISE EXCEPTION 'link already exists' USING ERRCODE = 'LY004';
-  END IF;
-
-  INSERT INTO public.guardian_links
-    (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at,
-     accepted_at, accepted_by_profile_id)
-  VALUES (p_guardian_id, p_student_id, 'active', 'student', now(), now(), p_student_id)
-  RETURNING * INTO v_row;
-
-  -- initiated_by='student' and accepted_by=the student: the student issued and shared the
-  -- code, so the student is both the initiator and the consenting party. Recording the
-  -- guardian as initiator would misattribute the consent.
-  PERFORM public.guardian_link_audit(
-    'guardian_link_initiated', p_student_id, p_guardian_id,
-    jsonb_build_object('from', NULL, 'to', 'active', 'via', 'student_link_code'),
-    v_row.id, p_request_id
-  );
-
-  -- Doc 01 §36.1 step 6 — both parties notified, in THIS transaction (contract §2.2).
-  -- Student: in_app. Guardian: in_app + email. Payload: link_id and the student's display
-  -- name only (contract §8.1; Doc 01 §38.1/§38.2 — nothing beyond identity to a guardian).
-  SELECT display_name INTO v_student_name FROM public.profiles WHERE id = p_student_id;
-  PERFORM public.emit_notification_event(
-    public.notification_event_id('guardian_linked', v_row.id::text),
-    'guardian_linked',
-    p_student_id,
-    jsonb_build_array(
-      jsonb_build_object('profile_id', p_student_id,  'channels', jsonb_build_array('in_app')),
-      jsonb_build_object('profile_id', p_guardian_id, 'channels', jsonb_build_array('in_app', 'email'))
-    ),
-    jsonb_build_object('link_id', v_row.id, 'student_display_name', coalesce(v_student_name, ''))
-  );
-
-  RETURN v_row;
+  -- initiated_by='student': the student issued and shared the code, so the student is both
+  -- the initiator and the consenting party.
+  RETURN public.guardian_link_create_core(
+    p_guardian_id, p_student_id, p_request_id, 'student', 'student_link_code');
 END;
 $$;
 
@@ -10714,6 +10657,21 @@ $$;
 
 
 --
+-- Name: guardian_link_active_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_link_active_id(p_guardian_id uuid, p_student_id uuid) RETURNS uuid
+    LANGUAGE sql STABLE
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT id FROM public.guardian_links
+   WHERE guardian_profile_id = p_guardian_id
+     AND student_profile_id  = p_student_id
+     AND status = 'active';
+$$;
+
+
+--
 -- Name: guardian_link_audit(text, uuid, uuid, jsonb, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -10726,6 +10684,309 @@ CREATE FUNCTION public.guardian_link_audit(p_action text, p_actor uuid, p_target
     p_actor, p_target, p_action, p_changes,
     jsonb_build_object('request_id', p_request_id, 'link_id', p_link_id)
   );
+$$;
+
+
+--
+-- Name: guardian_link_create_core(uuid, uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_link_create_core(p_guardian_id uuid, p_student_id uuid, p_request_id text, p_initiated_by text, p_via text) RETURNS public.guardian_links
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row          public.guardian_links;
+  v_student_name text;
+BEGIN
+  IF p_initiated_by NOT IN ('student', 'guardian') THEN
+    RAISE EXCEPTION 'unknown link initiator %', p_initiated_by USING ERRCODE = '22023';
+  END IF;
+  IF p_via NOT IN ('student_link_code', 'guardian_seat_invite') THEN
+    RAISE EXCEPTION 'unknown link mechanism %', p_via USING ERRCODE = '22023';
+  END IF;
+
+  IF p_guardian_id = p_student_id THEN
+    RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
+  END IF;
+
+  -- G2-01: both parties' roles, read here rather than trusted from the caller.
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_guardian_id AND role = 'guardian') THEN
+    RAISE EXCEPTION 'grantee is not a guardian' USING ERRCODE = 'LY006';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_student_id AND role = 'student') THEN
+    RAISE EXCEPTION 'subject is not a student' USING ERRCODE = 'LY006';
+  END IF;
+
+  -- Already linked is a 409, not a duplicate row.
+  IF EXISTS (
+    SELECT 1 FROM public.guardian_links
+     WHERE guardian_profile_id = p_guardian_id
+       AND student_profile_id  = p_student_id
+       AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'link already exists' USING ERRCODE = 'LY004';
+  END IF;
+
+  -- accepted_by is the student on both paths: the student shared the code, or the student
+  -- claimed the seat. initiated_by names who started it: the student (code) or the guardian
+  -- (seat invite).
+  INSERT INTO public.guardian_links
+    (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at,
+     accepted_at, accepted_by_profile_id)
+  VALUES (p_guardian_id, p_student_id, 'active', p_initiated_by, now(), now(), p_student_id)
+  RETURNING * INTO v_row;
+
+  PERFORM public.guardian_link_audit(
+    'guardian_link_initiated', p_student_id, p_guardian_id,
+    jsonb_build_object('from', NULL, 'to', 'active', 'via', p_via),
+    v_row.id, p_request_id
+  );
+
+  -- Doc 01 §36.1 step 6 — both parties notified, in THIS transaction.
+  SELECT display_name INTO v_student_name FROM public.profiles WHERE id = p_student_id;
+  PERFORM public.emit_notification_event(
+    public.notification_event_id('guardian_linked', v_row.id::text),
+    'guardian_linked',
+    p_student_id,
+    jsonb_build_array(
+      jsonb_build_object('profile_id', p_student_id,  'channels', jsonb_build_array('in_app')),
+      jsonb_build_object('profile_id', p_guardian_id, 'channels', jsonb_build_array('in_app', 'email'))
+    ),
+    jsonb_build_object('link_id', v_row.id, 'student_display_name', coalesce(v_student_name, ''))
+  );
+
+  RETURN v_row;
+END;
+$$;
+
+
+--
+-- Name: guardian_seats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.guardian_seats (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    guardian_profile_id uuid NOT NULL,
+    stripe_subscription_id text NOT NULL,
+    stripe_subscription_item_id text,
+    status text DEFAULT 'unassigned'::text NOT NULL,
+    student_profile_id uuid,
+    invite_token_hash text,
+    invite_expires_at timestamp with time zone,
+    invite_email text,
+    claim_refused_at timestamp with time zone,
+    claimed_at timestamp with time zone,
+    cancelled_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT guardian_seats_status_check CHECK ((status = ANY (ARRAY['unassigned'::text, 'claimed'::text, 'cancelled'::text]))),
+    CONSTRAINT guardian_seats_token_has_expiry CHECK (((invite_token_hash IS NULL) = (invite_expires_at IS NULL))),
+    CONSTRAINT guardian_seats_token_is_sha256_hex CHECK (((invite_token_hash IS NULL) OR (invite_token_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT guardian_seats_unassigned_has_no_student CHECK (((status <> 'unassigned'::text) OR (student_profile_id IS NULL)))
+);
+
+
+--
+-- Name: guardian_seat_cancel_invite(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_seat_cancel_invite(p_guardian_id uuid, p_seat_id uuid) RETURNS public.guardian_seats
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.guardian_seats;
+BEGIN
+  UPDATE public.guardian_seats
+     SET invite_token_hash = NULL,
+         invite_expires_at = NULL,
+         invite_email = NULL,
+         updated_at = now()
+   WHERE id = p_seat_id
+     AND guardian_profile_id = p_guardian_id
+     AND status = 'unassigned'
+  RETURNING * INTO v_row;
+  RETURN v_row;
+END;
+$$;
+
+
+--
+-- Name: guardian_seat_claim(text, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_seat_claim(p_token_hash text, p_student_id uuid, p_request_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_seat    public.guardian_seats;
+  v_link_id uuid;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_student_id AND role = 'student') THEN
+    RAISE EXCEPTION 'claimant is not a student' USING ERRCODE = 'LY006';
+  END IF;
+
+  SELECT * INTO v_seat FROM public.guardian_seats
+   WHERE invite_token_hash = p_token_hash
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('outcome', 'invalid');
+  END IF;
+
+  -- The same student retrying after a successful claim: report it again, change nothing.
+  IF v_seat.status = 'claimed' AND v_seat.student_profile_id = p_student_id THEN
+    v_link_id := public.guardian_link_active_id(v_seat.guardian_profile_id, p_student_id);
+    RETURN jsonb_build_object(
+      'outcome', 'claimed',
+      'link_id', v_link_id,
+      'seat_id', v_seat.id,
+      'guardian_profile_id', v_seat.guardian_profile_id,
+      'stripe_subscription_id', v_seat.stripe_subscription_id,
+      'stripe_subscription_item_id', v_seat.stripe_subscription_item_id);
+  END IF;
+
+  IF v_seat.status <> 'unassigned' OR v_seat.invite_expires_at <= now() THEN
+    RETURN jsonb_build_object('outcome', 'invalid');
+  END IF;
+
+  -- Already paid: do not claim. The seat stays unassigned with its token, and the guardian's
+  -- card shows that it was not used.
+  IF public.entitlement_active(p_student_id) THEN
+    UPDATE public.guardian_seats
+       SET claim_refused_at = now(), updated_at = now()
+     WHERE id = v_seat.id;
+    RETURN jsonb_build_object('outcome', 'already_paid');
+  END IF;
+
+  -- The link, through the one link writer, unless this pair is already linked (a guardian
+  -- who also redeemed a code): the seat still attaches to that student.
+  v_link_id := public.guardian_link_active_id(v_seat.guardian_profile_id, p_student_id);
+  IF v_link_id IS NULL THEN
+    SELECT (public.guardian_link_create_core(
+              v_seat.guardian_profile_id, p_student_id, p_request_id,
+              'guardian', 'guardian_seat_invite')).id
+      INTO v_link_id;
+  END IF;
+
+  UPDATE public.guardian_seats
+     SET status = 'claimed',
+         student_profile_id = p_student_id,
+         claimed_at = now(),
+         -- The token hash stays, so the same student's retry finds the seat (above); for
+         -- anyone else a claimed seat is 'invalid'.
+         invite_email = NULL,
+         claim_refused_at = NULL,
+         updated_at = now()
+   WHERE id = v_seat.id;
+
+  RETURN jsonb_build_object(
+    'outcome', 'claimed',
+    'link_id', v_link_id,
+    'seat_id', v_seat.id,
+    'guardian_profile_id', v_seat.guardian_profile_id,
+    'stripe_subscription_id', v_seat.stripe_subscription_id,
+    'stripe_subscription_item_id', v_seat.stripe_subscription_item_id);
+END;
+$$;
+
+
+--
+-- Name: guardian_seat_invite_valid(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_seat_invite_valid(p_token_hash text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.guardian_seats
+     WHERE invite_token_hash = p_token_hash
+       AND status = 'unassigned'
+       AND invite_expires_at > now()
+  );
+$$;
+
+
+--
+-- Name: guardian_seat_issue_invite(uuid, uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_seat_issue_invite(p_guardian_id uuid, p_seat_id uuid, p_token_hash text, p_email text) RETURNS public.guardian_seats
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.guardian_seats;
+BEGIN
+  UPDATE public.guardian_seats
+     SET invite_token_hash = p_token_hash,
+         invite_expires_at = now() + interval '7 days',
+         invite_email = coalesce(lower(btrim(p_email)), invite_email),
+         claim_refused_at = NULL,
+         updated_at = now()
+   WHERE id = p_seat_id
+     AND guardian_profile_id = p_guardian_id
+     AND status = 'unassigned'
+  RETURNING * INTO v_row;
+  RETURN v_row;
+END;
+$$;
+
+
+--
+-- Name: guardian_seat_mark_cancelled(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_seat_mark_cancelled(p_subscription_id text) RETURNS void
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  UPDATE public.guardian_seats
+     SET status = 'cancelled',
+         cancelled_at = now(),
+         invite_token_hash = NULL,
+         invite_expires_at = NULL,
+         invite_email = NULL,
+         updated_at = now()
+   WHERE stripe_subscription_id = p_subscription_id
+     AND status <> 'cancelled';
+$$;
+
+
+--
+-- Name: guardian_seat_record(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_seat_record(p_guardian_id uuid, p_subscription_id text, p_item_id text) RETURNS public.guardian_seats
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.guardian_seats;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_guardian_id AND role = 'guardian') THEN
+    RAISE EXCEPTION 'seat payer is not a guardian' USING ERRCODE = 'LY006';
+  END IF;
+
+  INSERT INTO public.guardian_seats (guardian_profile_id, stripe_subscription_id,
+                                     stripe_subscription_item_id)
+  VALUES (p_guardian_id, p_subscription_id, p_item_id)
+  ON CONFLICT ON CONSTRAINT guardian_seats_subscription_key DO NOTHING;
+
+  SELECT * INTO v_row FROM public.guardian_seats
+   WHERE stripe_subscription_id = p_subscription_id;
+  IF v_row.guardian_profile_id <> p_guardian_id THEN
+    RAISE EXCEPTION 'seat belongs to another guardian' USING ERRCODE = 'LY006';
+  END IF;
+  RETURN v_row;
+END;
 $$;
 
 
@@ -19773,7 +20034,7 @@ CREATE TABLE public.legal_acceptances (
     content_hash text,
     source_reference text,
     CONSTRAINT legal_acceptances_actor_type_check CHECK ((actor_type = ANY (ARRAY['student'::text, 'parent'::text]))),
-    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
+    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'guardian_seat_checkout'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
     CONSTRAINT legal_acceptances_content_hash_shape CHECK (((content_hash IS NULL) OR (content_hash ~ '^sha256:[0-9a-f]{64}$'::text)))
 );
 
@@ -19797,13 +20058,6 @@ COMMENT ON COLUMN public.legal_acceptances.content_hash IS 'sha256:<64 hex> of t
 --
 
 COMMENT ON COLUMN public.legal_acceptances.source_reference IS 'Identifier issued by the surface named in consent_source. A Stripe Checkout Session id (cs_...) for stripe_checkout; NULL for surfaces that issue none.';
-
-
---
--- Name: CONSTRAINT legal_acceptances_consent_source_check ON legal_acceptances; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT legal_acceptances_consent_source_check ON public.legal_acceptances IS 'Where the acceptance was collected. guardian_link_redeem: a guardian accepting Parent / Guardian Terms while redeeming a student link code. stripe_checkout: auto-renewal consent taken in Checkout per Cal. Bus. & Prof. Code § 17602, separate from Terms of Use acceptance at signup. reconsent_prompt: an existing user accepting a newly published version through the blocking modal shown at next sign-in.';
 
 
 --
@@ -23045,6 +23299,30 @@ ALTER TABLE ONLY public.guardian_links
 
 
 --
+-- Name: guardian_seats guardian_seats_invite_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_seats
+    ADD CONSTRAINT guardian_seats_invite_token_key UNIQUE (invite_token_hash);
+
+
+--
+-- Name: guardian_seats guardian_seats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_seats
+    ADD CONSTRAINT guardian_seats_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: guardian_seats guardian_seats_subscription_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_seats
+    ADD CONSTRAINT guardian_seats_subscription_key UNIQUE (stripe_subscription_id);
+
+
+--
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24452,6 +24730,20 @@ CREATE INDEX idx_guardian_links_guardian ON public.guardian_links USING btree (g
 --
 
 CREATE INDEX idx_guardian_links_student ON public.guardian_links USING btree (student_profile_id) WHERE (status = 'active'::text);
+
+
+--
+-- Name: idx_guardian_seats_guardian; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_guardian_seats_guardian ON public.guardian_seats USING btree (guardian_profile_id);
+
+
+--
+-- Name: idx_guardian_seats_student; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_guardian_seats_student ON public.guardian_seats USING btree (student_profile_id) WHERE (student_profile_id IS NOT NULL);
 
 
 --
@@ -26360,6 +26652,22 @@ ALTER TABLE ONLY public.guardian_links
 
 
 --
+-- Name: guardian_seats guardian_seats_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_seats
+    ADD CONSTRAINT guardian_seats_guardian_profile_id_fkey FOREIGN KEY (guardian_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: guardian_seats guardian_seats_student_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_seats
+    ADD CONSTRAINT guardian_seats_student_profile_id_fkey FOREIGN KEY (student_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
 -- Name: internal_service_auth_config_history internal_service_auth_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -27804,6 +28112,12 @@ ALTER TABLE public.guardian_consent_requests ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.guardian_links ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: guardian_seats; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.guardian_seats ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: internal_service_auth_config; Type: ROW SECURITY; Schema: public; Owner: -
@@ -30449,11 +30763,80 @@ GRANT ALL ON FUNCTION public.guardian_daily_digest_notify(p_now timestamp with t
 
 
 --
+-- Name: FUNCTION guardian_link_active_id(p_guardian_id uuid, p_student_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_link_active_id(p_guardian_id uuid, p_student_id uuid) FROM PUBLIC;
+
+
+--
 -- Name: FUNCTION guardian_link_audit(p_action text, p_actor uuid, p_target uuid, p_changes jsonb, p_link_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.guardian_link_audit(p_action text, p_actor uuid, p_target uuid, p_changes jsonb, p_link_id uuid, p_request_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.guardian_link_audit(p_action text, p_actor uuid, p_target uuid, p_changes jsonb, p_link_id uuid, p_request_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_link_create_core(p_guardian_id uuid, p_student_id uuid, p_request_id text, p_initiated_by text, p_via text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_link_create_core(p_guardian_id uuid, p_student_id uuid, p_request_id text, p_initiated_by text, p_via text) FROM PUBLIC;
+
+
+--
+-- Name: TABLE guardian_seats; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_seats TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_seat_cancel_invite(p_guardian_id uuid, p_seat_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_seat_cancel_invite(p_guardian_id uuid, p_seat_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_seat_cancel_invite(p_guardian_id uuid, p_seat_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_seat_claim(p_token_hash text, p_student_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_seat_claim(p_token_hash text, p_student_id uuid, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_seat_claim(p_token_hash text, p_student_id uuid, p_request_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_seat_invite_valid(p_token_hash text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_seat_invite_valid(p_token_hash text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_seat_invite_valid(p_token_hash text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_seat_issue_invite(p_guardian_id uuid, p_seat_id uuid, p_token_hash text, p_email text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_seat_issue_invite(p_guardian_id uuid, p_seat_id uuid, p_token_hash text, p_email text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_seat_issue_invite(p_guardian_id uuid, p_seat_id uuid, p_token_hash text, p_email text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_seat_mark_cancelled(p_subscription_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_seat_mark_cancelled(p_subscription_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_seat_mark_cancelled(p_subscription_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_seat_record(p_guardian_id uuid, p_subscription_id text, p_item_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_seat_record(p_guardian_id uuid, p_subscription_id text, p_item_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_seat_record(p_guardian_id uuid, p_subscription_id text, p_item_id text) TO service_role;
 
 
 --

@@ -94,6 +94,13 @@ import { findUsablePromotionCodeId } from "../lib/stripe/promotion-code";
 import { digestId } from "../lib/stripe/redact";
 import { classifyError } from "../lib/redact";
 import { doubleCsrfProtection } from "../middleware/csrf-double-submit";
+import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
+import { guardianAgeRefusal, toIsoDate } from "../lib/role-choice";
+import { recordLegalAcceptances } from "../lib/legal-acceptance";
+import { resolveLegalVersion } from "../lib/legal-registry.js";
+import { GUARDIAN_LINK_LEGAL_DOC } from "../../shared/legal-consent.js";
+import { listUnassignedGuardianSeats } from "../lib/guardian-seats";
+import { GUARDIAN_SEAT_PURCHASE_KIND } from "../../packages/shared/src/guardian-seat-schema";
 import { parseRuntimeRole } from "../lib/auth-role";
 import {
   authorizeSubscriptionForPayer,
@@ -155,6 +162,142 @@ function siteBaseUrl(): string {
  * The entitled student is `req.user.id`, taken from the authenticated session.
  * Nothing in the request body selects the subject.
  */
+/** A refusal the checkout route answers with, or null to proceed. */
+type CheckoutRefusal = {
+  status: number;
+  code: string;
+  message: string;
+};
+
+/**
+ * THE COUNTRY GATE AT SESSION CREATION — `blocksCheckout`, ALWAYS. One helper for both
+ * guardian purchase kinds (a linked student, and a seat with no student yet), so the gate
+ * cannot drift between them. See the note at its call site in the linked-student branch.
+ */
+async function guardianCountryRefusal(
+  stripe: Stripe,
+  customerId: string,
+  requestId: string | undefined,
+  payerProfileId: string,
+): Promise<CheckoutRefusal | null> {
+  const customer = await stripe.customers.retrieve(customerId);
+  const payerCountry =
+    "deleted" in customer && customer.deleted
+      ? null
+      : (customer as Stripe.Customer).address?.country;
+  const eligibility = evaluateCountryEligibility(
+    payerCountry,
+    await getTier1Countries(),
+  );
+  if (!blocksCheckout(eligibility)) return null;
+  logger.warn(
+    "BILLING",
+    "checkout",
+    "Guardian purchase refused by INV-03-08 country gate",
+    { requestId, payerProfileId, verdict: eligibility.verdict },
+  );
+  return {
+    status: 403,
+    code: "COUNTRY_NOT_ELIGIBLE",
+    message:
+      "This account's billing country is not eligible for premium at launch.",
+  };
+}
+
+/**
+ * @spec [owner brief "Parent paid seat + teen invite + book-a-call" (Karl, 2026-11-19) §1.3;
+ *        SCL-187 (a guardian must be 18 or older); SCL-084 (Parent/Guardian Terms)]
+ *        | @implemented [2026-11-19]
+ *
+ * plain English: what a seat checkout checks before any Stripe object exists. The guardian
+ * names no student, accepts the Parent/Guardian Terms, is 18 or older with a date of birth
+ * on file (the same rule and messages as link-code redemption), and has no unassigned seat
+ * already waiting (one seat per checkout; a second one waits until the first is claimed).
+ * The acceptance is recorded here, at checkout, because there may never be a link redeem.
+ */
+async function seatCheckoutRefusal(
+  req: Request,
+  guardianId: string,
+  input: { studentNamed: boolean; termsAccepted: boolean },
+): Promise<CheckoutRefusal | null> {
+  const requestId = req.requestId;
+  if (input.studentNamed) {
+    return {
+      status: 400,
+      code: "SEAT_CANNOT_NAME_STUDENT",
+      message:
+        "A seat is bought before a student is linked, so it cannot name one.",
+    };
+  }
+  if (!input.termsAccepted) {
+    return {
+      status: 400,
+      code: "PARENT_TERMS_REQUIRED",
+      message: "Accept the Parent / Guardian Terms to buy a seat.",
+    };
+  }
+
+  const { data: guardianProfile, error: profileError } = await supabaseServer
+    .from("profiles")
+    .select("date_of_birth")
+    .eq("id", guardianId)
+    .maybeSingle();
+  if (profileError) {
+    throw new Error(`seat checkout: guardian profile read failed`);
+  }
+  const dateOfBirth = toIsoDate(guardianProfile?.date_of_birth);
+  const ageRefusal =
+    dateOfBirth !== null
+      ? guardianAgeRefusal(dateOfBirth, new Date())
+      : ({
+          status: 403,
+          code: "GUARDIAN_DATE_OF_BIRTH_REQUIRED",
+          message:
+            "Add your date of birth to your account before buying a seat.",
+        } as const);
+  if (ageRefusal) {
+    return {
+      status: 403,
+      code: ageRefusal.code,
+      message: ageRefusal.message,
+    };
+  }
+
+  const waiting = await listUnassignedGuardianSeats(guardianId);
+  if (waiting.length > 0) {
+    return {
+      status: 409,
+      code: "SEAT_ALREADY_WAITING",
+      message:
+        "You already have a seat waiting for your teen. Invite them to it first.",
+    };
+  }
+
+  // Recorded before checkout; a failure refuses (no purchase without the acceptance).
+  const parentTerms = resolveLegalVersion(GUARDIAN_LINK_LEGAL_DOC.slug);
+  await recordLegalAcceptances(supabaseServer, {
+    userId: guardianId,
+    consentSource: "guardian_seat_checkout",
+    userAgent: req.get("user-agent") ?? null,
+    ipAddress: req.ip ?? null,
+    acceptances: [
+      {
+        docKey: GUARDIAN_LINK_LEGAL_DOC.docKey,
+        docSlug: parentTerms.slug,
+        docVersion: parentTerms.version,
+        contentHash: parentTerms.contentHash,
+        actorType: "parent",
+        minor: false,
+      },
+    ],
+  });
+  logger.info("BILLING", "checkout", "Seat checkout checks passed", {
+    requestId,
+    payerProfileId: guardianId,
+  });
+  return null;
+}
+
 router.post(
   "/checkout",
   requireSupabaseAuth,
@@ -194,8 +337,37 @@ router.post(
     const payerProfileId = userId;
     const studentProfileId = userId;
     const isGuardian = role === "guardian";
+    const isSeat = parsed.data.seat === true;
+    if (isSeat && !isGuardian) {
+      return res.status(400).json({
+        error: {
+          message: "Only a guardian buys a seat.",
+          code: "SEAT_GUARDIAN_ONLY",
+        },
+        requestId,
+      });
+    }
 
     try {
+      // A seat (owner brief 2026-11-19): every refusal before any Stripe object exists.
+      if (isSeat) {
+        const refusal = await seatCheckoutRefusal(req, payerProfileId, {
+          studentNamed: parsed.data.student_profile_id !== undefined,
+          termsAccepted: parsed.data.accept_parent_guardian_terms === true,
+        });
+        if (refusal) {
+          logger.info("BILLING", "checkout", "Seat purchase refused", {
+            requestId,
+            payerProfileId,
+            code: refusal.code,
+          });
+          return res.status(refusal.status).json({
+            error: { message: refusal.message, code: refusal.code },
+            requestId,
+          });
+        }
+      }
+
       /**
        * ONE RULE, BOTH ROUTES — the self-pay half.
        *
@@ -314,7 +486,41 @@ router.post(
        * every guardian purchase, so there is no branch that can drift from the
        * other and no second place for a gate to be forgotten.
        */
-      if (isGuardian) {
+      if (isSeat) {
+        /**
+         * A SEAT WITH NO STUDENT (owner brief 2026-11-19 §1; the SCL entry amending Doc 01 V8
+         * §20 and SCL-045). One subscription, one item, no student anywhere on it. The
+         * webhook records the seat once it is paid and writes NO entitlement; a teen claims
+         * it later through /join, which names the student on the item and writes the
+         * entitlement through the one writer. `purchase_kind` is set here, server-side, and
+         * is what the webhook reads.
+         */
+        const countryRefusal = await guardianCountryRefusal(
+          stripe,
+          customerId,
+          requestId,
+          payerProfileId,
+        );
+        if (countryRefusal) {
+          return res.status(countryRefusal.status).json({
+            error: {
+              message: countryRefusal.message,
+              code: countryRefusal.code,
+            },
+            requestId,
+          });
+        }
+        lineItems = [{ price: priceId, quantity: 1 }];
+        sessionMetadata = {
+          payer_profile_id: payerProfileId,
+          payer_relationship: "guardian",
+          purchase_kind: GUARDIAN_SEAT_PURCHASE_KIND,
+          plan,
+        };
+        // The idempotency key's subject: the guardian, since there is no student. A double
+        // submit inside the window returns the same session.
+        subjectStudentId = payerProfileId;
+      } else if (isGuardian) {
         const activeLinks = await getAllGuardianStudentLinks(payerProfileId);
         const subject = resolveGuardianPurchaseSubject(
           activeLinks,
@@ -452,31 +658,17 @@ router.post(
          * the subscription and refunds the charge in full. Coverage is complete;
          * the moment of refusal moved.
          */
-        const customer = await stripe.customers.retrieve(customerId);
-        const payerCountry =
-          "deleted" in customer && customer.deleted
-            ? null
-            : (customer as Stripe.Customer).address?.country;
-        const eligibility = evaluateCountryEligibility(
-          payerCountry,
-          await getTier1Countries(),
+        const countryRefusal = await guardianCountryRefusal(
+          stripe,
+          customerId,
+          requestId,
+          payerProfileId,
         );
-        if (blocksCheckout(eligibility)) {
-          logger.warn(
-            "BILLING",
-            "checkout",
-            "Guardian purchase refused by INV-03-08 country gate",
-            {
-              requestId,
-              payerProfileId,
-              verdict: eligibility.verdict,
-            },
-          );
-          return res.status(403).json({
+        if (countryRefusal) {
+          return res.status(countryRefusal.status).json({
             error: {
-              message:
-                "This account's billing country is not eligible for premium at launch.",
-              code: "COUNTRY_NOT_ELIGIBLE",
+              message: countryRefusal.message,
+              code: countryRefusal.code,
             },
             requestId,
           });

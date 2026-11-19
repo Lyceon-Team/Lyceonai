@@ -53,8 +53,7 @@ import {
  * `docs/plans/GUARDIAN_LINK_CODE_DDL.md`.
  */
 const GUARDIAN_LINK_CODE_ENTRY_BUCKET = "guardian_link_code_entry";
-const STUDENT_LINK_CODE_REGENERATION_BUCKET =
-  "student_link_code_regeneration";
+const STUDENT_LINK_CODE_REGENERATION_BUCKET = "student_link_code_regeneration";
 
 /** A guardian submitting a code. The guessing surface. */
 export const guardianLinkCodeEntryRateLimit = singleBucketRateLimit(
@@ -78,12 +77,20 @@ export const studentLinkCodeRegenerationRateLimit = singleBucketRateLimit(
 const GUARDIAN_LINK_INVITE_DAILY_BUCKET = "guardian_link_attempts_daily";
 const GUARDIAN_LINK_INVITE_EMAIL_BUCKET = "guardian_link_email_attempts";
 
-function guardianInviteEmailBucketKey(email: string): string {
+/**
+ * The parent seat invite's two buckets (owner brief 2026-11-19 §2.1): 10 sends a day per
+ * GUARDIAN, and 3 a day per (guardian, address). Same shape and same ledger as the student's
+ * invite above, keyed on the guardian who sends.
+ */
+const GUARDIAN_SEAT_INVITE_DAILY_BUCKET = "guardian_seat_invite_daily";
+const GUARDIAN_SEAT_INVITE_EMAIL_BUCKET = "guardian_seat_invite_email";
+
+function emailBucketKey(family: string, email: string): string {
   const digest = createHash("sha256")
     .update(email.trim().toLowerCase(), "utf8")
     .digest("hex")
     .slice(0, 16);
-  return `${GUARDIAN_LINK_INVITE_EMAIL_BUCKET}:${digest}`;
+  return `${family}:${digest}`;
 }
 
 /**
@@ -105,36 +112,71 @@ export async function applyGuardianInviteRateLimit(
   email: string,
   requestId: string | undefined,
 ): Promise<boolean> {
+  return applyDailyAndPerEmailLimit(res, profileId, email, requestId, {
+    daily: GUARDIAN_LINK_INVITE_DAILY_BUCKET,
+    perEmail: GUARDIAN_LINK_INVITE_EMAIL_BUCKET,
+    scope: "guardian_link_invite",
+  });
+}
+
+/**
+ * @spec [owner brief "Parent paid seat + teen invite" (Karl, 2026-11-19) §2.1] |
+ *       @implemented [2026-11-19]
+ *
+ * plain English: the parent's seat invite email, counted against the guardian: 10 a day, and
+ * 3 a day to any one address. Same rollback and fail-closed behaviour as the student invite.
+ * Returns true when the response has been written and the caller must stop.
+ */
+export async function applyGuardianSeatInviteRateLimit(
+  res: Response,
+  guardianProfileId: string,
+  email: string,
+  requestId: string | undefined,
+): Promise<boolean> {
+  return applyDailyAndPerEmailLimit(res, guardianProfileId, email, requestId, {
+    daily: GUARDIAN_SEAT_INVITE_DAILY_BUCKET,
+    perEmail: GUARDIAN_SEAT_INVITE_EMAIL_BUCKET,
+    scope: "guardian_seat_invite",
+  });
+}
+
+async function applyDailyAndPerEmailLimit(
+  res: Response,
+  profileId: string,
+  email: string,
+  requestId: string | undefined,
+  buckets: { daily: string; perEmail: string; scope: string },
+): Promise<boolean> {
   const client = supabaseServer as unknown as LedgerClient;
-  const emailBucketKey = guardianInviteEmailBucketKey(email);
+  const perEmailBucketKey = emailBucketKey(buckets.perEmail, email);
   try {
     const daily = await checkAndIncrement(client, {
       profileId,
-      bucketKey: GUARDIAN_LINK_INVITE_DAILY_BUCKET,
+      bucketKey: buckets.daily,
     });
     if (!daily.allowed) {
-      deny(res, GUARDIAN_LINK_INVITE_DAILY_BUCKET, daily, requestId);
+      deny(res, buckets.daily, daily, requestId);
       return true;
     }
     const perEmail = await checkAndIncrement(client, {
       profileId,
-      bucketKey: emailBucketKey,
+      bucketKey: perEmailBucketKey,
     });
     if (!perEmail.allowed) {
       const rolled = await rollback(client, {
         profileId,
-        bucketKey: GUARDIAN_LINK_INVITE_DAILY_BUCKET,
+        bucketKey: buckets.daily,
       });
       if (!rolled.ok) {
         logger.warn(
           "RATE_LIMIT",
-          "guardian_link_invite",
+          buckets.scope,
           "Daily bucket rollback failed after per-address denial",
           { requestId, reason: rolled.error ?? "unknown" },
         );
       }
       // The family name in the body, never the hashed key.
-      deny(res, GUARDIAN_LINK_INVITE_EMAIL_BUCKET, perEmail, requestId);
+      deny(res, buckets.perEmail, perEmail, requestId);
       return true;
     }
     applyHeaders(res, perEmail.remaining < daily.remaining ? perEmail : daily);
@@ -143,7 +185,7 @@ export async function applyGuardianInviteRateLimit(
     const unavailable = err instanceof RateLimitUnavailableError;
     logger.error(
       "RATE_LIMIT",
-      "guardian_link_invite",
+      buckets.scope,
       "Rate limit check failed — blocking request",
       {
         requestId,

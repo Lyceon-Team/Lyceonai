@@ -65,7 +65,9 @@ const PAGE = "/guardian/students";
 const PERIOD_END = Math.floor(Date.now() / 1000) + 9 * 86_400;
 
 /** The row `GET /cancel-state` would carry for one funded student. */
-async function rowFor(studentProfileId: string): Promise<CancellableSubscription> {
+async function rowFor(
+  studentProfileId: string,
+): Promise<CancellableSubscription> {
   const described = await describeCancellable(
     {} as unknown as import("stripe").Stripe,
     {
@@ -124,9 +126,9 @@ describe("the guardian's cancel control (SCL-272 clause 4)", () => {
     );
     // Presence first, so the two absences below are absences in a page that
     // rendered its rows rather than in a page that rendered nothing.
-    expect(within(row(BO)).getByTestId(`button-cancel-subscription-${BO}`)).toBe(
-      control,
-    );
+    expect(
+      within(row(BO)).getByTestId(`button-cancel-subscription-${BO}`),
+    ).toBe(control);
     // It names the student, because a guardian funding several needs to know
     // which one this button ends.
     expect(control.textContent).toBe("Cancel for Bo");

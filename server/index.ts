@@ -51,6 +51,8 @@ import {
 } from "./middleware/csrf-double-submit";
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
+import guardianSeatRoutes from "./routes/guardian-seat-routes";
+import seatJoinRoutes from "./routes/seat-join-routes";
 import studentResourceRoutes from "./routes/student-resources";
 import { calendarRouter } from "./routes/calendar-routes";
 import { satDateRouter } from "./routes/sat-date-routes";
@@ -558,6 +560,19 @@ app.get(
   requireSupabaseAdmin,
   getQuestionStats,
 );
+
+// Guardian seat card (owner brief 2026-11-19): the caller's unassigned seats and their invite.
+// Mounted BEFORE /api/guardian so these paths never fall through that router.
+app.use(
+  "/api/guardian/seats",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  guardianSeatRoutes,
+);
+
+// A teen claims a parent's seat. GET /:token is public (one boolean, the same for every
+// invalid token); the claim carries its own auth, CSRF and student-role gates.
+app.use("/api/join", seatJoinRoutes);
 
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use(

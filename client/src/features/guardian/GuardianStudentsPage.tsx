@@ -44,6 +44,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { GuardianShell } from "@/components/layout/GuardianShell";
 import { GuardianPurchaseCard } from "@/components/guardian/GuardianPurchaseCard";
+import { GuardianSeatCards } from "./GuardianSeatCard";
 import { CancelSubscriptionDialog } from "@/components/billing/CancelSubscriptionDialog";
 import { useCancelState } from "@/hooks/useCancelSubscription";
 import { csrfFetch } from "@/lib/csrf";
@@ -282,6 +283,10 @@ export default function GuardianStudentsPage(): JSX.Element {
             </ul>
           )}
         </section>
+
+        {/* A seat still waiting for a teen (owner brief 2026-11-19 §3.2): shown here too, so
+            a guardian who also has a linked student can still invite to it. */}
+        <GuardianSeatCards />
 
         {purchaseFor !== null && (
           <GuardianPurchaseCard

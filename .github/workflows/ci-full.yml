@@ -644,6 +644,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/growth-report.mutations.sh
 
+      # Parent paid seats (owner brief 2026-11-19): the claim's link, idempotency, already-paid
+      # refusal and token expiry; cancel; the webhook's once-only record; both invite limits;
+      # the raw token never logged; the under-13 claim; the seat checkout's terms, 18+ rule and
+      # purchase kind; an unclaimed or unpaid seat never an entitlement; the call link's one
+      # constant (S1-S18). Each must turn its named check red.
+      - name: Guardian seats mutations (planted defects must fail)
+        if: matrix.group == 'social-lisa'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/guardian-seats.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest

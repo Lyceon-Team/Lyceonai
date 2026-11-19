@@ -166,6 +166,11 @@ export async function startSubscriptionCheckout(
     readonly studentProfileId?: string;
     /** A promotion code NAME from `/upgrade?promo=`; the server decides whether it applies. */
     readonly promo?: string;
+    /**
+     * A guardian's seat with no student yet (owner brief 2026-11-19 §1). Sent only with the
+     * Parent / Guardian Terms accepted; the server checks both again.
+     */
+    readonly seatWithParentTermsAccepted?: true;
   },
 ): Promise<BillingCheckoutOutcome> {
   const payload = await postBilling("/api/billing/checkout", {
@@ -174,6 +179,9 @@ export async function startSubscriptionCheckout(
       ? { student_profile_id: options.studentProfileId }
       : {}),
     ...(options?.promo ? { promo: options.promo } : {}),
+    ...(options?.seatWithParentTermsAccepted
+      ? { seat: true, accept_parent_guardian_terms: true }
+      : {}),
   });
 
   const parsed = billingCheckoutOutcomeSchema.safeParse(payload);
