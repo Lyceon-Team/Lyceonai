@@ -46,6 +46,9 @@ export const RETURN_PATH_ROUTE_ROLES: Readonly<
   // server refuses admins too, so an admin is never landed there.
   "/guardian": ["guardian"],
   "/dashboard": ["student", "admin"],
+  // A teen claiming a parent's seat (owner brief 2026-11-19): /join/<token> rides through
+  // sign-up and onboarding as `next`. Students only: the claim is a student's.
+  "/join": ["student"],
   "/profile": ["student", "guardian", "admin"],
   "/practice": ["student", "admin"],
   "/review": ["student", "admin"],
@@ -143,6 +146,18 @@ export function sanitizeReturnPath(raw: unknown): string | null {
 }
 
 /** The login URL that carries a return path, e.g. `/login?next=%2Fguardian%3Fcode%3DABC234`. */
+/**
+ * @spec [owner brief "Parent paid seat + teen invite" (Karl, 2026-11-19) §2.2] |
+ *       @implemented [2026-11-19]
+ *
+ * plain English: is this return path a seat invite (/join/<token>)? An under-13 student with
+ * no guardian link is normally sent to /guardian-required ahead of any return path; a seat
+ * invite is the exception, because claiming it is how that student gets linked.
+ */
+export function isSeatJoinReturnPath(next: string | null): boolean {
+  return next !== null && pathnameOf(next).startsWith("/join/");
+}
+
 export function loginPathWithReturn(pathAndSearch: string): string {
   const safe = sanitizeReturnPath(pathAndSearch);
   if (safe === null) return "/login";

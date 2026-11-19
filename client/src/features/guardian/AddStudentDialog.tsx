@@ -60,7 +60,7 @@ async function redeem(code: string): Promise<string> {
     .student_profile_id;
 }
 
-async function saveDateOfBirth(dateOfBirth: string): Promise<void> {
+export async function saveDateOfBirth(dateOfBirth: string): Promise<void> {
   const res = await csrfFetch("/api/profile/date-of-birth", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

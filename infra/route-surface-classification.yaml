@@ -481,6 +481,18 @@ routes:
     requires_hmac: false
     prerender: false
     indexable: false
+  # a teen claims a parent's seat (owner brief 2026-11-19); public, never indexed
+  - path_pattern: /join/:token
+    surface_class: unauth_marketing
+    clarity_allowed: false
+    masking_required: false
+    owning_doc: Doc-01
+    last_classified_at: 2026-11-19
+    is_internal_api: false
+    requires_cloudflare_access: false
+    requires_hmac: false
+    prerender: false
+    indexable: false
   - path_pattern: /account/recover
     surface_class: unauth_marketing
     clarity_allowed: false

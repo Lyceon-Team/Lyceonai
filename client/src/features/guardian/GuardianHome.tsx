@@ -28,12 +28,27 @@ import { guardianPaths } from "./paths";
 import { AddStudentButton, AddStudentDialog } from "./AddStudentDialog";
 import { GuardianTemplatePreview } from "./GuardianTemplatePreview";
 import { CheckoutReturnPoller } from "@/components/guardian/CheckoutReturnPoller";
+import { PARENT_CALL_URL } from "@lyceon/shared/support-contact";
+import { GuardianSeatCards, useHasUnassignedSeat } from "./GuardianSeatCard";
+import { SeatCheckoutDialog } from "./SeatCheckoutDialog";
 
+/**
+ * @spec [Guardian_Closure_Plan G4-01; owner brief "Parent paid seat + teen invite +
+ *        book-a-call" (Karl, 2026-11-19) §3.1-§3.2, §4; DESIGN.md §5 (one filled primary
+ *        action)] | @implemented [2026-09-30; seat and call link 2026-11-19]
+ *
+ * plain English: a guardian with no linked student. The one filled action buys a Lyceon Pro
+ * seat for their teen; once a seat is waiting, its card takes that place instead. Entering a
+ * student's link code stays as the secondary action, and a plain link (new tab, no embed)
+ * offers a 15-minute call first.
+ */
 export function GuardianNoStudents({
   onAdd,
 }: {
   onAdd: () => void;
 }): JSX.Element {
+  const [buying, setBuying] = useState(false);
+  const hasSeat = useHasUnassignedSeat();
   return (
     <section
       className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-16 text-center"
@@ -41,17 +56,45 @@ export function GuardianNoStudents({
     >
       <h1 className="text-2xl font-semibold">Add your first student</h1>
       <p className="mx-auto max-w-xl text-base text-muted-foreground">
-        Ask your student for the 6-character link code on their Profile page,
-        under Settings. Once linked, you&rsquo;ll see their progress, study
-        calendar and test results here.
+        Get Lyceon Pro for your teen and invite them to join, or enter the
+        6-character link code from their Profile page, under Settings. Once
+        linked, you&rsquo;ll see their progress, study calendar and test results
+        here.
       </p>
+      {hasSeat ? (
+        <GuardianSeatCards />
+      ) : (
+        <>
+          <Button
+            className="mx-auto min-h-[48px] px-6 text-base"
+            onClick={() => setBuying(true)}
+            data-testid="guardian-no-students-buy-seat"
+          >
+            Get Lyceon Pro for your teen
+          </Button>
+          <SeatCheckoutDialog open={buying} onOpenChange={setBuying} />
+        </>
+      )}
       <Button
+        variant="outline"
         className="mx-auto min-h-[48px] px-6 text-base"
         onClick={onAdd}
         data-testid="guardian-no-students-add"
       >
         Enter a link code
       </Button>
+      <p className="text-base">
+        Want to talk it through first?{" "}
+        <a
+          href={PARENT_CALL_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+          data-testid="guardian-book-call"
+        >
+          Book a 15-minute call
+        </a>
+      </p>
       {/* The 2026-09-03 preview of what linking unlocks — structural, no figures (owner
           decision 2026-10-01: it lives in the no-students state). */}
       <div className="mt-8">

@@ -36,6 +36,7 @@ import {
   type SubscriptionCanceledKind,
 } from "./templates/subscription-canceled";
 import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
+import { guardianSeatInviteEmail } from "./templates/guardian-seat-invite";
 import { siteUrlFromEnv } from "./templates";
 import {
   defaultEmailTransport,
@@ -47,6 +48,7 @@ import {
 export const ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX =
   "account-deletion-scheduled";
 export const GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX = "guardian-link-invite";
+export const GUARDIAN_SEAT_INVITE_IDEMPOTENCY_PREFIX = "guardian-seat-invite";
 export const SUBSCRIPTION_CANCELED_IDEMPOTENCY_PREFIX = "subscription-canceled";
 export const ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX =
   "account-deletion-completed";
@@ -155,6 +157,102 @@ export async function sendAccountDeletionScheduledEmail(
       {
         deletionRequestId: input.deletionRequestId,
         recipientProfileId: input.recipientProfileId,
+        kind: sent.error.kind,
+        requestId: input.requestId,
+      },
+    );
+  }
+  return sent;
+}
+
+/**
+ * One key per issued token: a retried send of the same invite is one email, and every new
+ * token (send, resend) is a new email. The token itself is never part of the key; its hash
+ * prefix is.
+ */
+export function guardianSeatInviteIdempotencyKey(input: {
+  seatId: string;
+  tokenHash: string;
+}): string {
+  return `${GUARDIAN_SEAT_INVITE_IDEMPOTENCY_PREFIX}:${input.seatId}:${input.tokenHash.slice(0, 32)}`;
+}
+
+/**
+ * @spec [owner brief "Parent paid seat + teen invite" (Karl, 2026-11-19) §2.1;
+ *        contracts/notifications.contract.md §0.4, §12.3] | @implemented [2026-11-19]
+ *
+ * plain English: the parent's seat invite, on the same direct-send path as the student's
+ * guardian invite, with its own template. The /join link carries the token, so the URL is
+ * never logged: logs carry the seat id, the provider id and the outcome only.
+ */
+export async function sendGuardianSeatInviteEmail(
+  input: {
+    seatId: string;
+    guardianProfileId: string;
+    guardianDisplayName: string;
+    token: string;
+    tokenHash: string;
+    expiresAt: string;
+    toEmail: string;
+    requestId?: string;
+  },
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  const siteUrl = resolveSiteUrl(deps);
+  if (!siteUrl) {
+    logger.error(
+      "NOTIFICATIONS",
+      "seat_invite_email_unconfigured",
+      "PUBLIC_SITE_URL is not set; cannot build the join link",
+      { seatId: input.seatId, requestId: input.requestId },
+    );
+    return err({
+      kind: "config_missing",
+      message: "PUBLIC_SITE_URL is not configured",
+    });
+  }
+  const rendered = guardianSeatInviteEmail({
+    guardianDisplayName: input.guardianDisplayName,
+    joinUrl: `${siteUrl}/join/${input.token}`,
+    expiresAt: input.expiresAt,
+  });
+  const transport = deps.transport ?? defaultEmailTransport();
+  const sent = await transport({
+    idempotencyKey: guardianSeatInviteIdempotencyKey({
+      seatId: input.seatId,
+      tokenHash: input.tokenHash,
+    }),
+    to: input.toEmail,
+    // The teen is invited by address; there may be no profile yet.
+    recipientProfileId: null,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    fromCategory: rendered.fromCategory,
+    // Sent at the parent's request, in their own action.
+    audience: "user_triggered",
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  if (sent.ok) {
+    logger.info(
+      "NOTIFICATIONS",
+      "seat_invite_email_sent",
+      "Guardian seat invite email accepted",
+      {
+        seatId: input.seatId,
+        guardianProfileId: input.guardianProfileId,
+        providerMessageId: sent.value.providerMessageId,
+        requestId: input.requestId,
+      },
+    );
+  } else {
+    logger.warn(
+      "NOTIFICATIONS",
+      "seat_invite_email_failed",
+      "Guardian seat invite email not sent",
+      {
+        seatId: input.seatId,
+        guardianProfileId: input.guardianProfileId,
         kind: sent.error.kind,
         requestId: input.requestId,
       },

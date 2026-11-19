@@ -65,6 +65,12 @@ export const billingCheckoutRequestSchema = z
     plan: billingPeriodSchema,
     student_profile_id: z.string().uuid().optional(),
     promo: promoCodeNameSchema.optional(),
+    /**
+     * A guardian buying a seat with no student yet (owner brief 2026-11-19 §1). Requires the
+     * Parent/Guardian Terms acceptance below and refuses a student_profile_id.
+     */
+    seat: z.literal(true).optional(),
+    accept_parent_guardian_terms: z.literal(true).optional(),
   })
   .strict();
 

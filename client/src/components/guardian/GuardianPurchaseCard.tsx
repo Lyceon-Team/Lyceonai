@@ -59,7 +59,7 @@ import {
   monthlyAmountFrom,
 } from "../../../../packages/shared/src/billing-pricing";
 
-function formatPrice(amountCents: number, currency = "usd"): string {
+export function formatPrice(amountCents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currency.toUpperCase(),

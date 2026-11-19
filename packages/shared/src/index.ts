@@ -11,6 +11,7 @@ export * from "./env.js";
 export * from "./billing-schema.js";
 export * from "./exam-score-renewal-schema.js";
 export * from "./guardian-subject.js";
+export * from "./guardian-seat-schema.js";
 export * from "./entitlement-denial.js";
 export * from "./feature-access.js";
 export * from "./practice-quota.js";
