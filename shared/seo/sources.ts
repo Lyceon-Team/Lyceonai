@@ -366,3 +366,25 @@ export const CB_SENDING_WEEKEND_SCORES: Source = {
   label: "College Board: sending scores from SAT Weekend",
   url: "https://satsuite.collegeboard.org/scores/sending-sat-scores/weekend",
 };
+
+// Content pipeline sources (batch 2026-W48). Each page was fetched on 2026-11-18 and the quoted
+// text found on it; the quotes are in the claim inventory's "Content pipeline sources (batch
+// 2026-W48)" table.
+
+/** The 2026-27 SAT Weekend Student Guide: free score sends, Score Choice, Bluebook tools, guessing. */
+export const CB_SAT_STUDENT_GUIDE: Source = {
+  label: "College Board: SAT Weekend Student Guide 2026-27",
+  url: "https://satsuite.collegeboard.org/media/pdf/sat-student-guide.pdf",
+};
+
+/** Desmos: how the testing versions of its calculators differ from desmos.com (SY2026-2027). */
+export const DESMOS_TESTING_CALCULATORS: Source = {
+  label: "Desmos: calculators on College Board exams",
+  url: "https://www.desmos.com/assessment-pdfs/CollegeBoard_Desmos_Calculator_AP_SAT.pdf",
+};
+
+/** Desmos: clicking a curve or its equation shows maxes, mins, intercepts and intersections. */
+export const DESMOS_POINTS_OF_INTEREST: Source = {
+  label: "Desmos: points of interest",
+  url: "https://blog.desmos.com/articles/how-to-points-of-interest/",
+};
