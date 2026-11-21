@@ -120,6 +120,16 @@ export const billingCheckoutOutcomeSchema = z.object({
    */
   url: z.string().url(),
   sessionId: z.string().min(1),
+  /**
+   * Present only when the request linked a promotion code (`/upgrade?promo=<CODE>`).
+   * `applied`: the session carries it. `unavailable`: it was unknown, inactive, expired, used up,
+   * or refused by Stripe, and the session is the normal one with the code field.
+   *
+   * @spec [post-ALPHA brief (Karl, 2026-11-11) item 3: "an exhausted, expired or invalid code
+   *       must show a friendly message ... and continue to checkout without it. Never a dead
+   *       end."] | @implemented [2026-11-21]
+   */
+  promo: z.enum(["applied", "unavailable"]).optional(),
 });
 
 export type BillingCheckoutOutcome = z.infer<
