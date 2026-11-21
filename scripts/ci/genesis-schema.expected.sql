@@ -19010,7 +19010,7 @@ CREATE TABLE public.profiles (
     signup_channel text,
     signup_campaign text,
     CONSTRAINT profiles_signup_campaign_check CHECK (((signup_campaign IS NULL) OR (signup_campaign ~ '^[a-z0-9_]{1,40}$'::text))),
-    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'facebook'::text, 'email'::text, 'direct'::text, 'other'::text])))),
+    CONSTRAINT profiles_signup_channel_check CHECK (((signup_channel IS NULL) OR (signup_channel = ANY (ARRAY['reddit'::text, 'tiktok'::text, 'instagram'::text, 'facebook'::text, 'youtube'::text, 'x'::text, 'email'::text, 'direct'::text, 'other'::text])))),
     CONSTRAINT profiles_signup_source_check CHECK (((signup_source IS NULL) OR (signup_source = ANY (ARRAY['direct'::text, 'referral'::text, 'paid_ad'::text, 'organic_search'::text, 'unknown'::text]))))
 );
 
