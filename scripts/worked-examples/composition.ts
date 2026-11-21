@@ -48,7 +48,7 @@ import type {
   WorkedExampleFigureWhen,
   WorkedExampleScript,
 } from "../../packages/shared/src/worked-example-schema";
-import { TRAP_HEADING } from "../../shared/worked-examples/rules";
+import { cardText, TRAP_HEADING } from "../../shared/worked-examples/rules";
 import {
   FIGURE_GAP,
   FIGURE_TOP,
@@ -324,13 +324,13 @@ export function buildScriptComposition(
     .join("");
   const passage =
     question.passage && question.passage.trim() !== ""
-      ? `<div class="passage">${escapeHtml(plainMathText(question.passage))}</div>`
+      ? `<div class="passage">${escapeHtml(cardText(question.passage))}</div>`
       : "";
   const open =
     fill(t["hook-card"], { hookLine: escapeHtml(example.hook.line) }) +
     fill(t["question-card"], {
       passage,
-      stem: escapeHtml(plainMathText(question.stem)),
+      stem: escapeHtml(cardText(question.stem)),
       options,
     });
 
@@ -370,7 +370,7 @@ export function buildScriptComposition(
       return stepRow(s.notepad, k, `step-${k + 1}`);
     })
     .join("\n");
-  const recap = `<div class="recap"><div class="stem">${escapeHtml(plainMathText(question.stem))}</div><div>${question.options
+  const recap = `<div class="recap"><div class="stem">${escapeHtml(cardText(question.stem))}</div><div>${question.options
     .map((o) => `${o.key}) ${escapeHtml(plainMathText(o.text))}`)
     .join(" · ")}</div></div>`;
 

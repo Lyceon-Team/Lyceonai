@@ -10,9 +10,11 @@ test-date/myth and parent posts. A starting shape that changes with the data. Hy
 core; pilots are Manim with manim-voiceover (math visuals) and Chatterbox (a naturalness comparison
 against the Kokoro-82M `am_michael` voice); screen demos are scripted Playwright recordings, not
 OpenScreen, whose repository is archived (Karl, 2026-11-02); Remotion (licence), stock-footage
-generators, AI video/avatar models and schedulers are rejected for now. Until Desmos replies to the permission request, no example shows the Desmos
-interface or logo or says "Desmos" on screen or in a caption (screen recordings included): a graphing
-method is drawn in our own rendering (Manim). Posting stays by hand from `#social`.
+generators, AI video/avatar models and schedulers are rejected for now. Desmos is in scope (Karl,
+2026-11-15; Lyceon has a Desmos licence): an example may name Desmos and show its interface and logo,
+on screen, in captions and in carousels, replacing the 2026-11-02 constraint. The pipeline's code
+still enforces the old rule in places (see the follow-up list in the PR that recorded this).
+Posting stays by hand from `#social`.
 
 ## What runs where
 
@@ -92,8 +94,8 @@ the QOTD job (`qotd-social.yml`) is separate and stays.
 - **When:** Thursday 16:15 UTC, job `weekly` in `.github/workflows/worked-example-daily.yml`,
   building next Monday-Sunday (ISO week). Pull requests run the same job as a dry run on the
   fixture tree (committed voice, no secret, no upload, claim or post).
-- **Plan:** 7 Hard worked examples a week: 2 shortcut slots ("graphing method vs by hand"; never
-  name Desmos), 2 geometry slots with drawn figures (similar triangles, triangle theorem,
+- **Plan:** 7 Hard worked examples a week: 2 shortcut slots ("graphing method vs by hand"; Desmos
+  may be named and shown, Karl 2026-11-15), 2 geometry slots with drawn figures (similar triangles, triangle theorem,
   Pythagorean theorem, cylinders, cones), 3 trap slots (algebra, advanced math, problem-solving).
 - **Format:** the question on screen in frame 1; the spoken hook a dare or a shortcut promise; 30-60
   s; one problem; the answer near the end; one CTA (test variant: "Comment GRIND and I'll send you
@@ -125,6 +127,20 @@ the QOTD job (`qotd-social.yml`) is separate and stays.
   Instagram's grid and feed crop show; the layout check refuses any of it outside. The voice is
   not moved: the hook is spoken from 0:00 under the card, and the hook card and question follow
   at 0.4 s (still within the brief's 0.5 s). A drawn figure starts with them, never over the card.
+- **YouTube Shorts (from W48, Karl 2026-11-14):** each day's reply ends with a *YouTube Shorts*
+  pair of copy blocks: the title (the post's title plus " #Shorts") and the description (the
+  headline, "Comment your answer 👇", the "Free SAT practice:" line with the tagged link
+  `https://lyceon.ai/start?utm_source=youtube&utm_medium=shorts&utm_campaign=worked_example`,
+  then the hashtags). It never gives the answer, and the tagged link is the only link. Paste the
+  title into YouTube's title field and the description into its description. Sign-ups from it are
+  credited to `youtube` once SCL-278 is applied.
+- **Equations on their own lines (Karl 2026-11-14):** the card writes each display equation
+  (`$$...$$` in the seed) on a line of its own, as the app shows it; W47 Monday (SATM2GL735M) had
+  read "…have?y = x^2 − 4x + 5y = 2x − 3" because the card flattened two back-to-back display
+  blocks. The content check refuses a stem or passage where a display equation would not get its
+  own line (E1), or an inline equation runs into the words around it or straight into another
+  equation with only a space between (E2). A seed stem holding the two characters `\n` beside an
+  equation is refused by E2 too: fix the seed, or pick another question.
 - **Titles:** "SAT <section> worked example · <topic>", the topic being the STYLE row's
   `display_name` (at most 32 characters). A row without one falls back to the skill name shortened
   at a word boundary: the first phrase of two or more words before a comma, colon, "and", "or",

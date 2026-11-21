@@ -63,6 +63,10 @@ warning "SAT date list needs updating". Add the next College Board dates to
 - The TikTok **bio link**: `lyceon.ai/start?utm_source=tiktok&utm_campaign=qotd`.
 - The **link to send to people who comment SAT** on Instagram:
   `lyceon.ai/start?utm_source=instagram&utm_campaign=qotd`.
+- The **X founder link** (Karl, 2026-11-16), at most one per thread, in its last post:
+  `https://lyceon.ai/start?utm_source=x&utm_medium=social&utm_campaign=founder`. Sign-ups record
+  `signup_channel` `x` (SCL-278); `founder` is not on the campaign allowlist, so the campaign is
+  recorded as none until it is added.
 - The **alt text** goes with the image upload in Slack, not in the message.
 
 Every link points at `lyceon.ai/start` and is tagged with its channel and campaign, so each sign-up
