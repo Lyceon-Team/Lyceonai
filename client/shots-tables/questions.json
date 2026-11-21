@@ -1,0 +1,216 @@
+{
+ "tables": [
+  {
+   "id": "SATM27RIS45",
+   "section": "M",
+   "field": "stem",
+   "text": "The two-way table shows the results of a survey of 200 students about whether they participate in a sport and whether they participate in a music program.\n\n| | Sport | No Sport | Total |\n|---|---|---|---|\n| Music | 40 | 20 | 60 |\n| No Music | 70 | 70 | 140 |\n| Total | 110 | 90 | 200 |\n\nA student is selected at random from those who participate in a sport. What is the probability that this student also participates in music?"
+  },
+  {
+   "id": "SATM2K9CGMN",
+   "section": "M",
+   "field": "stem",
+   "text": "The linear function $g$ is defined for all real numbers. The table below shows selected values of $g$.\n\n| $x$ | $g(x)$ |\n|---|---|\n| $-2$ | $11$ |\n| $1$ | $5$ |\n| $4$ | $-1$ |\n\nFor what value of $x$ does $g(x) = 0$?"
+  },
+  {
+   "id": "SATM2XJUPEX",
+   "section": "M",
+   "field": "stem",
+   "text": "The table below shows data for five observations.\n\n| $x$ | $1$ | $2$ | $3$ | $4$ | $5$ |\n|---|---|---|---|---|---|\n| $y$ | $3$ | $5$ | $8$ | $9$ | $15$ |\n\nThe line of best fit for the data is $y = 2.8x + 0.2$. What is the sum of the squared residuals for these five data points?"
+  },
+  {
+   "id": "SATM26JR7DS",
+   "section": "M",
+   "field": "stem",
+   "text": "The linear function $g$ is defined for all real numbers. The table below shows selected values of $g(x)$.\n\n| $x$ | $g(x)$ |\n|---|---|\n| $-2$ | $11$ |\n| $1$ | $5$ |\n| $4$ | $-1$ |\n\nIf $g(a) = 0$, what is the value of $a$?"
+  },
+  {
+   "id": "SATM2V1IG7Q",
+   "section": "M",
+   "field": "stem",
+   "text": "The table below shows data for $300$ customers at a restaurant.\n\n| | Ordered Dessert | Did Not Order Dessert | Total |\n|---|---|---|---|\n| Ordered Coffee | $45$ | $105$ | $150$ |\n| Did Not Order Coffee | $30$ | $120$ | $150$ |\n| Total | $75$ | $225$ | $300$ |\n\nGiven that a randomly selected customer ordered coffee, what is the probability that the customer also ordered dessert?"
+  },
+  {
+   "id": "SATM2D3CCRE",
+   "section": "M",
+   "field": "stem",
+   "text": "A company tested $400$ products for defects. The results are summarized in the table below.\n\n| | Defective | Not Defective | Total |\n|---|---|---|---|\n| Factory X | $18$ | $182$ | $200$ |\n| Factory Y | $32$ | $168$ | $200$ |\n| Total | $50$ | $350$ | $400$ |\n\nA product is selected at random and found to be defective. What is the probability that it was produced by Factory Y?"
+  },
+  {
+   "id": "SATM2GJVE6Q",
+   "section": "M",
+   "field": "stem",
+   "text": "A survey asked 58 students about their preferred sport. The results are shown in the table below.\n\n| | Soccer | Swimming | Track | Total |\n|---|---|---|---|---|\n| 9th grade | 17 | 8 | 6 | 31 |\n| 10th grade | 9 | 13 | 5 | 27 |\n| Total | 26 | 21 | 11 | 58 |\n\nIf a student is selected at random from those in 10th grade, what is the probability that the student prefers swimming?"
+  },
+  {
+   "id": "SATM2ZKCLZ6",
+   "section": "M",
+   "field": "stem",
+   "text": "The function $g$ is a linear function. The table below shows selected values of $g$.\n\n| $x$ | $g(x)$ |\n|---|---|\n| $-2$ | $17$ |\n| $3$ | $2$ |\n| $11$ | $-22$ |\n\nFor what value of $x$ does $g(x) = -7$?"
+  },
+  {
+   "id": "SATM2L3XVSD",
+   "section": "M",
+   "field": "stem",
+   "text": "The table below shows the number of books read during a semester by each of 20 students.\n\n| Number of books | $0$ | $1$ | $2$ | $3$ | $4$ | $5$ |\n|---|---|---|---|---|---|---|\n| Frequency | $2$ | $5$ | $6$ | $4$ | $2$ | $1$ |\n\nWhat is the mean number of books read per student?"
+  },
+  {
+   "id": "SATM2D51OO3",
+   "section": "M",
+   "field": "stem",
+   "text": "A teacher recorded quiz scores and their frequencies as shown below.\n\n| Score | Frequency |\n|---|---|\n| $17$ | $3$ |\n| $23$ | $5$ |\n| $31$ | $x$ |\n| $38$ | $4$ |\n| $46$ | $2$ |\n\nThe total number of scores is $14 + x$. If the median score is $31$, what is the least possible value of $x$?"
+  },
+  {
+   "id": "SATM2ND2HP7",
+   "section": "M",
+   "field": "stem",
+   "text": "A company surveyed 150 employees about their commute method and department. The results are shown in the table below.\n\n| | Marketing | Engineering | Total |\n|---|---|---|---|\n| Drive | 31 | 42 | 73 |\n| Transit | 19 | 23 | 42 |\n| Bike | 14 | 21 | 35 |\n| Total | 64 | 86 | 150 |\n\nGiven that a randomly selected employee is in the Engineering department, what is the probability that this employee bikes to work?"
+  },
+  {
+   "id": "SATM2ZN0S79",
+   "section": "M",
+   "field": "stem",
+   "text": "The linear function $g$ is defined for all real numbers. The table below shows selected values of $g$.\n\n| $x$ | $g(x)$ |\n|---|---|\n| $-4$ | $31$ |\n| $2$ | $7$ |\n| $5$ | $-5$ |\n\nWhat is the value of $g(13)$?"
+  },
+  {
+   "id": "SATRW2OWOU0Y",
+   "section": "RW",
+   "field": "passage",
+   "text": "A team of nutritional scientists at the University of Groningen studied the relationship between fermented food consumption and gut microbiome diversity in 1,247 adults over a fourteen-month period. Participants who consumed at least three servings of fermented foods per week—such as kefir, sauerkraut, or kimchi—showed a statistically significant increase in gut microbial species richness compared to a control group that maintained their usual diet. The researchers concluded that regular fermented food consumption directly enhances gut microbiome diversity. However, the study relied on self-reported dietary logs, and participants were not randomly assigned to diet groups.\n\nThe following table summarizes key characteristics of the two groups at baseline:\n\n| Characteristic | Fermented-food group (n=623) | Control group (n=624) |\n|---|---|---|\n| Mean age (years) | 34.2 | 51.7 |\n| Median daily fiber intake (g) | 31.4 | 18.9 |\n| Percentage exercising >150 min/week | 72% | 38% |\n| Percentage taking probiotic supplements | 8% | 7% |"
+  },
+  {
+   "id": "SATM2E6UPTT",
+   "section": "M",
+   "field": "stem",
+   "text": "A company surveyed $150$ employees about their commuting method. The results are shown in the table below.\n\n| | Drive | Transit | Bike | Total |\n|---|---|---|---|---|\n| Full-time | $47$ | $31$ | $12$ | $90$ |\n| Part-time | $23$ | $19$ | $18$ | $60$ |\n| Total | $70$ | $50$ | $30$ | $150$ |\n\nIf a randomly selected employee from the survey uses transit, what is the probability that the employee is part-time?"
+  },
+  {
+   "id": "SATM2CW64YM",
+   "section": "M",
+   "field": "stem",
+   "text": "A researcher records the following data, where $x$ represents the number of years since $2010$ and $y$ represents a town's population in hundreds.\n\n| $x$ | $0$ | $5$ | $10$ | $15$ |\n|-----|-----|-----|------|------|\n| $y$ | $200$ | $310$ | $482$ | $749$ |\n\nWhich of the following function types best models the relationship between $x$ and $y$?"
+  },
+  {
+   "id": "SATM2VAO4LX",
+   "section": "M",
+   "field": "stem",
+   "text": "A biologist records the population of bacteria (in thousands) at various hours after the start of an experiment.\n\n| Hours | $0$ | $3$ | $6$ | $9$ | $12$ |\n|-------|-----|-----|-----|-----|------|\n| Population | $5$ | $14$ | $40$ | $113$ | $320$ |\n\nWhich of the following function types best models the relationship between hours and population?"
+  },
+  {
+   "id": "SATM218I2JA",
+   "section": "M",
+   "field": "stem",
+   "text": "The table below shows the distribution of 83 employees at a company by department and handedness.\n\n|              | Left-handed | Right-handed | Total |\n|--------------|-------------|--------------|-------|\n| Engineering  | 11          | 38           | 49    |\n| Marketing    | 7           | 27           | 34    |\n| Total        | 18          | 65           | 83    |\n\nIf one right-handed employee is selected at random, what is the probability that the employee works in Marketing?"
+  },
+  {
+   "id": "SATM2S2TV25",
+   "section": "M",
+   "field": "stem",
+   "text": "The table below shows the number of hours $13$ students spent studying for an exam.\n\n| Hours | $2$ | $3$ | $4$ | $5$ | $7$ |\n|---|---|---|---|---|---|\n| Frequency | $1$ | $4$ | $3$ | $3$ | $2$ |\n\nWhat is the mean number of hours spent studying, rounded to the nearest tenth?"
+  },
+  {
+   "id": "SATM26YMDZ9",
+   "section": "M",
+   "field": "stem",
+   "text": "A two-way frequency table summarizes the lunch preferences of $83$ employees at a company.\n\n|  | Salad | Sandwich | Soup | Total |\n|---|---|---|---|---|\n| Morning shift | $11$ | $17$ | $7$ | $35$ |\n| Afternoon shift | $13$ | $19$ | $16$ | $48$ |\n| Total | $24$ | $36$ | $23$ | $83$ |\n\nIf an employee is selected at random from those who prefer soup, what is the probability that the employee works the morning shift?"
+  },
+  {
+   "id": "SATM2PW7XKH",
+   "section": "M",
+   "field": "stem",
+   "text": "The function $f$ is linear, and the table below shows selected values.\n\n| $x$ | $f(x)$ |\n|---|---|\n| $-3$ | $41$ |\n| $1$ | $17$ |\n| $k$ | $-7$ |\n\nWhat is the value of $k$?"
+  },
+  {
+   "id": "SATM2ANI3Y2",
+   "section": "M",
+   "field": "stem",
+   "text": "A class of 23 students took a quiz scored from 0 to 10. The scores are summarized below:\n\n| Score | 3 | 5 | 6 | 7 | 8 | 9 | 10 |\n|-------|---|---|---|---|---|---|----|\n| Frequency | 1 | 3 | 4 | 6 | 5 | 3 | 1 |\n\nIf the student who scored 3 retakes the quiz and scores 8 instead, which of the following correctly describes the change in the mean and the median?"
+  },
+  {
+   "id": "SATM2OV79QY",
+   "section": "M",
+   "field": "stem",
+   "text": "A two-way frequency table summarizes the lunch preferences of 130 employees at a company.\n\n|  | Vegetarian | Non-vegetarian | Total |\n|---|---|---|---|\n| Morning shift | 18 | 37 | 55 |\n| Afternoon shift | 29 | 46 | 75 |\n| Total | 47 | 83 | 130 |\n\nIf an employee is selected at random from those who prefer vegetarian lunches, what is the probability that the employee works the afternoon shift?"
+  },
+  {
+   "id": "SATM2QRL3H3",
+   "section": "M",
+   "field": "stem",
+   "text": "The table below shows the number of hours $21$ students spent volunteering last month.\n\n| Hours | $1$ | $2$ | $3$ | $4$ | $5$ | $6$ | $7$ |\n|---|---|---|---|---|---|---|---|\n| Frequency | $2$ | $3$ | $4$ | $6$ | $3$ | $2$ | $1$ |\n\nIf one student who volunteered for $4$ hours is removed from the data set, which of the following statistics will change?"
+  }
+ ],
+ "plain": [
+  {
+   "id": "SATM2H9WR2X",
+   "section": "M",
+   "field": "stem",
+   "text": "The system of equations below has two solutions, $(x_1, y_1)$ and $(x_2, y_2)$.\n$$y = x^2 - 4x + 1$$\n$$y = 2x - 7$$\nWhat is the value of $x_1 + x_2$?"
+  },
+  {
+   "id": "SATM2Q4BJ8F",
+   "section": "M",
+   "field": "stem",
+   "text": "A factory produces $240$ widgets in $6$ hours. At this same constant rate, how many widgets would the factory produce in $10$ hours?"
+  },
+  {
+   "id": "SATM2L6TC5Y",
+   "section": "M",
+   "field": "stem",
+   "text": "In the $xy$-plane, line $p$ passes through the point $(3, 5)$ and is perpendicular to the line $2x + 3y = 12$. What is the $y$-intercept of line $p$?"
+  },
+  {
+   "id": "SATRW2J5AW9L",
+   "section": "RW",
+   "field": "stem",
+   "text": "Which choice completes the text so that it conforms to the conventions of Standard English?"
+  },
+  {
+   "id": "SATRW2E2HX6V",
+   "section": "RW",
+   "field": "stem",
+   "text": "The student wants to emphasize a disadvantage of green roofs. Which choice most effectively uses relevant information from the notes to accomplish this goal?"
+  },
+  {
+   "id": "SATM2JROGGR",
+   "section": "M",
+   "field": "stem",
+   "text": "A contractor charges a flat fee of $\\$120$ plus $\\$45$ per hour of labor. If the total charge for a job was $\\$570$, how many hours of labor were required?"
+  },
+  {
+   "id": "SATM2UYVX9I",
+   "section": "M",
+   "field": "stem",
+   "text": "A line is perpendicular to $y = dfrac{2}{3}x + 1$ and passes through the point $(6, 4)$. What is the $y$-intercept of this line?"
+  },
+  {
+   "id": "SATM2SQVF4T",
+   "section": "M",
+   "field": "stem",
+   "text": "A bakery models its daily production cost in dollars with the function $C(x) = 8x + 50$, where $x$ is the number of cakes produced. What does the number $8$ represent in this function?"
+  },
+  {
+   "id": "SATM2916ZRH",
+   "section": "M",
+   "field": "stem",
+   "text": "Two phone plans are modeled by the functions $f(x) = 25x + 40$ and $g(x) = 15x + 90$, where $x$ is the number of months. After how many months will the two plans have the same total cost?"
+  },
+  {
+   "id": "SATM2RV5VPN",
+   "section": "M",
+   "field": "stem",
+   "text": "A manufacturer requires that the temperature $T$, in degrees Celsius, of a chemical solution satisfy $-2 \\leq dfrac{3T - 9}{3} \\leq 5$. Which of the following correctly describes the allowable range of temperatures?"
+  },
+  {
+   "id": "SATM28ODSJL",
+   "section": "M",
+   "field": "stem",
+   "text": "What is the value of $x$ in the solution to the system of equations below?\n$$2x + y = 7$$\n$$x - y = 2$$"
+  },
+  {
+   "id": "SATM2Z7MRWF",
+   "section": "M",
+   "field": "stem",
+   "text": "A store sells notebooks for $\\$3$ each and pens for $\\$2$ each. A customer buys a total of 14 items and spends $\\$33$. How many notebooks does the customer buy?"
+  }
+ ]
+}

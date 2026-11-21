@@ -143,9 +143,12 @@ export default function QuestionRenderer({
           <MathRenderer content={question.passage} />
         </div>
       ) : null}
+      {/* `whitespace-pre-wrap` matches the passage above and the explanation below, which have
+          always had it. Without it a stem's own blank lines collapsed, so a two-paragraph stem
+          ran together — table or no table (owner: in scope, 2026-11-04). */}
       <div
         data-testid="runner-stem"
-        className="font-lyc-serif text-[23px] leading-[1.55] text-lyc-ink-strong"
+        className="whitespace-pre-wrap font-lyc-serif text-[23px] leading-[1.55] text-lyc-ink-strong"
       >
         <MathRenderer content={question.stem} />
       </div>
