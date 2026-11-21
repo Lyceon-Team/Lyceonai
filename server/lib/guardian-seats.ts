@@ -19,9 +19,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import {
   guardianSeatStatusSchema,
-  seatClaimOutcomeSchema,
   type GuardianSeatView,
-  type SeatClaimOutcome,
 } from "../../packages/shared/src/guardian-seat-schema";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 
@@ -32,7 +30,7 @@ export function newSeatInviteToken(): { token: string; tokenHash: string } {
 }
 
 /** SHA-256, lowercase hex: the only form of a token the database ever sees. */
-export function hashSeatInviteToken(token: string): string {
+function hashSeatInviteToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
@@ -50,7 +48,7 @@ const seatRowSchema = z
     claim_refused_at: z.string().nullable(),
   })
   .passthrough();
-export type GuardianSeatRow = z.infer<typeof seatRowSchema>;
+type GuardianSeatRow = z.infer<typeof seatRowSchema>;
 
 function parseSeatRow(data: unknown, op: string): GuardianSeatRow | null {
   if (data === null || data === undefined) return null;
@@ -208,7 +206,7 @@ const claimResultSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("invalid") }).strict(),
   z.object({ outcome: z.literal("already_paid") }).strict(),
 ]);
-export type GuardianSeatClaimResult = z.infer<typeof claimResultSchema>;
+type GuardianSeatClaimResult = z.infer<typeof claimResultSchema>;
 
 /** The claim, in one database transaction (link + seat). */
 export async function claimGuardianSeat(input: {
@@ -223,11 +221,4 @@ export async function claimGuardianSeat(input: {
   });
   if (error) throw rpcFailure("claim", error);
   return claimResultSchema.parse(data);
-}
-
-/** The outcome the client sees: the claim result without any id. */
-export function publicClaimOutcome(
-  result: GuardianSeatClaimResult,
-): SeatClaimOutcome {
-  return seatClaimOutcomeSchema.parse(result.outcome);
 }

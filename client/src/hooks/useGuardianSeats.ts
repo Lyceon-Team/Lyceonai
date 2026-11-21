@@ -18,7 +18,7 @@ import {
   type GuardianSeatsResponse,
 } from "@lyceon/shared/guardian-seat-schema";
 
-export const GUARDIAN_SEATS_QUERY_KEY = ["guardian-seats"] as const;
+const GUARDIAN_SEATS_QUERY_KEY = ["guardian-seats"] as const;
 
 async function readSeats(): Promise<GuardianSeatsResponse> {
   const res = await csrfFetch("/api/guardian/seats", {

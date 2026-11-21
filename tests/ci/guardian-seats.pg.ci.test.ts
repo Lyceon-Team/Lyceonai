@@ -9,7 +9,7 @@
  * plain English: the database is real (bootstrapped from supabase/migrations); the routes are
  * the production routers; Stripe, the email transport and the post-claim Stripe step are
  * recorded instead of called (the post-claim step and the webhook are proved in
- * guardian-seat-webhook.contract.test.ts). Every token assertion is made against the token the
+ * guardian-seat-webhook.pg.ci.test.ts). Every token assertion is made against the token the
  * guardian was actually handed.
  *
  *   Checkout   CK1-CK6  seat mode: refusals before Stripe, the session shape, consent recorded

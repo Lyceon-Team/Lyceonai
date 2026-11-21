@@ -68,7 +68,7 @@ if [ -n "${PGHOST:-}" ] && pg_isready -q -h "$PGHOST" -p "${PGPORT:-5432}" 2>/de
 
 ts_check() { pnpm exec vitest run "$@" 2>&1; }
 PG_SUITE=tests/ci/guardian-seats.pg.ci.test.ts
-WEBHOOK_SUITE=tests/ci/guardian-seat-webhook.contract.test.ts
+WEBHOOK_SUITE=tests/ci/guardian-seat-webhook.pg.ci.test.ts
 CALL_SUITE=tests/ci/parent-call-link.contract.test.ts
 
 # plant_check <name> <file> <old> <new> <expected test name> <test files...>

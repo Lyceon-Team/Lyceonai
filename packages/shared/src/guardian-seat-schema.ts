@@ -19,7 +19,6 @@ export const guardianSeatStatusSchema = z.enum([
   "claimed",
   "cancelled",
 ]);
-export type GuardianSeatStatus = z.infer<typeof guardianSeatStatusSchema>;
 
 /** One unassigned seat as the guardian's seat card shows it. */
 export const guardianSeatViewSchema = z
@@ -50,9 +49,6 @@ export const guardianSeatInviteRequestSchema = z
     email: z.string().trim().toLowerCase().email().max(254).optional(),
   })
   .strict();
-export type GuardianSeatInviteRequest = z.infer<
-  typeof guardianSeatInviteRequestSchema
->;
 
 /** What Send, Resend and Copy link return: the new link and when it stops working. */
 export const guardianSeatInviteResponseSchema = z
