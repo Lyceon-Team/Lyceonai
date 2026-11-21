@@ -15,8 +15,8 @@ Every trigger counts only situations on or after **2026-10-21 08:00 UTC**
 
 | Resend event | Fires when (all once per student, ever; 13+ only; never deleted, deletion-pending or denylisted) | Automation |
 |---|---|---|
-| `lyceon.onboarded` | first onboarding completion (unchanged) | "Founding cohort welcome": welcome only |
-| `lyceon.reminder_due` | onboarded 3–14 days ago, not entitled (PR 1) | "Founding cohort reminder (sent by app)": check `entitled` → the existing founding reminder template |
+| `lyceon.onboarded` | first onboarding completion (unchanged) | "Welcome: student + parent (on onboarding)": one welcome per role, no code |
+| `lyceon.reminder_due` | onboarded 3–14 days ago, not entitled (PR 1) | the reminder Automation: **disabled** since the free code closed (2026-11-11); the event still fires and starts nothing |
 | `lyceon.diagnostic_unfinished` | started Find your blind spots 48 h–14 days ago, not completed | send |
 | `lyceon.pro_no_plan` | entitled 48 h–14 days ago, no study plan | send |
 | `lyceon.practising_free` | not entitled, 10th answered item in the last 14 days (QOTD excluded) | check `entitled` ≠ `"true"` → send |
@@ -27,10 +27,17 @@ sent. The QOTD daily email is not a lifecycle email and is outside the cap.
 
 ## Wiring
 
-**Done (Claude, 2026-10-21): the Resend split.** "Founding cohort welcome" runs on
-`lyceon.onboarded` (welcome only); "Founding cohort reminder (sent by app)" runs on
-`lyceon.reminder_due` (contact property `entitled` is not `"true"` → the existing reminder
-template); the old Automation (welcome + 72 h reminder) is disabled.
+**Done (Claude, 2026-10-21): the Resend split.** The welcome Automation runs on
+`lyceon.onboarded` (welcome only); the reminder Automation runs on `lyceon.reminder_due`
+(contact property `entitled` is not `"true"` → the reminder template); the old Automation
+(welcome + 72 h reminder) is disabled.
+
+**Current state (read in Resend, read-only, 2026-11-21):** "Welcome: student + parent (on
+onboarding)" is enabled on `lyceon.onboarded`, branching on `event.role == guardian` to the
+"Welcome (parent)" or "Welcome (student)" template; neither names a code. The reminder Automation
+("Founding cohort reminder (sent by app)" in Resend, which still names the closed code) and the
+retired cohort onboarding Automation are disabled. Re-enabling the reminder needs new, code-free
+copy approved by Karl first (post-ALPHA brief, 2026-11-11, item 1).
 
 **Remaining, after #1284 merges and Karl applies `20261111000000_lifecycle_triggers.sql`
 (owner-run):**

@@ -43,7 +43,7 @@ export type BillingPeriodChoice = z.infer<typeof billingPeriodSchema>;
  * student believe they had bought for someone else.
  */
 /**
- * A promotion code's NAME as a customer types it (e.g. `FOUNDING50`), from `/upgrade?promo=`.
+ * A promotion code's NAME as a customer types it (the `<CODE>` in `/upgrade?promo=<CODE>`).
  *
  * @spec [owner brief (Karl) 2026-10-10: "support /upgrade?promo=<CODE>"] | @implemented [2026-10-10]
  *
