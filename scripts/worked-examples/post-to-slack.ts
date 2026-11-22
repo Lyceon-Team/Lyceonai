@@ -56,26 +56,30 @@ function copyBlock(text: string): string {
 }
 
 /** The platform line that opens a post, as the QOTD's. */
-function platformLine(name: "TikTok" | "Instagram" | "Facebook"): string {
+function platformLine(
+  name: "TikTok" | "Instagram" | "Facebook" | "YouTube Shorts",
+): string {
   return `*${name}*`;
 }
-
-/** Instagram and Facebook post the video already shared above, so they say so. */
-const SAME_VIDEO = "(the same video as TikTok, above)";
 
 /**
  * One video's #social set: what the message carries besides the video. A worked example is one
  * (workedExampleSlackSteps); so is a QOTD breakdown (scripts/qotd-social/breakdown.ts, SCL-266).
+ *
+ * Karl's ruling 2026-11-04 ("Copy-paste cleanup for all #social outputs"): outside the copy
+ * blocks, one platform header per post (TikTok / Instagram / Facebook) and any QA warnings,
+ * nothing else (no label, review line, date, file name or "same video" note); inside them, only
+ * what Karl pastes (copyBlockProblems, checked when the post is built).
  */
 export type VideoSet = {
-  label: string;
-  /** The review line under the label, outside the copy blocks. */
-  review: string;
   warnings: readonly string[];
   caption: string;
   keywords: readonly string[];
   instagram_caption: string;
   facebook_caption: string;
+  /** YouTube Shorts (worked examples from W48, Karl 2026-11-14); a set without one has none. */
+  youtube_title?: string | undefined;
+  youtube_description?: string | undefined;
 };
 
 /** The steps for any video set, in order. Text only: the video's bytes are passed separately. */
@@ -89,11 +93,7 @@ export function videoSetSlackSteps(set: VideoSet): WorkedExampleSlackStep[] {
   steps.push(
     {
       kind: "video",
-      comment: [
-        platformLine("TikTok"),
-        escapeMrkdwn(set.label),
-        set.review,
-      ].join("\n"),
+      comment: platformLine("TikTok"),
     },
     {
       kind: "message",
@@ -103,19 +103,27 @@ export function videoSetSlackSteps(set: VideoSet): WorkedExampleSlackStep[] {
     },
     {
       kind: "message",
-      text: [
-        `${platformLine("Instagram")} ${SAME_VIDEO}`,
-        copyBlock(set.instagram_caption),
-      ].join("\n"),
+      text: [platformLine("Instagram"), copyBlock(set.instagram_caption)].join(
+        "\n",
+      ),
     },
     {
       kind: "message",
-      text: [
-        `${platformLine("Facebook")} ${SAME_VIDEO}`,
-        copyBlock(set.facebook_caption),
-      ].join("\n"),
+      text: [platformLine("Facebook"), copyBlock(set.facebook_caption)].join(
+        "\n",
+      ),
     },
   );
+  // YouTube Shorts: the title and the description, each its own copy block (Karl, 2026-11-14).
+  if (set.youtube_title !== undefined && set.youtube_description !== undefined)
+    steps.push({
+      kind: "message",
+      text: [
+        platformLine("YouTube Shorts"),
+        copyBlock(set.youtube_title),
+        copyBlock(set.youtube_description),
+      ].join("\n"),
+    });
   return steps;
 }
 
@@ -123,10 +131,7 @@ export function videoSetSlackSteps(set: VideoSet): WorkedExampleSlackStep[] {
 export function workedExampleSlackSteps(
   post: WorkedExamplePost,
 ): WorkedExampleSlackStep[] {
-  return videoSetSlackSteps({
-    ...post,
-    review: `For review: posts on ${post.post_on}. Karl posts by hand.`,
-  });
+  return videoSetSlackSteps(post);
 }
 
 /** Posts a video set, each step confirmed before the next starts. */

@@ -231,11 +231,16 @@ describe("beginParallelGroup", () => {
       "ms",
       "step",
     ]);
-    const ms = (name: string): number => byName.get(name)!.ms as number;
-    const at = (name: string): number => byName.get(name)!.at_ms as number;
-    // Offsets and durations are each rounded to 0.1 ms, so a comparison of two of them, or of a
-    // sum, may be off by up to that much.
-    const ROUNDING = 0.1;
+    // Offsets and durations are each rounded to 0.1 ms (roundMs, server/lib/step-timer.ts), so
+    // they are compared in whole tenths of a millisecond: integers, exact. Compared as floats, a
+    // sum lands off by float error, and a gap of exactly the 0.1 ms allowance failed
+    // (2026-11-09: "expected 12.7 to be greater than or equal to 12.700000000000001").
+    const tenths = (v: number): number => Math.round(v * 10);
+    const ms = (name: string): number => tenths(byName.get(name)!.ms as number);
+    const at = (name: string): number =>
+      tenths(byName.get(name)!.at_ms as number);
+    // Two rounded values, or a sum of them, may be off by up to one tenth.
+    const ROUNDING = 1;
     // Wall time: from the group's start to the last member's end — at least the slowest member,
     // and less than the members' sum (they overlapped).
     expect(ms("pre_model")).toBeGreaterThanOrEqual(ms("slow") - ROUNDING);

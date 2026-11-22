@@ -52,6 +52,7 @@ import {
   socialFacebookCaption,
   socialInstagramCaption,
   socialKeywords,
+  copyBlockProblems,
   socialTiktokCaption,
   type SocialSection,
 } from "../social/posts";
@@ -66,12 +67,23 @@ import { qotdReadabilityProblem } from "./readability";
 import { QOTD_SECTION_NAME } from "./social";
 
 /**
- * The pilot window, as QOTD posting days (the day a breakdown of the day before posts): Karl's
- * ruling on #1398, 2026-11-02, "start 2026-11-09 and end 2026-11-22", 14 days inclusive. So the
- * QOTD days broken down are 2026-11-08 to 2026-11-21.
+ * The pilot window Karl ruled on #1398, 2026-11-02, as QOTD posting days (the day a breakdown of
+ * the day before posts): "start 2026-11-09 and end 2026-11-22", 14 days inclusive, so the QOTD
+ * days broken down are 2026-11-08 to 2026-11-21. Kept as the record of that ruling; the live window
+ * is QOTD_BREAKDOWN_PILOT below.
+ */
+export const QOTD_BREAKDOWN_PILOT_RULED: QotdBreakdownPilot =
+  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });
+
+/**
+ * The live window. HELD by Karl, 2026-11-03: "Hold the private repo. Pause the QOTD breakdown
+ * pilot ... so nothing posts 'no approved script' notices to #social from Nov 9. Leave the code
+ * merged. Karl will un-pause when the private repo exists." Off (no dates): the job installs,
+ * builds and posts nothing on any day. To un-pause, set the dates Karl then gives (or
+ * QOTD_BREAKDOWN_PILOT_RULED's, if still ahead).
  */
 export const QOTD_BREAKDOWN_PILOT: QotdBreakdownPilot =
-  qotdBreakdownPilotSchema.parse({ start: "2026-11-09", end: "2026-11-22" });
+  qotdBreakdownPilotSchema.parse({ start: null, end: null });
 
 /** Where `postedOn` (the QOTD posting day) sits against the window. `paused` wins over all. */
 export function pilotWindow(
@@ -302,36 +314,31 @@ export type BreakdownCopy = {
 
 /**
  * The SCL-262 captions and TikTok keywords, through the one caption builder: the QOTD headline
- * (the test month is the posting day's, as the carousel's), the music credit as the trailing line
- * of each caption (its CC BY 4.0 licence). Refused with problems on any caption rule.
+ * (the test month is the posting day's, as the carousel's). No music credit in any caption: it is
+ * on the video's end card (Karl, 2026-11-04). Refused with problems on any caption rule, and on
+ * a keywords block that carries anything but keywords (copyBlockProblems).
  */
 export function breakdownCopy(
   day: QotdArchiveResponse,
   postedOn: string,
-  musicCredit: string,
 ): { ok: true; copy: BreakdownCopy } | { ok: false; problems: string[] } {
   const section: SocialSection = QOTD_SECTION_NAME[day.question.section_code];
   const test = nextSatTest(postedOn);
   const headline = qotdHeadline(test, section);
-  const caption = socialTiktokCaption(headline, test, section, [musicCredit]);
-  const instagram = socialInstagramCaption(headline, test, section, [
-    musicCredit,
-  ]);
-  const facebook = socialFacebookCaption(headline, test, section, [
-    musicCredit,
-  ]);
+  const caption = socialTiktokCaption(headline, test, section);
+  const instagram = socialInstagramCaption(headline, test, section);
+  const facebook = socialFacebookCaption(headline, test, section);
   const keywords = socialKeywords(postedOn, section, day.question.domain);
   const problems = [
-    ...captionProblems(caption, musicCredit, headline).map(
-      (p) => `tiktok ${p}`,
-    ),
-    ...captionProblems(instagram, musicCredit, headline).map(
-      (p) => `instagram ${p}`,
-    ),
-    ...captionProblems(facebook, musicCredit, headline).map(
-      (p) => `facebook ${p}`,
-    ),
+    ...captionProblems(caption, headline).map((p) => `tiktok ${p}`),
+    ...captionProblems(instagram, headline).map((p) => `instagram ${p}`),
+    ...captionProblems(facebook, headline).map((p) => `facebook ${p}`),
     ...(keywords.ok ? [] : [`tiktok ${keywords.error}`]),
+    ...(keywords.ok
+      ? copyBlockProblems(keywords.keywords.join("\n")).map(
+          (p) => `tiktok keywords ${p}`,
+        )
+      : []),
   ];
   if (problems.length > 0 || !keywords.ok) return { ok: false, problems };
   return {

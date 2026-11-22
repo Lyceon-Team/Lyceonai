@@ -11,13 +11,13 @@
  *       setup → key move → trap → answer and check → "Follow, there's one of these every day.";
  *       the end card shows "Lyceon SAT Prep", no lyceon.ai. Owner brief "Worked examples:
  *       production system" (Karl, 2026-10-27); Public Disclosure Doctrine §0 rules 1-3
- *       (docs/plans/seo/seo-marketing-vertical.md); Part D1 and the owner ruling of 2026-11-02 (no
- *       third-party calculator named)]
- *       | @implemented [2026-11-02, the calculator-name guard 2026-11-02 (D1), re-scripted to the
- *       SCL-267 rules 2026-11-02]
+ *       (docs/plans/seo/seo-marketing-vertical.md); Part D1; Karl's ruling of 2026-11-15 (Desmos fully in
+ *       scope, the licence including the API), which removed the 2026-11-02 calculator-name guard]
+ *       | @implemented [2026-11-02, re-scripted to the SCL-267 rules 2026-11-02, the calculator-name
+ *       guard removed 2026-11-16]
  *
- * Before anything else, an example whose file names the third-party calculator is refused
- * (word-guard.ts), with the line that names it.
+ * (The D1 refusal of an example naming Desmos was removed on Karl's ruling of 2026-11-15: Desmos is
+ * fully in scope.)
  *
  * plain English:
  *   pnpm exec tsx scripts/video-pilots/manim/prepare.ts \
@@ -53,7 +53,6 @@ import {
 import { safeArea, scriptLines } from "../../worked-examples/composition";
 import { seedQuestion } from "../../worked-examples/content";
 import { KIT_DIR, ROOT, loadKit } from "../../worked-examples/kit";
-import { bannedWordHits, formatHit } from "./word-guard";
 
 /** The worked examples already in use (W45/W46); a pilot must use another question. */
 export const PILOT_EXCLUDED_IDS: readonly string[] = [
@@ -97,11 +96,6 @@ function main(): void {
   const examplePath = resolve(opt("--example"));
   const out = resolve(opt("--out"));
   const raw = readFileSync(examplePath, "utf8");
-  const named = bannedWordHits(examplePath, raw);
-  if (named.length > 0)
-    throw new Error(
-      `the pilot example names the third-party calculator:\n  ${named.map(formatHit).join("\n  ")}`,
-    );
   const example = workedExampleContentSchema.parse(JSON.parse(raw));
   if (PILOT_EXCLUDED_IDS.includes(example.question_id))
     throw new Error(
@@ -152,7 +146,7 @@ function main(): void {
     logo: abs(kit.brand.logo),
     music: {
       file: abs(kit.track.file),
-      credit: kit.track.credit,
+      credit: kit.track.on_screen_credit,
       gain: kit.voice.music_gain,
       fade_seconds: kit.voice.music_fade_seconds,
     },

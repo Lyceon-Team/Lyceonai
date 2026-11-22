@@ -97,7 +97,10 @@
       "correct_answer": null,
       "model_armor_input_template_id": null,
       "model_armor_output_template_id": null,
-      "requested_method": null
+      "requested_method": null,
+      "help_level": "ask",
+      "submit_state": "pre_submit",
+      "worked_step": null
     },
     true,
     "D"
@@ -214,7 +217,10 @@
       "correct_answer": null,
       "model_armor_input_template_id": null,
       "model_armor_output_template_id": null,
-      "requested_method": null
+      "requested_method": null,
+      "help_level": "ask",
+      "submit_state": "pre_submit",
+      "worked_step": null
     },
     true,
     "D"

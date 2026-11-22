@@ -40,5 +40,19 @@
     "pr": 1445,
     "mergedBy": "kingk237",
     "mergeSha": "686406832d84ff5d162418c719dc09c21df6da60"
+  },
+  "2026-W47": {
+    "by": "Karl",
+    "date": "2026-11-13",
+    "pr": 1476,
+    "mergedBy": "kingk237",
+    "mergeSha": "ac7572c96ae1353cbf67be8648a2ca9c0a592afc"
+  },
+  "2026-W48": {
+    "by": "Karl",
+    "date": "2026-11-21",
+    "pr": 1497,
+    "mergedBy": "kingk237",
+    "mergeSha": "18958a508cf55dc29e63f7385f0e17599fd698d7"
   }
 }

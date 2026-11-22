@@ -89,3 +89,18 @@ Production proof, after the deploy:
   tags, at the segment's start.
 - `route_timing` shows `path: "segment"`.
 - On a non-EE question, behaviour is unchanged (`path: "skill"`).
+
+## 7. Closed in production (2026-11-04)
+
+Karl's report, 2026-11-04, from production:
+
+- the segment path served on EE.3 and NLF.4 (`path: "segment"`);
+- playback stopped at the segment end;
+- "Watch full video" recorded one `video_watch_full` line, for segment `f2a625c3`.
+
+That is the production proof §6 names, plus the segment-end follow-up. The retrieval switch-over
+is #1382; the segment end, player window and "Watch full video" are #1439, which carries the
+screenshots (`evidence/`) and the §5 UI checklist. Closure-plan row H is closed on this evidence.
+
+What it also showed: NLF.4 has only Desmos segments, so "Explanation video" served Desmos there.
+That is a content gap, not a retrieval defect. It is the subject of `content-gaps-step0.md`.

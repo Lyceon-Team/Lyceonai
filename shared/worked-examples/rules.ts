@@ -49,10 +49,21 @@
  *      written, so "$64" is "64" and "sixty-four" is "sixty four"; a spelled-out number never
  *      matches a written one, which is the point: the voice talks about the screen).
  *   S2 the spoken hook is not the on-screen hook line, after the same normalisation.
+ *
+ * The equation layout (Karl's fix 2026-11-14: "separate equations show on separate lines"; W47
+ * SATM2GL735M's card read "…have?y = x^2 − 4x + 5y = 2x − 3"), on the stem and the passage as the
+ * card writes them (CARD_MATH), one function each:
+ *   E1 every display equation ($$...$$, \[...\]) is a line of its own on the card, so two written
+ *      back to back, or one straight after the question mark, never share a line.
+ *   E2 an inline equation ($...$ holding =, <, >, ≤, ≥ or ≠) has a space (or an opening bracket)
+ *      before it and a space, a closing bracket or punctuation after it, so it never runs into
+ *      the words around it or into the next piece of maths; and two inline equations always have
+ *      a word or punctuation between them ("$y = 2x$ and $y = x + 1$"), never only a space.
  */
 import {
   WORKED_EXAMPLE_HOOK_TYPES,
   WORKED_EXAMPLE_TITLE_MAX,
+  WORKED_EXAMPLE_TOPIC_MAX,
   type WorkedExampleContent,
   type WorkedExampleHookType,
   type WorkedExampleScript,
@@ -60,20 +71,30 @@ import {
   type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
 import { isoWeekCycle } from "../content/schedule";
-import { plainMathText } from "../qotd/plain-math";
+import { tokenizeMathContent } from "../math/tokenize";
+import { plainMathText, type PlainMathOptions } from "../qotd/plain-math";
 import { QOTD_SECTION_NAME } from "../qotd/social";
 import { capTiktokTitle } from "../qotd/tiktok";
 import {
+  funnelPhase,
+  youtubeShortsCtaLine,
+  youtubeShortsLink,
+} from "../social/funnel";
+import {
   nextSatTest,
+  SOCIAL_COMMENT_LINE,
   socialFacebookCaption,
+  socialHashtags,
   socialInstagramCaption,
   socialKeywords,
   socialTiktokCaption,
+  copyBlockProblems,
   type SocialSection,
   type SocialTest,
 } from "../social/posts";
 import { firstBannedPhrase, firstPipelinePhrase } from "../seo/banned-phrases";
 import type { SeedQuestion } from "./seed-question";
+import { figureProblems } from "./figure-rules";
 
 const STATISTICS: readonly RegExp[] = [
   /\b\d+(\.\d+)?\s*(%|percent)\s+of\b/i,
@@ -129,9 +150,15 @@ export type HookQuestion = Pick<
   "id" | "stem" | "passage" | "options" | "correct_answer"
 >;
 
+/**
+ * Maths written out for matching words and numbers: powers as ^ (x^2), so an exponent stays a
+ * number of its own; the superscript form (x², Karl 2026-11-16) is what the screen shows.
+ */
+const MATCH_MATH = { superscripts: false } as const;
+
 function questionText(q: HookQuestion): string {
   return [q.passage ?? "", q.stem, ...q.options.map((o) => o.text)]
-    .map(plainMathText)
+    .map((t) => plainMathText(t, MATCH_MATH))
     .join(" ");
 }
 
@@ -161,16 +188,23 @@ export function hookAnswerProblem(
     return `H5 gives the answer: "${text}" says what the answer is`;
   const correct = q.options.find((o) => o.key === q.correct_answer);
   if (!correct) return `H5 ${q.id} has no option ${q.correct_answer}`;
-  const correctPlain = plainMathText(correct.text).trim().toLowerCase();
-  if (correctPlain.length >= 2 && text.toLowerCase().includes(correctPlain))
-    return `H5 gives the answer: "${text}" contains the correct choice "${correctPlain}"`;
+  const correctPlain = plainMathText(correct.text, MATCH_MATH)
+    .trim()
+    .toLowerCase();
+  // The correct choice in either plain form: x^2 or x² (Karl, 2026-11-16).
+  for (const form of new Set([
+    correctPlain,
+    plainMathText(correct.text).trim().toLowerCase(),
+  ]))
+    if (form.length >= 2 && text.toLowerCase().includes(form))
+      return `H5 gives the answer: "${text}" contains the correct choice "${form}"`;
   const elsewhere = tokens(
     [
       q.passage ?? "",
       q.stem,
       ...q.options.filter((o) => o.key !== q.correct_answer).map((o) => o.text),
     ]
-      .map(plainMathText)
+      .map((t) => plainMathText(t, MATCH_MATH))
       .join(" "),
   );
   const own = [...tokens(correctPlain)].filter(
@@ -187,6 +221,36 @@ export function hookAnswerProblem(
 export function publicPhraseProblem(text: string): string | null {
   const hit = firstBannedPhrase(text) ?? firstPipelinePhrase(text);
   return hit ? `H6 public-copy phrase in "${text}": ${hit.why}` : null;
+}
+
+/**
+ * H7: the spoken hook never says a standalone "Go".
+ *
+ * @spec [Karl's ruling 2026-11-11: remove "Go!" from speed hooks; "Let's see if you can solve this
+ *       in ten seconds… ready, GO!" must not say "Go"; use "Think you can solve this in ten
+ *       seconds? Let's see." (or end on "Ready?" with a short pause, no "Go"); a content-check rule
+ *       refuses a spoken hook containing a standalone "Go" ("Go.", "Go!", "GO")]
+ *       | @implemented [2026-11-11]
+ *
+ * plain English: the hook is split at sentence and clause marks (. ! ? … , ; :); a piece that is
+ * the single word "go", any case ("…ready, GO!"), is refused. "Go" inside a sentence ("Let's go
+ * through it") is ordinary speech and passes. It binds from GO_RULE_FROM, the first post after the
+ * ruling, as the Hard-only rule does: a posted example (or a breakdown dated before it) is history
+ * and is not re-checked (the W45 Nov 2 example and the synthetic breakdown fixture keep their
+ * committed voice). Called where the Hard-only rule is, so the video pilots (not posts) are not
+ * held to it: with the worked example's post_on (exampleProblems, scripts/worked-examples/
+ * content.ts) and the breakdown script's qotd_date (check-breakdown-scripts.ts, breakdown.ts).
+ */
+export const GO_RULE_FROM = "2026-11-12";
+
+export function hookGoProblem(voice: string, date: string): string | null {
+  if (date < GO_RULE_FROM) return null;
+  const sentences = voice
+    .split(/[.!?…,;:]+/)
+    .map((x) => x.trim().toLowerCase());
+  return sentences.includes("go")
+    ? `H7 the spoken hook says "Go": "${voice}"; end on a question instead ("Think you can solve this in ten seconds? Let's see.")`
+    : null;
 }
 
 /** Every hook rule, on the on-screen line and on the spoken hook. */
@@ -283,6 +347,73 @@ export function spokenTexts(
   ];
 }
 
+/** How the card writes the question's maths: each display equation on a line of its own. */
+export const CARD_MATH: PlainMathOptions = { displayOnOwnLine: true };
+
+const RELATION = /[=<>≤≥≠]|\\(?:le|leq|ge|geq|ne|neq|lt|gt)(?![A-Za-z])/;
+const OPENS_EQUATION = /[\s([]/;
+const CLOSES_EQUATION = /[\s)\].,;:?!]/;
+
+/** Text as the card writes it (composition.ts draws the stem and passage with this). */
+export function cardText(text: string): string {
+  return plainMathText(text, CARD_MATH);
+}
+
+/**
+ * E1 (display equation on its own card line) and E2 (inline equation set off), stem and passage.
+ * `render` is the card's rendering; a test passes another to prove E1 refuses a flattened one.
+ */
+export function equationLayoutProblems(
+  q: Pick<HookQuestion, "stem" | "passage">,
+  render: (text: string) => string = cardText,
+): string[] {
+  const out: string[] = [];
+  const texts: { where: string; text: string }[] = [
+    ...(q.passage && q.passage.trim() !== ""
+      ? [{ where: "the passage", text: q.passage }]
+      : []),
+    { where: "the question stem", text: q.stem },
+  ];
+  for (const { where, text } of texts) {
+    const lines = render(text).split("\n");
+    let previous: { shown: string; end: number } | null = null;
+    for (const token of tokenizeMathContent(text)) {
+      if (token.type !== "math") continue;
+      const shown = cardText(text.slice(token.rawStart, token.rawEnd));
+      if (token.displayMode) {
+        if (!lines.some((l) => l === shown || l.slice(0, -1) === shown))
+          out.push(
+            `E1: in ${where}, the equation "${shown}" is not on a line of its own on the card`,
+          );
+        continue;
+      }
+      if (!RELATION.test(token.content)) {
+        previous = null;
+        continue;
+      }
+      if (
+        previous !== null &&
+        text.slice(previous.end, token.rawStart).trim() === ""
+      )
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into the equation before it ("${previous.shown}")`,
+        );
+      previous = { shown, end: token.rawEnd };
+      const before = text[token.rawStart - 1];
+      const after = text[token.rawEnd];
+      if (before !== undefined && !OPENS_EQUATION.test(before))
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into what comes before it ("${before}")`,
+        );
+      if (after !== undefined && !CLOSES_EQUATION.test(after))
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into what comes after it ("${after}")`,
+        );
+    }
+  }
+  return out;
+}
+
 /** S1: no spoken line reads VERBATIM_RUN_WORDS or more consecutive on-screen words aloud. */
 export function verbatimProblems(
   example: WorkedExampleScript,
@@ -347,6 +478,7 @@ export function scriptProblems(
       `trap.voice must open "The trap" or "Here's where people slip": "${example.trap.voice}"`,
     );
   out.push(...hookProblems(example.hook, q));
+  out.push(...equationLayoutProblems(q));
   out.push(...verbatimProblems(example, q));
   const echo = spokenHookEchoProblem(example.hook);
   if (echo) out.push(echo);
@@ -375,6 +507,39 @@ function lineProblems(lines: readonly string[]): string[] {
     if (p) out.push(p.replace(/^H\d /, ""));
   }
   return out;
+}
+
+/** The only difficulty a worked example or an authored breakdown script may use: Hard. */
+export const HARD_DIFFICULTY = 3;
+/**
+ * The first worked example the Hard-only rule binds: the first post after the ruling. The
+ * examples posted before it (W45's Nov 2 and Nov 4, difficulty 2) are history on `social`, and
+ * the content check reads every example there.
+ */
+export const HARD_ONLY_FROM = "2026-11-06";
+
+/**
+ * Hard questions only: the question must be the bank's difficulty 3.
+ *
+ * @spec [Karl's ruling 2026-11-05: "worked examples use Hard questions only
+ *       (questions.difficulty = 3) … The same rule will apply to authored QOTD breakdown
+ *       scripts when that pilot resumes"] | @implemented [2026-11-05]
+ *
+ * plain English: every worked example so far (W45, W46) was difficulty 2, which is too easy for
+ * the audience. A worked example due on or after HARD_ONLY_FROM (exampleProblems in
+ * scripts/worked-examples/content.ts: the content check, the daily selection and generate), and
+ * every authored breakdown script (check-breakdown-scripts.ts), is refused unless its question is
+ * difficulty 3. The video pilots under video-kit/pilots are not posts and are not checked. The difficulty is read from the seed
+ * SQL row the video is rendered from (seedQuestion), so the rule and the render read the same
+ * row. Trade-off: a production edit to a question's difficulty that the seed does not carry is
+ * not seen here; the CMO session's production check before each merge covers it.
+ */
+export function hardOnlyProblem(
+  q: Pick<SeedQuestion, "id" | "difficulty">,
+): string | null {
+  return q.difficulty === HARD_DIFFICULTY
+    ? null
+    : `${q.id} is difficulty ${q.difficulty}, not Hard (${HARD_DIFFICULTY}): worked examples and breakdowns use Hard questions only`;
 }
 
 /** The example against its question, its week, its style row and the public-copy lists. */
@@ -406,6 +571,8 @@ export function contentProblems(
       `signature_move differs from the style table's for "${example.skill_code}"`,
     );
   out.push(...scriptProblems(example, q));
+  if (example.figure)
+    out.push(...figureProblems(example.figure, example.steps.length, q));
   out.push(
     ...lineProblems([
       example.trap.summary,
@@ -469,13 +636,64 @@ export function workedExampleLabel(example: WorkedExampleContent): string {
   return `Worked example · ${example.skill_code} · ${example.hook.type}`;
 }
 
-/** "SAT Math worked example · Percentages": section and skill, at most 90 characters. */
-export function workedExampleTitle(
-  example: WorkedExampleContent,
-  q: SeedQuestion,
-): string {
+/** Where a title's topic came from, shown at the top of the "Week ready" message. */
+export type TitleSource = "display_name" | "skill_name";
+
+const PHRASE_BREAK = /[,:]\s+|\s+(?:and|or|in|of)\s+/g;
+const TRAILING_FILLER =
+  /(?:[\s,:·]+)?(?:\s+(?:and|or|in|of|the|a|to)[,:·]*)*$/i;
+
+/**
+ * A College Board skill name shortened for a title, never cut inside a word: the whole name if
+ * it fits WORKED_EXAMPLE_TOPIC_MAX, else the first prefix of two or more words ending at a phrase
+ * break (a comma or colon, or before "and", "or", "in", "of") that fits, else a one-word prefix
+ * there ("Probability"), else the longest run of whole words that fits; a trailing comma, colon
+ * or filler word ("in", "and", "the") is dropped. "Nonlinear Equations in One Variable and
+ * Systems of Equations in Two Variables" becomes "Nonlinear Equations".
+ *
+ * @spec [Karl's pipeline fixes 2026-11-14, item 5: "a caption title is never cut mid-word; a
+ *       missing display name falls back to a shortened skill name at a word boundary"]
+ *       | @implemented [2026-11-14]
+ */
+export function shortSkillName(skill: string): string {
+  const name = skill.replace(/\s+/g, " ").trim();
+  if (name.length <= WORKED_EXAMPLE_TOPIC_MAX) return name;
+  let single = "";
+  for (const m of name.matchAll(PHRASE_BREAK)) {
+    const head = name.slice(0, m.index).replace(TRAILING_FILLER, "");
+    if (head === "" || head.length > WORKED_EXAMPLE_TOPIC_MAX) continue;
+    if (head.includes(" ")) return head;
+    single ||= head;
+  }
+  if (single) return single;
+  const words: string[] = [];
+  for (const w of name.split(" ")) {
+    if ([...words, w].join(" ").length > WORKED_EXAMPLE_TOPIC_MAX) break;
+    words.push(w);
+  }
+  return (words.join(" ").replace(TRAILING_FILLER, "") || words[0]) ?? name;
+}
+
+/** The title's topic: the STYLE row's display_name, else the shortened skill name. */
+export function titleTopic(
+  style: WorkedExampleStyle,
+  skill: string,
+): { topic: string; source: TitleSource } | null {
+  const row = style[skill];
+  if (!row) return null;
+  return row.display_name
+    ? { topic: row.display_name, source: "display_name" }
+    : { topic: shortSkillName(skill), source: "skill_name" };
+}
+
+/**
+ * "SAT Math worked example · Linear inequalities": section and the skill's short topic, at most
+ * 90 characters. `topic` is the STYLE row's display_name (Karl's ruling 2026-11-11: short topic
+ * names in titles; the College Board skill name, example.skill_code, stays internal).
+ */
+export function workedExampleTitle(q: SeedQuestion, topic: string): string {
   return capTiktokTitle(
-    `SAT ${QOTD_SECTION_NAME[q.section]} worked example · ${example.skill_code}`,
+    `SAT ${QOTD_SECTION_NAME[q.section]} worked example · ${topic}`,
   );
 }
 
@@ -484,14 +702,14 @@ export function workedExampleTitle(
  *
  * @spec [SCL-265: Karl's ruling 2026-11-02 "captions and keywords for worked examples use the
  *       SCL-262 format"; SCL-262 items 2-5 (the caption lines, at most five hashtags, keywords
- *       from the test month, the always-set, the section and the canonical domain); the CC BY 4.0
- *       licence of the music (video-kit/worked-examples/music/tracks.json), credited in every
- *       caption] | @implemented [2026-11-02]
+ *       from the test month, the always-set, the section and the canonical domain); Karl's ruling
+ *       2026-11-04 ("Copy-paste cleanup"): no music credit in any caption, the credit is on the
+ *       video's end card] | @implemented [2026-11-02, credit moved 2026-11-04]
  *
  * plain English: the headline is the example's title ("SAT Math worked example · Percentages",
  * at most 90 characters, starting "SAT"). The captions come from the one caption builder
- * (shared/social/posts.ts); the only line a worked example adds is the music credit, last, on all
- * three, because the track's licence requires attribution. Replaces (2026-11-02) the 2026-10-28
+ * (shared/social/posts.ts), unchanged: a worked example adds nothing (the music credit its
+ * licence requires is on the end card, Karl 2026-11-04). Replaces (2026-11-02) the 2026-10-28
  * captions that opened "Follow for daily SAT questions 👆", carried the hook, and carried the
  * link-in-bio line (TikTok) or the comment-SAT line without the SCL-262 headline (Instagram).
  * The hook is no longer in the captions: it is on screen and spoken in the video.
@@ -499,42 +717,43 @@ export function workedExampleTitle(
 function captionContext(
   example: WorkedExampleContent,
   q: SeedQuestion,
+  topic: string,
 ): { headline: string; test: SocialTest | null; section: SocialSection } {
   return {
-    headline: workedExampleTitle(example, q),
+    headline: workedExampleTitle(q, topic),
     test: nextSatTest(example.post_on),
     section: QOTD_SECTION_NAME[q.section],
   };
 }
 
-/** TikTok: headline / follow and comment / hashtags / the music credit. No promo or link line. */
+/** TikTok: headline / follow and comment / hashtags. No promo or link line. */
 export function workedExampleCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
-  musicCredit: string,
+  topic: string,
 ): string {
-  const c = captionContext(example, q);
-  return socialTiktokCaption(c.headline, c.test, c.section, [musicCredit]);
+  const c = captionContext(example, q, topic);
+  return socialTiktokCaption(c.headline, c.test, c.section);
 }
 
-/** Instagram: headline / comment / "Taking the SAT <date>? Comment SAT…" / hashtags / credit. */
+/** Instagram: headline / comment / "Taking the SAT <date>? Comment SAT…" / hashtags. */
 export function workedExampleInstagramCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
-  musicCredit: string,
+  topic: string,
 ): string {
-  const c = captionContext(example, q);
-  return socialInstagramCaption(c.headline, c.test, c.section, [musicCredit]);
+  const c = captionContext(example, q, topic);
+  return socialInstagramCaption(c.headline, c.test, c.section);
 }
 
-/** Facebook: headline / the approach prompt / hashtags / credit. No link, no comment word. */
+/** Facebook: headline / the approach prompt / hashtags. No link, no comment word. */
 export function workedExampleFacebookCaption(
   example: WorkedExampleContent,
   q: SeedQuestion,
-  musicCredit: string,
+  topic: string,
 ): string {
-  const c = captionContext(example, q);
-  return socialFacebookCaption(c.headline, c.test, c.section, [musicCredit]);
+  const c = captionContext(example, q, topic);
+  return socialFacebookCaption(c.headline, c.test, c.section);
 }
 
 /** TikTok's keywords, keyed on the question's canonical domain (SCL-262 item 4). */
@@ -547,6 +766,107 @@ export function workedExampleKeywords(
     QOTD_SECTION_NAME[q.section],
     q.domain,
   );
+}
+
+/**
+ * The YouTube Shorts block (Karl, 2026-11-14: "add the YouTube Shorts block (title + description,
+ * no answer, utm_source=youtube&utm_medium=shorts) to each day's Slack reply from W48").
+ *
+ * @spec [Karl, 2026-11-14 (above); SCL-262 / SCL-265 (the captions' headline and hashtags, one
+ *       builder); owner brief "One funnel for every social post" (the "Free SAT practice:" line,
+ *       shared/social/funnel.ts); Public Disclosure Doctrine 1 (industry-standard Shorts copy:
+ *       a title with #Shorts, a description with the headline, a comment prompt, a link and
+ *       hashtags)] | @implemented [2026-11-14]
+ *
+ * plain English: from YOUTUBE_SHORTS_FROM (Monday of 2026-W48) every worked example's post
+ * carries a YouTube title (the worked-example title plus " #Shorts", at most 100 characters,
+ * YouTube's limit; without the tag if it would not fit) and a description: the headline, "Comment
+ * your answer 👇", the funnel's call to action with the tagged https link
+ * (lyceon.ai/start?utm_source=youtube&utm_medium=shorts&utm_campaign=worked_example), and the
+ * captions' hashtags. Nothing in it can give the answer (H5), and the link is the only one.
+ * Earlier posts carry no block, so a delivered week re-sent by recaption is unchanged.
+ */
+export const YOUTUBE_SHORTS_FROM = "2026-11-23";
+export const YOUTUBE_TITLE_MAX = 100;
+export const YOUTUBE_SHORTS_TAG = "#Shorts";
+
+/** True when a post on this date carries the YouTube Shorts block. */
+export function hasYoutubeShorts(postOn: string): boolean {
+  return postOn >= YOUTUBE_SHORTS_FROM;
+}
+
+/** "<title> #Shorts", or the title alone when the tag would pass 100 characters. */
+export function workedExampleYoutubeTitle(title: string): string {
+  const tagged = `${title} ${YOUTUBE_SHORTS_TAG}`;
+  return tagged.length <= YOUTUBE_TITLE_MAX ? tagged : title;
+}
+
+/** Headline / comment prompt / the call to action with the tagged link / hashtags. */
+export function workedExampleYoutubeDescription(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+  topic: string,
+): string {
+  const c = captionContext(example, q, topic);
+  return [
+    c.headline,
+    SOCIAL_COMMENT_LINE,
+    youtubeShortsCtaLine(funnelPhase(example.post_on), "worked_example"),
+    socialHashtags(c.test, c.section),
+  ].join("\n\n");
+}
+
+/**
+ * The YouTube block against its headline and question: the title within 100 characters and
+ * opening with the headline; the description opening with the headline and carrying exactly one
+ * link, the tagged Shorts link; with that link taken out, nothing Karl would not paste
+ * (copyBlockProblems) and no other link; no claim about people, statistic or banned phrase; and
+ * no answer (H5) in the title or anywhere in the description outside the fixed call to action.
+ */
+export function youtubeProblems(
+  youtube: { title: string; description: string },
+  headline: string,
+  q: HookQuestion,
+): string[] {
+  const out: string[] = [];
+  const { title, description } = youtube;
+  if (title.length > YOUTUBE_TITLE_MAX)
+    out.push(
+      `youtube title is ${title.length} characters (at most ${YOUTUBE_TITLE_MAX})`,
+    );
+  if (!title.startsWith(headline))
+    out.push(`youtube title must open with the headline "${headline}"`);
+  if (description.split("\n")[0] !== headline)
+    out.push(
+      `youtube description's first line must be the headline "${headline}"`,
+    );
+  const link = youtubeShortsLink("worked_example");
+  const links = description.split(link).length - 1;
+  if (links !== 1)
+    out.push(
+      `youtube description must carry the tagged Shorts link once (${link}), found ${links}`,
+    );
+  const rest = description.split(link).join("");
+  for (const p of copyBlockProblems(rest)) out.push(`youtube description ${p}`);
+  const other = CAPTION_LINK.exec(rest);
+  if (other)
+    out.push(`youtube description carries another link ("${other[0]}")`);
+  for (const text of [title, description]) {
+    const p =
+      hookPeopleProblem(text) ??
+      hookStatisticProblem(text) ??
+      publicPhraseProblem(text);
+    if (p) out.push(`youtube ${p.replace(/^H\d /, "")}`);
+  }
+  const prose = description
+    .split("\n")
+    .filter((l) => !l.includes(link))
+    .join("\n");
+  for (const text of [title, prose]) {
+    const a = hookAnswerProblem(text, q);
+    if (a) out.push(`youtube ${a.replace(/^H5 /, "")}`);
+  }
+  return out;
 }
 
 export function titleProblems(title: string): string[] {
@@ -566,23 +886,19 @@ const CAPTION_LINK =
   /https?:\/\/|\bwww\.|lyceon\.ai|\blink in bio\b|\bbio link\b/i;
 
 /**
- * One caption against its headline: the headline first, the music credit present, no link, and
- * the hook rules that apply to any public line (no claims about people, no statistics, no
- * banned public-copy phrase).
+ * One caption against its headline: the headline first, nothing in it but what Karl pastes (no
+ * music credit, licence, URL, field label, review note, id or file name: copyBlockProblems, Karl
+ * 2026-11-04), no link or bio line, and the hook rules that apply to any public line (no claims
+ * about people, no statistics, no banned public-copy phrase).
  */
-export function captionProblems(
-  caption: string,
-  musicCredit: string,
-  headline: string,
-): string[] {
+export function captionProblems(caption: string, headline: string): string[] {
   const out: string[] = [];
   const [first] = caption.split("\n");
   if (first !== headline)
     out.push(
       `caption's first line must be the headline "${headline}", got "${first ?? ""}"`,
     );
-  if (!caption.split("\n").includes(musicCredit))
-    out.push("caption does not credit the music track");
+  out.push(...copyBlockProblems(caption));
   const link = CAPTION_LINK.exec(caption);
   if (link) out.push(`caption carries a link or bio line ("${link[0]}")`);
   const p =
