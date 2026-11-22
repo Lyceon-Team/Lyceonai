@@ -30,6 +30,7 @@ import {
   it,
   vi,
 } from "vitest";
+import { createHash } from "node:crypto";
 import { Client } from "pg";
 import Stripe from "stripe";
 import express from "express";
@@ -60,6 +61,9 @@ const PRICES = {
 } as const;
 
 let pg: Client;
+/** The token's hash, as the database stores it (only the hash is ever stored). */
+const sha256 = (v: string): string =>
+  createHash("sha256").update(v, "utf8").digest("hex");
 const session = vi.hoisted(() => ({ id: null as string | null }));
 const mail = vi.hoisted(() => ({
   sent: [] as { kind: string; inviteId: string; studentProfileId?: string }[],
@@ -729,11 +733,9 @@ describe.skipIf(!PG_AVAILABLE)(
     it("CH2b the guard itself, raced on two real connections: exactly one begins", async () => {
       const inv = await savedCard();
       // Claim without the route's charge, so the race is on the SQL guard alone.
-      const { hashGuardianInviteToken } =
-        await import("../../server/lib/guardian-invites");
       await pg.query(
         `SELECT public.claim_guardian_invite_audited($1, $2, NULL)`,
-        [hashGuardianInviteToken(inv.token), STUDENT],
+        [sha256(inv.token), STUDENT],
       );
       const a = new Client(pgConnConfig(DB_NAME));
       const b = new Client(pgConnConfig(DB_NAME));
@@ -817,11 +819,9 @@ describe.skipIf(!PG_AVAILABLE)(
 
     it("CH6 no active link, no charge: the guard refuses even a claimed invite with a saved card", async () => {
       const inv = await savedCard();
-      const { hashGuardianInviteToken } =
-        await import("../../server/lib/guardian-invites");
       await pg.query(
         `SELECT public.claim_guardian_invite_audited($1, $2, NULL)`,
-        [hashGuardianInviteToken(inv.token), STUDENT],
+        [sha256(inv.token), STUDENT],
       );
       // The link is revoked before the charge begins.
       await pg.query(

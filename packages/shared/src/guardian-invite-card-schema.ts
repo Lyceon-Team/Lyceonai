@@ -30,7 +30,7 @@ export const guardianInviteCardRequestSchema = z
     acceptBillingTerms: z.literal(true),
   })
   .strict();
-export type GuardianInviteCardRequest = z.infer<
+type GuardianInviteCardRequest = z.infer<
   typeof guardianInviteCardRequestSchema
 >;
 
@@ -43,7 +43,7 @@ export type GuardianInviteCardResponse = z.infer<
 >;
 
 /** "month", "3 months", "year": the interval as the disclosure says it. */
-export function chargeIntervalText(
+function chargeIntervalText(
   interval: BillingPlanMetadata["interval"],
   intervalCount: number | null,
 ): string | null {
@@ -53,7 +53,7 @@ export function chargeIntervalText(
 }
 
 /** "$29.99", in the price's own currency. */
-export function formatChargeAmount(
+function formatChargeAmount(
   amountCents: number,
   currency: string,
 ): string {

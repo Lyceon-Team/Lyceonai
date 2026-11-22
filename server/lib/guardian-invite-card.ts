@@ -62,10 +62,10 @@ import {
 import { logger } from "../logger";
 
 /** The metadata purpose a setup session carries, so the webhook knows it is ours. */
-export const GUARDIAN_INVITE_CARD_PURPOSE = "guardian_invite_card";
+const GUARDIAN_INVITE_CARD_PURPOSE = "guardian_invite_card";
 
 /** The Stripe idempotency key for the one charge an invite may make: the invite id. */
-export function guardianInviteChargeIdempotencyKey(inviteId: string): string {
+function guardianInviteChargeIdempotencyKey(inviteId: string): string {
   return `guardian-invite-charge:${inviteId}`;
 }
 
@@ -92,11 +92,11 @@ const setSessionResultSchema = z
     ]),
   })
   .strict();
-export type SetSessionOutcome = z.infer<
+type SetSessionOutcome = z.infer<
   typeof setSessionResultSchema
 >["outcome"];
 
-export type CreateCardSessionResult =
+type CreateCardSessionResult =
   | { ok: true; url: string }
   | { ok: false; outcome: Exclude<SetSessionOutcome, "recorded"> };
 
@@ -214,7 +214,7 @@ const recordCardResultSchema = z
   })
   .strict();
 
-export type SetupSessionOutcome =
+type SetupSessionOutcome =
   | z.infer<typeof recordCardResultSchema>["outcome"]
   | "not_ours"
   | "setup_not_succeeded";
@@ -324,7 +324,7 @@ const beginResultSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("no_active_link") }).strict(),
 ]);
 
-export type ChargeOutcome =
+type ChargeOutcome =
   | "no_card"
   | "not_claimed"
   | "no_active_link"
