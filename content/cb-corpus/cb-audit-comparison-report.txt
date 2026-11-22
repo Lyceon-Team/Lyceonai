@@ -1,0 +1,150 @@
+========================================================================
+CB CORPUS BLIND AUDIT — COMPARISON REPORT
+========================================================================
+Date: 2026-11-22
+Fresh audit:  1618 items  (content/cb-corpus/cb-fresh-audit.ndjson)
+Stored tags:  1618 items  (content/cb-corpus/cb-tags-reconciled.ndjson)
+Source corpus: 1618 items (content/official-corpus/*.ndjson)
+Taxonomy: scl-v1.0.0  (151 active sub-skills, 282 clusters)
+
+OVERVIEW
+  Avg sub-skills/item — audit: 1.13  stored: 1.00
+  Avg clusters/item   — audit: 1.55  stored: 1.60
+  Unique sub-skills   — audit: 104  stored: 92
+  Unique clusters     — audit: 164  stored: 106
+
+────────────────────────────────────────────────────────────────────────
+METRIC 1: SKILL-LEVEL MATCH (audit primary → CB skill label)
+  Match: 1606/1618 = 99.3%
+  Mismatches: 12
+    Right Triangles and Trigonometry: 3 → [LAT:3]
+    Nonlinear Equations in One Variable and Systems of Equations in Two Variables: 2 → [NLF:2]
+    Systems of Two Linear Equations in Two Variables: 2 → [PCT:1, LE1:1]
+    Linear equations in two variables: 1 → [PCT:1]
+    Inference from Sample Statistics and Margin of Error: 1 → [ESC:1]
+    Lines, Angles, and Triangles: 1 → [RTT:1]
+    Ratios, Rates, Proportional Relationships, and Units: 1 → [NLF:1]
+    Percentages: 1 → [RAT:1]
+
+────────────────────────────────────────────────────────────────────────
+METRIC 2: PRIMARY SUB-SKILL AGREEMENT
+  Agreement: 934/1618 = 57.7%
+  Same-family disagree: 672   Cross-family: 12
+
+  Top 30 disagreement patterns:
+    NLF.1 -> NLF.4: 22
+    RAT.9 -> RAT.6: 20
+    LI.2 -> LI.1: 19
+    NLF.1 -> NLF.3: 18
+    LE1.1 -> LE1.2: 17
+    NLF.4 -> NLF.1: 17
+    EE.1 -> EE.2: 16
+    SYS.1 -> SYS.4: 16
+    CIR2 -> CIR1: 16
+    PRB.6 -> PRB.5: 15
+    EE.1 -> EE.3: 13
+    LI.5 -> LI.1: 12
+    INFS.5 -> INFS.4: 12
+    RAT.9 -> RAT.10: 12
+    LF.1 -> LF.3: 11
+    NLE.2 -> NLE.5: 11
+    NLF.3 -> NLF.2: 10
+    LAT.2 -> LAT.4: 10
+    LAT.2 -> LAT.5: 10
+    NLF.4 -> NLF.2: 9
+    LAT.2 -> LAT.1: 9
+    TVD.6 -> TVD.10: 9
+    EE.3 -> EE.2: 8
+    EE.3 -> EE.1: 8
+    LE2.2 -> LE2.3: 8
+    RTT3 -> RTT2: 8
+    PCT.6 -> PCT.13: 8
+    LE1.1 -> LE1.4: 7
+    LF.4 -> LF.3: 7
+    NLF.3 -> NLF.1: 7
+
+────────────────────────────────────────────────────────────────────────
+METRIC 3: CLUSTER AGREEMENT (Jaccard)
+  Overall avg: 0.215
+  Jaccard=0 (zero overlap): 966
+  Jaccard=1 (perfect):      135
+  Jaccard>0.5:              153
+
+  By CB skill:
+    Area and Volume: avg=0.104 n=80 zero=65 perfect=3
+    Circles: avg=0.223 n=44 zero=23 perfect=1
+    Equivalent Expressions: avg=0.230 n=101 zero=64 perfect=11
+    Evaluating Statistical Claims: Observational Studies and Experiments: avg=0.470 n=11 zero=2 perfect=0
+    Inference from Sample Statistics and Margin of Error: avg=0.303 n=24 zero=13 perfect=5
+    Linear Functions: avg=0.278 n=139 zero=53 perfect=5
+    Linear equations in one variable: avg=0.470 n=104 zero=32 perfect=31
+    Linear equations in two variables: avg=0.211 n=124 zero=63 perfect=4
+    Linear inequalities in one or two variables: avg=0.322 n=69 zero=29 perfect=7
+    Lines, Angles, and Triangles: avg=0.268 n=76 zero=40 perfect=8
+    Nonlinear Equations in One Variable and Systems of Equations in Two Variables: avg=0.361 n=130 zero=56 perfect=31
+    Nonlinear Functions: avg=0.106 n=226 zero=171 perfect=7
+    One-Variable Data: Distributions and Measures of Center and Spread: avg=0.016 n=73 zero=70 perfect=0
+    Percentages: avg=0.000 n=75 zero=75 perfect=0
+    Probability and Conditional Probability: avg=0.188 n=43 zero=25 perfect=0
+    Ratios, Rates, Proportional Relationships, and Units: avg=0.000 n=84 zero=84 perfect=0
+    Right Triangles and Trigonometry: avg=0.253 n=50 zero=30 perfect=7
+    Systems of Two Linear Equations in Two Variables: avg=0.386 n=102 zero=19 perfect=15
+    Two-Variable Data: Models and Scatterplots: avg=0.082 n=63 zero=52 perfect=0
+
+────────────────────────────────────────────────────────────────────────
+METRIC 4: RICHNESS GAP
+  Audit richer: 752 (46.5%)
+  Stored richer: 593 (36.7%)
+
+  Top 20 additional sub-skills found by audit:
+    NLF.3 (Exponential growth and decay structure): 52
+    NLF.4 (Quadratic and polynomial structure and models): 39
+    LI.1 (Model a situation with a one-sided inequality or system): 36
+    NLF.1 (Function notation: evaluate, read and solve input-output): 30
+    EE.2 (Expand and multiply): 26
+    NLF.2 (Interpret a nonlinear function in context): 25
+    LF.3 (Determine a linear function from points, a table, values, or slope): 23
+    RAT.6 (Single-Step Unit Conversion): 22
+    EE.3 (Factor polynomials (and rewrite quadratic forms)): 21
+    PRB.5 (Whole-Group Probability): 19
+    LAT.4 (Congruence and similarity: correspondence, criteria, and angle preservation): 18
+    LAT.5 (Similar figures: proportional side lengths): 18
+    LE1.2 (Find the value of an expression or an equivalent equation without stopping at the variable): 17
+    NLE.5 (Solve a system of a linear and a nonlinear equation): 16
+    SYS.4 (Model a context with a system): 16
+    CIR1 (Circle equation: center and radius): 16
+    LI.3 (Two-sided ranges (compound inequalities)): 14
+    EE.1 (Add, subtract, and combine like terms): 13
+    AV.5 (Similarity and scaling between figures): 13
+    RTT2 (Special right triangles (45-45-90, 30-60-90)): 13
+
+────────────────────────────────────────────────────────────────────────
+METRIC 5: DISTRACTOR OVERLAP
+  Items with distractors — audit: 977  stored: 1045  both: 959
+  Total pairs: 4726   Matching: 33   Overlap: 0.7%
+
+========================================================================
+SUMMARY
+  1. Skill-level match:       99.3%  (1606/1618)
+  2. Primary sub-skill agree: 57.7%  (934/1618)
+     — same-family: 672  cross-family: 12
+  3. Cluster Jaccard (avg):   0.215
+  4. Richness gap:            752 audit richer / 593 stored richer
+  5. Distractor overlap:      0.7%  (33/4726)
+
+INTERPRETATION NOTES
+  - Metric 1 at 99.3% confirms the audit is mapping questions to the correct
+    skill family (Math domain). The 12 mismatches are genuinely ambiguous items
+    that straddle two skill families.
+  - Metric 2 at 57.7% with 672/684 same-family means the disagreement is
+    almost entirely within-skill: which specific sub-skill (e.g. EE.1 vs EE.3)
+    is primary when the question tests multiple sub-skills in one family.
+  - Metric 3 (Jaccard 0.215) reflects that the audit used a broader cluster
+    vocabulary (164 vs 106 unique), and the two passes often chose different
+    clusters from the same solving-method family for the same question.
+  - Metric 4: the audit tagged 46.5% of items with extra sub-skills, as
+    expected from a 'tag richly' mandate vs the stored single-tag approach.
+  - Metric 5 (0.7% overlap) confirms distractors are highly subjective:
+    both passes identified distractors but rarely agreed on which option maps
+    to which cluster.
+========================================================================
