@@ -15,6 +15,9 @@
  *      the scan-key and envelope readers, prints "checked, not written", and never touches
  *      `tutor_eval_cases`. Without `--check` the same case is written.
  *   C2 an item row that exists but does not parse is refused, not read as pre-submit.
+ *   S1–S3 (owner brief 2026-11-22) a rubric scoped to one submit state is refused at import on a
+ *      cut-off in the other: G0-2-09 (before submission) on an answered item, G0-2-08 (the
+ *      post-submit control) on an unanswered one; an unscoped rubric imports in either.
  *   H1 (owner brief 2026-11-11) G0-2-04's window, "Walk me through it" then three "Got it, next
  *      step" taps, before submission: the WRITTEN case carries help_level worked_step (the final
  *      step 3) and submit_state pre_submit, computed by the route's own per-turn step. Before
@@ -341,6 +344,52 @@ describe("import: --check on a canonical-id conversation (2026-11-11)", () => {
     await expect(runImport([...ARGS, "--check"])).rejects.toThrow(
       "practice_session_items row does not parse: status: invalid_enum_value",
     );
+  });
+  /** The fixture's item, answered a minute before the cut-off: a post-submit turn. */
+  function answerTheItem(): void {
+    const item = db.current
+      .rows("practice_session_items")
+      .find((r) => r["id"] === ITEM);
+    if (item === undefined) throw new Error("fixture item missing");
+    item["status"] = "answered";
+    item["answered_at"] = "2026-11-04T18:19:02.000000+00:00";
+  }
+  const argsFor = (caseId: string): string[] => [
+    "--case",
+    caseId,
+    "--conversation",
+    CONVERSATION,
+    "--cutoff",
+    CUTOFF,
+    "--check",
+  ];
+
+  it("S1 a before-submission rubric (G0-2-09) on a post-submit cut-off is refused at import", async () => {
+    answerTheItem();
+    await expect(runImport(argsFor("G0-2-09"))).rejects.toThrow(
+      "G0-2-09: the rubric is scoped before submission, but this cut-off is after it",
+    );
+    expect(tablesTouched).not.toContain("tutor_eval_cases");
+  });
+
+  it("S2 the post-submit control (G0-2-08) imports on an answered item, and is refused before submission", async () => {
+    answerTheItem();
+    await expect(runImport(argsFor("G0-2-08"))).resolves.toMatch(
+      /^G0-2-08: checked, not written; .*post-submit; item answered;/,
+    );
+    db.current.rows("practice_session_items").forEach((r) => {
+      r["status"] = "served";
+      r["answered_at"] = null;
+    });
+    await expect(runImport(argsFor("G0-2-08"))).rejects.toThrow(
+      "G0-2-08: the rubric is scoped after submission, but this cut-off is before it",
+    );
+  });
+
+  it("S3 a rubric with no scope (G0-2-04) imports in either state", async () => {
+    await expect(runImport(argsFor("G0-2-04"))).resolves.toMatch(/pre-submit/);
+    answerTheItem();
+    await expect(runImport(argsFor("G0-2-04"))).resolves.toMatch(/post-submit/);
   });
 });
 

@@ -194,22 +194,55 @@ pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --report
 
 `read -rs` keeps the key and the password out of the screen and the shell history. A password with special characters must be URL-encoded inside `DATABASE_URL`.
 
-## G0-2-08: the Reading & Writing worked step (owner brief 2026-11-22)
+## G0-2-08: the post-submit control (re-scoped 2026-11-22)
 
-The production turn on SATRW23GOZ2P (key A) where LISA's worked step said "Let's look at
-Option B" before the student had answered. Its rubric carries the rule "no option named before
-submission" (`tests/eval/teaching-quality/rubrics.ts`).
+The production turn on SATRW23GOZ2P (key A) where LISA said "Let's look at Option B".
 
-1. Find the conversation and the cut-off with the G0-2-08 query in `real-case-finders.sql`.
-2. Import it. The line should end `help worked_step step … from N student turn(s)`:
+**It is a post-submit turn.**
+
+- Its item (`review_session_items`) was answered at 23:10:08, and the conversation began at 23:11:05.
+- The import line reads "post-submit; item answered".
+
+**Why the earlier batches failed.** Batches `ff9abf54` (v6) and `b1d92b1a` (v7) failed 5/5 only because the before-submission rule was applied to a submitted item.
+
+**Its rubric now** (`tests/eval/teaching-quality/rubrics.ts`, `submit_state: post_submit`):
+
+- Naming and comparing the options is allowed.
+- LISA must explain why the key is right from the passage.
+- LISA must never endorse a wrong option as right.
+
+**Steps:**
+
+1. Find the conversation and the cut-off with the G0-2-08 query in `real-case-finders.sql`. Its new columns:
+   - `item_answered_at`, set against `reply_at`;
+   - `post_submit_at_reply`, the import's own rule.
+2. If it is already imported, no re-import is needed: the stored request is unchanged. A fresh import also works:
 
    ```bash
    pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-08 --conversation <conversation_id> --cutoff <student message id>
    ```
 
-3. Run it on v6 (should fail the rule) and v7 (should pass):
+3. Rerun it on v6 and v7. The new rubric scores it; batches `ff9abf54` and `b1d92b1a` were scored by the old one:
 
    ```bash
    pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --case G0-2-08 --prompt-version lisa-default-v6
    pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --case G0-2-08 --prompt-version lisa-default-v7
    ```
+
+## G0-2-09: before submission, no option named (2026-11-22)
+
+**The rule:** "No option named before submission", with `submit_state: pre_submit`.
+
+**No real case yet.** Until a real before-submission case is found, it is backed by the synthetic replay of SATRW23GOZ2P:
+
+```bash
+NODE_USE_ENV_PROXY=1 pnpm exec tsx tests/eval/help-level/rw-worked-step.ts --runs 5
+```
+
+When a real case is found, import it as G0-2-09. The import refuses it if its cut-off is post-submit.
+
+**The scope check.**
+
+- Every rubric carries the submit state its rules are written for. The import refuses a case whose cut-off is in the other state, so a mismatch fails at import, not at judge time.
+- `--check` refuses the same way.
+- `run-baseline.ts` repeats the check for cases imported before it existed.
