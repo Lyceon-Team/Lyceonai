@@ -1005,7 +1005,7 @@ DELETE FROM public.question_sub_skills WHERE question_id IN (SELECT question_id 
 DELETE FROM public.question_clusters WHERE question_id IN (SELECT question_id FROM _psda_ids);
 DELETE FROM public.distractor_clusters WHERE question_id IN (SELECT question_id FROM _psda_ids);
 
--- Insert reconciled question_sub_skills (1026 rows)
+-- Insert reconciled question_sub_skills (1038 rows)
 INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_version, tagged_by, tagged_at) VALUES
   ('SATM203AIZR', 'PCT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM205AHRG', 'PRB.5', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1093,6 +1093,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2325NOV', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM233IFQV', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM233LSDR', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM233LSDR', 'OVD.13', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2342TI0', 'PCT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2344HI5', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2346BF3', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1288,6 +1289,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2AJN662', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2AK8272', 'RAT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2ANI3Y2', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2ANI3Y2', 'OVD.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2ANPHED', 'PCT.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2AO8J8N', 'PCT.7', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2ARMGOZ', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1347,6 +1349,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2C8B8U1', 'PCT.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2C8B8U1', 'PCT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2C9PLF0', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2C9PLF0', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2CBMVV7', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2CE68FC', 'PCT.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2CHEBF8', 'RAT.14', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1370,6 +1373,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2D6PU2H', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2D8R88J', 'PCT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2D92EI5', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2D92EI5', 'OVD.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2DAP879', 'PCT.7', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2DAWQPZ', 'PCT.7', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2DBNWE4', 'PCT.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1498,6 +1502,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2HHUDLH', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2HI5BSH', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2HN9ARN', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2HN9ARN', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2HOCI44', 'RAT.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2HOCMUQ', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2HSHS2U', 'PCT.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1627,6 +1632,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2MAJ5I7', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2MB76ZK', 'PCT.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2MBDHMQ', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2MBDHMQ', 'OVD.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2MCJKJD', 'PCT.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2MCJKJD', 'PCT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2MCXIY7', 'RAT.14', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1645,12 +1651,14 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2MWVMV1', 'PRB.5', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2MY4155', 'PCT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2MYFSGE', 'OVD.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2MYFSGE', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2N2BDYI', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2N37CTL', 'PCT.14', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2N3ZGYZ', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2N4KZW3', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2N5NKVV', 'RAT.14', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2N79AWC', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2N79AWC', 'OVD.7', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2NAUDAL', 'RAT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2ND2HP7', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2NIIPFB', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1700,6 +1708,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2OT6CCC', 'RAT.13', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2OV79QY', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2OVCU0A', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2OVCU0A', 'OVD.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2OWD6KJ', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2OWKS9C', 'RAT.14', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2OXM83I', 'RAT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1799,6 +1808,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2RNAK19', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2RO7DNB', 'OVD.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2ROBOT5', 'OVD.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2ROBOT5', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2ROEA8R', 'RAT.14', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2RQWZP2', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2RRGWIB', 'PCT.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1856,6 +1866,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2THJO5N', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2TKH17V', 'RAT.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2TKNAHZ', 'OVD.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2TKNAHZ', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2TLYG6S', 'PCT.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2TMISKB', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2TNKK8B', 'RAT.14', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1940,6 +1951,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2W6BZIZ', 'PCT.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2W6O055', 'RAT.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2W6WZV2', 'OVD.12', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2W6WZV2', 'OVD.10', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2W75Q9V', 'OVD.11', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2W7EO9G', 'PRB.5', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2WAGFPK', 'RAT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -1947,7 +1959,7 @@ INSERT INTO public.question_sub_skills (question_id, sub_skill_id, taxonomy_vers
   ('SATM2WBU6XA', 'PCT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2WC1VZU', 'PCT.7', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2WCTCQY', 'RAT.9', 'scl-v1.0.0', 'reconciled-v1', NOW()),
-  ('SATM2WE1R85', 'OVD.8', 'scl-v1.0.0', 'reconciled-v1', NOW()),
+  ('SATM2WE1R85', 'OVD.7', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2WEMJCQ', 'PCT.7', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2WGYPFW', 'PRB.5', 'scl-v1.0.0', 'reconciled-v1', NOW()),
   ('SATM2WHE1UG', 'PRB.6', 'scl-v1.0.0', 'reconciled-v1', NOW()),
@@ -7396,7 +7408,7 @@ INSERT INTO public.distractor_clusters (question_id, option_key, cluster_id, tax
   ('SATM2ZZRNQW', 'C', 'CL.0183', 'scl-v1.0.0'),
   ('SATM2ZZRNQW', 'D', 'CL.0183', 'scl-v1.0.0');
 
--- Sanity check: row counts (expected: 1026, 2846, 2510)
+-- Sanity check: row counts (expected: 1038, 2846, 2510)
 SELECT 'question_sub_skills' AS tbl, COUNT(*) AS cnt FROM public.question_sub_skills WHERE question_id IN (SELECT question_id FROM _psda_ids);
 SELECT 'question_clusters' AS tbl, COUNT(*) AS cnt FROM public.question_clusters WHERE question_id IN (SELECT question_id FROM _psda_ids);
 SELECT 'distractor_clusters' AS tbl, COUNT(*) AS cnt FROM public.distractor_clusters WHERE question_id IN (SELECT question_id FROM _psda_ids);
