@@ -101,7 +101,9 @@ export type ChatCompactionContent = z.infer<typeof chatCompactionContentSchema>;
  * have the version yet falls back to its default and reports that one, so the metrics row shows
  * what actually ran.
  */
-export const TUTOR_DEFAULT_PROMPT_VERSION = "lisa-default-v6";
+// lisa-default-v7 (Karl's ruling 1, 2026-11-22: "after #1502 merges, set
+// TUTOR_DEFAULT_PROMPT_VERSION=lisa-default-v7"); v6 before.
+export const TUTOR_DEFAULT_PROMPT_VERSION = "lisa-default-v7";
 
 export const policyAssignmentSchema = z.object({
   policy_family: z.string(),
