@@ -7,7 +7,11 @@
  * (bootstrap), not at request time. The registry is immutable after load.
  *
  * expected outcome: resolvePromptArtifact("default", null) returns the latest
- * default artifact. resolvePromptArtifact("default", "lisa-default-v1") returns
+ * default artifact. Since 2026-11-22 (W4-13) the BFF sends an exact version
+ * (shared/tutor-orchestrator-wire.ts TUTOR_DEFAULT_PROMPT_VERSION), so production
+ * runs the version the BFF names: a new default goes live when that constant
+ * changes, and this registry's default must equal it (pinned by
+ * tests/ci/tutor-turn-attribution-path.route.contract.test.ts). resolvePromptArtifact("default", "lisa-default-v1") returns
  * that specific version. Unknown variants/versions fall back to the default.
  *
  * trade-offs:
