@@ -215,6 +215,8 @@ export const SHELL_EXCLUDED_ROUTES: Readonly<
   "/start": "public-marketing",
   // Final brief "Trustpilot card + 'Feedback' across the site" (Karl, 2026-10-20) §2.
   "/contact": "public-marketing",
+  // Owner brief "/parent page" (Karl, 2026-11-22), ruling 1: prerendered and indexable.
+  "/parent": "public-marketing",
   "/trust": "public-legal",
   "/legal": "public-legal",
   "/legal/:slug": "public-legal",

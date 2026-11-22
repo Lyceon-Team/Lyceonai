@@ -215,6 +215,33 @@ published blueprint (CB_READING_WRITING, CB_MATH).
 | CB_KHAN (re-read 2026-10-15) | https://satsuite.collegeboard.org/practice/khan-academy | "Khan Academy’s Official SAT Prep course covers every skill on the test at 3 levels: Foundations, Medium, and Advanced."; "a special walk-through course that provides a detailed explanation of every question on that practice test" |
 | CB_BLUEBOOK_PRACTICE_TESTS (re-read 2026-10-15) | https://satsuite.collegeboard.org/practice/practice-tests/bluebook | "These tests are timed like a real test"; "Full-length practice tests are scored."; "you can view and download your scores in My Practice , review questions, analyze your performance" |
 
+## /parent page (approved by Karl 2026-11-22)
+
+**Approval:** owner brief "Build: `/parent` page + card-first parent onboarding" (Karl, 2026-11-22), ruling 3: "Karl approves every claim on the page, including 'A month of Pro costs less than an hour or two with most private SAT tutors'." Every row below is the approved prototype's copy, verbatim, except P8 and P9, whose wording Karl chose on 2026-11-22 in place of the prototype's "unlimited" (banned, X-list).
+
+**Guard:** `tests/ci/public-copy-claims.contract.test.ts` renders `/parent` with every other prerendered page. The two outcome sentences (P13, P15) are listed in `APPROVED_OUTCOME_PHRASES`; "See real progress before test day" is covered by H38's approved "See real progress".
+
+**Product facts checked (2026-11-22):** the guardian view shows the projected score range, target score and test date (`GuardianScoreStrip`), mastery across the eight domains (`GuardianMasteryCard`, SCL-194), the study calendar, planned against done (`GuardianCalendarTab`), and full-length practice test results (`GuardianExamsPage`); it never shows answers or tutor conversations. Free is 40 a day (`FREE_DAILY_PRACTICE_QUESTIONS`, now `client/src/lib/free-tier.ts`), the diagnostic and review; paid has no daily cap. Card first and the charge at join are enforced server-side in this same change (Part 2).
+
+| ID | Claim | Where | Cat | Note |
+|---|---|---|---|---|
+| P1 | "See real progress before test day." | H1 | e | approved; "See real progress" is H38's approved phrase |
+| P2 | "Stop guessing whether they're ready. Get real peace of mind before test day." | hero sub | e | approved |
+| P3 | "Students can practice free. The parent view is part of Lyceon Pro." | hero note | a | product fact: guardian visibility needs the student's paid plan |
+| P4 | Sample card "Maya's progress": projected 1310–1390, target 1450, four domain bars, "4 of 5 planned sessions" | hero | e | an illustration with sample data, captioned "Example view with sample data."; "Test day" is the next official date from `shared/sat-test-dates.ts` |
+| P5 | The five "What you'll see" cards | What you'll see | e | each names a surface the guardian view has (facts above); no mechanism described |
+| P6 | "Your teen's answers and their conversations with the AI tutor stay private to them." | What you'll see | e | guardians have zero LISA access and see no answers (CLAUDE.md guardian model) |
+| P7 | The four "How it works" steps, including "Nothing is charged yet" and "your card is charged, and Pro turns on for them right away" | How it works | e | ruling 2 (card first, charged at join); enforced by the Part 2 card guard |
+| P8 | Free: "Diagnostic test with a projected score"; "40 practice questions a day"; "Review of missed questions" | pricing | a, e | "Review of missed questions" chosen by Karl 2026-11-22 instead of "Unlimited review…" |
+| P9 | Pro: "Everything in Free, with no daily limit on practice questions", "The parent view", "A study calendar built around test day", "LISA, the AI tutor", "Full-length practice tests", "A projected score that updates as they practice" | pricing | e | first line chosen by Karl 2026-11-22 instead of "Everything in Free, unlimited"; "no daily limit" is the existing approved claim |
+| P10 | "A month of Pro costs less than an hour or two with most private SAT tutors, and it's there every day." | pricing sub | d, e | **approved by Karl in writing, 2026-11-22 (ruling 3).** Support: CARE_TUTOR_COST (test-prep tutors $100/hr, average posted starting rate) and TPR_TUTORING ($2,000 for 10 hours, $200/hr). True while the live monthly price is under $100. The monthly price is read from Stripe at runtime, so a price change can falsify this sentence without any code change: re-check it whenever the monthly price changes |
+| P11 | Price tiles; "Best value · save N%"; "per year (about $X a month)" | pricing | a | N and $X computed from the live Stripe prices (`yearlySavings`, N rounded down); no amount in the source or the prerendered HTML |
+| P12 | "Cancel any time from your billing page. Prices load live from checkout." | pricing | a | Billing Terms (cancel from the portal) |
+| P13 | FAQ "Does Lyceon guarantee a score?" / "No. We show where your teen stands and exactly what to work on." | FAQ, FAQPage JSON-LD | e | a disclaimer; the question is listed in `APPROVED_OUTCOME_PHRASES` |
+| P14 | The other five FAQ answers (invite link, when charged, cancel, what you see, existing account) | FAQ, FAQPage JSON-LD | e | "When am I charged?" matches ruling 2 and the Part 2 enforcement; "keep all their progress" matches claim-at-join (the student's own account is linked, nothing is reset) |
+| P15 | "Study smarter, score higher." / "Sign up, add your card, invite your teen. You’re only charged once they join." | final band | e | the X1 slogan in sentence case; listed in `APPROVED_OUTCOME_PHRASES` |
+| P16 | "Talk to Karl, Lyceon's founder, for 15 minutes…" | call band | a | ruling 8 (2026-11-21) Calendly call |
+
 ## Before and after
 
 `IDs` match the Step 0 inventory. "Source / approval" names the College Board or research source for a category-d fact, or the approval for everything else ("approved" means the 2026-10-03 approval above).
