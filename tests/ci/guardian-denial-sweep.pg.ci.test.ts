@@ -140,6 +140,13 @@ const GUARDIAN_REACHABLE: ReadonlyArray<string> = [
   "/api/guardian/", // guardian-role gated
   "/api/health",
   "/api/internal/", // server-to-server (CRON_SECRET / OIDC)
+  // Owner rulings 2026-11-21 (SCL-282): the guardian invite. POST /lookup answers what a token
+  // is (open / claimed / cancelled / expired / not_found, and an open one's guardian first name)
+  // and carries no student data; POST /claim refuses every non-student with 403
+  // ROLE_NOT_PERMITTED (an inline role gate, not requireStudentAccount, because that one carries
+  // the under-13 link gate the claim must precede). Guardian denial: CL4 in
+  // tests/ci/guardian-invites.pg.ci.test.ts.
+  "/api/join/",
   "/api/legal/", // the caller's own acceptances
   "/api/notifications/", // the caller's own feed
   "/api/profile/", // the caller's own profile

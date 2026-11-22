@@ -36,6 +36,12 @@ import {
   type SubscriptionCanceledKind,
 } from "./templates/subscription-canceled";
 import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
+import { guardianTeenInviteEmail } from "./templates/guardian-teen-invite";
+import {
+  guardianInviteAlreadyFundedEmail,
+  guardianInviteChargedEmail,
+  guardianInviteChargeFailedEmail,
+} from "./templates/guardian-invite-charge";
 import { siteUrlFromEnv } from "./templates";
 import {
   defaultEmailTransport,
@@ -47,6 +53,14 @@ import {
 export const ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX =
   "account-deletion-scheduled";
 export const GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX = "guardian-link-invite";
+export const GUARDIAN_TEEN_INVITE_IDEMPOTENCY_PREFIX = "guardian-teen-invite";
+/** The three outcomes of an invite's one charge (SCL-286). Keyed on the invite: one each, ever. */
+export const GUARDIAN_INVITE_CHARGED_IDEMPOTENCY_PREFIX =
+  "guardian-invite-charged";
+export const GUARDIAN_INVITE_CHARGE_FAILED_IDEMPOTENCY_PREFIX =
+  "guardian-invite-charge-failed";
+export const GUARDIAN_INVITE_ALREADY_FUNDED_IDEMPOTENCY_PREFIX =
+  "guardian-invite-already-funded";
 export const SUBSCRIPTION_CANCELED_IDEMPOTENCY_PREFIX = "subscription-canceled";
 export const ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX =
   "account-deletion-completed";
@@ -257,6 +271,104 @@ export async function sendGuardianLinkInviteEmail(
 }
 
 /**
+ * One key per issued link: a retried send of the same link is one email, and every new link
+ * (send, resend) is a new email. Derived from durable state (the invite row id and its current
+ * token's issue time), so neither the address, nor the token, nor its hash is in the key.
+ */
+export function guardianTeenInviteIdempotencyKey(input: {
+  inviteId: string;
+  tokenIssuedAt: string;
+}): string {
+  return `${GUARDIAN_TEEN_INVITE_IDEMPOTENCY_PREFIX}:${input.inviteId}:${input.tokenIssuedAt}`;
+}
+
+/**
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2; SCL-282;
+ *        contracts/notifications.contract.md §0.4, §0.5, §12.3] | @implemented [2026-11-22]
+ *
+ * plain English: the guardian's invite to their teen, on the same direct-send path as the
+ * student's guardian invite, with its own template. The /join link carries the token, so the
+ * URL is never logged: logs carry the invite id, the provider id and the outcome only. The
+ * address is used to send and nothing else. Never throws; returns a Result.
+ */
+export async function sendGuardianTeenInviteEmail(
+  input: {
+    inviteId: string;
+    guardianProfileId: string;
+    guardianFirstName: string;
+    token: string;
+    /** ISO issue time of the current token: part of the idempotency key. */
+    tokenIssuedAt: string;
+    expiresAt: string;
+    toEmail: string;
+    requestId?: string;
+  },
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  const siteUrl = resolveSiteUrl(deps);
+  if (!siteUrl) {
+    logger.error(
+      "NOTIFICATIONS",
+      "teen_invite_email_unconfigured",
+      "PUBLIC_SITE_URL is not set; cannot build the join link",
+      { inviteId: input.inviteId, requestId: input.requestId },
+    );
+    return err({
+      kind: "config_missing",
+      message: "PUBLIC_SITE_URL is not configured",
+    });
+  }
+  const rendered = guardianTeenInviteEmail({
+    guardianFirstName: input.guardianFirstName,
+    joinUrl: `${siteUrl}/join/${input.token}`,
+    expiresAt: input.expiresAt,
+  });
+  const transport = deps.transport ?? defaultEmailTransport();
+  const sent = await transport({
+    idempotencyKey: guardianTeenInviteIdempotencyKey({
+      inviteId: input.inviteId,
+      tokenIssuedAt: input.tokenIssuedAt,
+    }),
+    to: input.toEmail,
+    // The teen is invited by address; there may be no profile yet, and none is looked up.
+    recipientProfileId: null,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    fromCategory: rendered.fromCategory,
+    // Sent at the guardian's request, in their own action.
+    audience: "user_triggered",
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  if (sent.ok) {
+    logger.info(
+      "NOTIFICATIONS",
+      "teen_invite_email_sent",
+      "Guardian teen invite email accepted",
+      {
+        inviteId: input.inviteId,
+        guardianProfileId: input.guardianProfileId,
+        providerMessageId: sent.value.providerMessageId,
+        requestId: input.requestId,
+      },
+    );
+  } else {
+    logger.warn(
+      "NOTIFICATIONS",
+      "teen_invite_email_failed",
+      "Guardian teen invite email not sent",
+      {
+        inviteId: input.inviteId,
+        guardianProfileId: input.guardianProfileId,
+        kind: sent.error.kind,
+        requestId: input.requestId,
+      },
+    );
+  }
+  return sent;
+}
+
+/**
  * @spec [Doc-01_V8 §40.5 Hard delete at T+7; SCL-083 (PROPOSED — the completion notice is not
  *        in any locked document); contracts/notifications.contract.md §0.4 (direct send, C0.6
  *        best-effort-no-retry); Doc-01A_V1.0 §14 redaction] | @implemented [2026-09-15]
@@ -411,4 +523,132 @@ export async function sendSubscriptionCanceledEmail(
     );
   }
   return sent;
+}
+
+/**
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 3; SCL-286; contracts/notifications.contract.md
+ *        §0.4 (direct sends), §5.3 (a durable idempotency key), §12.3] | @implemented [2026-11-22]
+ *
+ * plain English: the guardian is told what happened to the card saved on their invite when the
+ * teen joined: charged ("Your teen joined. Pro is on."), not charged ("Payment didn't go through",
+ * with a link to today's checkout for that student), or not needed (the teen was already
+ * covered). Each key is the prefix and the invite id: an invite makes one charge attempt that
+ * finishes, so each email is sent at most once per invite, whatever retries happen. No key or
+ * log carries an address. `user_triggered`: sent in the teen's claim request, so not held for
+ * quiet hours. Never throws; returns a Result.
+ */
+async function sendGuardianInviteChargeMail(
+  kind: "charged" | "charge_failed" | "already_funded",
+  input: {
+    inviteId: string;
+    email: string;
+    recipientProfileId: string;
+    rendered: ReturnType<typeof guardianInviteChargedEmail>;
+    requestId?: string;
+  },
+  deps: DirectSendDeps,
+): Promise<DirectSendResult> {
+  const prefix =
+    kind === "charged"
+      ? GUARDIAN_INVITE_CHARGED_IDEMPOTENCY_PREFIX
+      : kind === "charge_failed"
+        ? GUARDIAN_INVITE_CHARGE_FAILED_IDEMPOTENCY_PREFIX
+        : GUARDIAN_INVITE_ALREADY_FUNDED_IDEMPOTENCY_PREFIX;
+  const transport = deps.transport ?? defaultEmailTransport();
+  const sent = await transport({
+    idempotencyKey: `${prefix}:${input.inviteId}`,
+    to: input.email,
+    recipientProfileId: input.recipientProfileId,
+    subject: input.rendered.subject,
+    html: input.rendered.html,
+    text: input.rendered.text,
+    fromCategory: input.rendered.fromCategory,
+    audience: "user_triggered",
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  if (sent.ok) {
+    logger.info(
+      "NOTIFICATIONS",
+      `guardian_invite_${kind}_email_sent`,
+      "Guardian invite charge email accepted",
+      {
+        inviteId: input.inviteId,
+        providerMessageId: sent.value.providerMessageId,
+        recipientProfileId: input.recipientProfileId,
+        requestId: input.requestId,
+      },
+    );
+  } else {
+    logger.warn(
+      "NOTIFICATIONS",
+      `guardian_invite_${kind}_email_failed`,
+      "Guardian invite charge email not sent (best-effort; the charge outcome stands)",
+      {
+        inviteId: input.inviteId,
+        recipientProfileId: input.recipientProfileId,
+        kind: sent.error.kind,
+        requestId: input.requestId,
+      },
+    );
+  }
+  return sent;
+}
+
+type GuardianInviteChargeMailInput = {
+  inviteId: string;
+  email: string;
+  /** The guardian. Logged as a digest; never the address. */
+  recipientProfileId: string;
+  requestId?: string;
+};
+
+/** "Your teen joined. Pro is on." */
+export async function sendGuardianInviteChargedEmail(
+  input: GuardianInviteChargeMailInput,
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  return sendGuardianInviteChargeMail(
+    "charged",
+    { ...input, rendered: guardianInviteChargedEmail() },
+    deps,
+  );
+}
+
+/** "Payment didn't go through", with a link to today's checkout for this student. */
+export async function sendGuardianInviteChargeFailedEmail(
+  input: GuardianInviteChargeMailInput & { studentProfileId: string },
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  const siteUrl = resolveSiteUrl(deps);
+  if (!siteUrl) {
+    logger.error(
+      "NOTIFICATIONS",
+      "guardian_invite_charge_failed_email_unconfigured",
+      "PUBLIC_SITE_URL is not set; cannot build the checkout link",
+      { inviteId: input.inviteId, requestId: input.requestId },
+    );
+    return err({
+      kind: "config_missing",
+      message: "PUBLIC_SITE_URL is not configured",
+    });
+  }
+  // The same page the guardian's "Choose a plan" sends them to (guardianPaths.choosePlan).
+  const checkoutUrl = `${siteUrl}/guardian/students?choose=${encodeURIComponent(input.studentProfileId)}`;
+  return sendGuardianInviteChargeMail(
+    "charge_failed",
+    { ...input, rendered: guardianInviteChargeFailedEmail({ checkoutUrl }) },
+    deps,
+  );
+}
+
+/** The teen was already covered; the card was not charged. */
+export async function sendGuardianInviteAlreadyFundedEmail(
+  input: GuardianInviteChargeMailInput,
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  return sendGuardianInviteChargeMail(
+    "already_funded",
+    { ...input, rendered: guardianInviteAlreadyFundedEmail() },
+    deps,
+  );
 }
