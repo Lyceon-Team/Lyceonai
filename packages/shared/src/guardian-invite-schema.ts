@@ -32,14 +32,11 @@ const guardianInviteEmailSchema = z
   .max(254);
 
 /**
- * POST /api/guardian/invites — start an invite. With `email`, it is emailed to the teen; without,
- * the guardian copies the link from the response. Starting an invite is where the guardian
- * accepts the Parent / Guardian Terms, so the acceptance is required, as at link-code redemption.
- */
-/**
  * POST /api/guardian/invites — start a DRAFT invite (card first, owner ruling 2026-11-22, 2).
  * No address: a draft has no card, so nothing can be sent for it. The link goes out from
- * `/:id/resend` or `/:id/link` once a card is saved (20261210000000).
+ * `/:id/resend` or `/:id/link` once a card is saved (20261210000000). Starting an invite is
+ * where the guardian accepts the Parent / Guardian Terms, so the acceptance is required, as at
+ * link-code redemption.
  */
 export const issueGuardianInviteRequestSchema = z
   .object({
@@ -109,7 +106,6 @@ export type GuardianInviteLinkResponse = z.infer<
   typeof guardianInviteLinkResponseSchema
 >;
 
-/** POST /api/join/lookup and POST /api/join/claim: the token goes in the body, never a path. */
 /** POST /api/guardian/invites answers with the draft only: no link exists for it yet. */
 export const guardianInviteDraftResponseSchema = z
   .object({
@@ -120,6 +116,7 @@ export type GuardianInviteDraftResponse = z.infer<
   typeof guardianInviteDraftResponseSchema
 >;
 
+/** POST /api/join/lookup and POST /api/join/claim: the token goes in the body, never a path. */
 export const joinTokenRequestSchema = z
   .object({ token: guardianInviteTokenSchema })
   .strict();
