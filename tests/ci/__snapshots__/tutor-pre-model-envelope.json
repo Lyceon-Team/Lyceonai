@@ -54,7 +54,7 @@
         "policy_family": "instructional_tutor",
         "policy_variant": "scaffolded",
         "policy_version": "1.0.0",
-        "prompt_version": "lisa-default-v6",
+        "prompt_version": "lisa-default-v7",
         "assignment_mode": "deterministic",
         "assignment_key": "<id-2>:scoped_question",
         "reason_snapshot": {
@@ -174,7 +174,7 @@
         "policy_family": "instructional_tutor",
         "policy_variant": "scaffolded",
         "policy_version": "1.0.0",
-        "prompt_version": "lisa-default-v6",
+        "prompt_version": "lisa-default-v7",
         "assignment_mode": "deterministic",
         "assignment_key": "<id-2>:scoped_question",
         "reason_snapshot": {
