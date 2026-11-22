@@ -1,0 +1,139 @@
+{"id":"3d1070c9","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=25x+30 at x=2: 25(2)+30=80"}
+{"id":"bd9eb2b5","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Solve f(x)=8x=72 for x: x=9"}
+{"id":"1480dd5c","sub_skills":["LF.3"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Determine constant b from f(7)=28 in f(x)=4x+b: 28+b=28, b=0"}
+{"id":"0d6ab461","sub_skills":["LF.2","LF.1"],"clusters":["CL.0104","CL.0094","CL.0060"],"distractors":[],"why":"Build model 600+35w and evaluate at w=4: 600+140=740"}
+{"id":"520c8177","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build linear model: 25 calories/day for x days gives c=25x"}
+{"id":"88e13c8c","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate contextual linear cost function at given input"}
+{"id":"3a3b95df","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate d=16-x/30 at x=300: 16-10=6"}
+{"id":"84664a7c","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0128"],"distractors":[],"why":"Build equation from rate 8 ft/s and initial height 15: h=8s+15"}
+{"id":"7fac16fb","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=0.7x+55 at x=20: 14+55=69"}
+{"id":"06fc1726","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=(2x-1)/3 at x=5: (10-1)/3=3"}
+{"id":"6863c7ce","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0060"],"distractors":[],"why":"Interpret slope 16 in d=16t: snail travels 16 inches per minute"}
+{"id":"0b332f00","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Solve g(x)=6x=54 for x: x=9"}
+{"id":"c10ad793","sub_skills":["LF.5"],"clusters":["CL.0072"],"distractors":[],"why":"Read x-intercept from graph of linear function"}
+{"id":"d11910d6","sub_skills":["LF.5"],"clusters":["CL.0072"],"distractors":[],"why":"Read y-intercept from graph of linear function"}
+{"id":"0eae6be1","sub_skills":["LE2.4"],"clusters":["CL.0104"],"distractors":[],"why":"Translate 'y is 84 less than x' into y=x-84"}
+{"id":"361f97c7","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=4x-3 at x=10: 40-3=37"}
+{"id":"447fa970","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=7x+2 at x=4: 28+2=30"}
+{"id":"27198699","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret 33 as y-intercept: predicted temp on day 0 is approx 33C"}
+{"id":"a130fcdc","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060","CL.0101"],"distractors":[],"why":"Evaluate g(x)=11x+4 at x=1,2,3 to match table: 15,26,37"}
+{"id":"bf36c815","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0084"],"distractors":[],"why":"Evaluate g(x)=-x+8 at x=0: g(0)=8"}
+{"id":"0d391910","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Solve f(x)=4x=8 for x: x=2"}
+{"id":"930c2990","sub_skills":["LF.1"],"clusters":["CL.0072","CL.0071"],"distractors":[],"why":"Read predicted volume from graph at 500 kelvins"}
+{"id":"3f5375d9","sub_skills":["LF.4"],"clusters":["CL.0024","CL.0072"],"distractors":[],"why":"Compute slope from graph to find cost per mile"}
+{"id":"1d18794b","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060","CL.0128"],"distractors":[],"why":"Build model from $35 setup + $23/month: c=23m+35"}
+{"id":"b51c173d","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write y=mx+b from slope=2 and y-intercept (0,-5): y=2x-5"}
+{"id":"4702da8f","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=80-6x at x=7: 80-42=38"}
+{"id":"13294295","sub_skills":["LF.4"],"clusters":["CL.0024","CL.0072"],"distractors":[],"why":"Read rate from graph: candy bars produced per second"}
+{"id":"33e4af6b","sub_skills":["LF.5"],"clusters":["CL.0072"],"distractors":[],"why":"Read y-intercept from graph of linear function"}
+{"id":"7b17f86a","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0040"],"distractors":[],"why":"Evaluate f(x)=x+8/11 at x=3/11: 3/11+8/11=1"}
+{"id":"adf60b28","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret 4 as y-intercept: machine had produced 4 items initially"}
+{"id":"b8cbe394","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060","CL.0128"],"distractors":[],"why":"Build model from $11/day + $10 insurance: c=11d+10"}
+{"id":"12983c1e","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128","CL.0094"],"distractors":[],"why":"Determine equation from table: slope=4, b=3, f(x)=4x+3"}
+{"id":"aeaba0b6","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Solve f(x)=14+4x=58: 4x=44, x=11 games"}
+{"id":"70d9516e","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate d=30t at t=2: d=60"}
+{"id":"720e51ac","sub_skills":["LF.1"],"clusters":["CL.0072","CL.0071"],"distractors":[],"why":"Read cost from graph at 60 rings"}
+{"id":"4e97f862","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=3x-8 at x=7: 21-8=13"}
+{"id":"3174f07d","sub_skills":["LF.5"],"clusters":["CL.0072"],"distractors":[],"why":"Read y-intercept from graph of linear function"}
+{"id":"f79fffba","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate h(x)=3x-7 at x=-2: -6-7=-13"}
+{"id":"a9039591","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128","CL.0094"],"distractors":[],"why":"Determine equation from table: slope=4, f(0)=10, f(x)=4x+10"}
+{"id":"a396ed75","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: 5.7 min/mile for m miles gives t=5.7m"}
+{"id":"e4a588ca","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0034"],"distractors":[],"why":"Evaluate f(x)=1/2(x+6) at x=4: 1/2(10)=5"}
+{"id":"2e379126","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate g(x)=4x-6 at x=-7: -28-6=-34"}
+{"id":"979b0b8d","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write equation from slope=39 and point (0,0): y=39x"}
+{"id":"bf883fde","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write equation from slope=3 and y-intercept (0,-8): y=3x-8"}
+{"id":"3462d850","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0060"],"distractors":[],"why":"Interpret 45 in d=45t: car travels 45 miles per hour"}
+{"id":"fe6f9678","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from f(0)=17, f(1)=17: slope=0, f(x)=17"}
+{"id":"bc638f2d","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret 9 as y-intercept: estimated 9 thousand fire ants at study start"}
+{"id":"9d9fe1e6","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0084"],"distractors":[],"why":"Interpret 39 as y-intercept: predicted temp on day 0 is approx 39C"}
+{"id":"c4d49134","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate s=40+3t at t=5: 40+15=55"}
+{"id":"255996a6","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Solve T=1000+18h=1576: 18h=576, h=32"}
+{"id":"a8e6bd75","sub_skills":["LF.5"],"clusters":["CL.0128","CL.0072"],"distractors":[],"why":"Identify graph of y=2x-5 from slope=2 and y-intercept=-5"}
+{"id":"5ad6bc97","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=7x+1 at x=7: 49+1=50"}
+{"id":"1993561d","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write equation from slope=1/4 and y-intercept (0,5): y=x/4+5"}
+{"id":"a73a5c22","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate g(x)=10x+8 at x=8: 80+8=88"}
+{"id":"5907e072","sub_skills":["LF.3"],"clusters":["CL.0084","CL.0089"],"distractors":[],"why":"Find b from f(0)=0+b=30: b=30"}
+{"id":"a4d6fbec","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate y=5x+10 at x=8: 40+10=50"}
+{"id":"8643d906","sub_skills":["LF.4"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret P(30)=550: population was 550K at 30 years after 2000"}
+{"id":"1ecaa9c0","sub_skills":["LF.2","LF.1"],"clusters":["CL.0104","CL.0060","CL.0094"],"distractors":[],"why":"Build expression $20+$0.70(38) for 38 miles"}
+{"id":"a232aa96","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=-3x+60 at x=-8: 24+60=84"}
+{"id":"0ea7ef01","sub_skills":["LF.1"],"clusters":["CL.0072","CL.0071"],"distractors":[],"why":"Read predicted temperature from graph at 6 atmospheres"}
+{"id":"2eef7e61","sub_skills":["LF.3"],"clusters":["CL.0128"],"distractors":[],"why":"Write equation from slope=3/4 and f(0)=3: f(x)=3x/4+3"}
+{"id":"97eab129","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from table: rate=2268/3780=0.6, f(x)=0.6x"}
+{"id":"81390d6c","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate h(x)=x+200 at x=50: 250"}
+{"id":"73b5f330","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Solve f(x)=5x+8=58: 5x=50, x=10"}
+{"id":"776cfa7c","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0060"],"distractors":[],"why":"Interpret 25 as slope: Hana deposited $25 each month"}
+{"id":"6efcc0a3","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from h(0)=41, h(1)=40: slope=-1, h(x)=-x+41"}
+{"id":"fe287f7e","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060","CL.0128"],"distractors":[],"why":"Build model from $60/hr + $120 parts: f(x)=60x+120"}
+{"id":"aad7e1b9","sub_skills":["LF.5"],"clusters":["CL.0084"],"distractors":[],"why":"Find y-intercept of f(x)=x/10-2: f(0)=-2, so (0,-2)"}
+{"id":"cee5b352","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060","CL.0128"],"distractors":[],"why":"Build model: 4.8 cm/month rate + 162 cm initial: y=4.8x+162"}
+{"id":"548a4929","sub_skills":["LF.5"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"Find both intercepts of h(x)=4x+28: x-int=-7, y-int=28, sum=21"}
+{"id":"e62cfe5f","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Read given data: body length 13mm has head width 2.6mm"}
+{"id":"e3cf671f","sub_skills":["LF.3","LF.1"],"clusters":["CL.0094","CL.0089","CL.0034","CL.0017"],"distractors":[],"why":"Find k from f(5)=32 in f(x)=4x+k(x-1): k=3, then f(10)=67"}
+{"id":"a5834ea4","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0101"],"distractors":[],"why":"Evaluate f(x)=39 at x=1,2,3: all outputs are 39"}
+{"id":"7e3f8363","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from (0,3) and (7,31): slope=4, f(x)=4x+3"}
+{"id":"c1bd5301","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Identify a=241 as initial weight in f(x)=a+bx"}
+{"id":"620fe971","sub_skills":["LF.5","LF.4"],"clusters":["CL.0084","CL.0150"],"distractors":[],"why":"Interpret x-intercept of y=120-25x: at x=4.8 hours all cargo unloaded"}
+{"id":"17d80dc3","sub_skills":["LF.5"],"clusters":["CL.0128","CL.0084"],"distractors":[],"why":"Find x-intercept from slope=5, y-int=-35: 0=5x-35, x=7"}
+{"id":"1c29bfd1","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060","CL.0128"],"distractors":[],"why":"Build model: 14.70 psi base + 0.44 per foot: P=14.70+0.44d"}
+{"id":"e470e19d","sub_skills":["LF.5"],"clusters":["CL.0084"],"distractors":[],"why":"Find x-intercept of f(x)=7x-84: 0=7x-84, x=12"}
+{"id":"af711d1b","sub_skills":["LF.3"],"clusters":["CL.0024"],"distractors":[],"why":"Determine equation from table: rate=1/4, t=d/4"}
+{"id":"f7e39fe9","sub_skills":["LF.3"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Find m in f(x)=mx-28 from table: 10m-28=82, m=11"}
+{"id":"5cf1bbc9","sub_skills":["LF.4"],"clusters":["CL.0024","CL.0072","CL.0150"],"distractors":[],"why":"Interpret slope of cost vs games graph: each game costs $25"}
+{"id":"c81f1c2f","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=45x+600 at x=50: 2250+600=2850"}
+{"id":"0d5495a6","sub_skills":["LF.3"],"clusters":["CL.0084","CL.0089"],"distractors":[],"why":"Find b from h(0)=0+b=45: b=45"}
+{"id":"3e9eaffc","sub_skills":["LF.5","LF.4"],"clusters":["CL.0084","CL.0150"],"distractors":[],"why":"Interpret y-intercept of f(x)=-5x+30: 30 ounces when pouring began"}
+{"id":"a775af14","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from (0,2) and (8,34): slope=4, f(x)=4x+2"}
+{"id":"9551cd91","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from table: rate=55, p=55c-9, so 55c-p=9"}
+{"id":"ebd457f4","sub_skills":["LF.2","LF.1"],"clusters":["CL.0060","CL.0094"],"distractors":[],"why":"Compute 2/5 of $215=$86 per week, times 9 weeks=$774"}
+{"id":"6c5c2a81","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from (7,21) and (9,25): slope=2, h(x)=2x+7"}
+{"id":"dae126d7","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: 212 base minus 1/550 per foot: B=212-x/550"}
+{"id":"271f7e3f","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(9)=(9+7)/4=4 and f(1)=(1+7)/4=2: difference=2"}
+{"id":"c651cc56","sub_skills":["LF.3","LF.1"],"clusters":["CL.0024","CL.0128","CL.0094"],"distractors":[],"why":"Determine equation from table: slope=3, f(x)=3x-2, f(3)=7"}
+{"id":"c22b5f25","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128","CL.0009"],"distractors":[],"why":"Determine equation from (-2,3) and (4,-5): slope=-4/3, f(x)=-4x/3+1/3"}
+{"id":"11e1ab81","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0072","CL.0128"],"distractors":[],"why":"Determine equation from conveyor belt graph: slope and intercept give d=2m"}
+{"id":"4fe4fd7c","sub_skills":["LF.3","LF.1"],"clusters":["CL.0094","CL.0089","CL.0060"],"distractors":[],"why":"Find m from c(100)=800: m=3, then c(1000)=3500"}
+{"id":"2f34cd1c","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate f(x)=55.20-0.16x at x=326: 55.20-52.16=3.04"}
+{"id":"3122fc7b","sub_skills":["LF.3","LF.1"],"clusters":["CL.0024","CL.0128","CL.0094"],"distractors":[],"why":"Find linear model from 57K in 1991 and 224K in 2011, evaluate at 2015"}
+{"id":"23dedddd","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from f(0)=8, f(1)=12: slope=4, f(x)=4x+8"}
+{"id":"c8fb6bcb","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0119"],"distractors":[],"why":"Interpret 244 in perimeter function f(x)=2x+244: 244=2w, width=122"}
+{"id":"a91a2b75","sub_skills":["LF.5"],"clusters":["CL.0084"],"distractors":[],"why":"Find y-coordinate of y-intercept of f(x)=-9x+9: f(0)=9"}
+{"id":"56dc8045","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0060"],"distractors":[],"why":"Interpret slope -4 in w(t)=300-4t: 4 ml drains per second"}
+{"id":"c01f4a95","sub_skills":["LF.3","LF.1"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Find m from j(12)=18: m=-10.5, then j(10)=39"}
+{"id":"4b0c156b","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from h(28)=15, h(26)=22: slope=-7/2, h(x)=-7x/2+113"}
+{"id":"868fc236","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0083"],"distractors":[],"why":"Determine conversion ratio from table: 16.8/4=4.2, so k=4.2x"}
+{"id":"7e1bff94","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from table h:1,3 f(h):155,285: slope=65, f(h)=65h+90"}
+{"id":"946ab892","sub_skills":["LF.3"],"clusters":["CL.0128"],"distractors":[],"why":"Write equation from slope=2 and point (1,14): g(x)=2x+12"}
+{"id":"0cadb20e","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Solve f(a)=(a+15)/5=10: a+15=50, a=35"}
+{"id":"042aa429","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate 4f(2)-g(2)=4(9)-14=36-14=22"}
+{"id":"b2fe7ab6","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128","CL.0094"],"distractors":[],"why":"Determine b from table: slope=-3, at x=1 gives b=57"}
+{"id":"1bc11c4e","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0060"],"distractors":[],"why":"Interpret slope -0.05 in g(m): vehicle uses 0.05 gallons per mile"}
+{"id":"113b938e","sub_skills":["LF.5","LF.4"],"clusters":["CL.0084","CL.0150"],"distractors":[],"why":"Interpret x-intercept of y=18-5x: at x=3.6s bicycle stops"}
+{"id":"295a41f0","sub_skills":["LF.5","LF.3"],"clusters":["CL.0024","CL.0128","CL.0087"],"distractors":[],"why":"Determine f from graph of y=f(x)-11: add 11 to get f(x)=-2x+4"}
+{"id":"1f0966db","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0016"],"distractors":[],"why":"Solve 9x/7+8/7=5: 9x+8=35, x=3"}
+{"id":"441558e7","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Evaluate y=0.67(58)+2.6=41.46 approx 41"}
+{"id":"f0773a55","sub_skills":["LF.4"],"clusters":["CL.0024","CL.0072","CL.0150"],"distractors":[],"why":"Interpret slope of electrician cost graph: hourly rate"}
+{"id":"53487897","sub_skills":["LF.3"],"clusters":["CL.0128"],"distractors":[],"why":"Build equation from slope=8 and point (2,18): y=8x+2"}
+{"id":"67d63e19","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: $52 first day + $26 each additional: C(d)=26d+26"}
+{"id":"bbf9e5ce","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: $21 for first 25 + $14 each additional: f(n)=14n+175"}
+{"id":"0bd33265","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0095"],"distractors":[],"why":"Solve h=9(v-273.15)/5+32=467.33 for v: v=515"}
+{"id":"a5882327","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0095","CL.0089"],"distractors":[],"why":"Substitute c+7 into g(x)=b-15x and solve: b=61c/4+105"}
+{"id":"023c0a8d","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"Match input: f(3x)=x-6, so f(6)=f(3*2)=2-6=-4"}
+{"id":"daad7c32","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0060"],"distractors":[],"why":"Interpret 2 in l=30+2w: length increases 2cm per newton"}
+{"id":"e103300e","sub_skills":["LF.5"],"clusters":["CL.0084","CL.0150"],"distractors":[],"why":"Interpret x-intercept of f(x)=4x+19: when f(x)=0, x=-19/4"}
+{"id":"e86a06fe","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0080"],"distractors":[],"why":"Interpret 6 in y-5x=6 (y=5x+6): 6 yards is fixed fabric amount"}
+{"id":"78391fcc","sub_skills":["LF.3","LF.5"],"clusters":["CL.0024","CL.0128","CL.0084"],"distractors":[],"why":"Determine equation from table: slope=-3, f(x)=-3x-12, x-intercept at x=-4"}
+{"id":"a7e2859a","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: $430 first day + $215 each additional: y=215x+215"}
+{"id":"6989c80a","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Compute increase: 9/5 * 2.10 = 3.78 degrees Fahrenheit"}
+{"id":"0b0fa68b","sub_skills":["LF.1","LF.3"],"clusters":["CL.0055","CL.0094","CL.0089"],"distractors":[],"why":"From f(cx)=x-8, derive f(u)=u/c-8; f(2)=35 gives c=2/43"}
+{"id":"a309803e","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: 2w sqft total / 220 sqft/gal: P=w/110"}
+{"id":"16889ef3","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine function from two points: slope=-2.1/13=-21/130, f(t)=-21t/130+4"}
+{"id":"50f4cb9c","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine a,b from table: a=64, b=-128, a-b=192"}
+{"id":"d1f50dbe","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: 2w sqft total / 170 sqft/gal: S=w/85"}
+{"id":"af2ba762","sub_skills":["LF.4"],"clusters":["CL.0150","CL.0094"],"distractors":[],"why":"Interpret 2.74 in F(x)=2.74-0.19(x-3): gas price at x=3 months"}
+{"id":"b988eeec","sub_skills":["LF.5"],"clusters":["CL.0017","CL.0084"],"distractors":[],"why":"Combine f+g=x/4-9+3x/4+21=x+12, x-intercept at x=-12"}
+{"id":"e9908930","sub_skills":["LF.3","LF.5"],"clusters":["CL.0024","CL.0128","CL.0087"],"distractors":[],"why":"Determine f from table, then h(x)=f(x)-13=5x+20-13=5x+7"}
+{"id":"415ab1d2","sub_skills":["LF.5","LF.3"],"clusters":["CL.0024","CL.0072","CL.0087"],"distractors":[],"why":"Read graph of f(x)+19 to determine f: negative slope, shift down 19"}
+{"id":"b3abf40f","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0060"],"distractors":[],"why":"Compute increase: 9/5 * 9.10 = 16.38 degrees Fahrenheit"}
+{"id":"be9cb6a2","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Build model: $270 first day + $135 each additional: y=135x+135"}
+{"id":"e25f0807","sub_skills":["LF.3","LF.1"],"clusters":["CL.0024","CL.0128","CL.0094"],"distractors":[],"why":"Determine equation from two points: slope=5, y=5x+15, evaluate at x=1/4: 65/4"}
