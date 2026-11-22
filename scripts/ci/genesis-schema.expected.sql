@@ -22352,7 +22352,7 @@ CREATE TABLE public.test_session_items (
 CREATE TABLE public.tutor_context_resolution_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     conversation_id uuid NOT NULL,
-    turn_ordinal integer NOT NULL,
+    turn_ordinal integer,
     context_version text,
     memory_summaries_count integer DEFAULT 0 NOT NULL,
     recent_messages_count integer DEFAULT 0 NOT NULL,
@@ -22368,6 +22368,13 @@ CREATE TABLE public.tutor_context_resolution_log (
 --
 
 COMMENT ON TABLE public.tutor_context_resolution_log IS 'Doc 03A §11.3: per-turn context assembly audit. Records what context was assembled (version, counts, flags). Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
+
+--
+-- Name: COLUMN tutor_context_resolution_log.turn_ordinal; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_context_resolution_log.turn_ordinal IS '0-based turn of the conversation. NULL = not known. Rows before 2026-11-22 carry a constant 0 (not measured).';
 
 
 --
@@ -22737,9 +22744,9 @@ COMMENT ON TABLE public.tutor_question_links IS 'Question relationship log — a
 CREATE TABLE public.tutor_turn_metrics (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     conversation_id uuid NOT NULL,
-    turn_ordinal integer NOT NULL,
+    turn_ordinal integer,
     orchestration_duration_ms integer NOT NULL,
-    model_name text NOT NULL,
+    model_name text,
     tokens_in integer,
     tokens_out integer,
     cache_hit boolean DEFAULT false NOT NULL,
@@ -22760,11 +22767,13 @@ CREATE TABLE public.tutor_turn_metrics (
     crisis_classifier_ms integer,
     crisis_classifier_attempts smallint,
     crisis_degraded_reason text,
+    turn_outcome text,
     CONSTRAINT tutor_turn_metrics_crisis_layer2_check CHECK ((((crisis_classifier_ms IS NULL) AND (crisis_classifier_attempts IS NULL) AND (crisis_degraded_reason IS NULL)) OR ((crisis_classifier_ms IS NOT NULL) AND (crisis_classifier_ms >= 0) AND (crisis_classifier_attempts IS NOT NULL) AND ((crisis_classifier_attempts >= 0) AND (crisis_classifier_attempts <= 2)) AND ((crisis_degraded_reason IS NULL) OR (crisis_degraded_reason = ANY (ARRAY['timeout'::text, 'rate_limited'::text, 'upstream_error'::text, 'config_error'::text])))))),
     CONSTRAINT tutor_turn_metrics_help_level_check CHECK (((help_level IS NULL) OR (help_level = ANY (ARRAY['ask'::text, 'hint'::text, 'worked_step'::text, 'full_solution'::text])))),
     CONSTRAINT tutor_turn_metrics_help_signal_check CHECK ((((help_level IS NULL) AND (help_signal IS NULL)) OR ((help_level IS NOT NULL) AND (help_signal IS NOT NULL) AND (help_signal = ANY (ARRAY['walkthrough'::text, 'step_understood'::text, 'stuck'::text, 'skipped'::text, 'solve_it'::text, 'correct_step'::text, 'none'::text]))))),
     CONSTRAINT tutor_turn_metrics_help_worked_step_check CHECK ((((help_worked_step IS NULL) AND (help_level IS DISTINCT FROM 'worked_step'::text)) OR ((help_level = 'worked_step'::text) AND (help_worked_step IS NOT NULL) AND ((help_worked_step >= 1) AND (help_worked_step <= 3))))),
-    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text]))))
+    CONSTRAINT tutor_turn_metrics_intent_check CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['walkthrough'::text, 'desmos_walkthrough'::text, 'explain_rule'::text, 'video_desmos'::text, 'video_explanation'::text, 'step_understood'::text, 'step_stuck'::text])))),
+    CONSTRAINT tutor_turn_metrics_turn_outcome_check CHECK (((turn_outcome IS NULL) OR (turn_outcome = ANY (ARRAY['completed'::text, 'model_armor_input_blocked'::text, 'crisis_bypass'::text, 'guided_choice_video'::text, 'idempotency_replay'::text, 'idempotency_conflict'::text, 'idempotency_lookup_error'::text, 'error:student_message_write_failed'::text, 'error:crisis_message_write_failed'::text, 'error:tutor_message_write_failed'::text, 'error:instruction_assignment_failed'::text, 'error:orchestration_failed'::text, 'error:unexpected'::text]))))
 );
 
 
@@ -22773,6 +22782,20 @@ CREATE TABLE public.tutor_turn_metrics (
 --
 
 COMMENT ON TABLE public.tutor_turn_metrics IS 'Doc 03A §11.5: per-turn operational telemetry. Fire-and-forget writes from tutor-policy-logger.ts. Service-internal — never exposed to clients.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.turn_ordinal; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.turn_ordinal IS '0-based turn of the conversation: the number of earlier student turns. NULL = not known (never a guessed 0; every row before 2026-11-22).';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.model_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.model_name IS 'The provider model the worker answered with. NULL when no model answered; never an outcome code (see turn_outcome).';
 
 
 --
@@ -22850,6 +22873,13 @@ COMMENT ON COLUMN public.tutor_turn_metrics.crisis_classifier_attempts IS 'Layer
 --
 
 COMMENT ON COLUMN public.tutor_turn_metrics.crisis_degraded_reason IS 'Why Layer 2 could not answer (timeout, rate_limited, upstream_error, config_error); NULL when it answered or did not run. A code, never message text.';
+
+
+--
+-- Name: COLUMN tutor_turn_metrics.turn_outcome; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tutor_turn_metrics.turn_outcome IS 'How the turn ended (W4-12): completed (a delivered reply), model_armor_input_blocked, crisis_bypass, guided_choice_video, idempotency_*, or error:*. NULL only on a pre-2026-11-22 row whose code was not recognised.';
 
 
 --

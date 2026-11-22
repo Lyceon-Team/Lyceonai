@@ -443,7 +443,9 @@ describe("video intents are served with no model call", () => {
     expect(metrics).toHaveLength(1);
     expect(metrics[0]).toMatchObject({
       intent: "video_desmos",
-      model_name: "guided_choice_video",
+      // W4-12 (2026-11-22): no model answered; the outcome is its own column.
+      model_name: null,
+      turn_outcome: "guided_choice_video",
       tokens_in: null,
       tokens_out: null,
       prompt_version: null,

@@ -104,6 +104,12 @@ import {
 } from "../services/tutor-policy-logger";
 import { persistInstructionAssignment } from "../services/tutor-runtime-writer";
 import {
+  contextHash,
+  exposuresForTurn,
+  readTurnOrdinal,
+} from "../services/tutor-attribution";
+import {
+  TUTOR_DEFAULT_PROMPT_VERSION,
   orchestrateRequestSchema,
   type OrchestrateRequest,
   type TurnAttribution,
@@ -1278,9 +1284,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       // Pre-pipeline error — no model invocation, no injection/crisis scan.
       await logTurnMetrics({
         conversationId: conversation.id,
-        turnOrdinal: 0,
+        turnOrdinal: null,
         orchestrationDurationMs: 0,
-        modelName: "idempotency_lookup_error",
+        modelName: null,
+        outcome: "idempotency_lookup_error",
+        contextHash: null,
         tokensIn: null,
         tokensOut: null,
         thinkingTokens: null,
@@ -1299,6 +1307,19 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       sendTutorError(res, "idempotency_lookup_failed");
       return;
     }
+
+    // Attribution (owner brief "attribution", Karl 2026-11-22): this turn's 0-based ordinal in the
+    // conversation. A retried turn counts from its own stored row, so it keeps the ordinal it was
+    // first given. Started here and awaited where it is written, so it runs alongside the steps
+    // below (scope, sanitization, the crisis classifier) and adds no time to the turn.
+    const turnOrdinal = readTurnOrdinal(
+      conversation.id,
+      (
+        (existingTurn ?? []).find(
+          (m) => (m as { role: string }).role === "student",
+        ) as ExistingStudentTurnRow | undefined
+      )?.created_at ?? null,
+    );
 
     let resumableStudentRow: { id: string } | null = null;
     if (existingTurn && existingTurn.length > 0) {
@@ -1321,9 +1342,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         // Pre-pipeline error — message mismatch on same client_turn_id.
         await logTurnMetrics({
           conversationId: conversation.id,
-          turnOrdinal: 0,
+          turnOrdinal: await turnOrdinal,
           orchestrationDurationMs: 0,
-          modelName: "idempotency_conflict",
+          modelName: null,
+          outcome: "idempotency_conflict",
+          contextHash: null,
           tokensIn: null,
           tokensOut: null,
           thinkingTokens: null,
@@ -1383,9 +1406,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         // is null — the classifier ran on the original turn, not this replay.
         await logTurnMetrics({
           conversationId: conversation.id,
-          turnOrdinal: 0,
+          turnOrdinal: await turnOrdinal,
           orchestrationDurationMs: 0,
-          modelName: "idempotency_replay",
+          modelName: null,
+          outcome: "idempotency_replay",
+          contextHash: null,
           tokensIn: null,
           tokensOut: null,
           thinkingTokens: null,
@@ -1599,6 +1624,10 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       };
     }
 
+    // The ordinal's count must finish before this turn's own student row exists, or it would
+    // count it (a new turn's count has no upper bound). Started at step 8, so it has long finished.
+    await turnOrdinal;
+
     // Step 11: Persist student message — or, on a resumed turn, reuse the row
     // step 8 already re-claimed (set back to 'pending').
     const { data: studentMessageRow, error: studentMessageError } =
@@ -1644,9 +1673,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       // LISA-GCP-007: log metrics for student message write failure.
       await logTurnMetrics({
         conversationId: conversation.id,
-        turnOrdinal: 0,
+        turnOrdinal: await turnOrdinal,
         orchestrationDurationMs: 0,
-        modelName: "error:student_message_write_failed",
+        modelName: null,
+        outcome: "error:student_message_write_failed",
+        contextHash: null,
         tokensIn: null,
         tokensOut: null,
         thinkingTokens: null,
@@ -1879,9 +1910,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         // LISA-GCP-007: log metrics for crisis message write failure.
         await logTurnMetrics({
           conversationId: conversation.id,
-          turnOrdinal: 0,
+          turnOrdinal: await turnOrdinal,
           orchestrationDurationMs: 0,
-          modelName: "error:crisis_message_write_failed",
+          modelName: null,
+          outcome: "error:crisis_message_write_failed",
+          contextHash: null,
           tokensIn: null,
           tokensOut: null,
           thinkingTokens: null,
@@ -1926,9 +1959,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       // @spec [CR-03C-V3-01 §3.4, Doc-03A_V1 §11.5]
       await logTurnMetrics({
         conversationId: conversation.id,
-        turnOrdinal: 0,
+        turnOrdinal: await turnOrdinal,
         orchestrationDurationMs: 0,
-        modelName: "crisis_bypass",
+        modelName: null,
+        outcome: "crisis_bypass",
+        contextHash: null,
         tokensIn: null,
         tokensOut: null,
         thinkingTokens: null,
@@ -2077,9 +2112,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
         );
         await logTurnMetrics({
           conversationId: conversation.id,
-          turnOrdinal: 0,
+          turnOrdinal: await turnOrdinal,
           orchestrationDurationMs: Date.now() - videoTurnStartedAt,
-          modelName: "error:tutor_message_write_failed",
+          modelName: null,
+          outcome: "error:tutor_message_write_failed",
+          contextHash: null,
           tokensIn: null,
           tokensOut: null,
           thinkingTokens: null,
@@ -2109,9 +2146,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       // No model call: null counts, no prompt version (unknown, never 0).
       await logTurnMetrics({
         conversationId: conversation.id,
-        turnOrdinal: 0,
+        turnOrdinal: await turnOrdinal,
         orchestrationDurationMs: Date.now() - videoTurnStartedAt,
-        modelName: "guided_choice_video",
+        modelName: null,
+        outcome: "guided_choice_video",
+        contextHash: null,
         tokensIn: null,
         tokensOut: null,
         thinkingTokens: null,
@@ -2181,19 +2220,28 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       policyFamily: "instructional_tutor",
       policyVariant: "scaffolded",
       policyVersion: "1.0",
-      promptVersion: null,
+      // W4-13: the version is decided here, before the model call, and the envelope carries the
+      // same constant (tutor-context.ts resolveDefaultPolicy), so this row and the turn's
+      // metrics row name the same artifact.
+      promptVersion: TUTOR_DEFAULT_PROMPT_VERSION,
       assignmentMode: "deterministic",
       assignmentKey: `${studentId}:${conversation.entry_mode}`,
       // emotional_register: omitted → DB DEFAULT 'default' applies (§18.4)
-      reasonSnapshot: { reason: "default_deterministic_assignment" },
+      // The guided-choice pick that started the turn, as its code (null: typed). Never text.
+      reasonSnapshot: {
+        reason: "default_deterministic_assignment",
+        intent: turnIntent,
+      },
     });
     if (!instructionAssignmentResult.ok) {
       // LISA-GCP-007: log metrics for instruction assignment failure.
       await logTurnMetrics({
         conversationId: conversation.id,
-        turnOrdinal: 0,
+        turnOrdinal: await turnOrdinal,
         orchestrationDurationMs: 0,
-        modelName: "error:instruction_assignment_failed",
+        modelName: null,
+        outcome: "error:instruction_assignment_failed",
+        contextHash: null,
         tokensIn: null,
         tokensOut: null,
         thinkingTokens: null,
@@ -2216,6 +2264,24 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
 
       sendTutorError(res, "canonical_write_failed");
       return;
+    }
+
+    // §18.1 / W4-13: the conversation records the prompt version it started on, once. Best effort:
+    // attribution, not the turn, so a failed write is logged and the turn proceeds.
+    {
+      const { error: promptVersionError } = await supabaseServer
+        .from("tutor_conversations")
+        .update({ prompt_version: TUTOR_DEFAULT_PROMPT_VERSION })
+        .eq("id", conversation.id)
+        .is("prompt_version", null);
+      if (promptVersionError) {
+        logger.warn(
+          "TUTOR_RUNTIME",
+          "conversation_prompt_version_write_failed",
+          "Failed to record the conversation's prompt version; turn proceeds",
+          { code: promptVersionError.code },
+        );
+      }
     }
 
     // Step 13: Resolve pre-submit state and correct answer BEFORE building the
@@ -2251,7 +2317,7 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
 
     await logContextResolution({
       conversationId: conversation.id,
-      turnOrdinal: 0,
+      turnOrdinal: await turnOrdinal,
       contextVersion: "1.0",
       memorySummariesCount: envelope.memory_summaries.length,
       recentMessagesCount: envelope.recent_messages.length,
@@ -2422,6 +2488,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       envelope.worked_step = helpTurn.directive.workedStep;
     }
 
+    // W4-14 (Doc 03D §8.1): the hash of exactly the request the worker receives, every field set.
+    // Null when Model Armor blocked the input: no request is sent.
+    const requestHash =
+      armorInput.kind === "blocked" ? null : contextHash(envelope);
+
     // Step 14: Invoke orchestration via the real worker boundary
     // (LISA-FULL-001 item 1). orchestrateTurn posts to the worker, applies
     // the BFF-side scanAndSubstitute (the anti-leak chokepoint per INV-03-04),
@@ -2472,9 +2543,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       // LISA-GCP-007: log metrics for orchestration failure.
       await logTurnMetrics({
         conversationId: conversation.id,
-        turnOrdinal: 0,
+        turnOrdinal: await turnOrdinal,
         orchestrationDurationMs: Date.now() - turnStartedAt,
-        modelName: "error:orchestration_failed",
+        modelName: null,
+        outcome: "error:orchestration_failed",
+        contextHash: requestHash,
         // Billed attempts that ended in a failure (a safety block, a truncation) still count
         // (owner ruling 2026-10-27); a failure with no Vertex response records null.
         ...turnMetricsAttribution(orchestrationResult.attribution ?? null),
@@ -2596,9 +2669,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       // LISA-GCP-007: log metrics for tutor message write failure.
       await logTurnMetrics({
         conversationId: conversation.id,
-        turnOrdinal: 0,
+        turnOrdinal: await turnOrdinal,
         orchestrationDurationMs: Date.now() - turnStartedAt,
-        modelName: "error:tutor_message_write_failed",
+        modelName: null,
+        outcome: "error:tutor_message_write_failed",
+        contextHash: requestHash,
         tokensIn: null,
         tokensOut: null,
         thinkingTokens: null,
@@ -2659,23 +2734,27 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
       }
     }
 
-    // Step 18: Persist instruction exposures, if any.
-    if (orchestration.instruction_exposures.length > 0) {
+    // Step 18 (§18.6, §21.1 step 7): what the student saw on this turn, after the reply is stored.
+    // Before 2026-11-22 this wrote only the worker's exposures (always none) with no assignment_id
+    // and no student_id, both NOT NULL, so no row was ever written. Non-blocking (§21): a failed
+    // write is logged and the turn proceeds.
+    try {
+      const exposures = exposuresForTurn({
+        assignmentId: instructionAssignmentResult.assignmentId,
+        conversationId: conversation.id,
+        studentId,
+        promptVersion:
+          orchestrationResult.attribution?.prompt_version ??
+          TUTOR_DEFAULT_PROMPT_VERSION,
+        policyVariant: envelope.policy_assignment.policy_variant,
+        intent: turnIntent,
+        help: helpTurn?.state ?? null,
+        suggestedAction: orchestration.response.suggested_action.type,
+        workerExposures: orchestration.instruction_exposures,
+      });
       const { error: exposuresError } = await supabaseServer
         .from("tutor_instruction_exposures")
-        .insert(
-          orchestration.instruction_exposures.map((exposure) => ({
-            conversation_id: conversation.id,
-            related_message_id: tutorMessageRow.id,
-            exposure_type: exposure.exposure_type,
-            content_variant_key: exposure.content_variant_key,
-            content_version: exposure.content_version,
-            rendered_difficulty: exposure.rendered_difficulty,
-            hint_depth: exposure.hint_depth,
-            tone_style: exposure.tone_style,
-            sequence_ordinal: exposure.sequence_ordinal,
-          })),
-        );
+        .insert(exposures);
       if (exposuresError) {
         logger.warn(
           "TUTOR_RUNTIME",
@@ -2684,6 +2763,19 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           { message: exposuresError.message, code: exposuresError.code },
         );
       }
+    } catch (exposureErr: unknown) {
+      // The reply is already stored: nothing in this log may fail the turn (§21).
+      logger.warn(
+        "TUTOR_RUNTIME",
+        "instruction_exposures_build_failed",
+        "Could not build tutor_instruction_exposures rows; turn proceeds",
+        {
+          error:
+            exposureErr instanceof Error
+              ? exposureErr.name
+              : typeof exposureErr,
+        },
+      );
     }
 
     // Compute classifier outcome for normal (non-crisis) path.
@@ -2695,9 +2787,18 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
 
     await logTurnMetrics({
       conversationId: conversation.id,
-      turnOrdinal: 0,
+      turnOrdinal: await turnOrdinal,
       orchestrationDurationMs: Date.now() - turnStartedAt,
-      modelName: orchestration.orchestration_meta.model_name,
+      // W4-12: the model, or null when Model Armor's substitution answered; the outcome says which.
+      modelName:
+        armorInput.kind === "blocked"
+          ? null
+          : orchestration.orchestration_meta.model_name,
+      outcome:
+        armorInput.kind === "blocked"
+          ? "model_armor_input_blocked"
+          : "completed",
+      contextHash: requestHash,
       // The Model Armor block's stand-in carries no attribution: no model call, null counts.
       ...turnMetricsAttribution(orchestrationResult.attribution ?? null),
       compactionRecommended:
@@ -2768,9 +2869,11 @@ async function postTutorMessage(req: Request, res: Response): Promise<void> {
           : "unknown";
       await logTurnMetrics({
         conversationId: catchConvoId,
-        turnOrdinal: 0,
+        turnOrdinal: null,
         orchestrationDurationMs: 0,
-        modelName: "error:unexpected",
+        modelName: null,
+        outcome: "error:unexpected",
+        contextHash: null,
         tokensIn: null,
         tokensOut: null,
         thinkingTokens: null,

@@ -193,3 +193,23 @@ pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --report
 ```
 
 `read -rs` keeps the key and the password out of the screen and the shell history. A password with special characters must be URL-encoded inside `DATABASE_URL`.
+
+## G0-2-08: the Reading & Writing worked step (owner brief 2026-11-22)
+
+The production turn on SATRW23GOZ2P (key A) where LISA's worked step said "Let's look at
+Option B" before the student had answered. Its rubric carries the rule "no option named before
+submission" (`tests/eval/teaching-quality/rubrics.ts`).
+
+1. Find the conversation and the cut-off with the G0-2-08 query in `real-case-finders.sql`.
+2. Import it. The line should end `help worked_step step … from N student turn(s)`:
+
+   ```bash
+   pnpm exec tsx tests/eval/teaching-quality/import-case.ts --case G0-2-08 --conversation <conversation_id> --cutoff <student message id>
+   ```
+
+3. Run it on v6 (should fail the rule) and v7 (should pass):
+
+   ```bash
+   pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --case G0-2-08 --prompt-version lisa-default-v6
+   pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts --runs 5 --case G0-2-08 --prompt-version lisa-default-v7
+   ```
