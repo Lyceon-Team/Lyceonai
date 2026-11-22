@@ -1,0 +1,24 @@
+{"id": "8173f32b", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Point estimate + MoE given; student selects the plausible interval by adding/subtracting MoE."}
+{"id": "6a305cd0", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Mean 37 with MoE 3; student forms interval 34–40 and identifies it as the plausible conclusion."}
+{"id": "97631565", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0086"], "distractors": [], "why": "Sample proportion scaled to full population by proportion setup; no MoE involved."}
+{"id": "0108ac2d", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "38% support with MoE 5.5%; student interprets plausible values as 32.5%–43.5%."}
+{"id": "f4b3672a", "sub_skills": ["INFS.5"], "clusters": ["CL.0026", "CL.0060"], "distractors": [], "why": "Compute sample mean of 5 parcels, then multiply by 253 acres to estimate total trees."}
+{"id": "e7d9649f", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0086"], "distractors": [], "why": "Sample rate 7/50 scaled to 14878 by proportion; no MoE."}
+{"id": "2c76bcce", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Estimated mean weight with MoE; student selects that the MEAN (not individual weights) is in the interval."}
+{"id": "90eed2e5", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0086"], "distractors": [], "why": "Sample proportion 6/20 scaled to population of 50 by proportion."}
+{"id": "affb2315", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0086"], "distractors": [], "why": "Sample proportion scaled to club total; no MoE."}
+{"id": "9ee22c16", "sub_skills": ["INFS.5"], "clusters": ["CL.0153", "CL.0202", "CL.0060"], "distractors": [], "why": "Read table to find Candidate A total (202+34=236), then scale 236/400 to 6000."}
+{"id": "89f8d08a", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0086"], "distractors": [], "why": "Scale sample proportion 20/80 to 1500; also distinguish \"best estimate\" from \"exactly\"."}
+{"id": "1e562f24", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Proportion estimate with MoE; student forms plausible interval."}
+{"id": "4096a482", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Mean estimate with MoE; student identifies the plausible interval for the population mean."}
+{"id": "f04d40b2", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0098"], "distractors": [], "why": "Percent estimate with MoE; student computes plausible range of counts by applying interval percentages to population."}
+{"id": "fc46af57", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0098"], "distractors": [], "why": "15% with MoE 2% on 10000 beads; student converts interval 13%–17% to counts 1300–1700."}
+{"id": "9bedc4a0", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Percent defective with MoE; student selects the plausible-interval interpretation."}
+{"id": "a2162ea1", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Average weight with MoE; student selects plausible values for the average within the interval."}
+{"id": "e03f3477", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Percent estimate with MoE; student selects the interval-based plausible conclusion."}
+{"id": "f8f79e11", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "Mean 4.5 with MoE 0.5; plausible that population mean is between 4 and 5. Correctly applies to mean, not all individuals."}
+{"id": "53d97af5", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0157"], "distractors": [], "why": "Sample statistic (30%) generalized to the sampled population (largemouth bass in pond), not all fish."}
+{"id": "85939da5", "sub_skills": ["INFS.4"], "clusters": ["CL.0002", "CL.0204"], "distractors": [], "why": "30% with MoE 3% gives interval 27%–33%; 35% is outside, so \"doubtful\" is correct. Requires interval reasoning."}
+{"id": "308084c5", "sub_skills": ["INFS.4"], "clusters": ["CL.0204"], "distractors": [], "why": "Conceptual: smaller sample size produces larger MoE. No interval computation; reasoning about MoE properties."}
+{"id": "9ba3e283", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0060", "CL.0029"], "distractors": [], "why": "Complement: 100%-34.6%=65.4% have <2 siblings; scale 0.654 × 26 × 1800 to get state total."}
+{"id": "916ffe9b", "sub_skills": ["INFS.5"], "clusters": ["CL.0202", "CL.0086", "CL.0153"], "distractors": [], "why": "Read poll table for each candidate, scale both to full electorate, compute difference."}
