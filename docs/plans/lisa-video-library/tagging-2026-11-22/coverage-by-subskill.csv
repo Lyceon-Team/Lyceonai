@@ -1,0 +1,182 @@
+target_rank,sub_skill_id,skill_code,section,domain,name,tagged_questions,before_segments,after_segments,delta_segments,before_videos,after_videos,before_channels,after_channels,before_q_no_video,after_q_no_video,flag_after
+1,RAT.10,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Proportion Setup and Solve,91,0,0,0,0,0,0,0,91,91,ZERO
+2,RAT.14,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Multi-Step Rate and Proportion Problems,86,0,0,0,0,0,0,0,86,86,ZERO
+3,LF.4,Linear Functions,M,Algebra,"Interpret slope, intercept, and constants in context",36,0,0,0,0,0,0,0,35,35,ZERO
+4,LF.2,Linear Functions,M,Algebra,Build a linear model from a verbal description,41,0,0,0,0,0,0,0,21,21,ZERO
+5,PCT.6,Percentages,M,Problem Solving and Data Analysis,"Find Part, Percent, or Whole",20,0,0,0,0,0,0,0,20,20,ZERO
+6,OVD.9,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Compute the Range,20,0,0,0,0,0,0,0,20,15,ZERO
+7,PCT.14,Percentages,M,Problem Solving and Data Analysis,Compound Category Percentages,15,0,0,0,0,0,0,0,15,15,ZERO
+8,EE.1,Equivalent Expressions,M,Advanced Math,"Add, subtract, and combine like terms",88,0,0,0,0,0,0,0,13,13,ZERO
+9,LE1.2,Linear Equations in One Variable,M,Algebra,Find the value of an expression or an equivalent equation without stopping at the variable,5,0,0,0,0,0,0,0,5,5,ZERO
+10,LI.6,Linear Inequalities in One or Two Variables,M,Algebra,Determine a parameter for no-solution / all-solution conditions,2,0,0,0,0,0,0,0,2,2,ZERO
+11,PCT.15,Percentages,M,Problem Solving and Data Analysis,Percent from Data,2,0,0,0,0,0,0,0,2,2,ZERO
+12,RAT.12,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Ratio Interpretation and Simplification,2,0,0,0,0,0,0,0,2,2,ZERO
+13,RAT.13,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Density and Derived-Rate Calculations,1,0,0,0,0,0,0,0,1,1,ZERO
+14,OVD.10,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Compare or Relate Measures of Center and Spread,5,0,0,0,0,0,0,0,5,0,ZERO
+15,CID.2,Central Ideas and Details,RW,Information and Ideas,Retrieve an explicitly stated key detail,0,0,0,0,0,0,0,0,0,0,ZERO
+16,CID.3,Central Ideas and Details,RW,Information and Ideas,Draw a conclusion the details support but do not state,0,0,0,0,0,0,0,0,0,0,ZERO
+17,CID.4,Central Ideas and Details,RW,Information and Ideas,"Characterize a person's feelings, traits or attitudes in a literary text",0,0,0,0,0,0,0,0,0,0,ZERO
+18,COE.1,Command of Evidence,RW,Information and Ideas,Read data accurately from a table or graph,0,0,0,0,0,0,0,0,0,0,ZERO
+19,CTC.3,Cross-Text Connections,RW,Craft and Structure,Predict a supportive or applied response,0,0,0,0,0,0,0,0,0,0,ZERO
+20,ESC.3,Evaluating Statistical Claims: Observational Studies and Experiments,M,Problem Solving and Data Analysis,Understanding Sample Variability,0,0,0,0,0,0,0,0,0,0,ZERO
+21,ESC3,Evaluating Statistical Claims: Observational Studies and Experiments,M,Problem Solving and Data Analysis,Sampling variability: a sample result is not a certainty,0,0,0,0,0,0,0,0,0,0,ZERO
+22,INF.1,Inferences,RW,Information and Ideas,Draw a conclusion from a comparison,0,0,0,0,0,0,0,0,0,0,ZERO
+23,INF.2,Inferences,RW,Information and Ideas,Chain stated premises to a consequence,0,0,0,0,0,0,0,0,0,0,ZERO
+24,INF.3,Inferences,RW,Information and Ideas,Weigh new evidence against a stated claim,0,0,0,0,0,0,0,0,0,0,ZERO
+25,INF.4,Inferences,RW,Information and Ideas,Generalize from specific cases,0,0,0,0,0,0,0,0,0,0,ZERO
+26,INF.5,Inferences,RW,Information and Ideas,Infer a person's view or motive,0,0,0,0,0,0,0,0,0,0,ZERO
+27,INFS.3,Inference from Sample Statistics and Margin of Error,M,Problem Solving and Data Analysis,What the sampling design supports,0,0,0,0,0,0,0,0,0,0,ZERO
+28,LAT.3,"Lines, Angles, and Triangles",M,Geometry and Trigonometry,Isosceles and equilateral triangles,0,0,0,0,0,0,0,0,0,0,ZERO
+29,LE2.1,Linear Equations in Two Variables,M,Algebra,Model a situation with a linear equation,0,0,0,0,0,0,0,0,0,0,ZERO
+30,LE2.2,Linear Equations in Two Variables,M,Algebra,Interpret parts of a contextual linear equation or graph,0,0,0,0,0,0,0,0,0,0,ZERO
+31,LE2.3,Linear Equations in Two Variables,M,Algebra,Find one quantity in context when the other is known,0,0,0,0,0,0,0,0,0,0,ZERO
+32,PCT.1,Percentages,M,Problem Solving and Data Analysis,Percent of a quantity,0,0,0,0,0,0,0,0,0,0,ZERO
+33,PCT.13,Percentages,M,Problem Solving and Data Analysis,Chained Percent Relationships,0,0,0,0,0,0,0,0,0,0,ZERO
+34,PCT.2,Percentages,M,Problem Solving and Data Analysis,Unknown percent or unknown whole,0,0,0,0,0,0,0,0,0,0,ZERO
+35,PRB.3,Probability and Conditional Probability,M,Problem Solving and Data Analysis,Find a count from a probability or from totals,0,0,0,0,0,0,0,0,0,0,ZERO
+36,PRB.7,Probability and Conditional Probability,M,Problem Solving and Data Analysis,Find Count from Probability,0,0,0,0,0,0,0,0,0,0,ZERO
+37,RAT.1,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Unit conversion (linear units),0,0,0,0,0,0,0,0,0,0,ZERO
+38,RAT.11,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Proportional Expression Construction,0,0,0,0,0,0,0,0,0,0,ZERO
+39,RAT.2,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Ratios and proportional scaling,0,0,0,0,0,0,0,0,0,0,ZERO
+40,RAT.4,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Density and per-area/per-volume rates,0,0,0,0,0,0,0,0,0,0,ZERO
+41,RAT.5,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Converting squared or cubed units,0,0,0,0,0,0,0,0,0,0,ZERO
+42,RAT.6,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Single-Step Unit Conversion,0,0,0,0,0,0,0,0,0,0,ZERO
+43,RAT.7,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Multi-Step Unit Conversion,0,0,0,0,0,0,0,0,0,0,ZERO
+44,RAT.8,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Squared and Cubed Unit Conversion,0,0,0,0,0,0,0,0,0,0,ZERO
+45,RS.1,Rhetorical Synthesis,RW,Expression of Ideas,Compare or contrast two or more items,0,0,0,0,0,0,0,0,0,0,ZERO
+46,RS.2,Rhetorical Synthesis,RW,Expression of Ideas,Fit the sentence to a stated audience,0,0,0,0,0,0,0,0,0,0,ZERO
+47,RS.3,Rhetorical Synthesis,RW,Expression of Ideas,Report a research study,0,0,0,0,0,0,0,0,0,0,ZERO
+48,RS.4,Rhetorical Synthesis,RW,Expression of Ideas,"Generalize, define, or give an example",0,0,0,0,0,0,0,0,0,0,ZERO
+49,RS.5,Rhetorical Synthesis,RW,Expression of Ideas,Focus on one named feature of one subject,0,0,0,0,0,0,0,0,0,0,ZERO
+50,TRN.2,Transitions,RW,Expression of Ideas,"Cause, result and purpose",0,0,0,0,0,0,0,0,0,0,ZERO
+51,TRN.5,Transitions,RW,Expression of Ideas,"Time, sequence and place",0,0,0,0,0,0,0,0,0,0,ZERO
+52,TVD.11,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Compute Average Rate of Change Between Intervals,0,0,0,0,0,0,0,0,0,0,ZERO
+53,TVD.7,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Make Predictions Using a Line or Curve of Best Fit,0,0,0,0,0,0,0,0,0,0,ZERO
+54,TVD.8,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Estimate the Slope of a Line of Best Fit,0,0,0,0,0,0,0,0,0,0,ZERO
+55,TVD.9,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Select or Write the Equation of a Line of Best Fit,0,0,0,0,0,0,0,0,0,0,ZERO
+56,WIC.3,Words in Context,RW,Craft and Structure,Inferred-relationship blank,0,0,0,0,0,0,0,0,0,0,ZERO
+57,LE2.4,Linear Equations in Two Variables,M,Algebra,"Connect a line's equation, graph, table, slope and intercepts",300,8,12,4,6,8,2,3,0,0,
+58,LE1.1,Linear Equations in One Variable,M,Algebra,Solve a linear equation for its variable,233,1,2,1,1,2,1,2,0,0,LOW(<=2)
+59,NLE.2,Nonlinear Equations in One Variable and Systems of Equations in Two Variables,M,Advanced Math,Solve a quadratic or polynomial equation in one variable,224,8,10,2,7,9,3,4,0,0,
+60,LF.1,Linear Functions,M,Algebra,Evaluate or invert a given linear rule,198,2,2,0,1,1,1,1,0,0,LOW(<=2)
+61,NLF.4,Nonlinear Functions,M,Advanced Math,Quadratic and polynomial structure and models,192,17,23,6,9,13,5,7,0,0,
+62,LI.2,Linear Inequalities in One or Two Variables,M,Algebra,Solve for a boundary value (maximum / minimum),187,1,2,1,1,2,1,2,0,0,LOW(<=2)
+63,EE.3,Equivalent Expressions,M,Advanced Math,Factor polynomials (and rewrite quadratic forms),162,21,25,4,11,12,5,6,0,0,
+64,LI.1,Linear Inequalities in One or Two Variables,M,Algebra,Model a situation with a one-sided inequality or system,160,2,3,1,2,2,2,2,0,0,
+65,EE.5,Equivalent Expressions,M,Advanced Math,Rational expressions,156,8,9,1,5,5,4,4,0,0,
+66,PRB.6,Probability and Conditional Probability,M,Problem Solving and Data Analysis,Conditional Probability,136,0,4,4,0,2,0,2,136,0,
+67,LF.3,Linear Functions,M,Algebra,"Determine a linear function from points, a table, values, or slope",130,3,3,0,3,3,2,2,0,0,
+68,NLF.1,Nonlinear Functions,M,Advanced Math,"Function notation: evaluate, read and solve input-output",128,13,16,3,10,11,4,5,0,0,
+69,NLE.5,Nonlinear Equations in One Variable and Systems of Equations in Two Variables,M,Advanced Math,Solve a system of a linear and a nonlinear equation,106,5,7,2,5,6,2,3,0,0,
+70,PCT.12,Percentages,M,Problem Solving and Data Analysis,Successive and Exponential Percent Changes,106,0,4,4,0,2,0,2,106,0,
+71,SYS.1,Systems of Two Linear Equations in Two Variables,M,Algebra,Solve a system algebraically,106,2,3,1,2,3,2,3,0,0,
+72,EE.2,Equivalent Expressions,M,Advanced Math,Expand and multiply,105,4,5,1,4,4,2,2,0,0,
+73,PRB.5,Probability and Conditional Probability,M,Problem Solving and Data Analysis,Whole-Group Probability,105,0,2,2,0,1,0,1,105,0,LOW(<=2)
+74,LE2.5,Linear Equations in Two Variables,M,Algebra,"Relate a second line: parallel, perpendicular or translated",93,3,8,5,3,6,1,3,0,0,
+75,NLE.4,Nonlinear Equations in One Variable and Systems of Equations in Two Variables,M,Advanced Math,Determine the number of real solutions,88,6,9,3,5,8,2,5,0,0,
+76,OVD.11,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Effect of Data Changes on Statistics,83,0,1,1,0,1,0,1,83,0,LOW(<=2)
+77,SYS.3,Systems of Two Linear Equations in Two Variables,M,Algebra,Number of solutions and conditions on constants,77,7,7,0,4,4,1,1,0,0,
+78,RAT.9,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Rate Application,76,0,1,1,0,1,0,1,76,0,LOW(<=2)
+79,SYS.4,Systems of Two Linear Equations in Two Variables,M,Algebra,Model a context with a system,70,2,3,1,1,1,1,1,0,0,
+80,OVD.8,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Find the Median,65,0,1,1,0,1,0,1,65,0,LOW(<=2)
+81,NLF.3,Nonlinear Functions,M,Advanced Math,Exponential growth and decay structure,64,2,5,3,2,3,1,2,0,0,
+82,OVD.12,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Solve for an Unknown Using the Mean (Including Weighted Mean),60,0,1,1,0,1,0,1,60,0,LOW(<=2)
+83,PCT.7,Percentages,M,Problem Solving and Data Analysis,Apply Percent Increase or Decrease,58,0,2,2,0,2,0,2,58,0,LOW(<=2)
+84,EE.4,Equivalent Expressions,M,Advanced Math,Exponents and radicals,56,4,8,4,3,5,3,4,0,0,
+85,NLE.3,Nonlinear Equations in One Variable and Systems of Equations in Two Variables,M,Advanced Math,"Solve an absolute value, radical, or rational equation in one variable",53,13,14,1,8,8,5,5,0,0,
+86,PCT.9,Percentages,M,Problem Solving and Data Analysis,Reverse Percent (Find Original Before Change),48,0,3,3,0,2,0,2,48,0,
+87,SYS.2,Systems of Two Linear Equations in Two Variables,M,Algebra,Value of an expression from a system,46,3,3,0,2,2,2,2,0,0,
+88,LE1.4,Linear Equations in One Variable,M,Algebra,Solve a context problem for an unknown quantity,45,2,2,0,1,1,1,1,0,0,LOW(<=2)
+89,PCT.8,Percentages,M,Problem Solving and Data Analysis,Percent Change Calculation,32,0,1,1,0,1,0,1,32,0,LOW(<=2)
+90,LI.4,Linear Inequalities in One or Two Variables,M,Algebra,Test solutions of a given inequality or system,28,5,5,0,3,3,3,3,0,0,
+91,NLF.5,Nonlinear Functions,M,Advanced Math,Transformations of functions,27,13,13,0,8,8,3,3,0,0,
+92,LI.3,Linear Inequalities in One or Two Variables,M,Algebra,Two-sided ranges (compound inequalities),21,1,1,0,1,1,1,1,0,0,LOW(<=2)
+93,LF.5,Linear Functions,M,Algebra,Intercepts and graph features of a linear function,16,2,4,2,2,3,2,3,0,0,
+94,LE1.5,Linear Equations in One Variable,M,Algebra,Determine the number of solutions or the constant that sets it,15,2,3,1,2,3,2,3,0,0,
+95,OVD.7,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Compute the Mean,14,0,1,1,0,1,0,1,14,0,LOW(<=2)
+96,EE.6,Equivalent Expressions,M,Advanced Math,Divide polynomials by long division,12,2,2,0,1,1,1,1,0,0,LOW(<=2)
+97,NLF.2,Nonlinear Functions,M,Advanced Math,Interpret a nonlinear function in context,12,2,2,0,2,2,2,2,0,0,LOW(<=2)
+98,OVD.6,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Read or Interpret a Data Display,8,0,4,4,0,3,0,2,8,0,
+99,OVD.13,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Compare Standard Deviations from Distributions,5,0,1,1,0,1,0,1,5,0,LOW(<=2)
+100,AV.1,Area and Volume,M,Geometry and Trigonometry,Polygon perimeter and area,0,3,4,1,2,3,1,2,0,0,
+101,AV.2,Area and Volume,M,Geometry and Trigonometry,Circle area and circumference,0,2,2,0,2,2,1,1,0,0,LOW(<=2)
+102,AV.3,Area and Volume,M,Geometry and Trigonometry,Volume of solids,0,5,6,1,3,3,3,3,0,0,
+103,AV.4,Area and Volume,M,Geometry and Trigonometry,Surface area of solids,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+104,AV.5,Area and Volume,M,Geometry and Trigonometry,Similarity and scaling between figures,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+105,BND.1,Boundaries,RW,Standard English Conventions,Linking independent clauses,0,6,15,9,2,8,2,4,0,0,
+106,BND.2,Boundaries,RW,Standard English Conventions,Setting off supplements and introductory elements,0,6,10,4,5,7,3,3,0,0,
+107,BND.3,Boundaries,RW,Standard English Conventions,No punctuation inside an integrated structure,0,2,2,0,2,2,2,2,0,0,LOW(<=2)
+108,BND.4,Boundaries,RW,Standard English Conventions,Colons and series punctuation,0,1,8,7,1,6,1,4,0,0,
+109,BND.5,Boundaries,RW,Standard English Conventions,End-of-sentence punctuation (direct vs indirect question),0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+110,CID.1,Central Ideas and Details,RW,Information and Ideas,Identify the central idea of the whole text,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+111,CIR1,Circles,M,Geometry and Trigonometry,Circle equation: center and radius,0,6,7,1,4,5,3,4,0,0,
+112,CIR2,Circles,M,Geometry and Trigonometry,Points and lines relative to a circle in the xy-plane,0,2,2,0,2,2,1,1,0,0,LOW(<=2)
+113,CIR3,Circles,M,Geometry and Trigonometry,"Arcs, central angles and circumference",0,1,4,3,1,3,1,2,0,0,
+114,CIR4,Circles,M,Geometry and Trigonometry,Radius-built triangles and tangent segments,0,1,3,2,1,2,1,1,0,0,
+115,CIR5,Circles,M,Geometry and Trigonometry,Radian measure and the unit circle,0,0,2,2,0,2,0,2,0,0,LOW(<=2)
+116,COE.2,Command of Evidence,RW,Information and Ideas,Use data as evidence for a claim,0,12,12,0,8,8,4,4,0,0,
+117,COE.3,Command of Evidence,RW,Information and Ideas,Choose a finding or source statement that supports or weakens a claim,0,8,8,0,7,7,3,3,0,0,
+118,COE.4,Command of Evidence,RW,Information and Ideas,Choose a quotation from a named work that illustrates a claim about it,0,2,2,0,2,2,2,2,0,0,LOW(<=2)
+119,CTC.1,Cross-Text Connections,RW,Craft and Structure,Predict a rebuttal,0,4,4,0,3,3,2,2,0,0,
+120,CTC.2,Cross-Text Connections,RW,Craft and Structure,Predict a qualified (yes-but) response,0,2,2,0,2,2,2,2,0,0,LOW(<=2)
+121,CTC.4,Cross-Text Connections,RW,Craft and Structure,Identify common ground,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+122,CTC.5,Cross-Text Connections,RW,Craft and Structure,Describe the difference or relationship between the texts,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+123,ESC.1,Evaluating Statistical Claims: Observational Studies and Experiments,M,Problem Solving and Data Analysis,Determining Generalization Scope,0,0,3,3,0,2,0,2,0,0,
+124,ESC.2,Evaluating Statistical Claims: Observational Studies and Experiments,M,Problem Solving and Data Analysis,Identifying Sampling Bias,0,0,6,6,0,3,0,3,0,0,
+125,ESC1,Evaluating Statistical Claims: Observational Studies and Experiments,M,Problem Solving and Data Analysis,Scope of generalization: the largest population the results apply to,0,2,3,1,1,2,1,2,0,0,
+126,ESC2,Evaluating Statistical Claims: Observational Studies and Experiments,M,Problem Solving and Data Analysis,Detect a biased (non-representative) sample,0,5,6,1,2,3,2,3,0,0,
+127,FSS.1,"Form, Structure, and Sense",RW,Standard English Conventions,Subject-verb agreement,0,14,18,4,6,6,4,4,0,0,
+128,FSS.2,"Form, Structure, and Sense",RW,Standard English Conventions,Verb tense and aspect,0,8,11,3,3,4,3,3,0,0,
+129,FSS.3,"Form, Structure, and Sense",RW,Standard English Conventions,Finite vs. nonfinite verb forms,0,3,4,1,2,2,2,2,0,0,
+130,FSS.4,"Form, Structure, and Sense",RW,Standard English Conventions,"Number and possession in nouns, pronouns, and determiners",0,3,6,3,2,3,2,2,0,0,
+131,FSS.5,"Form, Structure, and Sense",RW,Standard English Conventions,Subject-modifier placement,0,4,4,0,2,2,2,2,0,0,
+132,INFS.1,Inference from Sample Statistics and Margin of Error,M,Problem Solving and Data Analysis,Estimate a population count from a sample,0,4,4,0,2,2,2,2,0,0,
+133,INFS.2,Inference from Sample Statistics and Margin of Error,M,Problem Solving and Data Analysis,Interpret an estimate with a margin of error,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+134,INFS.4,Inference from Sample Statistics and Margin of Error,M,Problem Solving and Data Analysis,Interpreting Margin of Error,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+135,INFS.5,Inference from Sample Statistics and Margin of Error,M,Problem Solving and Data Analysis,Estimating Population Values from Samples,0,0,4,4,0,2,0,2,0,0,
+136,LAT.1,"Lines, Angles, and Triangles",M,Geometry and Trigonometry,Angle relationships at intersecting and parallel lines,0,0,4,4,0,3,0,2,0,0,
+137,LAT.2,"Lines, Angles, and Triangles",M,Geometry and Trigonometry,Triangle angle sum and exterior angles,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+138,LAT.4,"Lines, Angles, and Triangles",M,Geometry and Trigonometry,"Congruence and similarity: correspondence, criteria, and angle preservation",0,2,4,2,1,3,1,2,0,0,
+139,LAT.5,"Lines, Angles, and Triangles",M,Geometry and Trigonometry,Similar figures: proportional side lengths,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+140,LE1.3,Linear Equations in One Variable,M,Algebra,Translate between a context and a linear equation or expression,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+141,LI.5,Linear Inequalities in One or Two Variables,M,Algebra,Read an inequality from its graph,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+142,NLE.1,Nonlinear Equations in One Variable and Systems of Equations in Two Variables,M,Advanced Math,Rearrange a formula to isolate a variable,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+143,OVD.1,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Read and interpret a data display,0,4,4,0,3,3,2,2,0,0,
+144,OVD.2,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Find a measure of center from data,0,3,5,2,2,4,2,4,0,0,
+145,OVD.3,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Measures of spread: range and standard deviation,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+146,OVD.4,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Use the mean-total relationship,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+147,OVD.5,One-Variable Data: Distributions and Measures of Center and Spread,M,Problem Solving and Data Analysis,Compare measures across data sets or after a change,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+148,PCT.10,Percentages,M,Problem Solving and Data Analysis,Percent as Algebraic Expression,0,0,2,2,0,1,0,1,0,0,LOW(<=2)
+149,PCT.11,Percentages,M,Problem Solving and Data Analysis,Interpret Percent Expression,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+150,PCT.3,Percentages,M,Problem Solving and Data Analysis,Apply or undo a single percent increase or decrease,0,4,6,2,1,2,1,2,0,0,
+151,PCT.4,Percentages,M,Problem Solving and Data Analysis,Percent change between two values,0,2,2,0,2,2,2,2,0,0,LOW(<=2)
+152,PCT.5,Percentages,M,Problem Solving and Data Analysis,Chained percents (percent of a percent result),0,3,4,1,2,2,2,2,0,0,
+153,PRB.1,Probability and Conditional Probability,M,Problem Solving and Data Analysis,Probability of an event in the whole group,0,1,2,1,1,1,1,1,0,0,LOW(<=2)
+154,PRB.2,Probability and Conditional Probability,M,Problem Solving and Data Analysis,Conditional probability (restricted sample space),0,3,4,1,2,2,2,2,0,0,
+155,PRB.4,Probability and Conditional Probability,M,Problem Solving and Data Analysis,Complement and exclusion events,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+156,RAT.3,"Ratios, Rates, Proportional Relationships, and Units",M,Problem Solving and Data Analysis,Rates between different quantities,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+157,RTT1,Right Triangles and Trigonometry,M,Geometry and Trigonometry,Pythagorean theorem: missing side,0,3,9,6,2,7,1,3,0,0,
+158,RTT2,Right Triangles and Trigonometry,M,Geometry and Trigonometry,"Special right triangles (45-45-90, 30-60-90)",0,1,3,2,1,3,1,2,0,0,
+159,RTT3,Right Triangles and Trigonometry,M,Geometry and Trigonometry,Right-triangle trig ratios (SOH-CAH-TOA),0,2,4,2,1,3,1,3,0,0,
+160,RTT4,Right Triangles and Trigonometry,M,Geometry and Trigonometry,Trig-ratio relationships: complements and similarity,0,0,3,3,0,3,0,2,0,0,
+161,SYS.5,Systems of Two Linear Equations in Two Variables,M,Algebra,Solutions shown on a graph,0,2,3,1,1,1,1,1,0,0,
+162,TRN.1,Transitions,RW,Expression of Ideas,Contrast and concession,0,4,4,0,3,3,3,3,0,0,
+163,TRN.3,Transitions,RW,Expression of Ideas,Addition and similarity,0,2,2,0,2,2,2,2,0,0,LOW(<=2)
+164,TRN.4,Transitions,RW,Expression of Ideas,"Example, specification, restatement and emphasis",0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+165,TSP.1,Text Structure and Purpose,RW,Craft and Structure,Main purpose of an informational text,0,2,2,0,1,1,1,1,0,0,LOW(<=2)
+166,TSP.2,Text Structure and Purpose,RW,Craft and Structure,Overall structure of a text,0,7,7,0,4,4,3,3,0,0,
+167,TSP.3,Text Structure and Purpose,RW,Craft and Structure,Function of a part in an informational text,0,5,5,0,4,4,3,3,0,0,
+168,TSP.4,Text Structure and Purpose,RW,Craft and Structure,Purpose or function in a literary text,0,2,2,0,1,1,1,1,0,0,LOW(<=2)
+169,TVD.1,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Read data and changes from a graph,0,2,2,0,2,2,1,1,0,0,LOW(<=2)
+170,TVD.10,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Identify the Appropriate Model Type,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+171,TVD.12,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Evaluate Residuals and Deviations from a Model,0,0,4,4,0,2,0,2,0,0,
+172,TVD.13,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Interpret Slope or Intercept in Real-World Context,0,0,4,4,0,1,0,1,0,0,
+173,TVD.14,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Select or Determine a Nonlinear Model Equation,0,0,2,2,0,2,0,2,0,0,LOW(<=2)
+174,TVD.2,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Predict with a fitted model and compare data to it,0,4,4,0,2,2,2,2,0,0,
+175,TVD.3,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,"Linear model: direction, slope, intercept, equation, interpretation",0,5,5,0,2,2,2,2,0,0,
+176,TVD.4,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Nonlinear model fitted to a scatterplot,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+177,TVD.5,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Classify linear vs exponential relationships,0,0,1,1,0,1,0,1,0,0,LOW(<=2)
+178,TVD.6,Two-Variable Data: Models and Scatterplots,M,Problem Solving and Data Analysis,Read Values from Graphs and Scatterplots,0,0,2,2,0,2,0,1,0,0,LOW(<=2)
+179,WIC.1,Words in Context,RW,Craft and Structure,Restated-meaning blank,0,3,3,0,2,2,2,2,0,0,
+180,WIC.2,Words in Context,RW,Craft and Structure,Contrasted-meaning blank,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
+181,WIC.4,Words in Context,RW,Craft and Structure,Given word's meaning in context,0,1,1,0,1,1,1,1,0,0,LOW(<=2)
