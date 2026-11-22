@@ -1,0 +1,270 @@
+{
+  "skill_id": "PCT",
+  "skill_label": "Percentages",
+  "total_questions_read": 75,
+  "source_pdfs": [
+    "Easy - Pecentages - Problem-Solving and Data Analysis - Math-27.pdf (26 questions)",
+    "Medium - Pecentages - Problem-Solving and Data Analysis - Math-22.pdf (22 questions)",
+    "Hard - Pecentages - Problem-Solving and Data Analysis - Math-27.pdf (27 questions)"
+  ],
+  "verdict": "KEEP_ALL",
+  "verdict_rationale": "All five current sub-skills are well-calibrated. Each has a clear, reproducible inclusion test. Counts range from 6 to 20, and difficulty spreads are appropriate. No sub-skill should be split (the smaller partitions would have fewer than 5 evidence questions), merged (each tests a distinct cognitive operation), or replaced. The taxonomy covers every question in the corpus with no untaggable remainders.",
+  "sub_skills": [
+    {
+      "id": "PCT.1",
+      "label": "Percent of a quantity",
+      "status": "KEEP",
+      "definition": "Compute p% of a given quantity N, yielding a numeric result or an algebraic expression. The percent and the whole are both given; the student multiplies (p/100) * N.",
+      "inclusion_test": "Both the percent p and the whole N are stated or directly readable. The ask is to compute the part. No unknown to solve for; a single multiplication (or its algebraic equivalent) produces the answer.",
+      "boundary_notes": "If the result must then feed into a second percent operation with a different base, the question is PCT.5, not PCT.1. If the question gives the part and asks for p or N, it is PCT.2. If the percent is applied as an increase/decrease (adding to or subtracting from the base), it is PCT.3.",
+      "evidence_ids": [
+        "771ee744", "eaab8bc1", "6e4a60dd", "048811bd", "34e18ce4",
+        "a8fabad0", "77cf4fa6", "7ed0d098", "273b7f37", "9c44f828",
+        "284303f1", "8784bc84", "29c177e6", "28c6bd8c", "bb7c8186",
+        "dccdb20c",
+        "8213b1b3", "954943a4"
+      ],
+      "count": 18,
+      "difficulty_spread": { "Easy": 15, "Medium": 1, "Hard": 2 },
+      "clusters": [
+        {
+          "cluster_id": "C1.1",
+          "label": "Direct numeric computation",
+          "description": "Compute p% of N to get a number. Straightforward multiplication with concrete values.",
+          "evidence_ids": [
+            "771ee744", "eaab8bc1", "6e4a60dd", "048811bd", "34e18ce4",
+            "a8fabad0", "77cf4fa6", "7ed0d098", "273b7f37", "9c44f828",
+            "284303f1", "8784bc84", "29c177e6", "28c6bd8c", "bb7c8186",
+            "dccdb20c", "8213b1b3"
+          ],
+          "count": 17
+        },
+        {
+          "cluster_id": "C1.2",
+          "label": "Algebraic percent-of expression",
+          "description": "Express p% of N (or of x servings, etc.) as a formula in a variable. Same multiplication, but the answer is an expression rather than a number.",
+          "evidence_ids": ["954943a4"],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "PCT.2",
+      "label": "Unknown percent or unknown whole",
+      "status": "KEEP",
+      "definition": "Given two of the three quantities in p% * W = P, solve for the missing one, where the missing quantity is either the percent p or the whole W. (When the missing quantity is the part P, the question is PCT.1 instead.)",
+      "inclusion_test": "The part P and one of {p, W} are given. The ask is to find the other of {p, W}. The student sets up the equation (p/100) * W = P and solves by division. No increase/decrease framing; the percent relates a part to its whole, not a before to an after.",
+      "boundary_notes": "If the question frames the percent as an increase or decrease (before/after), it is PCT.3 or PCT.4, not PCT.2. If both p and W are given and the ask is P, it is PCT.1. Questions that phrase the relationship as 'p% greater than' but ask for p given two concrete values still belong here (the student must recognize that 'p% greater than' means part/whole relationship).",
+      "evidence_ids": [
+        "2d31caae", "e9fb7774", "3a6ed720",
+        "93724cc6",
+        "d72a2b4d", "e9f4521a", "94c65646", "7f84b136", "05195d8a",
+        "54cb53cf", "ba0e23b0", "40e7a1a9", "65c49824"
+      ],
+      "count": 13,
+      "difficulty_spread": { "Easy": 4, "Medium": 5, "Hard": 4 },
+      "clusters": [
+        {
+          "cluster_id": "C2.1",
+          "label": "Find the percent",
+          "description": "Given the part P and the whole W, compute p = (P/W) * 100. Student divides part by whole and converts to percent.",
+          "evidence_ids": [
+            "2d31caae", "e9fb7774", "3a6ed720",
+            "e9f4521a", "94c65646", "7f84b136",
+            "54cb53cf", "ba0e23b0", "40e7a1a9"
+          ],
+          "count": 9
+        },
+        {
+          "cluster_id": "C2.2",
+          "label": "Find the whole",
+          "description": "Given the part P and the percent p, compute W = P / (p/100). Student divides part by decimal percent to find the total.",
+          "evidence_ids": [
+            "93724cc6",
+            "d72a2b4d", "05195d8a",
+            "65c49824"
+          ],
+          "count": 4
+        }
+      ]
+    },
+    {
+      "id": "PCT.3",
+      "label": "Apply or undo a single percent increase/decrease",
+      "status": "KEEP",
+      "definition": "A single quantity changes by p% (increase or decrease). The student applies the multiplier (1 +/- p/100) in the forward direction, or inverts it to recover the original. Includes interpreting a decimal multiplier as a percent change.",
+      "inclusion_test": "The question frames a percent as an increase or decrease relative to a base (before/after, markup/discount, tax, growth, reduction). Exactly one percent change is applied to one base. The student either (a) multiplies to find the result, (b) divides to find the original, or (c) interprets a given multiplier (e.g. 0.35x) as a percent change.",
+      "boundary_notes": "If two or more percent changes are chained on different bases, the question is PCT.5. If the question asks for the percent change itself given two values (no increase/decrease is 'applied'), it is PCT.4. The phrase 'p% of' without increase/decrease framing is PCT.1 or PCT.2.",
+      "evidence_ids": [
+        "41b71b4e", "1c2f50a6", "194ae3b1", "949cd96b", "191d167b", "8705ecba",
+        "7b731fc3", "96a45430", "ba61d95f", "121dc44f", "d693f563",
+        "8e2e424e", "8a714fa1", "7cab9fe1",
+        "a0b165f8", "2afd3cec", "86684ce9", "5267c3c7", "1baffbcf"
+      ],
+      "count": 19,
+      "difficulty_spread": { "Easy": 6, "Medium": 8, "Hard": 5 },
+      "clusters": [
+        {
+          "cluster_id": "C3.1",
+          "label": "Apply forward (compute result after increase/decrease)",
+          "description": "Given the original value and the percent change, compute the new value: original * (1 +/- p/100). Includes sales tax additions, markups, discounts, and growth.",
+          "evidence_ids": [
+            "41b71b4e", "1c2f50a6", "194ae3b1", "949cd96b", "191d167b", "8705ecba",
+            "7b731fc3", "96a45430", "ba61d95f", "121dc44f", "d693f563",
+            "a0b165f8", "2afd3cec", "86684ce9", "5267c3c7"
+          ],
+          "count": 15
+        },
+        {
+          "cluster_id": "C3.2",
+          "label": "Undo/reverse (find original from result)",
+          "description": "Given the result after a percent increase/decrease, work backward to find the original value: result / (1 +/- p/100). The student must recognize that the base for the percent is the unknown original, not the given result.",
+          "evidence_ids": [
+            "8e2e424e", "8a714fa1", "7cab9fe1"
+          ],
+          "count": 3
+        },
+        {
+          "cluster_id": "C3.3",
+          "label": "Interpret multiplier as percent change",
+          "description": "Given an algebraic expression like 0.35x or 1.09x, determine what percent increase or decrease it represents. The student works backward from the multiplier to the percent.",
+          "evidence_ids": ["1baffbcf"],
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "PCT.4",
+      "label": "Percent change between two values",
+      "status": "KEEP",
+      "definition": "Given two values (old and new), compute the percent increase or decrease using the formula ((new - old) / old) * 100. The percent itself is the unknown.",
+      "inclusion_test": "Two concrete values representing a before and an after are given (directly or read from a table/graph). The ask is the percent change (increase or decrease). The student applies the percent-change formula with the original value as the denominator.",
+      "boundary_notes": "If the percent change is given and the student applies it to find a new value, that is PCT.3, not PCT.4. If the result of a percent-change computation feeds into a second operation, the overall question is PCT.5. Reading values from a table or graph before applying the formula does not change the sub-skill classification.",
+      "evidence_ids": [
+        "bd90f87e",
+        "ad1d6adb", "b2f6f17d", "709e04de", "63573fea",
+        "0231050d"
+      ],
+      "count": 6,
+      "difficulty_spread": { "Easy": 1, "Medium": 4, "Hard": 1 },
+      "clusters": [
+        {
+          "cluster_id": "C4.1",
+          "label": "Direct percent change computation",
+          "description": "Apply the percent-change formula to two given or table/graph-read values. This is the only solving pattern for PCT.4; complexity comes from the context (tables, graphs, word problems), not from variation in the mathematical procedure.",
+          "evidence_ids": [
+            "bd90f87e", "ad1d6adb", "b2f6f17d", "709e04de", "63573fea", "0231050d"
+          ],
+          "count": 6
+        }
+      ]
+    },
+    {
+      "id": "PCT.5",
+      "label": "Chained percents (two or more percent operations with different bases)",
+      "status": "KEEP",
+      "definition": "Two or more percent operations are applied in sequence, where each operation's base differs from the previous one's. The student must track which quantity each percent applies to and chain the computations or set up a system of equations.",
+      "inclusion_test": "The question involves at least two percent relationships or operations, and the base (denominator or 'whole') changes between them. This includes: (a) sequential 'percent of a percent-of' computations, (b) algebraic systems where quantities are defined as percents of each other with different bases, (c) computing a percent change and then applying a derived percent to a different base. A single percent applied to a single base is never PCT.5, regardless of how many arithmetic steps the problem requires.",
+      "boundary_notes": "A question that applies the same percent to the same base multiple times (e.g., compound interest at a fixed rate) is still PCT.5 because each iteration's base changes (the result of the previous iteration becomes the new base). If only one percent operation is involved, the question belongs to PCT.1-PCT.4 regardless of contextual complexity.",
+      "evidence_ids": [
+        "566759ef", "c256b723", "8cbf1415", "022e9894",
+        "ad911622", "25faa756", "34f8cd89", "040f2a84", "3d73a58b",
+        "8c5dbd3e", "2e92cc21", "623dbebb", "20845d36", "67c0200a",
+        "e635aede", "1fbd3b67", "993000da", "0ea56bb2", "4aaa9c42"
+      ],
+      "count": 19,
+      "difficulty_spread": { "Easy": 0, "Medium": 4, "Hard": 15 },
+      "clusters": [
+        {
+          "cluster_id": "C5.1",
+          "label": "Sequential percent-of computation",
+          "description": "Compute p1% of N, then p2% of that result. Concrete values at each step; the student chains two or more multiplications. Includes 'percent of the people who... percent of those...' patterns.",
+          "evidence_ids": [
+            "566759ef", "c256b723", "8cbf1415", "022e9894",
+            "ad911622", "25faa756", "34f8cd89", "040f2a84", "3d73a58b",
+            "8c5dbd3e", "2e92cc21", "623dbebb", "20845d36", "67c0200a",
+            "e635aede", "1fbd3b67"
+          ],
+          "count": 16
+        },
+        {
+          "cluster_id": "C5.2",
+          "label": "Algebraic chaining (percent-of-percent via equations)",
+          "description": "Quantities are defined as percents of each other through two or more relationships (e.g., a = 230% of b, a = 60% of c, find c as p% of b). The student sets up and solves a system of equations, substituting one relationship into another.",
+          "evidence_ids": ["993000da", "4aaa9c42"],
+          "count": 2
+        },
+        {
+          "cluster_id": "C5.3",
+          "label": "Percent change then apply",
+          "description": "Compute a percent change between two values, then apply that percent (or a fraction/multiple of it) to a different base. Combines PCT.4-style computation with PCT.3-style application across different bases.",
+          "evidence_ids": ["0ea56bb2"],
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "current_to_proposed_mapping": {
+    "PCT.1": {
+      "proposed": "PCT.1",
+      "action": "KEEP",
+      "rationale": "Definition, inclusion test, and question coverage unchanged. 18 evidence questions confirm a clean, well-bounded sub-skill dominated by Easy difficulty. No split warranted: the algebraic-expression variant (C1.2) has only 1 question and does not represent a distinct cognitive demand."
+    },
+    "PCT.2": {
+      "proposed": "PCT.2",
+      "action": "KEEP",
+      "rationale": "Definition, inclusion test, and question coverage unchanged. 13 evidence questions with balanced difficulty spread (E:4, M:5, H:4). The two clusters (find-percent vs find-whole) are distinct solving directions of the same equation; splitting would yield sub-skills with 9 and 4 questions respectively, making the find-whole bucket too thin."
+    },
+    "PCT.3": {
+      "proposed": "PCT.3",
+      "action": "KEEP",
+      "rationale": "Definition, inclusion test, and question coverage unchanged. 19 evidence questions with good difficulty spread (E:6, M:8, H:5). Three clusters capture the solving-step variations: apply-forward (15), undo-reverse (3), interpret-multiplier (1). Splitting 'undo' into its own sub-skill would create a bucket with only 3 questions."
+    },
+    "PCT.4": {
+      "proposed": "PCT.4",
+      "action": "KEEP",
+      "rationale": "Definition, inclusion test, and question coverage unchanged. 6 evidence questions is the smallest bucket but the operation is distinct enough (percent-change formula) to warrant its own sub-skill. The formula is a single, recognizable pattern that appears across all three difficulties. Merging into PCT.2 or PCT.3 would blur the inclusion test."
+    },
+    "PCT.5": {
+      "proposed": "PCT.5",
+      "action": "KEEP",
+      "rationale": "Definition, inclusion test, and question coverage unchanged. 19 evidence questions heavily concentrated in Hard (15/19), which is expected since chaining percent operations is inherently more complex. Three clusters capture the main patterns: sequential computation (16), algebraic chaining (2), and percent-change-then-apply (1)."
+    }
+  },
+  "untaggable_ids": [],
+  "all_question_ids": {
+    "easy": [
+      "771ee744", "eaab8bc1", "41b71b4e", "6e4a60dd", "048811bd",
+      "34e18ce4", "1c2f50a6", "a8fabad0", "194ae3b1", "2d31caae",
+      "77cf4fa6", "7ed0d098", "273b7f37", "9c44f828", "284303f1",
+      "3a6ed720", "28c6bd8c", "949cd96b", "8784bc84", "29c177e6",
+      "bb7c8186", "93724cc6", "191d167b", "8705ecba", "e9fb7774",
+      "bd90f87e"
+    ],
+    "medium": [
+      "d72a2b4d", "ad1d6adb", "566759ef", "dccdb20c", "e9f4521a",
+      "7b731fc3", "94c65646", "7f84b136", "c256b723", "b2f6f17d",
+      "96a45430", "8cbf1415", "ba61d95f", "709e04de", "8e2e424e",
+      "8a714fa1", "121dc44f", "7cab9fe1", "d693f563", "63573fea",
+      "022e9894", "05195d8a"
+    ],
+    "hard": [
+      "ad911622", "25faa756", "34f8cd89", "8213b1b3", "040f2a84",
+      "a0b165f8", "3d73a58b", "54cb53cf", "8c5dbd3e", "ba0e23b0",
+      "2e92cc21", "2afd3cec", "623dbebb", "86684ce9", "20845d36",
+      "67c0200a", "e635aede", "1fbd3b67", "5267c3c7", "40e7a1a9",
+      "993000da", "0231050d", "0ea56bb2", "4aaa9c42", "65c49824",
+      "954943a4", "1baffbcf"
+    ]
+  },
+  "notes": [
+    "75 questions read across 3 PDFs (Easy: 26, Medium: 22, Hard: 27). The Easy PDF title says 'Math-27' but only 26 distinct questions were found across all 27 pages.",
+    "PCT.1 is heavily Easy-skewed (15/18 Easy). This is expected: computing p% of N is the most basic percent operation and naturally concentrates at Easy difficulty.",
+    "PCT.5 is heavily Hard-skewed (15/19 Hard). This is expected: chaining multiple percent operations with different bases is inherently complex.",
+    "PCT.4 has the fewest questions (6) but is a distinct, well-defined operation. Merging it into another sub-skill would compromise tagging reproducibility.",
+    "No questions were untaggable. Every question maps cleanly to exactly one sub-skill under the two-tagger inclusion test.",
+    "The PCT.3 'undo/reverse' cluster (C3.2) has only 3 questions. If future question batches continue this pattern, a split into 'apply' vs 'undo' sub-skills might be warranted, but the current evidence does not support it.",
+    "Several Hard questions (993000da, 4aaa9c42) combine percent relationships algebraically. These are PCT.5 because they chain multiple percent operations across different bases, even though the solving method (algebraic substitution) differs from sequential numeric computation.",
+    "Question 0ea56bb2 straddles PCT.4 and PCT.5: the student computes a percent change (PCT.4 step) and then applies a derived percent to a different base (PCT.3 step). Because the full solution requires two percent operations on different bases, it is classified PCT.5."
+  ]
+}

@@ -1,0 +1,80 @@
+{"id":"93f48423","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle area from given sides 7×6; direct formula application"}
+{"id":"5252e606","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Square area from side length s=55; direct formula s²"}
+{"id":"bb560789","sub_skills":["AV.1"],"clusters":["CL.0119","CL.0004"],"distractors":[],"why":"Sum of triangle area and square area; two polygon areas added"}
+{"id":"babd7461","sub_skills":["AV.5"],"clusters":["CL.0086","CL.0182"],"distractors":[],"why":"Similar triangles with perimeter ratio k=9; multiplicative scaling between two figures"}
+{"id":"59cb654c","sub_skills":["AV.1"],"clusters":["CL.0119","CL.0099"],"distractors":[],"why":"Invert square area to find side length: √64=8"}
+{"id":"2b41a4c4","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangular prism volume V=11×8×10; direct formula"}
+{"id":"d0b6d927","sub_skills":["AV.1"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Rectangle width from area: A=63, l=9, solve w=7; invert area formula"}
+{"id":"0d43db90","sub_skills":["AV.1"],"clusters":["CL.0004"],"distractors":[],"why":"Triangle missing side from perimeter: subtract known sides from total"}
+{"id":"0e40dfb0","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle area as algebraic expression 3×39; direct formula"}
+{"id":"fc5ef8d3","sub_skills":["AV.5"],"clusters":["CL.0086","CL.0182"],"distractors":[],"why":"Similar triangles: perimeter ratio 150/50=3 to find unknown side; multiplicative scaling"}
+{"id":"689abc2a","sub_skills":["AV.1"],"clusters":["CL.0004"],"distractors":[],"why":"Subtract rectangle area from larger rectangle: 72−20=52"}
+{"id":"0837c3b9","sub_skills":["AV.5"],"clusters":["CL.0182"],"distractors":[],"why":"Similar triangles DE=2·AB; perimeter scales by factor 2"}
+{"id":"575f1e12","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle area 34×29; direct formula application"}
+{"id":"b4767bef","sub_skills":["AV.1"],"clusters":["CL.0004"],"distractors":[],"why":"Triangle third side from perimeter: 18−4−6=8; subtract parts from whole"}
+{"id":"c88183f7","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle perimeter 2(13+6)=38; direct perimeter formula"}
+{"id":"50774285","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Rectangular prism height from volume: V=2736, base=19×8, solve h; invert volume formula"}
+{"id":"29e9b28c","sub_skills":["AV.1"],"clusters":["CL.0004"],"distractors":[],"why":"Triangle perimeter: z=22−9−7=6; subtract known sides"}
+{"id":"3453aafc","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle area 36×34; direct formula"}
+{"id":"f60bb551","sub_skills":["AV.1"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Rectangle width from area: A=630, l=70, solve w=9; invert area formula"}
+{"id":"d2047497","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle area 17×7; direct formula"}
+{"id":"4efea6a3","sub_skills":["AV.1"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Rectangle shortest side from area and other side; invert area formula"}
+{"id":"f39f88b7","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Triangle area ½×40×90; direct formula"}
+{"id":"76670c80","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Square perimeter 4×45=180; direct perimeter formula"}
+{"id":"4420e500","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle area 4×2=8; direct formula"}
+{"id":"165c30c4","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle area 64×32; direct formula"}
+{"id":"d683a9cc","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangular prism volume 6×2×3=36; direct formula"}
+{"id":"a490003a","sub_skills":["AV.1"],"clusters":["CL.0119","CL.0094"],"distractors":[],"why":"Rectangle area: compute length=7+40=47, then A=7×47; substitute and evaluate"}
+{"id":"02b02213","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangle perimeter 2(4+9)=26; direct perimeter formula"}
+{"id":"cf53cb56","sub_skills":["AV.1"],"clusters":["CL.0113","CL.0136"],"distractors":[],"why":"Square on coordinate plane with diagonals on axes; area from vertex coordinates via decomposition"}
+{"id":"37dde49f","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Truncated cone volume V=473; solve for constant k using volume formula"}
+{"id":"468613c0","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Triangle area ½×56×112; direct formula"}
+{"id":"a2e76b60","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0004"],"distractors":[],"why":"Cylinder volume: total can volume minus syrup volume equals fruit volume; subtract parts"}
+{"id":"cecbdeba","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Cylinder height from volume and base area: h=V/B=432/24=18; invert volume formula"}
+{"id":"ae33e0a1","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0031"],"distractors":[],"why":"Cylinder volume: convert diameter 22 to radius 11, then V=π(121)(6); diameter-to-radius conversion"}
+{"id":"aef4fd8a","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Square area as expression 94×94; direct formula"}
+{"id":"9c0a0eca","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Triangle area ½×10×70=350; direct formula"}
+{"id":"08b7a3f5","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Triangular prism base area from volume: B=V/h=216/8=27; invert volume formula"}
+{"id":"e9c5bfb2","sub_skills":["AV.5"],"clusters":["CL.0086"],"distractors":[],"why":"Similar rectangles: find unknown side via proportion between corresponding sides"}
+{"id":"6ae1360d","sub_skills":["AV.2"],"clusters":["CL.0119"],"distractors":[],"why":"Circle area with radius 2.1; πr² gives coefficient b=4.41"}
+{"id":"98c12e38","sub_skills":["AV.2"],"clusters":["CL.0119","CL.0004"],"distractors":[],"why":"Sum areas of two circles; add circle areas together"}
+{"id":"38517165","sub_skills":["AV.2"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Circle diameter from circumference C=31π; invert C=πd to get d=31"}
+{"id":"e0874bc2","sub_skills":["AV.5"],"clusters":["CL.0086","CL.0182"],"distractors":[],"why":"Similar triangles: perimeter ratio 333/37=9 to find corresponding side; multiplicative scaling"}
+{"id":"a2659088","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"Cylinder volume V=π(144)(8)=1152π; direct formula"}
+{"id":"d621cffb","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"Sphere volume V=(4/3)π(17/5)³; direct formula application"}
+{"id":"151eda3c","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0106"],"distractors":[],"why":"Cylinder with 25% larger radius: multiplier 1.25, compute new volume; percent change to multiplier"}
+{"id":"03c6994f","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"Square sides scaled by 246; area scales by 246²=60516; similarity scaling applied to polygon area"}
+{"id":"c0586eb5","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0031"],"distractors":[],"why":"Cylinder volume: convert diameter 8 to radius 4, V=π(16)(12)=192π"}
+{"id":"e4b4e9ea","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Square prism height from volume: h=V/s²=2880/36=80; invert volume formula"}
+{"id":"e336a1d2","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"Cube volume V=41³=68921; direct formula"}
+{"id":"a4ed5285","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"Right triangle area ½×3×5=7.5; direct polygon area formula"}
+{"id":"3b931fb0","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Cylinder height from volume and base: h=V/B=377/13=29; invert volume formula"}
+{"id":"ec5d4823","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"Rectangular prism volume V=4×9×10=360; direct formula"}
+{"id":"096c7ef5","sub_skills":["AV.2"],"clusters":["CL.0113","CL.0119"],"distractors":[],"why":"Circle circumference from 3 coordinate points; find radius via distance formula then C=2πr"}
+{"id":"e86f0651","sub_skills":["AV.2"],"clusters":["CL.0119"],"distractors":[],"why":"Circle area π(43)²=1849π; direct formula"}
+{"id":"1f0b582e","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"Square perimeter doubled implies side doubled: new side=2×12=24; similarity scaling on polygon"}
+{"id":"5afbdc8e","sub_skills":["AV.2","AV.1"],"clusters":["CL.0119","CL.0099"],"distractors":[],"why":"Square side equals square root of circle area; links circle area to polygon side via √"}
+{"id":"310c87fe","sub_skills":["AV.4","AV.3"],"clusters":["CL.0096","CL.0047","CL.0119"],"distractors":[],"why":"Cube: SA gives edge length, then compute volume; surface area and volume both used"}
+{"id":"459dd6c5","sub_skills":["AV.5"],"clusters":["CL.0182"],"distractors":[],"why":"Similar triangles area ratio k²=16; scaling between two figures"}
+{"id":"306264ab","sub_skills":["AV.1"],"clusters":["CL.0119","CL.0088"],"distractors":[],"why":"Right triangle area with radical side lengths; simplify radicals then ½bh"}
+{"id":"c984f1a5","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"Hemisphere volume V=½(4/3)πr³; direct formula application"}
+{"id":"f7e626b2","sub_skills":["AV.4"],"clusters":["CL.0096"],"distractors":[],"why":"Rectangular prism surface area SA=2(lw+lh+wh)=148; sum of face areas"}
+{"id":"099526fc","sub_skills":["AV.1"],"clusters":["CL.0113","CL.0047","CL.0119"],"distractors":[],"why":"Right triangle: find other leg via distance formula and area constraint; invert area formula"}
+{"id":"f329442c","sub_skills":["AV.5","AV.2"],"clusters":["CL.0182"],"distractors":[],"why":"Circle area ratio (129/3)²=1849; similarity scaling between two circles"}
+{"id":"eb70d2d0","sub_skills":["AV.1"],"clusters":["CL.0136"],"distractors":[],"why":"Triangle area from 3 coordinate points via decomposition/shoelace method"}
+{"id":"93de3f84","sub_skills":["AV.3","AV.5"],"clusters":["CL.0182","CL.0119"],"distractors":[],"why":"Cylinder: double radius, halve height → volume doubles to 44; scaling between two solids"}
+{"id":"f243c383","sub_skills":["AV.4"],"clusters":["CL.0096","CL.0047"],"distractors":[],"why":"Two prisms glued: SA relationship from adding/removing shared face areas; solve for unknown"}
+{"id": "1be8b6b2", "sub_skills": ["AV.3"], "clusters": ["CL.0119", "CL.0184", "CL.0118"], "distractors": [], "why": "Cone volume via slant height: Pythagorean theorem to find height, then V=\u2153\u03c0r\u00b2h"}
+{"id":"dc71597b","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0047"],"distractors":[],"why":"Cone radius from volume and height; invert V=⅓πr²h"}
+{"id":"9f934297","sub_skills":["AV.4"],"clusters":["CL.0096"],"distractors":[],"why":"Rectangular prism surface area SA=2(lw+lh+wh); sum of face areas"}
+{"id":"5b2b8866","sub_skills":["AV.1","AV.5"],"clusters":["CL.0182","CL.0106"],"distractors":[],"why":"Rectangle area after 20% increase in each dimension; percent-change multipliers with scaling"}
+{"id":"8c1aa743","sub_skills":["AV.5"],"clusters":["CL.0182"],"distractors":[],"why":"Similar rectangles: area ratio equals side ratio squared, 6²=36"}
+{"id":"6708546e","sub_skills":["AV.5"],"clusters":["CL.0182"],"distractors":[],"why":"Similar parallelograms: area ratio equals side ratio squared, 2²=4"}
+{"id":"b0dc920d","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0095"],"distractors":[],"why":"Cylinder volume expression: substitute h=r+4 into V=πr²h; substitute expression"}
+{"id":"899c6042","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0031"],"distractors":[],"why":"Cone volume: convert diameter 6 to radius 3, then V=⅓π(9)(h); find n=66"}
+{"id":"ba8ca563","sub_skills":["AV.3","AV.4"],"clusters":["CL.0119","CL.0096"],"distractors":[],"why":"Cube: volume gives edge length, then compute surface area; both volume and SA formulas used"}
+{"id":"9fec9d49","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"Scale model: linear scale 1/10 means area scales by (1/10)²=1/100; similarity on polygon area"}
+{"id":"b2528e6b","sub_skills":["AV.2"],"clusters":["CL.0113","CL.0119"],"distractors":[],"why":"Circle circumference from 3 coordinate points; distance formula for radius then C=2πr"}
+{"id":"502d9690","sub_skills":["AV.5"],"clusters":["CL.0182","CL.0086"],"distractors":[],"why":"Similar rectangles: area ratio gives scale factor, then proportion for longest side"}
+{"id":"167aff9e","sub_skills":["AV.5","AV.3","AV.4"],"clusters":["CL.0182"],"distractors":[],"why":"Similar prisms: SA ratio gives scale factor k, then sum volumes using k³ scaling"}
+{"id":"a07ed090","sub_skills":["AV.3","AV.5"],"clusters":["CL.0182","CL.0119"],"distractors":[],"why":"Cylinder volume with R=7r and H=8h; scaling gives 392× original volume"}

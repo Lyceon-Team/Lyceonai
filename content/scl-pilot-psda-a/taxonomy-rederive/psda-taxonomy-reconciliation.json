@@ -1,0 +1,764 @@
+{
+  "meta": {
+    "title": "PSDA Taxonomy Re-Derivation: Two-Pass Reconciliation",
+    "taxonomy_version": "scl-v1.0.0",
+    "date": "2026-11-04",
+    "method": "Pass 1 (write derivation) + Pass 2 (blind audit) from official CB question bank, 373 questions across 21 PDFs",
+    "status": "PROPOSAL — for Karl + owner reconciliation. NOT written to canonical file.",
+    "total_cb_questions": 373,
+    "skills_covered": 7
+  },
+
+  "skills": [
+    {
+      "skill_code": "RAT",
+      "skill_name": "Ratios, Rates, Proportional Relationships, and Units",
+      "total_questions": 84,
+      "current_sub_skill_count": 5,
+      "pass1_sub_skill_count": 7,
+      "pass2_sub_skill_count": 9,
+      "proposed_sub_skill_count": 7,
+      "agreement_level": "MODERATE",
+
+      "current_to_proposed_mapping": [
+        {
+          "current_id": "RAT.1",
+          "current_name": "Unit conversion (linear units)",
+          "proposed_ids": ["RAT.1", "RAT.2"],
+          "action": "SPLIT",
+          "rationale": "Both passes independently split single-step vs multi-step conversion. P1: 17+11, P2: 11+13. High-confidence split."
+        },
+        {
+          "current_id": "RAT.2",
+          "current_name": "Ratios and proportional scaling",
+          "proposed_ids": ["RAT.5"],
+          "action": "RENAME",
+          "rationale": "Both passes identify a proportion-setup-and-solve sub-skill. P1: 14q, P2: 15q. Substantial overlap in evidence IDs."
+        },
+        {
+          "current_id": "RAT.3",
+          "current_name": "Rates between different quantities",
+          "proposed_ids": ["RAT.4"],
+          "action": "RENAME",
+          "rationale": "Both passes identify single-step rate application. P1: 15q, P2: 11q. Core: given rate * quantity = total."
+        },
+        {
+          "current_id": "RAT.4",
+          "current_name": "Density and per-area/per-volume rates",
+          "proposed_ids": ["RAT.6"],
+          "action": "RENAME",
+          "rationale": "Both passes keep density as distinct. P1: 13q, P2: 7q. P1 lumped more multi-step density problems in; P2 separated them to RAT.9."
+        },
+        {
+          "current_id": "RAT.5",
+          "current_name": "Converting squared or cubed units",
+          "proposed_ids": ["RAT.3"],
+          "action": "KEEP",
+          "rationale": "Both passes keep this as distinct. P1: 4q, P2: 4q. Same 4 evidence IDs in both. High confidence."
+        }
+      ],
+
+      "proposed_sub_skills": [
+        {
+          "id": "RAT.1",
+          "name": "Single-Step Unit Conversion",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 17q, P2: 11q. Difference in count due to P2 being stricter (excluding rate-application questions that P1 included).",
+          "question_count_range": "11-17",
+          "difficulty_spread": "Primarily Easy"
+        },
+        {
+          "id": "RAT.2",
+          "name": "Multi-Step (Chained) Unit Conversion",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 11q, P2: 13q. Core: two or more conversion factors applied in sequence.",
+          "question_count_range": "11-13",
+          "difficulty_spread": "Easy to Hard"
+        },
+        {
+          "id": "RAT.3",
+          "name": "Squared and Cubed Unit Conversion",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree on exactly the same 4 questions. P1: 4q, P2: 4q.",
+          "question_count_range": "4",
+          "difficulty_spread": "Medium to Hard"
+        },
+        {
+          "id": "RAT.4",
+          "name": "Single-Step Rate Application",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 15q ('Direct Rate Application'), P2: 11q ('Rate Application'). Core: rate * quantity or total / rate.",
+          "question_count_range": "11-15",
+          "difficulty_spread": "Primarily Easy"
+        },
+        {
+          "id": "RAT.5",
+          "name": "Proportion Setup and Solve",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 14q ('Setting Up and Solving Proportions'), P2: 15q. Core: a/b = c/d, solve by cross-multiplication.",
+          "question_count_range": "14-15",
+          "difficulty_spread": "Easy to Hard"
+        },
+        {
+          "id": "RAT.6",
+          "name": "Density and Derived-Rate Calculations",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 13q, P2: 7q. Difference: P1 included multi-step density problems P2 placed in RAT.9.",
+          "question_count_range": "7-13",
+          "difficulty_spread": "Easy to Hard"
+        },
+        {
+          "id": "RAT.7",
+          "name": "Multi-Step Rate and Proportion Problems",
+          "confidence": "MODERATE",
+          "rationale": "P1: 10q ('Proportional and Rate Reasoning with Algebra'). P2: 9q ('Multi-Step Rate and Proportion Problems'). Both identify a 'hard composite' tier. P2 also carved out RAT.6 (Proportional Expression Construction, 8q) and RAT.7 (Ratio Interpretation, 6q) as separate sub-skills — FLAGGED for Karl's decision.",
+          "question_count_range": "9-10",
+          "difficulty_spread": "Medium to Hard",
+          "karl_decision_needed": "P2 carved two additional sub-skills (Proportional Expression Construction: 8q, Ratio Interpretation: 6q). Should these be separate sub-skills or clusters within RAT.5/RAT.7?"
+        }
+      ],
+
+      "off_spec_patterns": [
+        {
+          "question_id": "3638f413",
+          "description": "Exponential rate (doubling); P1 flagged as off-spec for RAT, may belong to a growth/decay skill",
+          "flagged_by": "Pass 1"
+        },
+        {
+          "question_id": "3ac09984",
+          "description": "Rate + constant offset (not purely proportional); P1 flagged",
+          "flagged_by": "Pass 1"
+        }
+      ],
+
+      "proposed_clusters": [
+        { "name": "Direct Factor Application", "confidence": "HIGH", "description": "Single multiplication/division by a given conversion factor or rate." },
+        { "name": "Cross-Multiplication", "confidence": "HIGH", "description": "Setting up a/b = c/d and solving the linear equation." },
+        { "name": "Conversion-Factor Chaining", "confidence": "HIGH", "description": "Two or more sequential conversion multiplications, including squared/cubed." },
+        { "name": "Density Formula Application", "confidence": "HIGH", "description": "density = total / area-or-volume, rearranged as needed." },
+        { "name": "Ratio-to-Expression Translation", "confidence": "MODERATE", "description": "Translating a stated ratio into an algebraic expression with a variable. P2 only." },
+        { "name": "Multi-Operation Rate-Proportion Composition", "confidence": "HIGH", "description": "Primary rate/proportion step plus additional arithmetic (percentage, subtraction, scale factor)." }
+      ]
+    },
+
+    {
+      "skill_code": "PCT",
+      "skill_name": "Percentages",
+      "total_questions": 75,
+      "current_sub_skill_count": 5,
+      "pass1_sub_skill_count": 5,
+      "pass2_sub_skill_count": 13,
+      "proposed_sub_skill_count": 8,
+      "agreement_level": "DIVERGENT",
+
+      "current_to_proposed_mapping": [
+        {
+          "current_id": "PCT.1",
+          "current_name": "Percent of a quantity",
+          "proposed_ids": ["PCT.1", "PCT.2", "PCT.3"],
+          "action": "SPLIT",
+          "rationale": "P1 kept as one (18q). P2 split into Find-Part (8q), Find-Percent (4q), Find-Whole (4q). P2's split is pedagogically sound — different operations. But Find-Percent and Find-Whole are thin (4q each). RECOMMEND: split Find-Part from Find-Percent/Find-Whole but keep the latter two combined."
+        },
+        {
+          "current_id": "PCT.2",
+          "current_name": "Unknown percent or unknown whole",
+          "proposed_ids": ["PCT.2", "PCT.3"],
+          "action": "ABSORBED into PCT.1 split above",
+          "rationale": "Current PCT.2 maps to P2's PCT.2+PCT.3. Under proposed reconciliation, this becomes part of the Find-Percent/Find-Whole sub-skill."
+        },
+        {
+          "current_id": "PCT.3",
+          "current_name": "Apply or undo a single percent increase or decrease",
+          "proposed_ids": ["PCT.4", "PCT.5"],
+          "action": "SPLIT",
+          "rationale": "P2 split into: Apply forward (PCT.4, 5q), Reverse/undo (PCT.6, 3q). P1 kept combined (19q). RECOMMEND: keep combined — the reverse case (3q) is too thin standalone."
+        },
+        {
+          "current_id": "PCT.4",
+          "current_name": "Percent change between two values",
+          "proposed_ids": ["PCT.5"],
+          "action": "KEEP",
+          "rationale": "Both passes agree this is distinct. P1: 6q, P2: 6q. Stable."
+        },
+        {
+          "current_id": "PCT.5",
+          "current_name": "Chained percents (percent of a percent result)",
+          "proposed_ids": ["PCT.6", "PCT.7", "PCT.8"],
+          "action": "SPLIT",
+          "rationale": "P2 split into: Successive Percent Changes (9q), Chained Percent Relationships (7q), Compound Category Percentages (4q). P1 kept as one (19q). RECOMMEND: split Successive Changes from Chained Relationships — these are genuinely different cognitive operations."
+        }
+      ],
+
+      "proposed_sub_skills": [
+        {
+          "id": "PCT.1",
+          "name": "Find the Part (Percent of a Quantity)",
+          "confidence": "HIGH",
+          "rationale": "P1: included in 18q 'Percent of a quantity'. P2: 8q 'Find the Part'. Both agree this core operation exists.",
+          "question_count_range": "8-18",
+          "difficulty_spread": "Primarily Easy"
+        },
+        {
+          "id": "PCT.2",
+          "name": "Find the Percent or Find the Whole",
+          "confidence": "MODERATE",
+          "rationale": "P2 split these; P1 kept combined. Combined: ~8q. These are the inverse operations of PCT.1. Keeping combined avoids 4q sub-skills.",
+          "question_count_range": "8",
+          "difficulty_spread": "Easy to Medium"
+        },
+        {
+          "id": "PCT.3",
+          "name": "Apply or Undo a Percent Increase/Decrease",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree this is distinct from basic percent-of. P1: 19q, P2: 5q forward + 3q reverse = 8q. P2 also carved out Percent-as-Expression (11q) and Interpret-Expression (3q) — see PCT.4.",
+          "question_count_range": "8-19",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "PCT.4",
+          "name": "Percent as Algebraic Expression (Construct or Interpret)",
+          "confidence": "MODERATE",
+          "rationale": "P2 only: PCT.7 (11q, construct) + PCT.8 (3q, interpret) = 14q. P1 folded these into PCT.1/PCT.3. The 14q count and Medium-Hard concentration make this a viable NEW sub-skill.",
+          "question_count_range": "14",
+          "difficulty_spread": "Medium to Hard",
+          "karl_decision_needed": "P2 identified 14 questions where the answer is a symbolic expression, not a number. P1 distributed these across PCT.1 and PCT.3. Should this be a separate sub-skill?"
+        },
+        {
+          "id": "PCT.5",
+          "name": "Percent Change Calculation",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 6q, P2: 6q. Core: ((new-old)/old)*100.",
+          "question_count_range": "6",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "PCT.6",
+          "name": "Successive Percent Changes",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree this is distinct within the 'chained' category. P1: part of 19q 'Chained percents'. P2: 9q 'Successive Percent Changes'. Core: chain multipliers (1+r1)(1-r2).",
+          "question_count_range": "9",
+          "difficulty_spread": "Medium to Hard"
+        },
+        {
+          "id": "PCT.7",
+          "name": "Chained Percent Relationships (Transitive)",
+          "confidence": "HIGH",
+          "rationale": "P2: 7q, all Hard. P1: part of 'Chained percents'. Core: 'a is X% of b, a is Y% of c, find b as % of c'. Genuinely different operation from successive changes.",
+          "question_count_range": "7",
+          "difficulty_spread": "Hard only"
+        },
+        {
+          "id": "PCT.8",
+          "name": "Percent from Data (Table/Chart Reading + Percent Computation)",
+          "confidence": "MODERATE",
+          "rationale": "P2 only: 9q. P1 distributed these across PCT.1-PCT.3. Core: read data THEN compute a percent. The data-reading step is prerequisite.",
+          "question_count_range": "9",
+          "difficulty_spread": "Easy to Hard",
+          "karl_decision_needed": "P2 carved out 9 questions where a data-reading step precedes percent computation. P1 classified these by the type of percent operation instead. Is 'data then percent' a separate sub-skill or a cluster?"
+        }
+      ],
+
+      "off_spec_patterns": [
+        {
+          "question_ids": ["8e2e424e", "ba0e23b0"],
+          "description": "Exponential percent growth/decay (P2: PCT.13, 2q). These involve a^t exponential expressions — may belong more to Algebra than PSDA.",
+          "flagged_by": "Pass 2"
+        }
+      ],
+
+      "proposed_clusters": [
+        { "name": "Proportion Setup and Solve", "confidence": "HIGH", "description": "part/whole = rate/100, solve for the unknown." },
+        { "name": "Percent-Change Formula Application", "confidence": "HIGH", "description": "((new-old)/old)*100." },
+        { "name": "Single-Multiplier Construction or Interpretation", "confidence": "HIGH", "description": "Convert verbal percent to (1+r/100) or (1-r/100) and apply or read." },
+        { "name": "Multiplier Chaining", "confidence": "HIGH", "description": "Compose two or more multipliers sequentially." },
+        { "name": "Reverse Division (Undo a Percent)", "confidence": "HIGH", "description": "Divide result by multiplier to recover original." },
+        { "name": "Transitive Substitution Across Percent Links", "confidence": "HIGH", "description": "a=(p/100)*b, substitute to find c as % of d." },
+        { "name": "Data Extraction Then Percent Computation", "confidence": "MODERATE", "description": "Read from table/chart, then compute percent." },
+        { "name": "Nested Subset Computation", "confidence": "HIGH", "description": "Apply percent to subtotal, not original total." }
+      ]
+    },
+
+    {
+      "skill_code": "PRB",
+      "skill_name": "Probability and Conditional Probability",
+      "total_questions": 42,
+      "current_sub_skill_count": 4,
+      "pass1_sub_skill_count": 3,
+      "pass2_sub_skill_count": 8,
+      "proposed_sub_skill_count": 4,
+      "agreement_level": "DIVERGENT",
+
+      "current_to_proposed_mapping": [
+        {
+          "current_id": "PRB.1",
+          "current_name": "Probability of an event in the whole group",
+          "proposed_ids": ["PRB.1"],
+          "action": "KEEP (absorb PRB.4)",
+          "rationale": "P1 merged PRB.4 into PRB.1 (25q). P2 split by data source (description: 11q, frequency table: 4q, 2-way marginal: 6q, 2-way joint: 2q). RECOMMEND: keep merged — P2's splits are by data format not cognitive operation."
+        },
+        {
+          "current_id": "PRB.2",
+          "current_name": "Conditional probability (restricted sample space)",
+          "proposed_ids": ["PRB.2"],
+          "action": "KEEP",
+          "rationale": "Both passes agree. P1: 10q, P2: 10q. Same evidence IDs. High confidence."
+        },
+        {
+          "current_id": "PRB.3",
+          "current_name": "Find a count from a probability or from totals",
+          "proposed_ids": ["PRB.3"],
+          "action": "KEEP",
+          "rationale": "Both passes agree. P1: 6q, P2: 5q. Stable."
+        },
+        {
+          "current_id": "PRB.4",
+          "current_name": "Complement and exclusion events",
+          "proposed_ids": ["PRB.1"],
+          "action": "MERGE into PRB.1",
+          "rationale": "P1 explicitly merged PRB.4 into PRB.1. P2 distributed complement questions into PRB.7 (2q). With only 2-6 questions, complement is a cluster within whole-group probability, not a standalone sub-skill."
+        }
+      ],
+
+      "proposed_sub_skills": [
+        {
+          "id": "PRB.1",
+          "name": "Whole-Group Probability",
+          "confidence": "HIGH",
+          "rationale": "P1: 25q (absorbed PRB.4). P2: 11+4+6+2 = 23q (split by data source). Both agree on the boundary — whole group vs restricted sample. Merge PRB.4 complement/exclusion in as a cluster.",
+          "question_count_range": "23-25",
+          "difficulty_spread": "Easy to Medium"
+        },
+        {
+          "id": "PRB.2",
+          "name": "Conditional Probability",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree exactly. P1: 10q, P2: 10q. Core: restricted sample space ('given that', 'of those').",
+          "question_count_range": "10",
+          "difficulty_spread": "Easy to Hard"
+        },
+        {
+          "id": "PRB.3",
+          "name": "Find a Count from Probability",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 6q, P2: 5q. Core: given P and total, find count; or given P and count, find total.",
+          "question_count_range": "5-6",
+          "difficulty_spread": "Easy to Hard"
+        },
+        {
+          "id": "PRB.4",
+          "name": "Complement and Multi-Event Probability",
+          "confidence": "LOW",
+          "rationale": "Current PRB.4 has 6 evidence IDs. P1 merged into PRB.1. P2 carved PRB.7 (2q) + PRB.8 (2q). Very thin. RECOMMEND: demote to cluster within PRB.1.",
+          "question_count_range": "2-6",
+          "difficulty_spread": "Medium",
+          "karl_decision_needed": "Both passes suggest complement/exclusion is too thin for a standalone sub-skill (2-6q). Should it be a cluster within PRB.1, or remain a separate sub-skill?"
+        }
+      ],
+
+      "off_spec_patterns": [
+        {
+          "question_id": "b680e76d",
+          "description": "Both passes flag this question. P1: 'CB mis-tag, table arithmetic not probability'. P2: classified under PRB.6. The question may not be a true probability question.",
+          "flagged_by": "Both passes"
+        }
+      ],
+
+      "proposed_clusters": [
+        { "name": "Direct Ratio (favorable/total)", "confidence": "HIGH", "description": "Read counts, divide favorable by total." },
+        { "name": "Complement Arithmetic", "confidence": "HIGH", "description": "P(not A) = 1 - P(A), or sum of non-target categories." },
+        { "name": "Restricted Sample Space", "confidence": "HIGH", "description": "Identify the conditional subset, then compute within it." },
+        { "name": "Algebraic Count-Finding", "confidence": "HIGH", "description": "Set up P = x/N or P = k/x and solve." },
+        { "name": "Two-Way Table Navigation", "confidence": "HIGH", "description": "Locate the correct cell/margin in a two-way table before computing." }
+      ]
+    },
+
+    {
+      "skill_code": "OVD",
+      "skill_name": "One-Variable Data: Distributions and Measures of Center and Spread",
+      "total_questions": 73,
+      "current_sub_skill_count": 5,
+      "pass1_sub_skill_count": 5,
+      "pass2_sub_skill_count": 9,
+      "proposed_sub_skill_count": 7,
+      "agreement_level": "MODERATE",
+
+      "current_to_proposed_mapping": [
+        {
+          "current_id": "OVD.1",
+          "current_name": "Read and interpret a data display",
+          "proposed_ids": ["OVD.1"],
+          "action": "KEEP",
+          "rationale": "Both passes agree strongly. P1: 10q, P2: 17q (P2 found more questions from the 73-page PDF). High confidence."
+        },
+        {
+          "current_id": "OVD.2",
+          "current_name": "Find a measure of center from data",
+          "proposed_ids": ["OVD.2", "OVD.3"],
+          "action": "SPLIT",
+          "rationale": "P1 kept combined (21q). P2 split: Compute Mean (9q), Find Median (11q). The operations are genuinely different (sum/divide vs order/locate). RECOMMEND: split."
+        },
+        {
+          "current_id": "OVD.3",
+          "current_name": "Measures of spread: range and SD",
+          "proposed_ids": ["OVD.4", "OVD.7"],
+          "action": "SPLIT",
+          "rationale": "P1: 6q combined. P2: Compute Range (3q) + Compare SDs (4q). Range is max-min; SD comparison is visual distribution reasoning. Different operations. But Range alone is thin (3q). RECOMMEND: keep combined as 'Measures of Spread'."
+        },
+        {
+          "current_id": "OVD.4",
+          "current_name": "Use the mean-total relationship",
+          "proposed_ids": ["OVD.5", "OVD.6"],
+          "action": "SPLIT",
+          "rationale": "P1: 7q. P2: Solve for Unknown Using Mean (7q) + Combined/Weighted Mean (2q). Weighted mean is a distinct operation. But 2q is very thin. RECOMMEND: keep combined."
+        },
+        {
+          "current_id": "OVD.5",
+          "current_name": "Compare measures across data sets or after a change",
+          "proposed_ids": ["OVD.5_new", "OVD.6_new"],
+          "action": "SPLIT",
+          "rationale": "P1: 12q. P2: Compare/Relate Measures (13q) + Effect of Data Changes (7q). P2's split is pedagogically sound — comparing is conceptual; effect-of-change requires algebraic reasoning. RECOMMEND: split."
+        }
+      ],
+
+      "proposed_sub_skills": [
+        {
+          "id": "OVD.1",
+          "name": "Read or Interpret a Data Display",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 10q, P2: 17q.",
+          "question_count_range": "10-17",
+          "difficulty_spread": "Easy to Medium"
+        },
+        {
+          "id": "OVD.2",
+          "name": "Compute the Mean",
+          "confidence": "HIGH",
+          "rationale": "P2: 9q. P1 included mean questions in a combined 'Measures of Center' (21q). Splitting mean from median is pedagogically justified — different algorithms.",
+          "question_count_range": "9",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "OVD.3",
+          "name": "Find the Median",
+          "confidence": "HIGH",
+          "rationale": "P2: 11q. P1 included in combined 'Measures of Center'. Median uses order-and-locate, fundamentally different from mean's sum-and-divide.",
+          "question_count_range": "11",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "OVD.4",
+          "name": "Measures of Spread (Range and SD Comparison)",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree spread is distinct. P1: 6q, P2: Range 3q + SD comparison 4q = 7q. Keep combined to avoid thin sub-skills.",
+          "question_count_range": "6-7",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "OVD.5",
+          "name": "Use the Mean-Total Relationship (Algebraic)",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 7q, P2: Solve-for-unknown 7q + Combined mean 2q = 9q.",
+          "question_count_range": "7-9",
+          "difficulty_spread": "Medium to Hard"
+        },
+        {
+          "id": "OVD.6",
+          "name": "Compare or Relate Measures of Center and Spread",
+          "confidence": "HIGH",
+          "rationale": "P2: 13q. P1: part of 12q 'Compare measures'. Core: reason about mean vs median, compare across groups, identify statistics by properties.",
+          "question_count_range": "12-13",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "OVD.7",
+          "name": "Effect of Data Changes on Statistics",
+          "confidence": "MODERATE",
+          "rationale": "P2: 7q (Medium+Hard). P1 folded into 'Compare measures'. Core: add/remove/modify values, determine effect on mean/median/range/SD. Genuinely distinct operation.",
+          "question_count_range": "7",
+          "difficulty_spread": "Medium to Hard",
+          "karl_decision_needed": "P2 carved 7 questions about how data modifications affect statistics. P1 included these in the broader 'compare' sub-skill. Should this be separate?"
+        }
+      ],
+
+      "off_spec_patterns": [],
+
+      "proposed_clusters": [
+        { "name": "Graph/Table Value Extraction", "confidence": "HIGH", "description": "Visual-to-numeric translation from displays." },
+        { "name": "Sum-and-Divide (Mean Computation)", "confidence": "HIGH", "description": "Add values, divide by count." },
+        { "name": "Order-and-Locate (Median Finding)", "confidence": "HIGH", "description": "Sort and find middle position." },
+        { "name": "Max-Minus-Min (Range)", "confidence": "HIGH", "description": "Identify extremes, subtract." },
+        { "name": "Algebraic Mean Inversion", "confidence": "HIGH", "description": "sum/count = mean, solve for unknown." },
+        { "name": "Distribution-Shape Reasoning", "confidence": "HIGH", "description": "Use shape (skew, concentration) to infer statistical relationships." },
+        { "name": "Data-Modification Effect Analysis", "confidence": "HIGH", "description": "Reason about how a change propagates to statistics." },
+        { "name": "Statistic Identification and Selection", "confidence": "HIGH", "description": "Match a property description to the correct statistic." }
+      ]
+    },
+
+    {
+      "skill_code": "TVD",
+      "skill_name": "Two-Variable Data: Models and Scatterplots",
+      "total_questions": 63,
+      "current_sub_skill_count": 5,
+      "pass1_sub_skill_count": 9,
+      "pass2_sub_skill_count": 8,
+      "proposed_sub_skill_count": 8,
+      "agreement_level": "GOOD",
+
+      "current_to_proposed_mapping": [
+        {
+          "current_id": "TVD.1",
+          "current_name": "Read data and changes from a graph",
+          "proposed_ids": ["TVD.1", "TVD.6"],
+          "action": "SPLIT",
+          "rationale": "Both passes agree: reading raw values (P1: 8q, P2: 16q) is different from computing average rate of change (P1: 6q, P2: 6q). Current TVD.1 mixes both."
+        },
+        {
+          "current_id": "TVD.2",
+          "current_name": "Predict with a fitted model and compare data to it",
+          "proposed_ids": ["TVD.2", "TVD.5"],
+          "action": "SPLIT",
+          "rationale": "Both passes agree: prediction from LOBF (P1: 9q, P2: part of TVD.1) is different from residual computation (P1: 4q, P2: 4q). Current TVD.2 mixes both."
+        },
+        {
+          "current_id": "TVD.3",
+          "current_name": "Linear model: direction, slope, intercept, equation, interpretation",
+          "proposed_ids": ["TVD.3", "TVD.4", "TVD.7"],
+          "action": "SPLIT",
+          "rationale": "Both passes agree on splitting: estimate slope (6q), write equation (12-13q), interpret slope in context (3q). Current TVD.3 lumps all linear model work."
+        },
+        {
+          "current_id": "TVD.4",
+          "current_name": "Nonlinear model fitted to a scatterplot",
+          "proposed_ids": ["TVD.8"],
+          "action": "KEEP",
+          "rationale": "Both passes agree. P1: 4q, P2: 3q. Small but distinct."
+        },
+        {
+          "current_id": "TVD.5",
+          "current_name": "Classify linear vs exponential relationships",
+          "proposed_ids": ["TVD.4_new"],
+          "action": "RENAME/EXPAND",
+          "rationale": "Both passes agree. P1: 11q, P2: 12q. Expanded to include quadratic classification. Rename to 'Classify Model Type and Describe Associations'."
+        }
+      ],
+
+      "proposed_sub_skills": [
+        {
+          "id": "TVD.1",
+          "name": "Read Values from Graphs and Models",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 8q (raw data only), P2: 16q (includes LOBF reading). Count difference: P2 combined raw + LOBF reading; P1 separated them. RECOMMEND: include both raw and LOBF value reading.",
+          "question_count_range": "8-16",
+          "difficulty_spread": "Primarily Easy"
+        },
+        {
+          "id": "TVD.2",
+          "name": "Estimate the Slope of a Line of Best Fit",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree exactly. P1: 6q, P2: 6q. Same evidence IDs.",
+          "question_count_range": "6",
+          "difficulty_spread": "Easy to Medium"
+        },
+        {
+          "id": "TVD.3",
+          "name": "Choose or Write a Line of Best Fit Equation",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 12q, P2: 13q. Core: select y=mx+b from choices or construct it.",
+          "question_count_range": "12-13",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "TVD.4",
+          "name": "Classify Model Type and Describe Associations",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 11q, P2: 12q. Core: linear vs exponential vs quadratic; positive/negative association.",
+          "question_count_range": "11-12",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "TVD.5",
+          "name": "Compute and Use Residuals",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 4q ('Evaluate Residuals'), P2: 4q. Core: observed minus predicted.",
+          "question_count_range": "4",
+          "difficulty_spread": "Medium"
+        },
+        {
+          "id": "TVD.6",
+          "name": "Average Rate of Change",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 6q, P2: 6q. Core: (y2-y1)/(x2-x1) across intervals.",
+          "question_count_range": "6",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "TVD.7",
+          "name": "Interpret Slope or Intercept in Context",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 3q ('Interpret Slope/Intercept'), P2: 3q. All Hard. Core: translate slope to real-world meaning.",
+          "question_count_range": "3",
+          "difficulty_spread": "Hard only"
+        },
+        {
+          "id": "TVD.8",
+          "name": "Choose a Nonlinear Model Equation",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 4q, P2: 3q. Core: select quadratic or exponential equation for curved data.",
+          "question_count_range": "3-4",
+          "difficulty_spread": "Easy and Hard"
+        }
+      ],
+
+      "off_spec_patterns": [],
+
+      "proposed_clusters": [
+        { "name": "Visual Data Extraction", "confidence": "HIGH", "description": "Read a value from a plotted point or model line." },
+        { "name": "Slope Computation from Two Points", "confidence": "HIGH", "description": "Pick two points, compute rise/run." },
+        { "name": "Sign-and-Intercept Reasoning", "confidence": "HIGH", "description": "Determine equation by reasoning about slope sign and y-intercept." },
+        { "name": "Pattern Classification", "confidence": "HIGH", "description": "Examine how values change to classify as linear/exponential/quadratic." },
+        { "name": "Residual and Deviation Analysis", "confidence": "HIGH", "description": "Compute observed minus predicted, or count above/below." },
+        { "name": "Interval Rate-of-Change Computation", "confidence": "HIGH", "description": "Compute and compare (y2-y1)/(x2-x1) across intervals." },
+        { "name": "Contextual Slope Interpretation", "confidence": "HIGH", "description": "Translate numeric slope into real-world meaning." },
+        { "name": "Nonlinear Model Fitting by Key Features", "confidence": "HIGH", "description": "Match curve to equation via vertex, intercept, direction, base." }
+      ]
+    },
+
+    {
+      "skill_code": "INFS",
+      "skill_name": "Inference from Sample Statistics and Margin of Error",
+      "total_questions": 24,
+      "current_sub_skill_count": 2,
+      "pass1_sub_skill_count": 2,
+      "pass2_sub_skill_count": 8,
+      "proposed_sub_skill_count": 2,
+      "agreement_level": "MODERATE",
+
+      "current_to_proposed_mapping": [
+        {
+          "current_id": "INFS.1",
+          "current_name": "Estimate a population count from a sample",
+          "proposed_ids": ["INFS.2"],
+          "action": "RENAME",
+          "rationale": "Both passes agree: population estimation is distinct. P1: 10q, P2: core of INFS-B (7q) + INFS-C (1q) + INFS-H (1q) = 9q."
+        },
+        {
+          "current_id": "INFS.2",
+          "current_name": "Interpret an estimate with a margin of error",
+          "proposed_ids": ["INFS.1"],
+          "action": "RENAME",
+          "rationale": "Both passes agree: MOE interpretation is distinct. P1: 14q, P2: core of INFS-A (10q) + INFS-D (2q) + INFS-E (1q) + INFS-F (1q) = 14q."
+        }
+      ],
+
+      "proposed_sub_skills": [
+        {
+          "id": "INFS.1",
+          "name": "Interpret Margin of Error",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree this is the dominant sub-skill. P1: 14q, P2: 14q (spread across INFS-A/D/E/F). Core: estimate +/- MOE interval construction and interpretation.",
+          "question_count_range": "14",
+          "difficulty_spread": "All difficulties"
+        },
+        {
+          "id": "INFS.2",
+          "name": "Estimate Population Values from Samples",
+          "confidence": "HIGH",
+          "rationale": "Both passes agree. P1: 10q, P2: 9-10q (INFS-B/C/H). Core: sample proportion * population size.",
+          "question_count_range": "9-10",
+          "difficulty_spread": "All difficulties"
+        }
+      ],
+
+      "pass2_fine_splits_rejected": "P2 proposed 8 sub-skills, but 5 of them had only 1 question each (INFS-C, INFS-E, INFS-F, INFS-G, INFS-H). These are too thin to stand alone. They are better represented as clusters within the two main sub-skills. INFS-G (Generalization scope, 1q) may actually belong in ESC.",
+
+      "off_spec_patterns": [],
+
+      "proposed_clusters": [
+        { "name": "Construct Confidence Interval from Estimate and MOE", "confidence": "HIGH", "description": "Apply estimate +/- MOE." },
+        { "name": "Evaluate Claims Against MOE Interval", "confidence": "HIGH", "description": "Determine if a value falls within or outside the interval." },
+        { "name": "Factors Affecting MOE Size", "confidence": "MODERATE", "description": "Smaller sample = larger MOE." },
+        { "name": "Compute Sample Statistic from Raw Data", "confidence": "HIGH", "description": "Calculate proportion or mean from sample before scaling." },
+        { "name": "Scale Sample Proportion to Population Count", "confidence": "HIGH", "description": "Multiply sample proportion by population size." },
+        { "name": "Multi-Step Estimation", "confidence": "MODERATE", "description": "Complement proportion, then scale; or combine MOE with scaling." }
+      ]
+    },
+
+    {
+      "skill_code": "ESC",
+      "skill_name": "Evaluating Statistical Claims: Observational Studies and Experiments",
+      "total_questions": 11,
+      "current_sub_skill_count": 0,
+      "pass1_sub_skill_count": 3,
+      "pass2_sub_skill_count": 3,
+      "proposed_sub_skill_count": 3,
+      "agreement_level": "STRONG",
+
+      "current_to_proposed_mapping": [
+        {
+          "current_id": null,
+          "current_name": "No current sub-skills exist for ESC",
+          "proposed_ids": ["ESC.1", "ESC.2", "ESC.3"],
+          "action": "NEW",
+          "rationale": "Both passes independently derived exactly 3 sub-skills with the same question assignments (different naming only). Highest confidence in the entire PSDA reconciliation."
+        }
+      ],
+
+      "proposed_sub_skills": [
+        {
+          "id": "ESC.1",
+          "name": "Determining Generalization Scope",
+          "confidence": "STRONG",
+          "rationale": "Both passes agree on name, definition, and evidence. P1: 6q (82dfb646, b4f5a7ca, 6fca0144, 7ce2830a, 7d68096f, 1ea09200). P2: 6q (same IDs). Perfect match.",
+          "question_count_range": "6",
+          "difficulty_spread": "Easy to Hard"
+        },
+        {
+          "id": "ESC.2",
+          "name": "Identifying Sampling Bias",
+          "confidence": "STRONG",
+          "rationale": "Both passes agree. P1: 3q (9bf4c545, 4a422e3e, aa43b41f). P2: 3q (same IDs). Perfect match.",
+          "question_count_range": "3",
+          "difficulty_spread": "Easy and Hard"
+        },
+        {
+          "id": "ESC.3",
+          "name": "Understanding Sample Variability",
+          "confidence": "STRONG",
+          "rationale": "Both passes agree. P1: 2q (37930b2a, 642519d7). P2: 2q (same IDs). Perfect match. Thin (2q) but conceptually distinct.",
+          "question_count_range": "2",
+          "difficulty_spread": "Medium"
+        }
+      ],
+
+      "off_spec_patterns": [],
+
+      "proposed_clusters": [
+        { "name": "Sampling Frame Identification", "confidence": "HIGH", "description": "Identify the population from which the sample was drawn to determine generalization boundary." },
+        { "name": "Sampling Method Critique", "confidence": "HIGH", "description": "Recognize non-random or biased sampling methods." },
+        { "name": "Estimate vs Exact Value Distinction", "confidence": "HIGH", "description": "Understand that sample statistics are estimates, not exact population values." }
+      ]
+    }
+  ],
+
+  "summary": {
+    "total_current_sub_skills": 26,
+    "total_proposed_sub_skills": 39,
+    "net_change": "+13",
+    "high_confidence_proposals": 31,
+    "moderate_confidence_proposals": 5,
+    "low_confidence_proposals": 1,
+    "strong_confidence_proposals": 3,
+    "karl_decisions_needed": 5,
+    "off_spec_patterns_flagged": 4,
+
+    "skill_level_summary": [
+      { "skill": "RAT", "current": 5, "proposed": 7, "change": "+2", "agreement": "MODERATE" },
+      { "skill": "PCT", "current": 5, "proposed": 8, "change": "+3", "agreement": "DIVERGENT" },
+      { "skill": "PRB", "current": 4, "proposed": 4, "change": "0 (but restructured)", "agreement": "DIVERGENT" },
+      { "skill": "OVD", "current": 5, "proposed": 7, "change": "+2", "agreement": "MODERATE" },
+      { "skill": "TVD", "current": 5, "proposed": 8, "change": "+3", "agreement": "GOOD" },
+      { "skill": "INFS", "current": 2, "proposed": 2, "change": "0", "agreement": "MODERATE" },
+      { "skill": "ESC", "current": 0, "proposed": 3, "change": "+3", "agreement": "STRONG" }
+    ]
+  }
+}

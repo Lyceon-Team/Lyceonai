@@ -1,0 +1,107 @@
+{
+  "skill_code": "INFS",
+  "skill_name": "Inference from Sample Statistics and Margin of Error",
+  "pass": "blind_audit",
+  "question_ids_read": [
+    "8173f32b", "6a305cd0", "97631565", "0108ac2d", "f4b3672a",
+    "e7d9649f", "2c76bcce", "90eed2e5", "affb2315",
+    "9ee22c16", "89f8d08a", "1e562f24", "4096a482", "f04d40b2",
+    "fc46af57", "9bedc4a0", "a2162ea1", "e03f3477", "f8f79e11", "53d97af5",
+    "85939da5", "308084c5", "9ba3e283", "916ffe9b"
+  ],
+  "question_count": 24,
+  "proposed_sub_skills": [
+    {
+      "id": "INFS-A",
+      "name": "Constructing confidence intervals from margin of error",
+      "description": "Given a sample statistic (mean or proportion) and a stated margin of error, compute the interval of plausible values for the population parameter by adding and subtracting the MOE from the estimate.",
+      "cognitive_demand": "Arithmetic application of the MOE formula: statistic +/- MOE. Must distinguish the interval from the point estimate.",
+      "question_ids": ["8173f32b", "6a305cd0", "0108ac2d", "2c76bcce", "1e562f24", "4096a482", "9bedc4a0", "a2162ea1", "e03f3477", "f8f79e11"],
+      "difficulty_spread": {"easy": 4, "medium": 6, "hard": 0}
+    },
+    {
+      "id": "INFS-B",
+      "name": "Estimating population counts from sample proportions",
+      "description": "Given a sample proportion (or count within sample) and the total population size, scale up the proportion to estimate the count in the full population. May involve computing the proportion from raw counts first.",
+      "cognitive_demand": "Compute proportion from sample data, then multiply by population size. Some questions give the proportion directly; others require reading it from a table or computing it from counts.",
+      "question_ids": ["97631565", "e7d9649f", "90eed2e5", "affb2315", "9ee22c16", "89f8d08a", "9ba3e283"],
+      "difficulty_spread": {"easy": 4, "medium": 2, "hard": 1}
+    },
+    {
+      "id": "INFS-C",
+      "name": "Estimating population totals from sample means",
+      "description": "Compute the sample mean from raw data, then multiply by the number of units in the population to estimate the population total.",
+      "cognitive_demand": "Two-step: first compute the mean of a small dataset, then multiply by the population size to get a total.",
+      "question_ids": ["f4b3672a"],
+      "difficulty_spread": {"easy": 1, "medium": 0, "hard": 0}
+    },
+    {
+      "id": "INFS-D",
+      "name": "Combining margin of error with population estimation",
+      "description": "Compute the MOE interval as percentages, then scale both bounds to population counts to determine a plausible count range. Requires chaining MOE interpretation with population scaling.",
+      "cognitive_demand": "Multi-step: construct the percentage interval using MOE, then convert both endpoints to population counts. Must identify which count falls within the resulting range.",
+      "question_ids": ["f04d40b2", "fc46af57"],
+      "difficulty_spread": {"easy": 0, "medium": 2, "hard": 0}
+    },
+    {
+      "id": "INFS-E",
+      "name": "Evaluating specific claims against margin of error",
+      "description": "Given a sample estimate and MOE, judge whether a specific value or statement about the population parameter is plausible, doubtful, impossible, or certain. Requires understanding that values outside the interval are unlikely but not impossible.",
+      "cognitive_demand": "Conceptual reasoning about what MOE tells us. Must distinguish 'plausible' from 'certain', 'unlikely' from 'impossible'. Harder than simply computing the interval.",
+      "question_ids": ["85939da5"],
+      "difficulty_spread": {"easy": 0, "medium": 0, "hard": 1}
+    },
+    {
+      "id": "INFS-F",
+      "name": "Understanding factors that affect margin of error",
+      "description": "Understand the relationship between sample size and margin of error: smaller samples produce larger MOE because they are less representative of the population.",
+      "cognitive_demand": "Conceptual understanding of sampling theory. No computation; must reason about why MOE differs between two samples.",
+      "question_ids": ["308084c5"],
+      "difficulty_spread": {"easy": 0, "medium": 0, "hard": 1}
+    },
+    {
+      "id": "INFS-G",
+      "name": "Appropriate generalization of sample results",
+      "description": "Identify the correct population to which sample results can be generalized. Results apply only to the population from which the random sample was drawn, not broader populations.",
+      "cognitive_demand": "Conceptual: match the sampling frame to the generalization claim. Overlaps with ESC skill but appears here when tested alongside inference/estimation questions.",
+      "question_ids": ["53d97af5"],
+      "difficulty_spread": {"easy": 0, "medium": 1, "hard": 0}
+    },
+    {
+      "id": "INFS-H",
+      "name": "Multi-step population estimation with comparisons",
+      "description": "Scale up multiple proportions from a sample to the population, then compute a difference, comparison, or derived quantity (e.g., expected vote margin).",
+      "cognitive_demand": "Multi-step: compute proportion, scale to population, then perform additional arithmetic (subtraction, comparison). Requires careful tracking of quantities.",
+      "question_ids": ["916ffe9b"],
+      "difficulty_spread": {"easy": 0, "medium": 0, "hard": 1}
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "id": "INFS-CL1",
+      "name": "Margin of Error Interpretation",
+      "description": "Understanding what margin of error means and how to use it: constructing confidence intervals, evaluating claims against them, and understanding what affects MOE size.",
+      "sub_skill_ids": ["INFS-A", "INFS-E", "INFS-F"],
+      "question_ids": ["8173f32b", "6a305cd0", "0108ac2d", "2c76bcce", "1e562f24", "4096a482", "9bedc4a0", "a2162ea1", "e03f3477", "f8f79e11", "85939da5", "308084c5"]
+    },
+    {
+      "id": "INFS-CL2",
+      "name": "Population Estimation from Samples",
+      "description": "Using sample statistics (proportions or means) to estimate quantities in the full population, including simple scaling, multi-step scaling with MOE, and comparative estimates.",
+      "sub_skill_ids": ["INFS-B", "INFS-C", "INFS-D", "INFS-H"],
+      "question_ids": ["97631565", "e7d9649f", "90eed2e5", "affb2315", "9ee22c16", "89f8d08a", "9ba3e283", "f4b3672a", "f04d40b2", "fc46af57", "916ffe9b"]
+    },
+    {
+      "id": "INFS-CL3",
+      "name": "Generalization and Scope of Inference",
+      "description": "Determining the appropriate population to which sample-based conclusions can be extended.",
+      "sub_skill_ids": ["INFS-G"],
+      "question_ids": ["53d97af5"]
+    }
+  ],
+  "observations": {
+    "dominant_patterns": "The skill splits naturally into two major clusters: (1) margin-of-error interpretation (compute interval, evaluate claims, understand MOE factors) and (2) population estimation by scaling sample statistics. The MOE interpretation cluster is the largest, especially at medium difficulty. Population estimation questions are common at easy difficulty.",
+    "single_question_sub_skills": "INFS-C, INFS-E, INFS-F, INFS-G, and INFS-H each have only one question. They represent real cognitive distinctions but may need to be merged for practical taxonomy purposes. INFS-C (mean-based total estimation) and INFS-B (proportion-based count estimation) could merge. INFS-E and INFS-A are related but INFS-E requires deeper conceptual reasoning about plausibility vs certainty.",
+    "overlap_with_esc": "INFS-G (generalization scope) overlaps substantially with ESC-B. The question 53d97af5 is classified under INFS by CB but is conceptually an ESC question about appropriate generalization. Similarly, some ESC questions touch on inference concepts."
+  }
+}

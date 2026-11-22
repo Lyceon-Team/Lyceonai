@@ -1,0 +1,248 @@
+{
+  "skill_code": "TVD",
+  "skill_name": "Two-Variable Data: Models and Scatterplots",
+  "total_questions_read": 63,
+  "difficulty_counts": { "Easy": 31, "Medium": 21, "Hard": 11 },
+
+  "sub_skills": [
+    {
+      "id": "TVD.1",
+      "name": "Read Values from Graphs and Scatterplots",
+      "definition": "Read coordinates of data points, identify maxima or minima, compare plotted values, or compute simple differences between data values shown directly on a graph, scatterplot, or line graph -- without using a model equation or line of best fit.",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to read, locate, or compare one or more data values directly from a graph or scatterplot?",
+        "tagger_2": "Is the answer obtainable by reading axis values at plotted points (not from a regression line or model equation)?"
+      },
+      "evidence_ids": [
+        "8d63b6f1", "2e511919", "b58dbf88", "13f67ddc",
+        "74dee52b", "4a2264b3", "d6121490", "9d88a3e3"
+      ],
+      "question_count": 8,
+      "difficulty_spread": { "Easy": 8, "Medium": 0, "Hard": 0 }
+    },
+    {
+      "id": "TVD.2",
+      "name": "Make Predictions Using a Line or Curve of Best Fit",
+      "definition": "Use a drawn line of best fit, a drawn curve, or a given model equation to predict a y-value at a specified x-value, or interpolate/extrapolate a value from the model.",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask for a predicted, estimated, or modeled value at a specific input using a line or curve of best fit?",
+        "tagger_2": "Does solving require reading from a regression line/curve (not raw data points) or substituting into a model equation to find a predicted value?"
+      },
+      "evidence_ids": [
+        "cf0ae57a", "bc59c2d9", "5c24c861", "ae32cc3c",
+        "c9dd92b1", "ac5b6558", "8156d446",
+        "f46139df", "fdfc90e4"
+      ],
+      "question_count": 9,
+      "difficulty_spread": { "Easy": 7, "Medium": 2, "Hard": 0 }
+    },
+    {
+      "id": "TVD.3",
+      "name": "Estimate the Slope of a Line of Best Fit",
+      "definition": "Determine the approximate slope of a line of best fit by selecting two points on the drawn line and computing rise over run ((y2 - y1) / (x2 - x1)).",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to find or approximate the slope of a line of best fit shown on a scatterplot?",
+        "tagger_2": "Does solving require picking two points on the drawn line and computing the ratio of vertical change to horizontal change?"
+      },
+      "evidence_ids": [
+        "39aa146d",
+        "2e74e403", "03a16790", "90ba8f98", "4cc05491", "24a1e6a7"
+      ],
+      "question_count": 6,
+      "difficulty_spread": { "Easy": 1, "Medium": 5, "Hard": 0 }
+    },
+    {
+      "id": "TVD.4",
+      "name": "Select or Write the Equation of a Line of Best Fit",
+      "definition": "From a scatterplot (with or without a drawn line), select from multiple-choice options or write the linear equation y = mx + b that best represents the data, by determining the slope and y-intercept.",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to choose or write a linear equation (y = mx + b) that represents a line of best fit for scatterplot data?",
+        "tagger_2": "Does solving require determining both the slope and y-intercept of a best-fit line and matching to an equation?"
+      },
+      "evidence_ids": [
+        "5f3ee607", "9296553d", "c5ee6ac0", "16988f9c", "d230e963", "8baf2118",
+        "3c5b19ef", "3d985614", "9eb896c5", "50b2807e",
+        "1e1027a7", "79137c1b"
+      ],
+      "question_count": 12,
+      "difficulty_spread": { "Easy": 6, "Medium": 4, "Hard": 2 }
+    },
+    {
+      "id": "TVD.5",
+      "name": "Identify the Appropriate Model Type",
+      "definition": "Given data presented in a table, graph, or verbal description, determine whether the relationship is best modeled by a linear, quadratic, or exponential function, or identify the direction of association (positive, negative, or no association).",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to classify a relationship as linear, quadratic, or exponential, or to describe the direction/type of association?",
+        "tagger_2": "Does solving require analyzing the pattern of data (constant differences, constant ratios, curvature, or trend direction) to determine the model type?"
+      },
+      "evidence_ids": [
+        "a03b7e02", "c141366d", "43744269", "15ce8207", "661dfddd",
+        "7ac5d686", "9a144a01", "ab7740a8", "58171b5e",
+        "9b5b23fc", "af142f8d"
+      ],
+      "question_count": 11,
+      "difficulty_spread": { "Easy": 5, "Medium": 4, "Hard": 2 }
+    },
+    {
+      "id": "TVD.6",
+      "name": "Compute Average Rate of Change Between Intervals",
+      "definition": "Calculate the average rate of change (y2 - y1) / (x2 - x1) between two data points or identify the interval with the greatest or least change from a graph or table.",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to compute an average rate of change or identify the interval with the greatest/least change?",
+        "tagger_2": "Does solving require computing (y2 - y1) / (x2 - x1) for one or more intervals and comparing the results?"
+      },
+      "evidence_ids": [
+        "d112bc9d", "a6b2fcce", "83272c51",
+        "9bb4107c", "e24765e6",
+        "7b52985c"
+      ],
+      "question_count": 6,
+      "difficulty_spread": { "Easy": 3, "Medium": 2, "Hard": 1 }
+    },
+    {
+      "id": "TVD.7",
+      "name": "Evaluate Residuals and Deviations from a Model",
+      "definition": "Compute a residual (actual value minus predicted value) for a data point, or count the number of data points that lie above or below a line of best fit.",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to compute a residual or count data points above/below a model?",
+        "tagger_2": "Does solving require comparing actual data values to predicted values from a model (by subtraction or visual comparison to the line)?"
+      },
+      "evidence_ids": [
+        "1adb39f0", "7fd284ac", "e17babed", "ad7dbb22"
+      ],
+      "question_count": 4,
+      "difficulty_spread": { "Easy": 0, "Medium": 4, "Hard": 0 }
+    },
+    {
+      "id": "TVD.8",
+      "name": "Interpret Slope or Intercept in Real-World Context",
+      "definition": "Explain what the slope or y-intercept of a line of best fit represents in the real-world context of the problem, including unit-rate interpretations and contextual meaning.",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to interpret the meaning of the slope or y-intercept of a model in a real-world context?",
+        "tagger_2": "Does the correct answer require translating a numerical slope or intercept value into a statement about units, rates, or contextual meaning?"
+      },
+      "evidence_ids": [
+        "d6af3572", "d0430601", "9d95e7ad"
+      ],
+      "question_count": 3,
+      "difficulty_spread": { "Easy": 0, "Medium": 0, "Hard": 3 }
+    },
+    {
+      "id": "TVD.9",
+      "name": "Select or Determine a Nonlinear Model Equation",
+      "definition": "Choose or construct a quadratic or exponential equation that fits given data, determine parameters (such as the base of an exponential), or apply a transformation to a model when data are scaled or shifted.",
+      "inclusion_test": {
+        "tagger_1": "Does the question ask the student to select, write, or determine parameters for a nonlinear (quadratic or exponential) model equation?",
+        "tagger_2": "Does solving require matching data to a quadratic or exponential form, computing an exponential base, or transforming a model under a data scaling?"
+      },
+      "evidence_ids": [
+        "82aaa0a1",
+        "e821a26d", "fb866265", "2e8027b0"
+      ],
+      "question_count": 4,
+      "difficulty_spread": { "Easy": 1, "Medium": 0, "Hard": 3 }
+    }
+  ],
+
+  "clusters": [
+    {
+      "id": "TVD.C1",
+      "name": "Direct Graph Reading",
+      "definition": "Locate a value on one axis, trace horizontally or vertically to the graph/data point, and read the corresponding value on the other axis.",
+      "used_by_sub_skills": ["TVD.1", "TVD.2", "TVD.6", "TVD.7"],
+      "evidence_ids": [
+        "8d63b6f1", "2e511919", "b58dbf88", "13f67ddc", "74dee52b", "4a2264b3",
+        "cf0ae57a", "bc59c2d9", "ae32cc3c", "ac5b6558", "f46139df", "fdfc90e4",
+        "e17babed", "ad7dbb22"
+      ]
+    },
+    {
+      "id": "TVD.C2",
+      "name": "Slope Computation (Rise over Run)",
+      "definition": "Select two points (on a line or from data), compute (y2 - y1) / (x2 - x1), and express the result as a decimal or fraction.",
+      "used_by_sub_skills": ["TVD.3", "TVD.4", "TVD.6"],
+      "evidence_ids": [
+        "39aa146d", "2e74e403", "03a16790", "90ba8f98", "4cc05491", "24a1e6a7",
+        "16988f9c", "9eb896c5", "3c5b19ef",
+        "9bb4107c", "e24765e6", "7b52985c",
+        "d112bc9d", "a6b2fcce", "83272c51"
+      ]
+    },
+    {
+      "id": "TVD.C3",
+      "name": "Sign and Intercept Reasoning",
+      "definition": "Determine the sign of the slope (positive or negative) and the approximate y-intercept from a graph to eliminate answer choices or classify the relationship.",
+      "used_by_sub_skills": ["TVD.4", "TVD.5"],
+      "evidence_ids": [
+        "5f3ee607", "9296553d", "c5ee6ac0", "d230e963", "8baf2118", "50b2807e",
+        "661dfddd", "43744269"
+      ]
+    },
+    {
+      "id": "TVD.C4",
+      "name": "Pattern Recognition in Data (Differences vs. Ratios)",
+      "definition": "Examine successive differences or successive ratios in a table, or the curvature of a graph, to distinguish linear growth (constant differences) from exponential growth (constant ratios) or quadratic behavior.",
+      "used_by_sub_skills": ["TVD.5", "TVD.9"],
+      "evidence_ids": [
+        "a03b7e02", "ab7740a8", "9a144a01", "af142f8d",
+        "c141366d", "15ce8207",
+        "fb866265", "9b5b23fc", "58171b5e"
+      ]
+    },
+    {
+      "id": "TVD.C5",
+      "name": "Residual Computation",
+      "definition": "Compute actual value minus predicted value for a specific data point, using the model line/curve to find the predicted value.",
+      "used_by_sub_skills": ["TVD.7"],
+      "evidence_ids": [
+        "1adb39f0", "7fd284ac"
+      ]
+    },
+    {
+      "id": "TVD.C6",
+      "name": "Contextual Unit-Rate Interpretation",
+      "definition": "Translate the numerical slope into a per-unit statement (e.g., 'for each additional unit of x, y increases by m') and connect the y-intercept to the starting value in context.",
+      "used_by_sub_skills": ["TVD.8"],
+      "evidence_ids": [
+        "d6af3572", "d0430601", "9d95e7ad"
+      ]
+    },
+    {
+      "id": "TVD.C7",
+      "name": "Substitution and Evaluation",
+      "definition": "Plug a given x-value into a model equation and evaluate to find the predicted y, or test candidate equations by substituting known data points.",
+      "used_by_sub_skills": ["TVD.2", "TVD.4", "TVD.9"],
+      "evidence_ids": [
+        "5c24c861", "8156d446", "c9dd92b1",
+        "16988f9c", "1e1027a7", "79137c1b",
+        "82aaa0a1", "e821a26d", "2e8027b0"
+      ]
+    }
+  ],
+
+  "all_question_ids": {
+    "Easy": [
+      "cf0ae57a", "8d63b6f1", "39aa146d", "bc59c2d9", "a03b7e02",
+      "661dfddd", "5f3ee607", "5c24c861", "d112bc9d", "2e511919",
+      "b58dbf88", "d6121490", "8156d446", "c141366d",
+      "9296553d", "43744269", "c5ee6ac0", "ae32cc3c", "16988f9c",
+      "a6b2fcce", "c9dd92b1", "13f67ddc", "d230e963", "9d88a3e3",
+      "74dee52b", "15ce8207", "4a2264b3",
+      "ac5b6558", "8baf2118", "83272c51", "82aaa0a1"
+    ],
+    "Medium": [
+      "1adb39f0", "9bb4107c", "2e74e403", "9a144a01", "e24765e6",
+      "03a16790", "f46139df", "7ac5d686", "7fd284ac", "e17babed",
+      "ad7dbb22", "3c5b19ef", "ab7740a8", "3d985614",
+      "90ba8f98", "9eb896c5", "4cc05491", "fdfc90e4", "50b2807e",
+      "24a1e6a7", "58171b5e"
+    ],
+    "Hard": [
+      "fb866265", "2e8027b0", "d6af3572", "1e1027a7", "d0430601",
+      "7b52985c", "e821a26d", "79137c1b", "9b5b23fc", "af142f8d",
+      "9d95e7ad"
+    ]
+  },
+
+  "derivation_notes": "Derived from 63 official College Board SAT questions (31 Easy, 21 Medium, 11 Hard) for the skill 'Two-variable data: Models and scatterplots' under Problem-Solving and Data Analysis. Every question was read in full from the source PDFs. Sub-skills were identified by the distinct mathematical concept each question tests; clusters capture the reusable solving steps that appear across sub-skills. TVD.4 (Select/Write Equation of Line of Best Fit) is the largest sub-skill with 12 questions spanning all three difficulty tiers, reflecting its centrality to this skill. TVD.8 (Interpret Slope in Context) and TVD.9 (Nonlinear Model Equation) are exclusively or predominantly Hard, indicating that contextual interpretation and nonlinear modeling are the higher-order demands within this skill."
+}

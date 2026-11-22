@@ -1,0 +1,63 @@
+{"id": "cf0ae57a", "sub_skills": ["TVD.7"], "clusters": ["CL.0071", "CL.0161"], "distractors": [], "why": "Read prediction off line of best fit at x=1.2 AU; must read axes/scale."}
+{"id": "8d63b6f1", "sub_skills": ["TVD.6"], "clusters": ["CL.0072"], "distractors": [], "why": "Read a data point directly from scatterplot."}
+{"id": "39aa146d", "sub_skills": ["TVD.8"], "clusters": ["CL.0269"], "distractors": [], "why": "Estimate the slope of the line of best fit from scatterplot."}
+{"id": "bc59c2d9", "sub_skills": ["TVD.7"], "clusters": ["CL.0071", "CL.0161"], "distractors": [], "why": "Read predicted value off line of best fit at given x; has labeled axes."}
+{"id": "a03b7e02", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Classify function type from table values (differences vs ratios)."}
+{"id": "661dfddd", "sub_skills": ["TVD.6"], "clusters": ["CL.0137"], "distractors": [], "why": "Describe the trend/association shown in scatterplot."}
+{"id": "5f3ee607", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit from scatterplot."}
+{"id": "5c24c861", "sub_skills": ["TVD.7"], "clusters": ["CL.0071", "CL.0161"], "distractors": [], "why": "Read prediction off quadratic model at x=55 mph."}
+{"id": "d112bc9d", "sub_skills": ["TVD.11"], "clusters": ["CL.0271"], "distractors": [], "why": "Compare rate of change across intervals to find greatest increase."}
+{"id": "8156d446", "sub_skills": ["TVD.7"], "clusters": ["CL.0071"], "distractors": [], "why": "Read prediction off line of best fit at given temperature."}
+{"id": "c141366d", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Classify function type from graph shape (linear vs exponential, increasing vs decreasing)."}
+{"id": "2e511919", "sub_skills": ["TVD.6"], "clusters": ["CL.0072"], "distractors": [], "why": "Read the maximum value from a line graph."}
+{"id": "b58dbf88", "sub_skills": ["TVD.6"], "clusters": ["CL.0072"], "distractors": [], "why": "Read a data value from scatterplot."}
+{"id": "d6121490", "sub_skills": ["TVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read two values from graph and compute difference."}
+{"id": "9296553d", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit."}
+{"id": "43744269", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Classify function type from verbal description (constant rate = linear, descending = decreasing)."}
+{"id": "c5ee6ac0", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit shown on scatterplot."}
+{"id": "ae32cc3c", "sub_skills": ["TVD.7"], "clusters": ["CL.0071"], "distractors": [], "why": "Read predicted y-value from line of best fit at given x."}
+{"id": "16988f9c", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select most appropriate linear model equation for scatterplot."}
+{"id": "a6b2fcce", "sub_skills": ["TVD.11"], "clusters": ["CL.0271", "CL.0072"], "distractors": [], "why": "Compare rate of change across consecutive year intervals on a line graph."}
+{"id": "c9dd92b1", "sub_skills": ["TVD.7"], "clusters": ["CL.0071", "CL.0137"], "distractors": [], "why": "Read prediction from scatterplot trend at given x value."}
+{"id": "13f67ddc", "sub_skills": ["TVD.6"], "clusters": ["CL.0072"], "distractors": [], "why": "Read a value from a line graph to match a given probability."}
+{"id": "d230e963", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit."}
+{"id": "9d88a3e3", "sub_skills": ["TVD.6"], "clusters": ["CL.0072", "CL.0161"], "distractors": [], "why": "Read and interpret multiple features of a time-series graph to identify false statement."}
+{"id": "74dee52b", "sub_skills": ["TVD.6"], "clusters": ["CL.0072"], "distractors": [], "why": "Read the minimum value from a line graph."}
+{"id": "15ce8207", "sub_skills": ["TVD.10"], "clusters": ["CL.0137"], "distractors": [], "why": "Identify appropriate model type by matching graph shape to data trend."}
+{"id": "4a2264b3", "sub_skills": ["TVD.6"], "clusters": ["CL.0072"], "distractors": [], "why": "Read the minimum from a line graph."}
+{"id": "ac5b6558", "sub_skills": ["TVD.7"], "clusters": ["CL.0071", "CL.0161"], "distractors": [], "why": "Read prediction off line of best fit at given x; must read axes carefully."}
+{"id": "8baf2118", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit."}
+{"id": "83272c51", "sub_skills": ["TVD.11"], "clusters": ["CL.0271", "CL.0072"], "distractors": [], "why": "Compare average rate of change across intervals to find greatest decrease."}
+{"id": "82aaa0a1", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select best model equation for scatterplot data."}
+{"id": "1adb39f0", "sub_skills": ["TVD.12"], "clusters": ["CL.0268", "CL.0072"], "distractors": [], "why": "Compute residual: actual y minus predicted y at given x."}
+{"id": "9bb4107c", "sub_skills": ["TVD.11"], "clusters": ["CL.0271", "CL.0072"], "distractors": [], "why": "Compute average rate of change (delta y / delta x) between two points on graph."}
+{"id": "2e74e403", "sub_skills": ["TVD.8"], "clusters": ["CL.0269"], "distractors": [], "why": "Estimate slope of line of best fit from scatterplot."}
+{"id": "9a144a01", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Compare behavior of two function types to identify crossing point and relative ordering."}
+{"id": "e24765e6", "sub_skills": ["TVD.11"], "clusters": ["CL.0271", "CL.0072"], "distractors": [], "why": "Compute average rate of change from scatterplot data between two time points."}
+{"id": "03a16790", "sub_skills": ["TVD.8"], "clusters": ["CL.0269"], "distractors": [], "why": "Estimate slope of line of best fit from scatterplot."}
+{"id": "f46139df", "sub_skills": ["TVD.7"], "clusters": ["CL.0071"], "distractors": [], "why": "Read predicted y-value from line of best fit at given x."}
+{"id": "7ac5d686", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Classify model type from verbal description (constant rate = linear, decreasing = negative slope)."}
+{"id": "7fd284ac", "sub_skills": ["TVD.12"], "clusters": ["CL.0268", "CL.0072"], "distractors": [], "why": "Compute residual for the data point with greatest actual value."}
+{"id": "e17babed", "sub_skills": ["TVD.12"], "clusters": ["CL.0268"], "distractors": [], "why": "Count data points where actual y > predicted y (above the line)."}
+{"id": "3d985614", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit for scatterplot data."}
+{"id": "ad7dbb22", "sub_skills": ["TVD.12"], "clusters": ["CL.0268"], "distractors": [], "why": "Count data points where predicted y > actual y (below the line)."}
+{"id": "3c5b19ef", "sub_skills": ["TVD.9"], "clusters": ["CL.0269", "CL.0161"], "distractors": [], "why": "Select equation for line of best fit; shifted x-axis (years since 1968)."}
+{"id": "ab7740a8", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Check successive differences/ratios in tables to identify nonlinear relationship."}
+{"id": "90ba8f98", "sub_skills": ["TVD.8"], "clusters": ["CL.0269"], "distractors": [], "why": "Estimate slope of line of best fit from scatterplot."}
+{"id": "9eb896c5", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit."}
+{"id": "4cc05491", "sub_skills": ["TVD.8"], "clusters": ["CL.0269"], "distractors": [], "why": "Estimate slope of line of best fit from scatterplot."}
+{"id": "fdfc90e4", "sub_skills": ["TVD.7"], "clusters": ["CL.0071"], "distractors": [], "why": "Read predicted y-value from line of best fit at given x."}
+{"id": "50b2807e", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select most appropriate linear model equation for scatterplot."}
+{"id": "24a1e6a7", "sub_skills": ["TVD.8"], "clusters": ["CL.0269"], "distractors": [], "why": "Estimate slope of line of best fit from scatterplot."}
+{"id": "58171b5e", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Classify model type from verbal description (percent increase per period = increasing exponential)."}
+{"id": "fb866265", "sub_skills": ["TVD.14"], "clusters": ["CL.0072", "CL.0269"], "distractors": [], "why": "Determine parameter of nonlinear (exponential) model equation from scatterplot data."}
+{"id": "2e8027b0", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Determine how scaling y-values transforms the line of best fit equation."}
+{"id": "d6af3572", "sub_skills": ["TVD.13"], "clusters": ["CL.0154", "CL.0269"], "distractors": [], "why": "Interpret the meaning of slope in real-world context (wage increase per time unit)."}
+{"id": "1e1027a7", "sub_skills": ["TVD.9"], "clusters": ["CL.0269"], "distractors": [], "why": "Select equation for line of best fit."}
+{"id": "d0430601", "sub_skills": ["TVD.13"], "clusters": ["CL.0154", "CL.0269"], "distractors": [], "why": "Interpret slope in context: slope per unit * 5 units = additional people per 5C."}
+{"id": "7b52985c", "sub_skills": ["TVD.11"], "clusters": ["CL.0271", "CL.0072"], "distractors": [], "why": "Compute average rate of change between two specific data points from scatterplot."}
+{"id": "e821a26d", "sub_skills": ["TVD.14"], "clusters": ["CL.0267"], "distractors": [], "why": "Select nonlinear model equation for scatterplot data (quadratic or exponential pattern)."}
+{"id": "79137c1b", "sub_skills": ["TVD.9"], "clusters": ["CL.0269", "CL.0161"], "distractors": [], "why": "Select equation for line of best fit; must read axes/scale for large units."}
+{"id": "9b5b23fc", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Classify function type (multiplying by 3/4 each time = decreasing exponential)."}
+{"id": "af142f8d", "sub_skills": ["TVD.10"], "clusters": ["CL.0267"], "distractors": [], "why": "Compare exponential growth (compound interest) vs linear growth (fixed addition) behavior over time."}
+{"id": "9d95e7ad", "sub_skills": ["TVD.13"], "clusters": ["CL.0269", "CL.0154"], "distractors": [], "why": "Interpret slope as predicted increase in y per unit increase in x."}
