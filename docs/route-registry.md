@@ -61,6 +61,7 @@ This document records, for those routes:
 | `/start` | public | free | StartPage | `/api/public/qotd/today`, `/api/public/qotd/today/answer` | ACTIVE |
 | `/trust` | public | free | TrustHub | N/A (static SEO) | ACTIVE |
 | `/contact` | public | free | ContactPage | N/A (static, no form) | ACTIVE |
+| `/parent` | public | free | ParentPage | `/api/public/pricing/plans` | ACTIVE |
 | `/tutor` | public | free | TutorPage | N/A (static SEO) | ACTIVE |
 | `/legal` | public | free | LegalHub | N/A (static content) | ACTIVE |
 | `/legal/:slug` | public | free | LegalDoc | N/A (static content) | ACTIVE |
@@ -123,6 +124,7 @@ This document records, for those routes:
 - `/sat-question-of-the-day/:date` (every past day, prerendered at build time)
 - `/trust`
 - `/contact`
+- `/parent`
 - `/legal`
 - `/legal/:slug` (currently: `privacy-policy`, `student-terms`, `honor-code`, `community-guidelines`, `parent-guardian-terms`, `trust-and-safety`)
 

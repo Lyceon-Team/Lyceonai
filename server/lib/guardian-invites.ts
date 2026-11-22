@@ -24,6 +24,20 @@ import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 /** SQLSTATE the issue function raises when the guardian already has 3 open invites. */
 const OPEN_INVITE_LIMIT_SQLSTATE = "LY010";
 
+/**
+ * SQLSTATE the issue function raises when a link would go out for an invite with no saved card
+ * (card first, owner ruling 2026-11-22, 2; 20261210000000_guardian_invite_card_first.sql).
+ */
+const CARD_REQUIRED_SQLSTATE = "LY011";
+
+export class GuardianInviteCardRequiredError extends Error {
+  readonly code = "GUARDIAN_INVITE_CARD_REQUIRED" as const;
+  constructor() {
+    super("guardian invite has no saved card");
+    this.name = "GuardianInviteCardRequiredError";
+  }
+}
+
 export class GuardianInviteLimitError extends Error {
   readonly code = "GUARDIAN_INVITE_LIMIT" as const;
   constructor() {
@@ -176,6 +190,8 @@ export async function issueGuardianInvite(input: {
   if (error) {
     if (error.code === OPEN_INVITE_LIMIT_SQLSTATE)
       throw new GuardianInviteLimitError();
+    if (error.code === CARD_REQUIRED_SQLSTATE)
+      throw new GuardianInviteCardRequiredError();
     throw rpcFailure("issue", error);
   }
   return parseNullableInviteRow(data, "issue");

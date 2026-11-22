@@ -23,6 +23,8 @@ const read = (f: string) => fs.readFileSync(path.join(ROOT, f), "utf8");
 const PLACEMENTS = [
   "client/src/features/guardian/GuardianHome.tsx",
   "client/src/components/layout/GuardianShell.tsx",
+  // owner brief 2026-11-22: the public /parent page (hero and call band).
+  "client/src/pages/parent.tsx",
 ];
 
 function walk(dir: string, out: string[]): void {

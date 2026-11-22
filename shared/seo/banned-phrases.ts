@@ -177,6 +177,12 @@ export const APPROVED_OUTCOME_PHRASES: readonly string[] = [
   // W18 (SEO Wave 3, approved by Karl 2026-10-05): the College Board's own finding, quoted with
   // its "link, not proof" caveat on /free-sat-practice-test.
   "students who took one, two, or three or more Bluebook practice tests scored about 25, 45 and 60 points higher than similar students who took none",
+  // P15 (/parent, approved by Karl 2026-11-22, ruling 3): the slogan in sentence case as the
+  // page's closing heading. Split is case-sensitive, so X1's title case does not cover it.
+  "Study smarter, score higher",
+  // P13 (/parent FAQ, approved by Karl 2026-11-22, ruling 3): a question whose answer is "No."
+  // It names a guarantee in order to disclaim one.
+  "Does Lyceon guarantee a score?",
 ];
 
 export const OUTCOME_PATTERNS: readonly BannedPhrase[] = [

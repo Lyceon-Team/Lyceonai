@@ -15,3 +15,10 @@ export const PARENT_CALL_URL =
 
 /** The words every placement uses for that link. */
 export const PARENT_CALL_LABEL = "Book a call";
+
+/**
+ * The `/parent` hero's wording for the same link (owner brief 2026-11-22, approved prototype:
+ * "Book a 15-minute call"). Same URL; the hero names the length, every other placement keeps
+ * `PARENT_CALL_LABEL`.
+ */
+export const PARENT_CALL_HERO_LABEL = "Book a 15-minute call";

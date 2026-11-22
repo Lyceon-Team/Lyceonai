@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The optional card on file on an open invite: saved, pending, and the form that saves one.
+ * Step 1, the card on file for an invite: saved, pending, and the form that saves one. Card
+ * first since 2026-11-22: the form is step 1 itself, not an optional action.
  *
- * @spec [owner rulings 2026-11-21 (counsel-approved) 3, 9; SCL-286; DESIGN.md §5 (2-3 options
- *        are radios; one filled primary action; loading and error states)]
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 3, 9; owner ruling 2026-11-22 (2) card
+ *        first; SCL-286, SCL-287; DESIGN.md §5 (2-3 options are radios; one filled primary
+ *        action; loading and error states)]
  *        | @implemented [2026-11-22]
  *
  * plain English: mounted through the real App router at /guardian with one open invite. Every
@@ -123,15 +125,14 @@ function filled(el: HTMLElement): boolean {
 }
 
 describe("the card on file (ruling 3)", () => {
-  it("an open invite offers to save a card, as a ghost action", async () => {
+  it("a draft with no card shows the card form as step 1, Save card filled", async () => {
     mountApp(Router, "/guardian");
-    const open = await screen.findByTestId("invite-card-open");
-    expect(filled(open)).toBe(false);
+    expect(await screen.findByTestId("invite-card-form")).toBeTruthy();
+    expect(filled(screen.getByTestId("invite-card-save"))).toBe(true);
   });
 
   it("radios for each priced plan, the ruled sentence for the one chosen, Terms required, then Stripe", async () => {
     mountApp(Router, "/guardian");
-    fireEvent.click(await screen.findByTestId("invite-card-open"));
     // Two priced plans are offered; the plan with no price is not.
     expect(await screen.findByTestId("invite-card-plan-monthly")).toBeTruthy();
     expect(screen.getByTestId("invite-card-plan-quarterly")).toBeTruthy();
@@ -147,9 +148,9 @@ describe("the card on file (ruling 3)", () => {
       "You'll be charged $79.99/3 months when your teen joins. Renews until you cancel.",
     );
 
-    // Save card is outline: Send invite stays the one filled action.
+    // Step 1 is open, so Save card is the one filled action (card first).
     const save = screen.getByTestId("invite-card-save");
-    expect(filled(save)).toBe(false);
+    expect(filled(save)).toBe(true);
     fireEvent.click(save);
     expect(
       await screen.findByText("Agree to the Billing Terms to save a card."),
@@ -168,7 +169,6 @@ describe("the card on file (ruling 3)", () => {
 
   it("no plan chosen: nothing is posted", async () => {
     mountApp(Router, "/guardian");
-    fireEvent.click(await screen.findByTestId("invite-card-open"));
     fireEvent.click(await screen.findByTestId("invite-card-terms"));
     fireEvent.click(screen.getByTestId("invite-card-save"));
     expect(await screen.findByText("Choose a plan.")).toBeTruthy();
@@ -189,11 +189,12 @@ describe("the card on file (ruling 3)", () => {
     expect(await screen.findByTestId("invite-card-pending")).toBeTruthy();
   });
 
-  it("an expired invite offers no card", async () => {
+  it("an expired draft is not worked on: step 1 starts a new draft instead", async () => {
     invite = { ...INVITE, expired: true };
     mountApp(Router, "/guardian");
-    await screen.findByTestId("invite-row");
-    expect(screen.queryByTestId("invite-card-open")).toBeNull();
+    await screen.findByTestId("invite-card-form");
+    // The new-draft form asks for the Parent / Guardian Terms (no draft to reuse).
+    expect(screen.getByTestId("invite-terms")).toBeTruthy();
   });
 
   it("loading and error states for the plans (DESIGN.md §5)", async () => {
@@ -201,14 +202,12 @@ describe("the card on file (ruling 3)", () => {
       url === "/api/billing/plans" ? pending() : undefined,
     );
     mountApp(Router, "/guardian");
-    fireEvent.click(await screen.findByTestId("invite-card-open"));
     expect(await screen.findByTestId("invite-card-plans-loading")).toBeTruthy();
     cleanup();
     net.handlers.unshift((url) =>
       url === "/api/billing/plans" ? json({ error: "x" }, 502) : undefined,
     );
     mountApp(Router, "/guardian");
-    fireEvent.click(await screen.findByTestId("invite-card-open"));
     // The plans query retries once (as on /upgrade) before it shows the error.
     expect(
       await screen.findByTestId(

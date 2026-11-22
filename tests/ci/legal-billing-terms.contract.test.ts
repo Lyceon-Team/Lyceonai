@@ -99,10 +99,10 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
     expect(doc.state).toBe("published");
   });
 
-  it("reports version 3.0 and effective date 2026-11-22 from meta.yml", async () => {
+  it("reports version 4.0 and effective date 2026-11-22 from meta.yml", async () => {
     const doc = await loadLegalDocument("billing-terms");
     if (doc.state !== "published") throw new Error("expected published");
-    expect(doc.version).toBe("3.0");
+    expect(doc.version).toBe("4.0");
     expect(doc.effectiveDate).toBe("2026-11-22");
     expect(doc.title).toBe("LYCEON Billing Terms");
   });
@@ -111,7 +111,7 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
     const doc = await loadLegalDocument("billing-terms");
     if (doc.state !== "published") throw new Error("expected published");
     const served = fs.readFileSync(
-      path.join(REAL_LEGAL, "billing-terms/v4/en.md"),
+      path.join(REAL_LEGAL, "billing-terms/v5/en.md"),
     );
     expect(doc.contentHash).toBe(
       `sha256:${createHash("sha256").update(served).digest("hex")}`,
@@ -129,7 +129,7 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
 
   it("keeps version and date OUT of the body — they come from meta.yml alone", () => {
     const body = fs.readFileSync(
-      path.join(REAL_LEGAL, "billing-terms/v4/en.md"),
+      path.join(REAL_LEGAL, "billing-terms/v5/en.md"),
       "utf-8",
     );
     // No frontmatter BLOCK, which is `---` as the very first line. A bare
@@ -143,7 +143,7 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
     expect(body).not.toMatch(/^supersedes:/m);
   });
 
-  it("records the v4-directory / 3.0-version divergence deliberately", () => {
+  it("records the v5-directory / 4.0-version divergence deliberately", () => {
     // The directory is positional; the version field is the document's own
     // history. Asserting both stops someone "fixing" one to match the other.
     const manifest = JSON.parse(
@@ -152,13 +152,14 @@ describe("W1 — /legal/billing-terms renders from meta.yml", () => {
         "utf-8",
       ),
     );
-    expect(manifest.current).toBe("v4");
+    // v5 (2026-11-22, card first, owner ruling 2026-11-22 (2); SCL-287).
+    expect(manifest.current).toBe("v5");
     const meta = fs.readFileSync(
-      path.join(REAL_LEGAL, "billing-terms/v4/meta.yml"),
+      path.join(REAL_LEGAL, "billing-terms/v5/meta.yml"),
       "utf-8",
     );
-    expect(meta).toMatch(/^version:\s*"3\.0"$/m);
-    expect(meta).toMatch(/^supersedes:\s*"2\.0 \(2026-10-07\)"$/m);
+    expect(meta).toMatch(/^version:\s*"4\.0"$/m);
+    expect(meta).toMatch(/^supersedes:\s*"3\.0 \(2026-11-22\)"$/m);
     expect(meta).toMatch(/^published:\s*true$/m);
   });
 });

@@ -10,9 +10,9 @@
  * ownership; anything else is a 404). Every new link replaces the previous one, lasts 14 days,
  * and is returned to the guardian once in the response; the server keeps only its hash.
  *   GET    /             the caller's open invites (expired ones too, so they can be renewed)
- *   POST   /             start an invite: email it, or (no email) just return the link
- *   POST   /:id/resend   a new link, emailed to the address given
- *   POST   /:id/link     a new link, nothing sent (Copy link)
+ *   POST   /             start a DRAFT invite: no email, no link (card first)
+ *   POST   /:id/resend   a new link, emailed to the address given (needs a saved card)
+ *   POST   /:id/link     a new link, nothing sent (Copy link) (needs a saved card)
  *   DELETE /:id          cancel: the link stops working
  *   POST   /:id/card     save a card for a plan on an open invite: opens Stripe's card page
  *                        (Checkout `mode: "setup"`); charged only when the teen joins (SCL-286)
@@ -20,6 +20,12 @@
  * guardian's acceptance of the Parent / Guardian Terms, as link-code redemption does. Every new
  * link counts against 10 a day per guardian; every email also against 3 a day per (guardian,
  * address). A guardian may have at most 3 open invites.
+ *
+ * CARD FIRST (owner ruling 2026-11-22, 2; 20261210000000_guardian_invite_card_first.sql): the
+ * guardian saves a card on the draft (`/:id/card`) before any link exists that a teen could use.
+ * Resend and Copy link answer 409 GUARDIAN_INVITE_CARD_REQUIRED until then, and /join's lookup
+ * and claim treat a cardless invite as not found. The SQL functions decide; this file only maps
+ * their refusal.
  *
  * The response is the same whether or not an address has an account: no address is ever looked
  * up. The raw token appears only in the returned link and in the email; it is never logged.
@@ -29,6 +35,7 @@ import { z } from "zod";
 import { requireGuardianRole } from "../middleware/guardian-role";
 import { applyGuardianTeenInviteRateLimit } from "../middleware/guardian-link-rate-limit";
 import {
+  GuardianInviteCardRequiredError,
   GuardianInviteLimitError,
   cancelGuardianInvite,
   hashGuardianInviteEmail,
@@ -60,6 +67,7 @@ import {
   issueGuardianInviteRequestSchema,
   joinPath,
   resendGuardianInviteRequestSchema,
+  type GuardianInviteDraftResponse,
   type GuardianInviteLinkResponse,
   type GuardianInvitesResponse,
 } from "../../packages/shared/src/guardian-invite-schema";
@@ -97,6 +105,16 @@ function limitReached(res: Response, requestId: string | undefined): void {
     error: {
       code: "GUARDIAN_INVITE_LIMIT",
       message: "You have 3 open invites. Cancel one before starting another.",
+    },
+    requestId,
+  });
+}
+
+function cardRequired(res: Response, requestId: string | undefined): void {
+  res.status(409).json({
+    error: {
+      code: "GUARDIAN_INVITE_CARD_REQUIRED",
+      message: "Add your card first. Then you can invite your teen.",
     },
     requestId,
   });
@@ -235,42 +253,39 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-/** POST /api/guardian/invites — start an invite. */
+/**
+ * POST /api/guardian/invites — start a DRAFT invite (card first). Its token is generated so the
+ * row is complete, and then discarded: it is never returned, emailed or logged, and the SQL
+ * refuses it at /join until a card is saved. The guardian's first usable link comes from
+ * Resend or Copy link after the card.
+ */
 router.post("/", async (req: Request, res: Response) => {
   const requestId = req.requestId;
   const guardianId = req.user!.id;
   const parsed = issueGuardianInviteRequestSchema.safeParse(req.body ?? {});
   if (!parsed.success) return invalidInput(res, parsed.error, requestId);
-  const toEmail = parsed.data.email ?? null;
   try {
     if (await refuseUnlessAdult(res, guardianId, requestId)) return;
     if (
-      await applyGuardianTeenInviteRateLimit(
-        res,
-        guardianId,
-        toEmail,
-        requestId,
-      )
+      await applyGuardianTeenInviteRateLimit(res, guardianId, null, requestId)
     ) {
       return;
     }
     await recordParentTermsAcceptance(req, guardianId);
 
-    const { token, tokenHash } = newGuardianInviteToken();
+    const { tokenHash } = newGuardianInviteToken();
     const row = await issueGuardianInvite({
       guardianProfileId: guardianId,
       tokenHash,
-      emailHash: toEmail === null ? null : hashGuardianInviteEmail(toEmail),
+      emailHash: null,
       inviteId: null,
       ...(requestId ? { requestId } : {}),
     });
     if (!row) throw new Error("issue returned no row for a new invite");
-
-    const emailed =
-      toEmail === null
-        ? false
-        : await emailInvite({ row, token, toEmail, guardianId, requestId });
-    return res.status(201).json(linkResponse(row, token, emailed));
+    const body: GuardianInviteDraftResponse = {
+      data: { invite: toGuardianInviteView(row, Date.now()) },
+    };
+    return res.status(201).json(body);
   } catch (err: unknown) {
     if (err instanceof GuardianInviteLimitError) {
       return limitReached(res, requestId);
@@ -320,6 +335,9 @@ router.post("/:id/resend", async (req: Request, res: Response) => {
     if (err instanceof GuardianInviteLimitError) {
       return limitReached(res, requestId);
     }
+    if (err instanceof GuardianInviteCardRequiredError) {
+      return cardRequired(res, requestId);
+    }
     return failure(res, "resend", err, requestId);
   }
 });
@@ -350,6 +368,9 @@ router.post("/:id/link", async (req: Request, res: Response) => {
   } catch (err: unknown) {
     if (err instanceof GuardianInviteLimitError) {
       return limitReached(res, requestId);
+    }
+    if (err instanceof GuardianInviteCardRequiredError) {
+      return cardRequired(res, requestId);
     }
     return failure(res, "link", err, requestId);
   }
