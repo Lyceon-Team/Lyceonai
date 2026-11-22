@@ -30,6 +30,10 @@ const MIGRATION = resolve(
   __dirname,
   "../../supabase/migrations/20261013000000_guardian_revoke_party_check.sql",
 );
+const INVITES_MIGRATION = resolve(
+  __dirname,
+  "../../supabase/migrations/20261206000000_guardian_invites.sql",
+);
 
 /**
  * The guardian functions that still exist. `guardian_can_view_student(uuid)` and
@@ -39,7 +43,7 @@ const MIGRATION = resolve(
 const SIGNATURES = [
   "public.guardian_view_decision(uuid,uuid)",
   "public.guardian_link_audit(text,uuid,uuid,jsonb,uuid,text)",
-  "public.create_active_guardian_link_audited(uuid,uuid,text)",
+  "public.create_active_guardian_link_audited(uuid,uuid,text,text,text)",
   "public.revoke_guardian_link_audited(uuid,uuid,uuid,text,text)",
 ] as const;
 
@@ -154,8 +158,30 @@ describe.skipIf(!PG_AVAILABLE)(
         /guardian_can_view_student(_as)?\(/.test(s),
       );
       expect(dropped).toHaveLength(4);
+      // create_active_guardian_link_audited's three-argument form was dropped by
+      // 20261206000000 (SCL-282), which re-creates it with two defaulted arguments and carries
+      // its own REVOKE and GRANT. So this migration's two statements on the old form are left out
+      // and that migration's two on the new form are replayed in their place: exactly two each.
+      const oldLinkWriter = statements.filter((s) =>
+        /create_active_guardian_link_audited\(uuid, uuid, text\)/.test(s),
+      );
+      expect(oldLinkWriter).toHaveLength(2);
+      const newLinkWriter = readFileSync(INVITES_MIGRATION, "utf8")
+        .replace(/^--.*$/gm, "")
+        .split(";")
+        .filter((s) =>
+          /^\s*(REVOKE|GRANT)[\s\S]*create_active_guardian_link_audited\(uuid, uuid, text, text, text\)/.test(
+            s,
+          ),
+        );
+      expect(newLinkWriter).toHaveLength(2);
       await pg.query(
-        statements.filter((s) => !dropped.includes(s)).join(";") + ";",
+        [
+          ...statements.filter(
+            (s) => !dropped.includes(s) && !oldLinkWriter.includes(s),
+          ),
+          ...newLinkWriter,
+        ].join(";") + ";",
       );
 
       const r = await pg.query(
@@ -184,7 +210,8 @@ describe.skipIf(!PG_AVAILABLE)(
       expect(got).toEqual({
         "public.guardian_view_decision(uuid,uuid)": "f/f/f/t",
         "public.guardian_link_audit(text,uuid,uuid,jsonb,uuid,text)": "f/f/f/t",
-        "public.create_active_guardian_link_audited(uuid,uuid,text)": "f/f/f/t",
+        "public.create_active_guardian_link_audited(uuid,uuid,text,text,text)":
+          "f/f/f/t",
         "public.revoke_guardian_link_audited(uuid,uuid,uuid,text,text)":
           "f/f/f/t",
       });

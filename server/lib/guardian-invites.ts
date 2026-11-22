@@ -39,7 +39,7 @@ export function newGuardianInviteToken(): { token: string; tokenHash: string } {
 }
 
 /** SHA-256, lowercase hex: the only form of a token the database ever sees. */
-export function hashGuardianInviteToken(token: string): string {
+function hashGuardianInviteToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
@@ -213,7 +213,7 @@ const lookupResultSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("expired") }).strict(),
   z.object({ state: z.literal("not_found") }).strict(),
 ]);
-export type GuardianInviteLookup = z.infer<typeof lookupResultSchema>;
+type GuardianInviteLookup = z.infer<typeof lookupResultSchema>;
 
 /** What a token is, and for an open one, whose. The guardian id never leaves the server. */
 export async function lookupGuardianInvite(
@@ -241,7 +241,7 @@ const claimResultSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("expired") }).strict(),
   z.object({ outcome: z.literal("not_found") }).strict(),
 ]);
-export type GuardianInviteClaim = z.infer<typeof claimResultSchema>;
+type GuardianInviteClaim = z.infer<typeof claimResultSchema>;
 
 /** The claim, in one database transaction (link + invite). */
 export async function claimGuardianInvite(input: {

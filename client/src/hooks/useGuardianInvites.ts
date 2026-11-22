@@ -20,7 +20,7 @@ import {
 import { guardianInviteCardResponseSchema } from "@lyceon/shared/guardian-invite-card-schema";
 import type { BillingPlanMetadata } from "@lyceon/shared/billing-schema";
 
-export const GUARDIAN_INVITES_QUERY_KEY = ["guardian-invites"] as const;
+const GUARDIAN_INVITES_QUERY_KEY = ["guardian-invites"] as const;
 
 type InviteLink = GuardianInviteLinkResponse["data"];
 
