@@ -42,6 +42,7 @@ import {
   PG_AVAILABLE,
 } from "../helpers/pg-supabase";
 import {
+  guardianInviteDraftResponseSchema,
   guardianInviteLinkResponseSchema,
   guardianInvitesResponseSchema,
   joinClaimResponseSchema,
@@ -234,20 +235,30 @@ async function webhook(event: Record<string, unknown>): Promise<{
   )) as { ok: boolean; status?: string };
 }
 
-/** Start an emailed invite as `guardian`; its id and the token the guardian was handed. */
-async function startInvite(
-  guardian = GUARDIAN,
-): Promise<{ id: string; token: string }> {
+/**
+ * Start a DRAFT invite as `guardian` (card first, 20261210000000): its id. No link exists yet;
+ * `savedCard` makes the first one after the card is saved, as the guardian home does.
+ */
+async function startInvite(guardian = GUARDIAN): Promise<{ id: string }> {
   session.id = guardian;
   const res = await request(await app())
     .post("/api/guardian/invites")
-    .send({ email: "teen@example.test", acceptParentGuardianTerms: true });
+    .send({ acceptParentGuardianTerms: true });
   expect(res.status, JSON.stringify(res.body)).toBe(201);
-  const body = guardianInviteLinkResponseSchema.parse(res.body);
-  return {
-    id: body.data.invite.id,
-    token: body.data.url.split("/join/")[1]!,
-  };
+  const body = guardianInviteDraftResponseSchema.parse(res.body);
+  return { id: body.data.invite.id };
+}
+
+/** Step 2 after the card: email the invite; the token the guardian's teen was sent. */
+async function sendInvite(id: string, guardian = GUARDIAN): Promise<string> {
+  session.id = guardian;
+  const res = await request(await app())
+    .post(`/api/guardian/invites/${id}/resend`)
+    .send({ email: "teen@example.test" });
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
+  return guardianInviteLinkResponseSchema
+    .parse(res.body)
+    .data.url.split("/join/")[1]!;
 }
 
 let sessionSeq = 0;
@@ -343,7 +354,7 @@ async function savedCard(
     await completeSetup({ inviteId: inv.id, sessionId, plan }),
   ).toMatchObject({ ok: true });
   expect((await invite(inv.id)).charge_status).toBe("card_saved");
-  return inv;
+  return { id: inv.id, token: await sendInvite(inv.id) };
 }
 
 function createdSubscription(student: string, plan = "monthly") {

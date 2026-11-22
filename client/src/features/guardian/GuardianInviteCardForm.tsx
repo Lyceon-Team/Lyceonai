@@ -1,5 +1,6 @@
 /**
- * "Save a card now": the optional card on file for one open invite.
+ * Step 1 of the no-student guardian home: "Pick a plan and add your card." (card first, owner
+ * ruling 2026-11-22, 2: this replaces "the card is optional" from the 2026-11-21 build).
  *
  * @spec [owner rulings 2026-11-21 (counsel-approved) 3 (a guardian with no active link may save
  *        a card for a chosen plan; before saving they see "You'll be charged {price}/{interval}
@@ -11,8 +12,13 @@
  * plain English: the guardian picks one of the three plans, reads the ruled sentence for that
  * plan's real price (from `GET /api/billing/plans`, read from Stripe), ticks the Billing Terms
  * box, and presses **Save card**, which opens Stripe's card page. Nothing is charged there; the
- * card is charged when the teen joins. **Save card** is outline: **Send invite** stays the
- * screen's one filled action. A plan whose price is not known is not offered.
+ * card is charged when the teen joins. Card details are never collected on our page.
+ *
+ * 2026-11-22 (card first): with no invite yet (`inviteId` null) the form also asks for the
+ * Parent / Guardian Terms, starts a draft invite, then saves the card on it, in that order. While
+ * step 1 is the open step, **Save card** is the screen's one filled action (`primary`); changing
+ * a saved card later is outline, because **Send invite** is then the filled one. A plan whose
+ * price is not known is not offered.
  */
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -20,7 +26,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getBillingPlans } from "@/lib/billing-client";
 import { QUERY_FRESHNESS } from "@/lib/query-freshness";
-import { saveGuardianInviteCard } from "@/hooks/useGuardianInvites";
+import {
+  saveGuardianInviteCard,
+  startGuardianInvite,
+} from "@/hooks/useGuardianInvites";
 import type { BillingPlanMetadata } from "@lyceon/shared/billing-schema";
 import { guardianInviteChargeDisclosure } from "@lyceon/shared/guardian-invite-card-schema";
 
@@ -35,9 +44,13 @@ function errorMessage(err: unknown): string {
 export function GuardianInviteCardForm({
   inviteId,
   onClose,
+  primary = false,
 }: {
-  inviteId: string;
-  onClose: () => void;
+  /** The draft to save the card on, or null to start one first. */
+  inviteId: string | null;
+  /** Absent while step 1 is the open step: there is nothing to go back to. */
+  onClose?: () => void;
+  primary?: boolean;
 }): JSX.Element {
   const plans = useQuery({
     queryKey: ["/api/billing/plans"],
@@ -47,6 +60,7 @@ export function GuardianInviteCardForm({
   });
   const [chosen, setChosen] = useState<string | null>(null);
   const [accepted, setAccepted] = useState(false);
+  const [acceptedParentTerms, setAcceptedParentTerms] = useState(false);
   const [missing, setMissing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState<unknown>(null);
@@ -86,14 +100,16 @@ export function GuardianInviteCardForm({
           >
             Try again
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            className="min-h-[44px] text-base"
-            onClick={onClose}
-          >
-            Not now
-          </Button>
+          {onClose && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-[44px] text-base"
+              onClick={onClose}
+            >
+              Not now
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -111,6 +127,10 @@ export function GuardianInviteCardForm({
           setMissing("Choose a plan.");
           return;
         }
+        if (inviteId === null && !acceptedParentTerms) {
+          setMissing("Agree to the Parent / Guardian Terms to continue.");
+          return;
+        }
         if (!accepted) {
           setMissing("Agree to the Billing Terms to save a card.");
           return;
@@ -118,7 +138,12 @@ export function GuardianInviteCardForm({
         setMissing(null);
         setFailed(null);
         setSaving(true);
-        saveGuardianInviteCard(inviteId, selected.plan.plan)
+        const plan = selected.plan.plan;
+        (inviteId === null
+          ? startGuardianInvite().then((draft) => draft.id)
+          : Promise.resolve(inviteId)
+        )
+          .then((id) => saveGuardianInviteCard(id, plan))
           .then((url) => window.location.assign(url))
           .catch((err: unknown) => {
             setFailed(err);
@@ -135,7 +160,7 @@ export function GuardianInviteCardForm({
           >
             <input
               type="radio"
-              name={`invite-card-plan-${inviteId}`}
+              name={`invite-card-plan-${inviteId ?? "new"}`}
               value={plan.plan}
               checked={chosen === plan.plan}
               onChange={() => setChosen(plan.plan)}
@@ -149,6 +174,29 @@ export function GuardianInviteCardForm({
         <p className="m-0 text-base" data-testid="invite-card-disclosure">
           {selected.disclosure}
         </p>
+      )}
+      {inviteId === null && (
+        <label className="flex items-start gap-2 text-base">
+          <input
+            type="checkbox"
+            className="mt-1.5"
+            checked={acceptedParentTerms}
+            onChange={(e) => setAcceptedParentTerms(e.target.checked)}
+            data-testid="invite-terms"
+          />
+          <span>
+            I agree to the{" "}
+            <a
+              href="/legal/parent-guardian-terms"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              LYCEON Parent / Guardian Terms
+            </a>
+            .
+          </span>
+        </label>
       )}
       <label className="flex items-start gap-2 text-base">
         <input
@@ -189,21 +237,25 @@ export function GuardianInviteCardForm({
       <div className="flex flex-wrap gap-2">
         <Button
           type="submit"
-          variant="outline"
+          variant={primary ? "default" : "outline"}
           disabled={saving}
-          className="min-h-[44px] text-base"
+          className={
+            primary ? "min-h-[48px] px-6 text-base" : "min-h-[44px] text-base"
+          }
           data-testid="invite-card-save"
         >
           {saving ? "Opening…" : "Save card"}
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="min-h-[44px] text-base"
-          onClick={onClose}
-        >
-          Not now
-        </Button>
+        {onClose && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="min-h-[44px] text-base"
+            onClick={onClose}
+          >
+            Not now
+          </Button>
+        )}
       </div>
       <p className="m-0 text-base text-muted-foreground">
         Nothing is charged now. Stripe keeps your card; we never see its number.

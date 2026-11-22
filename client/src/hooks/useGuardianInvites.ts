@@ -2,7 +2,7 @@
  * @spec [owner rulings 2026-11-21 (counsel-approved) 2, 5; SCL-282] | @implemented [2026-11-22]
  *
  * plain English: the guardian's open invites, and the four things the invite card does with
- * them: start one (email it, or just get the link), resend it, copy a new link, cancel it.
+ * them: start one (a draft, card first: 2026-11-22), send or resend it, copy a link, cancel it.
  * Every response is parsed with the shared schema. After any change the list is refetched; the
  * server is the only source of what the card shows. A link is returned once, by the call that
  * made it; the server keeps only its hash.
@@ -12,6 +12,7 @@ import { csrfFetch } from "@/lib/csrf";
 import { parseApiErrorFromResponse } from "@/lib/api-error";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
 import {
+  guardianInviteDraftResponseSchema,
   guardianInviteLinkResponseSchema,
   guardianInvitesResponseSchema,
   type GuardianInviteLinkResponse,
@@ -59,15 +60,21 @@ async function postForLink(
   return guardianInviteLinkResponseSchema.parse(await res.json()).data;
 }
 
-/** Start an invite. With an email it is sent; without, the link is returned to copy. */
-export function startGuardianInvite(email: string | null): Promise<InviteLink> {
-  return postForLink(
-    "/api/guardian/invites",
-    email === null
-      ? { acceptParentGuardianTerms: true }
-      : { email, acceptParentGuardianTerms: true },
-    "Could not start the invite",
-  );
+/**
+ * Start a draft invite (card first, owner ruling 2026-11-22, 2): nothing is sent and no link is
+ * made. The guardian saves a card on it next; only then can it be sent or copied.
+ */
+export async function startGuardianInvite(): Promise<GuardianInviteView> {
+  const res = await csrfFetch("/api/guardian/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ acceptParentGuardianTerms: true }),
+  });
+  if (!res.ok) {
+    throw await parseApiErrorFromResponse(res, "Could not start the invite");
+  }
+  return guardianInviteDraftResponseSchema.parse(await res.json()).data.invite;
 }
 
 /** Resend: a new link, emailed to this address. The earlier link stops working. */
