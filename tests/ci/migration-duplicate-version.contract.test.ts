@@ -90,8 +90,8 @@ describe("duplicate migration versions", () => {
     )
       .stdout.trim()
       .split("\n");
-    expect(frozen.length).toBe(15);
-    expect(findings(MIGRATIONS, "").stdout.match(/^NEW /gm)).toHaveLength(15);
+    expect(frozen.length).toBe(16);
+    expect(findings(MIGRATIONS, "").stdout.match(/^NEW /gm)).toHaveLength(16);
 
     expect(findings(MIGRATIONS)).toEqual({ status: 0, stdout: "" });
   });

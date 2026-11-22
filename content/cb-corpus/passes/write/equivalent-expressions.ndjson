@@ -1,0 +1,101 @@
+{"id":"d4d513ff","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"12x+27 has GCF 3; target is factored product 3(4x+9)"}
+{"id":"974d33dc","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Sum of two polynomials; work is combining like terms only"}
+{"id":"5d93c782","sub_skills":["EE.3"],"clusters":["CL.0037"],"distractors":[],"why":"Trinomial x²+3x-40; target is factored product form"}
+{"id":"fd4b2aa0","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"12x³-5x³; combine like terms"}
+{"id":"508344ac","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"16(x+15) is product with sum as factor; target is expanded form"}
+{"id":"0354c7de","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"5x+15; GCF=5, target is factored product 5(x+3)"}
+{"id":"1e8d7183","sub_skills":["EE.3"],"clusters":["CL.0164","CL.0039"],"distractors":[],"why":"256w²-676 is difference of squares; target is factored product"}
+{"id":"5dd53f73","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"34x+34y; GCF=34, target is factored product 34(x+y)"}
+{"id":"e597050f","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"9x+6x+2y+3y; combine like terms"}
+{"id":"df747160","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0164"],"distractors":[],"why":"17(x²-100y²) is product with difference of squares inside; target is expanded"}
+{"id":"fb96a5b3","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"2(ab-3)+2; distribute then combine constants"}
+{"id":"127b2759","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"8+d²+3; combine constant like terms"}
+{"id":"50338a48","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"15w²+8w; GCF=w, target is factored product w(15w+8)"}
+{"id":"df0ef054","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"(2x³+3x)(x³-2x); product of two binomials, target is expanded"}
+{"id":"fd65f47f","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Sum of two polynomials; combine like terms"}
+{"id":"67e866b5","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"9x²+7x²+9x; combine like terms"}
+{"id":"499cb491","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"5x²-50xy²; GCF=5x, target is factored product"}
+{"id":"290cdc2c","sub_skills":["EE.4"],"clusters":["CL.0030"],"distractors":[],"why":"x^(1/14) is fractional exponent; convert to radical form"}
+{"id":"6e06a0a7","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"2a²(a+3); product with sum as factor, target expanded"}
+{"id":"beb86a0c","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"9x²+5x; GCF=x, target is factored product x(9x+5)"}
+{"id":"bdb0aa23","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"5x⁵-6x⁴+8x³; GCF=x³, target is factored product"}
+{"id":"294db8ec","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"2x³+4; GCF=2, target is factored product 2(x³+2)"}
+{"id":"18c7c3e0","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"13x²-7x²; combine like terms"}
+{"id":"9ed9f54d","sub_skills":["EE.1"],"clusters":["CL.0203","CL.0017"],"distractors":[],"why":"2(x²-x)+3(x²-x); treat (x²-x) as unit, combine coefficients"}
+{"id":"8f82ad81","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"4(x²+6); product with sum as factor, target is expanded"}
+{"id":"49efde89","sub_skills":["EE.2","EE.3"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"2x²+ax equiv x(2x+7); expand product and match coefficients to find a"}
+{"id":"4a5af623","sub_skills":["EE.3"],"clusters":["CL.0039","CL.0037"],"distractors":[],"why":"Asks which expression is a factor of 2x²+38x+10; factor out GCF then trinomial"}
+{"id":"60fdb4d4","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"(2x²-4)-(-3x²+2x-7); distribute negative sign then combine like terms"}
+{"id":"02489d55","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"19(x²-7); product with sum as factor, target is expanded"}
+{"id":"772de699","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"23x³+2x²+9x; GCF=x, target is factored product"}
+{"id":"1d3fee25","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"3(x+5)-6; distribute then combine constants"}
+{"id":"0536ad4f","sub_skills":["EE.1"],"clusters":["CL.0017","CL.0033"],"distractors":[],"why":"20w-(4w+3w); combine inside parentheses, distribute negative, combine"}
+{"id":"8452c42b","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"50x²+5x²; combine like terms"}
+{"id":"70482e20","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"11x³-5x³; combine like terms"}
+{"id":"4ac59df6","sub_skills":["EE.1"],"clusters":["CL.0006"],"distractors":[],"why":"(8yz)(y)(7z); multiply monomials using exponent rules, no sums as factors"}
+{"id":"075b29b0","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Sum of two polynomials; combine like terms"}
+{"id":"e312081b","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"(x+5)+(2x-3); combine like terms"}
+{"id":"72ebc024","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"16x³y²+14xy; GCF=2xy, target is factored product"}
+{"id":"f5c3e3b8","sub_skills":["EE.4"],"clusters":["CL.0006"],"distractors":[],"why":"Product of monomials with negative exponent z⁻¹; apply exponent rules"}
+{"id":"c602140f","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Two products with sums as factors minus another; expand and combine"}
+{"id":"4eaf0a3a","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006"],"distractors":[],"why":"Seventh root of x⁹y⁹; convert radical to rational exponent"}
+{"id":"1dd13816","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017","CL.0053"],"distractors":[],"why":"Subtract polynomials, distribute negative, combine like terms, match coefficient b"}
+{"id":"0b3d25c5","sub_skills":["EE.4"],"clusters":["CL.0165","CL.0030"],"distractors":[],"why":"Fourth root of perfect-square trinomial; recognize (x+4)² under radical, simplify"}
+{"id":"8838a672","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Subtract polynomials; distribute negative sign then combine like terms"}
+{"id":"b47419f4","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Subtract expressions with fractions; distribute negative sign, combine like terms"}
+{"id":"26e83bbc","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"f(x)·g(x) product given; expand and match coefficients to find b"}
+{"id":"7348f046","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"(2x+3)-(x-7); distribute negative, combine like terms"}
+{"id":"3e9cc0c2","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"(1-p) times polynomial sum; product with sum as factor, target expanded"}
+{"id":"d9137a84","sub_skills":["EE.4","EE.2"],"clusters":["CL.0006","CL.0034"],"distractors":[],"why":"Negative exponents in product distributed over sum; exponent rules and distribution"}
+{"id":"16de54c7","sub_skills":["EE.3"],"clusters":["CL.0037","CL.0053"],"distractors":[],"why":"Rewrite trinomial as product (2x-3)(x+k); factor and match constant k"}
+{"id":"c3a72da5","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Sum of two polynomials; combine like terms"}
+{"id":"24016dee","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"(8x³+8)-(x³-2); distribute negative, combine like terms"}
+{"id":"482a445b","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0164","CL.0017"],"distractors":[],"why":"Expand (x²+11)² and use difference of squares for (x-5)(x+5), combine"}
+{"id":"1be909aa","sub_skills":["EE.4"],"clusters":["CL.0006"],"distractors":[],"why":"Quotient of powers h¹⁵q⁷/(h⁵q²¹); apply exponent rules for division"}
+{"id":"a391ed22","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"Product of two binomials with fractions; expand (FOIL) and match coefficient b"}
+{"id":"f237ccfc","sub_skills":["EE.1"],"clusters":["CL.0017","CL.0094"],"distractors":[],"why":"Sum of two polynomials then evaluate a+b+c; combine like terms, sum coefficients"}
+{"id":"42f19012","sub_skills":["EE.4"],"clusters":["CL.0030"],"distractors":[],"why":"a^(11/12); fractional exponent, convert to radical form"}
+{"id":"26eb61c1","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"6x⁸y²+12x²y²; GCF=6x²y², target is factored product"}
+{"id":"5805e747","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"(7x³+7x)-(6x³-3x); distribute negative, combine like terms"}
+{"id":"6d04c89d","sub_skills":["EE.5"],"clusters":["CL.0039","CL.0075"],"distractors":[],"why":"24/(6x+42) reduced to 4/(x+b); denominator is polynomial, factor and reduce fraction"}
+{"id":"a1bf1c4e","sub_skills":["EE.3"],"clusters":["CL.0020"],"distractors":[],"why":"x²+6x+4; target is vertex/completed-square form"}
+{"id":"463eec13","sub_skills":["EE.4"],"clusters":["CL.0088","CL.0006"],"distractors":[],"why":"√(16x⁴y⁸)/x³; simplify radical with exponent rules"}
+{"id":"a255ae72","sub_skills":["EE.1"],"clusters":["CL.0095","CL.0017"],"distractors":[],"why":"Substitute x²=a+b and y²=a+c into (x²-y²)²; combine like terms after substitution"}
+{"id":"5b6af6b1","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"(d-6)(8d²-3); product with sum as factor, target is expanded"}
+{"id":"a520ba07","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0088"],"distractors":[],"why":"Cube root of x³y⁶; radical simplification"}
+{"id":"fde6f3bb","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"g(x)·h(x); multiply two function expressions, target is expanded"}
+{"id":"cc776a04","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Expand (1.5x-2.4)² then subtract; distribute and combine like terms"}
+{"id":"b4a6ed81","sub_skills":["EE.3"],"clusters":["CL.0039","CL.0053"],"distractors":[],"why":"90y⁵-54y⁴ equiv ry⁴(15y-9); factor out GCF and match coefficient r"}
+{"id":"3206b905","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"8x¹⁰-8x⁹+88x; GCF=8x, target is factored product"}
+{"id":"a05bd3a4","sub_skills":["EE.3"],"clusters":["CL.0164"],"distractors":[],"why":"x²-5; target is factored/product form via difference pattern"}
+{"id":"42c71eb5","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Expand (2x+5)² and distribute; combine all terms"}
+{"id":"ad2ec615","sub_skills":["EE.3"],"clusters":["CL.0037","CL.0203"],"distractors":[],"why":"x⁴-x²-6; factor trinomial treating x² as single unit"}
+{"id":"52931bfa","sub_skills":["EE.5"],"clusters":["CL.0039","CL.0008"],"distractors":[],"why":"Polynomial denominator (2x-14); factor numerator by grouping, cancel common factor"}
+{"id":"b8caaf84","sub_skills":["EE.2"],"clusters":["CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"Substitute p=3x+4 and v=x+5 into pv-2p+v; expand and combine"}
+{"id":"dd4ab4c4","sub_skills":["EE.3"],"clusters":["CL.0165"],"distractors":[],"why":"4a²+20ab+25b² is perfect-square trinomial; asks for a factor"}
+{"id":"7355b9d9","sub_skills":["EE.3"],"clusters":["CL.0053","CL.0095"],"distractors":[],"why":"k-x is factor of -x²+(1/29)nk²; substitute to find n via factor constraint"}
+{"id":"e117d3b8","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006"],"distractors":[],"why":"Radical expressions √((a+c)³)·√(a+c); convert to rational exponents, combine"}
+{"id":"f89e1d6f","sub_skills":["EE.3"],"clusters":["CL.0165","CL.0164","CL.0095"],"distractors":[],"why":"x²-c²-2cd-d²; recognize perfect-square trinomial c²+2cd+d², difference of squares, substitute a=c+d"}
+{"id":"b74f2feb","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006"],"distractors":[],"why":"Fifth and eighth roots with powers; convert radicals to rational exponents, simplify"}
+{"id":"911c415b","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Distribute 10 over (10y²-110), combine with first term"}
+{"id":"89fc23af","sub_skills":["EE.6"],"clusters":["CL.0035"],"distractors":[],"why":"(x²-2x-5)/(x-3); numerator does not factor over x-3, requires polynomial division"}
+{"id":"12e7faf8","sub_skills":["EE.5"],"clusters":["CL.0037","CL.0008"],"distractors":[],"why":"(x²+6x-7)/(x+7); factor numerator (x+7)(x-1), cancel common factor"}
+{"id":"42f8e4b4","sub_skills":["EE.3"],"clusters":["CL.0039","CL.0037"],"distractors":[],"why":"Factor 2x³+42x²+208x; GCF=2x, then factor trinomial to find smallest b"}
+{"id":"20291f47","sub_skills":["EE.5"],"clusters":["CL.0040","CL.0039","CL.0075"],"distractors":[],"why":"Add fractions with polynomial denominators; find common denominator, simplify"}
+{"id":"ad038c19","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"(a+b/2)²; expand the square of a binomial, target is expanded form"}
+{"id":"c6e85cd7","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006","CL.0053"],"distractors":[],"why":"4^(8c)=³√(4⁷); rewrite cube root as rational exponent, equate exponents"}
+{"id":"a0b4103e","sub_skills":["EE.3"],"clusters":["CL.0164","CL.0053"],"distractors":[],"why":"(1/3)x²-2 rewritten as (1/3)(x-k)(x+k); difference of squares pattern, match k"}
+{"id":"22fd3e1f","sub_skills":["EE.5"],"clusters":["CL.0037","CL.0039","CL.0008"],"distractors":[],"why":"f(x)/g(x); factor numerator and denominator polynomials, cancel common factors"}
+{"id":"ffdbcad4","sub_skills":["EE.3"],"clusters":["CL.0037","CL.0053"],"distractors":[],"why":"4x²+bx-45=(hx+k)(x+j); factor trinomial, determine integer constraint"}
+{"id":"2c88af4d","sub_skills":["EE.4"],"clusters":["CL.0006","CL.0079"],"distractors":[],"why":"Quotient with negative and fractional exponents; apply exponent rules, rewrite negatives"}
+{"id":"967ef685","sub_skills":["EE.5"],"clusters":["CL.0040","CL.0039"],"distractors":[],"why":"42a/k+42ak; combine terms over common variable denominator k"}
+{"id":"e51bf5b1","sub_skills":["EE.3"],"clusters":["CL.0037"],"distractors":[],"why":"Asks which expression has factor x+2b; identify by factoring"}
+{"id":"c81b6c57","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"Expand 3(2x²+px+8)-16x(p+4), match to 6x²-155x+24 to find p"}
+{"id":"5355c0ef","sub_skills":["EE.3"],"clusters":["CL.0053"],"distractors":[],"why":"0.36x²+0.63x+1.17=a(4x²+7x+13); match coefficients to find constant a"}
+{"id":"d8789a4c","sub_skills":["EE.5"],"clusters":["CL.0164","CL.0008"],"distractors":[],"why":"(x²-c)/(x-b) equiv x+b; factor numerator as difference of squares, cancel"}
+{"id":"433184f1","sub_skills":["EE.5"],"clusters":["CL.0040","CL.0034"],"distractors":[],"why":"Subtract fractions with polynomial denominators 4x-5 and x+1; find common denominator"}
+{"id":"ea6d05bb","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"(3x-23)(19x+6) expanded to ax²+bx+c; FOIL and identify coefficient b"}
+{"id":"137cc6fd","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006","CL.0053"],"distractors":[],"why":"Fifth roots and powers equiv to (70n)^(30x); convert radicals to exponents, equate"}
+{"id":"34847f8a","sub_skills":["EE.5"],"clusters":["CL.0040","CL.0034","CL.0053"],"distractors":[],"why":"Add fractions 2/(x-2)+3/(x+5) over common polynomial denominator; match numerator"}
+{"id":"40c09d66","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006"],"distractors":[],"why":"√(x⁵)/³√(x⁴)=x^(a/b); convert radicals to rational exponents, divide"}
+{"id":"c3b116d7","sub_skills":["EE.3"],"clusters":["CL.0037"],"distractors":[],"why":"Asks which expressions are factors of 3x²+20x-63; factor the trinomial"}

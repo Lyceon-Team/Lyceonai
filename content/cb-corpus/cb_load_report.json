@@ -1,0 +1,42 @@
+{
+  "generated": "2026-11-22T08:58:31.229Z",
+  "total": 1618,
+  "mcq": 1152,
+  "spr": 466,
+  "with_assets_descriptions": 163,
+  "ocr_needed": 163,
+  "ocr_note": "Items with [bracketed figure descriptions] in ocr_text — existing text descriptions preserved, no OCR re-run needed since descriptions are already clean text.",
+  "unrecoverable": [],
+  "by_cb_skill": {
+    "Area and Volume": 80,
+    "Circles": 44,
+    "Equivalent Expressions": 101,
+    "Evaluating Statistical Claims: Observational Studies and Experiments": 11,
+    "Inference from Sample Statistics and Margin of Error": 24,
+    "Linear equations in one variable": 104,
+    "Linear equations in two variables": 124,
+    "Linear Functions": 139,
+    "Linear inequalities in one or two variables": 69,
+    "Lines, Angles, and Triangles": 76,
+    "Nonlinear Equations in One Variable and Systems of Equations in Two Variables": 130,
+    "Nonlinear Functions": 226,
+    "One-Variable Data: Distributions and Measures of Center and Spread": 73,
+    "Percentages": 75,
+    "Probability and Conditional Probability": 43,
+    "Ratios, Rates, Proportional Relationships, and Units": 84,
+    "Right Triangles and Trigonometry": 50,
+    "Systems of Two Linear Equations in Two Variables": 102,
+    "Two-Variable Data: Models and Scatterplots": 63
+  },
+  "by_domain": {
+    "Geometry and Trigonometry": 250,
+    "Advanced Math": 457,
+    "Problem Solving and Data Analysis": 373,
+    "Algebra": 538
+  },
+  "by_difficulty": {
+    "Easy": 593,
+    "Medium": 538,
+    "Hard": 487
+  }
+}

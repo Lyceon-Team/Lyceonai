@@ -1,0 +1,104 @@
+{"id":"fa80893a","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 2x+3=9, asks for 6x-1 (an expression, not bare x). Solve for x then substitute into the target expression."}
+{"id":"0adbe034","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 4x-28=-24, asks for x-7 (expression value). Factor or solve then evaluate the expression."}
+{"id":"baca4a4c","sub_skills":["LE1.2"],"clusters":["CL.0034","CL.0047"],"distractors":[],"why":"Asks which equation has the same solution — equivalent equation. Divide both sides by 7 to simplify."}
+{"id":"097e10f5","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 5p+180=250 for p — pure symbolic solve for a variable."}
+{"id":"9b886541","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 3x-8=7, asks for 3x+8 (expression). Solve for 3x then compute."}
+{"id":"590f2187","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 3x-27=24, asks for x-9 (expression). Factor out 3 or solve then evaluate."}
+{"id":"f2b63f49","sub_skills":["LE1.1"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Combine like terms 8x-7x+130=260, then isolate x."}
+{"id":"05417146","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve w+7=357 for w — single-step isolation."}
+{"id":"51aabd93","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve (p+3)+8=10 for p — simplify then isolate."}
+{"id":"349a5bc1","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 4x+5=165 for x — two-step linear solve."}
+{"id":"6105234d","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Context (down payment + monthly payments = total), choices are equations. Translate words into equation."}
+{"id":"f305b5ca","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Context (cereal + strawberries cost), choices are equations. Translate price-per-pound context into equation."}
+{"id":"5c94e6fa","sub_skills":["LE1.5"],"clusters":["CL.0133"],"distractors":[],"why":"3x+21=3x+k asks for k giving infinitely many solutions. Compare coefficients/constants to determine solution count."}
+{"id":"2f0a43b2","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given x/8=5, asks for 8/x (expression, not bare x). Solve for x, then compute reciprocal expression."}
+{"id":"997bec28","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Isosceles triangle perimeter context, answer is a number (third side length). Set up equation from perimeter and solve."}
+{"id":"40ba6288","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given 3x=30, asks for 3x-12 (expression). Substitute known value of 3x."}
+{"id":"6ac23de7","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve (4x)/5=20 for x — isolate variable with fraction coefficient."}
+{"id":"7392dfc1","sub_skills":["LE1.2"],"clusters":["CL.0047"],"distractors":[],"why":"Find equivalent equation to 4x+6=12 — simplify by dividing both sides. Asks for expression equivalence."}
+{"id":"93954cfa","sub_skills":["LE1.3"],"clusters":["CL.0060"],"distractors":[],"why":"Context: 1 pound costs $2, find cost of c pounds. Translate rate into algebraic expression. Choices are expressions."}
+{"id":"3d04de9c","sub_skills":["LE1.4"],"clusters":["CL.0047"],"distractors":[],"why":"Context: 25 flags total, 20 blue, find yellow. Simple subtraction word problem yielding a number."}
+{"id":"60f71697","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 8x=88 for x — one-step division."}
+{"id":"4de87c9a","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Verbal description '3 more than 8 times x equals 83', choices are equations. Translate words to equation."}
+{"id":"12b04e68","sub_skills":["LE1.4"],"clusters":["CL.0047"],"distractors":[],"why":"Context: 165 total, 130 donors, find volunteers. Word problem, answer is a number."}
+{"id":"e7b6f0d1","sub_skills":["LE1.2"],"clusters":["CL.0047"],"distractors":[],"why":"Find equation with same solution as 4x+6=18 — subtract 6 to find equivalent form 4x=12."}
+{"id":"8339793c","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: 9 bins, $63 coupon, $27 final cost. Translate to equation and solve for original price per bin."}
+{"id":"550b352c","sub_skills":["LE1.5"],"clusters":["CL.0047","CL.0133"],"distractors":[],"why":"Asks 'how many solutions' for 10=2x+4. Determine number of solutions — exactly one."}
+{"id":"87071893","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve x+40=95 for x — one-step subtraction."}
+{"id":"b4553284","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 2x=12, asks for 9x (expression). Solve for x then multiply, or scale directly."}
+{"id":"ed18c4f7","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Verbal: 'Gerry has 3 more than twice Cathy's CDs.' Choices are expressions in terms of n."}
+{"id":"0d685865","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given x=7, asks for x+20 (expression value). Direct substitution."}
+{"id":"12255364","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: enrollment fee + monthly fee = total. Word problem, answer is number of months."}
+{"id":"b82a943c","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 7x=28, asks for 8x (expression). Solve for x then compute 8x."}
+{"id":"eac739b2","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given 4x+2=12, asks for 16x+8 (which is 4(4x+2)). Recognize scaling relationship."}
+{"id":"2e98b1df","sub_skills":["LE1.4"],"clusters":["CL.0060","CL.0094"],"distractors":[],"why":"Context: 90 initial + 10 per day for 4 days. Compute total members — word problem, answer is a number."}
+{"id":"d9d83c02","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0047"],"distractors":[],"why":"Solve w-10=2(w+5) for w — distribute then isolate."}
+{"id":"da2e9202","sub_skills":["LE1.2"],"clusters":["CL.0047"],"distractors":[],"why":"Find equivalent equation to 16x+30=190 — subtract 30 to get 16x=160."}
+{"id":"3c4ce699","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 6+x=9, asks for 18+3x (expression). Multiply both sides by 3 or solve then substitute."}
+{"id":"9fc31513","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Isosceles triangle perimeter context, answer is a number. Set up equation and solve."}
+{"id":"2e8cc1c0","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given 4x=3, asks for 24x (expression). Scale: 24x = 6(4x) = 6·3 = 18."}
+{"id":"c7d7980e","sub_skills":["LE1.1"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Solve 13x=112-x — combine like terms (add x) then isolate."}
+{"id":"83fb222d","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 6n=12, asks for n+4 (expression). Solve for n then evaluate."}
+{"id":"7a987ae4","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given (2n)/5=10, asks for 2n-1 (expression). Solve for 2n then subtract 1."}
+{"id":"56e1b09e","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 2.6+x=2.8 for x — one-step subtraction with decimals."}
+{"id":"4f8bd093","sub_skills":["LE1.1"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"Solve 16x+24=24x for x — collect x terms and isolate."}
+{"id":"9ff10b3b","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"Solve (1/2)x-(1/6)x=1 — clear fractions or combine fraction coefficients, then isolate."}
+{"id":"59afe8db","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve 3x+5(x+4)=76 — distribute, combine like terms, isolate x."}
+{"id":"4e77195b","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given 2+x=60, asks for 16+8x (expression). Solve for x or multiply equation by 8."}
+{"id":"4f7981a0","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given 3x+2=8, asks for 9x+6 = 3(3x+2). Recognize triple scaling."}
+{"id":"c841e8e8","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve k+12=336 for k — one-step subtraction."}
+{"id":"fbb0ea7f","sub_skills":["LE1.4"],"clusters":["CL.0047","CL.0060"],"distractors":[],"why":"Context: propellant burned over 21 seconds, find average rate. Word problem, answer is a number (kg/sec)."}
+{"id":"6fa593f1","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given x=40, asks for x+6. Direct substitution into expression."}
+{"id":"a9c04a21","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 2x+3=7 for x — standard two-step solve."}
+{"id":"70774aa4","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given 5x=20, asks for 15x (expression). Scale: 15x = 3(5x) = 60."}
+{"id":"49cd76d5","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given 8x=6, asks for 72x (expression). Scale: 72x = 9(8x) = 54."}
+{"id":"23758540","sub_skills":["LE1.1"],"clusters":["CL.0047"],"distractors":[],"why":"Solve 2p+275=325 for p — two-step isolation."}
+{"id":"e53870b6","sub_skills":["LE1.5"],"clusters":["CL.0133"],"distractors":[],"why":"6x+k=6x+5, find k for infinitely many solutions. Compare constants when coefficients match."}
+{"id":"56e373b3","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: 4500 cups, 70/day usage, find days to reach 1700. Set up equation and solve for days."}
+{"id":"46f68129","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: 43 books, 2 per child, 7 left over. Word problem, answer is number of children."}
+{"id":"c3989ef8","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: gift card, buy 3 movies, rent remaining. Multi-step word problem, answer is number of rentals."}
+{"id":"8c515062","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: candle burns 1oz per 4hrs, from 17 to 6oz. Word problem, find hours burned."}
+{"id":"f60aa0dc","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0095"],"distractors":[],"why":"9(4-3x)+2=8(4-3x)+18, asks for value of 4-3x (expression). Treat (4-3x) as a chunk and solve."}
+{"id":"eafdbbbd","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"(1/4)(x+5)-(1/3)(x+5)=-7. Treat (x+5) as chunk or clear fractions, then solve for x."}
+{"id":"45bba652","sub_skills":["LE1.2"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"2(x-5)+3(x-5)=10, asks for x-5 (expression). Combine to get 5(x-5)=10, so x-5=2."}
+{"id":"5ad9eff0","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Rectangular floor, width w, length w+6. Choices are perimeter expressions — translate geometry to algebraic expression."}
+{"id":"40049d49","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"4x+12=a(x+3)/2, find a for infinitely many solutions. Expand, compare coefficients and constants."}
+{"id":"5a7ab8e8","sub_skills":["LE1.5"],"clusters":["CL.0133"],"distractors":[],"why":"66x=66x — how many solutions? Identity equation has infinitely many."}
+{"id":"1ce51655","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: 20oz water, loses 1oz per 4 days, 9oz remain. Word problem, find days uncovered."}
+{"id":"36ab4122","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: Megan's regular/overtime wage, 10 hrs, $137.50. Translate pay structure to equation, solve for hourly wage."}
+{"id":"d0a2fed5","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Given (6/7)p+18=54, asks for 7p (expression, not bare p). Solve for p then multiply by 7."}
+{"id":"76f29fa5","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Context: boat rental cost structure, choices are equations. Translate tiered pricing into equation."}
+{"id":"ce6b52d8","sub_skills":["LE1.2"],"clusters":["CL.0034","CL.0047"],"distractors":[],"why":"Solve 2(3t-10)+t=40+4t, asks for 3t (expression). Distribute, combine, solve for t, then compute 3t."}
+{"id":"feb78194","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: revenue $14/tablet, $406 profit, $112 expenses. Word problem, find number of tablets."}
+{"id":"ce314070","sub_skills":["LE1.2"],"clusters":["CL.0094"],"distractors":[],"why":"Given 4x-1/2=-5, asks for 8x-1 = 2(4x-1/2). Recognize doubling relationship."}
+{"id":"4f669597","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve 2(p+1)+8(p-1)=5p — distribute, combine, isolate p."}
+{"id":"620abf36","sub_skills":["LE1.2"],"clusters":["CL.0047","CL.0095"],"distractors":[],"why":"5(x+4)=4(x+4)+29, asks for x+4 (expression). Treat (x+4) as chunk: subtract 4(x+4) to get (x+4)=29."}
+{"id":"79cf8505","sub_skills":["LE1.4"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Context: 115cm segment split into three parts (47 + two equal). Word problem, answer is a length."}
+{"id":"bf749912","sub_skills":["LE1.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"(1/3)(x+6)-(1/2)(x+6)=-8. Treat (x+6) as chunk or clear fractions, solve for x."}
+{"id":"f09097b1","sub_skills":["LE1.4"],"clusters":["CL.0060","CL.0047"],"distractors":[],"why":"Context: corn plant grows 1.20cm/day for 12 days, final 36.8cm. Find initial height — rate·time word problem."}
+{"id":"70e29454","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"a(3-x)-b=-1-2x, find a and b for infinitely many solutions. Expand and match coefficients and constants."}
+{"id":"018a2704","sub_skills":["LE1.2"],"clusters":["CL.0047"],"distractors":[],"why":"46=16+2(x-8), asks for 2(x-8) (expression). Subtract 16 from both sides directly."}
+{"id":"12ee1edc","sub_skills":["LE1.5"],"clusters":["CL.0133"],"distractors":[],"why":"(b-2)x=8, find b for no solution. Coefficient must be 0: b-2=0, so b=2."}
+{"id":"15daa8d6","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"2x+16=a(x+8), find a for infinitely many solutions. Expand and compare coefficients."}
+{"id":"aa85b138","sub_skills":["LE1.3","LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Given equation 2n+6=14 in context, asks for best interpretation of the number 2. Interpret a parameter's meaning in context."}
+{"id":"7a5a74a6","sub_skills":["LE1.2"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve 3(2x-6)-11=4(x-3)+6, asks for x-3 (expression). Distribute, combine, solve for x, compute x-3."}
+{"id":"9d4270fe","sub_skills":["LE1.3","LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"Equation 15000=2.00x-4500, asks for best interpretation of 2.00x. Interpret expression meaning in context."}
+{"id":"628300a9","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Context: 5 stations, x for Exp A (6 tsp), rest for Exp B (4 tsp). Choices are expressions for total salt."}
+{"id":"f5ff91b2","sub_skills":["LE1.5"],"clusters":["CL.0133","CL.0047"],"distractors":[],"why":"(x-5)/7=(x-5)/9 — only solution is x-5=0, so x-5 is between -3 and 3. Determine unique solution from equal fractions."}
+{"id":"429fb7c0","sub_skills":["LE1.1"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"Solve 0.8t-0.46=8(t-0.001)+1.9 for t — distribute, combine decimals, isolate t."}
+{"id":"3f8a701b","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"9x+5=a(x+b) has no solutions. Determine which conditions on a and b must hold. Compare coefficients."}
+{"id":"4771a64a","sub_skills":["LE1.2"],"clusters":["CL.0034","CL.0047"],"distractors":[],"why":"5-7(2-4x)=16-8(2-4x), asks for value of 2-4x. Treat (2-4x) as chunk, solve."}
+{"id":"0393ba15","sub_skills":["LE1.5"],"clusters":["CL.0047","CL.0133"],"distractors":[],"why":"-49x=-98x — how many solutions? Add 98x: 49x=0, exactly one solution x=0."}
+{"id":"aee9fd2d","sub_skills":["LE1.5"],"clusters":["CL.0133","CL.0047"],"distractors":[],"why":"(x+6)/3=(x+6)/13 — only solution is x+6=0, so between -2 and 2."}
+{"id":"153ee763","sub_skills":["LE1.5"],"clusters":["CL.0133"],"distractors":[],"why":"-3x+21px=84, find p for no solution. Factor x: (21p-3)x=84. No solution when 21p-3=0, so p=1/7."}
+{"id":"0cb57740","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"30-sided polygon, sides of 3cm (n), 8cm (5n), 4cm (6). Choices are equations — translate constraints to equation."}
+{"id":"69f609b2","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"How many solutions for 12(x-3)=-3(x+12)? Expand and check if coefficients differ — exactly one solution."}
+{"id":"771bd0ca","sub_skills":["LE1.2"],"clusters":["CL.0017","CL.0047"],"distractors":[],"why":"5(t+3)-7(t+3)=38, asks for t. Combine to -2(t+3)=38, then solve. Treats (t+3) as chunk."}
+{"id":"7d5d1b32","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"2(kx-n)=-(28/15)x-(36/19), no solution, n>1. Expand and match x-coefficients for no solution: 2k=-28/15."}
+{"id":"e6cb2402","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"3(kx+13)=(48/17)x+36, no solution, find k. Expand, match constant (39≠36 confirmed), set 3k=48/17."}
+{"id":"25e1cfed","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0133"],"distractors":[],"why":"How many solutions for 10(15x-9)=-15(6-10x)? Expand both sides: 150x-90=-90+150x — identity, infinitely many."}
+{"id":"b7e6394d","sub_skills":["LE1.3"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Context: miles, mpg, gas cost, wants to save $5. Choices are equations — translate rate/cost context into equation."}
+{"id":"38bf4e04","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Context: factory makes 9/7/4-inch screws with count constraints. Choices are equations representing the situation."}
+{"id":"f14484a5","sub_skills":["LE1.3"],"clusters":["CL.0104"],"distractors":[],"why":"Context: frying pans of 3 sizes with count constraints. Choices are equations — same structure as factory problem."}
+{"id":"2937ef4f","sub_skills":["LE1.4"],"clusters":["CL.0060","CL.0047"],"distractors":[],"why":"Context: auger removes corn at constant rate. Find hours for specific remaining amount. Rate·time word problem."}
+{"id":"ac472881","sub_skills":["LE1.5"],"clusters":["CL.0034","CL.0016","CL.0133"],"distractors":[],"why":"(12x+28)/4 - s/13 = r(x-8), infinitely many solutions, s>0, find s. Simplify LHS, expand RHS, match coefficients and constants."}

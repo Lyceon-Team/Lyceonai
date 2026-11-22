@@ -1,0 +1,197 @@
+{
+  "skill_code": "TVD",
+  "skill_name": "Two-Variable Data: Models and Scatterplots",
+  "pass": "blind_audit",
+  "source_pdfs": [
+    "Easy - Two-variable data, Models and scatterplots - Problem-Solving and Data Analysis - Math-31.pdf",
+    "Medium - Two-variable data, Models and scatterplots - Problem-Solving and Data Analysis - Math-21.pdf",
+    "Hard - Two-variable data, Models and scatterplots - Problem-Solving and Data Analysis - Math-11.pdf"
+  ],
+  "total_questions": 63,
+  "question_catalog": {
+    "easy": [
+      "cf0ae57a", "8d63b6f1", "39aa146d", "bc59c2d9", "a03b7e02",
+      "661dfddd", "5f3ee607", "5c24c861", "d112bc9d", "8156d446",
+      "c141366d", "2e511919", "b58dbf88", "d6121490", "9296553d",
+      "43744269", "c5ee6ac0", "ae32cc3c", "16988f9c", "a6b2fcce",
+      "c9dd92b1", "13f67ddc", "d230e963", "9d88a3e3", "74dee52b",
+      "15ce8207", "4a2264b3", "ac5b6558", "8baf2118", "83272c51",
+      "82aaa0a1"
+    ],
+    "medium": [
+      "1adb39f0", "9bb4107c", "2e74e403", "9a144a01", "e24765e6",
+      "03a16790", "f46139df", "7ac5d686", "7fd284ac", "e17babed",
+      "3d985614", "ad7dbb22", "3c5b19ef", "ab7740a8", "90ba8f98",
+      "9eb896c5", "4cc05491", "fdfc90e4", "50b2807e", "24a1e6a7",
+      "58171b5e"
+    ],
+    "hard": [
+      "fb866265", "2e8027b0", "d6af3572", "1e1027a7", "d0430601",
+      "7b52985c", "e821a26d", "79137c1b", "9b5b23fc", "af142f8d",
+      "9d95e7ad"
+    ]
+  },
+  "proposed_sub_skills": [
+    {
+      "id": "TVD.1",
+      "name": "Reading Values from Graphs and Models",
+      "definition": "Read or estimate a specific data value, predicted value, maximum, minimum, or other feature directly from a scatterplot, line graph, curve, or fitted model (line of best fit).",
+      "inclusion_test": "The question asks the student to identify a value at a given input, find the closest predicted value from a LOBF, identify the year/point with the highest or lowest value, or compute a simple difference between two read values. The core task is extraction from a visual, not computation or classification.",
+      "evidence_ids": [
+        "cf0ae57a", "8d63b6f1", "bc59c2d9", "5c24c861", "8156d446",
+        "2e511919", "b58dbf88", "ae32cc3c", "c9dd92b1", "13f67ddc",
+        "74dee52b", "4a2264b3", "ac5b6558", "d6121490", "f46139df",
+        "fdfc90e4"
+      ],
+      "count": 16,
+      "difficulty_spread": { "easy": 14, "medium": 2, "hard": 0 }
+    },
+    {
+      "id": "TVD.2",
+      "name": "Estimating Slope of a Line of Best Fit",
+      "definition": "Estimate the numerical slope of a line of best fit shown on a scatterplot by selecting two points on the line and computing rise over run, then choosing the closest answer.",
+      "inclusion_test": "The question shows a scatterplot with a LOBF and asks 'which is closest to the slope' or requires computing the slope value. The answer is a number (the slope), not an equation.",
+      "evidence_ids": [
+        "39aa146d", "2e74e403", "03a16790", "90ba8f98", "4cc05491",
+        "24a1e6a7"
+      ],
+      "count": 6,
+      "difficulty_spread": { "easy": 1, "medium": 5, "hard": 0 }
+    },
+    {
+      "id": "TVD.3",
+      "name": "Choosing or Writing a Line of Best Fit Equation",
+      "definition": "Select or construct the equation (typically y = mx + b or y = a + bx) of a line of best fit for data in a scatterplot, using slope sign, approximate slope magnitude, and y-intercept. Includes transforming a LOBF equation when data units are rescaled.",
+      "inclusion_test": "The question asks 'which equation best represents the LOBF' or 'which could be the equation for a LOBF' or requires writing the equation. The answer is a linear equation, not a slope value alone and not a model-type classification.",
+      "evidence_ids": [
+        "5f3ee607", "9296553d", "c5ee6ac0", "16988f9c", "d230e963",
+        "8baf2118", "3d985614", "9eb896c5", "3c5b19ef", "50b2807e",
+        "1e1027a7", "79137c1b", "2e8027b0"
+      ],
+      "count": 13,
+      "difficulty_spread": { "easy": 6, "medium": 4, "hard": 3 }
+    },
+    {
+      "id": "TVD.4",
+      "name": "Classifying Model Type and Describing Associations",
+      "definition": "Determine whether a relationship is best modeled by a linear, exponential, or quadratic function, or describe the direction and nature of an association (positive, negative, increasing, decreasing) from a graph, table, or verbal description. Includes comparing linear vs. exponential growth and identifying which model graph fits data.",
+      "inclusion_test": "The question asks 'what type of function best models' or 'which describes the association' or requires choosing between linear/exponential/quadratic classifications, or asks which model graph is most appropriate. The answer is a model type or association description, not a specific equation.",
+      "evidence_ids": [
+        "a03b7e02", "661dfddd", "c141366d", "43744269", "15ce8207",
+        "9d88a3e3", "7ac5d686", "ab7740a8", "58171b5e", "9a144a01",
+        "9b5b23fc", "af142f8d"
+      ],
+      "count": 12,
+      "difficulty_spread": { "easy": 6, "medium": 4, "hard": 2 }
+    },
+    {
+      "id": "TVD.5",
+      "name": "Computing and Using Residuals",
+      "definition": "Calculate the residual (observed y minus predicted y) for a specific data point given a line of best fit, or count the number of data points that lie above or below the model line.",
+      "inclusion_test": "The question asks for a residual value, or asks how many points are above/below the line of best fit. The student must compare actual data points to the model line.",
+      "evidence_ids": [
+        "1adb39f0", "7fd284ac", "e17babed", "ad7dbb22"
+      ],
+      "count": 4,
+      "difficulty_spread": { "easy": 0, "medium": 4, "hard": 0 }
+    },
+    {
+      "id": "TVD.6",
+      "name": "Average Rate of Change",
+      "definition": "Compute the average rate of change between two points on a graph or in a table, or identify the interval with the greatest or least average rate of change. Includes computing change between consecutive data points.",
+      "inclusion_test": "The question asks for the average rate of change over an interval, the greatest change between consecutive points, or the interval with the steepest increase or decrease. The answer involves computing (y2-y1)/(x2-x1) or comparing such values across intervals.",
+      "evidence_ids": [
+        "d112bc9d", "a6b2fcce", "83272c51", "9bb4107c", "e24765e6",
+        "7b52985c"
+      ],
+      "count": 6,
+      "difficulty_spread": { "easy": 3, "medium": 2, "hard": 1 }
+    },
+    {
+      "id": "TVD.7",
+      "name": "Interpreting Slope in Context",
+      "definition": "Interpret the slope of a linear model as a real-world rate of change within the context of the problem, including scaling the interpretation for multi-unit increases (e.g., 'for every 10 additional units').",
+      "inclusion_test": "The question asks what the slope represents in context, or asks for the predicted change in y for a given change in x using the slope. The answer is a contextual interpretation or a scaled prediction, not a raw slope value.",
+      "evidence_ids": [
+        "d6af3572", "d0430601", "9d95e7ad"
+      ],
+      "count": 3,
+      "difficulty_spread": { "easy": 0, "medium": 0, "hard": 3 }
+    },
+    {
+      "id": "TVD.8",
+      "name": "Choosing a Nonlinear Model Equation",
+      "definition": "Select or write the equation for a nonlinear model (quadratic or exponential) that fits data in a scatterplot, by using features such as vertex location, y-intercept, direction of opening, or exponential base/decay factor.",
+      "inclusion_test": "The question shows a scatterplot with clearly nonlinear data and asks which quadratic or exponential equation best fits. The answer is a nonlinear equation, not a model-type classification.",
+      "evidence_ids": [
+        "82aaa0a1", "e821a26d", "fb866265"
+      ],
+      "count": 3,
+      "difficulty_spread": { "easy": 1, "medium": 0, "hard": 2 }
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "name": "Visual data extraction",
+      "definition": "Locating and reading a numeric value (a data point, a predicted value on a model line, a maximum, a minimum, an intercept) directly from a graph.",
+      "evidence_ids": [
+        "cf0ae57a", "8d63b6f1", "bc59c2d9", "2e511919", "13f67ddc",
+        "74dee52b", "4a2264b3", "ae32cc3c", "ac5b6558", "f46139df",
+        "fdfc90e4"
+      ]
+    },
+    {
+      "name": "Slope computation from two points",
+      "definition": "Selecting two points on a line or LOBF and computing the slope as (y2 - y1) / (x2 - x1), including determining the sign.",
+      "evidence_ids": [
+        "39aa146d", "2e74e403", "03a16790", "90ba8f98", "4cc05491",
+        "24a1e6a7", "16988f9c", "3c5b19ef"
+      ]
+    },
+    {
+      "name": "Sign-and-intercept reasoning",
+      "definition": "Determining the correct linear equation by reasoning about slope sign (positive or negative) and y-intercept sign and approximate value from visual inspection of the scatterplot and LOBF, without precise computation.",
+      "evidence_ids": [
+        "5f3ee607", "9296553d", "c5ee6ac0", "d230e963", "8baf2118",
+        "3d985614", "9eb896c5", "50b2807e"
+      ]
+    },
+    {
+      "name": "Pattern classification",
+      "definition": "Examining how values change across a table, verbal description, or graph to determine whether the pattern is linear (constant additive change), exponential (constant multiplicative change), quadratic (accelerating change), or another type.",
+      "evidence_ids": [
+        "a03b7e02", "43744269", "c141366d", "15ce8207", "7ac5d686",
+        "ab7740a8", "58171b5e", "9b5b23fc", "af142f8d", "9a144a01"
+      ]
+    },
+    {
+      "name": "Residual and deviation analysis",
+      "definition": "Computing observed minus predicted for a single data point, or scanning data points in a scatterplot to count how many lie above or below the model line.",
+      "evidence_ids": [
+        "1adb39f0", "7fd284ac", "e17babed", "ad7dbb22"
+      ]
+    },
+    {
+      "name": "Interval rate-of-change computation",
+      "definition": "Computing (y2 - y1) / (x2 - x1) across one or more intervals from a graph or table to find average rate of change, or comparing rates across intervals to identify the steepest segment.",
+      "evidence_ids": [
+        "d112bc9d", "a6b2fcce", "83272c51", "9bb4107c", "e24765e6",
+        "7b52985c"
+      ]
+    },
+    {
+      "name": "Contextual slope interpretation",
+      "definition": "Translating a numeric slope into a real-world meaning (e.g., 'for each additional year, the value increases by 3.5') and scaling for multi-unit changes.",
+      "evidence_ids": [
+        "d6af3572", "d0430601", "9d95e7ad"
+      ]
+    },
+    {
+      "name": "Nonlinear model fitting by key features",
+      "definition": "Matching a scatterplot's curved pattern to a specific quadratic or exponential equation by testing key features such as vertex, y-intercept, direction of opening, or exponential base.",
+      "evidence_ids": [
+        "82aaa0a1", "e821a26d", "fb866265", "5c24c861"
+      ]
+    }
+  ]
+}

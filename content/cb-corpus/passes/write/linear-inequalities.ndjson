@@ -1,0 +1,69 @@
+{"id":"7d6928bd","sub_skills":["LI.1"],"clusters":["CL.0201","CL.0104"],"distractors":[],"why":"Context says 'at most 14'; asks which inequality models the situation → LI.1 model with one-sided inequality"}
+{"id":"b64e2c7f","sub_skills":["LI.1","LI.2"],"clusters":["CL.0201","CL.0047"],"distractors":[],"why":"'at least 55°F', current 51.3, find minimum increase → LI.1 model + LI.2 solve for boundary value"}
+{"id":"b75f7812","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0047","CL.0081"],"distractors":[],"why":"'no more than $280', find max whole hours → LI.1 model + LI.2 solve for max, round down"}
+{"id":"208626df","sub_skills":["LI.4"],"clusters":["CL.0009","CL.0094"],"distractors":[],"why":"Given inequality and point (8,3), asks best interpretation → LI.4 test solution against given inequality"}
+{"id":"f01ef454","sub_skills":["LI.3"],"clusters":["CL.0060","CL.0005"],"distractors":[],"why":"Volume between 12.7 and 15.7, multiply by 165 → LI.3 two-sided range, apply operation to compound inequality"}
+{"id":"e744499e","sub_skills":["LI.1","SYS.4"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Two constraints (at least 20 items, at most $80), asks which system → LI.1 model + SYS.4 model context with system"}
+{"id":"2869fe95","sub_skills":["LI.3"],"clusters":["CL.0005"],"distractors":[],"why":"Temperature 31 to 67 expressed as absolute value inequality → LI.3 compound inequality"}
+{"id":"c9355dec","sub_skills":["LI.5"],"clusters":["CL.0024","CL.0156"],"distractors":[],"why":"Graph with boundary line and shaded region, identify inequality → LI.5 read inequality from graph"}
+{"id":"84d0d07e","sub_skills":["LI.1"],"clusters":["CL.0201","CL.0104"],"distractors":[],"why":"'at most $120', asks which inequality → LI.1 model situation with one-sided inequality"}
+{"id":"89541f9b","sub_skills":["LI.4"],"clusters":["CL.0009","CL.0094"],"distractors":[],"why":"Which ordered pairs satisfy 5x-3y<4 → LI.4 test solutions of given inequality"}
+{"id":"915463e0","sub_skills":["LI.3","LI.4"],"clusters":["CL.0009"],"distractors":[],"why":"Range 97.8-99.0, which could be temperature → LI.3 compound range + LI.4 test which value satisfies"}
+{"id":"59a49431","sub_skills":["LI.5","LI.4"],"clusters":["CL.0009","CL.0156"],"distractors":[],"why":"Graph with shaded region, which ordered pair is solution → LI.5 read from graph + LI.4 test point"}
+{"id":"e006209c","sub_skills":["LI.1","LI.2"],"clusters":["CL.0201","CL.0047"],"distractors":[],"why":"'at least 67', has 63, how many more → LI.1 model + LI.2 solve for minimum additional"}
+{"id":"72a5fd28","sub_skills":["LI.1","LI.2"],"clusters":["CL.0047","CL.0081"],"distractors":[],"why":"'at least 50 rolls', packages of 12, minimum packages → LI.1 model + LI.2 solve for min, round up"}
+{"id":"86f7483f","sub_skills":["LI.3"],"clusters":["CL.0201"],"distractors":[],"why":"Distance 1510 to 4130, which inequality → LI.3 compound inequality representing range"}
+{"id":"df32b09c","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"'average at least 90', which inequality models it → LI.1 model situation with inequality"}
+{"id":"68f2cbaf","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0060"],"distractors":[],"why":"4 km/hr, at least 24 km, minimum hours → LI.2 solve for boundary value (minimum)"}
+{"id":"4a090a46","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0201"],"distractors":[],"why":"'at least 100 hours', has 86, minimum additional → LI.2 solve for minimum"}
+{"id":"563407e5","sub_skills":["LI.3","LI.4"],"clusters":["CL.0060","CL.0009"],"distractors":[],"why":"50-60 per tray, 4 trays → LI.3 compound range then LI.4 test which total fits"}
+{"id":"ee439cff","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Combined distance under 220 miles → LI.1 model situation with one-sided inequality"}
+{"id":"c50ede6d","sub_skills":["LI.1"],"clusters":["CL.0201","CL.0104"],"distractors":[],"why":"'at most $75' → LI.1 model situation with one-sided inequality"}
+{"id":"2c121b25","sub_skills":["LI.1"],"clusters":["CL.0201","CL.0104","CL.0060"],"distractors":[],"why":"'at least 400 red beads' with percentages → LI.1 model inequality from context"}
+{"id":"842cec4d","sub_skills":["LI.3"],"clusters":["CL.0201"],"distractors":[],"why":"Speed 150-170 inclusive → LI.3 compound inequality representing range"}
+{"id":"cfe67646","sub_skills":["LI.4"],"clusters":["CL.0009"],"distractors":[],"why":"(8,2) is solution to which system → LI.4 test point against inequality systems"}
+{"id":"948087f2","sub_skills":["LI.4"],"clusters":["CL.0009","CL.0094"],"distractors":[],"why":"Which ordered pair satisfies system of inequalities → LI.4 test solutions"}
+{"id":"d02193fb","sub_skills":["LI.5"],"clusters":["CL.0156","CL.0160"],"distractors":[],"why":"Graph with dashed line and shaded region → LI.5 read inequality from graph"}
+{"id":"8f0c82e2","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"'minimum value of x is 12 less than 6n' → LI.1 model with one-sided inequality"}
+{"id":"90bd9ef8","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0047","CL.0081"],"distractors":[],"why":"Savings must exceed cost, after how many years → LI.1 model + LI.2 solve for boundary, round up"}
+{"id":"f02b4509","sub_skills":["LI.1","LI.2"],"clusters":["CL.0047","CL.0081","CL.0104"],"distractors":[],"why":"Max weight 4600, trailer 500, boxes 120 each, max boxes → LI.1 model + LI.2 solve for max"}
+{"id":"e9ef0e6b","sub_skills":["LI.3"],"clusters":["CL.0060","CL.0005"],"distractors":[],"why":"72-77 mi/day for 16 days, total range → LI.3 compound inequality scaled by constant"}
+{"id":"74c98c82","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0081","CL.0104"],"distractors":[],"why":"Budget $200, $35 venue + $10.25/person, max attendees → LI.2 solve for max, round down"}
+{"id":"34aca984","sub_skills":["LI.1"],"clusters":["CL.0201","CL.0104"],"distractors":[],"why":"'perimeter at most 210' → LI.1 model situation with one-sided inequality"}
+{"id":"6daf8d70","sub_skills":["LI.1"],"clusters":["CL.0201","CL.0104"],"distractors":[],"why":"Two constraints: at most 164, azaleas ≤ 3×boxwoods → LI.1 model system of inequalities"}
+{"id":"0ef4a7b6","sub_skills":["LI.3"],"clusters":["CL.0201"],"distractors":[],"why":"Heights range 106-158, most accurate inequality → LI.3 compound inequality"}
+{"id":"f2bbd43d","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute y=53 into system, find which x satisfies → LI.4 test/find satisfying value"}
+{"id":"d9733ed9","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"y > 4x+8, which table of values are all solutions → LI.4 test solutions"}
+{"id":"c41e5688","sub_skills":["LI.5"],"clusters":["CL.0156","CL.0160"],"distractors":[],"why":"Graph with dashed line and shaded region → LI.5 read inequality from graph"}
+{"id":"6cb9bf45","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"y > 7x-4, which table of solutions → LI.4 test solutions of inequality"}
+{"id":"ecca0603","sub_skills":["LI.4"],"clusters":["CL.0009","CL.0094"],"distractors":[],"why":"y < x and x < 22, which table satisfies → LI.4 test solutions of system"}
+{"id":"c17d9ba9","sub_skills":["LI.2"],"clusters":["CL.0104","CL.0094"],"distractors":[],"why":"'x at most 17 less than 5y', y=3, greatest x → LI.2 solve for max boundary"}
+{"id":"b31c3117","sub_skills":["LI.3"],"clusters":["CL.0094","CL.0005"],"distractors":[],"why":"H=120p+60, p in [0.5,0.85], find H range → LI.3 compound inequality, evaluate at endpoints"}
+{"id":"b78cd5df","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0081"],"distractors":[],"why":"Budget $300, $35 + $10.25/person, max attendees → LI.2 solve for max, round down"}
+{"id":"80da233d","sub_skills":["LI.3"],"clusters":["CL.0060","CL.0005"],"distractors":[],"why":"200 lbs + 2-3 lbs/day for up to 365 days → LI.3 compound inequality over weight range"}
+{"id":"bf5f80c6","sub_skills":["LI.4"],"clusters":["CL.0009","CL.0094"],"distractors":[],"why":"y < -4x+4, which point is solution → LI.4 test solutions of given inequality"}
+{"id":"dd875c97","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Max 5630 lbs, 190 already loaded, crates of 25 and 62 → LI.1 model inequality"}
+{"id":"968e9e51","sub_skills":["LI.4"],"clusters":["CL.0009","CL.0094"],"distractors":[],"why":"Which ordered pair satisfies y≤x and y≤-x → LI.4 test solutions of system"}
+{"id":"0b221d05","sub_skills":["LI.5","LI.4"],"clusters":["CL.0009","CL.0156"],"distractors":[],"why":"Graph of system of inequalities, which point in shaded region → LI.5 read from graph + LI.4 test"}
+{"id":"64c85440","sub_skills":["LI.3"],"clusters":["CL.0005"],"distractors":[],"why":"Spaces 7.5-9.0 ft, curb 135 ft, range of n = 135/width → LI.3 compound inequality by division"}
+{"id":"9e5863bd","sub_skills":["LI.3"],"clusters":["CL.0201"],"distractors":[],"why":"Snowfall 0.6-1.8 in/hr → LI.3 compound inequality representing range"}
+{"id":"e723bd67","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"2x-y > 883, which table satisfies → LI.4 test solutions of inequality"}
+{"id":"f224df07","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"At least 10 packages, max 1100 lbs, max 120-lb packages → LI.1 model system + LI.2 solve for max"}
+{"id":"830120b0","sub_skills":["LI.4"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"y > 2x-1 and 2x > 5; derive all possible y-coordinates → LI.4 find satisfying set by substitution"}
+{"id":"b8e73b5b","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0047","CL.0081"],"distractors":[],"why":"Earned $8/hr for 10 hrs then $10/hr, save 90%, save ≥$270, least hours → LI.1 model + LI.2 solve min"}
+{"id":"68c5c81a","sub_skills":["LI.1","LE2.2"],"clusters":["CL.0154"],"distractors":[],"why":"11x+14y≤115, best interpretation of 14y → LI.1 inequality context + LE2.2 interpret part of model"}
+{"id":"fbd5483f","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"Consecutive odd integers, product at most 26 less than sum → LI.1 model inequality from context"}
+{"id":"03503d49","sub_skills":["LI.2"],"clusters":["CL.0106","CL.0047","CL.0081"],"distractors":[],"why":"Budget $14,000 incl 7% tax, 81 chairs, max price → LI.2 solve for max with percent multiplier"}
+{"id":"f8ff3249","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"y < 6x+2, which table of values are all solutions → LI.4 test solutions"}
+{"id":"963da34c","sub_skills":["LI.2","LI.3"],"clusters":["CL.0047","CL.0094","CL.0095"],"distractors":[],"why":"Perimeter+height≤130, h=60, l=2.5w, find allowable width → LI.2 solve boundary + LI.3 two-sided (w>0)"}
+{"id":"48fb34c8","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"y > 13x-18, which table satisfies → LI.4 test solutions of inequality"}
+{"id":"e8f9e117","sub_skills":["LI.2"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"I=V/R, R=500, V=6n, I≤0.25, greatest n → LI.2 solve for max using formula substitution"}
+{"id":"5bf5136d","sub_skills":["LI.3"],"clusters":["CL.0005"],"distractors":[],"why":"Triangle inequality: sum of two sides > third → LI.3 two-sided range for third side"}
+{"id":"a049f400","sub_skills":["LI.4"],"clusters":["CL.0094","CL.0009"],"distractors":[],"why":"y < 5x+6, which table satisfies → LI.4 test solutions of inequality"}
+{"id":"55ea82f3","sub_skills":["LI.1"],"clusters":["CL.0104","CL.0201"],"distractors":[],"why":"At least $5820, ticket prices related, which inequality → LI.1 model inequality from context"}
+{"id":"ee7b1de1","sub_skills":["LI.1","LI.2"],"clusters":["CL.0104","CL.0047"],"distractors":[],"why":"Budget $2200, min 200 candles, max large candles → LI.1 model system + LI.2 solve for max"}
+{"id":"1a621af4","sub_skills":["LI.2"],"clusters":["CL.0094","CL.0104"],"distractors":[],"why":"'x at most 2 less than 3y', y=-4, greatest x → LI.2 solve for max boundary value"}
+{"id":"6c71f3ec","sub_skills":["LI.3"],"clusters":["CL.0047","CL.0005"],"distractors":[],"why":"Earnings between 3x and 4x, derive range of sales s → LI.3 compound inequality, isolate s"}
+{"id":"541bef2f","sub_skills":["LI.4"],"clusters":["CL.0009","CL.0094"],"distractors":[],"why":"y≤x+7 and y≥-2x-1, which point is solution → LI.4 test solutions of system"}
+{"id":"ee2f611f","sub_skills":["LI.2"],"clusters":["CL.0047","CL.0081"],"distractors":[],"why":"$95 pass vs max $3.50/trip, min trips for pass to be cheaper → LI.2 solve for minimum, round up"}
+{"id":"45cfb9de","sub_skills":["LI.1"],"clusters":["CL.0104"],"distractors":[],"why":"Wait time + bus ride vs walking time, which inequality → LI.1 model situation with inequality"}

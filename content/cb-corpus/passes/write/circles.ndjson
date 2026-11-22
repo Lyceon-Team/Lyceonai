@@ -1,0 +1,44 @@
+{"id":"d03e29f1","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0099"],"distractors":[],"why":"Read radius from standard form (x-6)^2+(y-3)^2=81; r=sqrt(81)=9"}
+{"id":"23c5fcce","sub_skills":["CIR3"],"clusters":["CL.0205","CL.0086"],"distractors":[],"why":"Minor arc as fraction of circumference proportional to central angle; arc/36=angle/360"}
+{"id":"f2495de4","sub_skills":["CIR5"],"clusters":["CL.0076","CL.0041"],"distractors":[],"why":"Reduce 565pi/6 by full rotations to reference angle; evaluate cos on unit circle"}
+{"id":"b96ff36e","sub_skills":["CIR1","CIR2"],"clusters":["CL.0073","CL.0094"],"distractors":[],"why":"Read circle from standard form; substitute x=6 into equation and solve for c"}
+{"id":"82c8325f","sub_skills":["CIR1","CIR2"],"clusters":["CL.0113","CL.0073"],"distractors":[],"why":"Distance from center (-4,5) to point (-8,8) gives radius; write standard form equation"}
+{"id":"0815a5af","sub_skills":["CIR3"],"clusters":["CL.0205","CL.0047"],"distractors":[],"why":"Arc relationships with diameters; arcs as fractions of circumference 144pi; isolate arc QR"}
+{"id":"95ba2d09","sub_skills":["CIR3","CIR5"],"clusters":["CL.0028","CL.0205"],"distractors":[],"why":"Central angles sum to 360; subtract known 30+30; convert remaining angle to radians"}
+{"id":"856372ca","sub_skills":["CIR1"],"clusters":["CL.0073"],"distractors":[],"why":"Write standard form (x+8)^2+(y-6)^2=25 from center (-8,6) and radius 5"}
+{"id":"2d521ca9","sub_skills":["CIR5"],"clusters":["CL.0028"],"distractors":[],"why":"Convert 60 degrees to radians: 60*pi/180=pi/3"}
+{"id":"f1c1e971","sub_skills":["CIR5"],"clusters":["CL.0028"],"distractors":[],"why":"Add radian measures 2pi/3+5pi/12=13pi/12; convert to degrees: 195"}
+{"id":"a0cacec1","sub_skills":["CIR5"],"clusters":["CL.0028"],"distractors":[],"why":"Convert 16pi/15 radians to degrees: (16pi/15)*(180/pi)=192"}
+{"id":"ee540927","sub_skills":["CIR1"],"clusters":["CL.0020","CL.0073"],"distractors":[],"why":"Complete the square on x: (x+29)^2+y^2=841; center is (-29,0)"}
+{"id":"74d8b897","sub_skills":["CIR5"],"clusters":["CL.0028"],"distractors":[],"why":"Convert 9pi/20 radians to degrees: (9pi/20)*(180/pi)=81"}
+{"id":"fc8aa563","sub_skills":["CIR1"],"clusters":["CL.0073"],"distractors":[],"why":"Read center (1,-7) directly from standard form (x-1)^2+(y+7)^2=1"}
+{"id":"800e71b8","sub_skills":["CIR3"],"clusters":["CL.0205","CL.0004"],"distractors":[],"why":"Circumference = minor arc + major arc = 39+195 = 234"}
+{"id":"1efd7ef3","sub_skills":["CIR5"],"clusters":["CL.0076","CL.0041"],"distractors":[],"why":"42pi = 21 full rotations; sin(42pi)=sin(0)=0"}
+{"id":"6585d841","sub_skills":["CIR1"],"clusters":["CL.0020","CL.0073"],"distractors":[],"why":"Complete square on x and y; rewrite as (x+7)^2+(y-3)^2=167; radius=sqrt(167)"}
+{"id":"acd30391","sub_skills":["CIR1","CIR2"],"clusters":["CL.0073","CL.0113"],"distractors":[],"why":"Read center (-3,1) and r=5; compute distance from center to each point; not interior if distance>=5"}
+{"id":"a38c0183","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0102"],"distractors":[],"why":"Read center (-2,0) r=3; translate down 6 to (-2,-6); double radius to 6; r^2=36"}
+{"id":"fb58c0db","sub_skills":["CIR3","CIR5"],"clusters":["CL.0205","CL.0119"],"distractors":[],"why":"Circumference=2pi(1)=2pi; fraction = (pi/3)/(2pi) = 1/6"}
+{"id":"e80d62c6","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0102"],"distractors":[],"why":"Read center (0,2); shift down 4 to (0,-2); equation x^2+(y+2)^2=36"}
+{"id":"196e8e6e","sub_skills":["CIR2","CIR4"],"clusters":["CL.0169","CL.0113","CL.0118"],"distractors":[],"why":"Radius=sqrt(1+102)=sqrt(103); CA=CB so right isosceles triangle; AB=sqrt(2*103)=sqrt(206)"}
+{"id":"89661424","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0034"],"distractors":[],"why":"Write (x+5)^2+(y-2)^2=81; expand to general form x^2+y^2+10x-4y-52=0; c=-52"}
+{"id":"981275d2","sub_skills":["CIR1","CIR2"],"clusters":["CL.0073","CL.0115"],"distractors":[],"why":"Center (6,-5) is midpoint of diameter PQ; Q = 2*center - P = (2,-5)"}
+{"id":"9d159400","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0094"],"distractors":[],"why":"Circle tangent to y-axis when |h|=r; test each equation; x^2+(y-9)^2=16 has h=0,r=4"}
+{"id":"ca2235f6","sub_skills":["CIR3"],"clusters":["CL.0205","CL.0086"],"distractors":[],"why":"Arc/circumference = 45/360 = 1/8; circumference = 3*8 = 24"}
+{"id":"0acfddb5","sub_skills":["CIR4"],"clusters":["CL.0208","CL.0118","CL.0184"],"distractors":[],"why":"Tangent segments equal and perpendicular to radius; right triangle GMH; Pythagorean theorem for GH"}
+{"id":"244ff6c4","sub_skills":["CIR5"],"clusters":["CL.0076","CL.0041"],"distractors":[],"why":"Reduce 92pi/3 by full rotations to reference angle; evaluate tan on unit circle"}
+{"id":"9acd101f","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0102"],"distractors":[],"why":"Read center (0,1); shift down 2 to (0,-1); equation x^2+(y+1)^2=49"}
+{"id":"1b2b20b9","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0102"],"distractors":[],"why":"Radius^2=a=7 unchanged by translation; 4a=28"}
+{"id":"2855cb58","sub_skills":["CIR1"],"clusters":["CL.0073"],"distractors":[],"why":"Write standard form with r^2=(7k)^2=49k^2"}
+{"id":"9e44284b","sub_skills":["CIR1"],"clusters":["CL.0020","CL.0073"],"distractors":[],"why":"Divide by 2; complete square on x and y; (x-3/2)^2+(y+1/2)^2=25; radius=5"}
+{"id":"24cec8d1","sub_skills":["CIR4"],"clusters":["CL.0169","CL.0170","CL.0121"],"distractors":[],"why":"OR=OS (radii) so triangle ORS is isosceles; angle RSO = (180-88)/2 = 46"}
+{"id":"fa2771d5","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0102"],"distractors":[],"why":"Translate right 4: center (7,-3) moves to (11,-3); equation (x-11)^2+(y+3)^2=1"}
+{"id":"3e577e4a","sub_skills":["CIR4"],"clusters":["CL.0208","CL.0116","CL.0024"],"distractors":[],"why":"Radius slope from center to tangent point is 1/3; tangent slope is negative reciprocal = -3"}
+{"id":"ab176ad6","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0099"],"distractors":[],"why":"Read radius from standard form (x+6)^2+(y+3)^2=121; r=sqrt(121)=11"}
+{"id":"249d3f80","sub_skills":["CIR3"],"clusters":["CL.0205"],"distractors":[],"why":"Central angle equals arc measure; angle ROS = 100 degrees"}
+{"id":"b0a72bdc","sub_skills":["CIR1"],"clusters":["CL.0073","CL.0099"],"distractors":[],"why":"Read radius from (x-5)^2+(y-3)^2=16; r=4; diameter=2r=8"}
+{"id":"b8a225ff","sub_skills":["CIR1"],"clusters":["CL.0073"],"distractors":[],"why":"Read radius A=sqrt(4)=2; radius B=2*2=4; k=4^2=16"}
+{"id":"ebbf23ae","sub_skills":["CIR1","CIR2"],"clusters":["CL.0073","CL.0115","CL.0031"],"distractors":[],"why":"Diameter endpoints give center via midpoint; diameter length 10 so radius r=5"}
+{"id": "69b0d79d", "sub_skills": ["CIR3", "CIR4"], "clusters": ["CL.0169", "CL.0170", "CL.0205"], "distractors": [], "why": "Radii equal so isosceles triangle; angle sum gives central angle 120; arc=(120/360)*2pi*18=12pi"}
+{"id":"2266984b","sub_skills":["CIR1"],"clusters":["CL.0020","CL.0073"],"distractors":[],"why":"Complete square: (x+10)^2+(y+8)^2=144; center (-10,-8)"}
+{"id":"e50afdd3","sub_skills":["CIR1","CIR2"],"clusters":["CL.0073","CL.0094"],"distractors":[],"why":"Center (-4,19) r=11; a ranges from -15 to 7; substitute each choice; a=-14 yields real y"}
+{"id":"35d37640","sub_skills":["CIR5"],"clusters":["CL.0076"],"distractors":[],"why":"H=(-1,0) on unit circle; angle FGH=pi; 25pi mod 2pi = pi so 25pi is coterminal"}

@@ -18476,6 +18476,66 @@ COMMENT ON VIEW public.canonical_skill_catalog IS 'Distinct (section, domain, sk
 
 
 --
+-- Name: cb_distractor_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cb_distractor_clusters (
+    question_id text NOT NULL,
+    option_key text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL
+);
+
+
+--
+-- Name: cb_question_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cb_question_clusters (
+    question_id text NOT NULL,
+    cluster_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: cb_question_sub_skills; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cb_question_sub_skills (
+    question_id text NOT NULL,
+    sub_skill_id text NOT NULL,
+    taxonomy_version text NOT NULL,
+    tagged_by text NOT NULL,
+    tagged_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: cb_questions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cb_questions (
+    id text NOT NULL,
+    section text NOT NULL,
+    domain text NOT NULL,
+    cb_skill text NOT NULL,
+    difficulty text NOT NULL,
+    stem text NOT NULL,
+    passage text,
+    options jsonb,
+    correct_answer text,
+    explanation text,
+    item_type text NOT NULL,
+    assets jsonb,
+    source_ref jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: clusters; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -22749,6 +22809,30 @@ ALTER TABLE ONLY public.calendar_runtime_config
 
 
 --
+-- Name: cb_question_clusters cb_question_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_question_clusters
+    ADD CONSTRAINT cb_question_clusters_pkey PRIMARY KEY (question_id, cluster_id, taxonomy_version);
+
+
+--
+-- Name: cb_question_sub_skills cb_question_sub_skills_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_question_sub_skills
+    ADD CONSTRAINT cb_question_sub_skills_pkey PRIMARY KEY (question_id, sub_skill_id, taxonomy_version);
+
+
+--
+-- Name: cb_questions cb_questions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_questions
+    ADD CONSTRAINT cb_questions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: clusters clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24333,6 +24417,13 @@ CREATE INDEX idx_calendar_block_launches_block_student ON public.calendar_block_
 --
 
 CREATE INDEX idx_calendar_block_launches_student ON public.calendar_block_launches USING btree (student_id);
+
+
+--
+-- Name: idx_cb_distractor_clusters_qid; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cb_distractor_clusters_qid ON public.cb_distractor_clusters USING btree (question_id);
 
 
 --
@@ -26048,6 +26139,54 @@ ALTER TABLE ONLY public.calendar_runtime_config
 
 
 --
+-- Name: cb_distractor_clusters cb_distractor_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_distractor_clusters
+    ADD CONSTRAINT cb_distractor_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: cb_distractor_clusters cb_distractor_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_distractor_clusters
+    ADD CONSTRAINT cb_distractor_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.cb_questions(id);
+
+
+--
+-- Name: cb_question_clusters cb_question_clusters_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_question_clusters
+    ADD CONSTRAINT cb_question_clusters_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
+
+
+--
+-- Name: cb_question_clusters cb_question_clusters_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_question_clusters
+    ADD CONSTRAINT cb_question_clusters_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.cb_questions(id);
+
+
+--
+-- Name: cb_question_sub_skills cb_question_sub_skills_question_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_question_sub_skills
+    ADD CONSTRAINT cb_question_sub_skills_question_id_fkey FOREIGN KEY (question_id) REFERENCES public.cb_questions(id);
+
+
+--
+-- Name: cb_question_sub_skills cb_question_sub_skills_sub_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cb_question_sub_skills
+    ADD CONSTRAINT cb_question_sub_skills_sub_skill_id_fkey FOREIGN KEY (sub_skill_id) REFERENCES public.sub_skills(id);
+
+
+--
 -- Name: consent_runtime_config_history consent_runtime_config_history_changed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -27536,6 +27675,30 @@ ALTER TABLE public.calendar_runtime_config ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.calendar_runtime_config_history ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cb_distractor_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cb_distractor_clusters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cb_question_clusters; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cb_question_clusters ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cb_question_sub_skills; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cb_question_sub_skills ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cb_questions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cb_questions ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: clusters; Type: ROW SECURITY; Schema: public; Owner: -
@@ -32146,6 +32309,34 @@ GRANT SELECT(correct_variants) ON TABLE public.questions TO lyceon_scoring_owner
 --
 
 GRANT SELECT ON TABLE public.canonical_skill_catalog TO service_role;
+
+
+--
+-- Name: TABLE cb_distractor_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.cb_distractor_clusters TO service_role;
+
+
+--
+-- Name: TABLE cb_question_clusters; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.cb_question_clusters TO service_role;
+
+
+--
+-- Name: TABLE cb_question_sub_skills; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.cb_question_sub_skills TO service_role;
+
+
+--
+-- Name: TABLE cb_questions; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.cb_questions TO service_role;
 
 
 --

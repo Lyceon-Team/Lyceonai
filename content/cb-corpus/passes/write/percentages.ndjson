@@ -1,0 +1,75 @@
+{"id": "771ee744", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (320) and rate (10%), asks for part; single percent-of-quantity calculation"}
+{"id": "eaab8bc1", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (300) and rate (80%), asks for part; single percent-of-quantity"}
+{"id": "41b71b4e", "sub_skills": ["PCT.7"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Original value 60, increase by 20%, asks for resulting value; apply percent increase via multiplier"}
+{"id": "6e4a60dd", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole ($25) and rate (20%), asks for the tip amount (part); single percent-of-quantity"}
+{"id": "048811bd", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Direct 'what is p% of W' question; single percent-of-quantity calculation"}
+{"id": "34e18ce4", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (350) and rate (4%), asks for part; single percent-of-quantity"}
+{"id": "1c2f50a6", "sub_skills": ["PCT.7"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Original price $50, reduced by 20%, asks for sale price; apply percent decrease"}
+{"id": "a8fabad0", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole ($78.20) and rate (15%), asks for part (tip); single percent-of-quantity"}
+{"id": "194ae3b1", "sub_skills": ["PCT.7"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Original value 113000, increase by 29%, asks for resulting value; apply percent increase"}
+{"id": "2d31caae", "sub_skills": ["PCT.15"], "clusters": ["CL.0153", "CL.0238"], "distractors": [], "why": "Must read Employee A's 1-star count (12) and total (200) from table, then compute 12/200 as a percentage"}
+{"id": "77cf4fa6", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (170) and rate (10%), asks for part; single percent-of-quantity"}
+{"id": "7ed0d098", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "15% of 8-hour workday → compute part then convert to minutes; primary step is percent-of-quantity"}
+{"id": "273b7f37", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (760) and rate (10%), asks for part; single percent-of-quantity"}
+{"id": "9c44f828", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (840) and rate (50%), asks for part; single percent-of-quantity"}
+{"id": "284303f1", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (250) and rate (6%), asks for part; single percent-of-quantity"}
+{"id": "3a6ed720", "sub_skills": ["PCT.6"], "clusters": ["CL.0238"], "distractors": [], "why": "Given part (828000) and whole (900000), asks for the percentage; solve part/whole = p/100"}
+{"id": "28c6bd8c", "sub_skills": ["PCT.15"], "clusters": ["CL.0153", "CL.0098"], "distractors": [], "why": "Must extract percentages (63%+13%) from table, then compute that combined percent of 1200"}
+{"id": "949cd96b", "sub_skills": ["PCT.10"], "clusters": ["CL.0029"], "distractors": [], "why": "Describes percent relationship (89% of h), asks for algebraic expression; convert percent to decimal multiplier"}
+{"id": "8784bc84", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Direct 'what is p% of W' question; single percent-of-quantity"}
+{"id": "29c177e6", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Direct 'what is p% of W' question; single percent-of-quantity"}
+{"id": "bb7c8186", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Direct 'what is p% of W' question; single percent-of-quantity"}
+{"id": "93724cc6", "sub_skills": ["PCT.6"], "clusters": ["CL.0238"], "distractors": [], "why": "Given part (21) and rate (21%), asks for whole; single proportion solve: 21 = 0.21 × W"}
+{"id": "191d167b", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given rate (147%) and whole (200), asks for part (the 147% quantity); single percent-of-quantity"}
+{"id": "8705ecba", "sub_skills": ["PCT.7"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Original value $20, increase by 5% tax, asks for total cost; apply percent increase"}
+{"id": "e9fb7774", "sub_skills": ["PCT.6"], "clusters": ["CL.0238"], "distractors": [], "why": "Given part (75) and whole (300), asks for the percent; single proportion solve"}
+{"id": "bd90f87e", "sub_skills": ["PCT.15", "PCT.8"], "clusters": ["CL.0244", "CL.0239"], "distractors": [], "why": "Must read old ($1.00) and new ($1.60) from table, then compute percent change; data extraction then percent change formula"}
+{"id": "d72a2b4d", "sub_skills": ["PCT.6"], "clusters": ["CL.0238"], "distractors": [], "why": "Given part ($17.36) and whole ($15.50), asks for p where the price is p% of the original; proportion solve"}
+{"id": "ad1d6adb", "sub_skills": ["PCT.8"], "clusters": ["CL.0239"], "distractors": [], "why": "Two values (9 and 90), asks for percent increase; apply percent change formula"}
+{"id": "566759ef", "sub_skills": ["PCT.12"], "clusters": ["CL.0106"], "distractors": [], "why": "Two successive 20% decreases applied to $800; chained percent changes via multiplier 0.8^2"}
+{"id": "dccdb20c", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (450) and rate (6%), asks for part; single percent-of-quantity"}
+{"id": "e9f4521a", "sub_skills": ["PCT.6"], "clusters": ["CL.0238"], "distractors": [], "why": "Given part (13) and whole (25), asks for percent p; single proportion solve"}
+{"id": "7b731fc3", "sub_skills": ["PCT.7"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Original 115, increase by 40%, asks for resulting value; apply percent increase"}
+{"id": "94c65646", "sub_skills": ["PCT.6"], "clusters": ["CL.0238"], "distractors": [], "why": "Given part (432) and rate (96%), asks for whole; proportion solve 432 = 0.96 × W"}
+{"id": "7f84b136", "sub_skills": ["PCT.15"], "clusters": ["CL.0153", "CL.0238"], "distractors": [], "why": "Must read values from table (C=690, A=375), then compute 690/375 as percentage; data extraction then proportion"}
+{"id": "c256b723", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole ($50) and rate (20%), asks for part (tip); single percent-of-quantity"}
+{"id": "b2f6f17d", "sub_skills": ["PCT.8"], "clusters": ["CL.0239"], "distractors": [], "why": "Two values ($75.74 and $79.86), asks for percent increase; apply percent change formula"}
+{"id": "96a45430", "sub_skills": ["PCT.9"], "clusters": ["CL.0107", "CL.0242"], "distractors": [], "why": "Result after 6% increase is 318, asks for original n; reverse percent by dividing by 1.06"}
+{"id": "8cbf1415", "sub_skills": ["PCT.14"], "clusters": ["CL.0098"], "distractors": [], "why": "Population partitioned: 40% red, then 30% of that subtotal have stripes; percent applied to subtotal (0.4 × 0.3)"}
+{"id": "ba61d95f", "sub_skills": ["PCT.10"], "clusters": ["CL.0106"], "distractors": [], "why": "Percent increase described in words, asks for algebraic multiplier k; convert 7% increase to multiplier 1.07"}
+{"id": "709e04de", "sub_skills": ["PCT.11"], "clusters": ["CL.0106"], "distractors": [], "why": "Given expression z=1.13×100, asks to interpret as percent greater; decode multiplier 1.13 as 13% greater"}
+{"id": "8e2e424e", "sub_skills": ["PCT.10"], "clusters": ["CL.0106"], "distractors": [], "why": "Percent relationship described in words, asks for multiplier r; convert 36% greater to r = 1.36"}
+{"id": "8a714fa1", "sub_skills": ["PCT.10"], "clusters": ["CL.0106"], "distractors": [], "why": "Percent increase described in words, asks for algebraic expression; convert 9% increase to 1.09x"}
+{"id": "121dc44f", "sub_skills": ["PCT.10"], "clusters": ["CL.0106"], "distractors": [], "why": "Percent increase described in words, asks for algebraic multiplier k; convert 7% increase to 1.07"}
+{"id": "7cab9fe1", "sub_skills": ["PCT.10"], "clusters": ["CL.0106"], "distractors": [], "why": "Percent increase described in words, asks for algebraic expression; convert 43% increase to 1.43w"}
+{"id": "d693f563", "sub_skills": ["PCT.7"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Original value 35, increase by 60%, asks for resulting value; apply percent increase"}
+{"id": "63573fea", "sub_skills": ["PCT.7"], "clusters": ["CL.0098", "CL.0060"], "distractors": [], "why": "Compute 15% of 1,300,000 (returns per month), then multiply by 6 months; percent-of-quantity then rate × amount"}
+{"id": "022e9894", "sub_skills": ["PCT.14"], "clusters": ["CL.0098"], "distractors": [], "why": "Successive percent applied to subtotals: 72% of 1250, then 36% of that result; compound category percentages"}
+{"id": "05195d8a", "sub_skills": ["PCT.6"], "clusters": ["CL.0238"], "distractors": [], "why": "Given part (88) and rate (80%), asks for whole; proportion solve 88 = 0.80 × total"}
+{"id": "ad911622", "sub_skills": ["PCT.12"], "clusters": ["CL.0106"], "distractors": [], "why": "Two successive percent changes (increase 167%, decrease 16%), asks for net percent change; chained multipliers"}
+{"id": "25faa756", "sub_skills": ["PCT.13"], "clusters": ["CL.0243", "CL.0106"], "distractors": [], "why": "Chain: a = 1.6b, c = 0.55a → c = 0.55 × 1.6 × b; transitive substitution across percent links"}
+{"id": "34f8cd89", "sub_skills": ["PCT.14"], "clusters": ["CL.0098"], "distractors": [], "why": "Three successive percents applied to subtotals (0.37 × 0.37 × 0.42), then complement; compound category percentages"}
+{"id": "8213b1b3", "sub_skills": ["PCT.6"], "clusters": ["CL.0098"], "distractors": [], "why": "Given whole (140g) and rate (0.001%), asks for part; single percent-of-quantity with small percent"}
+{"id": "040f2a84", "sub_skills": ["PCT.12", "PCT.9"], "clusters": ["CL.0106", "CL.0107"], "distractors": [], "why": "Two successive percent operations: 80% decrease then reverse a 30% increase to find original cost; chained and reversed"}
+{"id": "a0b165f8", "sub_skills": ["PCT.9"], "clusters": ["CL.0107", "CL.0242"], "distractors": [], "why": "Result after 12.5% increase is 99, asks for original; reverse percent by dividing by 1.125"}
+{"id": "3d73a58b", "sub_skills": ["PCT.12"], "clusters": ["CL.0098", "CL.0106"], "distractors": [], "why": "Two successive percent operations: 290% of wholesale then 80% discount on retail; chained percent changes"}
+{"id": "54cb53cf", "sub_skills": ["PCT.11"], "clusters": ["CL.0242"], "distractors": [], "why": "Given multiplier 1.27, asks to interpret the reverse relationship as a percentage; decode expression meaning"}
+{"id": "8c5dbd3e", "sub_skills": ["PCT.13"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Chain: z = 0.45 × 50, then w = 2.10 × z; chained percent relationships with numeric computation"}
+{"id": "ba0e23b0", "sub_skills": ["PCT.8"], "clusters": ["CL.0239"], "distractors": [], "why": "Two values (10 and 140), asks for percent greater; apply percent change formula: (140-10)/10 × 100"}
+{"id": "2e92cc21", "sub_skills": ["PCT.13"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Chain: b = 0.10 × 47, then a = 2.10 × b; chained percent relationships with computation"}
+{"id": "2afd3cec", "sub_skills": ["PCT.9"], "clusters": ["CL.0107", "CL.0242"], "distractors": [], "why": "Result after 20% decrease is 360, asks for amount removed; reverse percent to find original then subtract"}
+{"id": "623dbebb", "sub_skills": ["PCT.12"], "clusters": ["CL.0098", "CL.0106"], "distractors": [], "why": "Two successive percent operations: 270% of purchase price then 70% discount; chained percent changes"}
+{"id": "86684ce9", "sub_skills": ["PCT.9"], "clusters": ["CL.0107", "CL.0242"], "distractors": [], "why": "Result after 1800% increase is 684, asks for original x; reverse percent: 684 / 19 = 36"}
+{"id": "20845d36", "sub_skills": ["PCT.13"], "clusters": ["CL.0243", "CL.0106"], "distractors": [], "why": "Chain: a = 0.3b, c = 1.6a → c = 0.48b; transitive substitution across percent links"}
+{"id": "5267c3c7", "sub_skills": ["PCT.9"], "clusters": ["CL.0107", "CL.0242"], "distractors": [], "why": "Result after 400% increase is 60, asks for original x; reverse percent: 60 / 5 = 12"}
+{"id": "40e7a1a9", "sub_skills": ["PCT.8"], "clusters": ["CL.0239"], "distractors": [], "why": "Two values (30 and 210), asks for percent greater; percent change formula"}
+{"id": "67c0200a", "sub_skills": ["PCT.13"], "clusters": ["CL.0243", "CL.0106"], "distractors": [], "why": "Chain: a = 0.3b, c = 1.8a → c = 0.54b; transitive substitution across percent links"}
+{"id": "e635aede", "sub_skills": ["PCT.12"], "clusters": ["CL.0106"], "distractors": [], "why": "Two successive percent increases (14% then 4%), asks for combined multiplier y = 1.14 × 1.04; chained percent changes"}
+{"id": "1fbd3b67", "sub_skills": ["PCT.13"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Chain: b = 0.2 × 24, a = 2.9 × b; chained percent relationships with computation"}
+{"id": "993000da", "sub_skills": ["PCT.13"], "clusters": ["CL.0243"], "distractors": [], "why": "Three-quantity chain: a = 2.3b and a = 0.6c, derive c/b ratio as percentage; transitive substitution"}
+{"id": "0231050d", "sub_skills": ["PCT.15", "PCT.8"], "clusters": ["CL.0244", "CL.0239"], "distractors": [], "why": "Must read values from line graph (2003=40, 2007=10), then compute percent decrease; data extraction then percent change"}
+{"id": "0ea56bb2", "sub_skills": ["PCT.15", "PCT.12"], "clusters": ["CL.0244", "CL.0239", "CL.0106"], "distractors": [], "why": "Read values from table, compute percent increase, halve it, apply forward; data extraction + chained percent reasoning"}
+{"id": "4aaa9c42", "sub_skills": ["PCT.13"], "clusters": ["CL.0243"], "distractors": [], "why": "Three-quantity chain with sum: a = 22.41(b+c), b = 0.83c → express a as percent of b; transitive substitution"}
+{"id": "65c49824", "sub_skills": ["PCT.14"], "clusters": ["CL.0238", "CL.0098"], "distractors": [], "why": "Population partitioned by percents with remainder count; find total from remaining 15% = 6, then compute category counts"}
+{"id": "954943a4", "sub_skills": ["PCT.10"], "clusters": ["CL.0060"], "distractors": [], "why": "Linear percent relationship: p = 5x; describes percent-per-serving rate, asks for algebraic expression"}
+{"id": "1baffbcf", "sub_skills": ["PCT.11"], "clusters": ["CL.0106"], "distractors": [], "why": "Given expression 0.35x, asks to interpret as percent decrease; decode multiplier 0.35 as 65% decrease"}

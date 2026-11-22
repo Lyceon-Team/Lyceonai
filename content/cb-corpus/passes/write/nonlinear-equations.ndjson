@@ -1,0 +1,130 @@
+{"id":"f11ffa93","sub_skills":["NLE.3"],"clusters":["CL.0091","CL.0047"],"distractors":[],"why":"√(x+4)=11; radical equation, square both sides then isolate"}
+{"id":"4236c5a3","sub_skills":["NLE.2"],"clusters":["CL.0099","CL.0047"],"distractors":[],"why":"(x+5)²=4; squared unknown, take square root both sides"}
+{"id":"bf704c34","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express c in terms of other variables; isolate"}
+{"id":"fcb78856","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0075"],"distractors":[],"why":"express c from b=42cf; isolate and reduce fraction"}
+{"id":"494d247d","sub_skills":["NLE.5"],"clusters":["CL.0009"],"distractors":[],"why":"system y=4 and y=|x|; two equations in x,y, one nonlinear; graph intersection"}
+{"id":"d964bc26","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express y in terms of other variables; isolate"}
+{"id":"98f735f2","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0075"],"distractors":[],"why":"express Q from T=PQ; isolate and reduce"}
+{"id":"dd3a910a","sub_skills":["NLE.5"],"clusters":["CL.0009"],"distractors":[],"why":"system with absolute value + line; graph intersection count"}
+{"id":"eb268057","sub_skills":["NLE.2"],"clusters":["CL.0099"],"distractors":[],"why":"x²=64; squared unknown, take square root"}
+{"id":"c8bf5313","sub_skills":["NLE.5"],"clusters":["CL.0094"],"distractors":[],"why":"x=8 and y=x²+8; two equations, substitute x into quadratic"}
+{"id":"c7789423","sub_skills":["NLE.3"],"clusters":["CL.0090","CL.0047"],"distractors":[],"why":"|x-2|=9; absolute value equation, split into two cases"}
+{"id":"5c7d5744","sub_skills":["NLE.5"],"clusters":["CL.0009"],"distractors":[],"why":"system parabola + line; graph intersection"}
+{"id":"ce940f80","sub_skills":["NLE.2"],"clusters":["CL.0047","CL.0099"],"distractors":[],"why":"x²/25=36; isolate squared term then take root"}
+{"id":"a67a439d","sub_skills":["NLE.5"],"clusters":["CL.0094","CL.0095"],"distractors":[],"why":"x+7=10 and (x+7)²=y; two equations, substitute expression"}
+{"id":"b76a2815","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express W from P=W/t; isolate variable"}
+{"id":"7399c3b0","sub_skills":["NLE.2"],"clusters":["CL.0047","CL.0099"],"distractors":[],"why":"k²-53=91; isolate squared term then take root"}
+{"id":"7a8cb72a","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0075"],"distractors":[],"why":"express m from 7m=2(n+p); isolate and simplify"}
+{"id":"d0e8e8f5","sub_skills":["NLE.5"],"clusters":["CL.0009"],"distractors":[],"why":"system parabola + line; graph intersection"}
+{"id":"3cce51ea","sub_skills":["NLE.3"],"clusters":["CL.0090","CL.0047"],"distractors":[],"why":"|p|+61=65; isolate absolute value, split"}
+{"id":"568aaf27","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"x+y=12 and y=x²; substitute and factor trinomial"}
+{"id":"b8c4a1cd","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0075"],"distractors":[],"why":"express j from 8j=k+15m; isolate and reduce"}
+{"id":"3f8d5876","sub_skills":["NLE.5"],"clusters":["CL.0009"],"distractors":[],"why":"system curve + line; graph intersection"}
+{"id":"5639dd1a","sub_skills":["NLE.2"],"clusters":["CL.0099"],"distractors":[],"why":"x²=(22)(22); take square root"}
+{"id":"c1964c11","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express p from p+34=q+r; isolate"}
+{"id":"0bebc08c","sub_skills":["NLE.5"],"clusters":["CL.0094"],"distractors":[],"why":"x=3 and y=(15-x)²; substitute and compute"}
+{"id":"7cb3a8ee","sub_skills":["NLE.3"],"clusters":["CL.0090","CL.0047"],"distractors":[],"why":"|x-5|=10; absolute value, split into two cases"}
+{"id":"88867d37","sub_skills":["NLE.2"],"clusters":["CL.0122"],"distractors":[],"why":"(x+2)(x-5)(x+9)=0; zero product property"}
+{"id":"13e5a5d5","sub_skills":["NLE.3"],"clusters":["CL.0047"],"distractors":[],"why":"5|x|=45; isolate absolute value"}
+{"id":"70f98ab4","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express q from q-29r=s; isolate"}
+{"id":"3de7a7d7","sub_skills":["NLE.2"],"clusters":["CL.0017","CL.0099"],"distractors":[],"why":"2x²-4=x²; combine like terms then take root"}
+{"id":"4ca30186","sub_skills":["NLE.5"],"clusters":["CL.0009"],"distractors":[],"why":"system curve + line; graph intersection"}
+{"id":"4e18fc5d","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express w from v=-w/(150x); isolate"}
+{"id":"a5663025","sub_skills":["NLE.4"],"clusters":["CL.0009"],"distractors":[],"why":"graph shown, asks how many solutions; solution-count question"}
+{"id":"d0a7871e","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"y=x+1 and y=x²+x; substitute and factor"}
+{"id":"7f81d0c3","sub_skills":["NLE.2"],"clusters":["CL.0007"],"distractors":[],"why":"x²-x-1=0; quadratic formula"}
+{"id":"b4acba95","sub_skills":["NLE.4"],"clusters":["CL.0037","CL.0025"],"distractors":[],"why":"how many distinct positive solutions; solution count question"}
+{"id":"ff2c1431","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0034"],"distractors":[],"why":"express n from 7m=5(n+p); distribute and isolate"}
+{"id":"6bdcac03","sub_skills":["NLE.4"],"clusters":["CL.0168"],"distractors":[],"why":"x²=-841; square cannot equal negative, zero solutions"}
+{"id":"3d7d7534","sub_skills":["NLE.2"],"clusters":["CL.0164","CL.0122"],"distractors":[],"why":"(d-30)(d+30)-7=-7; difference of squares, zero product"}
+{"id":"911383f2","sub_skills":["NLE.2"],"clusters":["CL.0122"],"distractors":[],"why":"(x-4)(x+2)(x-1)=0; zero product property, product of solutions"}
+{"id":"b80d10d7","sub_skills":["NLE.3"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"rational equation with (x+5) denominator; clear fraction and solve"}
+{"id":"fcdf87b7","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"y=x²-4x+4 and y=4-x; substitute and factor"}
+{"id":"3148fe3e","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"x²+y+10=10 and 8x+16-y=0; substitute and factor"}
+{"id":"652054da","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express p from s=(3/2)p; isolate"}
+{"id":"0380bbdc","sub_skills":["NLE.3"],"clusters":["CL.0091","CL.0047"],"distractors":[],"why":"4√(2x)=16; isolate radical, square both sides"}
+{"id":"95ed0b69","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express 4j+9 from p=k/(4j+9); isolate expression"}
+{"id":"6e02cd78","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"y=(x-1)² and y=2x-3; substitute and factor"}
+{"id":"11ccf3e1","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express k from 14j+5k=m; isolate"}
+{"id":"13e57f0a","sub_skills":["NLE.2"],"clusters":["CL.0007"],"distractors":[],"why":"-4x²-7x=-36; quadratic formula"}
+{"id":"802549ac","sub_skills":["NLE.2"],"clusters":["CL.0034","CL.0017","CL.0047"],"distractors":[],"why":"expand both sides, combine like terms, solve quadratic"}
+{"id":"75a32330","sub_skills":["NLE.5"],"clusters":["CL.0009","CL.0133"],"distractors":[],"why":"which graph for y=x²+1.7 and y=1.7-x; graph interpretation, count solutions"}
+{"id":"a4f61d75","sub_skills":["NLE.2"],"clusters":["CL.0120"],"distractors":[],"why":"x²-ax+12=0 with two integer solutions; sum/product of roots"}
+{"id":"062f86db","sub_skills":["NLE.2"],"clusters":["CL.0037","CL.0007"],"distractors":[],"why":"5x²-37x-24=0; factor or quadratic formula"}
+{"id":"717a1964","sub_skills":["NLE.2"],"clusters":["CL.0037"],"distractors":[],"why":"z²+10z-24=0; factor trinomial"}
+{"id":"fad2f98c","sub_skills":["NLE.2"],"clusters":["CL.0122"],"distractors":[],"why":"3x(x-4)(x+5)=0; zero product property"}
+{"id":"a267bd29","sub_skills":["NLE.2"],"clusters":["CL.0007"],"distractors":[],"why":"w²+12w-40=0; quadratic formula"}
+{"id":"630897df","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express T from v=331.3+0.606T; isolate"}
+{"id":"29ed5d39","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0016"],"distractors":[],"why":"express n from p=20+16/n; clear fraction and isolate"}
+{"id":"895628b5","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0034","CL.0037"],"distractors":[],"why":"y=(x-2)(x+4) and y=6x-12; substitute, expand, factor"}
+{"id":"8f65cddc","sub_skills":["NLE.1"],"clusters":["CL.0233","CL.0047"],"distractors":[],"why":"1/(7b)=11x/y; cross-multiply to express variable"}
+{"id":"2926cc6d","sub_skills":["NLE.2"],"clusters":["CL.0122"],"distractors":[],"why":"(5x+4)(2x-5)=0; zero product property"}
+{"id":"5ae4803e","sub_skills":["NLE.3"],"clusters":["CL.0008","CL.0047"],"distractors":[],"why":"(x+9)(x-9)/(x+9)=7; cancel common factor, variable in denominator"}
+{"id":"c77ef2fb","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0016"],"distractors":[],"why":"express H from V_B=V_P/(1-H); clear fraction and isolate"}
+{"id":"5ae186b4","sub_skills":["NLE.3"],"clusters":["CL.0047"],"distractors":[],"why":"-54/w=6; variable in denominator, solve"}
+{"id":"364a2d25","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"x+y=17 and xy=72; substitute and factor"}
+{"id":"a1262cdb","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0189"],"distractors":[],"why":"express c-b from 12t+b=c; target expression without full solve"}
+{"id":"0980fcdd","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"x²=6x+y and y=-6x+36; substitute and factor"}
+{"id":"87a3de81","sub_skills":["NLE.2"],"clusters":["CL.0037"],"distractors":[],"why":"x²+x-12=0; factor trinomial"}
+{"id":"4b6f0a3f","sub_skills":["NLE.2"],"clusters":["CL.0120"],"distractors":[],"why":"x²-5x-24=0; sum of solutions via Vieta's"}
+{"id":"2683b5db","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0034"],"distractors":[],"why":"express P from T=0.01(P-40000); distribute and isolate"}
+{"id":"40f2e601","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0034"],"distractors":[],"why":"express C from P=N(19-C); distribute and isolate"}
+{"id":"2f958af9","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express T from v²=LT/m; isolate"}
+{"id":"876a731c","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"y=x² and 2y+6=2(x+3); substitute and factor"}
+{"id":"bef4b1c6","sub_skills":["NLE.3"],"clusters":["CL.0016","CL.0037"],"distractors":[],"why":"55/(x+6)=x; clear fraction, factor resulting quadratic"}
+{"id":"928498f3","sub_skills":["NLE.2"],"clusters":["CL.0007"],"distractors":[],"why":"6x²+5x-7=0; quadratic formula"}
+{"id":"f76c1858","sub_skills":["NLE.2"],"clusters":["CL.0007"],"distractors":[],"why":"7x²-20x-32=0; quadratic formula"}
+{"id":"e8779461","sub_skills":["NLE.5"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"y=x²+14x+48 and x+8=11; solve for x, substitute into quadratic"}
+{"id":"09e5e4d3","sub_skills":["NLE.3"],"clusters":["CL.0016","CL.0189"],"distractors":[],"why":"42/x=7x; variable in denominator, multiply through, read target expression"}
+{"id":"6acdcece","sub_skills":["NLE.1"],"clusters":["CL.0047"],"distractors":[],"why":"express x from b-72=x/y; isolate"}
+{"id":"30a07668","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"y=4x and y=x²-12; substitute and factor"}
+{"id":"2d2ab76b","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0099"],"distractors":[],"why":"y=x²-1 and y=3; substitute and take root"}
+{"id":"58b109d4","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"x²+y+7=7 and 20x+100-y=0; substitute and factor"}
+{"id":"3a01a5ee","sub_skills":["NLE.3"],"clusters":["CL.0090","CL.0047"],"distractors":[],"why":"|-5x+13|=73; split absolute value into two cases"}
+{"id":"a54753ca","sub_skills":["NLE.4"],"clusters":["CL.0025","CL.0020"],"distractors":[],"why":"y=-x²+9x-100 meets y=c at one point; vertex/discriminant"}
+{"id":"c8e9a011","sub_skills":["NLE.1"],"clusters":["CL.0040","CL.0016"],"distractors":[],"why":"12/n-2/t=-2/w; express n, common denominator and clear fractions"}
+{"id":"9cb9beec","sub_skills":["NLE.4"],"clusters":["CL.0025","CL.0133"],"distractors":[],"why":"exactly one solution; discriminant equals zero"}
+{"id":"6011a3f8","sub_skills":["NLE.4"],"clusters":["CL.0025"],"distractors":[],"why":"more than one real solution; discriminant positive"}
+{"id":"fc3dfa26","sub_skills":["NLE.3"],"clusters":["CL.0040","CL.0016","CL.0077"],"distractors":[],"why":"rational with x²-9 denominator; common denom, check extraneous"}
+{"id":"2c5c22d0","sub_skills":["NLE.4"],"clusters":["CL.0095","CL.0025"],"distractors":[],"why":"how many solutions; substitute system then discriminant"}
+{"id":"ff2e5c76","sub_skills":["NLE.2"],"clusters":["CL.0120"],"distractors":[],"why":"x²-40x-10=0; sum of solutions via Vieta's"}
+{"id":"5edc8c98","sub_skills":["NLE.2"],"clusters":["CL.0120","CL.0053"],"distractors":[],"why":"64x²-(16a+4b)x+ab=0; Vieta's with matched coefficients"}
+{"id":"1697ffcf","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"y=3x²-14x and y=x; substitute and solve"}
+{"id":"77c0cced","sub_skills":["NLE.4"],"clusters":["CL.0095","CL.0025"],"distractors":[],"why":"one intersection; substitute system then discriminant zero"}
+{"id":"fbb96bb1","sub_skills":["NLE.4"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"no solution; expand and match coefficients for contradiction"}
+{"id":"5910bfff","sub_skills":["NLE.1"],"clusters":["CL.0047","CL.0034"],"distractors":[],"why":"express H from D=T-9/25(100-H); distribute and isolate"}
+{"id":"133f3e41","sub_skills":["NLE.1"],"clusters":["CL.0040","CL.0016"],"distractors":[],"why":"express q from 20/p=20/q-20/r-20/s; common denominator, clear fractions"}
+{"id":"4fb8a648","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"y=x+9 and y=x²+16x+63; substitute and factor"}
+{"id":"30281058","sub_skills":["NLE.5"],"clusters":["CL.0094"],"distractors":[],"why":"y=x²-9; substitute points to find slope between intersections"}
+{"id":"c9417793","sub_skills":["NLE.3"],"clusters":["CL.0090","CL.0047"],"distractors":[],"why":"|x-9|+45=63; isolate abs value, split, sum of solutions"}
+{"id":"6aefc52b","sub_skills":["NLE.4"],"clusters":["CL.0025","CL.0133"],"distractors":[],"why":"no real solutions; discriminant negative"}
+{"id":"158591f0","sub_skills":["NLE.2"],"clusters":["CL.0034","CL.0017","CL.0120"],"distractors":[],"why":"x(x+1)-56=4x(x-7); expand, combine, sum of solutions"}
+{"id":"7dbd46d9","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"8x+y=-11 and 2x²=y+341; substitute and factor"}
+{"id":"104bff62","sub_skills":["NLE.3"],"clusters":["CL.0088","CL.0091","CL.0047"],"distractors":[],"why":"x²/√(x²-c²); simplify radical, square both sides, solve"}
+{"id":"1ce9ffcd","sub_skills":["NLE.4"],"clusters":["CL.0025","CL.0133"],"distractors":[],"why":"-9x²+30x+c=0; exactly one solution, discriminant zero"}
+{"id":"b03adde3","sub_skills":["NLE.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"t in terms of u from u-3=6/(t-2); clear fraction, isolate"}
+{"id":"e9349667","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0120"],"distractors":[],"why":"y=x²+2x+1 and x+y+1=0; substitute, find y₁+y₂"}
+{"id":"2cd6b22d","sub_skills":["NLE.4"],"clusters":["CL.0025"],"distractors":[],"why":"5x²+10x+16=0; how many solutions, discriminant"}
+{"id":"4dc5c6f9","sub_skills":["NLE.4"],"clusters":["CL.0168"],"distractors":[],"why":"y=18 and y=-3(x-18)²+15; square cannot equal negative"}
+{"id":"71014fb1","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0120"],"distractors":[],"why":"y=x²+7x-11 and y=x+4; substitute, find y₁·y₂"}
+{"id":"3d12b1e0","sub_skills":["NLE.3"],"clusters":["CL.0091","CL.0090","CL.0077"],"distractors":[],"why":"√((x-2)²)=√(3x+34); abs value from squared radical, check extraneous"}
+{"id":"ebb717ab","sub_skills":["NLE.4"],"clusters":["CL.0094","CL.0101"],"distractors":[],"why":"y=(x-1)(x+1)(x+3) and y=a; three solutions condition, test choices"}
+{"id":"97e50fa2","sub_skills":["NLE.2"],"clusters":["CL.0120"],"distractors":[],"why":"f(x)=(x-10)(x+13); minimum at midpoint of roots"}
+{"id":"66bce0c1","sub_skills":["NLE.2"],"clusters":["CL.0122","CL.0101"],"distractors":[],"why":"p(x)=(x-a)(x-b)(x+c); identify graph from roots, test choices"}
+{"id":"17d0e87d","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0037"],"distractors":[],"why":"y=x²+3x-4 and y=7-x; substitute and factor"}
+{"id":"88a0c425","sub_skills":["NLE.2"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"2x(3x+5)+3(3x+5)=ax²+bx+c; expand and match coefficients"}
+{"id":"7028c74f","sub_skills":["NLE.2"],"clusters":["CL.0122"],"distractors":[],"why":"(14m-7)(2m-4)=0; zero product property"}
+{"id":"03ff48d2","sub_skills":["NLE.4"],"clusters":["CL.0095","CL.0122"],"distractors":[],"why":"y=2x+5 and y=(2x+5)(x-3); how many solutions, factor"}
+{"id":"e11294f9","sub_skills":["NLE.3"],"clusters":["CL.0091","CL.0037","CL.0077"],"distractors":[],"why":"√(x+14)=x-22; square both sides, factor, check extraneous"}
+{"id":"7bd10ef3","sub_skills":["NLE.1"],"clusters":["CL.0039","CL.0047"],"distractors":[],"why":"p=r/t+r/s; factor out r, isolate to express in terms of"}
+{"id":"74473be4","sub_skills":["NLE.5"],"clusters":["CL.0095","CL.0099"],"distractors":[],"why":"y=76 and y=x²-5; substitute and take root"}
+{"id":"2cb17792","sub_skills":["NLE.4"],"clusters":["CL.0025","CL.0133"],"distractors":[],"why":"-9x²+30x+c=0; exactly one solution, discriminant zero"}
+{"id":"c303ad23","sub_skills":["NLE.2"],"clusters":["CL.0094","CL.0120"],"distractors":[],"why":"y=x²+bx+c through (3,0),(-1,0); substitute points, sum/product of roots"}
+{"id":"1fe32f7d","sub_skills":["NLE.1"],"clusters":["CL.0040","CL.0016"],"distractors":[],"why":"1/x+1/y=1/k; common denominator to express k in terms of x,y"}
+{"id":"2c05d312","sub_skills":["NLE.2"],"clusters":["CL.0047","CL.0099"],"distractors":[],"why":"(x-3)²+12=76; isolate squared term, take root"}
+{"id":"d0a53ef5","sub_skills":["NLE.1"],"clusters":["CL.0016","CL.0047"],"distractors":[],"why":"R=F/(N+F); clear fraction, express F in terms of R,N"}
+{"id":"722de804","sub_skills":["NLE.4"],"clusters":["CL.0095","CL.0025"],"distractors":[],"why":"y=x²+x-2 and y=-x+1; how many solutions, discriminant"}
+{"id":"f5aa5040","sub_skills":["NLE.2"],"clusters":["CL.0094","CL.0122"],"distractors":[],"why":"f(x)=3(x+p)(x-p); root at x=-7, substitute to find p"}
+{"id":"6ce95fc8","sub_skills":["NLE.4"],"clusters":["CL.0025"],"distractors":[],"why":"9x²+9ax+16=0; no real solutions, discriminant inequality"}
+{"id":"fada6b03","sub_skills":["NLE.2"],"clusters":["CL.0025"],"distractors":[],"why":"y=2(x-a)²+b; vertex form, discriminant determines intercept count"}
+{"id":"f2f3fa00","sub_skills":["NLE.4"],"clusters":["CL.0025"],"distractors":[],"why":"kx²+6x+k=0; no real solutions, discriminant inequality"}
