@@ -27,6 +27,7 @@ import {
 import { resolveOnboardingErrorMessage } from "@/lib/api-error";
 import {
   RETURN_PATH_PARAM,
+  isJoinReturnPath,
   postAuthDestination,
   returnPathFromSearch,
   returnPathPrefersGuardian,
@@ -115,13 +116,20 @@ function resolvePostCompletionPath(
   role: ProfileRole | undefined,
   guardianLinkRequired: boolean,
 ): string {
-  if (role !== "guardian" && role !== "admin" && guardianLinkRequired) {
-    return "/guardian-required";
-  }
   const next =
     typeof window !== "undefined"
       ? returnPathFromSearch(window.location.search)
       : null;
+  // A guardian's invite (/join/<token>) is how an under-13 student gets linked, so it wins over
+  // the linking page (owner ruling 2026-11-21, 4; SCL-281).
+  if (
+    role !== "guardian" &&
+    role !== "admin" &&
+    guardianLinkRequired &&
+    !isJoinReturnPath(next)
+  ) {
+    return "/guardian-required";
+  }
   return postAuthDestination({
     role: role ?? "student",
     needsOnboarding: false,

@@ -24,6 +24,7 @@ This document records, for those routes:
 |-------|---------------|-------------|-----------|-------------------------|--------|
 | `/` | public | free | HomePage | N/A (static) | ACTIVE |
 | `/login` | public | free | Login | `/api/auth/signin`, `/api/auth/signup` | ACTIVE |
+| `/join/:token` | public | free | JoinPage (a teen claims a guardian's invite; SCL-281) | `/api/join/lookup`, `/api/join/claim` | ACTIVE |
 | `/signup` | public | free | Redirect→`/login?mode=signup` (the Sign Up tab; owner brief 2026-10-10) | N/A | ACTIVE |
 | `/update-password` | public | free | UpdatePassword | `/api/auth/update-password` | ACTIVE |
 | `/account/recover` | public | free | AccountRecover | `/api/account/recover-deletion` | ACTIVE |
@@ -128,6 +129,7 @@ This document records, for those routes:
 ### Active + Non-indexable (intentional)
 - `/start` (prerendered, `noindex`, not in the sitemap: the social landing page, owner brief 2026-10-28)
 - `/login`
+- `/join/:token` (a guardian's invite; noindex, never in the sitemap)
 - `/signup`
 - `/privacy` (301 to `/legal/privacy-policy`)
 - `/terms` (301 to `/legal/student-terms`)

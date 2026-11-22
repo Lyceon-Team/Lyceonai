@@ -1,0 +1,112 @@
+/**
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 2, 5; SCL-281] | @implemented [2026-11-22]
+ *
+ * plain English: the guardian's open invites, and the four things the invite card does with
+ * them: start one (email it, or just get the link), resend it, copy a new link, cancel it.
+ * Every response is parsed with the shared schema. After any change the list is refetched; the
+ * server is the only source of what the card shows. A link is returned once, by the call that
+ * made it; the server keeps only its hash.
+ */
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { csrfFetch } from "@/lib/csrf";
+import { parseApiErrorFromResponse } from "@/lib/api-error";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthContext";
+import {
+  guardianInviteLinkResponseSchema,
+  guardianInvitesResponseSchema,
+  type GuardianInviteLinkResponse,
+  type GuardianInviteView,
+} from "@lyceon/shared/guardian-invite-schema";
+
+export const GUARDIAN_INVITES_QUERY_KEY = ["guardian-invites"] as const;
+
+type InviteLink = GuardianInviteLinkResponse["data"];
+
+async function readInvites(): Promise<GuardianInviteView[]> {
+  const res = await csrfFetch("/api/guardian/invites", {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw await parseApiErrorFromResponse(res, "Could not load your invites");
+  }
+  return guardianInvitesResponseSchema.parse(await res.json()).data.invites;
+}
+
+export function useGuardianInvites() {
+  const { user } = useSupabaseAuth();
+  const guardianId = user?.id ?? null;
+  return useQuery({
+    queryKey: [...GUARDIAN_INVITES_QUERY_KEY, guardianId],
+    queryFn: readInvites,
+    enabled: guardianId !== null,
+  });
+}
+
+async function postForLink(
+  path: string,
+  body: Record<string, unknown>,
+  fallback: string,
+): Promise<InviteLink> {
+  const res = await csrfFetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await parseApiErrorFromResponse(res, fallback);
+  return guardianInviteLinkResponseSchema.parse(await res.json()).data;
+}
+
+/** Start an invite. With an email it is sent; without, the link is returned to copy. */
+export function startGuardianInvite(email: string | null): Promise<InviteLink> {
+  return postForLink(
+    "/api/guardian/invites",
+    email === null
+      ? { acceptParentGuardianTerms: true }
+      : { email, acceptParentGuardianTerms: true },
+    "Could not start the invite",
+  );
+}
+
+/** Resend: a new link, emailed to this address. The earlier link stops working. */
+export function resendGuardianInvite(
+  inviteId: string,
+  email: string,
+): Promise<InviteLink> {
+  return postForLink(
+    `/api/guardian/invites/${encodeURIComponent(inviteId)}/resend`,
+    { email },
+    "Could not resend the invite",
+  );
+}
+
+/** Copy link: a new link, nothing sent. The earlier link stops working. */
+export function newGuardianInviteLink(inviteId: string): Promise<InviteLink> {
+  return postForLink(
+    `/api/guardian/invites/${encodeURIComponent(inviteId)}/link`,
+    {},
+    "Could not make a new link",
+  );
+}
+
+export async function cancelGuardianInvite(inviteId: string): Promise<void> {
+  const res = await csrfFetch(
+    `/api/guardian/invites/${encodeURIComponent(inviteId)}`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!res.ok) {
+    throw await parseApiErrorFromResponse(res, "Could not cancel the invite");
+  }
+}
+
+/** A mutation that refetches the invite list when it settles. */
+export function useGuardianInviteMutation<TArgs, TResult>(
+  fn: (args: TArgs) => Promise<TResult>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: GUARDIAN_INVITES_QUERY_KEY }),
+  });
+}

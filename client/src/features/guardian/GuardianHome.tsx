@@ -28,7 +28,23 @@ import { guardianPaths } from "./paths";
 import { AddStudentButton, AddStudentDialog } from "./AddStudentDialog";
 import { GuardianTemplatePreview } from "./GuardianTemplatePreview";
 import { CheckoutReturnPoller } from "@/components/guardian/CheckoutReturnPoller";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PARENT_CALL_LABEL,
+  PARENT_CALL_URL,
+} from "@lyceon/shared/external-links";
+import { GuardianInviteCard } from "./GuardianInviteCard";
 
+/**
+ * @spec [Guardian_Closure_Plan G4-01; owner rulings 2026-11-21 (counsel-approved) 1, 2, 8;
+ *        SCL-281; DESIGN.md §5 (one filled primary action)] | @implemented [2026-09-30;
+ *        invite card and call link 2026-11-22]
+ *
+ * plain English: a guardian with no linked student. The invite card is the way in: email the
+ * teen a link (its **Send invite** is the one filled action on the screen), or copy one.
+ * Entering a student's link code stays, as an outline button. A plain link (new tab, no embed)
+ * offers a 15-minute call first.
+ */
 export function GuardianNoStudents({
   onAdd,
 }: {
@@ -41,17 +57,31 @@ export function GuardianNoStudents({
     >
       <h1 className="text-2xl font-semibold">Add your first student</h1>
       <p className="mx-auto max-w-xl text-base text-muted-foreground">
-        Ask your student for the 6-character link code on their Profile page,
-        under Settings. Once linked, you&rsquo;ll see their progress, study
-        calendar and test results here.
+        Invite your teen to join, or enter the 6-character link code from their
+        Profile page, under Settings. Once linked, you&rsquo;ll see their
+        progress, study calendar and test results here.
       </p>
+      <GuardianInviteCard />
       <Button
+        variant="outline"
         className="mx-auto min-h-[48px] px-6 text-base"
         onClick={onAdd}
         data-testid="guardian-no-students-add"
       >
         Enter a link code
       </Button>
+      <p className="m-0 text-base">
+        Want to talk it through first?{" "}
+        <a
+          href={PARENT_CALL_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+          data-testid="guardian-book-call"
+        >
+          {PARENT_CALL_LABEL} (15 minutes)
+        </a>
+      </p>
       {/* The 2026-09-03 preview of what linking unlocks — structural, no figures (owner
           decision 2026-10-01: it lives in the no-students state). */}
       <div className="mt-8">
@@ -88,11 +118,16 @@ function GuardianHomeBody(): JSX.Element {
         initialCode={prefill}
       />
       {isLoading ? (
+        // DESIGN.md §5: a loading state is a skeleton, never bare text.
         <div
-          className="py-16 text-center text-base"
+          role="status"
+          aria-label="Loading your students"
+          className="mx-auto flex max-w-3xl flex-col items-center gap-4 px-4 py-16"
           data-testid="guardian-loading"
         >
-          Loading your students…
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-5 w-full max-w-xl" />
+          <Skeleton className="h-40 w-full max-w-xl" />
         </div>
       ) : (
         <GuardianNoStudents onAdd={() => setAdding(true)} />

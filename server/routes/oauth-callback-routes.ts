@@ -35,6 +35,7 @@ import { resolveLegalVersion } from "../lib/legal-registry.js";
 import { isNewlyCreatedAccount } from "../lib/new-auth-account.js";
 import type { ResolvedLegalVersion } from "../lib/legal-registry-types.js";
 import {
+  isJoinReturnPath,
   postAuthDestination,
   sanitizeReturnPath,
 } from "../../packages/shared/src/return-path";
@@ -455,8 +456,12 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       // G2-04 (merged from `main`): a complete under-13 student with no active guardian link
       // goes to /guardian-required ahead of any `next` — the server refuses every learning
       // request until a guardian connects. Onboarding still comes first.
+      // A guardian's invite (/join/<token>) is how an under-13 student gets linked, so it
+      // wins over the linking page (owner ruling 2026-11-21, 4; SCL-281).
       redirectPath =
-        !profileNeedsCompletion && needsGuardianLink
+        !profileNeedsCompletion &&
+        needsGuardianLink &&
+        !isJoinReturnPath(safeNext)
           ? "/guardian-required"
           : postAuthDestination({
               role: profile.role,

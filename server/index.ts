@@ -51,6 +51,8 @@ import {
 } from "./middleware/csrf-double-submit";
 import { getScoreEstimate, getRecencyKpis } from "./routes/legacy/progress";
 import guardianRoutes from "./routes/guardian-routes";
+import guardianInviteRoutes from "./routes/guardian-invite-routes";
+import joinRoutes from "./routes/join-routes";
 import studentResourceRoutes from "./routes/student-resources";
 import { calendarRouter } from "./routes/calendar-routes";
 import { satDateRouter } from "./routes/sat-date-routes";
@@ -558,6 +560,20 @@ app.get(
   requireSupabaseAdmin,
   getQuestionStats,
 );
+
+// Guardian → teen invites (owner rulings 2026-11-21; SCL-281): the caller's own invites.
+// Mounted BEFORE /api/guardian so these paths never fall through that router.
+app.use(
+  "/api/guardian/invites",
+  requireSupabaseAuth,
+  doubleCsrfProtection,
+  guardianInviteRoutes,
+);
+
+// A teen looks up and claims a guardian's invite. /lookup is public (IP-limited, read-only);
+// /claim carries its own auth, CSRF, student-role and profile-complete gates. The token is in
+// the POST body, never the path (the request logger writes req.path).
+app.use("/api/join", joinRoutes);
 
 // Guardian Routes (requires Supabase auth + guardian role)
 app.use(

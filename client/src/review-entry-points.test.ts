@@ -163,13 +163,39 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
     expect(reviewRouteBlock).toContain('allow={["student", "admin"]}');
   });
 
+  /**
+   * The ONE allowlisted return path that is not a RequireRole route (owner rulings 2026-11-21;
+   * SCL-281): `/join/:token` is public on purpose. A signed-out teen must see the invite and
+   * choose sign-up, and an under-13 student must reach it before the guardian-required redirect.
+   * The page shows the student-only state to anyone else and the server refuses a non-student
+   * claim (`server/routes/join-routes.ts`). Named here, mounted path and all, so a second
+   * exception cannot slip in unseen.
+   */
+  const PUBLIC_RETURN_PATHS: Readonly<Record<string, string>> = {
+    "/join": 'path="/join/:token"',
+  };
+
+  it("the public return paths are exactly the named ones, and each is mounted public", () => {
+    const app = read("client/src/App.tsx");
+    for (const [entry, mount] of Object.entries(PUBLIC_RETURN_PATHS)) {
+      expect(RETURN_PATH_ROUTE_ROLES[entry], entry).toEqual(["student"]);
+      const at = app.indexOf(mount);
+      expect(at, `${entry} is not mounted at ${mount}`).toBeGreaterThan(-1);
+      // Public: no RequireRole between the path and the end of its <Route …> element.
+      const element = app.slice(at, app.indexOf("/>", at));
+      expect(element).not.toContain("RequireRole");
+    }
+  });
+
   it("every allowlist entry is a route in App.tsx (the file's own rule)", () => {
     const app = read("client/src/App.tsx");
     // G4-01: the guardian routes are mounted in App.tsx from one table, GUARDIAN_ROUTES.
     expect(app).toContain("GUARDIAN_ROUTES");
     const guardianRoutes = read("client/src/features/guardian/routes.tsx");
     for (const entry of RETURN_PATH_ALLOWLIST) {
+      const publicMount = PUBLIC_RETURN_PATHS[entry];
       const mounted =
+        (publicMount !== undefined && app.includes(publicMount)) ||
         app.includes(`path="${entry}"`) ||
         guardianRoutes.includes(`path: "${entry}"`);
       expect(mounted, `${entry} is allowlisted but not mounted`).toBe(true);
@@ -197,6 +223,8 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
     const guardianRoutes = read("client/src/features/guardian/routes.tsx");
     const guardianMount = app.indexOf("GUARDIAN_ROUTES.map(");
     for (const entry of RETURN_PATH_ALLOWLIST) {
+      // A named public return path has no RequireRole; its own test above checks it.
+      if (PUBLIC_RETURN_PATHS[entry] !== undefined) continue;
       if (
         !app.includes(`path="${entry}"`) &&
         guardianRoutes.includes(`path: "${entry}"`)
