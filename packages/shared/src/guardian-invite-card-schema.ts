@@ -30,9 +30,6 @@ export const guardianInviteCardRequestSchema = z
     acceptBillingTerms: z.literal(true),
   })
   .strict();
-type GuardianInviteCardRequest = z.infer<
-  typeof guardianInviteCardRequestSchema
->;
 
 /** Where to send the guardian: Stripe's hosted card page. */
 export const guardianInviteCardResponseSchema = z
