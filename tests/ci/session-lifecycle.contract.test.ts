@@ -339,9 +339,10 @@ describe("Session Lifecycle — Turn-level idempotency (§2)", () => {
       path.resolve(__dirname, "../../server/routes/tutor-runtime.ts"),
       "utf-8",
     );
-    // The replay path returns 200 with the existing response and logs
-    // modelName: "idempotency_replay" so it's distinguishable from new turns.
-    expect(routeSource).toContain('modelName: "idempotency_replay"');
+    // The replay path returns 200 with the existing response and logs the outcome
+    // "idempotency_replay" (its own column since W4-12, 2026-11-22) so it's distinguishable from
+    // new turns.
+    expect(routeSource).toContain('outcome: "idempotency_replay"');
     expect(routeSource).toContain("cacheHit: true");
   });
 });

@@ -13,6 +13,7 @@
  *  - `tutor_instruction_assignments` is written exactly as before: prompt_version null
  *    (ruling 3 — it stays as written).
  */
+import { TUTOR_DEFAULT_PROMPT_VERSION } from "../../shared/tutor-orchestrator-wire";
 import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -207,11 +208,13 @@ describe("tutor_turn_metrics attribution", () => {
     // Nothing from the conversation is stored in the metrics row.
     expect(JSON.stringify(row)).not.toContain(REPLY);
 
-    // Ruling 3: the instruction assignment is written as before — prompt_version null.
+    // W4-13 (closed 2026-11-22, owner brief "attribution"; was ruling 3's null): the assignment
+    // names the BFF's prompt version, the same one the worker ran and the metrics row records.
     expect(persistInstructionAssignment).toHaveBeenCalledTimes(1);
     expect(persistInstructionAssignment.mock.calls[0]?.[0]).toMatchObject({
-      promptVersion: null,
+      promptVersion: TUTOR_DEFAULT_PROMPT_VERSION,
     });
+    expect(row.prompt_version).toBe(TUTOR_DEFAULT_PROMPT_VERSION);
   });
 
   it("no cached tokens reported: cache_hit false", async () => {
@@ -245,7 +248,9 @@ describe("tutor_turn_metrics attribution", () => {
     const rows = metricsRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      model_name: "error:orchestration_failed",
+      // W4-12 (2026-11-22): the outcome is its own column; no model answered.
+      model_name: null,
+      turn_outcome: "error:orchestration_failed",
       tokens_in: 1500,
       tokens_out: null,
       thinking_tokens: 300,

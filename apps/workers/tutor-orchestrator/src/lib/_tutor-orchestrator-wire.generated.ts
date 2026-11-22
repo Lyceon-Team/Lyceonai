@@ -88,6 +88,21 @@ export const chatCompactionContentSchema = z.object({
 
 export type ChatCompactionContent = z.infer<typeof chatCompactionContentSchema>;
 
+/**
+ * @spec [LISA closure plan W4-13 (owner ruling 3, 2026-10-27): the prompt version must be known to
+ *       the server at decision time; owner brief "attribution", Karl 2026-11-22] | @implemented
+ *       [2026-11-22]
+ * plain English: THE prompt version a new turn runs on, decided by the BFF and sent as
+ * `policy_assignment.prompt_version`, so the assignment row written before the model call, the
+ * conversation, and the worker's reported version all name the same artifact. The worker resolves
+ * it by exact version (every version stays registered). Changing the production prompt means
+ * changing this line (a BFF deploy), and the worker registry's own default must equal it
+ * (pinned by tests/ci/tutor-turn-attribution-path.route.contract.test.ts). A worker that does not
+ * have the version yet falls back to its default and reports that one, so the metrics row shows
+ * what actually ran.
+ */
+export const TUTOR_DEFAULT_PROMPT_VERSION = "lisa-default-v6";
+
 export const policyAssignmentSchema = z.object({
   policy_family: z.string(),
   policy_variant: z.string(),
