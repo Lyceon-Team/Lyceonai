@@ -1,0 +1,75 @@
+{"id": "771ee744", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 10% of 320 = 32; straightforward percent-of-quantity"}
+{"id": "eaab8bc1", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 80% of 300 = 240; direct percent-of-quantity"}
+{"id": "41b71b4e", "sub_skills": ["PCT.7", "PCT.3"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "20% greater than 60: multiply 60 by 1.20 = 72; apply percent increase"}
+{"id": "6e4a60dd", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 20% of $25 = $5; straightforward percent-of-quantity"}
+{"id": "048811bd", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 10% of 370 = 37; direct percent-of-quantity"}
+{"id": "34e18ce4", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 4% of 350 = 14; direct percent-of-quantity"}
+{"id": "1c2f50a6", "sub_skills": ["PCT.7", "PCT.3"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Reduce $50 by 20%: multiply by 0.80 = $40; apply percent decrease"}
+{"id": "a8fabad0", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Estimate 15% of $78.20 ≈ $11.73 ≈ $12; percent-of-quantity with approximation"}
+{"id": "194ae3b1", "sub_skills": ["PCT.7", "PCT.3"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "Increase 113,000 by 29%: multiply by 1.29 ≈ 145,770; apply percent increase"}
+{"id": "2d31caae", "sub_skills": ["PCT.15", "PCT.2"], "clusters": ["CL.0072", "CL.0068"], "distractors": [], "why": "Read 12 out of 200 from table, compute 12/200 = 6%; percent from data"}
+{"id": "77cf4fa6", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 10% of 170 = 17; direct percent-of-quantity"}
+{"id": "7ed0d098", "sub_skills": ["PCT.1"], "clusters": ["CL.0098", "CL.0032"], "distractors": [], "why": "Convert 8 hours to 480 minutes, then compute 15% of 480 = 72; percent-of-quantity with unit conversion"}
+{"id": "273b7f37", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 10% of 760 = 76; direct percent-of-quantity"}
+{"id": "9c44f828", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 50% of 840 = 420; direct percent-of-quantity"}
+{"id": "284303f1", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 6% of 250 = 15; direct percent-of-quantity"}
+{"id": "3a6ed720", "sub_skills": ["PCT.2"], "clusters": ["CL.0068"], "distractors": [], "why": "Find percent: 828,000/900,000 = 92%; compute unknown percent"}
+{"id": "28c6bd8c", "sub_skills": ["PCT.14", "PCT.1"], "clusters": ["CL.0098", "CL.0072", "CL.0004"], "distractors": [], "why": "Add 63% + 13% = 76% from table, then compute 76% of 1200 = 912; combine categories then percent-of-quantity"}
+{"id": "949cd96b", "sub_skills": ["PCT.10", "PCT.11"], "clusters": ["CL.0240"], "distractors": [], "why": "Express 89% of h as 0.89h; translate percent relationship into algebraic expression"}
+{"id": "8784bc84", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 20% of 440 = 88; direct percent-of-quantity"}
+{"id": "29c177e6", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 10% of 470 = 47; direct percent-of-quantity"}
+{"id": "bb7c8186", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 23% of 100 = 23; direct percent-of-quantity"}
+{"id": "93724cc6", "sub_skills": ["PCT.2"], "clusters": ["CL.0124", "CL.0047"], "distractors": [], "why": "21 is 21% of what number: 21/0.21 = 100; find unknown whole"}
+{"id": "191d167b", "sub_skills": ["PCT.7", "PCT.1"], "clusters": ["CL.0098", "CL.0240"], "distractors": [], "why": "147% of 200 = 294; apply percent multiplier to find enrollment"}
+{"id": "8705ecba", "sub_skills": ["PCT.7", "PCT.3"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "$20 plus 5% tax: 20 × 1.05 = $21; apply percent increase"}
+{"id": "e9fb7774", "sub_skills": ["PCT.2"], "clusters": ["CL.0068"], "distractors": [], "why": "75/300 = 25%; find unknown percent"}
+{"id": "bd90f87e", "sub_skills": ["PCT.8", "PCT.15"], "clusters": ["CL.0023", "CL.0072", "CL.0239"], "distractors": [], "why": "Read $1.00 and $1.60 from table, compute (1.60-1.00)/1.00 = 60%; percent change from data"}
+{"id": "d72a2b4d", "sub_skills": ["PCT.2"], "clusters": ["CL.0068", "CL.0146"], "distractors": [], "why": "April price is p% of March price: 17.36/15.50 × 100 = 112; find unknown percent with base identification"}
+{"id": "ad1d6adb", "sub_skills": ["PCT.8", "PCT.4"], "clusters": ["CL.0023", "CL.0239"], "distractors": [], "why": "Percent increase from 9 to 90: (90-9)/9 × 100 = 900%; compute percent change"}
+{"id": "566759ef", "sub_skills": ["PCT.12", "PCT.5"], "clusters": ["CL.0061", "CL.0106", "CL.0241"], "distractors": [], "why": "$800 depreciates 20% per year for 2 years: 800 × 0.8 × 0.8 = $512; successive percent changes"}
+{"id": "dccdb20c", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "Compute 6% of 450 = 27; direct percent-of-quantity"}
+{"id": "e9f4521a", "sub_skills": ["PCT.2"], "clusters": ["CL.0068"], "distractors": [], "why": "13 is p% of 25: p = 13/25 × 100 = 52; find unknown percent"}
+{"id": "7b731fc3", "sub_skills": ["PCT.7", "PCT.3"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "40% greater than 115: 115 × 1.40 = 161; apply percent increase"}
+{"id": "94c65646", "sub_skills": ["PCT.9", "PCT.2"], "clusters": ["CL.0124", "CL.0047"], "distractors": [], "why": "432 is 96% of what: 432/0.96 = 450; reverse percent to find whole"}
+{"id": "7f84b136", "sub_skills": ["PCT.2", "PCT.15"], "clusters": ["CL.0068", "CL.0072"], "distractors": [], "why": "Read 690 and 375 from table; 690/375 × 100 = 184; find unknown percent from data"}
+{"id": "c256b723", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "20% of $50 = $10; direct percent-of-quantity"}
+{"id": "b2f6f17d", "sub_skills": ["PCT.8", "PCT.4"], "clusters": ["CL.0023", "CL.0239"], "distractors": [], "why": "Percent increase from $75.74 to $79.86: (79.86-75.74)/75.74 ≈ 5.4%; compute percent change"}
+{"id": "96a45430", "sub_skills": ["PCT.9", "PCT.3"], "clusters": ["CL.0107", "CL.0242"], "distractors": [], "why": "n increased 6% = 318: n × 1.06 = 318, n = 300; undo percent increase by dividing"}
+{"id": "8cbf1415", "sub_skills": ["PCT.5", "PCT.13"], "clusters": ["CL.0061", "CL.0245"], "distractors": [], "why": "40% red, of those 30% striped: 0.40 × 0.30 = 12%; chained percents on nested subsets"}
+{"id": "ba61d95f", "sub_skills": ["PCT.11", "PCT.10"], "clusters": ["CL.0106", "CL.0240"], "distractors": [], "why": "7% increase means multiplier k = 1.07; interpret percent change as multiplier"}
+{"id": "709e04de", "sub_skills": ["PCT.11", "PCT.4"], "clusters": ["CL.0138", "CL.0240"], "distractors": [], "why": "z = 1.13 × 100; must distinguish '1.13 times' from '13% greater'; percent greater = 13%"}
+{"id": "8e2e424e", "sub_skills": ["PCT.10", "PCT.11"], "clusters": ["CL.0106", "CL.0240"], "distractors": [], "why": "k is 36% greater than 50 means k = 50 × 1.36, so r = 1.36; construct multiplier from percent increase"}
+{"id": "8a714fa1", "sub_skills": ["PCT.10", "PCT.11"], "clusters": ["CL.0106", "CL.0240"], "distractors": [], "why": "Increasing x by 9% gives 1.09x; express percent increase as algebraic multiplier"}
+{"id": "121dc44f", "sub_skills": ["PCT.11", "PCT.10"], "clusters": ["CL.0106", "CL.0240"], "distractors": [], "why": "7% increase means multiplier k = 1.07; interpret percent change as multiplier"}
+{"id": "7cab9fe1", "sub_skills": ["PCT.10", "PCT.11"], "clusters": ["CL.0106", "CL.0240"], "distractors": [], "why": "Increasing w by 43% gives 1.43w; express percent increase as algebraic multiplier"}
+{"id": "d693f563", "sub_skills": ["PCT.7", "PCT.3"], "clusters": ["CL.0106", "CL.0098"], "distractors": [], "why": "60% greater than 35: 35 × 1.60 = 56; apply percent increase"}
+{"id": "63573fea", "sub_skills": ["PCT.1"], "clusters": ["CL.0098", "CL.0060"], "distractors": [], "why": "15% of 1,300,000 = 195,000 per month × 6 = 1,170,000; percent-of-quantity then multiply by count"}
+{"id": "022e9894", "sub_skills": ["PCT.5", "PCT.13"], "clusters": ["CL.0061", "CL.0241"], "distractors": [], "why": "1250 × 0.72 = 900, then 900 × 0.36 = 324; chain successive percent applications"}
+{"id": "05195d8a", "sub_skills": ["PCT.2", "PCT.9"], "clusters": ["CL.0124", "CL.0047"], "distractors": [], "why": "80% = 88 items, so total = 88/0.80 = 110; find unknown whole from part and percent"}
+{"id": "ad911622", "sub_skills": ["PCT.5", "PCT.12"], "clusters": ["CL.0061", "CL.0106", "CL.0241"], "distractors": [], "why": "Increase 167% then decrease 16%: 2.67 × 0.84 = 2.2428; net = 124.28%; successive percent changes"}
+{"id": "25faa756", "sub_skills": ["PCT.13", "PCT.3"], "clusters": ["CL.0106", "CL.0243"], "distractors": [], "why": "a = 1.6b, c = 0.55a = 0.55 × 1.6b = 0.88b; chain percent relationships via substitution"}
+{"id": "34f8cd89", "sub_skills": ["PCT.5", "PCT.14"], "clusters": ["CL.0061", "CL.0245", "CL.0209"], "distractors": [], "why": "37% × 37% × 42% ≈ 5.75% are green rect metal; complement = 94.25%; nested chained percents with complement"}
+{"id": "8213b1b3", "sub_skills": ["PCT.1"], "clusters": ["CL.0098"], "distractors": [], "why": "0.001% of 140 = 0.0014 grams; direct percent-of-quantity with very small percent"}
+{"id": "040f2a84", "sub_skills": ["PCT.3", "PCT.9", "PCT.13"], "clusters": ["CL.0106", "CL.0107", "CL.0243"], "distractors": [], "why": "Sale = 80% off $11.70 = $2.34; cost = $2.34 / 1.30 = $1.80; chain percent decrease then reverse increase"}
+{"id": "a0b165f8", "sub_skills": ["PCT.9", "PCT.3"], "clusters": ["CL.0107", "CL.0242"], "distractors": [], "why": "99 after 12.5% increase: original = 99/1.125 = 88; undo percent increase to find original"}
+{"id": "3d73a58b", "sub_skills": ["PCT.1", "PCT.3", "PCT.13"], "clusters": ["CL.0098", "CL.0106", "CL.0243"], "distractors": [], "why": "Retail = 290% of $7 = $20.30; 80% off retail = $20.30 × 0.20 = $4.06; chained percent calculations"}
+{"id": "54cb53cf", "sub_skills": ["PCT.2", "PCT.11"], "clusters": ["CL.0068", "CL.0146"], "distractors": [], "why": "2014 is p% of 2018: p = (1/1.27) × 100 ≈ 79; identify base and compute reverse percent ratio"}
+{"id": "8c5dbd3e", "sub_skills": ["PCT.13", "PCT.3"], "clusters": ["CL.0106", "CL.0243"], "distractors": [], "why": "z = 50 × 0.45 = 22.5; w = 22.5 × 2.10 = 47.25; chain two percent relationships"}
+{"id": "ba0e23b0", "sub_skills": ["PCT.8", "PCT.4"], "clusters": ["CL.0023", "CL.0239", "CL.0138"], "distractors": [], "why": "140 is p% greater than 10: (140-10)/10 = 1300%; distinguish 'p% greater' from 'p% of'"}
+{"id": "2e92cc21", "sub_skills": ["PCT.13", "PCT.3"], "clusters": ["CL.0106", "CL.0243"], "distractors": [], "why": "b = 47 × 0.10 = 4.7; a = 4.7 × 2.10 = 9.87; chain two percent relationships"}
+{"id": "2afd3cec", "sub_skills": ["PCT.9", "PCT.3"], "clusters": ["CL.0107", "CL.0242", "CL.0004"], "distractors": [], "why": "360 is 80% of original; original = 450; removed = 450 - 360 = 90; reverse percent then subtract"}
+{"id": "623dbebb", "sub_skills": ["PCT.1", "PCT.3", "PCT.13"], "clusters": ["CL.0098", "CL.0106", "CL.0243"], "distractors": [], "why": "Consumer = 270% of $5 = $13.50; 70% off = $13.50 × 0.30 = $4.05; chain percent calculations"}
+{"id": "86684ce9", "sub_skills": ["PCT.9", "PCT.3"], "clusters": ["CL.0107", "CL.0242", "CL.0138"], "distractors": [], "why": "x increased 1800% = 684: x × 19 = 684, x = 36; undo large percent increase, distinguish 'increased by' from 'of'"}
+{"id": "20845d36", "sub_skills": ["PCT.13", "PCT.3"], "clusters": ["CL.0106", "CL.0243"], "distractors": [], "why": "a = 0.30b, c = 1.60a = 0.48b; chain percent decrease then increase via substitution"}
+{"id": "5267c3c7", "sub_skills": ["PCT.9", "PCT.3"], "clusters": ["CL.0107", "CL.0242", "CL.0138"], "distractors": [], "why": "x increased 400% = 60: x × 5 = 60, x = 12; undo percent increase"}
+{"id": "40e7a1a9", "sub_skills": ["PCT.8", "PCT.4"], "clusters": ["CL.0023", "CL.0239"], "distractors": [], "why": "210 is p% greater than 30: (210-30)/30 × 100 = 600; compute percent change"}
+{"id": "67c0200a", "sub_skills": ["PCT.13", "PCT.3"], "clusters": ["CL.0106", "CL.0243"], "distractors": [], "why": "a = 0.30b, c = 1.80a = 0.54b; chain percent decrease then increase via substitution"}
+{"id": "e635aede", "sub_skills": ["PCT.12", "PCT.5"], "clusters": ["CL.0061", "CL.0106", "CL.0241"], "distractors": [], "why": "y = 1.14 × 1.04 = 1.1856; successive yearly percent increases compounded"}
+{"id": "1fbd3b67", "sub_skills": ["PCT.13", "PCT.3"], "clusters": ["CL.0106", "CL.0243"], "distractors": [], "why": "b = 24 × 0.20 = 4.8; a = 4.8 × 2.90 = 13.92; chain two percent relationships"}
+{"id": "993000da", "sub_skills": ["PCT.13", "PCT.2"], "clusters": ["CL.0243", "CL.0095", "CL.0047"], "distractors": [], "why": "a = 2.30b, a = 0.60c → c = 2.30b/0.60 ≈ 3.833b; p ≈ 383; chain percent links via substitution"}
+{"id": "0231050d", "sub_skills": ["PCT.8", "PCT.15"], "clusters": ["CL.0023", "CL.0072", "CL.0239"], "distractors": [], "why": "Read 40 and 10 from graph; (40-10)/40 = 75%; percent decrease from graphical data"}
+{"id": "0ea56bb2", "sub_skills": ["PCT.8", "PCT.7", "PCT.15"], "clusters": ["CL.0023", "CL.0072", "CL.0106", "CL.0098", "CL.0239"], "distractors": [], "why": "Compute 5% increase 2012-2013; half = 2.5% for 2013-2014; 5880 × 1.025 = 6027; percent change from data then apply"}
+{"id": "4aaa9c42", "sub_skills": ["PCT.13", "PCT.2"], "clusters": ["CL.0243", "CL.0095", "CL.0047"], "distractors": [], "why": "a = 22.41(b+c), b = 0.83c → b+c = b(1.83/0.83); a ≈ 49.41b = 4941% of b; chain percent links with algebra"}
+{"id": "65c49824", "sub_skills": ["PCT.9", "PCT.1", "PCT.14"], "clusters": ["CL.0124", "CL.0098", "CL.0209", "CL.0004"], "distractors": [], "why": "Remaining 15% = 6 people → total = 40; teachers 45% of 40 = 18, admins 25% of 40 = 10; difference = 8"}
+{"id": "954943a4", "sub_skills": ["PCT.10", "PCT.1"], "clusters": ["CL.0060", "CL.0104"], "distractors": [], "why": "Each serving = 5% of daily potassium; x servings = 5x%; p = 5x; express percent as algebraic expression"}
+{"id": "1baffbcf", "sub_skills": ["PCT.11", "PCT.3"], "clusters": ["CL.0138", "CL.0240"], "distractors": [], "why": "0.35x means x decreased by 65% (since 1 - 0.35 = 0.65); interpret multiplier as percent decrease"}

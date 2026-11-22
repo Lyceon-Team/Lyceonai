@@ -1,0 +1,50 @@
+{"id":"145337bc","sub_skills":["RTT2"],"clusters":["CL.0167"],"distractors":[],"why":"45-45-90 triangle with two 45° angles; legs are equal so x = 24"}
+{"id":"c9f8d1e9","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem expression c = √(a² + b²) with a=4, b=5"}
+{"id":"36661021","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Apply Pythagorean theorem: c = √(9² + 6²) = √117 ≈ 10.8"}
+{"id":"379ffefb","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: c = √(11² + 9²) = √202"}
+{"id":"a6097ec2","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"Identify sin x° = opposite/hypotenuse in right triangle with hypotenuse 73"}
+{"id":"bbaac300","sub_skills":["RTT4","LAT.4"],"clusters":["CL.0171","CL.0155"],"distractors":[],"why":"Similar right triangles share trig ratios; B corresponds to E so cos E = cos B = 1/22"}
+{"id":"64c1f044","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"Identify tan x° = opposite/adjacent = 26/7 in a right triangle"}
+{"id":"b0c5ece5","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Recognize Pythagorean theorem relationship 4² + b² = 19²"}
+{"id":"e6f2ace7","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: c = √(3² + 7²) = √58 ≈ 7.6"}
+{"id":"87a9a2d4","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"sin A = opposite/hypotenuse = BC/AB = 35/171 in right triangle with right angle at C"}
+{"id":"13d9a1c3","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0119"],"distractors":[],"why":"30-60-90 triangle; use special triangle side ratios to find PQ"}
+{"id":"a5aee181","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0184","CL.0099"],"distractors":[],"why":"Rectangle diagonal forms right triangle; (5√17)² = 5² + x² → x = 20"}
+{"id":"a71617d3","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0170"],"distractors":[],"why":"Two equal legs (32,32) → isosceles right triangle → 45-45-90 → x = 45"}
+{"id":"bf8d843e","sub_skills":["RTT2","RTT3","LAT.2"],"clusters":["CL.0167","CL.0119","CL.0121","CL.0136"],"distractors":[],"why":"Altitude creates two 30-60-90 triangles; use special triangle ratios in each to find AD"}
+{"id":"9ec76b54","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0088"],"distractors":[],"why":"Pythagorean theorem: c = √(28² + 20²) = √1184 = 4√74; simplify the radical"}
+{"id":"7700d098","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0099"],"distractors":[],"why":"Pythagorean theorem: other leg = √(196.8² − 43.2²) = √36864 = 192"}
+{"id":"de550be0","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Rearrange Pythagorean theorem: a = √(21² − 6²)"}
+{"id":"5a7e3b46","sub_skills":["RTT3","RTT1"],"clusters":["CL.0126","CL.0105","CL.0086"],"distractors":[],"why":"cos A = 3/5 gives 3-4-5 ratio; set up proportion with BC = 136 to find AB = 102"}
+{"id":"2bddbc1b","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"cos A = adjacent/hypotenuse = AC/AB = 41/42 in right triangle with right angle at C"}
+{"id":"902dc959","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"tan A = opposite/adjacent = BC/AC = 20/21 in right triangle with all sides given"}
+{"id":"659cb706","sub_skills":["RTT4","RTT3"],"clusters":["CL.0174","CL.0126"],"distractors":[],"why":"sin X = cos Y because X and Y are complementary angles in a right triangle"}
+{"id":"25da87f8","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0119","CL.0047"],"distractors":[],"why":"30-60-90 with perimeter x(3+√3) = 18+6√3; solve for x=6, longest side = 2x = 12"}
+{"id":"14e7c1f4","sub_skills":["RTT4"],"clusters":["CL.0174","CL.0047","CL.0104"],"distractors":[],"why":"cos Q = sin R means Q + R = 90; (x+61) + (4x+4) = 90 → x = 5"}
+{"id":"1bf809b5","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"cos x° = adjacent/hypotenuse = 11/28 from given vertical leg and hypotenuse"}
+{"id":"8027db3f","sub_skills":["RTT4","RTT3","RTT1"],"clusters":["CL.0174","CL.0118","CL.0126"],"distractors":[],"why":"cos K = 24/51 in right triangle; use complement relationship and Pythagorean theorem to find cos L = 45/51"}
+{"id":"dba6a25a","sub_skills":["LAT.5","LAT.4","RTT1"],"clusters":["CL.0173","CL.0118","CL.0086"],"distractors":[],"why":"Similar right triangles (BD ∥ AE); find CD = 10 via Pythagorean theorem, then scale by ratio 18/6 = 3 to get CE = 30"}
+{"id":"2be01bd9","sub_skills":["RTT4","LAT.4"],"clusters":["CL.0178","CL.0155"],"distractors":[],"why":"Similar right triangles; E corresponds to B, tan E = tan B = 1/tan A = 7/50 (reciprocal tangents)"}
+{"id":"a67b9f88","sub_skills":["RTT3","RTT1"],"clusters":["CL.0126","CL.0118","CL.0099"],"distractors":[],"why":"Find ST via Pythagorean theorem: √(53²−105) = 52; then sin R = ST/TR = 52/53"}
+{"id":"92eb236a","sub_skills":["RTT4","RTT2"],"clusters":["CL.0178","CL.0167"],"distractors":[],"why":"tan = √3/3 = 1/√3 (30° angle); other acute angle tangent is the reciprocal √3"}
+{"id":"c6dff223","sub_skills":["RTT3","RTT4","RTT1","LAT.4"],"clusters":["CL.0126","CL.0171","CL.0118","CL.0105"],"distractors":[],"why":"Similar triangles so sin D = sin A; from tan A = 21/20 build 21-20-29 triangle, sin A = 21/29"}
+{"id":"ae041e52","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0184","CL.0047"],"distractors":[],"why":"Square inscribed in circle; diagonal = diameter = 20√2; side = diagonal/√2 = 20 via 45-45-90"}
+{"id":"16d66178","sub_skills":["RTT4"],"clusters":["CL.0174","CL.0094"],"distractors":[],"why":"Since 24+66=90, sin24=cos66 and cos24=sin66; expression becomes sin²24+cos²24 = (cos66)²+(cos24)²"}
+{"id":"7c25b0dc","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0184","CL.0099"],"distractors":[],"why":"Rectangle diagonal forms right triangle; 3² + x² = (3√17)² → x = 12"}
+{"id":"6ab30ce3","sub_skills":["RTT2","RTT3","LAT.4"],"clusters":["CL.0167","CL.0126","CL.0171","CL.0118"],"distractors":[],"why":"tan A = √3 means 30-60-90; similar triangles; from DF = 125 and angle D = 60°, compute DE = 250"}
+{"id":"6933b3d9","sub_skills":["RTT3","RTT1","RTT4"],"clusters":["CL.0126","CL.0118","CL.0121"],"distractors":[],"why":"Right triangle with cevian SW; compute trig ratios using Pythagorean theorem and angle relationships; answer is 0"}
+{"id":"c9931030","sub_skills":["RTT3","RTT4","LAT.4"],"clusters":["CL.0126","CL.0171","CL.0155","CL.0075"],"distractors":[],"why":"20-48-52 right triangle (right angle at S); similar to UVW; tan W = tan T = 20/48 = 5/12"}
+{"id":"f811d345","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0088","CL.0047"],"distractors":[],"why":"Pythagorean theorem: √(24²+21²) = √1017 = 3√113; d = 113"}
+{"id":"0e709a29","sub_skills":["RTT3","RTT4","LAT.4"],"clusters":["CL.0126","CL.0171","CL.0155","CL.0075"],"distractors":[],"why":"440-384-584 right triangle (right angle at S); similar to UVW; tan W = tan T = 440/384 = 55/48"}
+{"id":"568d66a7","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0119","CL.0047","CL.0170"],"distractors":[],"why":"Isosceles right triangle; perimeter = a(2+√2) = 94+94√2; solve for leg a = 47√2"}
+{"id":"54df8076","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0119","CL.0047","CL.0170"],"distractors":[],"why":"Equilateral triangle side = 284; circumradius via 30-60-90 gives R = 284√3/3 = w√3 → w = 284/3"}
+{"id":"44b2b894","sub_skills":["RTT2","RTT1"],"clusters":["CL.0167","CL.0184","CL.0119","CL.0047","CL.0099"],"distractors":[],"why":"Diagonal = 2×short side → 30-60-90; area = s²√3 = 1089√3 → s = 33; diameter = 66"}
+{"id":"ffe862a3","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0119","CL.0004","CL.0170"],"distractors":[],"why":"Isosceles right triangle hypotenuse 58; legs = 58/√2 = 29√2; perimeter = 58 + 58√2"}
+{"id":"55bb437a","sub_skills":["RTT3","RTT1","LAT.5"],"clusters":["CL.0126","CL.0118","CL.0136","CL.0173"],"distractors":[],"why":"Use tan B = 3/4 and BC = 15 to find triangle sides; decompose figure to find DE via similar triangles"}
+{"id":"498d6795","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0088","CL.0006"],"distractors":[],"why":"Pythagorean theorem: AC = √((10√37)²+(24√37)²) = √(37·676) = 26√37"}
+{"id":"a4bd60a3","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0119","CL.0170"],"distractors":[],"why":"Equilateral triangle side = 208; height via 30-60-90 = 208√3/2 = 104√3 → k = 104"}
+{"id":"4c95c7d4","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0119","CL.0004"],"distractors":[],"why":"3 equilateral triangles form trapezoid; perimeter 20 gives side = 4; area of equilateral = s²√3/4; combine shaded areas"}
+{"id":"1429dcdf","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"sin x° = opposite/hypotenuse in right triangle with hypotenuse 23 and horizontal leg 16"}
+{"id":"52f7b898","sub_skills":["RTT2","RTT3","LAT.2"],"clusters":["CL.0167","CL.0121","CL.0126"],"distractors":[],"why":"Right triangle with 30° angle; angle A = 60° by triangle angle sum; tan 60° = √3"}
+{"id":"58c26db8","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0119","CL.0047","CL.0170"],"distractors":[],"why":"Isosceles right triangle; perimeter = a(2+√2) = 18+18√2; solve a = 9√2, hypotenuse = 18"}
+{"id":"bd87bc09","sub_skills":["RTT3","RTT1"],"clusters":["CL.0126","CL.0118","CL.0086"],"distractors":[],"why":"sin B = 5/13 → AC = 26×5/13 = 10; Pythagorean theorem → BC = √(676−100) = 24"}

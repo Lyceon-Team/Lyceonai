@@ -1,0 +1,76 @@
+{"id": "3b44439b", "sub_skills": ["LAT.1"], "clusters": ["CL.0148", "CL.0112"], "distractors": [], "why": "Parallel lines with transversal; co-interior angles sum to 180, so x+142=180"}
+{"id": "36200a38", "sub_skills": ["LAT.2"], "clusters": ["CL.0114"], "distractors": [], "why": "Two sides of triangle extended; exterior angle theorem gives x"}
+{"id": "42b4493b", "sub_skills": ["LAT.2"], "clusters": ["CL.0121"], "distractors": [], "why": "Right triangle acute angles sum to 90; other angle = 90-51 = 39"}
+{"id": "e0d2e21a", "sub_skills": ["LAT.4", "LAT.2"], "clusters": ["CL.0155", "CL.0121"], "distractors": [], "why": "Dilation preserves angles; angle X corresponds to angle A in similar triangle"}
+{"id": "739f1bbc", "sub_skills": ["LAT.3"], "clusters": ["CL.0170"], "distractors": [], "why": "AB=BC=4680; equilateral requires AC=4680 too"}
+{"id": "3828f53d", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Parallel lines m,n with transversal; identify angle pair to find b"}
+{"id": "64d1f49f", "sub_skills": ["LAT.1"], "clusters": ["CL.0179"], "distractors": [], "why": "Two intersecting lines; vertical angles equal, z=w=136"}
+{"id": "5b918ebb", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Transversal n crosses parallel lines r,s; corresponding or alternate angles give x"}
+{"id": "43236565", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Parallel lines m,n with transversal k; corresponding angles equal so x=145"}
+{"id": "0bb39de4", "sub_skills": ["LAT.4", "LAT.2"], "clusters": ["CL.0155", "CL.0121"], "distractors": [], "why": "Congruent triangles; A=D=18, B=E=90, so F=180-90-18=72"}
+{"id": "cf0d3050", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Transversal c crosses parallel lines s,t; identify angle relationship for x"}
+{"id": "3b4b5b1e", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Parallel lines j,k; use transversal angle pair to find x"}
+{"id": "5733ce30", "sub_skills": ["LAT.3", "LAT.2"], "clusters": ["CL.0170", "CL.0114"], "distractors": [], "why": "Isosceles triangle (angle BAC=BCA); exterior angle at D via exterior angle theorem"}
+{"id": "f1747a6a", "sub_skills": ["LAT.2"], "clusters": ["CL.0121"], "distractors": [], "why": "Triangle angle sum: A=180-52-17=111"}
+{"id": "992f4e93", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Parallel lines l,k with transversal j; identify angle pair with 64 to find a"}
+{"id": "afa3c48b", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Parallel lines m,n with transversal l; identify angle pair with 26 to find x"}
+{"id": "087cdcfd", "sub_skills": ["LAT.1"], "clusters": ["CL.0004", "CL.0112"], "distractors": [], "why": "Three lines at point P; angles on a straight line sum to 180, z=180-65-75=40"}
+{"id": "a456f28c", "sub_skills": ["LAT.1"], "clusters": ["CL.0179"], "distractors": [], "why": "Vertical angles are equal; angle 2=72"}
+{"id": "410bdbe6", "sub_skills": ["LAT.2"], "clusters": ["CL.0121", "CL.0047"], "distractors": [], "why": "Triangle angle sum: 31+2b+45=180, solve 2b=104, b=52"}
+{"id": "dfc420b2", "sub_skills": ["LAT.2", "LAT.1"], "clusters": ["CL.0121", "CL.0179"], "distractors": [], "why": "Lines intersect forming triangle; use vertical angles and triangle angle sum to find y"}
+{"id": "3563d76d", "sub_skills": ["LAT.5", "LAT.4"], "clusters": ["CL.0173", "CL.0086"], "distractors": [], "why": "Shadow problem; similar triangles from sun angle, set up proportion height/shadow"}
+{"id": "69f4bbdc", "sub_skills": ["LAT.2"], "clusters": ["CL.0121"], "distractors": [], "why": "Right triangle; a=90-13=77"}
+{"id": "b434e103", "sub_skills": ["LAT.2"], "clusters": ["CL.0121", "CL.0004"], "distractors": [], "why": "Triangle angle sum; R=63 so S+T=117, any S>=117 is impossible"}
+{"id": "0d3f51dc", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Parallel lines m,n with transversal t; angle pair with 33 determines x"}
+{"id": "f9d40000", "sub_skills": ["LAT.2"], "clusters": ["CL.0121"], "distractors": [], "why": "Triangle angle sum: Z=180-23-66=91"}
+{"id": "9d078710", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Prove parallel lines; need corresponding or alternate angles equal to 40"}
+{"id": "c24e1bda", "sub_skills": ["LAT.1"], "clusters": ["CL.0148"], "distractors": [], "why": "Parallel lines m,n; transversal angle pair with 134 gives w"}
+{"id": "cbe8ca31", "sub_skills": ["LAT.2"], "clusters": ["CL.0121"], "distractors": [], "why": "Triangle angle sum: Z=180-24-98=58"}
+{"id": "a6dbad6b", "sub_skills": ["LAT.2", "LAT.1"], "clusters": ["CL.0121", "CL.0148"], "distractors": [], "why": "Triangle between parallel lines; angle sum x=180-20-60=100"}
+{"id": "d5f349b7", "sub_skills": ["LAT.4", "LAT.2"], "clusters": ["CL.0155", "CL.0121"], "distractors": [], "why": "Similar right triangles; P corresponds to S, S=180-90-18=72"}
+{"id": "c8d60e48", "sub_skills": ["LAT.3", "LAT.2"], "clusters": ["CL.0170", "CL.0121"], "distractors": [], "why": "Isosceles AB=AC so base angles equal; x=180-67-67=46"}
+{"id": "95ca2683", "sub_skills": ["LAT.2"], "clusters": ["CL.0121", "CL.0047"], "distractors": [], "why": "Triangle angle sum: 54+90+k/2=180, k=72"}
+{"id": "4ff7b652", "sub_skills": ["LAT.4"], "clusters": ["CL.0155"], "distractors": [], "why": "Similar right triangles; M corresponds to Q so angle Q=53"}
+{"id": "6dd463ca", "sub_skills": ["LAT.1", "LAT.2"], "clusters": ["CL.0148", "CL.0121"], "distractors": [], "why": "AE parallel to BD; use alternate interior angles and triangle angle sum for angle CAE"}
+{"id": "7a8ad237", "sub_skills": ["LAT.4", "LAT.2"], "clusters": ["CL.0155", "CL.0121"], "distractors": [], "why": "Congruent triangles; A=D=69, E=90, F=180-69-90=21"}
+{"id": "1c3d613c", "sub_skills": ["LAT.4"], "clusters": ["CL.0155"], "distractors": [], "why": "Similar triangles preserve angles; EDF=BAC=20"}
+{"id": "014edcb7", "sub_skills": ["LAT.2"], "clusters": ["CL.0114"], "distractors": [], "why": "Exterior angle PRS=163 equals sum of remote interior angles; QPR=163-132=31"}
+{"id": "2adbf1b1", "sub_skills": ["LAT.1"], "clusters": ["CL.0148", "CL.0047", "CL.0112"], "distractors": [], "why": "Parallel lines; set angle expressions equal or supplementary, solve for k, then find z"}
+{"id": "901e3285", "sub_skills": ["LAT.3", "LAT.2"], "clusters": ["CL.0170", "CL.0121"], "distractors": [], "why": "Isosceles triangle with A=50; test which B values allow valid triangle"}
+{"id": "c7bed21d", "sub_skills": ["LAT.4", "LAT.5"], "clusters": ["CL.0155"], "distractors": [], "why": "Similar quadrilaterals preserve angles; P'=P=30"}
+{"id": "2085e10e", "sub_skills": ["LAT.4"], "clusters": ["CL.0173"], "distractors": [], "why": "Two angles match (D=R=47, E=S=97); AA similarity, no additional info needed"}
+{"id": "fd8745fc", "sub_skills": ["LAT.3", "LAT.2"], "clusters": ["CL.0170", "CL.0121"], "distractors": [], "why": "Isosceles K=L=48; J=180-48-48=84"}
+{"id": "d3fe472f", "sub_skills": ["LAT.5"], "clusters": ["CL.0155", "CL.0083"], "distractors": [], "why": "Similar triangles with scale factor 2; XY=2*AB=32"}
+{"id": "a4c05a1b", "sub_skills": ["LAT.1"], "clusters": ["CL.0148", "CL.0112"], "distractors": [], "why": "Co-interior angles supplementary; if y<65 then x>115"}
+{"id": "2f7c92ad", "sub_skills": ["LAT.4"], "clusters": ["CL.0155"], "distractors": [], "why": "Similar triangles preserve angles; CAE corresponds to CBD=57"}
+{"id": "933fee1a", "sub_skills": ["LAT.4", "RTT3", "RTT4"], "clusters": ["CL.0126", "CL.0174", "CL.0171"], "distractors": [], "why": "Complementary angles in right triangles; match trig ratio BC/AB with equivalent ratio in DEF"}
+{"id": "d7a8aa9c", "sub_skills": ["LAT.5"], "clusters": ["CL.0155"], "distractors": [], "why": "Scale factor k>1 produces larger triangle; k=29/28"}
+{"id": "055aafe7", "sub_skills": ["LAT.5"], "clusters": ["CL.0155", "CL.0086"], "distractors": [], "why": "Similar triangles; AB/XY=BC/YZ, 170/XY=850/60, XY=12"}
+{"id": "51f26ce8", "sub_skills": ["LAT.5", "LAT.4"], "clusters": ["CL.0155", "CL.0086"], "distractors": [], "why": "Similar triangles QPR~STR; set proportion QP/ST=QR/SR to find SR"}
+{"id": "94364a79", "sub_skills": ["LAT.5", "LAT.4"], "clusters": ["CL.0173", "CL.0086"], "distractors": [], "why": "Shadow problem; similar triangles give 10/5=h/2, h=4"}
+{"id": "81b664bc", "sub_skills": ["LAT.5", "LAT.1"], "clusters": ["CL.0086", "CL.0166"], "distractors": [], "why": "Three parallel lines cut proportionally; AB/BC=FE/ED, 9/18.5=8.5/ED"}
+{"id": "686b5212", "sub_skills": ["LAT.1"], "clusters": ["CL.0148", "CL.0047"], "distractors": [], "why": "Parallel lines with transversal; set angle expression y=2x+8 equal/supplementary to 58, solve for x"}
+{"id": "f67255ea", "sub_skills": ["LAT.1"], "clusters": ["CL.0148", "CL.0112", "CL.0034", "CL.0017"], "distractors": [], "why": "Parallel lines; acute=(9x-560), obtuse=(720-9x); sum 1 acute+3 obtuse=-18x+1600, so w=1600"}
+{"id": "6a3fbec3", "sub_skills": ["LAT.4", "LAT.5", "RTT1"], "clusters": ["CL.0173", "CL.0086", "CL.0118"], "distractors": [], "why": "Right triangle altitude to hypotenuse; geometric mean BD^2=AD*DC gives DC=36/8=4.5"}
+{"id": "694b7fce", "sub_skills": ["LAT.5", "LAT.4", "RTT1"], "clusters": ["CL.0173", "CL.0118", "CL.0182"], "distractors": [], "why": "Pythagorean theorem for BC, then similar triangles scaled by AE/AC=8; area scales by 64"}
+{"id": "17912810", "sub_skills": ["LAT.1", "LAT.2"], "clusters": ["CL.0148", "CL.0121"], "distractors": [], "why": "Two transversals crossing parallel lines; use alternate/co-interior angles and triangle sum for w"}
+{"id": "f731d88b", "sub_skills": ["LAT.1", "LAT.2"], "clusters": ["CL.0148", "CL.0112", "CL.0004"], "distractors": [], "why": "Pentagon with AB||DE; co-interior angles A+E=180, then C=540-180-139-174=47"}
+{"id": "adae6543", "sub_skills": ["LAT.4", "LAT.5"], "clusters": ["CL.0173", "CL.0086", "CL.0155"], "distractors": [], "why": "LM||PQ gives similar triangles at R; LR/QR=MR/PR, LQ=LR+QR=119/6"}
+{"id": "5b4757df", "sub_skills": ["LAT.5", "LAT.4"], "clusters": ["CL.0173", "CL.0086", "CL.0119"], "distractors": [], "why": "LK||RT creates similar triangles; scale 1/3, area gives ST=22, KT=2ST/3=44/3"}
+{"id": "010243e6", "sub_skills": ["LAT.4", "LAT.2"], "clusters": ["CL.0155", "CL.0121"], "distractors": [], "why": "Right triangles at L and P; corresponding angles preserved, angle N=(90-t)"}
+{"id": "48fb6483", "sub_skills": ["LAT.1", "LAT.4", "LAT.2"], "clusters": ["CL.0148", "CL.0173", "CL.0112"], "distractors": [], "why": "PQ||XY creates similar triangles; angle XPQ=180-27=153 via supplementary angles on XZ"}
+{"id": "eeb4143c", "sub_skills": ["LAT.2"], "clusters": ["CL.0119", "CL.0047", "CL.0201"], "distractors": [], "why": "Triangle area formula with inequality constraints; 48<=area<=60 to find valid x"}
+{"id": "322a6dfe", "sub_skills": ["LAT.4", "LAT.5"], "clusters": ["CL.0155"], "distractors": [], "why": "Similar quadrilaterals; S corresponds to Z, angle Z=angle S=135"}
+{"id": "bd7f6e30", "sub_skills": ["LAT.3", "LAT.2"], "clusters": ["CL.0170", "CL.0121"], "distractors": [], "why": "Isosceles RT=TU; base angles equal, use triangle angle sum to find x"}
+{"id": "fecc446d", "sub_skills": ["LAT.1"], "clusters": ["CL.0148", "CL.0112", "CL.0034", "CL.0017"], "distractors": [], "why": "Parallel lines; compute all possible sums of 4 angles to find which expression is impossible"}
+{"id": "3b225698", "sub_skills": ["LAT.4"], "clusters": ["CL.0155"], "distractors": [], "why": "Similar triangles; Z corresponds to T, angle T=angle Z=20"}
+{"id": "740bf79f", "sub_skills": ["LAT.4", "LAT.5", "RTT1"], "clusters": ["CL.0173", "CL.0118", "CL.0086"], "distractors": [], "why": "Right triangle altitude; MN=3, NP=4, MP=5; NQ=MN*NP/MP=12/5=2.4"}
+{"id": "b1e1c2f5", "sub_skills": ["LAT.5", "LAT.4"], "clusters": ["CL.0173", "CL.0086"], "distractors": [], "why": "DE||BC creates similar triangles; AE/AC=1/3 so DE=BC/3=54"}
+{"id": "f7dbde16", "sub_skills": ["LAT.4"], "clusters": ["CL.0173", "CL.0121"], "distractors": [], "why": "Prove similarity; angles M=70,T=50 gives AA with matching angle pairs"}
+{"id": "901c3215", "sub_skills": ["LAT.4"], "clusters": ["CL.0155"], "distractors": [], "why": "AA-similar triangles; need corresponding side lengths BC and EF for congruence"}
+{"id": "345cc36a", "sub_skills": ["LAT.4", "LAT.5"], "clusters": ["CL.0173", "CL.0155", "CL.0086"], "distractors": [], "why": "Intersecting segments at Q; similar triangles WQX~YQZ with ratio 10/9; YZ=54"}
+{"id": "2d2cb85e", "sub_skills": ["LAT.3", "LAT.2"], "clusters": ["CL.0170", "CL.0114", "CL.0121"], "distractors": [], "why": "Isosceles RT=TU with exterior angle; combine base angles and exterior angle theorem"}
+{"id": "a0369739", "sub_skills": ["LAT.4", "LAT.5", "RTT1"], "clusters": ["CL.0173", "CL.0086", "CL.0118"], "distractors": [], "why": "Right triangle with altitude; similar triangles give BC/BD=AC/AB=38/15"}
+{"id": "947a3cde", "sub_skills": ["LAT.4", "LAT.1"], "clusters": ["CL.0155", "CL.0179", "CL.0121"], "distractors": [], "why": "NP=QP, MP=PR gives congruent triangles via SAS with vertical angles"}
+{"id": "f88f27e5", "sub_skills": ["LAT.1"], "clusters": ["CL.0179", "CL.0112", "CL.0004"], "distractors": [], "why": "Intersecting lines r,s,t; use vertical and supplementary angles to find x"}
+{"id": "e10d8313", "sub_skills": ["LAT.1", "LAT.2"], "clusters": ["CL.0121", "CL.0112", "CL.0114"], "distractors": [], "why": "Multiple intersecting segments on line PV; combine triangle angle sums and supplementary angles"}
