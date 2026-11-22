@@ -266,6 +266,7 @@ export function buildSystemInstruction(request: OrchestrateRequest): string {
   const stateBlocks = renderStateBlocks(request, {
     dataBoundary: artifact.dataBoundary === true,
     helpLevel: artifact.helpLevelBlock === true,
+    rwWorkedStep: artifact.rwWorkedStepRule === true,
   });
   if (stateBlocks) {
     return `${behavioralRules}\n\n--- CONTEXT FOR CURRENT QUESTION ---\n\n${stateBlocks}`;
