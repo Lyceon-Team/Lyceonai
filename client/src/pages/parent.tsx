@@ -464,7 +464,7 @@ export default function ParentPage(): JSX.Element {
             <div className="flex flex-col items-center gap-2.5">
               <h2
                 id="parent-call-h"
-                className="text-[32px] font-bold leading-tight"
+                className="text-[32px] font-bold leading-tight text-background"
               >
                 Not sure it's right for your teen?
               </h2>

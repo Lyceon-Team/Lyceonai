@@ -150,6 +150,17 @@ describe("/parent CTAs resolve to their constants", () => {
   });
 });
 
+describe("/parent call band", () => {
+  it("its heading is readable on the navy band (the base h2 colour is navy)", () => {
+    fetchMock.mockResolvedValue(okPlans());
+    withClient(<ParentPage />);
+    const h = screen.getByRole("heading", {
+      name: "Not sure it's right for your teen?",
+    });
+    expect(h.className.split(/\s+/)).toContain("text-background");
+  });
+});
+
 describe("/parent prices come from the API", () => {
   it("fetches the plan list and renders exactly its amounts, with the computed saving", async () => {
     fetchMock.mockResolvedValue(okPlans());
