@@ -41,6 +41,7 @@ import {
 // use, so the wire contract is proved against the real routes (CLAUDE.md: derive fixtures from
 // real output; a round trip catches what neither side's tests can).
 import {
+  guardianInviteDraftResponseSchema,
   guardianInviteLinkResponseSchema,
   guardianInvitesResponseSchema,
   joinClaimResponseSchema,
@@ -205,25 +206,58 @@ function tokenOf(url: string): string {
   return token!;
 }
 
-/** Start an invite as `guardian` and return its id and the token the guardian was handed. */
+/**
+ * A card saved on the invite through the REAL SQL functions the webhook calls
+ * (20261207000000: record the setup session, then the completed card). Card first
+ * (20261210000000): nothing about an invite can be sent, copied or claimed until this ran.
+ */
+async function saveCard(inviteId: string, guardian = GUARDIAN): Promise<void> {
+  const sessionId = `cs_test_${inviteId.slice(0, 8)}_${Date.now()}`;
+  const set = await pg.query(
+    `SELECT public.set_guardian_invite_setup_session_audited($1, $2, $3, 'monthly', 'req-test') AS r`,
+    [guardian, inviteId, sessionId],
+  );
+  expect(JSON.stringify(set.rows[0].r)).toContain("recorded");
+  const rec = await pg.query(
+    `SELECT public.record_guardian_invite_card_audited($1, $2, $3, 'pm_card_visa_test', 'monthly', 'req-test') AS r`,
+    [inviteId, guardian, sessionId],
+  );
+  expect(JSON.stringify(rec.rows[0].r)).toContain("recorded");
+}
+
+/** Start a draft invite as `guardian` (POST /, card first): its id. No link exists yet. */
+async function startDraft(guardian: string): Promise<string> {
+  session.id = guardian;
+  const res = await request(await app())
+    .post("/api/guardian/invites")
+    .send({ acceptParentGuardianTerms: true });
+  expect(res.status, JSON.stringify(res.body)).toBe(201);
+  return guardianInviteDraftResponseSchema.parse(res.body).data.invite.id;
+}
+
+/**
+ * The whole card-first flow as the guardian home runs it: start a draft, save a card on it,
+ * then send it by email (or, with `email` null, Copy link). Returns the invite id and the token
+ * the guardian was handed.
+ */
 async function startInvite(
   guardian: string,
   email: string | null = TEEN_EMAIL,
 ): Promise<{ id: string; token: string }> {
+  const id = await startDraft(guardian);
+  await saveCard(id, guardian);
   session.id = guardian;
-  const res = await request(await app())
-    .post("/api/guardian/invites")
-    .send(
-      email === null
-        ? { acceptParentGuardianTerms: true }
-        : { email, acceptParentGuardianTerms: true },
-    );
-  expect(res.status, JSON.stringify(res.body)).toBe(201);
+  const res =
+    email === null
+      ? await request(await app())
+          .post(`/api/guardian/invites/${id}/link`)
+          .send({})
+      : await request(await app())
+          .post(`/api/guardian/invites/${id}/resend`)
+          .send({ email });
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
   guardianInviteLinkResponseSchema.parse(res.body);
-  return {
-    id: res.body.data.invite.id as string,
-    token: tokenOf(res.body.data.url as string),
-  };
+  return { id, token: tokenOf(res.body.data.url as string) };
 }
 
 async function lookup(token: string): Promise<Record<string, unknown>> {
@@ -398,7 +432,8 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
       expect(sent.emails[0]!.idempotency).not.toBe(sent.emails[1]!.idempotency);
       expect((await lookup(first.token)).state).toBe("not_found");
       expect((await lookup(second)).state).toBe("open");
-      expect(await auditSince("guardian_invite_reissued")).toHaveLength(1);
+      // Card first: the first send is itself a re-issue of the draft, so two.
+      expect(await auditSince("guardian_invite_reissued")).toHaveLength(2);
     });
 
     it("IN4 Copy new link makes a new link with nothing sent; the old link stops working", async () => {
@@ -492,6 +527,9 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
         `UPDATE public.guardian_invites SET expires_at = now() - interval '1 minute' WHERE id = $1`,
         [ids[0]],
       );
+      // Card first doubles each invite's operations (draft + link), so the daily bucket is
+      // reset here: this case is about the open-invite cap, not the rate limit (RL2).
+      await pg.query(`DELETE FROM public.rate_limit_ledger`);
       await startInvite(GUARDIAN, null); // the expired one does not count
       // Reviving the expired one would make 4 open: refused.
       const revive = await request(await app())
@@ -558,20 +596,134 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
       });
       session.id = GUARDIAN;
       const a = await app();
+      const knownId = await startDraft(GUARDIAN);
+      await saveCard(knownId);
+      const unknownId = await startDraft(GUARDIAN);
+      await saveCard(unknownId);
+      session.id = GUARDIAN;
       const known = await request(a)
-        .post("/api/guardian/invites")
-        .send({
-          email: `${STUDENT}@example.test`,
-          acceptParentGuardianTerms: true,
-        });
-      const unknown = await request(a).post("/api/guardian/invites").send({
-        email: "nobody@example.test",
-        acceptParentGuardianTerms: true,
-      });
+        .post(`/api/guardian/invites/${knownId}/resend`)
+        .send({ email: `${STUDENT}@example.test` });
+      const unknown = await request(a)
+        .post(`/api/guardian/invites/${unknownId}/resend`)
+        .send({ email: "nobody@example.test" });
       expect(known.status).toBe(unknown.status);
       expect(shape(known.body)).toEqual(shape(unknown.body));
       // Nothing about the address reached the profile table, and no account was touched.
       expect(await activeLinks()).toEqual([]);
+    });
+  });
+
+  // ------------------------------------------------------------------------------------------
+  // Card first (owner ruling 2026-11-22, 2; 20261210000000_guardian_invite_card_first.sql):
+  // an invite can't be emailed, show a copyable link, or be claimed until a card is saved on it.
+  describe("card first", () => {
+    it("CF1 starting an invite makes a draft: no email, no link, no address accepted", async () => {
+      const id = await startDraft(GUARDIAN);
+      expect(sent.emails).toHaveLength(0);
+      const row = await inviteRow(id);
+      expect(row.status).toBe("open");
+      expect(row.email_hash).toBeNull();
+      expect(row.card_saved_at).toBeNull();
+      session.id = GUARDIAN;
+      const withEmail = await request(await app())
+        .post("/api/guardian/invites")
+        .send({ email: TEEN_EMAIL, acceptParentGuardianTerms: true });
+      expect(withEmail.status).toBe(400);
+      // The database refuses an address on a new invite too, whatever the route sends.
+      await expect(
+        pg.query(
+          `SELECT public.issue_guardian_invite_audited($1, $2, $3, NULL, 'req-test')`,
+          [GUARDIAN, sha256("cf1-token"), sha256(TEEN_EMAIL)],
+        ),
+      ).rejects.toMatchObject({ code: "LY011" });
+    });
+
+    it("CF2 sending an invite is refused until a card is saved, and allowed after", async () => {
+      const id = await startDraft(GUARDIAN);
+      session.id = GUARDIAN;
+      const refused = await request(await app())
+        .post(`/api/guardian/invites/${id}/resend`)
+        .send({ email: TEEN_EMAIL });
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.code).toBe("GUARDIAN_INVITE_CARD_REQUIRED");
+      expect(sent.emails).toHaveLength(0);
+      expect((await inviteRow(id)).email_hash).toBeNull();
+
+      await saveCard(id);
+      session.id = GUARDIAN;
+      const allowed = await request(await app())
+        .post(`/api/guardian/invites/${id}/resend`)
+        .send({ email: TEEN_EMAIL });
+      expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+      expect(allowed.body.data.emailed).toBe(true);
+      expect(sent.emails).toHaveLength(1);
+    });
+
+    it("CF3 copying an invite's link is refused until a card is saved, and allowed after", async () => {
+      const id = await startDraft(GUARDIAN);
+      session.id = GUARDIAN;
+      const refused = await request(await app())
+        .post(`/api/guardian/invites/${id}/link`)
+        .send({});
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.code).toBe("GUARDIAN_INVITE_CARD_REQUIRED");
+      expect(refused.body).not.toHaveProperty("data");
+
+      await saveCard(id);
+      session.id = GUARDIAN;
+      const allowed = await request(await app())
+        .post(`/api/guardian/invites/${id}/link`)
+        .send({});
+      expect(allowed.status).toBe(200);
+      const token = tokenOf(allowed.body.data.url as string);
+      expect((await lookup(token)).state).toBe("open");
+    });
+
+    it("CF4 claiming an invite is refused until a card is saved, and allowed after", async () => {
+      // A token for a cardless invite, written through the real issue function (the route
+      // never hands one out, so the test makes its own to prove the database refuses it).
+      const token = "C".repeat(43);
+      const issued = await pg.query(
+        `SELECT (public.issue_guardian_invite_audited($1, $2, NULL, NULL, 'req-test')).id AS id`,
+        [GUARDIAN, sha256(token)],
+      );
+      const id = issued.rows[0].id as string;
+      expect(await lookup(token)).toEqual({ state: "not_found" });
+      const refused = await claim(STUDENT, token);
+      expect(refused.status).toBe(200);
+      expect(refused.body.data.outcome).toBe("not_found");
+      expect(await activeLinks()).toEqual([]);
+      expect((await inviteRow(id)).status).toBe("open");
+
+      await saveCard(id);
+      expect((await lookup(token)).state).toBe("open");
+      const allowed = await claim(STUDENT, token);
+      expect(allowed.body.data.outcome).toBe("claimed");
+      expect(await activeLinks()).toEqual([
+        { guardian: GUARDIAN, student: STUDENT, initiated_by: "guardian" },
+      ]);
+    });
+
+    it("CF5 the guard is one definition: card_saved_at AND card_payment_method_id", async () => {
+      const id = await startDraft(GUARDIAN);
+      await saveCard(id);
+      // Either column missing is not a card. The CHECK from 20261207000000 keeps those states
+      // out of the table, so the helper is asked about a row with one column blanked.
+      const r = await pg.query(
+        `SELECT public.guardian_invite_has_card(g) AS full_card,
+                public.guardian_invite_has_card(
+                  jsonb_populate_record(g, '{"card_payment_method_id": null}')) AS no_pm,
+                public.guardian_invite_has_card(
+                  jsonb_populate_record(g, '{"card_saved_at": null}')) AS no_saved
+           FROM public.guardian_invites g WHERE id = $1`,
+        [id],
+      );
+      expect(r.rows[0]).toEqual({
+        full_card: true,
+        no_pm: false,
+        no_saved: false,
+      });
     });
   });
 
@@ -586,13 +738,15 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
       });
       expect(JSON.stringify(found)).not.toContain(GUARDIAN); // no guardian id leaves
 
+      // Card first: every invite here is made (card saved) before the claim links the guardian,
+      // since a linked guardian pays through today's checkout rather than an invite card.
       const claimed = await startInvite(GUARDIAN, null);
+      const expired = await startInvite(GUARDIAN, null);
       expect((await claim(STUDENT, claimed.token)).body.data.outcome).toBe(
         "claimed",
       );
       expect(await lookup(claimed.token)).toEqual({ state: "claimed" });
 
-      const expired = await startInvite(GUARDIAN, null);
       await pg.query(
         `UPDATE public.guardian_invites SET expires_at = now() - interval '1 second' WHERE id = $1`,
         [expired.id],
@@ -738,10 +892,12 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
       // through the SQL function, as if the guardian's age had changed after issuing. The claim
       // must still refuse: the teen is the caller, and the guardian is checked by id.
       const token = "Y".repeat(43);
-      await pg.query(
-        `SELECT public.issue_guardian_invite_audited($1, $2, NULL, NULL)`,
+      const issued = await pg.query(
+        `SELECT (public.issue_guardian_invite_audited($1, $2, NULL, NULL)).id AS id`,
         [GUARDIAN_YOUNG, sha256(token)],
       );
+      // Card first: with a card saved, the age re-check is what refuses, not the card guard.
+      await saveCard(issued.rows[0].id as string, GUARDIAN_YOUNG);
       expect((await lookup(token)).state).toBe("open");
       const res = await claim(STUDENT, token);
       expect(res.body.data.outcome).toBe("unavailable");
@@ -750,12 +906,15 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
     });
 
     it("CL7 a pair already linked by code: the invite is claimed against that link, no second link", async () => {
+      // Card first: the card is saved and the invite sent while the guardian has no link (a
+      // linked guardian pays through today's checkout, not an invite card); the teen then links
+      // by code before claiming.
+      const { id, token } = await startInvite(GUARDIAN);
       await pg.query(
         `SELECT public.create_active_guardian_link_audited($1, $2)`,
         [GUARDIAN, STUDENT],
       );
       dispatched.eventIds.length = 0;
-      const { id, token } = await startInvite(GUARDIAN);
       expect((await claim(STUDENT, token)).body.data.outcome).toBe("claimed");
       expect(await activeLinks()).toEqual([
         { guardian: GUARDIAN, student: STUDENT, initiated_by: "student" },
@@ -802,7 +961,8 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
           WHERE profile_id = $1 AND bucket_key = 'guardian_invite_daily'`,
         [GUARDIAN],
       );
-      expect(daily.rows[0].n).toBe(3); // the denied 4th was rolled back
+      // The draft (1) and three emails (3); the denied 4th email was rolled back.
+      expect(daily.rows[0].n).toBe(4);
       // Another address still works.
       const other = await request(a)
         .post(`/api/guardian/invites/${id}/resend`)
@@ -814,11 +974,12 @@ describe.skipIf(!PG_AVAILABLE)("guardian invites (real Postgres)", () => {
       const { id } = await startInvite(GUARDIAN, null);
       session.id = GUARDIAN;
       const a = await app();
-      for (let i = 0; i < 9; i += 1) {
+      // The draft and its first link used 2 of the 10 (card first: starting a draft counts).
+      for (let i = 0; i < 8; i += 1) {
         const ok = await request(a)
           .post(`/api/guardian/invites/${id}/link`)
           .send({});
-        expect(ok.status, `link ${i + 2}`).toBe(200);
+        expect(ok.status, `operation ${i + 3}`).toBe(200);
       }
       const denied = await request(a)
         .post(`/api/guardian/invites/${id}/link`)

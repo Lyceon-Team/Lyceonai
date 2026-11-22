@@ -54,3 +54,43 @@ export const HOME_FAQS: readonly FaqItem[] = [
       "Yes. Daily practice is free. Full-length timed practice tests are on paid plans.",
   },
 ];
+
+/**
+ * @spec [owner brief "Build: /parent page + card-first parent onboarding" (Karl, 2026-11-22),
+ *       FAQ "Questions parents ask"; owner ruling 2026-11-22 (2) card first, charged when the
+ *       teen joins; (3) Karl approves every claim on the page; claim inventory P-rows] |
+ * @implemented [2026-11-22] | plain English: the six parent questions on `/parent`, verbatim
+ * from the approved prototype. The page renders this array and `PUBLIC_META["/parent"]` builds
+ * its FAQPage JSON-LD from it, the way `HOME_FAQS` works. "When am I charged?" describes the
+ * card-first flow the guardian app enforces (Part 2 of the same brief), so the answer and the
+ * product say the same thing.
+ */
+export const PARENT_FAQS: readonly FaqItem[] = [
+  {
+    question: "Do I need my teen’s email?",
+    answer: "No. You can copy the invite link and text it to them instead.",
+  },
+  {
+    question: "When am I charged?",
+    answer:
+      "Only when your teen joins. You add your card before sending the invite, and it’s charged the moment they accept. If they never join, you’re never charged.",
+  },
+  {
+    question: "Can I cancel?",
+    answer: "Yes, any time from your billing page.",
+  },
+  {
+    question: "What can I see, and what stays private?",
+    answer:
+      "You see their projected and target scores, mastery by area, study calendar and practice test results. Their individual answers and AI tutor conversations stay private to them.",
+  },
+  {
+    question: "My teen already uses Lyceon. Does that work?",
+    answer:
+      "Yes. They accept your invite from their existing account and keep all their progress.",
+  },
+  {
+    question: "Does Lyceon guarantee a score?",
+    answer: "No. We show where your teen stands and exactly what to work on.",
+  },
+];

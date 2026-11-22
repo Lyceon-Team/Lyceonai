@@ -32,6 +32,12 @@ export const API_CACHEABLE_ROUTES: ReadonlyArray<{
   },
   {
     method: "GET",
+    path: "/api/public/pricing/plans",
+    reason:
+      "The three parent plans' public price tags for /parent: the same body for every viewer, no user data, no price ids (server/routes/public-pricing-routes.ts).",
+  },
+  {
+    method: "GET",
     path: "/api/public/qotd/archive",
     reason:
       "The public list of past Question of the Day dates with section and domain: the same body for every viewer, max-age 3600 (server/routes/public-qotd-routes.ts).",

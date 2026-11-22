@@ -3,7 +3,8 @@
 # Mutation harness for guardian → teen invites (owner rulings 2026-11-21, counsel-approved;
 # SCL-282: one planted defect per rule)
 # ============================================================================
-# @spec [those rulings 1, 2, 4, 5, 8; supabase/migrations/20261206000000_guardian_invites.sql]
+# @spec [those rulings 1, 2, 4, 5, 8; supabase/migrations/20261206000000_guardian_invites.sql;
+#        card first: owner ruling 2026-11-22 (2), 20261210000000, SCL-287 (I19-I25)]
 #       | @implemented [2026-11-22]
 #
 # Each mutation plants a defect, runs the check that guards it, and requires that check to go
@@ -23,6 +24,11 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 MIG="supabase/migrations/20261206000000_guardian_invites.sql"
+# Card first (20261210000000, owner ruling 2026-11-22): the LAST definition of the issue, lookup
+# and claim functions moved here, so every plant aimed at them was re-pointed in the same change
+# (CLAUDE.md, "a migration that replaces a function body orphans its mutations"). cancel, the
+# link writer and the rate-limit rows stay in $MIG.
+CF_MIG="supabase/migrations/20261210000000_guardian_invite_card_first.sql"
 JOIN="server/routes/join-routes.ts"
 INVITE_ROUTES="server/routes/guardian-invite-routes.ts"
 RATE="server/middleware/guardian-link-rate-limit.ts"
@@ -30,7 +36,7 @@ HOME_PAGE="client/src/features/guardian/GuardianHome.tsx"
 PASS=0; FAIL=0
 BACKUPS="$(mktemp -d /tmp/guardian-invites-mut.XXXX)"
 
-FILES=("$MIG" "$JOIN" "$INVITE_ROUTES" "$RATE" "$HOME_PAGE")
+FILES=("$MIG" "$CF_MIG" "$JOIN" "$INVITE_ROUTES" "$RATE" "$HOME_PAGE")
 for f in "${FILES[@]}"; do mkdir -p "$BACKUPS/$(dirname "$f")"; cp "$f" "$BACKUPS/$f"; done
 restore() { for f in "${FILES[@]}"; do cp "$BACKUPS/$f" "$f"; done; }
 trap 'restore; rm -rf "$BACKUPS"' EXIT
@@ -81,11 +87,20 @@ plant_check() {
   restore
 }
 
+# The migration a function's plants must edit: the one that defines it LAST.
+mig_for() {
+  case "$1" in
+    issue_guardian_invite_audited|guardian_invite_lookup|claim_guardian_invite_audited|guardian_invite_has_card) echo "$CF_MIG" ;;
+    *) echo "$MIG" ;;
+  esac
+}
+
 # sql_plant <function> <name> <old> <new> <expected test name>
 sql_plant() {
   local fn="$1"; shift
-  [ "$(last_definer "$fn")" = "$MIG" ] || { bad "$1 targets $MIG but $fn is last defined in $(last_definer "$fn")"; return; }
-  plant_check "$1" "$MIG" "$2" "$3" "$4" "$PG_SUITE"
+  local target; target="$(mig_for "$fn")"
+  [ "$(last_definer "$fn")" = "$target" ] || { bad "$1 targets $target but $fn is last defined in $(last_definer "$fn")"; return; }
+  plant_check "$1" "$target" "$2" "$3" "$4" "$PG_SUITE"
 }
 
 echo "=== (0) GREEN BASELINE ==="
@@ -151,6 +166,36 @@ if [ "$HAVE_PG" = 1 ]; then
     "'guardian_invite_daily',     jsonb_build_object('limit', 10, 'window_seconds', 86400)" \
     "'guardian_invite_daily',     jsonb_build_object('limit', 11, 'window_seconds', 86400)" \
     "RL2 10 links a day per guardian" "$PG_SUITE"
+
+  echo "=== card first (real Postgres; 20261210000000) ==="
+  sql_plant guardian_invite_has_card "I19 the card-saved guard removed (every invite counts as carded)" \
+    "  SELECT p_row.card_saved_at IS NOT NULL AND p_row.card_payment_method_id IS NOT NULL;" \
+    "  SELECT true;" \
+    "CF2 sending an invite is refused until a card is saved"
+  sql_plant guardian_invite_has_card "I20 the guard forgets the payment method" \
+    "  SELECT p_row.card_saved_at IS NOT NULL AND p_row.card_payment_method_id IS NOT NULL;" \
+    "  SELECT p_row.card_saved_at IS NOT NULL;" \
+    "CF5 the guard is one definition"
+  sql_plant issue_guardian_invite_audited "I21 a link re-issued for an invite with no card" \
+    "  -- saved on this invite."$'\n'"  IF NOT public.guardian_invite_has_card(v_row) THEN" \
+    "  -- saved on this invite."$'\n'"  IF false THEN" \
+    "CF3 copying an invite's link is refused until a card is saved"
+  sql_plant issue_guardian_invite_audited "I22 a new invite accepts an address" \
+    "    IF p_email_hash IS NOT NULL THEN"$'\n'"      RAISE EXCEPTION 'a new invite has no saved card'" \
+    "    IF false THEN"$'\n'"      RAISE EXCEPTION 'a new invite has no saved card'" \
+    "CF1 starting an invite makes a draft"
+  sql_plant guardian_invite_lookup "I23 /join describes an invite with no card" \
+    "  -- Card first: an open invite with no saved card does not exist as far as /join is concerned."$'\n'"  IF NOT public.guardian_invite_has_card(v_row) THEN" \
+    "  -- Card first: an open invite with no saved card does not exist as far as /join is concerned."$'\n'"  IF false THEN" \
+    "CF4 claiming an invite is refused until a card is saved"
+  sql_plant claim_guardian_invite_audited "I24 an invite with no card can be claimed" \
+    "  -- Card first: an open invite with no saved card cannot be claimed (same answer as /join)."$'\n'"  IF NOT public.guardian_invite_has_card(v_row) THEN" \
+    "  -- Card first: an open invite with no saved card cannot be claimed (same answer as /join)."$'\n'"  IF false THEN" \
+    "CF4 claiming an invite is refused until a card is saved"
+  plant_check "I25 the route maps the card refusal to a 500" "$INVITE_ROUTES" \
+    "    if (err instanceof GuardianInviteCardRequiredError) {"$'\n'"      return cardRequired(res, requestId);"$'\n'"    }"$'\n'"    return failure(res, \"resend\", err, requestId);" \
+    "    return failure(res, \"resend\", err, requestId);" \
+    "CF2 sending an invite is refused until a card is saved" "$PG_SUITE"
 
   echo "=== the routes (real Postgres) ==="
   plant_check "I13 the inviting guardian's age not re-checked at claim" "$JOIN" \

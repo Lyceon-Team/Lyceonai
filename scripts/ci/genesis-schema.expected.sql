@@ -4846,6 +4846,10 @@ BEGIN
   IF v_row.status = 'cancelled' THEN
     RETURN jsonb_build_object('outcome', 'cancelled');
   END IF;
+  -- Card first: an open invite with no saved card cannot be claimed (same answer as /join).
+  IF NOT public.guardian_invite_has_card(v_row) THEN
+    RETURN jsonb_build_object('outcome', 'not_found');
+  END IF;
   IF v_row.expires_at <= now() THEN
     RETURN jsonb_build_object('outcome', 'expired');
   END IF;
@@ -11028,6 +11032,18 @@ $$;
 
 
 --
+-- Name: guardian_invite_has_card(public.guardian_invites); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_invite_has_card(p_row public.guardian_invites) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+  SELECT p_row.card_saved_at IS NOT NULL AND p_row.card_payment_method_id IS NOT NULL;
+$$;
+
+
+--
 -- Name: guardian_invite_lookup(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11047,6 +11063,10 @@ BEGIN
   END IF;
   IF v_row.status = 'cancelled' THEN
     RETURN jsonb_build_object('state', 'cancelled');
+  END IF;
+  -- Card first: an open invite with no saved card does not exist as far as /join is concerned.
+  IF NOT public.guardian_invite_has_card(v_row) THEN
+    RETURN jsonb_build_object('state', 'not_found');
   END IF;
   IF v_row.expires_at <= now() THEN
     RETURN jsonb_build_object('state', 'expired');
@@ -11205,6 +11225,12 @@ BEGIN
      AND expires_at > now();
 
   IF p_invite_id IS NULL THEN
+    -- Card first (owner ruling 2026-11-22, 2): a new invite is a draft with no card yet, so
+    -- it cannot be emailed. The route never sends an address here; refusing one makes that a
+    -- property of the database, not of the route.
+    IF p_email_hash IS NOT NULL THEN
+      RAISE EXCEPTION 'a new invite has no saved card' USING ERRCODE = 'LY011';
+    END IF;
     IF v_open >= 3 THEN
       RAISE EXCEPTION 'open invite limit reached' USING ERRCODE = 'LY010';
     END IF;
@@ -11226,6 +11252,12 @@ BEGIN
    FOR UPDATE;
   IF NOT FOUND THEN
     RETURN NULL;
+  END IF;
+
+  -- Card first (owner ruling 2026-11-22, 2): no new link, emailed or copied, until a card is
+  -- saved on this invite.
+  IF NOT public.guardian_invite_has_card(v_row) THEN
+    RAISE EXCEPTION 'invite has no saved card' USING ERRCODE = 'LY011';
   END IF;
 
   -- Reviving an expired invite counts as opening one.
@@ -31118,6 +31150,14 @@ GRANT ALL ON FUNCTION public.guardian_invite_audit(p_action text, p_actor uuid, 
 
 REVOKE ALL ON FUNCTION public.guardian_invite_charge_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.guardian_invite_charge_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_invite_has_card(p_row public.guardian_invites); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_invite_has_card(p_row public.guardian_invites) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_invite_has_card(p_row public.guardian_invites) TO service_role;
 
 
 --
