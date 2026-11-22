@@ -1,0 +1,113 @@
+{"id": "7f2524bf", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0264", "CL.0137", "CL.0145"], "distractors": [], "why": "y-intercept of decreasing tablet value curve is ~$225 at purchase; interpreting that contextually means the tablet was worth $225 when bought."}
+{"id": "e9aed539", "sub_skills": ["NLF.4"], "clusters": ["CL.0098"], "distractors": [], "why": "Translating a parabola up 4 units adds 4 to every y-value, a vertical shift of the graph."}
+{"id": "4fbffc0a", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0264"], "distractors": [], "why": "The marked point (1.0, 4.8) means 1.0 second after launch the ball is 4.8 meters high; interpreting a specific point on a nonlinear trajectory."}
+{"id": "6abec9a8", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading where the curve crosses the y-axis gives the y-intercept at approximately (0, -5)."}
+{"id": "1ee962ec", "sub_skills": ["NLF.1", "NLF.3"], "clusters": ["CL.0264"], "distractors": [], "why": "Reading multiple values from a parabola graph modeling ocean water levels; at x=0 y=0, at x=3 y=-12, at x=6 y=0."}
+{"id": "07bcecac", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "P(8) approx 32.91 means 8 years after 1984 the predicted population was approximately 32.91 million."}
+{"id": "788bfd56", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(144) = 4 + sqrt(144) = 4 + 12 = 16; direct substitution into a square root function."}
+{"id": "369b7bb7", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "g(3) = sqrt(8*3 + 1) = sqrt(25) = 5; substitution and evaluation of a square root expression."}
+{"id": "cc2601cb", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0136"], "distractors": [], "why": "Reading the x-coordinate where the parabola touches the x-axis from the graph (free response)."}
+{"id": "b39d74a0", "sub_skills": ["NLF.5", "NLF.1"], "clusters": ["CL.0267", "CL.0270"], "distractors": [], "why": "Table values {0:0, 1:1, 2:8, 3:27} are perfect cubes y = x^3; matching data pattern to a cubic graph."}
+{"id": "837e9da7", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(3) = 1/(6*3) = 1/18; direct substitution into a rational function."}
+{"id": "b5c43226", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading the y-intercept of an exponential curve from the graph at approximately (0, 2)."}
+{"id": "2fec8bf4", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "P(0) = 1800 means 1800 marine mammals when the study began; interpreting the initial value of an exponential model."}
+{"id": "e166aca6", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0136"], "distractors": [], "why": "Reading the x-intercept of a parabola from the graph at approximately (4, 0)."}
+{"id": "cfff8f8e", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0198"], "distractors": [], "why": "900 subscribers doubling yearly gives y = 900(2)^x; constructing an exponential model from initial value and growth factor."}
+{"id": "ad376f1a", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "f(0) is the y-intercept; reading from the graph gives approximately 3."}
+{"id": "bd4d0e0c", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(0) = 10(0)^2 - 32(0) - 152 = -152; substituting x = 0 into a quadratic."}
+{"id": "c13016f9", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(2) = 4 + 2 + 71 = 77; substituting x = 2 into x^2 + x + 71 (free response)."}
+{"id": "2d394c28", "sub_skills": ["TVD.8", "TVD.6"], "clusters": ["CL.0264", "CL.0270"], "distractors": [], "why": "Reading a predicted value from a scatter plot line of best fit at x = 6; this is a TVD (data/scatterplot) question, not NLF."}
+{"id": "2b6c12eb", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0136"], "distractors": [], "why": "Reading the x-coordinate of one x-intercept of a parabola from the graph (free response)."}
+{"id": "79e6ec70", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0136"], "distractors": [], "why": "Identifying the x-intercept of a decreasing curve where it crosses the x-axis."}
+{"id": "5377d9cf", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(-1) = (1 + 6 + 3)/(-1 - 1) = 10/(-2) = -5; substituting into a rational function."}
+{"id": "75915e3c", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(2) = 2(3)^2 = 2*9 = 18; evaluating an exponential function at a specific input."}
+{"id": "f547a8b1", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading the y-intercept of an exponential curve from the graph."}
+{"id": "2f4eafcc", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading the y-value where the parabola crosses the y-axis (free response)."}
+{"id": "9da41c80", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0198"], "distractors": [], "why": "22 in h(n) = 22(0.85)^n is the initial height before the first bounce; interpreting the coefficient of an exponential decay model."}
+{"id": "7160cbb3", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading the y-intercept of a curve from the graph."}
+{"id": "20722644", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(2) = 2^3 + 9 = 8 + 9 = 17; substituting into a cubic function."}
+{"id": "7fe7cf26", "sub_skills": ["NLF.4", "NLF.3"], "clusters": ["CL.0098", "CL.0145"], "distractors": [], "why": "Ball launched from 20-foot platform shifts the trajectory graph up 20 units; vertical translation with contextual interpretation."}
+{"id": "5e63b9cf", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0145", "CL.0137", "CL.0264"], "distractors": [], "why": "The y-intercept of the marble height graph is ~8, meaning the marble was 8 inches above ground when it started moving."}
+{"id": "5e63b9cf", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0145", "CL.0137", "CL.0264"], "distractors": [], "why": "Duplicate of line 29; y-intercept interpretation of marble height graph at ~8 inches initial height."}
+{"id": "94ff3e2d", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "h(2) = 8/(5*2 + 6) = 8/16 = 1/2; substituting into a rational function (free response)."}
+{"id": "72ae8a87", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "f(5) approx 518748 means 5 years after selling online, predicted revenue is ~$518,748."}
+{"id": "09f58996", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(36) = 6 + sqrt(36) = 6 + 6 = 12; substitution into a square root function (free response)."}
+{"id": "d84a514a", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "f(5) approx 648650 means 5 years after selling jewelry online, predicted revenue is ~$648,650."}
+{"id": "ebe4bde0", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0264", "CL.0219"], "distractors": [], "why": "Maximum plant diversity occurs at the vertex of the quadratic; reading the x-coordinate at ~1250 meters elevation."}
+{"id": "c99d154a", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading the y-coordinate where the curve crosses the y-axis, approximately 3 (free response)."}
+{"id": "893c7519", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "The y-intercept of the exponential graph is at (0, 3), so y = 3 (free response)."}
+{"id": "3ea87153", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "Solving g(x) = 25 where g(x) = x^2 + 9: x^2 = 16, x = 4; finding the input that produces a given output."}
+{"id": "d46da42c", "sub_skills": ["NLF.5"], "clusters": ["CL.0137", "CL.0272"], "distractors": [], "why": "f(x) = x^2 + 4 has vertex at (0, 4) opening upward; matching the equation to its graph using key features."}
+{"id": "0ad5012e", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0270"], "distractors": [], "why": "At x = 0 (end of May 2012), y = -1/4(0)^2 + 2(0) + 29 = 29 deliveries; interpreting the y-intercept of a quadratic model."}
+{"id": "5a74f696", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0198"], "distractors": [], "why": "Initial $890 doubling every 10 years gives M(t) = 890(2)^(t/10); constructing an exponential model with a doubling period."}
+{"id": "1863e3be", "sub_skills": ["NLF.2", "NLF.1"], "clusters": ["CL.0270", "CL.0137"], "distractors": [], "why": "y-intercept of y = x^2 + 31 is at x = 0: y = 0 + 31 = 31; evaluating to find the y-intercept (free response)."}
+{"id": "ca4ee54e", "sub_skills": ["NLF.1", "NLF.3"], "clusters": ["CL.0264"], "distractors": [], "why": "Reading the predicted SUV value at x = 3 years from a decreasing curve, approximately $13,632."}
+{"id": "c1eead73", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "g(4) = |4 + 18| = |22| = 22; evaluating an absolute value function."}
+{"id": "04b985e6", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "K(34) = 5202 means an object at 34 m/s has kinetic energy of 5202 joules; interpreting a function value in physics context."}
+{"id": "2cf7f039", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "Solving f(x) = 48 where f(x) = 8*sqrt(x): 8*sqrt(x) = 48, sqrt(x) = 6, x = 36; finding input from output."}
+{"id": "d45572cc", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "f(0) is the y-value where the curve crosses the y-axis, reading approximately 3 from the graph (free response)."}
+{"id": "79ba511a", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(2) = 2^3 + 15 = 8 + 15 = 23; substituting into a cubic function."}
+{"id": "26f5269a", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading the y-intercept value from a polynomial graph at approximately y = 40 (free response)."}
+{"id": "50418728", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "Reading the y-intercept of a polynomial function from the graph at approximately y = -3 (free response)."}
+{"id": "ee05c84e", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(20) = (20 + 0.25*20)(50 - 20) = (20 + 5)(30) = 25*30 = 750; substitution and arithmetic."}
+{"id": "782a8a53", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0219"], "distractors": [], "why": "Reading the vertex of a parabola from the graph at (0, 2); the vertex is a key feature of a quadratic."}
+{"id": "39652e93", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(17) = 16/17; direct substitution into a rational function."}
+{"id": "044c1cb7", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "h(1) = 1 - 3 = -2, h(2) = 4 - 3 = 1, h(3) = 9 - 3 = 6; evaluating x^2 - 3 at three inputs to match the correct table."}
+{"id": "de362c2f", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(8) = 5(8^2) = 5*64 = 320; substitution into a quadratic function."}
+{"id": "02c67921", "sub_skills": ["NLF.2"], "clusters": ["CL.0264", "CL.0137"], "distractors": [], "why": "The y-intercept of a decreasing exponential is at (0, 3), reading from the graph (free response)."}
+{"id": "100030d9", "sub_skills": ["NLF.1", "NLF.5"], "clusters": ["CL.0270", "CL.0198"], "distractors": [], "why": "Ball bounces to half height each time: 20 -> 10 -> 5 -> 2.5; between 3rd and 4th bounce max height is 2.5 feet, applying geometric decay."}
+{"id": "7ba694f3", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0198"], "distractors": [], "why": "The 4 in y = 44000(2)^(t/4) is the doubling period; the population doubles every 4 hours."}
+{"id": "c7a187a7", "sub_skills": ["NLF.2", "EE.4"], "clusters": ["CL.0136", "CL.0074"], "distractors": [], "why": "Factoring x^2 - 18x - 360 = (x - 30)(x + 12) = 0 gives x = -12 or x = 30; the x-intercept (-a, 0) with a positive means a = 12."}
+{"id": "a26c29f7", "sub_skills": ["NLF.4"], "clusters": ["CL.0098"], "distractors": [], "why": "Shifting f(x) = 7x^3 down 2 units gives g(x) = 7x^3 - 2; a vertical translation subtracts from the function."}
+{"id": "99269e03", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "At x = 3: y = 4(2)^3 + 3 = 4*8 + 3 = 35; substituting into an exponential expression."}
+{"id": "e1391dd6", "sub_skills": ["NLF.1", "NLF.5"], "clusters": ["CL.0270", "CL.0198"], "distractors": [], "why": "275000 doubles every 2 years: 275000 -> 550000 -> 1100000 takes 4 years, so 1985 + 4 = 1989."}
+{"id": "3c600337", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(0) = 270(0.1)^0 = 270*1 = 270; any base raised to the zero power is 1."}
+{"id": "4209aefe", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "f(5) approx 243 means 5 years after 1957 (i.e. 1962) the art was worth approximately $243."}
+{"id": "f1fa0821", "sub_skills": ["NLF.1", "NLF.3"], "clusters": ["CL.0264", "CL.0271"], "distractors": [], "why": "Population at x = 0 is ~2, at x = 1 is ~5; the ratio 5/2 = 2.5 means the population increased by approximately 2.5 times."}
+{"id": "5bf0f84a", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "In h(t) = -16t^2 + 110t + 72, the constant 72 is h(0), the height at t = 0, which is the building height."}
+{"id": "c048055c", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0240", "CL.0198"], "distractors": [], "why": "15000 increasing 4%/year means multiplying by 1.04 each year: p = 15000(1.04)^x."}
+{"id": "70ebd3d0", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0198"], "distractors": [], "why": "Base 0.90 means each 100m deeper the count is 90% of previous, a 10% decrease per 100 meters."}
+{"id": "45df91ee", "sub_skills": ["NLF.2", "NLF.1"], "clusters": ["CL.0270", "CL.0137"], "distractors": [], "why": "g(0) = 11(1/12)^0 = 11*1 = 11; the y-intercept is (0, 11), found by evaluating at x = 0."}
+{"id": "7f87deff", "sub_skills": ["NLF.2"], "clusters": ["CL.0136"], "distractors": [], "why": "Zeros of y = 3(x - 14)(x + 5)(x + 4) are x = 14, -5, -4; the only positive x-intercept is c = 14 (free response)."}
+{"id": "97158b3a", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "Area = w(w + 29) for a rectangle of width w means length is the other factor, w + 29."}
+{"id": "d8ace155", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0270"], "distractors": [], "why": "Testing 36100(1.05)^13 approx 36100*1.886 approx 68087, confirming the 5% annual growth model fits the data."}
+{"id": "dba7432e", "sub_skills": ["NLF.5"], "clusters": ["CL.0267", "CL.0272"], "distractors": [], "why": "Consecutive ratios are all 1/2, so f(x) = 5(1/2)^x = 5*2^(-x); recognizing constant ratio as exponential decay."}
+{"id": "cbc4c163", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(1/4) = 5(1/4 - 1/4)^2 + 11/4 = 5(0) + 11/4 = 11/4 = 2.75 (free response)."}
+{"id": "f1c81b3b", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "19*a^3 = 2375 gives a^3 = 125, a = 5; then g(4) = 19*5^4 = 19*625 = 11875 (free response)."}
+{"id": "c19d1fb0", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0270"], "distractors": [], "why": "At t = 0, h = -4.9(0) + 9(0) + 18 = 18; the egg was thrown from 18 meters height (free response)."}
+{"id": "0aaef7aa", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "7n^3 = 56, n^3 = 8, n = 2; solving for the input of a cubic function."}
+{"id": "b7cd6ca6", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "5 in E(t) = 5(1.8)^t is E(0) = 5, the number of employees when the restaurant opened."}
+{"id": "0af701e7", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(x) = |x - 4x| = |-3x| = 3|x|; f(5) = 15, f(5) - f(a) = -15 means f(a) = 30, so 3|a| = 30, a = 10."}
+{"id": "4880eecb", "sub_skills": ["NLF.2"], "clusters": ["CL.0074", "CL.0270"], "distractors": [], "why": "x(x + 8) = 180 gives x^2 + 8x - 180 = 0, factoring (x + 18)(x - 10) = 0, x = 10 (positive)."}
+{"id": "f5e8ccf1", "sub_skills": ["NLF.2"], "clusters": ["CL.0136"], "distractors": [], "why": "Zeros are x = -4, 1, 3/2; (-2/3, 0) is NOT a zero, so answer B."}
+{"id": "aa95fb33", "sub_skills": ["NLF.4"], "clusters": ["CL.0098"], "distractors": [], "why": "f(x) + 5 shifts the graph of f up by 5 units; vertical translation of a rational function."}
+{"id": "3918e8bc", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "At t = 0, h = -4.9(0) + 7(0) + 9 = 9; the object was kicked from 9 meters height."}
+{"id": "7e5a3640", "sub_skills": ["NLF.1"], "clusters": ["CL.0270", "CL.0198"], "distractors": [], "why": "300000 doubles every 3 hours; 15 hours = 5 doublings: 300000*2^5 = 9600000."}
+{"id": "52e589f9", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "m(330) approx 362 means 330 days after birth the predicted body mass is approximately 362 kg."}
+{"id": "4993b828", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "Area = w(w + 9) for width w means length is the other factor, w + 9."}
+{"id": "981aca65", "sub_skills": ["NLF.4"], "clusters": ["CL.0098", "CL.0099"], "distractors": [], "why": "Translating 3 down and 4 right: replace x with (x - 4) and subtract 3 from the constant, giving g(x) = (a - 19)/(x - 4) + 2."}
+{"id": "7a4475df", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0240", "CL.0198"], "distractors": [], "why": "2000 animals increasing 3%/year: multiply by 1.03 each year, p(x) = 2000(1.03)^x."}
+{"id": "5c00c2c1", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0240", "CL.0198"], "distractors": [], "why": "24 jackrabbits with 16.2% annual increase: p(t) = 24(1.162)^t."}
+{"id": "281a4f3b", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0240", "CL.0198"], "distractors": [], "why": "3000 students decreasing 2%/year: multiply by 0.98 each year, f(x) = 3000(0.98)^x."}
+{"id": "9ff88bb5", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0145", "CL.0136", "CL.0264"], "distractors": [], "why": "The x-intercept at ~1.6 seconds means the diver hit the water about 1.6 seconds after leaving the board."}
+{"id": "dbe9b217", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(2) = 8(2^3) + 4 = 8*8 + 4 = 68 (free response)."}
+{"id": "dd8ac009", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0267"], "distractors": [], "why": "674.02/670 approx 1.006, so rate is 0.6% per 30 days: d = 670(1.006)^(t/30)."}
+{"id": "90bcaa61", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0198"], "distractors": [], "why": "f(t) = 60000(2)^(t/410); the exponent doubles when t = 410, so doubling time is 410 minutes (free response)."}
+{"id": "6676f055", "sub_skills": ["NLF.3"], "clusters": ["CL.0145", "CL.0210"], "distractors": [], "why": "f(theta) = -0.28(theta - 27)^2 + 880 is a downward parabola with vertex at theta = 27, giving maximum airflow."}
+{"id": "d71f6dbf", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "h(1.4) approx 1.64 means 1.4 seconds after being thrown the ball is at 1.64 feet height."}
+{"id": "f44a29a8", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "1/2(4)v^2 = 18 gives 2v^2 = 18, v^2 = 9, v = 3 m/s."}
+{"id": "44076c7d", "sub_skills": ["NLF.5", "NLF.1"], "clusters": ["CL.0270", "CL.0272"], "distractors": [], "why": "Testing f(x) = x^2 + 5x + 14: f(-1) = 1 - 5 + 14 = 10, f(0) = 14, f(1) = 1 + 5 + 14 = 20; all three match."}
+{"id": "67f4b449", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "f(14) = 6(14^2) = 1176 means a wall 14 feet wide has area 1176 square feet."}
+{"id": "f880f910", "sub_skills": ["NLF.2"], "clusters": ["CL.0074", "CL.0270"], "distractors": [], "why": "1/2*h*(h + 12) = 270 gives h^2 + 12h - 540 = 0, factoring (h - 18)(h + 30) = 0, h = 18 cm."}
+{"id": "d675744f", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0198", "CL.0137"], "distractors": [], "why": "y = 4(2^x) is an increasing exponential passing through (0, 4); matching equation to graph by y-intercept and growth."}
+{"id": "78d5f91a", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(-1) = (-1)^3 + 3(-1)^2 - 6(-1) - 1 = -1 + 3 + 6 - 1 = 7."}
+{"id": "68607eca", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0240", "CL.0198"], "distractors": [], "why": "233 views increasing 70% every 2 days: f(x) = 233(1.70)^(x/2)."}
+{"id": "735a0a00", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "Point (1, 83) means 1 day after launch the stock price was $83."}
+{"id": "dc77e0dc", "sub_skills": ["NLF.3", "NLF.1"], "clusters": ["CL.0145", "CL.0270"], "distractors": [], "why": "At the surface t = 0: f(0) = 500(0.5)^0 = 500 mR/hr; evaluating and interpreting the initial value."}
+{"id": "c4cd5bcc", "sub_skills": ["NLF.2"], "clusters": ["CL.0137"], "distractors": [], "why": "The y-intercept (0, c) means c = f(0) by definition of y-intercept."}
+{"id": "203774bc", "sub_skills": ["NLF.2"], "clusters": ["CL.0074", "CL.0270"], "distractors": [], "why": "(2x + 11)*x = 546 gives 2x^2 + 11x - 546 = 0; solving yields x = 14, the smaller integer."}
+{"id": "6ecdbcb4", "sub_skills": ["NLF.1", "NLF.4"], "clusters": ["CL.0270", "CL.0098"], "distractors": [], "why": "At zeros of f (x = -6, -5, 4): f(x) = 0, so y = f(x) - 3 = -3; the vertical shift maps zeros to y = -3."}
+{"id": "db888cd6", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0145", "CL.0137", "CL.0264"], "distractors": [], "why": "The y-intercept of the catalog graph at x = 1992 is approximately 9 thousand catalogs."}
+{"id": "197bed38", "sub_skills": ["NLF.3"], "clusters": ["CL.0264", "CL.0271"], "distractors": [], "why": "The object height increases from x = 0 to x = 2 (before the vertex/maximum), then decreases."}
+{"id": "a31417d1", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0240", "CL.0198"], "distractors": [], "why": "600 million CDs decreasing 15%/year: C = 600(0.85)^t."}
+{"id": "e1f9000d", "sub_skills": ["NLF.1", "NLF.2"], "clusters": ["CL.0270", "CL.0136"], "distractors": [], "why": "h(0) = 3364 so b = 3364; h = 0 gives -16t^2 + 3364 = 0, t^2 = 210.25, t = 14.5 seconds."}
