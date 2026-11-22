@@ -17,9 +17,13 @@
  */
 import * as React from "react";
 import { Link, useLocation } from "wouter";
-import { Users } from "lucide-react";
+import { Phone, Users } from "lucide-react";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { guardianPaths } from "@/features/guardian/paths";
+import {
+  PARENT_CALL_LABEL,
+  PARENT_CALL_URL,
+} from "@lyceon/shared/external-links";
 import { SkipLink } from "@/components/common/skip-link";
 import { LyceonMark } from "@/components/common/LyceonMark";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
@@ -137,6 +141,19 @@ function GuardianHeader({
                   >
                     <Users className="mr-2 h-4 w-4" aria-hidden="true" />
                     Linked students &amp; billing
+                  </DropdownMenuItem>
+                  {/* Owner ruling 2026-11-21, 8: the parent call booking page, always in the
+                      menu. A plain outbound link in a new tab (no embed, no third-party script). */}
+                  <DropdownMenuItem asChild data-testid="menu-book-call">
+                    <a
+                      href={PARENT_CALL_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="no-underline"
+                    >
+                      <Phone className="mr-2 h-4 w-4" aria-hidden="true" />
+                      {PARENT_CALL_LABEL}
+                    </a>
                   </DropdownMenuItem>
                   {feedback.item}
                 </>

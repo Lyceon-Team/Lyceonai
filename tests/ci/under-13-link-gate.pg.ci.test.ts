@@ -258,6 +258,13 @@ const ALLOWED_EXACT: ReadonlySet<string> = new Set([
   "GET /api/billing/cancel-state",
   "POST /api/billing/cancel",
   "POST /api/billing/cancel/undo",
+  // OWNER RULING 2026-11-21 (counsel-approved) 4, SCL-282: "A teen under 13 may claim through
+  // /join." Claiming IS how such a student gets linked, so the gate cannot stand in front of it.
+  // The lookup answers what a token is and nothing about any student; the claim is student-role
+  // only (inline gate in server/routes/join-routes.ts) and creates the link. CL5 in
+  // tests/ci/guardian-invites.pg.ci.test.ts.
+  "POST /api/join/lookup",
+  "POST /api/join/claim",
 ]);
 const ALLOWED_PREFIXES: ReadonlyArray<string> = [
   "/api/auth/",
