@@ -28,7 +28,6 @@
 {"id": "20722644", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(2) = 2^3 + 9 = 8 + 9 = 17; substituting into a cubic function."}
 {"id": "7fe7cf26", "sub_skills": ["NLF.4", "NLF.3"], "clusters": ["CL.0098", "CL.0145"], "distractors": [], "why": "Ball launched from 20-foot platform shifts the trajectory graph up 20 units; vertical translation with contextual interpretation."}
 {"id": "5e63b9cf", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0145", "CL.0137", "CL.0264"], "distractors": [], "why": "The y-intercept of the marble height graph is ~8, meaning the marble was 8 inches above ground when it started moving."}
-{"id": "5e63b9cf", "sub_skills": ["NLF.3", "NLF.2"], "clusters": ["CL.0145", "CL.0137", "CL.0264"], "distractors": [], "why": "Duplicate of line 29; y-intercept interpretation of marble height graph at ~8 inches initial height."}
 {"id": "94ff3e2d", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "h(2) = 8/(5*2 + 6) = 8/16 = 1/2; substituting into a rational function (free response)."}
 {"id": "72ae8a87", "sub_skills": ["NLF.3"], "clusters": ["CL.0145"], "distractors": [], "why": "f(5) approx 518748 means 5 years after selling online, predicted revenue is ~$518,748."}
 {"id": "09f58996", "sub_skills": ["NLF.1"], "clusters": ["CL.0270"], "distractors": [], "why": "f(36) = 6 + sqrt(36) = 6 + 6 = 12; substitution into a square root function (free response)."}
@@ -111,3 +110,4 @@
 {"id": "197bed38", "sub_skills": ["NLF.3"], "clusters": ["CL.0264", "CL.0271"], "distractors": [], "why": "The object height increases from x = 0 to x = 2 (before the vertex/maximum), then decreases."}
 {"id": "a31417d1", "sub_skills": ["NLF.5"], "clusters": ["CL.0272", "CL.0240", "CL.0198"], "distractors": [], "why": "600 million CDs decreasing 15%/year: C = 600(0.85)^t."}
 {"id": "e1f9000d", "sub_skills": ["NLF.1", "NLF.2"], "clusters": ["CL.0270", "CL.0136"], "distractors": [], "why": "h(0) = 3364 so b = 3364; h = 0 gives -16t^2 + 3364 = 0, t^2 = 210.25, t = 14.5 seconds."}
+{"id": "be0c419e", "sub_skills": ["NLF.3", "NLF.1"], "clusters": ["CL.0264", "CL.0271"], "distractors": [{"option_key": "A", "cluster_id": "CL.0264"}, {"option_key": "B", "cluster_id": "CL.0271"}, {"option_key": "C", "cluster_id": "CL.0264"}], "why": "f(x)=65(1.03)^x models coin value x years after purchase; f(8)\u224882 means 8 years after purchase the coin is worth ~$82 (answer D). Interpreting exponential function output in context; distractors confuse days/years, rate vs value, and initial vs later value."}
