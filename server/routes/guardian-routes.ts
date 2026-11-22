@@ -13,7 +13,7 @@ import { EntitlementService } from "../services/entitlement-service";
 import { getEntitlementForProfile } from "../lib/account";
 import { resolveEntitlementDisplay } from "../lib/entitlement-display";
 import { guardianLinkCodeEntryRateLimit } from "../middleware/guardian-link-rate-limit";
-import { guardianAgeRefusal, toIsoDate } from "../lib/role-choice";
+import { checkGuardianIsAdult, type GuardianAgeCheck } from "../lib/guardian-age";
 
 /**
  * ONE code for every refusal a redemption can give: malformed, expired, already used, never
@@ -367,32 +367,22 @@ router.post(
     // is spent, so a refusal here leaves the student's code redeemable and writes no link.
     // An existing guardian with no date of birth is told to add it; nothing about their
     // existing links changes.
-    const { data: guardianProfile, error: guardianProfileError } =
-      await supabaseServer
-        .from("profiles")
-        .select("date_of_birth")
-        .eq("id", guardianId)
-        .maybeSingle();
-    if (guardianProfileError) {
+    // The one reader of "is this guardian an adult with a date of birth on file", shared with
+    // the invite routes (server/lib/guardian-age.ts).
+    let ageCheck: GuardianAgeCheck;
+    try {
+      ageCheck = await checkGuardianIsAdult(guardianId);
+    } catch (ageErr: unknown) {
       logger.error("GUARDIAN", "link_redeem", "Guardian profile read failed", {
-        error: guardianProfileError.message,
+        error: ageErr instanceof Error ? ageErr.message : "unknown",
         requestId,
       });
       return res
         .status(500)
         .json({ error: "Internal server error", requestId });
     }
-    const dateOfBirth = toIsoDate(guardianProfile?.date_of_birth);
-    const ageRefusal =
-      dateOfBirth !== null
-        ? guardianAgeRefusal(dateOfBirth, new Date())
-        : ({
-            status: 403,
-            code: "GUARDIAN_DATE_OF_BIRTH_REQUIRED",
-            message:
-              "Add your date of birth to your account before linking a student.",
-          } as const);
-    if (ageRefusal) {
+    if (!ageCheck.ok) {
+      const ageRefusal = ageCheck.refusal;
       logger.warn(
         "GUARDIAN",
         "link_redeem",

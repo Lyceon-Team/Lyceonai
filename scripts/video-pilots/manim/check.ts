@@ -35,11 +35,9 @@
  * applies to each voice line, which normalisation meets, and the music bed sits under it.
  * Exit 1 when any video fails.
  *
- * D1 (Karl, 2026-11-02): one more gate and one more column.
- *   * The word guard (word-guard.ts): every spoken line and every string the scene set on screen
- *     (the log's on_screen list) is scanned for the third-party calculator's name. Any hit is
- *     listed with the line key or on-screen index and fails the video: by the owner's ruling that
- *     word never ships.
+ * D1 (Karl, 2026-11-02): one more gate and one more column. (The D1 word guard that failed a video
+ * naming Desmos was removed on Karl's ruling of 2026-11-15: Desmos is fully in scope, the licence
+ * including the API.)
  *   * Timers: a video with on-screen stopwatches logs each one's start, stop and shown value
  *     (graph.py Stopwatch). The shown value must be the floored tenths of stop − start on the video
  *     clock, or the video fails; the column prints what the viewer sees.
@@ -58,7 +56,6 @@ import {
 } from "../../worked-examples/final-mix";
 import { loadKit } from "../../worked-examples/kit";
 import { lineQualityProblems } from "../../worked-examples/quality";
-import { bannedWordHits, formatHit } from "./word-guard";
 
 export const linesLogSchema = z.object({
   duration: z.number().positive(),
@@ -149,18 +146,6 @@ export function screenEchoProblems(log: PilotLinesLog): string[] {
   return out;
 }
 
-/** The word guard over a rendered video's log: spoken lines by key, on-screen strings by index. */
-export function logWordHits(log: PilotLinesLog): string[] {
-  return [
-    ...log.lines.flatMap((l) =>
-      bannedWordHits(`spoken line "${l.key}"`, l.text),
-    ),
-    ...log.on_screen.flatMap((s, k) =>
-      bannedWordHits(`on-screen string ${k + 1}`, s),
-    ),
-  ].map(formatHit);
-}
-
 /** Each stopwatch as the viewer sees it, or why its shown value is not its measured segment. */
 export function timerRows(log: PilotLinesLog): {
   rows: string[];
@@ -247,7 +232,6 @@ export function checkVideo(label: string, video: string): PilotRow {
   );
   if (mix) failures.push(`mix: ${mix}`);
   failures.push(...screenEchoProblems(log));
-  failures.push(...logWordHits(log));
   const timers = timerRows(log);
   failures.push(...timers.problems);
   failures.push(...finishedMixProblems(video, kit));

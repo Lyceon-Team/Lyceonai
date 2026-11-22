@@ -129,6 +129,18 @@ function sqlChanges(fname: string, body: string): Finding[] {
     if (val === undefined) throw new Error(`${fname}: no value for changes`);
     found.push({ writer: fname, changes: val });
   }
+  // guardian_invite_audit (20261206000000) has the same shape: its FIFTH argument becomes
+  // `changes`. Every caller's value is checked, not only the helper's own parameter.
+  if (fname !== "guardian_invite_audit") {
+    const call = /guardian_invite_audit\s*\(/gi;
+    while ((m = call.exec(body)) !== null) {
+      const args = splitTopLevel(balanced(body, m.index + m[0].length - 1));
+      const val = args[4];
+      if (val === undefined)
+        throw new Error(`${fname}: guardian_invite_audit call without changes`);
+      found.push({ writer: `${fname} -> guardian_invite_audit`, changes: val });
+    }
+  }
   if (fname !== "guardian_link_audit") {
     const call = /guardian_link_audit\s*\(/gi;
     while ((m = call.exec(body)) !== null) {
@@ -237,6 +249,11 @@ describe("audit_logs writers put no email into `changes` (C-03, Q15)", () => {
       "accept_guardian_link_audited -> guardian_link_audit",
       "revoke_guardian_link_audited -> guardian_link_audit",
       "create_active_guardian_link_audited -> guardian_link_audit",
+      // 20261206000000 (SCL-282): the guardian invite's own audit helper and its callers.
+      "guardian_invite_audit",
+      "issue_guardian_invite_audited -> guardian_invite_audit",
+      "cancel_guardian_invite_audited -> guardian_invite_audit",
+      "claim_guardian_invite_audited -> guardian_invite_audit",
       path.join("server", "routes", "guardian-routes.ts"),
       path.join("server", "services", "retention-sweep.ts"),
       path.join("server", "services", "email-reconsent-audit.ts"),

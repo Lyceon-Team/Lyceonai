@@ -52,9 +52,10 @@ export function msg(
  * `prompt_version`). Tests that only need "the default" read this; the one test that says WHICH
  * version it is, and records the ruling, is tests/ci/lisa-prompt-default.contract.test.ts.
  * Changing the default changes this line and that file, nothing else.
- * `lisa-default-v6`: Karl's ruling of 2026-11-11 (SCL-275 note).
+ * `lisa-default-v7`: owner brief "Reading & Writing worked step", 2026-11-22 (v6 before, Karl's
+ * ruling of 2026-11-11, SCL-275 note).
  */
-export const DEFAULT_PROMPT_VERSION = "lisa-default-v6";
+export const DEFAULT_PROMPT_VERSION = "lisa-default-v7";
 
 export const DEFAULT_POLICY: OrchestrateRequest["policy_assignment"] = {
   policy_family: "instructional_tutor",

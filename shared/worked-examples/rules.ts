@@ -49,6 +49,16 @@
  *      written, so "$64" is "64" and "sixty-four" is "sixty four"; a spelled-out number never
  *      matches a written one, which is the point: the voice talks about the screen).
  *   S2 the spoken hook is not the on-screen hook line, after the same normalisation.
+ *
+ * The equation layout (Karl's fix 2026-11-14: "separate equations show on separate lines"; W47
+ * SATM2GL735M's card read "…have?y = x^2 − 4x + 5y = 2x − 3"), on the stem and the passage as the
+ * card writes them (CARD_MATH), one function each:
+ *   E1 every display equation ($$...$$, \[...\]) is a line of its own on the card, so two written
+ *      back to back, or one straight after the question mark, never share a line.
+ *   E2 an inline equation ($...$ holding =, <, >, ≤, ≥ or ≠) has a space (or an opening bracket)
+ *      before it and a space, a closing bracket or punctuation after it, so it never runs into
+ *      the words around it or into the next piece of maths; and two inline equations always have
+ *      a word or punctuation between them ("$y = 2x$ and $y = x + 1$"), never only a space.
  */
 import {
   WORKED_EXAMPLE_HOOK_TYPES,
@@ -61,12 +71,20 @@ import {
   type WorkedExampleStyle,
 } from "../../packages/shared/src/worked-example-schema";
 import { isoWeekCycle } from "../content/schedule";
-import { plainMathText } from "../qotd/plain-math";
+import { tokenizeMathContent } from "../math/tokenize";
+import { plainMathText, type PlainMathOptions } from "../qotd/plain-math";
 import { QOTD_SECTION_NAME } from "../qotd/social";
 import { capTiktokTitle } from "../qotd/tiktok";
 import {
+  funnelPhase,
+  youtubeShortsCtaLine,
+  youtubeShortsLink,
+} from "../social/funnel";
+import {
   nextSatTest,
+  SOCIAL_COMMENT_LINE,
   socialFacebookCaption,
+  socialHashtags,
   socialInstagramCaption,
   socialKeywords,
   socialTiktokCaption,
@@ -132,9 +150,15 @@ export type HookQuestion = Pick<
   "id" | "stem" | "passage" | "options" | "correct_answer"
 >;
 
+/**
+ * Maths written out for matching words and numbers: powers as ^ (x^2), so an exponent stays a
+ * number of its own; the superscript form (x², Karl 2026-11-16) is what the screen shows.
+ */
+const MATCH_MATH = { superscripts: false } as const;
+
 function questionText(q: HookQuestion): string {
   return [q.passage ?? "", q.stem, ...q.options.map((o) => o.text)]
-    .map(plainMathText)
+    .map((t) => plainMathText(t, MATCH_MATH))
     .join(" ");
 }
 
@@ -164,16 +188,23 @@ export function hookAnswerProblem(
     return `H5 gives the answer: "${text}" says what the answer is`;
   const correct = q.options.find((o) => o.key === q.correct_answer);
   if (!correct) return `H5 ${q.id} has no option ${q.correct_answer}`;
-  const correctPlain = plainMathText(correct.text).trim().toLowerCase();
-  if (correctPlain.length >= 2 && text.toLowerCase().includes(correctPlain))
-    return `H5 gives the answer: "${text}" contains the correct choice "${correctPlain}"`;
+  const correctPlain = plainMathText(correct.text, MATCH_MATH)
+    .trim()
+    .toLowerCase();
+  // The correct choice in either plain form: x^2 or x² (Karl, 2026-11-16).
+  for (const form of new Set([
+    correctPlain,
+    plainMathText(correct.text).trim().toLowerCase(),
+  ]))
+    if (form.length >= 2 && text.toLowerCase().includes(form))
+      return `H5 gives the answer: "${text}" contains the correct choice "${form}"`;
   const elsewhere = tokens(
     [
       q.passage ?? "",
       q.stem,
       ...q.options.filter((o) => o.key !== q.correct_answer).map((o) => o.text),
     ]
-      .map(plainMathText)
+      .map((t) => plainMathText(t, MATCH_MATH))
       .join(" "),
   );
   const own = [...tokens(correctPlain)].filter(
@@ -316,6 +347,73 @@ export function spokenTexts(
   ];
 }
 
+/** How the card writes the question's maths: each display equation on a line of its own. */
+export const CARD_MATH: PlainMathOptions = { displayOnOwnLine: true };
+
+const RELATION = /[=<>≤≥≠]|\\(?:le|leq|ge|geq|ne|neq|lt|gt)(?![A-Za-z])/;
+const OPENS_EQUATION = /[\s([]/;
+const CLOSES_EQUATION = /[\s)\].,;:?!]/;
+
+/** Text as the card writes it (composition.ts draws the stem and passage with this). */
+export function cardText(text: string): string {
+  return plainMathText(text, CARD_MATH);
+}
+
+/**
+ * E1 (display equation on its own card line) and E2 (inline equation set off), stem and passage.
+ * `render` is the card's rendering; a test passes another to prove E1 refuses a flattened one.
+ */
+export function equationLayoutProblems(
+  q: Pick<HookQuestion, "stem" | "passage">,
+  render: (text: string) => string = cardText,
+): string[] {
+  const out: string[] = [];
+  const texts: { where: string; text: string }[] = [
+    ...(q.passage && q.passage.trim() !== ""
+      ? [{ where: "the passage", text: q.passage }]
+      : []),
+    { where: "the question stem", text: q.stem },
+  ];
+  for (const { where, text } of texts) {
+    const lines = render(text).split("\n");
+    let previous: { shown: string; end: number } | null = null;
+    for (const token of tokenizeMathContent(text)) {
+      if (token.type !== "math") continue;
+      const shown = cardText(text.slice(token.rawStart, token.rawEnd));
+      if (token.displayMode) {
+        if (!lines.some((l) => l === shown || l.slice(0, -1) === shown))
+          out.push(
+            `E1: in ${where}, the equation "${shown}" is not on a line of its own on the card`,
+          );
+        continue;
+      }
+      if (!RELATION.test(token.content)) {
+        previous = null;
+        continue;
+      }
+      if (
+        previous !== null &&
+        text.slice(previous.end, token.rawStart).trim() === ""
+      )
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into the equation before it ("${previous.shown}")`,
+        );
+      previous = { shown, end: token.rawEnd };
+      const before = text[token.rawStart - 1];
+      const after = text[token.rawEnd];
+      if (before !== undefined && !OPENS_EQUATION.test(before))
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into what comes before it ("${before}")`,
+        );
+      if (after !== undefined && !CLOSES_EQUATION.test(after))
+        out.push(
+          `E2: in ${where}, the equation "${shown}" runs into what comes after it ("${after}")`,
+        );
+    }
+  }
+  return out;
+}
+
 /** S1: no spoken line reads VERBATIM_RUN_WORDS or more consecutive on-screen words aloud. */
 export function verbatimProblems(
   example: WorkedExampleScript,
@@ -380,6 +478,7 @@ export function scriptProblems(
       `trap.voice must open "The trap" or "Here's where people slip": "${example.trap.voice}"`,
     );
   out.push(...hookProblems(example.hook, q));
+  out.push(...equationLayoutProblems(q));
   out.push(...verbatimProblems(example, q));
   const echo = spokenHookEchoProblem(example.hook);
   if (echo) out.push(echo);
@@ -667,6 +766,107 @@ export function workedExampleKeywords(
     QOTD_SECTION_NAME[q.section],
     q.domain,
   );
+}
+
+/**
+ * The YouTube Shorts block (Karl, 2026-11-14: "add the YouTube Shorts block (title + description,
+ * no answer, utm_source=youtube&utm_medium=shorts) to each day's Slack reply from W48").
+ *
+ * @spec [Karl, 2026-11-14 (above); SCL-262 / SCL-265 (the captions' headline and hashtags, one
+ *       builder); owner brief "One funnel for every social post" (the "Free SAT practice:" line,
+ *       shared/social/funnel.ts); Public Disclosure Doctrine 1 (industry-standard Shorts copy:
+ *       a title with #Shorts, a description with the headline, a comment prompt, a link and
+ *       hashtags)] | @implemented [2026-11-14]
+ *
+ * plain English: from YOUTUBE_SHORTS_FROM (Monday of 2026-W48) every worked example's post
+ * carries a YouTube title (the worked-example title plus " #Shorts", at most 100 characters,
+ * YouTube's limit; without the tag if it would not fit) and a description: the headline, "Comment
+ * your answer 👇", the funnel's call to action with the tagged https link
+ * (lyceon.ai/start?utm_source=youtube&utm_medium=shorts&utm_campaign=worked_example), and the
+ * captions' hashtags. Nothing in it can give the answer (H5), and the link is the only one.
+ * Earlier posts carry no block, so a delivered week re-sent by recaption is unchanged.
+ */
+export const YOUTUBE_SHORTS_FROM = "2026-11-23";
+export const YOUTUBE_TITLE_MAX = 100;
+export const YOUTUBE_SHORTS_TAG = "#Shorts";
+
+/** True when a post on this date carries the YouTube Shorts block. */
+export function hasYoutubeShorts(postOn: string): boolean {
+  return postOn >= YOUTUBE_SHORTS_FROM;
+}
+
+/** "<title> #Shorts", or the title alone when the tag would pass 100 characters. */
+export function workedExampleYoutubeTitle(title: string): string {
+  const tagged = `${title} ${YOUTUBE_SHORTS_TAG}`;
+  return tagged.length <= YOUTUBE_TITLE_MAX ? tagged : title;
+}
+
+/** Headline / comment prompt / the call to action with the tagged link / hashtags. */
+export function workedExampleYoutubeDescription(
+  example: WorkedExampleContent,
+  q: SeedQuestion,
+  topic: string,
+): string {
+  const c = captionContext(example, q, topic);
+  return [
+    c.headline,
+    SOCIAL_COMMENT_LINE,
+    youtubeShortsCtaLine(funnelPhase(example.post_on), "worked_example"),
+    socialHashtags(c.test, c.section),
+  ].join("\n\n");
+}
+
+/**
+ * The YouTube block against its headline and question: the title within 100 characters and
+ * opening with the headline; the description opening with the headline and carrying exactly one
+ * link, the tagged Shorts link; with that link taken out, nothing Karl would not paste
+ * (copyBlockProblems) and no other link; no claim about people, statistic or banned phrase; and
+ * no answer (H5) in the title or anywhere in the description outside the fixed call to action.
+ */
+export function youtubeProblems(
+  youtube: { title: string; description: string },
+  headline: string,
+  q: HookQuestion,
+): string[] {
+  const out: string[] = [];
+  const { title, description } = youtube;
+  if (title.length > YOUTUBE_TITLE_MAX)
+    out.push(
+      `youtube title is ${title.length} characters (at most ${YOUTUBE_TITLE_MAX})`,
+    );
+  if (!title.startsWith(headline))
+    out.push(`youtube title must open with the headline "${headline}"`);
+  if (description.split("\n")[0] !== headline)
+    out.push(
+      `youtube description's first line must be the headline "${headline}"`,
+    );
+  const link = youtubeShortsLink("worked_example");
+  const links = description.split(link).length - 1;
+  if (links !== 1)
+    out.push(
+      `youtube description must carry the tagged Shorts link once (${link}), found ${links}`,
+    );
+  const rest = description.split(link).join("");
+  for (const p of copyBlockProblems(rest)) out.push(`youtube description ${p}`);
+  const other = CAPTION_LINK.exec(rest);
+  if (other)
+    out.push(`youtube description carries another link ("${other[0]}")`);
+  for (const text of [title, description]) {
+    const p =
+      hookPeopleProblem(text) ??
+      hookStatisticProblem(text) ??
+      publicPhraseProblem(text);
+    if (p) out.push(`youtube ${p.replace(/^H\d /, "")}`);
+  }
+  const prose = description
+    .split("\n")
+    .filter((l) => !l.includes(link))
+    .join("\n");
+  for (const text of [title, prose]) {
+    const a = hookAnswerProblem(text, q);
+    if (a) out.push(`youtube ${a.replace(/^H5 /, "")}`);
+  }
+  return out;
 }
 
 export function titleProblems(title: string): string[] {

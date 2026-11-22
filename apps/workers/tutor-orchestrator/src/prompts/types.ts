@@ -63,4 +63,7 @@ export type PromptArtifact = {
   /** SCL-275: the state blocks carry the [HELP LEVEL] block when the request carries a help level
    * (`help_level`, decided by the BFF). Absent (v1–v5): no help block, output unchanged. */
   readonly helpLevelBlock?: true;
+  /** Owner brief 2026-11-22: a worked step on a Reading & Writing item before submission works
+   * from the passage and the question only, never an answer choice. Absent (v1–v6): unchanged. */
+  readonly rwWorkedStepRule?: true;
 };

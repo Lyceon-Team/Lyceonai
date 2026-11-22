@@ -30,6 +30,14 @@ describe("deriveSignupAttribution", () => {
       ["meta", "facebook"],
       ["newsletter", "email"],
       ["resend", "email"],
+      // SCL-278 (Karl, 2026-11-14): YouTube (the Shorts link) and X are their own channels.
+      ["youtube", "youtube"],
+      ["YouTube.com", "youtube"],
+      ["yt", "youtube"],
+      ["x", "x"],
+      ["x.com", "x"],
+      ["twitter", "x"],
+      ["twitter.com", "x"],
     ];
     for (const [source, channel] of cases) {
       expect(
@@ -39,11 +47,29 @@ describe("deriveSignupAttribution", () => {
     }
   });
 
+  it("A7 the Shorts link is credited to YouTube, with its campaign (SCL-278)", () => {
+    expect(
+      deriveSignupAttribution(
+        "?utm_source=youtube&utm_medium=shorts&utm_campaign=worked_example",
+      ),
+    ).toEqual({ channel: "youtube", campaign: "worked_example" });
+    // Carried into sign-up and accepted by the server's parse.
+    expect(signupAttributionFromQuery("youtube", "worked_example")).toEqual({
+      channel: "youtube",
+      campaign: "worked_example",
+    });
+    expect(signupAttributionFromQuery("x", null)).toEqual({
+      channel: "x",
+      campaign: null,
+    });
+  });
+
   it("A2 an email medium is email; any other UTM is other; none is direct", () => {
     expect(
       deriveSignupAttribution("?utm_source=mailchimp&utm_medium=email").channel,
     ).toBe("email");
-    expect(deriveSignupAttribution("?utm_source=youtube").channel).toBe(
+    // An unlisted source is other (youtube was the example until SCL-278 made it a channel).
+    expect(deriveSignupAttribution("?utm_source=snapchat").channel).toBe(
       "other",
     );
     expect(deriveSignupAttribution("?utm_campaign=qotd").channel).toBe("other");

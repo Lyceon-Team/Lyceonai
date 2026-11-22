@@ -1,7 +1,7 @@
 #!/usr/bin/env pnpm exec tsx
 /**
  * G0-2 baseline: replay every teaching-quality case n times on the production default
- * (lisa-default-v6 since Karl's second ruling of 2026-11-11; v5 then v3 before) at thinking
+ * (lisa-default-v7 since the owner brief of 2026-11-22; v6, v5 then v3 before) at thinking
  * budget 1024, and write each run to `tutor_eval_runs`.
  *
  * @spec [Doc-03D_V1.2 §3.2.1, §5.1, §5.3, §8.1;
@@ -23,7 +23,7 @@
  * Usage:
  *   NODE_USE_ENV_PROXY=1 DATABASE_URL=... pnpm exec tsx tests/eval/teaching-quality/run-baseline.ts \
  *     [--runs 5] [--batch <uuid>] [--case G0-2-03] [--judge-model gemini-3.1-pro-preview]
- *     [--prompt-version lisa-default-v3 | … | lisa-default-v6] [--report]
+ *     [--prompt-version lisa-default-v3 | … | lisa-default-v7] [--report]
  *
  * Vertex credentials are attached by the egress proxy or ADC; nothing is read from the
  * environment for them.
@@ -36,6 +36,7 @@ import pg from "pg";
 import { GoogleGenAI, type Content } from "@google/genai";
 import { OAuth2Client } from "google-auth-library";
 import { orchestrateRequestSchema } from "../../../shared/tutor-orchestrator-wire";
+import { resolvePromptArtifact } from "../../../apps/workers/tutor-orchestrator/src/prompts/prompt-registry";
 import {
   TEACHING_QUALITY_SET_VERSION,
   tutorEvalAgreement,
@@ -71,7 +72,7 @@ function readOptions(): Options {
       "judge-model": { type: "string", default: JUDGE_MODEL_DEFAULT },
       // The prompt artifact every case is replayed on, by exact version (v4 is not the latest
       // for any variant, so it is only reachable this way).
-      "prompt-version": { type: "string", default: "lisa-default-v6" },
+      "prompt-version": { type: "string", default: "lisa-default-v7" },
       // Print pass rates and judge-vs-Karl agreement from the table; no replay, no model call.
       report: { type: "boolean", default: false },
     },
@@ -262,10 +263,12 @@ async function main(): Promise<void> {
         },
         scanCorrectAnswer: row.scan_correct_answer,
       };
-      // lisa-default-v6 renders its help block only from `help_level`; a case without one
-      // replays as v5 and reads as a v6 result. Refuse it (owner brief 2026-11-11).
+      // A prompt with the help block (v6 and later) renders it only from `help_level`; a case
+      // without one replays as v5 and reads as a v6/v7 result. Refuse it (owner brief
+      // 2026-11-11; any help-block artifact since 2026-11-22, so v7 is covered).
       if (
-        promptVersion === "lisa-default-v6" &&
+        resolvePromptArtifact("default", promptVersion).helpLevelBlock ===
+          true &&
         parsed.data.help_level === undefined
       ) {
         throw new Error(

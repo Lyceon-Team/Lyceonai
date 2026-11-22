@@ -37,7 +37,6 @@ repository; the scripts also refuse an output folder inside it).
 | `manim/scene.py` | The shared scene: voice, open card, recap, notepad, end card, log; no captions; safe area x 71..912, y 154..1555. It calls `pilots/<question id>.py` |
 | `manim/pilots/<id>.py` | One module per question: its figure and its choreography in the spoken order (hook, setup, steps, trap, answer and check, end card) |
 | `manim/layout.py`, `manim/graph.py` | Shared layout helpers (and `ON_SCREEN`, every string drawn); the D1 graph panel and the video-clock stopwatch |
-| `manim/word-guard.ts` | D1: refuses the third-party calculator's name in pilot sources, spoken lines and anything drawn |
 | `manim/render.py` | Runs `voice-lines.ts`, then Manim at 1080×1920, 30 fps, then lays the worked examples' music bed under the voice with ffmpeg, then limits the finished mix to ≤ −1 dBTP true peak with `scripts/worked-examples/final-mix.ts` (its CLI) |
 | `manim/check.ts` | Every video: 1080×1920, 30 fps, audio, 30-60 s, every line through `quality.ts`, the voice-over-music margin, S1 on what was drawn, the finished mix at most −1 dBTP true peak (`final-mix.ts` `finishedMixProblems`); prints loudness (LUFS, true peak). Exit 1 on any failure |
 | `manim/safe_area_check.py` | Samples frames and fails if any ink leaves the safe area |
@@ -150,16 +149,14 @@ pnpm exec tsx scripts/video-pilots/manim/check.ts \
 * **One module per question.** `scene.py` loads `pilots/<question id>.py` and refuses a bundle
   with no module there. A new question needs its own module (its figure and choreography); the
   open card, recap, end card, voice and log are shared.
-* **No third-party calculator.** By the owner's ruling of 2026-11-02 the graphs are drawn here in
-  Manim and called "the graphing method" or "graphing calculator"; no product's interface, logo or
-  screenshot is shown and its name is never on screen or spoken. `word-guard.ts` enforces the name
-  in three places (prepare, check, the test suite).
+* **Desmos is in scope** (Karl, 2026-11-15; Lyceon's licence includes the API). The D1 pilots draw
+  their graphs in Manim and call it "the graphing method"; a pilot may now name Desmos and show its
+  interface and logo. The word guard that refused the name (owner ruling of 2026-11-02) is removed.
 * **Stopwatches are honest by construction.** `graph.py`'s `Stopwatch` reads the scene's own
   clock, so each readout is the length of its segment in the video (from its first step's voice
   to the end of its last), not a real-world solve time; re-voicing re-measures them. The log
   records each start, stop and shown value, and `check.ts` fails a readout that is not the floored
   tenths of stop − start.
 * **CI.** `tests/ci/video-pilots.test.ts` runs every committed pilot script through the rules
-  (S1 and S2 included), the calculator-name guard over the pilot sources, and proves check.ts's
-  format, S1, word-guard, timer and true-peak checks (the last on a real ffmpeg video, skipped
+  (S1 and S2 included), and proves check.ts's format, S1, timer and true-peak checks (the last on a real ffmpeg video, skipped
   without ffmpeg); rendering is never run in CI.

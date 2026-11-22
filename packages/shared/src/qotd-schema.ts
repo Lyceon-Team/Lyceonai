@@ -308,6 +308,12 @@ export const qotdRedditPostSchema = z
 
 /** The TikTok "Why:" line: at most this many characters, cut at a sentence boundary. */
 export const QOTD_TIKTOK_WHY_MAX = 300;
+/**
+ * The Why as stored keeps its maths as written ($…$) for KaTeX (Karl, 2026-11-16), so its source
+ * runs longer than the 300 characters a viewer reads (tiktokWhy holds that limit on the visible
+ * text); this caps the source.
+ */
+export const QOTD_TIKTOK_WHY_SOURCE_MAX = 1200;
 /** The TikTok title: hard cap (Karl, 2026-10-23). */
 export const QOTD_TIKTOK_TITLE_MAX = 90;
 
@@ -330,7 +336,7 @@ export const qotdTiktokCarouselSchema = z
     question: qotdSocialInputSchema,
     section: z.enum(["Math", "Reading and Writing"]),
     answer: qotdRevealAnswerSchema,
-    why: z.string().min(1).max(QOTD_TIKTOK_WHY_MAX),
+    why: z.string().min(1).max(QOTD_TIKTOK_WHY_SOURCE_MAX),
   })
   .strict()
   .refine(

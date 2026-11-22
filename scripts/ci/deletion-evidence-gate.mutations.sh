@@ -534,7 +534,9 @@ plant M58 "$RPOL" 's.replace("    retention_horizon_seconds: 7776000        # 90
 expect_red M58 "F1.10 — the registry's horizons are the constants the mechanisms use"
 
 echo "==> (M59) a citation points at a superseded policy version"
-plant M59 "$RPOL" 's.replace("legal/privacy-policy/v6/en.md §6.7", "legal/privacy-policy/v5/en.md §6.7", 1)'
+# Re-pointed 2026-11-22: Privacy v7 is current (SCL-283) and the registry cites it, so the plant
+# takes the live v7 citation back to the superseded v6.
+plant M59 "$RPOL" 's.replace("legal/privacy-policy/v7/en.md §6.7", "legal/privacy-policy/v6/en.md §6.7", 1)'
 expect_red M59 "F1.8 — every policy citation points at the CURRENT published version"
 
 echo "==> (M60) an alert id is filled in although the alert registry does not exist"
