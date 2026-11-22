@@ -3,7 +3,7 @@
 {"id": "b0fc3166", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0047", "CL.0094"], "distractors": [], "why": "Set y=6x+18 equal to y=x+3, solve 5x=-15→x=-3, then y=0. Answer C."}
 {"id": "cdec4c87", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0047", "CL.0094"], "distractors": [], "why": "Set y=4x equal to y=x+6, solve 3x=6→x=2, y=8. Answer C."}
 {"id": "dba8d38a", "sub_skills": ["SYS.1"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "Substitute y=2 into 2x+y=14, solve 2x=12→x=6. Answer A."}
-{"id": "f5563c26", "sub_skills": ["RAT.3"], "clusters": ["CL.0060"], "distractors": [], "why": "Compute 75% of 120=90 and 10% of 240=24, sum=114. Percentage-of-groups, no system needed. Answer B."}
+{"id": "f5563c26", "sub_skills": ["PCT.14"], "clusters": ["CL.0060"], "distractors": [], "why": "75% of 120 who would see again = 90; 10% of 240 who would not = 24; total excellent = 114. Compound category percentages across complementary subsets. Answer B."}
 {"id": "e6545fa8", "sub_skills": ["SYS.5"], "clusters": ["CL.0177"], "distractors": [], "why": "Read intersection point of two graphed lines. Answer C (2,6)."}
 {"id": "317e80f9", "sub_skills": ["SYS.3"], "clusters": ["CL.0133"], "distractors": [], "why": "2x+2y=2 simplifies to x+y=1, identical to second equation; infinitely many solutions. Answer D."}
 {"id": "aff28230", "sub_skills": ["SYS.1"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "Substitute x=4 into x+y=12, get y=8."}
