@@ -51,6 +51,7 @@ const { pageStub } = vi.hoisted(() => ({
 // Every page App.tsx imports, eager and lazy.
 vi.mock("@/pages/home", pageStub);
 vi.mock("@/pages/login", pageStub);
+vi.mock("@/pages/join", pageStub);
 vi.mock("@/pages/not-found", pageStub);
 vi.mock("@/features/exam/pages/ExamModulePage", pageStub);
 vi.mock("@/features/exam/pages/ExamReportPage", pageStub);
@@ -403,6 +404,8 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/tests/:sessionId/report",
       // UI-59: every bare-card page.
       "/login",
+      // SCL-282: the guardian invite page, a bare card like /login.
+      "/join/:token",
       "/profile/complete",
       "/update-password",
       "/account/recover",

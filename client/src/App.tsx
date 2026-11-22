@@ -130,6 +130,18 @@ function LoginRoute() {
     </StudentRouteFrame>
   );
 }
+/**
+ * `/join/:token` (owner rulings 2026-11-21; SCL-282): public on purpose. A signed-out teen sees
+ * the invite, and an under-13 student reaches it before the guardian-required redirect. The page
+ * and the server enforce the student role. Bare card, like /login.
+ */
+function JoinRoute({ params }: { params: { token: string } }) {
+  return (
+    <StudentRouteFrame route="/join/:token">
+      <JoinPage params={params} />
+    </StudentRouteFrame>
+  );
+}
 function AccountRecoverRoute() {
   return (
     <StudentRouteFrame route="/account/recover">
@@ -201,6 +213,7 @@ function ProfileRoute(): JSX.Element {
 }
 const ProfileComplete = lazy(() => import("@/pages/profile-complete"));
 const GuardianRequired = lazy(() => import("@/pages/guardian-required"));
+const JoinPage = lazy(() => import("@/pages/join"));
 
 // SEO Wave 3 (C2): every content page renders through one component, mounted at each path in
 // CONTENT_PAGE_PATHS (the light path list; the copy loads with the page's own chunk).
@@ -251,6 +264,8 @@ export function Router() {
         {/* Public routes */}
         <Route path="/" component={HomePage} />
         <Route path="/login" component={LoginRoute} />
+        {/* A teen claims a guardian's invite (SCL-282). Public: see JoinRoute. */}
+        <Route path="/join/:token" component={JoinRoute} />
 
         {/* Signup redirects to the auth page on its Sign Up tab (owner brief 2026-10-10 rule 1;
             the URL comes from the shared allowlist). */}

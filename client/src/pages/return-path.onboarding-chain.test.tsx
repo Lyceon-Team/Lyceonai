@@ -86,6 +86,8 @@ import {
   GUARDIAN_SIGNUP_HREF,
   START_DIAGNOSTIC_HREF,
 } from "@/lib/marketing-links";
+import { authEntryPath } from "@lyceon/shared/auth-entry";
+import { joinPath } from "@lyceon/shared/guardian-invite-schema";
 
 function redirectTarget(): string {
   const to = screen.getByTestId("redirect").getAttribute("data-to");
@@ -191,6 +193,90 @@ describe("UI-03 — a return path survives sign-in AND first-time onboarding", (
       guardianConsentRequestId: null,
     });
     expect(navigateMock).toHaveBeenCalledWith("/calendar");
+  });
+
+  /**
+   * @spec [owner ruling 2026-11-21 (counsel-approved) 4; SCL-282] | @implemented [2026-11-22]
+   * An invited teen under 13: the /join page's own sign-up link → sign up → onboarding → back
+   * on /join, where claiming gets them linked. The under-13 redirect to /guardian-required must
+   * yield to a /join return path at every hop, or the teen could never claim.
+   */
+  it("an invited under-13 teen: /join → sign up → onboarding → /join, never /guardian-required", async () => {
+    const here = joinPath("T".repeat(43));
+    // Hop 1: the link the /join page's "Create a student account" button navigates to.
+    const signupUrl = authEntryPath({
+      mode: "signup",
+      role: "student",
+      next: here,
+    });
+    expect(signupUrl).toContain(encodeURIComponent(here));
+
+    // Hop 2: signed in, first-time student: onboarding first, carrying /join.
+    window.history.replaceState({}, "", signupUrl);
+    authState = {
+      user: {
+        role: "student",
+        profile_completed_at: null,
+        requiredProfileComplete: false,
+        guardianConsentRequired: false,
+      },
+      isAuthenticated: true,
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    const { unmount } = render(React.createElement(Login));
+    const onboardingUrl = String(navigateMock.mock.calls[0]?.[0]);
+    expect(onboardingUrl).toBe(
+      `/profile/complete?next=${encodeURIComponent(here)}`,
+    );
+    unmount();
+
+    // Hop 3: onboarding completes with an under-13 date of birth: back to /join, not the
+    // linking page.
+    window.history.replaceState({}, "", onboardingUrl);
+    authState = { ...authState, user: { id: "u1", role: "student" } };
+    render(React.createElement(ProfileComplete));
+    navigateMock.mockClear();
+    await mutationOptions?.onSuccess({
+      success: true,
+      profile: {
+        id: "u1",
+        role: "student",
+        profileCompletedAt: "2026-11-22T00:00:00Z",
+      },
+      guardianConsentRequired: true,
+      guardianConsentRequestId: null,
+    });
+    expect(navigateMock).toHaveBeenCalledWith(here);
+  });
+
+  it("a complete under-13 student signing in with next=/join lands on /join; without it, on /guardian-required", () => {
+    const here = joinPath("U".repeat(43));
+    const under13 = {
+      user: {
+        role: "student",
+        profile_completed_at: "2026-11-01T00:00:00Z",
+        requiredProfileComplete: true,
+        guardianConsentRequired: true,
+      },
+      isAuthenticated: true,
+      authLoading: false,
+      isAdmin: false,
+      isGuardian: false,
+    };
+    window.history.replaceState(
+      {},
+      "",
+      `/login?next=${encodeURIComponent(here)}`,
+    );
+    authState = under13;
+    const first = render(React.createElement(Login));
+    expect(navigateMock).toHaveBeenLastCalledWith(here);
+    first.unmount();
+    window.history.replaceState({}, "", "/login?next=%2Fcalendar");
+    render(React.createElement(Login));
+    expect(navigateMock).toHaveBeenLastCalledWith("/guardian-required");
   });
 
   it("a guardian who completes onboarding with next=/calendar lands on /guardian, not a student page", async () => {

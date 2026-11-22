@@ -161,6 +161,10 @@
       "dest": "/app.html"
     },
     {
+      "src": "^/join/[^/]+/?$",
+      "dest": "/app.html"
+    },
+    {
       "src": "^/account/recover/?$",
       "dest": "/app.html"
     },

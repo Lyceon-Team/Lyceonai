@@ -644,6 +644,21 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/growth-report.mutations.sh
 
+      # Guardian → teen invites (owner rulings 2026-11-21; SCL-282): the claim's link and
+      # initiator, idempotency, cancelled and expired tokens, the claim's row lock; the mechanism
+      # guard and the link-code defaults; the open-invite cap, token rotation, ownership; both
+      # limits and the per-address rollback; the guardian's age at claim; the student-role gate;
+      # no token in a log line; the call link's one constant (I1-I18). Each must turn its named
+      # check red.
+      - name: Guardian invites mutations (planted defects must fail)
+        if: matrix.group == 'social-lisa'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/guardian-invites.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest

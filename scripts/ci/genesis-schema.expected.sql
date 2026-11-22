@@ -4138,6 +4138,67 @@ $$;
 
 
 --
+-- Name: guardian_invites; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.guardian_invites (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    guardian_profile_id uuid NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    token_hash text NOT NULL,
+    token_issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    email_hash text,
+    claimed_by_profile_id uuid,
+    claimed_at timestamp with time zone,
+    link_id uuid,
+    cancelled_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT guardian_invites_cancelled_has_time CHECK (((status = 'cancelled'::text) = (cancelled_at IS NOT NULL))),
+    CONSTRAINT guardian_invites_claimed_has_time CHECK (((status = 'claimed'::text) = (claimed_at IS NOT NULL))),
+    CONSTRAINT guardian_invites_email_is_sha256_hex CHECK (((email_hash IS NULL) OR (email_hash ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT guardian_invites_only_claimed_has_claimant CHECK (((status = 'claimed'::text) OR (claimed_by_profile_id IS NULL))),
+    CONSTRAINT guardian_invites_status_check CHECK ((status = ANY (ARRAY['open'::text, 'claimed'::text, 'cancelled'::text]))),
+    CONSTRAINT guardian_invites_token_is_sha256_hex CHECK ((token_hash ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: cancel_guardian_invite_audited(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cancel_guardian_invite_audited(p_guardian_id uuid, p_invite_id uuid, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_invites
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.guardian_invites;
+BEGIN
+  SELECT * INTO v_row FROM public.guardian_invites
+   WHERE id = p_invite_id
+     AND guardian_profile_id = p_guardian_id
+     AND status = 'open'
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  UPDATE public.guardian_invites
+     SET status = 'cancelled',
+         cancelled_at = now(),
+         updated_at = now()
+   WHERE id = v_row.id
+  RETURNING * INTO v_row;
+  PERFORM public.guardian_invite_audit(
+    'guardian_invite_cancelled', p_guardian_id, NULL, v_row.id,
+    '{}'::jsonb, p_request_id);
+  RETURN v_row;
+END;
+$$;
+
+
+--
 -- Name: canonical_mastery_events(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4674,6 +4735,87 @@ CREATE FUNCTION public.chicago_day(p_at timestamp with time zone) RETURNS date
     SET search_path TO 'public', 'pg_temp'
     AS $$
   SELECT (p_at AT TIME ZONE 'America/Chicago')::date;
+$$;
+
+
+--
+-- Name: claim_guardian_invite_audited(text, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.claim_guardian_invite_audited(p_token_hash text, p_student_id uuid, p_request_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row     public.guardian_invites;
+  v_link_id uuid;
+  v_created boolean := false;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_student_id AND role = 'student') THEN
+    RAISE EXCEPTION 'claimant is not a student' USING ERRCODE = 'LY006';
+  END IF;
+
+  SELECT * INTO v_row FROM public.guardian_invites
+   WHERE token_hash = p_token_hash
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('outcome', 'not_found');
+  END IF;
+
+  IF v_row.status = 'claimed' THEN
+    IF v_row.claimed_by_profile_id = p_student_id THEN
+      -- The same student retrying: the same answer, and nothing changes.
+      RETURN jsonb_build_object(
+        'outcome', 'claimed',
+        'invite_id', v_row.id,
+        'link_id', v_row.link_id,
+        'guardian_profile_id', v_row.guardian_profile_id,
+        'created_link', false);
+    END IF;
+    RETURN jsonb_build_object('outcome', 'claimed_by_other');
+  END IF;
+  IF v_row.status = 'cancelled' THEN
+    RETURN jsonb_build_object('outcome', 'cancelled');
+  END IF;
+  IF v_row.expires_at <= now() THEN
+    RETURN jsonb_build_object('outcome', 'expired');
+  END IF;
+
+  -- The link, through the one link writer, unless this pair is already linked (the guardian
+  -- also redeemed a code): the invite is still claimed, against that link.
+  SELECT id INTO v_link_id FROM public.guardian_links
+   WHERE guardian_profile_id = v_row.guardian_profile_id
+     AND student_profile_id  = p_student_id
+     AND status = 'active';
+  IF v_link_id IS NULL THEN
+    SELECT (public.create_active_guardian_link_audited(
+              v_row.guardian_profile_id, p_student_id, p_request_id,
+              'guardian', 'guardian_invite')).id
+      INTO v_link_id;
+    v_created := true;
+  END IF;
+
+  UPDATE public.guardian_invites
+     SET status = 'claimed',
+         claimed_by_profile_id = p_student_id,
+         claimed_at = now(),
+         link_id = v_link_id,
+         updated_at = now()
+   WHERE id = v_row.id;
+
+  PERFORM public.guardian_invite_audit(
+    'guardian_invite_claimed', p_student_id, v_row.guardian_profile_id, v_row.id,
+    jsonb_build_object('link_id', v_link_id, 'created_link', v_created),
+    p_request_id);
+
+  RETURN jsonb_build_object(
+    'outcome', 'claimed',
+    'invite_id', v_row.id,
+    'link_id', v_link_id,
+    'guardian_profile_id', v_row.guardian_profile_id,
+    'created_link', v_created);
+END;
 $$;
 
 
@@ -5856,10 +5998,10 @@ CREATE TABLE public.guardian_links (
 
 
 --
--- Name: create_active_guardian_link_audited(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: create_active_guardian_link_audited(uuid, uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_links
+CREATE FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text DEFAULT NULL::text, p_initiated_by text DEFAULT 'student'::text, p_via text DEFAULT 'student_link_code'::text) RETURNS public.guardian_links
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -5867,6 +6009,14 @@ DECLARE
   v_row          public.guardian_links;
   v_student_name text;
 BEGIN
+  -- The two mechanisms that exist, and the initiator each one implies. Anything else is a
+  -- programming error, refused before anything is read or written.
+  IF NOT ((p_initiated_by = 'student'  AND p_via = 'student_link_code')
+       OR (p_initiated_by = 'guardian' AND p_via = 'guardian_invite')) THEN
+    RAISE EXCEPTION 'unknown link mechanism % / %', p_initiated_by, p_via
+      USING ERRCODE = '22023';
+  END IF;
+
   IF p_guardian_id = p_student_id THEN
     RAISE EXCEPTION 'guardian and student must differ' USING ERRCODE = '22023';
   END IF;
@@ -5894,18 +6044,18 @@ BEGIN
     RAISE EXCEPTION 'link already exists' USING ERRCODE = 'LY004';
   END IF;
 
+  -- accepted_by is the student on both paths: the student shared their code, or the student
+  -- claimed the guardian's invite. Either way the student's own act is the consent.
+  -- initiated_by names who started it: the student (code) or the guardian (invite).
   INSERT INTO public.guardian_links
     (guardian_profile_id, student_profile_id, status, initiated_by, initiated_at,
      accepted_at, accepted_by_profile_id)
-  VALUES (p_guardian_id, p_student_id, 'active', 'student', now(), now(), p_student_id)
+  VALUES (p_guardian_id, p_student_id, 'active', p_initiated_by, now(), now(), p_student_id)
   RETURNING * INTO v_row;
 
-  -- initiated_by='student' and accepted_by=the student: the student issued and shared the
-  -- code, so the student is both the initiator and the consenting party. Recording the
-  -- guardian as initiator would misattribute the consent.
   PERFORM public.guardian_link_audit(
     'guardian_link_initiated', p_student_id, p_guardian_id,
-    jsonb_build_object('from', NULL, 'to', 'active', 'via', 'student_link_code'),
+    jsonb_build_object('from', NULL, 'to', 'active', 'via', p_via),
     v_row.id, p_request_id
   );
 
@@ -10714,6 +10864,61 @@ $$;
 
 
 --
+-- Name: guardian_invite_audit(text, uuid, uuid, uuid, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_invite_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_action NOT IN ('guardian_invite_issued', 'guardian_invite_reissued',
+                      'guardian_invite_cancelled', 'guardian_invite_claimed') THEN
+    RAISE EXCEPTION 'unknown guardian invite audit action %', p_action USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    p_actor, p_target, p_action, p_changes,
+    jsonb_build_object('request_id', p_request_id, 'invite_id', p_invite_id)
+  );
+END;
+$$;
+
+
+--
+-- Name: guardian_invite_lookup(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_invite_lookup(p_token_hash text) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.guardian_invites;
+BEGIN
+  SELECT * INTO v_row FROM public.guardian_invites WHERE token_hash = p_token_hash;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('state', 'not_found');
+  END IF;
+  IF v_row.status = 'claimed' THEN
+    RETURN jsonb_build_object('state', 'claimed');
+  END IF;
+  IF v_row.status = 'cancelled' THEN
+    RETURN jsonb_build_object('state', 'cancelled');
+  END IF;
+  IF v_row.expires_at <= now() THEN
+    RETURN jsonb_build_object('state', 'expired');
+  END IF;
+  RETURN jsonb_build_object(
+    'state', 'open',
+    'guardian_profile_id', v_row.guardian_profile_id,
+    'guardian_first_name', public.accountability_student_first_name(v_row.guardian_profile_id),
+    'expires_at', v_row.expires_at);
+END;
+$$;
+
+
+--
 -- Name: guardian_link_audit(text, uuid, uuid, jsonb, uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -10823,6 +11028,83 @@ BEGIN
 
   -- Unknown question type: explicitly false rather than ambiguous
   RETURN false;
+END;
+$$;
+
+
+--
+-- Name: issue_guardian_invite_audited(uuid, text, text, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.issue_guardian_invite_audited(p_guardian_id uuid, p_token_hash text, p_email_hash text, p_invite_id uuid, p_request_id text DEFAULT NULL::text) RETURNS public.guardian_invites
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row       public.guardian_invites;
+  v_open      integer;
+  v_was_live  boolean;
+  -- How this link reached the teen, for the audit row: never the address or its hash.
+  v_delivery  text := CASE WHEN p_email_hash IS NULL THEN 'link' ELSE 'mail' END;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.profiles
+                  WHERE id = p_guardian_id AND role = 'guardian') THEN
+    RAISE EXCEPTION 'inviter is not a guardian' USING ERRCODE = 'LY006';
+  END IF;
+
+  -- Serialise this guardian's invite writes, so two concurrent sends cannot both pass the
+  -- open-invite count below.
+  PERFORM 1 FROM public.profiles WHERE id = p_guardian_id FOR UPDATE;
+
+  SELECT count(*) INTO v_open
+    FROM public.guardian_invites
+   WHERE guardian_profile_id = p_guardian_id
+     AND status = 'open'
+     AND expires_at > now();
+
+  IF p_invite_id IS NULL THEN
+    IF v_open >= 3 THEN
+      RAISE EXCEPTION 'open invite limit reached' USING ERRCODE = 'LY010';
+    END IF;
+    INSERT INTO public.guardian_invites
+      (guardian_profile_id, token_hash, token_issued_at, expires_at, email_hash)
+    VALUES (p_guardian_id, p_token_hash, now(), now() + interval '14 days', p_email_hash)
+    RETURNING * INTO v_row;
+    PERFORM public.guardian_invite_audit(
+      'guardian_invite_issued', p_guardian_id, NULL, v_row.id,
+      jsonb_build_object('delivery', v_delivery, 'expires_at', v_row.expires_at),
+      p_request_id);
+    RETURN v_row;
+  END IF;
+
+  SELECT * INTO v_row FROM public.guardian_invites
+   WHERE id = p_invite_id
+     AND guardian_profile_id = p_guardian_id
+     AND status = 'open'
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN NULL;
+  END IF;
+
+  -- Reviving an expired invite counts as opening one.
+  v_was_live := v_row.expires_at > now();
+  IF NOT v_was_live AND v_open >= 3 THEN
+    RAISE EXCEPTION 'open invite limit reached' USING ERRCODE = 'LY010';
+  END IF;
+
+  UPDATE public.guardian_invites
+     SET token_hash = p_token_hash,
+         token_issued_at = now(),
+         expires_at = now() + interval '14 days',
+         email_hash = coalesce(p_email_hash, email_hash),
+         updated_at = now()
+   WHERE id = v_row.id
+  RETURNING * INTO v_row;
+  PERFORM public.guardian_invite_audit(
+    'guardian_invite_reissued', p_guardian_id, NULL, v_row.id,
+    jsonb_build_object('delivery', v_delivery, 'expires_at', v_row.expires_at),
+    p_request_id);
+  RETURN v_row;
 END;
 $$;
 
@@ -19773,7 +20055,7 @@ CREATE TABLE public.legal_acceptances (
     content_hash text,
     source_reference text,
     CONSTRAINT legal_acceptances_actor_type_check CHECK ((actor_type = ANY (ARRAY['student'::text, 'parent'::text]))),
-    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
+    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'guardian_invite_issue'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
     CONSTRAINT legal_acceptances_content_hash_shape CHECK (((content_hash IS NULL) OR (content_hash ~ '^sha256:[0-9a-f]{64}$'::text)))
 );
 
@@ -19797,13 +20079,6 @@ COMMENT ON COLUMN public.legal_acceptances.content_hash IS 'sha256:<64 hex> of t
 --
 
 COMMENT ON COLUMN public.legal_acceptances.source_reference IS 'Identifier issued by the surface named in consent_source. A Stripe Checkout Session id (cs_...) for stripe_checkout; NULL for surfaces that issue none.';
-
-
---
--- Name: CONSTRAINT legal_acceptances_consent_source_check ON legal_acceptances; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON CONSTRAINT legal_acceptances_consent_source_check ON public.legal_acceptances IS 'Where the acceptance was collected. guardian_link_redeem: a guardian accepting Parent / Guardian Terms while redeeming a student link code. stripe_checkout: auto-renewal consent taken in Checkout per Cal. Bus. & Prof. Code § 17602, separate from Terms of Use acceptance at signup. reconsent_prompt: an existing user accepting a newly published version through the blocking modal shown at next sign-in.';
 
 
 --
@@ -23037,6 +23312,22 @@ ALTER TABLE ONLY public.guardian_consent_requests
 
 
 --
+-- Name: guardian_invites guardian_invites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_invites
+    ADD CONSTRAINT guardian_invites_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: guardian_invites guardian_invites_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_invites
+    ADD CONSTRAINT guardian_invites_token_hash_key UNIQUE (token_hash);
+
+
+--
 -- Name: guardian_links guardian_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -24438,6 +24729,13 @@ CREATE INDEX idx_exam_runtime_outbox_pending ON public.exam_runtime_outbox USING
 --
 
 CREATE INDEX idx_guardian_consent_requests_student_profile ON public.guardian_consent_requests USING btree (student_profile_id);
+
+
+--
+-- Name: idx_guardian_invites_guardian; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_guardian_invites_guardian ON public.guardian_invites USING btree (guardian_profile_id, status);
 
 
 --
@@ -26328,6 +26626,30 @@ ALTER TABLE ONLY public.guardian_consent_requests
 
 
 --
+-- Name: guardian_invites guardian_invites_claimed_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_invites
+    ADD CONSTRAINT guardian_invites_claimed_by_profile_id_fkey FOREIGN KEY (claimed_by_profile_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: guardian_invites guardian_invites_guardian_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_invites
+    ADD CONSTRAINT guardian_invites_guardian_profile_id_fkey FOREIGN KEY (guardian_profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: guardian_invites guardian_invites_link_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.guardian_invites
+    ADD CONSTRAINT guardian_invites_link_id_fkey FOREIGN KEY (link_id) REFERENCES public.guardian_links(id) ON DELETE SET NULL;
+
+
+--
 -- Name: guardian_links guardian_links_accepted_by_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -27798,6 +28120,12 @@ ALTER TABLE public.growth_report_posts ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.guardian_consent_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: guardian_invites; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.guardian_invites ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: guardian_links; Type: ROW SECURITY; Schema: public; Owner: -
@@ -29435,6 +29763,21 @@ GRANT ALL ON FUNCTION public.cancel_account_deletion(p_profile_id uuid) TO servi
 
 
 --
+-- Name: TABLE guardian_invites; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_invites TO service_role;
+
+
+--
+-- Name: FUNCTION cancel_guardian_invite_audited(p_guardian_id uuid, p_invite_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.cancel_guardian_invite_audited(p_guardian_id uuid, p_invite_id uuid, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.cancel_guardian_invite_audited(p_guardian_id uuid, p_invite_id uuid, p_request_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION canonical_mastery_events(p_student_id uuid, p_entity_type text, p_section text, p_domain text, p_skill text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -29512,6 +29855,14 @@ GRANT ALL ON FUNCTION public.check_and_reserve_practice_quota(p_student_user_id 
 
 REVOKE ALL ON FUNCTION public.chicago_day(p_at timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.chicago_day(p_at timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION claim_guardian_invite_audited(p_token_hash text, p_student_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.claim_guardian_invite_audited(p_token_hash text, p_student_id uuid, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.claim_guardian_invite_audited(p_token_hash text, p_student_id uuid, p_request_id text) TO service_role;
 
 
 --
@@ -29640,11 +29991,11 @@ GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.guardian_links TO service_role
 
 
 --
--- Name: FUNCTION create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text, p_initiated_by text, p_via text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text) TO service_role;
+REVOKE ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text, p_initiated_by text, p_via text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_active_guardian_link_audited(p_guardian_id uuid, p_student_id uuid, p_request_id text, p_initiated_by text, p_via text) TO service_role;
 
 
 --
@@ -30449,6 +30800,22 @@ GRANT ALL ON FUNCTION public.guardian_daily_digest_notify(p_now timestamp with t
 
 
 --
+-- Name: FUNCTION guardian_invite_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_invite_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_invite_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_invite_lookup(p_token_hash text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_invite_lookup(p_token_hash text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_invite_lookup(p_token_hash text) TO service_role;
+
+
+--
 -- Name: FUNCTION guardian_link_audit(p_action text, p_actor uuid, p_target uuid, p_changes jsonb, p_link_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -30478,6 +30845,14 @@ GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 REVOKE ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.is_answer_correct(p_submitted text, p_question_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION issue_guardian_invite_audited(p_guardian_id uuid, p_token_hash text, p_email_hash text, p_invite_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.issue_guardian_invite_audited(p_guardian_id uuid, p_token_hash text, p_email_hash text, p_invite_id uuid, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.issue_guardian_invite_audited(p_guardian_id uuid, p_token_hash text, p_email_hash text, p_invite_id uuid, p_request_id text) TO service_role;
 
 
 --

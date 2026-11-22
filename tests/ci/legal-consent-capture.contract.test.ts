@@ -148,8 +148,9 @@ describe("C1 — every record resolves slug, version and hash at write time", ()
   it("holds the same consent_source values the database CHECK does", () => {
     // A value the app can produce and the database refuses is an insert that
     // fails at runtime with no test in between. Read from the migration text.
+    // The LAST migration that defines the CHECK (20261206000000 added guardian_invite_issue).
     const migration = read(
-      "supabase/migrations/20260916000000_consent_sources_and_reference.sql",
+      "supabase/migrations/20261206000000_guardian_invites.sql",
     );
     const check = /CHECK \(consent_source IN \(([\s\S]*?)\)\);/.exec(migration);
     expect(check, "CHECK not found in the migration").not.toBeNull();

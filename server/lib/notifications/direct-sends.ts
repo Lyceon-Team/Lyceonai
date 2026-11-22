@@ -36,6 +36,7 @@ import {
   type SubscriptionCanceledKind,
 } from "./templates/subscription-canceled";
 import { guardianLinkInviteEmail } from "./templates/guardian-link-invite";
+import { guardianTeenInviteEmail } from "./templates/guardian-teen-invite";
 import { siteUrlFromEnv } from "./templates";
 import {
   defaultEmailTransport,
@@ -47,6 +48,7 @@ import {
 export const ACCOUNT_DELETION_SCHEDULED_IDEMPOTENCY_PREFIX =
   "account-deletion-scheduled";
 export const GUARDIAN_LINK_INVITE_IDEMPOTENCY_PREFIX = "guardian-link-invite";
+export const GUARDIAN_TEEN_INVITE_IDEMPOTENCY_PREFIX = "guardian-teen-invite";
 export const SUBSCRIPTION_CANCELED_IDEMPOTENCY_PREFIX = "subscription-canceled";
 export const ACCOUNT_DELETION_COMPLETED_IDEMPOTENCY_PREFIX =
   "account-deletion-completed";
@@ -248,6 +250,104 @@ export async function sendGuardianLinkInviteEmail(
       {
         studentProfileId: input.studentProfileId,
         recipientProfileId: null,
+        kind: sent.error.kind,
+        requestId: input.requestId,
+      },
+    );
+  }
+  return sent;
+}
+
+/**
+ * One key per issued link: a retried send of the same link is one email, and every new link
+ * (send, resend) is a new email. Derived from durable state (the invite row id and its current
+ * token's issue time), so neither the address, nor the token, nor its hash is in the key.
+ */
+export function guardianTeenInviteIdempotencyKey(input: {
+  inviteId: string;
+  tokenIssuedAt: string;
+}): string {
+  return `${GUARDIAN_TEEN_INVITE_IDEMPOTENCY_PREFIX}:${input.inviteId}:${input.tokenIssuedAt}`;
+}
+
+/**
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2; SCL-282;
+ *        contracts/notifications.contract.md §0.4, §0.5, §12.3] | @implemented [2026-11-22]
+ *
+ * plain English: the guardian's invite to their teen, on the same direct-send path as the
+ * student's guardian invite, with its own template. The /join link carries the token, so the
+ * URL is never logged: logs carry the invite id, the provider id and the outcome only. The
+ * address is used to send and nothing else. Never throws; returns a Result.
+ */
+export async function sendGuardianTeenInviteEmail(
+  input: {
+    inviteId: string;
+    guardianProfileId: string;
+    guardianFirstName: string;
+    token: string;
+    /** ISO issue time of the current token: part of the idempotency key. */
+    tokenIssuedAt: string;
+    expiresAt: string;
+    toEmail: string;
+    requestId?: string;
+  },
+  deps: DirectSendDeps = {},
+): Promise<DirectSendResult> {
+  const siteUrl = resolveSiteUrl(deps);
+  if (!siteUrl) {
+    logger.error(
+      "NOTIFICATIONS",
+      "teen_invite_email_unconfigured",
+      "PUBLIC_SITE_URL is not set; cannot build the join link",
+      { inviteId: input.inviteId, requestId: input.requestId },
+    );
+    return err({
+      kind: "config_missing",
+      message: "PUBLIC_SITE_URL is not configured",
+    });
+  }
+  const rendered = guardianTeenInviteEmail({
+    guardianFirstName: input.guardianFirstName,
+    joinUrl: `${siteUrl}/join/${input.token}`,
+    expiresAt: input.expiresAt,
+  });
+  const transport = deps.transport ?? defaultEmailTransport();
+  const sent = await transport({
+    idempotencyKey: guardianTeenInviteIdempotencyKey({
+      inviteId: input.inviteId,
+      tokenIssuedAt: input.tokenIssuedAt,
+    }),
+    to: input.toEmail,
+    // The teen is invited by address; there may be no profile yet, and none is looked up.
+    recipientProfileId: null,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    fromCategory: rendered.fromCategory,
+    // Sent at the guardian's request, in their own action.
+    audience: "user_triggered",
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  if (sent.ok) {
+    logger.info(
+      "NOTIFICATIONS",
+      "teen_invite_email_sent",
+      "Guardian teen invite email accepted",
+      {
+        inviteId: input.inviteId,
+        guardianProfileId: input.guardianProfileId,
+        providerMessageId: sent.value.providerMessageId,
+        requestId: input.requestId,
+      },
+    );
+  } else {
+    logger.warn(
+      "NOTIFICATIONS",
+      "teen_invite_email_failed",
+      "Guardian teen invite email not sent",
+      {
+        inviteId: input.inviteId,
+        guardianProfileId: input.guardianProfileId,
         kind: sent.error.kind,
         requestId: input.requestId,
       },
