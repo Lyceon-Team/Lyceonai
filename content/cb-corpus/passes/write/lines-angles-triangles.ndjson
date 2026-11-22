@@ -1,0 +1,76 @@
+{"id":"3b44439b","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Transversal t crosses parallel lines p and q; uses transversal angle pair (supplementary) to find x+142"}
+{"id":"36200a38","sub_skills":["LAT.2"],"clusters":["CL.0114"],"distractors":[],"why":"Two sides of a triangle extended; exterior angle equals sum of remote interior angles"}
+{"id":"42b4493b","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Right triangle acute angles sum to 90; other acute = 90-51=39"}
+{"id":"e0d2e21a","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Dilation preserves angles; match corresponding angle X via vertex correspondence"}
+{"id":"739f1bbc","sub_skills":["LAT.3"],"clusters":["CL.0170"],"distractors":[],"why":"Two sides equal (AB=BC=4680); identify condition for equilateral (all three sides equal)"}
+{"id":"3828f53d","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines m and n with transversal; identify transversal angle pair to find b"}
+{"id":"64d1f49f","sub_skills":["LAT.1"],"clusters":["CL.0179"],"distractors":[],"why":"Two intersecting lines; vertical angles are equal, so z=w=136"}
+{"id":"5b918ebb","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Line n is a transversal crossing parallel lines r and s; use transversal angle pair for x"}
+{"id":"43236565","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Line k transversal to parallel m and n; corresponding angles determine x=145"}
+{"id":"0bb39de4","sub_skills":["LAT.4"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Congruent triangles with right angles; match correspondence A-D/B-E/C-F, then triangle angle sum gives F=72"}
+{"id":"cf0d3050","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Line c transversal to parallel s and t; use transversal angle pair to find x"}
+{"id":"3b4b5b1e","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines j and k with transversal; use transversal angle pair to find x"}
+{"id":"5733ce30","sub_skills":["LAT.2","LAT.3"],"clusters":["CL.0170","CL.0114"],"distractors":[],"why":"BAC=BCA means isosceles (equal base angles); AC extended to D creates exterior angle; use exterior angle theorem"}
+{"id":"f1747a6a","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Triangle angle sum: A = 180-52-17 = 111"}
+{"id":"992f4e93","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines l and k with transversal j; identify pair type (corresponding/alternate/co-interior) for a and 64"}
+{"id":"afa3c48b","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines m and n with transversal l; transversal angle pair relates x and 26"}
+{"id":"087cdcfd","sub_skills":["LAT.1"],"clusters":["CL.0112"],"distractors":[],"why":"Three lines meet at P forming angles; use supplementary angles on a straight line: z=180-65-75=40"}
+{"id":"a456f28c","sub_skills":["LAT.1"],"clusters":["CL.0179"],"distractors":[],"why":"Two intersecting lines; vertical angles are equal, so angle 2 = 72"}
+{"id":"410bdbe6","sub_skills":["LAT.2"],"clusters":["CL.0121","CL.0047"],"distractors":[],"why":"Triangle angle sum 31+2b+45=180; isolate b to get b=52"}
+{"id":"dfc420b2","sub_skills":["LAT.1"],"clusters":["CL.0112","CL.0179"],"distractors":[],"why":"AD intersects BE at C; use vertical and supplementary angles to find y"}
+{"id":"3563d76d","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Shadow problem: similar triangles from sun rays; set up proportion of height to shadow length"}
+{"id":"69f4bbdc","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Right triangle acute angles sum to 90; a=90-13=77"}
+{"id":"b434e103","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Triangle angle sum constrains S: R+S+T=180 with R=63, so S<117; 180 is impossible"}
+{"id":"0d3f51dc","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines m and n with transversal t; transversal angle pair relates x and 33"}
+{"id":"f9d40000","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Triangle angle sum: Z=180-23-66=91"}
+{"id":"9d078710","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Identify which angle relationship (corresponding, alternate interior) proves j parallel to k"}
+{"id":"c24e1bda","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines m and n with transversal t; transversal angle pair determines w from 134"}
+{"id":"cbe8ca31","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Triangle angle sum: Z=180-24-98=58"}
+{"id":"a6dbad6b","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0121"],"distractors":[],"why":"Triangle formed between parallel lines; alternate interior angles identify y and z, then triangle angle sum gives x=100"}
+{"id":"d5f349b7","sub_skills":["LAT.4"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Similar right triangles; match P-S correspondence, use triangle angle sum to find S=72"}
+{"id":"c8d60e48","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121"],"distractors":[],"why":"Isosceles AB=AC gives equal base angles; ACB=ABC=67, then A=180-67-67=46 to find x"}
+{"id":"95ca2683","sub_skills":["LAT.2"],"clusters":["CL.0121","CL.0047"],"distractors":[],"why":"Triangle angle sum: 54+90+(k/2)=180, so k/2=36, k=72"}
+{"id":"4ff7b652","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles with M-Q correspondence; angle Q = angle M = 53"}
+{"id":"6dd463ca","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0121"],"distractors":[],"why":"AE parallel to BD gives alternate interior angle at E; then triangle angle sum in ACE gives CAE=60"}
+{"id":"7a8ad237","sub_skills":["LAT.4"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Congruent triangles A-D/B-E/C-F; triangle angle sum gives C=21, so F=21"}
+{"id":"1c3d613c","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles preserve angles regardless of scale; BAC=20 implies EDF=20"}
+{"id":"014edcb7","sub_skills":["LAT.2"],"clusters":["CL.0114","CL.0112"],"distractors":[],"why":"Exterior angle PRS at R; use supplementary to find interior R=17, then exterior angle or triangle sum gives QPR=31"}
+{"id":"2adbf1b1","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0047"],"distractors":[],"why":"Parallel lines with transversal; x and y form co-interior pair so 6k+13+8k-29=180, solve for k, then find z"}
+{"id":"901e3285","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121"],"distractors":[],"why":"Isosceles triangle with A=50; test which pair of sides could be equal to find impossible angle B=100"}
+{"id":"c7bed21d","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar quadrilaterals preserve angles; P corresponds to P', so angle P'=30 regardless of scale"}
+{"id":"2085e10e","sub_skills":["LAT.4"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"D=R=47 and E=S=97 give two angle pairs; AA similarity established, no additional info needed"}
+{"id":"fd8745fc","sub_skills":["LAT.2","LAT.3"],"clusters":["CL.0121","CL.0170"],"distractors":[],"why":"K=L=48 (equal angles, isosceles); triangle angle sum gives J=180-48-48=84"}
+{"id":"d3fe472f","sub_skills":["LAT.5"],"clusters":["CL.0182"],"distractors":[],"why":"Similar triangles with scale factor 2; XY = 2 x AB = 32"}
+{"id":"a4c05a1b","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Parallel lines r and s with transversal; co-interior angles x+y=180, so y<65 implies x>115"}
+{"id":"2f7c92ad","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles CAE and CBD; corresponding angles equal, so CAE=CBD=57 regardless of side ratio"}
+{"id":"933fee1a","sub_skills":["RTT4"],"clusters":["CL.0174","CL.0171"],"distractors":[],"why":"32+58=90 (complementary); sin of one = cos of complement; match side ratios between similar right triangles"}
+{"id":"d7a8aa9c","sub_skills":["LAT.4"],"clusters":["CL.0182"],"distractors":[],"why":"Scale factor k maps equilateral S to larger T; k>1 required, only 29/28 qualifies"}
+{"id":"055aafe7","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Similar triangles; set up proportion AB/XY = BC/YZ, solve for XY=12"}
+{"id":"51f26ce8","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Similar triangles QPR and STR; set up proportion of corresponding sides to find SR"}
+{"id":"94364a79","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Two-trees shadow problem; similar triangles give height proportion 10/5 = h/2, so h=4"}
+{"id":"81b664bc","sub_skills":["LAT.5"],"clusters":["CL.0086","CL.0173"],"distractors":[],"why":"Three parallel lines cut by transversals; proportional intercepts AB/BC = FE/ED, solve for ED"}
+{"id":"686b5212","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0047"],"distractors":[],"why":"Parallel lines q and r with transversal s; transversal pair with 58 and y=2x+8, solve for x"}
+{"id":"f67255ea","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Parallel lines: 4 equal acute, 4 equal obtuse, supplementary pairs; compute sum of 1 acute + 3 obtuse to find w"}
+{"id":"6a3fbec3","sub_skills":["LAT.5"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"Altitude to hypotenuse creates similar triangles; geometric mean relation BD^2 = AD x DC gives DC"}
+{"id":"694b7fce","sub_skills":["LAT.5","RTT1"],"clusters":["CL.0118","CL.0173"],"distractors":[],"why":"Pythagorean theorem finds BC from AB and AC; similar triangles relate segments to compute area of ADE"}
+{"id":"17912810","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Two transversals r and s cross parallel lines q and t; chain transversal angle pairs and supplementary angles to find w"}
+{"id":"f731d88b","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Pentagon with AB parallel to DE; exterior angles along path B-C-D between parallel sides sum to 180; find C"}
+{"id":"adae6543","sub_skills":["LAT.5"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"LM parallel to PQ creates similar triangles at intersection R; proportional sides give QR, then LQ=LR+QR"}
+{"id":"5b4757df","sub_skills":["LAT.5"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"LK parallel to RT in right triangle; similar triangles give scale factor 1/3; use area to find ST, then KT"}
+{"id":"010243e6","sub_skills":["LAT.4"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Coordinate right triangles with equal legs; both isosceles right so N=45=90-t regardless of k"}
+{"id":"48fb6483","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"PQ parallel to XY; corresponding angles via transversal give angle in similar triangle, then supplementary angle at P"}
+{"id":"eeb4143c","sub_skills":["LAT.5"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"Area constraint on triangle with proportional sides along axes; use similar-triangle proportions to find x"}
+{"id":"322a6dfe","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar quadrilaterals; S corresponds to Z, so angle Z = angle S = 135"}
+{"id":"bd7f6e30","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121"],"distractors":[],"why":"RT=TU (isosceles); equal base angles, then triangle angle sum to find x"}
+{"id":"fecc446d","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Parallel lines: 4 equal acute, 4 equal obtuse angles; enumerate all possible sums of four to find the impossible one"}
+{"id":"3b225698","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles X-R/Y-S/Z-T correspondence; angle T = angle Z = 20 regardless of scale"}
+{"id":"740bf79f","sub_skills":["LAT.5","RTT1"],"clusters":["CL.0118","CL.0173"],"distractors":[],"why":"3-4-5 right triangle; altitude from right angle to hypotenuse creates similar triangles; NQ=12/5=2.4"}
+{"id":"b1e1c2f5","sub_skills":["LAT.5"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"DE parallel to BC in right triangle; similar triangles with scale factor AE/AC=1/3; DE=BC/3=54"}
+{"id":"f7dbde16","sub_skills":["LAT.4"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Determine sufficient condition for similarity; option giving two matching angle pairs (AA) works"}
+{"id":"901c3215","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"AA gives similarity not congruence; need corresponding side lengths (BC=EF) for ASA congruence"}
+{"id":"345cc36a","sub_skills":["LAT.5"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"Intersecting segments at Q; vertical angles give AA similar triangles; proportion of sides finds YZ"}
+{"id":"2d2cb85e","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0114"],"distractors":[],"why":"RT=TU (isosceles) with exterior angle; combine isosceles base angles and exterior angle theorem to find x"}
+{"id":"a0369739","sub_skills":["LAT.5"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"Altitude BD from right angle creates similar triangles; BC/BD = AC/AB = 38/15 from proportional relationships"}
+{"id":"947a3cde","sub_skills":["LAT.1","LAT.4"],"clusters":["CL.0179","CL.0155"],"distractors":[],"why":"Intersecting segments with NP=QP and MP=PR; vertical angles at P plus SAS congruence to find angle QMR"}
+{"id":"f88f27e5","sub_skills":["LAT.1"],"clusters":["CL.0179","CL.0112"],"distractors":[],"why":"Three intersecting lines; use vertical and supplementary angle relationships to find x"}
+{"id":"e10d8313","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0121","CL.0112"],"distractors":[],"why":"Multiple intersecting lines on base PV; chain triangle angle sums and supplementary angles to find TUR"}

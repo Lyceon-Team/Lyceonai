@@ -41,6 +41,10 @@ export default tseslint.config(
       // Vendored third-party build (GSAP 3.14.2, minified), copied from the /brag composition into
       // the worked-example asset kit. Not our source; the kit's own code is in scripts/worked-examples.
       "video-kit/**/vendor/**",
+      // CB corpus tagging utilities: one-off Node scripts for tag validation
+      // and reconciliation, not product code. They use CommonJS require, console
+      // and process — intentionally; they are run manually, never bundled.
+      "content/cb-corpus/tagging-input/**",
     ],
   },
   js.configs.recommended,
