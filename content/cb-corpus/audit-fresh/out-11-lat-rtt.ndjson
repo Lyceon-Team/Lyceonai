@@ -1,0 +1,126 @@
+{"id":"3b44439b","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Parallel lines cut by transversal; x and 142 are co-interior (same-side interior) angles so x+142=180; answer D."}
+{"id":"36200a38","sub_skills":["LAT.2"],"clusters":["CL.0114"],"distractors":[],"why":"Two sides of triangle extended; exterior angle equals sum of two remote interior angles."}
+{"id":"42b4493b","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Right triangle with one acute angle 51°; other acute angle = 90-51 = 39°; answer B."}
+{"id":"e0d2e21a","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Dilation preserves angle measures; angle X corresponds to angle A via stated vertex correspondence; d=16 is irrelevant to the angle."}
+{"id":"739f1bbc","sub_skills":["LAT.3"],"clusters":["CL.0170"],"distractors":[],"why":"AB=BC=4680; equilateral requires all three sides equal, so AC=4680 mm is sufficient; answer A."}
+{"id":"3828f53d","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines m and n with transversal; b is determined by the transversal angle pair relationship."}
+{"id":"64d1f49f","sub_skills":["LAT.1"],"clusters":["CL.0179"],"distractors":[],"why":"Two intersecting lines form vertical angles; w=136 so z=136 (vertical angles equal); answer D."}
+{"id":"5b918ebb","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Line n intersects parallel lines r and s; x found via transversal angle pair (corresponding or alternate interior)."}
+{"id":"43236565","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Line k intersects parallel m and n; x and 145 are corresponding angles so x=145; answer C."}
+{"id":"0bb39de4","sub_skills":["LAT.4","LAT.2"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Congruent triangles ABC and DEF with A↔D, B and E right angles. D=18°, E=90°, F=180-90-18=72°; answer B."}
+{"id":"cf0d3050","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Line c intersects parallel lines s and t; x found via transversal angle pair."}
+{"id":"3b4b5b1e","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"j parallel to k; x found via transversal angle relationship."}
+{"id":"5733ce30","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0114"],"distractors":[],"why":"Isosceles triangle (angle BAC = angle BCA); AC extended to D so exterior angle x = sum of two remote interior (both equal base angles); answer A (110)."}
+{"id":"f1747a6a","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Triangle angle sum: A = 180 - 52 - 17 = 111°; answer D."}
+{"id":"992f4e93","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines l,k with transversal j; a and 64 form a transversal angle pair to determine a."}
+{"id":"afa3c48b","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel lines m,n with transversal l; x and 26 form a transversal angle pair."}
+{"id":"087cdcfd","sub_skills":["LAT.1"],"clusters":["CL.0112"],"distractors":[],"why":"Three lines meet at P; angles on a straight line sum to 180: z=180-65-75=40; answer C."}
+{"id":"a456f28c","sub_skills":["LAT.1"],"clusters":["CL.0179"],"distractors":[],"why":"Vertical angles are equal; angle 2 = 72°; answer A."}
+{"id":"410bdbe6","sub_skills":["LAT.2"],"clusters":["CL.0121","CL.0047"],"distractors":[],"why":"Triangle angle sum: 31+2b+45=180, 2b=104, b=52; answer A."}
+{"id":"dfc420b2","sub_skills":["LAT.2","LAT.1"],"clusters":["CL.0121","CL.0112"],"distractors":[],"why":"AD intersects BE at C forming angles; use supplementary/triangle angle sum with x=100 to find y=60; answer D."}
+{"id":"3563d76d","sub_skills":["LAT.5"],"clusters":["CL.0086","CL.0173"],"distractors":[],"why":"Similar triangles from sun shadows; set up proportion height/shadow = 10/4 to find pole height."}
+{"id":"69f4bbdc","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Right triangle acute angles are complementary: a = 90-13 = 77; answer B."}
+{"id":"b434e103","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"R=63° so S+T=117; 180° is impossible for any triangle angle; answer D."}
+{"id":"0d3f51dc","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel m,n with transversal t; x and 33 form a transversal angle pair."}
+{"id":"f9d40000","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Triangle angle sum: Z=180-23-66=91°; answer C."}
+{"id":"9d078710","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Identify which angle relationship with the 40° angle proves lines j and k parallel."}
+{"id":"c24e1bda","sub_skills":["LAT.1"],"clusters":["CL.0148"],"distractors":[],"why":"Parallel m,n with transversal t; w and 134 form a transversal angle pair."}
+{"id":"cbe8ca31","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Triangle angle sum: Z=180-24-98=58°; answer A."}
+{"id":"a6dbad6b","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0121"],"distractors":[],"why":"Parallel lines l,m with triangle; y=20, z=60, x=180-20-60=100 via alternate interior angles and triangle angle sum; answer B."}
+{"id":"d5f349b7","sub_skills":["LAT.4","LAT.2"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Similar right triangles P↔S; Q=18° so right angle is not at Q. P=72° and S=P=72°; answer B."}
+{"id":"c8d60e48","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121"],"distractors":[],"why":"Isosceles AB=AC so angle ABC=angle ACB=67°; x=angle BAC=180-67-67=46; answer B."}
+{"id":"95ca2683","sub_skills":["LAT.2"],"clusters":["CL.0121","CL.0047"],"distractors":[],"why":"Triangle angle sum: 54+90+k/2=180, k/2=36, k=72; answer C."}
+{"id":"4ff7b652","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles with M↔Q; angle M=53° so angle Q=53°; answer B."}
+{"id":"6dd463ca","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0121"],"distractors":[],"why":"AE parallel to BD; use alternate interior angles and triangle angle sum to find angle CAE=60°; answer B."}
+{"id":"7a8ad237","sub_skills":["LAT.4","LAT.2"],"clusters":["CL.0155","CL.0121"],"distractors":[],"why":"Congruent triangles A↔D, B and E right angles; A=69° so in DEF: D=69°, E=90°, F=21°."}
+{"id":"1c3d613c","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles preserve angles; angle BAC=20° → angle EDF=20°."}
+{"id":"014edcb7","sub_skills":["LAT.2"],"clusters":["CL.0121","CL.0112"],"distractors":[],"why":"QR extended to S; PRS=163° so PRQ=17° (supplementary); QPR=180-132-17=31°; answer B."}
+{"id":"2adbf1b1","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112","CL.0047"],"distractors":[],"why":"Parallel lines; x and y related by transversal; solve 6k+13=8k-29 for k=21, then z=180-139=41; answer C."}
+{"id":"901e3285","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121"],"distractors":[],"why":"Isosceles with A=50°; B=100 makes C=30 with no equal pair, so not isosceles; answer D."}
+{"id":"c7bed21d","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar quadrilaterals preserve angles; P'=P=30°; answer B."}
+{"id":"2085e10e","sub_skills":["LAT.4"],"clusters":["CL.0173"],"distractors":[],"why":"D=R=47° and E=S=97° gives AA similarity; no additional info needed; answer D."}
+{"id":"fd8745fc","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121"],"distractors":[],"why":"Isosceles K=L=48°; J=180-48-48=84°."}
+{"id":"d3fe472f","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Similar triangles with scale factor 2; XY=2×16=32; answer D."}
+{"id":"a4c05a1b","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112"],"distractors":[],"why":"Parallel r,s with transversal m; co-interior angles sum to 180 so y<65 implies x>115; answer B."}
+{"id":"2f7c92ad","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles preserve angles; angle CAE = angle CBD = 57°; answer C."}
+{"id":"933fee1a","sub_skills":["RTT.3","RTT.4"],"clusters":["CL.0126","CL.0174"],"distractors":[],"why":"BC/AB is a trig ratio; 32° and 58° are complementary so sin(32°)=cos(58°), matching corresponding ratio in DEF; answer D."}
+{"id":"d7a8aa9c","sub_skills":["LAT.5"],"clusters":["CL.0083"],"distractors":[],"why":"Scale factor k produces larger triangle; k>1 so k=29/28; answer A."}
+{"id":"055aafe7","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Similar triangles; XY/AB = YZ/BC → XY=170×60/850=12; answer D."}
+{"id":"51f26ce8","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Similar QPR~STR; SR/QR=ST/QP → SR=25×14/15=350/15; answer A."}
+{"id":"94364a79","sub_skills":["LAT.5"],"clusters":["CL.0086","CL.0173"],"distractors":[],"why":"Similar triangles from shadows; proportion 10/5=h/2 gives h=4; answer B."}
+{"id":"81b664bc","sub_skills":["LAT.5"],"clusters":["CL.0086"],"distractors":[],"why":"Three parallel lines; proportional intercepts: ED/FE=BC/AB → ED=8.5×18.5/9=17.5; answer B."}
+{"id":"686b5212","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0047"],"distractors":[],"why":"Parallel lines; co-interior angles: y+58=180 → 2x+8=122 → x=57."}
+{"id":"f67255ea","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112","CL.0047"],"distractors":[],"why":"Parallel lines; sum of 1 acute + 3 obtuse = a+3(180-a)=540-2(9x-560)=-18x+1660; w=1660."}
+{"id":"6a3fbec3","sub_skills":["RTT.1","LAT.4"],"clusters":["CL.0118","CL.0184","CL.0173"],"distractors":[],"why":"Right triangle altitude to hypotenuse; BD²=AD×DC → DC=36/8=4.5."}
+{"id":"694b7fce","sub_skills":["RTT.1","LAT.5"],"clusters":["CL.0118","CL.0086","CL.0173"],"distractors":[],"why":"Pythagorean theorem gives BC=5; similar triangles with scale 8 give area of ADE."}
+{"id":"17912810","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0121"],"distractors":[],"why":"Parallel lines q,t with transversals r,s; use transversal angle pairs and triangle angle sum: w=180-43-58=79."}
+{"id":"f731d88b","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0121"],"distractors":[],"why":"Pentagon with AB∥DE; co-interior angles give A+E=180; pentagon sum 540 gives C=227-180=47°."}
+{"id":"adae6543","sub_skills":["LAT.4","LAT.5"],"clusters":["CL.0155","CL.0086","CL.0173"],"distractors":[],"why":"LM∥PQ gives similar triangles LMR~QPR; LR/QR=MR/PR → QR=77/6; LQ=7+77/6=119/6; answer D."}
+{"id":"5b4757df","sub_skills":["LAT.5"],"clusters":["CL.0086","CL.0173"],"distractors":[],"why":"LK∥RT in right triangle; scale=1/3; ST=22 from area; KT=ST-SK=22-22/3=44/3."}
+{"id":"010243e6","sub_skills":["LAT.2"],"clusters":["CL.0121"],"distractors":[],"why":"Right triangles at P/L with equal angle structure; angle N=90-t regardless of k; answer C."}
+{"id":"48fb6483","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0148","CL.0121"],"distractors":[],"why":"PQ∥XY; corresponding angle ZPQ=27°; angle XPQ=180-27=153°."}
+{"id":"eeb4143c","sub_skills":["RTT.1"],"clusters":["CL.0118","CL.0119"],"distractors":[],"why":"Right triangle area bounds 48≤(1/2)xy≤60 with integer y; solve for possible x."}
+{"id":"322a6dfe","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar quadrilaterals preserve angles; angle Z = angle S = 135°; answer D."}
+{"id":"bd7f6e30","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121"],"distractors":[],"why":"RT=TU isosceles; base angles equal; use triangle angle sum to find x."}
+{"id":"fecc446d","sub_skills":["LAT.1"],"clusters":["CL.0148","CL.0112","CL.0047"],"distractors":[],"why":"Parallel lines; possible sums of 4 angles: 28x-1000, -28x+1720, 14x-320, 360, -14x+1040; -14x+1540 is impossible; answer A."}
+{"id":"3b225698","sub_skills":["LAT.4"],"clusters":["CL.0155"],"distractors":[],"why":"Similar triangles; Z corresponds to T so angle T = angle Z = 20°; answer C."}
+{"id":"740bf79f","sub_skills":["RTT.1","LAT.4"],"clusters":["CL.0118","CL.0184","CL.0086"],"distractors":[],"why":"Right triangle altitude to hypotenuse; NQ = MN×NP/MP = 3×4/5 = 2.4; answer C."}
+{"id":"b1e1c2f5","sub_skills":["LAT.5"],"clusters":["CL.0086","CL.0173"],"distractors":[],"why":"DE∥BC in right triangle; CE=2AE so AE=AC/3; DE=BC/3=162/3=54."}
+{"id":"f7dbde16","sub_skills":["LAT.4"],"clusters":["CL.0173"],"distractors":[],"why":"L=R=60°; option D gives M=70° and T=50° so N=50°=T, confirming AA similarity; answer D."}
+{"id":"901c3215","sub_skills":["LAT.4"],"clusters":["CL.0155","CL.0173"],"distractors":[],"why":"AA already proven (same angles); congruence needs BC=EF to establish ASA; answer C."}
+{"id":"345cc36a","sub_skills":["LAT.4","LAT.5"],"clusters":["CL.0155","CL.0086","CL.0173"],"distractors":[],"why":"Intersecting segments; similar triangles WXQ~ZYQ; proportion gives YZ=60×21/40=31.5."}
+{"id":"2d2cb85e","sub_skills":["LAT.3","LAT.2"],"clusters":["CL.0170","CL.0121","CL.0114"],"distractors":[],"why":"Isosceles RT=TU; exterior angle theorem and triangle angle sum to find x."}
+{"id":"a0369739","sub_skills":["RTT.1","LAT.4"],"clusters":["CL.0118","CL.0184","CL.0086"],"distractors":[],"why":"Right triangle with altitude from B; BC/BD = AC/AB = 38/15; answer D."}
+{"id":"947a3cde","sub_skills":["LAT.1","LAT.4"],"clusters":["CL.0179","CL.0155"],"distractors":[],"why":"Vertical angles at P plus NP=QP, MP=PR gives SAS congruence; isosceles triangle MPR yields angle QMR."}
+{"id":"f88f27e5","sub_skills":["LAT.1"],"clusters":["CL.0179","CL.0112"],"distractors":[],"why":"Intersecting lines; use vertical angles and supplementary angles to solve for x."}
+{"id":"e10d8313","sub_skills":["LAT.1","LAT.2"],"clusters":["CL.0179","CL.0121"],"distractors":[],"why":"Angles on a line and triangle angle sum; chain angle relationships through triangles to find angle TUR."}
+{"id":"145337bc","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"45-45-90 triangle; legs are equal so x=24; answer A."}
+{"id":"c9f8d1e9","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: c=sqrt(a^2+b^2)=sqrt(4^2+5^2); answer D."}
+{"id":"36661021","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: c=sqrt(81+36)=sqrt(117)≈10.8; answer B."}
+{"id":"379ffefb","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: hyp=sqrt(121+81)=sqrt(202); answer B."}
+{"id":"a6097ec2","sub_skills":["RTT.3"],"clusters":["CL.0126"],"distractors":[],"why":"sin(x)=opposite/hypotenuse; opposite to x is the horizontal leg; sin(x)=63/73; answer C."}
+{"id":"bbaac300","sub_skills":["RTT.3","LAT.4"],"clusters":["CL.0126","CL.0155"],"distractors":[],"why":"Similar triangles preserve trig ratios; B corresponds to E so cos(E)=cos(B)=1/22; answer A."}
+{"id":"64c1f044","sub_skills":["RTT.3"],"clusters":["CL.0126"],"distractors":[],"why":"tan(x)=opposite/adjacent; with vertical leg 7 (adjacent) and horizontal leg 26 (opposite): tan(x)=26/7; answer C."}
+{"id":"b0c5ece5","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: 4^2+b^2=19^2; answer C."}
+{"id":"e6f2ace7","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: hyp=sqrt(9+49)=sqrt(58)≈7.6; answer C."}
+{"id":"87a9a2d4","sub_skills":["RTT.3"],"clusters":["CL.0126"],"distractors":[],"why":"sin(A)=opposite/hypotenuse=BC/AB=35/171; answer B."}
+{"id":"13d9a1c3","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"30-60-90 special triangle; use side ratios to find PQ from hypotenuse."}
+{"id":"a5aee181","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Rectangle diagonal via Pythagorean theorem: longer side=sqrt((5sqrt17)^2-25)=sqrt(400)=20; answer B."}
+{"id":"a71617d3","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"Isosceles right triangle with equal legs of 32; x=45."}
+{"id":"bf8d843e","sub_skills":["RTT.2","RTT.3"],"clusters":["CL.0167","CL.0126"],"distractors":[],"why":"Altitude creates 30-60-90 sub-triangles; use special ratios and trig to find AD."}
+{"id":"9ec76b54","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: hyp=sqrt(784+400)=sqrt(1184)=4sqrt(74); answer B."}
+{"id":"7700d098","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem: other leg=sqrt(196.8^2-43.2^2)=sqrt(36864)=192; answer C."}
+{"id":"de550be0","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem rearranged: a=sqrt(21^2-6^2); answer A."}
+{"id":"5a7e3b46","sub_skills":["RTT.3"],"clusters":["CL.0126","CL.0105"],"distractors":[],"why":"cos(A)=AB/AC=3/5; sides in ratio 3:4:5; BC=136=4k gives k=34; AB=102; answer B."}
+{"id":"2bddbc1b","sub_skills":["RTT.3"],"clusters":["CL.0126"],"distractors":[],"why":"cos(A)=adjacent/hypotenuse=AC/AB=41/42; answer B."}
+{"id":"902dc959","sub_skills":["RTT.3"],"clusters":["CL.0126"],"distractors":[],"why":"tan(A)=opposite/adjacent=BC/AC=20/21; answer C."}
+{"id":"659cb706","sub_skills":["RTT.3","RTT.4"],"clusters":["CL.0126","CL.0174"],"distractors":[],"why":"sin(X)=ZY/XY; cos(Y)=ZY/XY; complementary angles so sin(X)=cos(Y); answer D."}
+{"id":"25da87f8","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"30-60-90 triangle; perimeter=x(3+sqrt3)=18+6sqrt3=6(3+sqrt3); x=6; longest side=12."}
+{"id":"14e7c1f4","sub_skills":["RTT.4"],"clusters":["CL.0174","CL.0047"],"distractors":[],"why":"cos(Q)=sin(R) means Q+R=90; (x+61)+(4x+4)=90 gives x=5; answer A."}
+{"id":"1bf809b5","sub_skills":["RTT.3"],"clusters":["CL.0126"],"distractors":[],"why":"cos(x)=11/28 directly writes cosine as adjacent/hypotenuse ratio"}
+{"id":"8027db3f","sub_skills":["RTT.3","RTT.4"],"clusters":["CL.0126","CL.0174"],"distractors":[],"why":"cos(L)=15/17 is a trig ratio; sin(M)=cos(L) uses complementary identity since M+L=90"}
+{"id":"dba6a25a","sub_skills":["RTT.1","LAT.5"],"clusters":["CL.0118","CL.0086","CL.0173"],"distractors":[],"why":"BD∥AE creates similar triangles; proportion gives BC then Pythagorean theorem finds CE=30"}
+{"id":"2be01bd9","sub_skills":["RTT.3","RTT.4","LAT.4"],"clusters":["CL.0126","CL.0178","CL.0155"],"distractors":[],"why":"tan(E)=7/50; congruent triangles share angle so tan(F)=50/7 by reciprocal tangent identity"}
+{"id":"a67b9f88","sub_skills":["RTT.1","RTT.3"],"clusters":["CL.0118","CL.0126"],"distractors":[],"why":"sin(R)=52/53 is opp/hyp; Pythagorean theorem confirms the third side"}
+{"id":"92eb236a","sub_skills":["RTT.4"],"clusters":["CL.0178"],"distractors":[],"why":"reciprocal tangent relationship: if tan=1/√3 then complementary angle tan=√3"}
+{"id":"c6dff223","sub_skills":["RTT.3","LAT.4"],"clusters":["CL.0126","CL.0155"],"distractors":[],"why":"sin(D)=21/29 uses opp/hyp in congruent triangles with matched corresponding parts"}
+{"id":"ae041e52","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"square inscribed in circle: diagonal=side√2 by 45-45-90 special triangle ratio"}
+{"id":"16d66178","sub_skills":["RTT.4"],"clusters":["CL.0174"],"distractors":[],"why":"cos²66+cos²24=1 uses sin=cos of complement since 66+24=90"}
+{"id":"7c25b0dc","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"rectangle diagonal forms right triangle; Pythagorean theorem finds longer side=12"}
+{"id":"6ab30ce3","sub_skills":["RTT.2","RTT.3"],"clusters":["CL.0167","CL.0126"],"distractors":[],"why":"30-60-90 triangle with trig ratio setup gives DE=250"}
+{"id":"6933b3d9","sub_skills":["RTT.3","RTT.4"],"clusters":["CL.0126","CL.0174"],"distractors":[],"why":"cos(RSW)-sin(WST)=0 means cos=sin so angles are complementary"}
+{"id":"c9931030","sub_skills":["RTT.3","LAT.4"],"clusters":["CL.0126","CL.0155"],"distractors":[],"why":"tan(W)=5/12 from opp/adj in congruent triangles with corresponding parts"}
+{"id":"f811d345","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem a²+b²=c² gives d=113"}
+{"id":"0e709a29","sub_skills":["RTT.3","LAT.4"],"clusters":["CL.0126","CL.0155"],"distractors":[],"why":"tan(W)=55/48 from opp/adj in congruent triangles with matched corresponding parts"}
+{"id":"568d66a7","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"45-45-90 triangle: hypotenuse=leg√2 so leg=47√2"}
+{"id":"54df8076","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"30-60-90 special triangle ratio gives w=284/3"}
+{"id":"44b2b894","sub_skills":["RTT.2"],"clusters":["CL.0167","CL.0118"],"distractors":[],"why":"isosceles right triangle with Pythagorean theorem and 45-45-90 ratio gives diameter=66"}
+{"id":"ffe862a3","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"45-45-90 triangle: perimeter=58+58√2 using special triangle ratio"}
+{"id":"55bb437a","sub_skills":["RTT.3","LAT.5"],"clusters":["CL.0126","CL.0086","CL.0173"],"distractors":[],"why":"similar triangles via parallel lines; trig ratio and proportion give DE=20/3"}
+{"id":"498d6795","sub_skills":["RTT.1"],"clusters":["CL.0118"],"distractors":[],"why":"Pythagorean theorem gives AC=26√37"}
+{"id":"a4bd60a3","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"30-60-90 special triangle ratio gives k=104"}
+{"id":"4c95c7d4","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"equilateral triangle area formula using 30-60-90 height gives area=8√3"}
+{"id":"1429dcdf","sub_skills":["RTT.3"],"clusters":["CL.0126"],"distractors":[],"why":"sin(x)=16/23 directly writes sine as opp/hyp ratio"}
+{"id":"52f7b898","sub_skills":["RTT.2","RTT.3"],"clusters":["CL.0167","CL.0126"],"distractors":[],"why":"tan(A)=√3 recognized as 30-60-90 ratio; trig ratio identifies the angle"}
+{"id":"58c26db8","sub_skills":["RTT.2"],"clusters":["CL.0167"],"distractors":[],"why":"30-60-90 special triangle: hypotenuse=18 from side ratios"}
+{"id":"bd87bc09","sub_skills":["RTT.1","RTT.3"],"clusters":["CL.0118","CL.0126"],"distractors":[],"why":"trig ratio gives one side then Pythagorean theorem finds BC=24"}
