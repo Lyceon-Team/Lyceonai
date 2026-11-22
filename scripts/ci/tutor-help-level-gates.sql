@@ -1,14 +1,17 @@
 -- ============================================================================
 -- LISA help-level engine: schema gates (owner brief "Help-level engine", Karl 2026-11-05; SCL-275)
 -- ============================================================================
--- @spec [SCL-275; supabase/migrations/20261201000000_lisa_help_level.sql] | @implemented [2026-11-05]
+-- @spec [SCL-275; supabase/migrations/20261201000000_lisa_help_level.sql,
+--       20261206000000_lisa_help_keywords_v2.sql] | @implemented [2026-11-05; H3 updated 2026-11-22]
 --
 -- plain English: the three help columns on tutor_turn_metrics accept exactly the states the BFF
 -- writes and refuse everything else, including the rows a NULL comparison would let through.
 --   H1 accepted: no help (a turn that reached no worker), each level with its step and a signal.
 --   H2 refused: an unknown level; a worked step out of 1..3; worked_step without a step; a step on
 --      another level; a level without a signal; a signal without a level; an unknown signal.
---   H3 the keyword map is seeded at version 1 with both signal lists.
+--   H3 after the whole pipeline the keyword map is at version 2 with 33 stuck and 20 solve_it
+--      phrases: the v1 seed (20261201000000) plus the v2 append (20261206000000), the state Karl
+--      reported for production on 2026-11-22.
 -- One transaction, rolled back.
 -- ============================================================================
 \set ON_ERROR_STOP on
@@ -65,10 +68,10 @@ DO $$
 DECLARE v jsonb;
 BEGIN
   SELECT value INTO v FROM public.tutor_context_runtime_config WHERE key = 'tutor_help_keywords';
-  IF v IS NULL OR (v->>'version')::int IS DISTINCT FROM 1
-     OR jsonb_array_length(v->'signals'->'stuck') < 1
-     OR jsonb_array_length(v->'signals'->'solve_it') < 1 THEN
-    PERFORM pg_temp.fail('H3 tutor_help_keywords not seeded at version 1 with both lists');
+  IF v IS NULL OR (v->>'version')::int IS DISTINCT FROM 2
+     OR jsonb_array_length(v->'signals'->'stuck') IS DISTINCT FROM 33
+     OR jsonb_array_length(v->'signals'->'solve_it') IS DISTINCT FROM 20 THEN
+    PERFORM pg_temp.fail('H3 tutor_help_keywords is not version 2 with 33 stuck and 20 solve_it phrases');
   END IF;
   RAISE NOTICE 'H3 PASS';
 END $$;
