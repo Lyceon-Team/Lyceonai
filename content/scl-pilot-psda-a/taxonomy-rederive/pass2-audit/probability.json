@@ -1,0 +1,195 @@
+{
+  "skill_code": "PRB",
+  "skill_name": "Probability and Conditional Probability",
+  "pass": "blind_audit",
+  "total_questions_read": 42,
+  "question_catalog": [
+    {"cb_id": "4e527894", "difficulty": "Easy", "concept": "Simple P from description: 20 buttons, P(white)=8/20", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "0a99e5bb", "difficulty": "Easy", "concept": "Simple P from data set: {-13,4,23}, P(negative)=1/3", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "c943acba", "difficulty": "Easy", "concept": "Simple P from description: 7 houses, P(blue)=2/7", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "1dcea480", "difficulty": "Easy", "concept": "Find count from probability: 60 marbles, P(blue)=0.35, count=21", "sub_skill": "PRB.6", "cluster": "CL-6"},
+    {"cb_id": "b8150b17", "difficulty": "Easy", "concept": "Simple P from rate: 29/100 defective beads", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "1b8e412e", "difficulty": "Easy", "concept": "Simple P from data set: {-11,-9,26}, P(positive)=1/3", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "dae79de4", "difficulty": "Easy", "concept": "Marginal P from two-way table: P(>=40 years)=105/135", "sub_skill": "PRB.3", "cluster": "CL-3"},
+    {"cb_id": "a478f9f5", "difficulty": "Easy", "concept": "P from frequency table: P(color Y)=3/157", "sub_skill": "PRB.2", "cluster": "CL-2"},
+    {"cb_id": "2a08d878", "difficulty": "Easy", "concept": "Symbolic probability expression: P(nonfiction)=n/(n+12)", "sub_skill": "PRB.8", "cluster": "CL-8"},
+    {"cb_id": "12dbe3de", "difficulty": "Easy", "concept": "Simple P: 4/1000=0.004 defective MP3 players", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "79201024", "difficulty": "Easy", "concept": "Simple P: 11/45 play saxophone", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "ec7b0eb8", "difficulty": "Easy", "concept": "Marginal P from two-way table: P(talks daily)=415/799", "sub_skill": "PRB.3", "cluster": "CL-3"},
+    {"cb_id": "2905ded0", "difficulty": "Easy", "concept": "Marginal P from two-way table: P(>=40)=107/135", "sub_skill": "PRB.3", "cluster": "CL-3"},
+    {"cb_id": "e5b5fbdd", "difficulty": "Easy", "concept": "Simple P: 4/8=1/2 rocky planets", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "60caadfd", "difficulty": "Easy", "concept": "P from frequency table: P(igneous)=10/70, must sum categories for total", "sub_skill": "PRB.2", "cluster": "CL-2"},
+    {"cb_id": "47624288", "difficulty": "Easy", "concept": "Marginal P from two-way table: P(lion)=20/80=1/4", "sub_skill": "PRB.3", "cluster": "CL-3"},
+    {"cb_id": "b680e76d", "difficulty": "Easy", "concept": "Find missing count in table by subtraction: 1000-312-220-216=252", "sub_skill": "PRB.6", "cluster": "CL-6"},
+    {"cb_id": "16cea46c", "difficulty": "Easy", "concept": "P from frequency table: P(baritone)=10/25=0.40", "sub_skill": "PRB.2", "cluster": "CL-2"},
+    {"cb_id": "46545dd6", "difficulty": "Easy", "concept": "Conditional P from two-way table: fraction of 2010 interns from Valley=65/140", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "d89c1513", "difficulty": "Easy", "concept": "Marginal P from two-way table: P(no gasoline)=50/135", "sub_skill": "PRB.3", "cluster": "CL-3"},
+    {"cb_id": "1353b86e", "difficulty": "Easy", "concept": "P from frequency table: P(blue marble)=10/40", "sub_skill": "PRB.2", "cluster": "CL-2"},
+    {"cb_id": "b1b5300b", "difficulty": "Medium", "concept": "Joint P from two-way table: P(hybrid AND <=25K)=2/14=1/7", "sub_skill": "PRB.4", "cluster": "CL-4"},
+    {"cb_id": "e1ad3d41", "difficulty": "Medium", "concept": "Conditional P: fraction of chocolate-colored with deep blue=12/16", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "0301c5dc", "difficulty": "Medium", "concept": "Joint P from table: P(camping AND no bike)=5/37, must compute total", "sub_skill": "PRB.4", "cluster": "CL-4"},
+    {"cb_id": "0ae37ff3", "difficulty": "Medium", "concept": "Complement probability: P(neither blue nor yellow)=11/77=1/7", "sub_skill": "PRB.7", "cluster": "CL-7"},
+    {"cb_id": "1fc4f47b", "difficulty": "Medium", "concept": "Find count from probability: 350-168-84=98 in theater C", "sub_skill": "PRB.6", "cluster": "CL-6"},
+    {"cb_id": "2df8f293", "difficulty": "Medium", "concept": "Simple P, SPR format: P(letter D)=1/14", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "912cd125", "difficulty": "Medium", "concept": "Conditional P: P(weekend|no rain)=16/64=1/4", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "30db8f77", "difficulty": "Medium", "concept": "Find count from probability: 275-121-66=88 in group C", "sub_skill": "PRB.6", "cluster": "CL-6"},
+    {"cb_id": "38a9ac45", "difficulty": "Medium", "concept": "Simple proportion/P from rate: 6000/60000=1/10 in first 5 days", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "b6569d0e", "difficulty": "Medium", "concept": "Conditional P from frequency table: fraction of >=50 who were >=60=10/34", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "a3384df0", "difficulty": "Medium", "concept": "Probability comparison: which penguin type female pop closest to 1/3 of total female", "sub_skill": "PRB.7", "cluster": "CL-7"},
+    {"cb_id": "46b2e169", "difficulty": "Medium", "concept": "Simple P, SPR: P(red pen)=13/50", "sub_skill": "PRB.1", "cluster": "CL-1"},
+    {"cb_id": "f8696cd8", "difficulty": "Medium", "concept": "Conditional P from two-way table: P(master's|HR)=2/6=1/3", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "e9ed719f", "difficulty": "Medium", "concept": "Marginal P from two-way table, SPR: P(red)=30/100=3/10", "sub_skill": "PRB.3", "cluster": "CL-3"},
+    {"cb_id": "89f20d9e", "difficulty": "Hard", "concept": "Conditional P from two-way table: P(group A|>=10 years)=25/60=5/12", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "014c47ab", "difficulty": "Hard", "concept": "Conditional P from two-way table, SPR: P(site A|tulip)=35/50=7/10", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "5dc386fb", "difficulty": "Hard", "concept": "Conditional P as percentage: 6/45=13.3% of states with sales tax lack income tax", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "6a715bed", "difficulty": "Hard", "concept": "Conditional P from two-way table, SPR: P(group A|>=10)=23/60", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "585de39a", "difficulty": "Hard", "concept": "Find count from probability, algebraic: p/97=0.43, p=42", "sub_skill": "PRB.6", "cluster": "CL-6"},
+    {"cb_id": "e438ec3f", "difficulty": "Hard", "concept": "Conditional P from word problem (no table): P(maple|>=20ft)=45/93=15/31", "sub_skill": "PRB.5", "cluster": "CL-5"},
+    {"cb_id": "d4413871", "difficulty": "Hard", "concept": "Solve for unknown using conditional P equation: 2/(10+x)=1/9, x=8", "sub_skill": "PRB.8", "cluster": "CL-8"}
+  ],
+  "proposed_sub_skills": [
+    {
+      "id": "PRB.1",
+      "name": "Simple Probability from Description or List",
+      "definition": "Compute P(event) = favorable/total from a directly stated count, list, rate, or verbal description where no table reading is required.",
+      "inclusion_test": "The question provides counts or a list directly in prose and asks for the probability of a single event. No table, no conditioning, no unknown to solve for.",
+      "evidence_ids": ["4e527894", "0a99e5bb", "c943acba", "b8150b17", "1b8e412e", "12dbe3de", "79201024", "e5b5fbdd", "2df8f293", "46b2e169", "38a9ac45"],
+      "count": 11,
+      "difficulty_spread": {"Easy": 8, "Medium": 3}
+    },
+    {
+      "id": "PRB.2",
+      "name": "Probability from One-Way / Frequency Table",
+      "definition": "Read a one-way frequency table, identify the favorable category count, compute the total (by summing if not given), and calculate P(event) = count/total.",
+      "inclusion_test": "The question presents a single-variable frequency table (not a two-way table) and asks for the probability of selecting a member of one category.",
+      "evidence_ids": ["a478f9f5", "60caadfd", "16cea46c", "1353b86e"],
+      "count": 4,
+      "difficulty_spread": {"Easy": 4}
+    },
+    {
+      "id": "PRB.3",
+      "name": "Marginal Probability from Two-Way Table",
+      "definition": "Extract a row or column total (marginal) from a two-way contingency table and compute P(event) = marginal total / grand total.",
+      "inclusion_test": "The question presents a two-way table and asks for the probability of a single category (row or column marginal), not a joint or conditional probability.",
+      "evidence_ids": ["dae79de4", "ec7b0eb8", "2905ded0", "47624288", "d89c1513", "e9ed719f"],
+      "count": 6,
+      "difficulty_spread": {"Easy": 5, "Medium": 1}
+    },
+    {
+      "id": "PRB.4",
+      "name": "Joint Probability from Two-Way Table",
+      "definition": "Identify the intersection cell in a two-way table representing P(A AND B) and divide by the grand total.",
+      "inclusion_test": "The question presents a two-way table and asks for the probability of the intersection of two categories (a specific cell), not a marginal or conditional.",
+      "evidence_ids": ["b1b5300b", "0301c5dc"],
+      "count": 2,
+      "difficulty_spread": {"Medium": 2}
+    },
+    {
+      "id": "PRB.5",
+      "name": "Conditional Probability",
+      "definition": "Compute P(A|B) by restricting the sample space to condition B, then finding the proportion of A within that restricted space. The conditioning event may be given explicitly ('of those who...', 'given that...') or implied by the phrasing ('fraction of X that are Y').",
+      "inclusion_test": "The question asks for a probability or fraction within a subgroup defined by a condition. The denominator is NOT the grand total but the total of the conditioning group.",
+      "evidence_ids": ["46545dd6", "e1ad3d41", "912cd125", "b6569d0e", "f8696cd8", "89f20d9e", "014c47ab", "5dc386fb", "6a715bed", "e438ec3f"],
+      "count": 10,
+      "difficulty_spread": {"Easy": 1, "Medium": 4, "Hard": 5}
+    },
+    {
+      "id": "PRB.6",
+      "name": "Find Count from Probability (Reverse Probability)",
+      "definition": "Given a probability or proportion and a total (or partial totals), work backward to find an unknown count. This may involve solving P = x/N for x, multiplying probability by total, or subtracting known parts from a total.",
+      "inclusion_test": "The question provides a probability (or the total and partial counts) and asks for a missing count rather than a probability. The cognitive operation reverses the standard P = favorable/total formula.",
+      "evidence_ids": ["1dcea480", "b680e76d", "1fc4f47b", "30db8f77", "585de39a"],
+      "count": 5,
+      "difficulty_spread": {"Easy": 2, "Medium": 2, "Hard": 1},
+      "genuinely_separate": true,
+      "separation_rationale": "This sub-skill is genuinely distinct from forward probability computation. The student must reverse the formula direction: instead of dividing favorable by total, they multiply or solve an equation. It spans all three difficulty levels and the solving steps (reverse formula, algebraic equation, subtraction from total) are structurally different from any forward probability computation. The Easy variants use simple multiplication (0.35 * 60 = 21) or subtraction (1000 - 312 - 220 - 216 = 252), while Hard variants require setting up and solving algebraic equations (p/97 = 0.43). This progression confirms it as a standalone sub-skill, not merely a variant of simple probability."
+    },
+    {
+      "id": "PRB.7",
+      "name": "Complement or Combined-Event Probability",
+      "definition": "Use the complement rule P(not A) = 1 - P(A) or combine multiple non-overlapping event probabilities to find the probability of a composite event.",
+      "inclusion_test": "The question asks for the probability of an event defined by exclusion ('neither A nor B', 'not A') or requires comparing multiple computed probabilities across categories.",
+      "evidence_ids": ["0ae37ff3", "a3384df0"],
+      "count": 2,
+      "difficulty_spread": {"Medium": 2}
+    },
+    {
+      "id": "PRB.8",
+      "name": "Symbolic / Algebraic Probability Expression",
+      "definition": "Express a probability as an algebraic expression with a variable, or set up and solve an equation where the probability formula contains an unknown in the denominator or numerator.",
+      "inclusion_test": "The question requires writing P as an expression with a variable (not just computing a number), or solving an equation where an unknown appears inside the probability formula.",
+      "evidence_ids": ["2a08d878", "d4413871"],
+      "count": 2,
+      "difficulty_spread": {"Easy": 1, "Hard": 1}
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "id": "CL-1",
+      "name": "Identify Favorable and Total from Description",
+      "definition": "Read the problem text to identify the count of favorable outcomes and the total number of outcomes, then compute their ratio.",
+      "solving_steps": ["Read problem for favorable count", "Identify total count", "Divide favorable by total"],
+      "evidence_ids": ["4e527894", "0a99e5bb", "c943acba", "b8150b17", "1b8e412e", "12dbe3de", "79201024", "e5b5fbdd", "2df8f293", "46b2e169", "38a9ac45"]
+    },
+    {
+      "id": "CL-2",
+      "name": "Read One-Way Table and Compute Ratio",
+      "definition": "Read a single-variable frequency table, locate the target category count, compute the total by summing if not provided, and divide.",
+      "solving_steps": ["Read frequency table", "Identify target category count", "Sum categories for total if needed", "Divide count by total"],
+      "evidence_ids": ["a478f9f5", "60caadfd", "16cea46c", "1353b86e"]
+    },
+    {
+      "id": "CL-3",
+      "name": "Read Two-Way Table Marginals",
+      "definition": "Locate the appropriate row or column total in a two-way table, read the grand total, and compute the marginal probability.",
+      "solving_steps": ["Identify the target row or column", "Read its marginal total", "Read the grand total", "Divide marginal by grand total"],
+      "evidence_ids": ["dae79de4", "ec7b0eb8", "2905ded0", "47624288", "d89c1513", "e9ed719f"]
+    },
+    {
+      "id": "CL-4",
+      "name": "Read Two-Way Table Cell for Joint Probability",
+      "definition": "Locate the intersection cell representing two simultaneous conditions in a two-way table, read the grand total, and divide.",
+      "solving_steps": ["Identify the two conditions (row and column)", "Locate the intersection cell", "Read or compute the grand total", "Divide cell value by grand total"],
+      "evidence_ids": ["b1b5300b", "0301c5dc"]
+    },
+    {
+      "id": "CL-5",
+      "name": "Restrict Sample Space for Conditional Probability",
+      "definition": "Identify the conditioning event, restrict the denominator to the subgroup satisfying that condition, then find the count of the target event within that subgroup and divide.",
+      "solving_steps": ["Identify the conditioning event B", "Find the total count within B (column/row total or described subgroup size)", "Find the count of target event A within B", "Divide A-within-B by total-of-B"],
+      "evidence_ids": ["46545dd6", "e1ad3d41", "912cd125", "b6569d0e", "f8696cd8", "89f20d9e", "014c47ab", "5dc386fb", "6a715bed", "e438ec3f"]
+    },
+    {
+      "id": "CL-6",
+      "name": "Reverse the Probability Formula to Find Count",
+      "definition": "Given a probability and total (or partial counts), solve for the unknown count by reversing P = x/N, using multiplication, or subtracting known parts from the total.",
+      "solving_steps": ["Identify the given probability or proportion", "Identify the total N", "Solve for unknown: x = P * N, or x = N - sum(known parts)", "Verify the result satisfies the original constraint"],
+      "evidence_ids": ["1dcea480", "b680e76d", "1fc4f47b", "30db8f77", "585de39a"]
+    },
+    {
+      "id": "CL-7",
+      "name": "Complement or Exclusion Reasoning",
+      "definition": "Determine the probability of an event defined by what it is NOT, either by subtracting included events from 1 or by summing the non-matching categories.",
+      "solving_steps": ["Identify the excluded or negated events", "Compute probabilities of the named events", "Subtract from 1, or sum remaining categories", "Compare if multiple probabilities are involved"],
+      "evidence_ids": ["0ae37ff3", "a3384df0"]
+    },
+    {
+      "id": "CL-8",
+      "name": "Algebraic Equation Setup with Unknown",
+      "definition": "Set up a probability expression or equation containing a variable, then simplify or solve algebraically.",
+      "solving_steps": ["Express the probability formula with the unknown variable", "Set up the equation (expression = target value, or simplify)", "Solve algebraically for the unknown"],
+      "evidence_ids": ["2a08d878", "d4413871"]
+    }
+  ],
+  "find_count_from_probability_analysis": {
+    "is_genuinely_separate": true,
+    "rationale": "Find-count-from-probability (PRB.6) is a genuinely separate sub-skill, not a variant of simple probability or conditional probability. Evidence: (1) The cognitive operation is fundamentally different - students reverse P = favorable/total rather than computing it forward. (2) It spans all three difficulty levels (Easy: 1dcea480, b680e76d; Medium: 1fc4f47b, 30db8f77; Hard: 585de39a), showing it is a real axis of difficulty. (3) The solving steps are structurally distinct: Easy variants use direct multiplication (0.35 * 60 = 21) or subtraction from total; Medium variants chain subtractions (350 - 168 - 84 = 98); Hard variants require algebraic equation setup (p/97 = 0.43). (4) No question in PRB.6 could be reclassified into another sub-skill without losing the defining characteristic: the answer is a count, not a probability. (5) Students who can compute forward probability may still fail reverse problems, as the direction of reasoning is different."
+  },
+  "difficulty_progression_notes": {
+    "Easy_dominated": ["PRB.1 (Simple P)", "PRB.2 (Frequency table P)", "PRB.3 (Marginal P)"],
+    "Medium_dominated": ["PRB.4 (Joint P)", "PRB.7 (Complement/Combined)"],
+    "Hard_dominated": ["PRB.5 (Conditional P) - the core differentiator at Hard level"],
+    "spans_all_levels": ["PRB.6 (Find count from probability)", "PRB.8 (Symbolic/Algebraic)"],
+    "key_observation": "Conditional probability (PRB.5) is the single largest sub-skill (10 questions) and dominates Hard difficulty (5 of 7 Hard questions). This makes it the primary discriminator between Medium and Hard performance in this skill domain."
+  }
+}

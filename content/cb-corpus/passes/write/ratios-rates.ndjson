@@ -1,0 +1,84 @@
+{"id": "4e375d1f", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: centimeters to meters using one conversion factor."}
+{"id": "763e6769", "sub_skills": ["RAT.11"], "clusters": ["CL.0234"], "distractors": [], "why": "Given a fixed ratio, asks for one quantity in terms of another variable; ratio-to-expression construction."}
+{"id": "4347a032", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: tablespoons to teaspoons using one conversion factor."}
+{"id": "d7a3179d", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: inches to yards using one conversion factor."}
+{"id": "808f7d6c", "sub_skills": ["RAT.11"], "clusters": ["CL.0234"], "distractors": [], "why": "Given a proportional relationship, asks student to identify equivalent algebraic expression."}
+{"id": "3318d37b", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Explicit named rate (dollars per pound), single multiply to find total cost. No proportion setup or second operation needed."}
+{"id": "99550621", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Named rate (8 sq ft per person), single divide to find count. No second operation or proportion setup."}
+{"id": "4837406c", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Named rate (cm/sec), single divide total distance by rate to find time."}
+{"id": "94660ba8", "sub_skills": ["RAT.7"], "clusters": ["CL.0032"], "distractors": [], "why": "Converting speed unit: yards per hour to miles per hour requires converting yards to miles (chain of conversions in rate)."}
+{"id": "551c52b9", "sub_skills": ["RAT.11"], "clusters": ["CL.0234"], "distractors": [], "why": "Given a fixed rate and a variable number of hours, asks student to select expression for earnings."}
+{"id": "c47256ca", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion of a speed value using one conversion factor."}
+{"id": "8bf3f67a", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: fathoms to feet using one conversion factor."}
+{"id": "7270d642", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Named rate (meters per second), single multiply to find total distance."}
+{"id": "3ac09984", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0032"], "distractors": [], "why": "Rate conversion (peso to dollar) PLUS a percentage fee applied to the result. Two operations: RAT.14."}
+{"id": "2cdefcb1", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: meters to centimeters using one conversion factor."}
+{"id": "85b33aa8", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: yards to miles using one conversion factor."}
+{"id": "06a152cd", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0032"], "distractors": [], "why": "Rate application (2.5 oz × 48 muffins) PLUS unit conversion (oz to pounds). Two operations: RAT.14."}
+{"id": "d0d9ede4", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: yards to feet using one conversion factor."}
+{"id": "24ad9dcb", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Two rate applications (fraction of Earth weight for each planet) PLUS a subtraction to find difference. RAT.14."}
+{"id": "7cd1c6db", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Named rate (cm/sec), single divide to find time. Same pattern as item 7."}
+{"id": "ba62b0b0", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: kilograms to grams using one conversion factor."}
+{"id": "fe1ec415", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Scales two equivalent ratios (pounds/minutes = pounds/minutes); proportion setup and solve by cross-multiplication. No additional operation."}
+{"id": "0700a2d5", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: rods to yards using one conversion factor."}
+{"id": "c81499e1", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: kilograms to grams using one conversion factor."}
+{"id": "e9841407", "sub_skills": ["RAT.12"], "clusters": ["CL.0246", "CL.0075"], "distractors": [], "why": "Express ratio of two counts in simplest form: 7:28 = 1:4."}
+{"id": "aeeaec96", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: inches to yards using one conversion factor."}
+{"id": "2d16d62c", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: fathoms to feet using one conversion factor."}
+{"id": "6310adbc", "sub_skills": ["RAT.12"], "clusters": ["CL.0086"], "distractors": [], "why": "Use a given part-to-part ratio (1:2) to find one part from the other. Direct ratio application."}
+{"id": "da9ffcf6", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Scales two equivalent ratios to find segment length from given ratio and one known length. Proportion setup and solve."}
+{"id": "3f236a64", "sub_skills": ["RAT.12"], "clusters": ["CL.0166", "CL.0072"], "distractors": [], "why": "Identify constant ratio across rows of a table and solve for a missing entry."}
+{"id": "e3d49511", "sub_skills": ["RAT.13"], "clusters": ["CL.0060"], "distractors": [], "why": "Compute density: total raccoons / area in sq miles. Density and derived-rate calculation."}
+{"id": "be35c117", "sub_skills": ["RAT.12"], "clusters": ["CL.0075"], "distractors": [], "why": "Compute unit rate (revolutions per minute) from total revolutions and total minutes."}
+{"id": "15617f62", "sub_skills": ["RAT.13"], "clusters": ["CL.0242"], "distractors": [], "why": "Given density and population, solve for area (divide). Density and derived-rate calculation with reverse division."}
+{"id": "312ba47c", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Scale a part-to-part ratio to find unknown count from known count. Proportion setup and solve."}
+{"id": "000259aa", "sub_skills": ["RAT.12"], "clusters": ["CL.0075"], "distractors": [], "why": "Compute unit rate: total miles / total days to find miles per day."}
+{"id": "fe4c1c9e", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Named rate (items per hour), single multiply to find total items."}
+{"id": "86636d8f", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Named rate (price per pound), single divide to find quantity. No proportion or second operation."}
+{"id": "3f5398a6", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Scale equivalent ratios (1/5 = m/25) to find distance. Proportion setup and solve."}
+{"id": "3c8fdc40", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion of rate denominator: minutes to hours using one conversion factor (×60)."}
+{"id": "51c9d65f", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0238"], "distractors": [], "why": "Proportion reasoning (maintain ratio) PLUS computing the change in length (difference). Two operations: RAT.14."}
+{"id": "674a4084", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: feet to yards in a speed, using one conversion factor."}
+{"id": "89c39d77", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: miles to yards in a speed, using one conversion factor."}
+{"id": "96c3e32d", "sub_skills": ["RAT.9"], "clusters": ["CL.0060"], "distractors": [], "why": "Named rate (pounds per square inch), single multiply by area to find total force."}
+{"id": "568bc2a4", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: furlongs to feet using one conversion factor."}
+{"id": "f6cbb04a", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Rate equation d=55t, then computes ratio of two distances at different times. Rate reasoning plus ratio comparison: RAT.14."}
+{"id": "1180401d", "sub_skills": ["RAT.14", "RAT.13"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Must first subtract water area from total to get land area, then compute density. Density calculation plus a subtraction step: RAT.14 + RAT.13."}
+{"id": "cb4894f9", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: miles to yards in a speed, using one conversion factor."}
+{"id": "eb672707", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: teaspoons to tablespoons using one conversion factor."}
+{"id": "61b87506", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Maintain a ratio when one quantity changes; proportion setup to find the multiplied quantity."}
+{"id": "73ddfdac", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: furlongs to feet using one conversion factor."}
+{"id": "873d2838", "sub_skills": ["RAT.13"], "clusters": ["CL.0242"], "distractors": [], "why": "Given density and population, solve for area (divide). Density and derived-rate calculation."}
+{"id": "7e6c745f", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0072"], "distractors": [], "why": "Compute two unit rates (cost per gram protein for each food) from table data, then form their ratio. Rate reasoning plus ratio comparison: RAT.14."}
+{"id": "ec787383", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: furlongs to feet using one conversion factor."}
+{"id": "8917ce38", "sub_skills": ["RAT.7"], "clusters": ["CL.0032"], "distractors": [], "why": "Two conversion factors applied sequentially: kilometers to meters and hours to seconds."}
+{"id": "1d945139", "sub_skills": ["RAT.11"], "clusters": ["CL.0234"], "distractors": [], "why": "Given a fixed rate (mass per object), asks for algebraic expression for different count. Ratio-to-expression construction."}
+{"id": "e21d10a7", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Compute two total times (rate × count for each moon) then find their difference. Rate application plus subtraction: RAT.14."}
+{"id": "939c46d1", "sub_skills": ["RAT.7"], "clusters": ["CL.0032"], "distractors": [], "why": "Convert gallon to fluid ounces, then divide by 16 oz per glass. Two sequential conversion steps."}
+{"id": "445dd032", "sub_skills": ["RAT.11"], "clusters": ["CL.0234"], "distractors": [], "why": "Given a fixed rate and a variable, select the algebraic expression for earnings. Ratio-to-expression construction."}
+{"id": "1b403590", "sub_skills": ["RAT.13"], "clusters": ["CL.0060"], "distractors": [], "why": "Compute density: mass/volume. Density and derived-rate calculation."}
+{"id": "181cc4d6", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Set up proportion 15/w = 20/x and solve. No additional arithmetic step beyond proportion."}
+{"id": "fea831fc", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0032"], "distractors": [], "why": "Compute speed (11/26 miles per minute) then convert to miles per hour. Rate reasoning plus unit conversion: RAT.14."}
+{"id": "c3d78831", "sub_skills": ["RAT.11"], "clusters": ["CL.0234"], "distractors": [], "why": "Given a fixed ratio and a variable for coaches, select expression for number of athletes. Ratio-to-expression."}
+{"id": "9fa781f8", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Scale two equivalent ratios to find unknown value. Proportion setup and solve."}
+{"id": "8e528129", "sub_skills": ["RAT.14", "RAT.13"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Chain density with unit price: density × price = price per cubic inch. Density calculation plus chained rate multiplication: RAT.14 + RAT.13."}
+{"id": "3726e079", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Proportion relationship between variables, solve for unknown by cross-multiplication."}
+{"id": "3310c2ab", "sub_skills": ["RAT.6"], "clusters": ["CL.0032"], "distractors": [], "why": "Single-step unit conversion: quarts to fluid ounces using one conversion factor."}
+{"id": "825b7490", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Scale two equivalent ratios. Proportion setup and solve."}
+{"id": "b4912cc5", "sub_skills": ["RAT.14", "RAT.13"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Compute two populations from densities (density × area), then subtract to find increase. Density calculation plus subtraction: RAT.14 + RAT.13."}
+{"id": "d28c29e1", "sub_skills": ["RAT.7"], "clusters": ["CL.0032"], "distractors": [], "why": "Converting seconds to hours requires chaining: sec→min→hr (or sec→hr directly via ×3600). Two-factor conversion."}
+{"id": "d6456c7a", "sub_skills": ["RAT.8"], "clusters": ["CL.0092"], "distractors": [], "why": "Area unit conversion requiring squaring the linear conversion factor."}
+{"id": "11b06e35", "sub_skills": ["RAT.13"], "clusters": ["CL.0060", "CL.0092"], "distractors": [], "why": "Compute cube volume (V=s³) then multiply by density to find mass. Density and derived-rate with cube geometry."}
+{"id": "20b69297", "sub_skills": ["RAT.10"], "clusters": ["CL.0238"], "distractors": [], "why": "Scale equivalent ratios: 2/3 = 5/x. Proportion setup and solve."}
+{"id": "7d093333", "sub_skills": ["RAT.7", "RAT.8"], "clusters": ["CL.0032", "CL.0092"], "distractors": [], "why": "Convert area rate: sq ft to sq meters (squared factor) and hours to minutes. Multi-step conversion with squared units."}
+{"id": "21e539a0", "sub_skills": ["RAT.11"], "clusters": ["CL.0234"], "distractors": [], "why": "Given a fixed rate and a variable time, select the algebraic expression for water amount."}
+{"id": "c2e7fa6d", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Compute areas of two squares using edge relationship, multiply by electric field strength, use total flux equation. Rate reasoning plus algebraic manipulation: RAT.14."}
+{"id": "50b99b2d", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0060"], "distractors": [], "why": "Must derive S speed from R speed relationship, then compute time for different distance. Rate reasoning plus speed relationship and expression: RAT.14."}
+{"id": "5154615f", "sub_skills": ["RAT.13"], "clusters": ["CL.0060", "CL.0092"], "distractors": [], "why": "Compute cube volume (V=s³) then multiply by density to find mass. Density and derived-rate with cube geometry."}
+{"id": "61f61789", "sub_skills": ["RAT.13"], "clusters": ["CL.0060", "CL.0092"], "distractors": [], "why": "Compute cube volume (V=s³) then divide mass by volume to find density. Density and derived-rate with cube geometry."}
+{"id": "c7c6445f", "sub_skills": ["RAT.8"], "clusters": ["CL.0092"], "distractors": [], "why": "Area unit conversion requiring squaring the linear conversion factor."}
+{"id": "7d721177", "sub_skills": ["RAT.13"], "clusters": ["CL.0242", "CL.0092"], "distractors": [], "why": "Given density and mass, find volume then cube root for edge length. Density with cube geometry."}
+{"id": "8637294f", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0238"], "distractors": [], "why": "Two ratio/proportion relationships combined with algebraic substitution to find unknown. Proportion plus substitution: RAT.14."}
+{"id": "3638f413", "sub_skills": ["RAT.14"], "clusters": ["CL.0237", "CL.0242"], "distractors": [], "why": "Doubling rate applied repeatedly (4 years), work backwards to find original amount. Rate reasoning plus reverse computation: RAT.14."}
+{"id": "e7133228", "sub_skills": ["RAT.7", "RAT.8"], "clusters": ["CL.0032", "CL.0092"], "distractors": [], "why": "Convert meters to miles and seconds-squared to minutes-squared. Multi-step conversion with squared time units."}
+{"id": "69f6717f", "sub_skills": ["RAT.13"], "clusters": ["CL.0060", "CL.0092"], "distractors": [], "why": "Compute cube volume (V=s³) then multiply by density to find mass. Density and derived-rate with cube geometry."}

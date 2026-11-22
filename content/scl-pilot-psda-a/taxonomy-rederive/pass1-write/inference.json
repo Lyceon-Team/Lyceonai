@@ -1,0 +1,82 @@
+{
+  "skill": "Inference from Sample Statistics and Margin of Error",
+  "skill_code": "INFS",
+  "total_questions_read": 24,
+  "question_ids_read": [
+    "8173f32b", "6a305cd0", "97631565", "0108ac2d", "f4b3672a", "e7d9649f", "2c76bcce", "90eed2e5", "affb2315",
+    "9ee22c16", "89f8d08a", "1e562f24", "4096a482", "f04d40b2", "fc46af57", "9bedc4a0", "a2162ea1", "e03f3477", "f8f79e11", "53d97af5",
+    "85939da5", "308084c5", "9ba3e283", "916ffe9b"
+  ],
+  "proposed_sub_skills": [
+    {
+      "id": "INFS.1",
+      "name": "Interpreting Margin of Error",
+      "definition": "Given a point estimate (sample mean or proportion) and an associated margin of error, construct and interpret the interval of plausible values for the population parameter, including evaluating whether specific values fall within or outside that interval and understanding factors that affect margin of error size.",
+      "inclusion_test": "Does the question provide (or require the student to use) both a point estimate AND a stated margin of error to reason about what the population parameter plausibly is? If yes, INFS.1. If the question gives only a sample statistic and asks the student to scale it to a population count without any margin of error, it is INFS.2.",
+      "evidence_ids": [
+        "8173f32b", "6a305cd0", "0108ac2d", "2c76bcce",
+        "1e562f24", "4096a482", "9bedc4a0", "a2162ea1", "e03f3477", "f8f79e11",
+        "f04d40b2", "fc46af57",
+        "85939da5", "308084c5"
+      ],
+      "question_count": 14,
+      "difficulty_spread": {"easy": 4, "medium": 7, "hard": 3},
+      "notes": "This is the dominant sub-skill (14/24 questions). It has internal variety: (a) pure interval construction (estimate +/- MOE), which is the most common pattern (11 questions); (b) interval construction followed by scaling to a population count (f04d40b2, fc46af57 -- 2 questions, both medium, requiring both MOE interpretation AND population estimation); (c) understanding factors affecting MOE size, specifically that smaller samples produce larger MOE (308084c5 -- 1 question, hard). Several questions (2c76bcce, 4096a482, f8f79e11) add the wrinkle of distinguishing 'population mean is in the interval' from 'every individual value is in the interval' -- the MOE describes the mean, not individual observations. Question 85939da5 tests whether a value outside the interval is 'doubtful' rather than 'impossible', a subtle but important distinction."
+    },
+    {
+      "id": "INFS.2",
+      "name": "Estimating Population Values from Samples",
+      "definition": "Use a sample proportion or sample mean to estimate a population total or count, by scaling the sample statistic to the full population size, including identifying the correct population to which the sample result applies.",
+      "inclusion_test": "Does the question give a sample statistic (count, proportion, or mean) WITHOUT a margin of error and ask the student to estimate a population total or count by scaling? If yes, INFS.2. If the question involves a stated margin of error to construct an interval, it is INFS.1 (even if it also requires scaling).",
+      "evidence_ids": [
+        "97631565", "e7d9649f", "90eed2e5", "affb2315",
+        "9ee22c16", "89f8d08a", "f4b3672a",
+        "53d97af5",
+        "9ba3e283", "916ffe9b"
+      ],
+      "question_count": 10,
+      "difficulty_spread": {"easy": 5, "medium": 3, "hard": 2},
+      "notes": "Second major sub-skill (10/24 questions). The core operation is always: compute (sample proportion) x (population size). Variations include: (a) proportion given directly as a percentage (affb2315: 20% of 55); (b) proportion computed from raw counts in sample (97631565: 16/20; e7d9649f: 7/50; 90eed2e5: 6/20); (c) proportion computed from a two-way table (9ee22c16: 236/400); (d) mean computed from raw data then scaled (f4b3672a: mean of 5 values x 253 acres); (e) multi-step: compute complement proportion then scale (9ba3e283: 34.6% have >=2 siblings, so 65.4% have <2, scale to 1800 classes x 26 students); (f) compute margin of victory from two proportions (916ffe9b: scale both candidate proportions to 6,424 voters, subtract). Question 53d97af5 tests whether the student identifies the correct population (largemouth bass vs all fish) before generalizing -- a scope-of-inference check. Questions 89f8d08a and affb2315 test the distinction between 'best estimate' and 'exactly' -- the sample gives an estimate, not a certain count."
+    }
+  ],
+  "proposed_clusters": [
+    {
+      "name": "Compute sample statistic from raw data",
+      "definition": "Calculate a sample proportion or sample mean from counts or individual values provided in the question stem, before using it for inference.",
+      "evidence_ids": ["97631565", "f4b3672a", "9ee22c16", "9ba3e283", "916ffe9b", "e7d9649f", "90eed2e5"]
+    },
+    {
+      "name": "Construct confidence interval from estimate and MOE",
+      "definition": "Apply the formula estimate +/- margin of error to determine the interval of plausible values for the population parameter.",
+      "evidence_ids": ["8173f32b", "6a305cd0", "0108ac2d", "1e562f24", "4096a482", "9bedc4a0", "a2162ea1", "e03f3477", "f8f79e11", "85939da5", "f04d40b2", "fc46af57"]
+    },
+    {
+      "name": "Scale sample proportion to population count",
+      "definition": "Multiply the sample proportion (or its complement) by the total population size to estimate the number of individuals in the population with a given characteristic.",
+      "evidence_ids": ["97631565", "e7d9649f", "90eed2e5", "affb2315", "89f8d08a", "9ee22c16", "9ba3e283", "916ffe9b", "f04d40b2", "fc46af57"]
+    },
+    {
+      "name": "Distinguish population parameter from individual values",
+      "definition": "Recognize that the margin of error describes uncertainty about the population mean or proportion, NOT the range of individual values in the population or sample.",
+      "evidence_ids": ["2c76bcce", "4096a482", "f8f79e11"]
+    },
+    {
+      "name": "Evaluate whether a specific value is plausible",
+      "definition": "Determine whether a particular value falls inside or outside the confidence interval, using language like 'plausible', 'doubtful', or 'not possible' appropriately.",
+      "evidence_ids": ["85939da5", "1e562f24", "9bedc4a0", "e03f3477"]
+    },
+    {
+      "name": "Relate sample size to margin of error",
+      "definition": "Understand that a smaller sample size generally produces a larger margin of error, and vice versa, because smaller samples are less representative.",
+      "evidence_ids": ["308084c5"]
+    },
+    {
+      "name": "Identify correct population for generalization",
+      "definition": "Determine which population a sample statistic can be generalized to, based on how the sample was selected (e.g., largemouth bass vs all fish; adults who own TVs vs all adults).",
+      "evidence_ids": ["53d97af5", "e03f3477"]
+    }
+  ],
+  "mapping_from_current": [],
+  "off_spec_patterns": [],
+  "unsupported_current_sub_skills": []
+}

@@ -1,0 +1,243 @@
+{
+  "skill": "Probability and Conditional Probability",
+  "cb_skill_id": "probability-and-conditional-probability",
+  "total_questions_analyzed": 42,
+  "source_pdfs": [
+    {
+      "file": "Easy - Probability and conditional probability - Problem-Solving and Data Analysis - Math-21.pdf",
+      "difficulty": "Easy",
+      "question_count": 21
+    },
+    {
+      "file": "Medium - Probability and conditional probability - Problem-Solving and Data Analysis - Math-14.pdf",
+      "difficulty": "Medium",
+      "question_count": 14
+    },
+    {
+      "file": "Hard - Probability and conditional probability - Problem-Solving and Data Analysis - Math-7.pdf",
+      "difficulty": "Hard",
+      "question_count": 7
+    }
+  ],
+  "sub_skills": [
+    {
+      "id": "PRB.1",
+      "status": "KEEP",
+      "name": "Whole-Group Probability",
+      "definition": "Compute the probability of an event by dividing the number of favorable outcomes by the total number of outcomes, where the sample space is the entire population (no restricting condition). Includes reading counts from lists, frequency tables, two-way tables (using row/column totals), or word problems. The unknown is the probability; the counts are given or directly readable.",
+      "inclusion_test": "Two independent taggers agree: (1) the question asks for a probability, proportion, or fraction; (2) the sample space is the entire group (no 'given that', 'of those', 'among [subset]' restriction); (3) the favorable and total counts are given or directly computable from the data without algebraic rearrangement of a probability equation.",
+      "evidence_ids": [
+        "4e527894", "0a99e5bb", "c943acba", "b8150b17", "1b8e412e",
+        "dae79de4", "a478f9f5", "2a08d878", "12dbe3de", "79201024",
+        "ec7b0eb8", "2905ded0", "e5b5fbdd", "60caadfd", "47624288",
+        "16cea46c", "d89c1513", "1353b86e",
+        "b1b5300b", "0301c5dc", "2df8f293", "38a9ac45", "46b2e169",
+        "e9ed719f",
+        "0ae37ff3"
+      ],
+      "question_count": 25,
+      "difficulty_spread": { "Easy": 18, "Medium": 6, "Hard": 0 },
+      "notes": "Dominant sub-skill. Absorbs the former PRB.4 (complement/exclusion) — see merge rationale below. Includes questions where the student must first compute a table total or use complement arithmetic (e.g., 0ae37ff3: 'neither blue nor yellow'), but the sample space is still the whole group. Also includes algebraic-expression probability (2a08d878: P = n/(n+12)) and proportion-reasoning variants (38a9ac45: fraction of production in first 5 days)."
+    },
+    {
+      "id": "PRB.2",
+      "status": "KEEP",
+      "name": "Conditional Probability",
+      "definition": "Compute the probability of an event within a restricted sample space. The question restricts to a subset of the population using language like 'given that', 'of those', 'among', 'if [condition]', or 'of the [subset]', then asks for the probability within that subset. The student must identify the restricted total (denominator) and the favorable count within the restriction (numerator).",
+      "inclusion_test": "Two independent taggers agree: (1) the question explicitly restricts the sample space to a named subset before asking for a probability or fraction; (2) the denominator is not the whole-group total but a row total, column total, or sum of a defined subset; (3) the favorable count is read from within the restricted subset.",
+      "evidence_ids": [
+        "46545dd6",
+        "e1ad3d41", "912cd125", "b6569d0e", "f8696cd8",
+        "89f20d9e", "014c47ab", "5dc386fb", "6a715bed", "e438ec3f"
+      ],
+      "question_count": 10,
+      "difficulty_spread": { "Easy": 1, "Medium": 4, "Hard": 5 },
+      "notes": "Strong difficulty gradient — appears once at Easy and dominates Hard. The key distinguishing operation is restricting the sample space before computing the ratio. All Hard-level probability questions except PRB.3 instances are conditional. Multi-step computation (e.g., e438ec3f: summing across rows to compute the restricted total from individual counts per row) adds difficulty without changing the sub-skill category."
+    },
+    {
+      "id": "PRB.3",
+      "status": "KEEP",
+      "name": "Find Count from Probability",
+      "definition": "Given a probability (or proportion/fraction) and a total (or enough information to determine the total), solve algebraically for an unknown count. The solving direction is reversed compared to PRB.1: the probability is given, the count is unknown. The student sets up P = count / total and solves for count, or uses equivalent algebraic reasoning.",
+      "inclusion_test": "Two independent taggers agree: (1) the question provides a probability, proportion, or fraction as a given value; (2) the unknown being solved for is a count (number of items, people, etc.), not a probability; (3) the student must algebraically rearrange a probability equation or multiply a fraction by a total to find the count.",
+      "evidence_ids": [
+        "1dcea480",
+        "1fc4f47b", "30db8f77", "a3384df0",
+        "585de39a", "d4413871"
+      ],
+      "question_count": 6,
+      "difficulty_spread": { "Easy": 1, "Medium": 3, "Hard": 2 },
+      "stability_assessment": "STABLE. The prior concern about PRB.3 instability is not supported by the evidence. All 6 questions share a clear, testable distinguishing feature: the unknown is a count and the probability is given. The solving direction (given P, find count) is genuinely reversed from PRB.1 (given counts, find P). The algebraic setup (count = P * total) is a distinct cognitive operation. Difficulty varies through: (a) direct multiplication (1dcea480: 0.35 * 60 = 21), (b) multi-step subtraction then multiplication (1fc4f47b, 30db8f77: subtract known proportions from 1, then multiply), (c) unit conversion and algebra (585de39a: millions, rounding), (d) setting up and solving an equation with an unknown in the denominator (d4413871: conditional P with missing cell). The sub-skill is NOT a noisy grab bag — it has a single unifying operation (reverse the probability formula) with difficulty modulated by algebraic complexity, not by conceptual ambiguity.",
+      "notes": "d4413871 is the most complex instance: it combines conditional probability (restricted sample space) with count-finding (solve for the missing cell x). The primary operation is still 'find count from probability' because the unknown is x (a count), not a probability. a3384df0 is a proportion variant: find 1/3 of 180 = 60, then compare table values. The 'find count' direction is the same."
+    }
+  ],
+  "merged_sub_skills": [
+    {
+      "former_id": "PRB.4",
+      "former_name": "Complement and Exclusion",
+      "merged_into": "PRB.1",
+      "rationale": "Only 1 question (0ae37ff3) in the entire 42-question corpus maps to PRB.4. The complement operation ('neither blue nor yellow' = total minus blue minus yellow) is a single arithmetic step within whole-group probability, not a distinct cognitive category. The student still computes P = favorable / total using the entire sample space — the only difference is that the favorable count is obtained by subtraction rather than direct reading. A sub-skill with n=1 cannot be reliably taught, assessed, or differentiated by two independent taggers. Merge into PRB.1."
+    }
+  ],
+  "anomalies": [
+    {
+      "question_id": "b680e76d",
+      "difficulty": "Easy",
+      "description": "This question presents a frequency table with a missing cell and asks the student to find the missing count (252). It does NOT ask for a probability. The solving operation is table arithmetic (total minus known values), which belongs to the 'Two-Variable Data' or 'One-Variable Data' skill, not 'Probability'. CB appears to have mis-tagged this question under 'Probability and conditional probability'. Excluded from all sub-skill assignments.",
+      "recommended_skill": "Two-Variable Data (table arithmetic)"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": "C-PRB-1",
+      "sub_skill": "PRB.1",
+      "name": "Direct Ratio from Counts",
+      "solving_steps": [
+        "Identify or read the count of favorable outcomes from the data (list, table, or word problem)",
+        "Identify or compute the total number of outcomes (may require summing table entries or adding given counts)",
+        "Compute probability: P = favorable / total",
+        "Convert to requested format (fraction, decimal, or percent) if needed"
+      ],
+      "evidence_ids": [
+        "4e527894", "0a99e5bb", "c943acba", "b8150b17", "1b8e412e",
+        "dae79de4", "a478f9f5", "12dbe3de", "79201024", "ec7b0eb8",
+        "2905ded0", "e5b5fbdd", "60caadfd", "47624288", "16cea46c",
+        "d89c1513", "1353b86e",
+        "b1b5300b", "0301c5dc", "2df8f293", "46b2e169", "e9ed719f"
+      ]
+    },
+    {
+      "cluster_id": "C-PRB-1b",
+      "sub_skill": "PRB.1",
+      "name": "Probability via Complement or Multi-Step Counting",
+      "solving_steps": [
+        "Identify the event whose probability is requested",
+        "Compute the favorable count indirectly (e.g., total minus excluded categories, or algebraic expression)",
+        "Compute the total count",
+        "Compute probability: P = favorable / total"
+      ],
+      "evidence_ids": [
+        "0ae37ff3", "2a08d878", "38a9ac45"
+      ],
+      "notes": "Variant of C-PRB-1 where the favorable count requires an extra arithmetic or algebraic step. 0ae37ff3 uses complement (subtract excluded colors). 2a08d878 requires expressing P as an algebraic fraction. 38a9ac45 uses proportional reasoning (fraction of production over time)."
+    },
+    {
+      "cluster_id": "C-PRB-2",
+      "sub_skill": "PRB.2",
+      "name": "Restricted Sample Space Ratio",
+      "solving_steps": [
+        "Identify the restricting condition that defines the subset (e.g., 'of those who...', 'given that...', 'among...')",
+        "Compute the restricted total (denominator): sum of entries within the restricted subset (row total, column total, or filtered sum)",
+        "Read or compute the favorable count within the restricted subset (numerator)",
+        "Compute conditional probability: P(A|B) = favorable_in_B / total_in_B",
+        "Simplify or convert to requested format"
+      ],
+      "evidence_ids": [
+        "46545dd6",
+        "e1ad3d41", "912cd125", "b6569d0e", "f8696cd8",
+        "89f20d9e", "014c47ab", "5dc386fb", "6a715bed", "e438ec3f"
+      ]
+    },
+    {
+      "cluster_id": "C-PRB-3a",
+      "sub_skill": "PRB.3",
+      "name": "Direct Count from Probability (Multiply)",
+      "solving_steps": [
+        "Identify the given probability P and the total N",
+        "Compute count = P * N",
+        "Round or interpret as needed (e.g., nearest integer)"
+      ],
+      "evidence_ids": [
+        "1dcea480", "585de39a", "a3384df0"
+      ],
+      "notes": "Simplest form of PRB.3. 1dcea480: 0.35 * 60 = 21. 585de39a: 0.43 * 97 = 41.71 -> 42 (with unit conversion). a3384df0: 1/3 * 180 = 60 (then compare to table values)."
+    },
+    {
+      "cluster_id": "C-PRB-3b",
+      "sub_skill": "PRB.3",
+      "name": "Count from Multiple Probabilities (Subtract then Multiply)",
+      "solving_steps": [
+        "Identify multiple given probabilities that partition or partially cover the total",
+        "Compute the remaining probability: P_remaining = 1 - P_A - P_B - ...",
+        "Compute count = P_remaining * total",
+        "Verify the count is a whole number or round as needed"
+      ],
+      "evidence_ids": [
+        "1fc4f47b", "30db8f77"
+      ],
+      "notes": "Both questions give probabilities for categories A and B, then ask for the count in the remainder C. The extra step (compute P_C by subtraction) distinguishes this from C-PRB-3a."
+    },
+    {
+      "cluster_id": "C-PRB-3c",
+      "sub_skill": "PRB.3",
+      "name": "Solve Equation for Missing Count (Algebraic)",
+      "solving_steps": [
+        "Identify the conditional probability equation with the unknown count in the denominator or numerator",
+        "Set up the equation: given_P = known_count / (expression_involving_x)",
+        "Cross-multiply and solve for x",
+        "Verify the answer is a valid count (positive integer)"
+      ],
+      "evidence_ids": [
+        "d4413871"
+      ],
+      "notes": "Most complex PRB.3 variant. The unknown count appears inside the total (denominator), requiring algebraic equation-solving. d4413871: P(B|rh-) = 2/(10+x) = 1/9, solve x = 8. Combines conditional probability setup with algebraic count-finding."
+    }
+  ],
+  "question_level_assignments": [
+    { "id": "4e527894", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "20 buttons (8 white), P(white) = 8/20" },
+    { "id": "0a99e5bb", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Set {-13,4,23}, P(negative) = 1/3" },
+    { "id": "c943acba", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "7 houses (2 blue), P(blue) = 2/7" },
+    { "id": "1dcea480", "difficulty": "Easy", "sub_skill": "PRB.3", "cluster": "C-PRB-3a", "format": "MC", "summary": "60 marbles, P(blue) = 0.35, find count = 21" },
+    { "id": "b8150b17", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "29/100 beads defective, P = 29/100" },
+    { "id": "1b8e412e", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Set {-11,-9,26}, P(positive) = 1/3" },
+    { "id": "dae79de4", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Two-way table, P(at least 40) = 105/135" },
+    { "id": "a478f9f5", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Frequency table, P(color Y) = 3/157" },
+    { "id": "2a08d878", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1b", "format": "MC", "summary": "n nonfiction + 12 fiction, P(nonfiction) = n/(n+12)" },
+    { "id": "12dbe3de", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "1000 MP3 players, 4 defective, P = 0.004" },
+    { "id": "79201024", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "45 band members, 11 sax, P = 11/45" },
+    { "id": "ec7b0eb8", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Two-way table, P(talks daily) = 415/799" },
+    { "id": "2905ded0", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Two-way table, P(at least 40) = 107/135" },
+    { "id": "e5b5fbdd", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "8 planets, 4 rocky, P = 1/2" },
+    { "id": "60caadfd", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Frequency table, P(igneous) = 10/70" },
+    { "id": "47624288", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Two-way table, P(lion vote) = 20/80" },
+    { "id": "b680e76d", "difficulty": "Easy", "sub_skill": "ANOMALY", "cluster": null, "format": "FR", "summary": "Table with missing cell, find count = 252. NOT probability — table arithmetic." },
+    { "id": "16cea46c", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Frequency table, P(baritone) = 10/25 = 0.40" },
+    { "id": "46545dd6", "difficulty": "Easy", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, 'of students in 2010', fraction from Valley = 65/140" },
+    { "id": "d89c1513", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Two-way table, P(no gasoline) = 50/135" },
+    { "id": "1353b86e", "difficulty": "Easy", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Frequency table, P(blue marble) = 10/40" },
+    { "id": "b1b5300b", "difficulty": "Medium", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Two-way table, P(hybrid AND <=25k) = 2/14 = 1/7" },
+    { "id": "e1ad3d41", "difficulty": "Medium", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, fraction of chocolate kittens with deep blue eyes = 12/16" },
+    { "id": "0301c5dc", "difficulty": "Medium", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "MC", "summary": "Table, P(camping AND no bicycle) = 5/37 (compute total first)" },
+    { "id": "0ae37ff3", "difficulty": "Medium", "sub_skill": "PRB.1", "cluster": "C-PRB-1b", "format": "MC", "summary": "Cubes, P(neither blue nor yellow) = 11/77 = 1/7. Complement arithmetic." },
+    { "id": "1fc4f47b", "difficulty": "Medium", "sub_skill": "PRB.3", "cluster": "C-PRB-3b", "format": "FR", "summary": "350 customers, P(A)=0.48, P(B)=0.24, find count in C = 98" },
+    { "id": "2df8f293", "difficulty": "Medium", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "FR", "summary": "14-sided polygon, P(letter D) = 1/14" },
+    { "id": "912cd125", "difficulty": "Medium", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, 'of days with no rain', P(weekend) = 16/64 = 1/4" },
+    { "id": "30db8f77", "difficulty": "Medium", "sub_skill": "PRB.3", "cluster": "C-PRB-3b", "format": "FR", "summary": "275 attendees, P(A)=0.44, P(B)=0.24, count in C = 88" },
+    { "id": "38a9ac45", "difficulty": "Medium", "sub_skill": "PRB.1", "cluster": "C-PRB-1b", "format": "MC", "summary": "1200/day production, fraction in first 5 of 50 days = 1/10" },
+    { "id": "b6569d0e", "difficulty": "Medium", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Frequency table, 'of those at least 50', fraction >= 60 = 10/34" },
+    { "id": "a3384df0", "difficulty": "Medium", "sub_skill": "PRB.3", "cluster": "C-PRB-3a", "format": "MC", "summary": "Two-way table, which type's female count closest to 1/3 of 180 = 60?" },
+    { "id": "46b2e169", "difficulty": "Medium", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "FR", "summary": "13 red + 37 blue pens, P(red) = 13/50" },
+    { "id": "f8696cd8", "difficulty": "Medium", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, 'if person works in HR', P(master's) = 2/6 = 1/3" },
+    { "id": "e9ed719f", "difficulty": "Medium", "sub_skill": "PRB.1", "cluster": "C-PRB-1", "format": "FR", "summary": "Two-way table, P(red tile) = 30/100 = 3/10" },
+    { "id": "89f20d9e", "difficulty": "Hard", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, P(group A | at least 10) = 25/60 = 5/12" },
+    { "id": "014c47ab", "difficulty": "Hard", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, P(site A | tulip) = 35/50 = 7/10" },
+    { "id": "5dc386fb", "difficulty": "Hard", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, P(no income tax | sales tax) = 6/45, as percent ~13.3%" },
+    { "id": "6a715bed", "difficulty": "Hard", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Two-way table, P(group A | at least 10) = 23/60" },
+    { "id": "585de39a", "difficulty": "Hard", "sub_skill": "PRB.3", "cluster": "C-PRB-3a", "format": "FR", "summary": "P(MTN) = 0.43, total = 97M, find p = 42 (nearest integer)" },
+    { "id": "e438ec3f", "difficulty": "Hard", "sub_skill": "PRB.2", "cluster": "C-PRB-2", "format": "MC", "summary": "Grove rows, P(maple | >=20ft) = 45/93 = 15/31. Multi-step row computation." },
+    { "id": "d4413871", "difficulty": "Hard", "sub_skill": "PRB.3", "cluster": "C-PRB-3c", "format": "FR", "summary": "Two-way table with missing x, P(B | rh-) = 1/9, solve 2/(10+x) = 1/9, x = 8" }
+  ],
+  "summary": {
+    "proposed_sub_skills": 3,
+    "sub_skill_ids": ["PRB.1", "PRB.2", "PRB.3"],
+    "merged": ["PRB.4 -> PRB.1"],
+    "anomalies": 1,
+    "total_assigned": 41,
+    "difficulty_coverage": {
+      "PRB.1": { "Easy": 18, "Medium": 6, "Hard": 0, "total": 24 },
+      "PRB.2": { "Easy": 1, "Medium": 4, "Hard": 5, "total": 10 },
+      "PRB.3": { "Easy": 1, "Medium": 3, "Hard": 2, "total": 6 }
+    },
+    "prb3_stability_verdict": "STABLE — keep as separate sub-skill. The reversed solving direction (given P, find count) is a genuinely distinct cognitive operation from PRB.1 (given counts, find P). 6 questions across all 3 difficulty levels with consistent, testable inclusion criteria. Not a noisy overlap with PRB.1 or PRB.2."
+  }
+}

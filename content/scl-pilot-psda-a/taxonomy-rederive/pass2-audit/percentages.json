@@ -1,0 +1,233 @@
+{
+  "skill_code": "PCT",
+  "skill_name": "Percentages",
+  "pass": "blind_audit",
+  "source_question_count": 75,
+  "source_difficulty_counts": {
+    "Easy": 26,
+    "Medium": 22,
+    "Hard": 27
+  },
+  "note": "26 of 27 Easy questions captured; 1 Easy question likely on a page boundary was not visible in the PDF read.",
+  "sub_skills": [
+    {
+      "id": "PCT.1",
+      "name": "Find the Part",
+      "definition": "Given a whole quantity and a percent rate, compute the part by multiplying: part = (rate / 100) * whole. The core operation is a single multiplication converting a percent to a fraction of a known total.",
+      "inclusion_test": "The question provides both a whole (total quantity) and a percent rate, and asks for the resulting part. No intermediate computation is needed to identify the whole or the rate -- both are stated directly.",
+      "cb_evidence": ["eaab8bc1", "41b71b4e", "2d31caae", "bb7c8186", "a8fabad0", "77cf4fa6", "284303f1", "8784bc84"],
+      "count": 8,
+      "difficulty_spread": {
+        "Easy": 8,
+        "Medium": 0,
+        "Hard": 0
+      }
+    },
+    {
+      "id": "PCT.2",
+      "name": "Find the Percent",
+      "definition": "Given a part and a whole, compute what percent the part is of the whole: rate = (part / whole) * 100. The core operation is a single division followed by scaling to 100.",
+      "inclusion_test": "The question provides both a part and a whole (or enough to identify them directly) and asks 'what percent' or 'what percentage'. No percent rate is given in the stem -- the rate is the unknown.",
+      "cb_evidence": ["771ee744", "3a6ed720", "e9fb7774", "121dc44f"],
+      "count": 4,
+      "difficulty_spread": {
+        "Easy": 3,
+        "Medium": 1,
+        "Hard": 0
+      }
+    },
+    {
+      "id": "PCT.3",
+      "name": "Find the Whole",
+      "definition": "Given a part (a count or value) and the percent rate it represents, compute the whole: whole = part / (rate / 100). The core operation is dividing the known part by the decimal form of the rate.",
+      "inclusion_test": "The question provides a known quantity (the part) and states it is a specific percent of an unknown whole. The task is to find that whole. The percent and the part are given; the total is the unknown.",
+      "cb_evidence": ["34e18ce4", "273b7f37", "93724cc6", "05195d8a"],
+      "count": 4,
+      "difficulty_spread": {
+        "Easy": 3,
+        "Medium": 1,
+        "Hard": 0
+      }
+    },
+    {
+      "id": "PCT.4",
+      "name": "Apply Percent Increase or Decrease",
+      "definition": "Given an original value and a percent increase or decrease, compute the new value. For increase: new = original * (1 + rate/100). For decrease: new = original * (1 - rate/100). Includes applying sales tax, computing a value described as 'p% of' or 'p% more/less than' the original.",
+      "inclusion_test": "The question gives an original value and a single percent change (increase, decrease, tax, markup) and asks for the resulting numerical value -- not an expression, not the percent change itself, and not the original value.",
+      "cb_evidence": ["194ae3b1", "29c177e6", "191d167b", "28c6bd8c", "8705ecba"],
+      "count": 5,
+      "difficulty_spread": {
+        "Easy": 5,
+        "Medium": 0,
+        "Hard": 0
+      }
+    },
+    {
+      "id": "PCT.5",
+      "name": "Percent Change Calculation",
+      "definition": "Given an old value and a new value (or data from which both can be read), compute the percent increase or decrease using the formula: percent change = ((new - old) / old) * 100. May require reading values from a table, chart, or graph before applying the formula.",
+      "inclusion_test": "The question provides (directly or via data) two values representing a before and after state and asks for the percent change, percent increase, or percent decrease between them. The unknown is the rate of change, not a resulting value.",
+      "cb_evidence": ["1c2f50a6", "bd90f87e", "7f84b136", "709e04de", "0231050d", "1fbd3b67"],
+      "count": 6,
+      "difficulty_spread": {
+        "Easy": 2,
+        "Medium": 2,
+        "Hard": 2
+      }
+    },
+    {
+      "id": "PCT.6",
+      "name": "Reverse Percent (Find Original Before Change)",
+      "definition": "Given a final value that resulted from a percent increase or decrease, find the original value by dividing by the appropriate multiplier. For a p% increase: original = final / (1 + p/100). For a p% decrease: original = final / (1 - p/100).",
+      "inclusion_test": "The question states a result after a percent change has already been applied and asks for the original value before the change. The student must undo the percent operation, not apply it forward.",
+      "cb_evidence": ["94c65646", "63573fea", "2afd3cec"],
+      "count": 3,
+      "difficulty_spread": {
+        "Easy": 0,
+        "Medium": 2,
+        "Hard": 1
+      }
+    },
+    {
+      "id": "PCT.7",
+      "name": "Percent as Algebraic Expression",
+      "definition": "Translate a verbal percent relationship into an algebraic expression or select the correct expression from choices. Includes writing expressions of the form (1 + r/100)*x for 'r% greater than x', (1 - r/100)*x for 'r% less than x', or (p/100)*x for 'p% of x'. Also includes constructing linear percent-per-unit expressions (e.g., p = 5x for 5% per serving).",
+      "inclusion_test": "The question describes a percent relationship in words and asks the student to write, select, or identify the corresponding algebraic expression. The answer is a symbolic expression, not a numerical value.",
+      "cb_evidence": ["9c44f828", "d72a2b4d", "e9f4521a", "c256b723", "ba61d95f", "8a714fa1", "7cab9fe1", "ad911622", "8c5dbd3e", "40e7a1a9", "954943a4"],
+      "count": 11,
+      "difficulty_spread": {
+        "Easy": 1,
+        "Medium": 6,
+        "Hard": 4
+      }
+    },
+    {
+      "id": "PCT.8",
+      "name": "Interpret Percent Expression",
+      "definition": "Given an algebraic expression involving a decimal multiplier (e.g., 1.06p, 0.35x, 0.82(1.07)x), identify what percent change or relationship it represents. The student reads the expression and translates the multiplier back into a percent meaning.",
+      "inclusion_test": "The question presents a completed expression or formula and asks the student to interpret its percent meaning -- 'what does this expression represent?' or 'decreased by what percent?' The student decodes rather than constructs.",
+      "cb_evidence": ["ad1d6adb", "20845d36", "1baffbcf"],
+      "count": 3,
+      "difficulty_spread": {
+        "Easy": 0,
+        "Medium": 1,
+        "Hard": 2
+      }
+    },
+    {
+      "id": "PCT.9",
+      "name": "Successive Percent Changes",
+      "definition": "Apply two or more sequential percent changes to a quantity by chaining multipliers. For example, a 25% markup followed by a 15% discount yields a net multiplier of (1.25)(0.85). Includes markup-then-discount, increase-then-decrease, and any sequence of percent operations applied to the same base.",
+      "inclusion_test": "The question involves two or more percent changes applied in sequence to the same quantity (or its successive values). The student must chain the operations, not apply them to the original base independently.",
+      "cb_evidence": ["dccdb20c", "b2f6f17d", "96a45430", "34f8cd89", "a0b165f8", "3d73a58b", "54cb53cf", "5267c3c7", "0ea56bb2"],
+      "count": 9,
+      "difficulty_spread": {
+        "Easy": 0,
+        "Medium": 3,
+        "Hard": 6
+      }
+    },
+    {
+      "id": "PCT.10",
+      "name": "Chained Percent Relationships",
+      "definition": "Given two or more percent-of relationships linking different quantities (e.g., 'a is 230% of b' and 'a is 60% of c'), use transitive substitution to derive a percent relationship between two quantities not directly related. Requires algebraic manipulation of fractional/percent representations.",
+      "inclusion_test": "The question states two or more 'X is p% of Y' relationships involving three or more quantities and asks the student to derive a percent relationship between a pair not directly linked. The relationships form a chain that must be composed algebraically.",
+      "cb_evidence": ["25faa756", "8213b1b3", "2e92cc21", "623dbebb", "e635aede", "993000da", "4aaa9c42"],
+      "count": 7,
+      "difficulty_spread": {
+        "Easy": 0,
+        "Medium": 0,
+        "Hard": 7
+      }
+    },
+    {
+      "id": "PCT.11",
+      "name": "Compound Category Percentages",
+      "definition": "Compute a count or percent within nested or complementary subsets of a population. For example, 'p% of a group has trait A, and q% of those with trait A also have trait B -- how many have both?' Requires applying one percent to get a subtotal, then applying another percent to that subtotal, or using complementary percents (100% - sum of given percents) to find a remainder category.",
+      "inclusion_test": "The question defines a population partitioned into categories by percent (often including a 'remaining' category) and asks for a count or relationship within or across those categories. At least one percent is applied to a subtotal rather than to the original whole.",
+      "cb_evidence": ["040f2a84", "86684ce9", "65c49824", "022e9894"],
+      "count": 4,
+      "difficulty_spread": {
+        "Easy": 0,
+        "Medium": 1,
+        "Hard": 3
+      }
+    },
+    {
+      "id": "PCT.12",
+      "name": "Percent from Data",
+      "definition": "Read numerical values from a table, chart, bar graph, or line graph and then compute a percentage (either 'what percent of the total' or a specific ratio). The percent computation itself is straightforward (PCT.1 or PCT.2 level), but the question embeds it inside a data-reading task.",
+      "inclusion_test": "The question presents data in a table, chart, or graph, and the student must first extract the relevant numerical values before performing a percent calculation. The data-reading step is essential -- without it, the values for the percent computation are not available.",
+      "cb_evidence": ["6e4a60dd", "048811bd", "7ed0d098", "949cd96b", "566759ef", "7b731fc3", "8cbf1415", "d693f563", "67c0200a"],
+      "count": 9,
+      "difficulty_spread": {
+        "Easy": 4,
+        "Medium": 4,
+        "Hard": 1
+      }
+    },
+    {
+      "id": "PCT.13",
+      "name": "Exponential Percent Growth or Decay",
+      "definition": "Interpret or construct expressions involving repeated percent change over time, modeled by exponential functions of the form a(1 + r/100)^t (growth) or a(1 - r/100)^t (decay). Distinct from a single percent change (PCT.4) or a finite chain of changes (PCT.9) because the number of periods is a variable.",
+      "inclusion_test": "The question involves a percent rate applied repeatedly over a variable number of periods (years, months, etc.) and asks the student to write, interpret, or evaluate an exponential expression. The exponent is a variable representing time, not a fixed number of steps.",
+      "cb_evidence": ["8e2e424e", "ba0e23b0"],
+      "count": 2,
+      "difficulty_spread": {
+        "Easy": 0,
+        "Medium": 1,
+        "Hard": 1
+      }
+    }
+  ],
+  "clusters": [
+    {
+      "id": "CL.1",
+      "name": "Proportion Setup and Solve",
+      "definition": "The student sets up the proportion part/whole = rate/100 (or its equivalent: part = rate/100 * whole) and solves for the single unknown by one multiplication or one division. This is the foundational solving pattern for PCT.1, PCT.2, and PCT.3.",
+      "cb_evidence": ["eaab8bc1", "771ee744", "34e18ce4", "93724cc6", "bb7c8186", "e9fb7774"]
+    },
+    {
+      "id": "CL.2",
+      "name": "Percent-Change Formula Application",
+      "definition": "The student identifies old and new values, computes their difference, divides by the old value, and multiplies by 100. May include a preliminary step of reading values from data. This is the solving pattern for PCT.5.",
+      "cb_evidence": ["1c2f50a6", "bd90f87e", "709e04de", "0231050d"]
+    },
+    {
+      "id": "CL.3",
+      "name": "Single-Multiplier Construction or Interpretation",
+      "definition": "The student converts a verbal percent relationship into a single decimal multiplier ((1+r/100) or (1-r/100)) and either applies it to compute a value (PCT.4), writes it as an expression (PCT.7), or reads it from a given expression (PCT.8). The key step is recognizing the equivalence between 'p% more than x' and '(1 + p/100) * x'.",
+      "cb_evidence": ["d72a2b4d", "9c44f828", "ad1d6adb", "c256b723", "1baffbcf", "194ae3b1"]
+    },
+    {
+      "id": "CL.4",
+      "name": "Multiplier Chaining",
+      "definition": "The student constructs and composes two or more multipliers in sequence: multiply the quantity by the first multiplier, then by the second. For markup-then-discount: final = original * (1 + markup/100) * (1 - discount/100). The key insight is that the second percent acts on the intermediate result, not the original.",
+      "cb_evidence": ["34f8cd89", "54cb53cf", "b2f6f17d", "5267c3c7", "a0b165f8", "3d73a58b"]
+    },
+    {
+      "id": "CL.5",
+      "name": "Reverse Division (Undo a Percent)",
+      "definition": "The student divides a known result by the multiplier that produced it to recover the original value. For example, if the final price after a 20% discount is $80, divide by 0.80 to get the original $100. The key step is recognizing that undoing a percent requires division, not subtraction.",
+      "cb_evidence": ["94c65646", "63573fea", "2afd3cec", "05195d8a"]
+    },
+    {
+      "id": "CL.6",
+      "name": "Transitive Substitution Across Percent Links",
+      "definition": "The student expresses each quantity in terms of another using a = (p/100)*b notation, substitutes one equation into another to eliminate the intermediate variable, and simplifies to find the target percent. For example: a = 2.30b and a = 0.60c yields c = 2.30b/0.60 = 3.833b, so c is approximately 383% of b.",
+      "cb_evidence": ["8213b1b3", "993000da", "2e92cc21", "4aaa9c42", "623dbebb", "e635aede"]
+    },
+    {
+      "id": "CL.7",
+      "name": "Data Extraction Then Percent Computation",
+      "definition": "The student reads one or more numerical values from a table, bar chart, or line graph, then performs a percent calculation (find part, find percent, or percent change) on the extracted values. The data-reading step precedes and is prerequisite to the percent step.",
+      "cb_evidence": ["6e4a60dd", "566759ef", "7b731fc3", "d693f563", "67c0200a", "0ea56bb2"]
+    },
+    {
+      "id": "CL.8",
+      "name": "Nested Subset Computation",
+      "definition": "The student applies a first percent to a total to get a subtotal, then applies a second percent to that subtotal (not to the original total). Alternatively, the student uses complementary percents (100% minus the sum of stated percents) to find a remainder category, then works with that remainder. The key step is recognizing which quantity each percent applies to.",
+      "cb_evidence": ["022e9894", "040f2a84", "65c49824", "86684ce9"]
+    }
+  ]
+}

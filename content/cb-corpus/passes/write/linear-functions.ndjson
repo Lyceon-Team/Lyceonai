@@ -1,0 +1,139 @@
+{"id":"3d1070c9","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=25x+30 at x=2 by direct substitution"}
+{"id":"bd9eb2b5","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert f(x)=8x to find x when f(x)=72; isolate the variable"}
+{"id":"1480dd5c","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Substitute x=7 into f(x)=4x+b and solve for the constant b"}
+{"id":"0d6ab461","sub_skills":["LF.2"],"clusters":["CL.0060","CL.0094"],"distractors":[],"why":"Build linear model from verbal description ($35/week rate plus $600 initial) and evaluate"}
+{"id":"520c8177","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate verbal rate (25 cal/day) into equation c=25x; no equation given"}
+{"id":"88e13c8c","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Given f(x)=36x+1000, evaluate the function for the stated number of months"}
+{"id":"3a3b95df","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Substitute x=300 into d=16−x/30 and evaluate"}
+{"id":"84664a7c","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate verbal description (8 ft/s rate, 15 ft initial) into equation h=8s+15"}
+{"id":"7fac16fb","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=(7/10)x+55 at x=20 by substitution"}
+{"id":"06fc1726","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=(2x−1)/3 at x=5 by substitution"}
+{"id":"6863c7ce","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0269"],"distractors":[],"why":"Interpret the coefficient 16 in d=16t as the rate (distance per minute) in context"}
+{"id":"0b332f00","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert g(x)=6x to find x when g(x)=54; isolate variable"}
+{"id":"c10ad793","sub_skills":["LF.5"],"clusters":["CL.0264"],"distractors":[],"why":"Read the x-intercept directly from the graph of a linear function"}
+{"id":"d11910d6","sub_skills":["LF.5"],"clusters":["CL.0264"],"distractors":[],"why":"Read the y-intercept directly from the graph of a linear function"}
+{"id":"0eae6be1","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate 'y is 84 less than x' into equation y=x−84; no equation given"}
+{"id":"361f97c7","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=4x−3 at x=10 by substitution"}
+{"id":"447fa970","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=7x+2 at x=4 by substitution"}
+{"id":"27198699","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0160"],"distractors":[],"why":"Interpret the constant 33 in f(x)=33−0.18x as the initial/intercept value in context"}
+{"id":"a130fcdc","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate g(x)=11x+4 at x=1,2,3 to match the correct table of values"}
+{"id":"bf36c815","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate g(x)=−x+8 at x=0 by substitution"}
+{"id":"0d391910","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert f(x)=4x to find x when f(x)=8; isolate variable"}
+{"id":"930c2990","sub_skills":["LF.1"],"clusters":["CL.0072","CL.0264"],"distractors":[],"why":"Read predicted volume at 500K from graph; evaluate linear relationship visually"}
+{"id":"3f5375d9","sub_skills":["LF.4"],"clusters":["CL.0265","CL.0264"],"distractors":[],"why":"Determine cost per mile (slope) from graph by computing rise over run"}
+{"id":"1d18794b","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate verbal description ($23/month + $35 setup) into equation c=23m+35"}
+{"id":"b51c173d","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write y=mx+b from given slope (2) and y-intercept (−5)"}
+{"id":"4702da8f","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=80−6x at x=7 by substitution"}
+{"id":"13294295","sub_skills":["LF.4"],"clusters":["CL.0265","CL.0264"],"distractors":[],"why":"Determine production rate (slope) from graph of candy bars vs time"}
+{"id":"33e4af6b","sub_skills":["LF.5"],"clusters":["CL.0264"],"distractors":[],"why":"Read the y-intercept directly from the graph of a linear function"}
+{"id":"7b17f86a","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=x+8/11 at x=3/11 by substitution with fractions"}
+{"id":"adf60b28","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0160"],"distractors":[],"why":"Interpret the constant 4 in f(x)=8x+4 as the initial value in context"}
+{"id":"b8cbe394","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate verbal description ($11/day + $10 insurance) into equation c=11d+10"}
+{"id":"12983c1e","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine linear equation from table values by computing slope and intercept"}
+{"id":"aeaba0b6","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert f(x)=14+4x to find x when f(x)=58; isolate variable"}
+{"id":"70d9516e","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate d=30t at t=2 by substitution"}
+{"id":"720e51ac","sub_skills":["LF.1"],"clusters":["CL.0072","CL.0264"],"distractors":[],"why":"Read cost at 60 rings from graph; evaluate linear relationship visually"}
+{"id":"4e97f862","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=3x−8 at x=7 by substitution"}
+{"id":"3174f07d","sub_skills":["LF.5"],"clusters":["CL.0264"],"distractors":[],"why":"Read the y-intercept directly from the graph of a linear function"}
+{"id":"f79fffba","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate h(x)=3x−7 at x=−2 by substitution"}
+{"id":"a9039591","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine linear equation from table by computing slope from consecutive values and finding intercept"}
+{"id":"a396ed75","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Translate verbal rate (5.7 min/mile) into equation t=5.7m; multiply rate by amount"}
+{"id":"e4a588ca","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0034"],"distractors":[],"why":"Evaluate f(x)=(1/2)(x+6) at x=4; distribute then compute"}
+{"id":"2e379126","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate g(x)=4x−6 at x=−7 by substitution"}
+{"id":"979b0b8d","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write y=mx+b from slope (39) and point (0,0); y-intercept is zero"}
+{"id":"bf883fde","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write y=mx+b from slope (3) and y-intercept (−8)"}
+{"id":"3462d850","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0269"],"distractors":[],"why":"Interpret the coefficient 45 in d=45t as the rate (miles per hour) in context"}
+{"id":"fe6f9678","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"From f(0)=17 and f(1)=17, compute slope=0 and write equation f(x)=17"}
+{"id":"bc638f2d","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0160"],"distractors":[],"why":"Interpret the constant 9 in f(t)=14t+9 as the initial value (ants at start of study)"}
+{"id":"9d9fe1e6","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0160"],"distractors":[],"why":"Interpret the constant 39 in f(x)=39−0.18x as the initial temperature at day 0"}
+{"id":"c4d49134","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate s=40+3t at t=5 by substitution"}
+{"id":"255996a6","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert T=1000+18h to find h when T=1576; isolate the variable"}
+{"id":"a8e6bd75","sub_skills":["LF.5"],"clusters":["CL.0156","CL.0266"],"distractors":[],"why":"Match equation y=2x−5 to its graph using slope and y-intercept features"}
+{"id":"5ad6bc97","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=7x+1 at x=7 by substitution in context"}
+{"id":"1993561d","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write y=mx+b from slope (1/4) and y-intercept (5)"}
+{"id":"a73a5c22","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate g(x)=10x+8 at x=8 by substitution"}
+{"id":"5907e072","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Substitute x=0 into f(x)=x+b with f(0)=30 to solve for constant b"}
+{"id":"a4d6fbec","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate y=5x+10 at x=8 by substitution"}
+{"id":"8643d906","sub_skills":["LF.4"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret the function statement P(30)=550 in context of population model"}
+{"id":"1ecaa9c0","sub_skills":["LF.2"],"clusters":["CL.0060","CL.0094"],"distractors":[],"why":"Build cost expression from $20 fixed plus $0.70/mile rate for 38 miles"}
+{"id":"a232aa96","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=−3x+60 at x=−8 by substitution"}
+{"id":"0ea7ef01","sub_skills":["LF.1"],"clusters":["CL.0072","CL.0264"],"distractors":[],"why":"Read predicted temperature at 6 atmospheres from graph; visual evaluation"}
+{"id":"2eef7e61","sub_skills":["LF.5"],"clusters":["CL.0128"],"distractors":[],"why":"Write equation from given slope (3/4) and y-intercept f(0)=3"}
+{"id":"97eab129","sub_skills":["LF.3"],"clusters":["CL.0024"],"distractors":[],"why":"Determine linear equation from table of area vs water drained by computing the ratio/slope"}
+{"id":"81390d6c","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate h(x)=x+200 at x=50 by substitution"}
+{"id":"73b5f330","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert f(x)=5x+8 to find x when f(x)=58; isolate variable"}
+{"id":"776cfa7c","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0269"],"distractors":[],"why":"Interpret the coefficient 25 in f(t)=100+25t as the monthly deposit rate in context"}
+{"id":"6efcc0a3","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"From h(0)=41 and h(1)=40, compute slope=−1 and write h(x)=−x+41"}
+{"id":"fe287f7e","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate verbal description ($60/hr + $120 parts) into function f(x)=60x+120"}
+{"id":"aad7e1b9","sub_skills":["LF.5"],"clusters":["CL.0160"],"distractors":[],"why":"Identify y-intercept of f(x)=(1/10)x−2 by reading the constant term"}
+{"id":"cee5b352","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Build linear model from verbal: 162cm birth length + 4.8cm/month growth rate"}
+{"id":"548a4929","sub_skills":["LF.5"],"clusters":["CL.0084","CL.0047"],"distractors":[],"why":"Find x-intercept (set h(x)=0) and y-intercept (set x=0) of h(x)=4x+28, then add"}
+{"id":"e62cfe5f","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"The question states the head width at body length 13mm is 2.6mm; direct evaluation"}
+{"id":"e3cf671f","sub_skills":["LF.1"],"clusters":["CL.0089","CL.0094"],"distractors":[],"why":"Use f(5)=32 to solve for k, then evaluate f(10) with the known constant"}
+{"id":"a5834ea4","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate constant function f(x)=39 at x=1,2,3 to match table (all outputs are 39)"}
+{"id":"7e3f8363","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from points (0,3) and (7,31) by computing slope and using intercept"}
+{"id":"c1bd5301","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate verbal description (241 lbs at birth, 3 lbs/day) to f(x)=a+bx; a=241"}
+{"id":"620fe971","sub_skills":["LF.4"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Interpret x-intercept of y=120−25x in context: when cargo remaining is zero, x=4.8 hours"}
+{"id":"17d80dc3","sub_skills":["LF.5"],"clusters":["CL.0084","CL.0047"],"distractors":[],"why":"Find x-intercept of line with slope 5 and y-int −35: set y=0, solve 0=5x−35"}
+{"id":"1c29bfd1","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Build pressure equation from verbal: 14.70 base + 0.44 per foot → P=14.70+0.44d"}
+{"id":"e470e19d","sub_skills":["LF.5"],"clusters":["CL.0084","CL.0047"],"distractors":[],"why":"Find x-intercept of f(x)=7x−84 by setting f(x)=0 and solving"}
+{"id":"af711d1b","sub_skills":["LF.3"],"clusters":["CL.0024"],"distractors":[],"why":"Determine equation relating distance and time from table values by computing the ratio"}
+{"id":"f7e39fe9","sub_skills":["LF.3"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Substitute a table point into f(x)=mx−28 to solve for constant m"}
+{"id":"5cf1bbc9","sub_skills":["LF.4"],"clusters":["CL.0265","CL.0269"],"distractors":[],"why":"Interpret slope of cost-vs-games graph as the cost per game"}
+{"id":"c81f1c2f","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=45x+600 at x=50 by substitution"}
+{"id":"0d5495a6","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0089"],"distractors":[],"why":"Substitute x=0 into h(x)=x+b with h(0)=45 to find b=45"}
+{"id":"3e9eaffc","sub_skills":["LF.4"],"clusters":["CL.0160","CL.0154"],"distractors":[],"why":"Interpret y-intercept (30) of f(x)=−5x+30 as initial juice amount in context"}
+{"id":"a775af14","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from points (0,2) and (8,34) by computing slope and using intercept"}
+{"id":"9551cd91","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from table of cars vs passengers by computing slope and intercept"}
+{"id":"ebd457f4","sub_skills":["LF.2"],"clusters":["CL.0060","CL.0094"],"distractors":[],"why":"Build savings model: (2/5)×215 per week × 9 weeks; multiply rate by amount"}
+{"id":"6c5c2a81","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from points (7,21) and (9,25) by computing slope and finding intercept"}
+{"id":"dae126d7","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Build boiling-point equation from verbal: 212 base minus (1/550) per foot → B=212−x/550"}
+{"id":"271f7e3f","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(9) and f(1) for f(x)=(x+7)/4, then subtract"}
+{"id":"c651cc56","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0094"],"distractors":[],"why":"Determine linear equation from table, then evaluate at x=3"}
+{"id":"c22b5f25","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0009"],"distractors":[],"why":"Compute slope from two points and verify which function passes through both"}
+{"id":"11e1ab81","sub_skills":["LF.3"],"clusters":["CL.0265","CL.0264"],"distractors":[],"why":"Determine equation from graph by reading slope and intercept visually"}
+{"id":"4fe4fd7c","sub_skills":["LF.1"],"clusters":["CL.0089","CL.0094"],"distractors":[],"why":"Use c(100)=800 to solve for m in c(x)=mx+500, then evaluate c(1000)"}
+{"id":"2f34cd1c","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate f(x)=55.20−0.16x at x=326 by substitution"}
+{"id":"3122fc7b","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0094"],"distractors":[],"why":"Compute slope from (1991,57) and (2011,224), build equation, evaluate at 2015"}
+{"id":"23dedddd","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"From f(0)=8 and f(1)=12, compute slope=4 and write f(x)=4x+8"}
+{"id":"c8fb6bcb","sub_skills":["LF.4"],"clusters":["CL.0160","CL.0047"],"distractors":[],"why":"Interpret f(x)=2x+244 as perimeter: 2x+2w=2x+244 so w=122; read constant from equation"}
+{"id":"a91a2b75","sub_skills":["LF.5"],"clusters":["CL.0160"],"distractors":[],"why":"Identify y-coordinate of y-intercept of f(x)=−9x+9 by reading the constant term"}
+{"id":"56dc8045","sub_skills":["LF.4"],"clusters":["CL.0160","CL.0269"],"distractors":[],"why":"Interpret the coefficient −4 in w(t)=300−4t as the draining rate per second"}
+{"id":"c01f4a95","sub_skills":["LF.1"],"clusters":["CL.0089","CL.0094"],"distractors":[],"why":"Use j(12)=18 to solve for m in j(x)=mx+144, then evaluate j(10)"}
+{"id":"4b0c156b","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from h(28)=15 and h(26)=22 by computing slope and intercept"}
+{"id":"868fc236","sub_skills":["LF.3"],"clusters":["CL.0024"],"distractors":[],"why":"Determine conversion ratio k/x from table (16.8/4=4.2) to write k=4.2x"}
+{"id":"7e1bff94","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine equation from two table values by computing slope and finding intercept"}
+{"id":"946ab892","sub_skills":["LF.3"],"clusters":["CL.0128"],"distractors":[],"why":"Write equation from slope (2) and point (1,14) using y=mx+b form"}
+{"id":"0cadb20e","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert f(x)=(x+15)/5 to find a when f(a)=10; isolate variable"}
+{"id":"042aa429","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0270"],"distractors":[],"why":"Evaluate f(2) and g(2) separately, then compute 4f(2)−g(2)"}
+{"id":"b2fe7ab6","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Determine slope from table values, then find b by back-substitution"}
+{"id":"1bc11c4e","sub_skills":["LF.4"],"clusters":["CL.0160","CL.0269"],"distractors":[],"why":"Interpret the coefficient −0.05 in g(m)=−0.05m+12.1 as gallons used per mile"}
+{"id":"113b938e","sub_skills":["LF.4"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Interpret x-intercept of y=18−5x in context: speed reaches zero at x=3.6 seconds"}
+{"id":"295a41f0","sub_skills":["LF.5","LF.3"],"clusters":["CL.0087","CL.0264"],"distractors":[],"why":"Read slope/intercept from graph of y=f(x)−11, then shift up by 11 to find f(x)"}
+{"id":"1f0966db","sub_skills":["LF.1"],"clusters":["CL.0047"],"distractors":[],"why":"Invert f(x)=(9/7)x+8/7 to find x when f(x)=5; isolate variable"}
+{"id":"441558e7","sub_skills":["LF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Evaluate y=0.67x+2.6 at x=58 by substitution in context"}
+{"id":"f0773a55","sub_skills":["LF.4"],"clusters":["CL.0265","CL.0269"],"distractors":[],"why":"Interpret slope of graph (amount charged vs hours) as hourly rate"}
+{"id":"53487897","sub_skills":["LF.3"],"clusters":["CL.0128"],"distractors":[],"why":"Build equation from slope=8 and point (2,18): y=8x+2"}
+{"id":"67d63e19","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate first-day-plus-additional pricing into C(d)=52+26(d−1)=26d+26"}
+{"id":"bbf9e5ce","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate tiered admission pricing into function: $21 for first 25 + $14 each additional"}
+{"id":"0bd33265","sub_skills":["LF.1"],"clusters":["CL.0047","CL.0094"],"distractors":[],"why":"Invert the Kelvin-to-Fahrenheit formula to find v when h=467.33"}
+{"id":"a5882327","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0095"],"distractors":[],"why":"Substitute (c+7) into g(x)=b−15x, set equal to c/4, and solve for b"}
+{"id":"023c0a8d","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0095"],"distractors":[],"why":"Determine that f(3x)=x−6 means f(6) is found by setting 3x=6 (x=2), then f(6)=2−6=−4"}
+{"id":"daad7c32","sub_skills":["LF.4"],"clusters":["CL.0154","CL.0269"],"distractors":[],"why":"Interpret the coefficient 2 in l=30+2w as the length increase per unit weight"}
+{"id":"e103300e","sub_skills":["LF.4"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"Interpret x-intercept of f(x)=4x+19: when f(x)=0, x=−19/4"}
+{"id":"e86a06fe","sub_skills":["LF.4"],"clusters":["CL.0080","CL.0154"],"distractors":[],"why":"Rewrite y−5x=6 as y=5x+6; interpret 6 as the fixed fabric amount (y-intercept)"}
+{"id":"78391fcc","sub_skills":["LF.3","LF.5"],"clusters":["CL.0024","CL.0094"],"distractors":[],"why":"Build equation from table, then find x-intercept by setting f(x)=0"}
+{"id":"a7e2859a","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate first-day-plus-additional pricing into y=430+215(x−1)=215x+215"}
+{"id":"6989c80a","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0269"],"distractors":[],"why":"The 9/5 slope means a 2.10K increase yields (9/5)×2.10=3.78°F increase"}
+{"id":"0b0fa68b","sub_skills":["LF.1"],"clusters":["CL.0089","CL.0095"],"distractors":[],"why":"Use f(cx)=x−8 and f(2)=35 to solve for c by substituting into the linear form"}
+{"id":"a309803e","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Translate: 1 gal covers 220 sqft, painted twice → P=2w/220=w/110"}
+{"id":"16889ef3","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Compute slope from (0,4) and (13,1.9), then write equation to match answer choice"}
+{"id":"50f4cb9c","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0128"],"distractors":[],"why":"Find a and b from table using slope computation and intercept, then compute a−b"}
+{"id":"d1f50dbe","sub_skills":["LF.2"],"clusters":["CL.0104","CL.0060"],"distractors":[],"why":"Translate: 1 gal covers 170 sqft, stained twice → S=2w/170=w/85"}
+{"id":"af2ba762","sub_skills":["LF.4"],"clusters":["CL.0094","CL.0154"],"distractors":[],"why":"Interpret 2.74 in F(x)=2.74−0.19(x−3) as the value at x=3 (gas price at month 3)"}
+{"id":"b988eeec","sub_skills":["LF.5"],"clusters":["CL.0017","CL.0084"],"distractors":[],"why":"Combine f(x)+g(x) into h(x)=x+12, then find x-intercept by setting h(x)=0"}
+{"id":"e9908930","sub_skills":["LF.3","LF.5"],"clusters":["CL.0024","CL.0087"],"distractors":[],"why":"Build f(x) from table, then compute h(x)=f(x)−13 by shifting down"}
+{"id":"415ab1d2","sub_skills":["LF.5"],"clusters":["CL.0087","CL.0266"],"distractors":[],"why":"Graph shows y=f(x)+19 with negative slope; f(x) must be shifted down, with negative slope and negative intercept"}
+{"id":"b3abf40f","sub_skills":["LF.1"],"clusters":["CL.0094","CL.0269"],"distractors":[],"why":"The 9/5 slope means a 9.10K increase yields (9/5)×9.10=16.38°F increase"}
+{"id":"be9cb6a2","sub_skills":["LF.2"],"clusters":["CL.0104"],"distractors":[],"why":"Translate first-day-plus-additional pricing into y=270+135(x−1)=135x+135"}
+{"id":"e25f0807","sub_skills":["LF.3"],"clusters":["CL.0024","CL.0094"],"distractors":[],"why":"Compute slope from (−12,−45) and (6,45), build equation, evaluate at x=1/4"}
