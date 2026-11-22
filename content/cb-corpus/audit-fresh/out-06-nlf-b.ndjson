@@ -1,0 +1,113 @@
+{"id":"c4259674","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Evaluate f(21)=4(21)^(-1)=4/21 using negative exponent rule."}
+{"id":"50e40f08","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0122"],"distractors":[],"why":"Find x-intercept of factored quadratic by zero product property."}
+{"id":"f28944ff","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Evaluate exponential 32(2^x) at table values using exponent rules to match."}
+{"id":"15c364bf","sub_skills":["NLF.2"],"clusters":["CL.0150"],"distractors":[],"why":"Interpret s(87)≈23 as 23 grams remaining after 87 years; choices are context statements."}
+{"id":"341ba5db","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Minimum of x^2+55 is 55 at vertex (0,55) read from vertex form."}
+{"id":"dd3b1e1a","sub_skills":["NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"Find y-intercept by substituting x=0 into polynomial; b=17."}
+{"id":"752055d1","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0094","CL.0006"],"distractors":[],"why":"Substitute into P=C(2)^(rt), equate 24000=12000·2^(4r), solve 2^(4r)=2 giving r=1/4."}
+{"id":"d4950429","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037","CL.0122"],"distractors":[],"why":"Set up x(x-15)=76, factor x^2-15x-76=(x-19)(x+4), x=19."}
+{"id":"95d1c344","sub_skills":["NLF.1"],"clusters":["CL.0072"],"distractors":[],"why":"Read y-value from graph at Nov 2012; approximately 5."}
+{"id":"cc6ccd71","sub_skills":["NLF.4"],"clusters":["CL.0072"],"distractors":[],"why":"Count x-intercepts of cubic from graph; three crossings."}
+{"id":"252a3b3a","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0156"],"distractors":[],"why":"Match polynomial to graph using zeros at -5,0,4 and touch/cross multiplicity."}
+{"id":"926c246b","sub_skills":["NLF.2"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"5640 is initial value at t=0 (year 2010) in exponential model; choices are context statements."}
+{"id":"4618501a","sub_skills":["NLF.2"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"3000 is population at x=0 when species first observed; choices are context statements."}
+{"id":"e53add44","sub_skills":["NLF.3"],"clusters":["CL.0106"],"distractors":[],"why":"4% annual increase means multiplier a=1.04; convert percent to growth factor."}
+{"id":"768b60d2","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0159"],"distractors":[],"why":"Determine which exponential form shows f(0)=c as coefficient or base."}
+{"id":"f89af023","sub_skills":["NLF.4"],"clusters":["CL.0104"],"distractors":[],"why":"Set up 2w·w=162 from rectangle dimensions, solve w^2=81, w=9."}
+{"id":"02add2d2","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127"],"distractors":[],"why":"7% monthly increase: multiplier 1.07; write exponential model 1300(1.07)^t."}
+{"id":"ae05d37b","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0078"],"distractors":[],"why":"Exponent t/790 means doubling every 790 minutes; read period from exponent structure."}
+{"id":"1d3c5c95","sub_skills":["NLF.2"],"clusters":["CL.0154","CL.0084"],"distractors":[],"why":"4000 is beetle population at x=0 (year 2012); choices are context statements."}
+{"id":"f423771c","sub_skills":["NLF.3"],"clusters":["CL.0072","CL.0127"],"distractors":[],"why":"Compute growth factor ~1.12 per 2 years from table; model h(x)=1.23(1.12)^(x/2)."}
+{"id":"ff8c5844","sub_skills":["NLF.3"],"clusters":["CL.0072","CL.0198"],"distractors":[],"why":"Identify exponential base 1/25 from table values; decay function g(x)=(1/25)^x."}
+{"id":"52b1700c","sub_skills":["NLF.3"],"clusters":["CL.0072","CL.0106"],"distractors":[],"why":"Compute monthly growth factor 606.42/604=1.004 from table; 0.4% monthly rate."}
+{"id":"cb29c54c","sub_skills":["NLF.2"],"clusters":["CL.0162","CL.0154"],"distractors":[],"why":"Interpret vertex (5.6,502): max height 502 feet at 5.6 seconds; choices are context statements."}
+{"id":"39714777","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Rewrite p(x)=x^2-57; minimum at vertex (0,-57) is -57."}
+{"id":"beca03de","sub_skills":["NLF.2"],"clusters":["CL.0154"],"distractors":[],"why":"Interpret 15w as the length of the rectangle in the area model; choices are context statements."}
+{"id":"301faf80","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037","CL.0122"],"distractors":[],"why":"Set up n(2n+5)=462, factor 2n^2+5n-462=(n-14)(2n+33)=0, smaller integer is 14."}
+{"id":"128c75e2","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"Evaluate g(15a) and g(7a) using |x|/a with a<0; product is (-29)(-21)=609."}
+{"id":"02060533","sub_skills":["NLF.1"],"clusters":["CL.0072","CL.0094","CL.0084"],"distractors":[],"why":"Compute f(0)=g(0)·(0+3)=12·3=36; y-intercept of f is (0,36)."}
+{"id":"91e7ea5e","sub_skills":["NLF.4"],"clusters":["CL.0210","CL.0094"],"distractors":[],"why":"By parabola symmetry about x=4, if one intercept is x=0 then the other is x=8."}
+{"id":"358f18bc","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Vertex at x=24; f(24)=576-1152+2304=1728."}
+{"id":"8490cc45","sub_skills":["NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"f(0)=(-8)(1)+22=14; y-intercept is (0,14)."}
+{"id":"ebed7dc6","sub_skills":["NLF.4"],"clusters":["CL.0037","CL.0122"],"distractors":[],"why":"Solve x^2-14x-72=0 by factoring (x-18)(x+4)=0; max x where y>=0 is 18."}
+{"id":"a9084ca4","sub_skills":["NLF.2"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"y-intercept f(0)=9000 means 9000 ads sent in 1997; choices are context statements."}
+{"id":"2c6f214f","sub_skills":["NLF.3"],"clusters":["CL.0127"],"distractors":[],"why":"Geometric sequence first term 9, ratio 4: w=9(4)^(n-1)."}
+{"id":"781c2f6e","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0159"],"distractors":[],"why":"y-intercept a(1+2.2^b); neither form displays it as a single constant or coefficient."}
+{"id":"b8f13a3a","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"Set x=0: b-13=-75/7 gives b=16/7; then a=(320/7)/(16/7)=20."}
+{"id":"8e1da169","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"Vertex midpoint of zeros: x=(44+46)/2=45."}
+{"id":"40491607","sub_skills":["NLF.5","NLF.1"],"clusters":["CL.0094","CL.0087"],"distractors":[],"why":"g(x)=f(x)+6; g(4)=f(4)+6=(3)(7)(2)+6=48."}
+{"id":"7902bed0","sub_skills":["NLF.4"],"clusters":["CL.0162","CL.0104"],"distractors":[],"why":"Vertex (1.8,51.84) with downward opening: h=-16(t-1.8)^2+51.84."}
+{"id":"4a0d0399","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"f(0)=1+b=-323 gives b=-324; verify a^2=324, a=18."}
+{"id":"9654add7","sub_skills":["NLF.2","NLF.4"],"clusters":["CL.0163","CL.0154"],"distractors":[],"why":"Factor -500x(x-50); a=50 is the unit price yielding $0 revenue; choices are context statements."}
+{"id":"263f9937","sub_skills":["NLF.3"],"clusters":["CL.0072","CL.0094"],"distractors":[],"why":"Bacteria double daily; from 10^6 at day 3, need 2^9 more doublings to reach 5.12e8 at day 12."}
+{"id":"4dd4efcf","sub_skills":["NLF.4"],"clusters":["CL.0210","CL.0043"],"distractors":[],"why":"Axis at x=-3 gives a=2/3; vertex k=c-6<0 so c<6 but not necessarily c<0 or a>=1; neither must be true."}
+{"id":"2992ac30","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"Exponent (6/4)t: 4% increase when exponent advances 1, every 2/3 year=8 months."}
+{"id":"841ef26c","sub_skills":["NLF.5","NLF.4"],"clusters":["CL.0043","CL.0087"],"distractors":[],"why":"f min at x=-8; g(x)=f(x+5) shifts left 5, so g min at x=-13."}
+{"id":"09d21d79","sub_skills":["NLF.4"],"clusters":["CL.0043","CL.0084","CL.0094"],"distractors":[],"why":"c=-6 from y-intercept; b=4 from vertex x=-1; bc=-24."}
+{"id":"d135f4bf","sub_skills":["NLF.5","NLF.1"],"clusters":["CL.0094","CL.0087"],"distractors":[],"why":"g(0)=f(0)+4=(-6)(-2)(6)+4=72+4=76."}
+{"id":"271ffad7","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"By parabola symmetry about t=3, returns to launch height at t=6."}
+{"id":"ee857afb","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Vertex at x=-(-14)/(2·1)=7."}
+{"id":"35e05e19","sub_skills":["NLF.4"],"clusters":["CL.0104"],"distractors":[],"why":"Volume = lwh = 11·x·(x-1); multiply dimensions."}
+{"id":"a45ffacb","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"f(0)-15=b-16=-99/7 gives b=13/7; a=(65/7)/(13/7)=5."}
+{"id":"821e724e","sub_skills":["NLF.4","NLF.1"],"clusters":["CL.0094","CL.0122"],"distractors":[],"why":"g(24)=38(t-24)=0 gives t=24; g(0)=14·24=336."}
+{"id":"d8e84431","sub_skills":["NLF.4"],"clusters":["CL.0104"],"distractors":[],"why":"Length x, width x-24; area x(x-24)=2661."}
+{"id":"18e35375","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"Vertex midpoint of zeros: x=(14+(-19))/2=-5/2."}
+{"id":"ce508fb0","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"f(-4)=3+|8-16|=11; g(11)=11/10-6=-49/10."}
+{"id":"8462b105","sub_skills":["NLF.4"],"clusters":["CL.0104"],"distractors":[],"why":"Product of x and (x+91) is f(x)=x(x+91)."}
+{"id":"ce579859","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127","CL.0094"],"distractors":[],"why":"150% more means multiplier 2.5; at y=1: S0·2.5=180 gives S0=72; S=72(2.5)^y."}
+{"id":"2f51abc2","sub_skills":["NLF.1"],"clusters":["CL.0094"],"distractors":[],"why":"Solve |59-2k|=3k: case 59-2k>=0 gives 5k=59, k=59/5."}
+{"id":"d139cf4b","sub_skills":["NLF.5","NLF.4"],"clusters":["CL.0043","CL.0087"],"distractors":[],"why":"Max of f at t=55/4 is 2(55/4)^2; max of g=f(t)+3 is 3+2(55/4)^2."}
+{"id":"9afe2370","sub_skills":["NLF.3"],"clusters":["CL.0198"],"distractors":[],"why":"Population decreases so 0<1+r<1, meaning -1<r<0."}
+{"id":"df71424b","sub_skills":["NLF.3"],"clusters":["CL.0072","CL.0266"],"distractors":[],"why":"Graph of ab^x+c has horizontal asymptote and never crosses x-axis; zero solutions."}
+{"id":"b7c74b73","sub_skills":["NLF.3"],"clusters":["CL.0078","CL.0106"],"distractors":[],"why":"Per year (x+=12) multiplier is 0.64; decrease is 1-0.64=36%."}
+{"id":"f2d60b99","sub_skills":["NLF.2"],"clusters":["CL.0162","CL.0154"],"distractors":[],"why":"Vertex (7,3): minimum height 3 inches above ground; choices are context statements."}
+{"id":"1f353a9e","sub_skills":["NLF.2"],"clusters":["CL.0084","CL.0154"],"distractors":[],"why":"y-intercept f(0)=8000: 8000 coupons sent at end of 1998; choices are context statements."}
+{"id":"270cf326","sub_skills":["NLF.3"],"clusters":["CL.0266","CL.0198"],"distractors":[],"why":"Neither function achieves minimum -3; both decrease without bound."}
+{"id":"92f812bb","sub_skills":["NLF.4"],"clusters":["CL.0162","CL.0094"],"distractors":[],"why":"y=a(x-9)^2-14; a+b+c=f(1)=64a-14; only a=1/32>0 gives -12."}
+{"id":"0121a235","sub_skills":["NLF.4"],"clusters":["CL.0072","CL.0163"],"distractors":[],"why":"p(-1)=0 and p(2)=0 from table; (x+1)(x-2) is a factor."}
+{"id":"bba18ecb","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"By symmetry about x=-3: other intercept at x=-3+5/4=-7/4."}
+{"id":"668f1863","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"Axis of symmetry r=(-20+(-4))/2=-12."}
+{"id":"70753f99","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"Vertex at x=(-3+(-1))/2=-2, in interval (-3,1)."}
+{"id":"55c5d3c2","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0094"],"distractors":[],"why":"f(0)=1+b=-25 gives b=-26; f(2)=a^2-26=23 gives a=7; sum=-19."}
+{"id":"58dcc59f","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0037","CL.0122"],"distractors":[],"why":"w(w+5)=104; factor (w-8)(w+13)=0; w=8, length=13."}
+{"id":"2d1614a1","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"Exponent (4/3)t: 4% when exponent advances 1 every 3/4 year; n=4."}
+{"id":"84dd43f8","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0094"],"distractors":[],"why":"80% decrease means multiplier 0.2; f(2)=86(0.2)^2=3.44."}
+{"id":"59d1f4b5","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"Substitute t=q/4 for quarterly: M=1800(1.02)^(q/4)."}
+{"id":"48f83c34","sub_skills":["NLF.4"],"clusters":["CL.0104"],"distractors":[],"why":"Volume = 9·x·(x-7); length=x, width=x-7, height=9."}
+{"id":"6e7ae9fc","sub_skills":["NLF.4","NLF.5"],"clusters":["CL.0163","CL.0055"],"distractors":[],"why":"Zeros of g at x=0,2,-6; solve 7-w=each zero; sum w=7+5+13=25."}
+{"id":"1a722d7d","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0055"],"distractors":[],"why":"p(c)=80/c=10 gives c=8; p(12)=(16+160)/16=11."}
+{"id":"a7711fe8","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Vertex form (x-2)^2-4: minimum is -4."}
+{"id":"161126cf","sub_skills":["NLF.3"],"clusters":["CL.0078","CL.0106"],"distractors":[],"why":"(1.84)^(1/4)≈1.165; equivalent rate p≈16%."}
+{"id":"a8ae0d22","sub_skills":["NLF.3"],"clusters":["CL.0127"],"distractors":[],"why":"Factor 4 per unit x, initial 200: y=200(4)^x."}
+{"id":"1853bb35","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127"],"distractors":[],"why":"45% decrease means 55% retained, multiplier 0.55; q(x)=14(0.55)^x."}
+{"id":"a58232b7","sub_skills":["NLF.3"],"clusters":["CL.0084","CL.0159"],"distractors":[],"why":"Min at x=0 for both; neither form shows the minimum value as a constant or coefficient."}
+{"id":"7e6ea718","sub_skills":["NLF.4"],"clusters":["CL.0163"],"distractors":[],"why":"Zeros at x=d (double), x=-d, x=-g; three distinct x-intercepts since d!=g>0."}
+{"id":"4d7064a6","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"Vertex midpoint of zeros: x=(10-13)/2=-3/2."}
+{"id":"f25a34aa","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0034"],"distractors":[],"why":"Area x^2=(1/2)(2x+22)(x-10); expand to x^2=x^2+x-110; solve x=110."}
+{"id":"4d037075","sub_skills":["NLF.5","NLF.1"],"clusters":["CL.0072","CL.0094","CL.0087"],"distractors":[],"why":"From graph a=6, b=4; g(x)=f(x+4)=6/(x+8)."}
+{"id":"43926bd9","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0072","CL.0094"],"distractors":[],"why":"Exponents 1,5,9 form pattern 4x-3; solve 4k-3=29 gives k=8."}
+{"id":"7eed640d","sub_skills":["NLF.2"],"clusters":["CL.0154"],"distractors":[],"why":"Positive x-intercept is when projectile hits ground; choices are context statements."}
+{"id":"08d03fe4","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0094","CL.0159"],"distractors":[],"why":"f(1)=128·2^0=128; k=128 appears as coefficient in 128(2)^(x-1)."}
+{"id":"b73ee6cf","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127"],"distractors":[],"why":"3% annual increase: 60000=50000(1.03)^t."}
+{"id":"1fe10d97","sub_skills":["NLF.3"],"clusters":["CL.0078"],"distractors":[],"why":"Substitute t=m/12 for monthly: p=90000(1.06)^(m/12)."}
+{"id":"1073d70c","sub_skills":["NLF.3"],"clusters":["CL.0106","CL.0127"],"distractors":[],"why":"190% increase means multiplier 2.9; C=40(2.9)^t."}
+{"id":"2b1a27cd","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0210","CL.0094"],"distractors":[],"why":"Zeros at t=0 and t=12; g(t)=-8.4t(t-12); g(10)=168 meters."}
+{"id":"dcf63c94","sub_skills":["NLF.5","NLF.3"],"clusters":["CL.0087","CL.0006"],"distractors":[],"why":"h(x)=f(x-4)=272·2^(x-4)=17·2^x."}
+{"id":"04bbce67","sub_skills":["NLF.4"],"clusters":["CL.0162"],"distractors":[],"why":"Vertex form (x+7)^2+4: minimum at x=-7."}
+{"id":"7a6d06bf","sub_skills":["NLF.4"],"clusters":["CL.0104","CL.0007"],"distractors":[],"why":"Set up w(7w-4)=155; solve 7w^2-4w-155=0; w=5."}
+{"id":"f44b4125","sub_skills":["NLF.3"],"clusters":["CL.0084","CL.0159"],"distractors":[],"why":"g decreasing for x>=0; max g(0)=9 displayed as coefficient in 9(0.73)^x."}
+{"id":"0e61101e","sub_skills":["NLF.5","NLF.3"],"clusters":["CL.0087","CL.0006"],"distractors":[],"why":"g(x)=f(x+2)=9·4^(x+2)=144·4^x."}
+{"id":"083ef63a","sub_skills":["NLF.4"],"clusters":["CL.0210"],"distractors":[],"why":"Vertex midpoint of zeros: x=(2+(-15))/2=-13/2."}
+{"id":"9f2ecade","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0084"],"distractors":[],"why":"h(x)=(x+5)(x-6)(x-7); c=h(0)=5(-6)(-7)=210."}
+{"id":"6d9e01a2","sub_skills":["NLF.4"],"clusters":["CL.0043"],"distractors":[],"why":"Vertex at x=50/(2·4)=25/4."}
+{"id":"f678483b","sub_skills":["NLF.4"],"clusters":["CL.0163"],"distractors":[],"why":"g(x)=0 at x=-19 or x=35; for x>0, submersible surfaces at 35 minutes."}
+{"id":"cd358b89","sub_skills":["NLF.5","NLF.4"],"clusters":["CL.0087","CL.0163"],"distractors":[],"why":"g(x)=f(x-1); zeros shift right 1 to -5,-4,0; sum a+b+c=-9."}
+{"id":"84e8cc72","sub_skills":["NLF.4"],"clusters":["CL.0162","CL.0094"],"distractors":[],"why":"h(t)=-16(t-8)^2+1034; h(0)=10 gives a=-16; h(10)=-64+1034=970."}
+{"id":"1178f2df","sub_skills":["NLF.4"],"clusters":["CL.0072","CL.0210","CL.0094"],"distractors":[],"why":"f(x)=y-4; axis at x=23; f(x)=-4(x-23)^2+4; y-intercept of f is -2112."}
+{"id":"d41cf4d3","sub_skills":["NLF.1"],"clusters":["CL.0094","CL.0266"],"distractors":[],"why":"f(-24)=0 gives b=24; f(24)<0 gives a<0; since a<0<24=b, a<b."}
+{"id":"de39858a","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0094","CL.0006"],"distractors":[],"why":"h(0)=1+b=10 gives b=9; h(-2)=1/a^2+9=325/36 gives a=6; ab=54."}
+{"id":"70fb357b","sub_skills":["NLF.3","NLF.1"],"clusters":["CL.0084","CL.0159","CL.0006"],"distractors":[],"why":"y-intercept=576^2=331776; displayed as base in y=331776^(x+1)."}
+{"id":"635f54ee","sub_skills":["NLF.4"],"clusters":["CL.0156"],"distractors":[],"why":"Surface area 6(a/4)^2 means side=a/4; perimeter of one face=4(a/4)=a."}
+{"id":"ef926848","sub_skills":["NLF.4"],"clusters":["CL.0104"],"distractors":[],"why":"Q perimeter=4x+176, side=x+44; area f(x)=(x+44)^2."}
+{"id":"95eeeb5b","sub_skills":["NLF.4"],"clusters":["CL.0163","CL.0034"],"distractors":[],"why":"f(x)=a(x-7)(x+3)=ax^2-4ax-21a; a+b=a-4a=-3a; for a=2, a+b=-6."}
+{"id":"01668cd6","sub_skills":["NLF.3"],"clusters":["CL.0084","CL.0159","CL.0006"],"distractors":[],"why":"g(x)=33(0.16)(0.4)^(x-2)=33(0.4)^x; max g(0)=33 displayed as coefficient."}
