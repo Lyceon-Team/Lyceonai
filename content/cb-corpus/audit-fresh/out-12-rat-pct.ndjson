@@ -1,0 +1,159 @@
+{"official_id":"4e375d1f","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion between meters and centimeters using one conversion factor"}
+{"official_id":"763e6769","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.9","RAT.11"],"why":"Proportion a/b = c/d setup and cross-multiply to solve for a variable"}
+{"official_id":"4347a032","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion between teaspoons and tablespoons"}
+{"official_id":"d7a3179d","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from yards to inches using one factor"}
+{"official_id":"808f7d6c","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.9"],"why":"Ratio equivalence problem requiring proportion setup to find equivalent value"}
+{"official_id":"3318d37b","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.10"],"why":"Single multiply of rate (dollars per pound) by quantity to find total cost"}
+{"official_id":"99550621","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.10","RAT.13"],"why":"Single division 5400 sq ft divided by 8 sq ft/person to find max people"}
+{"official_id":"4837406c","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.14"],"why":"Single division of distance by speed to find time"}
+{"official_id":"94660ba8","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion of speed from yards per hour to miles per hour"}
+{"official_id":"551c52b9","sub_skills":["RAT.11"],"clusters":["CL.0234"],"distractors":["RAT.9"],"why":"Construct algebraic expression from rate times variable number of hours"}
+{"official_id":"c47256ca","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion of speed between different length units per second"}
+{"official_id":"8bf3f67a","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from fathoms to feet using one factor"}
+{"official_id":"7270d642","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.14"],"why":"Single multiply of rate (meters per second) by time to find distance"}
+{"official_id":"3ac09984","sub_skills":["RAT.14"],"clusters":["CL.0233"],"distractors":["RAT.9","RAT.7"],"why":"Multi-step: convert pesos to dollars via exchange rate then subtract 2% fee"}
+{"official_id":"2cdefcb1","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from meters to centimeters"}
+{"official_id":"85b33aa8","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from yards to miles"}
+{"official_id":"06a152cd","sub_skills":["RAT.14"],"clusters":["CL.0233"],"distractors":["RAT.7","RAT.9"],"why":"Multi-step: 2.5 oz times 48 muffins gives 120 oz then divide by 16 to get pounds"}
+{"official_id":"d0d9ede4","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from yards to feet"}
+{"official_id":"24ad9dcb","sub_skills":["RAT.14"],"clusters":["CL.0234"],"distractors":["RAT.9","RAT.10"],"why":"Multi-step: compute weight on Venus and Jupiter separately then subtract to find difference"}
+{"official_id":"7cd1c6db","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.14"],"why":"Single division of distance by speed to find time"}
+{"official_id":"ba62b0b0","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from kilograms to grams"}
+{"official_id":"fe1ec415","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.9"],"why":"Proportion setup relating pounds and minutes to find time for a different quantity"}
+{"official_id":"0700a2d5","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from rods to yards"}
+{"official_id":"c81499e1","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from kilograms to grams"}
+{"official_id":"e9841407","sub_skills":["RAT.12"],"clusters":["CL.0236"],"distractors":["RAT.9","RAT.10"],"why":"Interpret and simplify ratio 7:28 to 1:4"}
+{"official_id":"aeeaec96","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from inches to yards"}
+{"official_id":"2d16d62c","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from fathoms to feet"}
+{"official_id":"6310adbc","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12","RAT.9"],"why":"Given ratio 1:2 and t=5, set up proportion to solve for u"}
+{"official_id":"da9ffcf6","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12"],"why":"Proportion from segment ratio to find unknown length"}
+{"official_id":"3f236a64","sub_skills":["RAT.12"],"clusters":["CL.0236"],"distractors":["RAT.10"],"why":"Identify constant ratio y/x = 4 from table and use it to find k when x = 40"}
+{"official_id":"e3d49511","sub_skills":["RAT.13"],"clusters":["CL.0237"],"distractors":["RAT.9"],"why":"Compute population density as derived rate: count divided by area"}
+{"official_id":"be35c117","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.13"],"why":"Single division of revolutions by minutes to find rate"}
+{"official_id":"15617f62","sub_skills":["RAT.13"],"clusters":["CL.0237"],"distractors":["RAT.9"],"why":"Derived rate calculation: area equals population divided by density"}
+{"official_id":"312ba47c","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12"],"why":"Use ratio of black to red pens and known black count to find red via proportion"}
+{"official_id":"000259aa","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.13"],"why":"Single division 2100 miles divided by 120 days to find average daily distance"}
+{"official_id":"fe4c1c9e","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.10"],"why":"Single multiply of rate (items per hour) by time to find total items"}
+{"official_id":"86636d8f","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.10"],"why":"Single division of total cost by price per pound to find pounds purchased"}
+{"official_id":"3f5398a6","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12","RAT.9"],"why":"Ratio 1:5 for miles to seconds; given 25 seconds, proportion gives 5 miles"}
+{"official_id":"3c8fdc40","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step rate unit conversion from posters per minute to posters per hour"}
+{"official_id":"51c9d65f","sub_skills":["RAT.14"],"clusters":["CL.0235"],"distractors":["RAT.10","RAT.11"],"why":"Multi-step: determine new length needed to maintain ratio after width increases by a given amount"}
+{"official_id":"674a4084","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from feet per second to yards per second"}
+{"official_id":"89c39d77","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from miles per hour to yards per hour"}
+{"official_id":"96c3e32d","sub_skills":["RAT.13"],"clusters":["CL.0237"],"distractors":["RAT.9"],"why":"Derived rate: total force equals pressure (rate per area) times area"}
+{"official_id":"568bc2a4","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from furlongs to feet"}
+{"official_id":"f6cbb04a","sub_skills":["RAT.9"],"clusters":["CL.0234"],"distractors":["RAT.14","RAT.11"],"why":"Ratio of distances at same speed is ratio of times; single division of d(kt)/d(t)"}
+{"official_id":"1180401d","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13","RAT.9"],"why":"Multi-step: subtract water area from total to get land area then divide population by land area"}
+{"official_id":"cb4894f9","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from miles per hour to yards per hour"}
+{"official_id":"eb672707","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from teaspoons to tablespoons"}
+{"official_id":"61b87506","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12"],"why":"Determine what to multiply by to maintain a given ratio via proportion setup"}
+{"official_id":"73ddfdac","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from furlongs to feet"}
+{"official_id":"873d2838","sub_skills":["RAT.13"],"clusters":["CL.0237"],"distractors":["RAT.9"],"why":"Derived rate: area equals population divided by population density"}
+{"official_id":"7e6c745f","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.12","RAT.13"],"why":"Multi-step: compute cost per gram of protein for each food then find their ratio"}
+{"official_id":"ec787383","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from furlongs to feet"}
+{"official_id":"8917ce38","sub_skills":["RAT.7"],"clusters":["CL.0233"],"distractors":["RAT.6"],"why":"Multi-step unit conversion: 90 km/hr to m/s chains km-to-m and hr-to-s factors"}
+{"official_id":"1d945139","sub_skills":["RAT.11"],"clusters":["CL.0234"],"distractors":["RAT.9","RAT.10"],"why":"Construct expression for mass of k objects from total mass of n objects: (mass/n) times k"}
+{"official_id":"e21d10a7","sub_skills":["RAT.14"],"clusters":["CL.0234"],"distractors":["RAT.9"],"why":"Multi-step: compute total orbit days for each moon separately then subtract to find difference"}
+{"official_id":"939c46d1","sub_skills":["RAT.7"],"clusters":["CL.0233"],"distractors":["RAT.6","RAT.14"],"why":"Multi-step unit conversion: 1 gallon to fluid ounces then divide by 16 oz per glass"}
+{"official_id":"445dd032","sub_skills":["RAT.11"],"clusters":["CL.0234"],"distractors":["RAT.9"],"why":"Construct expression for earnings: hourly rate times variable number of hours"}
+{"official_id":"1b403590","sub_skills":["RAT.13"],"clusters":["CL.0237"],"distractors":["RAT.9"],"why":"Density as derived rate: mass divided by volume"}
+{"official_id":"181cc4d6","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.14","RAT.12"],"why":"Proportion from equal length-to-width ratios: 15/w = 20/x, solve for x"}
+{"official_id":"fea831fc","sub_skills":["RAT.14"],"clusters":["CL.0233"],"distractors":["RAT.9","RAT.7"],"why":"Multi-step: convert 11 miles in 26 minutes to miles per hour requires unit conversion plus rate calculation"}
+{"official_id":"c3d78831","sub_skills":["RAT.11"],"clusters":["CL.0235"],"distractors":["RAT.10"],"why":"Construct expression for number of athletes from ratio of coaches to athletes and number of coaches"}
+{"official_id":"9fa781f8","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12"],"why":"Proportion solve from equivalent ratios to find unknown value"}
+{"official_id":"8e528129","sub_skills":["RAT.13"],"clusters":["CL.0237"],"distractors":["RAT.9","RAT.14"],"why":"Derived rate: density (oz/cu in) times price ($/oz) gives selling price in $/cu in"}
+{"official_id":"3726e079","sub_skills":["RAT.14"],"clusters":["CL.0235"],"distractors":["RAT.10","RAT.12"],"why":"Multi-step: combine two ratios a/b and b/d to find a/d by multiplication"}
+{"official_id":"3310c2ab","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step unit conversion from quarts to fluid ounces"}
+{"official_id":"825b7490","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12"],"why":"Equivalent ratio proportion to solve for unknown value"}
+{"official_id":"b4912cc5","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13","RAT.9"],"why":"Multi-step: compute population at each time via density times area then subtract for increase"}
+{"official_id":"d28c29e1","sub_skills":["RAT.6"],"clusters":["CL.0232"],"distractors":["RAT.7"],"why":"Single-step conversion of miles per second to miles per hour by multiplying by 3600"}
+{"official_id":"d6456c7a","sub_skills":["RAT.8"],"clusters":["CL.0233"],"distractors":["RAT.6","RAT.7"],"why":"Squared unit conversion from square yards to square miles requires squaring the linear factor"}
+{"official_id":"11b06e35","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13","RAT.8"],"why":"Multi-step: compute cube volume from edge length then multiply by density to find mass"}
+{"official_id":"20b69297","sub_skills":["RAT.10"],"clusters":["CL.0235"],"distractors":["RAT.12","RAT.14"],"why":"Proportion from ratio 2:3 blue to yellow; with 5 oz blue, solve for yellow"}
+{"official_id":"7d093333","sub_skills":["RAT.7"],"clusters":["CL.0233"],"distractors":["RAT.8","RAT.6"],"why":"Multi-step unit conversion: sq ft/hr to sq m/min chains area and time conversions"}
+{"official_id":"21e539a0","sub_skills":["RAT.11"],"clusters":["CL.0234"],"distractors":["RAT.9","RAT.10"],"why":"Construct expression for output: (rate per unit time) times variable time gives total"}
+{"official_id":"c2e7fa6d","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13","RAT.10"],"why":"Multi-step: compute areas of two squares then multiply by field strength for flux, solve for larger share"}
+{"official_id":"50b99b2d","sub_skills":["RAT.14"],"clusters":["CL.0234"],"distractors":["RAT.9","RAT.11"],"why":"Multi-step: derive speed of S from R (double), then compute time for S to travel given distance"}
+{"official_id":"5154615f","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13"],"why":"Multi-step: cube the edge length for volume then multiply by density to find mass"}
+{"official_id":"61f61789","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13"],"why":"Multi-step: cube edge length for volume then divide mass by volume to find density"}
+{"official_id":"c7c6445f","sub_skills":["RAT.8"],"clusters":["CL.0233"],"distractors":["RAT.6","RAT.7"],"why":"Squared unit conversion from square miles to square yards requires squaring the linear factor"}
+{"official_id":"7d721177","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13"],"why":"Multi-step: compute volume as mass divided by density then take cube root for edge length"}
+{"official_id":"8637294f","sub_skills":["RAT.14"],"clusters":["CL.0235"],"distractors":["RAT.10"],"why":"Multi-step: combine two given ratios by multiplication to find the requested compound ratio"}
+{"official_id":"3638f413","sub_skills":["RAT.14"],"clusters":["CL.0234"],"distractors":["RAT.9"],"why":"Multi-step: amount doubles 4 times so x times 16 equals 480, back-solve for x"}
+{"official_id":"e7133228","sub_skills":["RAT.7"],"clusters":["CL.0233"],"distractors":["RAT.8","RAT.6"],"why":"Multi-step unit conversion: m/s-squared to mi/min-squared chains meters-to-miles and seconds-squared-to-minutes-squared"}
+{"official_id":"69f6717f","sub_skills":["RAT.14"],"clusters":["CL.0237"],"distractors":["RAT.13"],"why":"Multi-step: cube edge length for volume then multiply by density to find mass"}
+{"official_id":"771ee744","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 10% of 320 marbles"}
+{"official_id":"eaab8bc1","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 80% of 300 seeds"}
+{"official_id":"41b71b4e","sub_skills":["PCT.7"],"clusters":["CL.0241"],"distractors":["PCT.6"],"why":"Apply percent increase: number that is 20% greater than 60"}
+{"official_id":"6e4a60dd","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 20% tip of a 25 dollar bill"}
+{"official_id":"048811bd","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 10% of 370"}
+{"official_id":"34e18ce4","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 4% of 350 objects"}
+{"official_id":"1c2f50a6","sub_skills":["PCT.7"],"clusters":["CL.0241"],"distractors":["PCT.6"],"why":"Apply percent decrease: 20% off original price of 50 dollars"}
+{"official_id":"a8fabad0","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 15% of 78.20 dollars"}
+{"official_id":"194ae3b1","sub_skills":["PCT.7"],"clusters":["CL.0241"],"distractors":["PCT.6","PCT.8"],"why":"Apply percent increase: 29% increase from 113000"}
+{"official_id":"2d31caae","sub_skills":["PCT.6"],"clusters":["CL.0240"],"distractors":["PCT.15"],"why":"Find percent: 12 out of 200 expressed as a percentage"}
+{"official_id":"77cf4fa6","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 10% of 170 blocks"}
+{"official_id":"7ed0d098","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 15% of an 8-hour workday converted to minutes"}
+{"official_id":"273b7f37","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 10% of 760 potatoes"}
+{"official_id":"9c44f828","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 50% of 840 seats"}
+{"official_id":"284303f1","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 6% of 250 trees"}
+{"official_id":"3a6ed720","sub_skills":["PCT.6"],"clusters":["CL.0240"],"distractors":["PCT.8"],"why":"Find percent: 828000 out of 900000 as a percentage"}
+{"official_id":"28c6bd8c","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.14"],"why":"Find part: sum of doctor and internet percentages (76%) applied to 1200 respondents"}
+{"official_id":"949cd96b","sub_skills":["PCT.10"],"clusters":["CL.0245"],"distractors":["PCT.11"],"why":"Write algebraic expression: base is 89% of height h, expressed as 0.89h"}
+{"official_id":"8784bc84","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 20% of 440"}
+{"official_id":"29c177e6","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 10% of 470"}
+{"official_id":"bb7c8186","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 23% of 100"}
+{"official_id":"93724cc6","sub_skills":["PCT.6"],"clusters":["CL.0239"],"distractors":["PCT.9"],"why":"Find whole: 21 is 21% of what number"}
+{"official_id":"191d167b","sub_skills":["PCT.7"],"clusters":["CL.0241"],"distractors":["PCT.6"],"why":"Apply percent: 147% of 200 gives number of enrolled students"}
+{"official_id":"8705ecba","sub_skills":["PCT.7"],"clusters":["CL.0241"],"distractors":["PCT.6"],"why":"Apply percent increase: add 5% sales tax to 20 dollar shirt"}
+{"official_id":"e9fb7774","sub_skills":["PCT.6"],"clusters":["CL.0240"],"distractors":["PCT.8"],"why":"Find percent: what percentage of 300 is 75"}
+{"official_id":"bd90f87e","sub_skills":["PCT.8"],"clusters":["CL.0242"],"distractors":["PCT.6"],"why":"Percent change calculation: increase from 1.00 to 1.60 dollars"}
+{"official_id":"d72a2b4d","sub_skills":["PCT.6"],"clusters":["CL.0240"],"distractors":["PCT.8","PCT.11"],"why":"Find percent: April price is what percent of March price (17.36 / 15.50 as percent)"}
+{"official_id":"ad1d6adb","sub_skills":["PCT.8"],"clusters":["CL.0242"],"distractors":["PCT.6"],"why":"Percent change calculation: increase from 9 to 90 coins"}
+{"official_id":"566759ef","sub_skills":["PCT.12"],"clusters":["CL.0244"],"distractors":["PCT.7"],"why":"Successive percent changes: 20% depreciation applied twice to 800 dollars"}
+{"official_id":"dccdb20c","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 6% of 450 tiles"}
+{"official_id":"e9f4521a","sub_skills":["PCT.6"],"clusters":["CL.0240"],"distractors":["PCT.8"],"why":"Find percent: 13 is p% of 25"}
+{"official_id":"7b731fc3","sub_skills":["PCT.7"],"clusters":["CL.0241"],"distractors":["PCT.6"],"why":"Apply percent increase: 40% greater than 115"}
+{"official_id":"94c65646","sub_skills":["PCT.6"],"clusters":["CL.0239"],"distractors":["PCT.9"],"why":"Find whole: 432 is 96% of what number"}
+{"official_id":"7f84b136","sub_skills":["PCT.6"],"clusters":["CL.0240"],"distractors":["PCT.8","PCT.15"],"why":"Find percent: 690 is p% of 375"}
+{"official_id":"c256b723","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 20% tip of 50 dollar bill"}
+{"official_id":"b2f6f17d","sub_skills":["PCT.8"],"clusters":["CL.0242"],"distractors":["PCT.7"],"why":"Percent change calculation: increase from 75.74 to 79.86 dollars"}
+{"official_id":"96a45430","sub_skills":["PCT.9"],"clusters":["CL.0243"],"distractors":["PCT.7","PCT.6"],"why":"Reverse percent: n increased by 6% gives 318, solve n times 1.06 equals 318"}
+{"official_id":"8cbf1415","sub_skills":["PCT.14"],"clusters":["CL.0244"],"distractors":["PCT.12","PCT.6"],"why":"Compound category percentages: 40% red times 30% striped gives 12% red-with-stripes"}
+{"official_id":"ba61d95f","sub_skills":["PCT.11"],"clusters":["CL.0245"],"distractors":["PCT.7","PCT.10"],"why":"Interpret percent expression: 7% increase means k equals 1.07"}
+{"official_id":"709e04de","sub_skills":["PCT.11"],"clusters":["CL.0245"],"distractors":["PCT.8","PCT.10"],"why":"Interpret expression: z is 1.13 times 100, determine what percent greater z is than 100"}
+{"official_id":"8e2e424e","sub_skills":["PCT.11"],"clusters":["CL.0245"],"distractors":["PCT.7","PCT.10"],"why":"Interpret expression: k is 36% greater than 50 and k equals 50r, so r equals 1.36"}
+{"official_id":"8a714fa1","sub_skills":["PCT.10"],"clusters":["CL.0245"],"distractors":["PCT.11","PCT.7"],"why":"Write algebraic expression: x increased by 9% is represented as 1.09x"}
+{"official_id":"121dc44f","sub_skills":["PCT.11"],"clusters":["CL.0245"],"distractors":["PCT.7","PCT.10"],"why":"Interpret expression: 7% increase means k equals 1.07"}
+{"official_id":"7cab9fe1","sub_skills":["PCT.10"],"clusters":["CL.0245"],"distractors":["PCT.11","PCT.7"],"why":"Write algebraic expression: w increased by 43% is represented as 1.43w"}
+{"official_id":"d693f563","sub_skills":["PCT.7"],"clusters":["CL.0241"],"distractors":["PCT.6"],"why":"Apply percent increase: 60% greater than 35 plants"}
+{"official_id":"63573fea","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.7"],"why":"Find part: 15% of 1300000 returns per month then multiply by 6 months"}
+{"official_id":"022e9894","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.14","PCT.12"],"why":"Chained percent: 1250 times 72% gives second session, then 36% of that gives third session"}
+{"official_id":"05195d8a","sub_skills":["PCT.6"],"clusters":["CL.0239"],"distractors":["PCT.9"],"why":"Find whole: 80% of total equals 88, solve for total"}
+{"official_id":"ad911622","sub_skills":["PCT.12"],"clusters":["CL.0244"],"distractors":["PCT.8","PCT.7"],"why":"Successive percent changes: 167% increase then 16% decrease applied sequentially"}
+{"official_id":"25faa756","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.12","PCT.7"],"why":"Chained percent: a is 60% greater than b and c is 45% less than a, find c as multiple of b"}
+{"official_id":"34f8cd89","sub_skills":["PCT.14"],"clusters":["CL.0244"],"distractors":["PCT.13"],"why":"Compound category percentages: 37% green times 37% rectangular times 42% metal, then complement"}
+{"official_id":"8213b1b3","sub_skills":["PCT.6"],"clusters":["CL.0238"],"distractors":["PCT.10"],"why":"Find part: 0.001% of 140 grams"}
+{"official_id":"040f2a84","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7","PCT.9"],"why":"Chained percent: 80% less gives sale price, then sale price is 30% greater than cost, reverse to find cost"}
+{"official_id":"a0b165f8","sub_skills":["PCT.9"],"clusters":["CL.0243"],"distractors":["PCT.7","PCT.6"],"why":"Reverse percent: 12.5% increase yielded 99, solve original times 1.125 equals 99"}
+{"official_id":"3d73a58b","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7","PCT.12"],"why":"Chained percent: retail is 290% of wholesale, discount is 80% off retail"}
+{"official_id":"54cb53cf","sub_skills":["PCT.11"],"clusters":["CL.0245"],"distractors":["PCT.8","PCT.6"],"why":"Interpret multiplier: 2018 is 1.27 times 2014, find what percent 2014 is of 2018"}
+{"official_id":"8c5dbd3e","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7"],"why":"Chained percent: z is 55% less than 50, then w is 110% greater than z"}
+{"official_id":"ba0e23b0","sub_skills":["PCT.8"],"clusters":["CL.0242"],"distractors":["PCT.6"],"why":"Percent change: 140 is p% greater than 10, compute (140-10)/10 as percent"}
+{"official_id":"2e92cc21","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7"],"why":"Chained percent: b is 90% less than 47, then a is 110% greater than b"}
+{"official_id":"2afd3cec","sub_skills":["PCT.9"],"clusters":["CL.0243"],"distractors":["PCT.6","PCT.7"],"why":"Reverse percent: 20% removed leaves 360, so 80% of original is 360, find amount removed"}
+{"official_id":"623dbebb","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7","PCT.12"],"why":"Chained percent: consumer price is 270% of purchase, discount is 70% off consumer price"}
+{"official_id":"86684ce9","sub_skills":["PCT.9"],"clusters":["CL.0243"],"distractors":["PCT.7","PCT.6"],"why":"Reverse percent: 1800% increase means 19x equals 684, solve for x"}
+{"official_id":"20845d36","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7","PCT.12"],"why":"Chained percent: a is 70% less than b, c is 60% greater than a, find c as multiple of b"}
+{"official_id":"5267c3c7","sub_skills":["PCT.9"],"clusters":["CL.0243"],"distractors":["PCT.7","PCT.6"],"why":"Reverse percent: 400% increase means 5x equals 60, solve for x"}
+{"official_id":"40e7a1a9","sub_skills":["PCT.8"],"clusters":["CL.0242"],"distractors":["PCT.6"],"why":"Percent change: 210 is p% greater than 30, compute (210-30)/30 as percent"}
+{"official_id":"67c0200a","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7"],"why":"Chained percent: a is 70% less than b, c is 80% greater than a, find c as multiple of b"}
+{"official_id":"e635aede","sub_skills":["PCT.12"],"clusters":["CL.0244"],"distractors":["PCT.8","PCT.13"],"why":"Successive percent changes: 14% increase then 4% increase, y equals 1.14 times 1.04"}
+{"official_id":"1fbd3b67","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.7"],"why":"Chained percent: b is 80% less than 24, then a is 190% greater than b"}
+{"official_id":"993000da","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.11","PCT.6"],"why":"Chained percent: a is 230% of b and 60% of c, find c as percent of b via chain"}
+{"official_id":"0231050d","sub_skills":["PCT.8"],"clusters":["CL.0242"],"distractors":["PCT.15"],"why":"Percent change calculation: percent decrease in snowfall from 40 inches to 10 inches"}
+{"official_id":"0ea56bb2","sub_skills":["PCT.12"],"clusters":["CL.0244"],"distractors":["PCT.8"],"why":"Successive percent changes: compute rate from 2012-2013, halve it for 2013-2014, apply"}
+{"official_id":"4aaa9c42","sub_skills":["PCT.13"],"clusters":["CL.0244"],"distractors":["PCT.14","PCT.6"],"why":"Chained percent: a is 2241% of (b+c), b is 83% of c, substitute and find a as percent of b"}
+{"official_id":"65c49824","sub_skills":["PCT.6"],"clusters":["CL.0239"],"distractors":["PCT.14"],"why":"Find whole: remaining 6 people are 15% of total, find total then compute difference of teacher and admin counts"}
+{"official_id":"954943a4","sub_skills":["PCT.10"],"clusters":["CL.0245"],"distractors":["PCT.12","PCT.6"],"why":"Percent as algebraic expression: each serving gives 5% so x servings give p equals 5x"}
+{"official_id":"1baffbcf","sub_skills":["PCT.11"],"clusters":["CL.0245"],"distractors":["PCT.10","PCT.7"],"why":"Interpret expression: 0.35x means the quantity was decreased by 65%"}
