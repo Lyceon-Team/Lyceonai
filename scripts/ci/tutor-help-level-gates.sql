@@ -2,7 +2,7 @@
 -- LISA help-level engine: schema gates (owner brief "Help-level engine", Karl 2026-11-05; SCL-275)
 -- ============================================================================
 -- @spec [SCL-275; supabase/migrations/20261201000000_lisa_help_level.sql,
---       20261206000000_lisa_help_keywords_v2.sql] | @implemented [2026-11-05; H3 updated 2026-11-22]
+--       20261209000000_lisa_help_keywords_v2.sql] | @implemented [2026-11-05; H3 updated 2026-11-22]
 --
 -- plain English: the three help columns on tutor_turn_metrics accept exactly the states the BFF
 -- writes and refuse everything else, including the rows a NULL comparison would let through.
@@ -10,7 +10,7 @@
 --   H2 refused: an unknown level; a worked step out of 1..3; worked_step without a step; a step on
 --      another level; a level without a signal; a signal without a level; an unknown signal.
 --   H3 after the whole pipeline the keyword map is at version 2 with 33 stuck and 20 solve_it
---      phrases: the v1 seed (20261201000000) plus the v2 append (20261206000000), the state Karl
+--      phrases: the v1 seed (20261201000000) plus the v2 append (20261209000000), the state Karl
 --      reported for production on 2026-11-22.
 -- One transaction, rolled back.
 -- ============================================================================

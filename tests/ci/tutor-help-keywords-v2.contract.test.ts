@@ -3,7 +3,7 @@
  * stuck 33, solve_it 20).
  *
  * @spec [SCL-275 (the help-level engine; the keyword map is versioned config);
- *       supabase/migrations/20261206000000_lisa_help_keywords_v2.sql] | @implemented [2026-11-22]
+ *       supabase/migrations/20261209000000_lisa_help_keywords_v2.sql] | @implemented [2026-11-22]
  *
  * plain English: the map is not hand-copied here. It is built from the two committed migrations
  * the way Postgres builds it: the version-1 seed (20261201000000's $json$ literal), then the v2
@@ -31,7 +31,7 @@ const V1 = readFileSync(
   "utf8",
 );
 const V2 = readFileSync(
-  join(MIGRATIONS, "20261206000000_lisa_help_keywords_v2.sql"),
+  join(MIGRATIONS, "20261209000000_lisa_help_keywords_v2.sql"),
   "utf8",
 );
 
