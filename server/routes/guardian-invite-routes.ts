@@ -14,6 +14,8 @@
  *   POST   /:id/resend   a new link, emailed to the address given
  *   POST   /:id/link     a new link, nothing sent (Copy link)
  *   DELETE /:id          cancel: the link stops working
+ *   POST   /:id/card     save a card for a plan on an open invite: opens Stripe's card page
+ *                        (Checkout `mode: "setup"`); charged only when the teen joins (SCL-286)
  * Starting an invite requires an adult guardian (18+, date of birth on file) and records the
  * guardian's acceptance of the Parent / Guardian Terms, as link-code redemption does. Every new
  * link counts against 10 a day per guardian; every email also against 3 a day per (guardian,
@@ -42,7 +44,16 @@ import { sendGuardianTeenInviteEmail } from "../lib/notifications/direct-sends";
 import { siteUrlFromEnv } from "../lib/notifications/templates";
 import { recordLegalAcceptances } from "../lib/legal-acceptance";
 import { resolveLegalVersion } from "../lib/legal-registry.js";
-import { GUARDIAN_LINK_LEGAL_DOC } from "../../shared/legal-consent.js";
+import {
+  CHECKOUT_LEGAL_DOC,
+  GUARDIAN_LINK_LEGAL_DOC,
+} from "../../shared/legal-consent.js";
+import { createGuardianInviteCardSession } from "../lib/guardian-invite-card";
+import { getAllGuardianStudentLinks } from "../lib/account";
+import {
+  guardianInviteCardRequestSchema,
+  type GuardianInviteCardResponse,
+} from "../../packages/shared/src/guardian-invite-card-schema";
 import { supabaseServer } from "../../apps/api/src/lib/supabase-server";
 import { logger } from "../logger";
 import {
@@ -341,6 +352,142 @@ router.post("/:id/link", async (req: Request, res: Response) => {
       return limitReached(res, requestId);
     }
     return failure(res, "link", err, requestId);
+  }
+});
+
+/**
+ * The guardian's Billing Terms acceptance (with automatic renewal) before a card is saved on an
+ * invite. FAIL CLOSED, unlike the Parent Terms at invite start: the first charge happens later,
+ * off-session, with no Checkout consent box in front of it (SCL-286; Auto-Renewal Notice v3
+ * §3.5), so this row is the record of that consent. No row, no card. Returns true when the
+ * response has been written.
+ */
+async function refuseUnlessBillingConsentRecorded(
+  req: Request,
+  res: Response,
+  guardianId: string,
+  inviteId: string,
+): Promise<boolean> {
+  try {
+    const billingTerms = resolveLegalVersion(CHECKOUT_LEGAL_DOC.slug);
+    await recordLegalAcceptances(supabaseServer, {
+      userId: guardianId,
+      consentSource: "guardian_invite_card",
+      userAgent: req.get("user-agent") ?? null,
+      ipAddress: req.ip ?? null,
+      sourceReference: inviteId,
+      acceptances: [
+        {
+          docKey: CHECKOUT_LEGAL_DOC.docKey,
+          docSlug: billingTerms.slug,
+          docVersion: billingTerms.version,
+          contentHash: billingTerms.contentHash,
+          actorType: "parent",
+          minor: false,
+        },
+      ],
+    });
+    return false;
+  } catch (consentErr: unknown) {
+    logger.error(
+      "GUARDIAN_INVITE",
+      "card",
+      "Billing Terms consent could not be recorded; no card page opened",
+      {
+        error: consentErr instanceof Error ? consentErr.message : "unknown",
+        requestId: req.requestId,
+      },
+    );
+    res.status(503).json({
+      error: {
+        code: "CONSENT_NOT_RECORDED",
+        message: "We couldn't save your agreement just now. Please try again.",
+      },
+      requestId: req.requestId,
+    });
+    return true;
+  }
+}
+
+function hasLinkedStudent(res: Response, requestId: string | undefined): void {
+  res.status(409).json({
+    error: {
+      code: "GUARDIAN_HAS_LINKED_STUDENT",
+      message:
+        "You're already connected to a student. Choose a plan for them from Students.",
+    },
+    requestId,
+  });
+}
+
+/**
+ * POST /api/guardian/invites/:id/card — save a card for a plan on an open invite.
+ * Only for a guardian with no active link: one with a linked student pays through today's
+ * checkout. Nothing is charged here; the card is charged when the teen joins.
+ */
+router.post("/:id/card", async (req: Request, res: Response) => {
+  const requestId = req.requestId;
+  const guardianId = req.user!.id;
+  const inviteId = inviteIdSchema.safeParse(req.params.id);
+  if (!inviteId.success) return notFound(res, requestId);
+  const parsed = guardianInviteCardRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return invalidInput(res, parsed.error, requestId);
+  try {
+    if (await refuseUnlessAdult(res, guardianId, requestId)) return;
+    // A read-only early answer, so nothing is recorded or opened at Stripe for an invite that
+    // is not the caller's open one, or for a guardian who already has a linked student. The SQL
+    // function decides again, under a row lock, when the session is recorded.
+    const open = (await listOpenGuardianInvites(guardianId)).find(
+      (r) => r.id === inviteId.data && Date.parse(r.expires_at) > Date.now(),
+    );
+    if (!open) return notFound(res, requestId);
+    if ((await getAllGuardianStudentLinks(guardianId)).length > 0) {
+      return hasLinkedStudent(res, requestId);
+    }
+    if (
+      await refuseUnlessBillingConsentRecorded(
+        req,
+        res,
+        guardianId,
+        inviteId.data,
+      )
+    ) {
+      return;
+    }
+    const result = await createGuardianInviteCardSession({
+      guardianProfileId: guardianId,
+      guardianEmail: req.user?.email,
+      inviteId: inviteId.data,
+      plan: parsed.data.plan,
+      siteUrl: siteUrlFromEnv(),
+      ...(requestId ? { requestId } : {}),
+    });
+    if (!result.ok) {
+      if (result.outcome === "not_found") return notFound(res, requestId);
+      logger.info("GUARDIAN_INVITE", "card", "Card not offered", {
+        outcome: result.outcome,
+        requestId,
+      });
+      if (result.outcome === "has_active_link") {
+        return hasLinkedStudent(res, requestId);
+      }
+      return res.status(409).json({
+        error: {
+          code: "GUARDIAN_INVITE_CARD_IN_USE",
+          message: "The card on this invite can't be changed now.",
+        },
+        requestId,
+      });
+    }
+    logger.info("GUARDIAN_INVITE", "card", "Card page opened", {
+      inviteId: inviteId.data,
+      plan: parsed.data.plan,
+      requestId,
+    });
+    const body: GuardianInviteCardResponse = { data: { url: result.url } };
+    return res.json(body);
+  } catch (err: unknown) {
+    return failure(res, "card", err, requestId);
   }
 });
 

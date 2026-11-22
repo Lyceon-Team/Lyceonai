@@ -17,6 +17,8 @@ import {
   type GuardianInviteLinkResponse,
   type GuardianInviteView,
 } from "@lyceon/shared/guardian-invite-schema";
+import { guardianInviteCardResponseSchema } from "@lyceon/shared/guardian-invite-card-schema";
+import type { BillingPlanMetadata } from "@lyceon/shared/billing-schema";
 
 export const GUARDIAN_INVITES_QUERY_KEY = ["guardian-invites"] as const;
 
@@ -109,4 +111,27 @@ export function useGuardianInviteMutation<TArgs, TResult>(
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: GUARDIAN_INVITES_QUERY_KEY }),
   });
+}
+
+/**
+ * Save a card for a plan on an open invite (SCL-286). The guardian has ticked the Billing Terms
+ * box. Returns Stripe's card page; nothing is charged until the teen joins.
+ */
+export async function saveGuardianInviteCard(
+  inviteId: string,
+  plan: BillingPlanMetadata["plan"],
+): Promise<string> {
+  const res = await csrfFetch(
+    `/api/guardian/invites/${encodeURIComponent(inviteId)}/card`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ plan, acceptBillingTerms: true }),
+    },
+  );
+  if (!res.ok) {
+    throw await parseApiErrorFromResponse(res, "Could not open the card page");
+  }
+  return guardianInviteCardResponseSchema.parse(await res.json()).data.url;
 }

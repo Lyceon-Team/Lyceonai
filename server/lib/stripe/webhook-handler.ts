@@ -48,6 +48,7 @@ import {
 } from "../account";
 import type { EntitlementUpdate } from "../account";
 import { logger } from "../../logger";
+import { recordGuardianInviteCardFromSetupSession } from "../guardian-invite-card";
 import { digestId } from "./redact";
 import { EntitlementService } from "../../services/entitlement-service";
 import {
@@ -319,6 +320,13 @@ const checkoutSessionSchema = subjectSchema.extend({
     .passthrough()
     .nullish(),
   mode: z.string().nullish(),
+  /**
+   * SCL-286: a `mode: "setup"` session (a guardian saving a card on an invite) carries the
+   * SetupIntent whose payment method is the saved card, and no subscription.
+   */
+  setup_intent: z
+    .union([z.string().min(1), z.object({ id: z.string().min(1) })])
+    .nullish(),
   subscription: z
     .union([z.string().min(1), z.object({ id: z.string().min(1) })])
     .nullish(),
@@ -2685,6 +2693,29 @@ async function dispatch(event: Stripe.Event): Promise<DispatchStatus> {
       event.data.object,
       event.type,
     );
+
+    /**
+     * A CARD SAVED ON A GUARDIAN INVITE (owner ruling 2026-11-21 3; SCL-286).
+     *
+     * `mode: "setup"` moves no money and creates no subscription, so it writes NO entitlement
+     * and reaches neither the settlement gate nor fulfilment below. It records the saved card on
+     * the invite, and every outcome of that (recorded, a replay, a stale or closed invite, a
+     * session that is not ours) is a decision that SETTLES here with "processed": none of them
+     * is fixed by a retry. Only a failure a retry can fix (Stripe or the database unreachable)
+     * propagates, as everywhere in this dispatcher; swallowing it would lose a saved card with
+     * no signal. The charge itself happens later, when the teen joins
+     * (`chargeGuardianInviteOnClaim`), and its entitlement arrives through
+     * `customer.subscription.created` like any other guardian purchase.
+     */
+    if (session.mode === "setup") {
+      await recordGuardianInviteCardFromSetupSession({
+        sessionId: session.id,
+        setupIntent: session.setup_intent,
+        metadata: session.metadata,
+        eventId: event.id,
+      });
+      return "processed";
+    }
 
     /**
      * SCL-071. The settlement gate, and the reason both arms are here.

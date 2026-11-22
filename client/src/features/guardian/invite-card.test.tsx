@@ -51,6 +51,7 @@ const INVITE: GuardianInviteView = {
   expiresAt: "2026-12-06T10:00:00.000Z",
   expired: false,
   emailed: true,
+  card: null,
 };
 const URL_ = `https://lyceon.test/join/${"Q".repeat(43)}`;
 

@@ -38,6 +38,7 @@ import {
 import { checkGuardianIsAdult } from "../lib/guardian-age";
 import { dispatchQueuedMessages } from "../lib/notifications/dispatch";
 import { notificationEventId } from "../lib/notifications/event-id";
+import { chargeGuardianInviteOnClaim } from "../lib/guardian-invite-card";
 import { logger } from "../logger";
 import {
   joinTokenRequestSchema,
@@ -184,6 +185,17 @@ router.post(
         inviteId: result.invite_id,
         createdLink: result.created_link,
         requestId,
+      });
+      // Card on file (owner ruling 2026-11-21 3; SCL-286): AFTER the link's transaction has
+      // committed, charge the card the guardian saved on this invite, if any. The guard is in
+      // SQL (claimed by this student, link active, exactly one winner); this never throws, and
+      // the teen's answer is "claimed" whatever the charge does. A repeated claim by the same
+      // student reaches here too and tries a released charge again under the same key; the /join
+      // page itself does not repeat a claim (SCL-286 PR notes the gap).
+      await chargeGuardianInviteOnClaim({
+        inviteId: result.invite_id,
+        studentProfileId: studentId,
+        ...(requestId ? { requestId } : {}),
       });
       const body: JoinClaimResponse = { data: { outcome: "claimed" } };
       return res.json(body);

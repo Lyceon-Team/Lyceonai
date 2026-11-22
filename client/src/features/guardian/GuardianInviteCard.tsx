@@ -11,7 +11,9 @@
  * **Copy a link instead** makes a link without sending anything. Each open invite shows when its
  * link was emailed or made and when it stops working, with Resend, Copy new link and Cancel.
  * Every new link replaces the one before it (the server keeps only a hash, so a link can be shown
- * only once, right after it is made). At most 3 invites can be open at a time.
+ * only once, right after it is made). At most 3 invites can be open at a time. An open invite can
+ * also carry a card saved for a plan, charged only when the teen joins (ruling 3; SCL-286; see
+ * GuardianInviteCardForm).
  */
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,7 @@ import {
   GUARDIAN_INVITE_MAX_OPEN,
   type GuardianInviteView,
 } from "@lyceon/shared/guardian-invite-schema";
+import { GuardianInviteCardForm } from "./GuardianInviteCardForm";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -88,6 +91,7 @@ function InviteRow({
   onFreshLink: (url: string) => void;
 }): JSX.Element {
   const [resending, setResending] = useState(false);
+  const [cardOpen, setCardOpen] = useState(false);
   const [email, setEmail] = useState("");
   const resend = useGuardianInviteMutation((addr: string) =>
     resendGuardianInvite(invite.id, addr),
@@ -197,6 +201,14 @@ function InviteRow({
       <p className="m-0 text-base text-muted-foreground">
         A new link replaces the earlier one, which stops working.
       </p>
+      {!invite.expired && (
+        <InviteCardOnFile
+          invite={invite}
+          open={cardOpen}
+          onOpen={() => setCardOpen(true)}
+          onClose={() => setCardOpen(false)}
+        />
+      )}
       {failed !== null && (
         <p
           role="alert"
@@ -207,6 +219,71 @@ function InviteRow({
         </p>
       )}
     </li>
+  );
+}
+
+const PLAN_WORD: Record<"monthly" | "quarterly" | "yearly", string> = {
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  yearly: "Yearly",
+};
+
+/**
+ * The optional card on file for this invite (owner ruling 2026-11-21 3; SCL-286): saved, being
+ * saved, or an offer to save one. Charged only when the teen joins.
+ */
+function InviteCardOnFile({
+  invite,
+  open,
+  onOpen,
+  onClose,
+}: {
+  invite: GuardianInviteView;
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}): JSX.Element {
+  if (open) {
+    return <GuardianInviteCardForm inviteId={invite.id} onClose={onClose} />;
+  }
+  const card = invite.card;
+  if (card !== null && card.status === "saved") {
+    return (
+      <div className="flex flex-col gap-2" data-testid="invite-card-saved">
+        <p className="m-0 text-base">
+          Card saved for the {PLAN_WORD[card.plan]} plan. We&rsquo;ll charge it
+          when your teen joins.
+        </p>
+        <Button
+          variant="ghost"
+          className="min-h-[44px] self-start text-base"
+          onClick={onOpen}
+          data-testid="invite-card-change"
+        >
+          Change card or plan
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {card !== null && card.status === "pending" && (
+        <p
+          className="m-0 text-base text-muted-foreground"
+          data-testid="invite-card-pending"
+        >
+          Finishing saving your card. This can take a minute.
+        </p>
+      )}
+      <Button
+        variant="ghost"
+        className="min-h-[44px] self-start text-base"
+        onClick={onOpen}
+        data-testid="invite-card-open"
+      >
+        Save a card now (optional)
+      </Button>
+    </div>
   );
 }
 

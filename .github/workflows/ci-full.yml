@@ -659,6 +659,20 @@ jobs:
           PGPASSWORD: postgres
         run: bash scripts/ci/guardian-invites.mutations.sh
 
+      # Card on file for a guardian invite (owner ruling 2026-11-21 3; SCL-286): no charge without
+      # an active link, by the claimant, exactly once; a stale setup session; off-session,
+      # error_if_incomplete, the invite's idempotency key; a decline is a decline; already funded;
+      # the country gate; the claim charges; the setup webhook records; a linked guardian is never
+      # sent to Stripe (C1-C13). Each must turn its named check red.
+      - name: Guardian invite card mutations (planted defects must fail)
+        if: matrix.group == 'social-lisa'
+        env:
+          PGHOST: localhost
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash scripts/ci/guardian-invite-card.mutations.sh
+
       # LISA curriculum retrieval store (SCL-231, approved by Karl 2026-10-15): plants a dropped skill filter, a
       # dropped status filter, the bare ORDER BY/LIMIT form that comes back short under HNSW, a
       # reversed tie-break, a removed review CHECK, an empty-array-passing CHECK and a re-ingest

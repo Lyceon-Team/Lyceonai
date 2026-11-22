@@ -22,9 +22,9 @@ export const GENERATED_LEGAL_REGISTRY: Readonly<
   "billing-terms": {
     slug: "billing-terms",
     title: "LYCEON Billing Terms",
-    version: "2.0",
-    effectiveDate: "2026-10-07",
-    contentHash: "sha256:f39f920f7231aaad5fac9d008a11c68821c5ac9c5e83b3cc1eeacadff333e648",
+    version: "3.0",
+    effectiveDate: "2026-11-22",
+    contentHash: "sha256:38734162833ad54055b989f1747661a0d4fbde42ed729be5fcdf5f9070838283",
   },
   "community-guidelines": {
     slug: "community-guidelines",
@@ -64,9 +64,9 @@ export const GENERATED_LEGAL_REGISTRY: Readonly<
   "refund-policy": {
     slug: "refund-policy",
     title: "LYCEON Refund Policy",
-    version: "2.0",
-    effectiveDate: "2026-09-11",
-    contentHash: "sha256:f19c4cf98c613b59dc867adce729b82dca6aca8b3e84073c86e4d91b2752c745",
+    version: "3.0",
+    effectiveDate: "2026-11-22",
+    contentHash: "sha256:072c47d630e282b9d66b8abaf5a7249e18f801a2a36537a3a5973cddc0de2bc6",
   },
   "student-terms": {
     slug: "student-terms",
@@ -78,9 +78,9 @@ export const GENERATED_LEGAL_REGISTRY: Readonly<
   "subscription-auto-renewal-notice": {
     slug: "subscription-auto-renewal-notice",
     title: "LYCEON Subscription and Auto-Renewal Notice",
-    version: "2.0",
-    effectiveDate: "2026-09-11",
-    contentHash: "sha256:8d6d96950da9caa9d74a1732e7d785d1619b0c0e1e1498f0b2218bebd722545e",
+    version: "3.0",
+    effectiveDate: "2026-11-22",
+    contentHash: "sha256:3eb2f9aaf2be2c2012cea5be814fb1983ec48b37b139027bedb82ea4662837cb",
   },
   "trust-and-safety": {
     slug: "trust-and-safety",
