@@ -18,7 +18,7 @@ import {
   type GuardianInviteView,
 } from "@lyceon/shared/guardian-invite-schema";
 
-export const GUARDIAN_INVITES_QUERY_KEY = ["guardian-invites"] as const;
+const GUARDIAN_INVITES_QUERY_KEY = ["guardian-invites"] as const;
 
 type InviteLink = GuardianInviteLinkResponse["data"];
 

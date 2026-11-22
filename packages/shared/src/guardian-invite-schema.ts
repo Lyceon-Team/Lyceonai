@@ -17,16 +17,15 @@ import { z } from "zod";
 /** At most this many open, unexpired invites per guardian (ruling 5). Enforced in SQL. */
 export const GUARDIAN_INVITE_MAX_OPEN = 3;
 
-/** A link lasts this long from the moment it is issued (ruling 5). Enforced in SQL. */
-export const GUARDIAN_INVITE_TTL_DAYS = 14;
+/* A link lasts 14 days from the moment it is issued (ruling 5); enforced in SQL only. */
 
 /** A token as it appears in /join/<token>: 32 random bytes, base64url, no padding. */
-export const guardianInviteTokenSchema = z
+const guardianInviteTokenSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{43}$/);
 
 /** The teen's address, normalised the same way the existing invite normalises it. */
-export const guardianInviteEmailSchema = z
+const guardianInviteEmailSchema = z
   .string()
   .trim()
   .toLowerCase()
@@ -120,7 +119,7 @@ export const joinLookupResponseSchema = z
   })
   .strict();
 export type JoinLookupResponse = z.infer<typeof joinLookupResponseSchema>;
-export type JoinLookupState = JoinLookupResponse["data"]["state"];
+type JoinLookupState = JoinLookupResponse["data"]["state"];
 
 /**
  * What a claim answers.

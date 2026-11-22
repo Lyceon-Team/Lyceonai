@@ -23,7 +23,7 @@ export type GuardianAgeCheck =
   | { ok: true }
   | { ok: false; refusal: RoleChoiceRefusal };
 
-export const GUARDIAN_DATE_OF_BIRTH_REQUIRED: RoleChoiceRefusal = {
+const GUARDIAN_DATE_OF_BIRTH_REQUIRED: RoleChoiceRefusal = {
   status: 403,
   code: "GUARDIAN_DATE_OF_BIRTH_REQUIRED",
   message: "Add your date of birth to your account before linking a student.",
