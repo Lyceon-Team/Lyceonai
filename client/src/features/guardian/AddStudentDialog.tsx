@@ -161,8 +161,8 @@ export function AddStudentDialog({
         <DialogHeader>
           <DialogTitle>Add a student</DialogTitle>
           <DialogDescription className="text-base">
-            Your student finds their 6-character link code on their Profile
-            page, under Settings. Codes expire after 24 hours and work once.
+            Your student finds their 6-character link code in their Settings,
+            under Guardian. Codes expire after 24 hours and work once.
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={submit}>
