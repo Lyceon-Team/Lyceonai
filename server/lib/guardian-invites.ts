@@ -58,12 +58,25 @@ const inviteRowSchema = z
     token_issued_at: z.string(),
     expires_at: z.string(),
     email_hash: z.string().nullable(),
+    // The card on file (20261207000000, SCL-286). Every function returning a whole row carries
+    // them; a NULL plan is no card.
+    card_plan: z.enum(["monthly", "quarterly", "yearly"]).nullable(),
+    charge_status: z.enum([
+      "none",
+      "card_pending",
+      "card_saved",
+      "charging",
+      "charged",
+      "payment_failed",
+      "already_funded",
+      "not_charged",
+    ]),
   })
   .passthrough();
 export type GuardianInviteRow = z.infer<typeof inviteRowSchema>;
 
 const INVITE_COLUMNS =
-  "id, guardian_profile_id, status, token_issued_at, expires_at, email_hash";
+  "id, guardian_profile_id, status, token_issued_at, expires_at, email_hash, card_plan, charge_status";
 
 /**
  * A composite-returning function with no matching row comes back as a row of NULLs, not as
@@ -106,7 +119,22 @@ export function toGuardianInviteView(
     expiresAt: row.expires_at,
     expired: Date.parse(row.expires_at) <= nowMs,
     emailed: row.email_hash !== null,
+    card: cardView(row),
   };
+}
+
+/**
+ * What the guardian's card shows about a saved card. Only an OPEN invite is listed, so the charge
+ * states after a claim never reach the view; a pending session with no plan yet is not a card.
+ */
+function cardView(row: GuardianInviteRow): GuardianInviteView["card"] {
+  if (row.charge_status === "card_saved" && row.card_plan !== null) {
+    return { plan: row.card_plan, status: "saved" };
+  }
+  if (row.charge_status === "card_pending" && row.card_plan !== null) {
+    return { plan: row.card_plan, status: "pending" };
+  }
+  return null;
 }
 
 /** The guardian's open invites, oldest first, expired ones included (they can be renewed). */

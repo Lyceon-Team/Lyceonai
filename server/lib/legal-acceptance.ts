@@ -101,6 +101,7 @@ const outboxPayloadSchema = z.object({
     "google_continue_click",
     "guardian_link_redeem",
     "guardian_invite_issue",
+    "guardian_invite_card",
     "stripe_checkout",
     "reconsent_prompt",
   ]),

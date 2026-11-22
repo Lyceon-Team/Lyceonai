@@ -13,6 +13,7 @@
  * Nothing here ever says whether an email address has an account.
  */
 import { z } from "zod";
+import { billingPeriodSchema } from "./billing-schema";
 
 /** At most this many open, unexpired invites per guardian (ruling 5). Enforced in SQL. */
 export const GUARDIAN_INVITE_MAX_OPEN = 3;
@@ -60,6 +61,18 @@ export const guardianInviteViewSchema = z
     expired: z.boolean(),
     /** The current link was emailed (true) or only copied (false). */
     emailed: z.boolean(),
+    /**
+     * The card saved for this invite, if any (owner ruling 2026-11-21 3; SCL-286). `pending`: the
+     * guardian opened Stripe's card page and it has not been completed yet. `saved`: the card is
+     * on file and will be charged for `plan` when the teen joins. Never a card detail.
+     */
+    card: z
+      .object({
+        plan: billingPeriodSchema,
+        status: z.enum(["pending", "saved"]),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 export type GuardianInviteView = z.infer<typeof guardianInviteViewSchema>;

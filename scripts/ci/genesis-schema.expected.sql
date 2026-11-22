@@ -1144,6 +1144,61 @@ $$;
 
 
 --
+-- Name: begin_guardian_invite_charge_audited(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.begin_guardian_invite_charge_audited(p_invite_id uuid, p_student_id uuid, p_request_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_row public.guardian_invites;
+BEGIN
+  SELECT * INTO v_row FROM public.guardian_invites
+   WHERE id = p_invite_id
+   FOR UPDATE;
+
+  IF NOT FOUND OR v_row.status <> 'claimed'
+     OR v_row.claimed_by_profile_id IS DISTINCT FROM p_student_id THEN
+    RETURN jsonb_build_object('outcome', 'not_claimed');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.guardian_links l
+     WHERE l.id = v_row.link_id
+       AND l.status = 'active'
+       AND l.guardian_profile_id = v_row.guardian_profile_id
+       AND l.student_profile_id = p_student_id
+  ) THEN
+    RETURN jsonb_build_object('outcome', 'no_active_link');
+  END IF;
+
+  IF v_row.charge_status <> 'card_saved' THEN
+    RETURN jsonb_build_object('outcome', 'no_card');
+  END IF;
+
+  UPDATE public.guardian_invites
+     SET charge_status = 'charging',
+         charge_started_at = now(),
+         updated_at = now()
+   WHERE id = p_invite_id;
+
+  PERFORM public.guardian_invite_charge_audit(
+    'guardian_invite_charge_started', v_row.guardian_profile_id, p_student_id, p_invite_id,
+    jsonb_build_object('plan', v_row.card_plan),
+    p_request_id
+  );
+  RETURN jsonb_build_object(
+    'outcome', 'begin',
+    'guardian_profile_id', v_row.guardian_profile_id,
+    'plan', v_row.card_plan,
+    'payment_method_id', v_row.card_payment_method_id
+  );
+END;
+$$;
+
+
+--
 -- Name: bump_projection_refresh_counter(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4155,7 +4210,20 @@ CREATE TABLE public.guardian_invites (
     cancelled_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    card_plan text,
+    card_setup_session_id text,
+    card_payment_method_id text,
+    card_saved_at timestamp with time zone,
+    charge_status text DEFAULT 'none'::text NOT NULL,
+    charge_failure_code text,
+    stripe_subscription_id text,
+    charge_started_at timestamp with time zone,
+    charged_at timestamp with time zone,
     CONSTRAINT guardian_invites_cancelled_has_time CHECK (((status = 'cancelled'::text) = (cancelled_at IS NOT NULL))),
+    CONSTRAINT guardian_invites_card_plan_check CHECK (((card_plan IS NULL) OR (card_plan = ANY (ARRAY['monthly'::text, 'quarterly'::text, 'yearly'::text])))),
+    CONSTRAINT guardian_invites_card_saved_has_card CHECK (((charge_status = ANY (ARRAY['none'::text, 'card_pending'::text])) OR ((card_payment_method_id IS NOT NULL) AND (card_plan IS NOT NULL) AND (card_saved_at IS NOT NULL)))),
+    CONSTRAINT guardian_invites_charge_status_check CHECK ((charge_status = ANY (ARRAY['none'::text, 'card_pending'::text, 'card_saved'::text, 'charging'::text, 'charged'::text, 'payment_failed'::text, 'already_funded'::text, 'not_charged'::text]))),
+    CONSTRAINT guardian_invites_charged_has_subscription CHECK (((charge_status = 'charged'::text) = ((stripe_subscription_id IS NOT NULL) AND (charged_at IS NOT NULL)))),
     CONSTRAINT guardian_invites_claimed_has_time CHECK (((status = 'claimed'::text) = (claimed_at IS NOT NULL))),
     CONSTRAINT guardian_invites_email_is_sha256_hex CHECK (((email_hash IS NULL) OR (email_hash ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT guardian_invites_only_claimed_has_claimant CHECK (((status = 'claimed'::text) OR (claimed_by_profile_id IS NULL))),
@@ -10199,6 +10267,58 @@ COMMENT ON FUNCTION public.financial_record_retention_days() IS 'Privacy Policy 
 
 
 --
+-- Name: finish_guardian_invite_charge_audited(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.finish_guardian_invite_charge_audited(p_invite_id uuid, p_outcome text, p_subscription_id text, p_failure_code text, p_request_id text DEFAULT NULL::text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_row public.guardian_invites;
+  v_next text;
+BEGIN
+  IF p_outcome NOT IN ('charged', 'payment_failed', 'already_funded', 'not_charged', 'release') THEN
+    RAISE EXCEPTION 'unknown charge outcome %', p_outcome USING ERRCODE = '22023';
+  END IF;
+  IF p_outcome = 'charged'
+     AND (p_subscription_id IS NULL OR p_subscription_id !~ '^sub_[A-Za-z0-9_]+$') THEN
+    RAISE EXCEPTION 'a charged invite needs its subscription id' USING ERRCODE = '22023';
+  END IF;
+  IF p_failure_code IS NOT NULL AND p_failure_code !~ '^[a-z0-9_]{1,64}$' THEN
+    RAISE EXCEPTION 'failure code is not a code' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_row FROM public.guardian_invites
+   WHERE id = p_invite_id
+   FOR UPDATE;
+  IF NOT FOUND OR v_row.charge_status <> 'charging' THEN
+    RETURN false;
+  END IF;
+
+  v_next := CASE p_outcome WHEN 'release' THEN 'card_saved' ELSE p_outcome END;
+
+  UPDATE public.guardian_invites
+     SET charge_status = v_next,
+         stripe_subscription_id = CASE WHEN p_outcome = 'charged' THEN p_subscription_id ELSE NULL END,
+         charged_at = CASE WHEN p_outcome = 'charged' THEN now() ELSE NULL END,
+         charge_failure_code = CASE WHEN p_outcome IN ('charged', 'release') THEN NULL ELSE p_failure_code END,
+         charge_started_at = CASE WHEN p_outcome = 'release' THEN NULL ELSE charge_started_at END,
+         updated_at = now()
+   WHERE id = p_invite_id;
+
+  PERFORM public.guardian_invite_charge_audit(
+    'guardian_invite_charge_finished', v_row.guardian_profile_id, v_row.claimed_by_profile_id,
+    p_invite_id,
+    jsonb_build_object('outcome', p_outcome, 'code', p_failure_code),
+    p_request_id
+  );
+  RETURN true;
+END;
+$_$;
+
+
+--
 -- Name: flag_conversation_for_crisis_review(uuid, uuid, text, uuid, numeric, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -10875,6 +10995,28 @@ BEGIN
   IF p_action NOT IN ('guardian_invite_issued', 'guardian_invite_reissued',
                       'guardian_invite_cancelled', 'guardian_invite_claimed') THEN
     RAISE EXCEPTION 'unknown guardian invite audit action %', p_action USING ERRCODE = '22023';
+  END IF;
+  INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
+  VALUES (
+    p_actor, p_target, p_action, p_changes,
+    jsonb_build_object('request_id', p_request_id, 'invite_id', p_invite_id)
+  );
+END;
+$$;
+
+
+--
+-- Name: guardian_invite_charge_audit(text, uuid, uuid, uuid, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guardian_invite_charge_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+BEGIN
+  IF p_action NOT IN ('guardian_invite_card_session', 'guardian_invite_card_saved',
+                      'guardian_invite_charge_started', 'guardian_invite_charge_finished') THEN
+    RAISE EXCEPTION 'unknown guardian invite charge audit action %', p_action USING ERRCODE = '22023';
   END IF;
   INSERT INTO public.audit_logs (actor_profile_id, target_profile_id, action, changes, context)
   VALUES (
@@ -14270,6 +14412,68 @@ COMMENT ON FUNCTION public.record_exam_score_report(p_student_id uuid, p_occasio
 
 
 --
+-- Name: record_guardian_invite_card_audited(uuid, uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.record_guardian_invite_card_audited(p_invite_id uuid, p_guardian_id uuid, p_session_id text, p_payment_method_id text, p_plan text, p_request_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_row public.guardian_invites;
+BEGIN
+  IF p_plan IS NULL OR p_plan NOT IN ('monthly', 'quarterly', 'yearly') THEN
+    RAISE EXCEPTION 'unknown plan' USING ERRCODE = '22023';
+  END IF;
+  IF p_payment_method_id IS NULL OR p_payment_method_id !~ '^pm_[A-Za-z0-9_]+$' THEN
+    RAISE EXCEPTION 'payment method id is not a PaymentMethod id' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_row FROM public.guardian_invites
+   WHERE id = p_invite_id
+     AND guardian_profile_id = p_guardian_id
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('outcome', 'not_found');
+  END IF;
+
+  IF v_row.card_setup_session_id IS DISTINCT FROM p_session_id THEN
+    RETURN jsonb_build_object('outcome', 'stale_session');
+  END IF;
+
+  IF v_row.charge_status = 'card_saved'
+     AND v_row.card_payment_method_id = p_payment_method_id THEN
+    RETURN jsonb_build_object('outcome', 'already_recorded');
+  END IF;
+
+  IF v_row.status <> 'open' OR v_row.expires_at <= now() THEN
+    RETURN jsonb_build_object('outcome', 'invite_closed');
+  END IF;
+
+  IF v_row.charge_status NOT IN ('card_pending', 'card_saved') THEN
+    RETURN jsonb_build_object('outcome', 'card_in_use');
+  END IF;
+
+  UPDATE public.guardian_invites
+     SET card_plan = p_plan,
+         card_payment_method_id = p_payment_method_id,
+         card_saved_at = now(),
+         charge_status = 'card_saved',
+         updated_at = now()
+   WHERE id = p_invite_id;
+
+  PERFORM public.guardian_invite_charge_audit(
+    'guardian_invite_card_saved', p_guardian_id, NULL, p_invite_id,
+    jsonb_build_object('plan', p_plan),
+    p_request_id
+  );
+  RETURN jsonb_build_object('outcome', 'recorded');
+END;
+$_$;
+
+
+--
 -- Name: mastery_derivation_gap_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -16323,6 +16527,61 @@ BEGIN
   RETURN jsonb_build_object('enabled', p_enabled);
 END;
 $$;
+
+
+--
+-- Name: set_guardian_invite_setup_session_audited(uuid, uuid, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_guardian_invite_setup_session_audited(p_guardian_id uuid, p_invite_id uuid, p_session_id text, p_plan text, p_request_id text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $_$
+DECLARE
+  v_row public.guardian_invites;
+BEGIN
+  IF p_session_id IS NULL OR p_session_id !~ '^cs_[A-Za-z0-9_]+$' THEN
+    RAISE EXCEPTION 'setup session id is not a Checkout Session id' USING ERRCODE = '22023';
+  END IF;
+  IF p_plan IS NULL OR p_plan NOT IN ('monthly', 'quarterly', 'yearly') THEN
+    RAISE EXCEPTION 'unknown plan' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO v_row FROM public.guardian_invites
+   WHERE id = p_invite_id
+     AND guardian_profile_id = p_guardian_id
+   FOR UPDATE;
+
+  IF NOT FOUND OR v_row.status <> 'open' OR v_row.expires_at <= now() THEN
+    RETURN jsonb_build_object('outcome', 'not_found');
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM public.guardian_links
+              WHERE guardian_profile_id = p_guardian_id AND status = 'active') THEN
+    RETURN jsonb_build_object('outcome', 'has_active_link');
+  END IF;
+
+  IF v_row.charge_status NOT IN ('none', 'card_pending', 'card_saved') THEN
+    RETURN jsonb_build_object('outcome', 'card_in_use');
+  END IF;
+
+  -- A saved card stays saved, with its own plan, until a newer session completes; only a card
+  -- not yet saved shows the plan just chosen.
+  UPDATE public.guardian_invites
+     SET card_setup_session_id = p_session_id,
+         card_plan = CASE WHEN charge_status IN ('none', 'card_pending') THEN p_plan ELSE card_plan END,
+         charge_status = CASE WHEN charge_status = 'none' THEN 'card_pending' ELSE charge_status END,
+         updated_at = now()
+   WHERE id = p_invite_id;
+
+  PERFORM public.guardian_invite_charge_audit(
+    'guardian_invite_card_session', p_guardian_id, NULL, p_invite_id,
+    jsonb_build_object('previous_charge_status', v_row.charge_status, 'plan', p_plan),
+    p_request_id
+  );
+  RETURN jsonb_build_object('outcome', 'recorded');
+END;
+$_$;
 
 
 --
@@ -20055,7 +20314,7 @@ CREATE TABLE public.legal_acceptances (
     content_hash text,
     source_reference text,
     CONSTRAINT legal_acceptances_actor_type_check CHECK ((actor_type = ANY (ARRAY['student'::text, 'parent'::text]))),
-    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'guardian_invite_issue'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
+    CONSTRAINT legal_acceptances_consent_source_check CHECK ((consent_source = ANY (ARRAY['email_signup_form'::text, 'google_continue_pre_oauth'::text, 'google_continue_click'::text, 'guardian_link_redeem'::text, 'guardian_invite_issue'::text, 'guardian_invite_card'::text, 'stripe_checkout'::text, 'reconsent_prompt'::text]))),
     CONSTRAINT legal_acceptances_content_hash_shape CHECK (((content_hash IS NULL) OR (content_hash ~ '^sha256:[0-9a-f]{64}$'::text)))
 );
 
@@ -29537,6 +29796,14 @@ GRANT ALL ON FUNCTION public.backfill_recompute_student(p_student_id uuid, p_t_n
 
 
 --
+-- Name: FUNCTION begin_guardian_invite_charge_audited(p_invite_id uuid, p_student_id uuid, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.begin_guardian_invite_charge_audited(p_invite_id uuid, p_student_id uuid, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.begin_guardian_invite_charge_audited(p_invite_id uuid, p_student_id uuid, p_request_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION bump_projection_refresh_counter(p_student_id uuid, p_section text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -30696,6 +30963,14 @@ GRANT ALL ON FUNCTION public.financial_record_retention_days() TO service_role;
 
 
 --
+-- Name: FUNCTION finish_guardian_invite_charge_audited(p_invite_id uuid, p_outcome text, p_subscription_id text, p_failure_code text, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.finish_guardian_invite_charge_audited(p_invite_id uuid, p_outcome text, p_subscription_id text, p_failure_code text, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.finish_guardian_invite_charge_audited(p_invite_id uuid, p_outcome text, p_subscription_id text, p_failure_code text, p_request_id text) TO service_role;
+
+
+--
 -- Name: FUNCTION flag_conversation_for_crisis_review(p_conversation_id uuid, p_student_id uuid, p_source text, p_signature_id uuid, p_model_confidence numeric, p_category text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -30805,6 +31080,14 @@ GRANT ALL ON FUNCTION public.guardian_daily_digest_notify(p_now timestamp with t
 
 REVOKE ALL ON FUNCTION public.guardian_invite_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.guardian_invite_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION guardian_invite_charge_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.guardian_invite_charge_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.guardian_invite_charge_audit(p_action text, p_actor uuid, p_target uuid, p_invite_id uuid, p_changes jsonb, p_request_id text) TO service_role;
 
 
 --
@@ -31612,6 +31895,14 @@ GRANT ALL ON FUNCTION public.record_exam_score_report(p_student_id uuid, p_occas
 
 
 --
+-- Name: FUNCTION record_guardian_invite_card_audited(p_invite_id uuid, p_guardian_id uuid, p_session_id text, p_payment_method_id text, p_plan text, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.record_guardian_invite_card_audited(p_invite_id uuid, p_guardian_id uuid, p_session_id text, p_payment_method_id text, p_plan text, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.record_guardian_invite_card_audited(p_invite_id uuid, p_guardian_id uuid, p_session_id text, p_payment_method_id text, p_plan text, p_request_id text) TO service_role;
+
+
+--
 -- Name: TABLE mastery_derivation_gap_ledger; Type: ACL; Schema: public; Owner: -
 --
 
@@ -31903,6 +32194,14 @@ GRANT ALL ON FUNCTION public.select_practice_pool_random(p_sections text[], p_do
 
 REVOKE ALL ON FUNCTION public.set_guardian_daily_digest_email(p_guardian_id uuid, p_enabled boolean, p_now timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.set_guardian_daily_digest_email(p_guardian_id uuid, p_enabled boolean, p_now timestamp with time zone) TO service_role;
+
+
+--
+-- Name: FUNCTION set_guardian_invite_setup_session_audited(p_guardian_id uuid, p_invite_id uuid, p_session_id text, p_plan text, p_request_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_guardian_invite_setup_session_audited(p_guardian_id uuid, p_invite_id uuid, p_session_id text, p_plan text, p_request_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_guardian_invite_setup_session_audited(p_guardian_id uuid, p_invite_id uuid, p_session_id text, p_plan text, p_request_id text) TO service_role;
 
 
 --
