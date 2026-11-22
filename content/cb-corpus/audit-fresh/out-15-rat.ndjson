@@ -1,0 +1,84 @@
+{"id":"4e375d1f","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Straightforward cm-to-m conversion using a single conversion factor (÷100)."}
+{"id":"763e6769","sub_skills":["RAT.9","RAT.2"],"clusters":["CL.0086","CL.0233"],"distractors":[],"why":"Set up equivalent ratios a:b = c:d, cross-multiply to find the unknown in terms of the given variable."}
+{"id":"4347a032","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Single-step conversion from tablespoons to teaspoons using a given conversion factor."}
+{"id":"d7a3179d","sub_skills":["RAT.1","RAT.7"],"clusters":["CL.0032","CL.0235"],"distractors":[],"why":"Convert inches to yards, chaining inches→feet→yards (or using 1 yd = 36 in)."}
+{"id":"808f7d6c","sub_skills":["RAT.9","RAT.10"],"clusters":["CL.0086","CL.0234"],"distractors":[],"why":"Given a ratio equation, manipulate to find an equivalent expression; proportion reasoning."}
+{"id":"3318d37b","sub_skills":["RAT.3","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Multiply price-per-pound rate by number of pounds to get total cost."}
+{"id":"99550621","sub_skills":["RAT.4","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Divide room area (5400 sq ft) by per-person area (8 sq ft) to find max people: 675."}
+{"id":"4837406c","sub_skills":["RAT.3","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Divide distance by constant speed (cm/s) to find time in seconds."}
+{"id":"94660ba8","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert speed from yards per hour to miles per hour using a single conversion factor."}
+{"id":"551c52b9","sub_skills":["RAT.3","RAT.10"],"clusters":["CL.0060","CL.0234"],"distractors":[],"why":"Build an expression for earnings: rate (d dollars per h hours) times number of hours."}
+{"id":"c47256ca","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert a speed from one length unit per second to feet per second using a single factor."}
+{"id":"8bf3f67a","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert fathoms to feet using a single conversion factor."}
+{"id":"7270d642","sub_skills":["RAT.3","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Multiply speed (m/s) by time (s) to get distance in meters."}
+{"id":"3ac09984","sub_skills":["RAT.1","RAT.13"],"clusters":["CL.0032","CL.0060","CL.0098"],"distractors":[],"why":"Multi-step: convert 7500 pesos to dollars (×0.075 = $562.50), then subtract 2% fee (×0.98 = $551.25)."}
+{"id":"2cdefcb1","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert meters to centimeters using a single factor (×100)."}
+{"id":"85b33aa8","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert yards to miles using a single conversion factor."}
+{"id":"06a152cd","sub_skills":["RAT.8","RAT.7"],"clusters":["CL.0060","CL.0032","CL.0235"],"distractors":[],"why":"Multiply 2.5 oz/muffin × 48 = 120 oz, then convert oz to lbs (÷16 = 7.5). Two-step: rate application then unit conversion."}
+{"id":"d0d9ede4","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert yards to feet using a single conversion factor (×3)."}
+{"id":"24ad9dcb","sub_skills":["RAT.8","RAT.2"],"clusters":["CL.0060","CL.0004"],"distractors":[],"why":"Compute weight on each planet as a fraction of 100 lbs, then subtract to find the difference."}
+{"id":"7cd1c6db","sub_skills":["RAT.3","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Divide distance by speed (cm/s) to find time in seconds."}
+{"id":"ba62b0b0","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert kilograms to grams using a single factor (×1000)."}
+{"id":"fe1ec415","sub_skills":["RAT.3","RAT.9"],"clusters":["CL.0086","CL.0060"],"distractors":[],"why":"Set up proportion: lbs/min rate, then solve for time needed for a different number of pounds."}
+{"id":"0700a2d5","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert rods to yards using a single conversion factor."}
+{"id":"c81499e1","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert kilograms to grams (×1000)."}
+{"id":"e9841407","sub_skills":["RAT.11"],"clusters":["CL.0075"],"distractors":[],"why":"Simplify ratio 7:28 to 1:4 by dividing both parts by GCF (7)."}
+{"id":"aeeaec96","sub_skills":["RAT.1","RAT.7"],"clusters":["CL.0032","CL.0235"],"distractors":[],"why":"Convert inches to yards, potentially chaining inches→feet→yards."}
+{"id":"2d16d62c","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert fathoms to feet using a single conversion factor."}
+{"id":"6310adbc","sub_skills":["RAT.9","RAT.2"],"clusters":["CL.0086","CL.0094"],"distractors":[],"why":"Ratio t:u = 1:2 means u = 2t; substitute the given condition and solve for u."}
+{"id":"da9ffcf6","sub_skills":["RAT.9","RAT.2"],"clusters":["CL.0086","CL.0083"],"distractors":[],"why":"Use the given ratio of lengths to set up a proportion and find the unknown segment length."}
+{"id":"3f236a64","sub_skills":["RAT.2","RAT.9"],"clusters":["CL.0072","CL.0166","CL.0083"],"distractors":[],"why":"Read constant y/x ratio from the table (4:1), then apply to x=40 to get k=160."}
+{"id":"e3d49511","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236"],"distractors":[],"why":"Compute population density by dividing the number of raccoons by the area in square miles."}
+{"id":"be35c117","sub_skills":["RAT.3"],"clusters":["CL.0060"],"distractors":[],"why":"Divide total revolutions by total minutes to find revolutions per minute."}
+{"id":"15617f62","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0047"],"distractors":[],"why":"Rearrange density = population/area to area = population/density."}
+{"id":"312ba47c","sub_skills":["RAT.9","RAT.2"],"clusters":["CL.0086"],"distractors":[],"why":"Use the ratio of black:red pens to set up a proportion and find the number of red pens."}
+{"id":"000259aa","sub_skills":["RAT.3"],"clusters":["CL.0060"],"distractors":[],"why":"Divide 2100 miles by 120 days = 17.5 miles per day."}
+{"id":"fe4c1c9e","sub_skills":["RAT.3","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Multiply rate (items/hour) by number of hours to get total items produced."}
+{"id":"86636d8f","sub_skills":["RAT.3","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Divide total cost by price per pound to find number of pounds purchased."}
+{"id":"3f5398a6","sub_skills":["RAT.9","RAT.2"],"clusters":["CL.0086"],"distractors":[],"why":"Ratio m:k = 1:5; set up proportion 1/5 = m/25, solve m = 5."}
+{"id":"3c8fdc40","sub_skills":["RAT.1","RAT.6","RAT.3"],"clusters":["CL.0032","CL.0060"],"distractors":[],"why":"Convert posters per minute to posters per hour by multiplying rate by 60."}
+{"id":"51c9d65f","sub_skills":["RAT.2","RAT.9"],"clusters":["CL.0086","CL.0083"],"distractors":[],"why":"Ratio length:width is constant; if width changes, length must scale proportionally to maintain the ratio."}
+{"id":"674a4084","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert feet per second to yards per second (÷3)."}
+{"id":"89c39d77","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert miles per hour to yards per hour using a single conversion factor (1 mi = 1760 yd)."}
+{"id":"96c3e32d","sub_skills":["RAT.4","RAT.8"],"clusters":["CL.0060"],"distractors":[],"why":"Multiply pressure (lbs per sq in) by area (sq in) to get total force in pounds."}
+{"id":"568bc2a4","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert furlongs to feet using a single conversion factor."}
+{"id":"f6cbb04a","sub_skills":["RAT.2","RAT.10"],"clusters":["CL.0094","CL.0166"],"distractors":[],"why":"d=55t is proportional; d(3k)/d(k) = 55(3k)/55(k) = 3. Recognize proportionality and substitute."}
+{"id":"1180401d","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0004"],"distractors":[],"why":"Subtract water area from total to get land area (92.1-11.3=80.8), then divide population by land area: 621000/80.8 ≈ 7690."}
+{"id":"cb4894f9","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert miles per hour to yards per hour using a single conversion factor."}
+{"id":"eb672707","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert teaspoons to tablespoons using a single conversion factor."}
+{"id":"61b87506","sub_skills":["RAT.2","RAT.9"],"clusters":["CL.0083","CL.0086"],"distractors":[],"why":"Determine what multiplier to apply so the ratio is maintained when one quantity is scaled."}
+{"id":"73ddfdac","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert furlongs to feet using a single conversion factor."}
+{"id":"873d2838","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0047"],"distractors":[],"why":"Rearrange density = population/area to find area = population/density."}
+{"id":"7e6c745f","sub_skills":["RAT.3","RAT.11"],"clusters":["CL.0060","CL.0075","CL.0072"],"distractors":[],"why":"Compute cost per gram of protein for each food from the table, then simplify the ratio: (0.06):(0.03) = 2:1."}
+{"id":"ec787383","sub_skills":["RAT.1","RAT.6"],"clusters":["CL.0032"],"distractors":[],"why":"Convert furlongs to feet using a single conversion factor."}
+{"id":"8917ce38","sub_skills":["RAT.7","RAT.1"],"clusters":["CL.0032","CL.0235"],"distractors":[],"why":"Convert 90 km/hr to m/s: multiply by 1000 (km→m), divide by 3600 (hr→s) = 25 m/s. Two conversion factors chained."}
+{"id":"1d945139","sub_skills":["RAT.10","RAT.2"],"clusters":["CL.0234","CL.0166"],"distractors":[],"why":"Build an expression for mass of k objects from the proportional relationship: (total mass / n) × k."}
+{"id":"e21d10a7","sub_skills":["RAT.8","RAT.3"],"clusters":["CL.0060","CL.0004"],"distractors":[],"why":"Compute total days for each moon's multiple orbits, then subtract to find the difference."}
+{"id":"939c46d1","sub_skills":["RAT.1","RAT.7"],"clusters":["CL.0032","CL.0235"],"distractors":[],"why":"Convert 1 gallon to fluid ounces (1 gal = 128 fl oz), then divide by 16 fl oz per glass = 8."}
+{"id":"445dd032","sub_skills":["RAT.10","RAT.3","RAT.8"],"clusters":["CL.0234","CL.0060"],"distractors":[],"why":"Build expression for earnings at $13.50/hr for a modified number of hours using proportional reasoning."}
+{"id":"1b403590","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236"],"distractors":[],"why":"Compute density = mass (grams) ÷ volume (cm³)."}
+{"id":"181cc4d6","sub_skills":["RAT.9","RAT.2"],"clusters":["CL.0086","CL.0083"],"distractors":[],"why":"Set up proportion 15/w = 20/x to find rectangle B's width: x = 20w/15 = 4w/3."}
+{"id":"fea831fc","sub_skills":["RAT.3","RAT.7"],"clusters":["CL.0060","CL.0032"],"distractors":[],"why":"Compute rate 11 mi / 26 min, then convert min to hours: (11/26)×60 ≈ 25.4 mph."}
+{"id":"c3d78831","sub_skills":["RAT.10","RAT.9"],"clusters":["CL.0234","CL.0086"],"distractors":[],"why":"Use the coaches-to-athletes ratio to construct an expression for the number of athletes given a number of coaches."}
+{"id":"9fa781f8","sub_skills":["RAT.9"],"clusters":["CL.0086","CL.0233"],"distractors":[],"why":"Set up equivalent ratios and cross-multiply to find the unknown value."}
+{"id":"8e528129","sub_skills":["RAT.4","RAT.13"],"clusters":["CL.0060","CL.0236","CL.0237"],"distractors":[],"why":"Multiply density (0.555 oz/in³) by price ($8/oz) = $4.44/in³. Chain two rates together."}
+{"id":"3726e079","sub_skills":["RAT.13","RAT.9"],"clusters":["CL.0237","CL.0086"],"distractors":[],"why":"Chain two ratio equations (a/b and b/c) to find a/c by multiplication."}
+{"id":"3310c2ab","sub_skills":["RAT.1","RAT.7"],"clusters":["CL.0032","CL.0235"],"distractors":[],"why":"Convert quarts to fluid ounces, potentially chaining quarts→cups→fl oz."}
+{"id":"825b7490","sub_skills":["RAT.9"],"clusters":["CL.0086","CL.0233"],"distractors":[],"why":"Set up equivalent ratios and cross-multiply to find the missing value."}
+{"id":"b4912cc5","sub_skills":["RAT.4","RAT.8"],"clusters":["CL.0060","CL.0236","CL.0004"],"distractors":[],"why":"Compute population at each time (density × area), then subtract: (3.3−2.5)×100250 = 80,200."}
+{"id":"d28c29e1","sub_skills":["RAT.1","RAT.6","RAT.3"],"clusters":["CL.0032","CL.0060"],"distractors":[],"why":"Convert 4.76 mi/s to mi/hr by multiplying by 3600 = 17,136."}
+{"id":"d6456c7a","sub_skills":["RAT.5","RAT.14"],"clusters":["CL.0092","CL.0032"],"distractors":[],"why":"Convert square yards to square miles by squaring the linear conversion factor (yards per mile)."}
+{"id":"11b06e35","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0119","CL.0006"],"distractors":[],"why":"Compute cube volume (edge³) using exponent rules, then multiply by density to get mass."}
+{"id":"20b69297","sub_skills":["RAT.9","RAT.2"],"clusters":["CL.0086","CL.0083"],"distractors":[],"why":"Maintain 2:3 ratio with 5 oz blue → 7.5 oz yellow. Scale factor is 5/2 = 2.5; answer is 1.5×5 = 7.5."}
+{"id":"7d093333","sub_skills":["RAT.5","RAT.7"],"clusters":["CL.0092","CL.0032","CL.0235"],"distractors":[],"why":"Convert sq ft/hr to sq m/min: square the ft-to-m conversion factor and convert hours to minutes. Multi-step with squared units."}
+{"id":"21e539a0","sub_skills":["RAT.10","RAT.3","RAT.8"],"clusters":["CL.0234","CL.0060"],"distractors":[],"why":"Build an expression for water output: rate (oz per min) multiplied by a given number of minutes."}
+{"id":"c2e7fa6d","sub_skills":["RAT.8","RAT.13"],"clusters":["CL.0060","CL.0237","CL.0182"],"distractors":[],"why":"Flux = E × area; compute areas of two squares (larger side = k × smaller), find flux through the larger. Areas scale by k²."}
+{"id":"50b99b2d","sub_skills":["RAT.10","RAT.3","RAT.13"],"clusters":["CL.0234","CL.0060","CL.0237"],"distractors":[],"why":"Derive R's speed from distance/time, double it for S's speed, then build expression for S's travel time over a new distance."}
+{"id":"5154615f","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0119","CL.0006"],"distractors":[],"why":"Compute cube volume (edge³), then multiply by density to find mass in grams."}
+{"id":"61f61789","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0119","CL.0006"],"distractors":[],"why":"Compute cube volume (edge³), then divide mass by volume to find density in g/cm³."}
+{"id":"c7c6445f","sub_skills":["RAT.5","RAT.14"],"clusters":["CL.0092","CL.0032"],"distractors":[],"why":"Convert square miles to square yards by squaring the linear conversion factor (yards per mile)."}
+{"id":"7d721177","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0047","CL.0099"],"distractors":[],"why":"Rearrange density formula to find volume = mass/density, then take cube root to find edge length."}
+{"id":"8637294f","sub_skills":["RAT.13","RAT.9"],"clusters":["CL.0237","CL.0086"],"distractors":[],"why":"Chain two ratio equations (a/b and b/c) to find a/c by multiplying the ratios."}
+{"id":"3638f413","sub_skills":["RAT.8","RAT.13"],"clusters":["CL.0060","CL.0047"],"distractors":[],"why":"Amount doubles each year for 4 years: x × 2⁴ = 480, so x = 30. Work backward dividing by the rate."}
+{"id":"e7133228","sub_skills":["RAT.5","RAT.7"],"clusters":["CL.0092","CL.0032","CL.0235"],"distractors":[],"why":"Convert m/s² to mi/min²: convert meters to miles and square the seconds-to-minutes factor. Multi-step with squared time units."}
+{"id":"69f6717f","sub_skills":["RAT.4","RAT.12"],"clusters":["CL.0236","CL.0119","CL.0006"],"distractors":[],"why":"Compute cube volume (edge³), then multiply by density to find mass in kilograms."}

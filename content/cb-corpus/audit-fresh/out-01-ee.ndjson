@@ -1,0 +1,101 @@
+{"id":"d4d513ff","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 12x+27 = 3(4x+9). Target is factored form."}
+{"id":"974d33dc","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Add two polynomials and combine like terms: r^3+6r^2+8r+19."}
+{"id":"5d93c782","sub_skills":["EE.3"],"clusters":["CL.0037"],"distractors":[],"why":"Factor trinomial x^2+3x-40 = (x+8)(x-5). Target is product form."}
+{"id":"fd4b2aa0","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine like terms: 12x^3-5x^3 = 7x^3."}
+{"id":"508344ac","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"Distribute constant over sum: 16(x+15) = 16x+240."}
+{"id":"0354c7de","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 5x+15 = 5(x+3). Target is factored form."}
+{"id":"1e8d7183","sub_skills":["EE.3"],"clusters":["CL.0039","CL.0164"],"distractors":[],"why":"Factor GCF then difference of squares: 256w^2-676 = 4(64w^2-169) = 4(8w-13)(8w+13)."}
+{"id":"5dd53f73","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 34x+34y = 34(x+y)."}
+{"id":"e597050f","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine like terms: 9x+6x+2y+3y = 15x+5y."}
+{"id":"df747160","sub_skills":["EE.3"],"clusters":["CL.0164"],"distractors":[],"why":"Recognize and factor difference of squares inside: 17(x^2-100y^2) = 17(x-10y)(x+10y)."}
+{"id":"fb96a5b3","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Distribute then combine constants: 2(ab-3)+2 = 2ab-6+2 = 2ab-4."}
+{"id":"127b2759","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine constant like terms: 8+d^2+3 = d^2+11."}
+{"id":"50338a48","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 15w^2+8w = w(15w+8). Target is factored form."}
+{"id":"df0ef054","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Multiply two binomials (each with two terms): (2x^3+3x)(x^3-2x) = 2x^6-x^4-6x^2. Target is expanded."}
+{"id":"fd65f47f","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Add two polynomials and combine like terms: 3x^2+7x-8."}
+{"id":"67e866b5","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine like terms: 9x^2+7x^2+9x = 16x^2+9x."}
+{"id":"499cb491","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 5x^2-50xy^2 = 5x(x-10y^2). Target is factored form."}
+{"id":"290cdc2c","sub_skills":["EE.4"],"clusters":["CL.0030"],"distractors":[],"why":"Convert rational exponent to radical: x^(1/14) = 14th root of x."}
+{"id":"6e06a0a7","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"Distribute monomial over sum: 2a^2(a+3) = 2a^3+6a^2."}
+{"id":"beb86a0c","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 9x^2+5x = x(9x+5). Target is factored form."}
+{"id":"bdb0aa23","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 5x^5-6x^4+8x^3 = x^3(5x^2-6x+8)."}
+{"id":"294db8ec","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 2x^3+4 = 2(x^3+2)."}
+{"id":"18c7c3e0","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine like terms: 13x^2-7x^2 = 6x^2."}
+{"id":"9ed9f54d","sub_skills":["EE.1"],"clusters":["CL.0203","CL.0017"],"distractors":[],"why":"Treat (x^2-x) as a single unit, combine coefficients: 2+3 = 5, giving 5(x^2-x) = 5x^2-5x."}
+{"id":"8f82ad81","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"Distribute constant over sum: 4(x^2+6) = 4x^2+24."}
+{"id":"49efde89","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0053"],"distractors":[],"why":"Expand x(2x+7) = 2x^2+7x and match coefficients with 2x^2+ax to find a=7."}
+{"id":"4a5af623","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF from 2x^2+38x+10 = 2(x^2+19x+5) to identify 2 as a factor."}
+{"id":"60fdb4d4","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Distribute negative sign then combine like terms: (2x^2-4)-(-3x^2+2x-7) = 5x^2-2x+3."}
+{"id":"02489d55","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"Distribute constant: 19(x^2-7) = 19x^2-133."}
+{"id":"772de699","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 23x^3+2x^2+9x = x(23x^2+2x+9)."}
+{"id":"1d3fee25","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Distribute then combine constants: 3(x+5)-6 = 3x+15-6 = 3x+9."}
+{"id":"0536ad4f","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine like terms inside parentheses then subtract: 20w-(4w+3w) = 20w-7w = 13w."}
+{"id":"8452c42b","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine like terms: 50x^2+5x^2 = 55x^2."}
+{"id":"70482e20","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Combine like terms: 11x^3-5x^3 = 6x^3."}
+{"id":"4ac59df6","sub_skills":["EE.2"],"clusters":["CL.0006"],"distractors":[],"why":"Product of monomials: (8yz)(y)(7z) = 56y^2z^2. Multiply coefficients, add exponents."}
+{"id":"075b29b0","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Add two polynomials and combine like terms: 15x^3+5x^2+5x+2."}
+{"id":"e312081b","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Add two binomials and combine like terms: (x+5)+(2x-3) = 3x+2."}
+{"id":"72ebc024","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 16x^3y^2+14xy = 2xy(8x^2y+7)."}
+{"id":"f5c3e3b8","sub_skills":["EE.4"],"clusters":["CL.0006"],"distractors":[],"why":"Multiply monomials with negative exponents by adding exponents: m^5 q^9 z^2."}
+{"id":"c602140f","sub_skills":["EE.2","EE.3"],"clusters":["CL.0034","CL.0017","CL.0039"],"distractors":[],"why":"Distribute both products, combine, then factor common binomial (2x-3y) to get (2x-3y)(x+y)."}
+{"id":"4eaf0a3a","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006"],"distractors":[],"why":"Convert radical to rational exponent: 7th root of x^9 y^9 = (xy)^(9/7)."}
+{"id":"1dd13816","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017","CL.0053"],"distractors":[],"why":"Distribute negative sign, combine like terms to get 9x^3-11, then match coefficient b=9."}
+{"id":"0b3d25c5","sub_skills":["EE.4","EE.3"],"clusters":["CL.0165","CL.0030","CL.0006"],"distractors":[],"why":"Recognize perfect-square trinomial under 4th root: (x+4)^2, then simplify radical to sqrt(x+4)."}
+{"id":"8838a672","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Distribute negative sign and combine like terms: -2x^3-7x^2+x+3."}
+{"id":"b47419f4","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Distribute negative sign and combine fractional like terms: -1/6 x + 8."}
+{"id":"26e83bbc","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017","CL.0053"],"distractors":[],"why":"Expand f(x)*g(x) by distributing, combine like terms, match coefficients to find b=1/9."}
+{"id":"7348f046","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Distribute negative sign and combine: (2x+3)-(x-7) = x+10."}
+{"id":"3e9cc0c2","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Distribute (1-p) across the geometric sum; telescoping yields 1-p^7."}
+{"id":"d9137a84","sub_skills":["EE.2","EE.4"],"clusters":["CL.0034","CL.0006"],"distractors":[],"why":"Distribute monomial with negative exponents over a sum, applying exponent rules."}
+{"id":"16de54c7","sub_skills":["EE.3"],"clusters":["CL.0037","CL.0053"],"distractors":[],"why":"Factor trinomial 2x^2+5x-12 as (2x-3)(x+k) and match to find k=4."}
+{"id":"c3a72da5","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Add two polynomials and combine like terms: 7x^4+9x^3."}
+{"id":"24016dee","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Distribute negative sign and combine: (8x^3+8)-(x^3-2) = 7x^3+10."}
+{"id":"482a445b","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0164","CL.0017"],"distractors":[],"why":"Expand (x^2+11)^2 and use difference of squares for (x-5)(x+5), then combine: x^4+23x^2+96."}
+{"id":"1be909aa","sub_skills":["EE.4"],"clusters":["CL.0006"],"distractors":[],"why":"Quotient of powers of same base: h^15/h^5 = h^10, q^7/q^21 = q^-14."}
+{"id":"a391ed22","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017","CL.0053"],"distractors":[],"why":"FOIL two binomials with fractions, combine like terms, match coefficient b = 5/2."}
+{"id":"f237ccfc","sub_skills":["EE.1"],"clusters":["CL.0017"],"distractors":[],"why":"Add two polynomials: x^2+8x+23. Then a+b+c = 32."}
+{"id":"42f19012","sub_skills":["EE.4"],"clusters":["CL.0030"],"distractors":[],"why":"Convert rational exponent a^(11/12) to radical form."}
+{"id":"26eb61c1","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 6x^8y^2+12x^2y^2 = 6x^2y^2(x^6+2)."}
+{"id":"5805e747","sub_skills":["EE.1"],"clusters":["CL.0033","CL.0017"],"distractors":[],"why":"Distribute negative sign and combine: (7x^3+7x)-(6x^3-3x) = x^3+10x."}
+{"id":"6d04c89d","sub_skills":["EE.5"],"clusters":["CL.0039","CL.0008","CL.0075"],"distractors":[],"why":"Simplify rational expression with variable denominator: 24/(6x+42) = 24/[6(x+7)] = 4/(x+7), so b=7."}
+{"id":"a1bf1c4e","sub_skills":["EE.3"],"clusters":["CL.0020"],"distractors":[],"why":"Complete the square: x^2+6x+4 = (x+3)^2-5. Target is vertex form."}
+{"id":"463eec13","sub_skills":["EE.4"],"clusters":["CL.0088","CL.0006"],"distractors":[],"why":"Simplify radical sqrt(16x^4 y^8) = 4x^2 y^4, then divide by x^3 to get 4y^4/x."}
+{"id":"a255ae72","sub_skills":["EE.2","EE.1"],"clusters":["CL.0095","CL.0017","CL.0034"],"distractors":[],"why":"Substitute x^2=a+b and y^2=a+c, simplify x^2-y^2 = b-c, then square to get (b-c)^2."}
+{"id":"5b6af6b1","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Distribute binomial over trinomial: (d-6)(8d^2-3) = 8d^3-48d^2-3d+18."}
+{"id":"a520ba07","sub_skills":["EE.4"],"clusters":["CL.0088","CL.0006"],"distractors":[],"why":"Simplify cube root: (x^3 y^6)^(1/3) = x y^2."}
+{"id":"fde6f3bb","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"FOIL two binomials with fractions: g(x)*h(x) = (3/5)x(6x)+(3/5)x(-5)+(7/6)(6x)+(7/6)(-5)."}
+{"id":"cc776a04","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017","CL.0033"],"distractors":[],"why":"Expand squared binomial (1.5x-2.4)^2, distribute negative over second expression, combine."}
+{"id":"b4a6ed81","sub_skills":["EE.3"],"clusters":["CL.0039","CL.0053"],"distractors":[],"why":"Factor GCF from 90y^5-54y^4 = 6y^4(15y-9), match to find r=6."}
+{"id":"3206b905","sub_skills":["EE.3"],"clusters":["CL.0039"],"distractors":[],"why":"Factor GCF: 8x^10-8x^9+88x = 8x(x^9-x^8+11)."}
+{"id":"a05bd3a4","sub_skills":["EE.3"],"clusters":["CL.0164"],"distractors":[],"why":"Factor x^2-5 as difference of squares with irrational: (x-sqrt5)(x+sqrt5)."}
+{"id":"42c71eb5","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017","CL.0033"],"distractors":[],"why":"Expand (2x+5)^2, distribute negative and 2, combine all: 4x^2+21x+33."}
+{"id":"ad2ec615","sub_skills":["EE.3"],"clusters":["CL.0203","CL.0037"],"distractors":[],"why":"Treat x^2 as u, factor u^2-u-6 = (u-3)(u+2) = (x^2-3)(x^2+2)."}
+{"id":"52931bfa","sub_skills":["EE.5","EE.3"],"clusters":["CL.0039","CL.0008"],"distractors":[],"why":"Factor common (x-7) from numerator, simplify rational expression: (8x-3)/2."}
+{"id":"b8caaf84","sub_skills":["EE.2"],"clusters":["CL.0095","CL.0034","CL.0017"],"distractors":[],"why":"Substitute p=3x+4 and v=x+5 into pv-2p+v, expand all products, combine."}
+{"id":"dd4ab4c4","sub_skills":["EE.3"],"clusters":["CL.0165"],"distractors":[],"why":"Recognize perfect-square trinomial: 4a^2+20ab+25b^2 = (2a+5b)^2. Factor is (2a+5b)."}
+{"id":"7355b9d9","sub_skills":["EE.3"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=k (factor root) into -x^2+(1/29)nk^2=0, solve for n=29."}
+{"id":"e117d3b8","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006"],"distractors":[],"why":"Convert radicals to rational exponents: (a+c)^(3/2)*(a+c)^(1/2) = (a+c)^2."}
+{"id":"f89e1d6f","sub_skills":["EE.3"],"clusters":["CL.0095","CL.0165","CL.0164"],"distractors":[],"why":"Recognize c^2+2cd+d^2 = (c+d)^2 = a^2, so x^2-a^2 = (x-a)(x+a). Substitution + factoring."}
+{"id":"b74f2feb","sub_skills":["EE.4"],"clusters":["CL.0088","CL.0006"],"distractors":[],"why":"Simplify nested radicals: 6*3*x^9*2*x^(1/8) = 36x^(73/8). a+b = 36+73/8."}
+{"id":"911c415b","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017"],"distractors":[],"why":"Distribute 10 over second group, combine constants and y^2 terms: 200y^2+6432."}
+{"id":"89fc23af","sub_skills":["EE.6"],"clusters":["CL.0035"],"distractors":[],"why":"Long division: (x^2-2x-5)/(x-3) = x+1 - 2/(x-3). Numerator doesn't factor to cancel."}
+{"id":"12e7faf8","sub_skills":["EE.3"],"clusters":["CL.0037","CL.0008"],"distractors":[],"why":"Factor numerator: (x+7)(x-1), cancel (x+7) with denominator. Result x-1, so a+d=0."}
+{"id":"42f8e4b4","sub_skills":["EE.3"],"clusters":["CL.0039","CL.0037"],"distractors":[],"why":"Factor GCF then trinomial: 2x(x^2+21x+104) = 2x(x+8)(x+13). Smallest b=8."}
+{"id":"20291f47","sub_skills":["EE.5"],"clusters":["CL.0039","CL.0008","CL.0040","CL.0034","CL.0017"],"distractors":[],"why":"Simplify second fraction by factoring denominator, cancel, find common denominator, combine."}
+{"id":"ad038c19","sub_skills":["EE.2"],"clusters":["CL.0034"],"distractors":[],"why":"Expand squared binomial: (a+b/2)^2 = a^2+ab+b^2/4."}
+{"id":"c6e85cd7","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006","CL.0047"],"distractors":[],"why":"Rewrite cube root as rational exponent: 4^(8c) = 4^(7/3), solve 8c=7/3, c=7/24."}
+{"id":"a0b4103e","sub_skills":["EE.3"],"clusters":["CL.0164","CL.0053"],"distractors":[],"why":"Rewrite as (1/3)(x^2-6), factor difference of squares: (1/3)(x-sqrt6)(x+sqrt6), k=sqrt6."}
+{"id":"22fd3e1f","sub_skills":["EE.5","EE.3"],"clusters":["CL.0039","CL.0164","CL.0037","CL.0008"],"distractors":[],"why":"Factor both polynomials, cancel common (x-3): x(x+3)/(x+1)."}
+{"id":"ffdbcad4","sub_skills":["EE.3"],"clusters":["CL.0037","CL.0053"],"distractors":[],"why":"Factor 4x^2+bx-45 into integer factors (hx+k)(x+j) and determine which expression must be integer."}
+{"id":"2c88af4d","sub_skills":["EE.4"],"clusters":["CL.0006","CL.0079"],"distractors":[],"why":"Apply exponent rules to quotient: x^(-2-1/3)*y^(1/2+1) = x^(-7/3)*y^(3/2)."}
+{"id":"967ef685","sub_skills":["EE.5"],"clusters":["CL.0039","CL.0040","CL.0017"],"distractors":[],"why":"Factor 42a, find common denominator for 1/k+k = (1+k^2)/k: result 42a(1+k^2)/k."}
+{"id":"e51bf5b1","sub_skills":["EE.3"],"clusters":["CL.0037"],"distractors":[],"why":"Identify which expression has (x+2b) as a factor by checking factorizations."}
+{"id":"c81b6c57","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017","CL.0053","CL.0047"],"distractors":[],"why":"Expand and distribute both terms, combine, match coefficients with 6x^2-155x+24 to find p=7."}
+{"id":"5355c0ef","sub_skills":["EE.3"],"clusters":["CL.0039","CL.0053"],"distractors":[],"why":"Factor out common decimal: 0.09(4x^2+7x+13), so a=0.09."}
+{"id":"d8789a4c","sub_skills":["EE.3"],"clusters":["CL.0164","CL.0053"],"distractors":[],"why":"Recognize (x^2-c)/(x-b) = x+b means x^2-c = x^2-b^2, so c=b^2."}
+{"id":"433184f1","sub_skills":["EE.5"],"clusters":["CL.0040","CL.0034","CL.0017","CL.0033"],"distractors":[],"why":"Subtract rational expressions with variable denominators using common denominator: 9/[(4x-5)(x+1)]."}
+{"id":"ea6d05bb","sub_skills":["EE.2"],"clusters":["CL.0034","CL.0017","CL.0053"],"distractors":[],"why":"FOIL (3x-23)(19x+6) = 57x^2-419x-138. b=-419."}
+{"id":"137cc6fd","sub_skills":["EE.4"],"clusters":["CL.0006","CL.0030","CL.0047"],"distractors":[],"why":"Combine exponents: (70n)^(1/5)*(70n)^(2/5) = (70n)^(3/5). Set 3/5=30x, x=1/50."}
+{"id":"34847f8a","sub_skills":["EE.5"],"clusters":["CL.0040","CL.0034","CL.0017"],"distractors":[],"why":"Add fractions with variable denominators over common denominator: (5x+4)/[(x-2)(x+5)]. rt=20."}
+{"id":"40c09d66","sub_skills":["EE.4"],"clusters":["CL.0030","CL.0006"],"distractors":[],"why":"Convert radicals to rational exponents: x^(5/2)/x^(4/3) = x^(7/6). a/b = 7/6."}
+{"id":"c3b116d7","sub_skills":["EE.3"],"clusters":["CL.0037","CL.0038"],"distractors":[],"why":"Factor trinomial by grouping: 3x^2+20x-63 = (3x-7)(x+9). Only II (3x-7) is a factor."}

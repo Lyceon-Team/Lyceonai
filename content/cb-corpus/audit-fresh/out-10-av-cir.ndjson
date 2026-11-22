@@ -1,0 +1,124 @@
+{"id":"93f48423","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle area = 7×6 = 42"}
+{"id":"5252e606","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"square area = 55² = 3025"}
+{"id":"bb560789","sub_skills":["AV.1"],"clusters":["CL.0004","CL.0119"],"distractors":[],"why":"triangle area 80 + square area 4²=16, total 96"}
+{"id":"babd7461","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"scale factor 135/15=9, perimeter 36×9=324"}
+{"id":"59cb654c","sub_skills":["AV.1"],"clusters":["CL.0099","CL.0119"],"distractors":[],"why":"area=64, side=√64=8"}
+{"id":"2b41a4c4","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"V=lwh=11×8×10=880"}
+{"id":"d0b6d927","sub_skills":["AV.1"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"A=lw, 63=9w, w=7"}
+{"id":"0d43db90","sub_skills":["AV.1"],"clusters":["CL.0004"],"distractors":[],"why":"perimeter=17, BC=17-4-7=6"}
+{"id":"0e40dfb0","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle area expression = 3×39"}
+{"id":"fc5ef8d3","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"perimeter ratio 150:50=3, XY=6×3=18"}
+{"id":"689abc2a","sub_skills":["AV.1"],"clusters":["CL.0004","CL.0119"],"distractors":[],"why":"total area 72 minus removed 20 = 52"}
+{"id":"0837c3b9","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"DE=2AB so scale=2, perimeter DEF=2×20=40"}
+{"id":"575f1e12","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle area 34×29=986"}
+{"id":"b4767bef","sub_skills":["AV.1"],"clusters":["CL.0004"],"distractors":[],"why":"perimeter=18, third side=18-4-6=8"}
+{"id":"c88183f7","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle perimeter=2(13+6)=38"}
+{"id":"50774285","sub_skills":["AV.3"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"V=lwh, 2736=19×8×h, h=18"}
+{"id":"29e9b28c","sub_skills":["AV.1"],"clusters":["CL.0004"],"distractors":[],"why":"perimeter=22, z=22-9-7=6"}
+{"id":"3453aafc","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle area=36×34=1224"}
+{"id":"f60bb551","sub_skills":["AV.1"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"A=lw, 630=70w, w=9"}
+{"id":"d2047497","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle area=17×7=119"}
+{"id":"4efea6a3","sub_skills":["AV.1"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"A=lw, 57=19w, w=3"}
+{"id":"f39f88b7","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"triangle area=(1/2)(40)(90)=1800"}
+{"id":"76670c80","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"square perimeter=4×45=180"}
+{"id":"4420e500","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle area=4×2=8"}
+{"id":"165c30c4","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"rectangle area=64×32=2048"}
+{"id":"d683a9cc","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"V=lwh=6×2×3=36"}
+{"id":"a490003a","sub_skills":["AV.1"],"clusters":["CL.0104","CL.0119"],"distractors":[],"why":"length=7+40=47, area=7×47=329"}
+{"id":"02b02213","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"perimeter=2(4+9)=26"}
+{"id":"cf53cb56","sub_skills":["AV.1"],"clusters":["CL.0113"],"distractors":[],"why":"side=distance(-5,0)to(0,5)=√50, area=(√50)²=50"}
+{"id":"37dde49f","sub_skills":["AV.3"],"clusters":["CL.0094","CL.0047","CL.0099"],"distractors":[],"why":"V=7πk³/48=473, k³=473·48/(7π)≈1032.9, k≈10.11"}
+{"id":"468613c0","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"triangle area=(1/2)(56)(112)=3136"}
+{"id":"a2e76b60","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0004"],"distractors":[],"why":"cylinder V=75×10=750, fruit=750−110=640"}
+{"id":"cecbdeba","sub_skills":["AV.3"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"V=Bh, 432=24h, h=18"}
+{"id":"ae33e0a1","sub_skills":["AV.3"],"clusters":["CL.0031","CL.0119"],"distractors":[],"why":"r=22/2=11, V=π(11²)(6)=726π"}
+{"id":"aef4fd8a","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"square area=94×94"}
+{"id":"9c0a0eca","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"triangle area=(1/2)(10)(70)=350"}
+{"id":"08b7a3f5","sub_skills":["AV.3"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"V=Bh, 216=8B, B=27"}
+{"id":"e9c5bfb2","sub_skills":["AV.5","AV.1"],"clusters":["CL.0155","CL.0086"],"distractors":[],"why":"similar rectangles, 12/5=AD/10, AD=24"}
+{"id":"6ae1360d","sub_skills":["AV.2"],"clusters":["CL.0119"],"distractors":[],"why":"A=πr²=π(2.1)²=4.41π, b=4.41"}
+{"id":"98c12e38","sub_skills":["AV.2"],"clusters":["CL.0119","CL.0004"],"distractors":[],"why":"area K=16π + area L=100π = 116π"}
+{"id":"38517165","sub_skills":["AV.2"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"C=πd, 31π=πd, d=31"}
+{"id":"e0874bc2","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182","CL.0086"],"distractors":[],"why":"perimeter ratio 333/37=9, XY=18×9=162"}
+{"id":"a2659088","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"V=πr²h=π(144)(8)=1152π"}
+{"id":"d621cffb","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"V=(4/3)π(17/5)³=19652π/375"}
+{"id":"151eda3c","sub_skills":["AV.3"],"clusters":["CL.0083","CL.0119"],"distractors":[],"why":"r_B=16×1.25=20, V=π(20²)(50)=20000π"}
+{"id":"03c6994f","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"side ratio 246, area ratio=246²=60516"}
+{"id":"c0586eb5","sub_skills":["AV.3"],"clusters":["CL.0031","CL.0119"],"distractors":[],"why":"r=8/2=4, V=π(16)(12)=192π"}
+{"id":"e4b4e9ea","sub_skills":["AV.3"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"V=36h=2880, h=80"}
+{"id":"e336a1d2","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"V=41³=68921"}
+{"id":"a4ed5285","sub_skills":["AV.1"],"clusters":["CL.0119"],"distractors":[],"why":"right triangle area=(1/2)(3)(5)=7.5"}
+{"id":"3b931fb0","sub_skills":["AV.3"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"V=Bh, 377=13h, h=29"}
+{"id":"ec5d4823","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"V=4×9×10=360"}
+{"id":"096c7ef5","sub_skills":["AV.2"],"clusters":["CL.0113","CL.0119"],"distractors":[],"why":"center (7,8) equidistant from all 3 pts, r=3, C=6π, k=6"}
+{"id":"e86f0651","sub_skills":["AV.2"],"clusters":["CL.0119"],"distractors":[],"why":"A=π(43²)=1849π"}
+{"id":"1f0b582e","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"perimeter doubles so sides double, 12×2=24"}
+{"id":"5afbdc8e","sub_skills":["AV.2","AV.1"],"clusters":["CL.0119","CL.0099"],"distractors":[],"why":"circle area=4π, s²=4π, s=2√π"}
+{"id":"310c87fe","sub_skills":["AV.3","AV.4"],"clusters":["CL.0047","CL.0099","CL.0119"],"distractors":[],"why":"6s²=54, s=3, V=27"}
+{"id":"459dd6c5","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"side ratio 4:1, area ratio 16:1, 270/16=16.875"}
+{"id":"306264ab","sub_skills":["AV.1","RTT.1"],"clusters":["CL.0118","CL.0119"],"distractors":[],"why":"identify legs via Pythagorean: (2√2)²+(6√2)²=80, area=(1/2)(2√2)(6√2)=12"}
+{"id":"c984f1a5","sub_skills":["AV.3"],"clusters":["CL.0119"],"distractors":[],"why":"V_hemi=(1/2)(4/3)π(27³)=26244π/2≈41200"}
+{"id":"f7e626b2","sub_skills":["AV.4"],"clusters":["CL.0096"],"distractors":[],"why":"SA=2(4·5+4·6+5·6)=2(74)=148"}
+{"id":"099526fc","sub_skills":["AV.1","RTT.1"],"clusters":["CL.0113","CL.0047","CL.0119"],"distractors":[],"why":"leg₁=√((9²+6²))=3√13, (1/2)(3√13)(leg₂)=36√13, leg₂=24"}
+{"id":"f329442c","sub_skills":["AV.5","AV.2"],"clusters":["CL.0182"],"distractors":[],"why":"radius ratio 129n/3n=43, area ratio=43²=1849"}
+{"id":"eb70d2d0","sub_skills":["AV.1"],"clusters":["CL.0113"],"distractors":[],"why":"shoelace: (1/2)|(-3)(6)+5(-7)+4(1)|=24.5"}
+{"id":"93de3f84","sub_skills":["AV.3"],"clusters":["CL.0119","CL.0094"],"distractors":[],"why":"V_new=π(2r)²(h/2)=2πr²h=2(22)=44"}
+{"id":"f243c383","sub_skills":["AV.4"],"clusters":["CL.0096","CL.0047","CL.0104"],"distractors":[],"why":"K=2s²+360s, glued SA=2K−2s²=(92/47)K, solve s=8"}
+{"id":"1be8b6b2","sub_skills":["AV.3","RTT.1"],"clusters":["CL.0047","CL.0119","CL.0118","CL.0099"],"distractors":[],"why":"r=77, h=36, slant=√(77²+36²)=85"}
+{"id":"dc71597b","sub_skills":["AV.3"],"clusters":["CL.0047","CL.0119"],"distractors":[],"why":"(1/3)πr²(9)=(1/3)π, r²=1/9, r=1/3"}
+{"id":"9f934297","sub_skills":["AV.4"],"clusters":["CL.0096"],"distractors":[],"why":"SA=2(28·15+28·16+15·16)=2(1108)=2216"}
+{"id":"5b2b8866","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182","CL.0083"],"distractors":[],"why":"each dim ×1.2, area=360×1.44=518.4"}
+{"id":"8c1aa743","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"side ratio 6, area ratio=36, 54×36=1944"}
+{"id":"6708546e","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"side ratio 2, area ratio=4, 5×4=20"}
+{"id":"b0dc920d","sub_skills":["AV.3","EE.1"],"clusters":["CL.0094","CL.0010","CL.0119"],"distractors":[],"why":"h=r+4, V=πr²(r+4)=πr³+4πr²"}
+{"id":"899c6042","sub_skills":["AV.3"],"clusters":["CL.0031","CL.0119"],"distractors":[],"why":"r=6/2=3, V=(1/3)π(9)(22)=66π, n=66"}
+{"id":"ba8ca563","sub_skills":["AV.3","AV.4"],"clusters":["CL.0099","CL.0096","CL.0119"],"distractors":[],"why":"s=∛474552=78, SA=6(78²)=36504"}
+{"id":"9fec9d49","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182"],"distractors":[],"why":"side ratio 1/10, area ratio 1/100, 600/100=6"}
+{"id":"b2528e6b","sub_skills":["AV.2","CIR1"],"clusters":["CL.0113","CL.0047"],"distractors":[],"why":"find circumscribed circle of (2,6),(4,10),(6,2), center (19/3,19/3), r²=170/9, C=2π√(170)/3"}
+{"id":"502d9690","sub_skills":["AV.5","AV.1"],"clusters":["CL.0182","CL.0099"],"distractors":[],"why":"area ratio 648/72=9, side ratio=3, 36/3=12"}
+{"id":"167aff9e","sub_skills":["AV.5","AV.4","AV.3"],"clusters":["CL.0182","CL.0099"],"distractors":[],"why":"SA ratio=25, k=5, V_X=1250/125=10, sum=1260"}
+{"id":"a07ed090","sub_skills":["AV.3","AV.5"],"clusters":["CL.0119","CL.0094"],"distractors":[],"why":"V₂=πR²H=392πr²h, check C: π(49r²)(8h)=392πr²h ✓"}
+{"id":"d03e29f1","sub_skills":["CIR1"],"clusters":["CL.0099"],"distractors":[],"why":"(x-6)²+(y-3)²=81, r²=81, r=9"}
+{"id":"23c5fcce","sub_skills":["CIR3"],"clusters":["CL.0205"],"distractors":[],"why":"arc length as fraction of circumference 36"}
+{"id":"f2495de4","sub_skills":["CIR5"],"clusters":["CL.0094"],"distractors":[],"why":"565π/6 mod 2π=π/6, cos(π/6)=√3/2"}
+{"id":"b96ff36e","sub_skills":["CIR1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"(6-3)²+(c-5)²=9, 9+(c-5)²=9, c=5"}
+{"id":"82c8325f","sub_skills":["CIR1"],"clusters":["CL.0113"],"distractors":[],"why":"r²=(-4)²+3²=25, (x+4)²+(y-5)²=25"}
+{"id":"0815a5af","sub_skills":["CIR3"],"clusters":["CL.0205","CL.0047"],"distractors":[],"why":"C=144π, arcPQ=x, arcPS=2x, semicircle gives x=24π, arcQR=48π"}
+{"id":"95ba2d09","sub_skills":["CIR5","CIR3"],"clusters":["CL.0092","CL.0004"],"distractors":[],"why":"∠POQ+∠QOR+∠ROT+∠TOP=360°, convert result to radians"}
+{"id":"856372ca","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"center (-8,6), r=5, (x+8)²+(y-6)²=25"}
+{"id":"2d521ca9","sub_skills":["CIR5"],"clusters":["CL.0092"],"distractors":[],"why":"60°×π/180=π/3"}
+{"id":"f1c1e971","sub_skills":["CIR5"],"clusters":["CL.0004","CL.0092"],"distractors":[],"why":"T=2π/3+5π/12=13π/12 rad, (13/12)(180)=195°"}
+{"id":"a0cacec1","sub_skills":["CIR5"],"clusters":["CL.0092"],"distractors":[],"why":"(16π/15)(180/π)=192°"}
+{"id":"ee540927","sub_skills":["CIR1"],"clusters":["CL.0047"],"distractors":[],"why":"complete square: (x+29)²+y²=841, center (-29,0)"}
+{"id":"74d8b897","sub_skills":["CIR5"],"clusters":["CL.0092"],"distractors":[],"why":"(9π/20)(180/π)=81°"}
+{"id":"fc8aa563","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"(x-1)²+(y+7)²=1, center (1,-7)"}
+{"id":"800e71b8","sub_skills":["CIR3"],"clusters":["CL.0004"],"distractors":[],"why":"C=minor+major=39+195=234"}
+{"id":"1efd7ef3","sub_skills":["CIR5"],"clusters":["CL.0094"],"distractors":[],"why":"42π=21(2π), sin(42π)=sin(0)=0"}
+{"id":"6585d841","sub_skills":["CIR1"],"clusters":["CL.0047"],"distractors":[],"why":"complete square: (x+7)²+(y-3)²=167, r=√167"}
+{"id":"acd30391","sub_skills":["CIR2"],"clusters":["CL.0113"],"distractors":[],"why":"(3,2): d²=36+1=37>25, not in interior"}
+{"id":"a38c0183","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"shift down 6→center(-2,-6), r×2=6, (x+2)²+(y+6)²=36"}
+{"id":"fb58c0db","sub_skills":["CIR3"],"clusters":["CL.0205"],"distractors":[],"why":"C=2π, fraction=(π/3)/(2π)=1/6"}
+{"id":"e80d62c6","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"shift down 4: center(0,-2), x²+(y+2)²=36"}
+{"id":"196e8e6e","sub_skills":["CIR4"],"clusters":["CL.0113","CL.0118"],"distractors":[],"why":"r²=1+102=103, ∠ACB=90°, AB²=103+103=206, AB=√206"}
+{"id":"89661424","sub_skills":["CIR1"],"clusters":["CL.0010"],"distractors":[],"why":"expand (x+5)²+(y-2)²=81 → x²+y²+10x-4y-52=0, c=-52"}
+{"id":"981275d2","sub_skills":["CIR2"],"clusters":["CL.0094"],"distractors":[],"why":"P=(10,-5), center=(6,-5), Q=2·center−P=(2,-5)"}
+{"id":"9d159400","sub_skills":["CIR2","CIR1"],"clusters":["CL.0094"],"distractors":[],"why":"sub x=0: only C gives (y-9)²=0, one intersection"}
+{"id":"ca2235f6","sub_skills":["CIR3"],"clusters":["CL.0205","CL.0047"],"distractors":[],"why":"45/360=1/8, (1/8)C=3, C=24"}
+{"id":"0acfddb5","sub_skills":["CIR4","RTT.1"],"clusters":["CL.0118","CL.0047"],"distractors":[],"why":"tangent⊥radius, MH=1760, GH=√(168²+1760²)=1768"}
+{"id":"244ff6c4","sub_skills":["CIR5"],"clusters":["CL.0094"],"distractors":[],"why":"92π/3=30π+2π/3, tan(2π/3)=-√3"}
+{"id":"9acd101f","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"center (0,1) shift down 2→(0,-1), x²+(y+1)²=49"}
+{"id":"1b2b20b9","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"translate 96 right: center (96,6), a=7, 4a=28"}
+{"id":"2855cb58","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"r=7k, r²=49k², (x-16)²+(y-17)²=49k²"}
+{"id":"9e44284b","sub_skills":["CIR1"],"clusters":["CL.0047"],"distractors":[],"why":"÷2, complete square: (x-3/2)²+(y+1/2)²=25, r=5"}
+{"id":"24cec8d1","sub_skills":["CIR4"],"clusters":["CL.0004"],"distractors":[],"why":"OR=OS=r, isosceles, ∠RSO=(180-88)/2=46°"}
+{"id":"fa2771d5","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"translate right 4: center (11,-3), (x-11)²+(y+3)²=1"}
+{"id":"3e577e4a","sub_skills":["CIR4"],"clusters":["CL.0094"],"distractors":[],"why":"radius slope=(-1)/(-3)=1/3, tangent slope=-3"}
+{"id":"ab176ad6","sub_skills":["CIR1"],"clusters":["CL.0099"],"distractors":[],"why":"r²=121, r=11"}
+{"id":"249d3f80","sub_skills":["CIR3"],"clusters":["CL.0205"],"distractors":[],"why":"central angle=arc measure=100°"}
+{"id":"b0a72bdc","sub_skills":["CIR1"],"clusters":["CL.0031"],"distractors":[],"why":"r²=16, r=4, diameter=8"}
+{"id":"b8a225ff","sub_skills":["CIR1"],"clusters":["CL.0119"],"distractors":[],"why":"r_A=2, r_B=4, k=16"}
+{"id":"ebbf23ae","sub_skills":["CIR1"],"clusters":["CL.0031"],"distractors":[],"why":"diameter=10, r=5"}
+{"id":"69b0d79d","sub_skills":["CIR3","CIR4"],"clusters":["CL.0205","CL.0004"],"distractors":[],"why":"isosceles ∠OAB=∠OBA=30°, ∠AOB=120°, arc=(1/3)(36π)=12π"}
+{"id":"2266984b","sub_skills":["CIR1"],"clusters":["CL.0047"],"distractors":[],"why":"complete square: (x+10)²+(y+8)²=144, center (-10,-8)"}
+{"id":"e50afdd3","sub_skills":["CIR2"],"clusters":["CL.0004"],"distractors":[],"why":"center (-4,19), r=11, x∈[-15,7], only -14 is in range"}
+{"id":"35d37640","sub_skills":["CIR5"],"clusters":["CL.0094"],"distractors":[],"why":"H=(-1,0) at angle π, 25π=π+12(2π) coterminal"}
