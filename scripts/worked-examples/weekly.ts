@@ -63,6 +63,7 @@ import {
   postMessage,
   slackConfig,
   escapeMrkdwn,
+  unescapeMrkdwn,
 } from "../../shared/slack/client";
 import {
   approvalFromRecord,
@@ -161,13 +162,24 @@ export function deliveredExamples(
     );
 }
 
-/** The captions file for one video: the SCL-262/273 copy-paste set, warnings first. */
+/**
+ * One video's SCL-262/273 copy-paste set, warnings first, as Slack mrkdwn: the day's threaded
+ * reply carries it as it is.
+ */
 export function captionsMarkdown(post: WorkedExamplePost): string {
   const parts: string[] = [];
   for (const w of post.warnings) parts.push(w);
   for (const step of videoSetSlackSteps(post))
     parts.push(step.kind === "video" ? step.comment : step.text);
   return `${parts.join("\n\n")}\n`;
+}
+
+/**
+ * The captions.md record: the same set with Slack's escaping undone, so a copy from the file is
+ * the copy from the message (the YouTube link's "&" stays "&", not "&amp;"; Karl 2026-11-14).
+ */
+export function captionsFile(post: WorkedExamplePost): string {
+  return unescapeMrkdwn(captionsMarkdown(post));
 }
 
 export const weekPlanSchema = z
@@ -555,7 +567,7 @@ async function upload(f: Flags): Promise<void> {
     const video = join(dir, post.video);
     if (!existsSync(video))
       throw new Error(`${b.date}: ${post.video} was not rendered`);
-    const captions = captionsMarkdown(post);
+    const captions = captionsFile(post);
     writeFileSync(join(dir, "captions.md"), captions);
     const base = `${plan.week}/${b.date}`;
     if (!store) {
@@ -698,7 +710,7 @@ async function recaption(f: Flags): Promise<void> {
     if (!question) throw new Error(`${e.dir}: its question cannot be read`);
     const copy = workedExampleCopy(e, question, style);
     const post = buildPost(e, copy, approval);
-    const captions = captionsMarkdown(post);
+    const captions = captionsFile(post);
     const dir = join(out, date);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "post.json"), `${JSON.stringify(post, null, 2)}\n`);

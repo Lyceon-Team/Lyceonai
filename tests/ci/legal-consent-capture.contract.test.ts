@@ -148,9 +148,20 @@ describe("C1 — every record resolves slug, version and hash at write time", ()
   it("holds the same consent_source values the database CHECK does", () => {
     // A value the app can produce and the database refuses is an insert that
     // fails at runtime with no test in between. Read from the migration text.
-    const migration = read(
-      "supabase/migrations/20260916000000_consent_sources_and_reference.sql",
-    );
+    // The LAST migration that defines the CHECK, found rather than named: a newer migration that
+    // widens it would otherwise leave this reading a superseded list (20261206000000 added
+    // guardian_invite_issue, 20261207000000 guardian_invite_card).
+    const definers = fs
+      .readdirSync(path.join(REPO_ROOT, "supabase/migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .filter((f) =>
+        /ADD CONSTRAINT legal_acceptances_consent_source_check/.test(
+          read(`supabase/migrations/${f}`),
+        ),
+      );
+    expect(definers.length).toBeGreaterThan(0);
+    const migration = read(`supabase/migrations/${definers.at(-1)}`);
     const check = /CHECK \(consent_source IN \(([\s\S]*?)\)\);/.exec(migration);
     expect(check, "CHECK not found in the migration").not.toBeNull();
     const fromSql = (check?.[1] ?? "")

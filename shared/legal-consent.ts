@@ -165,6 +165,8 @@ export type ConsentSource =
   | "google_continue_pre_oauth"
   | "google_continue_click"
   | "guardian_link_redeem"
+  | "guardian_invite_issue"
+  | "guardian_invite_card"
   | "stripe_checkout"
   | "reconsent_prompt";
 
@@ -174,6 +176,8 @@ export const CONSENT_SOURCES: readonly ConsentSource[] = [
   "google_continue_pre_oauth",
   "google_continue_click",
   "guardian_link_redeem",
+  "guardian_invite_issue",
+  "guardian_invite_card",
   "stripe_checkout",
   "reconsent_prompt",
 ] as const;

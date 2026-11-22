@@ -160,6 +160,29 @@ describe.skipIf(!PG_AVAILABLE)("sign-up channel → real PG", () => {
     ).rejects.toThrow(/signup_campaign_check/);
   });
 
+  it("R7 youtube and x are stored (SCL-278); a channel off the list is still refused", async () => {
+    const yt = await account();
+    await record(yt, { channel: "youtube", campaign: "worked_example" }, "req");
+    expect(await stored(yt)).toEqual({
+      signup_channel: "youtube",
+      signup_campaign: "worked_example",
+    });
+    const x = await account();
+    await record(x, { channel: "x", campaign: null }, "req");
+    expect(await stored(x)).toEqual({
+      signup_channel: "x",
+      signup_campaign: null,
+    });
+    const off = await account();
+    await expect(
+      pg.query(
+        `UPDATE public.profiles SET signup_channel = 'myspace' WHERE id = $1`,
+        [off],
+      ),
+    ).rejects.toThrow(/signup_channel_check/);
+    expect((await stored(off))?.signup_channel).toBeNull();
+  });
+
   it("R6 under 13: the values are cleared when the age is known, and never stored after", async () => {
     const id = await account();
     await record(id, { channel: "tiktok", campaign: "qotd" }, "req");

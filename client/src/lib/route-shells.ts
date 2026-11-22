@@ -168,6 +168,7 @@ export const STUDENT_ROUTE_SHELLS = {
   "/score-report": focus("Full-Length", "/tests"),
   // Bare card.
   "/login": BARE,
+  "/join/:token": BARE,
   "/profile/complete": BARE,
   "/update-password": BARE,
   "/account/recover": BARE,

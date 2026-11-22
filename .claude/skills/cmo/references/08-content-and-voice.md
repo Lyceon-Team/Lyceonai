@@ -41,9 +41,9 @@ Applies to every voiced video: worked examples, QOTD breakdowns, the rotation po
   6. The call to action (§4a).
 - **Tone:** contractions, short sentences, "you/we", varied rhythm, small natural beats ("Okay.", "Ready?"; never "Go"). No textbook phrasing.
 - **Reference script** (Nov 11, hook updated 2026-11-11): "Think you can solve this in ten seconds? Let's see. … Okay. Take fourteen off both sides, and you get negative five x is at least twenty-five. Now here's where people slip: you're dividing by a negative, so the sign flips. x is less than or equal to negative five. Did you flip it? Follow, there's one of these every day."
-- **Voice (Karl, 2026-11-11):** worked examples are voiced in **voice A, Chirp 3 HD Orus** (Google Cloud Text-to-Speech), from the blind bake-off (it replaced Charon, voice C, the same day), voiced and cached by the weekly run; a line that fails the voice checks is voiced again, up to 3 takes. `am_michael` (Kokoro-82M) remains the voice of the local tools and the pilots.
+- **Voice (Karl, 2026-11-11; confirmed 2026-11-14 for the weekly batch from W48):** worked examples are voiced in **voice A, Chirp 3 HD Orus** (Google Cloud Text-to-Speech), from the blind bake-off (it replaced Charon, voice C, the same day), voiced and cached by the weekly run; a line that fails the voice checks is voiced again, up to 3 takes. `am_michael` (Kokoro-82M) remains the voice of the local tools and the pilots.
 - **"Lyceon" in voice A:** sent to Orus respelled **"Lye-see-ahn"**, with no IPA (Orus did not honour /ˈlaɪsiɑn/; Karl picked clip 3 of three, 2026-11-11). The on-screen spelling never changes.
-- **Pronunciation:** "Lyceon" is said "lye-see-on" (/ˈlaɪsiɑn/: LYE, see, ON; stress on the first syllable).
+- **Pronunciation:** "Lyceon" is said "lye-see-on" (LYE, see, ON; stress on the first syllable). Orus gets the respelling "Lye-see-ahn" (above); the IPA /ˈlaɪsiɑn/ is for voices that honour it.
 - **Outro and end card:** no "lyceon.ai" spoken or shown; the end card reads "Lyceon SAT Prep".
 - **Loudness:** voice lines are normalised (around −14 LUFS, true peak ≤ −1 dB) so nothing clips.
 - **QOTD breakdowns** use authored scripts, not the question read aloud.
@@ -51,7 +51,7 @@ Applies to every voiced video: worked examples, QOTD breakdowns, the rotation po
 
 ## 1c. Weekly worked examples (Karl, 2026-11-11, SCL-277)
 
-- **Seven a week, all Hard** (difficulty 3): 2 **shortcut** slots in the "graphing method vs by hand" format (never name Desmos until Desmos replies), 2 **geometry** slots with drawn figures (similar triangles, triangle theorem, Pythagorean theorem, cylinders, cones), 3 **trap** slots (algebra, advanced math, problem-solving). QOTD breakdowns stay paused.
+- **Seven a week, all Hard** (difficulty 3): 2 **shortcut** slots in the "graphing method vs by hand" format (Desmos may be named and shown: Karl, 2026-11-15), 2 **geometry** slots with drawn figures (similar triangles, triangle theorem, Pythagorean theorem, cylinders, cones), 3 **trap** slots (algebra, advanced math, problem-solving). QOTD breakdowns stay paused.
 - **Format** (from the competitor research, 23 top videos): the question on screen in frame 1; the spoken hook a dare or a shortcut promise ("Most people get this wrong", "There's a faster way"); 30-60 s; one problem; the answer near the end; one CTA. A second CTA to test: "Comment GRIND and I'll send you 10 more hard ones" (Karl sends them by hand). §1a's script rules still apply.
 - **Geometry figures:** the opening draws the figure stroke by stroke in the notepad style with only what the question gives (the side lengths, radius and height it states); anything worked out (a volume, a missing side) is drawn in at the step that finds it, never in the opening. The solution then builds on the same drawing.
 - **Delivery:** one weekly message in #social, "Week <n> ready", with a link to each video and its captions file (private storage, links expire in 14 days). Karl posts by hand. The daily per-video drop ends once the first weekly batch works.
@@ -78,7 +78,6 @@ Lyceon is for serious, hardworking students: the ones who want to put in the wor
 - Fear lines aimed at teens ("you'll fall behind", "don't ruin your future").
 - Normalizing the problem as pressure in student-facing copy ("most students procrastinate", "everyone else has already started").
 - **Exception: "Most people…" hooks are allowed** (Karl, 2026-11-02; replaces the earlier ban). A hook may open with "Most people…" ("Most people think it's $64…?"). Only the opening is exempt: the rest of the hook is held to every other rule, and the fear and pressure bans above still apply. The worked-example check is PR #1395 (`shared/worked-examples/rules.ts`, H2; SCL-265).
-- The Desmos interface, logo or the word "Desmos" in on-screen text or captions, until Desmos replies to Karl's permission request (Karl, 2026-11-02). Say "graphing calculator"; draw graphs in Lyceon's own rendering (Manim).
 - Fake urgency ("only today!", "spots filling fast" when untrue).
 - Any internal metric, mechanism or architecture detail.
 
@@ -125,9 +124,9 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 
 ### Social and short video (TikTok, Instagram Reels, YouTube Shorts, Facebook Page, X)
 - **Channels (Karl, 2026-11-02):** TikTok, Instagram Reels, YouTube Shorts and a Facebook Page. Student register on TikTok, Instagram and Shorts; parent register on the Facebook Page (parent-leaning). X is founder / build-in-public only, in Karl's voice, and not tracked against targets.
-- **Cadence (a starting shape that changes with the data):** QOTD daily. Worked examples Mon/Wed/Fri, plus more if quality holds. Other days rotate graphing-calculator/trap, product moments, test-date/myth and parent posts. "Graphing method vs by hand" content draws its graphs in Lyceon's own rendering (Manim) and never names or shows Desmos until Desmos replies (§2).
+- **Cadence (a starting shape that changes with the data):** QOTD daily. Worked examples Mon/Wed/Fri, plus more if quality holds. Other days rotate graphing-calculator/trap, product moments, test-date/myth and parent posts. "Graphing method vs by hand" content may name Desmos and show its interface and logo (Lyceon has a Desmos licence; Karl, 2026-11-15, replacing the 2026-11-02 constraint), or draw its graphs in Lyceon's own rendering (Manim).
 - Faceless videos for now. Open inside the product or the problem in the first seconds; one premise; a new beat before attention drops.
-- **Video tools:** Hyperframes is the core. Pilots: Manim with manim-voiceover (math visuals), Kokoro-82M (voice, `am_michael`), Chatterbox (D3, for naturalness against `am_michael`). Screen demos are scripted Playwright recordings, not OpenScreen (archived), and never of the Desmos interface for now. Scripts and voice follow §1a. Rejected: Remotion (licence), stock-footage generators, AI video/avatar models.
+- **Video tools:** Hyperframes is the core. Pilots: Manim with manim-voiceover (math visuals), Kokoro-82M (voice, `am_michael`), Chatterbox (D3, for naturalness against `am_michael`). Screen demos are scripted Playwright recordings, not OpenScreen (archived); they may show the Desmos interface (Karl, 2026-11-15). Scripts and voice follow §1a. Rejected: Remotion (licence), stock-footage generators, AI video/avatar models.
 - **TikTok keywords:** Karl adds them via TikTok's Manage keywords, from the `#social` keyword block (SCL-262).
 - **YouTube Shorts:** the same vertical videos as TikTok and Reels; the walkthrough video stays on the channel.
 - **Facebook Page:** parent-leaning; QOTD, worked examples and parent posts; end with a genuine question (§4a).
@@ -173,7 +172,7 @@ Blog posts and the monthly content plan go through content-ops (Doc 10B). Everyt
 - [ ] No fear aimed at teens; no normalizing the problem as pressure ("Most people…" hooks are fine).
 - [ ] Any "grind" line means effort, never burnout: no all-nighters or skipped sleep, no shaming students who aren't grinding (§1b).
 - [ ] "Free" only for the diagnostic, daily practice or the QOTD; calendar, parent view, LISA and full-length tests shown as Pro.
-- [ ] The channel's call to action (§4a); no Desmos name, logo or interface.
+- [ ] The channel's call to action (§4a).
 - [ ] Written to one person; plain words; no AI-tell phrases.
 - [ ] Links carry UTM tags; the success metric and run length are set.
 - [ ] Passes the ethical test: would the reader be glad if they knew how we persuaded them?

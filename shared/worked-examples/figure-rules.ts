@@ -124,7 +124,12 @@ export function figureProblems(
         `F2 ${name} is drawn at ${when}, but the example has ${stepCount} steps`,
       );
   });
-  const given = new Set(numbers(plainMathText(`${q.passage ?? ""} ${q.stem}`)));
+  // Powers as ^ (x^2), so an exponent counts as a number the question gives (Karl, 2026-11-16).
+  const given = new Set(
+    numbers(
+      plainMathText(`${q.passage ?? ""} ${q.stem}`, { superscripts: false }),
+    ),
+  );
   figure.shapes.forEach((s, k) => {
     if (s.kind !== "label" || (s.when ?? "open") !== "open") return;
     for (const n of numbers(s.text))
