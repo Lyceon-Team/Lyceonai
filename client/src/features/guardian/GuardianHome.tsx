@@ -40,8 +40,10 @@ import { GuardianInviteCard } from "./GuardianInviteCard";
  *        SCL-282; DESIGN.md §5 (one filled primary action)] | @implemented [2026-09-30;
  *        invite card and call link 2026-11-22]
  *
- * plain English: a guardian with no linked student. The invite card is the way in: email the
- * teen a link (its **Send invite** is the one filled action on the screen), or copy one.
+ * plain English: a guardian with no linked student. The invite card is the way in, card first
+ * (owner ruling 2026-11-22, 2): step 1 saves a card for a plan, step 2 (locked until then)
+ * emails the teen a link or copies one. One filled action at a time: **Save card**, then
+ * **Send invite**.
  * Entering a student's link code stays, as an outline button. A plain link (new tab, no embed)
  * offers a 15-minute call first.
  */

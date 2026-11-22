@@ -1,7 +1,7 @@
 import { BLOG_POSTS } from "../content/blog";
 import { CONTENT_PAGES } from "../content/pages";
 import { plainText } from "./content-gate";
-import { HOME_FAQS } from "./faqs";
+import { HOME_FAQS, PARENT_FAQS } from "./faqs";
 import { formatQotdDate, qotdTopic } from "./qotd-labels";
 import type { ContentPage } from "../../packages/shared/src/seo-content-schema";
 import type { QotdArchiveResponse } from "../../packages/shared/src/qotd-schema";
@@ -18,7 +18,7 @@ import {
 
 // Re-exported from their light modules (split out 2026-10-05 so client pages import them without
 // pulling every page's metadata into their bundle).
-export { HOME_FAQS, faqParagraphs, type FaqItem } from "./faqs";
+export { HOME_FAQS, PARENT_FAQS, faqParagraphs, type FaqItem } from "./faqs";
 export { formatQotdDate, qotdTopic } from "./qotd-labels";
 
 export interface PublicMeta {
@@ -200,6 +200,16 @@ export const PUBLIC_META: Record<string, PublicMeta> = {
       "How to contact Lyceon: our support email, our postal address, and where signed-in students and parents send feedback.",
     canonical: `${BASE_URL}/contact`,
     ogImage: DEFAULT_OG_IMAGE,
+  },
+  // owner brief 2026-11-22 ruling 1: /parent is a full prerendered, indexable page. Its FAQPage
+  // JSON-LD is built from the same array the page renders (PARENT_FAQS), as for the homepage.
+  "/parent": {
+    title: "For parents | Lyceon",
+    description:
+      "See your teen's SAT progress before test day: projected score range, target and test date, progress by area, study calendar and practice test results.",
+    canonical: `${BASE_URL}/parent`,
+    ogImage: DEFAULT_OG_IMAGE,
+    jsonLd: [createFaqJsonLd(PARENT_FAQS)],
   },
   "/legal": {
     title: "Legal & Trust | Lyceon",

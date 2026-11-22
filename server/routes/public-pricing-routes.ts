@@ -40,7 +40,11 @@
 import { Request, Response, Router } from "express";
 import { getStripeClient, getConfiguredPriceId } from "../lib/stripe/client";
 import {
+  billingPeriodSchema,
+  publicPlanPriceSchema,
   publicPricingSchema,
+  type BillingPeriodChoice,
+  type PublicPlanPrice,
   type PublicPricing,
 } from "../../packages/shared/src/billing-schema";
 import { logger } from "../logger";
@@ -65,9 +69,27 @@ type Memo = { readonly expiresAtMs: number; readonly outcome: PricingOutcome };
 
 let memo: Memo | null = null;
 
+/**
+ * The plan list's own outcome and memo, held on the same TTLs for the same reason: this is
+ * the second unauthenticated path to Stripe, and the memo is what bounds it (three reads per
+ * window instead of one).
+ */
+type PlansOutcome =
+  | { readonly kind: "plans"; readonly plans: readonly PublicPlanPrice[] }
+  | { readonly kind: "no_price" }
+  | { readonly kind: "unavailable" };
+
+type PlansMemo = {
+  readonly expiresAtMs: number;
+  readonly outcome: PlansOutcome;
+};
+
+let plansMemo: PlansMemo | null = null;
+
 /** Test-only reset. Nothing in the request path calls this. */
 export function __resetPublicPricingMemoForTests(): void {
   memo = null;
+  plansMemo = null;
 }
 
 /**
@@ -151,6 +173,118 @@ async function resolveOutcome(): Promise<PricingOutcome> {
     return outcome;
   }
 }
+
+/**
+ * The interval each plan must have in Stripe. A plan whose configured price disagrees (a
+ * monthly id in the yearly variable, say) is left out rather than shown under the wrong
+ * label: "per year" beside a monthly amount is worse than no tile.
+ */
+const EXPECTED_PLAN_INTERVAL: Readonly<
+  Record<
+    BillingPeriodChoice,
+    { interval: "month" | "year"; intervalCount: number }
+  >
+> = {
+  monthly: { interval: "month", intervalCount: 1 },
+  quarterly: { interval: "month", intervalCount: 3 },
+  yearly: { interval: "year", intervalCount: 1 },
+};
+
+async function readPlanPrice(
+  plan: BillingPeriodChoice,
+): Promise<PublicPlanPrice | null> {
+  const priceId = getConfiguredPriceId(plan);
+  if (!priceId) return null;
+  const price = await getStripeClient().prices.retrieve(priceId);
+  const parsed = publicPlanPriceSchema.safeParse({
+    plan,
+    amountCents: price.unit_amount,
+    currency: price.currency?.toLowerCase(),
+    interval: price.recurring?.interval,
+    intervalCount: price.recurring?.interval_count,
+  });
+  const expected = EXPECTED_PLAN_INTERVAL[plan];
+  if (
+    !parsed.success ||
+    parsed.data.interval !== expected.interval ||
+    parsed.data.intervalCount !== expected.intervalCount
+  ) {
+    // The price id is deliberately absent from the log line, as in readMonthlyPrice.
+    logger.warn(
+      "BILLING",
+      "public_pricing",
+      "Configured plan price is not the fixed recurring amount its plan needs",
+      { plan },
+    );
+    return null;
+  }
+  return parsed.data;
+}
+
+async function resolvePlansOutcome(): Promise<PlansOutcome> {
+  const now = Date.now();
+  if (plansMemo && plansMemo.expiresAtMs > now) {
+    return plansMemo.outcome;
+  }
+  try {
+    const read = await Promise.all(
+      billingPeriodSchema.options.map((plan) => readPlanPrice(plan)),
+    );
+    const plans = read.filter((row): row is PublicPlanPrice => row !== null);
+    const outcome: PlansOutcome =
+      plans.length > 0 ? { kind: "plans", plans } : { kind: "no_price" };
+    plansMemo = {
+      outcome,
+      expiresAtMs:
+        now + (outcome.kind === "plans" ? SUCCESS_TTL_MS : FAILURE_TTL_MS),
+    };
+    return outcome;
+  } catch (err: unknown) {
+    // Never a fallback amount, as for the monthly route. The message only.
+    const message = err instanceof Error ? err.message : "Unknown error";
+    logger.error(
+      "BILLING",
+      "public_pricing",
+      "Failed to read the plan prices from Stripe",
+      { message },
+    );
+    const outcome: PlansOutcome = { kind: "unavailable" };
+    plansMemo = { outcome, expiresAtMs: now + FAILURE_TTL_MS };
+    return outcome;
+  }
+}
+
+/**
+ * GET /api/public/pricing/plans — every configured plan's price tag, for `/parent`.
+ * Same posture as `/pricing`: no auth, no CSRF, memoised, and an error with no amount when
+ * there is nothing true to say. Registered before `/pricing` only for readability; the
+ * paths do not overlap.
+ */
+router.get("/pricing/plans", async (req: Request, res: Response) => {
+  const requestId = req.requestId;
+  const outcome = await resolvePlansOutcome();
+  if (outcome.kind === "plans") {
+    res.setHeader("Cache-Control", "public, max-age=900");
+    return res.json({ data: { plans: outcome.plans } });
+  }
+  res.setHeader("Cache-Control", "public, max-age=60");
+  if (outcome.kind === "no_price") {
+    return res.status(404).json({
+      error: {
+        message: "No plan prices are available.",
+        code: "PRICE_NOT_CONFIGURED",
+        requestId,
+      },
+    });
+  }
+  return res.status(502).json({
+    error: {
+      message: "No plan prices are available.",
+      code: "PRICE_UNAVAILABLE",
+      requestId,
+    },
+  });
+});
 
 router.get("/pricing", async (req: Request, res: Response) => {
   const requestId = req.requestId;
