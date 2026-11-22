@@ -1,0 +1,50 @@
+{"id":"145337bc","sub_skills":["RTT2"],"clusters":["CL.0167"],"distractors":[],"why":"45-45-90 triangle with leg=24; uses special triangle ratio to find x"}
+{"id":"c9f8d1e9","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Given legs a=4, b=5; writes Pythagorean theorem expression for c"}
+{"id":"36661021","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Legs 9 and 6; applies a²+b²=c² to find hypotenuse"}
+{"id":"379ffefb","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Legs 11 and 9; applies Pythagorean theorem to find hypotenuse"}
+{"id":"a6097ec2","sub_skills":["RTT3","RTT1"],"clusters":["CL.0126","CL.0118"],"distractors":[],"why":"Hyp=73, leg=63; finds missing leg via Pythagorean theorem then writes sin as opp/hyp"}
+{"id":"bbaac300","sub_skills":["RTT4"],"clusters":["CL.0171"],"distractors":[],"why":"Similar triangles where cos B=1/22; equal angles have equal trig ratios so cos E=1/22"}
+{"id":"64c1f044","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"Legs 7 and 26; writes tan x° as opposite/adjacent"}
+{"id":"b0c5ece5","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Hyp=19, leg=4; identifies which equation represents a²+b²=c²"}
+{"id":"e6f2ace7","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Legs 3 and 7; applies Pythagorean theorem and estimates closest whole number for hypotenuse"}
+{"id":"87a9a2d4","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"BC=35, AB=171; writes sin A as opposite/hypotenuse"}
+{"id":"13d9a1c3","sub_skills":["RTT2"],"clusters":["CL.0167"],"distractors":[],"why":"30° right triangle with hyp=8; uses 30-60-90 ratio to find PQ"}
+{"id":"a5aee181","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0184"],"distractors":[],"why":"Rectangle diagonal 5√17, side=5; sees right triangle in rectangle, applies Pythagorean theorem"}
+{"id":"a71617d3","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0170"],"distractors":[],"why":"Right triangle with two equal legs=32; recognizes isosceles right (45-45-90) to find angle x"}
+{"id":"bf8d843e","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0184"],"distractors":[],"why":"Altitude creates 30°/60° triangles; BC=12; uses 30-60-90 ratios on the embedded right triangle to find AD"}
+{"id":"9ec76b54","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0088"],"distractors":[],"why":"Legs 28 and 20; applies Pythagorean theorem and simplifies the radical"}
+{"id":"7700d098","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Leg=43.2, hyp=196.8; solves a²+b²=c² for the missing leg"}
+{"id":"de550be0","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"Hyp=21, leg=6; writes Pythagorean expression for missing leg a"}
+{"id":"5a7e3b46","sub_skills":["RTT3"],"clusters":["CL.0105","CL.0126"],"distractors":[],"why":"BC=136, cos A=3/5; treats ratio as sides with common multiplier to find AB"}
+{"id":"2bddbc1b","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"AB=42, AC=41; writes cos A as adjacent/hypotenuse"}
+{"id":"902dc959","sub_skills":["RTT3"],"clusters":["CL.0126"],"distractors":[],"why":"Sides 29,20,21; identifies opposite and adjacent to angle A, writes tan A"}
+{"id":"659cb706","sub_skills":["RTT4"],"clusters":["CL.0174"],"distractors":[],"why":"XZ=27, ZY=35; asks which ratio equals sin X — uses complement relationship sin X = cos(90°-X)"}
+{"id":"25da87f8","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0047"],"distractors":[],"why":"30-60-90 triangle with perimeter 18+6√3; uses special triangle ratios and isolates variable to find longest side"}
+{"id":"14e7c1f4","sub_skills":["RTT4"],"clusters":["CL.0174","CL.0047"],"distractors":[],"why":"cos Q = sin R with expressions x+61 and 4x+4; uses complement identity and solves for x"}
+{"id":"1bf809b5","sub_skills":["RTT3","RTT1"],"clusters":["CL.0126","CL.0118"],"distractors":[],"why":"Hyp=28, leg=11; finds missing side via Pythagorean theorem then writes cos x° as adj/hyp"}
+{"id":"8027db3f","sub_skills":["RTT4","RTT3"],"clusters":["CL.0174","CL.0105"],"distractors":[],"why":"cos K=24/51, J is right angle; uses complement relationship to find cos L from the same triangle"}
+{"id":"dba6a25a","sub_skills":["LAT.5","RTT1"],"clusters":["CL.0173","CL.0086"],"distractors":[],"why":"Similar right triangles with BD∥AE; uses similar triangle proportion and Pythagorean theorem to find CE"}
+{"id":"2be01bd9","sub_skills":["RTT4"],"clusters":["CL.0178","CL.0171"],"distractors":[],"why":"Similar triangles with tan A=50/7; uses reciprocal tangent relationship for the other acute angle"}
+{"id":"a67b9f88","sub_skills":["RTT3","RTT1"],"clusters":["CL.0126","CL.0118"],"distractors":[],"why":"RS=√105, TR=53; finds missing side via Pythagorean theorem then writes sin R as opp/hyp"}
+{"id":"92eb236a","sub_skills":["RTT4"],"clusters":["CL.0178"],"distractors":[],"why":"tan=√3/3 for one acute angle; finds tangent of the other acute angle using reciprocal tangent relationship"}
+{"id":"c6dff223","sub_skills":["RTT4","RTT3"],"clusters":["CL.0171","CL.0105"],"distractors":[],"why":"Similar triangles with tan A=21/20; uses equal trig ratios in similar triangles and ratio-as-sides to find sin D"}
+{"id":"ae041e52","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0184"],"distractors":[],"why":"Square inscribed in circle with radius 20√2/2; sees 45-45-90 triangle from diagonal to find side"}
+{"id":"16d66178","sub_skills":["RTT4"],"clusters":["CL.0174"],"distractors":[],"why":"sin24·cos66+cos24·sin66; recognizes complement pairs (24+66=90) to simplify expression"}
+{"id":"7c25b0dc","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0184"],"distractors":[],"why":"Rectangle diagonal 3√17, side=3; sees right triangle in rectangle, applies Pythagorean theorem for longer side"}
+{"id":"6ab30ce3","sub_skills":["RTT2","RTT4"],"clusters":["CL.0167","CL.0171","CL.0105"],"distractors":[],"why":"Similar triangles with tan A=√3; recognizes 30-60-90 ratio, uses similarity and ratio-as-sides to find DE"}
+{"id":"6933b3d9","sub_skills":["RTT3","RTT4"],"clusters":["CL.0126","CL.0174"],"distractors":[],"why":"RS=12, ST=5, W on RT; writes trig ratios and uses complement relationship for cos(RSW)-sin(WST)"}
+{"id":"c9931030","sub_skills":["RTT4","RTT3"],"clusters":["CL.0171","CL.0126"],"distractors":[],"why":"Sides 20,48,52 with similar triangle UVW; uses equal trig ratios in similar triangles to find tan W"}
+{"id":"f811d345","sub_skills":["RTT1"],"clusters":["CL.0118","CL.0088"],"distractors":[],"why":"Legs 24 and 21; applies Pythagorean theorem and simplifies hypotenuse as 3√d"}
+{"id":"0e709a29","sub_skills":["RTT4","RTT3"],"clusters":["CL.0171","CL.0126"],"distractors":[],"why":"Sides 440,384,584 with similar triangle UVW; uses equal trig ratios in similar triangles to find tan W"}
+{"id":"568d66a7","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0047"],"distractors":[],"why":"Isosceles right triangle with perimeter 94+94√2; uses 45-45-90 ratio and isolates variable to find leg"}
+{"id":"54df8076","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167","CL.0184"],"distractors":[],"why":"Equilateral triangle perimeter 852 inscribed in circle; uses 30-60-90 from center to find w"}
+{"id":"44b2b894","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0184"],"distractors":[],"why":"Rectangle in circle with diagonal=2×short side, area=1089√3; recognizes 30-60-90 to find diameter"}
+{"id":"ffe862a3","sub_skills":["RTT2"],"clusters":["CL.0167"],"distractors":[],"why":"Isosceles right triangle with hyp=58; uses 45-45-90 ratio to find legs and perimeter"}
+{"id":"55bb437a","sub_skills":["RTT3","RTT1"],"clusters":["CL.0105","CL.0126"],"distractors":[],"why":"tan B=3/4, BC=15, DA=4; uses ratio-as-sides and trig to find DE in composite figure"}
+{"id":"498d6795","sub_skills":["RTT1"],"clusters":["CL.0118"],"distractors":[],"why":"AB=10√37, BC=24√37; applies Pythagorean theorem to find AC"}
+{"id":"a4bd60a3","sub_skills":["RTT2","LAT.3"],"clusters":["CL.0167"],"distractors":[],"why":"Equilateral triangle perimeter 624; uses 30-60-90 from altitude to find height k√3"}
+{"id":"4c95c7d4","sub_skills":["RTT2","AV.1"],"clusters":["CL.0167","CL.0119"],"distractors":[],"why":"Three equilateral triangles forming trapezoid, perimeter 20; uses 30-60-90 for height, then area formula"}
+{"id":"1429dcdf","sub_skills":["RTT3","RTT1"],"clusters":["CL.0126","CL.0118"],"distractors":[],"why":"Hyp=23, leg=16; finds missing side via Pythagorean theorem then writes sin x° as opp/hyp"}
+{"id":"52f7b898","sub_skills":["RTT2","RTT3"],"clusters":["CL.0167","CL.0126"],"distractors":[],"why":"AB=54, angle B=30°; uses 30-60-90 to find sides then writes tan A"}
+{"id":"58c26db8","sub_skills":["RTT2"],"clusters":["CL.0167","CL.0047"],"distractors":[],"why":"Isosceles right triangle perimeter 18+18√2; uses 45-45-90 ratio and isolates variable to find hypotenuse"}
+{"id":"bd87bc09","sub_skills":["RTT3"],"clusters":["CL.0105","CL.0126"],"distractors":[],"why":"AB=26, sin B=5/13; treats ratio as sides with common multiplier to find BC"}
