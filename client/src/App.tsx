@@ -131,7 +131,7 @@ function LoginRoute() {
   );
 }
 /**
- * `/join/:token` (owner rulings 2026-11-21; SCL-281): public on purpose. A signed-out teen sees
+ * `/join/:token` (owner rulings 2026-11-21; SCL-282): public on purpose. A signed-out teen sees
  * the invite, and an under-13 student reaches it before the guardian-required redirect. The page
  * and the server enforce the student role. Bare card, like /login.
  */
@@ -264,7 +264,7 @@ export function Router() {
         {/* Public routes */}
         <Route path="/" component={HomePage} />
         <Route path="/login" component={LoginRoute} />
-        {/* A teen claims a guardian's invite (SCL-281). Public: see JoinRoute. */}
+        {/* A teen claims a guardian's invite (SCL-282). Public: see JoinRoute. */}
         <Route path="/join/:token" component={JoinRoute} />
 
         {/* Signup redirects to the auth page on its Sign Up tab (owner brief 2026-10-10 rule 1;

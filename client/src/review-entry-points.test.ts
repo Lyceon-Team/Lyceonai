@@ -165,7 +165,7 @@ describe("U9 — /review is in the allowlist and in App.tsx", () => {
 
   /**
    * The ONE allowlisted return path that is not a RequireRole route (owner rulings 2026-11-21;
-   * SCL-281): `/join/:token` is public on purpose. A signed-out teen must see the invite and
+   * SCL-282): `/join/:token` is public on purpose. A signed-out teen must see the invite and
    * choose sign-up, and an under-13 student must reach it before the guardian-required redirect.
    * The page shows the student-only state to anyone else and the server refuses a non-student
    * claim (`server/routes/join-routes.ts`). Named here, mounted path and all, so a second

@@ -108,7 +108,7 @@ export default function Login() {
       // request until a guardian connects, so a `next` there would only bounce. Onboarding
       // still comes first, exactly as on `main`.
       // A guardian's invite (/join/<token>) is how an under-13 student gets linked, so it wins
-      // over the linking page (owner ruling 2026-11-21, 4; SCL-281).
+      // over the linking page (owner ruling 2026-11-21, 4; SCL-282).
       const onboardingFirst = user.role !== "admin" && needsOnboarding;
       const destination =
         !onboardingFirst && needsGuardianLink && !isJoinReturnPath(next)

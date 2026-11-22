@@ -481,7 +481,7 @@ routes:
     requires_hmac: false
     prerender: false
     indexable: false
-  # a teen claims a guardian's invite (owner rulings 2026-11-21; SCL-281); public, never indexed
+  # a teen claims a guardian's invite (owner rulings 2026-11-21; SCL-282); public, never indexed
   - path_pattern: /join/:token
     surface_class: unauth_marketing
     clarity_allowed: false

@@ -386,6 +386,25 @@ describe("OAuth callback routing (AL-4 OAuth path, AL-3, AL-7)", () => {
     expect(res.headers.location).toBe("https://lyceon.ai/guardian-required");
   });
 
+  // Owner ruling 2026-11-21, 4 (SCL-282): a guardian's invite (/join/<token>) is how an under-13
+  // student gets linked, so it wins over /guardian-required: Google sign-in lands back on /join.
+  it("SCL-282: a completed under-13 student with no active link and next=/join/<token> lands on /join", async () => {
+    okExchange();
+    hasActiveGuardianLinkMock.mockResolvedValueOnce(false);
+    ensureProfileMock.mockResolvedValueOnce({
+      profile_completed_at: "2026-06-17T00:00:00Z",
+      is_under_13: true,
+      role: "student",
+    } satisfies ProfileShape);
+    const token = "J".repeat(43);
+
+    const res = await request(makeApp()).get(
+      `/auth/callback?code=valid-code&next=%2Fjoin%2F${token}`,
+    );
+
+    expect(res.headers.location).toBe(`https://lyceon.ai/join/${token}`);
+  });
+
   it("UI-03 + G2-04: a completed under-13 student WITH an active link keeps next=/tests/<id>", async () => {
     okExchange();
     hasActiveGuardianLinkMock.mockResolvedValueOnce(true);

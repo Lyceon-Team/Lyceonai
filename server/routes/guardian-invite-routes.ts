@@ -1,7 +1,7 @@
 /**
  * The guardian's invites to their teen: list, start, resend, copy a new link, cancel.
  *
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5; SCL-281; Doc 01 V8 §36.1 (the
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5; SCL-282; Doc 01 V8 §36.1 (the
  *        guardian-initiated path), §36.2 (10 a day per guardian, 3 a day per address);
  *        supabase/migrations/20261206000000_guardian_invites.sql] | @implemented [2026-11-22]
  *

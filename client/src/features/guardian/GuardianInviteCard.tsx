@@ -2,7 +2,7 @@
  * The guardian's "Waiting for your teen" card: invite a teen by email or by a copied link, and
  * resend, copy a new link, or cancel an open invite.
  *
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5; SCL-281; DESIGN.md §5 (one
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5; SCL-282; DESIGN.md §5 (one
  *        filled primary action; empty, loading and error states; nothing below 14px)]
  *        | @implemented [2026-11-22]
  *

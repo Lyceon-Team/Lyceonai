@@ -1,7 +1,7 @@
 /**
  * `/join/:token` — a teen claims their guardian's invite.
  *
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 4, 6, 7; SCL-281; DESIGN.md §5 (one
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 4, 6, 7; SCL-282; DESIGN.md §5 (one
  *        filled primary action; empty, loading and error states)] | @implemented [2026-11-22]
  *
  * plain English:

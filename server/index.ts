@@ -561,7 +561,7 @@ app.get(
   getQuestionStats,
 );
 
-// Guardian → teen invites (owner rulings 2026-11-21; SCL-281): the caller's own invites.
+// Guardian → teen invites (owner rulings 2026-11-21; SCL-282): the caller's own invites.
 // Mounted BEFORE /api/guardian so these paths never fall through that router.
 app.use(
   "/api/guardian/invites",

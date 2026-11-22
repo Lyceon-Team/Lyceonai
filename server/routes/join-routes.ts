@@ -1,7 +1,7 @@
 /**
  * /api/join — a teen looks up and claims a guardian's invite.
  *
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 4, 5, 6; SCL-281; SCL-202 (anonymous
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 4, 5, 6; SCL-282; SCL-202 (anonymous
  *        public reads are limited on an HMAC of the caller's IP); Doc 01 V8 §36.1 (both
  *        parties notified); supabase/migrations/20261206000000_guardian_invites.sql]
  *        | @implemented [2026-11-22]

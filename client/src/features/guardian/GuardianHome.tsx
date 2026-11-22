@@ -37,7 +37,7 @@ import { GuardianInviteCard } from "./GuardianInviteCard";
 
 /**
  * @spec [Guardian_Closure_Plan G4-01; owner rulings 2026-11-21 (counsel-approved) 1, 2, 8;
- *        SCL-281; DESIGN.md §5 (one filled primary action)] | @implemented [2026-09-30;
+ *        SCL-282; DESIGN.md §5 (one filled primary action)] | @implemented [2026-09-30;
  *        invite card and call link 2026-11-22]
  *
  * plain English: a guardian with no linked student. The invite card is the way in: email the

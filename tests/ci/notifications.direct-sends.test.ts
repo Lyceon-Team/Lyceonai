@@ -483,3 +483,60 @@ describe("the guardian invite promises no skills (SCL-194)", () => {
     }
   });
 });
+
+/**
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 7; SCL-282;
+ *        contracts/notifications.contract.md §0.4, §0.5] | @implemented [2026-11-22]
+ *
+ * plain English: the guardian's invite to their teen is the fifth direct send. Its call site is
+ * wired, its key is derived from durable state and carries no address, and its body states what
+ * the guardian will see in the Privacy Policy v6 §5.1 words, carries the /join link, says how to
+ * ignore it, and escapes the name it was given.
+ */
+describe("the guardian's invite to their teen (SCL-282)", () => {
+  it("is wired at its call site, by import and by an awaited call", () => {
+    const root = path.resolve(__dirname, "../..");
+    const routes = fs.readFileSync(
+      path.join(root, "server/routes/guardian-invite-routes.ts"),
+      "utf8",
+    );
+    expect(routes).toMatch(
+      /import \{ sendGuardianTeenInviteEmail \} from "\.\.\/lib\/notifications\/direct-sends"/,
+    );
+    expect(routes).toMatch(/await sendGuardianTeenInviteEmail\(\{/);
+  });
+
+  it("keys on the invite and its token's issue time, never an address or the token", async () => {
+    const { guardianTeenInviteIdempotencyKey } =
+      await import("../../server/lib/notifications/direct-sends");
+    const key = guardianTeenInviteIdempotencyKey({
+      inviteId: "0b0e6f9e-2f7a-4d77-9c11-2d6d5c1f0a01",
+      tokenIssuedAt: "2026-11-22T00:00:00.000Z",
+    });
+    expect(key).toBe(
+      "guardian-teen-invite:0b0e6f9e-2f7a-4d77-9c11-2d6d5c1f0a01:2026-11-22T00:00:00.000Z",
+    );
+    expect(key).not.toContain("@");
+  });
+
+  it("states what the guardian will and will not see, links /join, and escapes the name", async () => {
+    const { guardianTeenInviteEmail } =
+      await import("../../server/lib/notifications/templates/guardian-teen-invite");
+    const email = guardianTeenInviteEmail({
+      guardianFirstName: "<b>Robin</b>",
+      joinUrl: "https://lyceon.example/join/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      expiresAt: "2026-12-06T00:00:00.000Z",
+    });
+    for (const part of [email.text, email.html]) {
+      expect(part).toContain("mastery for each subject area");
+      expect(part).toContain("full-length practice test");
+      // The HTML part escapes the apostrophe.
+      expect(part).toMatch(/won('|&#39;|&#x27;|&apos;)t see skill-level detail, your answers/);
+      expect(part).toContain("/join/AAAA");
+      expect(part).toContain("ignore this email");
+      expect(part).not.toMatch(/\$\d|price|per month/i);
+    }
+    expect(email.html).not.toContain("<b>Robin</b>");
+    expect(email.html).toContain("&lt;b&gt;Robin&lt;/b&gt;");
+  });
+});

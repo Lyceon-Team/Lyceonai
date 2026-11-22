@@ -121,7 +121,7 @@ function resolvePostCompletionPath(
       ? returnPathFromSearch(window.location.search)
       : null;
   // A guardian's invite (/join/<token>) is how an under-13 student gets linked, so it wins over
-  // the linking page (owner ruling 2026-11-21, 4; SCL-281).
+  // the linking page (owner ruling 2026-11-21, 4; SCL-282).
   if (
     role !== "guardian" &&
     role !== "admin" &&

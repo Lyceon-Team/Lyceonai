@@ -181,14 +181,15 @@ describe("O2 — the four production states", () => {
   });
 
   // @spec [owner ruling 2026-10-05 (v5 rulings 1): every user re-accepts a new Privacy Policy;
-  //       owner ruling 2026-10-07: v6 is the launch version, folding in the SEO vertical] |
-  //       @implemented [2026-10-07]
-  // A user who accepted Privacy Policy 5.0 (or 4.0) and is current on Student Terms owes exactly
-  // the Privacy Policy again, at the version legal/ now publishes (6.0).
-  it.each(["5.0", "4.0"])(
-    "accepted Privacy Policy %s — re-asked for v6, and only for that",
+  //       owner ruling 2026-10-07: v6 is the launch version, folding in the SEO vertical;
+  //       owner rulings 2026-11-21 (counsel-approved) 7-9, SCL-283: v7] |
+  //       @implemented [2026-10-07; v7 2026-11-22]
+  // A user who accepted an earlier Privacy Policy (6.0, 5.0 or 4.0) and is current on Student
+  // Terms owes exactly the Privacy Policy again, at the version legal/ now publishes (7.0).
+  it.each(["6.0", "5.0", "4.0"])(
+    "accepted Privacy Policy %s — re-asked for v7, and only for that",
     (accepted) => {
-      expect(CURRENT["privacy-policy"]).toBe("6.0");
+      expect(CURRENT["privacy-policy"]).toBe("7.0");
       const ACCEPTED_OLDER = [
         { doc_key: "student_terms", doc_version: CURRENT["student-terms"]! },
         { doc_key: "privacy_policy", doc_version: accepted },

@@ -1,5 +1,5 @@
 /**
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 7; SCL-281;
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 7; SCL-282;
  *        contracts/notifications.contract.md §0.4 (a direct send: the teen may have no profile
  *        yet), §12.3; Privacy Policy v6 §5.1 (what a linked guardian can see)]
  *        | @implemented [2026-11-22]

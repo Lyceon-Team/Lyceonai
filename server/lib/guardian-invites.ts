@@ -1,7 +1,7 @@
 /**
  * Guardian → teen invites: the server's one data layer for them.
  *
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5, 6; SCL-281;
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5, 6; SCL-282;
  *        supabase/migrations/20261206000000_guardian_invites.sql] | @implemented [2026-11-22]
  *
  * plain English: every read and write of `public.guardian_invites` goes through here, and every

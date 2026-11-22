@@ -1,5 +1,5 @@
 /**
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5, 6, 7; SCL-281;
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 5, 6, 7; SCL-282;
  *        supabase/migrations/20261206000000_guardian_invites.sql; Privacy Policy v6 §5.1 (what a
  *        linked guardian can see); Coding Standards §7.2 (schema first, types inferred)]
  *        | @implemented [2026-11-22]

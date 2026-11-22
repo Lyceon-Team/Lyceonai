@@ -457,7 +457,7 @@ export async function nativeOAuthCallbackHandler(req: Request, res: Response) {
       // goes to /guardian-required ahead of any `next` — the server refuses every learning
       // request until a guardian connects. Onboarding still comes first.
       // A guardian's invite (/join/<token>) is how an under-13 student gets linked, so it
-      // wins over the linking page (owner ruling 2026-11-21, 4; SCL-281).
+      // wins over the linking page (owner ruling 2026-11-21, 4; SCL-282).
       redirectPath =
         !profileNeedsCompletion &&
         needsGuardianLink &&

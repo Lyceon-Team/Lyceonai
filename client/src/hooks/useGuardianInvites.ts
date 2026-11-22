@@ -1,5 +1,5 @@
 /**
- * @spec [owner rulings 2026-11-21 (counsel-approved) 2, 5; SCL-281] | @implemented [2026-11-22]
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 2, 5; SCL-282] | @implemented [2026-11-22]
  *
  * plain English: the guardian's open invites, and the four things the invite card does with
  * them: start one (email it, or just get the link), resend it, copy a new link, cancel it.

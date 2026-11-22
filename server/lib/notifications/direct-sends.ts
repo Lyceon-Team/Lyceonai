@@ -271,7 +271,7 @@ export function guardianTeenInviteIdempotencyKey(input: {
 }
 
 /**
- * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2; SCL-281;
+ * @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2; SCL-282;
  *        contracts/notifications.contract.md §0.4, §0.5, §12.3] | @implemented [2026-11-22]
  *
  * plain English: the guardian's invite to their teen, on the same direct-send path as the

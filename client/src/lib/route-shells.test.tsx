@@ -404,7 +404,7 @@ describe("the table says what DESIGN.md §2 says", () => {
       "/tests/:sessionId/report",
       // UI-59: every bare-card page.
       "/login",
-      // SCL-281: the guardian invite page, a bare card like /login.
+      // SCL-282: the guardian invite page, a bare card like /login.
       "/join/:token",
       "/profile/complete",
       "/update-password",

@@ -78,7 +78,7 @@ const GUARDIAN_LINK_INVITE_DAILY_BUCKET = "guardian_link_attempts_daily";
 const GUARDIAN_LINK_INVITE_EMAIL_BUCKET = "guardian_link_email_attempts";
 
 /**
- * The guardian → teen invite's two buckets (owner ruling 2026-11-21, 5; SCL-281): 10 links a
+ * The guardian → teen invite's two buckets (owner ruling 2026-11-21, 5; SCL-282): 10 links a
  * day per GUARDIAN, and 3 emails a day per (guardian, address), rolled back with the daily
  * bucket. Same ledger, same shape and same rollback as the student's invite above, keyed on
  * the guardian who sends.
@@ -121,7 +121,7 @@ export async function applyGuardianInviteRateLimit(
 }
 
 /**
- * @spec [owner ruling 2026-11-21 (counsel-approved) 5; SCL-281] | @implemented [2026-11-22]
+ * @spec [owner ruling 2026-11-21 (counsel-approved) 5; SCL-282] | @implemented [2026-11-22]
  *
  * plain English: a guardian issuing an invite link to their teen. Every new link counts
  * against the guardian's daily bucket (10); one that is EMAILED also counts against the

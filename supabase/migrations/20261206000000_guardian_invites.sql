@@ -4,7 +4,7 @@
 -- Guardian invites: a guardian invites their teen, and the teen claims the invite at
 -- /join/<token>. Claiming creates the guardian link.
 --
--- @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 4, 5, 6; SCL-281 (guardian-initiated
+-- @spec [owner rulings 2026-11-21 (counsel-approved) 1, 2, 4, 5, 6; SCL-282 (guardian-initiated
 --        linking by invite, amending SCL-080); Doc 01 V8 §36.1 (the guardian-initiated path,
 --        both parties notified); SCL-187 (under-13 only with an active link)]
 --        | @implemented [2026-11-22]
@@ -271,6 +271,8 @@ DECLARE
   v_row       public.guardian_invites;
   v_open      integer;
   v_was_live  boolean;
+  -- How this link reached the teen, for the audit row: never the address or its hash.
+  v_delivery  text := CASE WHEN p_email_hash IS NULL THEN 'link' ELSE 'mail' END;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.profiles
                   WHERE id = p_guardian_id AND role = 'guardian') THEN
@@ -297,7 +299,7 @@ BEGIN
     RETURNING * INTO v_row;
     PERFORM public.guardian_invite_audit(
       'guardian_invite_issued', p_guardian_id, NULL, v_row.id,
-      jsonb_build_object('emailed', p_email_hash IS NOT NULL, 'expires_at', v_row.expires_at),
+      jsonb_build_object('delivery', v_delivery, 'expires_at', v_row.expires_at),
       p_request_id);
     RETURN v_row;
   END IF;
@@ -327,7 +329,7 @@ BEGIN
   RETURNING * INTO v_row;
   PERFORM public.guardian_invite_audit(
     'guardian_invite_reissued', p_guardian_id, NULL, v_row.id,
-    jsonb_build_object('emailed', p_email_hash IS NOT NULL, 'expires_at', v_row.expires_at),
+    jsonb_build_object('delivery', v_delivery, 'expires_at', v_row.expires_at),
     p_request_id);
   RETURN v_row;
 END;
