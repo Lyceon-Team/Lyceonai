@@ -1,0 +1,1035 @@
+{
+  "audit_file": "content/cb-corpus/cb-fresh-audit.ndjson",
+  "stored_file": "content/cb-corpus/cb-tags-reconciled.ndjson",
+  "total_items": 1618,
+  "metric_1_skill_level_match": {
+    "description": "Audit primary sub-skill's skill-family vs item's CB official skill label",
+    "total_compared": 1618,
+    "match_count": 1241,
+    "match_pct": 76.7,
+    "mismatch_count": 377,
+    "mismatches": [
+      {
+        "id": "fa80893a",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "0adbe034",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "baca4a4c",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "097e10f5",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "9b886541",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "590f2187",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "f2b63f49",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "05417146",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "51aabd93",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "349a5bc1",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "6105234d",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.3",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "f305b5ca",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.3",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "5c94e6fa",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.5",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "2f0a43b2",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "997bec28",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "40ba6288",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "6ac23de7",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "7392dfc1",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "93954cfa",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "RAT.11",
+        "audit_scl": "Ratios, Rates, Proportional Relationships, and Units"
+      },
+      {
+        "id": "3d04de9c",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "60f71697",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "4de87c9a",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.3",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "12b04e68",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "e7b6f0d1",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "8339793c",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "550b352c",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.5",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "87071893",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "b4553284",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "ed18c4f7",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.3",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "0d685865",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "12255364",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "b82a943c",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "eac739b2",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "2e98b1df",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "d9d83c02",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "da2e9202",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "3c4ce699",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "9fc31513",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "2e8cc1c0",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "c7d7980e",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "83fb222d",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "7a987ae4",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "56e1b09e",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "4f8bd093",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "9ff10b3b",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "59afe8db",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "4e77195b",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "4f7981a0",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.2",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "c841e8e8",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.1",
+        "audit_scl": "Linear Equations in One Variable"
+      },
+      {
+        "id": "fbb0ea7f",
+        "cb_skill": "Linear equations in one variable",
+        "expected_scl": "Linear equations in one variable",
+        "audit_primary": "LE1.4",
+        "audit_scl": "Linear Equations in One Variable"
+      }
+    ]
+  },
+  "metric_2_primary_subskill_agreement": {
+    "description": "Audit primary sub-skill vs stored primary sub-skill",
+    "total_compared": 1618,
+    "agree_count": 828,
+    "agree_pct": 51.2,
+    "disagree_count": 790,
+    "disagreements": [
+      {
+        "id": "d4d513ff",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "974d33dc",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.2"
+      },
+      {
+        "id": "508344ac",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "0354c7de",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "1e8d7183",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "5dd53f73",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "df747160",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "fb96a5b3",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "50338a48",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "df0ef054",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "fd65f47f",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "67e866b5",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "290cdc2c",
+        "audit_primary": "EE.4",
+        "stored_primary": "EE.5"
+      },
+      {
+        "id": "6e06a0a7",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "bdb0aa23",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "294db8ec",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "18c7c3e0",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "9ed9f54d",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "8f82ad81",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "49efde89",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "60fdb4d4",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "02489d55",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "1d3fee25",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "8452c42b",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "4ac59df6",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "075b29b0",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "72ebc024",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "c602140f",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "8838a672",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "26e83bbc",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "3e9cc0c2",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "d9137a84",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.4"
+      },
+      {
+        "id": "16de54c7",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "c3a72da5",
+        "audit_primary": "EE.1",
+        "stored_primary": "EE.2"
+      },
+      {
+        "id": "482a445b",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "1be909aa",
+        "audit_primary": "EE.4",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "a391ed22",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "6d04c89d",
+        "audit_primary": "EE.5",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "5b6af6b1",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "fde6f3bb",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "cc776a04",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "b4a6ed81",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "3206b905",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "42c71eb5",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "52931bfa",
+        "audit_primary": "EE.5",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "b8caaf84",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "7355b9d9",
+        "audit_primary": "EE.3",
+        "stored_primary": "EE.4"
+      },
+      {
+        "id": "911c415b",
+        "audit_primary": "EE.2",
+        "stored_primary": "EE.1"
+      },
+      {
+        "id": "89fc23af",
+        "audit_primary": "EE.6",
+        "stored_primary": "EE.3"
+      },
+      {
+        "id": "12e7faf8",
+        "audit_primary": "EE.5",
+        "stored_primary": "EE.1"
+      }
+    ]
+  },
+  "metric_3_cluster_jaccard": {
+    "description": "Jaccard similarity of cluster sets (audit vs stored)",
+    "mean_jaccard": 0.258,
+    "per_skill": {
+      "Area and Volume": 0.596,
+      "Circles": 0.313,
+      "Equivalent Expressions": 0.228,
+      "Evaluating Statistical Claims: Observational Studies and Experiments": 0.41,
+      "Inference from Sample Statistics and Margin of Error": 0.25,
+      "Linear Equations in One Variable": 0.234,
+      "Linear Equations in Two Variables": 0.303,
+      "Linear Functions": 0.253,
+      "Linear Inequalities in One or Two Variables": 0.225,
+      "Lines, Angles, and Triangles": 0.387,
+      "Nonlinear Equations in One Variable and Systems of Equations in Two Variables": 0.114,
+      "Nonlinear Functions": 0.109,
+      "One-Variable Data: Distributions and Measures of Center and Spread": 0.274,
+      "Percentages": 0.249,
+      "Probability and Conditional Probability": 0.21,
+      "Ratios, Rates, Proportional Relationships, and Units": 0.151,
+      "Right Triangles and Trigonometry": 0.431,
+      "Systems of Two Linear Equations in Two Variables": 0.465,
+      "Two-Variable Data: Models and Scatterplots": 0.224,
+      "unknown": 0.363
+    }
+  },
+  "metric_4_richness_gap": {
+    "description": "Items where audit found additional genuinely-tested sub-skills the stored single-tag omitted",
+    "items_with_extra_tags": 946,
+    "pct_of_total": 58.5,
+    "examples": [
+      {
+        "id": "d4d513ff",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "974d33dc",
+        "stored_tags": [
+          "EE.2"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "508344ac",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "0354c7de",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "1e8d7183",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "5dd53f73",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "df747160",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.3",
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "fb96a5b3",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.1",
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "50338a48",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "df0ef054",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "fd65f47f",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "67e866b5",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.3",
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "290cdc2c",
+        "stored_tags": [
+          "EE.5"
+        ],
+        "audit_tags": [
+          "EE.4"
+        ],
+        "additional": [
+          "EE.4"
+        ]
+      },
+      {
+        "id": "6e06a0a7",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "bdb0aa23",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "294db8ec",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "18c7c3e0",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "9ed9f54d",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "8f82ad81",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "49efde89",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.3",
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "60fdb4d4",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "02489d55",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "1d3fee25",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.1",
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "8452c42b",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "4ac59df6",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "075b29b0",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      },
+      {
+        "id": "72ebc024",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.3"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "c602140f",
+        "stored_tags": [
+          "EE.1"
+        ],
+        "audit_tags": [
+          "EE.1",
+          "EE.2"
+        ],
+        "additional": [
+          "EE.2"
+        ]
+      },
+      {
+        "id": "0b3d25c5",
+        "stored_tags": [
+          "EE.4"
+        ],
+        "audit_tags": [
+          "EE.3",
+          "EE.4"
+        ],
+        "additional": [
+          "EE.3"
+        ]
+      },
+      {
+        "id": "8838a672",
+        "stored_tags": [
+          "EE.3"
+        ],
+        "audit_tags": [
+          "EE.1"
+        ],
+        "additional": [
+          "EE.1"
+        ]
+      }
+    ]
+  },
+  "metric_5_distractor_overlap": {
+    "description": "Distractor pair overlap between audit and stored",
+    "note": "Most audit workers wrote distractors as plain strings (option keys) rather than {option_key, cluster_id} objects. Only proper objects are compared; string-format distractors are excluded.",
+    "audit_proper_distractor_items": 0,
+    "audit_string_distractor_items": 544,
+    "stored_items_with_distractors": 1045,
+    "comparable_items": 1045,
+    "exact_match_count": 0,
+    "exact_match_pct": 0.0,
+    "mismatch_count": 1045,
+    "mean_jaccard_on_mismatches": 0.0
+  }
+}
