@@ -1751,7 +1751,7 @@
       "domain": "Problem Solving and Data Analysis",
       "name": "Successive and Exponential Percent Changes",
       "definition": "Apply two or more sequential percent changes to a quantity by chaining multipliers, or model repeated percent change over a variable number of periods as an exponential expression. For sequential changes: multiply by each successive factor. For exponential: use a(1±r/100)^t where t is a variable. Includes markup-then-discount, repeated growth/decay, and any chain of percent operations.",
-      "inclusion_test": "The question involves two or more percent changes applied in sequence to the same quantity (chaining multipliers), OR a percent rate applied repeatedly over a variable number of periods (exponential expression). The student must either chain operations or construct/evaluate an exponential form.",
+      "inclusion_test": "The question involves two or more percent changes applied in sequence to the same quantity (chaining multipliers), OR a percent rate applied repeatedly over a variable number of periods (exponential expression). The student must either chain operations or construct/evaluate an exponential form. CO-TAG with PCT.9 when the chain is applied in reverse (the question gives the final value after two or more successive percent changes and asks for the original/starting value). PCT.12 ALONE when the chain is forward (asks for the final value). PCT.9 ALONE when a single percent change is undone.",
       "evidence_ids": [
         "dccdb20c",
         "b2f6f17d",
@@ -1973,7 +1973,7 @@
       "domain": "Problem Solving and Data Analysis",
       "name": "Reverse Percent (Find Original Before Change)",
       "definition": "Given a final value that resulted from a percent increase or decrease, find the original value by dividing by the appropriate multiplier. For a p% increase: original = final / (1 + p/100). For a p% decrease: original = final / (1 - p/100).",
-      "inclusion_test": "The question states a result after a percent change has already been applied and asks for the original value before the change. The student must undo the percent operation, not apply it forward.",
+      "inclusion_test": "The question states a result after a percent change has already been applied and asks for the original value before the change. The student must undo the percent operation (divide by the multiplier), not apply it forward. CO-TAG with PCT.12 when two or more successive percent changes must be undone (the chain is reversed). PCT.9 ALONE when a single percent change is undone. PCT.12 ALONE (without PCT.9) when the chain is applied forward.",
       "evidence_ids": [
         "94c65646",
         "63573fea",
@@ -2068,7 +2068,7 @@
       "domain": "Problem Solving and Data Analysis",
       "name": "Whole-Group Probability",
       "definition": "Compute the probability of an event by dividing the number of favorable outcomes by the total number of outcomes, where the sample space is the entire population (no restricting condition). Includes reading counts from lists, frequency tables, two-way tables (using row/column totals), or word problems. The unknown is the probability; the counts are given or directly readable.",
-      "inclusion_test": "Two independent taggers agree: (1) the question asks for a probability, proportion, or fraction; (2) the sample space is the entire group (no 'given that', 'of those', 'among [subset]' restriction); (3) the favorable and total counts are given or directly computable from the data without algebraic rearrangement of a probability equation.",
+      "inclusion_test": "The question asks for a probability, proportion, or fraction and the denominator is the ENTIRE group total — no restriction narrows the sample space. If ANY restriction phrase appears ('given that', 'of those', 'of the [subset]', 'from those who', 'among', 'if [condition]', or an equivalent that selects a subgroup before the probability is computed), the question is PRB.6, not PRB.5 — even when the stem also says 'selected at random'. PRB.5 requires that the denominator is the whole-group count with no such restriction. The favorable and total counts are given or directly computable without algebraic rearrangement of a probability equation.",
       "evidence_ids": [
         "4e527894",
         "0a99e5bb",
@@ -2104,7 +2104,7 @@
       "domain": "Problem Solving and Data Analysis",
       "name": "Conditional Probability",
       "definition": "Compute the probability of an event within a restricted sample space. The question restricts to a subset of the population using language like 'given that', 'of those', 'among', 'if [condition]', or 'of the [subset]', then asks for the probability within that subset. The student must identify the restricted total (denominator) and the favorable count within the restriction (numerator).",
-      "inclusion_test": "Two independent taggers agree: (1) the question explicitly restricts the sample space to a named subset before asking for a probability or fraction; (2) the denominator is not the whole-group total but a row total, column total, or sum of a defined subset; (3) the favorable count is read from within the restricted subset.",
+      "inclusion_test": "The question restricts the sample space to a named subset BEFORE asking for a probability or fraction. Any restriction phrase is dispositive: 'given that', 'of those', 'of the [subset]', 'from those who', 'among', 'if [condition]', or an equivalent that selects a subgroup. When a restriction phrase is present, the question is PRB.6 regardless of other phrasing (including 'selected at random'). The denominator is the subset total (row total, column total, or sum of the defined subgroup), NOT the whole-group total. PRB.5 and PRB.6 are mutually exclusive — the presence or absence of a restriction phrase is the sole discriminator.",
       "evidence_ids": [
         "46545dd6",
         "e1ad3d41",
@@ -2162,7 +2162,7 @@
       "domain": "Problem Solving and Data Analysis",
       "name": "Proportion Setup and Solve",
       "definition": "Set up an equation of two equivalent ratios (a/b = c/d) with one unknown and solve by cross-multiplication or algebraic manipulation.",
-      "inclusion_test": "The problem states that two ratios are equivalent, or gives a fixed ratio and asks for an unknown value when one of the four quantities changes. The student must set up a proportion equation and solve algebraically.",
+      "inclusion_test": "Apply AFTER ruling out RAT.14. The problem scales two equivalent ratios — 'X per Y, how many X for Z Y' (recipe/ingredient/serving scaling, map scale, unit-price scaling) — requiring the student to set up a proportion equation (a/b = c/d) and solve by cross-multiplication or algebraic manipulation. If the problem stacks a second operation on top of the proportion (a surcharge, a difference of two derived values, a subtraction of an amount already used, currency conversion with a percentage), use RAT.14 instead.",
       "evidence_ids": [
         "4837406c",
         "3ac09984",
@@ -2242,7 +2242,7 @@
       "domain": "Problem Solving and Data Analysis",
       "name": "Multi-Step Rate and Proportion Problems",
       "definition": "Combine rate or proportion reasoning with one or more additional arithmetic operations such as percentage adjustments, differences between derived values, algebraic substitution, scale-factor application, or currency conversion with surcharges.",
-      "inclusion_test": "The problem requires proportional or rate reasoning PLUS at least one additional step: applying a percentage surcharge or fee, computing a difference between two density-derived values, performing algebraic substitution into a ratio equation, converting currencies with a percentage adjustment, or applying a scale factor to a real-world measurement.",
+      "inclusion_test": "Apply FIRST in the RAT.9/RAT.10/RAT.14 hierarchy. The problem requires rate or proportion reasoning PLUS at least one additional arithmetic step: a rate adjustment ('increases by 1/3'), a surcharge or fee, computing a difference between two derived values, subtracting an amount already used, performing algebraic substitution into a ratio equation, converting currencies with a percentage adjustment, or applying a scale factor to a real-world measurement. If the problem has a rate/proportion component and any second operation beyond the core rate multiply/divide or proportion solve, tag RAT.14.",
       "evidence_ids": [
         "89c39d77",
         "61b87506",
@@ -2399,7 +2399,7 @@
       "domain": "Problem Solving and Data Analysis",
       "name": "Rate Application",
       "definition": "Given a rate (quantity per unit) and a total or count, multiply to find a total output, or divide to find the missing quantity. Single-step rate reasoning with no additional unit conversion.",
-      "inclusion_test": "The problem states a rate (e.g., items per hour, cost per pound, miles per day, revolutions per minute) and asks the student to compute a total by multiplying rate times quantity, compute a unit rate by dividing total by count, or find an unknown count by dividing total by rate. Only one arithmetic operation is needed beyond identifying the rate.",
+      "inclusion_test": "Apply AFTER ruling out RAT.14 and RAT.10. The problem states an explicit named rate (e.g., 'items per hour', 'cost per pound', 'miles per day') and asks the student to compute a total (rate * quantity), a unit rate (total / count), or an unknown count (total / rate) in a SINGLE multiply or divide. No proportion setup (a/b = c/d) is needed, and no additional step (percentage, surcharge, difference, substitution, scale factor) follows. If the problem scales two equivalent ratios ('X per Y, how many X for Z Y'), use RAT.10. If it stacks a second operation on top of the rate reasoning, use RAT.14.",
       "evidence_ids": [
         "4347a032",
         "3318d37b",
