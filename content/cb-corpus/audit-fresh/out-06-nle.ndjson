@@ -1,0 +1,130 @@
+{"id": "f11ffa93", "sub_skills": ["NLE.3"], "clusters": ["CL.0047", "CL.0091"], "distractors": [], "why": "Radical equation: square both sides to remove sqrt, then isolate x"}
+{"id": "4236c5a3", "sub_skills": ["NLE.2"], "clusters": ["CL.0099"], "distractors": [], "why": "Quadratic in disguise: take square root of both sides, solve two cases"}
+{"id": "bf704c34", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate c by adding 7 to both sides"}
+{"id": "fcb78856", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate c by dividing both sides by 42f"}
+{"id": "494d247d", "sub_skills": ["NLE.5"], "clusters": ["CL.0072", "CL.0177"], "distractors": [], "why": "System of linear and absolute value equations: read intersection from graph"}
+{"id": "d964bc26", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate y by adding 57 to both sides"}
+{"id": "98f735f2", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate Q by dividing both sides by P"}
+{"id": "dd3a910a", "sub_skills": ["NLE.5"], "clusters": ["CL.0177"], "distractors": [], "why": "System of linear and nonlinear equations: read intersection points from graph"}
+{"id": "eb268057", "sub_skills": ["NLE.2"], "clusters": ["CL.0099"], "distractors": [], "why": "Simple quadratic: take square root of both sides to get x=±8"}
+{"id": "c8bf5313", "sub_skills": ["NLE.5"], "clusters": ["CL.0094"], "distractors": [], "why": "System with quadratic: substitute x=8 into y=x^2+8"}
+{"id": "c7789423", "sub_skills": ["NLE.3"], "clusters": ["CL.0090"], "distractors": [], "why": "Absolute value equation: split into two cases x-2=9 and x-2=-9"}
+{"id": "5c7d5744", "sub_skills": ["NLE.5"], "clusters": ["CL.0177"], "distractors": [], "why": "System of linear and quadratic: read intersection points from graph"}
+{"id": "ce940f80", "sub_skills": ["NLE.2"], "clusters": ["CL.0016", "CL.0099"], "distractors": [], "why": "Quadratic: clear fraction by multiplying by 25, then take square root"}
+{"id": "a67a439d", "sub_skills": ["NLE.5"], "clusters": ["CL.0094", "CL.0095"], "distractors": [], "why": "System: solve first equation for x, substitute expression into second"}
+{"id": "b76a2815", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate W by multiplying both sides by t"}
+{"id": "7399c3b0", "sub_skills": ["NLE.2"], "clusters": ["CL.0047", "CL.0099"], "distractors": [], "why": "Quadratic: isolate k^2 then take positive square root"}
+{"id": "7a8cb72a", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate m by dividing both sides by 7"}
+{"id": "d0e8e8f5", "sub_skills": ["NLE.5"], "clusters": ["CL.0177"], "distractors": [], "why": "System of quadratic and horizontal line: read intersection points from graph"}
+{"id": "3cce51ea", "sub_skills": ["NLE.3"], "clusters": ["CL.0047", "CL.0090"], "distractors": [], "why": "Absolute value equation: isolate |p| then split into two cases"}
+{"id": "568aaf27", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0037", "CL.0122"], "distractors": [], "why": "System of linear and quadratic: substitute, factor trinomial, use zero product property"}
+{"id": "b8c4a1cd", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate j by dividing both sides by 8"}
+{"id": "3f8d5876", "sub_skills": ["NLE.5"], "clusters": ["CL.0177"], "distractors": [], "why": "System of linear and nonlinear: read intersection points from graph"}
+{"id": "5639dd1a", "sub_skills": ["NLE.2"], "clusters": ["CL.0099"], "distractors": [], "why": "Quadratic: recognize (22)(22)=22^2, so x=22"}
+{"id": "c1964c11", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate p by subtracting 34 from both sides"}
+{"id": "0bebc08c", "sub_skills": ["NLE.5"], "clusters": ["CL.0094"], "distractors": [], "why": "System with quadratic: substitute x=3 to find y, then compute xy"}
+{"id": "7cb3a8ee", "sub_skills": ["NLE.3"], "clusters": ["CL.0090"], "distractors": [], "why": "Absolute value equation: split into two cases"}
+{"id": "88867d37", "sub_skills": ["NLE.2"], "clusters": ["CL.0122", "CL.0163"], "distractors": [], "why": "Polynomial equation in factored form: apply zero product property, pick positive solution"}
+{"id": "13e5a5d5", "sub_skills": ["NLE.3"], "clusters": ["CL.0047", "CL.0090"], "distractors": [], "why": "Absolute value equation: divide by 5 to isolate |x|, take positive value"}
+{"id": "70f98ab4", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate q by adding 29r to both sides"}
+{"id": "3de7a7d7", "sub_skills": ["NLE.2"], "clusters": ["CL.0017", "CL.0099"], "distractors": [], "why": "Quadratic: combine like terms to get x^2=4, take square root"}
+{"id": "4ca30186", "sub_skills": ["NLE.5"], "clusters": ["CL.0177"], "distractors": [], "why": "System of linear and nonlinear: read intersection points from graph"}
+{"id": "4e18fc5d", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate w by multiplying both sides by -150x"}
+{"id": "a5663025", "sub_skills": ["NLE.4"], "clusters": ["CL.0177"], "distractors": [], "why": "Determine number of solutions from graph: count intersection points"}
+{"id": "d0a7871e", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0099"], "distractors": [], "why": "System of linear and quadratic: substitute, simplify to x^2=1"}
+{"id": "7f81d0c3", "sub_skills": ["NLE.2"], "clusters": ["CL.0007"], "distractors": [], "why": "Quadratic equation solved with quadratic formula: a=1,b=-1,c=-1"}
+{"id": "b4acba95", "sub_skills": ["NLE.4", "NLE.2"], "clusters": ["CL.0025", "CL.0037"], "distractors": [], "why": "Count distinct positive solutions: factor or use discriminant to verify two positive roots"}
+{"id": "ff2c1431", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0034"], "distractors": [], "why": "Literal equation: distribute then isolate n"}
+{"id": "6bdcac03", "sub_skills": ["NLE.4"], "clusters": ["CL.0168"], "distractors": [], "why": "Determine solutions: a square cannot equal a negative number, so zero real solutions"}
+{"id": "3d7d7534", "sub_skills": ["NLE.2"], "clusters": ["CL.0122", "CL.0164"], "distractors": [], "why": "Simplify to difference of squares equal to zero, apply zero product property"}
+{"id": "911383f2", "sub_skills": ["NLE.2"], "clusters": ["CL.0122", "CL.0163"], "distractors": [], "why": "Find solutions via zero product property, compute their product"}
+{"id": "b80d10d7", "sub_skills": ["NLE.3"], "clusters": ["CL.0016", "CL.0034", "CL.0047"], "distractors": [], "why": "Rational equation: clear denominators, distribute, isolate variable, check domain"}
+{"id": "fcdf87b7", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0039", "CL.0122"], "distractors": [], "why": "System of quadratic and linear: substitute, factor out x, use zero product property"}
+{"id": "3148fe3e", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0165"], "distractors": [], "why": "System: eliminate y, get perfect square trinomial, solve for x=-4"}
+{"id": "652054da", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation in context: isolate p by multiplying both sides by 2/3"}
+{"id": "0380bbdc", "sub_skills": ["NLE.3"], "clusters": ["CL.0047", "CL.0091", "CL.0189"], "distractors": [], "why": "Radical equation: isolate radical, square both sides, then compute 6x"}
+{"id": "95ed0b69", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0203"], "distractors": [], "why": "Literal equation: treat (4j+9) as one unit, isolate it"}
+{"id": "6e02cd78", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0037", "CL.0165"], "distractors": [], "why": "System: substitute, expand, factor perfect square trinomial to get x=2, y=1"}
+{"id": "11ccf3e1", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: isolate k by subtracting 14j and dividing by 5"}
+{"id": "13e57f0a", "sub_skills": ["NLE.2"], "clusters": ["CL.0037"], "distractors": [], "why": "Quadratic equation: rearrange and factor (or use quadratic formula) to find positive root"}
+{"id": "802549ac", "sub_skills": ["NLE.2", "EE.2"], "clusters": ["CL.0034", "CL.0017", "CL.0047"], "distractors": [], "why": "Expand both sides, cancel x^2 terms, solve linear equation"}
+{"id": "75a32330", "sub_skills": ["NLE.5", "NLF.1"], "clusters": ["CL.0156", "CL.0160", "CL.0162"], "distractors": [], "why": "System visualization: match equation parameters to graph features"}
+{"id": "a4f61d75", "sub_skills": ["NLE.2"], "clusters": ["CL.0120", "CL.0037"], "distractors": [], "why": "Use sum and product of roots (Vieta's formulas) to find a"}
+{"id": "062f86db", "sub_skills": ["NLE.2"], "clusters": ["CL.0037", "CL.0122"], "distractors": [], "why": "Factor quadratic trinomial, apply zero product property for positive root"}
+{"id": "717a1964", "sub_skills": ["NLE.2"], "clusters": ["CL.0037", "CL.0122"], "distractors": [], "why": "Factor quadratic trinomial, apply zero product property"}
+{"id": "fad2f98c", "sub_skills": ["NLE.2"], "clusters": ["CL.0122", "CL.0163"], "distractors": [], "why": "Polynomial in factored form: apply zero product property"}
+{"id": "a267bd29", "sub_skills": ["NLE.2"], "clusters": ["CL.0020", "CL.0088"], "distractors": [], "why": "Quadratic solved by completing the square, simplify radical"}
+{"id": "630897df", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation in context: isolate T by subtracting and dividing"}
+{"id": "29ed5d39", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0016"], "distractors": [], "why": "Literal equation with fraction: isolate n by cross-multiplying"}
+{"id": "895628b5", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0039", "CL.0122"], "distractors": [], "why": "System: substitute, factor out (x-2), solve to find single intersection"}
+{"id": "8f65cddc", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0086"], "distractors": [], "why": "Literal equation: cross-multiply fraction equation, isolate x"}
+{"id": "2926cc6d", "sub_skills": ["NLE.2"], "clusters": ["CL.0122"], "distractors": [], "why": "Quadratic in factored form: apply zero product property"}
+{"id": "5ae4803e", "sub_skills": ["NLE.3"], "clusters": ["CL.0008", "CL.0047"], "distractors": [], "why": "Rational equation: cancel common factor (noting excluded value), solve linear"}
+{"id": "c77ef2fb", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0016"], "distractors": [], "why": "Literal equation in context: cross-multiply, isolate H"}
+{"id": "5ae186b4", "sub_skills": ["NLE.3"], "clusters": ["CL.0047"], "distractors": [], "why": "Rational equation: multiply both sides by w, divide by 6"}
+{"id": "364a2d25", "sub_skills": ["NLE.5", "NLE.2"], "clusters": ["CL.0095", "CL.0037", "CL.0122"], "distractors": [], "why": "System reducible to quadratic: express y=17-x, substitute into xy=72, factor"}
+{"id": "a1262cdb", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: subtract b to get c-b=12t"}
+{"id": "0980fcdd", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0094"], "distractors": [], "why": "System: substitute second into first, solve quadratic, compute xy"}
+{"id": "87a3de81", "sub_skills": ["NLE.2"], "clusters": ["CL.0037", "CL.0122"], "distractors": [], "why": "Factor quadratic trinomial, positive root"}
+{"id": "4b6f0a3f", "sub_skills": ["NLE.2"], "clusters": ["CL.0120"], "distractors": [], "why": "Sum of roots by Vieta's formulas: -(-5)/1=5"}
+{"id": "2683b5db", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation in context: isolate P"}
+{"id": "40f2e601", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: divide by N, subtract from 19"}
+{"id": "2f958af9", "sub_skills": ["NLE.1"], "clusters": ["CL.0047"], "distractors": [], "why": "Literal equation: multiply by m, divide by L"}
+{"id": "876a731c", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0122"], "distractors": [], "why": "System: simplify second eq, substitute into first, factor"}
+{"id": "bef4b1c6", "sub_skills": ["NLE.3"], "clusters": ["CL.0016", "CL.0037"], "distractors": [], "why": "Rational equation: clear denominator, factor resulting quadratic"}
+{"id": "928498f3", "sub_skills": ["NLE.2"], "clusters": ["CL.0007"], "distractors": [], "why": "Apply quadratic formula: a=6, b=5, c=-7"}
+{"id": "f76c1858", "sub_skills": ["NLE.2"], "clusters": ["CL.0037", "CL.0122"], "distractors": [], "why": "Factor quadratic trinomial, take positive root"}
+{"id": "e8779461", "sub_skills": ["NLE.5"], "clusters": ["CL.0094"], "distractors": [], "why": "System: solve linear for x, substitute into quadratic"}
+{"id": "09e5e4d3", "sub_skills": ["NLE.3"], "clusters": ["CL.0016", "CL.0047"], "distractors": [], "why": "Rational equation: multiply both sides by x, recognize result directly"}
+{"id": "6acdcece", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0086"], "distractors": [], "why": "Literal equation: multiply both sides by y"}
+{"id": "30a07668", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0037"], "distractors": [], "why": "System: substitute, factor quadratic for positive root"}
+{"id": "2d2ab76b", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0099"], "distractors": [], "why": "System: substitute constant, solve for x, list intersection points"}
+{"id": "58b109d4", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0165"], "distractors": [], "why": "System: eliminate y, get perfect square trinomial"}
+{"id": "3a01a5ee", "sub_skills": ["NLE.3"], "clusters": ["CL.0090"], "distractors": [], "why": "Absolute value equation: split into two cases, sum solutions"}
+{"id": "a54753ca", "sub_skills": ["NLE.4", "NLF.1"], "clusters": ["CL.0025", "CL.0168"], "distractors": [], "why": "Tangent line at vertex: complete square to find maximum y-value"}
+{"id": "c8e9a011", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0086"], "distractors": [], "why": "Literal equation with fractions: combine and isolate n"}
+{"id": "9cb9beec", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "System with one solution: set discriminant to zero"}
+{"id": "6011a3f8", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "Discriminant condition: b²-4(64)(25)>0 for two solutions"}
+{"id": "fc3dfa26", "sub_skills": ["NLE.3"], "clusters": ["CL.0016", "CL.0034", "CL.0037"], "distractors": [], "why": "Rational equation: common denominator, simplify, factor quadratic"}
+{"id": "2c5c22d0", "sub_skills": ["NLE.4", "NLE.5"], "clusters": ["CL.0095", "CL.0165"], "distractors": [], "why": "System: substitute, simplify to perfect square, one intersection"}
+{"id": "ff2e5c76", "sub_skills": ["NLE.2"], "clusters": ["CL.0120"], "distractors": [], "why": "Sum of roots by Vieta's formulas: -(-40)/1=40"}
+{"id": "5edc8c98", "sub_skills": ["NLE.2"], "clusters": ["CL.0120"], "distractors": [], "why": "Vieta's formulas: sum of roots, match to k(4a+b)"}
+{"id": "1697ffcf", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0122"], "distractors": [], "why": "System: set equal, factor, find nonzero intersection"}
+{"id": "77c0cced", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0025"], "distractors": [], "why": "System with exactly one intersection: discriminant equals zero"}
+{"id": "fbb96bb1", "sub_skills": ["NLE.2"], "clusters": ["CL.0122", "CL.0034"], "distractors": [], "why": "Factor equation, analyze when solutions become extraneous"}
+{"id": "5910bfff", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0034"], "distractors": [], "why": "Literal equation in context: isolate H with distribution"}
+{"id": "133f3e41", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0086"], "distractors": [], "why": "Literal equation with reciprocals: common denominator, isolate q"}
+{"id": "4fb8a648", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0037"], "distractors": [], "why": "System: substitute, factor quadratic, pick greatest root"}
+{"id": "30281058", "sub_skills": ["NLE.5", "NLF.1"], "clusters": ["CL.0094"], "distractors": [], "why": "Evaluate quadratic at two points, compute slope"}
+{"id": "c9417793", "sub_skills": ["NLE.3"], "clusters": ["CL.0090", "CL.0047"], "distractors": [], "why": "Absolute value equation: isolate absolute value, sum both cases"}
+{"id": "6aefc52b", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "Discriminant must be negative: solve inequality for k"}
+{"id": "158591f0", "sub_skills": ["NLE.2"], "clusters": ["CL.0034", "CL.0037"], "distractors": [], "why": "Expand both sides, combine like terms, use Vieta's for sum"}
+{"id": "7dbd46d9", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0037"], "distractors": [], "why": "System: substitute, solve quadratic for x"}
+{"id": "104bff62", "sub_skills": ["NLE.3"], "clusters": ["CL.0047", "CL.0088"], "distractors": [], "why": "Radical equation: combine fractions, simplify radical, solve"}
+{"id": "1ce9ffcd", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "One solution: discriminant equals zero, solve for c"}
+{"id": "b03adde3", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0016"], "distractors": [], "why": "Literal equation with fraction: cross-multiply, isolate t"}
+{"id": "e9349667", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0122"], "distractors": [], "why": "System of quadratic and linear: substitute, factor, sum y-values"}
+{"id": "2cd6b22d", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "Discriminant is negative: no real solutions"}
+{"id": "4dc5c6f9", "sub_skills": ["NLE.4"], "clusters": ["CL.0168"], "distractors": [], "why": "Square cannot be negative: system has zero solutions"}
+{"id": "71014fb1", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0120"], "distractors": [], "why": "System: substitute, use Vieta's formulas for product of y-values"}
+{"id": "3d12b1e0", "sub_skills": ["NLE.3"], "clusters": ["CL.0037", "CL.0090"], "distractors": [], "why": "Radical/absolute value equation: square both sides, factor, check"}
+{"id": "ebb717ab", "sub_skills": ["NLE.4", "NLF.1"], "clusters": ["CL.0163"], "distractors": [], "why": "Number of solutions of cubic: analyze local max/min"}
+{"id": "97e50fa2", "sub_skills": ["NLF.1"], "clusters": ["CL.0017"], "distractors": [], "why": "Vertex of parabola: average of roots gives x-coordinate of minimum"}
+{"id": "66bce0c1", "sub_skills": ["NLF.1"], "clusters": ["CL.0163"], "distractors": [], "why": "Analyze cubic zeros from factored form: signs of roots"}
+{"id": "17d0e87d", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0037"], "distractors": [], "why": "System: substitute, solve quadratic for positive x"}
+{"id": "88a0c425", "sub_skills": ["EE.2"], "clusters": ["CL.0034"], "distractors": [], "why": "Expand and combine like terms to identify coefficients"}
+{"id": "7028c74f", "sub_skills": ["NLE.2"], "clusters": ["CL.0122"], "distractors": [], "why": "Zero product property: solve each factor"}
+{"id": "03ff48d2", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0122"], "distractors": [], "why": "System: factor common expression, count solutions"}
+{"id": "e11294f9", "sub_skills": ["NLE.3"], "clusters": ["CL.0091", "CL.0037"], "distractors": [], "why": "Radical equation: square both sides, solve quadratic, check domain"}
+{"id": "7bd10ef3", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0086"], "distractors": [], "why": "Literal equation with fractions: factor r, isolate"}
+{"id": "74473be4", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0099"], "distractors": [], "why": "System: substitute, solve, sum absolute values"}
+{"id": "2cb17792", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "One solution: discriminant equals zero, c=-25"}
+{"id": "c303ad23", "sub_skills": ["NLE.2", "NLF.1"], "clusters": ["CL.0037", "CL.0120"], "distractors": [], "why": "Build quadratic from roots, identify coefficients"}
+{"id": "1fe32f7d", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0086"], "distractors": [], "why": "Literal equation with reciprocals: common denominator, invert"}
+{"id": "2c05d312", "sub_skills": ["NLE.2"], "clusters": ["CL.0099"], "distractors": [], "why": "Take square root of both sides, solve for negative x"}
+{"id": "d0a53ef5", "sub_skills": ["NLE.1"], "clusters": ["CL.0047", "CL.0016"], "distractors": [], "why": "Literal equation in context: cross-multiply, isolate F"}
+{"id": "722de804", "sub_skills": ["NLE.5"], "clusters": ["CL.0095", "CL.0037"], "distractors": [], "why": "System: substitute, factor, count solutions"}
+{"id": "f5aa5040", "sub_skills": ["NLF.1"], "clusters": ["CL.0163", "CL.0164"], "distractors": [], "why": "Identify zeros of quadratic from factored form"}
+{"id": "6ce95fc8", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "Discriminant inequality: 81a²<576 for no real solutions"}
+{"id": "fada6b03", "sub_skills": ["NLF.1"], "clusters": ["CL.0025", "CL.0168"], "distractors": [], "why": "Vertex below x-axis with upward parabola: two x-intercepts"}
+{"id": "f2f3fa00", "sub_skills": ["NLE.4"], "clusters": ["CL.0025"], "distractors": [], "why": "Discriminant inequality: k²>9 for no real solutions"}
