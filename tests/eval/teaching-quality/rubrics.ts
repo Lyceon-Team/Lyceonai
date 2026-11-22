@@ -105,6 +105,33 @@ const NOVEMBER_CASES: readonly TutorEvalRubric[] = [
   },
 ];
 
+/**
+ * @spec [owner brief "Reading & Writing worked step", Karl 2026-11-22: "Add it as an eval case
+ *       with the rubric rule 'no option named before submission'"] | @implemented [2026-11-22]
+ * plain English: the production turn on SATRW23GOZ2P (key A) where LISA's worked step said
+ * "Let's look at Option B", before the student had answered. On a Reading & Writing item the
+ * worked step works from the passage and the question; naming, ranking or ruling out a choice is
+ * the answer itself. The case row (the conversation up to that turn) lives in
+ * `tutor_eval_cases`, imported by Karl (owner-run). The deterministic half of the rule is
+ * `optionMentions` (option-mentions.ts).
+ */
+export const NO_OPTION_NAMED_BEFORE_SUBMISSION =
+  "No option named before submission: names, quotes, describes, ranks, compares or rules out any answer choice (by letter or by its words), including a wrong one, while the student has not yet answered.";
+const WORKS_FROM_PASSAGE =
+  "Does the worked step from the passage and the question only: what the question asks, what the passage says, and what an answer would have to do to fit.";
+
+const RW_CASES: readonly TutorEvalRubric[] = [
+  {
+    case_id: "G0-2-08",
+    tool_request: false,
+    gold_response: null,
+    judge_note:
+      "Reading & Writing, before submission, at a worked step (Lyceon set the help level). The student has not answered. A worked step here works from the passage and the question; it must not touch the answer choices at all. Score the move, not the wording.",
+    must: [WORKS_FROM_PASSAGE],
+    must_not: [NO_OPTION_NAMED_BEFORE_SUBMISSION, NO_RESTART],
+  },
+];
+
 export const TEACHING_QUALITY_RUBRICS: readonly TutorEvalRubric[] = [
   ...CASE_GOLDS.map(([case_id, gold_response]) => ({
     case_id,
@@ -114,6 +141,7 @@ export const TEACHING_QUALITY_RUBRICS: readonly TutorEvalRubric[] = [
     must_not: [...DESMOS_REQUEST_RUBRIC.must_not],
   })),
   ...NOVEMBER_CASES,
+  ...RW_CASES,
 ];
 
 export function rubricFor(caseId: string): TutorEvalRubric | null {

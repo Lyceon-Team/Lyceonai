@@ -108,6 +108,34 @@ WHERE m.role = 'student'
      || '|too\s+(stupid|dumb)\s+for')
 ORDER BY m.conversation_id, m.created_at;
 
+-- ── G0-2-08: an RW worked step that named an option before submission (2026-11-22) ────────
+-- The production case: SATRW23GOZ2P (key A), student ed97def1…, where LISA's worked step said
+-- "Let's look at Option B". The cut-off is the student message just before that reply. Its
+-- tutor_turn_metrics row should say help_level = worked_step (the import's own line says the
+-- same, computed from the window).
+SELECT c.id AS conversation_id, s.id AS cutoff_message_id, s.created_at, s.intent,
+       tm.help_level, tm.help_worked_step
+FROM public.tutor_conversations c
+JOIN public.tutor_messages t
+  ON t.conversation_id = c.id AND t.role = 'tutor' AND t.message ~* '\moption\s+b\M'
+JOIN LATERAL (
+  SELECT m.id, m.created_at, m.intent
+  FROM public.tutor_messages m
+  WHERE m.conversation_id = c.id AND m.role = 'student' AND m.created_at < t.created_at
+  ORDER BY m.created_at DESC, m.id DESC
+  LIMIT 1
+) s ON true
+LEFT JOIN LATERAL (
+  SELECT x.help_level, x.help_worked_step
+  FROM public.tutor_turn_metrics x
+  WHERE x.conversation_id = c.id AND x.recorded_at >= s.created_at
+  ORDER BY x.recorded_at
+  LIMIT 1
+) tm ON true
+WHERE c.student_id::text LIKE 'ed97def1%'
+  AND c.source_question_canonical_id = 'SATRW23GOZ2P'
+ORDER BY t.created_at;
+
 -- ── Before choosing: read a candidate (stays in the SQL editor) ────────────────────────────
 -- Confirms the candidate is the conversation the analysis team reviewed, and that the cut-off
 -- is a STUDENT message with a tutor reply after it (the import refuses otherwise).
