@@ -56,6 +56,7 @@ import {
 } from "../lib/schema.js";
 import { renderDataBlock } from "../lib/_tutor-safety-constants.generated.js";
 import { masteryLevelToBand } from "./mastery-bands.js";
+import { REVIEW_PRE_SUBMIT_COPY } from "./lisa-default-v2.js";
 
 export type StateBlockOptions = {
   /** Render data-derived values as data blocks (lisa-default-v5 and later). */
@@ -149,19 +150,26 @@ export function renderStateBlocks(
  * allowed at any worked step. Lisa-default-v7 only; v6 renders without it.
  * The "borrow a word" clause (2026-11-22, from the synthetic replay): a first wording left 2 of 15
  * worked steps asking "Which option describes a proverb acting as a structural pivot?", the key's
- * own word ("pivot") with no letter, which points at it as surely as naming it.
- * Open (for Karl): with the choices off limits, about a third of the worked steps reply with v2's
- * review copy "Submit it and we'll go through it together" (v6: 1–2 of 15). At the final step that
- * is the intended end (choosing is the last step); at step 2 it is a deflection. A clause asking
- * every step to add something new did not move it (6 of 15) and was not kept.
+ * own word ("pivot") with no letter, which points at it as surely as naming it. Tightened the
+ * same day to "a word that appears in a choice but not in the passage or the question": "rather
+ * than just decoration" (choice A's "not as decoration") still got through 1 of 15.
+ * The submit-line clause (Karl's ruling, 2026-11-22: "on a worked-step turn the 'Submit it and
+ * we'll go through it together.' line never replaces the step; it is only for a direct request for
+ * the answer. Every worked step gives the next step from the passage and question"): without it,
+ * about a third of the RW worked steps replied with only v2's review copy (v6: 1–2 of 15), because
+ * the review rule's "when they ask for the answer" was read into a "Got it, next step" tap.
  */
 export const RW_WORKED_STEP_RULE =
   `This is a Reading and Writing question: work this step only from the passage and the ` +
   `question (what the question asks, what the passage says, and what a correct answer would ` +
   `have to do, said in the passage's own terms). Do not name, quote, describe, rank, compare or ` +
-  `rule out any answer choice, by letter or by its words, not even a wrong one, and do not ` +
-  `borrow a word or detail that appears in only one of the choices. The student holds each ` +
-  `choice up against your reasoning themselves.`;
+  `rule out any answer choice, by letter or by its words, not even a wrong one, and do not use ` +
+  `any word or detail that appears in a choice but not in the passage or the question (say ` +
+  `what an answer must do in the passage's words only). The student holds each ` +
+  `choice up against your reasoning themselves. This message is a worked step, not a request ` +
+  `for the answer: always give the next step from the passage and the question, and never ` +
+  `reply with only "${REVIEW_PRE_SUBMIT_COPY}" That line is only for a direct request for ` +
+  `the answer or for whether a choice is right.`;
 
 export function renderHelpLevelBlock(
   request: OrchestrateRequest,

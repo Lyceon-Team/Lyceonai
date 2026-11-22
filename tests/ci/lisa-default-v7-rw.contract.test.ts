@@ -36,7 +36,12 @@ import { RW_WORKED_STEP_RULE } from "../../apps/workers/tutor-orchestrator/src/p
 import { hasAnswerLeak } from "../../shared/tutor-safety-constants";
 import type { OrchestrateRequest } from "../../shared/tutor-orchestrator-wire";
 import { completeRubric } from "../../packages/shared/src/tutor-eval-schema";
-import { RW_ITEM, rwTurnRequest } from "../eval/help-level/rw-worked-step";
+import {
+  RW_ITEM,
+  isSubmitOnly,
+  rwTurnRequest,
+} from "../eval/help-level/rw-worked-step";
+import { REVIEW_PRE_SUBMIT_COPY } from "../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v2";
 import { optionMentions } from "../eval/teaching-quality/option-mentions";
 import { buildJudgeUserMessage } from "../eval/teaching-quality/judge";
 import {
@@ -195,5 +200,27 @@ describe("optionMentions: the deterministic half of the rule", () => {
     expect(message).toContain("Chinua Achebe");
     expect(message).toContain("No option named before submission");
     expect(message).not.toMatch(/correct answer|answer key/i);
+  });
+
+  it("S1 the RW worked step names the submit line as never a step (Karl, 2026-11-22)", () => {
+    expect(RW_WORKED_STEP_RULE).toContain(`"${REVIEW_PRE_SUBMIT_COPY}"`);
+    expect(RW_WORKED_STEP_RULE).toMatch(
+      /always give the next step from the passage and the question/,
+    );
+    expect(RW_WORKED_STEP_RULE).toMatch(
+      /only for a direct request for the answer/,
+    );
+    // The replay's count: the line alone is a deflection; the line inside a real step is not.
+    expect(isSubmitOnly("Submit it and we'll go through it together.")).toBe(
+      true,
+    );
+    expect(isSubmitOnly("  submit it and we’ll go through it together! ")).toBe(
+      true,
+    );
+    expect(
+      isSubmitOnly(
+        "The passage says the proverbs carry the argument. Submit it and we'll go through it together.",
+      ),
+    ).toBe(false);
   });
 });

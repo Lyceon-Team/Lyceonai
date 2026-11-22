@@ -17,6 +17,9 @@
  *    decides; a lone word only one choice uses is reported as advisory;
  *  - the judge, with G0-2-08's rubric (rubrics.ts), whose must-not item is the rule.
  * A version passes when no worked-step reply in any run names an option on either check.
+ * Karl's ruling (2026-11-22) adds the deflection count: a worked step that is only v2's review
+ * line ("Submit it and we'll go through it together.") gave no step. v7 passes when 0 of its
+ * worked steps name a choice AND its submit-only count is at most v6's; both are printed.
  *
  * Synthetic: the student turns are the tap labels, nothing is read from or written to a
  * database, and no student text exists here. Replies go to tests/eval/help-level/.cache/
@@ -50,6 +53,7 @@ import {
 } from "../teaching-quality/rubrics";
 import { optionMentions } from "../teaching-quality/option-mentions";
 import { assertProxied } from "../../../scripts/rag/vertex";
+import { REVIEW_PRE_SUBMIT_COPY } from "../../../apps/workers/tutor-orchestrator/src/prompts/lisa-default-v2";
 
 /** SATRW23GOZ2P as the bank holds it (infra/supabase/seed/proving_batch_014.sql). */
 export const RW_ITEM = {
@@ -79,6 +83,20 @@ export const RW_ITEM = {
 } as const;
 
 export const VERSIONS = ["lisa-default-v6", "lisa-default-v7"] as const;
+
+/** Pure. The reply is only v2's review line (whitespace, quotes and case aside): no step given. */
+export function isSubmitOnly(reply: string): boolean {
+  const norm = (t: string): string =>
+    t
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[’‘]/g, "'")
+      .replace(/["“”]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/[.!]+$/, "");
+  return norm(reply) === norm(REVIEW_PRE_SUBMIT_COPY);
+}
 const TAPS: ReviewIntent[] = [
   "walkthrough",
   "step_understood",
@@ -146,6 +164,7 @@ async function main(): Promise<void> {
   const results: Array<Record<string, unknown>> = [];
   const failures: Record<string, number> = {};
   const workedTurns: Record<string, number> = {};
+  const submitOnly: Record<string, number> = {};
   let usd = 0;
   const errors: Array<Record<string, unknown>> = [];
   const outDir = join(import.meta.dirname, ".cache");
@@ -159,7 +178,15 @@ async function main(): Promise<void> {
     writeFileSync(
       file,
       JSON.stringify(
-        { item: RW_ITEM.id, usd, failures, workedTurns, errors, results },
+        {
+          item: RW_ITEM.id,
+          usd,
+          failures,
+          workedTurns,
+          submitOnly,
+          errors,
+          results,
+        },
         null,
         2,
       ),
@@ -168,6 +195,7 @@ async function main(): Promise<void> {
   for (const version of versions) {
     failures[version] = 0;
     workedTurns[version] = 0;
+    submitOnly[version] = 0;
     for (let run = 1; run <= runs; run += 1) {
       const history: Turn[] = [];
       let state: HelpState | null = null;
@@ -229,6 +257,8 @@ async function main(): Promise<void> {
         if (worked) {
           workedTurns[version] = (workedTurns[version] ?? 0) + 1;
           if (named) failures[version] = (failures[version] ?? 0) + 1;
+          if (isSubmitOnly(record.visible_reply))
+            submitOnly[version] = (submitOnly[version] ?? 0) + 1;
         }
         results.push({
           version,
@@ -268,8 +298,17 @@ async function main(): Promise<void> {
   save();
   for (const v of versions) {
     process.stdout.write(
-      `${v}: ${failures[v]}/${workedTurns[v]} worked-step replies named an option -> ${failures[v] === 0 ? "PASS" : "FAIL"}` +
+      `${v}: ${failures[v]}/${workedTurns[v]} worked-step replies named a choice; ` +
+        `${submitOnly[v]}/${workedTurns[v]} were only the submit line` +
         `${errors.some((e) => e["version"] === v) ? " (a run stopped on an error; see the file)" : ""}\n`,
+    );
+  }
+  const [v6, v7] = VERSIONS;
+  if (versions.includes(v6) && versions.includes(v7)) {
+    const pass =
+      failures[v7] === 0 && (submitOnly[v7] ?? 0) <= (submitOnly[v6] ?? 0);
+    process.stdout.write(
+      `${v7} vs ${v6} (Karl, 2026-11-22: 0 name a choice AND submit-only <= v6's): ${pass ? "PASS" : "FAIL"}\n`,
     );
   }
   process.stdout.write(`usd ${usd.toFixed(4)}\nreplies: ${file}\n`);

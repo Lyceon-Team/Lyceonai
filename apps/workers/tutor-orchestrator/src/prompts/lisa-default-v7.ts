@@ -20,8 +20,10 @@
  *    ruled out by "never state … which choice is correct".
  *  - Default for every variant (prompt-registry.ts), effective when Karl deploys the worker.
  *  - Evidence (synthetic replay of SATRW23GOZ2P, tests/eval/help-level/rw-worked-step.ts, 5 runs
- *    of walkthrough + 3 "Got it" taps, 2026-11-22): worked-step replies that named a choice, by
- *    letter, quote or judge, v6 10/15, v7 0/15. The real case is G0-2-08 (owner-run import).
+ *    of walkthrough + 3 "Got it" taps, 2026-11-22), on Karl's pass test of 2026-11-22 (0 of 15
+ *    name a choice AND worked steps that are only the submit line <= v6's): named a choice v6
+ *    8/15, v7 0/15; only the submit line v6 3/15, v7 1/15. PASS. The real case is G0-2-08
+ *    (owner-run import).
  */
 
 import type { PromptArtifact } from "./types.js";
