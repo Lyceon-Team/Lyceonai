@@ -1,0 +1,102 @@
+{"id": "b86123af", "sub_skills": ["SYS.4"], "clusters": ["CL.0104", "CL.0060"], "distractors": ["CL.0033"], "why": "Word problem: 7 items at $12/$15 totaling $93; translate counts and costs into s+p=7 and 12s+15p=93. Answer B."}
+{"id": "608eeb6e", "sub_skills": ["SYS.2", "SYS.1"], "clusters": ["CL.0047", "CL.0094"], "distractors": [], "why": "Asks for x+y. Solve 5x=15→1x=3, substitute into -4x+y=-2→y=10, then x+y=13."}
+{"id": "b0fc3166", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0047", "CL.0094"], "distractors": [], "why": "Set y=6x+18 equal to y=x+3, solve 5x=-15→x=-3, then y=0. Answer C."}
+{"id": "cdec4c87", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0047", "CL.0094"], "distractors": [], "why": "Set y=4x equal to y=x+6, solve 3x=6→x=2, y=8. Answer C."}
+{"id": "dba8d38a", "sub_skills": ["SYS.1"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "Substitute y=2 into 2x+y=14, solve 2x=12→x=6. Answer A."}
+{"id": "f5563c26", "sub_skills": ["RAT.3"], "clusters": ["CL.0060"], "distractors": [], "why": "Compute 75% of 120=90 and 10% of 240=24, sum=114. Percentage-of-groups, no system needed. Answer B."}
+{"id": "e6545fa8", "sub_skills": ["SYS.5"], "clusters": ["CL.0177"], "distractors": [], "why": "Read intersection point of two graphed lines. Answer C (2,6)."}
+{"id": "317e80f9", "sub_skills": ["SYS.3"], "clusters": ["CL.0133"], "distractors": [], "why": "2x+2y=2 simplifies to x+y=1, identical to second equation; infinitely many solutions. Answer D."}
+{"id": "aff28230", "sub_skills": ["SYS.1"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "Substitute x=4 into x+y=12, get y=8."}
+{"id": "8abed0fb", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0104", "CL.0060", "CL.0095", "CL.0047"], "distractors": [], "why": "Model L+S=6 and 40L+30S=210, substitute L=6-S, solve S=3. Answer C."}
+{"id": "e1259a5a", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0047", "CL.0094"], "distractors": [], "why": "Set -x+2=x-8, solve x=5, y=-3. Answer B (5,-3)."}
+{"id": "9db5b5c1", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0104", "CL.0060", "CL.0095", "CL.0034", "CL.0047"], "distractors": [], "why": "Model s+a=180 and 4s+6a=840, substitute a=180-s, distribute and solve s=120. Answer D."}
+{"id": "ca9bb527", "sub_skills": ["SYS.1"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "Substitute y=5 into 3x+y=17, solve 3x=12→x=4. Answer B."}
+{"id": "f88970cc", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0034", "CL.0047", "CL.0017"], "distractors": [], "why": "From x+y=10 get x=10-y, substitute into 2x+3y=26, combine like terms, solve x=4. Answer A."}
+{"id": "ffb371f5", "sub_skills": ["SYS.3"], "clusters": ["CL.0133", "CL.0172"], "distractors": [], "why": "Same slope 4, different intercepts (1 vs 3); parallel lines, zero solutions. Answer A."}
+{"id": "ece00725", "sub_skills": ["SYS.5"], "clusters": ["CL.0177"], "distractors": [], "why": "Read intersection of two graphed lines at (-4,-2). Answer A."}
+{"id": "e0177f5f", "sub_skills": ["SYS.1"], "clusters": ["CL.0003", "CL.0047"], "distractors": [], "why": "Add equations x+y=4 and 2x-y=2 to eliminate y, get 3x=6→x=2. Answer C."}
+{"id": "ee031767", "sub_skills": ["SYS.3"], "clusters": ["CL.0133"], "distractors": [], "why": "Both equations identical (y=3x+5); infinitely many solutions. Answer D."}
+{"id": "1006cad7", "sub_skills": ["SYS.1"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "Substitute x=10 into 3x+y=24, get 30+y=24→y=-6."}
+{"id": "939fc21b", "sub_skills": ["SYS.3"], "clusters": ["CL.0133", "CL.0172"], "distractors": [], "why": "Same slope 3, different intercepts (2 vs 6); parallel lines, zero solutions. Answer A."}
+{"id": "aacc834b", "sub_skills": ["SYS.2", "SYS.1"], "clusters": ["CL.0095", "CL.0034", "CL.0047", "CL.0094"], "distractors": [], "why": "Asks for x+y. From 5x+y=100 get y=100-5x, substitute into 4x+2y=86, solve x=19, y=5, x+y=24."}
+{"id": "cd33b015", "sub_skills": ["SYS.1"], "clusters": ["CL.0003", "CL.0047"], "distractors": [], "why": "Subtract x+y=8 from 3x+y=16 to eliminate y, get 2x=8→x=4. Answer A."}
+{"id": "4ec95eab", "sub_skills": ["SYS.3"], "clusters": ["CL.0133", "CL.0172"], "distractors": [], "why": "Same slope 5, different intercepts (7 vs 3); parallel lines, zero solutions. Answer A."}
+{"id": "4fb8adf7", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0104", "CL.0047"], "distractors": [], "why": "Model costs 25+50h and 100+30h, set equal: 20h=75→h=3.75. Answer D."}
+{"id": "4b06557b", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0047"], "distractors": [], "why": "Set y=x equal to y=2x-6, solve -x=-6→x=6."}
+{"id": "f6b055dc", "sub_skills": ["SYS.1"], "clusters": ["CL.0003", "CL.0047"], "distractors": [], "why": "Subtract equations: (x+y)-(x-y)=25-11→2y=14→y=7. Answer B."}
+{"id": "0d1dca87", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0034", "CL.0017", "CL.0047"], "distractors": [], "why": "Substitute x=y+3 into 2x+y=12, distribute, combine like terms: 3y+6=12→y=2, x=5."}
+{"id": "ccc3ad6b", "sub_skills": ["SYS.1"], "clusters": ["CL.0003", "CL.0047"], "distractors": [], "why": "Subtract equations: 2y=-8→y=-4. Answer A."}
+{"id": "cb8f449f", "sub_skills": ["SYS.1"], "clusters": ["CL.0094", "CL.0047"], "distractors": [], "why": "From (1/2)y=4, substitute into x-(1/2)y=2→x-4=2→x=6. Answer C."}
+{"id": "bf4a8b6a", "sub_skills": ["SYS.3"], "clusters": ["CL.0133"], "distractors": [], "why": "Identical equations y=3x+1; infinitely many solutions. Answer D."}
+{"id": "e53688cb", "sub_skills": ["SYS.2", "SYS.1"], "clusters": ["CL.0003", "CL.0047", "CL.0094"], "distractors": [], "why": "Asks for 10y. Add equations: 4x=16→x=4; substitute back: 5y=21→10y=42."}
+{"id": "65833256", "sub_skills": ["SYS.1"], "clusters": ["CL.0016", "CL.0095", "CL.0034", "CL.0047"], "distractors": [], "why": "Multiply first eq by 7 to clear fractions: 3x+y=98; substitute y=98-3x into x+3y=38, solve x=32, y=2."}
+{"id": "b544a348", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0104", "CL.0095", "CL.0047"], "distractors": [], "why": "Model m1+m2=550 and m2=1.2m1, substitute: 2.2m1=550→m1=250. Answer B."}
+{"id": "e3bbde69", "sub_skills": ["SYS.2", "SYS.1"], "clusters": ["CL.0053", "CL.0003", "CL.0047"], "distractors": [], "why": "Asks for x-y. Multiply eq2 by 5, add to eliminate x: 11y=-187→y=-17, x=0, so x-y=17."}
+{"id": "686b7cad", "sub_skills": ["SYS.3"], "clusters": ["CL.0133", "CL.0172"], "distractors": [], "why": "Same slope 1/3, different intercepts (7 vs -2); parallel lines, zero solutions. Answer A."}
+{"id": "a94ed4e0", "sub_skills": ["SYS.1"], "clusters": ["CL.0095", "CL.0017", "CL.0047"], "distractors": [], "why": "Substitute y=3x into x+y=12, combine 4x=12→x=3. Answer A."}
+{"id": "2704399f", "sub_skills": ["SYS.3"], "clusters": ["CL.0133"], "distractors": [], "why": "Identical equations y=(3/2)x+5; infinitely many solutions. Answer D."}
+{"id": "55447be2", "sub_skills": ["SYS.4", "SYS.1"], "clusters": ["CL.0104", "CL.0003", "CL.0047"], "distractors": [], "why": "Model A+B=3000 and A-B=180, add: 2A=3180→A=1590. Need strictly more than 50%, minimum A=1591. Answer D."}
+{"id": "5e422ff9", "sub_skills": ["SYS.1"], "clusters": ["CL.0003", "CL.0047"], "distractors": [], "why": "Add equations: 2x=16→x=8. Answer C."}
+{"id": "b3c7ca1d", "sub_skills": ["SYS.3"], "clusters": ["CL.0133"], "distractors": [], "why": "First equation is 2x second; identical lines, infinitely many solutions. Answer D."}
+{"id":"e77a76ce","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047"],"distractors":[],"why":"Wire 56 in cut into two pieces, one 18 in longer. Let x=shorter, y=longer: x+y=56, y=x+18. Substitution gives 2x+18=56, x=19, y=37. Two unknowns, two conditions → model with system."}
+{"id":"dcc4886a","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"System has infinitely many solutions ⇒ second equation is the same line. y=(2/7)x+3 so m=2/7, b=3. Asks for constant giving infinitely many solutions."}
+{"id":"4e400635","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"3x+y=6 and 3x+y=36: same coefficients, different constants ⇒ parallel lines ⇒ zero solutions."}
+{"id":"2875ba81","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047","CL.0017"],"distractors":[],"why":"x+y=9, 2x+3y=23. Substitute x=9−y: 2(9−y)+3y=23 → 18−2y+3y=23 → y=5. Asks for y from the system."}
+{"id":"6e50ce28","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"75 items bread+eggs, $3 and $4 each, total $245. b+e=75, 3b+4e=245. Substitute e=75−b → b=55. Word problem with two unknowns and two conditions."}
+{"id":"9f6f96ff","sub_skills":["SYS.4"],"clusters":["CL.0060","CL.0047"],"distractors":[],"why":"Bus 1 travels 60 mph, Bus 2 travels 45 mph. After t hours difference is 15t=30, t=2. Models two rates as linear equations and solves for time when gap condition is met."}
+{"id":"79784c23","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0017"],"distractors":[],"why":"5x+3y=30, x+3y=18. Subtract second from first: 4x=12. Asks for expression 4x, not x alone."}
+{"id":"bd45df49","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"30 mirrors+vases, $10/$5 discounts, total $185. m+v=30, 10m+5v=185. Substitute v=30−m → 5m=35, m=7. Word problem with two unknowns."}
+{"id":"d909cd31","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047","CL.0094"],"distractors":[],"why":"y=11x+2, y=−3x+2. Set equal: 14x=0, x=0, y=2. Asks for y."}
+{"id":"092ad67d","sub_skills":["SYS.3"],"clusters":["CL.0095","CL.0034","CL.0047"],"distractors":[],"why":"y=4x+1, 4y=4x+1. Substitute: 4(4x+1)=4x+1 → 16x+4=4x+1 → 12x=−3 → exactly one solution. Asks how many solutions."}
+{"id":"79be5180","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0047","CL.0094"],"distractors":[],"why":"y=8x+34, y=−2x+4. Set equal: 10x=−30, x=−3, y=10. Asks for x+y=7, an expression rather than x or y alone."}
+{"id":"b00ad7f2","sub_skills":["SYS.5"],"clusters":["CL.0133"],"distractors":[],"why":"Graph shows two lines intersecting at one point ⇒ exactly one solution. Solution read from the graph."}
+{"id":"c5082ce3","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"30 questions, +5 correct, −2 incorrect, total 78 pts. c+w=30, 5c−2w=78. Two unknowns, two conditions → model with system."}
+{"id":"a0489274","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"120 people, floor $25 balcony $15, total $2400. f+b=120, 25f+15b=2400. Substitute b=120−f → 10f=600, f=60. Word problem."}
+{"id":"19fdf387","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"x+y=7, 2x−y=8. Add equations: 3x=15, x=5. Asks for x."}
+{"id":"6ba39da5","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"y=7x+3 and y=7x+3 are identical ⇒ infinitely many solutions."}
+{"id":"ed92fb68","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"y=(1/2)x+3 and y=(1/2)x+6: same slope, different intercept ⇒ parallel ⇒ zero solutions."}
+{"id":"9a216c0f","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"4x+y=30, x+y=12. Subtract: 3x=18, x=6."}
+{"id":"8a87c2c8","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"3x+4y=18, 2x−4y=17. Add: 5x=35, x=7."}
+{"id":"74c03c21","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047"],"distractors":[],"why":"x+y=130, y=4x. Substitute: x+4x=130, 5x=130, x=26."}
+{"id":"f5929f7a","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"y=(5/6)x+1 and y=(5/6)x+10: same slope, different intercept ⇒ parallel ⇒ zero solutions."}
+{"id":"6e6a3241","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"2y=x+10 gives y=x/2+5; 4y=2x+10 gives y=x/2+2.5. Same slope, different intercept ⇒ zero solutions."}
+{"id":"6a87902f","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0047","CL.0094"],"distractors":[],"why":"y=x+9, y=−x+9. Set equal: 2x=0, x=0, y=9. Asks for y."}
+{"id":"38a43902","sub_skills":["SYS.1"],"clusters":["CL.0095","CL.0034","CL.0047"],"distractors":[],"why":"3x−4y=13, x=y+4. Substitute: 3(y+4)−4y=13 → −y+12=13 → y=−1."}
+{"id":"0c541d87","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"y=3x+1 and y=3x+2: same slope, different intercept ⇒ parallel ⇒ zero solutions."}
+{"id":"71189542","sub_skills":["SYS.5"],"clusters":["CL.0133"],"distractors":[],"why":"Graph shows two parallel lines that do not intersect ⇒ zero solutions. Solution count read from graph."}
+{"id":"73b3b7d8","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0017"],"distractors":[],"why":"5y=10x+11, −5y=5x−21. Add: 15x−10=0, x=2/3. Asks for 30x=20, an expression."}
+{"id":"27f5fff3","sub_skills":["SYS.5"],"clusters":["CL.0094","CL.0133"],"distractors":[],"why":"Graph shows two lines meeting at (8,2). Third equation x+4y=−16: 8+8=16≠−16, so no common point for all three ⇒ zero solutions for the 3-equation system."}
+{"id":"5e08a055","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"y=6x+18 ⇒ −6x+y=18. No solution requires same slope, different intercept: −6x+y=22 (choice B) gives y=6x+22, parallel."}
+{"id":"75012ee7","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0047"],"distractors":[],"why":"10x+15y=35 is 5×(2x+3y=7) ⇒ same line. Parametric: x=−3r/2+7/2, y=r ⇒ (−3r/2+7/2, r). Describes solution set of dependent system."}
+{"id":"3a84f885","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0017"],"distractors":[],"why":"Let u=x−2, v=4(y+7). u−v=117, u+v=442. Add: 2u=559, u=279.5. 6(x−2)=6u=1677. Asks for expression 6(x−2)."}
+{"id":"567ac7ab","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"2x+6y=10 simplifies to x+3y=5. No solution requires same ratio, different constant: x+3y=−20 (B)."}
+{"id":"a71b1bc1","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047"],"distractors":[],"why":"Wire 32 in: x+y=32, x=3y+4. Substitute: 4y+4=32, y=7, x=25. Word problem with two unknowns."}
+{"id":"14360f84","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0017"],"distractors":[],"why":"4x−9y=9y+5 becomes 4x−18y=5. hy=2+4x becomes 4x−hy=−2. No solution when h=18 (same LHS, different RHS)."}
+{"id":"59352689","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0017","CL.0034"],"distractors":[],"why":"Simplify first eq: (7/4)y−(5/8)x=4/7 → 35x−98y=−32. Second: 5x−4py=8. Coefficient ratio 35/5=7 ⇒ 4p×7=98 ⇒ p=7/2 for no solution."}
+{"id":"fb5e7f59","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0003","CL.0047"],"distractors":[],"why":"Substitute y=19: −x−19w=−337, 2x−19w=47. Add: 3x=384−(wait, subtract first from second: 3x=384, x=128). Then 128+19w=337, w=11."}
+{"id":"1e11190a","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"5.5r+3b=37, 6.5r+8b=66. Eliminate r: multiply and subtract → 24.5b=122.5, b=5. Word problem with two stores."}
+{"id":"1e0a46e4","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"D: −2x+3y=9 and 4x−6y=18. Second is −2×first LHS but −2(9)=−18≠18 ⇒ parallel ⇒ no solution."}
+{"id":"f03465dc","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0047"],"distractors":[],"why":"24x+21y=27 is 3×(8x+7y=9) ⇒ same line. Parametric: y=−8r/7+9/7 for x=r ⇒ (r, −8r/7+9/7). Solution set of dependent system."}
+{"id":"e2e3942f","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"y=2x+1, y=ax−8. No solution ⇒ parallel ⇒ a=2 (same slope, different intercept)."}
+{"id":"570b5a5d","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0094"],"distractors":[],"why":"(7/2)x+6y=25, (5/2)x+6y=23. Subtract: x=2, then y=3. (17/2)(2)+18(3)=17+54=71. Asks for expression."}
+{"id":"466b87e3","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"y=(1/2)x+8, y=cx+10. No solution ⇒ parallel ⇒ c=1/2 (same slope, different intercept)."}
+{"id":"f718c9cf","sub_skills":["SYS.2"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"Multiply first ×2 and subtract second: 21y=63, y=3. Then 5x=3, x=3/5. xy=9/5. Asks for expression xy."}
+{"id":"36fd6752","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0017"],"distractors":[],"why":"Rewrite: 7r−pw=−6, 7r−10w=11. For no solution: same r-coefficient, −p=−10 ⇒ p=10, and −6≠11."}
+{"id":"d7bf55e1","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"12a+8c=300, a+c=30. Substitute: 4a=60, a=15. Spent on adult: 12×15=180. Word problem."}
+{"id":"adb0c96c","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047","CL.0094"],"distractors":[],"why":"24x+y=48, 6x+y=72. Subtract: 18x=−24, x=−4/3. Then y=72−6(−4/3)=80."}
+{"id":"45a534d0","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0017"],"distractors":[],"why":"Simplify first to 8x−17y=4; second ×6 gives 96x+6ry=1. Scale first ×12: 96x−204y=48. No solution ⇒ 6r=−204, r=−34."}
+{"id":"7866a908","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"f+s=50, 0.3f+0.8s=25. Substitute: 0.5s=10, s=20. Silicon in second: 0.8×20=16. Alloy word problem."}
+{"id":"52cb8ea4","sub_skills":["SYS.2"],"clusters":["CL.0003"],"distractors":[],"why":"7x−5y=4, 4x−8y=9. Subtract second from first: 3x+3y=−5. Direct expression from elimination."}
+{"id":"1362ccde","sub_skills":["SYS.2"],"clusters":["CL.0095","CL.0034","CL.0047"],"distractors":[],"why":"Substitute y=4x+1 into 4y=15x−8: 16x+4=15x−8, x=−12, y=−47. x−y=−12+47=35. Asks for expression x−y."}
+{"id":"e1248a5c","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Multiply (1/2)x+(1/3)y=1/6 by 3: (3/2)x+y=1/2. Infinitely many ⇒ a=3/2 (and c=1/2)."}
+{"id":"70feb725","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047","CL.0060"],"distractors":[],"why":"r+b=200, b/10=2(r/5) ⇒ b=4r. Then 5r=200, r=40, b=160. Word problem with rates and times."}
+{"id":"f75bd744","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0017"],"distractors":[],"why":"Simplify first to 2x−8y=1; second to −2x+ty=1/2. No solution ⇒ −8/t=−1 ⇒ t=8, and 1≠−1/2 scaled."}
+{"id":"b5f62071","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0017"],"distractors":[],"why":"Simplify first to 6x−14y=3; second ×8 gives 96x+8ry=1. Scale first ×16: 96x−224y=48. No solution ⇒ 8r=−224, r=−28."}
+{"id":"4f1342d6","sub_skills":["SYS.4"],"clusters":["CL.0104","CL.0095","CL.0047"],"distractors":[],"why":"a=3s+15, a+s=363. Substitute: 4s+15=363, s=87. Word problem about sales."}
+{"id":"797a81fb","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"−12x+14y=36 is 2×(−6x+7y) but 36≠2(−18)=−36 ⇒ parallel ⇒ zero solutions."}
+{"id":"979c6ebc","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0047"],"distractors":[],"why":"28x+24y=20 is 4×(7x+6y=5) ⇒ same line. From 7x+6y=5, y=r gives x=(5−6r)/7=−6r/7+5/7, so D: (−6r/7+5/7, r)."}
+{"id":"571174f3","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"Infinitely many: ratio (5/2)/(2/7)=35/4. g=(35/4)(2/5)=7/2, k=(35/4)(7/5)=49/4. g/k=(7/2)/(49/4)=2/7."}
+{"id":"1b1deebe","sub_skills":["SYS.1"],"clusters":["CL.0094","CL.0047"],"distractors":[],"why":"Substitute x=4: 24+2by=56 ⇒ by=16. Then 4a+16=72 ⇒ a=14. Solve for constant via known intersection."}
+{"id":"ff501705","sub_skills":["SYS.3"],"clusters":["CL.0133","CL.0017","CL.0034"],"distractors":[],"why":"Simplify first to 3x−36y=−8; second to 3x−6py=18. No solution ⇒ 6p=36 ⇒ p=6, and −8≠18."}
+{"id":"d1b66ae6","sub_skills":["SYS.1"],"clusters":["CL.0003","CL.0047"],"distractors":[],"why":"−x+y=−3.5, x+3y=9.5. Add: 4y=6, y=1.5. Direct solve for y."}
+{"id":"4becad44","sub_skills":["SYS.3"],"clusters":["CL.0133"],"distractors":[],"why":"3x=36y−45 simplifies to x−12y=−15. B: (1/3)x=4y ⇒ x−12y=0. Same LHS, 0≠−15 ⇒ no solution."}
